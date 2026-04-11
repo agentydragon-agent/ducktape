@@ -9,15 +9,17 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pygit2
+from pydantic import ValidationError
 
 from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseHookSpecificOutput,
     PostToolUseInput,
     PostToolUseOutput,
 )
+from devinfra.claude.claude_api.tool_input_models import EditInput, WriteInput, _ToolInputBase
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import PreCommitConfig
 from devinfra.claude.hook_daemon.precommit_runner import (
@@ -27,17 +29,23 @@ from devinfra.claude.hook_daemon.precommit_runner import (
     RunResult,
     run_on_file,
 )
+from devinfra.claude.hook_daemon.tool_input_parsing import parse_tool_input
+
+if TYPE_CHECKING:
+    from devinfra.claude.hook_daemon.session import Session
 
 logger = logging.getLogger(__name__)
 
 FILE_MODIFYING_TOOLS: frozenset[str] = frozenset({"Edit", "Write", "MultiEdit"})
 
 
-def _get_file_path(tool_input: dict[str, Any]) -> Path | None:
-    file_path = tool_input.get("file_path")
-    if file_path is None:
-        return None
-    return Path(file_path)
+def _get_file_path(parsed: _ToolInputBase | None, raw: dict[str, Any]) -> Path | None:
+    """Extract file_path from parsed model, falling back to raw dict for unknown tools."""
+    if isinstance(parsed, (EditInput, WriteInput)):
+        return Path(parsed.file_path)
+    # Fallback for MultiEdit or parse failure — read from raw dict.
+    raw_path = raw.get("file_path")
+    return Path(raw_path) if raw_path is not None else None
 
 
 def _format_check_result(result: RunResult, file_path: Path, pre_commit: PreCommitConfig) -> str:
@@ -45,11 +53,18 @@ def _format_check_result(result: RunResult, file_path: Path, pre_commit: PreComm
     return output.strip()
 
 
-def evaluate(hook_input: PostToolUseInput, pre_commit: PreCommitConfig | None) -> PostToolUseOutput:
+def evaluate(hook_input: PostToolUseInput, session: Session) -> PostToolUseOutput:
     if hook_input.tool_name not in FILE_MODIFYING_TOOLS:
         return PostToolUseOutput()
 
-    file_path = _get_file_path(hook_input.tool_input)
+    try:
+        parsed = parse_tool_input(hook_input.tool_name, hook_input.tool_input)
+    except ValidationError as e:
+        msg = f"Failed to parse {hook_input.tool_name} tool_input: {e}"
+        logger.warning(msg)
+        session.post_message(f"[tool_input_parsing] {msg}")
+        parsed = None
+    file_path = _get_file_path(parsed, hook_input.tool_input)
     if file_path is None or not file_path.exists():
         return PostToolUseOutput()
 
@@ -59,6 +74,7 @@ def evaluate(hook_input: PostToolUseInput, pre_commit: PreCommitConfig | None) -
         return PostToolUseOutput()
     project_dir = Path(pygit2.Repository(git_path).workdir).resolve()
 
+    pre_commit = session.profile.pre_commit
     if not pre_commit:
         return PostToolUseOutput()
 

@@ -250,9 +250,9 @@ def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
                         session, req.hook, app.state.settings, profile=app.state.profile, ctx=ctx
                     )
                 case PreToolUseInput():
-                    output = evaluate_pre(req.hook)
+                    output = evaluate_pre(req.hook, session)
                 case PostToolUseInput():
-                    output = evaluate_post(req.hook, pre_commit=app.state.profile.pre_commit)
+                    output = evaluate_post(req.hook, session)
                 case _:
                     pass  # All other hooks: noop
 

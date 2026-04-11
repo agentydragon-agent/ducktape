@@ -68,12 +68,24 @@ py_library(
 )
 
 py_library(
+    name = "tool_input_parsing",
+    srcs = ["tool_input_parsing.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude/claude_api:tool_input_models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "pre_tool_use_lib",
     srcs = ["pre_tool_use.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":session",
+        ":tool_input_parsing",
+        "//devinfra/claude/claude_api:tool_input_models",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "@pypi//pydantic",
     ],
 )
 
@@ -93,8 +105,11 @@ py_library(
     deps = [
         ":config",
         ":precommit_runner",
+        ":tool_input_parsing",
+        "//devinfra/claude/claude_api:tool_input_models",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/hook_daemon/templates",
+        "@pypi//pydantic",
         "@pypi//pygit2",
     ],
 )
@@ -312,14 +327,18 @@ py_test(
     name = "test_post_tool_use",
     srcs = ["test_post_tool_use.py"],
     data = ["__snapshots__/test_post_tool_use.ambr"],
+    legacy_create_init = 0,
     uses_syrupy = True,
     deps = [
         ":config",
         ":hook_daemon_conftest",
         ":post_tool_use_lib",
         ":precommit_runner",
+        ":session",
         "//devinfra/claude:conftest",
+        "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//syrupy",

@@ -16,6 +16,9 @@ from devinfra.claude.hook_daemon.config import PreCommitConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result, evaluate
 from devinfra.claude.hook_daemon.precommit_runner import HookAutoApplied, HookFailedNotApplied, HookWouldEdit, RunResult
+from devinfra.claude.hook_daemon.session import Session
+from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
+from devinfra.claude.session_paths import SessionPaths
 
 _COMMON = {
     "session_id": "test-session",
@@ -26,6 +29,15 @@ _COMMON = {
     "tool_use_id": "toolu_test123",
     "tool_response": "",
 }
+
+
+@pytest.fixture
+def session(tmp_path: Path) -> Session:
+    return Session(
+        session_id="test-session",
+        paths=SessionPaths(session_id="test-session", home=tmp_path, xdg_cache_home=tmp_path),
+        profile=TEST_PROFILE,
+    )
 
 
 @pytest.fixture
@@ -42,21 +54,21 @@ def git_project(tmp_path: Path) -> tuple[Path, Path]:
 # === Guard tests ===
 
 
-def test_non_file_tool_returns_default() -> None:
+def test_non_file_tool_returns_default(session: Session) -> None:
     inp = PostToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": "echo hi"})
-    result = evaluate(inp, pre_commit=PreCommitConfig())
+    result = evaluate(inp, session)
     assert result.hook_specific_output is None
 
 
-def test_missing_file_path_returns_default() -> None:
+def test_missing_file_path_returns_default(session: Session) -> None:
     inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={})
-    result = evaluate(inp, pre_commit=PreCommitConfig())
+    result = evaluate(inp, session)
     assert result.hook_specific_output is None
 
 
-def test_nonexistent_file_returns_default() -> None:
+def test_nonexistent_file_returns_default(session: Session) -> None:
     inp = PostToolUseInput(**_COMMON, tool_name="Edit", tool_input={"file_path": "/nonexistent/file.py"})
-    result = evaluate(inp, pre_commit=PreCommitConfig())
+    result = evaluate(inp, session)
     assert result.hook_specific_output is None
 
 
@@ -147,14 +159,16 @@ def test_run_result_failed_not_applied_excludes_auto_applied() -> None:
 # === Integration tests (mocked run_on_file) ===
 
 
-def test_precommit_report_only_failure(git_project: tuple[Path, Path]) -> None:
+def test_precommit_report_only_failure(git_project: tuple[Path, Path], session: Session) -> None:
     _, test_file = git_project
 
     fake_result = RunResult(hooks={"ruff-format": HookWouldEdit(output=b"modified", exit_code=0)})
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
-        inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
-        result = evaluate(inp, pre_commit=PreCommitConfig())
+        inp = PostToolUseInput(
+            **_COMMON, tool_name="Write", tool_input={"file_path": str(test_file), "content": "x=1\n"}
+        )
+        result = evaluate(inp, session)
 
     assert result.hook_specific_output is not None
     ctx = result.hook_specific_output.additional_context
@@ -163,27 +177,31 @@ def test_precommit_report_only_failure(git_project: tuple[Path, Path]) -> None:
     assert "ruff-format" in ctx
 
 
-def test_precommit_passes(git_project: tuple[Path, Path]) -> None:
+def test_precommit_passes(git_project: tuple[Path, Path], session: Session) -> None:
     _, test_file = git_project
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=RunResult()):
-        inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
-        result = evaluate(inp, pre_commit=PreCommitConfig())
+        inp = PostToolUseInput(
+            **_COMMON, tool_name="Write", tool_input={"file_path": str(test_file), "content": "x=1\n"}
+        )
+        result = evaluate(inp, session)
 
     assert result.hook_specific_output is None
 
 
-def test_no_hooks_applied(git_project: tuple[Path, Path]) -> None:
+def test_no_hooks_applied(git_project: tuple[Path, Path], session: Session) -> None:
     _, test_file = git_project
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=RunResult()):
-        inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
-        result = evaluate(inp, pre_commit=PreCommitConfig())
+        inp = PostToolUseInput(
+            **_COMMON, tool_name="Write", tool_input={"file_path": str(test_file), "content": "x=1\n"}
+        )
+        result = evaluate(inp, session)
 
     assert result.hook_specific_output is None
 
 
-def test_auto_applied_only_returns_context(git_project: tuple[Path, Path]) -> None:
+def test_auto_applied_only_returns_context(git_project: tuple[Path, Path], session: Session) -> None:
     _, test_file = git_project
 
     fake_result = RunResult(
@@ -191,8 +209,10 @@ def test_auto_applied_only_returns_context(git_project: tuple[Path, Path]) -> No
     )
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
-        inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
-        result = evaluate(inp, pre_commit=PreCommitConfig())
+        inp = PostToolUseInput(
+            **_COMMON, tool_name="Write", tool_input={"file_path": str(test_file), "content": "x=1\n"}
+        )
+        result = evaluate(inp, session)
 
     assert result.hook_specific_output is not None
     ctx = result.hook_specific_output.additional_context
