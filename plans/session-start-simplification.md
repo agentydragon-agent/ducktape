@@ -145,13 +145,10 @@ to the profile's template. The current template should also be audited for accur
 describes capabilities (k8s access, secrets, Docker) that differ between cli and web but
 are rendered identically.
 
-### Simplify session start recovery doc
+### ~~Simplify session start recovery doc~~ (done)
 
-`devinfra/claude/hook_daemon/docs/session_start_recovery.md` still references SOPS
-decryption, `sops_decrypt.py`, and manual secret assembly. With env scripts
-(`devinfra/secrets/*.sh`), Step 3 (manual assembly) simplifies to sourcing the env script
-directly: `source devinfra/secrets/web_env.sh` gives you `BUILDBUDDY_API_KEY`,
-`GITHUB_TOKEN`, etc. without the SOPS Python API dance. Update the doc to reflect this.
+Rewrote `session_start_recovery.md`: removed SOPS/`sops_decrypt.py` references,
+Step 3 now sources `devinfra/secrets/web_env.sh` directly.
 
 ### Shim handler: fix dummy session_id and extract per-shim logic
 
