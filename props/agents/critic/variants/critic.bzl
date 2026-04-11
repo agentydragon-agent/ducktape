@@ -37,6 +37,7 @@ def critic_variant(name, prompt_md):
     # Build OCI image: shared layers (includes variant prompts via data)
     oci_image(
         name = name,
+        visibility = ["//props:__subpackages__"],
         base = "@debian_slim_linux_amd64",
         entrypoint = py_image_entrypoint("critic_bin", binary_package = "props/agents/critic"),
         env = py_image_env(extra_env = {
