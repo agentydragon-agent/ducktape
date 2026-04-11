@@ -33,6 +33,10 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] Auto-derive `nebula-mesh.json` from Hetzner: the static_host_map must match
+      current VPS IPs, but Hetzner assigns IPs at server creation time and they can
+      change across teardown/rebuild. Currently manual — tofu should write it, or
+      bootstrap should update it from `hcloud server list` output.
 - [ ] Restore docker-ci Gateway routing: docker-ci needs TLS passthrough on port 2376.
       Previously used a dedicated `docker-ci-tls` Gateway listener + TLSRoute, but Cilium
       bug [#42159](https://github.com/cilium/cilium/issues/42159) caused that listener's
