@@ -31,17 +31,6 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    - name: docker-ci-tls
-      hostname: "docker-ci.allegedly.works"
-      port: 2376
-      protocol: TLS
-      tls:
-        mode: Passthrough
-      allowedRoutes:
-        namespaces:
-          from: All
-        kinds:
-          - kind: TLSRoute
     - name: http
       port: 80
       protocol: HTTP

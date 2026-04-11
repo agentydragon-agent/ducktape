@@ -5,7 +5,7 @@
 # after the k8s API is reachable.
 
 locals {
-  cilium_version      = "1.18.7"
+  cilium_version      = "1.19.2"
   gateway_api_version = "v1.4.1"
 }
 

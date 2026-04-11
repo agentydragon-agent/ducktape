@@ -33,7 +33,7 @@ MTU: 1412
 
 # Gateway API: replaces ingress-nginx (retired March 2026)
 # Reuses per-node Envoy DaemonSet — zero additional controllers.
-# hostNetwork binds ports 80/443 directly on VPS nodes (same as ingress-nginx did).
+# hostNetwork binds ports 80/443 directly on VPS nodes.
 gatewayAPI:
   enabled: true
   hostNetwork:
@@ -54,17 +54,6 @@ envoy:
         - NET_ADMIN
         - SYS_ADMIN
         - NET_BIND_SERVICE
-
-# Mutual authentication via SPIRE — disabled for now.
-# SPIRE install times out during bootstrap on Talos (SPIRE pods never
-# start despite namespace creation). TODO: investigate Talos compatibility
-# and re-enable once Gateway API migration is complete.
-# authentication:
-#   mutual:
-#     spire:
-#       enabled: true
-#       install:
-#         enabled: true
 
 # Observability (optional, not networking-critical)
 hubble:

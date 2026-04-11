@@ -33,6 +33,18 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] Restore docker-ci Gateway routing: docker-ci needs TLS passthrough on port 2376.
+      Previously used a dedicated `docker-ci-tls` Gateway listener + TLSRoute, but Cilium
+      bug [#42159](https://github.com/cilium/cilium/issues/42159) caused that listener's
+      `allowedRoutes.kinds: [TLSRoute]` to bleed into all listeners, blocking all HTTPRoutes.
+      Options: (a) move docker-ci to HTTPS on port 443 with a subdomain, (b) separate Gateway
+      resource for docker-ci only, (c) wait for Cilium fix and re-add the listener with
+      `sectionName` on all HTTPRoute parentRefs. Also consider auto-discovering VPS IPs for
+      `CiliumLoadBalancerIPPool` from Hetzner nodes / nodes with external IPs.
+- [ ] Cilium Gateway API `Programmed=False` (#42786): hostNetwork mode leaves the Gateway
+      status as `Programmed=False` / `AddressNotAssigned`. Verify whether this is cosmetic
+      (routes still work) or blocks CEC programming. If blocking, try `spec.addresses` with
+      static VPS IPs, or track the upstream fix.
 - [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
