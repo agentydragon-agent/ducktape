@@ -57,9 +57,9 @@ jobs:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Push image
-        run: |
-          bb remote \
-            --remote_run_header="x-buildbuddy-platform.env-overrides=GHCR_TOKEN=$GHCR_TOKEN" \
-            --env="GHCR_USERNAME=$GHCR_USERNAME" \
-            run --remote_download_toplevel \
-            ${{ matrix.target }}
+        uses: ./.github/actions/bb-remote
+        with:
+          args: run --remote_download_toplevel ${{ matrix.target }}
+          env_overrides: |
+            GHCR_TOKEN=${{ env.GHCR_TOKEN }}
+            GHCR_USERNAME=${{ env.GHCR_USERNAME }}

@@ -40,12 +40,11 @@ jobs:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Test
-        run: |
-          bb remote test --keep_going \
-            --test_tag_filters=-live_openai_api \
-            //...
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test --keep_going --test_tag_filters=-live_openai_api //...
 
       - name: Build + lint
-        run: |
-          bb remote build --keep_going \
-            //...
+        uses: ./.github/actions/bb-remote
+        with:
+          args: build --keep_going //...

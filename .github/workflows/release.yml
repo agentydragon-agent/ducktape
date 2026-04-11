@@ -48,7 +48,8 @@ jobs:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Release
-        run: |
-          bb remote \
-            --remote_run_header="x-buildbuddy-platform.env-overrides=GH_RELEASE_PAT=$GH_RELEASE_PAT" \
-            run ${{ matrix.target }}
+        uses: ./.github/actions/bb-remote
+        with:
+          args: run ${{ matrix.target }}
+          env_overrides: |
+            GH_RELEASE_PAT=${{ env.GH_RELEASE_PAT }}

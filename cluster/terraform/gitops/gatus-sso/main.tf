@@ -103,7 +103,7 @@ resource "authentik_application" "gatus" {
 # --- Access Policy ---
 
 resource "authentik_policy_binding" "gatus_admins" {
-  target = authentik_application.gatus.id
+  target = authentik_application.gatus.uuid  # .id is slug, not UUID; API requires UUID
   group  = data.authentik_group.admins.id
   order  = 0
 }

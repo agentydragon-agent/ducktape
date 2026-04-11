@@ -28,8 +28,10 @@ CloudNativePG `local-path`.
   for `claude-rbac` RoleBinding dependency.
 - **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
 - **Airlock**: `airlock` — suspended 2026-04-06. `google-workspace-mcp` depends on this.
-- **ARC**: `arc` — suspended 2026-04-06. Secrets (`arc-secrets`) are deployed.
+- **ARC**: `arc`, `arc-namespace` — suspended 2026-04-11, resources deleted. Secrets
+  (`arc-secrets`) are deployed. GitHub runner pod/statefulset removed.
 - **Props**: `props` — suspended 2026-04-06. Secrets (`props-secrets`) are deployed.
+- **Scanner**: `scanner` — suspended.
 
 ## Next Actions
 

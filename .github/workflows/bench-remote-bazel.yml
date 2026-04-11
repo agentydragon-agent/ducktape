@@ -25,7 +25,7 @@ jobs:
         id: build
         run: |
           START=$SECONDS
-          bb remote --runner_exec_properties=EstimatedFreeDiskBytes=50GB build -k //... 2>&1 | tee /tmp/build.log
+          bb remote --runner_exec_properties=EstimatedFreeDiskBytes=50GB build -k //... --config=rbe 2>&1 | tee /tmp/build.log
           echo "elapsed=$((SECONDS - START))" >> "$GITHUB_OUTPUT"
 
       - name: bb remote test -k //...
@@ -33,7 +33,7 @@ jobs:
         if: always()
         run: |
           START=$SECONDS
-          bb remote --runner_exec_properties=EstimatedFreeDiskBytes=50GB test -k //... --test_tag_filters=-live_openai_api 2>&1 | tee /tmp/test.log
+          bb remote --runner_exec_properties=EstimatedFreeDiskBytes=50GB test -k //... --test_tag_filters=-live_openai_api --config=rbe 2>&1 | tee /tmp/test.log
           echo "elapsed=$((SECONDS - START))" >> "$GITHUB_OUTPUT"
 
       - name: Write results
