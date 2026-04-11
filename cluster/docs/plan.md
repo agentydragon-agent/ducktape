@@ -15,7 +15,6 @@ CloudNativePG `local-path`.
 ## Suspended Kustomizations
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`
-- **Grocy**: `grocy`, `grocy-namespace`
 - **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `gitea-admin-token`,
   `gitea-servicemonitor`, `authentik-blueprint-gitea-secret` — VPS memory pressure
   (2026-03-17 OOM). Re-enable after rebalancing.
