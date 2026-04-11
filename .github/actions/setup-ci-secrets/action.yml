@@ -1,6 +1,6 @@
 # Decrypt CI secrets from git using SOPS age key.
 #
-# Installs sops, runs devinfra/ci_env.sh, and exports the decrypted
+# Installs sops, runs devinfra/secrets/ci_env.sh, and exports the decrypted
 # secrets as environment variables for subsequent steps.
 #
 # Usage:
@@ -37,7 +37,7 @@ runs:
       env:
         SOPS_AGE_KEY: ${{ inputs.sops_age_key }}
       run: |
-        eval "$(devinfra/ci_env.sh)"
+        eval "$(devinfra/secrets/ci_env.sh)"
         # Mask secret values so they don't appear in logs
         for var in BUILDBUDDY_API_KEY GITHUB_TOKEN ATTIC_TOKEN DUCKTAPE_DOCKER_CLIENT_KEY \
                    PROPS_REGISTRY_PASSWORD GHCR_TOKEN GH_RELEASE_PAT; do

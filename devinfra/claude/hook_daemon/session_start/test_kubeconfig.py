@@ -1,13 +1,12 @@
-"""Tests for secret_sources."""
+"""Tests for kubeconfig generation."""
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest_bazel
 import yaml
 
-from devinfra.claude.hook_daemon.config import K8sConfig, SecretSource
-from devinfra.claude.hook_daemon.session_start.secret_sources import resolve_secret, write_kubeconfig
+from devinfra.claude.hook_daemon.config import K8sConfig
+from devinfra.claude.hook_daemon.session_start.kubeconfig import write_kubeconfig
 
 _K8S_CFG = K8sConfig(
     server="https://k8s.example.com",
@@ -15,17 +14,6 @@ _K8S_CFG = K8sConfig(
     service_account_namespace="default",
     namespace="secrets-ns",
 )
-
-
-def test_resolve_sops_secret(tmp_path: Path) -> None:
-    """resolve_secret dispatches SecretSource to SOPS decryption."""
-    source = SecretSource(kind="sops", sops_file="secrets/test.yaml", key="my_key")
-    with patch(
-        "devinfra.claude.hook_daemon.session_start.secret_sources.decrypt_sops_yaml",
-        return_value={"my_key": "decrypted_value"},
-    ):
-        result = resolve_secret(source, project_dir=tmp_path)
-    assert result == "decrypted_value"
 
 
 def test_kubeconfig_proxy_url(tmp_path: Path) -> None:

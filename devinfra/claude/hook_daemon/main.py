@@ -10,15 +10,15 @@ from filelock import FileLock
 
 from devinfra.claude.hook_daemon.config import HookConfig, OtelConfig
 from devinfra.claude.hook_daemon.server import app, configure
-from devinfra.claude.hook_daemon.session_start.secret_sources import resolve_secret
+from devinfra.claude.hook_daemon.source_env_script import run_env_script
 from devinfra.claude.hook_daemon.tracing import init_daemon_tracing, shutdown_tracing
-from devinfra.claude.settings import HookSettings
+from devinfra.claude.settings import HookSettings, is_web_mode
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_otel_config(hook_config: HookConfig, project_dir: Path) -> OtelConfig | None:
-    """Build OtelConfig with bearer token resolved from SOPS. Returns None if unavailable."""
+def _resolve_otel_config(hook_config: HookConfig) -> OtelConfig | None:
+    """Build OtelConfig from config + env vars. Bearer token comes from env (set by env script)."""
     if not hook_config.otel:
         return None
 
@@ -26,11 +26,10 @@ def _resolve_otel_config(hook_config: HookConfig, project_dir: Path) -> OtelConf
     if not otel_config.endpoint:
         return None
 
-    token_source = hook_config.secrets.otel_bearer_token
-    if token_source:
-        token = resolve_secret(token_source, project_dir=project_dir)
-        if token:
-            otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=token)
+    # Bearer token sourced from env (set by devinfra/secrets/dev_env.sh at daemon startup)
+    token = os.environ.get("DUCKTAPE_OTEL_BEARER_TOKEN")
+    if token:
+        otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=token)
 
     return otel_config
 
@@ -72,7 +71,18 @@ def main() -> None:
         project_dir = Path(project_dir_str)
         try:
             hook_config = HookConfig.load_from_repo(project_dir)
-            otel_config = _resolve_otel_config(hook_config, project_dir)
+
+            # Run the profile's env_script to populate secrets in os.environ
+            # (BUILDBUDDY_API_KEY, DUCKTAPE_OTEL_BEARER_TOKEN, etc.)
+            settings = HookSettings()
+            profile = hook_config.resolve_profile(is_web_mode(), override=settings.profile)
+            if profile.env_script:
+                env_script_path = project_dir / profile.env_script
+                if env_script_path.is_file():
+                    script_result = run_env_script(env_script_path)
+                    os.environ.update(script_result.env_vars)
+
+            otel_config = _resolve_otel_config(hook_config)
         except Exception as e:
             logger.warning("Failed to load hook config at startup: %s", e)
 

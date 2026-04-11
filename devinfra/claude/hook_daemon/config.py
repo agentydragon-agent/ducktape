@@ -1,15 +1,16 @@
 """Shared configuration loaded from .claude_hooks/config.yaml.
 
-Repo-level config file that all hooks read. Configures SOPS secrets,
-OTEL tracing, and other shared settings. Environment variables
-(DUCKTAPE_CLAUDE_HOOKS_*) override values from this file.
+Repo-level config file that all hooks read. Configures OTEL tracing,
+profiles, and other shared settings. Secrets are handled by env scripts
+(devinfra/secrets/*.sh), not by this config file.
+
+Environment variables (DUCKTAPE_CLAUDE_HOOKS_*) override values from this file.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -31,23 +32,6 @@ class OtelConfig(BaseModel):
             endpoint=os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_ENDPOINT", self.endpoint),
             bearer_token=os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN", self.bearer_token),
         )
-
-
-class SecretSource(BaseModel):
-    """Fetch a secret by decrypting a SOPS-encrypted YAML file."""
-
-    kind: Literal["sops"]
-    sops_file: str = Field(description="Repo-relative path to SOPS-encrypted YAML")
-    key: str = Field(description="Key within the decrypted YAML")
-
-
-class SecretsConfig(BaseModel):
-    """Named secrets with SOPS sources describing how to fetch each one."""
-
-    k8s_token: SecretSource | None = None
-    buildbuddy_api_key: SecretSource | None = None
-    github_token: SecretSource | None = None
-    otel_bearer_token: SecretSource | None = None
 
 
 class K8sConfig(BaseModel):
@@ -125,7 +109,6 @@ class HookConfig(BaseModel):
     """Top-level hook config file (.claude_hooks/config.yaml)."""
 
     k8s: K8sConfig | None = None
-    secrets: SecretsConfig = Field(default_factory=SecretsConfig)
     otel: OtelConfig | None = None
     pre_commit: PreCommitConfig | None = None
     profiles: dict[str, ProfileConfig]

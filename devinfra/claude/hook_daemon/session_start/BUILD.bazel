@@ -1,10 +1,13 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "sops_decrypt",
-    srcs = ["sops_decrypt.py"],
+    name = "kubeconfig",
+    srcs = ["kubeconfig.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pyyaml"],
+    deps = [
+        "//devinfra/claude/hook_daemon:config",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_library(
@@ -48,17 +51,6 @@ py_library(
     srcs = ["fork_remote.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pygit2"],
-)
-
-py_library(
-    name = "secret_sources",
-    srcs = ["secret_sources.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":sops_decrypt",
-        "//devinfra/claude/hook_daemon:config",
-        "@pypi//pyyaml",
-    ],
 )
 
 py_library(
@@ -115,10 +107,10 @@ py_library(
         ":buildbuddy",
         ":container_runtime",
         ":fork_remote",
+        ":kubeconfig",
         ":mkcert",
         ":platform_detect",
         ":precommit",
-        ":secret_sources",
         ":tmpfs",
         ":tune_rootfs",
         "//devinfra/claude:debug",
@@ -152,23 +144,6 @@ py_library(
 )
 
 py_test(
-    name = "test_sops_decrypt",
-    srcs = ["test_sops_decrypt.py"],
-    data = [
-        "//devinfra/claude/testdata:sops_test_age_key.txt",
-        "//devinfra/claude/testdata:sops_test_secrets.yaml",
-        "@multitool//tools/sops",
-    ],
-    env = {"SOPS_BIN": "$(rlocationpath @multitool//tools/sops)"},
-    deps = [
-        ":sops_decrypt",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_bazel_warmup",
     srcs = ["test_bazel_warmup.py"],
     deps = [
@@ -181,10 +156,10 @@ py_test(
 )
 
 py_test(
-    name = "test_secret_sources",
-    srcs = ["test_secret_sources.py"],
+    name = "test_kubeconfig",
+    srcs = ["test_kubeconfig.py"],
     deps = [
-        ":secret_sources",
+        ":kubeconfig",
         "//devinfra/claude/hook_daemon:config",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -202,7 +177,6 @@ py_test(
         ":mkcert",
         ":platform_detect",
         ":precommit",
-        ":secret_sources",
         ":session_start_lib",
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/hook_daemon/templates",

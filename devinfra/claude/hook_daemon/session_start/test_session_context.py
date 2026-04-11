@@ -11,8 +11,7 @@ from syrupy.assertion import SnapshotAssertion
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect
-from devinfra.claude.hook_daemon.session_start.handler import LogCollector
-from devinfra.claude.hook_daemon.session_start.secret_sources import SecretsResult
+from devinfra.claude.hook_daemon.session_start.handler import LogCollector, SecretsResult
 
 
 def _render(

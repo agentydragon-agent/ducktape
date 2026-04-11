@@ -10,7 +10,7 @@ and install a bazel wrapper that injects --bazelrc=<session-bazelrc>.
 import asyncio
 import logging
 import logging.handlers
-import subprocess
+import os
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -40,10 +40,10 @@ from devinfra.claude.hook_daemon.session_start import (
     buildbuddy,
     container_runtime,
     fork_remote,
+    kubeconfig,
     mkcert,
     platform_detect,
     precommit,
-    secret_sources,
     tmpfs,
     tune_rootfs,
 )
@@ -54,6 +54,16 @@ from devinfra.claude.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+
+
+@dataclass
+class SecretsResult:
+    """Secrets read from os.environ (populated by env scripts at daemon startup)."""
+
+    k8s_token: str | None = None
+    buildbuddy_api_key: str | None = None
+    github_token: str | None = None
+    kubeconfig_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -112,7 +122,7 @@ class PlatformSetup:
     with_direnv: bool = False
 
     # Shared-step results (populated by run_session, not platform setup)
-    secrets: secret_sources.SecretsResult = field(default_factory=secret_sources.SecretsResult)
+    secrets: SecretsResult = field(default_factory=SecretsResult)
     fork_result: fork_remote.ForkRemoteSetup | None = None
     buildbuddy_setup: buildbuddy.BuildbuddySetup = field(default_factory=buildbuddy.BuildbuddyNotConfigured)
 
@@ -349,25 +359,17 @@ async def handle(
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
     proxy_url = get_proxy_url(ctx.caller_env)
 
-    # Resolve secrets from SOPS config.
-    with tracer.start_as_current_span("resolve_secrets", context=root_ctx):
-        secrets_cfg = hook_config.secrets
-
-        def resolve(source: secret_sources.SecretSource) -> str | None:
-            return secret_sources.resolve_secret(source, project_dir=project_dir)
-
-        if secrets_cfg.k8s_token:
-            setup.secrets.k8s_token = resolve(secrets_cfg.k8s_token)
-        if secrets_cfg.buildbuddy_api_key:
-            setup.secrets.buildbuddy_api_key = resolve(secrets_cfg.buildbuddy_api_key)
-        if secrets_cfg.github_token:
-            setup.secrets.github_token = resolve(secrets_cfg.github_token)
+    # Read secrets from os.environ (populated by env scripts sourced at daemon startup).
+    with tracer.start_as_current_span("read_secrets", context=root_ctx):
+        setup.secrets.k8s_token = os.environ.get("K8S_TOKEN")
+        setup.secrets.buildbuddy_api_key = os.environ.get("BUILDBUDDY_API_KEY")
+        setup.secrets.github_token = os.environ.get("GITHUB_TOKEN")
 
         # Write kubeconfig when token is available and profile enables it.
         # CLI profile skips this — the user has their own ~/.kube/config.
         k8s_token = setup.secrets.k8s_token or settings.k8s_token
         if k8s_token and hook_config.k8s and profile.write_kubeconfig:
-            setup.secrets.kubeconfig_path = secret_sources.write_kubeconfig(
+            setup.secrets.kubeconfig_path = kubeconfig.write_kubeconfig(
                 token=k8s_token,
                 k8s_cfg=hook_config.k8s,
                 session_dir=session.paths.session_dir,
@@ -429,7 +431,7 @@ async def handle(
 
     # Write environment file
     with tracer.start_as_current_span("write_env_file", context=root_ctx):
-        extra_env = _build_extra_env_script(project_dir, profile)
+        extra_env = _build_extra_env_script(profile)
         env_vars = env_file.EnvVars(
             bazel_wrapper_dir=session.paths.wrapper_dir,
             session_bazelrc=session_bazelrc,
@@ -492,32 +494,23 @@ async def handle(
     return output
 
 
-def _build_extra_env_script(project_dir: Path, profile: ProfileConfig) -> str | None:
-    """Build extra env content from profile's env_script (file) and env_exports (inline)."""
-    parts: list[str] = []
+def _build_extra_env_script(profile: ProfileConfig) -> str | None:
+    """Build extra inline env content from profile's env_exports.
 
-    if profile.env_script:
-        script_path = project_dir / profile.env_script
-        if script_path.is_file():
-            result = subprocess.run([script_path], check=False, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                logger.error("%s exited %d: %s", profile.env_script, result.returncode, result.stderr)
-            elif result.stdout:
-                parts.append(result.stdout.rstrip())
-                logger.info("%s produced %d bytes of exports", profile.env_script, len(result.stdout))
-        else:
-            logger.warning("env_script %s not found at %s", profile.env_script, script_path)
-
+    Secrets from env_script are handled separately — run once at daemon startup
+    and passed through via _build_secrets_env_vars.
+    """
     if profile.env_exports:
-        parts.append(profile.env_exports.rstrip())
+        return profile.env_exports.rstrip()
+    return None
 
-    return "\n".join(parts) if parts else None
 
+def _build_secrets_env_vars(secrets: SecretsResult) -> dict[str, str] | None:
+    """Build env var dict for the session env file.
 
-def _build_secrets_env_vars(secrets: secret_sources.SecretsResult | None) -> dict[str, str] | None:
-    """Build env var dict from SecretsResult for the session env file."""
-    if not secrets:
-        return None
+    Secrets come from os.environ (populated by env_script at daemon startup).
+    KUBECONFIG is generated at session start time.
+    """
     env_vars: dict[str, str] = {}
     if secrets.buildbuddy_api_key:
         env_vars["BUILDBUDDY_API_KEY"] = secrets.buildbuddy_api_key
@@ -535,7 +528,7 @@ def _build_secrets_env_vars(secrets: secret_sources.SecretsResult | None) -> dic
 
 def _render_extra_context(
     project_dir: Path,
-    secrets: secret_sources.SecretsResult | None,
+    secrets: SecretsResult | None,
     fork_result: fork_remote.ForkRemoteSetup | None = None,
     *,
     web_mode: bool = False,

@@ -1,6 +1,12 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "source_env_script",
+    srcs = ["source_env_script.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "config",
     srcs = ["config.py"],
     visibility = ["//visibility:public"],
@@ -129,9 +135,9 @@ py_library(
     deps = [
         ":config",
         ":server",
+        ":source_env_script",
         ":tracing",
         "//devinfra/claude:settings",
-        "//devinfra/claude/hook_daemon/session_start:secret_sources",
         "@pypi//filelock",
         "@pypi//uvicorn",
     ],
