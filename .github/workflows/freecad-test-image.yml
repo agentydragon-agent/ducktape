@@ -2,7 +2,7 @@ name: FreeCAD test image
 
 on:
   push:
-    branches: [devel]
+    branches: [main, devel]
     paths:
       - "skills/freecad/Dockerfile.test"
       - ".github/workflows/freecad-test-image.yml"
@@ -19,36 +19,18 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: ./.github/actions/ghcr-build-push
+        id: build
         with:
           image: ghcr.io/${{ github.repository_owner }}/freecad-test
           context: skills/freecad
           file: skills/freecad/Dockerfile.test
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/freecad-test:buildcache
+          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/freecad-test:buildcache,mode=max
 
-      - name: Pin digest in image_pins.json
+      - name: Pin digest
         if: github.event_name != 'workflow_call'
-        run: |
-          DIGEST=$(docker manifest inspect "ghcr.io/${{ github.repository_owner }}/freecad-test:latest" --verbose | \
-            python3 -c "import json,sys; print(json.load(sys.stdin)['Descriptor']['digest'])")
-
-          python3 devinfra/update_image_pin.py freecad_test --digest "$DIGEST"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add devinfra/image_pins.json
-
-          if git diff --cached --quiet; then
-            echo "image_pins.json already up to date"
-            exit 0
-          fi
-
-          git commit -m "chore: pin freecad-test image digest [skip ci]"
-
-          BRANCH="${{ github.ref_name }}"
-          if ! git pull --rebase origin "$BRANCH"; then
-            echo "::error::Rebase failed"
-            git status
-            exit 1
-          fi
-
-          git push origin "HEAD:${BRANCH}"
+        uses: ./.github/actions/pin-image-digest
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/freecad-test
+          tag: ${{ steps.build.outputs.pin_tag }}
+          pin_name: freecad_test

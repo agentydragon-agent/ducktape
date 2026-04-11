@@ -10,7 +10,7 @@ name: OpenClaw Image
 
 on:
   push:
-    branches: [main, master, devel]
+    branches: [main, devel]
     paths:
       - "openclaw/**"
       - "airlock/openclaw/**"
@@ -44,4 +44,5 @@ jobs:
           image: ghcr.io/${{ github.repository_owner }}/openclaw-matrix
           context: .
           file: openclaw/Dockerfile
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw-matrix:buildcache
+          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw-matrix:buildcache,mode=max

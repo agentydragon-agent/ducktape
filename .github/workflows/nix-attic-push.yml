@@ -6,7 +6,7 @@ name: Nix Attic push
 
 on:
   push:
-    branches: [main, master, devel]
+    branches: [main, devel]
   workflow_dispatch:
 
 jobs:

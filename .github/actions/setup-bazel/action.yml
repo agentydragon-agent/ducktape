@@ -17,14 +17,6 @@ inputs:
     required: false
     default: ""
 
-outputs:
-  cache-hit:
-    description: "Whether GitHub Actions cache was restored"
-    value: ${{ steps.cache-restore.outputs.cache-hit }}
-  cache-key:
-    description: "Cache key"
-    value: ${{ steps.cache-key.outputs.key }}
-
 runs:
   using: composite
   steps:

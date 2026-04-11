@@ -8,7 +8,7 @@ name: Tana MCP Image
 
 on:
   push:
-    branches: [devel]
+    branches: [main, devel]
     paths: ["tana/mcp_server/**"]
   workflow_dispatch:
   workflow_call:
@@ -33,4 +33,5 @@ jobs:
         with:
           image: ghcr.io/${{ github.repository_owner }}/tana-desktop
           context: tana/mcp_server
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/tana-desktop:buildcache
+          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/tana-desktop:buildcache,mode=max

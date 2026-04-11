@@ -5,7 +5,7 @@ name: Ansible-lint
 
 on:
   push:
-    branches: [main, master, devel]
+    branches: [main, devel]
     paths:
       - "ansible/**"
       - ".github/workflows/ansible-lint.yml"

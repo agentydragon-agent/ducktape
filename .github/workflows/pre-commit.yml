@@ -5,7 +5,7 @@ name: Pre-commit checks
 
 on:
   push:
-    branches: [main, master, devel]
+    branches: [main, devel]
   pull_request:
   workflow_dispatch:
 
