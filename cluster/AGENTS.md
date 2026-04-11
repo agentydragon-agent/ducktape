@@ -72,7 +72,7 @@ Delegate complex diagnostics and independent workstreams to subagents via the Ta
 
 ## Operational Context
 
-- **SSH**: `root@atlas` (Proxmox host, key auth)
+- **SSH**: `root@atlas` (Proxmox host, key auth). Fallback from wyrm2: `root@10.2.0.2` if nebula DNS isn't up yet.
 - **Talos CLI**: Run from cluster directory (direnv provides tools + config)
 - **Proxmox API**: Only reachable from VLAN. Use `nodeSelector: topology.kubernetes.io/region: proxmox`.
 

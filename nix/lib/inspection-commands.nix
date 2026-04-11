@@ -111,10 +111,13 @@ let
     (mkPrefix "slabtop")
     # Disk information
     (mkPrefix "blkid")
-    # File system information - display commands only
+    # LVM information - read-only display/list commands
     (mkPrefix "lvdisplay")
     (mkPrefix "vgdisplay")
     (mkPrefix "pvdisplay")
+    (mkPrefix "lvs")
+    (mkPrefix "vgs")
+    (mkPrefix "pvs")
     # Kernel information
     (mkPrefix "modinfo")
     # NOTE: dmesg and journalctl removed from sudo rules - on NixOS, grant access via:
