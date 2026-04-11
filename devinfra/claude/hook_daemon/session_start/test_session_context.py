@@ -12,7 +12,7 @@ from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand
 from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect
-from devinfra.claude.hook_daemon.session_start.handler import LogCollector, SecretsResult
+from devinfra.claude.hook_daemon.session_start.handler import LogCollector
 
 
 def _render(
@@ -22,7 +22,6 @@ def _render(
     container: container_runtime.ContainerRuntimeSetup | None = None,
     background_commands: list[BackgroundCommand] | None = None,
     mkcert_result: mkcert.MkcertSetup | None = None,
-    secrets: SecretsResult | None = None,
     extra_context: str = "",
     log_entries: list[logging.LogRecord] | None = None,
     log_file: str = "/tmp/daemon.log",
@@ -37,7 +36,6 @@ def _render(
             container=container,
             background_commands=background_commands or [],
             mkcert=mkcert_result,
-            secrets=secrets,
             extra_context=extra_context,
             log_file=log_file,
             buildbuddy_configured=buildbuddy_configured,
@@ -109,7 +107,6 @@ def test_cli_with_buildbuddy(
 ) -> None:
     result = _render(
         platform=cli_platform(),
-        secrets=SecretsResult(buildbuddy_api_key="key", github_token="token"),
         buildbuddy_configured=True,
     )
     assert result == snapshot
@@ -124,7 +121,6 @@ def test_web_no_nix(
     result = _render(
         platform=web_platform,
         proxy=proxy,
-        secrets=SecretsResult(buildbuddy_api_key="key", github_token="token"),
         buildbuddy_configured=True,
     )
     assert result == snapshot
@@ -139,7 +135,6 @@ def test_web_with_docker(
         container=container_runtime.ContainerRuntimeSetup(
             socket_url="unix:///var/run/docker.sock", status="running", storage_driver="overlay"
         ),
-        secrets=SecretsResult(buildbuddy_api_key="key", github_token="token"),
         buildbuddy_configured=True,
     )
     assert result == snapshot

@@ -35,35 +35,9 @@ ${"##"} Background tasks
 - ${cmd.name}${ " (after env)" if cmd.after_env else "" }
 % endfor
 % endif
-<%
-    has_any_secret = secrets and (secrets.buildbuddy_api_key or secrets.github_token)
-%>\
-% if has_any_secret:
-
-## Secrets
-Secrets loaded (buildbuddy=${"yes" if secrets.buildbuddy_api_key else "no"}, github=${"yes" if secrets.github_token else "no"}).
-% if secrets.kubeconfig_path:
-`kubectl` access available: `cluster/k8s/{claude,agent-shared}-rbac/` includes admin in `claude-sandbox` namespace, read-only in `props`.
-% endif
-% else:
-
-## Secrets — UNAVAILABLE
-Secrets could not be fetched. This means:
-- `GITHUB_TOKEN` is not set — `gh` CLI and authenticated git operations will fail
-- `BUILDBUDDY_API_KEY` is not set — Bazel remote cache/execution (RBE) is unavailable
-- `KUBECONFIG` is not set — `kubectl` will not work
-
-**Recovery steps:**
-1. Check the daemon log for the root cause: `tail -50 ${log_file}`
-2. Common cause: proxy tunnel returned 403 (k8s token expired or proxy auth failed)
-3. Look for a previous working session's env file under `~/.claude/session-env/*/sessionstart-hook-0.sh` and copy `GITHUB_TOKEN` and `BUILDBUDDY_API_KEY` values
-4. Export them manually: `export GITHUB_TOKEN=... BUILDBUDDY_API_KEY=...`
-
-**Notify the user** that secrets are unavailable and Bazel RBE / GitHub operations will not work until resolved.
-% endif
 % if buildbuddy_configured:
 
-## BuildBuddy
+${"##"} BuildBuddy
 Bazel builds and tests by default execute remotely via BuildBuddy.
 Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
 % endif

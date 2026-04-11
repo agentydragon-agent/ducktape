@@ -1,7 +1,10 @@
 <%import os%>\
-## Repo-specific context for ducktape
-## Rendered by session_start hook if .claude_hooks/templates/context.mako exists.
-% if secrets:
+## Secrets
+<%
+    has_any_secret = secrets and (secrets.buildbuddy_api_key or secrets.github_token)
+%>\
+% if has_any_secret:
+Secrets loaded (buildbuddy=${"yes" if secrets.buildbuddy_api_key else "no"}, github=${"yes" if secrets.github_token else "no"}).
 % if secrets.github_token:
 `GITHUB_TOKEN`: GitHub PAT for the `agentydragon-agent` bot account. Used by `gh` CLI automatically.
   **PR workflow** (`origin` pushes to `agentydragon/ducktape` via proxy, but bot is NOT a collaborator so PRs must come from a fork):
@@ -28,15 +31,27 @@
   ```
 % endif
 % endif
-LLM inference (2x RTX 5090, Apache 2.0 `gpt-oss` models):
-  - `https://litellm.allegedly.works/v1` — OpenAI-compatible proxy (LiteLLM). Model: `gpt-oss-20b-128k`. API key: k8s secret `litellm-master-key` (key `api-key`) in `claude-sandbox`. LiteLLM routes to Ollama and can support additional providers.
-  - `https://ollama.allegedly.works` — Ollama native API (direct). Bearer token: k8s secret `ollama-bearer-token` (key `token`) in `claude-sandbox`. Use for Ollama-specific features (model management, embeddings).
+% if secrets.kubeconfig_path:
+`KUBECONFIG`: ServiceAccount `claude-code-web` with access to the `claude-sandbox` namespace (pods, services, secrets, exec). Resource limits: 4 CPU, 8Gi memory, 10 pods. Use `kubectl` for `cluster/` operations (deploy, inspect, debug).
+% endif
 % if secrets.buildbuddy_api_key:
 API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 % endif
-% if secrets.kubeconfig_path:
-`KUBECONFIG`: Points to decoded kubeconfig for the `cluster/` Talos k8s cluster. ServiceAccount `claude-code-web` with access to the `claude-sandbox` namespace (pods, services, secrets, exec). Resource limits: 4 CPU, 8Gi memory, 10 pods. Use `kubectl` for `cluster/` operations (deploy, inspect, debug).
-% endif
+% else:
+
+${"##"} Secrets — UNAVAILABLE
+Secrets could not be fetched. This means:
+- `GITHUB_TOKEN` is not set — `gh` CLI and authenticated git operations will fail
+- `BUILDBUDDY_API_KEY` is not set — Bazel remote cache/execution (RBE) is unavailable
+- `KUBECONFIG` is not set — `kubectl` will not work
+
+**Recovery steps:**
+1. Check the daemon log for the root cause (see `Session start log` path above)
+2. Common cause: proxy tunnel returned 403 (k8s token expired or proxy auth failed)
+3. Source env script manually: `source devinfra/secrets/web_env.sh`
+4. Export them manually: `export GITHUB_TOKEN=... BUILDBUDDY_API_KEY=...`
+
+**Notify the user** that secrets are unavailable and Bazel RBE / GitHub operations will not work until resolved.
 % endif
 % if os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"):
 `DUCKTAPE_CI_READ_GITHUB_TOKEN`: Fine-grained PAT for agentydragon/ducktape (read-only CI token, separate from `GITHUB_TOKEN`).
@@ -45,6 +60,9 @@ API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> fo
   Write access: POST create works (issues, comments), but PATCH update returns 403. Writes cannot be reverted with this token.
   Note: GitHub API requests frequently get transient 401s from the TLS-inspecting egress proxy. Retry on 401 with backoff (sleep 2-5s between retries). Parse JSON defensively — a 401 returns an empty body.
 % endif
+LLM inference (2x RTX 5090, Apache 2.0 `gpt-oss` models):
+  - `https://litellm.allegedly.works/v1` — OpenAI-compatible proxy (LiteLLM). Model: `gpt-oss-20b-128k`. API key: k8s secret `litellm-master-key` (key `api-key`) in `claude-sandbox`. LiteLLM routes to Ollama and can support additional providers.
+  - `https://ollama.allegedly.works` — Ollama native API (direct). Bearer token: k8s secret `ollama-bearer-token` (key `token`) in `claude-sandbox`. Use for Ollama-specific features (model management, embeddings).
 % if web_mode:
 Bazel: `bazel build //...` / `bazel test //...` (full repo) are slow in web sessions. When a repo-wide scan is needed, run a few smaller serial invocations (e.g. `//agent_core/...`, then `//props/...`) rather than one large `//...`.
 % endif

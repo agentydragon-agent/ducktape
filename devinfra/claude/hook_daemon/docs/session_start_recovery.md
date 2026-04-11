@@ -16,13 +16,13 @@ tail -100 ~/.claude/session-env/$LIVE/hook-daemon/daemon.log
 
 1. Read <devinfra/claude/hook_daemon/session_start/handler.py> for the full setup sequence
 2. Read <devinfra/claude/README.md> for architecture context
-3. Read `.claude_hooks/config.yaml` for profile config (env scripts, proxy, k8s settings)
+3. Read `.claude_hooks/web.yaml` for the web profile config (env scripts, proxy, k8s settings)
 
 **Key facts about secrets:**
 
 Secrets are populated by profile-configured env scripts (`devinfra/secrets/*.sh`), sourced
-at daemon startup. The env script is specified per-profile in `.claude_hooks/config.yaml`
-(`env_script` field). Web mode uses `devinfra/secrets/web_env.sh`.
+at daemon startup. The env script is specified in the profile YAML (`env_script` field).
+Web mode uses `.claude_hooks/web.yaml` → `devinfra/secrets/web_env.sh`.
 
 - `BUILDBUDDY_API_KEY` — set by env script (decrypted from SOPS by the script)
 - `GITHUB_TOKEN` — set by env script

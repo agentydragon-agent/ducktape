@@ -515,7 +515,6 @@ async def handle(
             container=setup.container,
             background_commands=profile.background_commands,
             mkcert=setup.mkcert_result,
-            secrets=setup.secrets,
             extra_context=extra_context,
             log_file=log_file,
             buildbuddy_configured=isinstance(setup.buildbuddy_setup, buildbuddy.BuildbuddyConfigured),
