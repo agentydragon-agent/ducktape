@@ -41,10 +41,10 @@ runs:
         done <<< "${{ inputs.env_overrides }}"
 
         bb remote \
-          --config=rbe \
           --runner_exec_properties=EstimatedFreeDiskBytes=${{ inputs.disk_bytes }} \
           --runner_exec_properties=EstimatedComputeUnits=${{ inputs.compute_units }} \
           --runner_exec_properties=workload-isolation-type=firecracker \
           --runner_exec_properties=init-dockerd=true \
           "${ENV_ARGS[@]}" \
-          ${{ inputs.args }}
+          ${{ inputs.args }} \
+          --config=rbe
