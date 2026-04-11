@@ -77,59 +77,33 @@ server-side logic:
 - `update_proxy_creds()` and `/wrapper-exec` endpoint removed (replaced by `/shim-exec`)
 - `create_app()` now takes `profile` parameter for server-side shim logic
 
-## Remaining
-
 ### CI workflow deduplication
 
-Target: 3 setup actions (down from 7):
-
-| Action               | Does what                                                                       |
-| -------------------- | ------------------------------------------------------------------------------- |
-| `setup-nix-devtools` | **New.** Nix + `nix profile install .#devtools` (replaces 5 inline copies)      |
-| `setup-ci-secrets`   | SOPS via `ci_env.sh` (unchanged)                                                |
-| `setup-bazel`        | BuildBuddy config + repo cache (inline `setup-buildbuddy` + `bazel-repo-cache`) |
-
-**Delete**: `setup-buildbuddy` (folded into setup-bazel), `bazel-repo-cache` (same),
-`setup-python-env` (only used by pre-commit, redundant — Python comes from devtools),
-`setup-nix-direnv` (used by nothing).
-
-**Workflow fixes**:
-
-- `push-images.yml`, `release.yml`: use `setup-nix-devtools` + `setup-bazel` instead of inlining
-- `bazel-ci.yml`, `pre-commit.yml`, `copilot-setup-steps.yml`: use `setup-nix-devtools`
-- `pre-commit.yml`: drop `setup-python-env` step
-- `freecad-test-image.yml`: `actions/checkout@v4` → `@v6`
-- `ansible-lint.yml`: fine as-is (uses `setup-python` only, no Nix needed)
-
-**Lower priority**: extract image digest pinning from `freecad-test-image.yml` +
-`rbe-image.yml` into shared action/script (only 2 files).
+Consolidated 7 GHA setup actions into 3 via `setup-ci-env` composite action wrapping
+Nix + devtools + secrets + Bazel setup. Deleted `setup-buildbuddy`, `bazel-repo-cache`,
+`setup-python-env`, `setup-nix-direnv`. Updated all workflows to use the new action.
 
 ### Profile config consolidation
 
-Move remaining top-level `HookConfig` fields into `ProfileConfig`:
+Eliminated `HookConfig` wrapper — each profile is now a standalone YAML file.
 
-1. **Move `otel`, `pre_commit`, `k8s` into profile**: These are currently shared across
-   profiles but should be per-profile (e.g. different pre-commit strictness for cli vs web,
-   or different k8s clusters).
-2. **One YAML file per profile**: Replace the `profiles:` dict in `config.yaml` with
-   standalone files (e.g. `.claude_hooks/web.yaml`, `.claude_hooks/cli.yaml`). Each file
-   is a complete `ProfileConfig` — no top-level `HookConfig` wrapper.
-3. **`DUCKTAPE_CLAUDE_HOOKS_PROFILE` selects the file**: Set to a repo-relative path
-   (e.g. `.claude_hooks/web.yaml`). In web mode, set as a session-level env var in Claude
-   Code web configuration. In CLI mode, set in `.envrc`. The daemon loads exactly one
-   profile file at startup — no profile resolution logic, no `default_profiles` map.
-4. **Delete `HookConfig`**: Once profiles are standalone files, the top-level config
-   wrapper and `resolve_profile()` become unnecessary.
-5. **Daemon startup simplifies to**: load single profile YAML (path from env var) →
-   source `env_script` → init OTEL tracing → start uvicorn. No profile resolution,
-   no `is_web_mode()`, no `default_profiles` map. `create_app` takes the loaded profile
-   directly — `web_mode` / profile caching in `app.state` become moot since there's
-   only one profile and it's the whole config.
+**What was done**:
 
-**Considered and rejected**: deferring env_script/OTEL init to first request (e.g. via
-stdin bootstrap). The current startup is fast (no network calls), and deferring would add
-conditional "not yet ready" states and a second protocol path for one-time use. The real
-simplification comes from eliminating profile resolution, not from reordering init.
+- Moved `otel`, `k8s`, `pre_commit` from top-level `HookConfig` into `ProfileConfig`
+- Added `context_template` field to `ProfileConfig` for per-profile session context templates
+- Added `ProfileConfig.load(config_path)` classmethod
+- Split `.claude_hooks/config.yaml` into `.claude_hooks/cli.yaml` and `.claude_hooks/web.yaml`
+- `DUCKTAPE_CLAUDE_HOOKS_PROFILE` env var selects the profile file path (set in `.envrc`
+  for CLI, `web_setup.sh` for web)
+- Daemon startup loads one profile directly — no `resolve_profile()`, no `is_web_mode()`,
+  no `default_profiles` map
+- `post_tool_use.evaluate()` receives `pre_commit` as parameter instead of re-loading
+  config from disk on every PostToolUse call
+- `_render_extra_context()` loads template from `profile.context_template` instead of
+  hardcoded `.claude_hooks/templates/context.mako` path
+- Deleted: `HookConfig`, `DefaultProfiles`, `is_web_mode()`
+
+## Remaining
 
 ### Future: `ci_env.sh` as full CI setup step
 
@@ -150,57 +124,28 @@ Nix closure.
 
 ### Per-profile session context
 
-`session_context.mako` renders the same context blurb regardless of profile, but the
-environment differs meaningfully between cli and web: different kubeconfig (personal vs
-`claude-sandbox` SA), different GitHub token (personal PAT vs machine-user PAT), different
-RBAC scope. The template should reflect what the agent actually has access to, not a
-generic "secrets loaded" message.
+`context_template` field is wired up (profile consolidation). Remaining work:
 
-Approach: add an optional `context_template` field to `ProfileConfig` — a Mako snippet
-(inline string or repo-relative `.mako` file) rendered into the session context output.
-Each profile describes its own environment. The shared `session_context.mako` handles
-structural sections (proxy, docker, warnings) and delegates the profile-specific block
-to the profile's template. The current template should also be audited for accuracy — it
-describes capabilities (k8s access, secrets, Docker) that differ between cli and web but
-are rendered identically.
+- Split `.claude_hooks/templates/context.mako` into `cli_context.mako` and `web_context.mako`
+- Move secrets/kubeconfig sections from shared `session_context.mako` into per-profile templates
+- Audit shared template for accuracy — some sections describe web-only capabilities generically
 
-### ~~Simplify session start recovery doc~~ (done)
+### Simplify session start recovery doc
 
-Rewrote `session_start_recovery.md`: removed SOPS/`sops_decrypt.py` references,
-Step 3 now sources `devinfra/secrets/web_env.sh` directly.
-
-### Shim handler: fix dummy session_id and extract per-shim logic
-
-The `/shim-exec` handler in `server.py` has two issues:
-
-1. **Dummy session*id `"*"`**: `SessionPaths.from_env("_", report.env)` is called just to
-   get `paths.bazelrc`, which is `<session_dir>/bazelrc`. Should read
-   `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` from `report.env` directly and construct the path
-   without faking a session ID.
-
-2. **Inline per-shim logic**: The handler does proxy creds + git blocking + bazelisk flag
-   injection all inline behind `if report.shim == "git"` / `"bazelisk"` checks. Extract
-   per-shim handlers as a `dict[str, Callable]` dispatch so adding a new shim doesn't
-   require editing the main handler. Each shim handler takes `(report, argv)` and returns
-   `ShimBlocked | ShimExecve`.
+`session_start_recovery.md` still references SOPS. Update Step 3 to source
+`devinfra/secrets/web_env.sh` directly.
 
 ### `env_script_exports` threading
 
 `env_script_exports: str` is sourced at daemon startup (`main.py`), stored in `app.state`,
-threaded through `handle_session_start()`, and written once to the session env file. It
-can't be deferred to session start because the env script also populates `os.environ` with
-`DUCKTAPE_OTEL_BEARER_TOKEN` (needed for OTEL tracer init before uvicorn starts) and
-`BUILDBUDDY_API_KEY` (read from `os.environ` at session start). The raw export lines are a
-separate concern — once profiles are standalone files and the daemon loads exactly one
-profile, this threading simplifies naturally (the profile file path is known, the script
-can be re-sourced if needed, and the exports string can be cached alongside the profile).
+threaded through `handle_session_start()`, and written once to the session env file.
+Now that profiles are standalone files and the daemon loads exactly one, the profile file
+path is known and the exports string could be cached alongside the profile. Low priority —
+the current threading works.
 
 ## TODOs
 
 - Double env_script resolution on laptop (direnv + daemon startup) — minor, second run is no-op
-- Container e2e test: env script passthrough verified (E2E_TEST_SECRET in session env file).
-  Shim refactor replaced `wrappers/bazel.py` with `wrappers/bazelisk.py` — wheel packaging
-  may need updating for new module paths. Awaiting green run.
 - `DUCKTAPE_DOCKER_CLIENT_KEY` disabled in `_common.sh` — `docker-ci.allegedly.works`
   unreachable from RBE workers. Tests use local Docker daemon. Re-enable when docker-ci
   works in cluster.
