@@ -152,6 +152,10 @@ in
             RemainAfterExit = true;
           };
           script = ''
+            if [ ! -b ${dev} ]; then
+              echo "Device ${dev} not present, skipping VG setup"
+              exit 0
+            fi
             if vgs openebs-proxmox-${vg} >/dev/null 2>&1; then
               echo "VG openebs-proxmox-${vg} already exists, activating"
             else
