@@ -9,7 +9,6 @@ py_library(
     ],
     visibility = ["//devinfra/claude:__subpackages__"],
     deps = [
-        "//devinfra/claude/hook_daemon/session_start:precommit",
         "@pypi//mako",
     ],
 )

@@ -7,8 +7,10 @@ import yaml
 from devinfra.claude.hook_daemon.config import DefaultProfiles, HookConfig, ProfileConfig
 from devinfra.claude.session_paths import SessionPaths
 
+TEST_PROFILE = ProfileConfig(idle_watchdog=True)
+
 TEST_HOOK_CONFIG = HookConfig(
-    profiles={"default": ProfileConfig()}, default_profiles=DefaultProfiles(cli="default", web="default")
+    profiles={"default": TEST_PROFILE}, default_profiles=DefaultProfiles(cli="default", web="default")
 )
 
 

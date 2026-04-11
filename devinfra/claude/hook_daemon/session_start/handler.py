@@ -1,6 +1,6 @@
 """Unified session start hook for Claude Code (web and CLI).
 
-Web mode (CLAUDE_CODE_REMOTE=true): Sets up auth proxy and git hooks.
+Web mode (CLAUDE_CODE_REMOTE=true): Sets up auth proxy, containers, and background tasks.
 CLI mode: Sets up per-session bazel wrapper with direnv integration.
 
 Both modes render a per-session bazelrc from the unified bazelrc.mako template
@@ -11,11 +11,10 @@ import asyncio
 import logging
 import logging.handlers
 import os
-from collections.abc import Coroutine
+import shlex
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import anyio
 from mako.template import Template
@@ -32,22 +31,18 @@ from devinfra.claude.claude_api.hooks.session_start import (
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_daemon import templates
-from devinfra.claude.hook_daemon.config import HOOKS_DOTDIR, HookConfig, ProfileConfig
+from devinfra.claude.hook_daemon.config import HOOKS_DOTDIR, BackgroundCommand, HookConfig, ProfileConfig
 from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.session_start import (
-    apt,
-    bazel_warmup,
     buildbuddy,
     container_runtime,
     fork_remote,
     kubeconfig,
     mkcert,
     platform_detect,
-    precommit,
     tmpfs,
-    tune_rootfs,
 )
-from devinfra.claude.hook_daemon.wrappers.install import install as install_wrapper
+from devinfra.claude.hook_daemon.shim_install import install as install_shim
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
@@ -127,20 +122,59 @@ class PlatformSetup:
     buildbuddy_setup: buildbuddy.BuildbuddySetup = field(default_factory=buildbuddy.BuildbuddyNotConfigured)
 
 
-def _run_background(session: Session, coro: Coroutine[Any, Any, Any], *, name: str) -> None:
-    """Create a background task, track it, post success/failure to session mailbox."""
-    task: asyncio.Task[Any] = asyncio.create_task(coro)
+async def _run_background_command(
+    session: Session, cmd: BackgroundCommand, sock_path: Path, env_file_path: Path | None, project_dir: Path
+) -> None:
+    """Run a background shell command with lifecycle messages to the session mailbox.
 
-    def _on_done(t: asyncio.Task[Any]) -> None:
-        if t.cancelled():
-            return
-        if exc := t.exception():
-            session.post_message(f"Background task '{name}' failed: {exc}")
+    Passes HOOK_DAEMON_SOCK so scripts can post additional messages via
+    ``curl --unix-socket $HOOK_DAEMON_SOCK -X POST http://localhost/mailbox -d '{"message":"..."}'``.
+    """
+    session.post_message(f"Task [{cmd.name}] started.")
+    try:
+        env = dict(os.environ)
+        env["HOOK_DAEMON_SOCK"] = str(sock_path)
+
+        shell_cmd = cmd.command
+        if cmd.after_env and env_file_path:
+            shell_cmd = f"source {shlex.quote(str(env_file_path))} && {shell_cmd}"
+
+        proc = await asyncio.create_subprocess_exec(
+            "bash",
+            "-c",
+            shell_cmd,
+            cwd=project_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=cmd.timeout)
+        if proc.returncode != 0:
+            output = (stderr or stdout or b"").decode(errors="replace")[-500:]
+            logger.error("Background command %s failed (exit %d): %s", cmd.name, proc.returncode, output)
+            session.post_message(f"Task [{cmd.name}] failed, see hook daemon logs for details.")
         else:
-            session.post_message(f"Background task '{name}' succeeded.")
+            session.post_message(f"Task [{cmd.name}] completed successfully.")
+    except TimeoutError:
+        logger.error("Background command %s timed out after %ds", cmd.name, cmd.timeout)
+        session.post_message(f"Task [{cmd.name}] failed, see hook daemon logs for details.")
+    except Exception:
+        logger.exception("Background command %s failed", cmd.name)
+        session.post_message(f"Task [{cmd.name}] failed, see hook daemon logs for details.")
 
-    task.add_done_callback(_on_done)
-    session.track(task)
+
+def _launch_background_commands(
+    session: Session,
+    commands: list[BackgroundCommand],
+    *,
+    sock_path: Path,
+    env_file_path: Path | None,
+    project_dir: Path,
+) -> None:
+    """Launch background commands as fire-and-forget asyncio tasks."""
+    for cmd in commands:
+        task = asyncio.create_task(_run_background_command(session, cmd, sock_path, env_file_path, project_dir))
+        session.track(task)
 
 
 async def _setup_web(
@@ -223,27 +257,18 @@ async def _setup_web(
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
-    #   apt_task (no deps — runs immediately)
     #   proxy_task (in-process, no supervisor dependency)
     #   supervisor_task ── setup_container_runtime (Docker)
     #                      (mounts its own tmpfs internally)
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
+    #   immediate background_commands (no deps — run immediately)
     logger.info("Starting parallel installations...")
 
-    apt_packages: list[str] = []
-    if profile.install_apt_packages:
-        apt_packages.extend(apt.NATIVE_DEV_PACKAGES)
-    else:
-        logger.info("Skipping native apt packages (install_apt_packages=False)")
-
-    @tracer.start_as_current_span("install_apt_packages", context=root_ctx)
-    async def traced_apt():
-        return await apt.install_packages(apt_packages)
-
-    # Fire-and-forget: apt, precommit, tune_rootfs (notifications via session mailbox).
-    _run_background(session, traced_apt(), name="apt package install")
-    _run_background(session, precommit.install_precommit(project_dir), name="pre-commit setup")
-    _run_background(session, run_in_thread(tune_rootfs.reduce_reserved_blocks), name="rootfs tuning")
+    # Fire-and-forget immediate background commands (notifications via session mailbox).
+    immediate_cmds = [cmd for cmd in profile.background_commands if not cmd.after_env]
+    _launch_background_commands(
+        session, immediate_cmds, sock_path=session.paths.hook_daemon_sock, env_file_path=None, project_dir=project_dir
+    )
 
     # Proxy task starts without BuildBuddy state (buildbuddy setup depends on
     # k8s secrets which in turn depend on proxy being up for TLS).
@@ -351,9 +376,20 @@ async def handle(
     platform = platform_detect.detect()
 
     # Platform-specific setup (proxy, containers, certs, etc.)
+    # Immediate background commands (after_env=False) are launched inside _setup_web
+    # for web mode (to run in parallel with proxy/container setup). For CLI mode,
+    # launch them here.
     if ctx.web_mode:
         setup = await _setup_web(session, settings, profile, project_dir, root_ctx, platform=platform)
     else:
+        immediate_cmds = [cmd for cmd in profile.background_commands if not cmd.after_env]
+        _launch_background_commands(
+            session,
+            immediate_cmds,
+            sock_path=session.paths.hook_daemon_sock,
+            env_file_path=None,
+            project_dir=project_dir,
+        )
         setup = PlatformSetup(platform=platform, with_direnv=True)
 
     # -- Shared steps: secrets, BuildBuddy, fork remote --
@@ -419,10 +455,10 @@ async def handle(
         session_bazelrc = session.paths.session_dir / "bazelrc"
         write_config(session_bazelrc, bazelrc_content, "session bazelrc")
 
-    # Install PATH wrappers (bazelisk proxy injection + git safety).
-    with tracer.start_as_current_span("install_wrappers", context=root_ctx):
-        install_wrapper("bazelisk", "devinfra.claude.hook_daemon.wrappers.bazel", session.paths)
-        install_wrapper("git", "devinfra.claude.hook_daemon.wrappers.git", session.paths)
+    # Install PATH shims (bazelisk --bazelrc injection + git safety).
+    with tracer.start_as_current_span("install_shims", context=root_ctx):
+        install_shim("bazelisk", session.paths)
+        install_shim("git", session.paths)
 
     # Generate timestamp
     hook_timestamp = datetime.now()
@@ -451,19 +487,18 @@ async def handle(
         env_file.write_env_file(ctx.env_file_path, env_vars)
     logger.info("Wrote environment to %s", ctx.env_file_path)
 
-    # Fire-and-forget Bazel warmup (both web and CLI modes).
-    # ORDERING: bazel tmpfs cache mount (in the gather above) must complete before
-    # warmup starts — otherwise bazel writes to the underlying fs, then the tmpfs
-    # mount shadows those files. This is satisfied because warmup runs after the gather.
-    if (bazel_command := profile.bazel_warmup) is not None:
-        handle = await bazel_warmup.start_bazel_command(
-            wrapper_path=session.paths.wrapper_path,
-            project_dir=ctx.project_dir,
-            env_file=ctx.env_file_path,
-            command=bazel_command,
-        )
-        session.post_message(f"Background `bazel {bazel_command}` started (PID {handle.pid}).")
-        _run_background(session, handle.wait(), name=f"bazel {bazel_command}")
+    # Fire-and-forget after_env background commands (both web and CLI modes).
+    # ORDERING: these run after env file is written (they source it) and after
+    # bazel tmpfs cache mount (in the gather above) — otherwise bazel writes to
+    # the underlying fs, then the tmpfs mount shadows those files.
+    deferred_cmds = [cmd for cmd in profile.background_commands if cmd.after_env]
+    _launch_background_commands(
+        session,
+        deferred_cmds,
+        sock_path=session.paths.hook_daemon_sock,
+        env_file_path=ctx.env_file_path,
+        project_dir=ctx.project_dir,
+    )
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
@@ -480,7 +515,7 @@ async def handle(
             collector=collector,
             proxy=setup.auth_proxy,
             container=setup.container,
-            precommit_installing=ctx.web_mode,
+            background_commands=profile.background_commands,
             mkcert=setup.mkcert_result,
             secrets=setup.secrets,
             extra_context=extra_context,
@@ -505,7 +540,6 @@ def _build_extra_env_script(profile: ProfileConfig) -> str | None:
     if profile.env_exports:
         return profile.env_exports.rstrip()
     return None
-
 
 
 # ============================================================================

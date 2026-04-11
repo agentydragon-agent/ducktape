@@ -90,7 +90,7 @@ def main() -> None:
     otel_config = _resolve_otel_config(hook_config)
 
     init_daemon_tracing(daemon_dir, otel_config=otel_config)
-    app = create_app(daemon_dir, hook_config=hook_config, env_script_exports=env_script_exports)
+    app = create_app(daemon_dir, hook_config=hook_config, env_script_exports=env_script_exports, profile=profile)
     uvicorn.run(app, uds=args.sock, log_level="info")
     shutdown_tracing()
 

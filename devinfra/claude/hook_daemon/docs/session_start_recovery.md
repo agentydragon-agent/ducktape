@@ -1,7 +1,7 @@
 # Session Start Hook Recovery (Claude Code Web)
 
 When running in Claude Code Web (`CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE` is set), the
-session start hook sets up Bazel, the auth proxy, TLS CA, SOPS secrets, BuildBuddy RBE,
+session start hook sets up Bazel, the auth proxy, TLS CA, secrets, BuildBuddy RBE,
 and other tooling. Symptoms of failure: certificate errors, `bazelisk: command not found`,
 `Unable to resolve host remote.buildbuddy.io`, missing env files.
 
@@ -16,17 +16,17 @@ tail -100 ~/.claude/session-env/$LIVE/hook-daemon/daemon.log
 
 1. Read <devinfra/claude/hook_daemon/session_start/handler.py> for the full setup sequence
 2. Read <devinfra/claude/README.md> for architecture context
-3. Read `.claude_hooks/config.yaml` for secrets config (SOPS files and k8s settings)
-4. Read <devinfra/claude/config/bazelrc.mako> for the session bazelrc template
+3. Read `.claude_hooks/config.yaml` for profile config (env scripts, proxy, k8s settings)
 
-**Key facts about secrets (changed from k8s to SOPS):**
+**Key facts about secrets:**
 
-- `BUILDBUDDY_API_KEY` — decrypted from `secrets/buildbuddy.yaml` (SOPS, age key in env)
-- `GITHUB_TOKEN` — decrypted from `secrets/github-pat-agentydragon-agent.yaml` (SOPS)
-- `k8s_token` — decrypted from `secrets/claude-web-k8s-token.yaml` (SOPS); also available
-  as `DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` env var (injected by the cluster at container start)
-- `otel_bearer_token` — fetched from k8s secret (non-critical, only for tracing)
-- `SOPS_AGE_KEY` — always present in env; standard sops env var for age-based decryption
+Secrets are populated by profile-configured env scripts (`devinfra/secrets/*.sh`), sourced
+at daemon startup. The env script is specified per-profile in `.claude_hooks/config.yaml`
+(`env_script` field). Web mode uses `devinfra/secrets/web_env.sh`.
+
+- `BUILDBUDDY_API_KEY` — set by env script (decrypted from SOPS by the script)
+- `GITHUB_TOKEN` — set by env script
+- `DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` — injected by cluster at container start (fallback)
 
 Without `BUILDBUDDY_API_KEY`, RBE is unavailable. All other secrets are non-critical.
 
@@ -68,31 +68,17 @@ source ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh
 
 ## Step 3: Manual assembly (daemon unavailable or env file missing)
 
-If the daemon is down, manually assemble using SOPS (no k8s required):
-
-**Decrypt secrets** — `SOPS_AGE_KEY` is always in env:
+If the daemon is down, source the env script directly:
 
 ```bash
-# Get the PYTHONPATH the daemon uses (needed for yaml, pyrage deps)
-DAEMON_PY_PATH=$(cat /proc/$(pgrep -f hook_daemon | head -1)/environ 2>/dev/null \
-  | tr '\0' '\n' | grep '^PYTHONPATH=' | cut -d= -f2-)
-
-PYTHONPATH="$DAEMON_PY_PATH" python3.13 - <<'EOF'
-from devinfra.claude.sops_decrypt import decrypt_sops_yaml
-from pathlib import Path
-# SOPS_AGE_KEY is inherited from the environment — sops reads it natively.
-proj = Path("/home/user/ducktape")
-bb = decrypt_sops_yaml(proj / "secrets/buildbuddy.yaml")
-gh = decrypt_sops_yaml(proj / "secrets/github-pat-agentydragon-agent.yaml")
-print(f"export BUILDBUDDY_API_KEY={bb['buildbuddy_api_key']}")
-print(f"export GITHUB_TOKEN={gh['github_token']}")
-EOF
+# Source the web env script — populates BUILDBUDDY_API_KEY, GITHUB_TOKEN, etc.
+# Requires SOPS_AGE_KEY in env (always present in web containers).
+source /home/user/ducktape/devinfra/secrets/web_env.sh
 ```
 
 **Configure BuildBuddy** (writes `~/.config/bazel/buildbuddy.bazelrc`):
 
 ```bash
-BUILDBUDDY_API_KEY=<from above>
 mkdir -p ~/.config/bazel
 cat > ~/.config/bazel/buildbuddy.bazelrc <<EOF
 common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
@@ -118,7 +104,6 @@ mkdir -p "$SD/auth-proxy" "$SD/bin"
 cat > "$SD/sessionstart-hook-0.sh" <<'ENVEOF'
 export PATH="<SD>/bin:$PATH"
 export SESSION_BAZELRC="<SD>/bazelrc"
-export BAZELISK_PATH="/usr/local/bin/bazelisk"
 export DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR="<SD>"
 export DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT="19001"
 export SSL_CERT_FILE="<SD>/auth-proxy/combined_ca.pem"
@@ -126,8 +111,8 @@ export REQUESTS_CA_BUNDLE="<SD>/auth-proxy/combined_ca.pem"
 export CURL_CA_BUNDLE="<SD>/auth-proxy/combined_ca.pem"
 export NODE_EXTRA_CA_CERTS="<SD>/auth-proxy/combined_ca.pem"
 export DOCKER_HOST="unix:///var/run/docker.sock"
-export GITHUB_TOKEN="<from SOPS above>"
-export BUILDBUDDY_API_KEY="<from SOPS above>"
+export GITHUB_TOKEN="<from env script above>"
+export BUILDBUDDY_API_KEY="<from env script above>"
 export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS="0"
 export NO_PROXY="localhost,127.0.0.1,169.254.169.254,metadata.google.internal,*.svc.cluster.local,*.local"
 export no_proxy="$NO_PROXY"
@@ -141,8 +126,8 @@ daemon is completely unavailable, re-run `devinfra/claude/web_setup.sh` to reins
 **Verify**:
 
 ```bash
-bazel info           # should show output_base in session-env
-bazel test //devinfra/claude:test_sops_decrypt  # passes via RBE
+bazelisk info  # should show output_base
 ```
 
-**Do NOT** bypass certificate/proxy errors with `--noverify`, `SSL_VERIFY=false`, etc. The root cause is always a missing/broken session start hook. Notify the user.
+**Do NOT** bypass certificate/proxy errors with `--noverify`, `SSL_VERIFY=false`, etc. The
+root cause is always a missing/broken session start hook. Notify the user.

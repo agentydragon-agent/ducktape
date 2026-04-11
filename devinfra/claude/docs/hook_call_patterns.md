@@ -133,10 +133,10 @@ After resume creates session `3a1f5b5a`, the new proxy socket is at:
 
 The Bazel server still tries the old path → connection refused.
 
-The bazel wrapper compounds this: it calls `update_proxy_creds` via
-RPC to the daemon matching `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR`. After
-resume, the env points to the new session, so the wrapper talks to the
-new daemon — but then execs `bazelisk --bazelrc=<new-session-bazelrc>`.
+The bazelisk shim compounds this: it calls `/shim-exec` via RPC to the
+daemon matching `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR`. After resume, the
+env points to the new session, so the shim talks to the new daemon —
+the daemon injects `--bazelrc=<new-session-bazelrc>` into the exec argv.
 Since the bazelrc has a different `--remote_proxy` path, Bazel detects
 a startup option change and **kills the existing server** to restart
 with the new bazelrc. This loses the warm Skyframe cache (45-min cold

@@ -11,7 +11,7 @@ import pygit2
 import pytest
 import yaml
 
-from devinfra.claude.hook_daemon.testing_helpers import setup_daemon_project
+from devinfra.claude.hook_daemon.testing.testing_helpers import setup_daemon_project
 from devinfra.claude.session_paths import SessionPaths
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

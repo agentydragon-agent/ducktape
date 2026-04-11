@@ -36,7 +36,7 @@ def git_project(tmp_path: Path) -> tuple[Path, Path]:
     repo_path.mkdir()
     config = HookConfig(
         pre_commit=PreCommitConfig(),
-        profiles={"default": ProfileConfig(bazel_remote_proxy=None, bazel_bes_proxy=None)},
+        profiles={"default": ProfileConfig(idle_watchdog=True, bazel_remote_proxy=None, bazel_bes_proxy=None)},
         default_profiles=DefaultProfiles(cli="default", web="default"),
     )
     hooks_dir = repo_path / ".claude_hooks"

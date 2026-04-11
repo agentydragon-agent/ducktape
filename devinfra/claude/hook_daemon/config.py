@@ -47,6 +47,19 @@ class BazelRemoteProxyConfig(BaseModel):
     target: str = Field(description="host:port to connect to, e.g. 'remote.buildbuddy.io:443'")
 
 
+class BackgroundCommand(BaseModel):
+    """Shell command to run in the background during session start."""
+
+    name: str = Field(description="Human label for mailbox lifecycle messages")
+    command: str = Field(description="Shell command passed to bash -c")
+    timeout: int = Field(default=300, description="Seconds before the command is killed")
+    after_env: bool = Field(
+        default=False,
+        description="If true, source the session env file before running and delay "
+        "until after the env file is written. If false, run immediately.",
+    )
+
+
 class ProfileConfig(BaseModel):
     bazel_remote_proxy: BazelRemoteProxyConfig | None = Field(
         default=None, description="UDS proxy for Bazel --remote_proxy (remote execution + cache). Null = disabled."
@@ -66,12 +79,11 @@ class ProfileConfig(BaseModel):
         "Set to false in CLI profile when the user has their own ~/.kube/config.",
     )
     install_mkcert: bool = Field(default=False, description="Install mkcert and generate localhost TLS cert.")
-    install_apt_packages: bool = Field(default=False, description="Install native dev packages via apt.")
     setup_docker: bool = Field(default=False, description="Set up Docker daemon under supervisor.")
-    bazel_warmup: str | None = Field(
-        default=None,
-        description="Bazel warmup command after session start. 'info' for JVM warmup, "
-        "arbitrary command string for cache warmup, null to disable.",
+    background_commands: list[BackgroundCommand] = Field(
+        default_factory=list,
+        description="Shell commands to run in the background during session start. "
+        "Scripts can post messages via curl --unix-socket $HOOK_DAEMON_SOCK /mailbox.",
     )
     env_exports: str | None = Field(
         default=None, description="Inline shell content appended verbatim to the session env file."
@@ -79,6 +91,10 @@ class ProfileConfig(BaseModel):
     env_script: str | None = Field(
         default=None,
         description="Repo-relative path to a shell script whose stdout is appended to the session env file.",
+    )
+    idle_watchdog: bool = Field(
+        description="Enable idle watchdog that shuts down daemon after inactivity. "
+        "Disable in environments where the container is torn down externally (e.g. web mode)."
     )
 
 

@@ -15,6 +15,8 @@ import logging
 import signal
 import time
 import traceback
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -22,6 +24,7 @@ from fastapi.responses import JSONResponse, Response
 from opentelemetry import trace
 from pydantic import BaseModel
 
+from devinfra.claude.auth_proxy.credentials import check_credential_expiry
 from devinfra.claude.claude_api.hooks.common import HookOutputBase
 from devinfra.claude.claude_api.hooks.config_change import ConfigChangeInput
 from devinfra.claude.claude_api.hooks.cwd_changed import CwdChangedInput
@@ -35,14 +38,14 @@ from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.claude_api.hooks.setup import SetupInput
 from devinfra.claude.claude_api.hooks.worktree_create import WorktreeCreateInput
 from devinfra.claude.claude_api.hooks.worktree_remove import WorktreeRemoveInput
-from devinfra.claude.hook_daemon.config import HookConfig
-from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
+from devinfra.claude.hook_daemon.config import HookConfig, ProfileConfig
+from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
 from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.session_start.handler import CallerContext, handle as handle_session_start
 from devinfra.claude.session_paths import SessionPaths
-from devinfra.claude.settings import HookSettings, is_web_mode
+from devinfra.claude.settings import HookSettings
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +70,8 @@ _NON_REPL_HOOK_TYPES = (
 )
 
 
-class _UpdateProxyCredsRequest(BaseModel):
-    https_proxy: str
+class _MailboxRequest(BaseModel):
+    message: str
 
 
 def _get_or_create_session(sessions: dict[str, Session], session_id: str, env: dict[str, str]) -> Session:
@@ -107,6 +110,85 @@ def _apply_mailbox(output: HookOutputBase | None, session: Session, hook: AnyHoo
     return output
 
 
+def _check_jwt_expiry(proxy_url: str, session: Session) -> None:
+    """Check JWT expiry and post info/warning to session mailbox."""
+    status = check_credential_expiry(proxy_url)
+    if status.expiry is None:
+        return
+    minutes_remaining = (status.expiry - datetime.now(UTC)).total_seconds() / 60
+    if minutes_remaining <= 0:
+        session.post_message(
+            f"JWT EXPIRED ({-minutes_remaining:.0f} min ago). Start a new Claude Code session for fresh credentials."
+        )
+    elif minutes_remaining < 30:
+        session.post_message(f"JWT valid for {minutes_remaining:.0f} min")
+
+
+# -- Per-shim handlers --
+# Each takes (report, session) and returns a response. Registered in _SHIM_HANDLERS.
+
+# Git global options that consume the next argument as a value.
+_GIT_GLOBAL_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix"})
+
+
+def _extract_git_subcommand(args: list[str]) -> tuple[str | None, list[str]]:
+    """Parse git global options to find the subcommand and its arguments."""
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg.startswith("--") and "=" in arg:
+            if arg.split("=", 1)[0] in _GIT_GLOBAL_VALUE_OPTIONS:
+                i += 1
+                continue
+        if arg in _GIT_GLOBAL_VALUE_OPTIONS:
+            i += 2
+            continue
+        if arg.startswith("-"):
+            i += 1
+            continue
+        return arg, args[i + 1 :]
+    return None, []
+
+
+def _handle_git_shim(report: ShimExecRequest, session: Session) -> ShimBlocked | ShimExecve:
+    """Block dangerous git commands, pass through the rest."""
+    subcommand, sub_args = _extract_git_subcommand(report.argv[1:])
+    if subcommand == "add":
+        if "--all" in sub_args:
+            return ShimBlocked(message="git add --all\n  Use 'git add <specific-files>' instead of staging everything.")
+        for arg in sub_args:
+            if arg == "-A":
+                return ShimBlocked(
+                    message="git add -A\n  Use 'git add <specific-files>' instead of staging everything."
+                )
+            if arg.startswith("-") and not arg.startswith("--") and "A" in arg:
+                return ShimBlocked(
+                    message=f"git add {arg} (contains -A)\n  Use 'git add <specific-files>' instead of staging everything."
+                )
+        if "." in sub_args:
+            return ShimBlocked(message="git add .\n  Use 'git add <specific-files>' instead of staging everything.")
+    if subcommand == "stash":
+        stash_sub = next((a for a in sub_args if not a.startswith("-")), None)
+        if stash_sub not in {"list", "show"}:
+            return ShimBlocked(message="git stash\n  Do not use git stash. Find other approaches for dirty worktrees.")
+    if subcommand == "commit" and "--amend" in sub_args:
+        return ShimBlocked(message="git commit --amend\n  Create a new commit instead of amending.")
+    return ShimExecve(argv=report.argv)
+
+
+def _handle_bazelisk_shim(report: ShimExecRequest, session: Session) -> ShimBlocked | ShimExecve:
+    """Inject --bazelrc pointing to the session bazelrc."""
+    argv = list(report.argv)
+    argv.insert(1, f"--bazelrc={session.paths.bazelrc}")
+    return ShimExecve(argv=argv)
+
+
+_SHIM_HANDLERS: dict[str, Callable[[ShimExecRequest, Session], ShimBlocked | ShimExecve]] = {
+    "git": _handle_git_shim,
+    "bazelisk": _handle_bazelisk_shim,
+}
+
+
 async def _idle_watchdog(app: FastAPI) -> None:
     """Background task: exit after IDLE_TIMEOUT_SECONDS of no requests."""
     while True:
@@ -118,7 +200,7 @@ async def _idle_watchdog(app: FastAPI) -> None:
             return
 
 
-def create_app(daemon_dir: Path, hook_config: HookConfig, env_script_exports: str) -> FastAPI:
+def create_app(daemon_dir: Path, hook_config: HookConfig, env_script_exports: str, profile: ProfileConfig) -> FastAPI:
     """Create and configure the hook daemon FastAPI app."""
     app = FastAPI()
 
@@ -206,24 +288,46 @@ def create_app(daemon_dir: Path, hook_config: HookConfig, env_script_exports: st
 
             return Response(content=resp_json, media_type="application/json")
 
-    @app.post("/update-proxy-creds")
-    async def update_proxy_creds(req: _UpdateProxyCredsRequest) -> None:
-        """Update in-process proxy credentials. Called by bazel_wrapper on each invocation."""
-        for s in app.state.sessions.values():
-            s.set_proxy_creds(req.https_proxy)
-        logger.debug("Updated proxy credentials via RPC")
+    @app.post("/shim-exec")
+    async def handle_shim_exec(report: ShimExecRequest) -> ShimBlocked | ShimExecve:
+        """Handle shim execution report. Returns block or approved argv."""
+        app.state.last_request_time = time.monotonic()
+        logger.info("shim-exec: %s cwd=%s argv=%s", report.shim, report.cwd, report.argv)
+
+        session = _get_or_create_session(app.state.sessions, report.session_id, report.env)
+
+        # Update proxy credentials
+        https_proxy = report.env.get("HTTPS_PROXY") or report.env.get("https_proxy")
+        if https_proxy:
+            session.set_proxy_creds(https_proxy)
+            _check_jwt_expiry(https_proxy, session)
+
+        # Dispatch to per-shim handler
+        handler = _SHIM_HANDLERS.get(report.shim)
+        if handler:
+            return handler(report, session)
+        return ShimExecve(argv=report.argv)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
         """Health check — does NOT reset idle timer."""
         return {"status": "ok"}
 
+    @app.post("/mailbox")
+    async def post_mailbox(req: _MailboxRequest) -> dict[str, str]:
+        """Post a message to all sessions' mailboxes.
+
+        Background commands use this via curl --unix-socket to send
+        progress messages (e.g. PID announcements) to the agent.
+        """
+        for s in app.state.sessions.values():
+            s.post_message(req.message)
+        return {"status": "ok"}
+
     @app.on_event("startup")
     async def _start_idle_watchdog() -> None:
-        if is_web_mode():
-            # Web sessions are managed by Anthropic's environment manager — don't
-            # self-terminate. The container is torn down externally when the session ends.
-            logger.info("Web mode: idle watchdog disabled")
+        if not profile.idle_watchdog:
+            logger.info("Idle watchdog disabled by profile config")
             return
         app.state.watchdog_task = asyncio.create_task(_idle_watchdog(app))
 

@@ -21,8 +21,8 @@ pre_commit:
 
 profiles:
   default:
+    idle_watchdog: true
     write_kubeconfig: false
-    bazel_warmup: info
     env_exports: |
       export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
       export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
@@ -31,11 +31,15 @@ profiles:
       target: remote.buildbuddy.io:443
     bazel_bes_proxy:
       target: remote.buildbuddy.io:443
+    background_commands:
+      - name: bazel info
+        command: bazelisk info
+        timeout: 300
+        after_env: true
   web:
+    idle_watchdog: false
     install_mkcert: true
-    install_apt_packages: true
     setup_docker: true
-    bazel_warmup: info
     env_exports: |
       export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
       export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
@@ -44,6 +48,22 @@ profiles:
       target: remote.buildbuddy.io:443
     bazel_bes_proxy:
       target: remote.buildbuddy.io:443
+    background_commands:
+      - name: apt package install
+        command: |
+          apt-get update -qq &&
+          apt-get install -y -qq libgirepository-2.0-dev libcairo2-dev libdbus-1-dev
+        timeout: 300
+      - name: rootfs tuning
+        command: /sbin/tune2fs -m 1 /dev/vda
+        timeout: 30
+      - name: pre-commit setup
+        command: pre-commit install --install-hooks
+        timeout: 300
+      - name: bazel info
+        command: bazelisk info
+        timeout: 300
+        after_env: true
 
 default_profiles:
   cli: default

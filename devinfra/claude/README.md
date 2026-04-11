@@ -43,7 +43,7 @@ By preserving the original proxy env vars:
 
 - Tools continue to use Anthropic's proxy directly
 - JWT token refreshes are automatically picked up
-- The bazel wrapper reads fresh credentials on each invocation
+- The bazelisk shim sends fresh credentials to the daemon on each invocation
 
 ## Components
 
@@ -62,10 +62,13 @@ The hook runs at the start of each Claude Code web session and:
 4. Creates combined CA bundle (system CAs + proxy CA)
 5. Writes bazelrc to `<session_dir>/bazelrc`
 
-### Bazel Setup (via `hook_daemon/session_start/bazelisk.py`)
+### PATH Shims (via `hook_daemon/shim_install.py`)
 
 7. Bazelisk binary provided by Nix devShell (on PATH)
-8. Creates wrapper script at `<session_dir>/bin/bazelisk` (injects proxy credentials)
+8. Installs PATH shims at `<session_dir>/bin/{bazelisk,git}` — thin scripts that
+   report to the hook daemon via `/shim-exec` RPC before exec'ing the real binary.
+   The daemon handles proxy credential refresh, `--bazelrc` injection (bazelisk),
+   and git safety checks (blocking `git add -A`, `git stash`, `git commit --amend`).
 
 ### Git Hooks
 
@@ -107,7 +110,7 @@ old ID, the client finds no socket for the old ID and tries to start a _second_ 
 - **`Setup` hook**: Do NOT register it in `.claude/settings.json`. It would start a daemon
   for the new session ID. The `Setup` hook handler is a noop anyway (the daemon returns
   `{}` immediately).
-- **Session-local files** (socket, wrapper dir, session bazelrc): always keyed by
+- **Session-local files** (socket, shim dir, session bazelrc): always keyed by
   `SessionStart`'s session ID, which may be the _old_ ID after a compaction.
 - **Session-global files** (bazelisk binary at `~/.cache/claude-hooks/bazelisk`): shared
   across all session IDs, safe for concurrent daemons.

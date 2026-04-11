@@ -10,6 +10,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.hook_daemon import templates
+from devinfra.claude.hook_daemon.config import BackgroundCommand
 from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect
 from devinfra.claude.hook_daemon.session_start.handler import LogCollector, SecretsResult
 
@@ -19,7 +20,7 @@ def _render(
     platform: platform_detect.PlatformInfo,
     proxy: proxy_setup.ProxySetup | None = None,
     container: container_runtime.ContainerRuntimeSetup | None = None,
-    precommit_installing: bool = False,
+    background_commands: list[BackgroundCommand] | None = None,
     mkcert_result: mkcert.MkcertSetup | None = None,
     secrets: SecretsResult | None = None,
     extra_context: str = "",
@@ -34,7 +35,7 @@ def _render(
             collector=collector,
             proxy=proxy,
             container=container,
-            precommit_installing=precommit_installing,
+            background_commands=background_commands or [],
             mkcert=mkcert_result,
             secrets=secrets,
             extra_context=extra_context,
@@ -144,10 +145,14 @@ def test_web_with_docker(
     assert result == snapshot
 
 
-def test_web_precommit_installing(
+def test_web_with_background_commands(
     snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
 ) -> None:
-    result = _render(platform=web_platform, proxy=proxy, precommit_installing=True)
+    cmds = [
+        BackgroundCommand(name="apt package install", command="apt-get install -y foo"),
+        BackgroundCommand(name="bazel info", command="bazelisk info", after_env=True),
+    ]
+    result = _render(platform=web_platform, proxy=proxy, background_commands=cmds)
     assert result == snapshot
 
 

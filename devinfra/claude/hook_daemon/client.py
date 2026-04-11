@@ -15,11 +15,13 @@ from pathlib import Path
 
 import httpx
 from filelock import FileLock
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
-from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
+from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
 from devinfra.claude.session_paths import SessionPaths
+
+_SHIM_RESPONSE_ADAPTER = TypeAdapter(ShimBlocked | ShimExecve)
 from util.bazel.subprocess import python_env
 
 logger = logging.getLogger(__name__)
@@ -85,16 +87,20 @@ class DaemonHttpError(RuntimeError):
         self.body = body
 
 
-def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> None:
-    """Send fresh proxy credentials to the daemon.
-
-    Raises OSError if the daemon is unreachable.
-    """
+def send_shim_exec(report: ShimExecRequest, paths: SessionPaths) -> ShimBlocked | ShimExecve | None:
+    """Send shim exec RPC to the daemon. Returns response or None if unreachable."""
     conn = _UDSConnection(paths.hook_daemon_sock)
     try:
-        r = conn.post("/update-proxy-creds", json={"https_proxy": https_proxy}, timeout=5.0)
+        r = conn.post(
+            "/shim-exec", content=report.model_dump_json(), headers={"Content-Type": "application/json"}, timeout=5.0
+        )
         if r.status_code != 200:
-            raise OSError(f"Daemon returned HTTP {r.status_code} for update-proxy-creds: {r.text}")
+            logger.error("Daemon returned HTTP %d for shim-exec: %s", r.status_code, r.text)
+            return None
+        return _SHIM_RESPONSE_ADAPTER.validate_json(r.content)
+    except (httpx.ConnectError, httpx.TimeoutException, OSError) as e:
+        logger.error("shim-exec RPC failed (daemon unreachable): %s", e)
+        return None
     finally:
         conn.close()
 

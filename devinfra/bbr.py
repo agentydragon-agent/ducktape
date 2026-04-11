@@ -121,8 +121,8 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> list[str]:
         *[f"--runner_exec_properties={k}={v}" for k, v in _RUNNER_PROPERTIES.items()],
         f"--container_image=docker://{rbe_image}",
         *secret_args,
-        *user_args,
         "--config=rbe",
+        *user_args,
     ]
 
 

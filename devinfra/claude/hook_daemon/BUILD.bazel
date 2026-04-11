@@ -70,7 +70,6 @@ py_library(
         "//devinfra/claude:settings",
         "//devinfra/claude/auth_proxy:proxy",
         "//devinfra/claude/auth_proxy:vars",
-        "//devinfra/claude/hook_daemon/session_start:precommit",
     ],
 )
 
@@ -111,6 +110,7 @@ py_library(
     srcs = ["server.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":config",
         ":models",
         ":post_tool_use_lib",
         ":pre_tool_use_lib",
@@ -118,6 +118,7 @@ py_library(
         ":tracing",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
+        "//devinfra/claude/auth_proxy:credentials",
         "//devinfra/claude/claude_api/hooks:dispatch_output",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
@@ -125,6 +126,7 @@ py_library(
         "//devinfra/claude/hook_daemon/session_start:session_start_lib",
         "@pypi//fastapi",
         "@pypi//opentelemetry_api",
+        "@pypi//pydantic",
     ],
 )
 
@@ -161,7 +163,39 @@ py_library(
         "//util/bazel:subprocess",
         "@pypi//filelock",
         "@pypi//httpx",
+        "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "shim_install",
+    srcs = ["shim_install.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//util/bazel:subprocess",
+    ],
+)
+
+py_library(
+    name = "shim_lib",
+    srcs = ["shim.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client",
+        ":shim_install",
+        "//devinfra/claude:debug",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+    ],
+)
+
+py_binary(
+    name = "shim",
+    main_module = "devinfra.claude.hook_daemon.shim",
+    visibility = ["//visibility:public"],
+    deps = [":shim_lib"],
 )
 
 py_library(
@@ -179,7 +213,6 @@ py_library(
 
 py_binary(
     name = "hook_dispatch",
-    data = ["//devinfra/claude/hook_daemon/wrappers:bazel"],
     main_module = "devinfra.claude.hook_daemon.hook_dispatch",
     visibility = ["//visibility:public"],
     deps = [":hook_dispatch_lib"],
@@ -205,11 +238,11 @@ py_test(
     deps = [
         ":models",
         ":server",
-        ":testing_helpers",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "//devinfra/claude/claude_api/hooks:stop",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -218,23 +251,12 @@ py_test(
 )
 
 py_library(
-    name = "testing_helpers",
-    testonly = True,
-    srcs = ["testing_helpers.py"],
-    deps = [
-        ":config",
-        "//devinfra/claude:session_paths",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
     name = "hook_daemon_conftest",
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":testing_helpers",
         "//devinfra/claude:session_paths",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
         "//util/testing:undeclared_outputs",
         "@pypi//pygit2",
         "@pypi//pytest",
@@ -251,9 +273,9 @@ py_test(
         ":hook_daemon_conftest",
         ":models",
         ":server",
-        ":testing_helpers",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:stop",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
         "@pypi//pytest_bazel",
         "@pypi//uvicorn",
     ],
@@ -268,9 +290,9 @@ py_test(
         ":client",
         ":hook_daemon_conftest",
         ":main_lib",
-        ":testing_helpers",
         "//devinfra/claude:conftest",
         "//devinfra/claude:session_paths",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
         "@pypi//pytest_bazel",
     ],
 )
@@ -285,7 +307,6 @@ py_test(
         "//devinfra/claude:conftest",
         "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
-        "//devinfra/claude/hook_daemon/session_start:precommit",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
@@ -348,5 +369,15 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_shim",
+    srcs = ["test_shim.py"],
+    deps = [
+        ":shim_install",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

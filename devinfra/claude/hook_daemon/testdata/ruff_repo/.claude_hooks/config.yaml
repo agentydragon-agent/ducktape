@@ -8,8 +8,10 @@ default_profiles:
 
 profiles:
   cli:
+    idle_watchdog: true
     bazel_remote_proxy: null
     bazel_bes_proxy: null
   web:
+    idle_watchdog: false
     bazel_remote_proxy: null
     bazel_bes_proxy: null

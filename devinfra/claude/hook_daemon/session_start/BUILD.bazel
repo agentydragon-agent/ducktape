@@ -11,19 +11,6 @@ py_library(
 )
 
 py_library(
-    name = "apt",
-    srcs = ["apt.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "bazel_warmup",
-    srcs = ["bazel_warmup.py"],
-    visibility = ["//visibility:public"],
-    deps = ["//devinfra/claude:shell"],
-)
-
-py_library(
     name = "buildbuddy",
     srcs = ["buildbuddy.py"],
     visibility = ["//visibility:public"],
@@ -65,13 +52,6 @@ py_library(
 )
 
 py_library(
-    name = "precommit",
-    srcs = ["precommit.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pre_commit"],
-)
-
-py_library(
     name = "platform_detect",
     srcs = ["platform_detect.py"],
     visibility = ["//visibility:public"],
@@ -79,12 +59,6 @@ py_library(
         "@pypi//psutil",
         "@pypi//types_psutil",
     ],
-)
-
-py_library(
-    name = "tune_rootfs",
-    srcs = ["tune_rootfs.py"],
-    visibility = ["//visibility:public"],
 )
 
 py_library(
@@ -102,17 +76,13 @@ py_library(
     srcs = ["handler.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":apt",
-        ":bazel_warmup",
         ":buildbuddy",
         ":container_runtime",
         ":fork_remote",
         ":kubeconfig",
         ":mkcert",
         ":platform_detect",
-        ":precommit",
         ":tmpfs",
-        ":tune_rootfs",
         "//devinfra/claude:debug",
         "//devinfra/claude:env_file",
         "//devinfra/claude:errors",
@@ -124,8 +94,8 @@ py_library(
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/hook_daemon:config",
         "//devinfra/claude/hook_daemon:session",
+        "//devinfra/claude/hook_daemon:shim_install",
         "//devinfra/claude/hook_daemon/templates",
-        "//devinfra/claude/hook_daemon/wrappers:install",
         "//devinfra/claude/supervisor:setup",
         "@pypi//anyio",
         "@pypi//httpx",
@@ -141,18 +111,6 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = ["//util/testing:otel_tracing"],
-)
-
-py_test(
-    name = "test_bazel_warmup",
-    srcs = ["test_bazel_warmup.py"],
-    deps = [
-        ":bazel_warmup",
-        "//devinfra/claude:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_test(
@@ -176,9 +134,9 @@ py_test(
         ":container_runtime",
         ":mkcert",
         ":platform_detect",
-        ":precommit",
         ":session_start_lib",
         "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/hook_daemon:config",
         "//devinfra/claude/hook_daemon/templates",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -108,14 +108,16 @@
   
   '''
 # ---
-# name: test_web_precommit_installing
+# name: test_web_with_background_commands
   '''
   # Claude Code session start hook — OK
   
   **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
   **Bazel:** wrapper adds auth proxy (loaded)
   
-  Installing in background. First `git commit` may block briefly.
+  ## Background tasks
+  - apt package install
+  - bazel info (after env)
   
   Secrets could not be fetched. This means:
   - `GITHUB_TOKEN` is not set — `gh` CLI and authenticated git operations will fail

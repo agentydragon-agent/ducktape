@@ -28,10 +28,12 @@ VFS on 9p (no layer caching, slower builds).
 ## Localhost TLS
 `$MKCERT_CERT` / `$MKCERT_KEY` (auto-trusted). Use for HTTPS dev servers.
 % endif
-% if precommit_installing:
+% if background_commands:
 
-## pre-commit
-Installing in background. First `git commit` may block briefly.
+${"##"} Background tasks
+% for cmd in background_commands:
+- ${cmd.name}${ " (after env)" if cmd.after_env else "" }
+% endfor
 % endif
 <%
     has_any_secret = secrets and (secrets.buildbuddy_api_key or secrets.github_token)

@@ -248,14 +248,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Safety check: running on wyrm2 without excluding module.wyrm2 will cause
+    # Safety check: running on wyrm2 without excluding it will cause
     # tofu to apply pending VM config changes, rebooting the machine mid-bootstrap.
+    wyrm2_exclude = "proxmox_virtual_environment_vm.wyrm2"
     hostname = socket.gethostname()
-    if hostname == "wyrm2" and "module.wyrm2" not in args.exclude:
+    if hostname == "wyrm2" and wyrm2_exclude not in args.exclude:
         raise SystemExit(
-            "Running on wyrm2 without --exclude=module.wyrm2. "
+            f"Running on wyrm2 without --exclude={wyrm2_exclude}. "
             "Tofu will apply pending VM changes and reboot this machine mid-bootstrap. "
-            "Re-run with: --exclude=module.wyrm2"
+            f"Re-run with: --exclude={wyrm2_exclude}"
         )
 
     excludes = args.exclude

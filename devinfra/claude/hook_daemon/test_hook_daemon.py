@@ -7,13 +7,14 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from httpx import ASGITransport, AsyncClient
+from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.stop import StopInput
-from devinfra.claude.hook_daemon.testing_helpers import TEST_HOOK_CONFIG
-from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
+from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
 from devinfra.claude.hook_daemon.server import create_app
+from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_HOOK_CONFIG, TEST_PROFILE
 
 _COMMON = {
     "session_id": "test-session",
@@ -30,7 +31,7 @@ async def client(tmp_path: Path) -> AsyncGenerator[AsyncClient]:
     """Create an async test client for the daemon app."""
     daemon_dir = tmp_path / "hook-daemon"
     daemon_dir.mkdir()
-    app = create_app(daemon_dir, hook_config=TEST_HOOK_CONFIG, env_script_exports="")
+    app = create_app(daemon_dir, hook_config=TEST_HOOK_CONFIG, env_script_exports="", profile=TEST_PROFILE)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
@@ -140,6 +141,83 @@ class TestHealth:
         resp = await client.get("/health")
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
+
+
+def _shim_request(shim: str, argv: list[str], env: dict[str, str] | None = None) -> ShimExecRequest:
+    return ShimExecRequest(
+        shim=shim, session_id="test-session", cwd="/tmp", argv=argv, env=env or {"HOME": "/tmp", "PATH": "/usr/bin"}
+    )
+
+
+class TestShimExec:
+    async def _post_shim(self, client: AsyncClient, req: ShimExecRequest) -> ShimBlocked | ShimExecve:
+        resp = await client.post("/shim-exec", content=req.model_dump_json(), headers=_JSON_HEADERS)
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        return TypeAdapter(ShimBlocked | ShimExecve).validate_json(resp.content)
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["git", "add", "-A"],
+            ["git", "add", "--all"],
+            ["git", "add", "."],
+            ["git", "add", "-Av"],
+            ["git", "stash"],
+            ["git", "stash", "push"],
+            ["git", "commit", "--amend"],
+        ],
+    )
+    async def test_git_blocked_commands(self, client: AsyncClient, argv: list[str]) -> None:
+        result = await self._post_shim(client, _shim_request("git", argv))
+        assert isinstance(result, ShimBlocked)
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["git", "add", "file.py"],
+            ["git", "commit", "-m", "msg"],
+            ["git", "status"],
+            ["git", "stash", "list"],
+            ["git", "stash", "show"],
+        ],
+    )
+    async def test_git_allowed_commands(self, client: AsyncClient, argv: list[str]) -> None:
+        result = await self._post_shim(client, _shim_request("git", argv))
+        assert isinstance(result, ShimExecve)
+        assert result.argv == argv
+
+    async def test_bazelisk_injects_bazelrc(self, client: AsyncClient, tmp_path: Path) -> None:
+        """Bazelisk shim response has --bazelrc injected into argv."""
+        env = {
+            "HOME": str(tmp_path),
+            "PATH": "/usr/bin",
+            "DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR": str(tmp_path / "session"),
+        }
+        result = await self._post_shim(client, _shim_request("bazelisk", ["bazelisk", "build", "//..."], env))
+        assert isinstance(result, ShimExecve)
+        assert any(a.startswith("--bazelrc=") for a in result.argv), f"Expected --bazelrc in {result.argv}"
+        assert result.argv[0] == "bazelisk"
+        assert "build" in result.argv
+        assert "//..." in result.argv
+
+    async def test_unknown_shim_passthrough(self, client: AsyncClient) -> None:
+        """Unknown shim names pass argv through unchanged."""
+        argv = ["something", "--flag", "arg"]
+        result = await self._post_shim(client, _shim_request("something", argv))
+        assert isinstance(result, ShimExecve)
+        assert result.argv == argv
+
+    async def test_proxy_creds_updated(self, client: AsyncClient, tmp_path: Path) -> None:
+        """Shim-exec updates proxy creds from env's HTTPS_PROXY."""
+        # First create a session via a hook request so app.state.sessions is populated
+        hook_input = StopInput(**_COMMON, hook_event_name="Stop", stop_hook_active=False)
+        env = {"HOME": "/tmp", "PATH": "/usr/bin", "CLAUDE_ENV_FILE": str(tmp_path / "e.sh")}
+        await _post_hook(client, HookRequest(hook=hook_input, env=env))
+
+        # Now send shim-exec with HTTPS_PROXY — should not error
+        proxy_env = {**env, "HTTPS_PROXY": "http://user:pass@proxy:8080"}
+        result = await self._post_shim(client, _shim_request("bazelisk", ["bazelisk", "build"], proxy_env))
+        assert isinstance(result, ShimExecve)
 
 
 if __name__ == "__main__":

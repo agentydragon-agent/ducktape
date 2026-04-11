@@ -34,12 +34,7 @@ def run_env_script(script_path: Path, *, timeout: int = 30) -> EnvScriptResult:
     - raw_exports: raw stdout from the script (export lines, pasted into session env file)
     """
     # First, capture the raw export lines (stdout of the script itself)
-    raw_result = subprocess.run(
-        ["bash", script_path],
-        check=False,
-        capture_output=True,
-        timeout=timeout,
-    )
+    raw_result = subprocess.run(["bash", script_path], check=False, capture_output=True, timeout=timeout)
     raw_exports = raw_result.stdout.decode(errors="replace").strip()
     stderr = raw_result.stderr.decode(errors="replace").strip()
 

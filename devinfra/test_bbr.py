@@ -116,8 +116,12 @@ class TestBuildCommand:
         assert cmd[1] == "remote"
         assert "--container_image=docker://ghcr.io/test/rbe@sha256:deadbeef" in cmd
         assert "--runner_exec_properties=init-dockerd=true" in cmd
-        assert cmd[-2] == "--nocache_test_results"
-        assert cmd[-1] == "--config=rbe"
+        assert cmd[-1] == "--nocache_test_results"
+        assert "--config=rbe" in cmd
+        # --config=rbe must come before user args so user flags can override
+        rbe_idx = cmd.index("--config=rbe")
+        user_idx = cmd.index("--nocache_test_results")
+        assert rbe_idx < user_idx
 
     def test_invocation_id_file_before_bazel_command(self, tmp_path: Path) -> None:
         """--invocation_id_file must come before the bazel command (bb remote flag)."""
