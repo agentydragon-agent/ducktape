@@ -1,19 +1,24 @@
 ---
 name: followups
 description: >
-  Surface all pending followups and verify session work is still on disk.
+  Surface pending followups, natural extensions, incomplete migrations, code
+  quality issues, and "what's next" suggestions. Verify session work is on disk.
   Use when user says "bt", "backtrace", "stack", "where are we", or asks about
   current progress on a multi-step task.
 allowed-tools: Bash, Read, Glob, Grep, Agent, AskUserQuestion
 ---
 
-Surface all pending followups and verify session work is still on disk.
+Surface pending followups, natural next steps, and quality improvements. Verify session work is on disk.
 
 ## Purpose
 
-**Save user time and cognitive load** - If there's >10-20% chance the user wants to do something, surface it for them to select with a key press. Much cheaper than having to remember/type it themselves.
-**Memory guide** - Make sure nothing mentioned (by user or agent) gets forgotten.
-**Verify persistence** - Double-check work done in this session is actually on disk (not stashed/reverted by parallel process).
+**"What's next?" advisor** — Proactively find natural extensions, incomplete migrations, unwired components, and quality improvements related to the session's work. Think like a colleague who sees what you just did and says "oh, and you probably also want to..."
+
+**Save user time and cognitive load** — If there's >10-20% chance the user wants to do something, surface it for them to select with a key press. Much cheaper than having to remember/type it themselves.
+
+**Catch loose threads** — Both agent and user loose threads: things discussed 15 minutes ago but abandoned when we pivoted, half-finished migrations, components built but not wired up.
+
+**Verify persistence** — Double-check work done in this session is actually on disk (not stashed/reverted by parallel process).
 
 ## Process
 
@@ -106,7 +111,77 @@ Scan conversation for:
 - Outdated comments referencing old code
 - Inconsistencies introduced
 
-### Phase 4: Prevent Recurrence Analysis
+### Phase 4: Natural Extensions and Incomplete Migrations
+
+Look beyond what was explicitly discussed. Based on what the session actually changed, search for natural next steps the user might not have thought of yet.
+
+**Incomplete migrations:**
+
+- If the session moved field/config/pattern A→B for one instance, search for remaining instances still on A
+- If the session replaced one tool/library/approach with another in one place, check if the old approach is still used elsewhere
+
+Examples:
+- "Moved `storageClass` from default to `lvm-proxmox-hdd` for grocy — 3 other PVCs still use the default class."
+- "Replaced Vault/ESO with SOPS for authentik secrets — harbor and grafana still use ESO."
+- "`ghcr-build-push` action now uses `github.token` directly instead of a `github_token` input — are any callers still passing the old input?"
+- "Removed `master` from branch triggers in 5 workflows — any others still referencing `master`?"
+
+**Extracted patterns not yet applied everywhere:**
+
+- If inline logic was extracted into a shared action/helper/utility, check for remaining copies of the inline version
+
+Examples:
+- "Extracted digest-pinning into `pin-image-digest` action for rbe-image and freecad-test — openclaw-image and tana-mcp-image still inline the same logic (or skip pinning entirely)."
+- "Added Docker layer caching (`cache_from`/`cache_to`) to 4 workflows — openclaw-image got caching but doesn't use the shared pin action yet."
+
+**Multi-layer version/config alignment:**
+
+- If the session fixed a version mismatch or config inconsistency in one layer, check all other layers that might have the same issue
+
+Examples:
+- "Fixed protobuf version in nix to match Bazel gencode — pip layer and MODULE.bazel still have the old version. All three need to agree."
+- "Updated Docker mTLS env vars in `py_test` macro — but the firewall doesn't allow port 2376 yet, and the test fixture isn't wired to the new env var name."
+
+**Unwired components:**
+
+- If the session created a Dockerfile/image but no CI workflow builds it
+- If the session created a k8s manifest but nothing applies/reconciles it
+- If the session created a library/module but nothing imports it yet
+- If the session added a config option but no documentation mentions it
+- If the session added infrastructure (fixture, helper, env var) but the consumers aren't connected yet
+
+Example: "Created Docker mTLS test fixture and env var setup — but the firewall port isn't open, and no tests actually use the fixture yet."
+
+**Generalizations:**
+
+- If a fix or improvement was made to one instance of a pattern, check if similar instances would benefit. Example: "Added `requires_docker = True` to one test — 4 other tests also use Docker fixtures but don't have it."
+- If a new utility/helper was created, search for places that hand-roll the same logic
+
+**Better ways to do what we're doing manually:**
+
+- If the session used a manual/ad-hoc approach, check if there's a more standard or automated way. Example: "Passing `github_token` as an explicit input — GitHub Actions provides `github.token` automatically, no need to thread it through."
+
+**Stale names after renames:**
+
+- If the session renamed a class, function, or concept, check whether file names, test file names, variable names, and documentation still use the old name
+
+Example: "Renamed `FooClass` to `BarClass` but it still lives in `foo.py` with test in `test_foo.py` — should be `bar.py` / `test_bar.py`."
+
+**Tests must move with the code they test:**
+
+- If the session refactored config, APIs, or function signatures, check whether tests still compile and match the new interfaces. Don't leave test fixes for later commits.
+
+Example: "Deleted `HookConfig` class and switched to standalone profile YAML — 5 test files still import `HookConfig` and pass it to `configure()`. These will break."
+
+**Optimizations and correctness:**
+
+- If the session added functionality, are there edge cases not handled?
+- If the session touched performance-sensitive code, are there obvious improvements?
+- If the session changed data formats, are there consumers that need updating?
+
+Surface these with enough context for the user to judge value, not just "you could also do X." Include what specifically would change and why.
+
+### Phase 5: Prevent Recurrence Analysis
 
 If the session involved debugging, diagnosing, or working around a problem, ask:
 
@@ -134,18 +209,52 @@ B. **Add pre-commit check for unquoted URLs in pnpm lockfiles**
    - A targeted check could catch this on lockfile regeneration
 ```
 
-### Phase 5: Verify Suggestions Are Actionable
+### Phase 6: Code Quality Audit of Changed Files
+
+**Delegate to subagent(s)** — these are read-only searches well suited for parallel execution.
+
+**Duplicate code detection:**
+
+- For each function/class added or substantially modified this session, search the repo for similar logic elsewhere
+- Look for: copy-pasted blocks, reimplemented stdlib/library functionality, patterns that exist in shared utilities (`util/`, `mcp_infra/`, etc.) but were hand-rolled instead
+- Surface as refactoring opportunities with specific file:line references
+
+**Refactoring opportunities:**
+
+- If a pattern was repeated 3+ times across the session's changes, suggest extracting it
+- If session changes introduced a new abstraction, check whether older code could use it
+- If session touched a module with known code smells (long functions, deep nesting, god classes), note the opportunity but at MAYBE priority
+
+**STYLE.md compliance audit:**
+
+Read `STYLE.md` and check all files modified this session against its rules. Common violations to scan for:
+
+- Exception swallowing (`except Exception: ... = {}`)
+- Unnecessary aliasing (`import foo as bar`, `x = param`)
+- String forward references instead of reordering
+- `model_dump()` used for logic instead of field access
+- Missing `Field(description=...)` on Pydantic models (docstring listing fields instead)
+- Verbose docstrings that restate the signature
+- `dict` construction instead of Pydantic model construction
+- `getattr`/`hasattr` usage without justification
+- Grab-bag module names (`utils.py`, `constants.py`, `core.py`)
+- `list` used where `set` is semantically correct
+- Manual iterator patterns where `more_itertools.one()`/`first()` fits
+
+Only flag **actual violations found in the diff**, not hypothetical ones. Include the file path, line number, the STYLE.md rule violated, and a concrete fix.
+
+### Phase 7: Verify Suggestions Are Actionable
 
 Before surfacing any suggestion, verify it's actually actionable right now:
 
-- **Git push/commit**: Check `git status` and `git log --oneline origin/HEAD..HEAD` — don't suggest pushing if already pushed, don't suggest committing if nothing is staged/modified
+- **Git push/commit**: Re-run `git status` and `git log --oneline origin/HEAD..HEAD` fresh — the user may have committed, pushed, or staged files since the last check. Don't suggest pushing if already pushed, don't suggest committing if nothing is staged/modified
 - **Run tests**: Confirm the test target exists and the test runner is available
 - **Code changes**: Confirm the file/function still exists and hasn't been changed by a concurrent agent
 - **Cleanup**: Confirm the dead code / unused import is actually still there
 
 Drop suggestions that fail verification. A stale or impossible suggestion wastes more attention than omitting it. If a suggestion is borderline (e.g., "bench.py might need updating" but you haven't checked), either verify it or drop it — don't surface uncertain claims as actionable items.
 
-### Phase 6: Probabilistic Action Suggestions
+### Phase 8: Probabilistic Action Suggestions
 
 For each verified action, estimate probability user wants it:
 
@@ -198,43 +307,38 @@ Found 3 immediate actions, 4 likely followups, 2 optional items.
 
 ### Action selection (AskUserQuestion)
 
-Use the `AskUserQuestion` tool to present followup actions as multi-select
-questions grouped by priority/topic. The user can select multiple items and
-add freeform input via the built-in "Other" option.
+Present followup suggestions using AskUserQuestion. Each item needs a tri-state response:
 
-**Grouping strategy**: Group by logical topic (e.g., "Git", "Code quality",
-"Documentation") rather than by priority level. Include the priority indicator
-in the option description. Limit to 1-4 questions with 2-4 options each —
-combine or drop low-value items to fit the constraints.
+- **Yes**: Do it now.
+- **Skip**: Not now, but resurface if `/followups` is called again this session.
+- **No**: Don't do it, and don't suggest it again this session. Track in conversation context only — do not save to memory.
 
-**Example** (2 questions covering 7 followups):
+Items not explicitly addressed default to **Skip**.
 
-```
-Question 1: "Which git/commit actions?" (multiSelect: true, header: "Git")
-  - "Push 2 commits to devel" (description: "🔴 fe4942f, 80bbc8b — docs updates")
-  - "Discard image_pins.json formatting" (description: "🟡 git checkout devinfra/image_pins.json")
-  - "Commit MODULE.bazel changes" (description: "🟡 Unrelated modification, needs review")
-
-Question 2: "Which code/docs followups?" (multiSelect: true, header: "Followups")
-  - "Run test suite" (description: "🟡 bb-remote test //... --config=rbe")
-  - "Remove dead helper functions" (description: "🟢 3 unused functions in auth.py, utils.py")
-  - "Update API docs" (description: "🟢 New endpoints need OpenAPI specs")
-  - "Add performance benchmarks" (description: "🔵 Optional — new code paths")
-```
-
-The user selects items to execute, can add freeform via "Other", and the agent
-proceeds with the selected actions.
-
-**Priority indicators in descriptions:**
+**Priority indicators** (include in option descriptions):
 
 - 🔴 = DO NOW (>80% probability)
 - 🟡 = LIKELY (40-80%)
 - 🟢 = MAYBE (20-40%)
 - 🔵 = OPTIONAL (10-20%)
 
-**If AskUserQuestion is not available** (e.g., non-interactive mode), fall back
-to printing the full list as markdown with the priority groupings and let the
-user respond in freeform text.
+**AskUserQuestion constraints:**
+
+- 1-4 questions per call, 2-4 options per question
+- Labels: 1-5 words. Details go in description.
+- Headers: max 12 chars (chip/tag)
+- `multiSelect: true` allows multiple selections
+- "Other" freeform option is auto-provided
+- Can call the tool multiple times sequentially
+
+**Presentation strategy**: Choose whatever interaction pattern best fits the specific suggestions being presented. Options include:
+
+- Multi-select by topic (selected=yes, unselected=skip), then a follow-up to capture explicit "no" items
+- Per-item single-select with Yes/Skip/No options (when items are few or need individual attention)
+- Batched by priority, processing DO NOW items first before presenting lower-priority ones
+- Multiple sequential calls to work through more items than fit in one call
+
+Use judgment — optimize for the user making quick decisions with minimal friction.
 
 ## Implementation Requirements
 
@@ -260,16 +364,7 @@ Every suggestion includes the exact command in the description:
 - 15%: Nice-to-have (documentation polish)
 - <10%: Omit entirely
 
-### 4. AskUserQuestion Constraints
-
-- 1-4 questions, 2-4 options each (hard API limit)
-- Group by topic, not priority — priority goes in description text
-- Use `multiSelect: true` on all questions (user picks what they want)
-- Keep option labels short (1-5 words), put details in description
-- "Other" is always available — user can add freeform items
-- If >16 items total, combine related items or drop lowest-probability ones
-
-### 5. Zero False Omissions
+### 4. Zero False Omissions
 
 Better to show 5 low-probability items than miss the one action user wanted.
 Err on side of over-suggesting rather than under-suggesting.
