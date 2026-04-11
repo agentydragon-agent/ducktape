@@ -203,9 +203,9 @@ py_test(
     srcs = ["test_hook_daemon.py"],
     legacy_create_init = 0,
     deps = [
-        ":config",
         ":models",
         ":server",
+        ":testing_helpers",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
@@ -218,11 +218,22 @@ py_test(
 )
 
 py_library(
+    name = "testing_helpers",
+    testonly = True,
+    srcs = ["testing_helpers.py"],
+    deps = [
+        ":config",
+        "//devinfra/claude:session_paths",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "hook_daemon_conftest",
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":config",
+        ":testing_helpers",
         "//devinfra/claude:session_paths",
         "//util/testing:undeclared_outputs",
         "@pypi//pygit2",
@@ -237,10 +248,10 @@ py_test(
     legacy_create_init = 0,
     deps = [
         ":client",
-        ":config",
         ":hook_daemon_conftest",
         ":models",
         ":server",
+        ":testing_helpers",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:stop",
         "@pypi//pytest_bazel",
@@ -257,6 +268,7 @@ py_test(
         ":client",
         ":hook_daemon_conftest",
         ":main_lib",
+        ":testing_helpers",
         "//devinfra/claude:conftest",
         "//devinfra/claude:session_paths",
         "@pypi//pytest_bazel",

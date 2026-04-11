@@ -11,7 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.stop import StopInput
-from devinfra.claude.hook_daemon.config import DefaultProfiles, HookConfig, ProfileConfig
+from devinfra.claude.hook_daemon.testing_helpers import TEST_HOOK_CONFIG
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.server import app, configure
 
@@ -30,21 +30,17 @@ async def client(tmp_path: Path) -> AsyncGenerator[AsyncClient]:
     """Create an async test client for the daemon app."""
     daemon_dir = tmp_path / "hook-daemon"
     daemon_dir.mkdir()
-    configure(
-        daemon_dir,
-        hook_config=HookConfig(
-            profiles={"test": ProfileConfig()}, default_profiles=DefaultProfiles(cli="test", web="test")
-        ),
-        env_script_exports="",
-    )
+    configure(daemon_dir, hook_config=TEST_HOOK_CONFIG, env_script_exports="")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
 
 @pytest.fixture
-def env() -> dict[str, str]:
-    return {"HOME": "/tmp", "PATH": "/usr/bin"}
+def env(tmp_path: Path) -> dict[str, str]:
+    env_file = tmp_path / "session-env" / "test" / "sessionstart-hook-0.sh"
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    return {"HOME": "/tmp", "PATH": "/usr/bin", "CLAUDE_ENV_FILE": str(env_file), "CLAUDE_PROJECT_DIR": str(tmp_path)}
 
 
 async def _post_hook(client: AsyncClient, req: HookRequest) -> HookResponse:

@@ -32,6 +32,7 @@ from devinfra.claude.hook_daemon.client import (
     _wait_for_sock,
     read_pidfile,
 )
+from devinfra.claude.hook_daemon.testing_helpers import setup_daemon_project
 from devinfra.claude.session_paths import SessionPaths
 
 
@@ -88,20 +89,35 @@ def test_parallel_cold_start(short_tmp: Path) -> None:
     paths = SessionPaths(session_id=session_id, home=short_tmp, xdg_cache_home=short_tmp / "cache")
     (short_tmp / "cache").mkdir()
 
-    n = 5
-    barrier: multiprocessing.synchronize.Barrier = multiprocessing.Barrier(n)
-    results: multiprocessing.sharedctypes.SynchronizedArray = multiprocessing.Array("i", n)
+    project_dir, env_file = setup_daemon_project(short_tmp, paths)
+    # Use os.environ directly so child processes inherit (monkeypatch doesn't fork).
+    # Use os.environ directly so child processes inherit (monkeypatch doesn't fork).
+    saved = {k: os.environ.get(k) for k in ("CLAUDE_PROJECT_DIR", "CLAUDE_ENV_FILE")}
+    os.environ["CLAUDE_PROJECT_DIR"] = str(project_dir)
+    os.environ["CLAUDE_ENV_FILE"] = str(env_file)
+    try:
+        n = 5
+        barrier: multiprocessing.synchronize.Barrier = multiprocessing.Barrier(n)
+        results: multiprocessing.sharedctypes.SynchronizedArray = multiprocessing.Array("i", n)
 
-    procs = [multiprocessing.Process(target=_cold_start_worker, args=(paths, barrier, results, i)) for i in range(n)]
-    for p in procs:
-        p.start()
-    for p in procs:
-        p.join(timeout=60)
+        procs = [
+            multiprocessing.Process(target=_cold_start_worker, args=(paths, barrier, results, i)) for i in range(n)
+        ]
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join(timeout=60)
 
-    failed = [i for i in range(n) if results[i] != 0]
-    assert not failed, f"Workers {failed} raised exceptions"
-    assert _UDSConnection(paths.hook_daemon_sock).check_health()
-    assert read_pidfile(paths.hook_daemon_pidfile) > 0
+        failed = [i for i in range(n) if results[i] != 0]
+        assert not failed, f"Workers {failed} raised exceptions"
+        assert _UDSConnection(paths.hook_daemon_sock).check_health()
+        assert read_pidfile(paths.hook_daemon_pidfile) > 0
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def test_concurrent_ensure_daemon(daemon_paths: SessionPaths) -> None:

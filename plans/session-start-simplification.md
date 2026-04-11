@@ -15,6 +15,7 @@ The session start hook (`handler.py`) has grown into a monolith that:
 Replaced Python SOPS resolution with profile-configured shell env scripts.
 
 **What was done**:
+
 - Split `devinfra/ci_env.sh` into three independent scripts in `devinfra/secrets/`:
   - `_common.sh` — shared `try_export` helper + common secrets (BB key, OTEL token, Docker mTLS)
   - `cli_env.sh` — laptop: sources `_common.sh` only, preserves personal `GITHUB_TOKEN`/`KUBECONFIG`
@@ -47,12 +48,12 @@ Replaced Python SOPS resolution with profile-configured shell env scripts.
 
 Replace bespoke Python modules with shell commands declared in profile YAML.
 
-| Task | What it does | Python needed? |
-|------|-------------|----------------|
-| apt | `apt-get update && apt-get install` | No |
-| tune_rootfs | `tune2fs -m 1 /dev/vda` | No |
-| bazel warmup | `bazelisk info` | No |
-| precommit | `pre-commit install --install-hooks` | No |
+| Task         | What it does                         | Python needed? |
+| ------------ | ------------------------------------ | -------------- |
+| apt          | `apt-get update && apt-get install`  | No             |
+| tune_rootfs  | `tune2fs -m 1 /dev/vda`              | No             |
+| bazel warmup | `bazelisk info`                      | No             |
+| precommit    | `pre-commit install --install-hooks` | No             |
 
 **Model**: `background_commands` list in profile config, generic shell executor in handler,
 `after: "env_file"` for ordering. Deletes `apt.py`, `tune_rootfs.py`, `bazel_warmup.py`,
@@ -67,6 +68,7 @@ Create `.github/actions/setup-ci-env` composite action wrapping Nix + devtools +
 ### 3. Future: `ci_env.sh` as full CI setup step
 
 `ci_env.sh` is CI-exclusive — can do more than export vars:
+
 - Registry logins (`docker login`) instead of `PROPS_REGISTRY_*`/`GHCR_*` env vars
 - `GITHUB_TOKEN` in CI should be the release PAT, not the agent PAT
 - Requires auditing all in-repo consumers of these env vars before rewiring
@@ -74,7 +76,9 @@ Create `.github/actions/setup-ci-env` composite action wrapping Nix + devtools +
 ## TODOs
 
 - Double env_script resolution on laptop (direnv + daemon startup) — minor, second run is no-op
-- Container e2e test: pending verification that `test_env.sh` env script exports flow through correctly
+- Container e2e test: env script passthrough verified (E2E_TEST_SECRET in session env file). Bazel build step fails — `bazelisk` wrapper calls `python -m devinfra.claude.hook_daemon.wrappers.bazel` which was missing from wheel. Fixed by adding `wrappers` package + `bazel_lib`/`git_lib` deps to `claude_hooks_pkg`. Awaiting green run.
+- `DUCKTAPE_DOCKER_CLIENT_KEY` disabled in `_common.sh` — `docker-ci.allegedly.works` unreachable from RBE workers. Tests use local Docker daemon. TODO: re-enable when docker-ci works in cluster.
+- `bbr.py` forwards `DUCKTAPE_DOCKER_CLIENT_KEY` via `--remote_run_header` which overrides `--test_env` — can't unset from inner bazel flags alone, must unset before bbr invocation.
 
 ## Non-goals
 

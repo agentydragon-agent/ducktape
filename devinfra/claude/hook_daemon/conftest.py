@@ -11,7 +11,7 @@ import pygit2
 import pytest
 import yaml
 
-from devinfra.claude.hook_daemon.config import DefaultProfiles, HookConfig, ProfileConfig
+from devinfra.claude.hook_daemon.testing_helpers import setup_daemon_project
 from devinfra.claude.session_paths import SessionPaths
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -60,16 +60,9 @@ def daemon_paths(
     paths = SessionPaths(session_id=session_id, home=tmp_path, xdg_cache_home=tmp_path / "cache")
     (tmp_path / "cache").mkdir()
 
-    # Minimal project dir with .claude_hooks/config.yaml for daemon startup.
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-    hooks_dir = project_dir / ".claude_hooks"
-    hooks_dir.mkdir()
-    config = HookConfig(
-        profiles={"default": ProfileConfig()}, default_profiles=DefaultProfiles(cli="default", web="default")
-    )
-    (hooks_dir / "config.yaml").write_text(yaml.dump(config.model_dump(mode="json")))
+    project_dir, env_file = setup_daemon_project(tmp_path, paths)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
+    monkeypatch.setenv("CLAUDE_ENV_FILE", str(env_file))
 
     yield paths
 

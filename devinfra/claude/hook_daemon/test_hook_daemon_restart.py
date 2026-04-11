@@ -15,7 +15,7 @@ import uvicorn
 from devinfra.claude.claude_api.hooks.stop import StopInput
 from devinfra.claude.hook_daemon.client import _post_to_daemon, _UDSConnection
 from devinfra.claude.hook_daemon.models import HookRequest
-from devinfra.claude.hook_daemon.config import DefaultProfiles, HookConfig, ProfileConfig
+from devinfra.claude.hook_daemon.testing_helpers import TEST_HOOK_CONFIG
 from devinfra.claude.hook_daemon.server import app, configure
 
 _COMMON = {
@@ -28,13 +28,7 @@ _COMMON = {
 
 def _start_uvicorn_in_thread(sock_path: Path, daemon_dir: Path) -> uvicorn.Server:
     """Start uvicorn serving the daemon app on a UDS in a background thread."""
-    configure(
-        daemon_dir,
-        hook_config=HookConfig(
-            profiles={"test": ProfileConfig()}, default_profiles=DefaultProfiles(cli="test", web="test")
-        ),
-        env_script_exports="",
-    )
+    configure(daemon_dir, hook_config=TEST_HOOK_CONFIG, env_script_exports="")
     config = uvicorn.Config(app=app, uds=str(sock_path), log_level="warning")
     server = uvicorn.Server(config)
 
