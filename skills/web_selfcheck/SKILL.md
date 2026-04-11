@@ -46,6 +46,7 @@ nix profile list 2>/dev/null | grep -E 'devtools|claude-hooks' | head -5 || echo
 found, devtools not in profile list.
 
 **Fix**: re-run setup from the Claude Code web UI setup command:
+
 ```
 bash ducktape/devinfra/claude/web_setup.sh
 ```
@@ -86,6 +87,7 @@ This means the installed `claude-hooks` package is stale — it still calls
 refactored to use standalone `web.yaml`. See check #3.
 
 **Fix if env file is missing**: re-trigger SessionStart on the live daemon:
+
 ```bash
 LIVE=<live_session_id>
 SOCK=/tmp/claude-hd/$LIVE/d.sock
@@ -104,6 +106,7 @@ source ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh
 ```
 
 **Manual fallback** (if daemon is down or still broken after fix):
+
 ```bash
 source /home/user/ducktape/devinfra/secrets/web_env.sh
 mkdir -p ~/.config/bazel
@@ -154,6 +157,7 @@ to `devel`. If recent `devinfra/claude/` commits haven't been released yet,
 or if the pin sync hasn't run, the installed package will be stale.
 
 **Fix**:
+
 1. Check if a release was published for the current code:
    - Look at GitHub Actions → `release.yml` runs on the `devel` branch
    - Check if `//:release_claude_hooks` completed after the relevant commit
@@ -197,6 +201,7 @@ done
 **Fix**: if `SOPS_AGE_KEY` is missing, the session didn't receive the age
 private key at startup. This is injected from the `claude-sandbox` k8s Secret
 by the container runtime. Check whether the k8s Secret exists:
+
 ```bash
 kubectl -n claude-sandbox get secret claude-web-age-key 2>/dev/null
 ```
@@ -208,6 +213,7 @@ kubectl -n claude-sandbox get secret claude-web-age-key 2>/dev/null
 Run each live test and capture HTTP status / response content.
 
 #### BuildBuddy API Key
+
 ```bash
 BB_KEY=$(sops -d /home/user/ducktape/secrets/buildbuddy.yaml 2>/dev/null \
   | awk '/buildbuddy_api_key:/ {print $2}')
@@ -227,6 +233,7 @@ Expected: `200` (or `400` for malformed proto — means auth passed).
 `secrets/buildbuddy.yaml`, push to `devel`, wait for `sync-pins.yml`.
 
 #### GitHub Agent PAT (`agentydragon-agent`)
+
 ```bash
 GH_TOKEN=$(sops -d /home/user/ducktape/secrets/github-pat-agentydragon-agent.yaml 2>/dev/null \
   | awk '/github_token:/ {print $2}')
@@ -242,6 +249,7 @@ Developer Settings → Personal Access Tokens), re-encrypt into
 `secrets/github-pat-agentydragon-agent.yaml`, push to `devel`.
 
 #### GitHub CI Read PAT (`agentydragon` fine-grained)
+
 ```bash
 GH_CI=$(sops -d /home/user/ducktape/secrets/github-ci-read-pat.yaml 2>/dev/null \
   | awk '/github_token:/ {print $2}')
@@ -252,6 +260,7 @@ curl -s -H "Authorization: Bearer $GH_CI" https://api.github.com/user \
 Expected: `login: agentydragon`.
 
 #### K8s Service Account Token
+
 ```bash
 K8S_TOKEN=$(sops -d /home/user/ducktape/secrets/claude-web-k8s-token.yaml 2>/dev/null \
   | awk '/k8s_token:/ {print $2}')
@@ -265,6 +274,7 @@ updated yet.
 
 **Note**: this token is **auto-rotated by an in-cluster CronJob**. The SOPS
 file should be updated automatically. If it returns 401, check:
+
 ```bash
 # Check CronJob last run and next run
 kubectl -n default get cronjob claude-web-token-rotator -o yaml 2>/dev/null | grep -E 'lastScheduleTime|schedule'
@@ -272,6 +282,7 @@ kubectl -n default get jobs -l app=claude-web-token-rotator 2>/dev/null | tail -
 ```
 
 #### OTLP Bearer Token (Grafana Alloy)
+
 ```bash
 OTLP_TOKEN=$(sops -d /home/user/ducktape/secrets/alloy-otlp-bearer-token.yaml 2>/dev/null \
   | awk '/token:/ {print $2}')
