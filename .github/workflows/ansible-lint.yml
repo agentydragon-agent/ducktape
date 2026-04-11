@@ -4,7 +4,15 @@
 name: Ansible-lint
 
 on:
-  workflow_call:
+  push:
+    branches: [main, master, devel]
+    paths:
+      - "ansible/**"
+      - ".github/workflows/ansible-lint.yml"
+  pull_request:
+    paths:
+      - "ansible/**"
+      - ".github/workflows/ansible-lint.yml"
   workflow_dispatch:
 
 jobs:

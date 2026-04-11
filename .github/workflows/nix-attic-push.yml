@@ -5,7 +5,9 @@
 name: Nix Attic push
 
 on:
-  workflow_call:
+  push:
+    branches: [main, master, devel]
+  workflow_dispatch:
 
 jobs:
   nix-attic-push:

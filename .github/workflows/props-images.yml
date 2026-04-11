@@ -34,60 +34,22 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
 
       - uses: ./.github/actions/setup-ci-secrets
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ env.BUILDBUDDY_API_KEY }}
-          rbe_image: ${{ inputs.rbe_image }}
-
-      - name: Login to Props Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ vars.PROPS_REGISTRY_URL }}
-          username: ${{ env.PROPS_REGISTRY_USERNAME }}
-          password: ${{ env.PROPS_REGISTRY_PASSWORD }}
-
-      - name: Build and load agent images
-        run: |
-          bazel run //props/agents/critic:load
-          bazel run //props/agents/grader:load
-          bazel run //props/agents/critic_dev/improve:load
-          bazel run //props/agents/critic_dev/optimize:load
-          bazel run //props/agents/critic/variants:contract_truthfulness_load
-          bazel run //props/agents/critic/variants:dead_code_load
-          bazel run //props/agents/critic/variants:flag_propagation_load
-          bazel run //props/agents/critic/variants:high_recall_load
-          bazel run //props/agents/critic/variants:verbose_docs_load
-
       - name: Push agent images
-        env:
-          REGISTRY: ${{ vars.PROPS_REGISTRY_URL }}
-          SHA: ${{ github.sha }}
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "PR build — skipping push"
-            exit 0
-          fi
-
-          push_image() {
-            local local_tag="$1" remote_repo="$2"
-            shift 2
-            local remote_tags=("$@")
-            for tag in "${remote_tags[@]}"; do
-              docker tag "$local_tag" "$REGISTRY/$remote_repo:$tag"
-              docker push --quiet "$REGISTRY/$remote_repo:$tag"
-            done
-          }
-
-          push_image critic:latest critic latest "$SHA"
-          push_image grader:latest grader latest "$SHA"
-          push_image critic_dev_improve:latest critic_dev_improve latest "$SHA"
-          push_image critic_dev_optimize:latest critic_dev_optimize latest "$SHA"
-
-          for variant in contract_truthfulness dead_code flag_propagation high_recall verbose_docs; do
-            push_image "critic:$variant" critic "$variant" "${variant}-${SHA}"
-          done
+        uses: ./.github/actions/bb-remote
+        with:
+          args: run //props/agents:push_images
+          env_overrides: |
+            PROPS_REGISTRY_URL=${{ vars.PROPS_REGISTRY_URL }}
+            PROPS_REGISTRY_USERNAME=${{ env.PROPS_REGISTRY_USERNAME }}
+            PROPS_REGISTRY_PASSWORD=${{ env.PROPS_REGISTRY_PASSWORD }}

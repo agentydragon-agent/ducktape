@@ -9,8 +9,13 @@
 name: OpenClaw Image
 
 on:
+  push:
+    branches: [main, master, devel]
+    paths:
+      - "openclaw/**"
+      - "airlock/openclaw/**"
+      - ".github/workflows/openclaw-image.yml"
   workflow_dispatch:
-  workflow_call:
 
 concurrency:
   group: openclaw-image-${{ github.ref }}

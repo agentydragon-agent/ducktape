@@ -1,15 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-
-# Source of truth for CI workflow definitions
-exports_files(["workflows.yaml"])
-
-# Generated workflow files consumed by test_generate_ci
-filegroup(
-    name = "generated_workflows",
-    srcs = [
-        "//.github/workflows:ci.yml",
-    ],
-)
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # === Base modules (no internal deps) ===
 
@@ -20,17 +9,6 @@ py_library(
     deps = [
         "//util:env",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "models",
-    srcs = ["models.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//util/bazel:workspace",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -60,34 +38,6 @@ py_library(
         "//util/bazel:workspace",
         "@pypi//pydantic",
         "@pypi//pygit2",
-    ],
-)
-
-py_library(
-    name = "ci_decide",
-    srcs = ["ci_decide.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":diff_utils",
-        ":github_actions",
-        ":models",
-        "//util:fmt",
-        "@pypi//pydantic",
-        "@pypi//pygit2",
-    ],
-)
-
-py_library(
-    name = "generate_ci",
-    srcs = ["generate_ci.py"],
-    data = [":workflows.yaml"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":github_actions",
-        ":models",
-        "//devinfra:prettier",
-        "//util/bazel:workspace",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -136,32 +86,4 @@ py_binary(
     name = "check_release_bin",
     main_module = "devinfra.ci.check_release",
     deps = [":check_release"],
-)
-
-py_binary(
-    name = "ci_decide_bin",
-    main_module = "devinfra.ci.ci_decide",
-    deps = [":ci_decide"],
-)
-
-py_binary(
-    name = "generate_ci_bin",
-    main_module = "devinfra.ci.generate_ci",
-    deps = [":generate_ci"],
-)
-
-# === Tests ===
-
-py_test(
-    name = "test_generate_ci",
-    srcs = ["test_generate_ci.py"],
-    data = [
-        ":generated_workflows",
-        ":workflows.yaml",
-    ],
-    deps = [
-        ":generate_ci",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
 )

@@ -97,9 +97,9 @@ use `oci_image` + `ghcr_push`.
 ## CI Configuration
 
 All CI runs through GitHub Actions → `bbr` (BuildBuddy RBE). No separate
-`buildbuddy.yaml`. `.github/workflows/ci.yml` is auto-generated from
-`devinfra/ci/workflows.yaml` — regenerate with
-`bb run --remote_executor="" //devinfra/ci:generate_ci_bin`.
+`buildbuddy.yaml`. `.github/workflows/ci.yml` orchestrates the dependency chain
+(rbe-image → bazel-ci → release/push-images/props-images). Independent workflows
+(pre-commit, ansible-lint, nix-attic-push, openclaw-image) have their own triggers.
 
 ## Refactoring
 

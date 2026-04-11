@@ -1,0 +1,50 @@
+# Wrapper around `bb remote` that ensures --config=rbe is always passed.
+#
+# We use `bb remote` directly instead of `bbr` (devinfra/bbr.py) in CI to
+# avoid a chicken-and-egg: bbr reads the RBE image pin from
+# devinfra/image_pins.json, but CI workflows may need to build/push the RBE
+# image itself. This action centralizes the --config=rbe flag so individual
+# workflows don't forget it (without RBE, actions run in linux-sandbox on the
+# runner VM which lacks tools like cpio).
+name: bb remote
+description: Run a Bazel command via bb remote with RBE enabled
+
+inputs:
+  args:
+    description: "Bazel subcommand and arguments (e.g. 'build //...' or 'run //target')"
+    required: true
+  env_overrides:
+    description: >
+      Newline-separated KEY=VALUE pairs forwarded to the runner via
+      x-buildbuddy-platform.env-overrides. Values from setup-ci-secrets are
+      already masked via ::add-mask:: so they won't leak in logs.
+    required: false
+    default: ""
+  disk_bytes:
+    description: "Runner disk size in bytes (EstimatedFreeDiskBytes)"
+    required: false
+    default: "50000000000"
+  compute_units:
+    description: "Runner vCPU count (EstimatedComputeUnits)"
+    required: false
+    default: "4"
+
+runs:
+  using: composite
+  steps:
+    - name: bb remote
+      shell: bash
+      run: |
+        ENV_ARGS=()
+        while IFS= read -r line; do
+          [[ -n "$line" ]] && ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=$line")
+        done <<< "${{ inputs.env_overrides }}"
+
+        bb remote \
+          --config=rbe \
+          --runner_exec_properties=EstimatedFreeDiskBytes=${{ inputs.disk_bytes }} \
+          --runner_exec_properties=EstimatedComputeUnits=${{ inputs.compute_units }} \
+          --runner_exec_properties=workload-isolation-type=firecracker \
+          --runner_exec_properties=init-dockerd=true \
+          "${ENV_ARGS[@]}" \
+          ${{ inputs.args }}
