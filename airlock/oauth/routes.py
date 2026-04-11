@@ -33,7 +33,7 @@ def create_oauth_router(providers: dict[str, Provider], k8s_store: K8sTokenStore
     """Create a FastAPI router for OAuth authorization/callback flows."""
     router = APIRouter(prefix="/oauth", tags=["oauth"])
 
-    @router.get("/authorize/{provider_name}")
+    @router.get("/authorize/{provider_name}", response_model=None)
     async def authorize(provider_name: str) -> RedirectResponse | _PlaidLinkResponse:
         provider = providers.get(provider_name)
         if provider is None:
@@ -46,7 +46,7 @@ def create_oauth_router(providers: dict[str, Provider], k8s_store: K8sTokenStore
         url = provider.build_authorize_url(state)
         return RedirectResponse(url)
 
-    @router.get("/callback/{provider_name}")
+    @router.get("/callback/{provider_name}", response_model=None)
     async def callback_get(provider_name: str, request: Request) -> RedirectResponse | _PlaidLinkResponse:
         provider = providers.get(provider_name)
         if provider is None:

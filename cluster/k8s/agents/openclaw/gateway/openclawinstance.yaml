@@ -211,6 +211,12 @@ spec:
                 input: ["text", "image"]
                 contextWindow: 200000
                 maxTokens: 64000
+      tools:
+        # Built-in exec is disabled. The Airlock plugin registers an exec
+        # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
+        # injection, replacing the node-host exec path entirely.
+        exec:
+          security: deny
       plugins:
         entries:
           airlock:
@@ -220,12 +226,6 @@ spec:
                 url: "http://127.0.0.1:8767/mcp/"
               execServer:
                 url: "http://127.0.0.1:8766/mcp"
-      tools:
-        # Built-in exec is disabled. The Airlock plugin registers an exec
-        # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
-        # injection, replacing the node-host exec path entirely.
-        exec:
-          enabled: false
       gateway:
         trustedProxies:
           - "10.244.0.0/16"
