@@ -2,6 +2,10 @@
 # Web agent environment: common secrets + machine-user identity + k8s access.
 # Usage: eval "$(devinfra/secrets/web_env.sh)"
 #
+# Age recipients: claude-web (+ admin via _common.sh)
+#   github-pat-agentydragon-agent.yaml: admin, all user keys, claude-web, ci
+#   claude-web-k8s-token.yaml:          admin, claude-web
+#
 # Consumed by:
 #   - Session start hook (web profile)
 

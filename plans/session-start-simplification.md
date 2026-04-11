@@ -325,6 +325,24 @@ Added TODO to `session.py`. Implementation would attach a logging handler that p
 - **`SopsSecretSource` import removed** — callers must use `SecretSource` (already done)
 - **CI workflows change step structure** — PRs in flight may need rebase
 
+## Future: `ci_env.sh` as a full CI setup step (not just env vars)
+
+`ci_env.sh` is only sourced by `.github/actions/setup-ci-secrets` — never by hooks
+or `.envrc`. So it can do more than export vars:
+
+- **Registry logins instead of env vars**: `PROPS_REGISTRY_*` and `GHCR_*` are only
+  used for `docker login` / `crane push`. `ci_env.sh` could do the `docker login`
+  directly and skip the env vars entirely.
+- **`GITHUB_TOKEN` should be the release PAT**: CI doesn't need the agent PAT
+  (`agentydragon-agent`). It should get `GH_RELEASE_PAT` as `GITHUB_TOKEN` (or just
+  export `GH_RELEASE_PAT` and let workflows use it explicitly).
+- **General principle**: `ci_env.sh` becomes a CI-exclusive setup step — can write
+  to docker config, set up credentials files, etc. Not limited to `export` lines.
+- **Env var rewiring**: Removing env vars like `PROPS_REGISTRY_*`, `GHCR_*` in favor
+  of `docker login` requires auditing all in-repo consumers (workflow files, Python
+  code, Bazel rules) that currently read those env vars. Same for changing which PAT
+  becomes `GITHUB_TOKEN`.
+
 ## Open Questions
 
 2. **apt removal timeline**: If apt install is going away with BB runners, should we bother moving it to a background_command or just delete it now?

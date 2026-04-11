@@ -2,6 +2,11 @@
 # Shared helpers and common secrets for env scripts.
 # Not intended to be run directly — sourced by cli_env.sh, web_env.sh, ci_env.sh.
 #
+# Age recipients that can decrypt secrets in this file:
+#   buildbuddy.yaml:               admin, all user keys, claude-web, ci
+#   alloy-otlp-bearer-token.yaml:  admin, claude-web
+#   docker-ci/client-key.sops.pem: admin, claude-web, ci
+#
 # On failure, writes diagnostics to stderr. Stdout contains only valid
 # export lines — safe to eval even on partial failure.
 set -euo pipefail

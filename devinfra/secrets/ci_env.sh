@@ -2,6 +2,10 @@
 # CI environment: common secrets + machine-user identity + registry/release credentials.
 # Usage: eval "$(devinfra/secrets/ci_env.sh)"
 #
+# Age recipients: ci (+ admin via _common.sh)
+#   github-pat-agentydragon-agent.yaml: admin, all user keys, claude-web, ci
+#   secrets/ci/*.sops.yaml:             admin, ci
+#
 # Consumed by:
 #   - .github/actions/setup-ci-secrets (GitHub Actions)
 
