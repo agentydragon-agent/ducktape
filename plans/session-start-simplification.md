@@ -122,18 +122,18 @@ separating client/server/protocol definitions so the statusline package doesn't 
 the full daemon dependency tree. Low priority — the dual install works, just wastes a
 Nix closure.
 
-### Per-profile session context
+### Per-profile session context (done)
 
-`context_template` field is wired up (profile consolidation). Remaining work:
+Split `context.mako` into `cli_context.mako` and `web_context.mako`. Moved
+secrets/kubeconfig sections from shared template into per-profile templates.
+Shared template now only renders structural sections. Bazel remote proxy info
+deduplicated into shared template. `DUCKTAPE_CI_READ_GITHUB_TOKEN` wired via
+SOPS + `web_env.sh` (gated on `os.environ.get` in template).
 
-- Split `.claude_hooks/templates/context.mako` into `cli_context.mako` and `web_context.mako`
-- Move secrets/kubeconfig sections from shared `session_context.mako` into per-profile templates
-- Audit shared template for accuracy — some sections describe web-only capabilities generically
+### Simplify session start recovery doc (done)
 
-### Simplify session start recovery doc
-
-`session_start_recovery.md` still references SOPS. Update Step 3 to source
-`devinfra/secrets/web_env.sh` directly.
+Updated `session_start_recovery.md`: references `.claude_hooks/web.yaml`
+instead of deleted `config.yaml`.
 
 ### `env_script_exports` threading
 
