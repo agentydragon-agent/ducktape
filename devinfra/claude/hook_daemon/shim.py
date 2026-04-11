@@ -77,7 +77,11 @@ def main() -> None:
 
     argv = _report_shim(shim_name, session_id, paths)
 
-    real = resolve_real_binary(shim_name)
+    try:
+        real = resolve_real_binary(shim_name)
+    except FileNotFoundError:
+        print(f"{shim_name}: command not found", file=sys.stderr)
+        raise SystemExit(127)
     logger.info("Execing %s", real)
     os.execvp(real, [real, *argv[1:]])
 
