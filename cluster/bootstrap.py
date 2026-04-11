@@ -12,6 +12,7 @@ bootstrap, then migrate state to in-cluster PG with tofu init -migrate-state.
 """
 
 import argparse
+import base64
 import json
 import logging
 import os
@@ -48,12 +49,12 @@ PERSISTENT_AUTH_TARGETS = [
     "local_file.nebula_ca_crt",
     "local_sensitive_file.nebula_ca_key",
     "null_resource.nebula_node_cert",
+    "talos_machine_secrets.cluster",
 ]
 
 # Infrastructure resources — VMs, Talos config, Cilium, k8s secrets.
 # Applied after persistent-auth, before Flux.
 INFRA_TARGETS = [
-    "talos_machine_secrets.cluster",
     "talos_image_factory_schematic.hcloud",
     "talos_image_factory_schematic.proxmox",
     "terraform_data.talos_hcloud_image",
@@ -140,7 +141,47 @@ def deploy_persistent_auth() -> None:
 
     targets = [f"-target={t}" for t in PERSISTENT_AUTH_TARGETS]
     tofu("apply", "-auto-approve", *targets, excludes=[])
+
+    _export_machine_secrets()
     log.info("Persistent auth ready")
+
+
+def _export_machine_secrets() -> None:
+    """Export machine secrets to SOPS and derive k8s-ca.crt + k8s-worker.yaml.
+
+    SOPS file is the durable source of truth for machine secrets — survives
+    tofu state loss. k8s-ca.crt and k8s-worker.yaml are derived from it.
+    """
+    secrets_dir = (SCRIPT_DIR / ".." / "secrets").resolve()
+    sops_file = secrets_dir / "talos-machine-secrets.sops.yaml"
+    ca_crt_file = secrets_dir / "k8s-ca.crt"
+    worker_file = secrets_dir / "k8s-worker.yaml"
+    repo_root = SCRIPT_DIR / ".."
+
+    # Get machine secrets JSON from tofu output
+    result = run([_TOFU_BIN, "output", "-raw", "machine_secrets_json"], cwd=TF_DIR, capture=True, check=False)
+    if result.returncode != 0:
+        log.warning("Could not read machine_secrets_json output — skipping export")
+        return
+
+    secrets = json.loads(result.stdout)
+
+    # 1. Export full machine secrets to SOPS
+    log.info("Exporting machine secrets to SOPS...")
+    sops_file.write_text(result.stdout)
+    run(["sops", "-e", "-i", str(sops_file)], cwd=repo_root)
+    log.info("  → %s", sops_file)
+
+    # 2. Derive k8s-ca.crt (plaintext PEM)
+    ca_pem = base64.b64decode(secrets["certs"]["k8s"]["cert"]).decode()
+    ca_crt_file.write_text(ca_pem)
+    log.info("  → %s", ca_crt_file)
+
+    # 3. Derive k8s-worker.yaml (SOPS-encrypted bootstrap token)
+    token = secrets["secrets"]["bootstrap_token"]
+    worker_file.write_text(f"k8s_bootstrap_token: {token}\n")
+    run(["sops", "-e", "-i", str(worker_file)], cwd=repo_root)
+    log.info("  → %s", worker_file)
 
 
 def deploy_infrastructure() -> None:

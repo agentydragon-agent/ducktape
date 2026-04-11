@@ -106,6 +106,7 @@ backend. Resources have `lifecycle { prevent_destroy = true }`.
 | `proxmox_virtual_environment_user_token.persistent`               | L2: users                                     | API tokens for CSI + terraform                    | L3: Proxmox VM creation; L6: CSI driver |
 | `local_file.nebula_ca_crt` / `local_sensitive_file.nebula_ca_key` | L1: `secrets/nebula/ca.{crt,sops.key}`        | CA cert/key on disk                               | L2: node cert signing                   |
 | `null_resource.nebula_node_cert` (5 Talos nodes)                  | L2: CA on disk                                | Per-node cert+key at `nebula-certs/`              | L3: Talos machine config (embedded)     |
+| `talos_machine_secrets.cluster`                                   | `var.talos_version`                           | CA keypairs, bootstrap token, etcd certs          | L3: all Talos machine configs           |
 | `kubernetes_namespace.flux_system`                                | L3: kubeconfig                                | `flux-system` namespace                           | L2: SOPS age secret; L5: Flux           |
 | `kubernetes_secret.sops_age_cluster_secrets`                      | L1: `secrets/shared/cluster-secrets-age.yaml` | k8s secret in flux-system                         | L5: Flux SOPS decryption                |
 
@@ -121,14 +122,13 @@ persistent-auth targets regenerates them. Update the SOPS CSI secret.
 
 Created by `tofu apply` Phase 2.
 
-| Resource                                           | Key Inputs                                        | What It Produces                                     |
-| -------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
-| `talos_machine_secrets.cluster`                    | `var.talos_version`                               | Bootstrap token, machine certs (fresh per lifecycle) |
-| `hcloud_server.vps` (4x)                           | L0: hcloud token, Talos image                     | 2 CP + 2 worker VPS nodes                            |
-| `proxmox_virtual_environment_vm.talos`             | L0: Proxmox token, Talos disk                     | 1 CP Proxmox VM                                      |
-| `talos_machine_configuration_apply.*`              | Machine secrets, L2: nebula certs, config patches | Talos config pushed to nodes                         |
-| `talos_machine_bootstrap.cluster`                  | Machine config applied                            | etcd initialized, k8s API available                  |
-| `local_file.kubeconfig` / `local_file.talosconfig` | Bootstrap output                                  | Cluster access files                                 |
+| Resource                                           | Key Inputs                                        | What It Produces                    |
+| -------------------------------------------------- | ------------------------------------------------- | ----------------------------------- |
+| `hcloud_server.vps` (4x)                           | L0: hcloud token, Talos image                     | 2 CP + 2 worker VPS nodes           |
+| `proxmox_virtual_environment_vm.talos`             | L0: Proxmox token, Talos disk                     | 1 CP Proxmox VM                     |
+| `talos_machine_configuration_apply.*`              | L2: machine secrets, nebula certs, config patches | Talos config pushed to nodes        |
+| `talos_machine_bootstrap.cluster`                  | Machine config applied                            | etcd initialized, k8s API available |
+| `local_file.kubeconfig` / `local_file.talosconfig` | Bootstrap output                                  | Cluster access files                |
 
 **If VPS nodes are lost**: `tofu apply` recreates them. Machine config is
 re-applied, nodes rejoin etcd (if quorum exists) or bootstrap fresh.
@@ -176,37 +176,36 @@ decrypted by Flux. See [App Credentials](#app-credentials) for the full list.
 
 wyrm2 and rugged join the cluster via kubelet TLS bootstrap over Nebula mesh.
 
-| What They Need           | Source                                       | Delivery                                                                |
-| ------------------------ | -------------------------------------------- | ----------------------------------------------------------------------- |
-| Nebula host cert         | Generated via `nebula-cert sign` (see below) | `secrets/nebula/{host}.crt` (plaintext) → `nixos-rebuild switch`        |
-| Nebula host key          | Generated via `nebula-cert sign` (see below) | `secrets/nebula/{host}.sops.key` (SOPS binary) → `nixos-rebuild switch` |
-| Nebula CA cert           | L1: `secrets/nebula/ca.crt`                  | Plaintext PEM, deployed via `environment.etc`                           |
-| k8s bootstrap kubeconfig | L3: `kubeconfig` + bootstrap token           | Manual copy → `secrets/k8s-worker.yaml` SOPS → `nixos-rebuild switch`   |
-| k8s CA cert              | L3: Talos machine secrets                    | Extracted from kubeconfig or tofu output                                |
+| What They Need           | Source                                       | Delivery                                                                        |
+| ------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------- |
+| Nebula host cert         | Generated via `nebula-cert sign` (see below) | `secrets/nebula/{host}.crt` (plaintext) → `nixos-rebuild switch`                |
+| Nebula host key          | Generated via `nebula-cert sign` (see below) | `secrets/nebula/{host}.sops.key` (SOPS binary) → `nixos-rebuild switch`         |
+| Nebula CA cert           | L1: `secrets/nebula/ca.crt`                  | Plaintext PEM, deployed via `environment.etc`                                   |
+| k8s bootstrap kubeconfig | L2: machine secrets (bootstrap token)        | `secrets/k8s-worker.yaml` (SOPS, auto-updated by bootstrap) → sops-nix          |
+| k8s CA cert              | L2: machine secrets (k8s CA cert)            | `secrets/k8s-ca.crt` (plaintext, auto-updated by bootstrap) → `environment.etc` |
 
-**After fresh bootstrap** (new cluster CA / new machine secrets):
+**After fresh bootstrap** (same persisted machine secrets):
 
-1. Update nebula + k8s secrets:
-   - Generate new nebula cert via `nebula-cert sign` (see <secrets.md> "Nebula Certs for Non-Talos Nodes"),
-     commit `.crt` and `.sops.key` to `secrets/nebula/`
-   - `secrets/k8s-ca.crt` — new CA cert PEM (`tofu output -raw k8s_ca_cert | base64 -d`)
-   - `secrets/k8s-worker.yaml` — new `k8s_bootstrap_token` (from `tofu output -raw k8s_bootstrap_token`)
-2. `nixos-rebuild switch` on each NixOS worker
-3. Restart nebula, haproxy, kubelet: `sudo systemctl restart nebula haproxy kubelet`
-4. **Delete stale kubelet TLS state** — kubelet caches a kubeconfig with certs
-   issued by the old cluster CA at `/var/lib/kubelet/kubelet.conf` and
-   `/var/lib/kubelet/pki/`. These must be removed so kubelet re-bootstraps
-   with the new CA:
+Since machine secrets are persistent (L2), `k8s-ca.crt` and `k8s-worker.yaml` are
+auto-updated by the bootstrap script. Workers rejoin without manual intervention:
+
+1. Commit updated `secrets/k8s-ca.crt` and `secrets/k8s-worker.yaml` (if changed)
+2. `nixos-rebuild switch` on each NixOS worker (picks up any cert/token changes)
+3. Verify: `kubectl get nodes` should show the worker as `Ready` after ~30s
+
+**After bootstrap with NEW machine secrets** (e.g., lost tofu state, fresh seed):
+
+If the CA changed, existing kubelet TLS state is invalid:
+
+1. `nixos-rebuild switch` on each NixOS worker
+2. Delete stale kubelet TLS state and restart:
 
    ```bash
    sudo rm /var/lib/kubelet/kubelet.conf /var/lib/kubelet/pki/*
    sudo systemctl restart kubelet
    ```
 
-   Without this, kubelet fails with `x509: failed to unmarshal elliptic curve
-point` or `certificate signed by unknown authority`.
-
-5. Verify: `kubectl get nodes` should show the worker as `Ready` after ~30s
+3. Verify: `kubectl get nodes` should show the worker as `Ready` after ~30s
 
 **If only nebula certs rotate** (same cluster CA): steps 1-3 only, skip step 4.
 

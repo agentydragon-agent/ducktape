@@ -147,3 +147,9 @@ output "k8s_bootstrap_token" {
   value       = talos_machine_secrets.cluster.machine_secrets.secrets.bootstrap_token
   sensitive   = true
 }
+
+output "machine_secrets_json" {
+  description = "Full machine secrets as JSON (for SOPS backup)"
+  value       = jsonencode(talos_machine_secrets.cluster.machine_secrets)
+  sensitive   = true
+}
