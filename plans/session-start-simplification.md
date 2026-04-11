@@ -81,9 +81,28 @@ server-side logic:
 
 ### CI workflow deduplication
 
-Create `.github/actions/setup-ci-env` composite action wrapping Nix + devtools + secrets + optional Bazel setup. Extract image digest pinning into reusable action.
+Target: 3 setup actions (down from 7):
 
-**Inconsistencies to fix**: missing `setup-bazel` in `push-images.yml`/`release.yml`, inline Python setup in `ansible-lint.yml`, stale `actions/checkout@v4` in `freecad-test-image.yml`.
+| Action               | Does what                                                                       |
+| -------------------- | ------------------------------------------------------------------------------- |
+| `setup-nix-devtools` | **New.** Nix + `nix profile install .#devtools` (replaces 5 inline copies)      |
+| `setup-ci-secrets`   | SOPS via `ci_env.sh` (unchanged)                                                |
+| `setup-bazel`        | BuildBuddy config + repo cache (inline `setup-buildbuddy` + `bazel-repo-cache`) |
+
+**Delete**: `setup-buildbuddy` (folded into setup-bazel), `bazel-repo-cache` (same),
+`setup-python-env` (only used by pre-commit, redundant — Python comes from devtools),
+`setup-nix-direnv` (used by nothing).
+
+**Workflow fixes**:
+
+- `push-images.yml`, `release.yml`: use `setup-nix-devtools` + `setup-bazel` instead of inlining
+- `bazel-ci.yml`, `pre-commit.yml`, `copilot-setup-steps.yml`: use `setup-nix-devtools`
+- `pre-commit.yml`: drop `setup-python-env` step
+- `freecad-test-image.yml`: `actions/checkout@v4` → `@v6`
+- `ansible-lint.yml`: fine as-is (uses `setup-python` only, no Nix needed)
+
+**Lower priority**: extract image digest pinning from `freecad-test-image.yml` +
+`rbe-image.yml` into shared action/script (only 2 files).
 
 ### Profile config consolidation
 
