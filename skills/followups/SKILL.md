@@ -3,8 +3,8 @@ name: followups
 description: >
   Surface pending followups, natural extensions, incomplete migrations, code
   quality issues, and "what's next" suggestions. Verify session work is on disk.
-  Use when user says "bt", "backtrace", "stack", "where are we", or asks about
-  current progress on a multi-step task.
+  Use when wrapping up a task or session, or when user asks "what's next",
+  "anything else", "what did we miss".
 allowed-tools: Bash, Read, Glob, Grep, Agent, AskUserQuestion
 ---
 
