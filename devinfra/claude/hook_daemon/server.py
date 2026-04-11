@@ -136,10 +136,9 @@ def _extract_git_subcommand(args: list[str]) -> tuple[str | None, list[str]]:
     i = 0
     while i < len(args):
         arg = args[i]
-        if arg.startswith("--") and "=" in arg:
-            if arg.split("=", 1)[0] in _GIT_GLOBAL_VALUE_OPTIONS:
-                i += 1
-                continue
+        if arg.startswith("--") and "=" in arg and arg.split("=", 1)[0] in _GIT_GLOBAL_VALUE_OPTIONS:
+            i += 1
+            continue
         if arg in _GIT_GLOBAL_VALUE_OPTIONS:
             i += 2
             continue

@@ -254,15 +254,18 @@ def test_circuit_breaker_increments_count(daemon_paths: SessionPaths) -> None:
 
     _record_startup_failure(daemon_dir)
     f1 = _read_startup_failure(daemon_dir)
-    assert f1 is not None and f1.consecutive_failures == 1
+    assert f1 is not None
+    assert f1.consecutive_failures == 1
 
     _record_startup_failure(daemon_dir)
     f2 = _read_startup_failure(daemon_dir)
-    assert f2 is not None and f2.consecutive_failures == 2
+    assert f2 is not None
+    assert f2.consecutive_failures == 2
 
     _record_startup_failure(daemon_dir)
     f3 = _read_startup_failure(daemon_dir)
-    assert f3 is not None and f3.consecutive_failures == 3
+    assert f3 is not None
+    assert f3.consecutive_failures == 3
 
 
 def test_circuit_breaker_noop_when_no_failures(daemon_paths: SessionPaths) -> None:

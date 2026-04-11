@@ -156,7 +156,7 @@ async def _run_background_command(
         else:
             session.post_message(f"Task [{cmd.name}] completed successfully.")
     except TimeoutError:
-        logger.error("Background command %s timed out after %ds", cmd.name, cmd.timeout)
+        logger.exception("Background command %s timed out after %ds", cmd.name, cmd.timeout)
         session.post_message(f"Task [{cmd.name}] failed, see hook daemon logs for details.")
     except Exception:
         logger.exception("Background command %s failed", cmd.name)

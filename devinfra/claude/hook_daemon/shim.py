@@ -10,6 +10,7 @@ wrapper at install time by shim_install.install().
 import logging
 import os
 import sys
+from pathlib import Path
 
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.hook_daemon.client import send_shim_exec
@@ -50,7 +51,7 @@ def _report_shim(shim: str, session_id: str, paths: SessionPaths) -> list[str]:
     On block: prints message to stderr and exits 1.
     On daemon unreachable: logs error, returns original sys.argv (fallback).
     """
-    report = ShimExecRequest(shim=shim, session_id=session_id, cwd=os.getcwd(), argv=sys.argv, env=dict(os.environ))
+    report = ShimExecRequest(shim=shim, session_id=session_id, cwd=str(Path.cwd()), argv=sys.argv, env=dict(os.environ))
     response = send_shim_exec(report, paths)
     if response is None:
         return sys.argv  # Fallback: daemon unreachable

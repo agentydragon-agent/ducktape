@@ -109,10 +109,7 @@ def test_cli_nix_without_nixpkgs(
 def test_cli_with_buildbuddy(
     snapshot: SnapshotAssertion, cli_platform: Callable[..., platform_detect.PlatformInfo]
 ) -> None:
-    result = _render(
-        platform=cli_platform(),
-        buildbuddy_configured=True,
-    )
+    result = _render(platform=cli_platform(), buildbuddy_configured=True)
     assert result == snapshot
 
 
@@ -122,11 +119,7 @@ def test_cli_with_buildbuddy(
 def test_web_no_nix(
     snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
 ) -> None:
-    result = _render(
-        platform=web_platform,
-        proxy=proxy,
-        buildbuddy_configured=True,
-    )
+    result = _render(platform=web_platform, proxy=proxy, buildbuddy_configured=True)
     assert result == snapshot
 
 
