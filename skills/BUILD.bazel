@@ -24,6 +24,7 @@ pkg_tar(
         "//skills/superforecaster:superforecaster_tar",
         "//skills/update_deps:update_deps_tar",
         "//skills/verify_docs:verify_docs_tar",
+        "//skills/web_selfcheck:web_selfcheck_tar",
     ],
 )
 
