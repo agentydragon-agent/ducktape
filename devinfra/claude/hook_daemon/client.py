@@ -4,6 +4,7 @@ Sends hook RPCs to the daemon over a Unix domain socket. If the daemon is
 unreachable, forks a new one and retries.
 """
 
+import datetime
 import fcntl
 import logging
 import os
@@ -14,6 +15,7 @@ from pathlib import Path
 
 import httpx
 from filelock import FileLock
+from pydantic import BaseModel
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
@@ -24,6 +26,18 @@ logger = logging.getLogger(__name__)
 
 # How long to wait for the daemon socket to appear after starting the daemon.
 _DAEMON_STARTUP_TIMEOUT_SECS = 5
+
+# Circuit breaker: throttle restart attempts after repeated failures.
+_STARTUP_FAILURE_FILE = "startup_failure.json"
+_CIRCUIT_BREAKER_BASE_SECS = 2
+_CIRCUIT_BREAKER_MAX_SECS = 120
+
+
+class StartupFailure(BaseModel):
+    """Persisted circuit breaker state for daemon startup failures."""
+
+    consecutive_failures: int
+    last_failure: datetime.datetime
 
 
 class _UDSConnection:
@@ -183,6 +197,50 @@ def _kill_daemon_by_pidfile(pidfile: Path) -> None:
     logger.warning("Daemon pid=%d still alive after SIGTERM+SIGKILL", pid)
 
 
+def _read_startup_failure(daemon_dir: Path) -> StartupFailure | None:
+    """Read circuit breaker state. Returns None if absent or corrupt."""
+    fail_file = daemon_dir / _STARTUP_FAILURE_FILE
+    try:
+        return StartupFailure.model_validate_json(fail_file.read_bytes())
+    except (OSError, ValueError):
+        # Corrupt or missing — delete if present so it doesn't permanently block.
+        fail_file.unlink(missing_ok=True)
+        return None
+
+
+def _check_circuit_breaker(daemon_dir: Path) -> None:
+    """Raise DaemonStartError if cooldown hasn't elapsed since last failure."""
+    failure = _read_startup_failure(daemon_dir)
+    if failure is None:
+        return
+    cooldown = min(_CIRCUIT_BREAKER_BASE_SECS * 2**failure.consecutive_failures, _CIRCUIT_BREAKER_MAX_SECS)
+    elapsed = (datetime.datetime.now(tz=datetime.UTC) - failure.last_failure).total_seconds()
+    remaining = cooldown - elapsed
+    if remaining > 0:
+        raise DaemonStartError(
+            f"Circuit breaker open: {failure.consecutive_failures} consecutive startup "
+            f"failure(s), next attempt in {remaining:.0f}s"
+        )
+    logger.debug("Circuit breaker cooldown elapsed (failures=%d, cooldown=%ds)", failure.consecutive_failures, cooldown)
+
+
+def _record_startup_failure(daemon_dir: Path) -> None:
+    """Atomically write/update startup_failure.json."""
+    fail_file = daemon_dir / _STARTUP_FAILURE_FILE
+    prev = _read_startup_failure(daemon_dir)
+    count = (prev.consecutive_failures + 1) if prev else 1
+    data = StartupFailure(consecutive_failures=count, last_failure=datetime.datetime.now(tz=datetime.UTC))
+    tmp = fail_file.with_suffix(".tmp")
+    tmp.write_bytes(data.model_dump_json().encode())
+    os.replace(tmp, fail_file)
+    logger.info("Recorded startup failure #%d", count)
+
+
+def _clear_startup_failure(daemon_dir: Path) -> None:
+    """Delete startup_failure.json if it exists."""
+    (daemon_dir / _STARTUP_FAILURE_FILE).unlink(missing_ok=True)
+
+
 def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
     """Ensure a healthy daemon is running, returning a connection to it.
 
@@ -210,6 +268,9 @@ def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
             logger.debug("Daemon already healthy (socket=%s), skipping start", sock_path)
             return conn
 
+        # Circuit breaker: skip startup attempt if recent failures haven't cooled down.
+        _check_circuit_breaker(daemon_dir)
+
         # Probe daemon liveness via flock on pidfile.
         if _is_pidfile_locked(pidfile):
             # Daemon process is alive (holds the flock), but health check
@@ -232,13 +293,17 @@ def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
         # Wait for socket while still holding daemon.lock — prevents other
         # clients from entering and trying to start a second daemon.
         try:
-            return _wait_for_sock(sock_path, pidfile=pidfile, daemon_pid=daemon_pid)
+            conn = _wait_for_sock(sock_path, pidfile=pidfile, daemon_pid=daemon_pid)
         except DaemonStartError as e:
+            _record_startup_failure(daemon_dir)
             # Enrich with daemon stderr at the error boundary (once).
             stderr = _read_daemon_stderr(daemon_dir)
             if stderr:
                 raise DaemonStartError(f"{e}\n--- daemon stderr ---\n{stderr}") from e
             raise
+
+        _clear_startup_failure(daemon_dir)
+        return conn
 
 
 def _fork_daemon(daemon_dir: Path, sock_path: Path) -> int:

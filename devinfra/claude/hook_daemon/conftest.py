@@ -11,6 +11,7 @@ import pygit2
 import pytest
 import yaml
 
+from devinfra.claude.hook_daemon.config import DefaultProfiles, HookConfig, ProfileConfig
 from devinfra.claude.session_paths import SessionPaths
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -41,18 +42,35 @@ def short_tmp() -> Generator[Path]:
 
 
 @pytest.fixture
-def daemon_paths(tmp_path: Path, request: pytest.FixtureRequest) -> Generator[SessionPaths]:
+def daemon_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Generator[SessionPaths]:
     """SessionPaths with a unique session_id (isolates socket path between tests).
 
     Each test gets its own session_id, so daemon socket paths don't collide.
     Daemons left running after a test are harmless — they'll be killed when
     the RBE container exits.
 
+    Sets CLAUDE_PROJECT_DIR to a temp dir with a minimal .claude_hooks/config.yaml
+    so the daemon can start (it loads config at startup).
+
     After the test, copies daemon logs to undeclared test outputs for post-hoc debugging.
     """
     session_id = f"td-{uuid.uuid4().hex[:8]}"
     paths = SessionPaths(session_id=session_id, home=tmp_path, xdg_cache_home=tmp_path / "cache")
     (tmp_path / "cache").mkdir()
+
+    # Minimal project dir with .claude_hooks/config.yaml for daemon startup.
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    hooks_dir = project_dir / ".claude_hooks"
+    hooks_dir.mkdir()
+    config = HookConfig(
+        profiles={"default": ProfileConfig()}, default_profiles=DefaultProfiles(cli="default", web="default")
+    )
+    (hooks_dir / "config.yaml").write_text(yaml.dump(config.model_dump(mode="json")))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
+
     yield paths
 
     # Copy daemon logs to undeclared outputs for BuildBuddy retrieval.

@@ -6,6 +6,7 @@ subprocess (double-forked), exercising the actual pidfile flock and UDS
 health endpoint.
 """
 
+import datetime
 import multiprocessing
 import multiprocessing.sharedctypes
 import multiprocessing.synchronize
@@ -20,8 +21,13 @@ import pytest_bazel
 
 from devinfra.claude.hook_daemon.client import (
     DaemonStartError,
+    StartupFailure,
+    _check_circuit_breaker,
+    _clear_startup_failure,
     _ensure_daemon,
     _kill_daemon_by_pidfile,
+    _read_startup_failure,
+    _record_startup_failure,
     _UDSConnection,
     _wait_for_sock,
     read_pidfile,
@@ -181,6 +187,84 @@ def test_wait_for_sock_detects_pre_pidfile_crash(daemon_paths: SessionPaths) -> 
     elapsed = time.monotonic() - start
     # Should detect within a couple poll cycles, not wait for the full 5s timeout.
     assert elapsed < 1.0, f"Took {elapsed:.1f}s — expected < 1s"
+
+
+def test_circuit_breaker_blocks_after_failure(daemon_paths: SessionPaths) -> None:
+    """_check_circuit_breaker raises when cooldown hasn't elapsed."""
+    daemon_dir = daemon_paths.hook_daemon_dir
+    daemon_dir.mkdir(parents=True, exist_ok=True)
+
+    _record_startup_failure(daemon_dir)
+
+    with pytest.raises(DaemonStartError, match="Circuit breaker open"):
+        _check_circuit_breaker(daemon_dir)
+
+
+def test_circuit_breaker_allows_after_cooldown(daemon_paths: SessionPaths) -> None:
+    """_check_circuit_breaker passes when cooldown has elapsed."""
+    daemon_dir = daemon_paths.hook_daemon_dir
+    daemon_dir.mkdir(parents=True, exist_ok=True)
+
+    _record_startup_failure(daemon_dir)
+
+    # Backdate the failure so cooldown has elapsed (1 failure → 4s cooldown).
+    backdated = StartupFailure(
+        consecutive_failures=1, last_failure=datetime.datetime.now(tz=datetime.UTC) - datetime.timedelta(seconds=10)
+    )
+    fail_file = daemon_dir / "startup_failure.json"
+    fail_file.write_bytes(backdated.model_dump_json().encode())
+
+    # Should not raise.
+    _check_circuit_breaker(daemon_dir)
+
+
+def test_circuit_breaker_clears_on_success(daemon_paths: SessionPaths) -> None:
+    """_clear_startup_failure removes the sentinel file."""
+    daemon_dir = daemon_paths.hook_daemon_dir
+    daemon_dir.mkdir(parents=True, exist_ok=True)
+
+    _record_startup_failure(daemon_dir)
+    assert _read_startup_failure(daemon_dir) is not None
+
+    _clear_startup_failure(daemon_dir)
+    assert _read_startup_failure(daemon_dir) is None
+
+
+def test_circuit_breaker_increments_count(daemon_paths: SessionPaths) -> None:
+    """Consecutive failures increment the counter."""
+    daemon_dir = daemon_paths.hook_daemon_dir
+    daemon_dir.mkdir(parents=True, exist_ok=True)
+
+    _record_startup_failure(daemon_dir)
+    f1 = _read_startup_failure(daemon_dir)
+    assert f1 is not None and f1.consecutive_failures == 1
+
+    _record_startup_failure(daemon_dir)
+    f2 = _read_startup_failure(daemon_dir)
+    assert f2 is not None and f2.consecutive_failures == 2
+
+    _record_startup_failure(daemon_dir)
+    f3 = _read_startup_failure(daemon_dir)
+    assert f3 is not None and f3.consecutive_failures == 3
+
+
+def test_circuit_breaker_noop_when_no_failures(daemon_paths: SessionPaths) -> None:
+    """_check_circuit_breaker is a no-op when no sentinel exists."""
+    daemon_dir = daemon_paths.hook_daemon_dir
+    daemon_dir.mkdir(parents=True, exist_ok=True)
+    _check_circuit_breaker(daemon_dir)
+
+
+def test_circuit_breaker_handles_corrupt_file(daemon_paths: SessionPaths) -> None:
+    """Corrupt sentinel file is deleted and doesn't block startup."""
+    daemon_dir = daemon_paths.hook_daemon_dir
+    daemon_dir.mkdir(parents=True, exist_ok=True)
+
+    fail_file = daemon_dir / "startup_failure.json"
+    fail_file.write_text("not valid json{{{")
+
+    _check_circuit_breaker(daemon_dir)
+    assert not fail_file.exists()
 
 
 if __name__ == "__main__":

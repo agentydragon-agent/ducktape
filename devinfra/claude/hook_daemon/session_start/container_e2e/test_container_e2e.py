@@ -264,7 +264,7 @@ def test_container_e2e(
 
         # Run bazel build through the proxy chain
         logger.info("Running bazel build")
-        bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
+        bazel_cmd = f"source {_ENV_FILE} && bazelisk build //:hello"
         _exec(container, ["bash", "-c", bazel_cmd], workdir="/project")
 
     finally:
