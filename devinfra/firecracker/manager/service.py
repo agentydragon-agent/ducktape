@@ -180,7 +180,7 @@ def main() -> None:
 
     config = load_config(config_path)
     app.state.config = config
-    app.state.k8s = K8sVMClient()
+    app.state.k8s = K8sVMClient(config.storage)
 
     logger.info("Starting Firecracker VM manager on port %d", config.port)
     uvicorn.run(app, host="0.0.0.0", port=config.port)

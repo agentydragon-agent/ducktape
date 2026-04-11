@@ -149,8 +149,8 @@ base LV. Re-run when Nix config changes. The rootfs updates infrequently
 #### Setup
 
 1. Attach a block device to wyrm2 (Proxmox virtual disk, ~100GB)
-2. Create VG + thin pool (OpenEBS LVM LocalPV is deployed, VG: `openebs-lvmvg`)
-3. Create block-mode StorageClass `lvm-proxmox-block` (same VG, no fstype)
+2. Create VG + thin pool (OpenEBS LVM LocalPV is deployed, VG: `openebs-proxmox-ssd`)
+3. Create block-mode StorageClass `lvm-proxmox-ssd-block` (same VG, no fstype)
 4. Create base rootfs LV and run `provision-rootfs.sh`
 
 ### Guest init: process_api via initramfs

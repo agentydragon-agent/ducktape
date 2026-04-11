@@ -8,6 +8,16 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+class StorageConfig(BaseModel):
+    """PVC storage classes and sizes for Firecracker VM volumes."""
+
+    block_storage_class: str = Field(description="StorageClass for block-mode PVCs (rootfs)")
+    fs_storage_class: str = Field(description="StorageClass for filesystem PVCs (work, snapshots)")
+    rootfs_size: str = Field(description="Size of rootfs block PVCs")
+    work_size: str = Field(description="Size of work filesystem PVCs")
+    snapshot_size: str = Field(description="Size of snapshot filesystem PVCs")
+
+
 class ManagerConfig(BaseModel):
     """Configuration for the Firecracker VM manager service."""
 
@@ -17,6 +27,7 @@ class ManagerConfig(BaseModel):
         default=None, description="Node selector for VM pods. None = schedule anywhere."
     )
     port: int = Field(default=8080, description="HTTP port for the manager API")
+    storage: StorageConfig
 
 
 def load_config(path: Path) -> ManagerConfig:

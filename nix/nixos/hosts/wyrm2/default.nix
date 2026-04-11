@@ -131,31 +131,41 @@ in
   };
 
   # LVM for OpenEBS LVM LocalPV — thin-provisioned volumes with snapshot support.
-  # virtio2 (/dev/vdc) is a dedicated 500GB Proxmox disk for the LVM VG.
   # OpenEBS node agent runs privileged and uses host LVM tools via nsenter.
   boot.kernelModules = [ "dm_thin_pool" ];
 
-  # Create LVM PV + VG on the OpenEBS disk (idempotent oneshot)
-  systemd.services.openebs-lvm-setup = {
-    description = "Initialize LVM VG for OpenEBS on /dev/vdc";
-    wantedBy = [ "multi-user.target" ];
-    before = [ "kubelet.service" ];
-    after = [ "systemd-udev-settle.service" ];
-    path = [ pkgs.lvm2 ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      if vgs openebs-lvmvg >/dev/null 2>&1; then
-        echo "VG openebs-lvmvg already exists, activating"
-      else
-        pvcreate /dev/vdc
-        vgcreate openebs-lvmvg /dev/vdc
-      fi
-      vgchange -ay openebs-lvmvg
-    '';
-  };
+  # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
+  #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
+  #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)
+  systemd.services =
+    lib.mapAttrs'
+      (
+        vg: dev:
+        lib.nameValuePair "openebs-${vg}-setup" {
+          description = "Initialize LVM VG openebs-proxmox-${vg} on ${dev}";
+          wantedBy = [ "multi-user.target" ];
+          before = [ "kubelet.service" ];
+          after = [ "systemd-udev-settle.service" ];
+          path = [ pkgs.lvm2 ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
+          script = ''
+            if vgs openebs-proxmox-${vg} >/dev/null 2>&1; then
+              echo "VG openebs-proxmox-${vg} already exists, activating"
+            else
+              pvcreate ${dev}
+              vgcreate openebs-proxmox-${vg} ${dev}
+            fi
+            vgchange -ay openebs-proxmox-${vg}
+          '';
+        }
+      )
+      {
+        ssd = "/dev/vdc";
+        hdd = "/dev/vdg";
+      };
 
   # Intermediate directories for the nested repo cache mount.
   # The SSD disk is mounted at ~/.cache/bazel, then the HDD disk is mounted

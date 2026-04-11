@@ -1,7 +1,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: lvm-proxmox
+  name: lvm-proxmox-ssd
 provisioner: local.csi.openebs.io
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
@@ -14,6 +14,6 @@ allowVolumeExpansion: true
 # should pin pods to region=proxmox via nodeSelector to avoid failed scheduling attempts.
 parameters:
   storage: "lvm"
-  volgroup: "openebs-lvmvg"
+  volgroup: "openebs-proxmox-ssd"
   fstype: "ext4"
   thinProvision: "yes"

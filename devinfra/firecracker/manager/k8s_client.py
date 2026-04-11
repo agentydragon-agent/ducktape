@@ -16,6 +16,7 @@ from typing import Any
 
 from kubernetes import client, config
 
+from devinfra.firecracker.manager.config import StorageConfig
 from devinfra.firecracker.manager.models import VMInfo, VMStatus
 
 logger = logging.getLogger(__name__)
@@ -34,22 +35,17 @@ SNAPSHOT_MOUNT = "/snapshots"
 KERNEL_PATH = "/opt/firecracker/vmlinux"
 INITRAMFS_PATH = "/opt/firecracker/initramfs.cpio"
 
-# StorageClass names — both from LVM thin pool on wyrm2 (VG: openebs-lvmvg).
-# lvm-proxmox exists in devel (Filesystem). lvm-proxmox-block needs to be
-# created (same VG, no fstype, volumeMode: Block support).
-_BLOCK_SC = "lvm-proxmox-block"
-_FS_SC = "lvm-proxmox"
-
 
 class K8sVMClient:
     """Manages Firecracker VM pods and PVCs via the Kubernetes API."""
 
-    def __init__(self) -> None:
+    def __init__(self, storage: StorageConfig) -> None:
         try:
             config.load_incluster_config()
         except config.ConfigException:
             config.load_kube_config()
         self._core = client.CoreV1Api()
+        self._storage = storage
 
     # ── VM lifecycle ─────────────────────────────────────────────────────
 
@@ -57,35 +53,13 @@ class K8sVMClient:
         self, *, vm_image: str, base_rootfs_pvc: str, cpus: int, mem_mib: int, node_selector: dict[str, str] | None
     ) -> VMInfo:
         """Create a VM's PVCs + pod and return its info."""
-        vm_id = secrets.token_hex(4)
-        rootfs_pvc = self._create_pvc(
-            _rootfs_pvc_name(vm_id),
-            volume_mode="Block",
-            storage_class=_BLOCK_SC,
-            size="10Gi",
-            labels={_VM_ID_LABEL: vm_id},
-            data_source=base_rootfs_pvc,
-        )
-        work_pvc = self._create_pvc(
-            _work_pvc_name(vm_id),
-            volume_mode="Filesystem",
-            storage_class=_FS_SC,
-            size="10Gi",
-            labels={_VM_ID_LABEL: vm_id},
-        )
-        spec = self._pod_spec(
-            vm_id,
+        return self._create_vm_pod(
             vm_image=vm_image,
-            rootfs_pvc=rootfs_pvc,
-            work_pvc=work_pvc,
+            rootfs_data_source=base_rootfs_pvc,
             cpus=cpus,
             mem_mib=mem_mib,
             node_selector=node_selector,
         )
-
-        logger.info("Creating VM pod %s (cpus=%d, mem=%dMiB)", _pod_name(vm_id), cpus, mem_mib)
-        self._core.create_namespaced_pod(namespace=_NAMESPACE, body=spec)
-        return VMInfo(id=vm_id, pod_name=_pod_name(vm_id), status=VMStatus.CREATING)
 
     def delete_vm(self, vm_id: str) -> None:
         """Delete a VM pod and all its PVCs (rootfs, work, snapshot clone)."""
@@ -110,13 +84,13 @@ class K8sVMClient:
 
     # ── Snapshot lifecycle ───────────────────────────────────────────────
 
-    def create_snapshot_pvc(self, snapshot_name: str, size: str = "8Gi") -> str:
+    def create_snapshot_pvc(self, snapshot_name: str) -> str:
         """Create a filesystem PVC for snapshot memory + vmstate files."""
         return self._create_pvc(
             _snapshot_pvc_name(snapshot_name),
             volume_mode="Filesystem",
-            storage_class=_FS_SC,
-            size=size,
+            storage_class=self._storage.fs_storage_class,
+            size=self._storage.snapshot_size,
             labels={_SNAPSHOT_LABEL: snapshot_name},
         )
 
@@ -163,29 +137,53 @@ class K8sVMClient:
         - Snapshot: thin clone of the snapshot PVC (has memory + vmstate)
         - Work: fresh thin LV for the restored VM's own use
         """
+        return self._create_vm_pod(
+            vm_image=vm_image,
+            rootfs_data_source=source_rootfs_pvc,
+            snapshot_name=snapshot_name,
+            cpus=cpus,
+            mem_mib=mem_mib,
+            node_selector=node_selector,
+        )
+
+    # ── Internal ─────────────────────────────────────────────────────────
+
+    def _create_vm_pod(
+        self,
+        *,
+        vm_image: str,
+        rootfs_data_source: str,
+        cpus: int,
+        mem_mib: int,
+        node_selector: dict[str, str] | None,
+        snapshot_name: str | None = None,
+    ) -> VMInfo:
+        """Shared implementation for create_vm and create_restored_vm."""
         vm_id = secrets.token_hex(4)
         rootfs_pvc = self._create_pvc(
             _rootfs_pvc_name(vm_id),
             volume_mode="Block",
-            storage_class=_BLOCK_SC,
-            size="10Gi",
+            storage_class=self._storage.block_storage_class,
+            size=self._storage.rootfs_size,
             labels={_VM_ID_LABEL: vm_id},
-            data_source=source_rootfs_pvc,
+            data_source=rootfs_data_source,
         )
-        # CoW clone of the snapshot PVC — each restored VM gets its own copy.
-        snapshot_clone_pvc = self._create_pvc(
-            f"firecracker-snap-{vm_id}",
-            volume_mode="Filesystem",
-            storage_class=_FS_SC,
-            size="8Gi",
-            labels={_VM_ID_LABEL: vm_id, _SNAPSHOT_LABEL: snapshot_name},
-            data_source=_snapshot_pvc_name(snapshot_name),
-        )
+        snapshot_clone_pvc: str | None = None
+        if snapshot_name is not None:
+            # CoW clone of the snapshot PVC — each restored VM gets its own copy.
+            snapshot_clone_pvc = self._create_pvc(
+                f"firecracker-snap-{vm_id}",
+                volume_mode="Filesystem",
+                storage_class=self._storage.fs_storage_class,
+                size=self._storage.snapshot_size,
+                labels={_VM_ID_LABEL: vm_id, _SNAPSHOT_LABEL: snapshot_name},
+                data_source=_snapshot_pvc_name(snapshot_name),
+            )
         work_pvc = self._create_pvc(
             _work_pvc_name(vm_id),
             volume_mode="Filesystem",
-            storage_class=_FS_SC,
-            size="10Gi",
+            storage_class=self._storage.fs_storage_class,
+            size=self._storage.work_size,
             labels={_VM_ID_LABEL: vm_id},
         )
         spec = self._pod_spec(
@@ -198,12 +196,12 @@ class K8sVMClient:
             mem_mib=mem_mib,
             node_selector=node_selector,
         )
-
-        logger.info("Creating restored VM pod %s from snapshot %s", _pod_name(vm_id), snapshot_name)
+        if snapshot_name is not None:
+            logger.info("Creating restored VM pod %s from snapshot %s", _pod_name(vm_id), snapshot_name)
+        else:
+            logger.info("Creating VM pod %s (cpus=%d, mem=%dMiB)", _pod_name(vm_id), cpus, mem_mib)
         self._core.create_namespaced_pod(namespace=_NAMESPACE, body=spec)
         return VMInfo(id=vm_id, pod_name=_pod_name(vm_id), status=VMStatus.CREATING)
-
-    # ── Internal ─────────────────────────────────────────────────────────
 
     def _create_pvc(
         self,

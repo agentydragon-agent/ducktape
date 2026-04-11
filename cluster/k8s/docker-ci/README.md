@@ -95,7 +95,7 @@ cp client-key.pem secrets/docker-ci/client-key.sops.pem && sops -e -i secrets/do
 
 - **Namespace**: `docker-ci` (privileged PSA — DinD requires it)
 - **Deployment**: `docker:27-dind` with `--tlsverify`, pinned to Proxmox
-- **PVC**: 50Gi on `lvm-proxmox` (Docker image cache at `/var/lib/docker`)
+- **PVC**: 50Gi on `lvm-proxmox-hdd` (Docker image cache at `/var/lib/docker`)
 - **Service**: ClusterIP on port 2376
 - **ConfigMap**: `docker-ci-public-certs` (ca.pem, server-cert.pem)
 - **Secret**: `docker-ci-server-tls` (server-key.pem, SOPS-encrypted)

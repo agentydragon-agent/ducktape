@@ -126,7 +126,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     discard      = "on"
     size         = 500
     file_format  = "raw"
-  } # OpenEBS LVM (VG openebs-lvmvg)
+  } # OpenEBS LVM SSD (VG openebs-proxmox-ssd)
   disk {
     datastore_id = var.storage
     interface    = "virtio3"
@@ -151,6 +151,14 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     size         = 100
     file_format  = "raw"
   } # Bazel repository cache — HDD (~/.cache/bazel/.../cache/repos)
+  disk {
+    datastore_id = "tank-hdd"
+    interface    = "virtio6"
+    iothread     = true
+    discard      = "on"
+    size         = 500
+    file_format  = "raw"
+  } # OpenEBS LVM HDD (VG openebs-proxmox-hdd)
 
   network_device {
     bridge = "vmbr0"

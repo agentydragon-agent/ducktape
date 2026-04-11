@@ -8,7 +8,7 @@
 # Prerequisites:
 #   - Run on wyrm2 (has Nix, the ducktape repo, and the LVM VG)
 #   - The base LV must exist:
-#       lvcreate -V 10G -T openebs-lvmvg/thin-pool -n fc-base-rootfs
+#       lvcreate -V 10G -T openebs-proxmox-ssd/thin-pool -n fc-base-rootfs
 #
 # Usage:
 #   cd ~/code/ducktape
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-ROOTFS_LV="${ROOTFS_LV:-/dev/openebs-lvmvg/fc-base-rootfs}"
+ROOTFS_LV="${ROOTFS_LV:-/dev/openebs-proxmox-ssd/fc-base-rootfs}"
 
 echo "Building NixOS rootfs..."
 # make-ext4-fs produces a single file derivation — the ext4 image itself.
@@ -33,7 +33,7 @@ echo "Rootfs: $ROOTFS_FILE ($(numfmt --to=iec "$ROOTFS_SIZE"))"
 
 if [ ! -b "$ROOTFS_LV" ]; then
   echo "ERROR: LV $ROOTFS_LV does not exist. Create it first:" >&2
-  echo "  lvcreate -V 10G -T openebs-lvmvg/thin-pool -n fc-base-rootfs" >&2
+  echo "  lvcreate -V 10G -T openebs-proxmox-ssd/thin-pool -n fc-base-rootfs" >&2
   exit 1
 fi
 

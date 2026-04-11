@@ -75,14 +75,15 @@ All storage is region-local — no cross-site synchronous replication.
 | `local-path`         | local-path-provisioner | Any       | CNPG (all databases), Gatus, MinIO, Nix cache                 |
 | `local-path-hetzner` | local-path-provisioner | `hil`     | Vault Raft, Loki, Mimir, Alertmanager, Grafana DB             |
 | `local-path-proxmox` | local-path-provisioner | `proxmox` | ActivityWatch, Scanner, Google Workspace MCP, Tana MCP        |
-| `lvm-proxmox`        | OpenEBS LVM CSI        | `proxmox` | Thin provisioning, expansion: Harbor                          |
+| `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning: Firecracker                           |
+| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Langfuse, Docker CI            |
 | `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API: Ollama, Matrix (migrating off) |
 | `longhorn`           | Longhorn               | `hil`     | Legacy — orphaned PVCs only, no active workloads              |
 | `hetzner-longhorn`   | Longhorn               | `hil`     | Replicated across VPS nodes (none active yet)                 |
 | `hcloud-volumes`     | Hetzner Cloud CSI      | `hil`     | (none active)                                                 |
 
 Proxmox CSI needs VLAN access to Proxmox API. OpenEBS LVM is constrained to nodes
-with the `openebs-lvmvg` volume group (currently Proxmox nodes only).
+with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently Proxmox nodes only).
 
 ## GPU (NVIDIA)
 

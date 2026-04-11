@@ -6,7 +6,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: lvm-proxmox
+  storageClassName: lvm-proxmox-hdd
   resources:
     requests:
       storage: 50Gi
