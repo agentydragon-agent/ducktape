@@ -65,8 +65,9 @@ spec:
           storageClass: lvm-proxmox
           size: 30Gi
         jobservice:
-          storageClass: lvm-proxmox
-          size: 1Gi
+          jobLog:
+            storageClass: lvm-proxmox
+            size: 1Gi
         redis:
           storageClass: lvm-proxmox
           size: 1Gi
