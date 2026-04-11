@@ -121,6 +121,7 @@ Look beyond what was explicitly discussed. Based on what the session actually ch
 - If the session replaced one tool/library/approach with another in one place, check if the old approach is still used elsewhere
 
 Examples:
+
 - "Moved `storageClass` from default to `lvm-proxmox-hdd` for grocy — 3 other PVCs still use the default class."
 - "Replaced Vault/ESO with SOPS for authentik secrets — harbor and grafana still use ESO."
 - "`ghcr-build-push` action now uses `github.token` directly instead of a `github_token` input — are any callers still passing the old input?"
@@ -131,6 +132,7 @@ Examples:
 - If inline logic was extracted into a shared action/helper/utility, check for remaining copies of the inline version
 
 Examples:
+
 - "Extracted digest-pinning into `pin-image-digest` action for rbe-image and freecad-test — openclaw-image and tana-mcp-image still inline the same logic (or skip pinning entirely)."
 - "Added Docker layer caching (`cache_from`/`cache_to`) to 4 workflows — openclaw-image got caching but doesn't use the shared pin action yet."
 
@@ -139,6 +141,7 @@ Examples:
 - If the session fixed a version mismatch or config inconsistency in one layer, check all other layers that might have the same issue
 
 Examples:
+
 - "Fixed protobuf version in nix to match Bazel gencode — pip layer and MODULE.bazel still have the old version. All three need to agree."
 - "Updated Docker mTLS env vars in `py_test` macro — but the firewall doesn't allow port 2376 yet, and the test fixture isn't wired to the new env var name."
 

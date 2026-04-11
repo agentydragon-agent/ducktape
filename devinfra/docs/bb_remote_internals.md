@@ -352,6 +352,77 @@ All paths relative to <https://github.com/buildbuddy-io/buildbuddy>.
 | [`enterprise/server/cmd/goinit/main.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/cmd/goinit/main.go)                                                                         | Firecracker VM init process (PID 1), mounts, pivot root, spawns vmexec            |
 | [`enterprise/server/vmexec/vmexec.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/vmexec/vmexec.go)                                                                             | VM exec service: runs commands via gRPC over vsock, workspace mount/unmount       |
 | [`enterprise/server/remote_execution/containers/firecracker/firecracker.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/remote_execution/containers/firecracker/firecracker.go) | Firecracker container orchestration, image conversion, VM lifecycle               |
+| [`cli/storage/storage.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/storage/storage.go)                                                                                                     | `ConfigDir`, `CacheDir`, `.git/config [buildbuddy]` read/write                    |
+| [`cli/config/config.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/config/config.go)                                                                                                         | `buildbuddy.yaml` loading (user + workspace), plugin/local-cache config           |
+| [`cli/login/login.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/login/login.go)                                                                                                             | API key resolution (`BUILDBUDDY_API_KEY` env → `.git/config` → interactive login) |
+
+## Server-side: how `Run` becomes an RE action
+
+Source: `enterprise/server/hostedrunner/hostedrunner.go`
+
+The `runnerService.Run()` RPC translates the bespoke `RunRequest` into a
+standard Remote Execution API action:
+
+1. **Upload input root** — the ci_runner binary and supporting files go to CAS
+2. **Upload patches** — each `RepoState.Patch[]` blob is uploaded via bytestream,
+   producing CAS URIs passed as `--patch_uri` args to ci_runner
+3. **Serialize action** — the steps YAML is base64-encoded into
+   `--serialized_action` arg
+4. **Build `Command` proto** — ci_runner binary with args:
+   `--bes_backend`, `--cache_backend`, `--rbe_backend`, `--invocation_id`,
+   `--target_repo_url`, `--pushed_branch`, `--commit_sha`, `--patch_uri`, etc.
+5. **Call standard RE `Execute()`** — `ExecuteRequest` with the action digest,
+   `SkipCacheLookup: true`, `DigestFunction: BLAKE3`
+6. **Wait for first `Operation`** from the stream (ensures execution is created),
+   then return invocation ID to the CLI
+
+### Client-side completion tracking
+
+The CLI uses **two parallel paths** to track the execution:
+
+- **BB bespoke API** (`BuildBuddyServiceClient`): `GetEventLogChunk` for live
+  log streaming, `GetInvocation` for final invocation metadata, `GetExecution`
+  to look up the execution ID, `CancelExecutions` on interrupt
+- **Standard RE API** (`ExecutionClient`): `WaitExecution` on the execution ID
+  to get the final `ExecuteResponse` (exit code)
+
+Both are standard — the RE action is a normal execution on BB's infrastructure.
+The bespoke APIs exist because RE `WaitExecution` only provides `Operation`
+status updates, not live stdout or invocation-level metadata.
+
+## bb CLI configuration (non-Bazel-flag)
+
+Source: `cli/storage/storage.go`, `cli/config/config.go`, `cli/login/login.go`
+
+### Dotfiles
+
+| File                                                                       | Purpose                                                       |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `$BUILDBUDDY_CONFIG_DIR/buildbuddy.yaml` (default `~/.config/buildbuddy/`) | Plugins, local cache config                                   |
+| `<workspace>/buildbuddy.yaml`                                              | Same schema, higher precedence                                |
+| `.git/config [buildbuddy]` section                                         | API key (`api-key`), remote-bazel remote name, default branch |
+
+Both YAML files support `plugins` (list of repos/paths) and `local_cache`
+(enabled, max_size, root_directory). Env vars in YAML are expanded via
+`os.ExpandEnv`.
+
+### Environment variables
+
+| Variable                   | Purpose                                                            |
+| -------------------------- | ------------------------------------------------------------------ |
+| `BUILDBUDDY_API_KEY`       | API key (checked before `.git/config`)                             |
+| `BUILDBUDDY_CONFIG_DIR`    | Override config dir                                                |
+| `BUILDBUDDY_CACHE_DIR`     | Override cache dir                                                 |
+| `BB_USE_BAZEL_VERSION`     | Override Bazel version (takes precedence over `USE_BAZEL_VERSION`) |
+| `BB_DISABLE_SIDECAR`       | Set to `1`/`true` to disable the local sidecar                     |
+| `BB_SIDECAR_ARGS`          | Extra args passed to the sidecar process                           |
+| `BB_WATCHER_LOCKFILE_PATH` | Override watcher lockfile path                                     |
+| `GIT_REPO_DEFAULT_BRANCH`  | Override default branch detection for `bb remote`                  |
+| `BAZELISK_SKIP_WRAPPER`    | Set to `true` to make bb behave as plain bazelisk                  |
+| `CI`                       | Disables sidecar when truthy                                       |
+
+**None of these inject Bazel flags.** For `bb remote`, Bazel flags come only
+from the CLI command line and the workspace `.bazelrc` (loaded by ci_runner).
 
 ## Future: custom runner orchestration
 

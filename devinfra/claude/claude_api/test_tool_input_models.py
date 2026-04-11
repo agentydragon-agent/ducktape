@@ -22,13 +22,15 @@ class TestBashInput:
         assert m.run_in_background is None
 
     def test_all_fields(self) -> None:
-        m = BashInput.model_validate({
-            "command": "echo hi",
-            "description": "Print greeting",
-            "timeout": 5000,
-            "run_in_background": True,
-            "dangerouslyDisableSandbox": True,
-        })
+        m = BashInput.model_validate(
+            {
+                "command": "echo hi",
+                "description": "Print greeting",
+                "timeout": 5000,
+                "run_in_background": True,
+                "dangerouslyDisableSandbox": True,
+            }
+        )
         assert m.command == "echo hi"
         assert m.dangerously_disable_sandbox is True
         assert m.run_in_background is True
@@ -44,21 +46,14 @@ class TestBashInput:
 
 class TestEditInput:
     def test_parse(self) -> None:
-        m = EditInput.model_validate({
-            "file_path": "/tmp/foo.py",
-            "old_string": "a",
-            "new_string": "b",
-        })
+        m = EditInput.model_validate({"file_path": "/tmp/foo.py", "old_string": "a", "new_string": "b"})
         assert m.file_path == "/tmp/foo.py"
         assert m.replace_all is False
 
     def test_replace_all(self) -> None:
-        m = EditInput.model_validate({
-            "file_path": "/tmp/foo.py",
-            "old_string": "a",
-            "new_string": "b",
-            "replace_all": True,
-        })
+        m = EditInput.model_validate(
+            {"file_path": "/tmp/foo.py", "old_string": "a", "new_string": "b", "replace_all": True}
+        )
         assert m.replace_all is True
 
 
@@ -77,14 +72,7 @@ class TestReadInput:
 
 class TestGrepInput:
     def test_dash_aliases(self) -> None:
-        m = GrepInput.model_validate({
-            "pattern": "foo",
-            "-B": 3,
-            "-A": 5,
-            "-C": 2,
-            "-n": True,
-            "-i": True,
-        })
+        m = GrepInput.model_validate({"pattern": "foo", "-B": 3, "-A": 5, "-C": 2, "-n": True, "-i": True})
         assert m.before_context == 3
         assert m.after_context == 5
         assert m.context == 2

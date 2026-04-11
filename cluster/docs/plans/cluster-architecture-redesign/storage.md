@@ -93,12 +93,12 @@ moved to `local-path-hetzner`. Loki and Tempo now use MinIO.
 
 Remaining Longhorn PVCs (stale/orphaned — no workloads reference `storageClassName: longhorn`):
 
-| Namespace | PVC                             | Size | Notes                                  |
-| --------- | ------------------------------- | ---- | -------------------------------------- |
-| gitea     | data-gitea-postgresql-0         | 10G  | Legacy, suspended                      |
+| Namespace | PVC                             | Size | Notes                                      |
+| --------- | ------------------------------- | ---- | ------------------------------------------ |
+| gitea     | data-gitea-postgresql-0         | 10G  | Legacy, suspended                          |
 | harbor    | data-harbor-redis-0             | 1G   | Orphaned (Harbor now on `lvm-proxmox-hdd`) |
 | harbor    | data-harbor-trivy-0             | 5G   | Orphaned (Harbor now on `lvm-proxmox-hdd`) |
-| harbor    | database-data-harbor-database-0 | 1G   | Orphaned (migrated to CNPG)            |
+| harbor    | database-data-harbor-database-0 | 1G   | Orphaned (migrated to CNPG)                |
 | harbor    | harbor-jobservice               | 1G   | Orphaned (Harbor now on `lvm-proxmox-hdd`) |
 | harbor    | harbor-registry                 | 30G  | Orphaned (Harbor now on `lvm-proxmox-hdd`) |
 
