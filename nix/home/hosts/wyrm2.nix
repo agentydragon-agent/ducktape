@@ -37,6 +37,7 @@
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad
+    pkgs.psmisc
     # TODO: Add a GUI system monitor with graphs (psensor not in nixpkgs;
     # candidates: gnomeExtensions.vitals, gnomeExtensions.astra-monitor)
     pkgs.telegram-desktop
