@@ -73,7 +73,11 @@ def _check_blocked(subcommand: str, sub_args: list[str]) -> str | None:
             return "git add .\n  Use 'git add <specific-files>' instead of staging everything."
 
     if subcommand == "stash":
-        return "git stash\n  Do not use git stash. Find other approaches for dirty worktrees."
+        # Allow read-only stash subcommands.
+        stash_readonly = {"list", "show"}
+        stash_sub = next((a for a in sub_args if not a.startswith("-")), None)
+        if stash_sub not in stash_readonly:
+            return "git stash\n  Do not use git stash. Find other approaches for dirty worktrees."
 
     if subcommand == "commit" and "--amend" in sub_args:
         return "git commit --amend\n  Create a new commit instead of amending."

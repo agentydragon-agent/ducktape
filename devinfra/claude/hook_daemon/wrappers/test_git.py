@@ -34,7 +34,9 @@ class TestCheckBlocked:
             ("stash", []),
             ("stash", ["push"]),
             ("stash", ["pop"]),
-            ("stash", ["list"]),
+            ("stash", ["apply"]),
+            ("stash", ["drop"]),
+            ("stash", ["clear"]),
         ],
     )
     def test_blocked(self, subcommand: str, sub_args: list[str]):
@@ -52,6 +54,10 @@ class TestCheckBlocked:
             ("status", []),
             ("push", []),
             ("diff", ["HEAD"]),
+            ("stash", ["list"]),
+            ("stash", ["show"]),
+            ("stash", ["show", "-p"]),
+            ("stash", ["list", "--oneline"]),
         ],
     )
     def test_allowed(self, subcommand: str, sub_args: list[str]):
