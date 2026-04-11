@@ -246,7 +246,7 @@
         pkgs.shfmt
         pkgs.buildifier
         pkgs.gofumpt
-        pkgs.nodePackages.prettier # TODO: not used by pre-commit yet (uses language:node with svelte plugin instead). Consolidate by bundling prettier+plugins in Nix.
+        ducktapePkgs.prettier
         pkgs.openssl
         # Infrastructure tools
         pkgs.gh

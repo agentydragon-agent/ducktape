@@ -169,17 +169,13 @@ repos:
         exclude: "^ansible/(gpd|requirements|inventory)\\.yaml$"
         pass_filenames: true
 
-      # Prettier formatter - uses .prettierrc.cjs config and .prettierignore
-      # The .prettierrc.cjs uses require() for the svelte plugin, which resolves via
-      # NODE_PATH set by pre-commit's language:node environment
+      # Prettier formatter - uses .prettierrc.cjs config and .prettierignore.
+      # Prettier + plugins bundled in Nix (nix/packages/prettier/) — NODE_PATH
+      # is set by the wrapper so .prettierrc.cjs's require() resolves.
       - id: prettier
         name: prettier
         entry: prettier --write --ignore-unknown --list-different
-        language: node
-        additional_dependencies:
-          - prettier@3.8.1
-          - prettier-plugin-svelte@3.4.1
-          - svelte@5.38.1
+        language: system
         files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html)$"
         exclude: "\\.pnpm/"
 

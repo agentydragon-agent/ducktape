@@ -6,7 +6,8 @@ Usage:
 
 import argparse
 import json
-import re
+import shutil
+import subprocess
 from pathlib import Path
 
 _PINS_FILE = Path(__file__).parent / "image_pins.json"
@@ -23,14 +24,12 @@ def main() -> None:
         parser.error(f"Unknown image: {args.name} (known: {', '.join(sorted(pins))})")
 
     pins[args.name]["digest"] = args.digest
-    # Produce prettier-compatible JSON: short arrays stay on one line.
-    text = json.dumps(pins, indent=2) + "\n"
-    text = re.sub(
-        r"\[\s+\"([^\"]+)\"\s+\]",
-        r'["\1"]',
-        text,
-    )
-    _PINS_FILE.write_text(text)
+    _PINS_FILE.write_text(json.dumps(pins, indent=2) + "\n")
+
+    prettier = shutil.which("prettier")
+    if prettier:
+        subprocess.run([prettier, "--write", _PINS_FILE], check=True)
+
     print(f"Updated {args.name} in {_PINS_FILE}")
 
 

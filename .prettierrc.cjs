@@ -1,10 +1,9 @@
 // Prettier configuration
 // https://prettier.io/docs/en/options.html
 //
-// Svelte plugin: Loaded via require() so Bazel can resolve it from runfiles.
-// String-based plugin names fail in CI because prettier finds this config in
-// the source tree but can't resolve plugins without node_modules.
-// See aspect-build/rules_lint#176 and PR #417.
+// Svelte plugin: Loaded via require() so both Nix (NODE_PATH wrapper) and
+// Bazel (runfiles) can resolve it. String-based plugin names don't work
+// because prettier can't resolve them without node_modules on the search path.
 
 const config = {
   printWidth: 120,
