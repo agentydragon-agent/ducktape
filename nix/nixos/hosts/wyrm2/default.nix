@@ -84,6 +84,7 @@ in
     pkgs.lvm2 # LVM tools for OpenEBS LVM LocalPV
     pkgs.freecad
     pkgs.unzip
+    pkgs.usbutils # lsusb
   ];
 
   # Podman
