@@ -456,6 +456,9 @@ async def handle(
     with tracer.start_as_current_span("install_shims", context=root_ctx):
         install_shim("bazelisk", session.paths)
         install_shim("git", session.paths)
+        install_shim("bazel", session.paths)
+        install_shim("bb", session.paths)
+        install_shim("bbr", session.paths)
 
     # Generate timestamp
     hook_timestamp = datetime.now()

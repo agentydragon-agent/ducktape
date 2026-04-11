@@ -77,6 +77,18 @@ class PreCommitConfig(BaseModel, frozen=True):
     )
 
 
+class GitShimConfig(BaseModel):
+    """Per-behavior toggles for the git PATH shim.
+
+    In CLI mode, the human shares the repo — block dangerous commands.
+    In web mode, the agent owns the repo — let it do what it wants.
+    """
+
+    block_amend: bool = Field(default=False, description="Block `git commit --amend`.")
+    block_stash: bool = Field(default=False, description="Block `git stash` (except list/show).")
+    block_add_all: bool = Field(default=False, description="Block `git add -A`, `git add --all`, `git add .`.")
+
+
 class ProfileConfig(BaseModel):
     bazel_remote_proxy: BazelRemoteProxyConfig | None = Field(
         default=None, description="UDS proxy for Bazel --remote_proxy (remote execution + cache). Null = disabled."
@@ -114,6 +126,7 @@ class ProfileConfig(BaseModel):
     k8s: K8sConfig | None = Field(default=None, description="K8s cluster connection config for kubeconfig generation.")
     otel: OtelConfig | None = Field(default=None, description="OpenTelemetry tracing configuration.")
     pre_commit: PreCommitConfig | None = Field(default=None, description="Pre-commit hook behavior configuration.")
+    git_shim: GitShimConfig = Field(default_factory=GitShimConfig, description="Git shim behavior toggles.")
     context_template: str | None = Field(
         default=None, description="Repo-relative path to a Mako template rendered into the session context output."
     )

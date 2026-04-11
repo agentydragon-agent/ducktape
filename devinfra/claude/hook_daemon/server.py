@@ -74,11 +74,13 @@ class _MailboxRequest(BaseModel):
     message: str
 
 
-def _get_or_create_session(sessions: dict[str, Session], session_id: str, env: dict[str, str]) -> Session:
+def _get_or_create_session(
+    sessions: dict[str, Session], session_id: str, env: dict[str, str], profile: ProfileConfig
+) -> Session:
     """Return existing Session for session_id, or create and register one."""
     if existing := sessions.get(session_id):
         return existing
-    session = Session(session_id=session_id, paths=SessionPaths.from_env(session_id, env))
+    session = Session(session_id=session_id, paths=SessionPaths.from_env(session_id, env), profile=profile)
     sessions[session_id] = session
     return session
 
@@ -150,9 +152,10 @@ def _extract_git_subcommand(args: list[str]) -> tuple[str | None, list[str]]:
 
 
 def _handle_git_shim(report: ShimExecRequest, session: Session) -> ShimBlocked | ShimExecve:
-    """Block dangerous git commands, pass through the rest."""
+    """Block dangerous git commands based on profile config, pass through the rest."""
+    git_cfg = session.profile.git_shim
     subcommand, sub_args = _extract_git_subcommand(report.argv[1:])
-    if subcommand == "add":
+    if git_cfg.block_add_all and subcommand == "add":
         if "--all" in sub_args:
             return ShimBlocked(message="git add --all\n  Use 'git add <specific-files>' instead of staging everything.")
         for arg in sub_args:
@@ -166,11 +169,11 @@ def _handle_git_shim(report: ShimExecRequest, session: Session) -> ShimBlocked |
                 )
         if "." in sub_args:
             return ShimBlocked(message="git add .\n  Use 'git add <specific-files>' instead of staging everything.")
-    if subcommand == "stash":
+    if git_cfg.block_stash and subcommand == "stash":
         stash_sub = next((a for a in sub_args if not a.startswith("-")), None)
         if stash_sub not in {"list", "show"}:
             return ShimBlocked(message="git stash\n  Do not use git stash. Find other approaches for dirty worktrees.")
-    if subcommand == "commit" and "--amend" in sub_args:
+    if git_cfg.block_amend and subcommand == "commit" and "--amend" in sub_args:
         return ShimBlocked(message="git commit --amend\n  Create a new commit instead of amending.")
     return ShimExecve(argv=report.argv)
 
@@ -236,12 +239,12 @@ def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
         ) as span:
             _save_session_env(app.state.daemon_dir, req.env)
 
-            session = _get_or_create_session(app.state.sessions, req.hook.session_id, req.env)
+            session = _get_or_create_session(app.state.sessions, req.hook.session_id, req.env, app.state.profile)
 
             output: HookOutputBase | None = None
             match req.hook:
                 case SessionStartHookInput():
-                    await session.start_proxy(app.state.profile)
+                    await session.start_proxy()
                     ctx = CallerContext.from_env(req.env)
                     output = await handle_session_start(
                         session, req.hook, app.state.settings, profile=app.state.profile, ctx=ctx
@@ -284,7 +287,7 @@ def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
         app.state.last_request_time = time.monotonic()
         logger.info("shim-exec: %s cwd=%s argv=%s", report.shim, report.cwd, report.argv)
 
-        session = _get_or_create_session(app.state.sessions, report.session_id, report.env)
+        session = _get_or_create_session(app.state.sessions, report.session_id, report.env, app.state.profile)
 
         # Update proxy credentials
         https_proxy = report.env.get("HTTPS_PROXY") or report.env.get("https_proxy")

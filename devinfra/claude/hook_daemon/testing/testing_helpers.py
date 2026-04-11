@@ -4,12 +4,14 @@ from pathlib import Path
 
 import yaml
 
-from devinfra.claude.hook_daemon.config import ProfileConfig
+from devinfra.claude.hook_daemon.config import GitShimConfig, ProfileConfig
 from devinfra.claude.session_paths import SessionPaths
 
 PROFILE_FILENAME = "profile.yaml"
 
-TEST_PROFILE = ProfileConfig(idle_watchdog=True)
+TEST_PROFILE = ProfileConfig(
+    idle_watchdog=True, git_shim=GitShimConfig(block_amend=True, block_stash=True, block_add_all=True)
+)
 
 
 def setup_daemon_project(base_dir: Path, paths: SessionPaths) -> tuple[Path, Path]:

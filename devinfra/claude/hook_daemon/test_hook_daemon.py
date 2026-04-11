@@ -12,9 +12,12 @@ from pydantic import TypeAdapter
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.stop import StopInput
+from devinfra.claude.hook_daemon.config import ProfileConfig
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
 from devinfra.claude.hook_daemon.server import create_app
 from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
+
+_PERMISSIVE_PROFILE = ProfileConfig(idle_watchdog=True)
 
 _COMMON = {
     "session_id": "test-session",
@@ -218,6 +221,40 @@ class TestShimExec:
         proxy_env = {**env, "HTTPS_PROXY": "http://user:pass@proxy:8080"}
         result = await self._post_shim(client, _shim_request("bazelisk", ["bazelisk", "build"], proxy_env))
         assert isinstance(result, ShimExecve)
+
+
+class TestGitShimConfigDisabled:
+    """When git_shim blocks are disabled (web mode), all git commands pass through."""
+
+    @pytest.fixture
+    async def permissive_client(self, tmp_path: Path) -> AsyncGenerator[AsyncClient]:
+        daemon_dir = tmp_path / "hook-daemon"
+        daemon_dir.mkdir()
+        app = create_app(daemon_dir, profile=_PERMISSIVE_PROFILE)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
+
+    async def _post_shim(self, client: AsyncClient, req: ShimExecRequest) -> ShimBlocked | ShimExecve:
+        resp = await client.post("/shim-exec", content=req.model_dump_json(), headers=_JSON_HEADERS)
+        assert resp.status_code == 200
+        return TypeAdapter(ShimBlocked | ShimExecve).validate_json(resp.content)
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["git", "add", "-A"],
+            ["git", "add", "--all"],
+            ["git", "add", "."],
+            ["git", "stash"],
+            ["git", "stash", "push"],
+            ["git", "commit", "--amend"],
+        ],
+    )
+    async def test_git_commands_allowed_when_disabled(self, permissive_client: AsyncClient, argv: list[str]) -> None:
+        result = await self._post_shim(permissive_client, _shim_request("git", argv))
+        assert isinstance(result, ShimExecve)
+        assert result.argv == argv
 
 
 if __name__ == "__main__":

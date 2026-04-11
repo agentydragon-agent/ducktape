@@ -13,6 +13,10 @@ pre_commit:
     - trailing-whitespace
     - end-of-file-fixer
 
+git_shim:
+  block_amend: true
+  block_stash: true
+  block_add_all: true
 idle_watchdog: true
 write_kubeconfig: false
 env_exports: |

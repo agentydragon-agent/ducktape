@@ -25,6 +25,7 @@ class Session:
 
     session_id: str
     paths: SessionPaths
+    profile: ProfileConfig
     uds_remote: UdsRemoteProxy | None = None  # Bazel --remote_proxy
     bes_interceptor: BesInterceptor | None = None  # BES event interceptor
     buildbuddy_api_key: str | None = None
@@ -47,12 +48,13 @@ class Session:
         self._mailbox.clear()
         return messages
 
-    async def start_proxy(self, profile: ProfileConfig) -> None:
+    async def start_proxy(self) -> None:
         """Start proxy infrastructure for this session."""
         upstream_url = get_upstream_proxy_url()
 
         self._upstream_creds.set(upstream_url)
 
+        profile = self.profile
         if profile.bazel_remote_proxy is not None:
             self.uds_remote = UdsRemoteProxy(
                 sock_path=self.paths.bazel_remote_proxy_sock,

@@ -8,6 +8,7 @@ import pytest_bazel
 from devinfra.claude.claude_api.hooks.pre_tool_use import PermissionDecision, PreToolUseInput
 from devinfra.claude.hook_daemon.pre_tool_use import ALWAYS_ALLOW_COMMANDS, evaluate
 from devinfra.claude.hook_daemon.session import Session
+from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
 from devinfra.claude.session_paths import SessionPaths
 
 
@@ -16,6 +17,7 @@ def session() -> Session:
     return Session(
         session_id="test-session",
         paths=SessionPaths(session_id="test-session", home=Path("/tmp"), xdg_cache_home=Path("/tmp")),
+        profile=TEST_PROFILE,
     )
 
 
