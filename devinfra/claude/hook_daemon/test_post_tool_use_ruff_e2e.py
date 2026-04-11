@@ -15,9 +15,11 @@ import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
-from devinfra.claude.hook_daemon.config import PreCommitConfig
+from devinfra.claude.hook_daemon.config import PreCommitConfig, ProfileConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo, write_precommit_config
 from devinfra.claude.hook_daemon.post_tool_use import evaluate
+from devinfra.claude.hook_daemon.session import Session
+from devinfra.claude.session_paths import SessionPaths
 
 
 def _find_ruff() -> str:
@@ -96,7 +98,14 @@ def test_unused_import_preserved_after_hook(ruff_repo: Path) -> None:
 
     inp = PostToolUseInput(**_COMMON_INPUT, tool_name="Edit", tool_input={"file_path": str(test_file)})
     pre_commit = PreCommitConfig(auto_apply_hooks=frozenset({"ruff-format"}))
-    result = evaluate(inp, pre_commit=pre_commit)
+    session = Session(
+        session_id="test-session",
+        paths=SessionPaths(
+            session_id="test-session", home=ruff_repo.parent, xdg_cache_home=ruff_repo.parent / ".cache"
+        ),
+        profile=ProfileConfig(idle_watchdog=False, pre_commit=pre_commit),
+    )
+    result = evaluate(inp, session)
 
     # File content must be preserved — ruff-check is report-only, changes reverted
     assert "import os" in test_file.read_text(), (

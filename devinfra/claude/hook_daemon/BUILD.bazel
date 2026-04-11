@@ -105,6 +105,7 @@ py_library(
     deps = [
         ":config",
         ":precommit_runner",
+        ":session",
         ":tool_input_parsing",
         "//devinfra/claude/claude_api:tool_input_models",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
@@ -372,11 +373,15 @@ py_test(
         "@multitool//tools/ruff",
     ],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
+    legacy_create_init = 0,
     deps = [
+        ":config",
         ":hook_daemon_conftest",
         ":post_tool_use_lib",
         ":precommit_runner",
+        ":session",
         "//devinfra/claude:conftest",
+        "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
