@@ -35,6 +35,12 @@ spec:
         name: kyverno
         namespace: flux-system
   values:
+    # Use ghcr.io instead of reg.kyverno.io (scarf.sh proxy) — more reliable
+    # and already mirrored through Harbor (ghcr-proxy).
+    global:
+      image:
+        registry: ghcr.io
+
     # Admission controller configuration
     # HA: one replica per control-plane node (3 nodes = 3 replicas).
     # Ensures the webhook is reachable from every API server without
