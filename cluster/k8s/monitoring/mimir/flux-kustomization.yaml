@@ -22,6 +22,7 @@ spec:
       namespace: monitoring
   timeout: 10m
   dependsOn:
-    - name: monitoring-namespace
+    # monitoring-stack installs the ServiceMonitor CRD via kube-prometheus-stack
+    - name: monitoring-stack
     - name: grafana-helmrepository
     - name: minio-hil
