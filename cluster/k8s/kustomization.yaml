@@ -66,6 +66,7 @@ resources:
   - external-secrets/crds/flux-kustomization.yaml
   - external-secrets/operator/flux-kustomization.yaml
   - external-secrets/config/flux-kustomization.yaml
+  - external-secrets/vault-config/flux-kustomization.yaml
 
   # --- external-dns ---
   - external-dns/flux-kustomization.yaml

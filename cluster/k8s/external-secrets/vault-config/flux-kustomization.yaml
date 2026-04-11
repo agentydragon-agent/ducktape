@@ -1,24 +1,24 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: external-secrets-config
+  name: external-secrets-vault-config
   namespace: flux-system
 spec:
   interval: 10m0s
   retryInterval: 30s
-  path: ./cluster/k8s/external-secrets/config
+  path: ./cluster/k8s/external-secrets/vault-config
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
   timeout: 5m0s
   wait: true
-  # Health check ensures non-Vault ClusterSecretStores are ready before dependents.
-  # Vault-dependent store is in external-secrets-vault-config (separate kustomization).
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ClusterSecretStore
-      name: kubernetes-secret-store
+      name: vault-backend
   dependsOn:
     - name: external-secrets-operator
+      namespace: flux-system
+    - name: vault
       namespace: flux-system

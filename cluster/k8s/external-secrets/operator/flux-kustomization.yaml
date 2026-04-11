@@ -18,8 +18,6 @@ spec:
       namespace: flux-system
     - name: cert-manager # ESO uses Issuer resources
       namespace: flux-system
-    - name: vault
-      namespace: flux-system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
