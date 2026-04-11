@@ -1,5 +1,4 @@
-# Bazel test + build via bbr (runs on BuildBuddy RBE).
-# Replaces the BuildBuddy Workflows "CI" action.
+# Bazel test + build via bb remote (runs on BuildBuddy RBE).
 name: Bazel CI
 
 on:
@@ -19,6 +18,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  GIT_REPO_DEFAULT_BRANCH: devel
+
 jobs:
   bazel-ci:
     name: Test & Build
@@ -30,6 +32,8 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
 
       - uses: ./.github/actions/setup-ci-secrets
         with:
@@ -37,11 +41,11 @@ jobs:
 
       - name: Test
         run: |
-          bbr test --keep_going \
+          bb remote test --keep_going \
             --test_tag_filters=-live_openai_api \
             //...
 
       - name: Build + lint
         run: |
-          bbr build --keep_going \
+          bb remote build --keep_going \
             //...

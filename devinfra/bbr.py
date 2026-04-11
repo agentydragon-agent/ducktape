@@ -76,7 +76,7 @@ def _env_override(key: str, value: str) -> str:
 
 
 def _build_secret_args() -> list[str]:
-    """Build --remote_run_header and --env flags from CI secret env vars."""
+    """Build --remote_run_header flags for env vars that need forwarding to RBE."""
     args: list[str] = []
 
     # DUCKTAPE_DOCKER_CLIENT_KEY is already base64-encoded — forward as-is.
@@ -84,15 +84,6 @@ def _build_secret_args() -> list[str]:
     # assembles DOCKER_HOST / DOCKER_TLS_VERIFY / DOCKER_CERT_PATH.
     if dk_b64 := os.environ.get("DUCKTAPE_DOCKER_CLIENT_KEY"):
         args.append(_env_override("DUCKTAPE_DOCKER_CLIENT_KEY", dk_b64))
-
-    if ghcr_token := os.environ.get("GHCR_TOKEN"):
-        args.append(_env_override("GHCR_TOKEN", ghcr_token))
-
-    if ghcr_username := os.environ.get("GHCR_USERNAME"):
-        args.append(f"--env=GHCR_USERNAME={ghcr_username}")
-
-    if gh_release_pat := os.environ.get("GH_RELEASE_PAT"):
-        args.append(_env_override("GH_RELEASE_PAT", gh_release_pat))
 
     return args
 

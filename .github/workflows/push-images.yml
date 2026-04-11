@@ -1,5 +1,4 @@
-# Push OCI images to GHCR via bbr (parallel matrix).
-# Replaces the 13 BuildBuddy Workflows "Push" actions.
+# Push OCI images to GHCR via bb remote (parallel matrix).
 #
 # Each image is pushed independently — a broken build doesn't block others.
 # Images with unchanged digests are skipped (ghcr_push_lib deduplicates).
@@ -18,6 +17,9 @@ on:
 permissions:
   contents: read
   packages: write
+
+env:
+  GIT_REPO_DEFAULT_BRANCH: devel
 
 jobs:
   push:
@@ -47,10 +49,16 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
 
       - uses: ./.github/actions/setup-ci-secrets
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Push image
-        run: bbr run --remote_download_toplevel ${{ matrix.target }}
+        run: |
+          bb remote run --remote_download_toplevel \
+            --remote_run_header="x-buildbuddy-platform.env-overrides=GHCR_TOKEN=$GHCR_TOKEN" \
+            --env="GHCR_USERNAME=$GHCR_USERNAME" \
+            ${{ matrix.target }}

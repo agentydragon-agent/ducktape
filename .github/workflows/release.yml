@@ -16,6 +16,9 @@ on:
 permissions:
   contents: write
 
+env:
+  GIT_REPO_DEFAULT_BRANCH: devel
+
 jobs:
   release:
     name: Release ${{ matrix.target }}
@@ -37,10 +40,15 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
 
       - uses: ./.github/actions/setup-ci-secrets
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Release
-        run: bbr run ${{ matrix.target }}
+        run: |
+          bb remote run \
+            --remote_run_header="x-buildbuddy-platform.env-overrides=GH_RELEASE_PAT=$GH_RELEASE_PAT" \
+            ${{ matrix.target }}

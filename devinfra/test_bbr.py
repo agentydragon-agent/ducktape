@@ -45,25 +45,6 @@ class TestBuildSecretArgs:
             in args
         )
 
-    def test_ghcr_token(self) -> None:
-        env = {"GHCR_TOKEN": "ghp_abc123"}
-        with patch.dict("os.environ", env, clear=True):
-            args = _build_secret_args()
-        assert "--remote_run_header=x-buildbuddy-platform.env-overrides=GHCR_TOKEN=ghp_abc123" in args
-
-    def test_ghcr_username_independent(self) -> None:
-        """GHCR_USERNAME is forwarded independently of GHCR_TOKEN."""
-        env = {"GHCR_USERNAME": "other"}
-        with patch.dict("os.environ", env, clear=True):
-            args = _build_secret_args()
-        assert "--env=GHCR_USERNAME=other" in args
-
-    def test_gh_release_pat(self) -> None:
-        env = {"GH_RELEASE_PAT": "ghp_release"}
-        with patch.dict("os.environ", env, clear=True):
-            args = _build_secret_args()
-        assert "--remote_run_header=x-buildbuddy-platform.env-overrides=GH_RELEASE_PAT=ghp_release" in args
-
 
 class TestValidateGitState:
     def test_detached_head_skips(self, tmp_path: Path) -> None:

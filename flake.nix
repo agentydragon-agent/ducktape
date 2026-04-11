@@ -267,6 +267,14 @@
       };
 
       packages.${system} = ducktapePkgs // {
+        # Minimal CI package: just bb + sops (no claude-hooks wheel needed).
+        citools = pkgs.symlinkJoin {
+          name = "ducktape-citools";
+          paths = [
+            ducktapePkgs.bb
+            pkgs.sops
+          ];
+        };
         # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
         devtools = pkgs.symlinkJoin {
           name = "ducktape-devtools";

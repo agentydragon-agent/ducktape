@@ -1,5 +1,11 @@
 name: Setup Nix + Devtools
-description: Install Nix and the devtools flake output (.#devtools)
+description: Install Nix and a flake package output (default .#devtools)
+
+inputs:
+  package:
+    description: "Nix flake package to install (e.g. devtools, citools)"
+    required: false
+    default: devtools
 
 runs:
   using: composite
@@ -8,6 +14,6 @@ runs:
       with:
         extra_nix_config: experimental-features = nix-command flakes
 
-    - name: Install devtools
+    - name: Install ${{ inputs.package }}
       shell: bash
-      run: nix profile install .#devtools
+      run: nix profile install .#${{ inputs.package }}
