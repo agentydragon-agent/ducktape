@@ -22,7 +22,6 @@ runs:
           python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
 
         python3 devinfra/update_image_pin.py "${{ inputs.pin_name }}" --digest "$DIGEST"
-        npx prettier --write devinfra/image_pins.json
 
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

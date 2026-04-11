@@ -6,6 +6,7 @@ Usage:
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 _PINS_FILE = Path(__file__).parent / "image_pins.json"
@@ -22,7 +23,14 @@ def main() -> None:
         parser.error(f"Unknown image: {args.name} (known: {', '.join(sorted(pins))})")
 
     pins[args.name]["digest"] = args.digest
-    _PINS_FILE.write_text(json.dumps(pins, indent=2) + "\n")
+    # Produce prettier-compatible JSON: short arrays stay on one line.
+    text = json.dumps(pins, indent=2) + "\n"
+    text = re.sub(
+        r"\[\s+\"([^\"]+)\"\s+\]",
+        r'["\1"]',
+        text,
+    )
+    _PINS_FILE.write_text(text)
     print(f"Updated {args.name} in {_PINS_FILE}")
 
 
