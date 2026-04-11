@@ -1,11 +1,5 @@
-# Build and push the custom OpenClaw+matrix container image to GHCR.
-#
-# Derives from upstream ghcr.io/openclaw/openclaw with the matrix channel
-# plugin and its native crypto binary pre-installed.
-#
-# Triggers:
-#   - workflow_dispatch: manual trigger (tags :latest too)
-#   - workflow_call (from ci.yml): tags :<sha> + :<timestamp>-<sha7>
+# Build and push the OpenClaw+matrix container image to GHCR.
+# Derives from upstream openclaw with the matrix channel plugin pre-installed.
 name: OpenClaw Image
 
 on:

@@ -1,15 +1,7 @@
 # Build and push the BuildBuddy RBE worker image to GHCR.
-#
 # Based on BuildBuddy's rbe-ubuntu24-04 image, with extra deps for Rust, GHC,
 # and Chromium headless shell. See devinfra/rbe_image/Dockerfile.
-#
-# Triggers:
-#   - push to main/devel (when devinfra/rbe_image/** changes): tags :latest + :<sha> + :{branch}-{ts}-{sha7}
-#   - workflow_dispatch: tags :latest + :<sha> + :{branch}-{ts}-{sha7}
-#   - workflow_call (from ci.yml): tags :<sha> + :{branch}-{ts}-{sha7}, outputs image ref
-#
-# On push/dispatch, also pins BUILD.bazel to the new :{branch}-{ts}-{sha7} tag
-# and commits with "chore: update rbe image [skip ci]".
+# On push/dispatch, pins digest in image_pins.json and auto-commits.
 name: RBE Worker Image
 
 on:

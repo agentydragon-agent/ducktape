@@ -1,9 +1,4 @@
 # Build and push the Tana MCP Desktop image to GHCR.
-#
-# Triggers:
-#   - push to devel changing tana/mcp_server/** (tags :latest too)
-#   - workflow_dispatch: manual trigger (tags :latest too)
-#   - workflow_call (from ci.yml): tags :<sha> + :<timestamp>-<sha7>
 name: Tana MCP Image
 
 on:
