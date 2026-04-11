@@ -20,9 +20,9 @@ from pydantic import BaseModel, TypeAdapter
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
 from devinfra.claude.session_paths import SessionPaths
+from util.bazel.subprocess import python_env
 
 _SHIM_RESPONSE_ADAPTER: TypeAdapter[ShimBlocked | ShimExecve] = TypeAdapter(ShimBlocked | ShimExecve)
-from util.bazel.subprocess import python_env
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +99,8 @@ def send_shim_exec(report: ShimExecRequest, paths: SessionPaths) -> ShimBlocked 
             return None
         result: ShimBlocked | ShimExecve = _SHIM_RESPONSE_ADAPTER.validate_json(r.content)
         return result
-    except (httpx.ConnectError, httpx.TimeoutException, OSError) as e:
-        logger.error("shim-exec RPC failed (daemon unreachable): %s", e)
+    except (httpx.ConnectError, httpx.TimeoutException, OSError):
+        logger.exception("shim-exec RPC failed (daemon unreachable)")
         return None
     finally:
         conn.close()
@@ -239,7 +239,7 @@ def _record_startup_failure(daemon_dir: Path) -> None:
     data = StartupFailure(consecutive_failures=count, last_failure=datetime.datetime.now(tz=datetime.UTC))
     tmp = fail_file.with_suffix(".tmp")
     tmp.write_bytes(data.model_dump_json().encode())
-    os.replace(tmp, fail_file)
+    tmp.replace(fail_file)
     logger.info("Recorded startup failure #%d", count)
 
 
