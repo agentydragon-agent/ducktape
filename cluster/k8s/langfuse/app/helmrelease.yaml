@@ -136,12 +136,12 @@ spec:
         replicaCount: 1
         resourcesPreset: small
         persistence:
-          storageClass: lvm-proxmox-hdd-hdd
+          storageClass: lvm-proxmox-hdd
           size: 8Gi
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       persistence:
-        storageClass: TODO # replace before unsuspending
+        storageClass: lvm-proxmox-hdd
         size: 20Gi
 
     redis:
@@ -155,7 +155,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       primary:
         persistence:
-          storageClass: lvm-proxmox-hdd-hdd
+          storageClass: lvm-proxmox-hdd
 
     # TODO(reliability): Replace bundled MinIO with multi-node MinIO or
     # external S3 (Cloudflare R2 / Hetzner Object Storage) for durability.

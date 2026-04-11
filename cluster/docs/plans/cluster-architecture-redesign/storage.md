@@ -96,11 +96,11 @@ Remaining Longhorn PVCs (stale/orphaned — no workloads reference `storageClass
 | Namespace | PVC                             | Size | Notes                                  |
 | --------- | ------------------------------- | ---- | -------------------------------------- |
 | gitea     | data-gitea-postgresql-0         | 10G  | Legacy, suspended                      |
-| harbor    | data-harbor-redis-0             | 1G   | Orphaned (Harbor now on `lvm-proxmox`) |
-| harbor    | data-harbor-trivy-0             | 5G   | Orphaned (Harbor now on `lvm-proxmox`) |
+| harbor    | data-harbor-redis-0             | 1G   | Orphaned (Harbor now on `lvm-proxmox-hdd`) |
+| harbor    | data-harbor-trivy-0             | 5G   | Orphaned (Harbor now on `lvm-proxmox-hdd`) |
 | harbor    | database-data-harbor-database-0 | 1G   | Orphaned (migrated to CNPG)            |
-| harbor    | harbor-jobservice               | 1G   | Orphaned (Harbor now on `lvm-proxmox`) |
-| harbor    | harbor-registry                 | 30G  | Orphaned (Harbor now on `lvm-proxmox`) |
+| harbor    | harbor-jobservice               | 1G   | Orphaned (Harbor now on `lvm-proxmox-hdd`) |
+| harbor    | harbor-registry                 | 30G  | Orphaned (Harbor now on `lvm-proxmox-hdd`) |
 
 Previously on Longhorn, now migrated:
 
@@ -113,7 +113,7 @@ Previously on Longhorn, now migrated:
 | loki/storage-loki-stack-0     | MinIO (S3)           | 2026-04-06 |
 | vault/vault-raft-instance-\*  | `local-path-hetzner` | 2026-04-06 |
 
-All remaining Longhorn PVCs are orphaned — Harbor moved to `lvm-proxmox`,
+All remaining Longhorn PVCs are orphaned — Harbor moved to `lvm-proxmox-hdd`,
 Gitea is suspended. After verifying nothing is mounted, these are safe to delete.
 
 ## Distributed Storage Options Considered
