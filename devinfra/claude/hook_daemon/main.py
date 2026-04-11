@@ -9,7 +9,7 @@ import uvicorn
 from filelock import FileLock
 
 from devinfra.claude.hook_daemon.config import HookConfig, OtelConfig
-from devinfra.claude.hook_daemon.server import app, configure
+from devinfra.claude.hook_daemon.server import create_app
 from devinfra.claude.hook_daemon.source_env_script import run_env_script
 from devinfra.claude.hook_daemon.tracing import init_daemon_tracing, shutdown_tracing
 from devinfra.claude.settings import HookSettings, is_web_mode
@@ -90,8 +90,7 @@ def main() -> None:
     otel_config = _resolve_otel_config(hook_config)
 
     init_daemon_tracing(daemon_dir, otel_config=otel_config)
-    configure(daemon_dir, hook_config=hook_config, env_script_exports=env_script_exports)
-
+    app = create_app(daemon_dir, hook_config=hook_config, env_script_exports=env_script_exports)
     uvicorn.run(app, uds=args.sock, log_level="info")
     shutdown_tracing()
 

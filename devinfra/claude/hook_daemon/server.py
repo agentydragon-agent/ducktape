@@ -49,54 +49,6 @@ logger = logging.getLogger(__name__)
 IDLE_TIMEOUT_SECONDS = 1800  # 30 minutes
 IDLE_CHECK_INTERVAL_SECONDS = 30
 
-app = FastAPI()
-
-
-@app.middleware("http")
-async def _log_exceptions(request: Request, call_next):
-    """Log full traceback for unhandled exceptions instead of silent 500."""
-    try:
-        return await call_next(request)
-    except Exception:
-        tb_str = traceback.format_exc()
-        logger.exception("Unhandled exception in %s %s", request.method, request.url.path)
-        return JSONResponse(status_code=500, content={"detail": tb_str})
-
-
-def configure(
-    daemon_dir: Path,
-    hook_config: HookConfig,
-    env_script_exports: str,
-) -> None:
-    """Set daemon runtime directory and shared config. Call before starting uvicorn."""
-    app.state.daemon_dir = daemon_dir
-    app.state.settings = HookSettings()
-    app.state.hook_config = hook_config
-    app.state.env_script_exports = env_script_exports
-    app.state.last_request_time = time.monotonic()
-    app.state.sessions = {}  # dict[str, Session]
-    # Proxies are started lazily on the first SessionStart hook, not here.
-
-
-def _get_or_create_session(session_id: str, env: dict[str, str]) -> Session:
-    """Return existing Session for session_id, or create and register one."""
-    sessions: dict[str, Session] = app.state.sessions
-    if existing := sessions.get(session_id):
-        return existing
-    session = Session(session_id=session_id, paths=SessionPaths.from_env(session_id, env))
-    sessions[session_id] = session
-    return session
-
-
-def _save_session_env(env: dict[str, str]) -> None:
-    """Persist caller's env to disk for debuggability and daemon restart survival."""
-    daemon_dir: Path | None = getattr(app.state, "daemon_dir", None)
-    if daemon_dir is None:
-        return
-    env_file = daemon_dir / "session_env.json"
-    env_file.write_text(json.dumps(env, indent=2))
-
-
 # Non-REPL hooks: Claude Code delivers systemMessage to the UI notification
 # callback only, not to the model conversation. Flushing mailbox messages into
 # these would waste them — the model never sees them, so they'd be silently lost.
@@ -113,6 +65,27 @@ _NON_REPL_HOOK_TYPES = (
     WorktreeRemoveInput,
     ConfigChangeInput,
 )
+
+
+class _UpdateProxyCredsRequest(BaseModel):
+    https_proxy: str
+
+
+def _get_or_create_session(sessions: dict[str, Session], session_id: str, env: dict[str, str]) -> Session:
+    """Return existing Session for session_id, or create and register one."""
+    if existing := sessions.get(session_id):
+        return existing
+    session = Session(session_id=session_id, paths=SessionPaths.from_env(session_id, env))
+    sessions[session_id] = session
+    return session
+
+
+def _save_session_env(daemon_dir: Path | None, env: dict[str, str]) -> None:
+    """Persist caller's env to disk for debuggability and daemon restart survival."""
+    if daemon_dir is None:
+        return
+    env_file = daemon_dir / "session_env.json"
+    env_file.write_text(json.dumps(env, indent=2))
 
 
 def _apply_mailbox(output: HookOutputBase | None, session: Session, hook: AnyHookInput) -> HookOutputBase | None:
@@ -134,94 +107,7 @@ def _apply_mailbox(output: HookOutputBase | None, session: Session, hook: AnyHoo
     return output
 
 
-@app.post("/hook")
-async def handle_hook(req: HookRequest) -> Response:
-    app.state.last_request_time = time.monotonic()
-
-    tracer = trace.get_tracer(__name__)
-    hook_name = req.hook.hook_event_name
-
-    with tracer.start_as_current_span(
-        f"hook.{hook_name}",
-        attributes={
-            "hook.event_name": hook_name,
-            "hook.session_id": req.hook.session_id,
-            "hook.input": req.model_dump_json(),
-        },
-    ) as span:
-        # Persist env to disk on every call
-        _save_session_env(req.env)
-
-        session = _get_or_create_session(req.hook.session_id, req.env)
-
-        output: HookOutputBase | None = None
-        match req.hook:
-            case SessionStartHookInput():
-                hook_config = app.state.hook_config
-                web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
-                profile = hook_config.resolve_profile(web_mode, override=app.state.settings.profile)
-                await session.start_proxy(profile)
-                ctx = CallerContext.from_env(req.env)
-                output = await handle_session_start(
-                    session,
-                    req.hook,
-                    app.state.settings,
-                    hook_config=hook_config,
-                    ctx=ctx,
-                    env_script_exports=app.state.env_script_exports,
-                )
-            case PreToolUseInput():
-                output = evaluate_pre(req.hook)
-            case PostToolUseInput():
-                output = evaluate_post(req.hook)
-            case _:
-                pass  # All other hooks: noop
-
-        output = _apply_mailbox(output, session, req.hook)
-
-        # Guard: non-REPL hooks deliver systemMessage to the UI notification
-        # callback only — the model never sees it. If we accidentally set it,
-        # catch the bug here rather than silently losing the message.
-        if output is not None and output.system_message is not None and isinstance(req.hook, _NON_REPL_HOOK_TYPES):
-            raise AssertionError(
-                f"Bug: system_message set on non-REPL hook {hook_name!r}. "
-                f"The model will never see this message. Use additionalContext "
-                f"or initialUserMessage in hookSpecificOutput instead."
-            )
-
-        resp = HookResponse(output=output)
-        # exclude_none: the client may run an older version of the models
-        # (e.g. Nix-installed claude-hook) that uses extra="forbid" on
-        # CamelModel. New Optional fields default to None; if serialized
-        # as null they become unknown extras on the old client → ValidationError.
-        # Omitting None fields keeps the wire format forward-compatible.
-        resp_json = resp.model_dump_json(by_alias=True, exclude_none=True)
-
-        span.set_attribute("hook.output", resp_json)
-        logger.info("hook %s → %s", hook_name, resp_json)
-
-        return Response(content=resp_json, media_type="application/json")
-
-
-class _UpdateProxyCredsRequest(BaseModel):
-    https_proxy: str
-
-
-@app.post("/update-proxy-creds")
-async def update_proxy_creds(req: _UpdateProxyCredsRequest) -> None:
-    """Update in-process proxy credentials. Called by bazel_wrapper on each invocation."""
-    for s in app.state.sessions.values():
-        s.set_proxy_creds(req.https_proxy)
-    logger.debug("Updated proxy credentials via RPC")
-
-
-@app.get("/health")
-async def health() -> dict[str, str]:
-    """Health check — does NOT reset idle timer."""
-    return {"status": "ok"}
-
-
-async def _idle_watchdog() -> None:
+async def _idle_watchdog(app: FastAPI) -> None:
     """Background task: exit after IDLE_TIMEOUT_SECONDS of no requests."""
     while True:
         await asyncio.sleep(IDLE_CHECK_INTERVAL_SECONDS)
@@ -232,18 +118,119 @@ async def _idle_watchdog() -> None:
             return
 
 
-@app.on_event("startup")
-async def _start_idle_watchdog() -> None:
-    if is_web_mode():
-        # Web sessions are managed by Anthropic's environment manager — don't
-        # self-terminate. The container is torn down externally when the session ends.
-        logger.info("Web mode: idle watchdog disabled")
-        return
-    app.state.watchdog_task = asyncio.create_task(_idle_watchdog())
+def create_app(daemon_dir: Path, hook_config: HookConfig, env_script_exports: str) -> FastAPI:
+    """Create and configure the hook daemon FastAPI app."""
+    app = FastAPI()
 
+    app.state.daemon_dir = daemon_dir
+    app.state.settings = HookSettings()
+    app.state.hook_config = hook_config
+    app.state.env_script_exports = env_script_exports
+    app.state.last_request_time = time.monotonic()
+    app.state.sessions = {}  # dict[str, Session]
 
-@app.on_event("shutdown")
-async def _stop_proxy() -> None:
-    """Stop the in-process proxies on daemon shutdown."""
-    for session in app.state.sessions.values():
-        session.stop()
+    @app.middleware("http")
+    async def _log_exceptions(request: Request, call_next):
+        """Log full traceback for unhandled exceptions instead of silent 500."""
+        try:
+            return await call_next(request)
+        except Exception:
+            tb_str = traceback.format_exc()
+            logger.exception("Unhandled exception in %s %s", request.method, request.url.path)
+            return JSONResponse(status_code=500, content={"detail": tb_str})
+
+    @app.post("/hook")
+    async def handle_hook(req: HookRequest) -> Response:
+        app.state.last_request_time = time.monotonic()
+
+        tracer = trace.get_tracer(__name__)
+        hook_name = req.hook.hook_event_name
+
+        with tracer.start_as_current_span(
+            f"hook.{hook_name}",
+            attributes={
+                "hook.event_name": hook_name,
+                "hook.session_id": req.hook.session_id,
+                "hook.input": req.model_dump_json(),
+            },
+        ) as span:
+            _save_session_env(app.state.daemon_dir, req.env)
+
+            session = _get_or_create_session(app.state.sessions, req.hook.session_id, req.env)
+
+            output: HookOutputBase | None = None
+            match req.hook:
+                case SessionStartHookInput():
+                    hook_cfg = app.state.hook_config
+                    web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
+                    profile = hook_cfg.resolve_profile(web_mode, override=app.state.settings.profile)
+                    await session.start_proxy(profile)
+                    ctx = CallerContext.from_env(req.env)
+                    output = await handle_session_start(
+                        session,
+                        req.hook,
+                        app.state.settings,
+                        hook_config=hook_cfg,
+                        ctx=ctx,
+                        env_script_exports=app.state.env_script_exports,
+                    )
+                case PreToolUseInput():
+                    output = evaluate_pre(req.hook)
+                case PostToolUseInput():
+                    output = evaluate_post(req.hook)
+                case _:
+                    pass  # All other hooks: noop
+
+            output = _apply_mailbox(output, session, req.hook)
+
+            # Guard: non-REPL hooks deliver systemMessage to the UI notification
+            # callback only — the model never sees it. If we accidentally set it,
+            # catch the bug here rather than silently losing the message.
+            if output is not None and output.system_message is not None and isinstance(req.hook, _NON_REPL_HOOK_TYPES):
+                raise AssertionError(
+                    f"Bug: system_message set on non-REPL hook {hook_name!r}. "
+                    f"The model will never see this message. Use additionalContext "
+                    f"or initialUserMessage in hookSpecificOutput instead."
+                )
+
+            resp = HookResponse(output=output)
+            # exclude_none: the client may run an older version of the models
+            # (e.g. Nix-installed claude-hook) that uses extra="forbid" on
+            # CamelModel. New Optional fields default to None; if serialized
+            # as null they become unknown extras on the old client → ValidationError.
+            # Omitting None fields keeps the wire format forward-compatible.
+            resp_json = resp.model_dump_json(by_alias=True, exclude_none=True)
+
+            span.set_attribute("hook.output", resp_json)
+            logger.info("hook %s → %s", hook_name, resp_json)
+
+            return Response(content=resp_json, media_type="application/json")
+
+    @app.post("/update-proxy-creds")
+    async def update_proxy_creds(req: _UpdateProxyCredsRequest) -> None:
+        """Update in-process proxy credentials. Called by bazel_wrapper on each invocation."""
+        for s in app.state.sessions.values():
+            s.set_proxy_creds(req.https_proxy)
+        logger.debug("Updated proxy credentials via RPC")
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        """Health check — does NOT reset idle timer."""
+        return {"status": "ok"}
+
+    @app.on_event("startup")
+    async def _start_idle_watchdog() -> None:
+        if is_web_mode():
+            # Web sessions are managed by Anthropic's environment manager — don't
+            # self-terminate. The container is torn down externally when the session ends.
+            logger.info("Web mode: idle watchdog disabled")
+            return
+        app.state.watchdog_task = asyncio.create_task(_idle_watchdog(app))
+
+    @app.on_event("shutdown")
+    async def _stop_proxy() -> None:
+        """Stop the in-process proxies on daemon shutdown."""
+        for session in app.state.sessions.values():
+            session.stop()
+
+    return app
