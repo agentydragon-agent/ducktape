@@ -49,6 +49,7 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: run //props/agents:push_images
+          rbe_image: ${{ inputs.rbe_image }}
           env_overrides: |
             PROPS_REGISTRY_URL=${{ vars.PROPS_REGISTRY_URL }}
             PROPS_REGISTRY_USERNAME=${{ env.PROPS_REGISTRY_USERNAME }}

@@ -51,5 +51,6 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: run ${{ matrix.target }}
+          rbe_image: ${{ inputs.rbe_image }}
           env_overrides: |
             GH_RELEASE_PAT=${{ env.GH_RELEASE_PAT }}

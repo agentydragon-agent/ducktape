@@ -19,7 +19,25 @@ permissions:
   packages: write
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      rbe_image: ${{ steps.filter.outputs.rbe_image }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rbe_image:
+              - 'devinfra/rbe_image/**'
+              - '.github/workflows/rbe-image.yml'
+
   rbe-image:
+    needs: [changes]
+    if: needs.changes.outputs.rbe_image == 'true'
     uses: ./.github/workflows/rbe-image.yml
     secrets: inherit
 

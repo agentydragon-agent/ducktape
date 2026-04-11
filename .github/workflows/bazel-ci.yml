@@ -43,8 +43,10 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: test --keep_going --test_tag_filters=-live_openai_api //...
+          rbe_image: ${{ inputs.rbe_image }}
 
       - name: Build + lint
         uses: ./.github/actions/bb-remote
         with:
           args: build --keep_going //...
+          rbe_image: ${{ inputs.rbe_image }}

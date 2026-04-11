@@ -20,6 +20,13 @@ inputs:
       already masked via ::add-mask:: so they won't leak in logs.
     required: false
     default: ""
+  rbe_image:
+    description: >
+      Override RBE executor container image (e.g. ghcr.io/.../rbe-worker:sha).
+      When set, passes --remote_default_exec_properties=container-image to
+      override the pinned image from image_pins.json.
+    required: false
+    default: ""
   disk_bytes:
     description: "Runner disk size in bytes (EstimatedFreeDiskBytes)"
     required: false
@@ -40,6 +47,11 @@ runs:
           [[ -n "$line" ]] && ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=$line")
         done <<< "${{ inputs.env_overrides }}"
 
+        IMAGE_ARGS=()
+        if [[ -n "${{ inputs.rbe_image }}" ]]; then
+          IMAGE_ARGS+=(--remote_default_exec_properties="container-image=docker://${{ inputs.rbe_image }}")
+        fi
+
         bb remote \
           --runner_exec_properties=EstimatedFreeDiskBytes=${{ inputs.disk_bytes }} \
           --runner_exec_properties=EstimatedComputeUnits=${{ inputs.compute_units }} \
@@ -47,4 +59,5 @@ runs:
           --runner_exec_properties=init-dockerd=true \
           "${ENV_ARGS[@]}" \
           ${{ inputs.args }} \
-          --config=rbe
+          --config=rbe \
+          "${IMAGE_ARGS[@]}"

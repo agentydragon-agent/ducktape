@@ -60,6 +60,7 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: run --remote_download_toplevel ${{ matrix.target }}
+          rbe_image: ${{ inputs.rbe_image }}
           env_overrides: |
             GHCR_TOKEN=${{ env.GHCR_TOKEN }}
             GHCR_USERNAME=${{ env.GHCR_USERNAME }}
