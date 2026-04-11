@@ -82,8 +82,8 @@ jobs:
           file: devinfra/rbe_image/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
 
       - name: Pin RBE image digest in image_pins.json
         if: github.event_name != 'workflow_call'
