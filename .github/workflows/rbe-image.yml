@@ -90,7 +90,7 @@ jobs:
         run: |
           PIN_TAG="${{ steps.meta.outputs.pin_tag }}"
           DIGEST=$(docker manifest inspect "ghcr.io/${{ github.repository_owner }}/rbe-worker:${PIN_TAG}" --verbose | \
-            python3 -c "import json,sys; print(json.load(sys.stdin)['Descriptor']['digest'])")
+            python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
 
           python3 devinfra/update_image_pin.py rbe_worker --digest "$DIGEST"
 
