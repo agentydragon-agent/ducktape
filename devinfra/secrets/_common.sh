@@ -43,19 +43,20 @@ try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy
 # OTEL bearer token (Grafana Alloy via Authentik)
 try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]'
 
+# TODO: Re-enable DUCKTAPE_DOCKER_CLIENT_KEY once docker-ci is working in cluster.
 # Docker CI mTLS — only the base64-encoded client key.
 # Python code (docker_mtls fixture) assembles DOCKER_HOST / DOCKER_TLS_VERIFY /
 # DOCKER_CERT_PATH atomically from this single value.
-_dk_file="$REPO_ROOT/secrets/docker-ci/client-key.sops.pem"
-if [ -f "$_dk_file" ]; then
-  _dk_stderr=$(mktemp)
-  if _dk=$(sops -d "$_dk_file" 2>"$_dk_stderr"); then
-    _dk_b64=$(printf '%s' "$_dk" | base64 -w0)
-    printf 'export DUCKTAPE_DOCKER_CLIENT_KEY=%s\n' "$_dk_b64"
-  else
-    echo "WARNING: secrets: DUCKTAPE_DOCKER_CLIENT_KEY: sops decrypt failed: $(cat "$_dk_stderr")" >&2
-  fi
-  rm -f "$_dk_stderr"
-else
-  echo "WARNING: secrets: DUCKTAPE_DOCKER_CLIENT_KEY: file not found: $_dk_file" >&2
-fi
+# _dk_file="$REPO_ROOT/secrets/docker-ci/client-key.sops.pem"
+# if [ -f "$_dk_file" ]; then
+#   _dk_stderr=$(mktemp)
+#   if _dk=$(sops -d "$_dk_file" 2>"$_dk_stderr"); then
+#     _dk_b64=$(printf '%s' "$_dk" | base64 -w0)
+#     printf 'export DUCKTAPE_DOCKER_CLIENT_KEY=%s\n' "$_dk_b64"
+#   else
+#     echo "WARNING: secrets: DUCKTAPE_DOCKER_CLIENT_KEY: sops decrypt failed: $(cat "$_dk_stderr")" >&2
+#   fi
+#   rm -f "$_dk_stderr"
+# else
+#   echo "WARNING: secrets: DUCKTAPE_DOCKER_CLIENT_KEY: file not found: $_dk_file" >&2
+# fi
