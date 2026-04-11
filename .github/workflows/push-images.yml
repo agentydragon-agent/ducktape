@@ -58,7 +58,8 @@ jobs:
 
       - name: Push image
         run: |
-          bb remote run --remote_download_toplevel \
+          bb remote \
             --remote_run_header="x-buildbuddy-platform.env-overrides=GHCR_TOKEN=$GHCR_TOKEN" \
             --env="GHCR_USERNAME=$GHCR_USERNAME" \
+            run --remote_download_toplevel \
             ${{ matrix.target }}

@@ -49,6 +49,6 @@ jobs:
 
       - name: Release
         run: |
-          bb remote run \
+          bb remote \
             --remote_run_header="x-buildbuddy-platform.env-overrides=GH_RELEASE_PAT=$GH_RELEASE_PAT" \
-            ${{ matrix.target }}
+            run ${{ matrix.target }}
