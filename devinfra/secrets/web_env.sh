@@ -17,3 +17,6 @@ try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" 
 
 # K8s service account token (claude-code-web SA)
 try_export K8S_TOKEN "$REPO_ROOT/secrets/claude-web-k8s-token.yaml" '["k8s_token"]'
+
+# CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
+try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.yaml" '["github_token"]'

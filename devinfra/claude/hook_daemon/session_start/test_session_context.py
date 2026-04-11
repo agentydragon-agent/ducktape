@@ -10,9 +10,10 @@ from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.hook_daemon import templates
-from devinfra.claude.hook_daemon.config import BackgroundCommand
+from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
 from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect
 from devinfra.claude.hook_daemon.session_start.handler import LogCollector
+from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
 
 
 def _render(
@@ -26,6 +27,7 @@ def _render(
     log_entries: list[logging.LogRecord] | None = None,
     log_file: str = "/tmp/daemon.log",
     buildbuddy_configured: bool = False,
+    profile: ProfileConfig = TEST_PROFILE,
 ) -> str:
     collector = LogCollector()
     collector.buffer.extend(log_entries or [])
@@ -40,6 +42,8 @@ def _render(
             log_file=log_file,
             buildbuddy_configured=buildbuddy_configured,
             platform=platform,
+            profile=profile,
+            bazel_remote_proxy_sock=None,
         )
     )
 

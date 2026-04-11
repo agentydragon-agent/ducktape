@@ -519,6 +519,8 @@ async def handle(
             log_file=log_file,
             buildbuddy_configured=isinstance(setup.buildbuddy_setup, buildbuddy.BuildbuddyConfigured),
             platform=setup.platform,
+            profile=profile,
+            bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
         )
         output = SessionStartOutput(
             hook_specific_output=SessionStartHookSpecificOutput(additional_context=context_output)

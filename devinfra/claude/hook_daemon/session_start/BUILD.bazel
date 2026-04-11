@@ -138,6 +138,7 @@ py_test(
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/hook_daemon:config",
         "//devinfra/claude/hook_daemon/templates",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//syrupy",
