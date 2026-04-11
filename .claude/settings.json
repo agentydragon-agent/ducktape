@@ -242,6 +242,7 @@
       "Bash(bazel run @bazel_gazelle//cmd/gazelle:*)",
       "Bash(bazel test:*)",
       "Bash(bb remote:*)",
+      "Bash(bbr:*)",
       "Bash(dconf dump:*)",
       "Bash(dconf read:*)",
       "Bash(flux reconcile:*)",
