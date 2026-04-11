@@ -4,7 +4,7 @@
 
 Bazel CI uses two caching layers:
 
-1. **BuildBuddy remote cache** — caches action results (build outputs, test results) across all runs. 98%+ hit rate in practice. Configured via `setup-buildbuddy` action.
+1. **BuildBuddy remote cache** — caches action results (build outputs, test results) across all runs. 98%+ hit rate in practice. Configured via `setup-bazel` action.
 2. **GHA repository cache** — caches Bazel's `repository_cache` (compressed downloads of external deps). Uses the unified `actions/cache@v4` action for restore+save.
 
 ## Why repository_cache only?
@@ -36,7 +36,7 @@ bazel-repo-cache-<hash of MODULE.bazel + MODULE.bazel.lock>
 
 ```
 compute-targets job
-  ├── restore repository_cache (bazel-repo-cache action)
+  ├── restore repository_cache (setup-bazel action)
   ├── bazel-diff queries (fetches external repos into repository_cache)
   └── post step: save repository_cache (automatic, only on exact-key miss)
 
@@ -45,7 +45,7 @@ compute-targets job
         post step: save skipped (exact-key hit from compute-targets)
 ```
 
-The `bazel-repo-cache` action uses the unified `actions/cache@v4`, which saves the cache as a post step on job success. The unified action only saves when the exact key was NOT found during restore, avoiding duplicate entries.
+The `setup-bazel` action uses the unified `actions/cache@v4`, which saves the cache as a post step on job success. The unified action only saves when the exact key was NOT found during restore, avoiding duplicate entries.
 
 There is **no prewarm step**. The `compute-targets` job runs `bazel query` via `bazel-diff`, which fetches all external repos during analysis. Downstream jobs benefit from the cache saved by `compute-targets`.
 

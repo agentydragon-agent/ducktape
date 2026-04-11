@@ -6,9 +6,8 @@ Both GitHub Copilot and Claude Code hooks use `devinfra/setup_buildbuddy.sh` to 
 
 **GitHub Copilot** (`.github/workflows/copilot-setup-steps.yml`):
 
-- `setup-bazel` action → `setup-buildbuddy` action → `devinfra/setup_buildbuddy.sh`
+- `setup-bazel` action → `devinfra/setup_buildbuddy.sh`
 - API key from `${{ secrets.BUILDBUDDY_API_KEY }}`
-- Toolchain detection enabled in `bazel-repo-cache` action
 
 **Claude Code Hooks** (`devinfra/claude/session_start.py`):
 

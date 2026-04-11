@@ -29,12 +29,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: experimental-features = nix-command flakes
-
-      - name: Install devtools
-        run: nix profile install .#devtools
+      - uses: ./.github/actions/setup-nix-devtools
 
       - uses: ./.github/actions/setup-ci-secrets
         with:

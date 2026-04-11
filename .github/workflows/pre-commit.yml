@@ -20,19 +20,9 @@ jobs:
       # ENVIRONMENT SETUP
       # ============================================================================
 
-      - uses: ./.github/actions/setup-python-env
+      - uses: ./.github/actions/setup-nix-devtools
 
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: experimental-features = nix-command flakes
-
-      # Install devtools via flake — provides ducktape-precommit, nixfmt,
-      # pre-commit, and other dev tools (all language: system hooks).
-      - name: Install dev tools
-        run: nix profile install .#devtools
-
-      # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
-      - uses: ./.github/actions/bazel-repo-cache
+      - uses: ./.github/actions/setup-bazel
         id: bazel-cache
 
       # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)

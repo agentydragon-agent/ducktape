@@ -21,24 +21,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - uses: ./.github/actions/setup-nix-devtools
+
       - uses: ./.github/actions/setup-ci-secrets
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
+      - uses: ./.github/actions/setup-bazel
         with:
-          extra_nix_config: experimental-features = nix-command flakes
-
-      - name: Install devtools from Nix flake
-        run: |
-          nix profile install .#devtools
-          echo "$HOME/.nix-profile/bin" >> $GITHUB_PATH
-
-      - name: Setup BuildBuddy
-        uses: ./.github/actions/setup-buildbuddy
-        with:
-          api_key: ${{ env.BUILDBUDDY_API_KEY }}
+          buildbuddy_api_key: ${{ env.BUILDBUDDY_API_KEY }}
 
       - name: Install pre-commit git hooks
         run: |
