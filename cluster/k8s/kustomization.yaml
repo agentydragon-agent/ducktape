@@ -126,7 +126,6 @@ resources:
   - authentik/app/flux-kustomization.yaml
   - authentik/servicemonitor/flux-kustomization.yaml
   - authentik/secrets/flux-kustomization.yaml
-  - authentik/token/flux-kustomization.yaml
   - authentik/sso-secrets/flux-kustomization.yaml
   - authentik/proxy-routes/flux-kustomization.yaml
   - authentik/blueprints/sso-secrets/flux-kustomization.yaml
