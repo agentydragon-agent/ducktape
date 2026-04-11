@@ -4,18 +4,16 @@ from pathlib import Path
 
 import yaml
 
-from devinfra.claude.hook_daemon.config import DefaultProfiles, HookConfig, ProfileConfig
+from devinfra.claude.hook_daemon.config import ProfileConfig
 from devinfra.claude.session_paths import SessionPaths
+
+PROFILE_FILENAME = "profile.yaml"
 
 TEST_PROFILE = ProfileConfig(idle_watchdog=True)
 
-TEST_HOOK_CONFIG = HookConfig(
-    profiles={"default": TEST_PROFILE}, default_profiles=DefaultProfiles(cli="default", web="default")
-)
-
 
 def setup_daemon_project(base_dir: Path, paths: SessionPaths) -> tuple[Path, Path]:
-    """Create minimal project dir with hook config and return (project_dir, env_file).
+    """Create minimal project dir with profile config and return (project_dir, env_file).
 
     Used by both the daemon_paths fixture and test_parallel_cold_start (which needs
     os.environ for child process inheritance instead of monkeypatch).
@@ -24,6 +22,6 @@ def setup_daemon_project(base_dir: Path, paths: SessionPaths) -> tuple[Path, Pat
     project_dir.mkdir(exist_ok=True)
     hooks_dir = project_dir / ".claude_hooks"
     hooks_dir.mkdir(exist_ok=True)
-    (hooks_dir / "config.yaml").write_text(yaml.dump(TEST_HOOK_CONFIG.model_dump(mode="json")))
+    (hooks_dir / PROFILE_FILENAME).write_text(yaml.dump(TEST_PROFILE.model_dump(mode="json")))
     env_file = paths.session_dir / "sessionstart-hook-0.sh"
     return project_dir, env_file

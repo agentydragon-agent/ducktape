@@ -19,7 +19,7 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseOutput,
 )
 from devinfra.claude.hook_daemon import templates
-from devinfra.claude.hook_daemon.config import HookConfig, PreCommitConfig
+from devinfra.claude.hook_daemon.config import PreCommitConfig
 from devinfra.claude.hook_daemon.precommit_runner import (
     HookAutoApplied,
     HookFailedNotApplied,
@@ -45,7 +45,7 @@ def _format_check_result(result: RunResult, file_path: Path, pre_commit: PreComm
     return output.strip()
 
 
-def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
+def evaluate(hook_input: PostToolUseInput, pre_commit: PreCommitConfig | None) -> PostToolUseOutput:
     if hook_input.tool_name not in FILE_MODIFYING_TOOLS:
         return PostToolUseOutput()
 
@@ -59,11 +59,9 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
         return PostToolUseOutput()
     project_dir = Path(pygit2.Repository(git_path).workdir).resolve()
 
-    config = HookConfig.load_from_repo(project_dir)
-    if not config or not config.pre_commit:
+    if not pre_commit:
         return PostToolUseOutput()
 
-    pre_commit = config.pre_commit
     run_result = run_on_file(file_path, project_dir, auto_apply_hooks=pre_commit.auto_apply_hooks)
 
     for hook_id, hr in run_result.hooks.items():

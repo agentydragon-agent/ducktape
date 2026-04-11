@@ -8,21 +8,21 @@ from pathlib import Path
 import uvicorn
 from filelock import FileLock
 
-from devinfra.claude.hook_daemon.config import HookConfig, OtelConfig
+from devinfra.claude.hook_daemon.config import OtelConfig, ProfileConfig
 from devinfra.claude.hook_daemon.server import create_app
 from devinfra.claude.hook_daemon.source_env_script import run_env_script
 from devinfra.claude.hook_daemon.tracing import init_daemon_tracing, shutdown_tracing
-from devinfra.claude.settings import HookSettings, is_web_mode
+from devinfra.claude.settings import HookSettings
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_otel_config(hook_config: HookConfig) -> OtelConfig | None:
-    """Build OtelConfig from config + env vars. Bearer token comes from env (set by env script)."""
-    if not hook_config.otel:
+def _resolve_otel_config(profile: ProfileConfig) -> OtelConfig | None:
+    """Build OtelConfig from profile + env vars. Bearer token comes from env (set by env script)."""
+    if not profile.otel:
         return None
 
-    otel_config = hook_config.otel.with_env_overrides()
+    otel_config = profile.otel.with_env_overrides()
     if not otel_config.endpoint:
         return None
 
@@ -63,23 +63,23 @@ def main() -> None:
     logger.info("Daemon startup env var keys: %s", sorted(os.environ))
     logger.info("Daemon startup settings: %s", HookSettings().model_dump())
 
-    # Load config once at daemon startup. Shared by tracing init and session start handler.
-    otel_config: OtelConfig | None = None
+    # Load profile once at daemon startup.
     env_script_exports: str = ""
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
     if not project_dir_str:
-        raise RuntimeError("CLAUDE_PROJECT_DIR not set — cannot load hook config")
+        raise RuntimeError("CLAUDE_PROJECT_DIR not set — cannot load profile config")
 
     project_dir = Path(project_dir_str)
-    hook_config = HookConfig.load_from_repo(project_dir)
+    settings = HookSettings()
+    if not settings.profile:
+        raise RuntimeError("DUCKTAPE_CLAUDE_HOOKS_PROFILE not set — cannot load profile config")
+    profile = ProfileConfig.load(project_dir / settings.profile)
 
     # Run the profile's env_script to populate secrets in os.environ
     # (BUILDBUDDY_API_KEY, DUCKTAPE_OTEL_BEARER_TOKEN, etc.)
     # Raw export lines are stored and written verbatim to the session env file.
     # TODO: os.environ.update() is a footgun — env script can silently overwrite
     # any daemon env var. Consider allowlisting which vars the script may set.
-    settings = HookSettings()
-    profile = hook_config.resolve_profile(is_web_mode(), override=settings.profile)
     if profile.env_script:
         env_script_path = project_dir / profile.env_script
         if env_script_path.is_file():
@@ -87,10 +87,10 @@ def main() -> None:
             os.environ.update(script_result.env_vars)
             env_script_exports = script_result.raw_exports
 
-    otel_config = _resolve_otel_config(hook_config)
+    otel_config = _resolve_otel_config(profile)
 
     init_daemon_tracing(daemon_dir, otel_config=otel_config)
-    app = create_app(daemon_dir, hook_config=hook_config, env_script_exports=env_script_exports, profile=profile)
+    app = create_app(daemon_dir, env_script_exports=env_script_exports, profile=profile)
     uvicorn.run(app, uds=args.sock, log_level="info")
     shutdown_tracing()
 

@@ -11,7 +11,7 @@ import pygit2
 import pytest
 import yaml
 
-from devinfra.claude.hook_daemon.testing.testing_helpers import setup_daemon_project
+from devinfra.claude.hook_daemon.testing.testing_helpers import PROFILE_FILENAME, setup_daemon_project
 from devinfra.claude.session_paths import SessionPaths
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -51,8 +51,8 @@ def daemon_paths(
     Daemons left running after a test are harmless — they'll be killed when
     the RBE container exits.
 
-    Sets CLAUDE_PROJECT_DIR to a temp dir with a minimal .claude_hooks/config.yaml
-    so the daemon can start (it loads config at startup).
+    Sets CLAUDE_PROJECT_DIR and DUCKTAPE_CLAUDE_HOOKS_PROFILE so the daemon
+    can load profile config at startup.
 
     After the test, copies daemon logs to undeclared test outputs for post-hoc debugging.
     """
@@ -63,6 +63,7 @@ def daemon_paths(
     project_dir, env_file = setup_daemon_project(tmp_path, paths)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
     monkeypatch.setenv("CLAUDE_ENV_FILE", str(env_file))
+    monkeypatch.setenv("DUCKTAPE_CLAUDE_HOOKS_PROFILE", f".claude_hooks/{PROFILE_FILENAME}")
 
     yield paths
 

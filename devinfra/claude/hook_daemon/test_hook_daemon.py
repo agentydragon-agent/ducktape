@@ -14,7 +14,7 @@ from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.stop import StopInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
 from devinfra.claude.hook_daemon.server import create_app
-from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_HOOK_CONFIG, TEST_PROFILE
+from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
 
 _COMMON = {
     "session_id": "test-session",
@@ -31,7 +31,7 @@ async def client(tmp_path: Path) -> AsyncGenerator[AsyncClient]:
     """Create an async test client for the daemon app."""
     daemon_dir = tmp_path / "hook-daemon"
     daemon_dir.mkdir()
-    app = create_app(daemon_dir, hook_config=TEST_HOOK_CONFIG, env_script_exports="", profile=TEST_PROFILE)
+    app = create_app(daemon_dir, env_script_exports="", profile=TEST_PROFILE)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

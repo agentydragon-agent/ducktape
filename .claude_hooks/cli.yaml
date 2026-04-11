@@ -1,0 +1,31 @@
+otel:
+  endpoint: https://alloy-otlp.allegedly.works/v1/traces
+  # bearer_token: read from DUCKTAPE_OTEL_BEARER_TOKEN env var (set by env scripts).
+
+pre_commit:
+  auto_apply_hooks:
+    - ruff-format
+    - buildifier
+    - shfmt
+    - prettier
+    - nixfmt
+    - gofumpt
+    - trailing-whitespace
+    - end-of-file-fixer
+
+idle_watchdog: true
+write_kubeconfig: false
+env_exports: |
+  export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
+  export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
+env_script: devinfra/secrets/cli_env.sh
+bazel_remote_proxy:
+  target: remote.buildbuddy.io:443
+bazel_bes_proxy:
+  target: remote.buildbuddy.io:443
+background_commands:
+  - name: bazel info
+    command: bazelisk info
+    timeout: 300
+    after_env: true
+context_template: .claude_hooks/templates/context.mako

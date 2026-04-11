@@ -94,7 +94,10 @@ for bin in "${NIX_PROFILE}"/bin/*; do
   ln -sfn "$bin" /usr/local/bin/"$(basename "$bin")"
 done
 
-# --- Step 3: Symlink skills into ~/.claude/skills/ ---
+# --- Step 3: Set profile for web mode ---
+export DUCKTAPE_CLAUDE_HOOKS_PROFILE=.claude_hooks/web.yaml
+
+# --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
 # pre-landed default skills are preserved.
 echo "Deploying skills to ~/.claude/skills/..."

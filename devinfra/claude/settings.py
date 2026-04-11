@@ -10,7 +10,6 @@ Environment Variables (in priority order):
 """
 
 import importlib.resources
-import os
 from importlib.resources.abc import Traversable
 
 from pydantic import Field
@@ -34,11 +33,6 @@ ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
 ENV_SESSION_DIR = _env_name("session_dir")
 
 
-def is_web_mode() -> bool:
-    """Check if running in Claude Code web mode (CLAUDE_CODE_REMOTE=true)."""
-    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
-
-
 class HookSettings(BaseSettings):
     """Configuration for claude via environment variables.
 
@@ -51,8 +45,8 @@ class HookSettings(BaseSettings):
     # Port overrides (used by tests for free-port isolation)
     supervisor_port: int = Field(default=19001, description="Supervisor TCP port")
 
-    # Profile override (env var DUCKTAPE_CLAUDE_HOOKS_PROFILE)
-    profile: str | None = Field(default=None, description="Override profile name from config.yaml")
+    # Profile YAML file path (repo-relative, e.g. .claude_hooks/cli.yaml)
+    profile: str | None = Field(default=None, description="Profile YAML file path (repo-relative)")
 
     k8s_token: str | None = Field(
         default=None, description="K8s SA token for kubeconfig (env var fallback when SOPS unavailable)"

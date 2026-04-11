@@ -1,0 +1,7 @@
+pre_commit:
+  auto_apply_hooks:
+    - ruff-format
+
+idle_watchdog: true
+bazel_remote_proxy: null
+bazel_bes_proxy: null

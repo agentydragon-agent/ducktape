@@ -187,6 +187,7 @@ def test_container_e2e(
         "DUCKTAPE_CLAUDE_HOOKS_INSTALL_FLUX": "false",
         "DUCKTAPE_CLAUDE_HOOKS_INSTALL_APT_PACKAGES": "false",
         "DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME": "none",
+        "DUCKTAPE_CLAUDE_HOOKS_PROFILE": ".claude_hooks/profile.yaml",
         "ANTHROPIC_CA_PATH": "/certs/mock_ca.pem",
     }
     for var in PROXY_ENV_VARS:

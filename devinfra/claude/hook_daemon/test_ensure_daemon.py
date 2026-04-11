@@ -32,7 +32,7 @@ from devinfra.claude.hook_daemon.client import (
     _wait_for_sock,
     read_pidfile,
 )
-from devinfra.claude.hook_daemon.testing.testing_helpers import setup_daemon_project
+from devinfra.claude.hook_daemon.testing.testing_helpers import PROFILE_FILENAME, setup_daemon_project
 from devinfra.claude.session_paths import SessionPaths
 
 
@@ -92,9 +92,10 @@ def test_parallel_cold_start(short_tmp: Path) -> None:
     project_dir, env_file = setup_daemon_project(short_tmp, paths)
     # Use os.environ directly so child processes inherit (monkeypatch doesn't fork).
     # Use os.environ directly so child processes inherit (monkeypatch doesn't fork).
-    saved = {k: os.environ.get(k) for k in ("CLAUDE_PROJECT_DIR", "CLAUDE_ENV_FILE")}
+    saved = {k: os.environ.get(k) for k in ("CLAUDE_PROJECT_DIR", "CLAUDE_ENV_FILE", "DUCKTAPE_CLAUDE_HOOKS_PROFILE")}
     os.environ["CLAUDE_PROJECT_DIR"] = str(project_dir)
     os.environ["CLAUDE_ENV_FILE"] = str(env_file)
+    os.environ["DUCKTAPE_CLAUDE_HOOKS_PROFILE"] = f".claude_hooks/{PROFILE_FILENAME}"
     try:
         n = 5
         barrier: multiprocessing.synchronize.Barrier = multiprocessing.Barrier(n)

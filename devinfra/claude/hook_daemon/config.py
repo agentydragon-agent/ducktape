@@ -1,10 +1,10 @@
-"""Shared configuration loaded from .claude_hooks/config.yaml.
+"""Profile configuration loaded from a standalone YAML file.
 
-Repo-level config file that all hooks read. Configures OTEL tracing,
-profiles, and other shared settings. Secrets are handled by env scripts
-(devinfra/secrets/*.sh), not by this config file.
+Each profile (cli, web) is a standalone YAML file under .claude_hooks/
+(e.g. .claude_hooks/cli.yaml). The daemon loads exactly one profile at
+startup, selected by the DUCKTAPE_CLAUDE_HOOKS_PROFILE env var.
 
-Environment variables (DUCKTAPE_CLAUDE_HOOKS_*) override values from this file.
+Secrets are handled by env scripts (devinfra/secrets/*.sh), not by config.
 """
 
 from __future__ import annotations
@@ -60,6 +60,22 @@ class BackgroundCommand(BaseModel):
     )
 
 
+class PreCommitConfig(BaseModel, frozen=True):
+    """Pre-commit hook behavior configuration."""
+
+    auto_apply_hooks: frozenset[str] = Field(
+        default_factory=frozenset,
+        description="Hook IDs whose file modifications are kept (not reverted). "
+        "All other hooks' modifications are reverted and reported as diffs.",
+    )
+    show_report_diffs: bool = Field(
+        default=False, description="Show unified diffs from report-only hooks in the PostToolUse output."
+    )
+    show_hook_output: bool = Field(
+        default=False, description="Show stdout/stderr from failing hooks in the PostToolUse output."
+    )
+
+
 class ProfileConfig(BaseModel):
     bazel_remote_proxy: BazelRemoteProxyConfig | None = Field(
         default=None, description="UDS proxy for Bazel --remote_proxy (remote execution + cache). Null = disabled."
@@ -97,60 +113,19 @@ class ProfileConfig(BaseModel):
         "Disable in environments where the container is torn down externally (e.g. web mode)."
     )
 
-
-class DefaultProfiles(BaseModel):
-    """Which named profile to use by default for each mode."""
-
-    cli: str
-    web: str
-
-
-class PreCommitConfig(BaseModel, frozen=True):
-    """Pre-commit hook behavior configuration."""
-
-    auto_apply_hooks: frozenset[str] = Field(
-        default_factory=frozenset,
-        description="Hook IDs whose file modifications are kept (not reverted). "
-        "All other hooks' modifications are reverted and reported as diffs.",
+    # Formerly top-level HookConfig fields, now per-profile.
+    k8s: K8sConfig | None = Field(default=None, description="K8s cluster connection config for kubeconfig generation.")
+    otel: OtelConfig | None = Field(default=None, description="OpenTelemetry tracing configuration.")
+    pre_commit: PreCommitConfig | None = Field(default=None, description="Pre-commit hook behavior configuration.")
+    context_template: str | None = Field(
+        default=None, description="Repo-relative path to a Mako template rendered into the session context output."
     )
-    show_report_diffs: bool = Field(
-        default=False, description="Show unified diffs from report-only hooks in the PostToolUse output."
-    )
-    show_hook_output: bool = Field(
-        default=False, description="Show stdout/stderr from failing hooks in the PostToolUse output."
-    )
-
-
-class HookConfig(BaseModel):
-    """Top-level hook config file (.claude_hooks/config.yaml)."""
-
-    k8s: K8sConfig | None = None
-    otel: OtelConfig | None = None
-    pre_commit: PreCommitConfig | None = None
-    profiles: dict[str, ProfileConfig]
-    default_profiles: DefaultProfiles
-
-    def resolve_profile(self, web_mode: bool, override: str | None = None) -> ProfileConfig:
-        """Resolve a profile by name. Override > default for mode > error."""
-        name = override or (self.default_profiles.web if web_mode else self.default_profiles.cli)
-        if name not in self.profiles:
-            available = ", ".join(sorted(self.profiles))
-            raise KeyError(f"Profile {name!r} not found (available: {available})")
-        return self.profiles[name]
 
     @classmethod
-    def load(cls, config_path: Path) -> HookConfig:
-        """Load hook config from YAML file."""
+    def load(cls, config_path: Path) -> ProfileConfig:
+        """Load profile config from a standalone YAML file."""
         raw = yaml.safe_load(config_path.read_text())
-        return cls.model_validate(raw)
-
-    @classmethod
-    def load_from_repo(cls, root: Path) -> HookConfig:
-        """Load hook config from repo root. Raises FileNotFoundError if absent."""
-        config_path = root / HOOKS_DOTDIR / "config.yaml"
-        if not config_path.exists():
-            raise FileNotFoundError(f"Hook config not found: {config_path}")
-        config = cls.load(config_path)
+        config = cls.model_validate(raw)
         if config.otel:
             config = config.model_copy(update={"otel": config.otel.with_env_overrides()})
         return config

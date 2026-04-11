@@ -21,7 +21,7 @@ from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
 from devinfra.claude.session_paths import SessionPaths
 
-_SHIM_RESPONSE_ADAPTER = TypeAdapter(ShimBlocked | ShimExecve)
+_SHIM_RESPONSE_ADAPTER: TypeAdapter[ShimBlocked | ShimExecve] = TypeAdapter(ShimBlocked | ShimExecve)
 from util.bazel.subprocess import python_env
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,8 @@ def send_shim_exec(report: ShimExecRequest, paths: SessionPaths) -> ShimBlocked 
         if r.status_code != 200:
             logger.error("Daemon returned HTTP %d for shim-exec: %s", r.status_code, r.text)
             return None
-        return _SHIM_RESPONSE_ADAPTER.validate_json(r.content)
+        result: ShimBlocked | ShimExecve = _SHIM_RESPONSE_ADAPTER.validate_json(r.content)
+        return result
     except (httpx.ConnectError, httpx.TimeoutException, OSError) as e:
         logger.error("shim-exec RPC failed (daemon unreachable): %s", e)
         return None

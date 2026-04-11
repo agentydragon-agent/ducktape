@@ -38,7 +38,7 @@ from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.claude_api.hooks.setup import SetupInput
 from devinfra.claude.claude_api.hooks.worktree_create import WorktreeCreateInput
 from devinfra.claude.claude_api.hooks.worktree_remove import WorktreeRemoveInput
-from devinfra.claude.hook_daemon.config import HookConfig, ProfileConfig
+from devinfra.claude.hook_daemon.config import ProfileConfig
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
@@ -200,13 +200,13 @@ async def _idle_watchdog(app: FastAPI) -> None:
             return
 
 
-def create_app(daemon_dir: Path, hook_config: HookConfig, env_script_exports: str, profile: ProfileConfig) -> FastAPI:
+def create_app(daemon_dir: Path, env_script_exports: str, profile: ProfileConfig) -> FastAPI:
     """Create and configure the hook daemon FastAPI app."""
     app = FastAPI()
 
     app.state.daemon_dir = daemon_dir
     app.state.settings = HookSettings()
-    app.state.hook_config = hook_config
+    app.state.profile = profile
     app.state.env_script_exports = env_script_exports
     app.state.last_request_time = time.monotonic()
     app.state.sessions = {}  # dict[str, Session]
@@ -243,23 +243,20 @@ def create_app(daemon_dir: Path, hook_config: HookConfig, env_script_exports: st
             output: HookOutputBase | None = None
             match req.hook:
                 case SessionStartHookInput():
-                    hook_cfg = app.state.hook_config
-                    web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
-                    profile = hook_cfg.resolve_profile(web_mode, override=app.state.settings.profile)
-                    await session.start_proxy(profile)
+                    await session.start_proxy(app.state.profile)
                     ctx = CallerContext.from_env(req.env)
                     output = await handle_session_start(
                         session,
                         req.hook,
                         app.state.settings,
-                        hook_config=hook_cfg,
+                        profile=app.state.profile,
                         ctx=ctx,
                         env_script_exports=app.state.env_script_exports,
                     )
                 case PreToolUseInput():
                     output = evaluate_pre(req.hook)
                 case PostToolUseInput():
-                    output = evaluate_post(req.hook)
+                    output = evaluate_post(req.hook, pre_commit=app.state.profile.pre_commit)
                 case _:
                     pass  # All other hooks: noop
 

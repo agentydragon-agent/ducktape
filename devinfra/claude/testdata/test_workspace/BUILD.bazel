@@ -23,7 +23,7 @@ filegroup(
     srcs = [
         ".bazelrc",
         ".bazelversion",
-        ".claude_hooks/config.yaml",
+        ".claude_hooks/profile.yaml",
         "BUILD.bazel",
         "MODULE.bazel",
         "test_env.sh",

@@ -31,7 +31,7 @@ from devinfra.claude.claude_api.hooks.session_start import (
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_daemon import templates
-from devinfra.claude.hook_daemon.config import HOOKS_DOTDIR, BackgroundCommand, HookConfig, ProfileConfig
+from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
 from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.session_start import (
     buildbuddy,
@@ -344,7 +344,7 @@ async def handle(
     session: Session,
     hook_input: SessionStartHookInput,
     settings: HookSettings,
-    hook_config: HookConfig,
+    profile: ProfileConfig,
     ctx: CallerContext,
     env_script_exports: str,
 ) -> SessionStartOutput:
@@ -369,8 +369,6 @@ async def handle(
     project_dir = ctx.project_dir
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
     logger.info("Session directory: %s", session.paths.session_dir)
-
-    profile = hook_config.resolve_profile(ctx.web_mode, override=settings.profile)
 
     # Detect platform early (safe in both modes — reads /proc + psutil).
     platform = platform_detect.detect()
@@ -405,10 +403,10 @@ async def handle(
         # Write kubeconfig when token is available and profile enables it.
         # CLI profile skips this — the user has their own ~/.kube/config.
         k8s_token = setup.secrets.k8s_token or settings.k8s_token
-        if k8s_token and hook_config.k8s and profile.write_kubeconfig:
+        if k8s_token and profile.k8s and profile.write_kubeconfig:
             setup.secrets.kubeconfig_path = kubeconfig.write_kubeconfig(
                 token=k8s_token,
-                k8s_cfg=hook_config.k8s,
+                k8s_cfg=profile.k8s,
                 session_dir=session.paths.session_dir,
                 combined_ca_path=combined_ca,
                 proxy_url=proxy_url,
@@ -557,8 +555,10 @@ def _render_extra_context(
     bazel_remote_proxy_sock: Path | None,
     bazel_bes_proxy_sock: Path | None,
 ) -> str:
-    """Render repo-specific context from .claude_hooks/templates/context.mako if it exists."""
-    extra_template_path = project_dir / HOOKS_DOTDIR / "templates" / "context.mako"
+    """Render per-profile context template if configured."""
+    if not profile.context_template:
+        return ""
+    extra_template_path = project_dir / profile.context_template
     if not extra_template_path.exists():
         return ""
     template = Template(extra_template_path.read_text())

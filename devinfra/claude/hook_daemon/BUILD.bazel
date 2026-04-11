@@ -327,7 +327,6 @@ py_test(
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
         "@pypi//syrupy",
     ],
 )
@@ -354,7 +353,7 @@ py_test(
     name = "test_post_tool_use_ruff_e2e",
     srcs = ["test_post_tool_use_ruff_e2e.py"],
     data = [
-        "testdata/ruff_repo/.claude_hooks/config.yaml",
+        "testdata/ruff_repo/.claude_hooks/profile.yaml",
         "testdata/ruff_repo/ruff.toml",
         "@multitool//tools/ruff",
     ],
