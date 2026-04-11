@@ -203,6 +203,7 @@ py_test(
     srcs = ["test_hook_daemon.py"],
     legacy_create_init = 0,
     deps = [
+        ":config",
         ":models",
         ":server",
         "//devinfra/claude:conftest",
@@ -236,6 +237,7 @@ py_test(
     legacy_create_init = 0,
     deps = [
         ":client",
+        ":config",
         ":hook_daemon_conftest",
         ":models",
         ":server",
