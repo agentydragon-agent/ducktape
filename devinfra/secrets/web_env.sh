@@ -19,6 +19,9 @@ try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" 
 # K8s service account token (claude-code-web SA)
 try_export K8S_TOKEN "$REPO_ROOT/secrets/claude-web-k8s-token.yaml" '["k8s_token"]'
 
+# Same token under verbose name for claude-sandbox MCP server
+try_export CLAUDE_SANDBOX_K8S_TOKEN "$REPO_ROOT/secrets/claude-web-k8s-token.yaml" '["k8s_token"]'
+
 # OTEL bearer token (Grafana Alloy via Authentik)
 try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]'
 

@@ -161,6 +161,10 @@ creation_rules:
       - age:
           - *admin
           - *claude-web
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Shared dev secrets (all users + claude-web agent + CI)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:

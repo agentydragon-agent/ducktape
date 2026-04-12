@@ -263,6 +263,7 @@
       "Bash(kubectl logs:*)",
       "Bash(kubectl rollout restart:*)",
       "Bash(kubectl top:*)",
+      "mcp__claude-sandbox-kubectl__*",
       "Bash(modinfo:*)",
       "Bash(nix search:*)",
       "Bash(ping:*)",

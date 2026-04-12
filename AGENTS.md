@@ -14,6 +14,22 @@ doing any other work.** Follow <devinfra/claude/hook_daemon/docs/session_start_r
 Do not bypass proxy/certificate errors with `--noverify`, `SSL_VERIFY=false`, or similar.
 The root cause is always a broken session start hook — notify the user if recovery fails.
 
+## Kubernetes MCP Server (`claude-sandbox-kubectl`)
+
+Prefer the `claude-sandbox-kubectl` MCP server tools over `Bash(kubectl ...)` for
+`claude-sandbox` namespace operations. The MCP server uses the `claude-code-web`
+ServiceAccount and never triggers permission prompts.
+
+**RBAC** (defined in <cluster/k8s/agents/claude-rbac/role-sandbox.yaml>): full CRUD on
+pods, pods/log, pods/exec, pods/attach, services, configmaps, secrets, PVCs, events,
+deployments, statefulsets, daemonsets, replicasets, jobs, and cronjobs within
+`claude-sandbox`. Cross-namespace read access to several namespaces (harbor, langfuse,
+ollama, openclaw, props, gatus, logs) via separate rolebindings in
+<cluster/k8s/agents/claude-rbac/>. Resource quota: 8 CPU, 16Gi memory, 20 pods.
+
+**Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
+session kubeconfig (web) for operations needing higher privileges or other namespaces.
+
 ## Sandbox
 
 Run `bb`, `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).

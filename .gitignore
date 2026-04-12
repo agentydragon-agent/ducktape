@@ -84,7 +84,6 @@ cluster/.claude/
 .gitconfig
 !devinfra/claude/web_env/rootfs/root/.gitconfig
 .gitmodules
-.mcp.json
 .profile
 !devinfra/claude/web_env/rootfs/root/.profile
 .ripgreprc

@@ -112,7 +112,8 @@ import json, os, sys
 from pathlib import Path
 
 keys = ["BUILDBUDDY_API_KEY", "DUCKTAPE_OTEL_BEARER_TOKEN",
-        "GITHUB_TOKEN", "K8S_TOKEN", "DUCKTAPE_CI_READ_GITHUB_TOKEN"]
+        "GITHUB_TOKEN", "K8S_TOKEN", "CLAUDE_SANDBOX_K8S_TOKEN",
+        "DUCKTAPE_CI_READ_GITHUB_TOKEN"]
 present = {k: v for k in keys if (v := os.environ.get(k))}
 missing = [k for k in keys if k not in present]
 if missing:

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claude-sandbox-kubectl": {
+      "command": "bash",
+      "args": ["devinfra/claude/claude-sandbox-kubectl-mcp.sh"]
+    }
+  }
+}

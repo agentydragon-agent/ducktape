@@ -1,16 +1,22 @@
 # Claude Sandbox Namespace
 
-This directory configures a sandbox namespace for Claude AI assistant with full access for experimentation.
+This directory configures a sandbox namespace for Claude AI assistant with full access
+for experimentation.
+
+**Cross-references**: RBAC is referenced from the root `AGENTS.md` (Kubernetes MCP Server
+section). Keep both in sync when changing permissions.
 
 ## Permissions Granted
 
-**claude-sandbox namespace (full access):**
+**claude-sandbox namespace** (full access, defined in <role-sandbox.yaml>):
 
-- ✅ Create/delete pods, deployments, services, jobs
-- ✅ Full secrets access (create, read, update, delete)
-- ✅ `kubectl exec` into pods
-- ✅ Attach to pods, view logs
-- ⚠️ **Resource limits:** 4 CPU, 8Gi memory, 10 pods max (enforced by ResourceQuota)
+- Pods: create/delete, logs, exec, attach
+- Workloads: deployments, statefulsets, daemonsets, replicasets, jobs, cronjobs
+- Config: configmaps, secrets, PVCs, events, services
+- ⚠️ **Resource limits** (<resourcequota.yaml>): 8 CPU, 16Gi memory, 20 pods
+
+**Cross-namespace read access** (separate rolebindings in this directory):
+harbor, langfuse, ollama, openclaw, props, gatus, logs/configmaps
 
 ## ServiceAccount
 
@@ -84,9 +90,6 @@ kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml get pods -A
 
 The sandbox provides an isolated environment with resource limits:
 
-- **Namespace isolation**: Only `claude-sandbox` namespace is accessible
-- **Resource quotas**: 4 CPU, 8Gi memory, 10 pods max
+- **Namespace isolation**: Full CRUD only in `claude-sandbox`; other namespaces are read-only
+- **Resource quotas**: 8 CPU, 16Gi memory, 20 pods (see <resourcequota.yaml>)
 - **Full control**: Create/delete/modify any resources including secrets within sandbox
-- **No cluster access**: Without additional cluster-wide RBAC, access is limited to sandbox only
-
-To grant cluster-wide read access, deploy the separate `claude-rbac-read-only` configuration.

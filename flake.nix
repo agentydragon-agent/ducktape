@@ -260,6 +260,7 @@
         pkgs.opentofu
         pkgs.tflint
         pkgs.sops
+        ducktapePkgs.kubernetes-mcp-server
       ];
     in
     {
