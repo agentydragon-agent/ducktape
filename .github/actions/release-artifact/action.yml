@@ -11,6 +11,9 @@ inputs:
   filename:
     description: "Release asset filename (e.g. claude_hooks-0.1.0-py3-none-any.whl)"
     required: true
+  bazel_output:
+    description: "Path to artifact under bb-out/ (e.g. bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl)"
+    required: true
   rbe_image:
     description: "Override RBE container image (optional)"
     required: false
@@ -46,10 +49,9 @@ runs:
           exit 0
         fi
 
-        # Find the built artifact (bb remote downloads to bb-out/)
-        artifact=$(find bb-out -name "$FILENAME" -type f | head -1)
-        if [[ -z "$artifact" ]]; then
-          echo "::error::Artifact $FILENAME not found in bb-out"
+        artifact="${{ inputs.bazel_output }}"
+        if [[ ! -f "$artifact" ]]; then
+          echo "::error::Artifact not found at $artifact"
           ls -R bb-out/ 2>/dev/null || echo "bb-out/ does not exist"
           exit 1
         fi
@@ -68,7 +70,7 @@ runs:
         tag="${PKG}-${short_sha}"
         echo "$PKG: content changed, creating release $tag"
 
-        gh release create "$tag" "$artifact" \
+        gh release create "$tag" "${artifact}#${FILENAME}" \
           --title "$PKG ($short_sha)" \
           --notes "$PKG release" \
           --latest=false

@@ -31,21 +31,27 @@ jobs:
           - pkg: claude-hooks
             target: //:claude_hooks_wheel
             filename: claude_hooks-0.1.0-py3-none-any.whl
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl
           - pkg: ducktape-util
             target: //util:wheel
             filename: ducktape_util-0.1.0-py3-none-any.whl
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl
           - pkg: ducktape
             target: //:wheel
             filename: ducktape-0.1.0-py3-none-any.whl
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
           - pkg: gterm-theme
             target: //gterm_theme:wheel
             filename: gterm_theme-0.1.0-py3-none-any.whl
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
           - pkg: skills
             target: //skills:all_skills_tar
             filename: skills.tar
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/skills/all_skills_tar.tar
           - pkg: bbapi
             target: //devinfra/buildbuddy_cli:bbapi
             filename: bbapi
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi
     steps:
       - uses: actions/checkout@v6
         with:
@@ -64,4 +70,5 @@ jobs:
           pkg: ${{ matrix.pkg }}
           bazel_target: ${{ matrix.target }}
           filename: ${{ matrix.filename }}
+          bazel_output: ${{ matrix.bazel_output }}
           rbe_image: ${{ inputs.rbe_image }}
