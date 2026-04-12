@@ -137,7 +137,7 @@ platform(
     exec_properties = {
         # Custom image layered on BuildBuddy's rbe-ubuntu24-04 with git,
         # ca-certificates, and podman for e2e tests.
-        # Built by .github/workflows/rbe-image.yml, pinned in devinfra/image_pins.json.
+        # Built by .github/workflows/container-images.yml, pinned in devinfra/image_pins.json.
         "container-image": "docker://" + RBE_WORKER_IMAGE + "@" + RBE_WORKER_DIGEST,
         # BuildBuddy Firecracker isolation for all RBE actions (better isolation + runner recycling)
         "workload-isolation-type": "firecracker",

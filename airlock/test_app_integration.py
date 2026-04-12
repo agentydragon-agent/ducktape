@@ -51,6 +51,7 @@ def _mock_k8s_store():
     """Patch K8sTokenStore.from_incluster since tests don't run in a k8s pod."""
     mock_store = MagicMock()
     mock_store.list_secrets = AsyncMock(return_value=[])
+    mock_store.delete_orphaned_secrets = AsyncMock()
     with patch("airlock.app.K8sTokenStore.from_incluster", new_callable=AsyncMock, return_value=mock_store):
         yield
 
@@ -110,9 +111,11 @@ async def test_mcp_action_visible_via_rest(rsa_key_pair: RSAKeyPair, predicate_f
 
     app = create_app(settings, auth=auth, include_static=False)
     async with serve_app(echo_starlette, port=echo_port), serve_app(app, port=port):
-        # Create an action via MCP.
+        # Create an action via MCP (tool is namespace_toolname = test_echo_tool).
         async with GateClient(agent_transport(f"http://127.0.0.1:{port}", agent_jwt)) as client:
-            action = await client.call_echo("hello", session_key="test-session")
+            action = await client.call_gate_tool(
+                "test_echo_tool", {"input": {"text": "hello"}, "justification": "test", "session_key": "test-session"}
+            )
             assert action.state.status.value == "pending"
 
         # Verify action is visible via REST.

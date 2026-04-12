@@ -19,38 +19,38 @@ permissions:
   packages: write
 
 jobs:
-  rbe-image:
-    uses: ./.github/workflows/rbe-image.yml
+  container-images:
+    uses: ./.github/workflows/container-images.yml
     secrets: inherit
 
   bazel-ci:
-    needs: [rbe-image]
+    needs: [container-images]
     if: always() && !cancelled() && !failure()
     uses: ./.github/workflows/bazel-ci.yml
     with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+      rbe_image: ${{ needs.container-images.outputs.rbe_image }}
     secrets: inherit
 
   release:
-    needs: [bazel-ci, rbe-image]
+    needs: [bazel-ci, container-images]
     if: always() && !cancelled() && github.event_name == 'push'
     uses: ./.github/workflows/release.yml
     with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+      rbe_image: ${{ needs.container-images.outputs.rbe_image }}
     secrets: inherit
 
   push-images:
-    needs: [bazel-ci, rbe-image]
+    needs: [bazel-ci, container-images]
     if: always() && !cancelled() && github.event_name == 'push'
     uses: ./.github/workflows/push-images.yml
     with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+      rbe_image: ${{ needs.container-images.outputs.rbe_image }}
     secrets: inherit
 
   props-images:
-    needs: [bazel-ci, rbe-image]
+    needs: [bazel-ci, container-images]
     if: always() && !cancelled() && !failure() && github.event_name == 'push'
     uses: ./.github/workflows/props-images.yml
     with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+      rbe_image: ${{ needs.container-images.outputs.rbe_image }}
     secrets: inherit
