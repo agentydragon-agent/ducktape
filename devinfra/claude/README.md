@@ -141,10 +141,10 @@ BCR fetches use native JVM proxy settings from Anthropic's `JAVA_TOOL_OPTIONS`.
 
 ## Configuration
 
-| Environment Variable                    | Default | Description                           |
-| --------------------------------------- | ------- | ------------------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT` | `19001` | Supervisor TCP port                   |
-| `DUCKTAPE_CLAUDE_HOOKS_SETUP_DOCKER`    | `true`  | Set up Docker daemon under supervisor |
+| Environment Variable                    | Default | Description          |
+| --------------------------------------- | ------- | -------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT` | `19001` | Supervisor TCP port  |
+| `DUCKTAPE_CLAUDE_HOOKS_PROFILE`         | (none)  | Path to profile YAML |
 
 `<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.
 
