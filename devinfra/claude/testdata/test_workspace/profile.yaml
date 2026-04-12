@@ -1,4 +1,5 @@
 idle_watchdog: false
 bazel_remote_proxy: null
 bazel_bes_proxy: null
-env_script: test_env.sh
+env_exports: |
+  export E2E_TEST_SECRET='hello-from-env-exports'
