@@ -43,7 +43,7 @@ ARTIFACTS = [
     Artifact(pkg="ducktape-util", filename="ducktape_util-0.1.0-py3-none-any.whl"),
     Artifact(pkg="ducktape", filename="ducktape-0.1.0-py3-none-any.whl"),
     Artifact(pkg="gterm-theme", filename="gterm_theme-0.1.0-py3-none-any.whl"),
-    Artifact(pkg="skills", filename="skills.tar"),
+    Artifact(pkg="skills", filename="all_skills_tar.tar"),
     Artifact(pkg="bbapi", filename="bbapi"),
 ]
 

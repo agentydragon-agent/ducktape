@@ -8,9 +8,6 @@ inputs:
   bazel_target:
     description: "Bazel target to build (e.g. //:claude_hooks_wheel)"
     required: true
-  filename:
-    description: "Release asset filename (e.g. claude_hooks-0.1.0-py3-none-any.whl)"
-    required: true
   bazel_output:
     description: "Path to artifact under bb-out/ (e.g. bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl)"
     required: true
@@ -37,7 +34,6 @@ runs:
       env:
         GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
         PKG: ${{ inputs.pkg }}
-        FILENAME: ${{ inputs.filename }}
         RETENTION_DAYS: ${{ inputs.retention_days }}
       run: |
         set -euo pipefail
@@ -70,7 +66,7 @@ runs:
         tag="${PKG}-${short_sha}"
         echo "$PKG: content changed, creating release $tag"
 
-        gh release create "$tag" "${artifact}#${FILENAME}" \
+        gh release create "$tag" "$artifact" \
           --title "$PKG ($short_sha)" \
           --notes "$PKG release" \
           --latest=false
