@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import anyio
 import pytest_bazel
+from fastmcp.mcp_config import RemoteMCPServer
 
 from airlock.conftest import (
     TEST_NS,
@@ -37,12 +38,13 @@ async def test_client_reconnects_after_server_restart(
     agent_jwt: str,
     operator_jwt: str,
     echo_backend: EchoBackend,
+    echo_http: RemoteMCPServer,
     session_key: str,
 ):
     """New client connects after server restart and can call tools successfully."""
 
     # ── Phase 1: start server, call tool ─────────────────────────────────
-    app1 = make_gate_app({TEST_NS: echo_backend.server})
+    app1 = make_gate_app({TEST_NS: echo_http})
     async with serve_app(app1, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         tools = await agent.list_tools()
         assert any(t.name == "test_echo" for t in tools)
@@ -53,7 +55,7 @@ async def test_client_reconnects_after_server_restart(
     # Server is now down — old client is disconnected
 
     # ── Phase 2: restart server on same port, same db ────────────────────
-    app2 = make_gate_app({TEST_NS: echo_backend.server})
+    app2 = make_gate_app({TEST_NS: echo_http})
     async with serve_app(app2, port=free_port):
         # New client connects successfully
         async with GateClient(agent_transport(base_url, agent_jwt)) as agent:
@@ -78,19 +80,20 @@ async def test_pending_action_survives_server_restart(
     agent_jwt: str,
     operator_jwt: str,
     echo_backend: EchoBackend,
+    echo_http: RemoteMCPServer,
     session_key: str,
 ):
     """Action created before restart is readable and resolvable after restart."""
 
     # ── Phase 1: create action ───────────────────────────────────────────
-    app1 = make_gate_app({TEST_NS: echo_backend.server})
+    app1 = make_gate_app({TEST_NS: echo_http})
     async with serve_app(app1, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         created = await agent.call_echo("survive", session_key=session_key)
 
     # Server down — action is persisted in SQLite
 
     # ── Phase 2: restart, approve, verify catch-up ───────────────────────
-    app2 = make_gate_app({TEST_NS: echo_backend.server})
+    app2 = make_gate_app({TEST_NS: echo_http})
     async with (
         serve_app(app2, port=free_port),
         GateClient(operator_transport(base_url, operator_jwt)) as operator,
@@ -111,19 +114,20 @@ async def test_resubscribe_receives_notifications_after_restart(
     agent_jwt: str,
     operator_jwt: str,
     echo_backend: EchoBackend,
+    echo_http: RemoteMCPServer,
     session_key: str,
 ):
     """Re-subscribing to a session's log HWM on a new connection receives notifications."""
 
     # ── Phase 1: create action ───────────────────────────────────────────
-    app1 = make_gate_app({TEST_NS: echo_backend.server})
+    app1 = make_gate_app({TEST_NS: echo_http})
     async with serve_app(app1, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         created = await agent.call_echo("resub", session_key=session_key)
 
     # Server down
 
     # ── Phase 2: restart, re-subscribe, approve, wait for notification ───
-    app2 = make_gate_app({TEST_NS: echo_backend.server})
+    app2 = make_gate_app({TEST_NS: echo_http})
     async with serve_app(app2, port=free_port):
         async with GateClient(agent_transport(base_url, agent_jwt)) as agent:
             # Approve via operator

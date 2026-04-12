@@ -152,7 +152,7 @@ class AirlockServer(EnhancedFastMCP):
     def __init__(
         self,
         *,
-        backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
+        backends: Mapping[MCPMountPrefix, MCPServerTypes],
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
@@ -228,13 +228,13 @@ class AirlockServer(EnhancedFastMCP):
             namespace = MCPMountPrefix(action.call.server_namespace)
             self._spawn(self._await_human_decision(action.key, namespace, action.call.tool_name, action.call.arguments))
 
-    async def _try_connect_backend(self, namespace: MCPMountPrefix, spec: MCPServerTypes | FastMCP) -> None:
+    async def _try_connect_backend(self, namespace: MCPMountPrefix, spec: MCPServerTypes) -> None:
         """Attempt to connect one backend. Updates _backends and broadcasts status change.
 
         On failure the backend is marked degraded but no exception is raised — airlock
         continues serving other backends.
         """
-        client: Client = Client(spec) if isinstance(spec, FastMCP) else Client(spec.to_transport())
+        client: Client = Client(spec.to_transport())
         stack = AsyncExitStack()
         try:
             logger.info("[_try_connect_backend] connecting %s", namespace)

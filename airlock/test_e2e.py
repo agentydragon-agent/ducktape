@@ -19,6 +19,7 @@ from airlock.conftest import (
     GateAppFactory,
     GateClient,
     GateServerFactory,
+    as_remote_server,
     gate_http_app,
     serve_app,
 )
@@ -129,24 +130,25 @@ async def test_multi_backend_namespace_isolation(
 
     ns_a = MCPMountPrefix("alpha")
     ns_b = MCPMountPrefix("beta")
-    app = make_gate_app({ns_a: srv_a, ns_b: srv_b}, predicate=lambda ns, tool, args: Approved())
+    async with as_remote_server(srv_a) as spec_a, as_remote_server(srv_b) as spec_b:
+        app = make_gate_app({ns_a: spec_a, ns_b: spec_b}, predicate=lambda ns, tool, args: Approved())
 
-    async with serve_app(app, port=free_port), GateClient(agent_client_transport) as client:
-        tools = await client.list_tools()
-        tool_names = {t.name for t in tools}
-        assert {"alpha_echo", "beta_echo"} <= tool_names
+        async with serve_app(app, port=free_port), GateClient(agent_client_transport) as client:
+            tools = await client.list_tools()
+            tool_names = {t.name for t in tools}
+            assert {"alpha_echo", "beta_echo"} <= tool_names
 
-        action_a = await client.call_gate_tool(
-            "alpha_echo", {"input": {"text": "from-a"}, "justification": "test", "session_key": session_key}
-        )
-        with anyio.fail_after(5.0):
-            await client.wait_for(action_a.key, ActionStatus.DONE)
+            action_a = await client.call_gate_tool(
+                "alpha_echo", {"input": {"text": "from-a"}, "justification": "test", "session_key": session_key}
+            )
+            with anyio.fail_after(5.0):
+                await client.wait_for(action_a.key, ActionStatus.DONE)
 
-        action_b = await client.call_gate_tool(
-            "beta_echo", {"input": {"text": "from-b"}, "justification": "test", "session_key": session_key}
-        )
-        with anyio.fail_after(5.0):
-            await client.wait_for(action_b.key, ActionStatus.DONE)
+            action_b = await client.call_gate_tool(
+                "beta_echo", {"input": {"text": "from-b"}, "justification": "test", "session_key": session_key}
+            )
+            with anyio.fail_after(5.0):
+                await client.wait_for(action_b.key, ActionStatus.DONE)
 
     assert calls_a == ["from-a"]
     assert calls_b == ["from-b"]
