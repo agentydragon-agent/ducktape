@@ -14,7 +14,6 @@ manifest:
     IPython: ipython
     OpenSSL: pyopenssl
     PIL: pillow
-    PySide6: pyside6_essentials
     absl: absl_py
     agent_framework: agent_framework_core
     agent_framework_anthropic: agent_framework_anthropic
@@ -117,7 +116,6 @@ manifest:
     fastmcp: fastmcp
     fastuuid: fastuuid
     filelock: filelock
-    fitz: pymupdf
     flatbuffers: flatbuffers
     flexcache: flexcache
     flexparser: flexparser
@@ -434,7 +432,6 @@ manifest:
     pygit2: pygit2
     pygments: pygments
     pylab: matplotlib
-    pymupdf: pymupdf
     pyparsing: pyparsing
     pypdf: pypdf
     pypdfium2: pypdfium2
@@ -482,7 +479,6 @@ manifest:
     send2trash: send2trash
     setuptools: setuptools
     shellingham: shellingham
-    shiboken6: shiboken6
     simplejson: simplejson
     six: six
     slugify: python_slugify
@@ -602,4 +598,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 7d6b9b977722f1f4016f4720ae8b19d2c0eb9c6ec0f3be301f266a30340c8bd7
+integrity: 8616993dc9bdbab6b8dba9219d51d79e1165babe8e060ee64774d68d05e33c43
