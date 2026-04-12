@@ -1,6 +1,9 @@
 # Push OCI images to GHCR via bb remote (parallel matrix).
 #
 # Each image is pushed independently — a broken build doesn't block others.
+# Images with a test_target are only pushed if their tests pass (Bazel remote
+# cache makes this a fast cache lookup after bazel-ci already ran //...).
+# Images without a test_target are always pushed on commit.
 # Images with unchanged digests are skipped (ghcr_push_lib deduplicates).
 name: Push Images
 
@@ -29,20 +32,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - //airlock:push_ghcr
-          - //airlock/auth_proxy:push_ghcr
-          - //cluster/k8s/agents/claude-token-rotation:push_ghcr
-          - //cluster/k8s/inventree/token-provisioner:push_ghcr
-          - //devinfra/firecracker/manager:push_ghcr
-          - //devinfra/firecracker/vm_pod:push_ghcr
-          - //homeassistant/proxy:push_ghcr
-          - //inventree_utils/rai_plugin:push_ghcr
-          - //mcp_infra/exec:push_ghcr
-          - //openclaw/exec:push_ghcr
-          - //props/backend:push_ghcr
-          - //tana/token_broker:push_ghcr
-          - //third_party/activitywatch:push_ghcr
+        include:
+          # Images with test gates: only pushed if their tests pass.
+          - target: //airlock:push_ghcr
+            test_target: //airlock/...
+          - target: //airlock/auth_proxy:push_ghcr
+            test_target: //airlock/auth_proxy/...
+          - target: //homeassistant/proxy:push_ghcr
+            test_target: //homeassistant/proxy/...
+          - target: //mcp_infra/exec:push_ghcr
+            test_target: //mcp_infra/exec/...
+          - target: //props/backend:push_ghcr
+            test_target: //props/backend/...
+          - target: //tana/token_broker:push_ghcr
+            test_target: //tana/token_broker/...
+          # Images without tests: always pushed on commit.
+          - target: //cluster/k8s/agents/claude-token-rotation:push_ghcr
+          - target: //cluster/k8s/inventree/token-provisioner:push_ghcr
+          - target: //devinfra/firecracker/manager:push_ghcr
+          - target: //devinfra/firecracker/vm_pod:push_ghcr
+          - target: //inventree_utils/rai_plugin:push_ghcr
+          - target: //openclaw/exec:push_ghcr
+          - target: //third_party/activitywatch:push_ghcr
     steps:
       - uses: actions/checkout@v6
         with:
@@ -56,7 +67,17 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
+      - name: Test
+        id: test
+        if: matrix.test_target != ''
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test --test_tag_filters=-live_openai_api ${{ matrix.test_target }}
+          rbe_image: ${{ inputs.rbe_image }}
+        continue-on-error: true
+
       - name: Push image
+        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
         uses: ./.github/actions/bb-remote
         with:
           args: run --remote_download_toplevel ${{ matrix.target }}
