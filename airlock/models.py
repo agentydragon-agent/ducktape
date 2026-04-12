@@ -103,6 +103,7 @@ class Action(BaseModel):
     call: ToolCall
     justification: str
     state: ActionState
+    client_id: str | None = Field(default=None, description="OAuth client_id of the caller that proposed this action.")
 
     model_config = ConfigDict(extra="forbid")
 

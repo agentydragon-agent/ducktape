@@ -32,6 +32,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server.auth import require_scopes
+from fastmcp.server.dependencies import get_access_token
 from fastmcp.tools.tool import FunctionTool
 from mako.template import Template
 from mcp import types as mcp_types
@@ -304,9 +305,11 @@ class AirlockServer(EnhancedFastMCP):
             input: dict[str, object] = {},  # noqa: B006
             wait_mode: WaitMode | None = None,
         ) -> Action:
+            token = get_access_token()
+            caller_client_id = token.client_id if token else None
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
             action = await self._req_storage.create_action(
-                session_key=session_key, call=call, justification=justification
+                session_key=session_key, call=call, justification=justification, client_id=caller_client_id
             )
             key = action.key
             await self._append_log_and_notify(key, ActionReceivedDetail())

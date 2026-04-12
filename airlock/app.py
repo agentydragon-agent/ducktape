@@ -24,6 +24,9 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
+from fastmcp.server.auth import MultiAuth
+from fastmcp.server.auth.auth import AuthProvider
+from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.lifespan import combine_lifespans
 from pydantic import BaseModel
@@ -45,7 +48,7 @@ from airlock.oauth.provider import PlaidProvider, Provider
 from airlock.oauth.refresh import token_refresh_loop
 from airlock.oauth.routes import create_oauth_router
 from airlock.predicates import load_predicate
-from airlock.proxy_server import AirlockServer
+from airlock.proxy_server import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, AirlockServer
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +68,7 @@ def _detect_namespace() -> str:
     return "airlock"
 
 
-def create_app(settings: Settings, *, auth: JWTVerifier, include_static: bool = True) -> FastAPI:
+def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool = True) -> FastAPI:
     """Build the FastAPI app serving UI, REST API, and MCP on a single port."""
     predicate = load_predicate(settings.predicate_path)
     gate = AirlockServer(
@@ -196,12 +199,37 @@ def create_app(settings: Settings, *, auth: JWTVerifier, include_static: bool = 
     return app
 
 
+def _build_auth(settings: Settings) -> AuthProvider:
+    """Build the auth provider: OIDCProxy + JWTVerifier when configured, plain JWTVerifier otherwise."""
+    if settings.oidc_proxy_client_id and settings.oidc_proxy_client_secret:
+        proxy = OIDCProxy(
+            config_url=f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration",
+            client_id=settings.oidc_proxy_client_id,
+            client_secret=settings.oidc_proxy_client_secret,
+            base_url=f"{settings.public_base_url}/mcp",
+            require_authorization_consent=True,
+        )
+        # OIDCProxy doesn't expose valid_scopes for DCR; patch it so clients can
+        # register with any of airlock's scopes.
+        assert proxy.client_registration_options is not None
+        proxy.client_registration_options.valid_scopes = [PROPOSE_SCOPE, DECIDE_SCOPE, READ_SCOPE, "openid"]
+        return MultiAuth(
+            server=proxy,
+            verifiers=[
+                JWTVerifier(
+                    jwks_uri=f"{settings.oidc_issuer.rstrip('/')}/.well-known/jwks", issuer=settings.oidc_issuer
+                )
+            ],
+        )
+    # Fallback: discover JWKS from OIDC issuer synchronously at startup.
+    discovery_url = f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
+    discovery = httpx.get(discovery_url, timeout=10.0).raise_for_status().json()
+    return JWTVerifier(jwks_uri=discovery["jwks_uri"])
+
+
 async def _serve() -> None:
     settings = Settings.load()
-    discovery_url = f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
-    async with httpx.AsyncClient() as http:
-        discovery = (await http.get(discovery_url, timeout=10.0)).raise_for_status().json()
-    auth = JWTVerifier(jwks_uri=discovery["jwks_uri"])
+    auth = _build_auth(settings)
     app = create_app(settings, auth=auth)
     logger.info("serving on %s:%d", settings.host, settings.port)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, log_level="info"))

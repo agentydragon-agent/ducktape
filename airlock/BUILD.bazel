@@ -291,3 +291,25 @@ py_test(
         "@pypi//starlette",
     ],
 )
+
+py_test(
+    name = "test_oauth_flow",
+    size = "medium",
+    srcs = ["test_oauth_flow.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        "//airlock/oauth:provider",
+        "//mcp_infra:prefix",
+        "//util:net",
+        "@pypi//cryptography",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)

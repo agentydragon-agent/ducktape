@@ -48,6 +48,12 @@ class Settings(BaseModel):
     )
     oidc_issuer: str
     oidc_client_id: str
+    oidc_proxy_client_id: str | None = Field(
+        default=None, description="OAuth client_id for OIDCProxy upstream auth. Enables MCP OAuth when set with secret."
+    )
+    oidc_proxy_client_secret: str | None = Field(
+        default=None, description="OAuth client_secret for OIDCProxy upstream auth."
+    )
     default_wait_mode: WaitMode = YieldAfterMs(timeout_ms=0)
     oauth: OAuthConfig = Field(description="OAuth token broker configuration")
     host: str = "0.0.0.0"

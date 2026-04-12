@@ -62,6 +62,7 @@ class _ActionRow(_Base):
     justification: Mapped[str] = mapped_column(Text, nullable=False)
     state_json: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
+    client_id: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
 
     def to_action(self) -> Action:
         return Action(
@@ -71,6 +72,7 @@ class _ActionRow(_Base):
             call=ToolCall.model_validate_json(self.call_json),
             justification=self.justification,
             state=_ACTION_STATE_TA.validate_json(self.state_json),
+            client_id=self.client_id,
         )
 
 
@@ -116,7 +118,9 @@ class ActionStorage:
 
     # ── Action CRUD ──────────────────────────────────────────────────────────
 
-    async def create_action(self, *, session_key: str, call: ToolCall, justification: str) -> Action:
+    async def create_action(
+        self, *, session_key: str, call: ToolCall, justification: str, client_id: str | None = None
+    ) -> Action:
         """Insert a new pending action, atomically assigning the next action_seq."""
         state = PendingState()
         async with self._session_factory() as session:
@@ -131,6 +135,7 @@ class ActionStorage:
                 justification=justification,
                 state_json=state.model_dump_json(),
                 status=state.status,
+                client_id=client_id,
             )
             session.add(row)
             await session.commit()
