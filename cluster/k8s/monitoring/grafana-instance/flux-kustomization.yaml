@@ -14,7 +14,7 @@ spec:
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
-      name: grafana
+      name: grafana-deployment
       namespace: monitoring
   timeout: 5m
   dependsOn:
