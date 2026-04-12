@@ -1,4 +1,11 @@
-"""Tests for devinfra.bbr."""
+"""Tests for devinfra.bbr.
+
+# TODO: Consider adding integration tests that run real `bb remote` on a small
+# target and verify metadata (ROLE, TAGS) lands on BuildBuddy via bbapi. These
+# would be E2E tests requiring BuildBuddy API access — not worth mocking since
+# the value is in verifying the real pipeline. Manual verification done
+# 2026-04-12 (invocation 5a95cd6f showed Role=claude-code, Tags=session:...).
+"""
 
 import json
 from pathlib import Path
@@ -10,7 +17,6 @@ import pytest_bazel
 from devinfra.bbr import (
     RepoConfig,
     _bazelrc_args,
-    _build_secret_args,
     _env_args,
     _read_repo_config,
     _validate_git_state,
@@ -80,20 +86,6 @@ class TestReadRepoConfig:
         assert result.bazel_args == ["--config=rbe"]
         assert result.runner_exec_properties == {}
         assert result.container_image is None
-
-
-class TestBuildSecretArgs:
-    def test_no_secrets(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("DUCKTAPE_DOCKER_CLIENT_KEY", raising=False)
-        assert _build_secret_args() == []
-
-    def test_docker_client_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("DUCKTAPE_DOCKER_CLIENT_KEY", "bXktcGVtLWtleQo=")
-        args = _build_secret_args()
-        assert (
-            "--remote_run_header=x-buildbuddy-platform.env-overrides=DUCKTAPE_DOCKER_CLIENT_KEY=bXktcGVtLWtleQo="
-            in args
-        )
 
 
 class TestValidateGitState:
@@ -227,7 +219,7 @@ class TestBuildCommand:
         _setup_repo_config(repo)
         monkeypatch.setattr("devinfra.bbr._find_bb", lambda: BB)
         # Clear env vars that affect command construction
-        for var in ("DUCKTAPE_DOCKER_CLIENT_KEY", "BBR_REMOTE_ARGS", "BBR_BAZELRC"):
+        for var in ("BBR_REMOTE_ARGS", "BBR_BAZELRC"):
             monkeypatch.delenv(var, raising=False)
         for k, v in (env or {}).items():
             monkeypatch.setenv(k, v)
@@ -341,20 +333,6 @@ class TestBuildCommand:
             "--flag",
             "//foo",
             "--config=rbe",
-        ]
-
-    def test_docker_secret(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd = self._build(tmp_path, ["test", "//foo"], monkeypatch, env={"DUCKTAPE_DOCKER_CLIENT_KEY": "bXlrZXk="})
-        assert cmd == [
-            BB,
-            "remote",
-            _inv_id_file(),
-            "--runner_exec_properties=workload-isolation-type=firecracker",
-            f"--container_image=docker://{IMAGE}",
-            "--remote_run_header=x-buildbuddy-platform.env-overrides=DUCKTAPE_DOCKER_CLIENT_KEY=bXlrZXk=",
-            "test",
-            "--config=rbe",
-            "//foo",
         ]
 
     def test_no_repo_config_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

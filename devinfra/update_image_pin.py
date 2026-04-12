@@ -10,7 +10,21 @@ import shutil
 import subprocess
 from pathlib import Path
 
-_PINS_FILE = Path(__file__).parent / "image_pins.json"
+_DEVINFRA = Path(__file__).parent
+_PINS_FILE = _DEVINFRA / "image_pins.json"
+_BBR_CONFIG = _DEVINFRA / "bbr.json"
+
+
+def _update_bbr_config(image: str, digest: str) -> bool:
+    """Update container_image in bbr.json when rbe_worker is repinned."""
+    if not _BBR_CONFIG.exists():
+        return False
+    config = json.loads(_BBR_CONFIG.read_text())
+    if "container_image" not in config:
+        return False
+    config["container_image"] = f"{image}@{digest}"
+    _BBR_CONFIG.write_text(json.dumps(config, indent=2) + "\n")
+    return True
 
 
 def main() -> None:
@@ -31,6 +45,14 @@ def main() -> None:
         subprocess.run([prettier, "--write", _PINS_FILE], check=True)
 
     print(f"Updated {args.name} in {_PINS_FILE}")
+
+    # Also update bbr.json when rbe_worker is repinned
+    if args.name == "rbe_worker":
+        image = pins[args.name]["image"]
+        if _update_bbr_config(image, args.digest):
+            if prettier:
+                subprocess.run([prettier, "--write", _BBR_CONFIG], check=True)
+            print(f"Updated container_image in {_BBR_CONFIG}")
 
 
 if __name__ == "__main__":
