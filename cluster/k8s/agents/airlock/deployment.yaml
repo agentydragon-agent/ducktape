@@ -71,16 +71,6 @@ spec:
                 secretKeyRef:
                   name: airlock-oidc-proxy-credentials
                   key: client_secret
-            - name: OIDC_PROXY_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: airlock-oidc-proxy-credentials
-                  key: client_id
-            - name: OIDC_PROXY_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: airlock-oidc-proxy-credentials
-                  key: client_secret
           volumeMounts:
             - name: data
               mountPath: /data
