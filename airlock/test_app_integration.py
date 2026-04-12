@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from textwrap import dedent
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -19,7 +19,6 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-import airlock.app as app_module
 from airlock.app import create_app
 from airlock.config import Settings
 from airlock.conftest import GateClient, agent_transport, serve_app
@@ -52,14 +51,8 @@ def _mock_k8s_store():
     """Patch K8sTokenStore.from_incluster since tests don't run in a k8s pod."""
     mock_store = MagicMock()
     mock_store.list_secrets = AsyncMock(return_value=[])
-    original = app_module.K8sTokenStore.from_incluster
-
-    async def fake_from_incluster(**kwargs):
-        return mock_store
-
-    app_module.K8sTokenStore.from_incluster = staticmethod(fake_from_incluster)
-    yield
-    app_module.K8sTokenStore.from_incluster = original
+    with patch("airlock.app.K8sTokenStore.from_incluster", new_callable=AsyncMock, return_value=mock_store):
+        yield
 
 
 @pytest.mark.usefixtures("_mock_k8s_store")

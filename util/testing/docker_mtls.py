@@ -5,6 +5,11 @@ atomically sets DOCKER_HOST, DOCKER_TLS_VERIFY, and DOCKER_CERT_PATH so that
 docker.from_env() / aiodocker.Docker() pick up mTLS automatically.
 
 No-op when DUCKTAPE_DOCKER_CLIENT_KEY is not set (falls back to default Docker).
+
+TODO: Once docker-ci is live, .envrc/web_setup.sh will pass the PEM via
+BBR_REMOTE_ARGS using secret-env-overrides-base64. That means bb remote handles
+the base64 encoding — this fixture should then read the raw PEM directly from the
+env var instead of base64-decoding it.
 """
 
 from __future__ import annotations

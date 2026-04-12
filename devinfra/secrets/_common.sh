@@ -39,7 +39,11 @@ try_export() {
 # BuildBuddy API key
 try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy_api_key"]'
 
-# TODO: Re-enable DUCKTAPE_DOCKER_CLIENT_KEY once docker-ci is working in cluster.
+# TODO: Once docker-ci is working in cluster, put the decrypted PEM into
+# BBR_REMOTE_ARGS as:
+#   --remote_run_header=x-buildbuddy-platform.secret-env-overrides-base64=DUCKTAPE_DOCKER_CLIENT_KEY=<base64>
+# bb remote handles the base64 natively so no manual pre-encoding needed.
+# Update docker_mtls.py to read the raw PEM instead of base64-decoding.
 # Docker CI mTLS — only the base64-encoded client key.
 # Python code (docker_mtls fixture) assembles DOCKER_HOST / DOCKER_TLS_VERIFY /
 # DOCKER_CERT_PATH atomically from this single value.

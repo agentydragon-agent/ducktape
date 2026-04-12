@@ -340,7 +340,6 @@ class TestBuildCommand:
         repo = _make_repo(tmp_path)
         # No bbr.json written
         monkeypatch.setattr("devinfra.bbr._find_bb", lambda: BB)
-        monkeypatch.delenv("DUCKTAPE_DOCKER_CLIENT_KEY", raising=False)
         monkeypatch.delenv("BBR_REMOTE_ARGS", raising=False)
         monkeypatch.delenv("BBR_BAZELRC", raising=False)
         cmd = build_command(repo, ["test", "//foo"])

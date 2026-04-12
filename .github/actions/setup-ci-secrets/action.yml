@@ -8,7 +8,7 @@
 #     with:
 #       sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 #
-#   # Subsequent steps have BUILDBUDDY_API_KEY, DUCKTAPE_DOCKER_CLIENT_KEY, etc. in env
+#   # Subsequent steps have BUILDBUDDY_API_KEY, etc. in env
 name: Setup CI Secrets
 description: Decrypt SOPS-encrypted CI secrets and export as env vars
 
@@ -39,7 +39,7 @@ runs:
       run: |
         eval "$(devinfra/secrets/ci_env.sh)"
         # Mask secret values so they don't appear in logs
-        for var in BUILDBUDDY_API_KEY GITHUB_TOKEN ATTIC_TOKEN DUCKTAPE_DOCKER_CLIENT_KEY \
+        for var in BUILDBUDDY_API_KEY GITHUB_TOKEN ATTIC_TOKEN \
                    PROPS_REGISTRY_PASSWORD GHCR_TOKEN GH_RELEASE_PAT; do
           val="${!var:-}"
           if [ -n "$val" ]; then
@@ -47,4 +47,4 @@ runs:
           fi
         done
         # Export to GITHUB_ENV for subsequent steps
-        env | grep -E '^(DUCKTAPE_DOCKER_CLIENT_KEY|BUILDBUDDY_API_KEY|GITHUB_TOKEN|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|GHCR_USERNAME|GHCR_TOKEN|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"
+        env | grep -E '^(BUILDBUDDY_API_KEY|GITHUB_TOKEN|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|GHCR_USERNAME|GHCR_TOKEN|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"

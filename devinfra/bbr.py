@@ -106,24 +106,6 @@ def _validate_git_state(repo: pygit2.Repository) -> None:
         sys.exit(1)
 
 
-def _env_override(key: str, value: str) -> str:
-    """Build a --remote_run_header flag that sets an env var on the runner."""
-    return f"--remote_run_header=x-buildbuddy-platform.env-overrides={key}={value}"
-
-
-def _build_secret_args() -> list[str]:
-    """Build --remote_run_header flags for env vars that need forwarding to RBE."""
-    args: list[str] = []
-
-    # DUCKTAPE_DOCKER_CLIENT_KEY is already base64-encoded — forward as-is.
-    # The docker_mtls pytest fixture on the RBE worker decodes it and
-    # assembles DOCKER_HOST / DOCKER_TLS_VERIFY / DOCKER_CERT_PATH.
-    if dk_b64 := os.environ.get("DUCKTAPE_DOCKER_CLIENT_KEY"):
-        args.append(_env_override("DUCKTAPE_DOCKER_CLIENT_KEY", dk_b64))
-
-    return args
-
-
 def _find_bb() -> str:
     """Locate the bb binary on PATH."""
     if path := shutil.which("bb"):
@@ -178,7 +160,6 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> list[str]:
     """
     repo_root = Path(repo.workdir)
     config = _read_repo_config(repo_root)
-    secret_args = _build_secret_args()
     bb = _find_bb()
 
     _INVOCATION_ID_DIR.mkdir(parents=True, exist_ok=True)
@@ -207,7 +188,6 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> list[str]:
         f"--invocation_id_file={_INVOCATION_ID_FILE}",
         *runner_props,
         *container_flag,
-        *secret_args,
         *_env_args("BBR_REMOTE_ARGS"),
         *startup_options,
         *([verb] if verb else []),
