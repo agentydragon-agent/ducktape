@@ -122,6 +122,23 @@ CloudNativePG `local-path`.
 - [ ] OpenClaw: obfuscation detection forces approval despite `security: full`
       (upstream `0e28e50b4`, PR #24287)
 - [ ] OpenClaw: fix Ollama model discovery timeout on startup (Nebula not ready)
+- [ ] OpenClaw: eliminate custom image (`ghcr.io/agentydragon/openclaw-matrix`).
+      Three steps: (1) publish the airlock plugin as an npm package and install via
+      `spec.plugins`, (2) move the `airlock-auth-proxy` sidecar to a standalone
+      Deployment+Service in `openclaw-gateway` namespace (CNP-gated to openclaw pod
+      only — preserves OAuth2 identity, no security loss), (3) point the plugin config
+      at the new service URL instead of `127.0.0.1:8767`. This decouples the proxy
+      lifecycle from the StatefulSet (no OpenClaw restart for proxy image updates) and
+      lets the instance use the stock upstream image.
+- [ ] OpenClaw: StatefulSet RollingUpdate won't replace crash-looping pods. The K8s
+      StatefulSet controller counts a crash-looping pod as unavailable, and with default
+      `maxUnavailable: 1` the budget is already spent, so it refuses to delete the pod
+      for update. This means image updates (e.g. from Flux image automation) are never
+      rolled out while the pod is unhealthy. The openclaw-operator (v0.11.1, checked
+      through v0.26.2) doesn't set `MaxUnavailable` and exposes no CRD knob for it.
+      Workaround: `kubectl delete pod openclaw-0 -n openclaw-gateway`.
+      Fix: upstream the operator to set `maxUnavailable: "100%"` for single-replica
+      StatefulSets, or add a `spec.updateStrategy` passthrough field.
 - [ ] OpenClaw: eliminate one-time token entry
 - [ ] Cilium Gateway `Programmed: False` (upstream bug `cilium/cilium#42786`):
       hostNetwork gateways lost address assignment in v1.18.3 refactor.
