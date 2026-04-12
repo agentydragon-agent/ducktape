@@ -22,7 +22,7 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       # Props main image is on GHCR (public, no pull secret needed).
-      # Props still uses Harbor internally for agent images via props-harbor-robot.
+      # Props still uses Harbor internally for agent images via props-harbor-upstream-creds.
       containers:
         - name: props
           image: ghcr.io/agentydragon/props-backend:devel-20260411101958-97f35ad # {"$imagepolicy": "flux-system:props-backend"}
@@ -67,12 +67,12 @@ spec:
             - name: PROPS_REGISTRY_UPSTREAM_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: props-harbor-robot
+                  name: props-harbor-upstream-creds
                   key: username
             - name: PROPS_REGISTRY_UPSTREAM_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: props-harbor-robot
+                  name: props-harbor-upstream-creds
                   key: password
             - name: PROPS_REGISTRY_UPSTREAM_PROJECT
               value: props

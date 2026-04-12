@@ -4,7 +4,7 @@
 #   - props project (private, for props agent images: critic, grader, etc.)
 #   - props robot account with push+pull (used by the props backend proxy
 #     to forward pushes to Harbor and to pull config blobs for metadata)
-#   - k8s Secret "props-harbor-robot" in the props namespace with robot credentials
+#   - k8s Secret "props-harbor-upstream-creds" in the props namespace with robot credentials
 
 data "kubernetes_secret" "harbor_admin_password" {
   metadata {
@@ -56,9 +56,9 @@ resource "harbor_robot_account" "props" {
   }
 }
 
-resource "kubernetes_secret" "props_harbor_robot" {
+resource "kubernetes_secret" "props_harbor_upstream_creds" {
   metadata {
-    name      = "props-harbor-robot"
+    name      = "props-harbor-upstream-creds"
     namespace = "props"
   }
 
