@@ -75,6 +75,9 @@ class EnvVars:
     # Kubeconfig generated at session start (web mode only)
     kubeconfig_path: Path | None = None
 
+    # bbr session bazelrc (metadata tags for BuildBuddy invocations)
+    bbr_bazelrc: Path | None = None
+
     # CLI mode: include direnv eval for .envrc propagation
     with_direnv: bool = False
 
@@ -138,6 +141,10 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     if vars.kubeconfig_path:
         exports.extend(["", "# Kubeconfig (generated at session start)"])
         exports.extend(exports_from_dict({"KUBECONFIG": vars.kubeconfig_path}))
+
+    if vars.bbr_bazelrc:
+        exports.extend(["", "# bbr session bazelrc (BuildBuddy invocation metadata)"])
+        exports.extend(exports_from_dict({"BBR_BAZELRC": vars.bbr_bazelrc}))
 
     # Point Ansible's local tmp to a sandbox-writable directory so that
     # pre-commit ansible-syntax-check works when /tmp is read-only in the

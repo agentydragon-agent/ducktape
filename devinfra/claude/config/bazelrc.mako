@@ -41,9 +41,6 @@ common --repo_env=GOSUMDB=sum.golang.org
 common --repo_env=GIT_SSL_CAINFO=${combined_ca_path | sh}
 common --repo_env=SSL_CERT_FILE=${combined_ca_path | sh}
 
-# Tag invocations for BuildBuddy filtering
-build --build_metadata=ROLE=claude-code
-
 # Skip live OpenAI tests in wildcard expansion (no API key available)
 test --test_tag_filters=-live_openai_api
 % endif
@@ -66,6 +63,10 @@ build --bes_results_url=https://app.buildbuddy.io/invocation/
 % if buildbuddy_bazelrc:
 # BuildBuddy remote cache (API key written to per-session bazelrc)
 try-import ${buildbuddy_bazelrc}
+% endif
+% if bbr_bazelrc:
+# bbr metadata (ROLE, session TAGS) — also read by bbr for bb remote invocations
+try-import ${bbr_bazelrc}
 % endif
 
 # AI agent quiet mode (suppress verbose progress for agent transcript)

@@ -11,6 +11,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func formatTags(inv *invocationpb.Invocation) string {
+	var names []string
+	for _, t := range inv.GetTags() {
+		names = append(names, t.GetName())
+	}
+	return strings.Join(names, ",")
+}
+
 func invocationCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "invocation <invocation-id>",
@@ -48,6 +56,12 @@ func invocationCmd() *cobra.Command {
 				fmt.Printf("Commit:      %s\n", sha)
 				fmt.Printf("Branch:      %s\n", inv.GetBranchName())
 				fmt.Printf("Repo:        %s\n", inv.GetRepoUrl())
+				if role := inv.GetRole(); role != "" {
+					fmt.Printf("Role:        %s\n", role)
+				}
+				if tags := formatTags(inv); tags != "" {
+					fmt.Printf("Tags:        %s\n", tags)
+				}
 				fmt.Printf("Actions:     %d\n", inv.GetActionCount())
 				fmt.Printf("Success:     %v\n", inv.GetSuccess())
 				if cs := inv.GetCacheStats(); cs != nil {
@@ -81,6 +95,8 @@ func invocationCmd() *cobra.Command {
 func invocationListCmd() *cobra.Command {
 	var repo string
 	var count int32
+	var tagFilter string
+	var roleFilter string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List recent invocations",
@@ -95,8 +111,15 @@ func invocationListCmd() *cobra.Command {
 					return fmt.Errorf("auto-detect repo (use --repo to override): %w", err)
 				}
 			}
+			query := &invocationpb.InvocationQuery{RepoUrl: repo}
+			if tagFilter != "" {
+				query.Tags = []string{tagFilter}
+			}
+			if roleFilter != "" {
+				query.Role = []string{roleFilter}
+			}
 			req := &invocationpb.SearchInvocationRequest{
-				Query: &invocationpb.InvocationQuery{RepoUrl: repo},
+				Query: query,
 				Count: count,
 			}
 			resp := &invocationpb.SearchInvocationResponse{}
@@ -107,7 +130,7 @@ func invocationListCmd() *cobra.Command {
 				return printProtoJSON(resp)
 			}
 			t := newTable()
-			t.header("INVOCATION", "CREATED", "DUR", "COMMAND", "STATUS", "SHA")
+			t.header("INVOCATION", "CREATED", "DUR", "COMMAND", "STATUS", "ROLE", "TAGS", "SHA")
 			for _, inv := range resp.GetInvocation() {
 				sha := inv.GetCommitSha()
 				if len(sha) > 8 {
@@ -119,6 +142,8 @@ func invocationListCmd() *cobra.Command {
 					fmtDurationUsec(inv.GetDurationUsec()),
 					inv.GetCommand()+" "+strings.Join(inv.GetPattern(), " "),
 					inv.GetInvocationStatus().String(),
+					inv.GetRole(),
+					formatTags(inv),
 					sha,
 				)
 			}
@@ -128,6 +153,8 @@ func invocationListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().Int32Var(&count, "count", 10, "Number of invocations to list")
+	cmd.Flags().StringVar(&tagFilter, "tag", "", "Filter by tag (exact match)")
+	cmd.Flags().StringVar(&roleFilter, "role", "", "Filter by role (exact match)")
 	return cmd
 }
 

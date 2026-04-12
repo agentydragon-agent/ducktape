@@ -189,6 +189,9 @@ with `git apply`. Result: workspace matches your local working tree.
 | `--runner_exec_properties=K=V` | bb CLI   | `RunRequest.ExecProperties`   | Runner VM platform (disk, recycling)                                |
 | `--remote_run_header=K=V`      | bb CLI   | `RunRequest.RemoteHeaders`    | gRPC metadata for the runner execution request                      |
 | `--remote_header=K=V`          | Bazel    | Bazel args (after subcommand) | gRPC metadata for RBE actions (API keys, container image overrides) |
+| `--build_metadata=K=V`         | Bazel    | Bazel args (after subcommand) | BES metadata: `ROLE=X` → invocation role, `TAGS=a,b` → tags         |
+
+For bbr's layered configuration (repo config, session bazelrc, env vars), see `bbr --help`.
 
 ## Bazel linux-sandbox and Docker
 

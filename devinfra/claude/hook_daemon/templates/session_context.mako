@@ -43,6 +43,10 @@ Bazel remote proxy (UDS): `${bazel_remote_proxy_sock}` → `${profile.bazel_remo
 ${"##"} BuildBuddy
 Bazel builds and tests by default execute remotely via BuildBuddy.
 Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
+% if session_id and session_id != "unknown":
+Your `bbr` invocations are tagged `session:${session_id}`. To list your builds:
+`bbapi invocation list --tag session:${session_id}`
+% endif
 % endif
 
 % if platform.nixpkgs_available:

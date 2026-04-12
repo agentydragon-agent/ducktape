@@ -50,6 +50,16 @@ the target: `bbr build //target --remote_download_regex='.*\.whl$'`.
 **Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by session
 start hook).
 
+**Configuration layers** (in priority order, last-wins for Bazel flags):
+
+| Layer   | Source                           | Contents                                                  |
+| ------- | -------------------------------- | --------------------------------------------------------- |
+| Repo    | `devinfra/bbr.json` (checked in) | `runner_exec_properties`, `container_image`, `bazel_args` |
+| Session | `$BBR_BAZELRC` file              | `--build_metadata` (ROLE, session TAGS)                   |
+| Ad-hoc  | `$BBR_REMOTE_ARGS` env var       | Extra bb-remote flags (slot 2)                            |
+
+The session hook writes `bbr.bazelrc` and exports `BBR_BAZELRC` automatically.
+
 **Invocation tracking:** `bbr` automatically writes the BuildBuddy invocation ID to
 `~/.cache/bbr/last_invocation_id` and prints a post-run summary with `bbapi` commands:
 
@@ -62,6 +72,9 @@ bbapi invocation <id>                # Invocation details (commit, branch, dirty
 
 # Or read the last invocation ID from file:
 cat ~/.cache/bbr/last_invocation_id
+
+# List invocations filtered by session tag:
+bbapi invocation list --tag session:<session-id>
 
 # Target history (pass/fail timeline, useful for bisecting):
 bbapi target history --label //path:target
