@@ -234,7 +234,7 @@ class AirlockServer(EnhancedFastMCP):
         On failure the backend is marked degraded but no exception is raised — airlock
         continues serving other backends.
         """
-        client: Client = Client(spec) if isinstance(spec, FastMCP) else Client(spec.to_transport())  # type: ignore[arg-type]
+        client: Client = Client(spec) if isinstance(spec, FastMCP) else Client(spec.to_transport())
         stack = AsyncExitStack()
         try:
             logger.info("[_try_connect_backend] connecting %s", namespace)
@@ -528,6 +528,7 @@ class AirlockServer(EnhancedFastMCP):
         """Return the current connection status for each configured backend."""
         result: list[BackendStatus] = []
         for ns, state in self._backends.items():
+            conn_status: BackendConnectedStatus | BackendDegradedStatus
             if isinstance(state, _ConnectedBackend):
                 conn_status = BackendConnectedStatus()
             else:
