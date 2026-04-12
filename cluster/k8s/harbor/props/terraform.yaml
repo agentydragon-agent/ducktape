@@ -21,7 +21,3 @@ spec:
         secret_suffix = "harbor-props"
         namespace     = "flux-system"
       }
-
-  vars:
-    - name: vault_address
-      value: "http://instance.vault.svc.cluster.local:8200"

@@ -4,9 +4,7 @@
 #   - props project (private, for props agent images: critic, grader, etc.)
 #   - props robot account with push+pull (used by the props backend proxy
 #     to forward pushes to Harbor and to pull config blobs for metadata)
-#
-# Stores robot credentials in Vault at kv/harbor/props-robot.
-# The props backend reads these via the props-harbor-robot ExternalSecret.
+#   - k8s Secret "props-harbor-robot" in the props namespace with robot credentials
 
 data "kubernetes_secret" "harbor_admin_password" {
   metadata {
@@ -19,15 +17,6 @@ provider "harbor" {
   url      = var.harbor_url
   username = "admin"
   password = data.kubernetes_secret.harbor_admin_password.data["HARBOR_ADMIN_PASSWORD"]
-}
-
-provider "vault" {
-  address = var.vault_address
-  auth_login_jwt {
-    mount = "kubernetes"
-    role  = "tf-runner"
-    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
-  }
 }
 
 resource "harbor_project" "props" {
@@ -67,12 +56,14 @@ resource "harbor_robot_account" "props" {
   }
 }
 
-resource "vault_kv_secret_v2" "harbor_props_robot" {
-  mount = "kv"
-  name  = "harbor/props-robot"
+resource "kubernetes_secret" "props_harbor_robot" {
+  metadata {
+    name      = "props-harbor-robot"
+    namespace = "props"
+  }
 
-  data_json = jsonencode({
+  data = {
     username = harbor_robot_account.props.full_name
     password = harbor_robot_account.props.secret
-  })
+  }
 }
