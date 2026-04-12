@@ -50,7 +50,16 @@ bbr query '...'
 
 # Local side effects only:
 bb run --remote_executor="" //devinfra:gazelle
-bb run --remote_executor="" //:requirements.update
+```
+
+**Updating `requirements_bazel.txt`**: `bb run --remote_executor="" //:requirements.update`
+fails on NixOS (no `/bin/bash`). Use RBE instead:
+
+```bash
+bbr build //:requirements --remote_download_regex='.*requirements\.out' --noremote_accept_cached
+cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
+# Then update the gazelle manifest:
+bb run --remote_executor="" //devinfra:gazelle_python_manifest.update
 ```
 
 `bbr` wraps `bb remote` (<devinfra/bbr.py>) — runs Bazel on a

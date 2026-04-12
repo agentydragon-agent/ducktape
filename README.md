@@ -29,8 +29,8 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 
 ### Python
 
-- Deps: add to `pyproject.toml`, run `bb run --remote_executor="" //:requirements.update`, use `@pypi//pkg` in BUILD
-- Lockfile: `requirements_bazel.txt` (never edit manually)
+- Deps: add to `pyproject.toml`, regenerate lockfile (see below), use `@pypi//pkg` in BUILD
+- Lockfile: `requirements_bazel.txt` (never edit manually; regenerate via RBE — see below)
 - Lint: ruff + mypy via Bazel aspects (default on; `--config=nolint` to skip)
 
 ### Gazelle
@@ -89,7 +89,12 @@ See `.github/workflows/` and `buildbuddy.yaml`.
 ## Common Commands
 
 ```bash
-bb run --remote_executor="" //:requirements.update       # Update Python lockfile
+# Update Python lockfile (requires RBE — no /bin/bash on NixOS for local run)
+bbr build //:requirements --remote_download_regex='.*requirements\.out' --noremote_accept_cached
+cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
+# Then regenerate the gazelle manifest:
+bb run --remote_executor="" //devinfra:gazelle_python_manifest.update
+
 bb run --remote_executor="" //devinfra/lint:buildifier    # Format Bazel files
 ```
 
