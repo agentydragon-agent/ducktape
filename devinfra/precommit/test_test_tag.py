@@ -104,11 +104,69 @@ class TestVerifyInvocations:
             verify_invocations_on_buildbuddy([_UUID])
 
     def test_build_invocation_rejected(self, monkeypatch):
+        """A 'build' invocation with no children is rejected."""
         monkeypatch.setenv("BUILDBUDDY_API_KEY", "test-key")
         mock_response = httpx.Response(200, json={"invocation": [{"invocationId": _UUID_STR, "command": "build"}]})
         with (
             patch("httpx.post", return_value=mock_response),
             pytest.raises(TestTagError, match="'build' invocation, not 'test'"),
+        ):
+            verify_invocations_on_buildbuddy([_UUID])
+
+    def test_wrapper_invocation_resolves_to_child(self, monkeypatch):
+        """A 'remote test' wrapper invocation is accepted if its child is a 'test'."""
+        monkeypatch.setenv("BUILDBUDDY_API_KEY", "test-key")
+        child_id = "22222222-3333-4444-5555-666666666666"
+        wrapper_response = httpx.Response(
+            200,
+            json={
+                "invocation": [
+                    {
+                        "invocationId": _UUID_STR,
+                        "command": "remote test",
+                        "event": [
+                            {"buildEvent": {"children": [{"childInvocationCompleted": {"invocationId": child_id}}]}}
+                        ],
+                    }
+                ]
+            },
+        )
+        child_response = httpx.Response(200, json={"invocation": [{"invocationId": child_id, "command": "test"}]})
+
+        def mock_post(url, *, json, **kwargs):
+            inv_id = json["lookup"]["invocationId"]
+            return wrapper_response if inv_id == _UUID_STR else child_response
+
+        with patch("httpx.post", side_effect=mock_post):
+            verify_invocations_on_buildbuddy([_UUID])
+
+    def test_wrapper_with_non_test_child_rejected(self, monkeypatch):
+        """A wrapper invocation whose children are all non-test is rejected."""
+        monkeypatch.setenv("BUILDBUDDY_API_KEY", "test-key")
+        child_id = "22222222-3333-4444-5555-666666666666"
+        wrapper_response = httpx.Response(
+            200,
+            json={
+                "invocation": [
+                    {
+                        "invocationId": _UUID_STR,
+                        "command": "remote build",
+                        "event": [
+                            {"buildEvent": {"children": [{"childInvocationCompleted": {"invocationId": child_id}}]}}
+                        ],
+                    }
+                ]
+            },
+        )
+        child_response = httpx.Response(200, json={"invocation": [{"invocationId": child_id, "command": "build"}]})
+
+        def mock_post(url, *, json, **kwargs):
+            inv_id = json["lookup"]["invocationId"]
+            return wrapper_response if inv_id == _UUID_STR else child_response
+
+        with (
+            patch("httpx.post", side_effect=mock_post),
+            pytest.raises(TestTagError, match=r"wrapper.*none.*child.*'test'"),
         ):
             verify_invocations_on_buildbuddy([_UUID])
 

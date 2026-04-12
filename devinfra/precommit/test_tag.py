@@ -112,31 +112,70 @@ def parse_test_tag(message: str) -> TestTag:
     return Invocations(items)
 
 
+def _get_invocation(inv_id: uuid.UUID, api_key: str) -> dict:
+    """Fetch a single invocation from BuildBuddy. Returns the first invocation dict."""
+    try:
+        resp = httpx.post(
+            _BUILDBUDDY_API_URL,
+            json={"lookup": {"invocationId": str(inv_id)}},
+            headers={"x-buildbuddy-api-key": api_key},
+            timeout=5.0,
+        )
+    except httpx.HTTPError as e:
+        raise TestTagError(f"Failed to verify invocation {inv_id}: {e}") from e
+    if resp.status_code != 200:
+        raise TestTagError(f"BuildBuddy API returned HTTP {resp.status_code} for invocation {inv_id}")
+    data = resp.json()
+    invocations = data.get("invocation")
+    if not invocations:
+        raise TestTagError(f"BuildBuddy invocation {inv_id} not found")
+    return invocations[0]
+
+
+def _get_child_invocation_ids(inv: dict) -> list[str]:
+    """Extract child invocation IDs from a workflow/runner invocation's build events."""
+    children: list[str] = []
+    for event in inv.get("event", []):
+        build_event = event.get("buildEvent", {})
+        for child in build_event.get("children", []):
+            cid = child.get("childInvocationCompleted", {}).get("invocationId", "")
+            if cid:
+                children.append(cid)
+    return children
+
+
 def verify_invocations_on_buildbuddy(ids: list[uuid.UUID]) -> None:
-    """Query BuildBuddy to check invocation IDs exist and are test runs."""
+    """Query BuildBuddy to check invocation IDs exist and are test runs.
+
+    If an invocation is a wrapper (e.g. ``bbr`` runner with command ``remote test``),
+    automatically resolves to its child invocation and verifies that instead.
+    """
     api_key = os.environ.get("BUILDBUDDY_API_KEY")
     if not api_key:
         return
 
     for inv_id in ids:
-        try:
-            resp = httpx.post(
-                _BUILDBUDDY_API_URL,
-                json={"lookup": {"invocationId": str(inv_id)}},
-                headers={"x-buildbuddy-api-key": api_key},
-                timeout=5.0,
-            )
-        except httpx.HTTPError as e:
-            raise TestTagError(f"Failed to verify invocation {inv_id}: {e}") from e
-        if resp.status_code != 200:
-            raise TestTagError(f"BuildBuddy API returned HTTP {resp.status_code} for invocation {inv_id}")
-        data = resp.json()
-        invocations = data.get("invocation")
-        if not invocations:
-            raise TestTagError(f"BuildBuddy invocation {inv_id} not found")
-        command = invocations[0].get("command", "")
-        if command != "test":
+        inv = _get_invocation(inv_id, api_key)
+        command = inv.get("command", "")
+        if command == "test":
+            continue
+
+        # Not a direct test invocation — try resolving child invocations (bbr wrapper pattern).
+        children = _get_child_invocation_ids(inv)
+        if not children:
             raise TestTagError(f"BuildBuddy invocation {inv_id} is a '{command}' invocation, not 'test'")
+
+        # Verify at least one child is a test invocation.
+        for child_id_str in children:
+            child_inv = _get_invocation(uuid.UUID(child_id_str), api_key)
+            child_command = child_inv.get("command", "")
+            if child_command == "test":
+                break
+        else:
+            raise TestTagError(
+                f"BuildBuddy invocation {inv_id} is a '{command}' wrapper, "
+                f"but none of its {len(children)} child invocation(s) are 'test'"
+            )
 
 
 def check_commit_message(message: str) -> None:
