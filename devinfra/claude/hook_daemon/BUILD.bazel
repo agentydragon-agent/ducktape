@@ -82,6 +82,7 @@ py_library(
     srcs = ["pre_tool_use.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":session",
         ":tool_input_parsing",
         "//devinfra/claude/claude_api:tool_input_models",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
