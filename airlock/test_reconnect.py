@@ -27,8 +27,7 @@ from airlock.conftest import (
     operator_transport,
     serve_app,
 )
-from airlock.models import Action, ActionStatus
-from mcp_infra.resource_utils import read_text_json_typed
+from airlock.models import ActionStatus
 
 
 async def test_client_reconnects_after_server_restart(
@@ -100,8 +99,8 @@ async def test_pending_action_survives_server_restart(
         GateClient(agent_transport(base_url, agent_jwt)) as agent,
     ):
         await operator.approve(created.key)
-        action_uri = f"resource://sessions/{created.key.session_key}/actions/{created.key.action_seq}"
-        action: Action = await read_text_json_typed(agent, action_uri, Action)
+        with anyio.fail_after(10.0):
+            action = await agent.wait_for(created.key, ActionStatus.DONE)
         assert action.state.status == ActionStatus.DONE
 
     assert "survive" in echo_backend.calls
