@@ -5,12 +5,12 @@
       "sha256": "TgfSB1u2oIO519Ew320bvQGBBurJ9hp8xmdyM7QEXCE="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-52b4085/bbapi",
-      "sha256": "LVhPVPt4DoiMdMj0gUqwp9zq4RWy2iSlDP3sS1Lh1xg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-1710bc6/bbapi",
+      "sha256": "FJ20Tw+e8sN/jUyDfxmdff+jDtnjFgIgdH4VcstFwSc="
     },
     "claude-hooks": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-52b4085/claude_hooks-0.1.0-py3-none-any.whl",
-      "sha256": "cUL4xDhXFlDFz4cr0aT5AfG/NJ27PNuHp5wD72qsMHk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-1710bc6/claude_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "WlbXHbt8ex12YFmHCSkIlBDrQDqHo0uCXzNivLhrphI="
     },
     "ducktape-util": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-92424e8/ducktape_util-0.1.0-py3-none-any.whl",
@@ -25,8 +25,8 @@
       "sha256": "Bg6ZLAWoqnD7d/gKGhybzQ7E5CShdegeHq6ymTkadEA="
     },
     "skills": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-52b4085/all_skills_tar.tar",
-      "sha256": "uCKwmtlcBbCD1tn7YIT2Rx+DvGIH/BzcreF/V0LjLZU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-1710bc6/all_skills_tar.tar",
+      "sha256": "8V4mBYu960CSPa5S13DalPienPuCYlFKtsV6A0pc6fU="
     }
   }
 }
