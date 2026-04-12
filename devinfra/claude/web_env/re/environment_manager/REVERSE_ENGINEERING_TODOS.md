@@ -59,3 +59,6 @@ See `BINDIFF_RESULTS.md` for full analysis. Key findings:
      `environment_id` — likely a work assignment or event record.
      Exact usage of both structs is garble-obfuscated; cannot recover without runtime
      observation.
+- **`processSources()` parameters**: `gitProxyConfig`, `outcomes`, and
+  `activityRecorder` passed to `NewSourceHandlerManager` are garble-obfuscated;
+  cannot recover their sources without runtime observation.
