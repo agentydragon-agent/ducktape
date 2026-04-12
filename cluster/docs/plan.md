@@ -189,7 +189,7 @@ See <plans/file_sync_evaluation.md>.
 | Ingress   | OK     | None (hostNetwork)   | Cilium Gateway on VPS                 |
 | Authentik | OK     | `local-path`         | All components pinned                 |
 | Vault     | OK     | `local-path-hetzner` | Raft storage, VPS-pinned              |
-| Grafana   | OK     | CNPG VPS-HA          | Moved from Longhorn PVC to PostgreSQL |
+| Grafana   | OK     | CNPG VPS-HA          | grafana-operator managed, JWT auth, no admin creds dependency |
 
 **Compliance checklist** for critical-path changes:
 

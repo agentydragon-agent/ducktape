@@ -9,4 +9,4 @@ spec:
       dashboards: grafana
   grafanaCom:
     id: 3070
-    revision: 5
+    revision: 3
