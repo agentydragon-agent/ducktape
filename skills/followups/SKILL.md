@@ -130,9 +130,6 @@ Examples:
 **Extracted patterns not yet applied everywhere:**
 
 - If inline logic was extracted into a shared action/helper/utility, check for remaining copies of the inline version
-
-Examples:
-
 - "Extracted digest-pinning into `pin-image-digest` action for rbe-image and freecad-test — openclaw-image and tana-mcp-image still inline the same logic (or skip pinning entirely)."
 - "Added Docker layer caching (`cache_from`/`cache_to`) to 4 workflows — openclaw-image got caching but doesn't use the shared pin action yet."
 
