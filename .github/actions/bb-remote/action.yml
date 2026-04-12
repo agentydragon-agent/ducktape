@@ -49,6 +49,7 @@ runs:
 
         IMAGE_ARGS=()
         if [[ -n "${{ inputs.rbe_image }}" ]]; then
+          IMAGE_ARGS+=(--container_image="docker://${{ inputs.rbe_image }}")
           IMAGE_ARGS+=(--remote_default_exec_properties="container-image=docker://${{ inputs.rbe_image }}")
         fi
 
