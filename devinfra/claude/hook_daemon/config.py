@@ -1,8 +1,8 @@
 """Profile configuration loaded from a standalone YAML file.
 
-Each profile (cli, web) is a standalone YAML file under .claude_hooks/
-(e.g. .claude_hooks/cli.yaml). The daemon loads exactly one profile at
-startup, selected by the DUCKTAPE_CLAUDE_HOOKS_PROFILE env var.
+Each profile (cli, web) lives under devinfra/claude/hook_daemon/profiles/<name>/profile.yaml.
+The daemon loads exactly one profile at startup, selected by the
+DUCKTAPE_CLAUDE_HOOKS_PROFILE env var.
 
 Secrets are not handled here. Web: written to settings.local.json by web_setup.sh.
 CLI: sourced via .envrc (eval "$(devinfra/secrets/cli_env.sh)").
@@ -15,8 +15,6 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field
-
-HOOKS_DOTDIR = ".claude_hooks"
 
 
 class OtelConfig(BaseModel):

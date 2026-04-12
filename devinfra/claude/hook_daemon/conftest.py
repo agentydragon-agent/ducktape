@@ -63,7 +63,7 @@ def daemon_paths(
     project_dir, env_file = setup_daemon_project(tmp_path, paths)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
     monkeypatch.setenv("CLAUDE_ENV_FILE", str(env_file))
-    monkeypatch.setenv("DUCKTAPE_CLAUDE_HOOKS_PROFILE", f".claude_hooks/{PROFILE_FILENAME}")
+    monkeypatch.setenv("DUCKTAPE_CLAUDE_HOOKS_PROFILE", PROFILE_FILENAME)
 
     yield paths
 

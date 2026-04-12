@@ -50,7 +50,7 @@ _TESTDATA = Path(__file__).resolve().parent / "testdata" / "ruff_repo"
 
 @pytest.fixture
 def ruff_repo(tmp_path: Path) -> Path:
-    """Git repo with real ruff hooks and .claude_hooks config from testdata."""
+    """Git repo with real ruff hooks and profile config from testdata."""
     repo_path = tmp_path / "repo"
     shutil.copytree(_TESTDATA, repo_path)
 

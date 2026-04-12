@@ -44,8 +44,9 @@ LICENSE*
 # Shell scripts (many are standalone utilities)
 *.sh
 
-# Age-encrypted secrets (only in .claude_hooks/secrets/)
-.claude_hooks/secrets/*.age
+# Profile YAML and Mako templates
+devinfra/claude/hook_daemon/profiles/**/*.yaml
+devinfra/claude/hook_daemon/profiles/**/*.mako
 
 # Nginx configs
 *.conf

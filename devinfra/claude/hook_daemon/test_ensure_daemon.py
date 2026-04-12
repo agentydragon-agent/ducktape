@@ -95,7 +95,7 @@ def test_parallel_cold_start(short_tmp: Path) -> None:
     saved = {k: os.environ.get(k) for k in ("CLAUDE_PROJECT_DIR", "CLAUDE_ENV_FILE", "DUCKTAPE_CLAUDE_HOOKS_PROFILE")}
     os.environ["CLAUDE_PROJECT_DIR"] = str(project_dir)
     os.environ["CLAUDE_ENV_FILE"] = str(env_file)
-    os.environ["DUCKTAPE_CLAUDE_HOOKS_PROFILE"] = f".claude_hooks/{PROFILE_FILENAME}"
+    os.environ["DUCKTAPE_CLAUDE_HOOKS_PROFILE"] = PROFILE_FILENAME
     try:
         n = 5
         barrier: multiprocessing.synchronize.Barrier = multiprocessing.Barrier(n)

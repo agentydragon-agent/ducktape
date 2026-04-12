@@ -31,4 +31,4 @@ background_commands:
     command: bazelisk info
     timeout: 300
     after_env: true
-context_template: .claude_hooks/templates/cli_context.mako
+context_template: devinfra/claude/hook_daemon/profiles/cli/context.mako

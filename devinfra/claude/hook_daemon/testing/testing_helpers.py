@@ -24,8 +24,6 @@ def setup_daemon_project(base_dir: Path, paths: SessionPaths) -> tuple[Path, Pat
     """
     project_dir = base_dir / "project"
     project_dir.mkdir(exist_ok=True)
-    hooks_dir = project_dir / ".claude_hooks"
-    hooks_dir.mkdir(exist_ok=True)
-    (hooks_dir / PROFILE_FILENAME).write_text(yaml.dump(TEST_PROFILE.model_dump(mode="json")))
+    (project_dir / PROFILE_FILENAME).write_text(yaml.dump(TEST_PROFILE.model_dump(mode="json")))
     env_file = paths.session_dir / "sessionstart-hook-0.sh"
     return project_dir, env_file

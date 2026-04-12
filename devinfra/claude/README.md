@@ -217,7 +217,7 @@ Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
 `alloy-otlp.allegedly.works`. Bearer token: web — written to `settings.local.json` by
 `web_setup.sh`; CLI — sourced via `.envrc` (`cli_env.sh`).
 
-Configured in `.claude_hooks/config.yaml` (`otel.endpoint`, `secrets.otel_bearer_token`).
+Configured in the profile path (`otel.endpoint`, `secrets.otel_bearer_token`).
 
 Key files: TF module in `cluster/terraform/gitops/alloy-otlp-bearer-token/`,
 Authentik blueprint in `cluster/k8s/authentik/app/blueprints/alloy-otlp-sso.yaml`.

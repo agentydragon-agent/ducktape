@@ -23,9 +23,9 @@ filegroup(
     srcs = [
         ".bazelrc",
         ".bazelversion",
-        ".claude_hooks/profile.yaml",
         "BUILD.bazel",
         "MODULE.bazel",
+        "profile.yaml",
         "test_env.sh",
     ],
     visibility = ["//devinfra/claude:__subpackages__"],

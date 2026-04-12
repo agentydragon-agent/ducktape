@@ -47,4 +47,4 @@ background_commands:
       wait "${bazelisk_pid}"
     timeout: 300
     after_env: true
-context_template: .claude_hooks/templates/web_context.mako
+context_template: devinfra/claude/hook_daemon/profiles/web/context.mako

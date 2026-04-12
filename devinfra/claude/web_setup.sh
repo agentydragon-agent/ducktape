@@ -118,7 +118,7 @@ missing = [k for k in keys if k not in present]
 if missing:
     print(f"WARNING: secrets missing from settings.local.json: {missing}", file=sys.stderr)
 Path(os.environ["SETTINGS_LOCAL"]).write_text(
-    json.dumps({"env": {"DUCKTAPE_CLAUDE_HOOKS_PROFILE": ".claude_hooks/web.yaml"} | present})
+    json.dumps({"env": {"DUCKTAPE_CLAUDE_HOOKS_PROFILE": "devinfra/claude/hook_daemon/profiles/web/profile.yaml"} | present})
 )
 PYEOF
 echo "[$(date -Iseconds)] Wrote profile + secrets to ${SETTINGS_LOCAL}"

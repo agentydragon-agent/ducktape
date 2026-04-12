@@ -45,7 +45,7 @@ class HookSettings(BaseSettings):
     # Port overrides (used by tests for free-port isolation)
     supervisor_port: int = Field(default=19001, description="Supervisor TCP port")
 
-    # Profile YAML file path (repo-relative, e.g. .claude_hooks/cli.yaml)
+    # Profile YAML file path (repo-relative, e.g. devinfra/claude/hook_daemon/profiles/cli/profile.yaml)
     profile: str | None = Field(default=None, description="Profile YAML file path (repo-relative)")
 
     k8s_token: str | None = Field(
