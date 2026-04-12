@@ -6,6 +6,6 @@
     "init-dockerd": "true",
     "recycle-runner": "true"
   },
-  "container_image": "ghcr.io/agentydragon/rbe-worker@sha256:be1500b58c55b6443f8446e7cb64f50155040dc55bd28cc018c2a4535422da53",
+  "container_image": "ghcr.io/agentydragon/rbe-worker@sha256:2d36d388ef0fa7f1b2b13c8de98f5c4039813394075162526ad981d114aafbdd",
   "bazel_args": ["--config=rbe"]
 }
