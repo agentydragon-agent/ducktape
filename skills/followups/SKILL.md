@@ -352,7 +352,7 @@ when there are multiple independent checks. Spawn in parallel when possible.
 Every suggestion includes the exact command in the description:
 
 - ✅ `git push origin devel`
-- ✅ `bb-remote test //path/to:target`
+- ✅ `bbr test //path/to:target`
 - ❌ "consider committing changes"
 
 ### 3. Probability Calibration

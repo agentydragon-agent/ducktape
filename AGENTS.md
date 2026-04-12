@@ -76,7 +76,7 @@ start hook).
 | ------- | -------------------------------- | --------------------------------------------------------- |
 | Repo    | `devinfra/bbr.json` (checked in) | `runner_exec_properties`, `container_image`, `bazel_args` |
 | Session | `$BBR_BAZELRC` file              | `--build_metadata` (ROLE, session TAGS)                   |
-| Ad-hoc  | `$BBR_REMOTE_ARGS` env var       | Extra bb-remote flags (slot 2)                            |
+| Ad-hoc  | `$BBR_REMOTE_ARGS` env var       | Extra `bb remote` flags (slot 2)                          |
 
 The session hook writes `bbr.bazelrc` and exports `BBR_BAZELRC` automatically.
 

@@ -82,7 +82,7 @@ The unreleased master of `rules_proto_grpc_python` uses `grpc` 1.78.0
 and `protobuf` 34.0, which would be better aligned with our versions.
 
 **Next step:** try `bazel_dep(name = "rules_proto_grpc_python", version = "5.8.0")`
-and see if `bb-remote build //...` survives the protobuf version skew.
+and see if `bbr build //...` survives the protobuf version skew.
 
 ### C. Define plugins ourselves, use `@grpc//src/compiler:grpc_python_plugin`
 

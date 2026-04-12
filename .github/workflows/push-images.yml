@@ -72,7 +72,7 @@ jobs:
         if: matrix.test_target != ''
         uses: ./.github/actions/bb-remote
         with:
-          args: test --test_tag_filters=-live_openai_api ${{ matrix.test_target }}
+          args: test ${{ matrix.test_target }}
           rbe_image: ${{ inputs.rbe_image }}
         continue-on-error: true
 

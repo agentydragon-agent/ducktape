@@ -1,7 +1,7 @@
 """bbr: wrapper around `bb remote` with configurable defaults.
 
 Reads repo-level config from devinfra/bbr.json, session-level bazel flags
-from $BBR_BAZELRC, and ad-hoc bb-remote flags from $BBR_REMOTE_ARGS.
+from $BBR_BAZELRC, and ad-hoc `bb remote` flags from $BBR_REMOTE_ARGS.
 See devinfra/docs/bb_remote_internals.md for how bb remote works under the hood.
 """
 
@@ -220,7 +220,7 @@ Usage: bbr [--dry-run] [--help] <bazel-verb> [flags...] [targets...]
 Configuration layers (last-wins for Bazel flags):
   Repo      devinfra/bbr.json          runner properties, container image, bazel_args
   Session   $BBR_BAZELRC file          --build_metadata (ROLE, session TAGS)
-  Ad-hoc    $BBR_REMOTE_ARGS env var   extra bb-remote flags (before verb)
+  Ad-hoc    $BBR_REMOTE_ARGS env var   extra `bb remote` flags (before verb)
   CLI       user args                  flags and targets (override everything)
 
 Flags:
@@ -230,12 +230,12 @@ Flags:
 Environment variables:
   BBR_BAZELRC       Path to a bazelrc-format file with Bazel flags to forward.
                     Lines are parsed as "<command> <flag>" (prefix stripped).
-  BBR_REMOTE_ARGS   Space-separated bb-remote flags injected before the verb.
+  BBR_REMOTE_ARGS   Space-separated `bb remote` flags injected before the verb.
 
 Examples:
   bbr test //foo:bar                          # basic test
   bbr build //foo --config=nolint             # user override
-  BBR_REMOTE_ARGS="--timeout=600" bbr test    # ad-hoc bb-remote flag
+  BBR_REMOTE_ARGS="--timeout=600" bbr test    # ad-hoc `bb remote` flag
 """
 
 

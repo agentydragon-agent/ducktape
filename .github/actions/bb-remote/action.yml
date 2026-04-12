@@ -47,7 +47,7 @@ runs:
           [[ -n "$line" ]] && ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=$line")
         done <<< "${{ inputs.env_overrides }}"
 
-        # --container_image is a bb-remote flag: must come before the Bazel subcommand.
+        # --container_image is a `bb remote` flag: must come before the Bazel subcommand.
         # --remote_default_exec_properties is a Bazel command flag: must come after the subcommand.
         BB_IMAGE_ARGS=()
         BAZEL_IMAGE_ARGS=()
@@ -65,4 +65,5 @@ runs:
           "${BB_IMAGE_ARGS[@]}" \
           ${{ inputs.args }} \
           --config=rbe \
+          --config=ci \
           "${BAZEL_IMAGE_ARGS[@]}"

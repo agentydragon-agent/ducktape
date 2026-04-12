@@ -42,7 +42,7 @@ jobs:
       - name: Test
         uses: ./.github/actions/bb-remote
         with:
-          args: test --keep_going --test_tag_filters=-live_openai_api //...
+          args: test --keep_going //...
           rbe_image: ${{ inputs.rbe_image }}
 
       - name: Build + lint
