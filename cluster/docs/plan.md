@@ -89,14 +89,8 @@ CloudNativePG `local-path`.
       loss caused `sso-secrets` to regenerate all `random_password` resources. Fix by
       force re-applying all SSO blueprints (clear `last_applied_hash` via `ak shell`) so
       the DB picks up the current env var values.
-- [ ] OpenEBS LVM on Talos nodes: Currently deployed on wyrm2 (NixOS) for
-      Firecracker VM storage (thin provisioning, `volumeMode: Block` cloning).
-      If it works well on wyrm2, expand to Talos nodes: - **VPS nodes**: Partition each 160GB NVMe to carve out ~60GB for a VG
-      (`openebs-vps-vg`). Use Talos `machine.disks` or `machine.volumes`
-      (1.9+). Add `lvm-vps` StorageClass. Rolling update: drain + destroy +
-      recreate each VPS node. Gives VPS a local non-replicated option
-      (faster than Longhorn for CNPG `local-path` replacements). - **Proxmox CP**: Similar approach if needed for local storage. - Expand OpenEBS LVM HelmRelease `lvmNode.nodeSelector` to include
-      target regions.
+- [ ] Consider OpenEBS LVM on Talos nodes; Talos has `machine.disks` or `machine.volumes`.
+      Would allow firecracker fast-clone on Hetzner.
 - [ ] Longhorn node tags: Kyverno mutate policy sets `node.longhorn.io/default-node-tags`
       annotation, but only fires at Node admission time — nodes created before Kyverno is
       deployed (i.e., bootstrap) never get tagged. Currently patched manually. Options:
@@ -144,10 +138,6 @@ CloudNativePG `local-path`.
       hostNetwork gateways lost address assignment in v1.18.3 refactor.
       Workaround: wildcard/apex ClusterRRsets in `k8s/powerdns/zones/`.
       Remove workaround when Cilium ships a fix and we upgrade past it.
-- [ ] `vault-oidc-auth` terraform: Apply fails with `path is already in use at oidc/` —
-      Vault's OIDC auth backend exists but TF state was lost in the April 1 rebuild.
-      Fix: `vault auth disable oidc/` then let tofu-controller re-apply (per AGENTS.md).
-      Will break SSO logins until re-applied. Coordinate with `sso-secrets` resync TODO above.
 - [ ] File upstream: powerdns-operator "stuck Failed" bug — once a ClusterRRset
       reaches Failed, it never retries unless spec changes. Should retry with backoff.
       See <lessons_learned/2026_04_07_powerdns_operator_stuck_failed_rrsets.md>.

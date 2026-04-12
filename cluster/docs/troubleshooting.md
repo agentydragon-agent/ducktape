@@ -217,8 +217,7 @@ See <lessons_learned/2026_02_13_authentik_token_vault_overwrite.md>.
 
 ### Authentik Teardown: TF State Desync (Mostly Historical)
 
-Most SSO config migrated to native blueprints. Only `sso-secrets` and `vault-oidc-auth`
-remain as Terraform. The cascading desync described in
+Most SSO config migrated to native blueprints. Only `sso-secrets` remains as Terraform. The cascading desync described in
 <lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md> should no longer occur.
 
 If it does: suspend Authentik-targeting Terraform resources, delete stale `tfstate-default-*`

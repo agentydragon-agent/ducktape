@@ -26,10 +26,8 @@ the git remote, not your local filesystem.
 
 ## CRITICAL: Authentik Teardown -- Remaining TF State
 
-Most Authentik SSO uses native blueprints. Two TF modules still target Authentik-adjacent systems:
-`tfstate-default-sso-secrets` (OAuth2 secrets in Vault) and `tfstate-default-vault-oidc-auth`
-(Vault OIDC backend). After Authentik DB wipe, `vault-oidc-auth` requires
-`vault auth disable oidc/` before re-apply.
+Most Authentik SSO uses native blueprints. One TF module still targets Authentik-adjacent systems:
+`tfstate-default-sso-secrets` (OAuth2 secrets in Vault).
 See <docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
 
 ## CRITICAL: VPS-Only Resilience

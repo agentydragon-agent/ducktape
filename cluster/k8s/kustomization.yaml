@@ -116,7 +116,6 @@ resources:
   - vault/app/flux-kustomization.yaml
   - vault/servicemonitor/flux-kustomization.yaml
   - vault/ingress/flux-kustomization.yaml
-  - vault/oidc-auth/flux-kustomization.yaml
 
   # --- authelia ---
   - authelia/namespace/flux-kustomization.yaml
@@ -136,7 +135,6 @@ resources:
   - authentik/blueprints/harbor-secret/flux-kustomization.yaml
   - authentik/blueprints/headlamp-secret/flux-kustomization.yaml
   - authentik/blueprints/matrix-secret/flux-kustomization.yaml
-  - authentik/blueprints/vault-secret/flux-kustomization.yaml
   - authentik/blueprints/inventree-secret/flux-kustomization.yaml
 
   # --- harbor ---
