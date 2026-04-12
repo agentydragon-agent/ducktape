@@ -1,4 +1,5 @@
 idle_watchdog: false
+setup_auth_proxy: true
 bazel_remote_proxy: null
 bazel_bes_proxy: null
 env_exports: |
