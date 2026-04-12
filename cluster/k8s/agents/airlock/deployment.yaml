@@ -27,7 +27,7 @@ spec:
         - name: harbor-pull-robot
       containers:
         - name: airlock
-          image: ghcr.io/agentydragon/airlock:devel-20260412093906-52f7eb1 # {"$imagepolicy": "flux-system:airlock"}
+          image: ghcr.io/agentydragon/airlock:devel-20260412182517-e736f3a # {"$imagepolicy": "flux-system:airlock"}
           imagePullPolicy: Always
           ports:
             - name: http
