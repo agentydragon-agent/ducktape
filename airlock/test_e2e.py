@@ -11,6 +11,7 @@ import anyio
 import pytest
 import pytest_bazel
 from fastmcp import FastMCP
+from fastmcp.mcp_config import RemoteMCPServer
 from starlette.applications import Starlette
 
 from airlock.conftest import (
@@ -19,6 +20,7 @@ from airlock.conftest import (
     GateAppFactory,
     GateClient,
     GateServerFactory,
+    as_remote_server,
     gate_http_app,
     serve_app,
 )
@@ -93,10 +95,11 @@ async def test_auto_approve_predicate_skips_queue(
     free_port: int,
     agent_client_transport: object,
     echo_backend: EchoBackend,
+    echo_http: RemoteMCPServer,
     session_key: str,
 ):
     """Auto-approve predicate: tool call immediately executes without any operator action."""
-    app = make_gate_app({TEST_NS: echo_backend.server}, predicate=lambda ns, tool, args: Approved())
+    app = make_gate_app({TEST_NS: echo_http}, predicate=lambda ns, tool, args: Approved())
 
     async with serve_app(app, port=free_port), GateClient(agent_client_transport) as agent:
         action = await agent.call_echo("auto", justification="auto", session_key=session_key)
@@ -129,24 +132,25 @@ async def test_multi_backend_namespace_isolation(
 
     ns_a = MCPMountPrefix("alpha")
     ns_b = MCPMountPrefix("beta")
-    app = make_gate_app({ns_a: srv_a, ns_b: srv_b}, predicate=lambda ns, tool, args: Approved())
+    async with as_remote_server(srv_a) as spec_a, as_remote_server(srv_b) as spec_b:
+        app = make_gate_app({ns_a: spec_a, ns_b: spec_b}, predicate=lambda ns, tool, args: Approved())
 
-    async with serve_app(app, port=free_port), GateClient(agent_client_transport) as client:
-        tools = await client.list_tools()
-        tool_names = {t.name for t in tools}
-        assert {"alpha_echo", "beta_echo"} <= tool_names
+        async with serve_app(app, port=free_port), GateClient(agent_client_transport) as client:
+            tools = await client.list_tools()
+            tool_names = {t.name for t in tools}
+            assert {"alpha_echo", "beta_echo"} <= tool_names
 
-        action_a = await client.call_gate_tool(
-            "alpha_echo", {"input": {"text": "from-a"}, "justification": "test", "session_key": session_key}
-        )
-        with anyio.fail_after(5.0):
-            await client.wait_for(action_a.key, ActionStatus.DONE)
+            action_a = await client.call_gate_tool(
+                "alpha_echo", {"input": {"text": "from-a"}, "justification": "test", "session_key": session_key}
+            )
+            with anyio.fail_after(5.0):
+                await client.wait_for(action_a.key, ActionStatus.DONE)
 
-        action_b = await client.call_gate_tool(
-            "beta_echo", {"input": {"text": "from-b"}, "justification": "test", "session_key": session_key}
-        )
-        with anyio.fail_after(5.0):
-            await client.wait_for(action_b.key, ActionStatus.DONE)
+            action_b = await client.call_gate_tool(
+                "beta_echo", {"input": {"text": "from-b"}, "justification": "test", "session_key": session_key}
+            )
+            with anyio.fail_after(5.0):
+                await client.wait_for(action_b.key, ActionStatus.DONE)
 
     assert calls_a == ["from-a"]
     assert calls_b == ["from-b"]
@@ -227,14 +231,14 @@ async def test_wait_mode_resolution(
     make_gate_server: GateServerFactory,
     free_port: int,
     agent_client_transport: object,
-    echo_backend: EchoBackend,
+    echo_http: RemoteMCPServer,
     session_key: str,
     server_kwargs: dict,
     call_kwargs: dict,
     expected_status: ActionStatus,
 ):
     """Various wait_mode / server-default combinations resolve to expected status."""
-    gate = make_gate_server({TEST_NS: echo_backend.server}, **server_kwargs)
+    gate = make_gate_server({TEST_NS: echo_http}, **server_kwargs)
     app = gate_http_app(gate)
 
     async with serve_app(app, port=free_port), GateClient(agent_client_transport) as agent:
@@ -249,11 +253,12 @@ async def test_auto_deny_with_timeout_returns_rejected(
     free_port: int,
     agent_client_transport: object,
     echo_backend: EchoBackend,
+    echo_http: RemoteMCPServer,
     session_key: str,
 ):
     """Auto-deny predicate + server timeout -> rejected with reason."""
     gate = make_gate_server(
-        {TEST_NS: echo_backend.server},
+        {TEST_NS: echo_http},
         predicate=lambda ns, tool, args: Denied(reason="nope"),
         default_wait_mode=YieldAfterMs(timeout_ms=5000),
     )
@@ -275,12 +280,12 @@ async def test_yield_zero_overrides_large_server_default(
     make_gate_server: GateServerFactory,
     free_port: int,
     agent_client_transport: object,
-    echo_backend: EchoBackend,
+    echo_http: RemoteMCPServer,
     session_key: str,
 ):
     """yield_after_ms=0 returns immediately despite a 30s server default."""
     gate = make_gate_server(
-        {TEST_NS: echo_backend.server}, predicate=_auto_approve, default_wait_mode=YieldAfterMs(timeout_ms=30000)
+        {TEST_NS: echo_http}, predicate=_auto_approve, default_wait_mode=YieldAfterMs(timeout_ms=30000)
     )
     app = gate_http_app(gate)
 
@@ -299,11 +304,12 @@ async def test_blocking_overrides_tiny_server_default(
     free_port: int,
     agent_client_transport: object,
     echo_backend: EchoBackend,
+    echo_http: RemoteMCPServer,
     session_key: str,
 ):
     """blocking wait_mode overrides a 10ms server default — waits for completion."""
     gate = make_gate_server(
-        {TEST_NS: echo_backend.server}, predicate=_auto_approve, default_wait_mode=YieldAfterMs(timeout_ms=10)
+        {TEST_NS: echo_http}, predicate=_auto_approve, default_wait_mode=YieldAfterMs(timeout_ms=10)
     )
     app = gate_http_app(gate)
 
@@ -324,10 +330,11 @@ async def test_blocking_waits_for_operator_approval(
     agent_client_transport: object,
     operator_client_transport: object,
     echo_backend: EchoBackend,
+    echo_http: RemoteMCPServer,
     session_key: str,
 ):
     """blocking wait_mode with NeedsHumanDecision blocks until operator approves."""
-    gate = make_gate_server({TEST_NS: echo_backend.server})
+    gate = make_gate_server({TEST_NS: echo_http})
     app = gate_http_app(gate)
 
     async with (

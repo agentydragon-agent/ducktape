@@ -3,10 +3,15 @@
   import { getApiClient } from "./api.ts";
   import ActionList from "./ActionList.svelte";
   import ActionDetail from "./ActionDetail.svelte";
+  import BackendStatus from "./BackendStatus.svelte";
   import OAuthProviders from "./OAuthProviders.svelte";
   import type { Action } from "./types.ts";
 
-  type Route = { kind: "list" } | { kind: "action"; sessionKey: string; actionSeq: number } | { kind: "oauth" };
+  type Route =
+    | { kind: "list" }
+    | { kind: "action"; sessionKey: string; actionSeq: number }
+    | { kind: "oauth" }
+    | { kind: "backends" };
 
   function parseRoute(): Route {
     const hash = window.location.hash;
@@ -16,6 +21,9 @@
     }
     if (hash === "#/oauth") {
       return { kind: "oauth" };
+    }
+    if (hash === "#/backends") {
+      return { kind: "backends" };
     }
     return { kind: "list" };
   }
@@ -73,6 +81,7 @@
     <h1 class="app-header-title text-lg font-semibold m-0">Airlock</h1>
     <nav class="flex gap-3 ml-auto text-sm">
       <a href="#/" class="app-header-link">Actions</a>
+      <a href="#/backends" class="app-header-link">Backends</a>
       <a href="#/oauth" class="app-header-link">OAuth</a>
     </nav>
   </header>
@@ -95,6 +104,11 @@
       <p class="font-medium" style="color: var(--color-error);">Action not found.</p>
     </main>
   {/if}
+{:else if route.kind === "backends"}
+  {@render defaultHeader()}
+  <main class="max-w-4xl mx-auto px-4 py-6">
+    <BackendStatus />
+  </main>
 {:else if route.kind === "oauth"}
   {@render defaultHeader()}
   <main class="max-w-4xl mx-auto px-4 py-6">

@@ -15,21 +15,22 @@ import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 
-from airlock.conftest import TEST_NS, GateAppFactory, agent_transport, operator_transport, serve_app
+from airlock.conftest import TEST_NS, GateAppFactory, agent_transport, as_remote_server, operator_transport, serve_app
 
 
 @pytest.fixture
 async def gate_http(make_gate_app: GateAppFactory, free_port: int):
-    """HTTP gate with an in-process FastMCP backend; yields base URL."""
+    """HTTP gate with an echo backend served over HTTP; yields base URL."""
     backend = FastMCP()
 
     @backend.tool()
     async def echo(text: str) -> str:
         return f"echoed: {text}"
 
-    app = make_gate_app({TEST_NS: backend})
-    async with serve_app(app, port=free_port):
-        yield f"http://127.0.0.1:{free_port}"
+    async with as_remote_server(backend) as spec:
+        app = make_gate_app({TEST_NS: spec})
+        async with serve_app(app, port=free_port):
+            yield f"http://127.0.0.1:{free_port}"
 
 
 async def test_agent_cannot_see_operator_tools(gate_http, agent_jwt):

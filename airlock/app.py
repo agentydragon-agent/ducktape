@@ -38,6 +38,7 @@ from airlock.models import (
     ActionKey,
     ActionStatus,
     ApproveDecision,
+    BackendStatus,
     ConnectedOAuthStatus,
     DenyDecision,
     DisconnectedOAuthStatus,
@@ -68,7 +69,9 @@ def _detect_namespace() -> str:
     return "airlock"
 
 
-def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool = True) -> FastAPI:
+def create_app(
+    settings: Settings, *, auth: AuthProvider, include_static: bool = True, reconnect_interval_s: float = 30.0
+) -> FastAPI:
     """Build the FastAPI app serving UI, REST API, and MCP on a single port."""
     predicate = load_predicate(settings.predicate_path)
     gate = AirlockServer(
@@ -77,6 +80,7 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
         predicate=predicate,
         public_base_url=settings.public_base_url,
         default_wait_mode=settings.default_wait_mode,
+        reconnect_interval_s=reconnect_interval_s,
         auth=auth,
     )
     mcp_app = gate.http_app(path="/")
@@ -165,6 +169,10 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
                 gate.remove_sse_listener(queue)
 
         return StreamingResponse(generate(), media_type="text/event-stream")
+
+    @app.get("/api/backends")
+    async def list_backends() -> list[BackendStatus]:
+        return gate.get_backend_statuses()
 
     @app.get("/api/oauth/providers")
     async def list_oauth_providers() -> list[OAuthProviderStatus]:

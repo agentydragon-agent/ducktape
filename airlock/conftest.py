@@ -31,6 +31,17 @@ from mcp_infra.resource_utils import read_text_json_typed
 from mcp_utils.resources import parse_tool_result_as
 from util.net import pick_free_port
 
+
+@asynccontextmanager
+async def as_remote_server(server: FastMCP) -> AsyncGenerator[RemoteMCPServer]:
+    """Start a FastMCP server as HTTP and yield a RemoteMCPServer pointing at it."""
+    port = pick_free_port()
+    mcp_app = server.http_app(path="/")
+    starlette = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
+    async with serve_app(starlette, port=port):
+        yield RemoteMCPServer(url=f"http://127.0.0.1:{port}/mcp")
+
+
 TEST_NS = MCPMountPrefix("test")
 
 
@@ -216,7 +227,7 @@ def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFact
     """
 
     def _factory(
-        backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
+        backends: Mapping[MCPMountPrefix, MCPServerTypes],
         *,
         predicate: PredicateFn | None = None,
         default_wait_mode: WaitMode = _DEFAULT_WAIT_MODE,
@@ -246,16 +257,23 @@ GateAppFactory = Callable[..., Starlette]
 def make_gate_app(make_gate_server: GateServerFactory) -> GateAppFactory:
     """Convenience fixture: creates a gate server and wraps it in a Starlette app."""
 
-    def _factory(backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP], **kwargs: object) -> Starlette:
+    def _factory(backends: Mapping[MCPMountPrefix, MCPServerTypes], **kwargs: object) -> Starlette:
         return gate_http_app(make_gate_server(backends, **kwargs))
 
     return _factory
 
 
 @pytest.fixture
-def echo_gate_app(make_gate_app: GateAppFactory, echo_backend: EchoBackend) -> Starlette:
+async def echo_http(echo_backend: EchoBackend) -> AsyncGenerator[RemoteMCPServer]:
+    """Start the echo backend as an HTTP server; yield its RemoteMCPServer spec."""
+    async with as_remote_server(echo_backend.server) as spec:
+        yield spec
+
+
+@pytest.fixture
+def echo_gate_app(make_gate_app: GateAppFactory, echo_http: RemoteMCPServer) -> Starlette:
     """Gate app with a single echo backend under TEST_NS."""
-    return make_gate_app({TEST_NS: echo_backend.server})
+    return make_gate_app({TEST_NS: echo_http})
 
 
 @pytest.fixture

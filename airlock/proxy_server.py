@@ -23,6 +23,7 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,9 @@ from airlock.models import (
     ActionState,
     ActionStatus,
     ApproveDecision,
+    BackendConnectedStatus,
+    BackendDegradedStatus,
+    BackendStatus,
     BlockingWait,
     DeniedDetail,
     DenyDecision,
@@ -82,6 +86,25 @@ _INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
 _WAIT_MODE_SCHEMA: dict[str, Any] = TypeAdapter(WaitMode).json_schema()
 _DEFAULT_WAIT_MODE = YieldAfterMs(timeout_ms=0)
+
+
+@dataclass
+class _ConnectedBackend:
+    """Live backend with an active client connection."""
+
+    client: Client
+    stack: AsyncExitStack  # owns the client's lifetime
+
+
+@dataclass
+class _DegradedBackend:
+    """Backend that failed to connect or lost its connection."""
+
+    error: str
+    since: datetime
+
+
+_BackendState = _ConnectedBackend | _DegradedBackend
 
 
 def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
@@ -129,11 +152,12 @@ class AirlockServer(EnhancedFastMCP):
     def __init__(
         self,
         *,
-        backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
+        backends: Mapping[MCPMountPrefix, MCPServerTypes],
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
         default_wait_mode: WaitMode = _DEFAULT_WAIT_MODE,
+        reconnect_interval_s: float = 30.0,
         **kwargs: Any,
     ) -> None:
         super().__init__("Airlock", lifespan=self._lifespan, instructions="Airlock — initialising…", **kwargs)
@@ -143,7 +167,8 @@ class AirlockServer(EnhancedFastMCP):
         self._predicate = predicate
         self._public_base_url = public_base_url
         self._default_wait_mode = default_wait_mode
-        self._backend_clients: dict[MCPMountPrefix, Client] = {}
+        self._reconnect_interval_s = reconnect_interval_s
+        self._backends: dict[MCPMountPrefix, _BackendState] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
         # Keyed by ActionKey while action is parked awaiting a human decision.
@@ -169,14 +194,12 @@ class AirlockServer(EnhancedFastMCP):
     async def _lifespan(self, app: FastMCP) -> AsyncGenerator[None]:
         self._storage = await ActionStorage.initialize(self._db_path)
 
-        # Manual stack management so cleanup runs inside the shielded scope below.
-        stack = AsyncExitStack()
-        await stack.__aenter__()
         try:
-            await self._connect_backends(stack)
+            await self._connect_backends()
             await self._rehydrate_pending_actions()
             self._register_resources()
             self._register_tools()
+            self._spawn(self._reconnect_degraded_backends())
             yield
         finally:
             # Shield cleanup from FastMCP memory transport's cancel scope.
@@ -187,8 +210,10 @@ class AirlockServer(EnhancedFastMCP):
                 if self._background_tasks:
                     logger.info("[_lifespan] draining %d background task(s)", len(self._background_tasks))
                     await asyncio.gather(*self._background_tasks, return_exceptions=True)
-                await stack.aclose()
-                self._backend_clients.clear()
+                for state in self._backends.values():
+                    if isinstance(state, _ConnectedBackend):
+                        await state.stack.aclose()
+                self._backends.clear()
                 if self._storage is not None:
                     await self._storage.close()
 
@@ -203,26 +228,63 @@ class AirlockServer(EnhancedFastMCP):
             namespace = MCPMountPrefix(action.call.server_namespace)
             self._spawn(self._await_human_decision(action.key, namespace, action.call.tool_name, action.call.arguments))
 
-    async def _connect_backends(self, stack: AsyncExitStack) -> None:
-        """Connect to all backend servers, register wrapped tools, and render instructions."""
-        backend_instructions: dict[str, str | None] = {}
-        for namespace, spec in self._backend_specs.items():
-            client = Client(spec) if isinstance(spec, FastMCP) else Client(spec.to_transport())  # type: ignore[arg-type]
+    async def _try_connect_backend(self, namespace: MCPMountPrefix, spec: MCPServerTypes) -> None:
+        """Attempt to connect one backend. Updates _backends and broadcasts status change.
 
-            logger.info("[_connect_backends] connecting to %s: %s", namespace, spec)
+        On failure the backend is marked degraded but no exception is raised — airlock
+        continues serving other backends.
+        """
+        client: Client = Client(spec.to_transport())
+        stack = AsyncExitStack()
+        try:
+            logger.info("[_try_connect_backend] connecting %s", namespace)
+            await stack.__aenter__()
             await stack.enter_async_context(client)
-            logger.info("[_connect_backends] %s connected", namespace)
-            self._backend_clients[namespace] = client
+        except Exception as exc:
+            await stack.aclose()
+            logger.warning("[_try_connect_backend] %s failed: %s", namespace, exc)
+            self._backends[namespace] = _DegradedBackend(error=str(exc), since=datetime.now(tz=UTC))
+            self._broadcast_sse({"type": "backends_changed"})
+            return
 
-            init = client.initialize_result
-            backend_instructions[namespace] = init.instructions if init else None
+        # Close the previous connection if this is a reconnect.
+        prev = self._backends.get(namespace)
+        if isinstance(prev, _ConnectedBackend):
+            with contextlib.suppress(Exception):
+                await prev.stack.aclose()
 
-            for tool in await client.list_tools():
-                self._register_wrapped_tool(namespace, tool)
+        self._backends[namespace] = _ConnectedBackend(client=client, stack=stack)
+        logger.info("[_try_connect_backend] %s connected", namespace)
+
+        for tool in await client.list_tools():
+            self._register_wrapped_tool(namespace, tool)
+
+        self._broadcast_sse({"type": "backends_changed"})
+
+    async def _connect_backends(self) -> None:
+        """Connect to all configured backends and render MCP instructions."""
+        for namespace, spec in self._backend_specs.items():
+            await self._try_connect_backend(namespace, spec)
+
+        backend_instructions: dict[str, str | None] = {}
+        for namespace, state in self._backends.items():
+            if isinstance(state, _ConnectedBackend):
+                init = state.client.initialize_result
+                backend_instructions[namespace] = init.instructions if init else None
+            else:
+                backend_instructions[namespace] = None
 
         self.instructions = Template(filename=str(_INSTRUCTIONS_TEMPLATE)).render(
             backend_instructions=backend_instructions, public_base_url=self._public_base_url
         )
+
+    async def _reconnect_degraded_backends(self) -> None:
+        """Background loop: periodically retry backends that failed to connect."""
+        while True:
+            await asyncio.sleep(self._reconnect_interval_s)
+            for namespace, state in list(self._backends.items()):
+                if isinstance(state, _DegradedBackend):
+                    await self._try_connect_backend(namespace, self._backend_specs[namespace])
 
     def _register_resources(self) -> None:
         """Register resource templates and subscription tracking handlers."""
@@ -384,11 +446,25 @@ class AirlockServer(EnhancedFastMCP):
             case ApproveDecision():
                 started_at = datetime.now(tz=UTC)
                 await self._update_and_notify(key, ExecutingState(), ExecutionStartedDetail(started_at=started_at))
-                client = self._backend_clients.get(namespace)
-                if client is None:
-                    raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
-                outcome = await client.call_tool_mcp(tool_name, input)
-                await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
+                state = self._backends.get(namespace)
+                if not isinstance(state, _ConnectedBackend):
+                    error_msg = f"Backend {namespace!r} is not connected"
+                else:
+                    try:
+                        outcome = await state.client.call_tool_mcp(tool_name, input)
+                        await self._update_and_notify(
+                            key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome)
+                        )
+                        return
+                    except Exception as exc:
+                        logger.warning("[_apply_decision] backend %s call failed: %s", namespace, exc)
+                        error_msg = f"Backend {namespace!r} call failed: {exc}"
+                error_outcome = mcp_types.CallToolResult(
+                    content=[mcp_types.TextContent(type="text", text=error_msg)], isError=True
+                )
+                await self._update_and_notify(
+                    key, DoneState(outcome=error_outcome), ExecutionFinishedDetail(outcome=error_outcome)
+                )
             case DenyDecision(reason=reason):
                 await self._update_and_notify(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
 
@@ -446,6 +522,18 @@ class AirlockServer(EnhancedFastMCP):
         fut = self._pending_decisions.pop(key, None)
         if fut is not None and not fut.done():
             fut.cancel()
+        return result
+
+    def get_backend_statuses(self) -> list[BackendStatus]:
+        """Return the current connection status for each configured backend."""
+        result: list[BackendStatus] = []
+        for ns, state in self._backends.items():
+            conn_status: BackendConnectedStatus | BackendDegradedStatus
+            if isinstance(state, _ConnectedBackend):
+                conn_status = BackendConnectedStatus()
+            else:
+                conn_status = BackendDegradedStatus(error=state.error, since=state.since)
+            result.append(BackendStatus(name=str(ns), connection_status=conn_status))
         return result
 
     def _spawn(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
