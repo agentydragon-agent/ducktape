@@ -47,14 +47,22 @@ runs:
           [[ -n "$line" ]] && ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=$line")
         done <<< "${{ inputs.env_overrides }}"
 
-        # --container_image is a `bb remote` flag: must come before the Bazel subcommand.
-        # --remote_default_exec_properties is a Bazel command flag: must come after the subcommand.
-        BB_IMAGE_ARGS=()
-        BAZEL_IMAGE_ARGS=()
-        if [[ -n "${{ inputs.rbe_image }}" ]]; then
-          BB_IMAGE_ARGS+=(--container_image="docker://${{ inputs.rbe_image }}")
-          BAZEL_IMAGE_ARGS+=(--remote_default_exec_properties="container-image=docker://${{ inputs.rbe_image }}")
+        # Resolve the runner + RBE executor image.
+        # --container_image is a `bb remote` flag (runner VM): must come before the Bazel subcommand.
+        # --remote_default_exec_properties is a Bazel command flag (RBE executor): must come after the subcommand.
+        #
+        # When no override is given, read the pinned image from image_pins.json so that
+        # repo-rule resolution (pip wheel builds) runs on the custom image with system libs
+        # (pkg-config, libcairo2-dev, etc.). Without this, bb remote uses BuildBuddy's
+        # default image which lacks these dependencies.
+        RBE_IMAGE="${{ inputs.rbe_image }}"
+        if [[ -z "$RBE_IMAGE" ]]; then
+          pin_image=$(jq -r '.rbe_worker.image' devinfra/image_pins.json)
+          pin_digest=$(jq -r '.rbe_worker.digest' devinfra/image_pins.json)
+          RBE_IMAGE="${pin_image}@${pin_digest}"
         fi
+        BB_IMAGE_ARGS=(--container_image="docker://${RBE_IMAGE}")
+        BAZEL_IMAGE_ARGS=(--remote_default_exec_properties="container-image=docker://${RBE_IMAGE}")
 
         bb remote \
           --runner_exec_properties=EstimatedFreeDiskBytes=${{ inputs.disk_bytes }} \

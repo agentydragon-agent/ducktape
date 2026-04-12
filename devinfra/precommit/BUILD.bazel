@@ -94,6 +94,7 @@ py_test(
 py_test(
     name = "test_git_hook",
     srcs = ["test_git_hook.py"],
+    legacy_create_init = 0,
     deps = [
         ":git_hook",
         "@pypi//pygit2",
