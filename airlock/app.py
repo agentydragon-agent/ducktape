@@ -74,9 +74,8 @@ def _detect_namespace() -> str:
     return "airlock"
 
 
-def create_app(settings: Settings, *, include_static: bool = True) -> FastAPI:
+def create_app(settings: Settings, *, auth: JWTVerifier, include_static: bool = True) -> FastAPI:
     """Build the FastAPI app serving UI, REST API, and MCP on a single port."""
-    discovery = _fetch_oidc_discovery(settings.oidc_issuer)
     predicate = load_predicate(settings.predicate_path)
     gate = AirlockServer(
         backends=settings.backends,
@@ -84,7 +83,7 @@ def create_app(settings: Settings, *, include_static: bool = True) -> FastAPI:
         predicate=predicate,
         public_base_url=settings.public_base_url,
         default_wait_mode=settings.default_wait_mode,
-        auth=JWTVerifier(jwks_uri=discovery["jwks_uri"]),
+        auth=auth,
     )
     mcp_app = gate.http_app(path="/")
 
@@ -208,7 +207,9 @@ def create_app(settings: Settings, *, include_static: bool = True) -> FastAPI:
 
 async def _serve() -> None:
     settings = Settings.load()
-    app = create_app(settings)
+    discovery = _fetch_oidc_discovery(settings.oidc_issuer)
+    auth = JWTVerifier(jwks_uri=discovery["jwks_uri"])
+    app = create_app(settings, auth=auth)
     logger.info("serving on %s:%d", settings.host, settings.port)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, log_level="info"))
     await server.serve()

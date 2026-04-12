@@ -271,3 +271,23 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_app_integration",
+    size = "medium",
+    srcs = ["test_app_integration.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        "//airlock/oauth:provider",
+        "//mcp_infra:prefix",
+        "//util:net",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
