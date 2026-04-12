@@ -1,5 +1,5 @@
-# Release artifacts to GitHub via per-artifact bazel targets.
-# Each target builds its artifact (as a dep), computes SHA, and creates
+# Release artifacts to GitHub via per-artifact build + gh release.
+# Each matrix entry builds its artifact on RBE, computes SHA, and creates
 # a GitHub Release if the content changed.
 name: Release
 
@@ -21,19 +21,31 @@ env:
 
 jobs:
   release:
-    name: Release ${{ matrix.target }}
+    name: Release ${{ matrix.pkg }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - //:release_claude_hooks
-          - //util:release_ducktape_util
-          - //:release_ducktape
-          - //gterm_theme:release_gterm_theme
-          - //skills:release_skills
-          - //devinfra/buildbuddy_cli:release_bbapi
+        include:
+          - pkg: claude-hooks
+            target: //:claude_hooks_wheel
+            filename: claude_hooks-0.1.0-py3-none-any.whl
+          - pkg: ducktape-util
+            target: //util:wheel
+            filename: ducktape_util-0.1.0-py3-none-any.whl
+          - pkg: ducktape
+            target: //:wheel
+            filename: ducktape-0.1.0-py3-none-any.whl
+          - pkg: gterm-theme
+            target: //gterm_theme:wheel
+            filename: gterm_theme-0.1.0-py3-none-any.whl
+          - pkg: skills
+            target: //skills:all_skills_tar
+            filename: skills.tar
+          - pkg: bbapi
+            target: //devinfra/buildbuddy_cli:bbapi
+            filename: bbapi
     steps:
       - uses: actions/checkout@v6
         with:
@@ -47,10 +59,9 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Release
-        uses: ./.github/actions/bb-remote
+      - uses: ./.github/actions/release-artifact
         with:
-          args: run ${{ matrix.target }}
+          pkg: ${{ matrix.pkg }}
+          bazel_target: ${{ matrix.target }}
+          filename: ${{ matrix.filename }}
           rbe_image: ${{ inputs.rbe_image }}
-          env_overrides: |
-            GH_RELEASE_PAT=${{ env.GH_RELEASE_PAT }}

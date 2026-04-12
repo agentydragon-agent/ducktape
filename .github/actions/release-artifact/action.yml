@@ -1,0 +1,86 @@
+name: Release artifact
+description: Build a Bazel artifact via RBE, upload to GitHub Release if content changed.
+
+inputs:
+  pkg:
+    description: "Package name (e.g. claude-hooks)"
+    required: true
+  bazel_target:
+    description: "Bazel target to build (e.g. //:claude_hooks_wheel)"
+    required: true
+  filename:
+    description: "Release asset filename (e.g. claude_hooks-0.1.0-py3-none-any.whl)"
+    required: true
+  rbe_image:
+    description: "Override RBE container image (optional)"
+    required: false
+    default: ""
+  retention_days:
+    description: "Delete releases older than this many days"
+    required: false
+    default: "30"
+
+runs:
+  using: composite
+  steps:
+    - name: Build artifact
+      uses: ./.github/actions/bb-remote
+      with:
+        args: build ${{ inputs.bazel_target }}
+        rbe_image: ${{ inputs.rbe_image }}
+
+    - name: Release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
+        PKG: ${{ inputs.pkg }}
+        FILENAME: ${{ inputs.filename }}
+        RETENTION_DAYS: ${{ inputs.retention_days }}
+      run: |
+        set -euo pipefail
+
+        # Skip [skip ci] commits
+        subject=$(git log -1 --format=%s)
+        if [[ "$subject" == *"[skip ci]"* ]]; then
+          echo "$PKG: commit has [skip ci], skipping"
+          exit 0
+        fi
+
+        # Find the built artifact (bb remote downloads to bb-out/)
+        artifact=$(find bb-out -name "$FILENAME" -type f | head -1)
+        if [[ -z "$artifact" ]]; then
+          echo "::error::Artifact $FILENAME not found in bb-out"
+          ls -R bb-out/ 2>/dev/null || echo "bb-out/ does not exist"
+          exit 1
+        fi
+
+        # Compute SHA256 (base64, matching npins format)
+        sha=$(openssl dgst -sha256 -binary "$artifact" | base64 -w0)
+
+        # Compare against pinned value
+        pinned_sha=$(jq -r ".pins.\"$PKG\".sha256 // empty" npins/sources.json)
+        if [[ "$sha" == "$pinned_sha" ]]; then
+          echo "$PKG: unchanged, skipping"
+          exit 0
+        fi
+
+        short_sha=$(git rev-parse --short=7 HEAD)
+        tag="${PKG}-${short_sha}"
+        echo "$PKG: content changed, creating release $tag"
+
+        gh release create "$tag" "$artifact" \
+          --title "$PKG ($short_sha)" \
+          --notes "$PKG release" \
+          --latest=false
+
+        # Prune old releases for this package
+        cutoff=$(date -u -d "-${RETENTION_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
+        gh release list --json tagName,createdAt -L 200 \
+          --jq ".[] | select(.tagName | test(\"^${PKG}-[0-9a-f]{7}$\")) | select(.createdAt < \"${cutoff}\") | .tagName" \
+          | while read -r old_tag; do
+              [[ "$old_tag" == "$tag" ]] && continue
+              echo "  pruning $old_tag"
+              gh release delete "$old_tag" --yes --cleanup-tag
+            done
+
+        echo "Released: $PKG ($tag)"

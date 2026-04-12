@@ -1,5 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//devinfra/ci:github_release.bzl", "github_release")
 
 go_library(
     name = "bbapi_lib",
@@ -48,11 +47,4 @@ go_test(
     name = "bbapi_test",
     srcs = ["helpers_test.go"],
     embed = [":bbapi_lib"],
-)
-
-github_release(
-    name = "release_bbapi",
-    artifact = ":bbapi",
-    filename = "bbapi",
-    pkg = "bbapi",
 )

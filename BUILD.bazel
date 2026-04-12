@@ -33,9 +33,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 # Visibility is controlled per-target. Gazelle uses python_default_visibility NONE
 # so targets default to private. Public targets explicitly set visibility.
 
-# --- GitHub release targets ---
-load("//devinfra/ci:github_release.bzl", "github_release")
-
 # Link workspace npm packages
 npm_link_all_packages(name = "node_modules")
 
@@ -321,18 +318,4 @@ py_wheel(
     ],
     version = "0.1.0",
     deps = [":ducktape_pkg"],
-)
-
-github_release(
-    name = "release_claude_hooks",
-    artifact = ":claude_hooks_wheel",
-    filename = "claude_hooks-0.1.0-py3-none-any.whl",
-    pkg = "claude-hooks",
-)
-
-github_release(
-    name = "release_ducktape",
-    artifact = ":wheel",
-    filename = "ducktape-0.1.0-py3-none-any.whl",
-    pkg = "ducktape",
 )

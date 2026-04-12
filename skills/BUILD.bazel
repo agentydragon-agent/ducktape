@@ -1,5 +1,4 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/ci:github_release.bzl", "github_release")
 
 # All skill tars combined into one archive for web deployment.
 # Extract with: tar xf skills.tar -C ~/.claude/skills/
@@ -26,11 +25,4 @@ pkg_tar(
         "//skills/verify_docs:verify_docs_tar",
         "//skills/web_selfcheck:web_selfcheck_tar",
     ],
-)
-
-github_release(
-    name = "release_skills",
-    artifact = ":all_skills_tar",
-    filename = "skills.tar",
-    pkg = "skills",
 )

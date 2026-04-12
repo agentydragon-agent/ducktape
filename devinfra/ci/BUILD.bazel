@@ -53,18 +53,6 @@ py_library(
 )
 
 py_library(
-    name = "github_release_lib",
-    srcs = ["github_release_bin.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":artifacts",
-        "//util/bazel:runfiles",
-        "//util/bazel:workspace",
-        "@pypi//pygithub",
-    ],
-)
-
-py_library(
     name = "sync_pins",
     srcs = ["sync_pins.py"],
     visibility = ["//:__subpackages__"],

@@ -101,11 +101,6 @@ def _sha256_of_chunks(chunks: Iterable[bytes]) -> str:
     return base64.b64encode(h.digest()).decode()
 
 
-def file_sha256(path: Path) -> str:
-    with path.open("rb") as f:
-        return _sha256_of_chunks(iter(lambda: f.read(65536), b""))
-
-
 def url_sha256(url: str) -> str:
     with httpx.stream("GET", url, follow_redirects=True) as response:
         response.raise_for_status()
