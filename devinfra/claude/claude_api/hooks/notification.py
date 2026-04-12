@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Literal
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
 class NotificationType(StrEnum):
@@ -23,7 +23,3 @@ class NotificationInput(HookInputBase):
 class NotificationHookSpecificOutput(CamelModel):
     hook_event_name: Literal["Notification"] = "Notification"
     additional_context: str | None = None
-
-
-class NotificationOutput(HookOutputBase):
-    hook_specific_output: NotificationHookSpecificOutput | None = None

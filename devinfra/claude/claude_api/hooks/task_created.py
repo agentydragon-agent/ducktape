@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from devinfra.claude.claude_api.hooks.common import HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import HookInputBase
 
 
 class TaskCreatedInput(HookInputBase):
@@ -12,7 +12,3 @@ class TaskCreatedInput(HookInputBase):
     task_description: str | None = None
     teammate_name: str | None = None
     team_name: str | None = None
-
-
-class TaskCreatedOutput(HookOutputBase):
-    pass

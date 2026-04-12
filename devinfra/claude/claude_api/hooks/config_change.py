@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import HookInputBase
 
 
 class ConfigChangeSource(StrEnum):
@@ -21,7 +21,3 @@ class ConfigChangeInput(HookInputBase):
     hook_event_name: Literal["ConfigChange"] = "ConfigChange"
     source: ConfigChangeSource
     file_path: Path | None = Field(default=None, description="Path to changed file; absent for some source types")
-
-
-class ConfigChangeOutput(HookOutputBase):
-    pass

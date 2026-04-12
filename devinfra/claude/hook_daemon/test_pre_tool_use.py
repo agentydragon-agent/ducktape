@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.claude.claude_api.hooks.pre_tool_use import PermissionDecision, PreToolUseInput
+from devinfra.claude.claude_api.hooks.pre_tool_use import (
+    PermissionDecision,
+    PreToolUseHookSpecificOutput,
+    PreToolUseInput,
+)
 from devinfra.claude.hook_daemon.pre_tool_use import ALWAYS_ALLOW_COMMANDS, evaluate
 from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
@@ -37,6 +41,7 @@ class TestEvaluate:
         hook_input = PreToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": command})
         result = evaluate(hook_input, session)
         assert result.hook_specific_output is not None
+        assert isinstance(result.hook_specific_output, PreToolUseHookSpecificOutput)
         assert result.hook_specific_output.permission_decision == PermissionDecision.ALLOW
 
     def test_output_serializes_to_camel_case(self, session: Session) -> None:

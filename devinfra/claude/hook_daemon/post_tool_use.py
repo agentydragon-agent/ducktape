@@ -14,11 +14,8 @@ from typing import TYPE_CHECKING, Any
 import pygit2
 from pydantic import ValidationError
 
-from devinfra.claude.claude_api.hooks.post_tool_use import (
-    PostToolUseHookSpecificOutput,
-    PostToolUseInput,
-    PostToolUseOutput,
-)
+from devinfra.claude.claude_api.hooks.output import HookOutput
+from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseHookSpecificOutput, PostToolUseInput
 from devinfra.claude.claude_api.tool_input_models import EditInput, WriteInput, _ToolInputBase
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import PreCommitConfig
@@ -53,9 +50,9 @@ def _format_check_result(result: RunResult, file_path: Path, pre_commit: PreComm
     return output.strip()
 
 
-def evaluate(hook_input: PostToolUseInput, session: Session) -> PostToolUseOutput:
+def evaluate(hook_input: PostToolUseInput, session: Session) -> HookOutput:
     if hook_input.tool_name not in FILE_MODIFYING_TOOLS:
-        return PostToolUseOutput()
+        return HookOutput()
 
     try:
         parsed = parse_tool_input(hook_input.tool_name, hook_input.tool_input)
@@ -66,17 +63,17 @@ def evaluate(hook_input: PostToolUseInput, session: Session) -> PostToolUseOutpu
         parsed = None
     file_path = _get_file_path(parsed, hook_input.tool_input)
     if file_path is None or not file_path.exists():
-        return PostToolUseOutput()
+        return HookOutput()
 
     search_dir = str(file_path.parent if file_path.is_file() else file_path)
     git_path = pygit2.discover_repository(search_dir)
     if git_path is None:
-        return PostToolUseOutput()
+        return HookOutput()
     project_dir = Path(pygit2.Repository(git_path).workdir).resolve()
 
     pre_commit = session.profile.pre_commit
     if not pre_commit:
-        return PostToolUseOutput()
+        return HookOutput()
 
     run_result = run_on_file(file_path, project_dir, auto_apply_hooks=pre_commit.auto_apply_hooks)
 
@@ -93,9 +90,9 @@ def evaluate(hook_input: PostToolUseInput, session: Session) -> PostToolUseOutpu
             )
 
     if not run_result.has_issues:
-        return PostToolUseOutput()
+        return HookOutput()
 
-    return PostToolUseOutput(
+    return HookOutput(
         hook_specific_output=PostToolUseHookSpecificOutput(
             additional_context=_format_check_result(run_result, file_path, pre_commit)
         )

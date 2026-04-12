@@ -18,13 +18,14 @@ import json
 
 import pytest_bazel
 
-from devinfra.claude.claude_api.hooks.session_start import SessionStartHookSpecificOutput, SessionStartOutput
+from devinfra.claude.claude_api.hooks.output import HookOutput
+from devinfra.claude.claude_api.hooks.session_start import SessionStartHookSpecificOutput
 
 
 def test_exclude_none_omits_null_fields() -> None:
     """Fields with None values are omitted, avoiding null values that Zod
     .optional() rejects. Literal defaults like hookEventName are preserved."""
-    output = SessionStartOutput(
+    output = HookOutput(
         hook_specific_output=SessionStartHookSpecificOutput(additional_context="# Session hook context")
     )
     raw = output.model_dump_json(by_alias=True, exclude_none=True)
@@ -42,7 +43,7 @@ def test_exclude_none_omits_null_fields() -> None:
 
 def test_default_serialization_emits_nulls() -> None:
     """Demonstrates the bug: without exclude_none, None becomes null in JSON."""
-    output = SessionStartOutput(hook_specific_output=SessionStartHookSpecificOutput(additional_context="ctx"))
+    output = HookOutput(hook_specific_output=SessionStartHookSpecificOutput(additional_context="ctx"))
     parsed = json.loads(output.model_dump_json(by_alias=True))
     # This is the broken behavior that Claude Code rejects
     assert parsed["stopReason"] is None

@@ -4,8 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from devinfra.claude.claude_api.hooks.common import HookOutputBase
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
+from devinfra.claude.claude_api.hooks.output import HookOutput
 
 
 class HookRequest(BaseModel):
@@ -18,7 +18,7 @@ class HookRequest(BaseModel):
 class HookResponse(BaseModel):
     """RPC response from hook daemon."""
 
-    output: HookOutputBase | None = Field(default=None, description="Typed hook output. None for noops.")
+    output: HookOutput | None = Field(default=None, description="Typed hook output. None for noops.")
 
 
 class ShimExecRequest(BaseModel):

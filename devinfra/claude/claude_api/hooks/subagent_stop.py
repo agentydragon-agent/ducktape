@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from devinfra.claude.claude_api.hooks.common import HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import HookInputBase
 
 
 class SubagentStopInput(HookInputBase):
@@ -12,7 +12,3 @@ class SubagentStopInput(HookInputBase):
     agent_type: str
     agent_transcript_path: str
     last_assistant_message: str
-
-
-class SubagentStopOutput(HookOutputBase):
-    pass

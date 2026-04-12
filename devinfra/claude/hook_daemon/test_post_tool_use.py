@@ -7,11 +7,8 @@ import pytest
 import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
-from devinfra.claude.claude_api.hooks.post_tool_use import (
-    PostToolUseHookSpecificOutput,
-    PostToolUseInput,
-    PostToolUseOutput,
-)
+from devinfra.claude.claude_api.hooks.output import HookOutput
+from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseHookSpecificOutput, PostToolUseInput
 from devinfra.claude.hook_daemon.config import PreCommitConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result, evaluate
@@ -76,7 +73,7 @@ def test_nonexistent_file_returns_default(session: Session) -> None:
 
 
 def test_output_serializes_camel_case() -> None:
-    out = PostToolUseOutput(hook_specific_output=PostToolUseHookSpecificOutput(additional_context="formatted"))
+    out = HookOutput(hook_specific_output=PostToolUseHookSpecificOutput(additional_context="formatted"))
     j = out.model_dump_json(by_alias=True)
     assert '"hookSpecificOutput"' in j
     assert '"additionalContext"' in j
@@ -85,11 +82,11 @@ def test_output_serializes_camel_case() -> None:
 
 def test_stop_reason_requires_continue_false() -> None:
     with pytest.raises(ValueError, match="stop_reason requires continue=false"):
-        PostToolUseOutput(stop_reason="done", continue_=True)
+        HookOutput(stop_reason="done", continue_=True)
 
 
 def test_stop_reason_with_continue_false() -> None:
-    out = PostToolUseOutput(stop_reason="done", continue_=False)
+    out = HookOutput(stop_reason="done", continue_=False)
     assert out.stop_reason == "done"
     assert out.continue_ is False
 
@@ -171,10 +168,10 @@ def test_precommit_report_only_failure(git_project: tuple[Path, Path], session: 
         result = evaluate(inp, session)
 
     assert result.hook_specific_output is not None
-    ctx = result.hook_specific_output.additional_context
-    assert ctx is not None
-    assert "Not auto-applied" in ctx
-    assert "ruff-format" in ctx
+    assert isinstance(result.hook_specific_output, PostToolUseHookSpecificOutput)
+    assert result.hook_specific_output.additional_context is not None
+    assert "Not auto-applied" in result.hook_specific_output.additional_context
+    assert "ruff-format" in result.hook_specific_output.additional_context
 
 
 def test_precommit_passes(git_project: tuple[Path, Path], session: Session) -> None:
@@ -215,10 +212,10 @@ def test_auto_applied_only_returns_context(git_project: tuple[Path, Path], sessi
         result = evaluate(inp, session)
 
     assert result.hook_specific_output is not None
-    ctx = result.hook_specific_output.additional_context
-    assert ctx is not None
-    assert "Auto-applied:" in ctx
-    assert "ruff-format" in ctx
+    assert isinstance(result.hook_specific_output, PostToolUseHookSpecificOutput)
+    assert result.hook_specific_output.additional_context is not None
+    assert "Auto-applied:" in result.hook_specific_output.additional_context
+    assert "ruff-format" in result.hook_specific_output.additional_context
 
 
 if __name__ == "__main__":

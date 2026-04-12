@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
 class UserPromptSubmitInput(HookInputBase):
@@ -13,7 +13,3 @@ class UserPromptSubmitInput(HookInputBase):
 class UserPromptSubmitHookSpecificOutput(CamelModel):
     hook_event_name: Literal["UserPromptSubmit"] = "UserPromptSubmit"
     additional_context: str | None = None
-
-
-class UserPromptSubmitOutput(HookOutputBase):
-    hook_specific_output: UserPromptSubmitHookSpecificOutput | None = None

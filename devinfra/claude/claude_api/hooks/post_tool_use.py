@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
 class PostToolUseInput(HookInputBase):
@@ -28,15 +28,3 @@ class PostToolUseHookSpecificOutput(CamelModel):
         alias="updatedMCPToolOutput",
         description="MCP tools only — replaces the tool's output. Silently ignored for built-in tools.",
     )
-
-
-class PostToolUseOutput(HookOutputBase):
-    """PostToolUse hook output per Claude Code API."""
-
-    hook_specific_output: PostToolUseHookSpecificOutput | None = None
-
-    @model_validator(mode="after")
-    def _validate_stop_reason(self) -> PostToolUseOutput:
-        if self.stop_reason is not None and self.continue_:
-            raise ValueError("stop_reason requires continue=false")
-        return self

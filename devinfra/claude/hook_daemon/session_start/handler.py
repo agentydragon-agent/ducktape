@@ -23,11 +23,8 @@ from opentelemetry import trace
 from devinfra.claude import env_file
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.auth_proxy.vars import get_proxy_url
-from devinfra.claude.claude_api.hooks.session_start import (
-    SessionStartHookInput,
-    SessionStartHookSpecificOutput,
-    SessionStartOutput,
-)
+from devinfra.claude.claude_api.hooks.output import HookOutput
+from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput, SessionStartHookSpecificOutput
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_daemon import templates
@@ -344,7 +341,7 @@ async def handle(
     settings: HookSettings,
     profile: ProfileConfig,
     ctx: CallerContext,
-) -> SessionStartOutput:
+) -> HookOutput:
     """Profile-driven session setup.
 
     Dispatches platform services (proxy, containers, tmpfs, certs) based on
@@ -521,9 +518,7 @@ async def handle(
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             session_id=session_id,
         )
-        output = SessionStartOutput(
-            hook_specific_output=SessionStartHookSpecificOutput(additional_context=context_output)
-        )
+        output = HookOutput(hook_specific_output=SessionStartHookSpecificOutput(additional_context=context_output))
 
     root_span.end()
     return output

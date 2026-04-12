@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
 class SetupTrigger(StrEnum):
@@ -31,9 +31,3 @@ class SetupInput(HookInputBase):
 class SetupHookSpecificOutput(CamelModel):
     hook_event_name: Literal["Setup"] = "Setup"
     additional_context: str | None = Field(default=None, description="Context added to Claude's system prompt")
-
-
-class SetupOutput(HookOutputBase):
-    """Setup hook stdout JSON output."""
-
-    hook_specific_output: SetupHookSpecificOutput | None = None

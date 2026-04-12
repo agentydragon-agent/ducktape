@@ -64,7 +64,6 @@ hasn't been accepted, ALL hooks are skipped.
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -84,25 +83,6 @@ class CamelModel(BaseModel):
     """Base for hook output models — serializes fields as camelCase, rejects extra fields."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class HookOutputBase(CamelModel):
-    """Common fields for all hook outputs (matches Zod hookOutput schema)."""
-
-    continue_: bool = Field(default=True, alias="continue")
-    suppress_output: bool = False
-    stop_reason: str | None = None
-    decision: Literal["approve", "block"] | None = Field(
-        default=None,
-        description="Legacy generic decision. 'approve' → allow, 'block' → deny + blockingError. "
-        "Shell hooks: exit code 2 is equivalent to decision='block'.",
-    )
-    reason: str | None = None
-    system_message: str | None = Field(
-        default=None,
-        description="REPL hooks only — injected into model conversation. "
-        "Non-REPL hooks deliver this to the UI notification callback; model never sees it.",
-    )
 
 
 class HookInputBase(BaseModel):

@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Literal
 
-from devinfra.claude.claude_api.hooks.common import HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import HookInputBase
 
 
 class StopFailureError(StrEnum):
@@ -21,7 +21,3 @@ class StopFailureInput(HookInputBase):
     error: StopFailureError
     error_details: str | None = None
     last_assistant_message: str | None = None
-
-
-class StopFailureOutput(HookOutputBase):
-    pass

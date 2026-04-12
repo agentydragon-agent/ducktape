@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
 class CwdChangedInput(HookInputBase):
@@ -16,7 +16,3 @@ class CwdChangedInput(HookInputBase):
 class CwdChangedHookSpecificOutput(CamelModel):
     hook_event_name: Literal["CwdChanged"] = "CwdChanged"
     watch_paths: list[str] | None = Field(default=None, description="Register paths to watch for FileChanged events")
-
-
-class CwdChangedOutput(HookOutputBase):
-    hook_specific_output: CwdChangedHookSpecificOutput | None = None

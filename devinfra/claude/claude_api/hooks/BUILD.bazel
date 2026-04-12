@@ -240,23 +240,12 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_session_start_serialization",
-    srcs = ["test_session_start_serialization.py"],
-    deps = [
-        ":session_start",
-        "//devinfra/claude:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
-    name = "dispatch_output",
-    srcs = ["dispatch_output.py"],
+    name = "output",
+    srcs = ["output.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":config_change",
+        ":common",
         ":cwd_changed",
         ":elicitation",
         ":file_changed",
@@ -268,10 +257,38 @@ py_library(
         ":pre_tool_use",
         ":session_start",
         ":setup",
-        ":stop",
         ":subagent_start",
-        ":subagent_stop",
         ":user_prompt_submit",
+        ":worktree_create",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_hook_output_serialization",
+    srcs = ["test_hook_output_serialization.py"],
+    deps = [
+        ":output",
+        ":post_tool_use",
+        ":pre_tool_use",
+        ":session_start",
+        ":worktree_create",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/hook_daemon:models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_start_serialization",
+    srcs = ["test_session_start_serialization.py"],
+    deps = [
+        ":output",
+        ":session_start",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

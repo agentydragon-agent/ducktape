@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
 class PermissionDeniedInput(HookInputBase):
@@ -22,7 +22,3 @@ class PermissionDeniedInput(HookInputBase):
 class PermissionDeniedHookSpecificOutput(CamelModel):
     hook_event_name: Literal["PermissionDenied"] = "PermissionDenied"
     retry: bool | None = Field(default=None, description="If true, Claude retries the denied tool use")
-
-
-class PermissionDeniedOutput(HookOutputBase):
-    hook_specific_output: PermissionDeniedHookSpecificOutput | None = None

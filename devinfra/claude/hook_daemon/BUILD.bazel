@@ -48,7 +48,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//devinfra/claude/claude_api/hooks:dispatch_input",
-        "//devinfra/claude/claude_api/hooks:dispatch_output",
+        "//devinfra/claude/claude_api/hooks:output",
         "@pypi//pydantic",
     ],
 )
@@ -85,6 +85,7 @@ py_library(
         ":session",
         ":tool_input_parsing",
         "//devinfra/claude/claude_api:tool_input_models",
+        "//devinfra/claude/claude_api/hooks:output",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "@pypi//pydantic",
     ],
@@ -109,10 +110,21 @@ py_library(
         ":session",
         ":tool_input_parsing",
         "//devinfra/claude/claude_api:tool_input_models",
+        "//devinfra/claude/claude_api/hooks:output",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/hook_daemon/templates",
         "@pypi//pydantic",
         "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "worktree",
+    srcs = ["worktree.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude/claude_api/hooks:output",
+        "//devinfra/claude/claude_api/hooks:worktree_create",
     ],
 )
 
@@ -127,10 +139,11 @@ py_library(
         ":pre_tool_use_lib",
         ":session",
         ":tracing",
+        ":worktree",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude/auth_proxy:credentials",
-        "//devinfra/claude/claude_api/hooks:dispatch_output",
+        "//devinfra/claude/claude_api/hooks:output",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "//devinfra/claude/claude_api/hooks:session_start",
@@ -339,6 +352,7 @@ py_test(
         ":session",
         "//devinfra/claude:conftest",
         "//devinfra/claude:session_paths",
+        "//devinfra/claude/claude_api/hooks:output",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/hook_daemon/testing:testing_helpers",
         "@pypi//pytest",

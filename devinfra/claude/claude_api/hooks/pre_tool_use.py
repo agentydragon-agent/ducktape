@@ -6,7 +6,7 @@ See https://code.claude.com/docs/en/hooks for the full API spec.
 from enum import StrEnum
 from typing import Any, Literal
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
 class PermissionDecision(StrEnum):
@@ -30,7 +30,3 @@ class PreToolUseHookSpecificOutput(CamelModel):
     permission_decision_reason: str | None = None
     updated_input: dict[str, Any] | None = None
     additional_context: str | None = None
-
-
-class PreToolUseOutput(HookOutputBase):
-    hook_specific_output: PreToolUseHookSpecificOutput | None = None

@@ -25,12 +25,12 @@ from opentelemetry import trace
 from pydantic import BaseModel
 
 from devinfra.claude.auth_proxy.credentials import check_credential_expiry
-from devinfra.claude.claude_api.hooks.common import HookOutputBase
 from devinfra.claude.claude_api.hooks.config_change import ConfigChangeInput
 from devinfra.claude.claude_api.hooks.cwd_changed import CwdChangedInput
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.claude_api.hooks.file_changed import FileChangedInput
 from devinfra.claude.claude_api.hooks.instructions_loaded import InstructionsLoadedInput
+from devinfra.claude.claude_api.hooks.output import HookOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.session_end import SessionEndInput
@@ -44,6 +44,7 @@ from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
 from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.session_start.handler import CallerContext, handle as handle_session_start
+from devinfra.claude.hook_daemon.worktree import handle_worktree_create
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 
@@ -93,7 +94,7 @@ def _save_session_env(daemon_dir: Path | None, env: dict[str, str]) -> None:
     env_file.write_text(json.dumps(env, indent=2))
 
 
-def _apply_mailbox(output: HookOutputBase | None, session: Session, hook: AnyHookInput) -> HookOutputBase | None:
+def _apply_mailbox(output: HookOutput | None, session: Session, hook: AnyHookInput) -> HookOutput | None:
     """Drain session mailbox and append messages to output.system_message.
 
     Only flushes on REPL hooks — those where Claude Code delivers systemMessage
@@ -105,7 +106,7 @@ def _apply_mailbox(output: HookOutputBase | None, session: Session, hook: AnyHoo
         return output
     if bg_messages := session.drain_messages():
         if output is None:
-            output = HookOutputBase()
+            output = HookOutput()
         formatted = "Messages from hook daemon mailbox:\n" + "\n".join(f"- {m}" for m in bg_messages)
         parts = [output.system_message, formatted] if output.system_message else [formatted]
         output.system_message = "\n\n".join(parts)
@@ -241,7 +242,7 @@ def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
 
             session = _get_or_create_session(app.state.sessions, req.hook.session_id, req.env, app.state.profile)
 
-            output: HookOutputBase | None = None
+            output: HookOutput | None = None
             match req.hook:
                 case SessionStartHookInput():
                     await session.start_proxy()
@@ -253,6 +254,8 @@ def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
                     output = evaluate_pre(req.hook, session)
                 case PostToolUseInput():
                     output = evaluate_post(req.hook, session)
+                case WorktreeCreateInput():
+                    output = handle_worktree_create(req.hook)
                 case _:
                     pass  # All other hooks: noop
 

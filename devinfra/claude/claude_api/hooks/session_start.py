@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
 class HookSource(StrEnum):
@@ -30,9 +30,3 @@ class SessionStartHookSpecificOutput(CamelModel):
     additional_context: str | None = Field(default=None, description="Context added to Claude's system prompt")
     initial_user_message: str | None = Field(default=None, description="Inject an initial user message")
     watch_paths: list[str] | None = Field(default=None, description="Register paths to watch for FileChanged events")
-
-
-class SessionStartOutput(HookOutputBase):
-    """SessionStart hook stdout JSON output."""
-
-    hook_specific_output: SessionStartHookSpecificOutput | None = None

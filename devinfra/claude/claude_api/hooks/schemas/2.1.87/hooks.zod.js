@@ -490,6 +490,10 @@ const hookOutput = z.object({
         ]),
       }),
       z.object({
+        hookEventName: z.literal("PermissionDenied"),
+        retry: z.boolean().optional(),
+      }),
+      z.object({
         hookEventName: z.literal("Elicitation"),
         action: z.enum(["accept", "decline", "cancel"]).optional(),
         content: z.record(z.string(), z.unknown()).optional(),

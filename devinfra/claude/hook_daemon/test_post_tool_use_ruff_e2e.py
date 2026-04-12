@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
-from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
+from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseHookSpecificOutput, PostToolUseInput
 from devinfra.claude.hook_daemon.config import PreCommitConfig, ProfileConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo, write_precommit_config
 from devinfra.claude.hook_daemon.post_tool_use import evaluate
@@ -114,6 +114,7 @@ def test_unused_import_preserved_after_hook(ruff_repo: Path) -> None:
 
     # Hook should have produced output (ruff-check detected F401)
     assert result.hook_specific_output is not None, "Hook should report ruff-check findings"
+    assert isinstance(result.hook_specific_output, PostToolUseHookSpecificOutput)
     ctx = result.hook_specific_output.additional_context
     assert ctx is not None
 
