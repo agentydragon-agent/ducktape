@@ -61,7 +61,7 @@ dependencies = [
     "pyroute2>=0.9.0",
 
     # CAD
-    "ezdxf[draw]>=0.18",
+    "ezdxf>=0.18",
     "freecad-stubs",
 
     # Data
