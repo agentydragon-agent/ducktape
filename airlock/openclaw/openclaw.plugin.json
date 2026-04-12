@@ -10,7 +10,7 @@
       "airlock": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["url", "token"],
+        "required": ["url"],
         "properties": {
           "url": {
             "type": "string",
