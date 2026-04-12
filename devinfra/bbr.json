@@ -3,7 +3,8 @@
     "EstimatedFreeDiskBytes": "50000000000",
     "EstimatedComputeUnits": "4",
     "workload-isolation-type": "firecracker",
-    "init-dockerd": "true"
+    "init-dockerd": "true",
+    "recycle-runner": "true"
   },
   "container_image": "ghcr.io/agentydragon/rbe-worker@sha256:be1500b58c55b6443f8446e7cb64f50155040dc55bd28cc018c2a4535422da53",
   "bazel_args": ["--config=rbe"]
