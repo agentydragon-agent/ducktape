@@ -33,7 +33,7 @@ jobs:
 
   release:
     needs: [bazel-ci, rbe-image]
-    if: always() && !cancelled() && !failure() && github.event_name == 'push'
+    if: always() && !cancelled() && github.event_name == 'push'
     uses: ./.github/workflows/release.yml
     with:
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}

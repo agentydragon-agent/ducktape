@@ -31,21 +31,27 @@ jobs:
           - pkg: claude-hooks
             target: //:claude_hooks_wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl
+            tests: //devinfra/claude/... //devinfra/precommit/... //cluster/validation/...
           - pkg: ducktape-util
             target: //util:wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl
+            tests: //util/...
           - pkg: ducktape
             target: //:wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
+            tests: //difftree/... //git_commit_ai/... //gmail_archiver/... //mcp_infra/... //mcp_utils/... //openai_utils/...
           - pkg: gterm-theme
             target: //gterm_theme:wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
+            tests: ""
           - pkg: skills
             target: //skills:all_skills_tar
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/skills/all_skills_tar.tar
+            tests: //skills/...
           - pkg: bbapi
             target: //devinfra/buildbuddy_cli:bbapi
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi
+            tests: //devinfra/buildbuddy_cli/...
     steps:
       - uses: actions/checkout@v6
         with:
@@ -58,6 +64,13 @@ jobs:
       - uses: ./.github/actions/setup-ci-secrets
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Run tests for ${{ matrix.pkg }}
+        if: matrix.tests != ''
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test ${{ matrix.tests }}
+          rbe_image: ${{ inputs.rbe_image }}
 
       - uses: ./.github/actions/release-artifact
         with:
