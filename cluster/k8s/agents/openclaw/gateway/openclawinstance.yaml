@@ -291,7 +291,7 @@ spec:
         memory: "2Gi"
   sidecars:
     - name: airlock-auth-proxy
-      image: ghcr.io/agentydragon/auth-proxy:devel-20260412033238-0370fd8 # {"$imagepolicy": "flux-system:auth-proxy"}
+      image: ghcr.io/agentydragon/auth-proxy:devel-20260412065800-945d622 # {"$imagepolicy": "flux-system:auth-proxy"}
       env:
         - name: UPSTREAM_URL
           value: "http://airlock.airlock.svc.cluster.local:8765"
