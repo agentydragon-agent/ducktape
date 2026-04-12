@@ -74,6 +74,10 @@ class Settings(BaseModel):
             for backend in settings.backends.values():
                 if isinstance(backend, RemoteMCPServer) and "Authorization" not in backend.headers:
                     backend.headers["Authorization"] = f"Bearer {exec_token}"
+        if proxy_id := os.environ.get("OIDC_PROXY_CLIENT_ID"):
+            settings.oidc_proxy_client_id = proxy_id
+        if proxy_secret := os.environ.get("OIDC_PROXY_CLIENT_SECRET"):
+            settings.oidc_proxy_client_secret = proxy_secret
         return settings
 
 
