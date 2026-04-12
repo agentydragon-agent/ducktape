@@ -1,7 +1,10 @@
 # Main CI pipeline — dependency chain for Bazel builds, releases, and image pushes.
 #
-# Independent workflows (pre-commit, ansible-lint, nix-attic-push, openclaw-image)
-# have their own triggers and run separately.
+# Container images (rbe-worker, freecad-test) are built by container-images.yml
+# independently. CI uses the pinned image from image_pins.json.
+#
+# Independent workflows (pre-commit, ansible-lint, nix-attic-push, openclaw-image,
+# container-images) have their own triggers and run separately.
 name: CI
 
 on:
@@ -19,38 +22,24 @@ permissions:
   packages: write
 
 jobs:
-  container-images:
-    uses: ./.github/workflows/container-images.yml
-    secrets: inherit
-
   bazel-ci:
-    needs: [container-images]
-    if: always() && !cancelled() && !failure()
     uses: ./.github/workflows/bazel-ci.yml
-    with:
-      rbe_image: ${{ needs.container-images.outputs.rbe_image }}
     secrets: inherit
 
   release:
-    needs: [bazel-ci, container-images]
+    needs: [bazel-ci]
     if: always() && !cancelled() && github.event_name == 'push'
     uses: ./.github/workflows/release.yml
-    with:
-      rbe_image: ${{ needs.container-images.outputs.rbe_image }}
     secrets: inherit
 
   push-images:
-    needs: [bazel-ci, container-images]
+    needs: [bazel-ci]
     if: always() && !cancelled() && github.event_name == 'push'
     uses: ./.github/workflows/push-images.yml
-    with:
-      rbe_image: ${{ needs.container-images.outputs.rbe_image }}
     secrets: inherit
 
   props-images:
-    needs: [bazel-ci, container-images]
+    needs: [bazel-ci]
     if: always() && !cancelled() && !failure() && github.event_name == 'push'
     uses: ./.github/workflows/props-images.yml
-    with:
-      rbe_image: ${{ needs.container-images.outputs.rbe_image }}
     secrets: inherit
