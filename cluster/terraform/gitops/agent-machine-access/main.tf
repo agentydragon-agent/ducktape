@@ -33,6 +33,10 @@ provider "authentik" {
 
 # --- Shared data sources ---
 
+data "authentik_flow" "authentication" {
+  slug = "default-authentication-flow"
+}
+
 data "authentik_flow" "implicit_consent" {
   slug = "default-provider-authorization-implicit-consent"
 }
@@ -41,12 +45,8 @@ data "authentik_flow" "invalidation" {
   slug = "default-provider-invalidation-flow"
 }
 
-data "authentik_certificate_key_pair" "self_signed" {
-  name = "authentik Self-signed Certificate"
-}
-
-data "authentik_property_mapping_provider_scope" "openid" {
-  managed = "goauthentik.io/providers/oauth2/scope-openid"
+data "authentik_group" "admins" {
+  name = "authentik Admins"
 }
 
 # --- Service Account ---
@@ -87,42 +87,58 @@ resource "kubernetes_secret" "agent_bearer_token" {
   }
 }
 
-# Application bindings are managed via blueprint:
-# cluster/k8s/authentik/app/blueprints/agent-machine-access-bindings.yaml
-
-# --- Grocy Machine Auth (OAuth2 client_credentials) ---
-# Separate OAuth2 provider for machine access to Grocy.
-# Agents exchange client_id + client_secret for a JWT via client_credentials grant,
+# --- Grocy (proxy provider + machine auth via client_credentials) ---
+# Replaces the grocy-sso.yaml blueprint. TF is the sole manager.
+# Humans authenticate via OIDC (browser session through the proxy outpost).
+# Agents exchange client_id + client_secret for a JWT via client_credentials,
 # then use the JWT as Bearer token against grocy.allegedly.works.
+# The proxy outpost only accepts JWTs from its own provider, so both flows
+# must go through the same provider.
 
-resource "authentik_provider_oauth2" "grocy_machine" {
-  name               = "grocy-machine"
-  client_id          = "grocy-machine"
-  client_type        = "confidential"
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-  issuer_mode                = "per_provider"
-  include_claims_in_id_token = true
-  access_token_validity      = "hours=1"
-
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-  ]
+resource "authentik_provider_proxy" "grocy" {
+  name               = "grocy"
+  external_host      = "https://grocy.allegedly.works"
+  internal_host      = "http://grocy.grocy.svc.cluster.local:80"
+  mode               = "proxy"
+  authentication_flow = data.authentik_flow.authentication.id
+  authorization_flow  = data.authentik_flow.implicit_consent.id
+  invalidation_flow   = data.authentik_flow.invalidation.id
+  access_token_validity = "hours=24"
 }
 
-resource "authentik_application" "grocy_machine" {
-  name              = "Grocy (Machine)"
-  slug              = "grocy-machine"
-  protocol_provider = authentik_provider_oauth2.grocy_machine.id
-  meta_description  = "Machine-to-machine auth for agent access to Grocy"
+resource "authentik_application" "grocy" {
+  name              = "Grocy"
+  slug              = "grocy"
+  protocol_provider = authentik_provider_proxy.grocy.id
+  meta_description  = "Groceries & household management"
+  meta_icon         = "https://cdn.simpleicons.org/grocy"
+  meta_launch_url   = "https://grocy.allegedly.works"
+  open_in_new_tab   = true
 }
 
-# No policy bindings — the application is unrestricted. The client_secret
-# is the auth boundary; client_credentials auto-creates ak-grocy-machine-client_credentials.
+# Human access: admins group.
+resource "authentik_policy_binding" "grocy_admins" {
+  target = authentik_application.grocy.uuid
+  group  = data.authentik_group.admins.id
+  order  = 0
+}
 
-# K8s secret with OAuth2 client credentials for agents.
+# Machine access: pre-create the service account that client_credentials
+# auto-generates (ak-<provider-slug>-client_credentials) so we can bind it.
+resource "authentik_user" "grocy_machine_sa" {
+  username = "ak-grocy-client_credentials"
+  name     = "Grocy Machine (client_credentials)"
+  type     = "service_account"
+  path     = "goauthentik.io/service-accounts"
+}
+
+resource "authentik_policy_binding" "grocy_machine_sa" {
+  target = authentik_application.grocy.uuid
+  user   = authentik_user.grocy_machine_sa.id
+  order  = 10
+}
+
+# K8s secret with the proxy provider's OAuth2 credentials for agents.
 resource "kubernetes_secret" "grocy_machine_credentials" {
   metadata {
     name      = "grocy-machine-credentials"
@@ -136,7 +152,7 @@ resource "kubernetes_secret" "grocy_machine_credentials" {
   }
 
   data = {
-    client_id     = "grocy-machine"
-    client_secret = authentik_provider_oauth2.grocy_machine.client_secret
+    client_id     = authentik_provider_proxy.grocy.client_id
+    client_secret = authentik_provider_proxy.grocy.client_secret
   }
 }
