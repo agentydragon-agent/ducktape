@@ -124,7 +124,7 @@ async def test_mcp_action_visible_via_rest(rsa_key_pair: RSAKeyPair, predicate_f
             assert r.status_code == 200
             actions = r.json()
             assert len(actions) == 1
-            assert actions[0]["tool_call"]["tool_name"] == "echo_tool"
+            assert actions[0]["call"]["tool_name"] == "echo_tool"
 
 
 if __name__ == "__main__":
