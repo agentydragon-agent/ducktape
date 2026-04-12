@@ -71,6 +71,8 @@ spec:
                 secretKeyRef:
                   name: airlock-oidc-proxy-credentials
                   key: client_secret
+            - name: FASTMCP_HOME
+              value: "/data/fastmcp"
           volumeMounts:
             - name: data
               mountPath: /data
