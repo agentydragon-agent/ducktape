@@ -100,7 +100,7 @@ Previously on Longhorn, now migrated:
 | monitoring/db-alertmanager-\* | `local-path-hetzner` | 2026-04-06 |
 | loki/storage-loki-stack-0     | MinIO (S3)           | 2026-04-06 |
 | vault/vault-raft-instance-\*  | `local-path-hetzner` | 2026-04-06 |
-| harbor/\*                     | `lvm-proxmox-hdd`   | 2026-04-11 |
+| harbor/\*                     | `lvm-proxmox-hdd`    | 2026-04-11 |
 | gitea/\*                      | Deleted (suspended)  | 2026-04-11 |
 
 ## Distributed Storage Options Considered

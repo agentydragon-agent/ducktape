@@ -182,13 +182,13 @@ See <plans/file_sync_evaluation.md>.
 **Rule**: These services MUST work with VPS only (Proxmox completely down). No
 `proxmox-csi-retain` storage or Proxmox-pinned workloads.
 
-| Service   | Status | Storage              | Notes                                 |
-| --------- | ------ | -------------------- | ------------------------------------- |
-| DNS       | OK     | `local-path`         | CNPG 2-instance on VPS                |
-| Website   | OK     | None (stateless)     |                                       |
-| Ingress   | OK     | None (hostNetwork)   | Cilium Gateway on VPS                 |
-| Authentik | OK     | `local-path`         | All components pinned                 |
-| Vault     | OK     | `local-path-hetzner` | Raft storage, VPS-pinned              |
+| Service   | Status | Storage              | Notes                                                         |
+| --------- | ------ | -------------------- | ------------------------------------------------------------- |
+| DNS       | OK     | `local-path`         | CNPG 2-instance on VPS                                        |
+| Website   | OK     | None (stateless)     |                                                               |
+| Ingress   | OK     | None (hostNetwork)   | Cilium Gateway on VPS                                         |
+| Authentik | OK     | `local-path`         | All components pinned                                         |
+| Vault     | OK     | `local-path-hetzner` | Raft storage, VPS-pinned                                      |
 | Grafana   | OK     | CNPG VPS-HA          | grafana-operator managed, JWT auth, no admin creds dependency |
 
 **Compliance checklist** for critical-path changes:
