@@ -4,7 +4,6 @@
 #
 # Age recipients that can decrypt secrets in this file:
 #   buildbuddy.yaml:               admin, all user keys, claude-web, ci
-#   alloy-otlp-bearer-token.yaml:  admin, claude-web
 #   docker-ci/client-key.sops.pem: admin, claude-web, ci
 #
 # On failure, writes diagnostics to stderr. Stdout contains only valid
@@ -39,9 +38,6 @@ try_export() {
 
 # BuildBuddy API key
 try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy_api_key"]'
-
-# OTEL bearer token (Grafana Alloy via Authentik)
-try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]'
 
 # TODO: Re-enable DUCKTAPE_DOCKER_CLIENT_KEY once docker-ci is working in cluster.
 # Docker CI mTLS — only the base64-encoded client key.
