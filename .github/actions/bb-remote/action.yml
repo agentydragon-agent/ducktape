@@ -59,6 +59,6 @@ runs:
           --runner_exec_properties=workload-isolation-type=firecracker \
           --runner_exec_properties=init-dockerd=true \
           "${ENV_ARGS[@]}" \
+          "${IMAGE_ARGS[@]}" \
           ${{ inputs.args }} \
-          --config=rbe \
-          "${IMAGE_ARGS[@]}"
+          --config=rbe
