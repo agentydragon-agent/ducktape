@@ -117,9 +117,8 @@ cluster DNS unavailability.
 **Downside**: extra moving part, requires maintaining the same list as option 1. Only
 worth it if you need more flexibility (e.g., automated record updates).
 
-## Recommendation
+## Resolution
 
-Use **option 1**. Nebula IPs are the one stable quantity in a cluster that gets
-regularly rebuilt. The hosts file approach is dependency-free, instant to resolve, and
-requires no DNS infrastructure. Adding a node already requires a Nix commit for the
-Nebula cert — adding a hosts entry to the same commit is trivial.
+**Option 2** was implemented: `nebula1` uses routing domain `~nebula.allegedly.works`
+(no `+DefaultRoute`). Only `*.nebula.allegedly.works` queries go to cluster DNS;
+all other DNS goes through the host's default resolver. See `nix/nixos/modules/nebula.nix`.

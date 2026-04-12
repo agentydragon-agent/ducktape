@@ -175,8 +175,9 @@ to PG can silently write nothing.
 - [x] Split `common_cluster_config` into CP and worker variants (workers had CP-only
       etcd/apiServer/kubernetesTalosAPIAccess settings causing boot loop)
 - [x] Fix Proxmox SSH address to use VLAN IP directly (avoid Nebula DNS chicken-and-egg)
-- [ ] Bootstrap cluster from `errored.tfstate` + temp local PG (in progress)
-- [ ] Always use `-exclude=module.wyrm2` when running tofu from wyrm2
+- [x] Bootstrap cluster from `errored.tfstate` + temp local PG (completed 2026-04-02)
+- [x] Always use `-exclude=module.wyrm2` when running tofu from wyrm2
+      (implemented in `cluster/bootstrap.py` — auto-detects hostname and aborts without exclude)
 - [ ] Consider external state backend or automated state backup
 - [ ] Add AGENTS.md guidance: never use `import {}` blocks without reviewing
       full plan for forced replacements

@@ -6,7 +6,7 @@ KubeSpan (Talos built-in WireGuard mesh) replaced by Nebula. KubeSpan lacked rel
 - Nebula deployed on all nodes (Talos extension + NixOS service)
 - kubespand (custom KubeSpan reimplementation, ~15k LOC Go) decommissioned
 
-Nebula PKI managed in `persistent-auth/nebula.tf`.
+Nebula PKI managed in `terraform/main/persistent-auth.tf` (CA certs) and `terraform/main/nebula.tf` (node certs).
 
 ## kubespand (decommissioned)
 

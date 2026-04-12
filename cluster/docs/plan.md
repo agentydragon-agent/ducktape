@@ -226,7 +226,8 @@ ones like cache disks). Eliminating proxmox-csi usage on wyrm2 lets us eventuall
 ignore rule and manage all disks declaratively.
 
 **Migration**: Replace `proxmox-csi-retain` PVCs with `local-path-proxmox` (same failure
-domain, no CSI disk hotplug). Remaining `proxmox-csi-retain` consumer on wyrm2: `ollama/llm-models` (200Gi).
+domain, no CSI disk hotplug). Remaining `proxmox-csi-retain` consumers on wyrm2:
+`ollama/llm-models` (200Gi), `devbot-workspace` (20Gi), `devbot-config` (5Gi).
 
 ## Operational Hardening
 
