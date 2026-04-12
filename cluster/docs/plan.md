@@ -26,7 +26,7 @@ CloudNativePG `local-path`.
   suspended 2026-03-31, degraded Longhorn volumes on wyrm2. Namespace kept active
   for `claude-rbac` RoleBinding dependency.
 - **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
-- **Airlock**: `airlock` — suspended 2026-04-06. `google-workspace-mcp` depends on this.
+- **Airlock**: `airlock` — unsuspended 2026-04-12 (FastAPI bug fixed, new image deployed). `google-workspace-mcp` depends on this.
 - **ARC**: `arc`, `arc-namespace` — suspended 2026-04-11, resources deleted. Secrets
   (`arc-secrets`) are deployed. GitHub runner pod/statefulset removed.
 - **Props**: `props` — suspended 2026-04-06. Secrets (`props-secrets`) are deployed.
@@ -34,6 +34,14 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] Fast token rotation on cluster reprovision: `claude-token-rotation` CronJob runs
+      biweekly (1st/15th), so after a cluster rebuild the SOPS-encrypted token in
+      `secrets/claude-web-k8s-token.yaml` is stale until the next scheduled run. Need a
+      mechanism to rotate immediately on reprovision — e.g., trigger the job from
+      bootstrap, or add a post-bootstrap hook. Also consider whether the bootstrap script
+      itself should decrypt the new token and inject it into the local environment so
+      Claude Code sessions work immediately without waiting for the git push + re-source
+      cycle.
 - [ ] Auto-derive `nebula-mesh.json` from Hetzner: the static_host_map must match
       current VPS IPs, but Hetzner assigns IPs at server creation time and they can
       change across teardown/rebuild. Currently manual — tofu should write it, or
@@ -342,6 +350,12 @@ Motivated by 2026-03-17 OOM cascade. Deploy PriorityClasses: `system-critical`
 
 VPA deployed (`k8s/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
 Default mode "Off" (recommendation-only). Enable per namespace.
+
+**TODO**: Require explicit `goldilocks.fairwinds.com/vpa-resource-policy` annotations
+with `minAllowed` on all namespaces that use `updateMode: auto`. Without a floor,
+VPA can recommend absurdly low CPU (e.g., 15m) that prevents containers from starting.
+Consider a Kyverno policy to enforce this cluster-wide. See airlock namespace for
+working example (JSON format required, not YAML).
 
 ### Alertmanager -> ntfy Bridge
 

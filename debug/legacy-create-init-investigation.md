@@ -1,86 +1,87 @@
 # legacy_create_init Investigation
 
-## Summary
+## Summary — Resolved
 
-Commit `7265f7ccb` added `legacy_create_init = 0` to the global `py_test` macro
-in `devinfra/testing/defs.bzl`. This broke 4 tests. Reverting fixes them.
+The native Bazel flag `--incompatible_default_to_explicit_init_py` in `.bazelrc`
+globally suppresses auto-generated `__init__.py` stubs in runfiles. This fixes
+both protobuf namespace packages (`google.*`) and FreeCAD conda C extension
+shadowing without per-target `legacy_create_init = 0` annotations.
 
-## Root Cause: How Stubs Prevent Stdlib Shadowing
+## Background: What Stubs Do
 
-With `legacy_create_init = 1` (default), the runfiles manifest includes empty
-`__init__.py` stubs for every directory:
+With `legacy_create_init = 1` (rules_python default), Bazel generates empty
+`__init__.py` stubs in runfiles for every directory containing `.py` or `.so`
+files. This turns bare directories into Python packages.
+
+**Why stubs exist**: Prevent stdlib shadowing. When `_main` is on `sys.path` and
+`_main/x/claude_linter_v2/types.py` exists, the stub `__init__.py` in
+`x/claude_linter_v2/` makes it a package, so `import types` resolves to stdlib
+rather than the local `types.py`.
+
+**Why stubs break things**:
+
+1. **Protobuf namespace packages**: `google.*` uses PEP 420 namespace packages
+   (no `__init__.py`). A generated stub at `google/__init__.py` makes Python
+   treat `google` as a regular package rooted in one directory, preventing
+   discovery of `google.devtools` from a different runfiles subtree.
+
+2. **FreeCAD conda C extensions**: FreeCAD's conda env has `Part.so` (C
+   extension) and `Mod/Part/` (directory). A stub `Mod/Part/__init__.py` shadows
+   the C extension: `import Part` finds the empty package instead of `Part.so`.
+
+## The Fix: Native Bazel Flag
 
 ```
-_main/x/__init__.py                    (empty stub)
-_main/x/claude_linter_v2/__init__.py   (empty stub)
-_main/x/claude_linter_v2/types.py      (real source file)
-_main/util/__init__.py                 (empty stub)
-_main/util/bazel/__init__.py           (empty stub)
-_main/util/bazel/subprocess.py         (real source file)
+common --incompatible_default_to_explicit_init_py
 ```
 
-With `legacy_create_init = 0`, ALL the empty stubs disappear. Only real
-`__init__.py` files from pip packages remain.
+This is a **native Bazel flag** (not a rules_python Starlark config setting).
+It tells `_should_create_init_files()` in `py_executable.bzl` to return `false`,
+skipping the `merge_runfiles_with_generated_inits_empty_files_supplier` call
+that generates stubs.
 
-**Why stubs matter**: When `_main` is on `sys.path`:
+All per-target `legacy_create_init = 0` annotations are removed — the global
+flag makes them redundant.
 
-- **With stubs**: `x/claude_linter_v2/` has `__init__.py` → it's a package.
-  `import types` resolves to stdlib because `types.py` is only reachable as
-  `x.claude_linter_v2.types` (a submodule of a package).
-- **Without stubs**: `x/claude_linter_v2/` has no `__init__.py` → it's a bare
-  directory. Python's import machinery can find `types.py` in it when the
-  directory appears on `sys.path` (via PYTHONPATH propagation to subprocesses).
+## Why the Starlark Config Setting Doesn't Work
 
-## Global Flag vs Per-Target Attribute
+The rules_python docs recommend:
 
-- `--@rules_python//python/config_settings:incompatible_default_to_explicit_init_py=True`
-  → tests PASS
-- `legacy_create_init = 0` on `py_test` → tests FAIL
+```
+common --@rules_python//python/config_settings:incompatible_default_to_explicit_init_py=true
+```
 
-**Why different?** `legacy_create_init` only exists on `py_binary`/`py_test` (not
-`py_library`). Both settings should be equivalent for the test binary itself.
-The global flag was tested only briefly — needs more verification. It may have
-been a false positive (cached results).
+**This has no effect in Bazel 8.** Here's why:
 
-## The FreeCAD Problem
+`_should_create_init_files()` calls `read_possibly_native_flag(ctx, "default_to_explicit_init_py")` (`py_executable.bzl:284`). This function checks
+`hasattr(ctx.fragments, "py")` (`flags.bzl:65`) — which is `true` in Bazel 8 —
+and reads from the **native** `ctx.fragments.py.default_to_explicit_init_py`
+(defaults to `false`), ignoring the Starlark config setting entirely.
 
-FreeCAD's conda env has C extensions (`Part.so`) and package dirs (`Mod/Part/`).
-Auto-generated `__init__.py` stubs in `Mod/Part/` shadow the C extensions:
+The Starlark flag only takes effect once Bazel enables
+`--incompatible_remove_ctx_py_fragment` (expected in Bazel 9+). Until then,
+use the native flag.
 
-- **With stubs**: `import Part` → finds empty `Mod/Part/__init__.py` → broken
-- **Without stubs**: `import Part` → finds `lib/Part.so` → works
+### Observed Symptoms (2026-04-12)
 
-Only ~7 test targets in `skills/freecad/` need `legacy_create_init = 0`.
+When using the Starlark flag, runfiles manifests showed 244 **more**
+`__init__.py` entries (842 vs 598) because the config setting change caused
+build configuration transitions and cache invalidation, producing different
+(but still broken) runfiles without actually suppressing stubs.
 
-## Options
+## FreeCAD Runfiles Path Fix
 
-### Option 1: Per-target `legacy_create_init = 0` on FreeCAD tests only
+As part of this change, `skills/freecad/conftest.py:_find_conda_root()` was
+refactored to use `Rlocation` instead of manual `.runfiles` path walking. The
+old code walked up to the `.runfiles` directory and constructed the conda env
+path manually — fragile and breaks under alternative runfiles layouts (venv
+site-packages, etc.). The new code Rlocates `bin/freecadcmd` directly inside
+the conda env repo and derives the root from `anchor.parent.parent`.
 
-Apply `legacy_create_init = 0` only to the ~7 FreeCAD test targets.
-Everyone else keeps the default (stubs enabled).
+## Future: `venvs_site_packages`
 
-**Pro**: Minimal blast radius, fixes FreeCAD without breaking anything.
-**Con**: Each new FreeCAD test needs to remember to set this.
-
-### Option 2: Global flag + fix subprocess PYTHONPATH propagation
-
-Set `--incompatible_default_to_explicit_init_py` globally in `.bazelrc`.
-Fix `util/bazel/subprocess.py` `python_env()` to filter PYTHONPATH to
-prevent stdlib shadowing in child processes.
-
-**Pro**: Moves toward the recommended rules_python direction.
-**Con**: Risky, needs careful PYTHONPATH filtering, may have other fallout.
-
-### Option 3: Fix FreeCAD's conda import issue differently
-
-Use a conftest fixture or wrapper that reloads C extensions after import
-(like the old `_fix_freecad_stub_modules()` approach from `9b924c2f6`).
-
-**Pro**: No build system changes needed.
-**Con**: Fragile, band-aid.
-
-## Current Status
-
-- Macro reverted to NOT set `legacy_create_init`
-- FreeCAD tests need `legacy_create_init = 0` applied per-target
-- All 4 previously broken tests pass again
+rules_python is moving toward `venvs_site_packages=yes` (pip deps laid out in a
+real venv `site-packages/` directory). This is still experimental in rules_python
+1.9.0 but tested to work for non-conda targets. Once stable, it makes
+`--incompatible_default_to_explicit_init_py` redundant for pip deps — but the
+native flag is still needed for non-pip source directories and conda envs.

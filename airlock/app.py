@@ -58,15 +58,6 @@ class RejectBody(BaseModel):
     reason: str | None = None
 
 
-def _fetch_oidc_discovery(issuer: str) -> dict[str, Any]:
-    """Fetch the OpenID Connect discovery document from the issuer."""
-    url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
-    resp = httpx.get(url, timeout=10.0)
-    resp.raise_for_status()
-    result: dict[str, Any] = resp.json()
-    return result
-
-
 def _detect_namespace() -> str:
     """Read the in-cluster namespace, falling back to 'airlock'."""
     if _NS_PATH.exists():
@@ -207,7 +198,9 @@ def create_app(settings: Settings, *, auth: JWTVerifier, include_static: bool = 
 
 async def _serve() -> None:
     settings = Settings.load()
-    discovery = _fetch_oidc_discovery(settings.oidc_issuer)
+    discovery_url = f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
+    async with httpx.AsyncClient() as http:
+        discovery = (await http.get(discovery_url, timeout=10.0)).raise_for_status().json()
     auth = JWTVerifier(jwks_uri=discovery["jwks_uri"])
     app = create_app(settings, auth=auth)
     logger.info("serving on %s:%d", settings.host, settings.port)
