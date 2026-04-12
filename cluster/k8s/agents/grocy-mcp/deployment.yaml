@@ -21,7 +21,7 @@ spec:
         # Sidecar: translates GROCY-API-KEY requests into Bearer JWT via
         # Authentik M2M token exchange.
         - name: grocy-auth-proxy
-          image: ghcr.io/agentydragon/grocy-auth-proxy:latest # {"$imagepolicy": "flux-system:grocy-auth-proxy"}
+          image: ghcr.io/agentydragon/grocy-auth-proxy:devel-20260412203518-171b480 # {"$imagepolicy": "flux-system:grocy-auth-proxy"}
           imagePullPolicy: Always
           ports:
             - name: proxy
