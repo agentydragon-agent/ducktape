@@ -25,6 +25,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
 from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.utilities.lifespan import combine_lifespans
 from pydantic import BaseModel
 from starlette.responses import HTMLResponse, StreamingResponse
 
@@ -92,7 +93,7 @@ def create_app(settings: Settings, *, include_static: bool = True) -> FastAPI:
     oauth_target_ns: str = ""
 
     @contextlib.asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def app_lifespan(app: FastAPI):
         nonlocal oauth_providers, oauth_k8s_store, oauth_target_ns
         oauth_providers = build_oauth_providers(settings.oauth)
         oauth_k8s_store = await K8sTokenStore.from_incluster(managed_by=settings.oauth.managed_by)
@@ -108,9 +109,13 @@ def create_app(settings: Settings, *, include_static: bool = True) -> FastAPI:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-    app = FastAPI(title="Airlock", docs_url=None, redoc_url=None, lifespan=lifespan)
+    # combine_lifespans runs both in order: app_lifespan first (OAuth setup),
+    # then mcp_app.lifespan (gate storage + backends). This ensures the gate
+    # is fully initialized before the outer app serves REST requests.
+    app = FastAPI(
+        title="Airlock", docs_url=None, redoc_url=None, lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan)
+    )
 
-    # Mount MCP sub-app for agent clients (its own lifespan manages the gate).
     app.mount("/mcp", mcp_app)
 
     # ── Routes ───────────────────────────────────────────────────────────────
