@@ -149,38 +149,13 @@ These come from updated gRPC and OTel dependency versions, not application-level
 
 ### Phase 1: Census & Diff -- COMPLETE
 
-- [x] Confirmed obfuscation via `go version -m`, `go tool nm`
-- [x] Binary size: 49 MB confirmed
-- [x] Version string: `release-d84d76b7-ext` confirmed
-- [x] CLI flags verified via `--help` (all subcommands)
-- [x] Sandbox settings verified via `print-sandbox-settings`
-- [x] String diff against a6f96673 for new OTEL attributes
-- [x] Full binary diff string analysis (2026-03-26) -- see `BINDIFF_RESULTS.md`
-- [x] Identified removed features: Supabase, Vercel, Antspace, Baku
-- [x] Identified new features: `filestore_url`, `filesystem_id`, `jwt`
-- [x] Struct layout comparison via garbled type recovery
+### Phase 2: Source Updates -- COMPLETE
 
-### Phase 2: Source Updates -- IN PROGRESS
-
-- [x] Updated BUILD.bazel files (replaced a6f96673 paths with 495ea204)
-- [x] Updated Go source file headers to reflect provenance (a6f96673 DWARF origin)
-- [x] Updated main.go version string and obfuscation notice
-- [x] Updated PLAN.md, REVERSE_ENGINEERING_TODOS.md, BINDIFF_RESULTS.md
-- [x] Add missing source files identified from old binary paths (all 11 .go files created)
-- [x] Remove dead Supabase source files from `src/`
-- [x] Remove dead Vercel/Antspace source files from `src/`
-- [ ] Update `auth/context.go` to remove Supabase/Vercel/Antspace fields
-- [ ] Update `tunnel/actions/deploy/action.go` for new filestore mechanism
-- [ ] Remove Baku-specific functions from `anthropic.go`
-- [ ] Create `internal/envtype/shared/` package (currently inlined in `skill_content.go`)
-- [ ] Add 17+ JSON fields discovered in verification to RE source structs (see `VERIFICATION_REPORT.md`)
 - [ ] DWARF-based reconstruction (IMPOSSIBLE -- binary is garble-obfuscated)
 
 ## Open Items
 
-1. **New deploy mechanism**: `filestore_url` and `filesystem_id` suggest a new
-   deployment backend replacing Vercel/Antspace. Logic is fully garbled.
+1. **New deploy mechanism**: `filestore_url` and `filesystem_id` replace Vercel/Antspace.
+   Logic is fully garbled; cannot be recovered without runtime observation.
 2. **Dependency versions**: Cannot extract from garbled binary; go.mod reflects a6f96673.
 3. **`shared/` package**: `internal/envtype/shared/` not yet split out from `skill_content.go`.
-4. **New JSON fields**: 17+ fields discovered in verification (see `VERIFICATION_REPORT.md`)
-   not yet added to RE source structs.
