@@ -1,9 +1,9 @@
-"""Unified session start hook for Claude Code (web and CLI).
+"""Unified session start hook for Claude Code.
 
-Web mode (CLAUDE_CODE_REMOTE=true): Sets up auth proxy, containers, and background tasks.
-CLI mode: Sets up per-session bazel wrapper with direnv integration.
+Profile-driven setup: auth proxy, containers, tmpfs, and background tasks are
+controlled by flags in the active profile (see ProfileConfig in config.py).
 
-Both modes render a per-session bazelrc from the unified bazelrc.mako template
+All profiles render a per-session bazelrc from the unified bazelrc.mako template
 and install a bazel wrapper that injects --bazelrc=<session-bazelrc>.
 """
 
@@ -70,13 +70,8 @@ class CallerContext:
     """
 
     env_file_path: Path
-    web_mode: bool
     project_dir: Path
     caller_env: dict[str, str]
-
-    @property
-    def mode_label(self) -> str:
-        return "web" if self.web_mode else "cli"
 
     @classmethod
     def from_env(cls, env: dict[str, str]) -> "CallerContext":
@@ -86,12 +81,7 @@ class CallerContext:
         project_dir_str = env.get("CLAUDE_PROJECT_DIR")
         if not project_dir_str:
             raise KeyError("CLAUDE_PROJECT_DIR environment variable is required")
-        return cls(
-            env_file_path=Path(env_file_str),
-            web_mode=env.get("CLAUDE_CODE_REMOTE") == "true",
-            project_dir=Path(project_dir_str),
-            caller_env=env,
-        )
+        return cls(env_file_path=Path(env_file_str), project_dir=Path(project_dir_str), caller_env=env)
 
 
 # ============================================================================
@@ -101,7 +91,7 @@ class CallerContext:
 
 @dataclass
 class PlatformSetup:
-    """Results of platform-specific setup (web or CLI).
+    """Results of profile-driven platform setup.
 
     Carries actual setup results — not copies of fields derivable from
     paths, settings, or the result objects themselves.
@@ -114,8 +104,6 @@ class PlatformSetup:
     mkcert_result: mkcert.MkcertSetup | None = None
     docker_env: dict[str, str] | None = None
     bazel_cache_dir: Path | None = None
-    with_direnv: bool = False
-
     # Shared-step results (populated by run_session, not platform setup)
     secrets: SecretsResult = field(default_factory=SecretsResult)
     fork_result: fork_remote.ForkRemoteSetup | None = None
@@ -177,7 +165,7 @@ def _launch_background_commands(
         session.track(task)
 
 
-async def _setup_web(
+async def _setup_platform_services(
     session: Session,
     settings: HookSettings,
     profile: ProfileConfig,
@@ -185,22 +173,22 @@ async def _setup_web(
     root_ctx: trace.Context,
     platform: platform_detect.PlatformInfo,
 ) -> PlatformSetup:
-    """Web mode: supervisor, proxy, containers, parallel installs.
+    """Profile-driven platform services: supervisor, proxy, containers, tmpfs, certs.
 
     Returns a PlatformSetup with platform-specific results. K8s secrets,
-    BuildBuddy, and fork remote are handled in the unified run_session() path.
+    BuildBuddy, and fork remote are handled in the unified handle() path.
 
-    Platform drives tmpfs, Docker storage driver, and JVM heap decisions
-    (see platform_detect.py, container_spec.md).
+    Which services run is controlled by profile flags (setup_auth_proxy,
+    setup_docker, setup_tmpfs, install_mkcert).
     """
-    logger.info("Setting up dev environment...")
+    logger.info("Setting up platform services...")
 
     async def traced_supervisor_start():
         with tracer.start_as_current_span("supervisor_start", context=root_ctx):
             return await supervisor_setup.start(session.paths, settings)
 
-    # Start supervisor (required by docker)
-    supervisor_task = asyncio.create_task(traced_supervisor_start())
+    # Start supervisor early (required by Docker setup below).
+    supervisor_task = asyncio.create_task(traced_supervisor_start()) if profile.setup_docker else None
 
     async def mount_tmpfs_at(path: Path) -> bool:
         """Mount a tmpfs at the given path. Returns True on success, False on failure.
@@ -223,6 +211,8 @@ async def _setup_web(
     async def setup_proxy_credentials() -> proxy_setup.ProxySetup:
         """Set up CA/truststore for TLS-inspecting proxy."""
         with tracer.start_as_current_span("setup_proxy", context=root_ctx):
+            if not profile.setup_auth_proxy:
+                raise SkipError("Auth proxy setup disabled (setup_auth_proxy=False)")
             return await proxy_setup.setup_auth_proxy(session.paths)
 
     async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
@@ -234,11 +224,11 @@ async def _setup_web(
         - gVisor without tmpfs: fall back to vfs
         """
         with tracer.start_as_current_span("setup_container_runtime", context=root_ctx):
-            if not profile.setup_docker:
+            if not profile.setup_docker or not supervisor_task:
                 raise SkipError("Docker setup disabled (setup_docker=False)")
             storage_dir = session.paths.container_storage_dir
             supervisor_result = await supervisor_task
-            tmpfs_mounted = await mount_tmpfs_at(storage_dir)
+            tmpfs_mounted = await mount_tmpfs_at(storage_dir) if profile.setup_tmpfs else False
             return await container_runtime.setup_container_runtime(
                 session.paths,
                 supervisor_result,
@@ -249,6 +239,8 @@ async def _setup_web(
     async def setup_bazel_on_tmpfs() -> tmpfs.TmpfsSetup:
         """Set up Bazel cache (mounts dedicated tmpfs under session dir)."""
         with tracer.start_as_current_span("setup_bazel_tmpfs", context=root_ctx):
+            if not profile.setup_tmpfs:
+                raise SkipError("tmpfs disabled (setup_tmpfs=False)")
             bazel_cache_dir = session.paths.bazel_cache_dir
             await mount_tmpfs_at(bazel_cache_dir)
             return tmpfs.setup_bazel_cache(bazel_cache_dir)
@@ -306,14 +298,24 @@ async def _setup_web(
     tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[2]
     mkcert_result: mkcert.MkcertSetup | BaseException = results[3]
 
-    # Log non-critical failures
-    if isinstance(tmpfs_result, BaseException):
+    # Log non-critical failures / skips
+    if isinstance(auth_proxy_result, SkipError):
+        logger.info("Auth proxy setup skipped: %s", auth_proxy_result)
+    elif isinstance(auth_proxy_result, BaseException):
+        # Proxy was requested but failed — propagate
+        logger.error("Proxy setup failed: %s", auth_proxy_result)
+        raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
+
+    if isinstance(tmpfs_result, SkipError):
+        logger.info("tmpfs setup skipped: %s", tmpfs_result)
+    elif isinstance(tmpfs_result, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
+
     if isinstance(mkcert_result, SkipError):
         logger.info("mkcert setup skipped: %s", mkcert_result)
     elif isinstance(mkcert_result, BaseException):
         logger.warning("Failed to set up mkcert: %s", mkcert_result)
-    # Handle container runtime result
+
     docker_env: dict[str, str] | None = None
     if isinstance(container_result, SkipError):
         logger.info("Container runtime setup skipped: %s", container_result)
@@ -322,17 +324,13 @@ async def _setup_web(
     else:
         docker_env = container_result.env_vars
 
-    # Proxy setup is required - propagate failure with clear error message
-    if isinstance(auth_proxy_result, BaseException):
-        logger.error("Proxy setup failed: %s", auth_proxy_result)
-        raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
-
-    logger.info("Ready: proxy=%s, CA=%s", auth_proxy_result.status, auth_proxy_result.ca_status)
+    if isinstance(auth_proxy_result, proxy_setup.ProxySetup):
+        logger.info("Ready: proxy=%s, CA=%s", auth_proxy_result.status, auth_proxy_result.ca_status)
     logger.info("Container: %s", container_result)
 
     return PlatformSetup(
         platform=platform,
-        auth_proxy=auth_proxy_result,
+        auth_proxy=auth_proxy_result if isinstance(auth_proxy_result, proxy_setup.ProxySetup) else None,
         container=None if isinstance(container_result, BaseException) else container_result,
         mkcert_result=None if isinstance(mkcert_result, BaseException) else mkcert_result,
         docker_env=docker_env,
@@ -347,21 +345,21 @@ async def handle(
     profile: ProfileConfig,
     ctx: CallerContext,
 ) -> SessionStartOutput:
-    """Unified session setup for both web and CLI modes.
+    """Profile-driven session setup.
 
-    Dispatches platform-specific setup, then runs shared steps:
-    bazelrc render, wrapper install, env file write, session context emit.
+    Dispatches platform services (proxy, containers, tmpfs, certs) based on
+    profile flags, then runs shared steps: bazelrc render, wrapper install,
+    env file write, session context emit.
     """
 
     collector = _setup_session_logging()
     log_file = session.paths.hook_daemon_log
     root_span = tracer.start_span(
-        "session_start",
-        attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source, "mode": ctx.mode_label},
+        "session_start", attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source}
     )
     root_ctx = trace.set_span_in_context(root_span)
 
-    logger.info("Session start hook (%s mode)", ctx.mode_label)
+    logger.info("Session start hook")
     logger.info("Hook input: %s", hook_input.model_dump_json())
     log_entrypoint_debug("session_start")
 
@@ -369,25 +367,13 @@ async def handle(
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
     logger.info("Session directory: %s", session.paths.session_dir)
 
-    # Detect platform early (safe in both modes — reads /proc + psutil).
+    # Detect platform early (reads /proc + psutil, safe in all environments).
     platform = platform_detect.detect()
 
-    # Platform-specific setup (proxy, containers, certs, etc.)
-    # Immediate background commands (after_env=False) are launched inside _setup_web
-    # for web mode (to run in parallel with proxy/container setup). For CLI mode,
-    # launch them here.
-    if ctx.web_mode:
-        setup = await _setup_web(session, settings, profile, project_dir, root_ctx, platform=platform)
-    else:
-        immediate_cmds = [cmd for cmd in profile.background_commands if not cmd.after_env]
-        _launch_background_commands(
-            session,
-            immediate_cmds,
-            sock_path=session.paths.hook_daemon_sock,
-            env_file_path=None,
-            project_dir=project_dir,
-        )
-        setup = PlatformSetup(platform=platform, with_direnv=True)
+    # Platform services (proxy, containers, certs, tmpfs) are individually gated
+    # by profile flags inside _setup_platform_services. Services whose flags are
+    # false get skipped via SkipError.
+    setup = await _setup_platform_services(session, settings, profile, project_dir, root_ctx, platform=platform)
 
     # -- Shared steps: secrets, BuildBuddy, fork remote --
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
@@ -448,7 +434,7 @@ async def handle(
             CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"]
         )
         bazelrc_content: str = bazelrc_template.render(
-            web_proxy=ctx.web_mode,
+            setup_auth_proxy=profile.setup_auth_proxy,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
             truststore_path=session.paths.auth_proxy_truststore,
@@ -493,7 +479,6 @@ async def handle(
             mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
             kubeconfig_path=setup.secrets.kubeconfig_path,
             bbr_bazelrc=bbr_bazelrc,
-            with_direnv=setup.with_direnv,
             extra_env_script=extra_env,
         )
         env_file.write_env_file(ctx.env_file_path, env_vars)
@@ -518,7 +503,6 @@ async def handle(
             project_dir,
             setup.secrets,
             setup.fork_result,
-            web_mode=ctx.web_mode,
             profile=profile,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
@@ -562,7 +546,6 @@ def _render_extra_context(
     secrets: SecretsResult | None,
     fork_result: fork_remote.ForkRemoteSetup | None = None,
     *,
-    web_mode: bool = False,
     profile: ProfileConfig,
     bazel_remote_proxy_sock: Path | None,
     bazel_bes_proxy_sock: Path | None,
@@ -577,7 +560,6 @@ def _render_extra_context(
     result: str = template.render(
         secrets=secrets,
         fork_result=fork_result,
-        web_mode=web_mode,
         profile=profile,
         bazel_remote_proxy_sock=bazel_remote_proxy_sock,
         bazel_bes_proxy_sock=bazel_bes_proxy_sock,

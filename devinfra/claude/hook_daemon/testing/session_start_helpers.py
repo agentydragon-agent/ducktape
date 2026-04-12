@@ -82,8 +82,7 @@ def setup_hook_env(monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs,
     # Pick isolated port for supervisor
     supervisor_port = pick_free_port()
 
-    # Required for web mode
-    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    # Required by CallerContext.from_env()
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(isolated_dirs.project))
     monkeypatch.setenv("CLAUDE_ENV_FILE", str(isolated_dirs.env_file))
 

@@ -14,7 +14,7 @@ startup --host_jvm_args=-Xmx8g
 % elif platform.is_gvisor:
 startup --host_jvm_args=-Xmx4g
 % endif
-% if web_proxy:
+% if setup_auth_proxy:
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
 # BCR fetches use the native JVM proxy settings from Anthropic's

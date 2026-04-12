@@ -78,8 +78,8 @@ class PreCommitConfig(BaseModel, frozen=True):
 class GitShimConfig(BaseModel):
     """Per-behavior toggles for the git PATH shim.
 
-    In CLI mode, the human shares the repo — block dangerous commands.
-    In web mode, the agent owns the repo — let it do what it wants.
+    When the human shares the repo (CLI profile), block dangerous commands.
+    When the agent owns the repo (web profile), let it do what it wants.
     """
 
     block_amend: bool = Field(default=False, description="Block `git commit --amend`.")
@@ -115,9 +115,15 @@ class ProfileConfig(BaseModel):
     env_exports: str | None = Field(
         default=None, description="Inline shell content appended verbatim to the session env file."
     )
+    setup_auth_proxy: bool = Field(
+        default=False, description="Set up TLS-inspecting proxy (CA, truststore, combined bundle, UDS proxy)."
+    )
+    setup_tmpfs: bool = Field(
+        default=False, description="Mount tmpfs for Docker storage and Bazel cache (useful on 9p/gVisor)."
+    )
     idle_watchdog: bool = Field(
         description="Enable idle watchdog that shuts down daemon after inactivity. "
-        "Disable in environments where the container is torn down externally (e.g. web mode)."
+        "Disable in environments where the container is torn down externally."
     )
 
     # Formerly top-level HookConfig fields, now per-profile.

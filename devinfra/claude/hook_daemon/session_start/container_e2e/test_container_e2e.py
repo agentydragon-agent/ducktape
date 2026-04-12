@@ -178,15 +178,8 @@ def test_container_e2e(
     container_name = f"{_CONTAINER_NAME}-{os.getpid()}"
 
     env = {
-        "CLAUDE_CODE_REMOTE": "true",
         "CLAUDE_PROJECT_DIR": "/project",
         "CLAUDE_ENV_FILE": _ENV_FILE,
-        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_MKCERT": "false",
-        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_GH": "false",
-        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_KUBECTL": "false",
-        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_FLUX": "false",
-        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_APT_PACKAGES": "false",
-        "DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME": "none",
         "DUCKTAPE_CLAUDE_HOOKS_PROFILE": "profile.yaml",
         "ANTHROPIC_CA_PATH": "/certs/mock_ca.pem",
     }

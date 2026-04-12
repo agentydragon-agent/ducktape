@@ -4,7 +4,6 @@ Centralizes all environment variable exports into a single file write.
 """
 
 import os
-import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -47,39 +46,38 @@ def _strip_no_proxy_google() -> dict[str, str] | None:
 class EnvVars:
     """Collected environment variables for session.
 
-    Used in both web and CLI modes. Web mode sets all fields; CLI mode
-    sets only bazel_wrapper_dir, session_bazelrc, and with_direnv.
+    All profiles set bazel_wrapper_dir and session_bazelrc. Other fields
+    are populated based on profile flags (setup_auth_proxy, setup_docker,
+    install_mkcert, write_kubeconfig, etc.).
     """
 
-    # Required in all modes
+    # Required in all profiles
     bazel_wrapper_dir: Path
     session_bazelrc: Path
 
-    # Web mode: per-session directory
+    # Per-session directory
     session_dir: Path | None = None
 
-    # Web mode: Bazel configuration
+    # Supervisor port (when setup_docker is enabled)
     supervisor_port: int | None = None
+    # Combined CA bundle (when setup_auth_proxy is enabled)
     combined_ca: Path | None = None
 
-    # Container runtime env vars (web mode)
+    # Container runtime env vars (when setup_docker is enabled)
     docker_env: dict[str, str] | None = None
 
-    # Session metadata timestamp (web mode)
+    # Session metadata timestamp
     hook_timestamp: datetime | None = None
 
-    # mkcert localhost TLS certificate (web mode)
+    # mkcert localhost TLS certificate (when install_mkcert is enabled)
     mkcert_cert: Path | None = None
     mkcert_key: Path | None = None
 
-    # Kubeconfig generated at session start (web mode only)
+    # Kubeconfig (when write_kubeconfig is enabled)
     kubeconfig_path: Path | None = None
 
     # bbr session bazelrc (metadata tags for BuildBuddy invocations)
     bbr_bazelrc: Path | None = None
-
-    # CLI mode: include direnv eval for .envrc propagation
-    with_direnv: bool = False
 
     # Extra shell script content from config.yaml (appended verbatim)
     extra_env_script: str | None = None
@@ -155,9 +153,6 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     # shlex.quote would single-quote the $TMPDIR variable expansion.
     exports.extend(["", "# Ansible (pre-commit sandbox compatibility)"])
     exports.append('export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/ansible-tmp"')
-
-    if vars.with_direnv and shutil.which("direnv"):
-        exports.append('eval "$(direnv export bash 2>/dev/null)"')
 
     if vars.extra_env_script:
         exports.extend(["", "# Extra env script from config.yaml"])

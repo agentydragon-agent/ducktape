@@ -1,12 +1,11 @@
 """Tests for CLI-mode environment file generation.
 
 Verifies that write_env_file with CLI-mode EnvVars writes the wrapper PATH,
-SESSION_BAZELRC, and direnv eval for .envrc propagation into subsequent Bash
+SESSION_BAZELRC, and extra_env_script (including direnv) into subsequent Bash
 tool calls.
 """
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import pytest_bazel
@@ -14,8 +13,8 @@ import pytest_bazel
 from devinfra.claude.env_file import EnvVars, write_env_file
 
 
-def _cli_env_vars(wrapper_dir: Path, bazelrc: Path, *, with_direnv: bool = False) -> EnvVars:
-    return EnvVars(bazel_wrapper_dir=wrapper_dir, session_bazelrc=bazelrc, with_direnv=with_direnv)
+def _cli_env_vars(wrapper_dir: Path, bazelrc: Path, *, extra_env_script: str | None = None) -> EnvVars:
+    return EnvVars(bazel_wrapper_dir=wrapper_dir, session_bazelrc=bazelrc, extra_env_script=extra_env_script)
 
 
 @pytest.fixture
@@ -53,13 +52,13 @@ def test_exports_session_bazelrc(env_file: Path, wrapper_dir: Path, bazelrc: Pat
     assert str(bazelrc) in content
 
 
-def test_includes_direnv_eval(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
-    """When direnv is available, env file includes dynamic eval."""
-    with patch("devinfra.claude.env_file.shutil.which", return_value="/usr/bin/direnv"):
-        write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc, with_direnv=True))
+def test_extra_env_script_with_direnv(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
+    """extra_env_script content (e.g. direnv eval) is included verbatim."""
+    direnv_line = 'if command -v direnv >/dev/null 2>&1; then eval "$(direnv export bash 2>/dev/null)"; fi'
+    write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc, extra_env_script=direnv_line))
 
     content = env_file.read_text()
-    assert 'eval "$(direnv export bash 2>/dev/null)"' in content
+    assert "direnv export bash" in content
 
 
 def test_exports_ansible_local_temp(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
@@ -70,10 +69,9 @@ def test_exports_ansible_local_temp(env_file: Path, wrapper_dir: Path, bazelrc: 
     assert "ANSIBLE_LOCAL_TEMP=" in content
 
 
-def test_no_direnv_when_missing(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
-    """When direnv is not installed, env file omits the eval."""
-    with patch("devinfra.claude.env_file.shutil.which", return_value=None):
-        write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc, with_direnv=True))
+def test_no_direnv_without_extra_env(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
+    """Without extra_env_script, no direnv eval appears."""
+    write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc))
 
     content = env_file.read_text()
     assert "direnv export" not in content
