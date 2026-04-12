@@ -293,6 +293,28 @@ py_test(
 )
 
 py_test(
+    name = "test_backend_resilience",
+    size = "medium",
+    srcs = ["test_backend_resilience.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":conftest",
+        ":models",
+        "//airlock/oauth:provider",
+        "//mcp_infra:prefix",
+        "//util:net",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
     name = "test_oauth_flow",
     size = "medium",
     srcs = ["test_oauth_flow.py"],

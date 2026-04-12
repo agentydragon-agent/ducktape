@@ -45,6 +45,15 @@ js_library(
 )
 
 js_library(
+    name = "BackendStatus",
+    srcs = ["BackendStatus.svelte"],
+    deps = [
+        ":api",
+        ":types",
+    ],
+)
+
+js_library(
     name = "OAuthProviders",
     srcs = ["OAuthProviders.svelte"],
     deps = [
@@ -60,6 +69,7 @@ js_library(
     deps = [
         ":ActionDetail",
         ":ActionList",
+        ":BackendStatus",
         ":OAuthProviders",
         ":api",
         ":types",

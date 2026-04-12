@@ -235,3 +235,27 @@ class OAuthProviderStatus(BaseModel):
     status: OAuthConnectionStatus
 
     model_config = ConfigDict(extra="forbid")
+
+
+class BackendConnectedStatus(BaseModel):
+    state: Literal["connected"] = "connected"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BackendDegradedStatus(BaseModel):
+    state: Literal["degraded"] = "degraded"
+    error: str
+    since: datetime
+
+    model_config = ConfigDict(extra="forbid")
+
+
+BackendConnectionStatus = Annotated[BackendConnectedStatus | BackendDegradedStatus, Field(discriminator="state")]
+
+
+class BackendStatus(BaseModel):
+    name: str
+    connection_status: BackendConnectionStatus
+
+    model_config = ConfigDict(extra="forbid")
