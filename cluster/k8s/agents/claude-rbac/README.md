@@ -8,15 +8,37 @@ section). Keep both in sync when changing permissions.
 
 ## Permissions Granted
 
-**claude-sandbox namespace** (full access, defined in <role-sandbox.yaml>):
+### 1. claude-sandbox namespace — full CRUD
+
+Defined in <role-sandbox.yaml>, bound via <rolebinding-sandbox.yaml>:
 
 - Pods: create/delete, logs, exec, attach
 - Workloads: deployments, statefulsets, daemonsets, replicasets, jobs, cronjobs
 - Config: configmaps, secrets, PVCs, events, services
 - ⚠️ **Resource limits** (<resourcequota.yaml>): 8 CPU, 16Gi memory, 20 pods
 
-**Cross-namespace read access** (separate rolebindings in this directory):
-harbor, langfuse, ollama, openclaw, props, gatus, logs/configmaps
+### 2. Cluster-wide read — diagnostics
+
+`cluster-diagnostics-reader` ClusterRole (<clusterrole-cluster-diagnostics-reader.yaml>),
+bound via `shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`:
+
+- Core: nodes, pods, services, endpoints, PVs, PVCs, events, namespaces, resourcequotas
+- Workloads: deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, HPAs, VPAs
+- Networking: ingresses, networkpolicies, Gateway API routes, Cilium policies
+- Storage: storageclasses, volumeattachments, Longhorn volumes/replicas/nodes
+- GitOps: Flux kustomizations (+ patch for reconcile), HelmReleases, git/helm/OCI repos,
+  image policies, Terraform resources
+- Certs & secrets: cert-manager certificates/issuers, trust-manager bundles, ExternalSecrets
+- Monitoring: Prometheus, Alertmanager, ServiceMonitors, metrics API (pods + nodes)
+- Other: RBAC roles/bindings, CRDs, webhooks, leases, priority classes, Kyverno policies,
+  PowerDNS zones, Vault
+
+### 3. Cross-namespace read
+
+Namespaced Roles + RoleBindings for specific namespaces:
+
+- harbor, langfuse, ollama (read + consumer), openclaw, props, gatus
+- Logs/configmaps in monitoring, kube-system, longhorn-system, flux-system
 
 ## ServiceAccount
 
@@ -71,25 +93,10 @@ Kubeconfig is generated automatically by the session start hook via
 `devinfra/claude/hook_daemon/session_start/secret_sources.py`. The SA token is stored as a k8s Secret in the
 `claude-sandbox` namespace and read at session start. No manual encryption needed.
 
-## Testing Permissions
-
-```bash
-# Should work (full access in sandbox)
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox create deployment nginx --image=nginx
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox get pods
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox create secret generic test --from-literal=key=value
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox get secrets
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml -n claude-sandbox exec -it <pod> -- /bin/bash
-
-# Should fail (no permissions outside sandbox without cluster-wide RBAC)
-kubectl --kubeconfig=/tmp/claude-kubeconfig.yaml get pods -A
-# Error: pods is forbidden
-```
-
 ## Security Considerations
 
-The sandbox provides an isolated environment with resource limits:
-
-- **Namespace isolation**: Full CRUD only in `claude-sandbox`; other namespaces are read-only
+- **Write isolation**: Full CRUD only in `claude-sandbox` namespace
+- **Broad read**: Cluster-wide diagnostics read (nodes, pods, Flux, certs, metrics, etc.)
 - **Resource quotas**: 8 CPU, 16Gi memory, 20 pods (see <resourcequota.yaml>)
-- **Full control**: Create/delete/modify any resources including secrets within sandbox
+- **Flux patch**: Can trigger Flux reconciliation via annotation patch (Kyverno policy
+  restricts to annotation-only patches)

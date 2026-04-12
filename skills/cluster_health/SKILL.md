@@ -6,10 +6,19 @@ allowed-tools: Bash, Read, Grep, Glob, Agent
 
 # Cluster Health Check
 
-Comprehensive cluster health scan. Run all checks via `kubectl`, collect results,
-then produce a single structured report with an actionable fix plan.
+Comprehensive cluster health scan. Collect results from all checks, then produce a
+single structured report with an actionable fix plan.
 
-Run `kubectl` commands outside the sandbox (`dangerouslyDisableSandbox: true`).
+Use the `claude-sandbox-kubectl` MCP server tools for all read queries — the SA has a
+`cluster-diagnostics-reader` ClusterRole with cluster-wide read access to nodes, pods,
+deployments, Flux kustomizations, HelmReleases, cert-manager, CNPG, metrics, Longhorn,
+Gateway API, Kyverno, and more (see
+<cluster/k8s/agents/claude-rbac/clusterrole-cluster-diagnostics-reader.yaml>).
+It can also patch Flux Kustomizations (for manual reconciliation triggers).
+
+Fall back to `Bash(kubectl ...)` with `dangerouslyDisableSandbox: true` only for
+operations the SA cannot do (e.g., writing resources outside `claude-sandbox`,
+reading pod logs in namespaces without explicit rolebindings).
 
 ## What to Check
 
@@ -55,13 +64,12 @@ When any check reveals an error (unhealthy CNPG cluster, CrashLoopBackOff pod,
 failed HelmRelease, stuck Terraform, etc.), don't just report the status — dig into
 the cause before moving on:
 
-- Pod failures: check logs (`kubectl logs`), previous container logs (`--previous`),
-  describe output (events, conditions, scheduling failures)
+- Pod failures: check logs, previous container logs (`--previous`), describe output
+  (events, conditions, scheduling failures)
 - CNPG issues: check operator logs in `cnpg-system`, individual instance logs, cluster
   events
 - Flux/Helm failures: check the controller logs, the kustomization/helmrelease events
-- Node problems: check `kubectl describe node`, kubelet conditions, recent events on
-  the node
+- Node problems: check node describe, kubelet conditions, recent events on the node
 - Image pull failures: check if the registry (Harbor) is up, if the image tag exists,
   if pull secrets are configured
 

@@ -20,12 +20,16 @@ Prefer the `claude-sandbox-kubectl` MCP server tools over `Bash(kubectl ...)` fo
 `claude-sandbox` namespace operations. The MCP server uses the `claude-code-web`
 ServiceAccount and never triggers permission prompts.
 
-**RBAC** (defined in <cluster/k8s/agents/claude-rbac/role-sandbox.yaml>): full CRUD on
-pods, pods/log, pods/exec, pods/attach, services, configmaps, secrets, PVCs, events,
-deployments, statefulsets, daemonsets, replicasets, jobs, and cronjobs within
-`claude-sandbox`. Cross-namespace read access to several namespaces (harbor, langfuse,
-ollama, openclaw, props, gatus, logs) via separate rolebindings in
-<cluster/k8s/agents/claude-rbac/>. Resource quota: 8 CPU, 16Gi memory, 20 pods.
+**RBAC** (see <cluster/k8s/agents/claude-rbac/>):
+
+- **claude-sandbox namespace**: full CRUD on pods, pods/log, pods/exec, pods/attach,
+  services, configmaps, secrets, PVCs, events, deployments, statefulsets, daemonsets,
+  replicasets, jobs, cronjobs (<role-sandbox.yaml>). Quota: 8 CPU, 16Gi memory, 20 pods.
+- **Cluster-wide read** (`cluster-diagnostics-reader` ClusterRole): nodes, pods,
+  deployments, Flux kustomizations (+ patch for reconcile triggers), HelmReleases,
+  cert-manager, CNPG clusters, metrics, Longhorn, Gateway API, Kyverno, and more.
+- **Cross-namespace read**: harbor, langfuse, ollama, openclaw, props, gatus,
+  logs/configmaps via namespaced rolebindings.
 
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
 session kubeconfig (web) for operations needing higher privileges or other namespaces.
