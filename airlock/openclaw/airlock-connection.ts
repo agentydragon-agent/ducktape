@@ -31,17 +31,19 @@ export class AirlockConnection extends ReconnectingMcpClient {
 
   constructor(
     url: string,
-    private readonly apiKey: string,
+    private readonly apiKey: string | undefined,
     log: ScopedLogger
   ) {
     super(url, "openclaw-airlock", log);
   }
 
   protected override createTransport(): StreamableHTTPClientTransport {
+    const init: RequestInit = {};
+    if (this.apiKey) {
+      init.headers = { Authorization: `Bearer ${this.apiKey}` };
+    }
     return new StreamableHTTPClientTransport(new URL(this.url), {
-      requestInit: {
-        headers: { Authorization: `Bearer ${this.apiKey}` },
-      },
+      requestInit: init,
     });
   }
 

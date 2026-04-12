@@ -20,7 +20,8 @@
  *
  * Auth:
  *   - Exec sidecar: unauthenticated (pod-local, 127.0.0.1)
- *   - Airlock MCP endpoint: Bearer token (airlockToken from plugin config)
+ *   - Airlock MCP endpoint: optional Bearer token (airlockToken from plugin config;
+ *     omit when auth-proxy sidecar injects tokens upstream)
  *
  * This plugin MUST run inside the gateway process (not a node). The
  * `enqueueSystemEvent` API writes to the gateway's in-memory per-session
@@ -111,8 +112,8 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   const execServerUrl = cfg?.execServer?.url?.trim();
   const nativeExecInjection = cfg?.nativeExecInjection ?? false;
 
-  if (!airlockUrl || !airlockToken) {
-    log.warn("airlock.url and airlock.token are required in plugin config; plugin disabled");
+  if (!airlockUrl) {
+    log.warn("airlock.url is required in plugin config; plugin disabled");
     return;
   }
 
