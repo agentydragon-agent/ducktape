@@ -60,6 +60,16 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_git_hook",
+    srcs = ["test_git_hook.py"],
+    deps = [
+        ":git_hook",
+        "@pypi//pygit2",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "git_hook",
     srcs = ["git_hook.py"],

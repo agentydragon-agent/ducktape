@@ -117,9 +117,9 @@ def _staged_deltas(repo: pygit2.Repository) -> tuple[pygit2.Tree | None, list[py
     return head_tree, list(repo.index.diff_to_tree(base).deltas)
 
 
-def _setup_tracing(repo_root: Path) -> None:
+def _setup_tracing(repo: pygit2.Repository) -> None:
     provider = TracerProvider()
-    exporter = JsonlSpanExporter(repo_root / ".git" / "precommit-traces.jsonl")
+    exporter = JsonlSpanExporter(Path(repo.path) / "precommit-traces.jsonl")
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
 
@@ -132,7 +132,7 @@ def _setup_tracing(repo_root: Path) -> None:
 async def _run_pre_commit(argv: list[str]) -> int:
     repo = pygit2.Repository(".")
     repo_root = Path(repo.workdir)
-    _setup_tracing(repo_root)
+    _setup_tracing(repo)
 
     with tracer.start_as_current_span("precommit"):
         head_tree, all_deltas = _staged_deltas(repo)
@@ -238,7 +238,7 @@ def main_pre_commit() -> int:
 def main_pytest_main_check() -> int:
     repo = pygit2.Repository(".")
     repo_root = Path(repo.workdir)
-    _setup_tracing(repo_root)
+    _setup_tracing(repo)
 
     workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
     bazel_index = build_bazel_index(workspace)
