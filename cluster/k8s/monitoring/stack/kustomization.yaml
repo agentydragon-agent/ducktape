@@ -3,5 +3,4 @@ kind: Kustomization
 resources:
   - helmrepository.yaml
   - helmrelease.yaml
-  - grafana-httproute.yaml
   - networkpolicy.yaml

@@ -88,6 +88,7 @@ resources:
 
   # --- monitoring ---
   - monitoring/grafana-helmrepository/flux-kustomization.yaml
+  - monitoring/grafana-operator/flux-kustomization.yaml
   - monitoring/namespace/flux-kustomization.yaml
   - monitoring/stack/flux-kustomization.yaml
   - monitoring/stack-secrets/flux-kustomization.yaml
@@ -99,6 +100,7 @@ resources:
   - monitoring/tempo/flux-kustomization.yaml
   - monitoring/mimir/flux-kustomization.yaml
   - monitoring/grafana-db/flux-kustomization.yaml
+  - monitoring/grafana-instance/flux-kustomization.yaml
 
   # --- powerdns ---
   - powerdns/namespace/flux-kustomization.yaml

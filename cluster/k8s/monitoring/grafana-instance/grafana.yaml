@@ -1,0 +1,70 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels:
+    dashboards: grafana
+spec:
+  client:
+    useKubeAuth: true
+  config:
+    server:
+      root_url: https://grafana.allegedly.works
+    security:
+      # Expanded at runtime from GF_SECURITY_ADMIN_{USER,PASSWORD} env vars below.
+      # init-time only: Grafana writes the admin user to PostgreSQL on first boot.
+      admin_user: ${GF_SECURITY_ADMIN_USER}
+      admin_password: ${GF_SECURITY_ADMIN_PASSWORD}
+    database:
+      type: postgres
+      host: grafana-db-rw.monitoring.svc.cluster.local:5432
+      name: grafana
+      user: grafana
+      password: ${GF_DATABASE_PASSWORD}
+      ssl_mode: require
+    plugins:
+      preinstall: grafana-clock-panel
+    auth.jwt:
+      # Operator authenticates via K8s projected service account token (audience:
+      # operator.grafana.com). No admin password required for automation.
+      enabled: "true"
+      header_name: Authorization
+      username_claim: sub
+      email_claim: sub
+      # auto_sign_up: creates the operator's K8s identity as a Grafana user on first
+      # auth. Scoped to JWT auth only — does not affect Authentik OAuth logins.
+      auto_sign_up: "true"
+      jwk_set_url: https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}/openid/v1/jwks
+      jwk_set_bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      expect_claims: '{"aud": "operator.grafana.com"}'
+      role_attribute_path: "contains(sub, 'system:serviceaccount:monitoring:grafana-operator-controller-manager') && 'GrafanaAdmin' || 'None'"
+  deployment:
+    spec:
+      template:
+        metadata:
+          annotations:
+            reloader.stakater.com/auto: "true"
+        spec:
+          containers:
+            - name: grafana
+              env:
+                # Secret key names don't match GF_* env var names — explicit mapping.
+                - name: GF_SECURITY_ADMIN_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: grafana-admin-password
+                      key: admin-user
+                - name: GF_SECURITY_ADMIN_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: grafana-admin-password
+                      key: admin-password
+                - name: GF_DATABASE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: grafana-db-app
+                      key: password
+              envFrom:
+                - secretRef:
+                    name: grafana-oidc-config # GF_AUTH_GENERIC_OAUTH_* vars
