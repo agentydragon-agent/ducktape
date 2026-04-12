@@ -230,6 +230,8 @@
         pkgs.rustfmt # 1GB (pulls full rustc via RPATH)
         pkgs.ansible # 650MB
       ];
+      # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
+      systemLibs = import ./nix/packages/system-libs.nix { inherit pkgs; };
       devToolPackages = [
         # Repo-specific tools (bbr is provided by claude-hooks wheel)
         ducktapePkgs.claude-hooks
@@ -263,7 +265,9 @@
     {
       # Development shell — enter via `nix develop` or direnv (`use flake`).
       devShells.${system}.default = pkgs.mkShell {
-        packages = devToolPackages ++ localOnlyPackages;
+        packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;
+        inherit (systemLibs) buildInputs;
+        LD_LIBRARY_PATH = systemLibs.libraryPath;
       };
 
       packages.${system} = ducktapePkgs // {

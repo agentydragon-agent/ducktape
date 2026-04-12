@@ -8,6 +8,10 @@
 # We layer on: libssl-dev + pkg-config (Rust toolchain), libtinfo5 (GHC
 # toolchain), and Chromium shared libraries (headless_shell from
 # rules_playwright for visual regression tests).
+#
+# The Nix equivalents of these system libraries are in
+# nix/packages/system-libs.nix (shared by devShell and nix RBE image).
+# Keep the two lists in sync when adding/removing libraries.
 FROM gcr.io/flame-public/rbe-ubuntu24-04:latest
 LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 

@@ -70,7 +70,6 @@ with pkgs;
 
   # TODO: add back once image size is manageable
   # cpio             # Firecracker initramfs genrule
-  # xorg.xorgserver  # Xvfb for headless GUI tests (FreeCAD)
   # dbus             # private D-Bus sessions in tests
   # Chromium headless shell deps (rules_playwright):
   # alsa-lib at-spi2-atk cups libdrm mesa nspr nss pango
