@@ -6,3 +6,10 @@ metadata:
     name: airlock
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: |
+      containerPolicies:
+        - containerName: "*"
+          minAllowed:
+            cpu: 100m
+            memory: 128Mi
