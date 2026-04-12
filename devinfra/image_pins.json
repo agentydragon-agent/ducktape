@@ -5,7 +5,7 @@
   },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
-    "digest": "sha256:418e1cb66f449247d536c4195b01415d5189b1213609171c71465886d9111e87",
+    "digest": "sha256:eff5b9154f7ae3c57718432a8226533a7303f37e5a3a7da043577db5b76a6065",
     "platforms": ["linux/amd64"]
   }
 }
