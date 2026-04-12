@@ -267,6 +267,7 @@
       "Bash(nix search:*)",
       "Bash(ping:*)",
       "Bash(pre-commit run:*)",
+      "Skill(followups)",
       "WebFetch(domain:docs.attic.rs)",
       "WebFetch(domain:raw.githubusercontent.com)"
     ]
