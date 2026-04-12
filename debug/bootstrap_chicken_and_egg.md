@@ -7,8 +7,7 @@ creating circular dependencies that can deadlock if the chain breaks.
 
 **Cycle**: CI workflows use `bbr` (installed via `nix profile install .#devtools`)
 to run Bazel on RBE. `bbr` is a console script entry point in the `claude-hooks`
-wheel. The `claude-hooks` wheel is built and released by CI using `bbr run
-//:release_claude_hooks`.
+wheel. The `claude-hooks` wheel is built and released by CI (`.github/workflows/release.yml`).
 
 ```
 CI needs bbr → bbr comes from claude-hooks wheel (npins) → wheel is released by CI using bbr

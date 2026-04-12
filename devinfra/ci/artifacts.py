@@ -35,62 +35,16 @@ def is_tag_for_pkg(tag: str, pkg: str) -> bool:
 
 class Artifact(BaseModel, frozen=True):
     pkg: str = Field(description="npins package name")
-    bazel_target: str = Field(description="Bazel target that builds this artifact")
-    src_glob: str = Field(description="Path glob under bazel-bin/")
-    dest: str = Field(description="Destination path or directory under dist/")
-    notes: str = Field(description="GitHub release body")
     filename: str = Field(description="Artifact filename attached to the GitHub release")
 
 
 ARTIFACTS = [
-    Artifact(
-        pkg="claude-hooks",
-        bazel_target="//:claude_hooks_wheel",
-        src_glob="bazel-bin/claude_hooks-*.whl",
-        dest="dist/",
-        notes="claude-hooks wheel for Claude Code integration.",
-        filename="claude_hooks-0.1.0-py3-none-any.whl",
-    ),
-    Artifact(
-        pkg="ducktape-util",
-        bazel_target="//util:wheel",
-        src_glob="bazel-bin/util/ducktape_util-*.whl",
-        dest="dist/",
-        notes="ducktape-util shared utility wheel.",
-        filename="ducktape_util-0.1.0-py3-none-any.whl",
-    ),
-    Artifact(
-        pkg="ducktape",
-        bazel_target="//:wheel",
-        src_glob="bazel-bin/ducktape-*.whl",
-        dest="dist/",
-        notes="ducktape wheel containing CLI tools.",
-        filename="ducktape-0.1.0-py3-none-any.whl",
-    ),
-    Artifact(
-        pkg="gterm-theme",
-        bazel_target="//gterm_theme:wheel",
-        src_glob="bazel-bin/gterm_theme/gterm_theme-*.whl",
-        dest="dist/",
-        notes="gterm-theme wheel (GNOME Terminal theme follower).",
-        filename="gterm_theme-0.1.0-py3-none-any.whl",
-    ),
-    Artifact(
-        pkg="skills",
-        bazel_target="//skills:all_skills_tar",
-        src_glob="bazel-bin/skills/all_skills_tar.tar",
-        dest="dist/skills.tar",
-        notes="Skills tarball for AI agent deployment.",
-        filename="skills.tar",
-    ),
-    Artifact(
-        pkg="bbapi",
-        bazel_target="//devinfra/buildbuddy_cli:bbapi",
-        src_glob="bazel-bin/devinfra/buildbuddy_cli/bbapi_/bbapi",
-        dest="dist/",
-        notes="bbapi — BuildBuddy API CLI (Linux x86_64).",
-        filename="bbapi",
-    ),
+    Artifact(pkg="claude-hooks", filename="claude_hooks-0.1.0-py3-none-any.whl"),
+    Artifact(pkg="ducktape-util", filename="ducktape_util-0.1.0-py3-none-any.whl"),
+    Artifact(pkg="ducktape", filename="ducktape-0.1.0-py3-none-any.whl"),
+    Artifact(pkg="gterm-theme", filename="gterm_theme-0.1.0-py3-none-any.whl"),
+    Artifact(pkg="skills", filename="skills.tar"),
+    Artifact(pkg="bbapi", filename="bbapi"),
 ]
 
 
