@@ -67,7 +67,7 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Test
+      - name: Test (gate for push)
         id: test
         if: matrix.test_target != ''
         uses: ./.github/actions/bb-remote
@@ -76,7 +76,7 @@ jobs:
           rbe_image: ${{ inputs.rbe_image }}
         continue-on-error: true
 
-      - name: Push image
+      - name: Push image (skipped if tests failed)
         if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
         uses: ./.github/actions/bb-remote
         with:

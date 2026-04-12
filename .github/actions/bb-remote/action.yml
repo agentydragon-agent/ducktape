@@ -47,10 +47,13 @@ runs:
           [[ -n "$line" ]] && ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=$line")
         done <<< "${{ inputs.env_overrides }}"
 
-        IMAGE_ARGS=()
+        # --container_image is a bb-remote flag: must come before the Bazel subcommand.
+        # --remote_default_exec_properties is a Bazel command flag: must come after the subcommand.
+        BB_IMAGE_ARGS=()
+        BAZEL_IMAGE_ARGS=()
         if [[ -n "${{ inputs.rbe_image }}" ]]; then
-          IMAGE_ARGS+=(--container_image="docker://${{ inputs.rbe_image }}")
-          IMAGE_ARGS+=(--remote_default_exec_properties="container-image=docker://${{ inputs.rbe_image }}")
+          BB_IMAGE_ARGS+=(--container_image="docker://${{ inputs.rbe_image }}")
+          BAZEL_IMAGE_ARGS+=(--remote_default_exec_properties="container-image=docker://${{ inputs.rbe_image }}")
         fi
 
         bb remote \
@@ -59,6 +62,7 @@ runs:
           --runner_exec_properties=workload-isolation-type=firecracker \
           --runner_exec_properties=init-dockerd=true \
           "${ENV_ARGS[@]}" \
-          "${IMAGE_ARGS[@]}" \
+          "${BB_IMAGE_ARGS[@]}" \
           ${{ inputs.args }} \
-          --config=rbe
+          --config=rbe \
+          "${BAZEL_IMAGE_ARGS[@]}"
