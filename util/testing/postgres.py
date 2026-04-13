@@ -11,13 +11,13 @@ _TERMINATE_SQL = text(
     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :db_name AND pid <> pg_backend_pid()"
 )
 
-_SAFE_DB_NAME = re.compile(r"^[a-z0-9_]+$")
+_SAFE_DB_NAME = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
 def _require_safe_db_name(db_name: str) -> None:
-    """Raise if db_name contains characters outside [a-z0-9_]."""
+    """Raise if db_name contains characters outside [a-zA-Z0-9_]."""
     if not _SAFE_DB_NAME.match(db_name):
-        raise ValueError(f"Unsafe database name for test teardown: {db_name!r} (must match [a-z0-9_]+)")
+        raise ValueError(f"Unsafe database name for test teardown: {db_name!r} (must match [a-zA-Z0-9_]+)")
 
 
 async def force_drop_database(admin_url: str, db_name: str) -> None:
