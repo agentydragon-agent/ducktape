@@ -14,7 +14,12 @@ Config file format (YAML):
 
   public_base_url: "https://airlock.example.com"
   oidc_issuer: "https://auth.example.com/application/o/airlock/"
-  db_path: "/data/airlock.db"      # optional, defaults to /data/airlock.db
+
+Required env vars (injected by Kubernetes, not in YAML):
+
+  DATABASE_URL  — PostgreSQL connection URL from the CNPG airlock-db-app secret.
+                  May be postgresql:// or postgresql+asyncpg://; the driver prefix
+                  is normalised automatically.
 
 Each backend entry matches fastmcp's MCPConfig mcpServers entry format.
 Backend keys are validated as MCPMountPrefix (lowercase alphanumeric + underscore).
@@ -27,19 +32,23 @@ from pathlib import Path
 
 import yaml
 from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from airlock.models import WaitMode, YieldAfterMs
 from airlock.oauth.provider import GenericOAuth2Provider, OAuthConfig, PlaidProvider, PlaidProviderConfig, Provider
 from mcp_infra.prefix import MCPMountPrefix
 
 
-class Settings(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(populate_by_name=True)
 
     backends: dict[MCPMountPrefix, MCPServerTypes]
     public_base_url: str
-    db_path: Path = Path("/data/airlock.db")
+    db_url: str = Field(
+        validation_alias="DATABASE_URL",
+        description="PostgreSQL connection URL, injected from DATABASE_URL env var (CNPG airlock-db-app secret).",
+    )
     predicate_path: Path = Field(
         description=(
             "Path to a Python module exporting "
@@ -55,6 +64,7 @@ class Settings(BaseModel):
         default=None, description="OAuth client_secret for OIDCProxy upstream auth."
     )
     default_wait_mode: WaitMode = YieldAfterMs(timeout_ms=0)
+    reconnect_interval_s: float = 30.0
     oauth: OAuthConfig = Field(description="OAuth token broker configuration")
     host: str = "0.0.0.0"
     port: int
@@ -63,6 +73,12 @@ class Settings(BaseModel):
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:
         return v.rstrip("/")
+
+    @field_validator("db_url", mode="after")
+    @classmethod
+    def _normalise_db_url(cls, v: str) -> str:
+        """Ensure the asyncpg driver prefix is present."""
+        return v.replace("postgresql://", "postgresql+asyncpg://", 1)
 
     @classmethod
     def load(cls) -> Settings:
@@ -74,10 +90,6 @@ class Settings(BaseModel):
             for backend in settings.backends.values():
                 if isinstance(backend, RemoteMCPServer) and "Authorization" not in backend.headers:
                     backend.headers["Authorization"] = f"Bearer {exec_token}"
-        if proxy_id := os.environ.get("OIDC_PROXY_CLIENT_ID"):
-            settings.oidc_proxy_client_id = proxy_id
-        if proxy_secret := os.environ.get("OIDC_PROXY_CLIENT_SECRET"):
-            settings.oidc_proxy_client_secret = proxy_secret
         return settings
 
 

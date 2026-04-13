@@ -170,12 +170,14 @@ def _build_multiauth(*, oidc_url: str, airlock_url: str, extra_verifiers: list |
     return MultiAuth(server=proxy, verifiers=extra_verifiers or [])
 
 
-def _build_settings(*, airlock_port: int, airlock_url: str, oidc_url: str, echo_port: int, **overrides) -> Settings:
+def _build_settings(
+    *, airlock_port: int, airlock_url: str, oidc_url: str, echo_port: int, db_url: str, predicate_path: Path
+) -> Settings:
     return Settings(
         backends={MCPMountPrefix("test"): RemoteMCPServer(url=f"http://127.0.0.1:{echo_port}/mcp")},
         public_base_url=airlock_url,
-        db_path=overrides.pop("db_path"),
-        predicate_path=overrides.pop("predicate_path"),
+        db_url=db_url,
+        predicate_path=predicate_path,
         oidc_issuer=oidc_url,
         oidc_client_id="test",
         oidc_proxy_client_id="airlock-proxy",
@@ -235,7 +237,7 @@ def predicate_file(tmp_path: Path) -> Path:
 
 
 @pytest.mark.usefixtures("_mock_k8s_store")
-async def test_oauth_discovery_endpoints(oidc_key_pair, predicate_file: Path, tmp_path: Path):
+async def test_oauth_discovery_endpoints(oidc_key_pair, predicate_file: Path, db_url: str):
     """OIDCProxy serves well-known endpoints that MCP clients need for auth discovery."""
     private_key, public_key = oidc_key_pair
     oidc_port = pick_free_port()
@@ -254,7 +256,7 @@ async def test_oauth_discovery_endpoints(oidc_key_pair, predicate_file: Path, tm
             airlock_url=airlock_url,
             oidc_url=oidc_url,
             echo_port=echo_port,
-            db_path=tmp_path / "gate.db",
+            db_url=db_url,
             predicate_path=predicate_file,
         )
         app = create_app(settings, auth=auth, include_static=False)
@@ -292,7 +294,7 @@ async def test_oauth_discovery_endpoints(oidc_key_pair, predicate_file: Path, tm
 
 
 @pytest.mark.usefixtures("_mock_k8s_store")
-async def test_jwt_verifier_fallback(oidc_key_pair, predicate_file: Path, tmp_path: Path):
+async def test_jwt_verifier_fallback(oidc_key_pair, predicate_file: Path, db_url: str):
     """Tokens signed directly (not via OIDCProxy) are accepted via JWTVerifier fallback.
 
     This verifies the OpenClaw auth-proxy sidecar path still works when MultiAuth is active.
@@ -320,7 +322,7 @@ async def test_jwt_verifier_fallback(oidc_key_pair, predicate_file: Path, tmp_pa
             airlock_url=airlock_url,
             oidc_url=oidc_url,
             echo_port=echo_port,
-            db_path=tmp_path / "gate.db",
+            db_url=db_url,
             predicate_path=predicate_file,
         )
         app = create_app(settings, auth=auth, include_static=False)
@@ -329,7 +331,11 @@ async def test_jwt_verifier_fallback(oidc_key_pair, predicate_file: Path, tmp_pa
             async with GateClient(agent_transport(airlock_url, agent_jwt)) as client:
                 action = await client.call_gate_tool(
                     "test_echo_tool",
-                    {"input": {"text": "hello"}, "justification": "test", "session_key": "jwt-session"},
+                    {
+                        "input": {"text": "hello"},
+                        "justification": "test",
+                        "session_key": "a0000000-0000-0000-0000-000000000001",
+                    },
                 )
                 assert action.state.status.value == "pending"
 
@@ -342,7 +348,7 @@ async def test_jwt_verifier_fallback(oidc_key_pair, predicate_file: Path, tmp_pa
 
 
 @pytest.mark.usefixtures("_mock_k8s_store")
-async def test_full_oauth_flow_with_tool_call(oidc_key_pair, predicate_file: Path, tmp_path: Path):
+async def test_full_oauth_flow_with_tool_call(oidc_key_pair, predicate_file: Path, db_url: str):
     """Walk the complete OAuth flow: DCR → authorize → token → MCP tool call.
 
     Exercises the OIDCProxy path end-to-end with consent disabled for test simplicity.
@@ -363,7 +369,7 @@ async def test_full_oauth_flow_with_tool_call(oidc_key_pair, predicate_file: Pat
             airlock_url=airlock_url,
             oidc_url=oidc_url,
             echo_port=echo_port,
-            db_path=tmp_path / "gate.db",
+            db_url=db_url,
             predicate_path=predicate_file,
         )
         app = create_app(settings, auth=auth, include_static=False)
@@ -447,7 +453,11 @@ async def test_full_oauth_flow_with_tool_call(oidc_key_pair, predicate_file: Pat
             ) as client:
                 action = await client.call_gate_tool(
                     "test_echo_tool",
-                    {"input": {"text": "oauth-hello"}, "justification": "oauth test", "session_key": "oauth-session"},
+                    {
+                        "input": {"text": "oauth-hello"},
+                        "justification": "oauth test",
+                        "session_key": "a0000000-0000-0000-0000-000000000002",
+                    },
                 )
                 assert action.state.status.value == "pending"
                 # Verify client_id is tracked on the action

@@ -21,26 +21,29 @@ import contextlib
 import copy
 import logging
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Coroutine, Mapping
+from collections.abc import AsyncGenerator, Coroutine
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import anyio
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server.auth import require_scopes
+from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.dependencies import get_access_token
-from fastmcp.tools.tool import FunctionTool
+from fastmcp.tools.function_tool import FunctionTool
 from mako.template import Template
 from mcp import types as mcp_types
 from mcp.server.session import ServerSession
 from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
 
+from airlock.config import Settings
 from airlock.models import (
     Action,
     ActionKey,
@@ -149,25 +152,11 @@ def _wait_mode_to_timeout(wait_mode: WaitMode) -> float:
 class AirlockServer(EnhancedFastMCP):
     """MCP server that wraps multiple backend MCP servers with an approval layer."""
 
-    def __init__(
-        self,
-        *,
-        backends: Mapping[MCPMountPrefix, MCPServerTypes],
-        db_path: Path,
-        predicate: PredicateFn,
-        public_base_url: str,
-        default_wait_mode: WaitMode = _DEFAULT_WAIT_MODE,
-        reconnect_interval_s: float = 30.0,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__("Airlock", lifespan=self._lifespan, instructions="Airlock — initialising…", **kwargs)
-        self._backend_specs = backends
-        self._db_path = db_path
+    def __init__(self, settings: Settings, *, predicate: PredicateFn, auth: AuthProvider) -> None:
+        super().__init__("Airlock", lifespan=self._lifespan, instructions="Airlock — initialising…", auth=auth)
+        self._settings = settings
         self._storage: ActionStorage | None = None
         self._predicate = predicate
-        self._public_base_url = public_base_url
-        self._default_wait_mode = default_wait_mode
-        self._reconnect_interval_s = reconnect_interval_s
         self._backends: dict[MCPMountPrefix, _BackendState] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
@@ -192,7 +181,7 @@ class AirlockServer(EnhancedFastMCP):
 
     @asynccontextmanager
     async def _lifespan(self, app: FastMCP) -> AsyncGenerator[None]:
-        self._storage = await ActionStorage.initialize(self._db_path)
+        self._storage = await ActionStorage.initialize(self._settings.db_url)
 
         try:
             await self._connect_backends()
@@ -263,7 +252,7 @@ class AirlockServer(EnhancedFastMCP):
 
     async def _connect_backends(self) -> None:
         """Connect to all configured backends and render MCP instructions."""
-        for namespace, spec in self._backend_specs.items():
+        for namespace, spec in self._settings.backends.items():
             await self._try_connect_backend(namespace, spec)
 
         backend_instructions: dict[str, str | None] = {}
@@ -275,16 +264,16 @@ class AirlockServer(EnhancedFastMCP):
                 backend_instructions[namespace] = None
 
         self.instructions = Template(filename=str(_INSTRUCTIONS_TEMPLATE)).render(
-            backend_instructions=backend_instructions, public_base_url=self._public_base_url
+            backend_instructions=backend_instructions, public_base_url=self._settings.public_base_url
         )
 
     async def _reconnect_degraded_backends(self) -> None:
         """Background loop: periodically retry backends that failed to connect."""
         while True:
-            await asyncio.sleep(self._reconnect_interval_s)
+            await asyncio.sleep(self._settings.reconnect_interval_s)
             for namespace, state in list(self._backends.items()):
                 if isinstance(state, _DegradedBackend):
-                    await self._try_connect_backend(namespace, self._backend_specs[namespace])
+                    await self._try_connect_backend(namespace, self._settings.backends[namespace])
 
     def _register_resources(self) -> None:
         """Register resource templates and subscription tracking handlers."""
@@ -363,13 +352,13 @@ class AirlockServer(EnhancedFastMCP):
 
         async def _tool_handler(
             justification: str,
-            session_key: str,
-            input: dict[str, object] = {},  # noqa: B006
+            session_key: UUID,
+            input: dict[str, object] | None = None,
             wait_mode: WaitMode | None = None,
         ) -> Action:
             token = get_access_token()
             caller_client_id = token.client_id if token else None
-            call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
+            call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input or {})
             action = await self._req_storage.create_action(
                 session_key=session_key, call=call, justification=justification, client_id=caller_client_id
             )
@@ -378,7 +367,7 @@ class AirlockServer(EnhancedFastMCP):
             await self.broadcast_resource_list_changed()
             self._broadcast_sse({"type": "actions_changed"})
 
-            effective = wait_mode if wait_mode is not None else self._default_wait_mode
+            effective = wait_mode if wait_mode is not None else self._settings.default_wait_mode
             effective_timeout = _wait_mode_to_timeout(effective)
 
             pipeline = self._spawn(self._run_action_pipeline(key, namespace, tool_name, input))

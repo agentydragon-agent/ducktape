@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 from opentelemetry import trace
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
@@ -24,6 +24,7 @@ from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_sp
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
+from util.testing.postgres import force_drop_database_sync
 
 tracer = trace.get_tracer(__name__)
 
@@ -83,35 +84,14 @@ def postgres_base_config(postgres_container: PostgresContainer) -> DatabaseConfi
     return DatabaseConfig(host=host, port=port, database="postgres", user="postgres", password="postgres")
 
 
-def _terminate_and_drop_db(postgres_engine, db_name: str) -> None:
-    """Terminate all connections and drop a database.
-
-    Used for test cleanup to ensure databases can be dropped even if
-    connections are still open.
-    """
-    with postgres_engine.connect() as conn:
-        conn.execute(
-            text(
-                f"""
-                SELECT pg_terminate_backend(pg_stat_activity.pid)
-                FROM pg_stat_activity
-                WHERE pg_stat_activity.datname = '{db_name}'
-                  AND pid <> pg_backend_pid()
-            """
-            )
-        )
-        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-
-
-def _setup_test_database(postgres_base_config: DatabaseConfig, db_name: str) -> tuple[Database, Engine]:
-    """Drop (if exists), create, and migrate a test database. Returns (database, postgres_engine)."""
-    postgres_config = postgres_base_config.with_database("postgres")
-    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
-    _terminate_and_drop_db(postgres_engine, db_name)
+def _setup_test_database(postgres_base_config: DatabaseConfig, db_name: str) -> Database:
+    """Drop (if exists), create, and migrate a test database."""
+    admin_url = postgres_base_config.with_database("postgres").url
+    force_drop_database_sync(admin_url, db_name)
     ensure_database_exists(postgres_base_config, db_name)
     database = Database(postgres_base_config.with_database(db_name))
     database.recreate()
-    return database, postgres_engine
+    return database
 
 
 def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
@@ -144,7 +124,7 @@ def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> 
     sanitized_id = _sanitize_test_id(test_node_id)
     db_name = f"props_test_{sanitized_id}"
 
-    database, postgres_engine = _setup_test_database(postgres_base_config, db_name)
+    database = _setup_test_database(postgres_base_config, db_name)
 
     try:
         yield database
@@ -157,8 +137,8 @@ def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> 
             print(f"Database config: {test_config}")
             print(f"Connect with: psql {test_config.url}")
         else:
-            _terminate_and_drop_db(postgres_engine, db_name)
-        postgres_engine.dispose()
+            admin_url = postgres_base_config.with_database("postgres").url
+            force_drop_database_sync(admin_url, db_name)
 
 
 @pytest.fixture
@@ -202,15 +182,15 @@ async def _session_synced_db(
     """
     db_name = "props_test_session_shared"
 
-    database, postgres_engine = _setup_test_database(postgres_base_config, db_name)
+    database = _setup_test_database(postgres_base_config, db_name)
     _sync_test_fixtures(database, session_monkeypatch)
 
     try:
         yield database
     finally:
         database.dispose()
-        _terminate_and_drop_db(postgres_engine, db_name)
-        postgres_engine.dispose()
+        admin_url = postgres_base_config.with_database("postgres").url
+        force_drop_database_sync(admin_url, db_name)
 
 
 @pytest.fixture(scope="session")

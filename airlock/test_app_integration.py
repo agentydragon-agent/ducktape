@@ -57,13 +57,13 @@ def _mock_k8s_store():
 
 
 @pytest.mark.usefixtures("_mock_k8s_store")
-async def test_rest_api_works_after_startup(rsa_key_pair: RSAKeyPair, predicate_file: Path, tmp_path: Path):
+async def test_rest_api_works_after_startup(rsa_key_pair: RSAKeyPair, predicate_file: Path, db_url: str):
     """GET /api/actions returns 200 immediately — no MCP client needed."""
     port = pick_free_port()
     settings = Settings(
         backends={},
         public_base_url=f"http://127.0.0.1:{port}",
-        db_path=tmp_path / "gate.db",
+        db_url=db_url,
         predicate_path=predicate_file,
         oidc_issuer="https://unused.example.com",
         oidc_client_id="test",
@@ -83,7 +83,7 @@ async def test_rest_api_works_after_startup(rsa_key_pair: RSAKeyPair, predicate_
 
 
 @pytest.mark.usefixtures("_mock_k8s_store")
-async def test_mcp_action_visible_via_rest(rsa_key_pair: RSAKeyPair, predicate_file: Path, tmp_path: Path):
+async def test_mcp_action_visible_via_rest(rsa_key_pair: RSAKeyPair, predicate_file: Path, db_url: str):
     """An action created via MCP appears in GET /api/actions."""
     port = pick_free_port()
     echo = FastMCP("echo")
@@ -99,7 +99,7 @@ async def test_mcp_action_visible_via_rest(rsa_key_pair: RSAKeyPair, predicate_f
     settings = Settings(
         backends={MCPMountPrefix("test"): RemoteMCPServer(url=f"http://127.0.0.1:{echo_port}/mcp")},
         public_base_url=f"http://127.0.0.1:{port}",
-        db_path=tmp_path / "gate.db",
+        db_url=db_url,
         predicate_path=predicate_file,
         oidc_issuer="https://unused.example.com",
         oidc_client_id="test",
@@ -114,7 +114,12 @@ async def test_mcp_action_visible_via_rest(rsa_key_pair: RSAKeyPair, predicate_f
         # Create an action via MCP (tool is namespace_toolname = test_echo_tool).
         async with GateClient(agent_transport(f"http://127.0.0.1:{port}", agent_jwt)) as client:
             action = await client.call_gate_tool(
-                "test_echo_tool", {"input": {"text": "hello"}, "justification": "test", "session_key": "test-session"}
+                "test_echo_tool",
+                {
+                    "input": {"text": "hello"},
+                    "justification": "test",
+                    "session_key": "a0000000-0000-0000-0000-000000000001",
+                },
             )
             assert action.state.status.value == "pending"
 

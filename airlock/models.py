@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
+from uuid import UUID
 
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,7 +34,7 @@ class ActionKey(BaseModel):
     action_seq is 1-based and monotonically increasing per session_key.
     """
 
-    session_key: str
+    session_key: UUID
     action_seq: int
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -157,7 +158,7 @@ class LogEntry(BaseModel):
     """A single append-only event log entry, scoped to a session."""
 
     entry_id: int
-    session_key: str
+    session_key: UUID
     action_seq: int
     detail: LogEventDetail
     timestamp: datetime

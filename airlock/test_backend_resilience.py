@@ -19,7 +19,7 @@ import httpx
 import pytest
 import pytest_bazel
 from fastmcp.mcp_config import RemoteMCPServer
-from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
@@ -32,21 +32,6 @@ from mcp_infra.prefix import MCPMountPrefix
 from util.net import pick_free_port
 
 TEST_NS = MCPMountPrefix("test")
-
-
-@pytest.fixture
-def rsa_key_pair() -> RSAKeyPair:
-    return RSAKeyPair.generate()
-
-
-@pytest.fixture
-def agent_jwt(rsa_key_pair: RSAKeyPair) -> str:
-    return rsa_key_pair.create_token(subject="agent", scopes=["propose", "read"])
-
-
-@pytest.fixture
-def operator_jwt(rsa_key_pair: RSAKeyPair) -> str:
-    return rsa_key_pair.create_token(subject="operator", scopes=["decide", "read"])
 
 
 @pytest.fixture
@@ -74,38 +59,36 @@ def _mock_k8s_store():
 
 
 def _make_settings(
-    *, backends: dict, port: int, tmp_path: Path, predicate_file: Path, reconnect_interval_s: float = 30.0
-) -> tuple[Settings, dict]:
-    """Build a Settings object and extra kwargs for create_app()."""
-    settings = Settings(
+    *, backends: dict, port: int, db_url: str, predicate_file: Path, reconnect_interval_s: float = 30.0
+) -> Settings:
+    """Build a Settings object for test apps."""
+    return Settings(
         backends=backends,
         public_base_url=f"http://127.0.0.1:{port}",
-        db_path=tmp_path / "gate.db",
+        db_url=db_url,
         predicate_path=predicate_file,
         oidc_issuer="https://unused.example.com",
         oidc_client_id="test",
+        reconnect_interval_s=reconnect_interval_s,
         oauth=OAuthConfig(providers=[]),
         port=port,
     )
-    return settings, {"reconnect_interval_s": reconnect_interval_s}
 
 
 @pytest.mark.usefixtures("_mock_k8s_store")
-async def test_airlock_starts_with_backend_down(
-    rsa_key_pair: RSAKeyPair, agent_jwt: str, predicate_file: Path, tmp_path: Path
-):
+async def test_airlock_starts_with_backend_down(rsa_key_pair, agent_jwt: str, predicate_file: Path, db_url: str):
     """Airlock starts and serves /mcp even when a backend URL is unreachable."""
     dead_port = pick_free_port()
     gate_port = pick_free_port()
     auth = JWTVerifier(public_key=rsa_key_pair.public_key)
 
-    settings, extra = _make_settings(
+    settings = _make_settings(
         backends={TEST_NS: RemoteMCPServer(url=f"http://127.0.0.1:{dead_port}/mcp")},
         port=gate_port,
-        tmp_path=tmp_path,
+        db_url=db_url,
         predicate_file=predicate_file,
     )
-    app = create_app(settings, auth=auth, include_static=False, **extra)
+    app = create_app(settings, auth=auth, include_static=False)
 
     async with serve_app(app, port=gate_port), httpx.AsyncClient(base_url=f"http://127.0.0.1:{gate_port}") as http:
         r = await http.get("/healthz")
@@ -130,7 +113,7 @@ async def test_airlock_starts_with_backend_down(
 
 @pytest.mark.usefixtures("_mock_k8s_store")
 async def test_api_backends_connected_when_backend_up(
-    rsa_key_pair: RSAKeyPair, predicate_file: Path, tmp_path: Path, echo_backend: EchoBackend
+    rsa_key_pair, predicate_file: Path, db_url: str, echo_backend: EchoBackend
 ):
     """GET /api/backends reports connected when backend is reachable."""
     echo_port = pick_free_port()
@@ -139,13 +122,13 @@ async def test_api_backends_connected_when_backend_up(
 
     echo_mcp_app = echo_backend.server.http_app(path="/")
     echo_app = Starlette(routes=[Mount("/mcp", app=echo_mcp_app)], lifespan=echo_mcp_app.lifespan)
-    settings, extra = _make_settings(
+    settings = _make_settings(
         backends={TEST_NS: RemoteMCPServer(url=f"http://127.0.0.1:{echo_port}/mcp")},
         port=gate_port,
-        tmp_path=tmp_path,
+        db_url=db_url,
         predicate_file=predicate_file,
     )
-    app = create_app(settings, auth=auth, include_static=False, **extra)
+    app = create_app(settings, auth=auth, include_static=False)
 
     async with (
         serve_app(echo_app, port=echo_port),
@@ -161,21 +144,21 @@ async def test_api_backends_connected_when_backend_up(
 
 @pytest.mark.usefixtures("_mock_k8s_store")
 async def test_backend_reconnects_when_available(
-    rsa_key_pair: RSAKeyPair, agent_jwt: str, predicate_file: Path, tmp_path: Path, echo_backend: EchoBackend
+    rsa_key_pair, agent_jwt: str, predicate_file: Path, db_url: str, echo_backend: EchoBackend
 ):
     """After airlock starts with a dead backend, it reconnects once the backend comes up."""
     echo_port = pick_free_port()
     gate_port = pick_free_port()
     auth = JWTVerifier(public_key=rsa_key_pair.public_key)
 
-    settings, extra = _make_settings(
+    settings = _make_settings(
         backends={TEST_NS: RemoteMCPServer(url=f"http://127.0.0.1:{echo_port}/mcp")},
         port=gate_port,
-        tmp_path=tmp_path,
+        db_url=db_url,
         predicate_file=predicate_file,
         reconnect_interval_s=0.1,
     )
-    app = create_app(settings, auth=auth, include_static=False, **extra)
+    app = create_app(settings, auth=auth, include_static=False)
 
     echo_mcp_app = echo_backend.server.http_app(path="/")
     echo_starlette = Starlette(routes=[Mount("/mcp", app=echo_mcp_app)], lifespan=echo_mcp_app.lifespan)
@@ -205,12 +188,7 @@ async def test_backend_reconnects_when_available(
 
 @pytest.mark.usefixtures("_mock_k8s_store")
 async def test_approved_action_errors_when_backend_unavailable(
-    rsa_key_pair: RSAKeyPair,
-    agent_jwt: str,
-    operator_jwt: str,
-    predicate_file: Path,
-    tmp_path: Path,
-    echo_backend: EchoBackend,
+    rsa_key_pair, agent_jwt: str, operator_jwt: str, predicate_file: Path, db_url: str, echo_backend: EchoBackend
 ):
     """When a backend goes down after tools are registered, approved actions complete
     with isError=true rather than getting stuck in EXECUTING."""
@@ -219,10 +197,10 @@ async def test_approved_action_errors_when_backend_unavailable(
     auth = JWTVerifier(public_key=rsa_key_pair.public_key)
 
     # Use a long reconnect interval so the reconnect loop doesn't interfere.
-    settings, extra = _make_settings(
+    settings = _make_settings(
         backends={TEST_NS: RemoteMCPServer(url=f"http://127.0.0.1:{echo_port}/mcp")},
         port=gate_port,
-        tmp_path=tmp_path,
+        db_url=db_url,
         predicate_file=predicate_file,
         reconnect_interval_s=3600.0,
     )
@@ -232,13 +210,18 @@ async def test_approved_action_errors_when_backend_unavailable(
 
     # Phase 1: Both servers up — queue an action (stays PENDING).
     async with serve_app(echo_starlette, port=echo_port):
-        app = create_app(settings, auth=auth, include_static=False, **extra)
+        app = create_app(settings, auth=auth, include_static=False)
         async with (
             serve_app(app, port=gate_port),
             GateClient(agent_transport(f"http://127.0.0.1:{gate_port}", agent_jwt)) as agent,
         ):
             action = await agent.call_gate_tool(
-                "test_echo", {"input": {"text": "hello"}, "justification": "test", "session_key": "test-session"}
+                "test_echo",
+                {
+                    "input": {"text": "hello"},
+                    "justification": "test",
+                    "session_key": "a0000000-0000-0000-0000-000000000001",
+                },
             )
             assert action.state.status == ActionStatus.PENDING
             created_key = action.key
@@ -247,7 +230,7 @@ async def test_approved_action_errors_when_backend_unavailable(
 
     # Phase 2: Restart gate only (echo remains down) → backend is degraded.
     # Approving the pending action must yield isError rather than hanging.
-    app2 = create_app(settings, auth=auth, include_static=False, **extra)
+    app2 = create_app(settings, auth=auth, include_static=False)
     async with serve_app(app2, port=gate_port):
         async with GateClient(operator_transport(f"http://127.0.0.1:{gate_port}", operator_jwt)) as operator:
             await operator.approve(created_key)

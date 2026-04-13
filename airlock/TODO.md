@@ -15,12 +15,6 @@ so each user only sees their own. Low priority while only one user (agentydragon
 Show `client_id` on actions in the operator SPA. The field is stored in the DB and
 returned by the REST API — the frontend just needs to render it.
 
-### OIDCProxy client storage persistence
-
-DCR registrations are in-memory by default. On airlock restart, clients must re-register.
-MCP clients handle this gracefully (retry on 401), but persisting to SQLite would avoid
-the round-trip. `OIDCProxy` accepts a `client_storage: AsyncKeyValue` parameter.
-
 ### Well-known protected resource metadata
 
 `/.well-known/oauth-protected-resource` returns 404 under the `/mcp` mount. The ASM
