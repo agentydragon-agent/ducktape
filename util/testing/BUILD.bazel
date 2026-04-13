@@ -49,6 +49,18 @@ py_library(
 )
 
 py_library(
+    name = "postgres",
+    testonly = True,
+    srcs = ["postgres.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//psycopg2_binary",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "container_logs",
     testonly = True,
     srcs = ["container_logs.py"],

@@ -1,27 +1,32 @@
-"""SQLite-backed storage for action records and append-only event log.
+"""PostgreSQL-backed storage for action records and append-only event log.
 
-Uses SQLAlchemy async ORM with the aiosqlite driver.
+Uses SQLAlchemy async ORM with the asyncpg driver and Alembic for schema migrations.
 
 Schema:
-  actions(session_key TEXT, action_seq INT, ...)  — composite PK
-  event_log(session_key TEXT, entry_id INT, ...)  — composite PK, append-only
+  actions(session_key UUID, action_seq INT, ...)         — composite PK
+  action_seq_counters(session_key UUID, next_seq INT)    — per-session sequence
+  event_log(session_key UUID, entry_id INT, ...)         — composite PK, append-only
 
 status is stored as a denormalised indexed column for fast pending queries;
 it always matches action.state.status.
 
-TODO: Consider normalizing — the current action state is derivable from the
-event log by replaying entries for the action. The state_json/status columns
-on _ActionRow are redundant with the log. Kept for query convenience.
+Migrations are applied automatically on ActionStorage.initialize().
+Add new migrations in airlock/migrations/versions/.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
 from pydantic import TypeAdapter
-from sqlalchemy import Index, Integer, String, Text, func, select
+from sqlalchemy import DateTime, Index, Integer, String, Text, Uuid, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -41,9 +46,15 @@ logger = logging.getLogger(__name__)
 _ACTION_STATE_TA: TypeAdapter[ActionState] = TypeAdapter(ActionState)
 _LOG_DETAIL_TA: TypeAdapter[LogEventDetail] = TypeAdapter(LogEventDetail)
 
+_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
-def _now() -> str:
-    return datetime.now(tz=UTC).isoformat()
+
+def _run_alembic_migrations(conn: Any) -> None:
+    """Run all pending Alembic migrations. Called synchronously via run_sync."""
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
+    cfg.attributes["connection"] = conn
+    alembic_command.upgrade(cfg, "head")
 
 
 class _Base(DeclarativeBase):
@@ -54,10 +65,10 @@ class _ActionRow(_Base):
     __tablename__ = "actions"
     __table_args__ = (Index("idx_actions_status", "status"), Index("idx_actions_created", "created_at"))
 
-    session_key: Mapped[str] = mapped_column(String, primary_key=True)
+    session_key: Mapped[UUID] = mapped_column(Uuid(as_uuid=True, native_uuid=True), primary_key=True)
     action_seq: Mapped[int] = mapped_column(Integer, primary_key=True)
-    created_at: Mapped[str] = mapped_column(String, nullable=False, default=_now)
-    updated_at: Mapped[str] = mapped_column(String, nullable=False, default=_now, onupdate=_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
     call_json: Mapped[str] = mapped_column(Text, nullable=False)
     justification: Mapped[str] = mapped_column(Text, nullable=False)
     state_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -67,8 +78,8 @@ class _ActionRow(_Base):
     def to_action(self) -> Action:
         return Action(
             key=ActionKey(session_key=self.session_key, action_seq=self.action_seq),
-            created_at=datetime.fromisoformat(self.created_at),
-            updated_at=datetime.fromisoformat(self.updated_at),
+            created_at=self.created_at,
+            updated_at=self.updated_at,
             call=ToolCall.model_validate_json(self.call_json),
             justification=self.justification,
             state=_ACTION_STATE_TA.validate_json(self.state_json),
@@ -76,15 +87,22 @@ class _ActionRow(_Base):
         )
 
 
+class _ActionSeqCounterRow(_Base):
+    __tablename__ = "action_seq_counters"
+
+    session_key: Mapped[UUID] = mapped_column(Uuid(as_uuid=True, native_uuid=True), primary_key=True)
+    next_seq: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class _LogEntryRow(_Base):
     __tablename__ = "event_log"
     __table_args__ = (Index("idx_log_session_action", "session_key", "action_seq"),)
 
-    session_key: Mapped[str] = mapped_column(String, primary_key=True)
+    session_key: Mapped[UUID] = mapped_column(Uuid(as_uuid=True, native_uuid=True), primary_key=True)
     entry_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     action_seq: Mapped[int] = mapped_column(Integer, nullable=False)
     kind: Mapped[str] = mapped_column(String, nullable=False)
-    timestamp: Mapped[str] = mapped_column(String, nullable=False, default=_now)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.now)
     detail_json: Mapped[str] = mapped_column(Text, nullable=False)
 
     def to_log_entry(self) -> LogEntry:
@@ -93,23 +111,23 @@ class _LogEntryRow(_Base):
             session_key=self.session_key,
             action_seq=self.action_seq,
             detail=_LOG_DETAIL_TA.validate_json(self.detail_json),
-            timestamp=datetime.fromisoformat(self.timestamp),
+            timestamp=self.timestamp,
         )
 
 
 class ActionStorage:
-    """Async SQLite storage for action records and event log."""
+    """Async PostgreSQL storage for action records and event log."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession], engine: AsyncEngine) -> None:
         self._session_factory = session_factory
         self._engine = engine
 
     @classmethod
-    async def initialize(cls, db_path: Path) -> ActionStorage:
-        """Open the database, create schema if needed, and return a ready storage."""
-        engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    async def initialize(cls, db_url: str) -> ActionStorage:
+        """Open the database, run Alembic migrations to head, and return a ready storage."""
+        engine = create_async_engine(db_url)
         async with engine.begin() as conn:
-            await conn.run_sync(_Base.metadata.create_all)
+            await conn.run_sync(_run_alembic_migrations)
         return cls(async_sessionmaker(engine, expire_on_commit=False), engine)
 
     async def close(self) -> None:
@@ -119,15 +137,25 @@ class ActionStorage:
     # ── Action CRUD ──────────────────────────────────────────────────────────
 
     async def create_action(
-        self, *, session_key: str, call: ToolCall, justification: str, client_id: str | None = None
+        self, *, session_key: UUID, call: ToolCall, justification: str, client_id: str | None = None
     ) -> Action:
-        """Insert a new pending action, atomically assigning the next action_seq."""
+        """Insert a new pending action, atomically assigning the next action_seq.
+
+        Uses a per-session counter table with PostgreSQL atomic upsert to safely
+        assign monotonically increasing action_seq values even under concurrent writers.
+        """
         state = PendingState()
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(func.coalesce(func.max(_ActionRow.action_seq), 0)).where(_ActionRow.session_key == session_key)
+            # Atomically increment (or initialise) the per-session sequence counter.
+            stmt = (
+                pg_insert(_ActionSeqCounterRow)
+                .values(session_key=session_key, next_seq=1)
+                .on_conflict_do_update(
+                    index_elements=["session_key"], set_={"next_seq": _ActionSeqCounterRow.next_seq + 1}
+                )
+                .returning(_ActionSeqCounterRow.next_seq)
             )
-            action_seq = result.scalar_one() + 1
+            action_seq = (await session.execute(stmt)).scalar_one()
             row = _ActionRow(
                 session_key=session_key,
                 action_seq=action_seq,
@@ -194,7 +222,7 @@ class ActionStorage:
     # ── Event log ────────────────────────────────────────────────────────────
 
     @staticmethod
-    async def _get_log_hwm(session: AsyncSession, session_key: str) -> int:
+    async def _get_log_hwm(session: AsyncSession, session_key: UUID) -> int:
         result = await session.execute(
             select(func.coalesce(func.max(_LogEntryRow.entry_id), 0)).where(_LogEntryRow.session_key == session_key)
         )
@@ -202,7 +230,7 @@ class ActionStorage:
 
     @staticmethod
     async def _add_log_row(
-        session: AsyncSession, *, session_key: str, action_seq: int, next_id: int, detail: LogEventDetail
+        session: AsyncSession, *, session_key: UUID, action_seq: int, next_id: int, detail: LogEventDetail
     ) -> _LogEntryRow:
         row = _LogEntryRow(
             session_key=session_key,
@@ -214,7 +242,7 @@ class ActionStorage:
         session.add(row)
         return row
 
-    async def append_log_entry(self, *, session_key: str, action_seq: int, detail: LogEventDetail) -> LogEntry:
+    async def append_log_entry(self, *, session_key: UUID, action_seq: int, detail: LogEventDetail) -> LogEntry:
         """Append an event to the log; assigns the next entry_id for the session."""
         async with self._session_factory() as session:
             next_id = (await self._get_log_hwm(session, session_key)) + 1
@@ -224,12 +252,12 @@ class ActionStorage:
             await session.commit()
         return row.to_log_entry()
 
-    async def get_log_hwm(self, session_key: str) -> int:
+    async def get_log_hwm(self, session_key: UUID) -> int:
         """Return the highest entry_id for a session, or 0 if no entries."""
         async with self._session_factory() as session:
             return await self._get_log_hwm(session, session_key)
 
-    async def get_log_entry(self, session_key: str, entry_id: int) -> LogEntry | None:
+    async def get_log_entry(self, session_key: UUID, entry_id: int) -> LogEntry | None:
         """Fetch a specific log entry."""
         async with self._session_factory() as session:
             row = await session.get(_LogEntryRow, (session_key, entry_id))
@@ -237,7 +265,7 @@ class ActionStorage:
             return None
         return row.to_log_entry()
 
-    async def get_log_entries_since(self, session_key: str, after_entry_id: int) -> list[LogEntry]:
+    async def get_log_entries_since(self, session_key: UUID, after_entry_id: int) -> list[LogEntry]:
         """Fetch all log entries after a given entry_id for catch-up."""
         async with self._session_factory() as session:
             result = await session.execute(

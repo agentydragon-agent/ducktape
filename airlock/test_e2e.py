@@ -7,6 +7,8 @@ and transport stack end-to-end.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 import anyio
 import pytest
 import pytest_bazel
@@ -52,7 +54,7 @@ async def test_approve_executes_backend_tool(
     agent_client_transport: object,
     operator_client_transport: object,
     echo_backend: EchoBackend,
-    session_key: str,
+    session_key: UUID,
 ):
     """Happy path: tool call queued -> operator approves -> backend runs -> action done."""
     async with (
@@ -74,7 +76,7 @@ async def test_reject_leaves_action_rejected_and_skips_backend(
     agent_client_transport: object,
     operator_client_transport: object,
     echo_backend: EchoBackend,
-    session_key: str,
+    session_key: UUID,
 ):
     """Reject path: tool call queued -> operator rejects -> rejected state, backend not called."""
     async with (
@@ -96,7 +98,7 @@ async def test_auto_approve_predicate_skips_queue(
     agent_client_transport: object,
     echo_backend: EchoBackend,
     echo_http: RemoteMCPServer,
-    session_key: str,
+    session_key: UUID,
 ):
     """Auto-approve predicate: tool call immediately executes without any operator action."""
     app = make_gate_app({TEST_NS: echo_http}, predicate=lambda ns, tool, args: Approved())
@@ -110,7 +112,7 @@ async def test_auto_approve_predicate_skips_queue(
 
 
 async def test_multi_backend_namespace_isolation(
-    make_gate_app: GateAppFactory, free_port: int, agent_client_transport: object, session_key: str
+    make_gate_app: GateAppFactory, free_port: int, agent_client_transport: object, session_key: UUID
 ):
     """Multiple backends each get namespaced tools that route to the correct backend."""
     calls_a: list[str] = []
@@ -141,13 +143,13 @@ async def test_multi_backend_namespace_isolation(
             assert {"alpha_echo", "beta_echo"} <= tool_names
 
             action_a = await client.call_gate_tool(
-                "alpha_echo", {"input": {"text": "from-a"}, "justification": "test", "session_key": session_key}
+                "alpha_echo", {"input": {"text": "from-a"}, "justification": "test", "session_key": str(session_key)}
             )
             with anyio.fail_after(5.0):
                 await client.wait_for(action_a.key, ActionStatus.DONE)
 
             action_b = await client.call_gate_tool(
-                "beta_echo", {"input": {"text": "from-b"}, "justification": "test", "session_key": session_key}
+                "beta_echo", {"input": {"text": "from-b"}, "justification": "test", "session_key": str(session_key)}
             )
             with anyio.fail_after(5.0):
                 await client.wait_for(action_b.key, ActionStatus.DONE)
@@ -157,7 +159,7 @@ async def test_multi_backend_namespace_isolation(
 
 
 async def test_action_seq_increments_within_session(
-    echo_gate_app: Starlette, free_port: int, agent_client_transport: object, session_key: str
+    echo_gate_app: Starlette, free_port: int, agent_client_transport: object, session_key: UUID
 ):
     """Action sequences increment monotonically within a session."""
     async with serve_app(echo_gate_app, port=free_port), GateClient(agent_client_transport) as client:
@@ -175,7 +177,7 @@ async def test_log_hwm_increments_on_state_changes(
     free_port: int,
     agent_client_transport: object,
     operator_client_transport: object,
-    session_key: str,
+    session_key: UUID,
 ):
     """The session log HWM increases as actions are received and decided."""
     async with (
@@ -232,7 +234,7 @@ async def test_wait_mode_resolution(
     free_port: int,
     agent_client_transport: object,
     echo_http: RemoteMCPServer,
-    session_key: str,
+    session_key: UUID,
     server_kwargs: dict,
     call_kwargs: dict,
     expected_status: ActionStatus,
@@ -254,7 +256,7 @@ async def test_auto_deny_with_timeout_returns_rejected(
     agent_client_transport: object,
     echo_backend: EchoBackend,
     echo_http: RemoteMCPServer,
-    session_key: str,
+    session_key: UUID,
 ):
     """Auto-deny predicate + server timeout -> rejected with reason."""
     gate = make_gate_server(
@@ -281,7 +283,7 @@ async def test_yield_zero_overrides_large_server_default(
     free_port: int,
     agent_client_transport: object,
     echo_http: RemoteMCPServer,
-    session_key: str,
+    session_key: UUID,
 ):
     """yield_after_ms=0 returns immediately despite a 30s server default."""
     gate = make_gate_server(
@@ -305,7 +307,7 @@ async def test_blocking_overrides_tiny_server_default(
     agent_client_transport: object,
     echo_backend: EchoBackend,
     echo_http: RemoteMCPServer,
-    session_key: str,
+    session_key: UUID,
 ):
     """blocking wait_mode overrides a 10ms server default — waits for completion."""
     gate = make_gate_server(
@@ -331,7 +333,7 @@ async def test_blocking_waits_for_operator_approval(
     operator_client_transport: object,
     echo_backend: EchoBackend,
     echo_http: RemoteMCPServer,
-    session_key: str,
+    session_key: UUID,
 ):
     """blocking wait_mode with NeedsHumanDecision blocks until operator approves."""
     gate = make_gate_server({TEST_NS: echo_http})

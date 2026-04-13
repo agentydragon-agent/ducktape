@@ -14,6 +14,8 @@ full transport stack, simulating the pattern used by the OpenClaw plugin.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 import anyio
 import pytest_bazel
 from fastmcp.mcp_config import RemoteMCPServer
@@ -38,7 +40,7 @@ async def test_client_reconnects_after_server_restart(
     operator_jwt: str,
     echo_backend: EchoBackend,
     echo_http: RemoteMCPServer,
-    session_key: str,
+    session_key: UUID,
 ):
     """New client connects after server restart and can call tools successfully."""
 
@@ -80,7 +82,7 @@ async def test_pending_action_survives_server_restart(
     operator_jwt: str,
     echo_backend: EchoBackend,
     echo_http: RemoteMCPServer,
-    session_key: str,
+    session_key: UUID,
 ):
     """Action created before restart is readable and resolvable after restart."""
 
@@ -114,7 +116,7 @@ async def test_resubscribe_receives_notifications_after_restart(
     operator_jwt: str,
     echo_backend: EchoBackend,
     echo_http: RemoteMCPServer,
-    session_key: str,
+    session_key: UUID,
 ):
     """Re-subscribing to a session's log HWM on a new connection receives notifications."""
 

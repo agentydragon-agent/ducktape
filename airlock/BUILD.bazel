@@ -36,11 +36,23 @@ py_binary(
 py_library(
     name = "storage",
     srcs = ["storage.py"],
+    data = glob(["migrations/**"]),
     visibility = ["//visibility:public"],
     deps = [
         ":models",
-        "@pypi//aiosqlite",
+        "@pypi//alembic",
+        "@pypi//asyncpg",
         "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "kv_store",
+    srcs = ["kv_store.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
 )
@@ -62,6 +74,7 @@ py_library(
         "//mcp_infra:prefix",
         "@pypi//fastmcp",
         "@pypi//pydantic",
+        "@pypi//pydantic_settings",
         "@pypi//pyyaml",
     ],
 )
@@ -72,6 +85,7 @@ py_library(
     data = ["instructions.mako"],
     visibility = ["//visibility:public"],
     deps = [
+        ":config",
         ":models",
         ":predicates",
         ":storage",
@@ -94,6 +108,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":kv_store",
         ":models",
         ":predicates",
         ":proxy_server",
@@ -161,23 +176,35 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":config",
         ":models",
         ":predicates",
         ":proxy_server",
         ":storage",
+        "//airlock/oauth:provider",
         "//mcp_infra:prefix",
         "//mcp_infra:resource_utils",
         "//mcp_utils",
+        "//third_party/containers:rlocations",
         "//util:net",
+        "//util:oci",
+        "//util/testing:postgres",
         "@pypi//anyio",
+        "@pypi//asyncpg",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
         "@pypi//starlette",
+        "@pypi//testcontainers",
         "@pypi//uvicorn",
     ],
 )
@@ -197,12 +224,14 @@ py_test(
 
 py_test(
     name = "test_storage",
+    size = "medium",
     srcs = ["test_storage.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":models",
         ":storage",
-        "@pypi//aiosqlite",
+        "@pypi//asyncpg",
         "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -232,7 +261,9 @@ py_test(
 
 py_test(
     name = "test_operator_auth",
+    size = "medium",
     srcs = ["test_operator_auth.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         "@pypi//fastmcp",
@@ -246,6 +277,7 @@ py_test(
     name = "test_e2e",
     size = "medium",
     srcs = ["test_e2e.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":models",
@@ -262,6 +294,7 @@ py_test(
     name = "test_reconnect",
     size = "medium",
     srcs = ["test_reconnect.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":models",
@@ -276,6 +309,7 @@ py_test(
     name = "test_app_integration",
     size = "medium",
     srcs = ["test_app_integration.py"],
+    requires_docker = True,
     deps = [
         ":app",
         ":config",
@@ -296,6 +330,7 @@ py_test(
     name = "test_backend_resilience",
     size = "medium",
     srcs = ["test_backend_resilience.py"],
+    requires_docker = True,
     deps = [
         ":app",
         ":config",
@@ -318,6 +353,7 @@ py_test(
     name = "test_oauth_flow",
     size = "medium",
     srcs = ["test_oauth_flow.py"],
+    requires_docker = True,
     deps = [
         ":app",
         ":config",

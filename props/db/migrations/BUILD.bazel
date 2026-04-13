@@ -37,6 +37,7 @@ py_test(
         "//props:conftest",
         "//props/db:config",
         "//props/db:conftest",
+        "//util/testing:postgres",
         "@pypi//alembic",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

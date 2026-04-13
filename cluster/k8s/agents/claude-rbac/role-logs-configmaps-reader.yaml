@@ -57,3 +57,15 @@ rules:
       - pods/log
       - configmaps
     verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: logs-configmaps-reader
+  namespace: airlock
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods/log
+      - configmaps
+    verbs: ["get", "list", "watch"]

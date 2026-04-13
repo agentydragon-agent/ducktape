@@ -14,6 +14,7 @@ from alembic.config import Config
 from sqlalchemy import Engine, create_engine, text
 
 from props.db.config import DatabaseConfig
+from util.testing.postgres import force_drop_database_sync
 
 MIGRATIONS_DIR = str(Path(__file__).parent)
 
@@ -22,10 +23,10 @@ MIGRATIONS_DIR = str(Path(__file__).parent)
 def blank_engine(postgres_base_config: DatabaseConfig) -> Generator[Engine]:
     """Engine for a fresh database with no migrations applied."""
     db_name = "props_test_matview_migration"
-    config = postgres_base_config.with_database("postgres")
-    pg_engine = create_engine(config.url, isolation_level="AUTOCOMMIT")
+    admin_url = postgres_base_config.with_database("postgres").url
+    force_drop_database_sync(admin_url, db_name)
+    pg_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
     with pg_engine.connect() as conn:
-        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
         conn.execute(text(f'CREATE DATABASE "{db_name}"'))
     pg_engine.dispose()
 
@@ -33,10 +34,7 @@ def blank_engine(postgres_base_config: DatabaseConfig) -> Generator[Engine]:
     yield engine
     engine.dispose()
 
-    pg_engine = create_engine(config.url, isolation_level="AUTOCOMMIT")
-    with pg_engine.connect() as conn:
-        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-    pg_engine.dispose()
+    force_drop_database_sync(admin_url, db_name)
 
 
 def _make_alembic_config(engine: Engine) -> Config:

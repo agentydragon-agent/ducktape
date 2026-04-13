@@ -33,6 +33,7 @@ from pydantic import BaseModel
 from starlette.responses import HTMLResponse, StreamingResponse
 
 from airlock.config import Settings, build_oauth_providers
+from airlock.kv_store import PostgresKeyValueStore
 from airlock.models import (
     Action,
     ActionKey,
@@ -69,21 +70,11 @@ def _detect_namespace() -> str:
     return "airlock"
 
 
-def create_app(
-    settings: Settings, *, auth: AuthProvider, include_static: bool = True, reconnect_interval_s: float = 30.0
-) -> FastAPI:
+def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool = True) -> FastAPI:
     """Build the FastAPI app serving UI, REST API, and MCP on a single port."""
     predicate = load_predicate(settings.predicate_path)
-    gate = AirlockServer(
-        backends=settings.backends,
-        db_path=settings.db_path,
-        predicate=predicate,
-        public_base_url=settings.public_base_url,
-        default_wait_mode=settings.default_wait_mode,
-        reconnect_interval_s=reconnect_interval_s,
-        auth=auth,
-    )
-    mcp_app = gate.http_app(path="/")
+    server = AirlockServer(settings, predicate=predicate, auth=auth)
+    mcp_app = server.http_app(path="/")
 
     oauth_providers: dict[str, Provider] = {}
     oauth_k8s_store: K8sTokenStore | None = None
@@ -132,12 +123,12 @@ def create_app(
     @app.get("/api/actions")
     async def list_actions(status: str | None = None, limit: int = 100, offset: int = 0) -> list[Action]:
         status_enum = ActionStatus(status) if status else None
-        return await gate._req_storage.list_actions(status_enum, limit=limit, offset=offset)
+        return await server._req_storage.list_actions(status_enum, limit=limit, offset=offset)
 
     @app.get("/api/actions/{session_key}/{action_seq}")
     async def get_action(session_key: str, action_seq: int) -> Action:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
-        action = await gate._req_storage.get_action(key)
+        action = await server._req_storage.get_action(key)
         if action is None:
             raise HTTPException(status_code=404, detail="Action not found")
         return action
@@ -145,20 +136,20 @@ def create_app(
     @app.post("/api/actions/{session_key}/{action_seq}/approve", status_code=204)
     async def approve_action(session_key: str, action_seq: int) -> Response:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
-        await gate.decide(key, ApproveDecision())
+        await server.decide(key, ApproveDecision())
         return Response(status_code=204)
 
     @app.post("/api/actions/{session_key}/{action_seq}/reject", status_code=204)
     async def reject_action(session_key: str, action_seq: int, body: RejectBody | None = None) -> Response:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
         reason = body.reason if body else None
-        await gate.decide(key, DenyDecision(reason=reason))
+        await server.decide(key, DenyDecision(reason=reason))
         return Response(status_code=204)
 
     @app.get("/api/events")
     async def events() -> StreamingResponse:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
-        gate.add_sse_listener(queue)
+        server.add_sse_listener(queue)
 
         async def generate():
             try:
@@ -166,13 +157,13 @@ def create_app(
                     event = await queue.get()
                     yield f"data: {json.dumps(event)}\n\n"
             finally:
-                gate.remove_sse_listener(queue)
+                server.remove_sse_listener(queue)
 
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     @app.get("/api/backends")
     async def list_backends() -> list[BackendStatus]:
-        return gate.get_backend_statuses()
+        return server.get_backend_statuses()
 
     @app.get("/api/oauth/providers")
     async def list_oauth_providers() -> list[OAuthProviderStatus]:
@@ -207,7 +198,7 @@ def create_app(
     return app
 
 
-def _build_auth(settings: Settings) -> AuthProvider:
+def _build_auth(settings: Settings, *, kv_store: PostgresKeyValueStore | None = None) -> AuthProvider:
     """Build the auth provider: OIDCProxy + JWTVerifier when configured, plain JWTVerifier otherwise."""
     if settings.oidc_proxy_client_id and settings.oidc_proxy_client_secret:
         proxy = OIDCProxy(
@@ -216,6 +207,7 @@ def _build_auth(settings: Settings) -> AuthProvider:
             client_secret=settings.oidc_proxy_client_secret,
             base_url=f"{settings.public_base_url}/mcp",
             require_authorization_consent=True,
+            client_storage=kv_store,
         )
         # OIDCProxy doesn't expose valid_scopes for DCR; patch it so clients can
         # register with any of airlock's scopes.
@@ -237,11 +229,15 @@ def _build_auth(settings: Settings) -> AuthProvider:
 
 async def _serve() -> None:
     settings = Settings.load()
-    auth = _build_auth(settings)
+    kv_store = PostgresKeyValueStore.from_url(settings.db_url)
+    auth = _build_auth(settings, kv_store=kv_store)
     app = create_app(settings, auth=auth)
     logger.info("serving on %s:%d", settings.host, settings.port)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, log_level="info"))
-    await server.serve()
+    try:
+        await server.serve()
+    finally:
+        await kv_store.close()
 
 
 def main() -> None:

@@ -21,6 +21,8 @@ spec:
         component: server
     spec:
       serviceAccountName: airlock
+      nodeSelector:
+        topology.kubernetes.io/region: hil
       securityContext:
         fsGroup: 1000
       imagePullSecrets:
@@ -71,7 +73,14 @@ spec:
                 secretKeyRef:
                   name: airlock-oidc-proxy-credentials
                   key: client_secret
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: airlock-db-app
+                  key: uri
             - name: FASTMCP_HOME
+              # OIDC token cache for the OIDCProxy sidecar. Tokens are lost on pod
+              # restart (users must re-authenticate via PKCE), which is acceptable.
               value: "/data/fastmcp"
           volumeMounts:
             - name: data
@@ -100,8 +109,7 @@ spec:
             periodSeconds: 10
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: airlock-data
+          emptyDir: {}
         - name: config
           configMap:
             name: airlock-config
