@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: server
-          image: ghcr.io/agentydragon/authentik-mcp-poc-server:latest # {"$imagepolicy": "flux-system:authentik-mcp-poc-server"}
+          image: ghcr.io/agentydragon/authentik-mcp-poc-server:devel-20260413030146-e437889 # {"$imagepolicy": "flux-system:authentik-mcp-poc-server"}
           imagePullPolicy: Always
           ports:
             - name: http
