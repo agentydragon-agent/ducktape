@@ -162,7 +162,12 @@ in
 
   programs.git = {
     enable = true;
-    package = pkgs.git.override { withLibsecret = true; };
+    # CLEANUP(2026-04-12): Remove doCheck override once git 2.51.2 test failures
+    #   are fixed in nixpkgs (t1092-sparse-checkout-compatibility.sh).
+    package = (pkgs.git.override { withLibsecret = true; }).overrideAttrs {
+      doCheck = false;
+      doInstallCheck = false;
+    };
     lfs.enable = true;
 
     ignores = [
