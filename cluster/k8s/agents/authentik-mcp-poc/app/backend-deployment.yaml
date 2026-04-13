@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: ghcr.io/agentydragon/authentik-mcp-poc-backend:latest # {"$imagepolicy": "flux-system:authentik-mcp-poc-backend"}
+          image: ghcr.io/agentydragon/authentik-mcp-poc-backend:devel-20260413030152-e437889 # {"$imagepolicy": "flux-system:authentik-mcp-poc-backend"}
           imagePullPolicy: Always
           ports:
             - name: http
