@@ -14,8 +14,6 @@
 # shellcheck source=_common.sh
 source "$(dirname "$0")/_common.sh"
 
-# TODO: alloy-otlp-bearer-token.yaml is only decryptable by admin and claude-web.
-# CLI env runs under personal user keys, so this will fail unless the user has admin.
 try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]'
 
 # K8s service account token for claude-sandbox MCP server

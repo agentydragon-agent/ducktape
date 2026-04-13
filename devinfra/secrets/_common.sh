@@ -12,6 +12,20 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
+# If SOPS_AGE_KEY is not already set (web/CI inject it externally), derive it from
+# the SSH key using ssh-to-age. SOPS 3.12 only auto-discovers ~/.ssh/id_rsa, not
+# id_ed25519, so this is required for CLI mode on user machines.
+if [ -z "${SOPS_AGE_KEY:-}" ] && command -v ssh-to-age >/dev/null 2>&1; then
+  _ssh_key="${HOME}/.ssh/id_ed25519"
+  if [ -f "$_ssh_key" ]; then
+    if _age_key=$(ssh-to-age --private-key -i "$_ssh_key" 2>/dev/null); then
+      export SOPS_AGE_KEY="$_age_key"
+    fi
+    unset _age_key
+  fi
+  unset _ssh_key
+fi
+
 # Helper: decrypt a SOPS file, output an export line. On failure, warns on stderr
 # but continues (stdout only contains successful exports, safe to eval).
 try_export() {

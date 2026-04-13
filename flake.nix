@@ -260,6 +260,7 @@
         pkgs.opentofu
         pkgs.tflint
         pkgs.sops
+        pkgs.ssh-to-age
         ducktapePkgs.kubernetes-mcp-server
       ];
     in
