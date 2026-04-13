@@ -264,13 +264,13 @@ def test_container_e2e(
         # `git`, report to the daemon, then exec the real git.
         logger.info("Testing git shim: passthrough")
         rc, stdout, _ = _exec(container, ["bash", "-c", f"source {_ENV_FILE} && git --version"])
-        assert b"git version" in stdout, f"git shim did not exec real git: {stdout}"
+        assert b"git version" in stdout, f"git shim did not exec real git: {stdout!r}"
 
         # Verify the git shim blocks dangerous commands (block_add_all=true in profile).
         logger.info("Testing git shim: blocks git add -A")
         rc, _, stderr = _exec(container, ["bash", "-c", f"source {_ENV_FILE} && git add -A"], check=False)
         assert rc != 0, "git add -A should be blocked by git shim"
-        assert b"BLOCKED" in stderr, f"Expected BLOCKED message, got: {stderr}"
+        assert b"BLOCKED" in stderr, f"Expected BLOCKED message, got: {stderr!r}"
 
         # Run bazel build through the proxy chain
         logger.info("Running bazel build")
