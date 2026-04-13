@@ -202,6 +202,8 @@ def test_container_e2e(
         detach=True,
     )
 
+    session_dir = f"/root/.claude/session-env/{_SESSION_ID}"
+
     try:
         logger.info("Started test container %s on isolated network", container_name)
 
@@ -256,6 +258,20 @@ def test_container_e2e(
             )
             logger.info("env_exports verified: E2E_TEST_SECRET found in session env file")
 
+        # Verify PATH shims were installed and work.
+        # Session start installs git/bazelisk/bazel/bb/bbr shims and adds
+        # the shim dir to PATH in the env file. The git shim should intercept
+        # `git`, report to the daemon, then exec the real git.
+        logger.info("Testing git shim: passthrough")
+        rc, stdout, _ = _exec(container, ["bash", "-c", f"source {_ENV_FILE} && git --version"])
+        assert b"git version" in stdout, f"git shim did not exec real git: {stdout}"
+
+        # Verify the git shim blocks dangerous commands (block_add_all=true in profile).
+        logger.info("Testing git shim: blocks git add -A")
+        rc, _, stderr = _exec(container, ["bash", "-c", f"source {_ENV_FILE} && git add -A"], check=False)
+        assert rc != 0, "git add -A should be blocked by git shim"
+        assert b"BLOCKED" in stderr, f"Expected BLOCKED message, got: {stderr}"
+
         # Run bazel build through the proxy chain
         logger.info("Running bazel build")
         bazel_cmd = f"source {_ENV_FILE} && bazelisk build //:hello"
@@ -270,7 +286,6 @@ def test_container_e2e(
         # Extract specific log files from the container. We don't bind-mount
         # the session dir because the container (root) creates bazel cache/install
         # files that are unreadable by the CI runner and break Bazel's output collection.
-        session_dir = f"/root/.claude/session-env/{_SESSION_ID}"
         for log_file in [
             "hook-daemon/daemon.log",
             "sessionstart-hook-0.sh",
