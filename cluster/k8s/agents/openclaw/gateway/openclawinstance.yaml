@@ -6,7 +6,7 @@ metadata:
 spec:
   image:
     repository: ghcr.io/agentydragon/openclaw-matrix
-    tag: "devel-20260412021634-921630d" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
+    tag: "devel-20260414192922-6253538" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
     pullPolicy: Always
   env:
     # OpenClaw requires an API key for every provider. Ollama has no auth,
