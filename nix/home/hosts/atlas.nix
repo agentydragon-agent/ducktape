@@ -9,14 +9,27 @@
   lib,
   ...
 }:
+let
+  keys = import ../../ssh-keys.nix;
+in
 {
   imports = [
     ../home.nix
+    ../modules/kubeconfig.nix
+    ../modules/talosconfig.nix
   ];
+
+  # Atlas runs on Proxmox VE (Debian-based), not NixOS.
+  # User authorized keys managed here (root keys in ansible/atlas.yaml).
+  # mode = "0600" is required — sshd rejects authorized_keys that are group/world writable.
+  home.file.".ssh/authorized_keys" = {
+    text = with keys; ''
+      ${atlas}
+      ${rugged}
+    '';
+    mode = "0600";
+  };
 
   # Atlas-specific configuration (Proxmox host with GUI)
   home.stateVersion = "24.05";
-
-  # Atlas runs on Proxmox VE (Debian-based), not NixOS
-  # GUI and Kube enabled in flake.nix
 }

@@ -103,13 +103,12 @@
         state: present
       tags: [users]
 
-    - name: Authorize atlas SSH key for local logins
+    - name: Authorize SSH keys for root login
       ansible.posix.authorized_key:
-        user: "{{ item }}"
-        key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBoGigbjJZfs1+M6yUCJSBzUlu2mFcakFTmuxrN425fO agentydragon@atlas"
-      loop:
-        - "{{ my_user }}"
-        - root
+        user: root
+        key: |
+          ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBoGigbjJZfs1+M6yUCJSBzUlu2mFcakFTmuxrN425fO agentydragon@atlas
+          ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICweiJQQidbhojDI7tXuSuntptCc6Dy4stIGzDlI9z0b agentydragon@rugged
       tags: [users, ssh]
 
     - name: Allow input group access to /dev/uinput

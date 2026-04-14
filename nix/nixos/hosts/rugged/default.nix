@@ -22,6 +22,9 @@
   username,
   ...
 }:
+let
+  keys = import ../../../ssh-keys.nix;
+in
 {
   imports = [
     ./hardware-configuration.nix
@@ -139,8 +142,10 @@
     shell = pkgs.zsh;
     # Allow reading system logs without sudo (systemd-journal group)
     extraGroups = [ "systemd-journal" ];
-    openssh.authorizedKeys.keys = [
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@iguana"
+    openssh.authorizedKeys.keys = with keys; [
+      iguana
+      wyrm2
+      atlas
     ];
   };
 

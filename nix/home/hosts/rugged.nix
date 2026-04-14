@@ -10,6 +10,8 @@
     ../home.nix
     ../modules/15leroy-ssh.nix
     ../modules/github-ssh.nix
+    ../modules/kubeconfig.nix
+    ../modules/talosconfig.nix
   ];
 
   ducktape.githubSsh.sopsFile = ../../../secrets/home/rugged/github-ssh.yaml;

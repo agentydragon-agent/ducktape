@@ -159,6 +159,33 @@ bbr test //...
 Lint (ruff + mypy) runs by default. Use `--config=nolint` to skip.
 If you touched `ansible/`, also follow <ansible/AGENTS.md>.
 
+## SOPS
+
+SOPS `.sops.yaml` creation rules match files by **path relative to the repo root**.
+Running `sops -e /tmp/some-file.yaml` fails with "no matching creation rules found"
+because the path doesn't match any rule. Always write the file to its final destination
+(or a temp path under the repo) and encrypt in-place:
+
+```bash
+# Correct: write file to destination first, then encrypt in-place
+cp /tmp/plaintext.yaml secrets/shared/kubeconfig.yaml
+sops -e -i secrets/shared/kubeconfig.yaml
+
+# Wrong: file outside repo — no creation rule matches
+sops -e /tmp/plaintext.yaml > secrets/shared/kubeconfig.yaml
+```
+
+SOPS 3.12 auto-discovers `~/.ssh/id_rsa` but NOT `~/.ssh/id_ed25519`. The root
+`.envrc` (via `devinfra/secrets/cli_env.sh`) sets `SOPS_AGE_KEY` automatically
+by deriving from `~/.ssh/id_ed25519`. **Always run sops commands from within the
+repo directory** (with direnv active) so `SOPS_AGE_KEY` is set correctly.
+If you need to run sops outside the repo, derive the key manually:
+
+```bash
+export SOPS_AGE_KEY=$(ssh-to-age --private-key -i ~/.ssh/id_ed25519)
+sops -d secrets/shared/kubeconfig.yaml
+```
+
 ## Git
 
 **NEVER amend a commit that has already been pushed.**

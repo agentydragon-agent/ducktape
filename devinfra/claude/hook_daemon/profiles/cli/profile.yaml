@@ -15,7 +15,12 @@ pre_commit:
 
 git_shim:
   block_amend: true
-  block_stash: true
+  # block_stash is disabled because pre-commit (invoked as a git commit hook) uses
+  # git stash internally to save/restore unstaged changes before running checks.
+  # When the shim blocks git stash, the hook process receives SIGSEGV (signal 11)
+  # and git commit fails with "pre-commit died of signal 11", even though all
+  # checks actually pass. Disabling the block lets pre-commit operate normally.
+  block_stash: false
   block_add_all: true
 idle_watchdog: true
 setup_auth_proxy: false

@@ -13,6 +13,8 @@
   imports = [
     ../home.nix
     ../modules/github-ssh.nix
+    ../modules/kubeconfig.nix
+    ../modules/talosconfig.nix
   ];
 
   ducktape.githubSsh.sopsFile = ../../../secrets/home/iguana/github-ssh.yaml;
