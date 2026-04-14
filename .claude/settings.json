@@ -241,9 +241,9 @@
       "Bash(bazel query:*)",
       "Bash(bazel run @bazel_gazelle//cmd/gazelle:*)",
       "Bash(bazel test:*)",
+      "Bash(bb remote:*)",
       "Bash(bbapi artifact:*)",
       "Bash(bbapi target:*)",
-      "Bash(bb remote:*)",
       "Bash(bbr:*)",
       "Bash(dconf dump:*)",
       "Bash(dconf read:*)",
@@ -258,21 +258,23 @@
       "Bash(gsettings list-recursively:*)",
       "Bash(gsettings list-schemas:*)",
       "Bash(kubectl describe:*)",
+      "Bash(kubectl get imagerepository:*)",
       "Bash(kubectl get job:*)",
       "Bash(kubectl get pod:*)",
       "Bash(kubectl get pods:*)",
+      "Bash(kubectl get receiver:*)",
       "Bash(kubectl get terraform:*)",
       "Bash(kubectl logs:*)",
       "Bash(kubectl rollout restart:*)",
       "Bash(kubectl top:*)",
-      "mcp__claude-sandbox-kubectl__*",
       "Bash(modinfo:*)",
       "Bash(nix search:*)",
       "Bash(ping:*)",
       "Bash(pre-commit run:*)",
       "Skill(followups)",
       "WebFetch(domain:docs.attic.rs)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "mcp__claude-sandbox-kubectl__*"
     ]
   }
 }
