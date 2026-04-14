@@ -108,6 +108,8 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
                 f"No tool override for {route.method} {route.path} — add it to TOOL_OVERRIDES in tool_metadata.py"
             )
         component.name = override.name
+        if isinstance(component, OpenAPIResource):
+            component.uri = f"resource://{override.name}"
         if override.extra_description:
             component.description = f"{component.description}\n\n{override.extra_description}"
 
