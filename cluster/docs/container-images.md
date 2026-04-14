@@ -18,8 +18,11 @@ Props agent images are still published to Harbor (`registry.allegedly.works/prop
 
 3. **Tag policy — avoid `:latest`**: Use Flux image automation to track pinned tags
    (`{branch}-{timestamp}-{sha7}`). For in-cluster images:
-   - Create `ImageRepository` + `ImagePolicy` in `k8s/flux-image-automation/`
+   - Create `ImageRepository` + `ImagePolicy` in `k8s/flux-image-automation-ghcr/`
    - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image field
+   - **Add the `ImageRepository` to the GitHub webhook receiver** at
+     `k8s/flux-webhook/github-webhook-receiver.yaml` — without this, the image
+     only gets picked up on the 5m poll interval instead of immediately on push
    - Flux updates the tag in-repo on each new push
 
    For images not deployed in-cluster, pin the tag in the consuming BUILD.bazel.

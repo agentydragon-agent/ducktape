@@ -134,7 +134,10 @@ redundant application.
 Most container images are built with Bazel (`rules_oci`, `rules_distroless`) and pushed
 to GHCR via `ghcr_push` targets, triggered by BuildBuddy CI. A few images use Dockerfiles
 with GitHub Actions workflows (RBE worker, devbot, claude web_env). New images should
-use `oci_image` + `ghcr_push`.
+use `oci_image` + `ghcr_push`. For in-cluster images with Flux image automation, also
+add the `ImageRepository` to the GitHub webhook receiver at
+`cluster/k8s/flux-webhook/github-webhook-receiver.yaml`. See
+<cluster/docs/container-images.md> for the full checklist.
 
 ## CI Configuration
 
