@@ -61,6 +61,12 @@
   );
 
   home.packages = [
+    ducktapePackages.bebas-neue-font
+    pkgs.inkscape
+    pkgs.kicad
+    pkgs.openscad
+    pkgs.psmisc
+    pkgs.telegram-desktop
     pkgs.lightburn
     ducktapePackages.tana
   ];
@@ -68,6 +74,8 @@
   programs.gnome-shell.extensions = [
     { package = pkgs.gnomeExtensions.appindicator; }
   ];
+
+  services.google-drive.enable = true;
 
   home.stateVersion = "25.11";
 }
