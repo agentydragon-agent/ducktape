@@ -241,6 +241,8 @@
       "Bash(bazel query:*)",
       "Bash(bazel run @bazel_gazelle//cmd/gazelle:*)",
       "Bash(bazel test:*)",
+      "Bash(bbapi artifact:*)",
+      "Bash(bbapi target:*)",
       "Bash(bb remote:*)",
       "Bash(bbr:*)",
       "Bash(dconf dump:*)",
