@@ -26,6 +26,10 @@ spec:
       # parse `GROCY_MCP_*_PORT=tcp://...` as the `port: int` field and
       # crash. Same protection as x/authentik_mcp_poc.
       enableServiceLinks: false
+      volumes:
+        - name: fastmcp-state
+          persistentVolumeClaim:
+            claimName: grocy-mcp-fastmcp-state
       containers:
         - name: server
           image: ghcr.io/agentydragon/grocy-mcp:devel-20260414053610-45e0ed2 # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
@@ -63,6 +67,9 @@ spec:
                 secretKeyRef:
                   name: grocy-mcp-oidc
                   key: grocy_proxy_client_id
+          volumeMounts:
+            - name: fastmcp-state
+              mountPath: /tmp/fastmcp
           resources:
             requests:
               memory: "128Mi"

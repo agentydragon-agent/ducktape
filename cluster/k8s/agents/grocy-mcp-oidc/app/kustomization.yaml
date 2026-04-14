@@ -6,6 +6,7 @@ kind: Kustomization
 # Kustomization is layer 3 and only fills the namespace with runtime
 # objects.
 resources:
+  - pvc.yaml
   - server-deployment.yaml
   - server-service.yaml
   - server-httproute.yaml

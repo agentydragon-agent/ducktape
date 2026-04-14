@@ -1,0 +1,15 @@
+# TODO(future): Consider switching to Redis/Valkey backend for OIDCProxy state
+# persistence instead of PVC. This would support multi-instance deployments and
+# provide better performance. See x/grocy_mcp/server.py and FastMCP storage docs.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grocy-mcp-fastmcp-state
+  namespace: grocy-mcp-oidc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path-proxmox
+  resources:
+    requests:
+      storage: 100Mi
