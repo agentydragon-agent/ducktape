@@ -258,6 +258,7 @@
       "Bash(gsettings list-recursively:*)",
       "Bash(gsettings list-schemas:*)",
       "Bash(kubectl describe:*)",
+      "Bash(kubectl get gitrepository:*)",
       "Bash(kubectl get imagerepository:*)",
       "Bash(kubectl get job:*)",
       "Bash(kubectl get kustomization:*)",
