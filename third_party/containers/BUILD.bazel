@@ -64,6 +64,13 @@ oci_layout_rloc(
 )
 
 oci_layout_rloc(
+    name = "grocy",
+    testonly = True,
+    image = "@grocy_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_rloc(
     name = "debian_slim",
     image = "@debian_slim_linux_amd64",
     visibility = ["//visibility:public"],

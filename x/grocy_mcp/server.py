@@ -8,8 +8,8 @@ This is deliberately a thin wrapper: `FastMCP.from_openapi` generates the
 tool surface directly from Grocy's OpenAPI 3.1 spec. The only custom wiring
 is `AuthentikExchangeAuth` (an `httpx.Auth` subclass that swaps the MCP
 user's upstream Authentik JWT for a Grocy-proxy-scoped JWT per request) and
-a pair of `RouteMap`s that filter the generated tool set down to the
-inventory bootstrap surface (`/objects/*` + `/stock/*`).
+`TOOL_OVERRIDES` which controls naming, descriptions, enablement, and whether
+a route is exposed as a tool or an MCP resource.
 
 See <x/grocy_mcp/README.md> for the architecture and end-to-end flow;
 <x/authentik_mcp_poc/NOTES.md> §5-§6 for why each piece of the token
@@ -29,28 +29,19 @@ from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.providers.openapi import MCPType, RouteMap
+from fastmcp.server.providers.openapi import MCPType, OpenAPIResource, OpenAPITool, RouteMap
+from fastmcp.utilities.openapi import HTTPRoute
 
 from util.bazel.runfiles import get_required_path
 from x.grocy_mcp.auth import AuthentikExchangeAuth
 from x.grocy_mcp.config import ServerSettings
+from x.grocy_mcp.tool_metadata import TOOL_OVERRIDES
 
 logger = logging.getLogger(__name__)
 
-
-# Route filter: include everything the inventory bootstrap needs, exclude
-# everything else explicitly so a Grocy spec refresh can't silently add
-# /recipes or /chores tools. First match wins.
-ROUTE_MAPS = [
-    # Generic object CRUD: /objects/{entity}, /objects/{entity}/{objectId}.
-    # Covers products, locations, quantity_units, product_groups, and any
-    # other entity the LLM might need for inventory bootstrap.
-    RouteMap(pattern=r"^/objects(/.*)?$", mcp_type=MCPType.TOOL),
-    # Stock manipulation: /stock, /stock/products/{id}/{add,consume,...}.
-    RouteMap(pattern=r"^/stock(/.*)?$", mcp_type=MCPType.TOOL),
-    # Everything else is explicitly out.
-    RouteMap(pattern=r".*", mcp_type=MCPType.EXCLUDE),
-]
+# All routes become tools by default; TOOL_OVERRIDES controls which are
+# enabled, disabled, or promoted to MCP resources.
+ROUTE_MAPS = [RouteMap(pattern=r".*", mcp_type=MCPType.TOOL)]
 
 
 def _build_auth(settings: ServerSettings) -> AuthProvider:
@@ -67,61 +58,67 @@ def _build_auth(settings: ServerSettings) -> AuthProvider:
         base_url=settings.normalized_public_base_url(),
         require_authorization_consent=True,
     )
-    # OIDCProxy's DCR endpoint rejects scopes it doesn't know about; allow
-    # the standard OIDC scopes the TF module registers on the Authentik
-    # provider.
     assert proxy.client_registration_options is not None
     proxy.client_registration_options.valid_scopes = ["openid", "email", "profile"]
     return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=f"{issuer}/.well-known/jwks", issuer=issuer)])
 
 
-def _strip_empty_enums(node: object) -> None:
-    """Drop empty `enum: []` keys recursively.
-
-    Grocy's OpenAPI spec (4.6.0) declares at least one schema with
-    `"enum": []` — `ExposedEntityEditRequiresAdmin`. Empty enums are
-    invalid per the OpenAPI spec, and FastMCP's pydantic-based parser
-    rejects the whole document with `too_short`. Fall back to the
-    plain `type: string` the schema already declares.
-    """
-    if isinstance(node, dict):
-        if isinstance(node.get("enum"), list) and not node["enum"]:
-            del node["enum"]
-        for value in node.values():
-            _strip_empty_enums(value)
-    elif isinstance(node, list):
-        for item in node:
-            _strip_empty_enums(item)
-
-
 def _load_openapi_spec() -> dict[str, object]:
-    """Return the Grocy OpenAPI 3.1 spec, fetched via the @grocy_openapi_spec
-    http_file repo (pinned to a Grocy release tag in MODULE.bazel)."""
-    spec_path = get_required_path("grocy_openapi_spec/file/grocy.openapi.json")
-    spec: dict[str, object] = json.loads(spec_path.read_text())
-    _strip_empty_enums(spec)
-    return spec
+    """Return the pre-fixed Grocy OpenAPI 3.1 spec.
+
+    The raw upstream spec has issues (empty enums, dangling $refs for
+    entity path parameters) that are fixed at build time by the
+    :grocy_openapi_fixed genrule. See <fix_openapi_spec.py>.
+    """
+    spec_path = get_required_path("_main/x/grocy_mcp/grocy.openapi.fixed.json")
+    return json.loads(spec_path.read_text())
 
 
-def build_mcp(settings: ServerSettings) -> FastMCP:
+def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = None) -> FastMCP:
     """Build the FastMCP instance with generated Grocy tools, but no auth.
 
-    Split out from `build_server` so tests can exercise the OpenAPI →
-    tool-surface wiring without FastMCP's `OIDCProxy` trying to reach out
-    to Authentik for `.well-known/openid-configuration` at construction
-    time (which fails on hermetic RBE test workers).
+    Args:
+        settings: Server configuration.
+        client: Optional pre-configured httpx client for Grocy API calls.
+            If not provided, creates an Authentik-exchange-wrapped client
+            (production path). Tests can pass a plain client to bypass auth.
     """
     spec = _load_openapi_spec()
 
-    # Separate clients by design — see AuthentikExchangeAuth docstring.
-    exchange_client = httpx.AsyncClient(timeout=10.0)
-    grocy_client = httpx.AsyncClient(
-        base_url=f"{settings.grocy_url.rstrip('/')}/api",
-        auth=AuthentikExchangeAuth(settings, exchange_client),
-        timeout=30.0,
-    )
+    if client is None:
+        exchange_client = httpx.AsyncClient(timeout=10.0)
+        client = httpx.AsyncClient(
+            base_url=f"{settings.grocy_url.rstrip('/')}/api",
+            auth=AuthentikExchangeAuth(settings, exchange_client),
+            timeout=30.0,
+        )
 
-    return FastMCP.from_openapi(openapi_spec=spec, client=grocy_client, name="Grocy", route_maps=ROUTE_MAPS)
+    def _filter_disabled(route: HTTPRoute, mcp_type: MCPType) -> MCPType | None:
+        override = TOOL_OVERRIDES.get((route.method, route.path))
+        if override is not None and not override.enabled:
+            return MCPType.EXCLUDE
+        if override is not None and override.resource:
+            return MCPType.RESOURCE
+        return mcp_type
+
+    def _customize_component(route: HTTPRoute, component: OpenAPITool | OpenAPIResource) -> None:
+        override = TOOL_OVERRIDES.get((route.method, route.path))
+        if override is None:
+            raise ValueError(
+                f"No tool override for {route.method} {route.path} — add it to TOOL_OVERRIDES in tool_metadata.py"
+            )
+        component.name = override.name
+        if override.extra_description:
+            component.description = f"{component.description}\n\n{override.extra_description}"
+
+    return FastMCP.from_openapi(
+        openapi_spec=spec,
+        client=client,
+        name="Grocy",
+        route_maps=ROUTE_MAPS,
+        route_map_fn=_filter_disabled,
+        mcp_component_fn=_customize_component,
+    )
 
 
 def build_server(settings: ServerSettings) -> FastMCP:

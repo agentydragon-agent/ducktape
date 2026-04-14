@@ -4,6 +4,29 @@ load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
+# ── Build-time spec fixup ────────────────────────────────────────────────────
+
+py_library(
+    name = "fix_openapi_spec_lib",
+    srcs = ["fix_openapi_spec.py"],
+)
+
+py_binary(
+    name = "fix_openapi_spec",
+    main_module = "x.grocy_mcp.fix_openapi_spec",
+    deps = [":fix_openapi_spec_lib"],
+)
+
+genrule(
+    name = "grocy_openapi_fixed",
+    srcs = ["@grocy_openapi_spec//file"],
+    outs = ["grocy.openapi.fixed.json"],
+    cmd = "$(execpath :fix_openapi_spec) $(SRCS) $@",
+    tools = [":fix_openapi_spec"],
+)
+
+# ── Libraries ────────────────────────────────────────────────────────────────
+
 py_library(
     name = "config",
     srcs = ["config.py"],
@@ -26,13 +49,20 @@ py_library(
 )
 
 py_library(
+    name = "tool_metadata",
+    srcs = ["tool_metadata.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "server",
     srcs = ["server.py"],
-    data = ["@grocy_openapi_spec//file"],
+    data = [":grocy_openapi_fixed"],
     visibility = ["//visibility:public"],
     deps = [
         ":auth",
         ":config",
+        ":tool_metadata",
         "//util/bazel:runfiles",
         "@pypi//fastmcp",
         "@pypi//httpx",
@@ -46,7 +76,17 @@ py_binary(
     deps = [":server"],
 )
 
-# ── Tests ─────────────────────────────────────────────────────────────────────
+# ── Tests ────────────────────────────────────────────────────────────────────
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
 
 py_test(
     name = "test_config",
@@ -69,7 +109,53 @@ py_test(
     ],
 )
 
-# ── OCI image ─────────────────────────────────────────────────────────────────
+py_test(
+    name = "test_fix_openapi_spec",
+    srcs = ["test_fix_openapi_spec.py"],
+    deps = [
+        ":fix_openapi_spec_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_dump_tool",
+    srcs = ["test_dump_tool.py"],
+    deps = [
+        ":config",
+        ":conftest",
+        ":server",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    size = "medium",
+    srcs = ["test_e2e.py"],
+    data = [
+        "//third_party/containers:grocy",
+    ],
+    requires_docker = True,
+    deps = [
+        ":config",
+        ":conftest",
+        ":server",
+        ":tool_metadata",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+    ],
+)
+
+# ── OCI image ────────────────────────────────────────────────────────────────
 
 aspect_py_binary(
     name = "server_bin",
