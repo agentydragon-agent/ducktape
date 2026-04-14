@@ -260,6 +260,7 @@
       "Bash(kubectl describe:*)",
       "Bash(kubectl get imagerepository:*)",
       "Bash(kubectl get job:*)",
+      "Bash(kubectl get kustomization:*)",
       "Bash(kubectl get pod:*)",
       "Bash(kubectl get pods:*)",
       "Bash(kubectl get receiver:*)",
