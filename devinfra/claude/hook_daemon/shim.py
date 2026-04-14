@@ -51,7 +51,9 @@ def _report_shim(shim: str, session_id: str, paths: SessionPaths) -> list[str]:
     On block: prints message to stderr and exits 1.
     On daemon unreachable: logs error, returns original sys.argv (fallback).
     """
-    report = ShimExecRequest(shim=shim, session_id=session_id, cwd=str(Path.cwd()), argv=sys.argv, env=dict(os.environ))
+    report = ShimExecRequest(
+        shim=shim, session_id=session_id, cwd=Path.cwd(), argv=sys.argv, pid=os.getpid(), env=dict(os.environ)
+    )
     response = send_shim_exec(report, paths)
     if response is None:
         return sys.argv  # Fallback: daemon unreachable

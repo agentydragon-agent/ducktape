@@ -1,6 +1,7 @@
 """Pydantic models and dataclasses for hook daemon RPC protocol and startup state."""
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -41,8 +42,9 @@ class ShimExecRequest(BaseModel):
 
     shim: str = Field(description="Shim name: 'bazelisk', 'git'")
     session_id: str = Field(description="Session ID (from DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR basename)")
-    cwd: str = Field(description="Working directory of the shim process")
+    cwd: Path = Field(description="Working directory of the shim process")
     argv: list[str] = Field(description="Full argv including argv[0]")
+    pid: int = Field(description="PID of the shim process")
     env: dict[str, str] = Field(description="Environment variables of the shim process")
 
 
