@@ -12,6 +12,8 @@
     ../home.nix
     ../modules/no-screensaver.nix
     ../modules/15leroy-ssh.nix
+    ../modules/kubeconfig.nix
+    ../modules/talosconfig.nix
   ];
 
   ducktape.attic = {
