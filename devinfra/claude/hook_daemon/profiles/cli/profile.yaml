@@ -46,8 +46,13 @@ bazel_remote_proxy:
 bazel_bes_proxy:
   target: remote.buildbuddy.io:443
 background_commands:
-  - name: bazel info
-    command: bazelisk info
+  - name: bazelisk warmup (query //...)
+    command: |
+      bazelisk query //... >/dev/null &
+      bazelisk_pid=$!
+      echo "Bazel warmup running (PID ${bazelisk_pid}). Output base lock held until finished."
+      echo "To cancel: kill -TERM ${bazelisk_pid}"
+      wait "${bazelisk_pid}"
     timeout: 300
     after_env: true
 context_template: devinfra/claude/hook_daemon/profiles/cli/context.mako

@@ -81,16 +81,16 @@ background_commands:
         -H "Accept: application/vnd.github.v3+json" \
         -H "User-Agent: ducktape-session-hook/1.0" \
         https://api.github.com/user 2>/dev/null) || {
-        echo "WARNING: fork remote: GitHub /user API call failed" >&2
+        echo "WARNING: GitHub /user API call failed" >&2
         exit 1
       }
       username=$(printf '%s' "$user_json" \
         | python3 -c 'import json,sys; print(json.load(sys.stdin)["login"])') || {
-        echo "WARNING: fork remote: could not parse username" >&2
+        echo "WARNING: could not parse username" >&2
         exit 1
       }
       origin_url=$(git remote get-url origin 2>/dev/null) || {
-        echo "WARNING: fork remote: no origin remote" >&2
+        echo "WARNING: no origin remote" >&2
         exit 1
       }
       repo_name="${origin_url%/}"; repo_name="${repo_name%.git}"; repo_name="${repo_name##*/}"
