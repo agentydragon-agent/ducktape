@@ -6,7 +6,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: litellm
+      app.kubernetes.io/name: litellm
   endpoints:
     - port: http
       path: /metrics

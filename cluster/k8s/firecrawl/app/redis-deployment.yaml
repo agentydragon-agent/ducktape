@@ -3,15 +3,22 @@ kind: Deployment
 metadata:
   name: firecrawl-redis
   namespace: firecrawl
+  labels:
+    app.kubernetes.io/name: firecrawl
+    app.kubernetes.io/component: redis
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: firecrawl-redis
+      app.kubernetes.io/name: firecrawl
+      app.kubernetes.io/component: redis
   template:
     metadata:
       labels:
-        app: firecrawl-redis
+        app.kubernetes.io/name: firecrawl
+        app.kubernetes.io/component: redis
     spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox

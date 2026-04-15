@@ -4,12 +4,12 @@ metadata:
   name: authentik-mcp-poc-server
   namespace: authentik-mcp-poc
   labels:
-    app: authentik-mcp-poc
-    component: server
+    app.kubernetes.io/name: authentik-mcp-poc
+    app.kubernetes.io/component: server
 spec:
   selector:
-    app: authentik-mcp-poc
-    component: server
+    app.kubernetes.io/name: authentik-mcp-poc
+    app.kubernetes.io/component: server
   ports:
     - name: http
       port: 8765

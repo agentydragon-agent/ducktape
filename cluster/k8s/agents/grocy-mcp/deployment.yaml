@@ -4,18 +4,19 @@ metadata:
   name: grocy-mcp
   namespace: grocy-mcp
   labels:
-    app: grocy-mcp
+    app.kubernetes.io/name: grocy-mcp
   annotations:
     reloader.stakater.com/auto: "true"
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: grocy-mcp
+      app.kubernetes.io/name: grocy-mcp
   template:
     metadata:
       labels:
-        app: grocy-mcp
+        app.kubernetes.io/name: grocy-mcp
     spec:
       volumes:
         - name: envoy-config

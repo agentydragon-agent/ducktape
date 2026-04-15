@@ -5,7 +5,7 @@ metadata:
   namespace: atuin
 spec:
   selector:
-    app: atuin-server
+    app.kubernetes.io/name: atuin
   ports:
     - name: http
       port: 8888

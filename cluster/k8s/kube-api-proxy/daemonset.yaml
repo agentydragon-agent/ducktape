@@ -3,16 +3,20 @@ kind: DaemonSet
 metadata:
   name: kube-api-proxy
   namespace: kube-api-proxy
+  labels:
+    app.kubernetes.io/name: kube-api-proxy
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   selector:
     matchLabels:
-      app: kube-api-proxy
+      app.kubernetes.io/name: kube-api-proxy
   template:
     metadata:
       annotations:
         reloader.stakater.com/auto: "true"
       labels:
-        app: kube-api-proxy
+        app.kubernetes.io/name: kube-api-proxy
     spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet

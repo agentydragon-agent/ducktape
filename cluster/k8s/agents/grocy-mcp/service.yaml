@@ -5,7 +5,7 @@ metadata:
   namespace: grocy-mcp
 spec:
   selector:
-    app: grocy-mcp
+    app.kubernetes.io/name: grocy-mcp
   ports:
     - name: mcp
       port: 3000

@@ -12,7 +12,7 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app: google-workspace-mcp
+      app.kubernetes.io/name: google-workspace-mcp
   ingress:
     # Kubelet liveness/readiness probes.
     - fromEntities:
@@ -34,8 +34,8 @@ spec:
     # Airlock server — proxies agent MCP calls after JWT validation + approval.
     - fromEndpoints:
         - matchLabels:
-            app: airlock
-            component: server
+            app.kubernetes.io/name: airlock
+            app.kubernetes.io/component: server
             k8s:io.kubernetes.pod.namespace: airlock
       toPorts:
         - ports:

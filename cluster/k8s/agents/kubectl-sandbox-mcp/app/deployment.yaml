@@ -3,18 +3,21 @@ kind: Deployment
 metadata:
   name: kubectl-sandbox-mcp
   namespace: kubectl-sandbox-mcp
+  labels:
+    app.kubernetes.io/name: kubectl-sandbox-mcp
   annotations:
     description: "containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is forwarded directly to kube-apiserver; server itself is unprivileged."
     reloader.stakater.com/auto: "true"
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: kubectl-sandbox-mcp
+      app.kubernetes.io/name: kubectl-sandbox-mcp
   template:
     metadata:
       labels:
-        app: kubectl-sandbox-mcp
+        app.kubernetes.io/name: kubectl-sandbox-mcp
     spec:
       serviceAccountName: kubectl-sandbox-mcp
       # Prevent kubernetes-mcp-server from picking up KUBECTL_SANDBOX_MCP_* env vars

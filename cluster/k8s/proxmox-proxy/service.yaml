@@ -5,7 +5,7 @@ metadata:
   namespace: proxmox-proxy
 spec:
   selector:
-    app: proxmox-proxy
+    app.kubernetes.io/name: proxmox-proxy
   ports:
     - port: 8080
       targetPort: 8080

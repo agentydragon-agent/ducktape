@@ -5,7 +5,7 @@ metadata:
   namespace: claude-sandbox
 spec:
   selector:
-    app: firecracker-manager
+    app.kubernetes.io/name: firecracker-manager
   ports:
     - name: api
       port: 8080

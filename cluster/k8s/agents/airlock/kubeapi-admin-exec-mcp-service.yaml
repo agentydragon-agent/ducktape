@@ -4,12 +4,12 @@ metadata:
   name: kubeapi-admin-exec-mcp
   namespace: airlock
   labels:
-    app: airlock
-    component: kubeapi-admin-exec-mcp
+    app.kubernetes.io/name: airlock
+    app.kubernetes.io/component: kubeapi-admin-exec-mcp
 spec:
   selector:
-    app: airlock
-    component: kubeapi-admin-exec-mcp
+    app.kubernetes.io/name: airlock
+    app.kubernetes.io/component: kubeapi-admin-exec-mcp
   ports:
     - name: mcp
       port: 8766

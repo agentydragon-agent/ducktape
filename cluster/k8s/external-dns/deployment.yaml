@@ -4,16 +4,20 @@ kind: Deployment
 metadata:
   name: external-dns
   namespace: external-dns
+  labels:
+    app.kubernetes.io/name: external-dns
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: external-dns
+      app.kubernetes.io/name: external-dns
   template:
     metadata:
       labels:
-        app: external-dns
+        app.kubernetes.io/name: external-dns
       annotations:
         reloader.stakater.com/auto: "true"
     spec:

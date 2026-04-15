@@ -5,7 +5,7 @@ metadata:
   namespace: website
 spec:
   selector:
-    app: website
+    app.kubernetes.io/name: website
   ports:
     - name: http
       port: 80

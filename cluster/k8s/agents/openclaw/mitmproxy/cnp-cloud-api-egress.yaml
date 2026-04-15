@@ -8,7 +8,7 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app: mitmproxy
+      app.kubernetes.io/name: mitmproxy
   egress:
     - toFQDNs:
         - matchName: generativelanguage.googleapis.com

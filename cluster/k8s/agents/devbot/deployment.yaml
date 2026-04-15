@@ -4,19 +4,21 @@ metadata:
   name: devbot-desktop
   namespace: agents
   labels:
-    app: devbot
-    component: desktop
+    app.kubernetes.io/name: devbot
+    app.kubernetes.io/component: desktop
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: devbot
-      component: desktop
+      app.kubernetes.io/name: devbot
+      app.kubernetes.io/component: desktop
   template:
     metadata:
       labels:
-        app: devbot
-        component: desktop
+        app.kubernetes.io/name: devbot
+        app.kubernetes.io/component: desktop
       annotations:
         reloader.stakater.com/auto: "true"
     spec:

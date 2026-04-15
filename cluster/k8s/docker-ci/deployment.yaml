@@ -3,17 +3,21 @@ kind: Deployment
 metadata:
   name: docker-ci
   namespace: docker-ci
+  labels:
+    app.kubernetes.io/name: docker-ci
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: docker-ci
+      app.kubernetes.io/name: docker-ci
   template:
     metadata:
       labels:
-        app: docker-ci
+        app.kubernetes.io/name: docker-ci
     spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox

@@ -3,11 +3,15 @@ kind: Deployment
 metadata:
   name: proxmox-proxy
   namespace: proxmox-proxy
+  labels:
+    app.kubernetes.io/name: proxmox-proxy
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: proxmox-proxy
+      app.kubernetes.io/name: proxmox-proxy
   strategy:
     type: Recreate
   template:
@@ -15,7 +19,7 @@ spec:
       annotations:
         reloader.stakater.com/auto: "true"
       labels:
-        app: proxmox-proxy
+        app.kubernetes.io/name: proxmox-proxy
     spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox

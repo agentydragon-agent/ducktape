@@ -5,7 +5,7 @@ metadata:
   namespace: google-workspace-mcp
 spec:
   selector:
-    app: google-workspace-mcp
+    app.kubernetes.io/name: google-workspace-mcp
   ports:
     - name: http
       port: 8000

@@ -4,22 +4,23 @@ metadata:
   name: grocy-mcp-oidc-server
   namespace: grocy-mcp-oidc
   labels:
-    app: grocy-mcp-oidc
-    component: server
+    app.kubernetes.io/name: grocy-mcp-oidc
+    app.kubernetes.io/component: server
   annotations:
     description: "FastMCP server generating Grocy tools from Grocy's OpenAPI spec. Per-request token exchange swaps the caller's Authentik JWT for a Grocy-proxy-scoped JWT before calling Grocy."
     reloader.stakater.com/auto: "true"
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: grocy-mcp-oidc
-      component: server
+      app.kubernetes.io/name: grocy-mcp-oidc
+      app.kubernetes.io/component: server
   template:
     metadata:
       labels:
-        app: grocy-mcp-oidc
-        component: server
+        app.kubernetes.io/name: grocy-mcp-oidc
+        app.kubernetes.io/component: server
     spec:
       # Don't auto-inject `<SERVICE>_PORT=tcp://...` env vars from
       # same-namespace Services — Pydantic-settings on our pod would

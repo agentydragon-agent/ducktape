@@ -13,7 +13,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: scanner
+      app.kubernetes.io/name: scanner
   policyTypes:
     - Ingress
   ingress:

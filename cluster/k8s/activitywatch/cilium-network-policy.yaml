@@ -9,7 +9,7 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app: activitywatch
+      app.kubernetes.io/name: activitywatch
   ingress:
     - fromEntities:
         - kube-apiserver

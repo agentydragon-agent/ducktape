@@ -4,11 +4,11 @@ metadata:
   name: litellm
   namespace: ollama
   labels:
-    app: litellm
+    app.kubernetes.io/name: litellm
 spec:
   type: ClusterIP
   selector:
-    app: litellm
+    app.kubernetes.io/name: litellm
   ports:
     - name: http
       port: 4000

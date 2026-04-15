@@ -5,7 +5,7 @@ metadata:
   namespace: grocy
 spec:
   selector:
-    app: grocy
+    app.kubernetes.io/name: grocy
   ports:
     - name: http
       port: 80

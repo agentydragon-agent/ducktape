@@ -9,7 +9,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: grocy
+      app.kubernetes.io/name: grocy
   policyTypes:
     - Ingress
   ingress:

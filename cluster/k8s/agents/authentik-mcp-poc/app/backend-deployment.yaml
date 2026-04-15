@@ -4,22 +4,23 @@ metadata:
   name: authentik-mcp-poc-backend
   namespace: authentik-mcp-poc
   labels:
-    app: authentik-mcp-poc
-    component: backend
+    app.kubernetes.io/name: authentik-mcp-poc
+    app.kubernetes.io/component: backend
   annotations:
     description: "Whoami backend sitting behind the Authentik proxy outpost. Trusts X-Authentik-* headers injected by the outpost."
     reloader.stakater.com/auto: "true"
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: authentik-mcp-poc
-      component: backend
+      app.kubernetes.io/name: authentik-mcp-poc
+      app.kubernetes.io/component: backend
   template:
     metadata:
       labels:
-        app: authentik-mcp-poc
-        component: backend
+        app.kubernetes.io/name: authentik-mcp-poc
+        app.kubernetes.io/component: backend
     spec:
       # Don't auto-inject `<SERVICE>_PORT=tcp://...` env vars. The same-namespace
       # `authentik-mcp-poc-backend` Service injects

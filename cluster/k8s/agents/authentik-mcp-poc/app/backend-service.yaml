@@ -7,12 +7,12 @@ metadata:
   name: authentik-mcp-poc-backend
   namespace: authentik-mcp-poc
   labels:
-    app: authentik-mcp-poc
-    component: backend
+    app.kubernetes.io/name: authentik-mcp-poc
+    app.kubernetes.io/component: backend
 spec:
   selector:
-    app: authentik-mcp-poc
-    component: backend
+    app.kubernetes.io/name: authentik-mcp-poc
+    app.kubernetes.io/component: backend
   ports:
     - name: http
       port: 8080

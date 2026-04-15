@@ -42,16 +42,18 @@ metadata:
   name: element-web
   namespace: matrix
   labels:
-    app: element-web
+    app.kubernetes.io/name: element-web
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: element-web
+      app.kubernetes.io/name: element-web
   template:
     metadata:
       labels:
-        app: element-web
+        app.kubernetes.io/name: element-web
       annotations:
         reloader.stakater.com/auto: "true"
     spec:
@@ -103,7 +105,7 @@ metadata:
   name: element-web
   namespace: matrix
   labels:
-    app: element-web
+    app.kubernetes.io/name: element-web
 spec:
   type: ClusterIP
   ports:
@@ -112,4 +114,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app: element-web
+    app.kubernetes.io/name: element-web

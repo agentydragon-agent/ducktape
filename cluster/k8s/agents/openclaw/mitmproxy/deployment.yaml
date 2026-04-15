@@ -3,15 +3,19 @@ kind: Deployment
 metadata:
   name: mitmproxy
   namespace: openclaw-mitmproxy
+  labels:
+    app.kubernetes.io/name: mitmproxy
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mitmproxy
+      app.kubernetes.io/name: mitmproxy
   template:
     metadata:
       labels:
-        app: mitmproxy
+        app.kubernetes.io/name: mitmproxy
     spec:
       initContainers:
         - name: mitmproxy-ca-init
@@ -80,7 +84,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: mitmproxy
+      app.kubernetes.io/name: mitmproxy
   ingress:
     - from:
         - namespaceSelector:
@@ -99,7 +103,7 @@ metadata:
   namespace: openclaw-mitmproxy
 spec:
   selector:
-    app: mitmproxy
+    app.kubernetes.io/name: mitmproxy
   ports:
     - name: proxy
       port: 8080

@@ -5,7 +5,7 @@ metadata:
   namespace: docker-ci
 spec:
   selector:
-    app: docker-ci
+    app.kubernetes.io/name: docker-ci
   ports:
     - port: 2376
       targetPort: 2376

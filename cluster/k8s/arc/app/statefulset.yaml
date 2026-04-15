@@ -3,16 +3,20 @@ kind: StatefulSet
 metadata:
   name: github-runner
   namespace: arc-runners
+  labels:
+    app.kubernetes.io/name: github-runner
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   serviceName: github-runner
   replicas: 1
   selector:
     matchLabels:
-      app: github-runner
+      app.kubernetes.io/name: github-runner
   template:
     metadata:
       labels:
-        app: github-runner
+        app.kubernetes.io/name: github-runner
     spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox

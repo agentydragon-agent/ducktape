@@ -4,12 +4,12 @@ metadata:
   name: grocy-mcp-oidc-server
   namespace: grocy-mcp-oidc
   labels:
-    app: grocy-mcp-oidc
-    component: server
+    app.kubernetes.io/name: grocy-mcp-oidc
+    app.kubernetes.io/component: server
 spec:
   selector:
-    app: grocy-mcp-oidc
-    component: server
+    app.kubernetes.io/name: grocy-mcp-oidc
+    app.kubernetes.io/component: server
   ports:
     - name: http
       port: 8765

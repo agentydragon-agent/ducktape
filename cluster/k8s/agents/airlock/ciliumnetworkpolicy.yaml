@@ -20,8 +20,8 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app: airlock
-      component: server
+      app.kubernetes.io/name: airlock
+      app.kubernetes.io/component: server
   ingress:
     # Kubelet health probes from the local node + Cilium Gateway API traffic.
     # When the backend pod is on the same node as Envoy, source appears as "host" (local node).
@@ -63,8 +63,8 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app: airlock
-      component: kubeapi-admin-exec-mcp
+      app.kubernetes.io/name: airlock
+      app.kubernetes.io/component: kubeapi-admin-exec-mcp
   ingress:
     - fromEntities:
         - host
@@ -75,8 +75,8 @@ spec:
     # Only the Airlock server pod connects to the exec backend.
     - fromEndpoints:
         - matchLabels:
-            app: airlock
-            component: server
+            app.kubernetes.io/name: airlock
+            app.kubernetes.io/component: server
       toPorts:
         - ports:
             - port: "8766"

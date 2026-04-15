@@ -5,7 +5,7 @@ metadata:
   namespace: kubectl-sandbox-mcp
 spec:
   selector:
-    app: kubectl-sandbox-mcp
+    app.kubernetes.io/name: kubectl-sandbox-mcp
   ports:
     - name: http
       port: 8080

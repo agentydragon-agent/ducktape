@@ -5,7 +5,7 @@ metadata:
   namespace: activitywatch
 spec:
   selector:
-    app: activitywatch
+    app.kubernetes.io/name: activitywatch
   ports:
     - port: 5600
       targetPort: 5601

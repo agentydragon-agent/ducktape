@@ -3,15 +3,22 @@ kind: Deployment
 metadata:
   name: firecrawl-playwright
   namespace: firecrawl
+  labels:
+    app.kubernetes.io/name: firecrawl
+    app.kubernetes.io/component: playwright
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: firecrawl-playwright
+      app.kubernetes.io/name: firecrawl
+      app.kubernetes.io/component: playwright
   template:
     metadata:
       labels:
-        app: firecrawl-playwright
+        app.kubernetes.io/name: firecrawl
+        app.kubernetes.io/component: playwright
     spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
