@@ -7,7 +7,6 @@ metadata:
     app.kubernetes.io/name: scanner
   annotations:
     reloader.stakater.com/auto: "true"
-    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:

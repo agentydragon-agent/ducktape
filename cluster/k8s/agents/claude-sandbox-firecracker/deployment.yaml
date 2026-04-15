@@ -9,7 +9,6 @@ metadata:
     description: >-
       Firecracker VM manager. Creates VM pods (PVC + pod), then drives
       boot/restore via the Firecracker API proxy on each pod.
-    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   strategy:

@@ -5,8 +5,6 @@ metadata:
   namespace: proxmox-proxy
   labels:
     app.kubernetes.io/name: proxmox-proxy
-  annotations:
-    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 1
   selector:

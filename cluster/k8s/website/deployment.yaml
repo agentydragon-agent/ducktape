@@ -5,8 +5,6 @@ metadata:
   namespace: website
   labels:
     app.kubernetes.io/name: website
-  annotations:
-    kustomize.toolkit.fluxcd.io/force: "enabled"
 spec:
   replicas: 2
   selector:
