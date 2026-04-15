@@ -3,8 +3,10 @@
 All shim-specific logic (git blocking, bazelisk --bazelrc injection) lives
 server-side. This is the shared runtime entrypoint for all PATH shims.
 
-The shim name and session ID are read from env vars baked into the shell
-wrapper at install time by shim_install.install().
+Invoked as `claude-hook shim <shim_name> [args...]` (new style, via the
+profile-symlink binary that auto-follows nix profile refreshes) or via
+`python -m devinfra.claude.hook_daemon.shim` with env vars (legacy style for
+old-format shim wrappers written before this change).
 """
 
 import logging
@@ -63,29 +65,45 @@ def _report_shim(shim: str, session_id: str, paths: SessionPaths) -> list[str]:
     return response.argv
 
 
-def main() -> None:
-    shim_name = os.environ.get(SHIM_NAME_ENV)
-    session_id = os.environ.get(SHIM_SESSION_ID_ENV)
-    session_dir_str = os.environ.get(ENV_SESSION_DIR)
-    if not shim_name or not session_id or not session_dir_str:
-        raise RuntimeError(
-            f"Shim env vars not set ({SHIM_NAME_ENV}, {SHIM_SESSION_ID_ENV}, {ENV_SESSION_DIR}) "
-            f"— shim must be installed via shim_install.install()"
-        )
+def run_shim(shim_name: str, session_id: str) -> None:
+    """Run the shim: report to daemon, resolve real binary, exec it.
 
+    Expects sys.argv[1:] to be the arguments for the real binary.
+    Both callers (hook_dispatch shim subcommand and legacy main()) normalize
+    sys.argv before calling here.
+    """
     paths = SessionPaths.from_env(session_id, dict(os.environ))
     _setup_logging(shim_name, paths)
     log_entrypoint_debug(f"{shim_name}_shim")
 
     argv = _report_shim(shim_name, session_id, paths)
 
+    # Propagate session dir to subprocesses of the real binary (e.g. bazel_wrapper).
+    os.environ[ENV_SESSION_DIR] = str(paths.session_dir)
+
     try:
-        real = resolve_real_binary(shim_name)
+        real = resolve_real_binary(shim_name, paths.wrapper_dir)
     except FileNotFoundError:
         print(f"{shim_name}: command not found", file=sys.stderr)
         raise SystemExit(127)
     logger.info("Execing %s", real)
     os.execvp(real, [real, *argv[1:]])
+
+
+def main() -> None:
+    """Entry point for legacy python -m invocation (old-style shim wrappers)."""
+    shim_name = os.environ.get(SHIM_NAME_ENV)
+    session_id = os.environ.get(SHIM_SESSION_ID_ENV)
+    if not shim_name or not session_id:
+        raise RuntimeError(
+            f"Shim env vars not set ({SHIM_NAME_ENV}, {SHIM_SESSION_ID_ENV}) "
+            f"— shim must be installed via shim_install.install()"
+        )
+    # Normalize sys.argv so run_shim sees [shim_name, <original args>].
+    # In a python -m invocation sys.argv[0] is the module file path, not the
+    # shim name; replace it so argv[1:] is unambiguously the args to forward.
+    sys.argv = [shim_name, *sys.argv[1:]]
+    run_shim(shim_name, session_id)
 
 
 if __name__ == "__main__":
