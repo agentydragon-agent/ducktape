@@ -33,13 +33,12 @@ _D = lambda name, **kw: ToolOverride(name, enabled=False, **kw)  # noqa: E731
 
 TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # ── Generic entity CRUD ──────────────────────────────────────────
-    ("GET", "/objects/{entity}"): _E("list_entities"),
-    ("POST", "/objects/{entity}"): _E("create_entity"),
-    ("GET", "/objects/{entity}/{objectId}"): _E("get_entity"),
+    # GET /objects/{entity}, POST /objects/{entity}, GET /objects/{entity}/{objectId}
+    # and GET /stock are stripped from the OpenAPI spec by fix_openapi_spec.py;
+    # they are replaced by batch tools in batch_tools.py.
     ("PUT", "/objects/{entity}/{objectId}"): _E("update_entity"),
     ("DELETE", "/objects/{entity}/{objectId}"): _E("delete_entity"),
     # ── Stock overview ───────────────────────────────────────────────
-    ("GET", "/stock"): _E("list_stock"),
     ("GET", "/stock/volatile"): _E(
         "list_volatile_stock", "Returns products that are due soon, overdue, expired, or below min stock."
     ),
@@ -49,12 +48,9 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("GET", "/stock/entry/{entryId}/printlabel"): _D("print_stock_entry_label"),
     # ── Product stock operations (by ID) ─────────────────────────────
     ("GET", "/stock/products/{productId}"): _E("get_product_stock"),
-    ("POST", "/stock/products/{productId}/add"): _E("add_product_stock"),
-    ("POST", "/stock/products/{productId}/consume"): _E("consume_product_stock"),
+    # POST /stock/products/{productId}/add, /consume, /inventory stripped from
+    # OpenAPI spec; replaced by batch add_stock, consume_stock, inventory_products.
     ("POST", "/stock/products/{productId}/transfer"): _E("transfer_product_stock"),
-    ("POST", "/stock/products/{productId}/inventory"): _E(
-        "inventory_product", "Set absolute stock amount — Grocy adds or removes to reach the target."
-    ),
     ("POST", "/stock/products/{productId}/open"): _E("open_product_stock"),
     ("GET", "/stock/products/{productId}/entries"): _E("list_product_stock_entries"),
     ("GET", "/stock/products/{productId}/locations"): _E("list_product_locations"),
@@ -137,7 +133,9 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("GET", "/userfields/{entity}/{objectId}"): _D("get_userfields"),
     ("PUT", "/userfields/{entity}/{objectId}"): _D("set_userfields"),
     # ── System ───────────────────────────────────────────────────────
-    ("GET", "/system/info"): _E("get_system_info", resource=True),
+    ("GET", "/system/info"): _E(
+        "get_system_info"
+    ),  # tool, not resource: claude.ai doesn't expose MCP resources to the AI
     ("GET", "/system/time"): _D("get_system_time"),
     ("GET", "/system/db-changed-time"): _E("get_db_changed_time"),
     ("GET", "/system/config"): _D("get_system_config"),
