@@ -137,7 +137,7 @@ locals {
       {
         hostPath  = "/etc/kubernetes/auth"
         mountPath = "/etc/kubernetes/auth"
-        readOnly  = true
+        readonly  = true
       }
     ]
   }

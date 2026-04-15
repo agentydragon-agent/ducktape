@@ -34,6 +34,17 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **Apply kube-apiserver auth-config migration to VPS CPs** (unblocked once wyrm2 is
+      back): `secrets/nebula/ca.sops.key` now has all agentydragon user keys as recipients
+      but the file needs re-encryption before `tofu apply` works from any user machine.
+      Steps when wyrm2 is back: 1. `sops updatekeys secrets/nebula/ca.sops.key` (uses admin key on wyrm2 to re-encrypt
+      with new recipients from `.sops.yaml`) 2. Commit the re-encrypted `ca.sops.key` 3. `tofu apply -target='talos_machine_configuration_apply.vps'` from any agentydragon
+      machine — applies the auth-config migration (removes old `--oidc-*` flags, adds
+      `authentication-config` extraArg + `extraVolumes` + `/etc/kubernetes/auth/` file)
+      to `talos-vps-cp-0` and `talos-vps-cp-1`. Apply to `talos-pve-cp-0` separately
+      once atlas is back. 4. Verify kube-apiserver restarts cleanly on each CP before moving to the next.
+      Note: etcd quorum is safe for rolling VPS CP updates (2/3 members, can lose 1).
+
 - [ ] Fast token rotation on cluster reprovision: `claude-token-rotation` CronJob runs
       biweekly (1st/15th), so after a cluster rebuild the SOPS-encrypted token in
       `secrets/claude-web-k8s-token.yaml` is stale until the next scheduled run. Need a
