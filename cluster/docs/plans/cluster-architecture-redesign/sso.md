@@ -113,8 +113,8 @@ doesn't handle registrar-level NS records.
 
 - 12 native OIDC apps (Grafana, Gitea, Harbor, Matrix, Vault, Headlamp,
   Gatus, Inventree, Airlock x2, OpenClaw Agent, Google Workspace MCP)
-- 11 proxy-mode forward-auth apps (OpenClaw, Proxmox, Longhorn, Hubble,
-  Loki, Grocy, Scanner, Goldilocks, Alloy OTLP, Google Workspace MCP,
+- 10 proxy-mode forward-auth apps (OpenClaw, Proxmox, Longhorn, Hubble,
+  Grocy, Scanner, Goldilocks, Alloy OTLP, Google Workspace MCP,
   OpenClaw Mitmproxy)
 - 2 public PKCE clients (Airlock SPA, Claude Code Airlock)
 - 2 service accounts with bearer tokens / client_credentials

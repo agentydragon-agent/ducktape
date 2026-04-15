@@ -18,7 +18,6 @@ configMapGenerator:
       - blueprints/matrix-sso.yaml
       - blueprints/vault-sso.yaml
       - blueprints/inventree-sso.yaml
-      - blueprints/loki-sso.yaml
       - blueprints/hubble-sso.yaml
       - blueprints/longhorn-sso.yaml
       - blueprints/openclaw-sso.yaml
