@@ -36,7 +36,7 @@ spec:
     # Grafana → Loki (log queries)
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: grafana
+            app: grafana
             k8s:io.kubernetes.pod.namespace: monitoring
       toPorts:
         - ports:
