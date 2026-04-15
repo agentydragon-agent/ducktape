@@ -1,17 +1,8 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 exports_files([".tflint.hcl"])
-
-py_library(
-    name = "flux_convergence",
-    srcs = ["flux_convergence.py"],
-    deps = [
-        "@pypi//kubernetes",
-        "@pypi//pydantic",
-    ],
-)
 
 py_library(
     name = "network_readiness",
@@ -26,7 +17,6 @@ py_library(
     name = "bootstrap_lib",
     srcs = ["bootstrap.py"],
     deps = [
-        ":flux_convergence",
         ":network_readiness",
         "//util/bazel:runfiles",
         "//util/bazel:workspace",
@@ -40,13 +30,4 @@ py_binary(
     data = ["@multitool//tools/tofu"],
     main_module = "cluster.bootstrap",
     deps = [":bootstrap_lib"],
-)
-
-py_test(
-    name = "test_flux_convergence",
-    srcs = ["test_flux_convergence.py"],
-    deps = [
-        ":flux_convergence",
-        "@pypi//pytest_bazel",
-    ],
 )

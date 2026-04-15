@@ -23,7 +23,6 @@ from pathlib import Path
 import pygit2
 from kubernetes import client, config
 
-from cluster.flux_convergence import monitor_flux_convergence
 from cluster.network_readiness import (
     restart_cilium_operator_gateway_controller,
     verify_clusterip_routing,
@@ -224,11 +223,7 @@ def deploy_services(*, excludes: list[str]) -> None:
     log.info("Deploying all remaining resources (Flux, VMs)...")
     tofu("apply", "-auto-approve", excludes=excludes)
 
-    log.info("Flux deployed. Monitoring kustomization convergence...")
-    config.load_kube_config(str(kubeconfig))
-    monitor_flux_convergence()
-
-    log.info("Bootstrap complete - all kustomizations converged.")
+    log.info("Bootstrap complete.")
     print(f"\nAccess cluster: export KUBECONFIG='{kubeconfig}'")
 
 
