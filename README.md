@@ -21,7 +21,6 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `trilium/`         | Trilium Notes extensions            |
 | `inventree_utils/` | InventTree plugins                  |
 | `website/`         | Personal website (Hakyll)           |
-| `x/k8s_old/`       | Legacy k3s cluster                  |
 
 ## Build System
 

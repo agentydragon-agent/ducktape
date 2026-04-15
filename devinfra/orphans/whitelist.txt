@@ -55,7 +55,6 @@ devinfra/claude/hook_daemon/profiles/**/*.mako
 found/**
 ansible/**
 nix/**
-k8s_old/**
 
 # k8s cluster manifests (declarative YAML, never Bazelized; scripts/charts/terraform are Bazelized)
 cluster/k8s/**
