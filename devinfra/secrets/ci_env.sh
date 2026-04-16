@@ -14,11 +14,6 @@
 # `bb remote`'s `x-buildbuddy-platform.env-overrides`. See
 # .github/workflows/push-images.yml for the wiring.
 #
-# TODO: secrets/github-pat-agentydragon-agent.yaml is still read by non-CI
-# consumers (devinfra/claude/ web sessions, devinfra/secrets/web_env.sh,
-# wt/server/github_client.py). When those are migrated off the machine-user
-# PAT, the SOPS file + PAT can be rotated out entirely.
-#
 # TODO: secrets/ci/ghcr-credentials.sops.yaml is no longer consumed by any
 # CI workflow after the migration to secrets.GITHUB_TOKEN. It can be deleted
 # once no out-of-tree consumer depends on it; keeping it temporarily so the
