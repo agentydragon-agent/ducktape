@@ -24,9 +24,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
-from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.auth import AuthProvider
-from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.lifespan import combine_lifespans
 from pydantic import BaseModel
@@ -51,6 +49,8 @@ from airlock.oauth.refresh import token_refresh_loop
 from airlock.oauth.routes import create_oauth_router
 from airlock.predicates import load_predicate
 from airlock.proxy_server import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, AirlockServer
+from mcp_infra.authentik_auth.auth import build_authentik_auth
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 
 logger = logging.getLogger(__name__)
 
@@ -201,25 +201,15 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
 def _build_auth(settings: Settings, *, kv_store: PostgresKeyValueStore | None = None) -> AuthProvider:
     """Build the auth provider: OIDCProxy + JWTVerifier when configured, plain JWTVerifier otherwise."""
     if settings.oidc_proxy_client_id and settings.oidc_proxy_client_secret:
-        proxy = OIDCProxy(
-            config_url=f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration",
-            client_id=settings.oidc_proxy_client_id,
-            client_secret=settings.oidc_proxy_client_secret,
-            base_url=f"{settings.public_base_url}/mcp",
-            require_authorization_consent=True,
-            client_storage=kv_store,
+        config = AuthentikAuthConfig(
+            oidc_issuer=settings.oidc_issuer,
+            oidc_client_id=settings.oidc_proxy_client_id,
+            oidc_client_secret=settings.oidc_proxy_client_secret,
+            # Airlock is mounted under FastAPI at /mcp, so base_url includes the prefix.
+            public_base_url=f"{settings.public_base_url}/mcp",
         )
-        # OIDCProxy doesn't expose valid_scopes for DCR; patch it so clients can
-        # register with any of airlock's scopes.
-        assert proxy.client_registration_options is not None
-        proxy.client_registration_options.valid_scopes = [PROPOSE_SCOPE, DECIDE_SCOPE, READ_SCOPE, "openid"]
-        return MultiAuth(
-            server=proxy,
-            verifiers=[
-                JWTVerifier(
-                    jwks_uri=f"{settings.oidc_issuer.rstrip('/')}/.well-known/jwks", issuer=settings.oidc_issuer
-                )
-            ],
+        return build_authentik_auth(
+            config, valid_scopes=[PROPOSE_SCOPE, DECIDE_SCOPE, READ_SCOPE, "openid"], client_storage=kv_store
         )
     # Fallback: discover JWKS from OIDC issuer synchronously at startup.
     discovery_url = f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"

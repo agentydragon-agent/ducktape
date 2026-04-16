@@ -18,14 +18,17 @@ from urllib.parse import urlparse, urlunparse
 class AuthentikAuthConfig:
     """Auth-only config for an Authentik-backed MCP server.
 
-    Fields map 1:1 to what OIDCProxy and AuthentikExchangeAuth need.
+    Core fields (oidc_issuer through public_base_url) are needed by
+    `build_authentik_auth`. Exchange fields (proxy_client_id, exchange_timeout)
+    are only needed when using `AuthentikExchangeAuth` for JWT-bearer token
+    exchange against a proxy provider outpost.
     """
 
     oidc_issuer: str
     oidc_client_id: str
     oidc_client_secret: str
     public_base_url: str
-    proxy_client_id: str
+    proxy_client_id: str | None = None
     exchange_timeout: float = 10.0
 
     def normalized_public_base_url(self) -> str:

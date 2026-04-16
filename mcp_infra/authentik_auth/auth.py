@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -45,11 +45,24 @@ EXCHANGE_SCOPES = "openid email profile ak_proxy"
 _EXPIRY_LEEWAY = 30
 
 
-def build_authentik_auth(config: AuthentikAuthConfig) -> AuthProvider:
+DEFAULT_VALID_SCOPES = ["openid", "email", "profile"]
+
+
+def build_authentik_auth(
+    config: AuthentikAuthConfig, *, valid_scopes: list[str] | None = None, client_storage: Any | None = None
+) -> AuthProvider:
     """Build OIDCProxy + JWTVerifier auth for an Authentik-backed MCP server.
 
     OIDCProxy handles the user-facing MCP OAuth dance (DCR, PKCE, consent).
     JWTVerifier validates tool-call Bearer tokens against Authentik's JWKS.
+
+    Args:
+        config: Authentik auth configuration.
+        valid_scopes: Scopes OIDCProxy's DCR endpoint will accept. Defaults
+            to ``["openid", "email", "profile"]``.
+        client_storage: Optional ``AsyncKeyValue`` backend for OIDCProxy state
+            (DCR registrations, tokens). Defaults to FastMCP's file-based
+            encrypted store under ``FASTMCP_HOME``.
     """
     issuer = config.normalized_issuer()
     proxy = OIDCProxy(
@@ -58,9 +71,10 @@ def build_authentik_auth(config: AuthentikAuthConfig) -> AuthProvider:
         client_secret=config.oidc_client_secret,
         base_url=config.normalized_public_base_url(),
         require_authorization_consent=True,
+        client_storage=client_storage,
     )
     assert proxy.client_registration_options is not None
-    proxy.client_registration_options.valid_scopes = ["openid", "email", "profile"]
+    proxy.client_registration_options.valid_scopes = valid_scopes or DEFAULT_VALID_SCOPES
     return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=f"{issuer}/.well-known/jwks", issuer=issuer)])
 
 
@@ -75,6 +89,8 @@ class AuthentikExchangeAuth(httpx.Auth):
     """
 
     def __init__(self, config: AuthentikAuthConfig) -> None:
+        if config.proxy_client_id is None:
+            raise ValueError("proxy_client_id is required for AuthentikExchangeAuth")
         self._config = config
         self._exchange_client = AsyncOAuth2Client(client_id=config.proxy_client_id, timeout=config.exchange_timeout)
         # Per-user cache: upstream JWT → OAuth2Token (with expires_at tracking).
