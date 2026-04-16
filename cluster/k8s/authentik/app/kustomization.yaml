@@ -31,6 +31,7 @@ configMapGenerator:
       - blueprints/google-workspace-mcp-sso.yaml
       - blueprints/embedded-outpost.yaml
       - blueprints/openclaw-agent-oauth2.yaml
+      - blueprints/airlock-scope-mappings.yaml
       - blueprints/airlock-sso.yaml
       - blueprints/claude-code-airlock-oauth2.yaml
     namespace: authentik

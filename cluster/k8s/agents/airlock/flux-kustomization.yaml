@@ -25,5 +25,5 @@ spec:
       namespace: airlock
   dependsOn:
     - name: gateway
-    - name: external-secrets-config
+    - name: sso-providers-tf
     - name: cnpg

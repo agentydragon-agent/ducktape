@@ -21,4 +21,4 @@ spec:
     - name: grafana-operator
     - name: grafana-db
     - name: monitoring-stack-secrets
-    - name: authentik-blueprint-grafana-secret
+    - name: sso-providers-tf

@@ -1,0 +1,21 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: sso-providers
+  namespace: flux-system
+spec:
+  interval: 15m
+  approvePlan: "auto"
+  path: ./cluster/terraform/gitops/sso-providers
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix    = "sso-providers"
+        namespace        = "flux-system"
+      }
+  vars: []
