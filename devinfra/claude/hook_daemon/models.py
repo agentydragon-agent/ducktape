@@ -15,7 +15,7 @@ class StartupResult:
     """Outcome of running startup_env_script at daemon startup.
 
     exit_code is None when no script was configured.
-    output is the script's combined stdout+stderr (human-readable status/error messages).
+    output is the script's stderr (human-readable status/diagnostic messages).
     env_overlay holds vars that were new or changed vs. the pre-script environment.
     """
 

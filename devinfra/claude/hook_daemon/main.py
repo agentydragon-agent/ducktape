@@ -23,11 +23,13 @@ logger = logging.getLogger(__name__)
 def _source_env_script(script_path: Path, extra_env: dict[str, str] | None = None) -> StartupResult:
     """Run a startup env script and collect env var patches without mutating os.environ.
 
-    The script must print `export VAR=value` lines to stdout (as try_export does).
-    Runs as: eval "$(script)" && env -0 — executes the script in a subprocess,
-    evals its stdout, then dumps the final env via null-delimited pairs. Returns
-    the vars the script added or changed relative to the current env; callers
-    apply them explicitly rather than relying on a global mutation.
+    The script exports vars directly (not via stdout). We source it in a
+    subprocess, then dump the final env via null-delimited pairs. Returns the
+    vars the script added or changed relative to the current env; callers apply
+    them explicitly rather than relying on a global mutation.
+
+    Script stdout and stderr are captured for the session banner (diagnostic
+    messages only — secret values are never printed).
 
     extra_env is merged into the subprocess environment (and into the baseline
     used to compute the overlay, so the flags themselves are not reported as
@@ -43,11 +45,12 @@ def _source_env_script(script_path: Path, extra_env: dict[str, str] | None = Non
     initial_env = dict(os.environ)
     if extra_env:
         initial_env.update(extra_env)
-    # Pipe script stdout through `tee /dev/stderr` so the export lines are visible
-    # in proc.stderr alongside the script's own stderr. proc.stdout receives only the
-    # null-delimited `env -0` output used for env var parsing.
+    # Source the script (which exports vars directly into the shell), then dump
+    # the final environment via null-delimited pairs on stdout. Script diagnostic
+    # output (stderr) is captured separately for the session banner. Stdout from
+    # the script itself is redirected to stderr so it doesn't mix with env -0.
     proc = subprocess.run(
-        ["bash", "-c", f'eval "$({shlex.quote(str(script_path))} | tee /dev/stderr)" && env -0'],
+        ["bash", "-c", f"source {shlex.quote(str(script_path))} >&2 && env -0"],
         capture_output=True,
         env=initial_env,
         check=False,

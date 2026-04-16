@@ -7,7 +7,7 @@ DUCKTAPE_CLAUDE_HOOKS_PROFILE env var.
 Secrets are not handled here.
 Web: sourced via startup_env_script (web_env.sh) at daemon startup (SOPS_AGE_KEY
 is available in the daemon's inherited env from Claude Code).
-CLI: sourced via .envrc (eval "$(devinfra/secrets/cli_env.sh)") before daemon starts.
+CLI: sourced via .envrc (source devinfra/secrets/cli_env.sh) before daemon starts.
 """
 
 from __future__ import annotations
@@ -136,7 +136,7 @@ class ProfileConfig(BaseModel):
     startup_env_script: str | None = Field(
         default=None,
         description="Repo-relative path to a shell script run at daemon startup. "
-        "The script's stdout must be eval-able shell (e.g. `export VAR=val` lines from try_export). "
+        "The script exports vars directly (sourced, not eval'd). "
         "New/changed vars are merged into os.environ before any session starts. "
         "Used by the web profile to decrypt SOPS secrets when SOPS_AGE_KEY is available.",
     )

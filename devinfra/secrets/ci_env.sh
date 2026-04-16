@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CI environment: common secrets + registry/release credentials.
-# Usage: eval "$(devinfra/secrets/ci_env.sh)"
+# Usage: source devinfra/secrets/ci_env.sh
 #
 # Age recipients: ci (+ admin via _common.sh)
 #   secrets/ci/*.sops.yaml:             admin, ci

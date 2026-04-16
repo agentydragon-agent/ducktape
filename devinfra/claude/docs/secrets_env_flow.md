@@ -133,12 +133,12 @@ only inherits the container env. Neither subprocess receives the user's UI vars.
 - Configured in `profiles/web/profile.yaml` as `devinfra/secrets/web_env.sh`
 - Run by `main.py` at daemon startup, after the profile is loaded
 - By daemon startup, `SOPS_AGE_KEY` is in the inherited env → decryption works
-- `eval "$(web_env.sh)" && env -0` captures exported vars, diffs against
+- `source web_env.sh && env -0` captures exported vars, diffs against
   initial `os.environ`, and merges new/changed vars into `os.environ`
 - All subsequent session start logic reads secrets directly from `os.environ`
 
 ## CLI Profile
 
 CLI sessions don't use `startup_env_script`. Secrets are sourced via `.envrc`
-(direnv) before the daemon starts: `eval "$(devinfra/secrets/cli_env.sh)"`.
+(direnv) before the daemon starts: `source devinfra/secrets/cli_env.sh`.
 By the time the daemon launches, all secrets are already in the environment.

@@ -6,8 +6,8 @@
 #   buildbuddy.yaml:               admin, all user keys, claude-web, ci
 #   docker-ci/client-key.sops.pem: admin, claude-web, ci
 #
-# On failure, writes diagnostics to stderr. Stdout contains only valid
-# export lines — safe to eval even on partial failure.
+# On failure, writes diagnostics to stderr. Scripts export vars directly
+# into the current shell — source them, don't eval their stdout.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -26,9 +26,9 @@ if [ -z "${SOPS_AGE_KEY:-}" ] && command -v ssh-to-age >/dev/null 2>&1; then
   unset _ssh_key
 fi
 
-# Helper: read a value from a K8s Secret via kubectl, output an export line. On
+# Helper: read a value from a K8s Secret via kubectl, export directly. On
 # failure (no kubeconfig, no cluster access, missing secret), warns on stderr
-# but continues — stdout only contains successful exports, safe to eval.
+# but continues.
 try_export_from_k8s() {
   local var_name="$1" namespace="$2" secret_name="$3" key="$4" description="${5:-}"
   local _desc_suffix=""
@@ -56,11 +56,11 @@ try_export_from_k8s() {
   local _ok_msg="secrets: ${var_name}: OK"
   [ -n "$description" ] && _ok_msg="${_ok_msg} — ${description}"
   echo "$_ok_msg" >&2
-  printf 'export %s=%q\n' "$var_name" "$value"
+  export "$var_name=$value"
 }
 
-# Helper: decrypt a SOPS file, output an export line. On failure, warns on stderr
-# but continues (stdout only contains successful exports, safe to eval).
+# Helper: decrypt a SOPS file, export directly. On failure, warns on stderr
+# but continues.
 try_export() {
   local var_name="$1" file="$2" extract="${3:-}" description="${4:-}"
   if [ ! -f "$file" ]; then
@@ -83,7 +83,7 @@ try_export() {
   local _ok_msg="secrets: ${var_name}: OK"
   [ -n "$description" ] && _ok_msg="${_ok_msg} — ${description}"
   echo "$_ok_msg" >&2
-  printf 'export %s=%q\n' "$var_name" "$value"
+  export "$var_name=$value"
 }
 
 # --- Common secrets (shared across all contexts) ---

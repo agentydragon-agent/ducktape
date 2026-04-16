@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Web agent environment: common secrets + machine-user identity + k8s access.
-# Usage: eval "$(devinfra/secrets/web_env.sh)"
+# Usage: source devinfra/secrets/web_env.sh
 #
 # Age recipients: claude-web (+ admin via _common.sh)
 #   github-pat-agentydragon-agent.yaml: admin, all user keys, claude-web, ci
@@ -65,5 +65,5 @@ try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.
 # (sops, bb, gh, etc.) without relying on /usr/local/bin symlinks.
 if [ -d "/nix/var/nix/profiles/default/bin" ]; then
   echo "PATH: prepended /nix/var/nix/profiles/default/bin (Nix default profile)" >&2
-  echo 'export PATH=/nix/var/nix/profiles/default/bin:$PATH'
+  export PATH="/nix/var/nix/profiles/default/bin:$PATH"
 fi
