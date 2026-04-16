@@ -49,8 +49,7 @@ from airlock.oauth.refresh import token_refresh_loop
 from airlock.oauth.routes import create_oauth_router
 from airlock.predicates import load_predicate
 from airlock.proxy_server import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, AirlockServer
-from mcp_infra.authentik_auth.auth import build_authentik_auth
-from mcp_infra.authentik_auth.config import AuthentikAuthConfig
+from mcp_infra.authentik_auth.auth import AuthentikAuthConfig, build_authentik_auth
 
 logger = logging.getLogger(__name__)
 

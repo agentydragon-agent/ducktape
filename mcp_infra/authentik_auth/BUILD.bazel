@@ -1,19 +1,23 @@
-load("//devinfra/python:defs.bzl", "py_library")
-
-py_library(
-    name = "config",
-    srcs = ["config.py"],
-    visibility = ["//visibility:public"],
-)
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "auth",
     srcs = ["auth.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":config",
         "@pypi//authlib",
         "@pypi//fastmcp",
         "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "test_auth",
+    srcs = ["test_auth.py"],
+    deps = [
+        ":auth",
+        "@pypi//authlib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

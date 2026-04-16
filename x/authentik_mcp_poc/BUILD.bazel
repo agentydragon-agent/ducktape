@@ -8,7 +8,7 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//mcp_infra/authentik_auth:config",
+        "//mcp_infra/authentik_auth:auth",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],

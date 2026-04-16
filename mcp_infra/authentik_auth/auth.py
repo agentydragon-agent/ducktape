@@ -1,11 +1,15 @@
 """Shared auth wiring for Authentik-backed MCP servers.
 
-Two components:
+Three components:
 
-1. `build_authentik_auth` — constructs the FastMCP AuthProvider (OIDCProxy +
+1. `AuthentikAuthConfig` — frozen dataclass capturing the auth-only fields
+   needed to wire OIDCProxy + JWTVerifier and perform JWT-bearer token
+   exchanges against an Authentik proxy provider outpost.
+
+2. `build_authentik_auth` — constructs the FastMCP AuthProvider (OIDCProxy +
    JWTVerifier + MultiAuth) that handles the MCP OAuth dance with claude.ai.
 
-2. `AuthentikExchangeAuth` — an httpx.Auth subclass that transparently exchanges
+3. `AuthentikExchangeAuth` — an httpx.Auth subclass that transparently exchanges
    the MCP user's upstream Authentik JWT for a proxy-provider-scoped JWT via
    RFC 7521 jwt-bearer client_credentials. Tokens are cached per upstream JWT
    using authlib's `OAuth2Token` for expiry tracking. Uses a long-lived
@@ -17,7 +21,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -27,8 +33,6 @@ from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
-
-from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -44,8 +48,52 @@ EXCHANGE_SCOPES = "openid email profile ak_proxy"
 # OAuth2Token.is_expired(leeway=N) subtracts this from expires_at.
 _EXPIRY_LEEWAY = 30
 
-
 DEFAULT_VALID_SCOPES = ["openid", "email", "profile"]
+
+
+# ── Config ────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class AuthentikAuthConfig:
+    """Auth-only config for an Authentik-backed MCP server.
+
+    Core fields (oidc_issuer through public_base_url) are needed by
+    `build_authentik_auth`. Exchange fields (proxy_client_id, exchange_timeout)
+    are only needed when using `AuthentikExchangeAuth` for JWT-bearer token
+    exchange against a proxy provider outpost.
+    """
+
+    oidc_issuer: str
+    oidc_client_id: str
+    oidc_client_secret: str
+    public_base_url: str
+    proxy_client_id: str | None = None
+    exchange_timeout: float = 10.0
+
+    def normalized_public_base_url(self) -> str:
+        return self.public_base_url.rstrip("/")
+
+    def normalized_issuer(self) -> str:
+        return self.oidc_issuer.rstrip("/")
+
+    def authentik_token_endpoint(self) -> str:
+        """Global Authentik `/application/o/token/` URL derived from `oidc_issuer`.
+
+        Strips the trailing provider slug, preserving any reverse-proxy path
+        prefix before `/application/o/`.
+        """
+        parsed = urlparse(self.oidc_issuer.rstrip("/"))
+        prefix, marker, provider_slug = parsed.path.rpartition("/application/o/")
+        if not marker or not provider_slug or "/" in provider_slug:
+            raise ValueError(
+                "oidc_issuer must end in an Authentik per-provider issuer path "
+                f"like `.../application/o/<slug>/`; got {self.oidc_issuer!r}"
+            )
+        return urlunparse(parsed._replace(path=f"{prefix}{marker}token/"))
+
+
+# ── Auth builder ──────────────────────────────────────────────────────────
 
 
 def build_authentik_auth(
@@ -76,6 +124,9 @@ def build_authentik_auth(
     assert proxy.client_registration_options is not None
     proxy.client_registration_options.valid_scopes = valid_scopes or DEFAULT_VALID_SCOPES
     return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=f"{issuer}/.well-known/jwks", issuer=issuer)])
+
+
+# ── Token exchange auth ───────────────────────────────────────────────────
 
 
 class AuthentikExchangeAuth(httpx.Auth):

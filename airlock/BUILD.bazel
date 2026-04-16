@@ -116,7 +116,6 @@ py_library(
         "//airlock/oauth:refresh",
         "//airlock/oauth:routes",
         "//mcp_infra/authentik_auth:auth",
-        "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",
         "@pypi//fastmcp",
         "@pypi//httpx",

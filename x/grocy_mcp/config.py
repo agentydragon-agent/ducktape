@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from mcp_infra.authentik_auth.config import AuthentikAuthConfig
+from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
 
 
 class ServerSettings(BaseSettings):
