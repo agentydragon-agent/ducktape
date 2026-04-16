@@ -1,11 +1,30 @@
 # SSO Integration (Authentik)
 
+## Two provider management patterns
+
+### TF-managed providers (preferred for new providers)
+
+`terraform/gitops/sso-providers/` creates `authentik_provider_oauth2` resources directly.
+TF owns the client_secret lifecycle — no Vault, no ESO, no `!Env` drift.
+
+**Secret flow**: TF creates provider → reads `client_secret` → writes `kubernetes_secret`
+in `authentik` namespace → Reflector mirrors to consumer namespace(s).
+
+**Currently managed**: grafana, headlamp, openclaw-agent.
+
+### Blueprint-managed providers (legacy, migrating)
+
 Native blueprints in `k8s/authentik/app/blueprints/` (ConfigMap, re-applied every 60 min).
 
 **Secret flow**: `terraform/gitops/sso-secrets/` → Vault → ESO `authentik-sso-client-secrets`
 in authentik namespace → worker `envFrom` → blueprint `!Env` tags.
 
 **App-side secrets**: ESO in `k8s/authentik/blueprints/{app}-secret/` reads from same Vault path.
+
+**Currently managed**: gitea, harbor, matrix, vault, inventree.
+
+**Why migrate**: `!Env` in blueprints causes silent drift — Authentik doesn't re-apply
+when env vars change. TF-managed providers eliminate this class of bug.
 
 ## Proxy-mode NetworkPolicy (required)
 
@@ -51,3 +70,7 @@ removes the stale resource. Follow the `CLEANUP` tombstone convention from <../.
 Place absent entries in the app's existing blueprint, or in a dedicated cleanup blueprint
 (e.g., `k8s/authentik/blueprints/headscale-cleanup.yaml`) when the app itself is gone.
 Remove the entries after a few reconcile cycles once confirmed clean.
+
+**Exception**: When migrating a provider from blueprints to TF, use tombstones to delete
+the old blueprint-managed resource, then let TF create a fresh one. The tombstone
+and TF creation can coexist in the same commit.

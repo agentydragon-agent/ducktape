@@ -40,16 +40,6 @@ resource "random_password" "gitea_client_secret" {
   }
 }
 
-resource "random_password" "grafana_client_secret" {
-  length  = 32
-  special = false
-  keepers = { rotation_version = var.rotation_version }
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
 resource "random_password" "harbor_client_secret" {
   length  = 32
   special = false
@@ -90,26 +80,6 @@ resource "random_password" "inventree_client_secret" {
   }
 }
 
-resource "random_password" "headlamp_client_secret" {
-  length  = 32
-  special = false
-  keepers = { rotation_version = var.rotation_version }
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
-resource "random_password" "openclaw_agent_client_secret" {
-  length  = 32
-  special = false
-  keepers = { rotation_version = var.rotation_version }
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
 # --- Vault Storage: Basic Credentials ---
 
 resource "vault_kv_secret_v2" "gitea_oidc" {
@@ -119,16 +89,6 @@ resource "vault_kv_secret_v2" "gitea_oidc" {
   data_json = jsonencode({
     client_id     = "gitea"
     client_secret = random_password.gitea_client_secret.result
-  })
-}
-
-resource "vault_kv_secret_v2" "grafana_oidc" {
-  mount = "kv"
-  name  = "sso/grafana"
-
-  data_json = jsonencode({
-    client_id     = "grafana"
-    client_secret = random_password.grafana_client_secret.result
   })
 }
 
@@ -172,46 +132,8 @@ resource "vault_kv_secret_v2" "inventree_oidc" {
   })
 }
 
-resource "vault_kv_secret_v2" "headlamp_oidc" {
-  mount = "kv"
-  name  = "sso/headlamp"
-
-  data_json = jsonencode({
-    client_id     = "headlamp"
-    client_secret = random_password.headlamp_client_secret.result
-  })
-}
-
-resource "vault_kv_secret_v2" "openclaw_agent_oidc" {
-  mount = "kv"
-  name  = "sso/openclaw-agent"
-
-  data_json = jsonencode({
-    client_id     = "openclaw-agent"
-    client_secret = random_password.openclaw_agent_client_secret.result
-  })
-}
-
 # --- Vault Storage: Full OIDC Provider Configs ---
 # These are consumed by application-side ESO to configure OIDC in the app itself.
-
-resource "vault_kv_secret_v2" "grafana_oidc_config" {
-  mount = "kv"
-  name  = "sso/oidc-providers/grafana"
-
-  data_json = jsonencode({
-    enabled             = true
-    name                = "Authentik"
-    client_id           = "grafana"
-    client_secret       = random_password.grafana_client_secret.result
-    scopes              = "openid email profile"
-    auth_url            = "https://auth.allegedly.works/application/o/authorize/"
-    token_url           = "http://authentik-server.authentik/application/o/token/"
-    api_url             = "http://authentik-server.authentik/application/o/userinfo/"
-    role_attribute_path = "contains(groups[*], 'Grafana Admins') && 'Admin' || 'Viewer'"
-    allow_sign_up       = true
-  })
-}
 
 resource "vault_kv_secret_v2" "matrix_oidc_config" {
   mount = "kv"
