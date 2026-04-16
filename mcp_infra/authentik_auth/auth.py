@@ -157,13 +157,13 @@ class AuthentikExchangeAuth(httpx.Auth):
         # Fast path: check cache without lock.
         cached = self._cache.get(upstream_token)
         if cached is not None and not cached.is_expired(leeway=_EXPIRY_LEEWAY):
-            return cached["access_token"]
+            return str(cached["access_token"])
 
         # Slow path: acquire lock, re-check, then exchange.
         async with self._lock:
             cached = self._cache.get(upstream_token)
             if cached is not None and not cached.is_expired(leeway=_EXPIRY_LEEWAY):
-                return cached["access_token"]
+                return str(cached["access_token"])
 
             token_data: OAuth2Token = await self._exchange_client.fetch_token(
                 url=self._config.authentik_token_endpoint(),
@@ -178,7 +178,7 @@ class AuthentikExchangeAuth(httpx.Auth):
                 token_data.get("expires_in"),
                 token_data.get("expires_at"),
             )
-            return token_data["access_token"]
+            return str(token_data["access_token"])
 
     async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
         access = get_access_token()
