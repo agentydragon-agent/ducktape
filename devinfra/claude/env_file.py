@@ -48,7 +48,7 @@ class EnvVars:
 
     All profiles set bazel_wrapper_dir and session_bazelrc. Other fields
     are populated based on profile flags (setup_auth_proxy, setup_docker,
-    install_mkcert, etc.).
+    etc.).
     """
 
     # Required in all profiles
