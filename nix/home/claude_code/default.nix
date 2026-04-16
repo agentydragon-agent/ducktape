@@ -242,6 +242,7 @@ let
   # Directories where Read/Grep/Glob are always allowed without prompting
   alwaysAllowedReadDirs = [
     "~/.claude" # Claude Code session history, settings, commands
+    "/nix" # Nix store and configuration
   ]
   ++ cfg.extraAllowedReadDirs;
 
