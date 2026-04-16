@@ -151,6 +151,9 @@ metadata:
     rbac.kyverno.io/aggregate-to-admission-controller: "true"
     rbac.kyverno.io/aggregate-to-background-controller: "true"
 rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["dns.cav.enablers.ob"]
     resources: ["clusterrrsets"]
     verbs: ["create", "update", "patch", "delete", "get", "list"]
