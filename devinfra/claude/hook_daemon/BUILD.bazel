@@ -31,17 +31,11 @@ py_library(
     ],
 )
 
-py_library(
-    name = "kubeconfig",
-    srcs = ["kubeconfig.py"],
-    visibility = ["//visibility:public"],
-)
-
 py_test(
     name = "test_kubeconfig",
     srcs = ["test_kubeconfig.py"],
     deps = [
-        ":kubeconfig",
+        ":write_kubeconfig_cli",
         "@pypi//pytest_bazel",
     ],
 )
@@ -262,7 +256,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
-        ":kubeconfig",
         "//devinfra/claude/auth_proxy:vars",
         "@pypi//pyyaml",
     ],

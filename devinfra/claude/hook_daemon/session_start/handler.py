@@ -183,7 +183,7 @@ async def _setup_platform_services(
 
     env_overlay is the delta from startup_env_script (new/changed vars vs. os.environ).
     Callers access secrets as properties (k8s_token, etc.).
-    BuildBuddy, fork remote, and kubeconfig write are handled in handle().
+    BuildBuddy and fork remote are handled in handle().
 
     Which services run is controlled by profile flags (setup_auth_proxy,
     setup_docker, setup_tmpfs, install_mkcert).

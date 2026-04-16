@@ -1,9 +1,8 @@
 """`claude-hook write-kubeconfig <path>` — materialize a service-account kubeconfig.
 
-Shared kubeconfig writer used by both `web_env.sh` (writes `~/.kube/config` at
-daemon startup) and `claude-sandbox-kubectl-mcp.sh` (writes a tempfile for the
-kubectl MCP server). Both use `build_kubeconfig` for consistent CA and proxy
-handling.
+Kubeconfig writer used by `web_env.sh` (writes `~/.kube/config` at daemon
+startup) and `claude-sandbox-kubectl-mcp.sh` (writes a tempfile for the
+kubectl MCP server).
 
 Used to be a duplicated bash script at `devinfra/claude/kube_from_sops.sh` that
 silently drifted — emitting a kubeconfig with no `certificate-authority-data`
@@ -13,6 +12,7 @@ and no `proxy-url`, breaking kubectl on Claude Code web (TLS inspecting proxy
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import subprocess
@@ -23,7 +23,6 @@ import yaml
 
 from devinfra.claude.auth_proxy.vars import get_proxy_url
 from devinfra.claude.hook_daemon.config import ProfileConfig
-from devinfra.claude.hook_daemon.kubeconfig import build_kubeconfig
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +97,32 @@ def _resolve_ca_path() -> Path | None:
     return None
 
 
+def _build_kubeconfig(
+    token: str, server: str, service_account: str, namespace: str, ca_path: Path | None, proxy_url: str | None
+) -> dict:
+    """Build kubeconfig dict for kubectl CLI use."""
+    cluster_config: dict[str, str] = {"server": server}
+    if ca_path and ca_path.exists():
+        ca_pem = ca_path.read_text()
+        cluster_config["certificate-authority-data"] = base64.b64encode(ca_pem.encode()).decode()
+    if proxy_url:
+        cluster_config["proxy-url"] = proxy_url
+
+    return {
+        "apiVersion": "v1",
+        "kind": "Config",
+        "clusters": [{"cluster": cluster_config, "name": "cluster"}],
+        "contexts": [
+            {
+                "context": {"cluster": "cluster", "namespace": namespace, "user": service_account},
+                "name": service_account,
+            }
+        ],
+        "current-context": service_account,
+        "users": [{"name": service_account, "user": {"token": token}}],
+    }
+
+
 def main(argv: list[str]) -> None:
     if len(argv) != 1:
         print("usage: claude-hook write-kubeconfig <output-path>", file=sys.stderr)
@@ -118,7 +143,7 @@ def main(argv: list[str]) -> None:
     ca_path = _resolve_ca_path()
     proxy_url = get_proxy_url(dict(os.environ))
 
-    kubeconfig = build_kubeconfig(
+    kubeconfig = _build_kubeconfig(
         token=token,
         server=profile.k8s.server,
         service_account=profile.k8s.service_account,
