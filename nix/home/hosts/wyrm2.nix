@@ -42,6 +42,7 @@
     pkgs.psmisc
     # TODO: Add a GUI system monitor with graphs (psensor not in nixpkgs;
     # candidates: gnomeExtensions.vitals, gnomeExtensions.astra-monitor)
+    pkgs.signal-desktop
     pkgs.telegram-desktop
     pkgs.tor-browser
     pkgs.tuxguitar
@@ -53,6 +54,26 @@
   ];
 
   services.google-drive.enable = true;
+
+  xdg.autostart = {
+    enable = true;
+    entries = [
+      (pkgs.writeText "signal-desktop.desktop" ''
+        [Desktop Entry]
+        Type=Application
+        Name=Signal
+        Exec=signal-desktop --start-in-tray
+        X-GNOME-Autostart-enabled=true
+      '')
+      (pkgs.writeText "telegram-desktop.desktop" ''
+        [Desktop Entry]
+        Type=Application
+        Name=Telegram Desktop
+        Exec=telegram-desktop -startintray
+        X-GNOME-Autostart-enabled=true
+      '')
+    ];
+  };
 
   home.stateVersion = "25.11";
 }
