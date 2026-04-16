@@ -1,0 +1,154 @@
+# Generates PowerDNS ClusterRRset DNS records from VPS node ExternalIPs.
+#
+# Replaces the old cluster-info ConfigMap + Flux postBuild substitution chain.
+# When a Node changes, Kyverno re-fetches all VPS node IPs and regenerates
+# the DNS records. Adding/removing a VPS node automatically updates DNS.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-dns-records
+  annotations:
+    policies.kyverno.io/title: Generate DNS A records from VPS node IPs
+    policies.kyverno.io/category: DNS
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Watches Node resources and generates allegedly.works DNS records.
+      Wildcard and apex get all VPS IPv4 IPs; ns1/ns2 get individual CP IPs.
+spec:
+  rules:
+    # ── Wildcard: *.allegedly.works → all VPS IPs ────────────────────────
+    - name: wildcard
+      match:
+        any:
+          - resources:
+              kinds: [Node]
+      context:
+        - name: vpsIPv4s
+          apiCall:
+            urlPath: /api/v1/nodes?labelSelector=topology.kubernetes.io/region=hil
+            jmesPath: >-
+              items[].status.addresses[?type=='ExternalIP' && contains(address, '.')][]
+              | [].address | sort(@)
+      generate:
+        generateExisting: true
+        synchronize: true
+        orphanDownstreamOnPolicyDelete: false
+        apiVersion: dns.cav.enablers.ob/v1alpha2
+        kind: ClusterRRset
+        name: wildcard
+        data:
+          spec:
+            zoneRef:
+              kind: ClusterZone
+              name: allegedly.works
+            name: "*.allegedly.works."
+            type: A
+            ttl: 300
+            records: "{{ vpsIPv4s }}"
+
+    # ── Apex: allegedly.works → all VPS IPs ──────────────────────────────
+    - name: apex
+      match:
+        any:
+          - resources:
+              kinds: [Node]
+      context:
+        - name: vpsIPv4s
+          apiCall:
+            urlPath: /api/v1/nodes?labelSelector=topology.kubernetes.io/region=hil
+            jmesPath: >-
+              items[].status.addresses[?type=='ExternalIP' && contains(address, '.')][]
+              | [].address | sort(@)
+      generate:
+        generateExisting: true
+        synchronize: true
+        orphanDownstreamOnPolicyDelete: false
+        apiVersion: dns.cav.enablers.ob/v1alpha2
+        kind: ClusterRRset
+        name: apex
+        data:
+          spec:
+            zoneRef:
+              kind: ClusterZone
+              name: allegedly.works
+            name: "allegedly.works."
+            type: A
+            ttl: 300
+            records: "{{ vpsIPv4s }}"
+
+    # ── NS1: ns1.allegedly.works → 1st CP node IP ───────────────────────
+    - name: ns1
+      match:
+        any:
+          - resources:
+              kinds: [Node]
+      context:
+        - name: cpNodes
+          apiCall:
+            urlPath: /api/v1/nodes?labelSelector=topology.kubernetes.io/region=hil,node-role.kubernetes.io/control-plane
+            jmesPath: >-
+              items[].{name: metadata.name,
+                       ip: status.addresses[?type=='ExternalIP' && contains(address, '.')][0].address}
+              | sort_by(@, &name)
+      generate:
+        generateExisting: true
+        synchronize: true
+        orphanDownstreamOnPolicyDelete: false
+        apiVersion: dns.cav.enablers.ob/v1alpha2
+        kind: ClusterRRset
+        name: ns1
+        data:
+          spec:
+            zoneRef:
+              kind: ClusterZone
+              name: allegedly.works
+            name: "ns1.allegedly.works."
+            type: A
+            ttl: 3600
+            records:
+              - "{{ cpNodes[0].ip }}"
+
+    # ── NS2: ns2.allegedly.works → 2nd CP node IP ───────────────────────
+    - name: ns2
+      match:
+        any:
+          - resources:
+              kinds: [Node]
+      context:
+        - name: cpNodes
+          apiCall:
+            urlPath: /api/v1/nodes?labelSelector=topology.kubernetes.io/region=hil,node-role.kubernetes.io/control-plane
+            jmesPath: >-
+              items[].{name: metadata.name,
+                       ip: status.addresses[?type=='ExternalIP' && contains(address, '.')][0].address}
+              | sort_by(@, &name)
+      generate:
+        generateExisting: true
+        synchronize: true
+        orphanDownstreamOnPolicyDelete: false
+        apiVersion: dns.cav.enablers.ob/v1alpha2
+        kind: ClusterRRset
+        name: ns2
+        data:
+          spec:
+            zoneRef:
+              kind: ClusterZone
+              name: allegedly.works
+            name: "ns2.allegedly.works."
+            type: A
+            ttl: 3600
+            records:
+              - "{{ cpNodes[1].ip }}"
+---
+# RBAC: let Kyverno background controller manage ClusterRRset resources.
+# Aggregated into the main background-controller ClusterRole via label.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno-generate-dns-records
+  labels:
+    rbac.kyverno.io/aggregate-to-background-controller: "true"
+rules:
+  - apiGroups: ["dns.cav.enablers.ob"]
+    resources: ["clusterrrsets"]
+    verbs: ["create", "update", "patch", "delete", "get", "list"]

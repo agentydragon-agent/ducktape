@@ -13,10 +13,6 @@ spec:
     kind: GitRepository
     name: flux-system
   wait: true
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cluster-info
   dependsOn:
     - name: powerdns-zone
   timeout: 5m
