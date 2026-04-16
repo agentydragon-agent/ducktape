@@ -20,7 +20,7 @@
 # change is trivially revertible.
 
 # shellcheck source=_common.sh
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 # Attic binary cache token
 try_export ATTIC_TOKEN "$REPO_ROOT/secrets/ci/attic-token.sops.yaml" '["token"]'

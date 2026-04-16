@@ -12,6 +12,6 @@
 #   - Session start hook (CLI profile)
 
 # shellcheck source=_common.sh
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 try_export_from_k8s DUCKTAPE_OTEL_BEARER_TOKEN claude-sandbox alloy-otlp-bearer-token token "OTEL bearer token — traces to Grafana Alloy"

@@ -10,7 +10,7 @@
 # into the current shell — source them, don't eval their stdout.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # If SOPS_AGE_KEY is not already set (web/CI inject it externally), derive it from
 # the SSH key using ssh-to-age. SOPS 3.12 only auto-discovers ~/.ssh/id_rsa, not

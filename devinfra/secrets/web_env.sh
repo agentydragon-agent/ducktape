@@ -17,7 +17,7 @@
 #     works without KUBECONFIG set. Web env has no pre-existing user kubeconfig.
 
 # shellcheck source=_common.sh
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 # Machine-user GitHub PAT (agentydragon-agent)
 try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" '["github_token"]' "GitHub PAT for agentydragon-agent bot — used by gh CLI automatically. PR workflow: origin is a local proxy; PRs must come from a fork (fork remote + push/PR instructions delivered via mailbox)."
