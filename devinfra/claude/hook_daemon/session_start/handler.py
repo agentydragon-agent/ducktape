@@ -30,7 +30,7 @@ from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
 from devinfra.claude.hook_daemon.models import StartupResult
 from devinfra.claude.hook_daemon.session import BgStream, Session, _feed_queue
-from devinfra.claude.hook_daemon.session_start import buildbuddy, container_runtime, mkcert, platform_detect, tmpfs
+from devinfra.claude.hook_daemon.session_start import buildbuddy, container_runtime, platform_detect, tmpfs
 from devinfra.claude.hook_daemon.shim_install import install as install_shim
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
@@ -85,7 +85,6 @@ class PlatformSetup:
     env_overlay: dict[str, str]  # vars added/changed by startup_env_script (delta over os.environ)
     auth_proxy: proxy_setup.ProxySetup | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
-    mkcert_result: mkcert.MkcertSetup | None = None
     docker_env: dict[str, str] | None = None
     bazel_cache_dir: Path | None = None
     # Shared-step results (populated by handle(), not platform setup)
@@ -186,7 +185,7 @@ async def _setup_platform_services(
     BuildBuddy and fork remote are handled in handle().
 
     Which services run is controlled by profile flags (setup_auth_proxy,
-    setup_docker, setup_tmpfs, install_mkcert).
+    setup_docker, setup_tmpfs).
     """
     logger.info("Setting up platform services...")
 
@@ -280,35 +279,11 @@ async def _setup_platform_services(
     # This task writes credentials and sets up CA/truststore.
     proxy_task = asyncio.create_task(setup_proxy_credentials())
 
-    async def mkcert_generate_certs() -> mkcert.MkcertSetup:
-        """Generate mkcert certs (no proxy dependency — runs immediately in parallel)."""
-        with tracer.start_as_current_span("setup_mkcert", context=root_ctx):
-            if not profile.install_mkcert:
-                raise SkipError("mkcert disabled (install_mkcert=False)")
-            # Pass combined_ca=None: bundle append happens in mkcert_append_bundle
-            return await mkcert.setup_mkcert(session.paths, combined_ca=None)
-
-    # Start cert generation immediately, without waiting for the proxy.
-    mkcert_task = asyncio.create_task(mkcert_generate_certs())
-
-    async def mkcert_append_bundle() -> mkcert.MkcertSetup:
-        """Append mkcert CA to the combined CA bundle (depends on proxy + cert gen)."""
-        with tracer.start_as_current_span("mkcert_append_bundle", context=root_ctx):
-            mkcert_result = await mkcert_task
-            await proxy_task
-            combined_ca = session.paths.auth_proxy_combined_ca
-            if combined_ca.exists():
-                mkcert.append_mkcert_ca_to_bundle(mkcert_result.ca_root, combined_ca)
-            return mkcert_result
-
-    results = await asyncio.gather(
-        proxy_task, setup_container_runtime_task(), bazel_tmpfs_task, mkcert_append_bundle(), return_exceptions=True
-    )
+    results = await asyncio.gather(proxy_task, setup_container_runtime_task(), bazel_tmpfs_task, return_exceptions=True)
     # Unpack with explicit type annotations for mypy
     auth_proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
     container_result: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
     tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[2]
-    mkcert_result: mkcert.MkcertSetup | BaseException = results[3]
 
     # Log non-critical failures / skips
     if isinstance(auth_proxy_result, SkipError):
@@ -322,11 +297,6 @@ async def _setup_platform_services(
         logger.info("tmpfs setup skipped: %s", tmpfs_result)
     elif isinstance(tmpfs_result, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
-
-    if isinstance(mkcert_result, SkipError):
-        logger.info("mkcert setup skipped: %s", mkcert_result)
-    elif isinstance(mkcert_result, BaseException):
-        logger.warning("Failed to set up mkcert: %s", mkcert_result)
 
     docker_env: dict[str, str] | None = None
     if isinstance(container_result, SkipError):
@@ -345,7 +315,6 @@ async def _setup_platform_services(
         env_overlay=env_overlay,
         auth_proxy=auth_proxy_result if isinstance(auth_proxy_result, proxy_setup.ProxySetup) else None,
         container=None if isinstance(container_result, BaseException) else container_result,
-        mkcert_result=None if isinstance(mkcert_result, BaseException) else mkcert_result,
         docker_env=docker_env,
         bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
     )
@@ -464,8 +433,6 @@ async def handle(
             combined_ca=combined_ca,
             docker_env=setup.docker_env,
             hook_timestamp=hook_timestamp,
-            mkcert_cert=setup.mkcert_result.cert_path if setup.mkcert_result else None,
-            mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
             bbr_bazelrc=bbr_bazelrc,
             env_overlay=startup.env_overlay,
             extra_env_script=extra_env,
@@ -501,7 +468,6 @@ async def handle(
             proxy=setup.auth_proxy,
             container=setup.container,
             background_commands=profile.background_commands,
-            mkcert=setup.mkcert_result,
             extra_context=extra_context,
             log_file=log_file,
             buildbuddy_configured=isinstance(setup.buildbuddy_setup, buildbuddy.BuildbuddyConfigured),

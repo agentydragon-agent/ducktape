@@ -111,11 +111,6 @@ class SessionPaths:
         return self.wrapper_dir / "bazelisk"
 
     @property
-    def mkcert_dir(self) -> Path:
-        """mkcert directory for certs and CA (session-scoped)."""
-        return self.session_dir / "mkcert"
-
-    @property
     def docker_dir(self) -> Path:
         return self.session_dir / "docker"
 

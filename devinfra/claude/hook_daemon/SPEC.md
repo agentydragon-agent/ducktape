@@ -28,7 +28,7 @@ Its job is to make every session look the same to the agent:
 The daemon exposes two **profiles** — `cli` and `web` — that differ both in
 what the surrounding environment is expected to provide and in which
 behaviors are enabled (e.g., the git safety shim and direnv bridge are
-CLI-only; egress proxy handling, mkcert, tmpfs, managed credentials, and
+CLI-only; egress proxy handling, tmpfs, managed credentials, and
 idle shutdown are web-only).
 
 ## Common Behaviors (CLI and Web)
@@ -142,7 +142,7 @@ to layer the shims on top.
 ### What CLI does NOT do
 
 - Does not configure an egress proxy.
-- Does not set up tmpfs, mkcert, docker, or supervisor.
+- Does not set up tmpfs, docker, or supervisor.
 - Does not write a kubeconfig — the user provides one.
 - Does not idle-shutdown.
 
@@ -195,7 +195,7 @@ identity; the daemon is responsible for standing up everything else.
   truststores, proxy env vars, or `--remote_proxy` flags to get builds
   working over the container's constrained egress.
 
-- **Container runtime.** Docker, supervisor, and mkcert are set up so that
+- **Container runtime.** Docker and supervisor are set up so that
   integration tests that need a local container runtime work.
 
 - **Tmpfs caching.** Performance-sensitive caches (Bazel output base, Docker

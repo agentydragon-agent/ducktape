@@ -69,10 +69,6 @@ class EnvVars:
     # Session metadata timestamp
     hook_timestamp: datetime | None = None
 
-    # mkcert localhost TLS certificate (when install_mkcert is enabled)
-    mkcert_cert: Path | None = None
-    mkcert_key: Path | None = None
-
     # bbr session bazelrc (metadata tags for BuildBuddy invocations)
     bbr_bazelrc: Path | None = None
 
@@ -127,10 +123,6 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     if vars.docker_env:
         exports.extend(["", "# Docker/Podman configuration"])
         exports.extend(exports_from_dict(vars.docker_env))
-
-    if vars.mkcert_cert and vars.mkcert_key:
-        exports.extend(["", "# Localhost TLS certificate (mkcert)"])
-        exports.extend(exports_from_dict({"MKCERT_CERT": vars.mkcert_cert, "MKCERT_KEY": vars.mkcert_key}))
 
     if vars.hook_timestamp:
         exports.extend(["", "# Session metadata"])

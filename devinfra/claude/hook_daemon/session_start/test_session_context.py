@@ -12,7 +12,7 @@ from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
 from devinfra.claude.hook_daemon.models import StartupResult
-from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect
+from devinfra.claude.hook_daemon.session_start import container_runtime, platform_detect
 from devinfra.claude.hook_daemon.session_start.handler import LogCollector
 from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
 
@@ -23,7 +23,6 @@ def _render(
     proxy: proxy_setup.ProxySetup | None = None,
     container: container_runtime.ContainerRuntimeSetup | None = None,
     background_commands: list[BackgroundCommand] | None = None,
-    mkcert_result: mkcert.MkcertSetup | None = None,
     extra_context: str = "",
     log_entries: list[logging.LogRecord] | None = None,
     log_file: str = "/tmp/daemon.log",
@@ -40,7 +39,6 @@ def _render(
             proxy=proxy,
             container=container,
             background_commands=background_commands or [],
-            mkcert=mkcert_result,
             extra_context=extra_context,
             log_file=log_file,
             buildbuddy_configured=buildbuddy_configured,

@@ -243,7 +243,6 @@
         pkgs.bazelisk
         pkgs.nixfmt-rfc-style
         pkgs.statix
-        pkgs.mkcert
         pkgs.ruff
         pkgs.shfmt
         pkgs.buildifier

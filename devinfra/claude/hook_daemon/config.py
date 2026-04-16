@@ -102,7 +102,6 @@ class ProfileConfig(BaseModel):
         description="When BES interceptor is active, post a mailbox nudge if a build/test invocation "
         "lacks --remote_executor. Encourages agent to use `bb remote`.",
     )
-    install_mkcert: bool = Field(default=False, description="Install mkcert and generate localhost TLS cert.")
     setup_docker: bool = Field(default=False, description="Set up Docker daemon under supervisor.")
     background_commands: list[BackgroundCommand] = Field(
         default_factory=list,

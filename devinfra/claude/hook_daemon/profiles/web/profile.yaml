@@ -24,7 +24,6 @@ pre_commit:
 idle_watchdog: false
 setup_auth_proxy: true
 setup_tmpfs: true
-install_mkcert: true
 setup_docker: true
 env_exports: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0

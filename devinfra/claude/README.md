@@ -198,7 +198,6 @@ CA/truststore files (in `<session_dir>/auth-proxy/`, created by `proxy_setup.py`
 Global (non-session-scoped) files in `~/.cache/claude-hooks/`:
 
 - `bazelisk` - Bazelisk binary
-- `mkcert` - mkcert binary
 
 ## Known Limitations
 

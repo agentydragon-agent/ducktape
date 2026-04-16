@@ -36,11 +36,6 @@ overlay on tmpfs (layer caching works for <~35 layers). Use `--layers=false` for
 VFS on 9p (no layer caching, slower builds).
 % endif
 % endif
-% if mkcert:
-
-## Localhost TLS
-`$MKCERT_CERT` / `$MKCERT_KEY` (auto-trusted). Use for HTTPS dev servers.
-% endif
 % if background_commands:
 
 ${"##"} Background tasks

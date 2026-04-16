@@ -24,17 +24,6 @@ py_library(
 )
 
 py_library(
-    name = "mkcert",
-    srcs = ["mkcert.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//devinfra/claude:session_paths",
-        "@pypi//anyio",
-        "@pypi//opentelemetry_api",
-    ],
-)
-
-py_library(
     name = "platform_detect",
     srcs = ["platform_detect.py"],
     visibility = ["//visibility:public"],
@@ -61,7 +50,6 @@ py_library(
     deps = [
         ":buildbuddy",
         ":container_runtime",
-        ":mkcert",
         ":platform_detect",
         ":tmpfs",
         "//devinfra/claude:debug",
@@ -102,7 +90,6 @@ py_test(
     uses_syrupy = True,
     deps = [
         ":container_runtime",
-        ":mkcert",
         ":platform_detect",
         ":session_start_lib",
         "//devinfra/claude/auth_proxy:setup",
