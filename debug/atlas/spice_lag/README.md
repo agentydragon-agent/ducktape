@@ -1,8 +1,8 @@
 # SPICE Lag Investigation
 
-> **Status: Partially resolved.** Burst latency fixed (462ms -> 152ms) by disabling videostreaming. Remaining ~59ms gap between GNOME and VT is Mutter compositor overhead. GPU type since changed to virtio (working) — measurements below are from the old GPU config and should be re-done.
+> **Status: Resolved (display latency).** Burst latency fixed (462ms -> 152ms) by disabling videostreaming. Current config: `vga: virtio` (no VirGL), GNOME 49 on Wayland, 4K (3840x2081). Display latency feels acceptable as of 2026-04-16 despite running Wayland (earlier notes predicted "deadly slow" — not observed in practice).
 >
-> **TODO**: wyrm2 has no audio output — needs investigation.
+> **Remaining issue**: Audio over SPICE is slightly choppy. `pw-top` shows ~168 xruns on the ALSA sink. PipeWire quantum is 1024 @ 48kHz (default). Root cause not yet identified.
 
 ## Conclusions
 
@@ -229,6 +229,10 @@ browser-based spice-html5 client. Native client is significantly faster.
 ## Known Issues (from research)
 
 ### SPICE + Wayland = deadly slow (confirmed by Proxmox staff)
+
+> **2026-04-16 update**: Despite this warning, GNOME 49 on Wayland over SPICE
+> (virtio-gpu, no VirGL) feels acceptably responsive at 4K. The "deadly slow"
+> reports may be outdated or specific to older GNOME/SPICE/Mesa versions.
 
 Proxmox forum posts confirm GNOME on Wayland over SPICE is extremely slow.
 Proxmox staff explicitly said "Gnome on Wayland? Deadly slow on spice" and
