@@ -1,8 +1,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
-  name: gatus-reader
-  namespace: gatus
+  name: namespace-diagnostics-reader
 rules:
   - apiGroups: [""]
     resources:
@@ -18,4 +17,5 @@ rules:
     resources:
       - deployments
       - replicasets
+      - statefulsets
     verbs: ["get", "list", "watch"]

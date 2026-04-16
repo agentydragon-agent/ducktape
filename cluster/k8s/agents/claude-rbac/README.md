@@ -37,7 +37,8 @@ bound via `shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`:
 
 Namespaced Roles + RoleBindings for specific namespaces:
 
-- harbor, langfuse, ollama (read + consumer), openclaw, props, gatus
+- Namespace diagnostics (pods, logs, services, configmaps, PVCs, events, deployments, replicasets, statefulsets) in harbor, gatus, authentik-mcp-poc
+- Extended read in langfuse, ollama (read + consumer), openclaw, props (+ jobs, constrained secrets)
 - Logs/configmaps in monitoring, kube-system, longhorn-system, flux-system, grocy-mcp, grocy-mcp-oidc, airlock, authentik
 
 ## ServiceAccount

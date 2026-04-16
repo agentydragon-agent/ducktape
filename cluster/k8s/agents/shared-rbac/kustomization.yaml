@@ -3,6 +3,6 @@ kind: Kustomization
 resources:
   - clusterrolebinding-cluster-diagnostics-reader.yaml
 
-  - rolebinding-gatus-reader.yaml
   - rolebinding-props-reader.yaml
   - rolebinding-logs-configmaps-reader.yaml
+  - rolebinding-namespace-diagnostics-reader.yaml
