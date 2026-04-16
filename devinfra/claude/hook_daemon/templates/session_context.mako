@@ -1,11 +1,15 @@
 <%
+    from devinfra.claude.auth_proxy.setup import ProxyConfigured
     status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
 %>\
 # Claude Code session start hook — ${status}
 
-% if proxy:
-**Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-**Bazel:** wrapper adds auth proxy (${proxy.ca_status})
+% if isinstance(proxy, ProxyConfigured):
+**Environment:** gVisor sandbox, TLS-inspecting proxy
+**Bazel:** wrapper adds auth proxy (${proxy.combined_ca})
+% elif proxy is not None:
+**Environment:** gVisor sandbox, no egress proxy detected
+**Bazel:** direct connect (system CA)
 % else:
 **Environment:** CLI (local)
 % endif

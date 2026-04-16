@@ -46,13 +46,13 @@ def _strip_no_proxy_google() -> dict[str, str] | None:
 class EnvVars:
     """Collected environment variables for session.
 
-    All profiles set bazel_wrapper_dir and session_bazelrc. Other fields
+    All profiles set shims_dir (session bin/) and session_bazelrc. Other fields
     are populated based on profile flags (setup_auth_proxy, setup_docker,
     etc.).
     """
 
     # Required in all profiles
-    bazel_wrapper_dir: Path
+    shims_dir: Path
     session_bazelrc: Path
 
     # Per-session directory
@@ -85,7 +85,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     This is the SINGLE write point for all session environment variables.
     Works for both web mode (all fields set) and CLI mode (minimal fields).
     """
-    path_str = os.pathsep.join(filter(None, [str(vars.bazel_wrapper_dir), os.environ.get("PATH")]))
+    path_str = os.pathsep.join(filter(None, [str(vars.shims_dir), os.environ.get("PATH")]))
 
     exports: list[str] = ["# Environment configured by session start hook"]
     if vars.hook_timestamp:
@@ -99,6 +99,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         if vars.supervisor_port is not None:
             session_config[ENV_SUPERVISOR_PORT] = str(vars.supervisor_port)
         if vars.combined_ca is not None:
+            assert vars.combined_ca.exists(), f"combined_ca set but missing: {vars.combined_ca}"
             ca_config: dict[str, str | Path] = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
             session_config.update(ca_config)
         exports.extend(["", "# Session configuration"])
@@ -136,19 +137,13 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         exports.extend(["", "# Secrets from startup_env_script"])
         exports.extend(exports_from_dict(vars.env_overlay))
 
-    # Point Ansible's local tmp to a sandbox-writable directory so that
-    # pre-commit ansible-syntax-check works when /tmp is read-only in the
-    # Claude Code sandbox. Use $TMPDIR at runtime (set by sandbox to a
-    # writable path like /tmp/claude), not the hook daemon's TMPDIR which
-    # resolves to bare /tmp.
-    # Raw shell expression — not passed through exports_from_dict because
-    # shlex.quote would single-quote the $TMPDIR variable expansion.
-    exports.extend(["", "# Ansible (pre-commit sandbox compatibility)"])
-    exports.append('export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/ansible-tmp"')
-
     if vars.extra_env_script:
         exports.extend(["", "# Extra env script from config.yaml"])
         exports.append(vars.extra_env_script.rstrip())
+
+    # Session bin dir must be first on PATH regardless of what env_overlay or
+    # extra_env_script did to PATH above. Emit this last so it always wins.
+    exports.extend(["", f'export PATH="{vars.shims_dir}:$PATH"'])
 
     content = "\n".join(exports) + "\n"
     write_config(env_file, content, "session environment")
