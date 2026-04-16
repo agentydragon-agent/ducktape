@@ -125,6 +125,18 @@ locals {
     ]
   })
 
+  # Auth config file for CP nodes — written to /var (Talos restricts `op: create`
+  # to /var) and mounted into kube-apiserver via extraVolumes.
+  # permissions = 420 (= 0644 octal: owner rw, group r, world r)
+  cp_auth_files = [
+    {
+      content     = local.auth_config_content
+      path        = "/var/etc/kubernetes/auth/auth-config.yaml"
+      op          = "create"
+      permissions = 420
+    }
+  ]
+
   # Shared kube-apiserver config for all control plane nodes (VPS + Proxmox).
   # Centralised here to avoid duplicating between hetzner-nodes.tf and proxmox-nodes.tf.
   api_server_config = {
@@ -135,7 +147,7 @@ locals {
     }
     extraVolumes = [
       {
-        hostPath  = "/etc/kubernetes/auth"
+        hostPath  = "/var/etc/kubernetes/auth"
         mountPath = "/etc/kubernetes/auth"
         readonly  = true
       }
@@ -228,16 +240,6 @@ locals {
 # ============================================================================
 # HETZNER VPS NODES (see hetzner-nodes.tf for server resources)
 # ============================================================================
-
-# SSH key for emergency rescue mode access
-resource "tls_private_key" "ssh" {
-  algorithm = "ED25519"
-}
-
-resource "hcloud_ssh_key" "talos" {
-  name       = "talos-cluster"
-  public_key = tls_private_key.ssh.public_key_openssh
-}
 
 # Firewall for Talos/Kubernetes traffic
 resource "hcloud_firewall" "talos" {

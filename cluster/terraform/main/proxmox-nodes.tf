@@ -174,19 +174,6 @@ locals {
     "csi.proxmox.sinextra.dev/max-volume-attachments" = "29"
   }
 
-  # AuthenticationConfiguration file for Proxmox CP nodes.
-  # Written to host filesystem; mounted into kube-apiserver via extraVolumes.
-  # CP nodes only — workers don't run kube-apiserver.
-  # permissions = 416 (= 0640 octal: owner rw, group r, world none)
-  proxmox_cp_auth_files = [
-    {
-      content     = local.auth_config_content
-      path        = "/etc/kubernetes/auth/auth-config.yaml"
-      op          = "overwrite"
-      permissions = 416
-    }
-  ]
-
 }
 
 data "talos_machine_configuration" "proxmox" {
@@ -227,7 +214,7 @@ data "talos_machine_configuration" "proxmox" {
           }
         })
         # Write AuthenticationConfiguration for CP nodes only (workers don't run kube-apiserver).
-        files = each.value.type == "controlplane" ? local.proxmox_cp_auth_files : []
+        files = each.value.type == "controlplane" ? local.cp_auth_files : []
       })
       })),
       # Explicit hostname — overrides HostnameConfig auto: stable (Talos v1.12+).
