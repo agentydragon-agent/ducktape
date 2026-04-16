@@ -114,8 +114,23 @@ spec:
             "records": dyn([variables.cpIPsSorted[1].ip])
           })
         }
+    # ConfigMap with CP node IPs for the dns-records TF module (Route 53 glue).
+    # Flat keys — avoids JSON serialization (Kyverno CEL has no json.marshal).
+    - name: clusterInfo
+      expression: |
+        {
+          "apiVersion": dyn("v1"),
+          "kind": dyn("ConfigMap"),
+          "metadata": dyn({"name": "cluster-info", "namespace": "kube-system"}),
+          "data": dyn({
+            "ns1_ip": dyn(variables.cpIPsSorted[0].ip),
+            "ns1_name": dyn(variables.cpIPsSorted[0].name),
+            "ns2_ip": dyn(variables.cpIPsSorted[1].ip),
+            "ns2_name": dyn(variables.cpIPsSorted[1].name)
+          })
+        }
   generate:
-    # Empty namespace for cluster-scoped resources
+    # Empty namespace for cluster-scoped ClusterRRsets
     - expression: >-
         generator.Apply("", [
           variables.wildcard,
@@ -123,6 +138,9 @@ spec:
           variables.ns1,
           variables.ns2
         ])
+    # ConfigMap in kube-system for dns-records TF module
+    - expression: >-
+        generator.Apply("kube-system", [variables.clusterInfo])
 ---
 # RBAC: let Kyverno manage ClusterRRset resources and read Nodes.
 # Aggregated into both admission-controller and background-controller
