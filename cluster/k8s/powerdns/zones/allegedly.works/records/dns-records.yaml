@@ -29,11 +29,7 @@ spec:
     - "${vps_ip_vps1}"
 ---
 # Wildcard A record for all *.allegedly.works services.
-# Workaround for Cilium Gateway API bug (github.com/cilium/cilium/issues/42786):
-# hostNetwork gateways stay Programmed=False (regression in v1.18.3), which
-# prevents external-dns from generating DNS records. This declarative record
-# replaces external-dns for the wildcard.
-# TODO: Remove once Cilium fixes #42786 and external-dns can manage this again.
+# Cilium Envoy runs on all VPS nodes via hostNetwork — all 4 IPs serve traffic.
 apiVersion: dns.cav.enablers.ob/v1alpha2
 kind: ClusterRRset
 metadata:
@@ -66,19 +62,5 @@ spec:
   records:
     - "${vps_ip_vps0}"
     - "${vps_ip_vps1}"
----
-# Kubernetes API endpoint (round-robin to CP nodes)
-apiVersion: dns.cav.enablers.ob/v1alpha2
-kind: ClusterRRset
-metadata:
-  name: api
-spec:
-  zoneRef:
-    kind: ClusterZone
-    name: allegedly.works
-  name: api.allegedly.works.
-  type: A
-  ttl: 300
-  records:
-    - "${vps_ip_vps0}"
-    - "${vps_ip_vps1}"
+    - "${vps_ip_vps_worker0}"
+    - "${vps_ip_vps_worker1}"
