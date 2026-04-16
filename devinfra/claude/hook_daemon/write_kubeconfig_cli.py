@@ -2,8 +2,7 @@
 
 Shared kubeconfig writer used by both `web_env.sh` (writes `~/.kube/config` at
 daemon startup) and `claude-sandbox-kubectl-mcp.sh` (writes a tempfile for the
-kubectl MCP server). Reuses the same `build_kubeconfig` helper the daemon uses
-for its own session kubeconfig, so all three consumers agree on CA and proxy
+kubectl MCP server). Both use `build_kubeconfig` for consistent CA and proxy
 handling.
 
 Used to be a duplicated bash script at `devinfra/claude/kube_from_sops.sh` that

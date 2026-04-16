@@ -22,9 +22,6 @@ source "$(dirname "$0")/_common.sh"
 # Machine-user GitHub PAT (agentydragon-agent)
 try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" '["github_token"]' "GitHub PAT for agentydragon-agent bot — used by gh CLI automatically. PR workflow: origin is a local proxy; PRs must come from a fork (fork remote + push/PR instructions delivered via mailbox)."
 
-# K8s service account token (claude-code-web SA) — for session hook kubeconfig
-try_export K8S_TOKEN "$REPO_ROOT/secrets/claude-web-k8s-token.yaml" '["k8s_token"]' "K8s service account token (claude-code-web SA)"
-
 # Write ~/.kube/config via the canonical hook-daemon kubeconfig materializer —
 # embeds CA + proxy-url from the active profile so kubectl actually works behind
 # the TLS-inspecting egress proxy on Claude Code web. The MCP server

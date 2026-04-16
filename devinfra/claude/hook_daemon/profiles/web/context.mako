@@ -1,7 +1,4 @@
 <%import os%>\
-% if setup.kubeconfig_path:
-`KUBECONFIG` set — `kubectl` and the `claude-sandbox-kubectl` MCP tools are available.
-% endif
 % if setup.buildbuddy_api_key:
 API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 % endif

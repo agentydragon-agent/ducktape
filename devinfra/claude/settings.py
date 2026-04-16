@@ -48,9 +48,6 @@ class HookSettings(BaseSettings):
     # Profile YAML file path (repo-relative, e.g. devinfra/claude/hook_daemon/profiles/cli/profile.yaml)
     profile: str | None = Field(default=None, description="Profile YAML file path (repo-relative)")
 
-    k8s_token: str | None = Field(
-        default=None, description="K8s SA token for kubeconfig (env var fallback when SOPS unavailable)"
-    )
     # Per-session output directory. Exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR so
     # subprocesses (e.g. bazel_wrapper) pick it up automatically via pydantic-settings.
     # Baked into the bazel/bazelisk shell wrapper at install time so it survives

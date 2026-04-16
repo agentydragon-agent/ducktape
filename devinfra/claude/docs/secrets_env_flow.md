@@ -43,11 +43,10 @@ Container starts
         │
         ├── Runs startup_env_script: devinfra/secrets/web_env.sh
         │   → Decrypts all SOPS secrets into daemon os.environ
-        │   → Side effect: writes ~/.kube/config from K8S_TOKEN
+        │   → Side effect: writes ~/.kube/config via claude-hook write-kubeconfig
         │
         ├── Session starts (SessionStart hook fires)
         │   ├── Reads secrets from os.environ
-        │   ├── Writes kubeconfig from K8S_TOKEN
         │   ├── Configures BuildBuddy from BUILDBUDDY_API_KEY
         │   ├── Sets up fork remote from GITHUB_TOKEN
         │   └── Writes session env file including env_overlay block

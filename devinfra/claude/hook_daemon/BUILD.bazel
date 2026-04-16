@@ -35,20 +35,14 @@ py_library(
     name = "kubeconfig",
     srcs = ["kubeconfig.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":config",
-        "@pypi//pyyaml",
-    ],
 )
 
 py_test(
     name = "test_kubeconfig",
     srcs = ["test_kubeconfig.py"],
     deps = [
-        ":config",
         ":kubeconfig",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

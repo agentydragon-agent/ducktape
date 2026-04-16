@@ -64,7 +64,7 @@
   # Claude Code session start hook — OK
   
   **Environment:** CLI (local)
-  **startup_env_script** `None` succeeded — yielded 3 vars: BUILDBUDDY_API_KEY, GITHUB_TOKEN, K8S_TOKEN
+  **startup_env_script** `None` succeeded — yielded 2 vars: BUILDBUDDY_API_KEY, GITHUB_TOKEN
   ```
   secrets: BUILDBUDDY_API_KEY: OK
   kubeconfig: wrote ~/.kube/config

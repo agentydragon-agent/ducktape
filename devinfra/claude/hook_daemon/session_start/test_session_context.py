@@ -175,7 +175,7 @@ def test_startup_script_succeeded(
     startup = StartupResult(
         exit_code=0,
         output="secrets: BUILDBUDDY_API_KEY: OK\nkubeconfig: wrote ~/.kube/config\nNix: available with nixpkgs.",
-        env_overlay={"BUILDBUDDY_API_KEY": "key123", "GITHUB_TOKEN": "ghp_xxx", "K8S_TOKEN": "tok"},
+        env_overlay={"BUILDBUDDY_API_KEY": "key123", "GITHUB_TOKEN": "ghp_xxx"},
     )
     result = _render(platform=cli_platform(), startup=startup)
     assert result == snapshot
