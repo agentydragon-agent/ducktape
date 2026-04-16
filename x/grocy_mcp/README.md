@@ -100,7 +100,8 @@ filter gives us the entire surface in 20 LoC.
 Per-request auth is the only thing that needs to be custom, and
 `httpx.Auth.async_auth_flow` is exactly the right seam: it runs inside
 the request lifecycle, `await`s fine, and has access to FastMCP's
-request-scoped contextvars via `get_access_token()`. See <auth.py>.
+request-scoped contextvars via `get_access_token()`. See
+<../../mcp_infra/authentik_auth/auth.py>.
 
 ## Deploying
 
