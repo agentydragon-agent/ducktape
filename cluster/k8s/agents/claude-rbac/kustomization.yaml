@@ -19,4 +19,4 @@ resources:
   - rolebinding-harbor-reader.yaml
   - role-authentik-mcp-poc-reader.yaml
   - rolebinding-authentik-mcp-poc-reader.yaml
-  - role-logs-configmaps-reader.yaml
+  - clusterrole-logs-configmaps-reader.yaml
