@@ -3,7 +3,6 @@
 # or don't need exclusion (cache dirs with no .py files like __pycache__)
 # gazelle:exclude ansible
 # gazelle:exclude homeassistant  # TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
-# gazelle:exclude x/claude_hooks  # complex internal imports
 
 # gazelle:python_root
 # gazelle:python_generation_mode file
