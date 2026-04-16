@@ -14,13 +14,13 @@ from mcp_infra.authentik_auth.auth import _EXPIRY_LEEWAY, AuthentikAuthConfig, A
 # ── AuthentikAuthConfig tests ─────────────────────────────────────────────
 
 
-def _config(issuer: str = "https://auth.example.com/application/o/test/", **kwargs: object) -> AuthentikAuthConfig:
+def _config(
+    issuer: str = "https://auth.example.com/application/o/test/",
+    public_base_url: str = "https://mcp.example.com",
+    **kwargs: object,
+) -> AuthentikAuthConfig:
     return AuthentikAuthConfig(
-        oidc_issuer=issuer,
-        oidc_client_id="id",
-        oidc_client_secret="secret",
-        public_base_url="https://mcp.example.com",
-        **kwargs,
+        oidc_issuer=issuer, oidc_client_id="id", oidc_client_secret="secret", public_base_url=public_base_url, **kwargs
     )
 
 
