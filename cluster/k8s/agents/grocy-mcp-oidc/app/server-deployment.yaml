@@ -42,7 +42,7 @@ spec:
             # OIDCProxy's encrypted DCR client store needs a writable
             # path; the OCI image runs as user 1000 with no HOME.
             - name: FASTMCP_HOME
-              value: "/tmp/fastmcp"
+              value: "/data/fastmcp"
             - name: LOG_LEVEL
               value: "DEBUG"
             - name: GROCY_MCP_OIDC_ISSUER
@@ -71,7 +71,7 @@ spec:
                   key: grocy_proxy_client_id
           volumeMounts:
             - name: fastmcp-state
-              mountPath: /tmp/fastmcp
+              mountPath: /data/fastmcp
           resources:
             requests:
               memory: "128Mi"

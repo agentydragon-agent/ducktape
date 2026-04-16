@@ -1,9 +1,9 @@
-"""Tests for the URL helpers on ServerSettings.
+"""Tests for the URL helpers on ServerSettings / AuthentikAuthConfig.
 
-The only non-trivial piece in `config.py` is
-`authentik_token_endpoint()` — it needs to derive the global Authentik
-token endpoint from a per-provider issuer URL while preserving reverse-proxy
-path prefixes and rejecting non-Authentik issuer shapes. Pin the behaviour.
+The only non-trivial piece is `authentik_token_endpoint()` — it needs to
+derive the global Authentik token endpoint from a per-provider issuer URL
+while preserving reverse-proxy path prefixes and rejecting non-Authentik
+issuer shapes. Pin the behaviour.
 """
 
 from __future__ import annotations
@@ -26,32 +26,30 @@ def _settings(issuer: str) -> ServerSettings:
 
 
 def test_token_endpoint_simple() -> None:
-    s = _settings("https://auth.allegedly.works/application/o/authentik-mcp-poc/")
-    assert s.authentik_token_endpoint() == "https://auth.allegedly.works/application/o/token/"
+    cfg = _settings("https://auth.allegedly.works/application/o/authentik-mcp-poc/").auth_config()
+    assert cfg.authentik_token_endpoint() == "https://auth.allegedly.works/application/o/token/"
 
 
 def test_token_endpoint_preserves_reverse_proxy_prefix() -> None:
-    # Authentik mounted under /auth/ behind a reverse proxy — the prefix
-    # must survive the transformation.
-    s = _settings("https://example.com/auth/application/o/mcp/")
-    assert s.authentik_token_endpoint() == "https://example.com/auth/application/o/token/"
+    cfg = _settings("https://example.com/auth/application/o/mcp/").auth_config()
+    assert cfg.authentik_token_endpoint() == "https://example.com/auth/application/o/token/"
 
 
 def test_token_endpoint_accepts_unterminated_issuer() -> None:
-    s = _settings("https://auth.allegedly.works/application/o/mcp")  # no trailing slash
-    assert s.authentik_token_endpoint() == "https://auth.allegedly.works/application/o/token/"
+    cfg = _settings("https://auth.allegedly.works/application/o/mcp").auth_config()
+    assert cfg.authentik_token_endpoint() == "https://auth.allegedly.works/application/o/token/"
 
 
 def test_token_endpoint_rejects_non_authentik_issuer() -> None:
-    s = _settings("https://keycloak.example.com/realms/mcp")
+    cfg = _settings("https://keycloak.example.com/realms/mcp").auth_config()
     with pytest.raises(ValueError, match="Authentik per-provider issuer path"):
-        s.authentik_token_endpoint()
+        cfg.authentik_token_endpoint()
 
 
 def test_token_endpoint_rejects_missing_slug() -> None:
-    s = _settings("https://auth.allegedly.works/application/o/")
+    cfg = _settings("https://auth.allegedly.works/application/o/").auth_config()
     with pytest.raises(ValueError, match="Authentik per-provider issuer path"):
-        s.authentik_token_endpoint()
+        cfg.authentik_token_endpoint()
 
 
 if __name__ == "__main__":

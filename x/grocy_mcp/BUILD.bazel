@@ -31,19 +31,9 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//mcp_infra/authentik_auth:config",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-    ],
-)
-
-py_library(
-    name = "auth",
-    srcs = ["auth.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":config",
-        "@pypi//fastmcp",
-        "@pypi//httpx",
     ],
 )
 
@@ -71,10 +61,10 @@ py_library(
     data = [":grocy_openapi_fixed"],
     visibility = ["//visibility:public"],
     deps = [
-        ":auth",
         ":batch_tools",
         ":config",
         ":tool_metadata",
+        "//mcp_infra/authentik_auth:auth",
         "//util/bazel:runfiles",
         "@pypi//fastmcp",
         "@pypi//httpx",

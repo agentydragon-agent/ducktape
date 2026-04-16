@@ -8,6 +8,7 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//mcp_infra/authentik_auth:config",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
@@ -30,6 +31,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        "//mcp_infra/authentik_auth:auth",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//uvicorn",

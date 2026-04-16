@@ -26,16 +26,12 @@ import sys
 import httpx
 import uvicorn
 from fastmcp import FastMCP
-from fastmcp.server.auth import MultiAuth
-from fastmcp.server.auth.auth import AuthProvider
-from fastmcp.server.auth.oidc_proxy import OIDCProxy
-from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.providers.openapi import MCPType, OpenAPIResource, OpenAPIResourceTemplate, OpenAPITool, RouteMap
 from fastmcp.utilities.openapi import HTTPRoute
 from pydantic.networks import AnyUrl
 
+from mcp_infra.authentik_auth.auth import AuthentikExchangeAuth, build_authentik_auth
 from util.bazel.runfiles import get_required_path
-from x.grocy_mcp.auth import AuthentikExchangeAuth
 from x.grocy_mcp.batch_tools import register_batch_tools
 from x.grocy_mcp.config import ServerSettings
 from x.grocy_mcp.tool_metadata import TOOL_OVERRIDES
@@ -45,25 +41,6 @@ logger = logging.getLogger(__name__)
 # All routes become tools by default; TOOL_OVERRIDES controls which are
 # enabled, disabled, or promoted to MCP resources.
 ROUTE_MAPS = [RouteMap(pattern=r".*", mcp_type=MCPType.TOOL)]
-
-
-def _build_auth(settings: ServerSettings) -> AuthProvider:
-    """OIDCProxy (DCR + MCP OAuth endpoints) + JWTVerifier (tool calls).
-
-    Identical to <x/authentik_mcp_poc/server.py>'s `_build_auth`; see that
-    module's docstring for the `base_url` (must not include `/mcp`) gotcha.
-    """
-    issuer = settings.normalized_issuer()
-    proxy = OIDCProxy(
-        config_url=f"{issuer}/.well-known/openid-configuration",
-        client_id=settings.oidc_client_id,
-        client_secret=settings.oidc_client_secret,
-        base_url=settings.normalized_public_base_url(),
-        require_authorization_consent=True,
-    )
-    assert proxy.client_registration_options is not None
-    proxy.client_registration_options.valid_scopes = ["openid", "email", "profile"]
-    return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=f"{issuer}/.well-known/jwks", issuer=issuer)])
 
 
 def _load_openapi_spec() -> dict[str, object]:
@@ -90,10 +67,9 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
     spec = _load_openapi_spec()
 
     if client is None:
-        exchange_client = httpx.AsyncClient(timeout=settings.exchange_timeout)
         client = httpx.AsyncClient(
             base_url=f"{settings.grocy_url.rstrip('/')}/api",
-            auth=AuthentikExchangeAuth(settings, exchange_client),
+            auth=AuthentikExchangeAuth(settings.auth_config()),
             timeout=settings.grocy_timeout,
         )
 
@@ -133,7 +109,7 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
 
 def build_server(settings: ServerSettings) -> FastMCP:
     mcp = build_mcp(settings)
-    mcp.auth = _build_auth(settings)
+    mcp.auth = build_authentik_auth(settings.auth_config())
     return mcp
 
 

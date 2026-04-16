@@ -9,10 +9,10 @@ and the FastAPI whoami backend (`backend.py`). Server settings use the
 
 from __future__ import annotations
 
-from urllib.parse import urlparse, urlunparse
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 
 
 class ServerSettings(BaseSettings):
@@ -32,13 +32,6 @@ class ServerSettings(BaseSettings):
         description="Public URL of the Authentik-proxy-protected whoami backend, e.g. "
         "https://authentik-mcp-poc-backend.allegedly.works"
     )
-    # For the RFC 7521 JWT-bearer client_credentials token exchange the tool
-    # handler performs before calling the backend (see server.py and
-    # <NOTES.md> §5). The MCP server authenticates as the backend's own
-    # OAuth2 client, presenting the user's upstream token as the
-    # `client_assertion` — Authentik validates it against the proxy
-    # provider's `jwt_federation_providers` and mints a NEW token scoped to
-    # the backend provider, which the outpost's introspection then accepts.
     backend_oidc_client_id: str = Field(
         description=(
             "client_id of the backend's Authentik Proxy Provider (the inner "
@@ -49,35 +42,15 @@ class ServerSettings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8765
 
-    def normalized_public_base_url(self) -> str:
-        return self.public_base_url.rstrip("/")
-
-    def normalized_issuer(self) -> str:
-        return self.oidc_issuer.rstrip("/")
-
-    def authentik_token_endpoint(self) -> str:
-        """Global Authentik `/application/o/token/` URL derived from `oidc_issuer`.
-
-        Authentik's token endpoint is NOT per-provider — every OAuth2 provider
-        dispatches off the `client_id` parameter in the request body, so a
-        single URL like `https://auth.allegedly.works/application/o/token/`
-        handles both our MCP user-login provider AND the backend's proxy
-        provider.
-
-        We derive it by stripping only the trailing provider slug from
-        `oidc_issuer`, preserving any reverse-proxy path prefix before
-        `/application/o/` — so `https://example.com/auth/application/o/<slug>/`
-        correctly yields `https://example.com/auth/application/o/token/`, not
-        `https://example.com/application/o/token/`.
-        """
-        parsed = urlparse(self.oidc_issuer.rstrip("/"))
-        prefix, marker, provider_slug = parsed.path.rpartition("/application/o/")
-        if not marker or not provider_slug or "/" in provider_slug:
-            raise ValueError(
-                "oidc_issuer must end in an Authentik per-provider issuer path "
-                f"like `.../application/o/<slug>/`; got {self.oidc_issuer!r}"
-            )
-        return urlunparse(parsed._replace(path=f"{prefix}{marker}token/"))
+    def auth_config(self) -> AuthentikAuthConfig:
+        """Construct the shared auth config from this server's settings."""
+        return AuthentikAuthConfig(
+            oidc_issuer=self.oidc_issuer,
+            oidc_client_id=self.oidc_client_id,
+            oidc_client_secret=self.oidc_client_secret,
+            public_base_url=self.public_base_url,
+            proxy_client_id=self.backend_oidc_client_id,
+        )
 
 
 class BackendSettings(BaseSettings):
