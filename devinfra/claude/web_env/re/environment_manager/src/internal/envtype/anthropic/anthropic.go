@@ -129,13 +129,18 @@ type anthropicEnvironmentType struct {
 //	offset 0x68: devServerConfig *devServerConfig
 //	offset 0x70: padding/reserved
 type anthropicConfig struct {
-	InitScript           string              `json:"init_script,omitempty"`
-	StopHookPath         string              `json:"stop_hook_path,omitempty"`
-	CWD                  string              `json:"cwd"`
+	InitScript string `json:"init_script,omitempty"`
+	// TODO(re): json tag "stop_hook_path" not found in binary strings — may be garbled or wrong name.
+	// Field offset 0x10 confirmed via bootstrapHooksInAllDirs disassembly; tag is inferred.
+	StopHookPath string `json:"stop_hook_path,omitempty"`
+	CWD          string `json:"cwd"`
+	// TODO(re): json tag "skills_directory" not found in binary strings — may be garbled or wrong name.
+	// Field offset 0x30 confirmed; tag is inferred.
 	SkillsDirectory      string              `json:"skills_directory,omitempty"`
 	EnvironmentVariables map[string]string   `json:"environment_variables,omitempty"`
 	Languages            []anthropicLanguage `json:"languages,omitempty"`
-	DevServerConfig      *devServerConfig    `json:"dev_server,omitempty"`
+	// TODO(re): json tag "dev_server" not found in binary strings. Struct offset 0x68 confirmed; tag inferred.
+	DevServerConfig *devServerConfig `json:"dev_server,omitempty"`
 }
 
 // anthropicLanguage represents a language runtime to install.
@@ -287,29 +292,43 @@ func (e *anthropicEnvironmentType) CreateLeaseManager(ctx context.Context, sessi
 // This is a complex multi-step process that includes:
 //  1. Installing languages (Go, Node, Python, etc.) — new/setup-only modes only
 //  2. Cloning git repositories from sources — new/setup-only modes only
-//  3. Running init scripts — all modes, if configured
-//  4. Running "claude --init-only" (via RunInit) — all modes, non-fatal
-//  5. Bootstrapping Claude skills — all modes
-//  6. Bootstrapping hooks (settings.json + stop hook) — all modes
+//  3. Running init scripts — new/setup-only modes only (NOT resume or resume-cached)
+//  4. Running "claude --init-only" (via RunInit) — new, resume, and partial setup-only
+//  5. Bootstrapping Claude skills — new and resume modes
+//  6. Bootstrapping hooks (settings.json + stop hook) — new and resume modes
 //
-// Steps 1-2 are gated on isNewOrSetup (session mode "new" or "setup-only").
-// Steps 3-6 run unconditionally for all session modes including resume.
-// Step 4 errors are non-fatal (logged and swallowed).
+// Steps 1-3 are gated on isNewOrSetup (session mode "new" or "setup-only").
+// Steps 4-6 run for "new" and "resume" modes; resume-cached exits early before them.
 //
-// Binary address: 0xaf8740 (a6f96673) — address likely shifted in 495ea204.
+// VERIFIED by disassembly of VMA 0x1fb1220 (function YpqWUfDmj6T.(*yczF0CFcH).Initialize):
+//
+// Step 3 (init script) guard: at VMA 0x1fb2640:
+//
+//	test %r10b,%r10b    ; test isNewOrSetup flag
+//	je   0x1fb3726      ; if NOT newOrSetup (resume OR resume-cached): skip entire init script block
+//
+// The guard is isNewOrSetup, NOT "!isResumeCached". Both "resume" and "resume-cached"
+// skip the init script. There is exactly one call site (0x1fb26a0) to the init script
+// function (VzYs1kO6Z.mcv2vyZK362.func2.func54 at 0x1f393c0).
+//
+// resume-cached early exit: at VMA 0x1fba0e1 the binary checks len==13 + "resume-cached":
+//
+//	jne  0x1fbb075      ; if NOT resume-cached: jump to non-cached path
+//	...                 ; resume-cached: call FJqRbR1MIeE("resume") + ProcessSources
+//	ret  at 0x1fbb074   ; resume-cached RETURNS HERE — skipping Steps 4, 5, 6
+//
+// The non-resume-cached path (0x1fbb075) calls FJqRbR1MIeE("fresh") + UpdateRemoteURLs,
+// then continues to Steps 4-6.
+//
+// setup-only exits mid-sequence: setup-only sessions enter the non-resume-cached path
+// (0x1fbb075) and proceed through some steps before exiting early at multiple
+// check points (e.g. 0x1fbb4ae → 0x1fbb6f3 → ret, 0x1fc0105 → 0x1fc0365 → ret).
+//
+// Binary address: VMA 0x1fb1220 (495ea204, `YpqWUfDmj6T.(*yczF0CFcH).Initialize`).
 // Source file: anthropic.go
-//
-// The function has grown significantly between binary versions:
-//   - a6f96673: 5 RecordFunction closures (func1-func5)
-//   - 495ea204: 87 top-level closures (func1-func87) + 6 IravBP8W4ie
-//     (RecordFunction) wrappers (func107, func111, func133, func146,
-//     func164, func172), each with identical sub-closure patterns.
-//
-// The 6 IravBP8W4ie wrappers correspond to the 6 major initialization
-// steps listed above, each individually timed and observed.
 func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	// Default session mode to "new" if not set.
-	// Binary: 0xaf87db-0xaf8816 checks sessionMode len == 0, sets to "new"
+	// Binary 0x1fb12d5: cmpq $0x0,0x28(%rax); jne ...; movq $0x3,0x28(%rax); "new"
 	if e.sessionMode == "" {
 		e.sessionMode = "new"
 	}
@@ -319,8 +338,7 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	hasSources := e.startupContext != nil && len(e.startupContext.Sources) > 0
 
 	// Log initialization start with configuration details.
-	// Binary: 0xaf89e7 slog.Info "Initializing Anthropic environment" (34 chars)
-	// with 10 attrs including cwd, session_mode, has_init_script, languages count, has_sources
+	// Binary 0x1fb23a5: computes isNewOrSetup flag.
 	e.logger.Info("Initializing Anthropic environment",
 		"cwd", e.cwd,
 		"session_mode", e.sessionMode,
@@ -330,55 +348,68 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	)
 
 	// Check session mode: "new" or "setup-only" proceed with full init.
-	// Binary: 0xaf8a20-0xaf8a70 compares session mode string
+	// Binary 0x1fb23b5-0x1fb240f: compares len==3/"new" and len==10/"setup-only".
 	isNewOrSetup := e.sessionMode == "new" || e.sessionMode == "setup-only"
 
+	// Steps 1-2: language installation and source cloning — new/setup-only only.
 	if isNewOrSetup && hasSources {
-		// Step 1: Install languages (via RecordFunction.func1 at 0xafe420)
+		// Step 1: Install languages (new/setup-only + sources).
 		if err := e.installLanguages(ctx); err != nil {
 			return err
 		}
 
 		// Step 2: Process sources (git repos) via SourceHandlerManager.
-		// (via RecordFunction.func2 at 0xafdf60)
-		//
-		// The exact parameters passed to NewSourceHandlerManager for the
-		// anthropic new/setup path are garble-obfuscated in 495ea204; the
-		// implementation below is a best-effort reconstruction based on the
-		// available struct fields. Compare with byoc.handleBranchCheckout()
-		// which uses the same mechanism for resume mode.
 		if err := e.processSources(ctx); err != nil {
 			return err
 		}
 	} else if isNewOrSetup {
-		// Step 1 only: Install languages without git
+		// Step 1 only: Install languages without sources.
 		if err := e.installLanguages(ctx); err != nil {
 			return err
 		}
 	}
+	// resume / resume-cached: Steps 1-2 are skipped entirely.
 
-	// Step 3: Run init script (via RecordFunction/IravBP8W4ie wrapper)
-	if e.config != nil && e.config.InitScript != "" {
-		if err := e.runInitScript(ctx, e.config.InitScript); err != nil {
-			return err
+	// Step 3: Run init script — ONLY for new/setup-only sessions.
+	// Binary 0x1fb2640: test %r10b (isNewOrSetup); je 0x1fb3726 (skip).
+	// Guard is isNewOrSetup, NOT !isResumeCached. Both "resume" and
+	// "resume-cached" skip the init script. Single call site at 0x1fb26a0.
+	if isNewOrSetup {
+		if e.config != nil && e.config.InitScript != "" {
+			if err := e.runInitScript(ctx, e.config.InitScript); err != nil {
+				return err
+			}
 		}
 	}
 
-	// Step 4: Run "claude --init-only" (via RecordFunction/IravBP8W4ie wrapper)
-	// Calls claude.RunInit which executes "claude --init-only" in the working
-	// directory with the environment's env vars. This runs Setup + SessionStart
-	// hooks synchronously, then exits. See internal/claude/init.go for details.
-	//
-	// Session mode gating: UNCONDITIONAL — runs for all session modes (new,
-	// setup-only, resume, resume-cached). The session_mode.go documentation
-	// confirms resume modes still run RunInit. This makes sense because
-	// --init-only runs hooks (which need to fire every session) and applies
-	// config env vars (idempotent).
-	//
-	// Error handling: NON-FATAL — errors are logged at Warn level and
-	// initialization continues. This is intentional: RunInit fires hooks as
-	// a best-effort pre-warm; the main Claude Code session will fire hooks
-	// again during its own startup.
+	// resume-cached early exit: Binary 0x1fba0e1-0x1fbb074.
+	// Disassembly shows the fall-through block (after jne 0x1fbb075) calls
+	// FJqRbR1MIeE("resume") then ProcessSources, then hits ret at 0x1fbb074.
+	// Steps 4-6 are NOT reached for resume-cached sessions.
+	if e.sessionMode == "resume-cached" {
+		// TODO(re): FJqRbR1MIeE is a garble-obfuscated function called with
+		// the string "resume" on this path and "fresh" on the non-cached path
+		// (0x1fbb075). Likely configures language symlinks or source handler
+		// mode for fast-resume vs fresh install. Not reconstructed.
+
+		// processSources runs on resume-cached with mode "resume" (not "resume-cached").
+		// The "Fast resume: ..." log messages observed at runtime are emitted inside
+		// FJqRbR1MIeE / processSources, not by Initialize directly.
+		if err := e.processSources(ctx); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// setup-only exits partway through the remaining steps (verified at
+	// 0x1fbb4ae and 0x1fc0105 in the binary). The exact cutoff point is
+	// unclear from RE alone; the reconstruction below is approximate.
+
+	// Step 4: Run "claude --init-only" (via RunInit).
+	// Runs Setup + SessionStart hooks synchronously, then exits.
+	// Session mode gating: runs for "new" and "resume"; NOT resume-cached (exits above).
+	// Error handling: NON-FATAL — errors are logged at Warn level.
+	// Binary: WarnContext calls at 0x1fbb480+ log step progress/errors.
 	{
 		envVars := e.config.EnvironmentVariables
 		if err := claude.RunInit(e.logger, ctx, e.cwd, envVars); err != nil {
@@ -388,12 +419,12 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 		}
 	}
 
-	// Step 5: Bootstrap Claude skills (via RecordFunction/IravBP8W4ie wrapper)
+	// Step 5: Bootstrap Claude skills.
 	if err := e.bootstrapClaudeSkills(ctx); err != nil {
 		return err
 	}
 
-	// Step 6: Bootstrap hooks in all dirs (via RecordFunction/IravBP8W4ie wrapper)
+	// Step 6: Bootstrap hooks in all dirs.
 	if err := e.bootstrapHooksInAllDirs(ctx); err != nil {
 		return err
 	}
@@ -557,16 +588,17 @@ func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, name, ve
 }
 
 // processSources creates a SourceHandlerManager and processes the git sources
-// from the startup context. Called during Initialize() Step 2 when
-// isNewOrSetup && hasSources.
+// from the startup context. Called in two places in Initialize():
+//   - Step 2 (new/setup-only + hasSources): fresh clone path
+//   - resume-cached early-exit block: fast-update path, after FJqRbR1MIeE("resume")
 //
 // Binary address: wrapped by RecordFunction.func2 at 0xafdf60 in 495ea204.
 // Source file: anthropic.go
 //
 // TODO(re): Exact parameters to NewSourceHandlerManager are garble-obfuscated
-// in 495ea204. The session ID, gitProxyConfig, outcomes, and activityRecorder
-// bindings are reconstructed from struct fields; the processMode string and
-// exact error wrapping messages cannot be verified without runtime observation.
+// in 495ea204. In particular, the processMode string passed for resume-cached
+// is "resume" (from FJqRbR1MIeE("resume")), not "resume-cached" — the current
+// stub passes string(e.sessionMode) which is wrong for that path.
 // Compare with byoc.handleBranchCheckout() for the resume-mode analog.
 func (e *anthropicEnvironmentType) processSources(ctx context.Context) error {
 	// TODO(re): sessionID source — likely e.startupContext.SessionID
