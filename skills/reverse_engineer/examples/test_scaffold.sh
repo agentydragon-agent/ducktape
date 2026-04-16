@@ -5,8 +5,10 @@
 # Env vars (set via Bazel env = {...}):
 #   GARBLE    — rlocation path to the garble go_binary
 #   GO        — rlocation path to the go_bin_runner wrapper
+#   GORESYM   — rlocation path to the GoReSym go_binary
 #   PCLNTOOL  — rlocation path to the compiled pclntool binary
 #   RECIPE    — rlocation path to garble_re_recipe.sh
+#   REDRESS   — rlocation path to the redress go_binary
 set -euo pipefail
 
 # ── 1. Resolve GOROOT via go_bin_runner ──────────────────────────────────────
@@ -16,6 +18,8 @@ set -euo pipefail
 mkdir -p "$TEST_TMPDIR/bin"
 ln -s "$TEST_SRCDIR/$GO" "$TEST_TMPDIR/bin/go_bin_runner"
 ln -s "$TEST_SRCDIR/$PCLNTOOL" "$TEST_TMPDIR/bin/pclntool"
+ln -s "$TEST_SRCDIR/$REDRESS" "$TEST_TMPDIR/bin/redress"
+ln -s "$TEST_SRCDIR/$GORESYM" "$TEST_TMPDIR/bin/GoReSym"
 
 export GOROOT
 GOROOT=$(cd "$TEST_SRCDIR/_main" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)

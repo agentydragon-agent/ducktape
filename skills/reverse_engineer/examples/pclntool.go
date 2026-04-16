@@ -1,15 +1,3 @@
-// pclntool maps an instruction PC to its containing function name in a
-// garble-obfuscated Go ELF binary.
-//
-// garble v0.13.0+ XORs the .gopclntab magic header bytes with a seed-derived
-// key, preventing standard tools (go tool objdump, debug/gosym) from parsing
-// the table. The rest of the pclntab structure is intact, so this tool tries
-// each known Go magic value until debug/gosym.NewTable succeeds, then returns
-// the garbled function name for the given PC.
-//
-// Usage: pclntool <binary> <pc>
-//
-//	pc may be decimal or hex (0x-prefixed).
 package main
 
 import (
@@ -19,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/spf13/cobra"
 )
 
 // Known pclntab magic values (little-endian uint32 as stored in the binary).
@@ -31,48 +21,163 @@ var goMagics = []uint32{
 }
 
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: pclntool <binary> <pc>")
-		os.Exit(1)
-	}
-	f, err := elf.Open(os.Args[1])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "elf.Open:", err)
-		os.Exit(1)
-	}
-	defer f.Close()
-
-	pc, err := strconv.ParseUint(os.Args[2], 0, 64)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "parse pc:", err)
-		os.Exit(1)
+	root := &cobra.Command{
+		Use:           "pclntool",
+		Short:         "Operate on garble-obfuscated Go ELF binaries via pclntab",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
-	pclntabData, err := f.Section(".gopclntab").Data()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, ".gopclntab read:", err)
-		os.Exit(1)
-	}
-	textAddr := f.Section(".text").Addr
+	root.AddCommand(cmdPC(), cmdPatch())
 
+	if err := root.Execute(); err != nil {
+		panic(err)
+	}
+}
+
+func cmdPC() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pc <binary> <pc>",
+		Short: "Map an instruction PC to its containing garbled function name",
+		Long: `Map an instruction PC to its containing garbled function name.
+
+garble XORs the .gopclntab magic header, but the rest of the table is intact.
+pclntool tries each known Go magic until debug/gosym.NewTable succeeds, then
+calls PCToFunc to resolve the name.
+
+pc may be decimal or hex (0x-prefixed).`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runPC(args[0], args[1])
+			return nil
+		},
+	}
+}
+
+func cmdPatch() *cobra.Command {
+	return &cobra.Command{
+		Use:   "patch <binary> <output>",
+		Short: "Repair obfuscated pclntab magic so redress/GoReSym can parse the binary",
+		Long: `Write a copy of <binary> with the obfuscated pclntab magic repaired.
+
+The output binary is identical to the input except for the 4-byte magic at the
+start of .gopclntab. redress, GoReSym, and debug/gosym all work on the patched
+output.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runPatch(args[0], args[1])
+			return nil
+		},
+	}
+}
+
+// findWorkingMagic tries each known Go pclntab magic against pclntabData
+// (with .text base addr textAddr) and returns the first that parses, plus
+// the resulting symbol table.
+func findWorkingMagic(pclntabData []byte, textAddr uint64) (uint32, *gosym.Table, bool) {
+	if len(pclntabData) < 4 {
+		return 0, nil, false
+	}
 	for _, magic := range goMagics {
 		buf := make([]byte, len(pclntabData))
 		copy(buf, pclntabData)
 		binary.LittleEndian.PutUint32(buf[:4], magic)
-
 		lt := gosym.NewLineTable(buf, textAddr)
 		table, err := gosym.NewTable(nil, lt)
 		if err != nil || len(table.Funcs) == 0 {
 			continue
 		}
-		fn := table.PCToFunc(pc)
-		if fn == nil {
-			fmt.Fprintf(os.Stderr, "no function at PC %#x\n", pc)
-			os.Exit(1)
-		}
-		fmt.Println(fn.Name)
-		return
+		return magic, table, true
 	}
-	fmt.Fprintln(os.Stderr, "could not parse pclntab with any known Go magic")
-	os.Exit(1)
+	return 0, nil, false
+}
+
+func runPC(binaryPath, pcStr string) {
+	f, err := elf.Open(binaryPath)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	pc, err := strconv.ParseUint(pcStr, 0, 64)
+	if err != nil {
+		panic(err)
+	}
+
+	pclntabSec := f.Section(".gopclntab")
+	if pclntabSec == nil {
+		panic("no .gopclntab section")
+	}
+	pclntabData, err := pclntabSec.Data()
+	if err != nil {
+		panic(err)
+	}
+	textSec := f.Section(".text")
+	if textSec == nil {
+		panic("no .text section")
+	}
+
+	_, table, ok := findWorkingMagic(pclntabData, textSec.Addr)
+	if !ok {
+		panic("could not parse pclntab with any known Go magic")
+	}
+	fn := table.PCToFunc(pc)
+	if fn == nil {
+		panic(fmt.Sprintf("no function at PC %#x", pc))
+	}
+	fmt.Println(fn.Name)
+}
+
+func runPatch(inputPath, outputPath string) {
+	raw, err := os.ReadFile(inputPath)
+	if err != nil {
+		panic(err)
+	}
+
+	f, err := elf.Open(inputPath)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	sec := f.Section(".gopclntab")
+	if sec == nil {
+		panic("no .gopclntab section")
+	}
+	pclntabData, err := sec.Data()
+	if err != nil {
+		panic(err)
+	}
+	fileOffset := sec.Offset
+	if uint64(len(raw)) < fileOffset+4 {
+		panic(fmt.Sprintf(".gopclntab offset %#x out of range for %d-byte file", fileOffset, len(raw)))
+	}
+
+	textSec := f.Section(".text")
+	if textSec == nil {
+		panic("no .text section")
+	}
+
+	if len(pclntabData) < 4 {
+		panic(".gopclntab is too short to contain a magic value")
+	}
+	origMagic := binary.LittleEndian.Uint32(pclntabData[:4])
+	magic, _, ok := findWorkingMagic(pclntabData, textSec.Addr)
+	if !ok {
+		panic("could not find working pclntab magic")
+	}
+
+	out := make([]byte, len(raw))
+	copy(out, raw)
+	binary.LittleEndian.PutUint32(out[fileOffset:fileOffset+4], magic)
+
+	info, err := os.Stat(inputPath)
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(outputPath, out, info.Mode()); err != nil {
+		panic(err)
+	}
+	fmt.Fprintf(os.Stderr, "patched .gopclntab magic: %#08x → %#08x\n", origMagic, magic)
+	fmt.Fprintf(os.Stderr, "wrote %d bytes to %s\n", len(out), outputPath)
 }
