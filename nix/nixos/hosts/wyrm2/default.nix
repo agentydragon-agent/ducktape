@@ -97,6 +97,16 @@ in
   # NixOS auto-disables Wayland for NVIDIA, but the display is QXL (not NVIDIA).
   services.displayManager.gdm.wayland = true;
 
+  # SPICE audio: increase PipeWire quantum to 2048 to eliminate xruns on the
+  # virtual ich9-intel-hda device. Adds ~42ms audio latency (vs ~21ms default),
+  # acceptable for media playback. See <debug/atlas/spice_audio/README.md>.
+  services.pipewire.extraConfig.pipewire."10-spice-quantum" = {
+    "context.properties" = {
+      "default.clock.quantum" = 2048;
+      "default.clock.min-quantum" = 2048;
+    };
+  };
+
   # Separate data disks (Proxmox virtio disks).
   # autoFormat creates ext4 on first boot; autoResize grows to full disk size.
   # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
