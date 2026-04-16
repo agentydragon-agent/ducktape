@@ -5,6 +5,26 @@
 # client_secret), then writes K8s secrets into the authentik namespace.
 # Reflector mirrors them to consumer namespaces.
 
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    authentik = {
+      source  = "goauthentik/authentik"
+      version = "~> 2025.10"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.35"
+    }
+  }
+
+  backend "kubernetes" {
+    secret_suffix = "sso-providers"
+    namespace     = "flux-system"
+  }
+}
+
 data "kubernetes_secret" "authentik_bootstrap" {
   metadata {
     name      = "authentik-bootstrap"
@@ -233,7 +253,7 @@ resource "kubernetes_secret" "airlock_secrets" {
     name      = "airlock-secrets"
     namespace = "authentik"
     annotations = {
-      description                                                      = "OAuth2 client creds for openclaw-agent — reflected to airlock and openclaw-gateway"
+      description                                                     = "OAuth2 client creds for openclaw-agent — reflected to airlock and openclaw-gateway"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "airlock,openclaw-gateway"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
