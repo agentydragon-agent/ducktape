@@ -85,7 +85,6 @@ resource "hcloud_server" "vps" {
   server_type = each.value.server_type
   location    = var.hetzner_location
   image       = data.hcloud_image.talos.id
-  ssh_keys    = [hcloud_ssh_key.talos.id]
   user_data   = local.vps_user_data[each.key]
 
   labels = {
