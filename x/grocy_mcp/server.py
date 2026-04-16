@@ -90,11 +90,11 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
     spec = _load_openapi_spec()
 
     if client is None:
-        exchange_client = httpx.AsyncClient(timeout=10.0)
+        exchange_client = httpx.AsyncClient(timeout=settings.exchange_timeout)
         client = httpx.AsyncClient(
             base_url=f"{settings.grocy_url.rstrip('/')}/api",
             auth=AuthentikExchangeAuth(settings, exchange_client),
-            timeout=30.0,
+            timeout=settings.grocy_timeout,
         )
 
     def _filter_disabled(route: HTTPRoute, mcp_type: MCPType) -> MCPType | None:
@@ -127,7 +127,7 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
         route_map_fn=_filter_disabled,
         mcp_component_fn=_customize_component,
     )
-    register_batch_tools(mcp, client)
+    register_batch_tools(mcp, client, settings)
     return mcp
 
 

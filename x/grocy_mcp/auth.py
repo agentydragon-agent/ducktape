@@ -7,14 +7,17 @@ and stamps the resulting token as `Authorization: Bearer ...` on the outgoing
 request. This is the same exchange shape the authentik MCP POC uses; see
 <x/authentik_mcp_poc/NOTES.md> §5-§6 for why each piece is load-bearing.
 
-The POC calls `_exchange_token_for_backend` inline in the tool handler. Here
-we lift it into an `httpx.Auth` subclass so FastMCP's `from_openapi`-generated
-tools get the exchange for free without any per-tool wiring.
+The exchanged token is cached keyed on the upstream JWT so that batch
+operations (which fire many concurrent Grocy requests under the same MCP user
+context) only hit Authentik's token endpoint once instead of N times. The
+cache respects `expires_in` from the exchange response with a safety margin.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import httpx
@@ -45,6 +48,9 @@ logger = logging.getLogger(__name__)
 # backend, audit the destination's auth requirements before changing this.
 EXCHANGE_SCOPES = "openid email profile ak_proxy"
 
+# Subtract this from expires_in to avoid using a token right at expiry.
+_EXPIRY_SAFETY_MARGIN = 30.0
+
 
 class AuthentikExchangeAuth(httpx.Auth):
     """httpx Auth that mints a Grocy-scoped JWT per request.
@@ -52,6 +58,10 @@ class AuthentikExchangeAuth(httpx.Auth):
     Per-request, because each tool invocation runs as a different MCP user
     and the minted JWT must carry that user's identity through the outpost's
     property-mapping hop to Grocy's `ReverseProxyAuthMiddleware`.
+
+    The exchanged token is cached keyed on the upstream JWT so that multiple
+    concurrent requests within a single batch tool call reuse the same
+    exchange instead of each firing their own TLS+POST to Authentik.
 
     `get_access_token()` reads FastMCP's request-scoped contextvar — same
     mechanism as the POC's `_extract_bearer_token` at
@@ -67,26 +77,59 @@ class AuthentikExchangeAuth(httpx.Auth):
         # wraps with this Auth — reusing the Grocy client here would recurse
         # through `async_auth_flow` forever.
         self._exchange_client = exchange_client
+        # Cache: upstream_token → (exchanged_token, expires_at_monotonic)
+        self._cache: dict[str, tuple[str, float]] = {}
+        # Single lock to prevent thundering-herd on cache miss (multiple
+        # concurrent requests all missing cache and firing exchanges).
+        self._lock = asyncio.Lock()
+
+    async def _get_exchanged_token(self, upstream_token: str) -> str:
+        """Return a cached or freshly exchanged Grocy-proxy-scoped token."""
+        now = time.monotonic()
+
+        # Fast path: check cache without lock.
+        cached = self._cache.get(upstream_token)
+        if cached is not None:
+            token, expires_at = cached
+            if now < expires_at:
+                return token
+
+        # Slow path: acquire lock, re-check, then exchange.
+        async with self._lock:
+            cached = self._cache.get(upstream_token)
+            if cached is not None:
+                token, expires_at = cached
+                if now < expires_at:
+                    return token
+
+            response = await self._exchange_client.post(
+                self._settings.authentik_token_endpoint(),
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self._settings.grocy_proxy_client_id,
+                    "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                    "client_assertion": upstream_token,
+                    "scope": EXCHANGE_SCOPES,
+                },
+            )
+            if response.status_code != 200:
+                preview = response.text[:500]
+                raise RuntimeError(f"Authentik token exchange failed: status={response.status_code} body={preview!r}")
+            payload = response.json()
+            if not isinstance(payload, dict) or not isinstance(payload.get("access_token"), str):
+                raise RuntimeError(f"token exchange response missing access_token: {payload!r}")
+
+            exchanged_token: str = payload["access_token"]
+            expires_in = float(payload.get("expires_in", 300))
+            expires_at = now + max(expires_in - _EXPIRY_SAFETY_MARGIN, 10.0)
+            self._cache[upstream_token] = (exchanged_token, expires_at)
+            logger.debug("cached exchanged token (expires_in=%.0fs, effective_ttl=%.0fs)", expires_in, expires_at - now)
+            return exchanged_token
 
     async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
         access = get_access_token()
         if access is None:
             raise RuntimeError("no authenticated access token in request context")
-        response = await self._exchange_client.post(
-            self._settings.authentik_token_endpoint(),
-            data={
-                "grant_type": "client_credentials",
-                "client_id": self._settings.grocy_proxy_client_id,
-                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-                "client_assertion": access.token,
-                "scope": EXCHANGE_SCOPES,
-            },
-        )
-        if response.status_code != 200:
-            preview = response.text[:500]
-            raise RuntimeError(f"Authentik token exchange failed: status={response.status_code} body={preview!r}")
-        payload = response.json()
-        if not isinstance(payload, dict) or not isinstance(payload.get("access_token"), str):
-            raise RuntimeError(f"token exchange response missing access_token: {payload!r}")
-        request.headers["Authorization"] = f"Bearer {payload['access_token']}"
+        token = await self._get_exchanged_token(access.token)
+        request.headers["Authorization"] = f"Bearer {token}"
         yield request

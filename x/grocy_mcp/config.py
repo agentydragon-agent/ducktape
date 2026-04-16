@@ -40,6 +40,16 @@ class ServerSettings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8765
 
+    # ── Timeout and resilience knobs ──────────────────────────────────────
+    grocy_timeout: float = Field(default=30.0, description="Timeout (seconds) for Grocy API requests.")
+    exchange_timeout: float = Field(
+        default=10.0, description="Timeout (seconds) for Authentik token exchange requests."
+    )
+    max_batch_size: int = Field(default=20, description="Maximum items per batch tool call.")
+    max_concurrent_requests: int = Field(default=4, description="Maximum parallel Grocy API requests within a batch.")
+    max_retries: int = Field(default=2, description="Retry count for transient errors (timeouts, 5xx).")
+    retry_base_delay: float = Field(default=0.5, description="Initial retry delay in seconds; doubles each attempt.")
+
     def normalized_public_base_url(self) -> str:
         return self.public_base_url.rstrip("/")
 

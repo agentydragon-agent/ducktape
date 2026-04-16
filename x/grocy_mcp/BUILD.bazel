@@ -58,6 +58,7 @@ py_library(
     srcs = ["batch_tools.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":config",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//pydantic",

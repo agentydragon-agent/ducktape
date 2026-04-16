@@ -3,17 +3,54 @@
 Custom tools that replace several single-shot OpenAPI-generated tools with
 batch/enriched versions. Each operation fans out concurrently via asyncio.gather
 and collects results (continue-and-collect, never fail-fast).
+
+Concurrency is bounded by an asyncio.Semaphore so that large batches don't
+overwhelm Grocy's PHP/SQLite backend or the Authentik token exchange endpoint
+(each request triggers a per-user JWT exchange). Transient errors (timeouts,
+5xx) are retried with exponential backoff.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any, Literal
 
 import httpx
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
+
+from x.grocy_mcp.config import ServerSettings
+
+logger = logging.getLogger(__name__)
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Whether an exception is transient and worth retrying."""
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {429, 500, 502, 503, 504}
+
+
+async def _with_retry[T](
+    fn: Callable[[], Awaitable[T]], semaphore: asyncio.Semaphore, *, max_retries: int, base_delay: float
+) -> T:
+    """Run fn under semaphore with retry on transient errors."""
+    async with semaphore:
+        for attempt in range(1 + max_retries):
+            try:
+                return await fn()
+            except Exception as e:
+                if not _is_retryable(e) or attempt == max_retries:
+                    raise
+                delay = base_delay * (2**attempt)
+                logger.warning(
+                    "retryable error (attempt %d/%d, next in %.1fs): %s", attempt + 1, 1 + max_retries, delay, e
+                )
+                await asyncio.sleep(delay)
+        raise AssertionError("unreachable")
 
 
 class EntityType(StrEnum):
@@ -155,24 +192,41 @@ class StockOpResult(BaseModel):
 # ── Tool registration ──────────────────────────────────────────────────────
 
 
-def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
+def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: ServerSettings) -> None:
     """Register custom batch tools on an existing FastMCP instance."""
+    sem = asyncio.Semaphore(settings.max_concurrent_requests)
+    max_batch = settings.max_batch_size
+    max_retries = settings.max_retries
+    base_delay = settings.retry_base_delay
+
+    def _check_batch_size(items: list[Any] | set[Any], label: str) -> None:
+        if len(items) > max_batch:
+            raise ValueError(f"batch too large: {len(items)} {label} exceeds maximum of {max_batch}")
+
+    async def _retry[T](fn: Callable[[], Awaitable[T]]) -> T:
+        return await _with_retry(fn, sem, max_retries=max_retries, base_delay=base_delay)
 
     @mcp.tool()
     async def create_entities(items: list[CreateItem]) -> list[CreateOk | CreateError]:
-        """Create multiple Grocy entities in one call.
+        """Create multiple Grocy entities in one call. Maximum 20 items per call.
 
-        Sends one POST /objects/{entity_type} per item concurrently. Failed items
-        are collected as CreateError; they do not abort others.
+        Sends one POST /objects/{entity_type} per item concurrently (up to
+        4 in parallel). Failed items are collected as CreateError; they do not
+        abort others. Transient errors are retried.
         """
+        _check_batch_size(items, "items")
 
         async def _one(i: int, item: CreateItem) -> CreateOk | CreateError:
             try:
-                r = await client.post(f"/objects/{item.entity_type}", json=item.body)
-                r.raise_for_status()
-                data = r.json()
-                raw_id = data.get("created_object_id")
-                return CreateOk(index=i, created_object_id=int(raw_id) if raw_id is not None else None)
+
+                async def _do() -> CreateOk:
+                    r = await client.post(f"/objects/{item.entity_type}", json=item.body)
+                    r.raise_for_status()
+                    data = r.json()
+                    raw_id = data.get("created_object_id")
+                    return CreateOk(index=i, created_object_id=int(raw_id) if raw_id is not None else None)
+
+                return await _retry(_do)
             except Exception as e:
                 return CreateError(index=i, error=str(e) or repr(e))
 
@@ -180,35 +234,44 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
 
     @mcp.tool()
     async def list_entities(entity_types: list[EntityType]) -> dict[str, list[Any]]:
-        """Fetch multiple Grocy entity types in one call.
+        """Fetch multiple Grocy entity types in one call. Maximum 20 entity types per call.
 
         Returns a mapping of entity_type → list of entity objects, fetched
-        concurrently. Raises on the first failed fetch (fail-fast). Use
-        separate calls if partial failure tolerance is needed.
+        concurrently (up to 4 in parallel). Raises on the first failed fetch
+        (fail-fast). Use separate calls if partial failure tolerance is needed.
         """
+        _check_batch_size(entity_types, "entity_types")
 
         async def _fetch(entity_type: EntityType) -> tuple[str, list[Any]]:
-            r = await client.get(f"/objects/{entity_type}")
-            r.raise_for_status()
-            return str(entity_type), r.json()
+            async def _do() -> tuple[str, list[Any]]:
+                r = await client.get(f"/objects/{entity_type}")
+                r.raise_for_status()
+                return str(entity_type), r.json()
+
+            return await _retry(_do)
 
         pairs = await asyncio.gather(*[_fetch(et) for et in entity_types])
         return dict(pairs)
 
     @mcp.tool()
     async def get_entities(entity_type: EntityType, object_ids: list[int]) -> list[GetOk | GetError]:
-        """Fetch multiple Grocy objects of the same entity type by ID.
+        """Fetch multiple Grocy objects of the same entity type by ID. Maximum 20 IDs per call.
 
-        Returns one GetResult per ID, each carrying entity_type and object_id for
+        Returns one result per ID, each carrying entity_type and object_id for
         unambiguous identification without index-matching. Failed fetches are
         returned as GetError and do not abort others.
         """
+        _check_batch_size(object_ids, "object_ids")
 
         async def _one(object_id: int) -> GetOk | GetError:
             try:
-                r = await client.get(f"/objects/{entity_type}/{object_id}")
-                r.raise_for_status()
-                return GetOk(entity_type=entity_type, object_id=object_id, data=r.json())
+
+                async def _do() -> GetOk:
+                    r = await client.get(f"/objects/{entity_type}/{object_id}")
+                    r.raise_for_status()
+                    return GetOk(entity_type=entity_type, object_id=object_id, data=r.json())
+
+                return await _retry(_do)
             except Exception as e:
                 return GetError(entity_type=entity_type, object_id=object_id, error=str(e) or repr(e))
 
@@ -226,11 +289,15 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
         parallel with the main stock request and joined in Python by
         product.qu_id_stock / product.location_id.
         """
-        coros = [client.get("/stock")]
+
+        async def _get(path: str) -> httpx.Response:
+            return await _retry(lambda: client.get(path))
+
+        coros: list[Any] = [_get("/stock")]
         if include_quantity_unit:
-            coros.append(client.get("/objects/quantity_units"))
+            coros.append(_get("/objects/quantity_units"))
         if include_location:
-            coros.append(client.get("/objects/locations"))
+            coros.append(_get("/objects/locations"))
 
         responses = await asyncio.gather(*coros)
         for r in responses:
@@ -272,41 +339,47 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
 
     @mcp.tool()
     async def add_stock(items: list[AddItem]) -> list[StockOpResult]:
-        """Add stock for multiple products in one call.
+        """Add stock for multiple products in one call. Maximum 20 items per call.
 
-        Each item fires a POST /stock/products/{id}/add. Results are collected
-        concurrently; a failure on one item does not affect others.
+        Each item fires a POST /stock/products/{id}/add (up to 4 in parallel).
+        Results are collected concurrently; a failure on one item does not
+        affect others. Transient errors are retried.
 
         Each result includes transaction_id (for per-operation undo via the
         undo_transaction tool), amount_delta (net change from the stock log), and
         new_amount (resulting stock, fetched via an extra GET per product after the add).
         """
+        _check_batch_size(items, "items")
 
         async def _one(i: int, item: AddItem) -> StockOpResult:
             try:
-                body: dict[str, Any] = {"amount": item.amount}
-                if item.best_before_date is not None:
-                    body["best_before_date"] = item.best_before_date
-                if item.price is not None:
-                    body["price"] = item.price
-                if item.location_id is not None:
-                    body["location_id"] = item.location_id
-                if item.note is not None:
-                    body["note"] = item.note
 
-                r = await client.post(f"/stock/products/{item.product_id}/add", json=body)
-                r.raise_for_status()
-                entries: list[dict[str, Any]] = r.json()
-                tx_id = entries[0]["transaction_id"] if entries else None
-                amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
+                async def _do() -> StockOpResult:
+                    body: dict[str, Any] = {"amount": item.amount}
+                    if item.best_before_date is not None:
+                        body["best_before_date"] = item.best_before_date
+                    if item.price is not None:
+                        body["price"] = item.price
+                    if item.location_id is not None:
+                        body["location_id"] = item.location_id
+                    if item.note is not None:
+                        body["note"] = item.note
 
-                stock_r = await client.get(f"/stock/products/{item.product_id}")
-                stock_r.raise_for_status()
-                new_amount = float(stock_r.json().get("stock_amount", 0))
+                    r = await client.post(f"/stock/products/{item.product_id}/add", json=body)
+                    r.raise_for_status()
+                    entries: list[dict[str, Any]] = r.json()
+                    tx_id = entries[0]["transaction_id"] if entries else None
+                    amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
 
-                return StockOpResult(
-                    index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
-                )
+                    stock_r = await client.get(f"/stock/products/{item.product_id}")
+                    stock_r.raise_for_status()
+                    new_amount = float(stock_r.json().get("stock_amount", 0))
+
+                    return StockOpResult(
+                        index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
+                    )
+
+                return await _retry(_do)
             except Exception as e:
                 return StockOpResult(index=i, ok=False, error=str(e) or repr(e))
 
@@ -314,38 +387,44 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
 
     @mcp.tool()
     async def consume_stock(items: list[ConsumeItem]) -> list[StockOpResult]:
-        """Consume stock for multiple products in one call.
+        """Consume stock for multiple products in one call. Maximum 20 items per call.
 
-        Each item fires a POST /stock/products/{id}/consume. Results are
-        collected concurrently; a failure on one item does not affect others.
+        Each item fires a POST /stock/products/{id}/consume (up to 4 in parallel).
+        Results are collected concurrently; a failure on one item does not
+        affect others. Transient errors are retried.
 
         Each result includes transaction_id, amount_delta (typically negative),
         and new_amount (resulting stock after the consume).
         """
+        _check_batch_size(items, "items")
 
         async def _one(i: int, item: ConsumeItem) -> StockOpResult:
             try:
-                body: dict[str, Any] = {
-                    "amount": item.amount,
-                    "spoiled": item.spoiled,
-                    "allow_subproduct_substitution": item.allow_subproduct_substitution,
-                }
-                if item.location_id is not None:
-                    body["location_id"] = item.location_id
 
-                r = await client.post(f"/stock/products/{item.product_id}/consume", json=body)
-                r.raise_for_status()
-                entries: list[dict[str, Any]] = r.json()
-                tx_id = entries[0]["transaction_id"] if entries else None
-                amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
+                async def _do() -> StockOpResult:
+                    body: dict[str, Any] = {
+                        "amount": item.amount,
+                        "spoiled": item.spoiled,
+                        "allow_subproduct_substitution": item.allow_subproduct_substitution,
+                    }
+                    if item.location_id is not None:
+                        body["location_id"] = item.location_id
 
-                stock_r = await client.get(f"/stock/products/{item.product_id}")
-                stock_r.raise_for_status()
-                new_amount = float(stock_r.json().get("stock_amount", 0))
+                    r = await client.post(f"/stock/products/{item.product_id}/consume", json=body)
+                    r.raise_for_status()
+                    entries: list[dict[str, Any]] = r.json()
+                    tx_id = entries[0]["transaction_id"] if entries else None
+                    amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
 
-                return StockOpResult(
-                    index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
-                )
+                    stock_r = await client.get(f"/stock/products/{item.product_id}")
+                    stock_r.raise_for_status()
+                    new_amount = float(stock_r.json().get("stock_amount", 0))
+
+                    return StockOpResult(
+                        index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
+                    )
+
+                return await _retry(_do)
             except Exception as e:
                 return StockOpResult(index=i, ok=False, error=str(e) or repr(e))
 
@@ -353,11 +432,11 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
 
     @mcp.tool()
     async def inventory_products(items: list[InventoryItem]) -> list[StockOpResult]:
-        """Set absolute stock amounts for multiple products in one call.
+        """Set absolute stock amounts for multiple products in one call. Maximum 20 items per call.
 
-        Each item fires a POST /stock/products/{id}/inventory. Grocy computes how
-        much to add or remove to reach new_amount and applies it atomically per product.
-        Results are collected concurrently.
+        Each item fires a POST /stock/products/{id}/inventory (up to 4 in parallel).
+        Grocy computes how much to add or remove to reach new_amount and applies it
+        atomically per product. Results are collected concurrently.
 
         Semantics of optional fields:
         - best_before_date, location_id, price apply ONLY to units being added. If Grocy
@@ -369,30 +448,35 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
         - Each item produces its own transaction_id; there is no cross-item atomicity — a
           failure on one product does not roll back others.
         """
+        _check_batch_size(items, "items")
 
         async def _one(i: int, item: InventoryItem) -> StockOpResult:
             try:
-                body: dict[str, Any] = {"new_amount": item.new_amount}
-                if item.best_before_date is not None:
-                    body["best_before_date"] = item.best_before_date
-                if item.location_id is not None:
-                    body["location_id"] = item.location_id
-                if item.price is not None:
-                    body["price"] = item.price
 
-                r = await client.post(f"/stock/products/{item.product_id}/inventory", json=body)
-                r.raise_for_status()
-                entries: list[dict[str, Any]] = r.json()
-                tx_id = entries[0]["transaction_id"] if entries else None
-                amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
+                async def _do() -> StockOpResult:
+                    body: dict[str, Any] = {"new_amount": item.new_amount}
+                    if item.best_before_date is not None:
+                        body["best_before_date"] = item.best_before_date
+                    if item.location_id is not None:
+                        body["location_id"] = item.location_id
+                    if item.price is not None:
+                        body["price"] = item.price
 
-                stock_r = await client.get(f"/stock/products/{item.product_id}")
-                stock_r.raise_for_status()
-                new_amount = float(stock_r.json().get("stock_amount", 0))
+                    r = await client.post(f"/stock/products/{item.product_id}/inventory", json=body)
+                    r.raise_for_status()
+                    entries: list[dict[str, Any]] = r.json()
+                    tx_id = entries[0]["transaction_id"] if entries else None
+                    amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
 
-                return StockOpResult(
-                    index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
-                )
+                    stock_r = await client.get(f"/stock/products/{item.product_id}")
+                    stock_r.raise_for_status()
+                    new_amount = float(stock_r.json().get("stock_amount", 0))
+
+                    return StockOpResult(
+                        index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
+                    )
+
+                return await _retry(_do)
             except Exception as e:
                 return StockOpResult(index=i, ok=False, error=str(e) or repr(e))
 
