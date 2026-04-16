@@ -24,7 +24,7 @@ spec:
         - port: 53
           protocol: UDP
     # Port 8081 API: cert-manager pdns-webhook (ACME DNS-01),
-    # powerdns-operator (zone/record management), external-dns (record sync)
+    # powerdns-operator (zone/record management)
     - from:
         - namespaceSelector:
             matchLabels:
@@ -32,9 +32,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: powerdns-operator
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: external-dns
       ports:
         - port: 8081
           protocol: TCP

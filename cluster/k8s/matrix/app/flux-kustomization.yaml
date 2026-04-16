@@ -25,7 +25,6 @@ spec:
     - name: gateway
     - name: cert-manager
     - name: authentik # Wait for Authentik worker to apply SSO blueprints
-    - name: external-dns # OIDC discovery uses external URL (auth.allegedly.works)
     - name: matrix-secrets
     - name: local-path-provisioner
 # Note: Matrix Synapse needs OIDC discovery endpoint at startup (from provider),

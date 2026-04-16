@@ -25,5 +25,4 @@ spec:
     - name: inventree-secrets
     - name: authentik-blueprint-inventree-secret
     - name: gateway
-    - name: external-dns
     - name: authentik

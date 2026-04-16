@@ -3,8 +3,6 @@ kind: HTTPRoute
 metadata:
   name: atuin
   namespace: atuin
-  annotations:
-    external-dns.alpha.kubernetes.io/hostname: atuin.allegedly.works
 spec:
   parentRefs:
     - name: cluster-gateway

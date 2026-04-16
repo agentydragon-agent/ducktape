@@ -3,8 +3,6 @@ kind: TLSRoute
 metadata:
   name: docker-ci
   namespace: docker-ci
-  annotations:
-    external-dns.alpha.kubernetes.io/hostname: docker-ci.allegedly.works
 spec:
   parentRefs:
     - name: cluster-gateway

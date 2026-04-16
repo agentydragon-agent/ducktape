@@ -9,9 +9,9 @@ resource "kubernetes_config_map" "cluster_info" {
       # Reflector copies to external-dns (--default-targets env vars)
       # and flux-system (Flux postBuild substituteFrom for Gateway annotation)
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "external-dns,flux-system"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "flux-system"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "external-dns,flux-system"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "flux-system"
     }
   }
 

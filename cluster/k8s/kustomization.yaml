@@ -78,9 +78,6 @@ resources:
   - external-secrets/config/flux-kustomization.yaml
   - external-secrets/vault-config/flux-kustomization.yaml
 
-  # --- external-dns ---
-  - external-dns/flux-kustomization.yaml
-
   # --- cert-manager ---
   - cert-manager/issuer-config/flux-kustomization.yaml
   - cert-manager/app/flux-kustomization.yaml

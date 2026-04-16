@@ -29,5 +29,3 @@ spec:
       namespace: flux-system
     - name: cert-manager
       namespace: flux-system
-    - name: external-dns
-      namespace: flux-system

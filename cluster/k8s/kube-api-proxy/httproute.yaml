@@ -4,7 +4,6 @@ metadata:
   name: kube-api-proxy
   namespace: kube-api-proxy
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: api.allegedly.works
     description: |
       Exposes the k8s API at https://api.allegedly.works on the standard
       port 443, behind the cluster Cilium Gateway. This exists so Claude
