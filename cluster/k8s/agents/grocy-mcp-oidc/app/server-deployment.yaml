@@ -32,7 +32,7 @@ spec:
             claimName: grocy-mcp-fastmcp-state
       containers:
         - name: server
-          image: ghcr.io/agentydragon/grocy-mcp:devel-20260415033620-0e276d4 # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
+          image: ghcr.io/agentydragon/grocy-mcp:devel-20260416073335-8625864 # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
           imagePullPolicy: Always
           ports:
             - name: http
