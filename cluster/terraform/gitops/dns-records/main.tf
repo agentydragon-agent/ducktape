@@ -19,10 +19,10 @@ locals {
 
   # VPS node ExternalIPs (region=hil). Update when nodes change.
   vps_ips = [
-    "5.78.142.158",  # talos-vps-cp-0
-    "5.78.144.197",  # talos-vps-cp-1
-    "5.78.106.249",  # talos-vps-worker-0
-    "5.78.43.147",   # talos-vps-worker-1
+    "5.78.142.158", # talos-vps-cp-0
+    "5.78.144.197", # talos-vps-cp-1
+    "5.78.106.249", # talos-vps-worker-0
+    "5.78.43.147",  # talos-vps-worker-1
   ]
 }
 
