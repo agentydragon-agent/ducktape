@@ -100,6 +100,10 @@ CloudNativePG `local-path`.
       loss caused `sso-secrets` to regenerate all `random_password` resources. Fix by
       force re-applying all SSO blueprints (clear `last_applied_hash` via `ak shell`) so
       the DB picks up the current env var values.
+- [ ] Investigate why `proxmox-csi-retain` publishes zero `CSIStorageCapacity` objects —
+      the scheduler sees 0 available space and refuses to schedule `WaitForFirstConsumer`
+      PVCs, creating a deadlock. Likely a Proxmox API connectivity issue in
+      `proxmox-proxy`. Check `csi-proxmox` controller logs and `proxmox-proxy` logs.
 - [ ] Consider OpenEBS LVM on Talos nodes; Talos has `machine.disks` or `machine.volumes`.
       Would allow firecracker fast-clone on Hetzner.
 - [ ] Longhorn node tags: Kyverno mutate policy sets `node.longhorn.io/default-node-tags`

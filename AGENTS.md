@@ -29,6 +29,7 @@ ServiceAccount and never triggers permission prompts.
   deployments, Flux kustomizations (+ patch for reconcile triggers), HelmReleases,
   cert-manager, CNPG clusters, metrics, Longhorn, Gateway API, Kyverno, and more.
 - **Cross-namespace read**: harbor, langfuse, ollama, openclaw, props, gatus,
+  csi-proxmox, openebs, proxmox-proxy,
   logs/configmaps via namespaced rolebindings (monitoring, kube-system,
   longhorn-system, flux-system, grocy-mcp, grocy-mcp-oidc, airlock, authentik).
 

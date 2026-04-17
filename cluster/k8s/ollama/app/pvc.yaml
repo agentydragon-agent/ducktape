@@ -6,8 +6,8 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  # Proxmox storage on GPU worker node — co-located with GPUs
-  storageClassName: proxmox-csi-retain
+  # OpenEBS LVM HDD on wyrm2 — co-located with GPUs
+  storageClassName: lvm-proxmox-hdd
   resources:
     requests:
       storage: 200Gi

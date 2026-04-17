@@ -51,3 +51,54 @@ subjects:
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-namespace-diagnostics-reader
+  namespace: csi-proxmox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-diagnostics-reader
+subjects:
+  - kind: ServiceAccount
+    name: claude-code-web
+    namespace: default
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-namespace-diagnostics-reader
+  namespace: openebs
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-diagnostics-reader
+subjects:
+  - kind: ServiceAccount
+    name: claude-code-web
+    namespace: default
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-namespace-diagnostics-reader
+  namespace: proxmox-proxy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-diagnostics-reader
+subjects:
+  - kind: ServiceAccount
+    name: claude-code-web
+    namespace: default
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io
