@@ -94,6 +94,10 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
             component.uri = AnyUrl(f"resource://{override.name}")
         if override.extra_description:
             component.description = f"{component.description}\n\n{override.extra_description}"
+        # Strip output schemas — Grocy's response schemas are unreliable (wrong types,
+        # null where string expected, etc.). E2e tests are the real contract.
+        if isinstance(component, OpenAPITool):
+            component.output_schema = None
 
     mcp = FastMCP.from_openapi(
         openapi_spec=spec,

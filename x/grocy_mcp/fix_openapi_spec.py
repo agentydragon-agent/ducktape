@@ -84,6 +84,8 @@ _REPLACED_ROUTES: set[tuple[str, str]] = {
     ("post", "/stock/products/{productId}/add"),
     ("post", "/stock/products/{productId}/consume"),
     ("post", "/stock/products/{productId}/inventory"),
+    ("get", "/stock/entry/{entryId}"),
+    ("put", "/stock/entry/{entryId}"),
 }
 
 

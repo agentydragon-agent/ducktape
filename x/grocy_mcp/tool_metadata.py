@@ -43,8 +43,10 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
         "list_volatile_stock", "Returns products that are due soon, overdue, expired, or below min stock."
     ),
     # ── Stock entry ──────────────────────────────────────────────────
-    ("GET", "/stock/entry/{entryId}"): _E("get_stock_entry"),
-    ("PUT", "/stock/entry/{entryId}"): _E("edit_stock_entry"),
+    # Replaced by custom tools in batch_tools.py (get_stock_entries, edit_stock_entry).
+    # Stripped from the OpenAPI spec by fix_openapi_spec.py.
+    ("GET", "/stock/entry/{entryId}"): _D("get_stock_entry"),
+    ("PUT", "/stock/entry/{entryId}"): _D("edit_stock_entry"),
     ("GET", "/stock/entry/{entryId}/printlabel"): _D("print_stock_entry_label"),
     # ── Product stock operations (by ID) ─────────────────────────────
     ("GET", "/stock/products/{productId}"): _E("get_product_stock"),

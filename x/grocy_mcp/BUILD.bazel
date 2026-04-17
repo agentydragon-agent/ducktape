@@ -38,12 +38,6 @@ py_library(
 )
 
 py_library(
-    name = "tool_metadata",
-    srcs = ["tool_metadata.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "batch_tools",
     srcs = ["batch_tools.py"],
     visibility = ["//visibility:public"],
@@ -68,6 +62,7 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//fastmcp",
         "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
 )
@@ -86,7 +81,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
     ],
 )
 
@@ -95,6 +90,8 @@ py_test(
     srcs = ["test_config.py"],
     deps = [
         ":config",
+        ":conftest",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -105,8 +102,9 @@ py_test(
     srcs = ["test_server.py"],
     deps = [
         ":config",
+        ":conftest",
         ":server",
-        "@pypi//pytest",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -115,8 +113,9 @@ py_test(
     name = "test_fix_openapi_spec",
     srcs = ["test_fix_openapi_spec.py"],
     deps = [
+        ":conftest",
         ":fix_openapi_spec_lib",
-        "@pypi//pytest",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -128,6 +127,21 @@ py_binary(
     deps = [
         ":config",
         ":server",
+    ],
+)
+
+py_test(
+    name = "test_retry_safety",
+    srcs = ["test_retry_safety.py"],
+    deps = [
+        ":batch_tools",
+        ":config",
+        ":conftest",
+        "//:conftest",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -144,15 +158,14 @@ py_test(
         ":conftest",
         ":server",
         ":tool_metadata",
+        "//:conftest",
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/testing:container_logs",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
-        "@pypi//testcontainers",
     ],
 )
 
@@ -186,4 +199,9 @@ oci_load(
     name = "server_load",
     image = ":server_image",
     repo_tags = ["grocy-mcp:latest"],
+)
+
+py_library(
+    name = "tool_metadata",
+    srcs = ["tool_metadata.py"],
 )
