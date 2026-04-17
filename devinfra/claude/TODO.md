@@ -1,5 +1,27 @@
 # claude_hooks TODO
 
+## Audit claude-hooks wheel deps after auth_proxy removal
+
+**CLEANUP(2026-04-16)**: The `auth_proxy` subsystem was removed in the
+followup to PR #1325. A few Python runtime deps may now be unused:
+
+- `cryptography` — previously for CA extraction / x509 parsing
+- `pyjwt` — previously for proxy JWT credential expiry checks
+
+(`grpcio` + `protobuf` are still used by the BES interceptor that surfaces
+the "use `bb remote`" nudge — keep.)
+
+Check whether anything else in the wheel imports them (e.g. via transitive
+use by FastAPI/uvicorn/etc.) and drop the ones that are truly unused.
+
+Files to update in lockstep:
+
+1. `//:claude_hooks_wheel` `requires` in root `BUILD.bazel`
+2. `claude-hooks` `propagatedBuildInputs` in `nix/packages/default.nix`
+
+Condition to remove this tombstone: deps audited and pruned, or confirmed
+still needed by indirect usage.
+
 ## OTEL bearer token: mirror into SOPS
 
 **CLEANUP(2026-04-15)**: today `devinfra/secrets/web_env.sh` fetches
@@ -63,6 +85,14 @@ many targets, then compare `bb remote test //... --config=rbe` vs `bb remote tes
 
 ## Integration Test: Session Start Hook via Nix devShell
 
-**Problem**: The existing container E2E test (`container_e2e/test_container_e2e.py`) tests the hook daemon inside a Docker container with `uv tool install`, but does not exercise the Nix-packaged `claude-hooks` derivation. Missing Nix-level dependencies (like `grpcio`) cause the daemon to crash with `ModuleNotFoundError` at startup — only discovered when a real CLI session starts.
+**Problem**: The container E2E test (`container_e2e/test_container_e2e.py`)
+exercises the hook daemon inside a Docker container with `uv tool install`,
+but does not exercise the Nix-packaged `claude-hooks` derivation. Missing
+Nix-level dependencies (like `grpcio`) cause the daemon to crash with
+`ModuleNotFoundError` at startup — only discovered when a real CLI session
+starts.
 
-**Solution**: Add an integration test that runs the exact session start hook shim as configured in `.claude/settings.json` (i.e., invokes `claude-hook` the same way Claude Code does), using the Nix devShell environment. This verifies that all runtime imports resolve end-to-end — not just a subset. The existing container E2E test exercises the `uv tool install` path but has no Nix; this test would cover the Nix-installed path.
+**Solution**: Add an integration test that runs the exact session start hook
+shim as configured in `.claude/settings.json` (i.e., invokes `claude-hook` the
+same way Claude Code does), using the Nix devShell environment. This verifies
+that all runtime imports resolve end-to-end — not just a subset.

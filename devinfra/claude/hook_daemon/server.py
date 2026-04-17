@@ -17,7 +17,6 @@ import time
 import traceback
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 
 import anyio
@@ -26,7 +25,6 @@ from fastapi.responses import JSONResponse, Response
 from opentelemetry import trace
 from pydantic import BaseModel
 
-from devinfra.claude.auth_proxy.credentials import check_credential_expiry
 from devinfra.claude.claude_api.hooks.config_change import ConfigChangeInput
 from devinfra.claude.claude_api.hooks.cwd_changed import CwdChangedInput
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
@@ -141,20 +139,6 @@ def _apply_mailbox(output: HookOutput | None, session: Session, hook: AnyHookInp
 
     output.system_message = "\n\n".join(parts)
     return output
-
-
-def _check_jwt_expiry(proxy_url: str, session: Session) -> None:
-    """Check JWT expiry and post info/warning to session mailbox."""
-    status = check_credential_expiry(proxy_url)
-    if status.expiry is None:
-        return
-    minutes_remaining = (status.expiry - datetime.now(UTC)).total_seconds() / 60
-    if minutes_remaining <= 0:
-        session.post_message(
-            f"JWT EXPIRED ({-minutes_remaining:.0f} min ago). Start a new Claude Code session for fresh credentials."
-        )
-    elif minutes_remaining < 30:
-        session.post_message(f"JWT valid for {minutes_remaining:.0f} min")
 
 
 # -- Per-shim handlers --
@@ -299,7 +283,6 @@ def create_app(daemon_dir: Path, profile: ProfileConfig, startup: StartupResult)
             output: HookOutput | None = None
             match req.hook:
                 case SessionStartHookInput():
-                    await session.start_proxy()
                     ctx = CallerContext.from_env(req.env)
                     output = await handle_session_start(
                         session,
@@ -350,12 +333,6 @@ def create_app(daemon_dir: Path, profile: ProfileConfig, startup: StartupResult)
         logger.info("shim-exec: %s cwd=%s argv=%s", report.shim, report.cwd, report.argv)
 
         session = _get_or_create_session(app.state.sessions, report.session_id, report.env, app.state.profile)
-
-        # Update proxy credentials
-        https_proxy = report.env.get("HTTPS_PROXY") or report.env.get("https_proxy")
-        if https_proxy:
-            session.set_proxy_creds(https_proxy)
-            _check_jwt_expiry(https_proxy, session)
 
         # Dispatch to per-shim handler
         handler = _SHIM_HANDLERS.get(report.shim)

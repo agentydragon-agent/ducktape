@@ -94,12 +94,10 @@ class GitShimConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
-    bazel_remote_proxy: BazelRemoteProxyConfig | None = Field(
-        default=None, description="UDS proxy for Bazel --remote_proxy (remote execution + cache). Null = disabled."
-    )
     bazel_bes_proxy: BazelRemoteProxyConfig | None = Field(
         default=None,
-        description="BES interceptor: gRPC service that inspects events and forwards to BuildBuddy. Null = disabled.",
+        description="BES interceptor: gRPC service that inspects build events and forwards to BuildBuddy. "
+        "Null = disabled. When set, bazelrc routes --bes_backend through a UDS to the in-process interceptor.",
     )
     bes_nudge_remote_execution: bool = Field(
         default=False,
@@ -114,9 +112,6 @@ class ProfileConfig(BaseModel):
     )
     env_exports: str | None = Field(
         default=None, description="Inline shell content appended verbatim to the session env file."
-    )
-    setup_auth_proxy: bool = Field(
-        default=False, description="Set up TLS-inspecting proxy (CA, truststore, combined bundle, UDS proxy)."
     )
     setup_tmpfs: bool = Field(
         default=False, description="Mount tmpfs for Docker storage and Bazel cache (useful on 9p/gVisor)."

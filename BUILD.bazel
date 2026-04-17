@@ -155,14 +155,13 @@ platform(
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )
 
-# Claude hooks wheel - Claude Code session hooks, auth proxy, statusline
+# Claude hooks wheel - Claude Code session hooks, statusline
 py_package(
     name = "claude_hooks_pkg",
     packages = [
         "cluster.validation",
         "devinfra",
         "devinfra.claude",
-        "devinfra.claude.auth_proxy",
         "devinfra.claude.claude_api",
         "devinfra.claude.claude_api.hooks",
         "devinfra.claude.hook_daemon",
@@ -204,6 +203,11 @@ py_wheel(
     # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
     # (claude-hooks). The Nix derivation provides these at runtime on NixOS/devShell.
     # When adding a dependency, update BOTH places.
+    #
+    # CLEANUP: the auth_proxy subsystem was removed; audit whether `cryptography`
+    # (was CA extraction) and `pyjwt` (was JWT expiry check) are still needed.
+    # `grpcio` + `protobuf` are still required for the BES interceptor that
+    # surfaces the "use `bb remote`" nudge.
     requires = [
         "anyio",
         "cryptography",
@@ -235,7 +239,7 @@ py_wheel(
         "ducktape-util",
     ],
     version = "0.1.0",
-    visibility = ["//devinfra/claude/hook_daemon/session_start/container_e2e:__pkg__"],
+    visibility = ["//visibility:public"],
     deps = [":claude_hooks_pkg"],
 )
 
