@@ -116,14 +116,12 @@ in
     # The wheel declares pip-level deps; this list provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
     #
-    # CLEANUP: auth_proxy subsystem removed — audit cryptography, grpcio,
-    # protobuf, pyjwt for whether anything still uses them and drop the unused
-    # ones (matching BUILD.bazel).
+    # `grpcio` + `protobuf` are required for the BES interceptor that surfaces
+    # the "use `bb remote`" nudge.
     propagatedBuildInputs =
       with pkgs.python3Packages;
       [
         anyio
-        cryptography
         fastapi
         filelock
         grpcio
@@ -138,7 +136,6 @@ in
         pydantic
         pydantic-settings
         pygit2
-        pyjwt
         pyyaml
         requests
         rich

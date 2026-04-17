@@ -204,13 +204,10 @@ py_wheel(
     # (claude-hooks). The Nix derivation provides these at runtime on NixOS/devShell.
     # When adding a dependency, update BOTH places.
     #
-    # CLEANUP: the auth_proxy subsystem was removed; audit whether `cryptography`
-    # (was CA extraction) and `pyjwt` (was JWT expiry check) are still needed.
-    # `grpcio` + `protobuf` are still required for the BES interceptor that
-    # surfaces the "use `bb remote`" nudge.
+    # `grpcio` + `protobuf` are required for the BES interceptor that surfaces
+    # the "use `bb remote`" nudge.
     requires = [
         "anyio",
-        "cryptography",
         "fastapi>=0.115.0",
         "filelock",
         "grpcio",
@@ -228,7 +225,6 @@ py_wheel(
         "pydantic-settings",
         "pygit2>=1.14",
         "pyrage>=1.0.0",
-        "pyjwt",
         "pyyaml",
         "requests",
         "rich",
