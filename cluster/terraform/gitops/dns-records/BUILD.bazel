@@ -4,8 +4,6 @@ tf_providers_versions(
     name = "providers",
     providers = {
         "aws": "hashicorp/aws:~>5.0",
-        "kubernetes": "hashicorp/kubernetes:~>2.0",
-        "powerdns": "pan-net/powerdns:~>1.5",
     },
     tf_version = "1.9.8",
 )
@@ -14,8 +12,6 @@ tf_module(
     name = "dns-records",
     providers = [
         "aws",
-        "kubernetes",
-        "powerdns",
     ],
     providers_versions = ":providers",
 )

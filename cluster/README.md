@@ -25,7 +25,7 @@ See <docs/bootstrap.md> for full setup.
   - 10.2.0.2: Atlas (Proxmox host) — **only reachable from Proxmox VLAN**
   - 10.2.1.x: Control plane (Proxmox), 10.2.2.x: Workers (Proxmox)
 - Nodes: see [Node Types](#node-types) below
-- Domain: `*.allegedly.works` (PowerDNS in-cluster, DNS-01 challenges, dual LE issuers)
+- Domain: `*.allegedly.works` (AWS Route 53, DNS-01 challenges, dual LE issuers)
 - HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
 - Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on VPS nodes)
 - Cilium MTU: `MTU: 1412` (uppercase key required — VXLAN 50 + Nebula 38 = 88 overhead)

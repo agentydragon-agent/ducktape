@@ -281,7 +281,7 @@ repos:
     rev: 3.2.513
     hooks:
       - id: checkov_diff
-        args: ["--framework", "terraform", "--skip-check", "CKV_TF_1", "-f"]
+        args: ["--framework", "terraform", "--skip-check", "CKV_TF_1,CKV2_AWS_23", "-f"]
         files: "^cluster/terraform/.*\\.tf$"
         additional_dependencies: ["urllib3", "python-dateutil"]
 

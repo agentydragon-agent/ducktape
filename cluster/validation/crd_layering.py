@@ -27,7 +27,6 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "vault-operator": {"Vault"},
     "vault": set(),
     "tofu-controller": {"Terraform"},
-    "powerdns-operator": {"ClusterZone", "ClusterRRset", "Zone", "RRset"},
     "monitoring-stack": {"ServiceMonitor", "PodMonitor"},
     "cnpg": {
         "Cluster",

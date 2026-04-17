@@ -4,4 +4,3 @@ resources:
   - require-gitops.yaml
   - inject-mitmproxy.yaml
   - restrict-agent-kustomization-patch.yaml
-  - generate-dns-records.yaml

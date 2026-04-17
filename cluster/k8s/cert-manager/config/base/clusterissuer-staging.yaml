@@ -11,15 +11,15 @@ spec:
       name: letsencrypt-staging-key
     solvers:
       - dns01:
-          webhook:
-            groupName: acme.zacharyseguin.ca
-            solverName: pdns
-            config:
-              host: http://powerdns-api.dns-system:8081
-              apiKeySecretRef:
-                name: powerdns-api-key
-                key: powerdns_api_key
-                namespace: cert-manager
+          route53:
+            region: us-east-1
+            hostedZoneID: Z02901943N8ZFQFOD9P5I
+            accessKeyIDSecretRef:
+              name: aws-route53-credentials
+              key: AWS_ACCESS_KEY_ID
+            secretAccessKeySecretRef:
+              name: aws-route53-credentials
+              key: AWS_SECRET_ACCESS_KEY
         selector:
           dnsZones:
             - "allegedly.works"

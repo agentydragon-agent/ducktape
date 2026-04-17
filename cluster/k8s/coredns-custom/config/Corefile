@@ -1,12 +1,4 @@
-# Forward allegedly.works zone to PowerDNS ClusterIP service
-# Uses fixed ClusterIP (pinned in powerdns helmrelease) for stable config across recreates
-allegedly.works:53 {
-    errors
-    cache 30
-    forward . 10.96.53.53
-}
-
-# Default configuration for all other domains
+# Default configuration for all domains
 .:53 {
     errors
     health {

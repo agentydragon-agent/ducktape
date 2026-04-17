@@ -1,74 +1,60 @@
-# DNS Automation
+# DNS
 
-DNS A records for `allegedly.works` are generated declaratively by a Kyverno policy
-from VPS node ExternalIPs. Adding or removing a VPS node automatically updates DNS.
+DNS for `allegedly.works` is served by AWS Route 53. Records are managed by
+Terraform via tofu-controller.
 
 ## Architecture
 
 ```text
-VPS Nodes (ExternalIP in status.addresses)
-         │
-         ▼
-Kyverno ClusterPolicy "generate-dns-records"
-├── Watches Node changes
-├── apiCall fetches nodes by label (topology.kubernetes.io/region=hil)
-├── JMESPath extracts IPv4 ExternalIPs
-└── Generates ClusterRRset resources (synchronize: true)
-         │
-         ▼
-PowerDNS Operator (in-cluster)
-├── Reads ClusterRRset CRDs
-└── Creates/updates DNS records in PowerDNS
+AWS Route 53 hosted zone (Z02901943N8ZFQFOD9P5I)
+├── *.allegedly.works  A  → VPS node IPs (wildcard)
+├── allegedly.works    A  → VPS node IPs (apex)
+└── _acme-challenge.*  TXT  (managed by cert-manager for ACME DNS-01)
+
+Terraform (tofu-controller) manages A records.
+cert-manager Route 53 solver manages ACME challenge TXT records.
 ```
 
-## Records Generated
+## Records
 
-| Record   | FQDN                   | Source                       | TTL  |
-| -------- | ---------------------- | ---------------------------- | ---- |
-| wildcard | `*.allegedly.works.`   | All VPS nodes                | 300  |
-| apex     | `allegedly.works.`     | All VPS nodes                | 300  |
-| ns1      | `ns1.allegedly.works.` | 1st CP node (sorted by name) | 3600 |
-| ns2      | `ns2.allegedly.works.` | 2nd CP node (sorted by name) | 3600 |
+| Record   | FQDN                 | IPs              | TTL |
+| -------- | -------------------- | ---------------- | --- |
+| wildcard | `*.allegedly.works.` | All VPS node IPs | 300 |
+| apex     | `allegedly.works.`   | All VPS node IPs | 300 |
+
+VPS node IPs are hardcoded in the Terraform module. Update when adding/removing
+VPS nodes.
 
 ## Key Files
 
-| File                                                         | Purpose                                 |
-| ------------------------------------------------------------ | --------------------------------------- |
-| `k8s/kyverno/policies/generate-dns-records.yaml`             | Policy + RBAC for DNS record generation |
-| `k8s/powerdns/zones/allegedly.works/records/soa-record.yaml` | SOA record for zone                     |
-
-## Route 53 Glue Records
-
-NS glue records at the domain registrar (Route 53) point `ns1`/`ns2.allegedly.works`
-to the CP node IPs. These are managed separately — see the Route 53 console.
+| File                                                     | Purpose                              |
+| -------------------------------------------------------- | ------------------------------------ |
+| `terraform/gitops/dns-records/main.tf`                   | Route 53 records + domain delegation |
+| `k8s/dns-automation/dns-records-tf.yaml`                 | tofu-controller Terraform resource   |
+| `k8s/dns-automation/aws-credentials.sops.yaml`           | AWS IAM credentials (SOPS)           |
+| `k8s/cert-manager/config/base/aws-credentials.sops.yaml` | AWS creds for cert-manager (SOPS)    |
 
 ### IAM User: `cluster-dns-manager`
 
-Dedicated user with Route 53 policy. Credentials in
-`k8s/dns-automation/aws-credentials.sops.yaml` (SOPS-encrypted).
+Dedicated user with Route 53 policy. Credentials in SOPS-encrypted secrets
+(see table above). IAM policy documented in <docs/iam-policy-route53.json>.
 
 ## Verification
 
 ```bash
-# Check generated ClusterRRset resources
-kubectl get clusterrrset
+# Check DNS resolution
+dig allegedly.works A +short
+dig api.allegedly.works A +short
 
-# Verify PowerDNS records
-kubectl exec -n dns-system deployment/powerdns -- pdnsutil list-zone allegedly.works
+# Check Route 53 nameservers
+dig allegedly.works NS
 
-# Test DNS resolution
-dig @ns1.allegedly.works allegedly.works
-dig @ns1.allegedly.works '*.allegedly.works'
+# Check certificate status
+kubectl get certificate -A
 ```
 
-## Dependencies
+## Updating VPS Node IPs
 
-```text
-kyverno (policy engine running)
-    ↓
-generate-dns-records policy (watches Nodes, generates ClusterRRsets)
-    ↓
-powerdns-operator (manages ClusterRRset → PowerDNS records)
-    ↓
-reflector (copies powerdns-api-key to operator namespace)
-```
+When adding or removing VPS nodes, update the `vps_ips` local in
+`terraform/gitops/dns-records/main.tf`. Commit and push — tofu-controller
+applies automatically.

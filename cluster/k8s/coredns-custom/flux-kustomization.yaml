@@ -13,5 +13,3 @@ spec:
     name: flux-system
   timeout: 5m
   wait: true
-  dependsOn:
-    - name: powerdns # CoreDNS forwards allegedly.works to PowerDNS ClusterIP
