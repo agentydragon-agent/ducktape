@@ -7,6 +7,7 @@ k8s:
   service_account: claude-code-web
   service_account_namespace: default
   namespace: claude-sandbox
+  write_home_kubeconfig: false # sops-nix owns ~/.kube/config on CLI; don't clobber it
 
 pre_commit:
   auto_apply_hooks:

@@ -42,6 +42,10 @@ class K8sConfig(BaseModel):
     service_account: str = Field(description="ServiceAccount name for kubeconfig user and context")
     service_account_namespace: str = Field(default="default", description="Namespace of the ServiceAccount")
     namespace: str = Field(description="Default namespace for kubectl operations")
+    write_home_kubeconfig: bool = Field(
+        default=True,
+        description="Write SA kubeconfig to ~/.kube/config. Set false on CLI where sops-nix manages that file.",
+    )
 
 
 class BazelRemoteProxyConfig(BaseModel):

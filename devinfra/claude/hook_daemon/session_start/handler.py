@@ -518,7 +518,7 @@ async def handle(
 
 async def _write_kubeconfig(profile: ProfileConfig, project_dir: Path, combined_ca: Path | None) -> None:
     """Write ~/.kube/config after auth_proxy setup so proxy-url and CA are correct."""
-    if profile.k8s is None:
+    if profile.k8s is None or not profile.k8s.write_home_kubeconfig:
         return
 
     output_path = Path.home() / ".kube" / "config"
