@@ -35,20 +35,6 @@ the patched binary, but the names are still opaque hashes — we can't yet map
    loads each distinctive string, then assign a descriptive name from the string
    content.
 
-**Recipe sketch** (ground-skill-style):
-
-- Build victim_v1 plain (`go build`); build victim_v2 (adds/removes functions,
-  renames a few strings) garbled (`garble build`). Using two different versions
-  makes the match realistic: some functions are new in v2 (unmatched in v1),
-  some are renamed/changed (partial match), some are identical (high confidence).
-- Run `radiff2 -Cj victim_v1 victim_v2_garbled | python3 -c "..."` to extract
-  matched pairs with similarity scores.
-- Assert: high-similarity pairs (>0.9) share the same distinctive strings.
-- Assert: new v2 functions (no v1 counterpart) are identified and left unnamed.
-- For unmatched garbled functions: run string_vma→fn_at_vma recipe to name them
-  from their string references.
-- Verify: all strings in the garbled binary anchored to a named function.
-
 ### Function/type name recovery without a reference binary
 
 **What's needed**: when no unobfuscated reference exists, recover human-readable
