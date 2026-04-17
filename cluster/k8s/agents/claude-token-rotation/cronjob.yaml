@@ -32,7 +32,7 @@ spec:
                 name: claude-token-rotation-script
           containers:
             - name: rotate
-              image: ghcr.io/agentydragon/claude-token-rotation:devel-20260405225634-b069fe4 # {"$imagepolicy": "flux-system:claude-token-rotation"}
+              image: ghcr.io/agentydragon/claude-token-rotation:devel-20260417183436-19a8bc4 # {"$imagepolicy": "flux-system:claude-token-rotation"}
               command: ["/bin/bash", "/scripts/rotate.sh"]
               env:
                 # rules_distroless extracts debs without running postinst, so
