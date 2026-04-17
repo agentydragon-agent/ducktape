@@ -36,7 +36,13 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # GET /objects/{entity}, POST /objects/{entity}, GET /objects/{entity}/{objectId}
     # and GET /stock are stripped from the OpenAPI spec by fix_openapi_spec.py;
     # they are replaced by batch tools in batch_tools.py.
-    ("PUT", "/objects/{entity}/{objectId}"): _E("update_entity"),
+    ("PUT", "/objects/{entity}/{objectId}"): _E(
+        "update_entity",
+        "WARNING: This is a FULL REPLACE, not a partial update. You must include ALL fields, "
+        "not just the ones you want to change. Fields you omit will be set to null. "
+        "First use get_entities to read the current state, then send the complete object "
+        "with your changes applied. For products, use the dedicated edit_product tool instead.",
+    ),
     ("DELETE", "/objects/{entity}/{objectId}"): _E("delete_entity"),
     # ── Stock overview ───────────────────────────────────────────────
     ("GET", "/stock/volatile"): _E(
@@ -52,7 +58,9 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("GET", "/stock/products/{productId}"): _E("get_product_stock"),
     # POST /stock/products/{productId}/add, /consume, /inventory stripped from
     # OpenAPI spec; replaced by batch add_stock, consume_stock, inventory_products.
-    ("POST", "/stock/products/{productId}/transfer"): _E("transfer_product_stock"),
+    # Replaced by custom transfer_stock in batch_tools.py.
+    # Stripped from the OpenAPI spec by fix_openapi_spec.py.
+    ("POST", "/stock/products/{productId}/transfer"): _D("transfer_product_stock"),
     ("POST", "/stock/products/{productId}/open"): _E("open_product_stock"),
     ("GET", "/stock/products/{productId}/entries"): _E("list_product_stock_entries"),
     ("GET", "/stock/products/{productId}/locations"): _E("list_product_locations"),
@@ -70,17 +78,20 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # ── Location stock ───────────────────────────────────────────────
     ("GET", "/stock/locations/{locationId}/entries"): _E("list_location_stock"),
     # ── Shopping list ────────────────────────────────────────────────
-    ("POST", "/stock/shoppinglist/add-missing-products"): _E("shopping_list_add_missing"),
-    ("POST", "/stock/shoppinglist/add-overdue-products"): _E("shopping_list_add_overdue"),
-    ("POST", "/stock/shoppinglist/add-expired-products"): _E("shopping_list_add_expired"),
-    ("POST", "/stock/shoppinglist/clear"): _E("shopping_list_clear"),
-    ("POST", "/stock/shoppinglist/add-product"): _E("shopping_list_add_product"),
-    ("POST", "/stock/shoppinglist/remove-product"): _E("shopping_list_remove_product"),
+    # Shopping list bulk helpers — disabled for now (low usage, custom tools cover the core).
+    ("POST", "/stock/shoppinglist/add-missing-products"): _D("shopping_list_add_missing"),
+    ("POST", "/stock/shoppinglist/add-overdue-products"): _D("shopping_list_add_overdue"),
+    ("POST", "/stock/shoppinglist/add-expired-products"): _D("shopping_list_add_expired"),
+    # Replaced by custom tools in batch_tools.py.
+    # Stripped from the OpenAPI spec by fix_openapi_spec.py.
+    ("POST", "/stock/shoppinglist/clear"): _D("shopping_list_clear"),
+    ("POST", "/stock/shoppinglist/add-product"): _D("shopping_list_add_product"),
+    ("POST", "/stock/shoppinglist/remove-product"): _D("shopping_list_remove_product"),
     # ── Bookings / transactions ──────────────────────────────────────
     ("GET", "/stock/bookings/{bookingId}"): _D("get_booking"),
     ("POST", "/stock/bookings/{bookingId}/undo"): _D("undo_booking"),
     ("GET", "/stock/transactions/{transactionId}"): _D("get_transaction_bookings"),
-    ("POST", "/stock/transactions/{transactionId}/undo"): _D("undo_transaction"),
+    ("POST", "/stock/transactions/{transactionId}/undo"): _E("undo_transaction"),
     # ── Barcode lookup ───────────────────────────────────────────────
     ("GET", "/stock/barcodes/external-lookup/{barcode}"): _D("barcode_lookup"),
     # ── Batteries ────────────────────────────────────────────────────

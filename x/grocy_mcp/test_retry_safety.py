@@ -1,6 +1,6 @@
 """Unit tests for retry safety and QU validation in batch_tools.
 
-These tests mock the httpx client to verify:
+These tests mock the httpx client via respx to verify:
 - Mutating POSTs are never re-executed after they succeed (even when follow-up GET fails)
 - Legitimate retries work when the POST itself fails transiently
 - QU validation rejects mismatched units
@@ -9,17 +9,27 @@ These tests mock the httpx client to verify:
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 import pytest_bazel
+import respx
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
 from x.grocy_mcp.batch_tools import register_batch_tools
 from x.grocy_mcp.config import ServerSettings
+
+BASE_URL = "https://grocy.example.com/api"
+
+PRODUCTS = [{"id": 1, "name": "TestProduct", "qu_id_stock": 1, "location_id": 1}]
+LOCATIONS = [{"id": 1, "name": "TestLoc"}]
+QUS = [{"id": 1, "name": "pieces"}, {"id": 2, "name": "grams"}]
+CONVERSIONS: list[dict[str, object]] = []  # no conversions in these tests
+
+ADD_RESPONSE = [{"transaction_id": "tx-123", "amount": 5}]
+STOCK_RESPONSE = {"stock_amount": 5}
 
 
 def _settings() -> ServerSettings:
@@ -28,152 +38,93 @@ def _settings() -> ServerSettings:
         oidc_client_id="unused",
         oidc_client_secret="unused",
         public_base_url="https://test.example.com",
-        grocy_url="https://grocy.example.com",
+        grocy_url=BASE_URL.removesuffix("/api"),
         grocy_proxy_client_id="unused",
         max_retries=2,
         retry_base_delay=0.01,
     )
 
 
-def _make_response(status_code: int, json_data: object = None) -> httpx.Response:
-    """Build a fake httpx.Response."""
-    return httpx.Response(status_code=status_code, json=json_data, request=httpx.Request("GET", "https://fake"))
-
-
-PRODUCT_DATA = {"id": 1, "name": "TestProduct", "qu_id_stock": 1, "location_id": 1}
-
-QU_LIST = [{"id": 1, "name": "pieces"}, {"id": 2, "name": "grams"}]
-
-ADD_RESPONSE = [{"transaction_id": "tx-123", "amount": 5}]
-STOCK_RESPONSE = {"stock_amount": 5}
+def _setup_resolver_routes(router: respx.Router) -> None:
+    """Register routes the EntityResolver needs."""
+    router.get("/objects/products").respond(json=PRODUCTS)
+    router.get("/objects/locations").respond(json=LOCATIONS)
+    router.get("/objects/quantity_units").respond(json=QUS)
+    router.get("/objects/quantity_unit_conversions_resolved").respond(json=CONVERSIONS)
 
 
 @pytest.fixture
-def mock_http_client() -> AsyncMock:
-    """Mock httpx.AsyncClient for Grocy API calls."""
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.base_url = httpx.URL("https://grocy.example.com/api")
-    return mock_client
+async def mcp_client() -> AsyncGenerator[tuple[Client, respx.Router]]:
+    """MCP client + respx router for configuring per-test responses."""
+    with respx.mock(base_url=BASE_URL, assert_all_called=False) as router:
+        _setup_resolver_routes(router)
+        http_client = httpx.AsyncClient(base_url=BASE_URL)
+        mcp = FastMCP("test")
+        register_batch_tools(mcp, http_client, _settings())
+        async with Client(FastMCPTransport(mcp)) as client:
+            yield client, router
 
 
-@pytest.fixture
-async def mcp_client(mock_http_client: AsyncMock) -> AsyncGenerator[Client]:
-    """MCP client backed by the mock httpx client."""
-    mcp = FastMCP("test")
-    register_batch_tools(mcp, mock_http_client, _settings())
+async def test_add_stock_post_not_retried_when_get_fails(mcp_client: tuple[Client, respx.Router]) -> None:
+    """POST succeeds on first try, GET for new_amount fails -> POST must NOT be retried."""
+    client, router = mcp_client
 
-    async with Client(FastMCPTransport(mcp)) as client:
-        yield client
+    post_route = router.post("/stock/products/1/add").respond(json=ADD_RESPONSE)
+    # GET for new_amount fails
+    router.get("/stock/products/1").respond(500)
 
-
-def _setup_mock_responses(mock_client: AsyncMock, post_responses: list[httpx.Response]) -> None:
-    """Configure mock to return specific responses for POST (mutation) and GET (reads)."""
-    post_call_count = 0
-
-    async def _mock_get(url: str, **_kw: object) -> httpx.Response:
-        if "/objects/quantity_units" in url:
-            return _make_response(200, QU_LIST)
-        if "/objects/products/" in url:
-            return _make_response(200, PRODUCT_DATA)
-        if "/stock/products/" in url:
-            return _make_response(200, STOCK_RESPONSE)
-        return _make_response(404)
-
-    async def _mock_post(url: str, **_kw: object) -> httpx.Response:
-        nonlocal post_call_count
-        if "/objects/quantity_units" in url:
-            return _make_response(200, QU_LIST)
-        if "/objects/products/" in url:
-            return _make_response(200, PRODUCT_DATA)
-        if "/stock/products/" in url and "/add" in url:
-            resp = post_responses[min(post_call_count, len(post_responses) - 1)]
-            post_call_count += 1
-            return resp
-        return _make_response(404)
-
-    mock_client.get = AsyncMock(side_effect=_mock_get)
-    mock_client.post = AsyncMock(side_effect=_mock_post)
-
-
-def _setup_mock_with_get_failure(mock_client: AsyncMock) -> None:
-    """POST succeeds, but the follow-up GET (for new_amount) returns 500."""
-    call_log: list[tuple[str, str]] = []
-
-    async def _mock_get(url: str, **_kw: object) -> httpx.Response:
-        call_log.append(("GET", url))
-        if "/objects/quantity_units" in url:
-            return _make_response(200, QU_LIST)
-        if "/objects/products/" in url:
-            return _make_response(200, PRODUCT_DATA)
-        if "/stock/products/" in url:
-            # Simulate GET failure for new_amount read
-            return _make_response(500)
-        return _make_response(404)
-
-    async def _mock_post(url: str, **_kw: object) -> httpx.Response:
-        call_log.append(("POST", url))
-        if "/add" in url:
-            return _make_response(200, ADD_RESPONSE)
-        return _make_response(404)
-
-    mock_client.get = AsyncMock(side_effect=_mock_get)
-    mock_client.post = AsyncMock(side_effect=_mock_post)
-    mock_client._call_log = call_log
-
-
-async def test_add_stock_post_not_retried_when_get_fails(mcp_client: Client, mock_http_client: AsyncMock) -> None:
-    """POST succeeds on first try, GET fails → POST must NOT be retried."""
-    _setup_mock_with_get_failure(mock_http_client)
-
-    result = await mcp_client.call_tool("add_stock", {"items": [{"product_id": 1, "amount": 5, "qu_name": "pieces"}]})
+    result = await client.call_tool(
+        "add_stock", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
+    )
     sc = result.structured_content
     assert sc is not None
     op = sc["result"][0]
     assert op["kind"] == "ok", f"expected ok, got: {op}"
-    # new_amount should be None because GET failed
-    assert op["new_amount"] is None
+    assert op["new_amount"] is None  # GET failed
     assert op["qu_name"] == "pieces"
-
-    # Verify POST was called exactly once (not retried due to GET failure)
-    post_calls = [(method, url) for method, url in mock_http_client._call_log if method == "POST" and "/add" in url]
-    assert len(post_calls) == 1, f"POST /add called {len(post_calls)} times, expected 1"
+    assert op["location_name"] == "TestLoc"
+    assert post_route.call_count == 1
 
 
-async def test_add_stock_post_retried_on_transient_failure(mcp_client: Client, mock_http_client: AsyncMock) -> None:
-    """POST fails with 500 then succeeds → POST should be retried (legitimate)."""
-    _setup_mock_responses(
-        mock_http_client,
-        [
-            _make_response(500),  # first attempt fails
-            _make_response(200, ADD_RESPONSE),  # retry succeeds
-        ],
+async def test_add_stock_post_retried_on_transient_failure(mcp_client: tuple[Client, respx.Router]) -> None:
+    """POST fails with 500 then succeeds -> POST should be retried (legitimate)."""
+    client, router = mcp_client
+
+    post_route = router.post("/stock/products/1/add").mock(
+        side_effect=[httpx.Response(500, json={}), httpx.Response(200, json=ADD_RESPONSE)]
     )
+    router.get("/stock/products/1").respond(json=STOCK_RESPONSE)
 
-    result = await mcp_client.call_tool("add_stock", {"items": [{"product_id": 1, "amount": 5, "qu_name": "pieces"}]})
+    result = await client.call_tool(
+        "add_stock", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
+    )
     sc = result.structured_content
     assert sc is not None
     op = sc["result"][0]
     assert op["kind"] == "ok", f"expected ok, got: {op}"
     assert op["new_amount"] == 5.0
+    assert post_route.call_count == 2  # first attempt failed, second succeeded
 
 
-async def test_unit_validation_rejects_wrong_qu(mcp_client: Client, mock_http_client: AsyncMock) -> None:
-    """Specifying the wrong QU name should fail validation."""
-    _setup_mock_responses(mock_http_client, [_make_response(200, ADD_RESPONSE)])
+async def test_unit_validation_rejects_wrong_qu(mcp_client: tuple[Client, respx.Router]) -> None:
+    """Specifying a QU with no conversion to stock QU should fail validation."""
+    client, _router = mcp_client
 
-    result = await mcp_client.call_tool("add_stock", {"items": [{"product_id": 1, "amount": 5, "qu_name": "grams"}]})
+    result = await client.call_tool(
+        "add_stock", {"items": [{"product": 1, "amount": 5, "qu": "grams", "location": "TestLoc"}]}
+    )
     sc = result.structured_content
     assert sc is not None
     op = sc["result"][0]
     assert op["kind"] == "error", f"expected error for wrong QU, got: {op}"
-    assert "pieces" in op["error"], "error should mention the expected QU"
+    assert "pieces" in op["error"], "error should mention the expected stock QU"
 
 
-async def test_unit_validation_rejects_missing_qu(mcp_client: Client) -> None:
-    """Omitting both qu_id and qu_name should fail Pydantic validation."""
-    # FastMCP raises on input validation failure rather than returning an error result
-    with pytest.raises(Exception, match="qu_id or qu_name"):
-        await mcp_client.call_tool("add_stock", {"items": [{"product_id": 1, "amount": 5}]})
+async def test_unit_validation_rejects_missing_qu(mcp_client: tuple[Client, respx.Router]) -> None:
+    """Omitting qu should fail validation."""
+    client, _router = mcp_client
+    with pytest.raises(Exception, match="qu"):
+        await client.call_tool("add_stock", {"items": [{"product": 1, "amount": 5, "location": "TestLoc"}]})
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""E2E test: Grocy container + MCP server → inventory bootstrap workflow.
+"""E2E test: Grocy container + MCP server -> inventory bootstrap workflow.
 
 Starts a real Grocy container (LinuxServer image, auth disabled, demo mode),
 wires the MCP server to it, and exercises a realistic sequence of tool calls
@@ -17,6 +17,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -41,13 +42,30 @@ CUSTOM_TOOL_NAMES = {
     "get_stock",
     "add_stock",
     "consume_stock",
-    "inventory_products",
+    "inventory_stock",
     "get_stock_entries",
     "edit_stock_entry",
+    # Phase 3 tools:
+    "list_products",
+    "list_locations",
+    "list_quantity_units",
+    "list_product_groups",
+    "create_product",
+    "edit_product",
+    "delete_product",
+    "transfer_stock",
+    "get_shopping_list",
+    "add_to_shopping_list",
+    "edit_shopping_list_item",
+    "remove_from_shopping_list",
+    "clear_shopping_list",
+    "get_expiring_stock",
+    "get_below_minimum_stock",
+    "get_expired_stock",
 }
 
 
-# ── Fixtures ─────────────────────────────────────────────────────────────
+# -- Fixtures -----------------------------------------------------------------
 
 
 def _settings(grocy_url: str) -> ServerSettings:
@@ -62,11 +80,7 @@ def _settings(grocy_url: str) -> ServerSettings:
 
 
 def _prepare_custom_init_dir() -> str:
-    """Create a dir with a script that strips IPv6 listen directives from nginx config.
-
-    LinuxServer s6-overlay runs scripts in /custom-cont-init.d/ after
-    migrations (which generate the nginx config) but before services start.
-    """
+    """Create a dir with a script that strips IPv6 listen directives from nginx config."""
     init_dir = tempfile.mkdtemp(prefix="grocy-custom-init-")
     script = Path(init_dir) / "disable-ipv6.sh"
     script.write_text(
@@ -95,7 +109,6 @@ def grocy_container() -> Generator[LoggedContainer]:
     container.with_env("TZ", "UTC")
     container.with_env("GROCY_MODE", "production")
     container.with_env("GROCY_DISABLE_AUTH", "true")
-    # Mount custom-init script that strips IPv6 — RBE workers lack IPv6.
     container.with_volume_mapping(_prepare_custom_init_dir(), "/custom-cont-init.d", "ro")
 
     with container:
@@ -107,8 +120,6 @@ def grocy_container() -> Generator[LoggedContainer]:
         last_err = ""
         while time.monotonic() < deadline:
             try:
-                # Hit the web UI first — Grocy runs DB migrations on first page load.
-                # The first load can be slow (demo data generation).
                 httpx.get(f"{base_url}/", timeout=10)
                 r = httpx.get(f"{base_url}/api/system/info", timeout=10)
                 if r.status_code == 200:
@@ -133,13 +144,7 @@ def grocy_base_url(grocy_container: LoggedContainer) -> str:
 
 @pytest.fixture
 async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
-    """Function-scoped MCP client exercising the full MCP protocol in-process.
-
-    A fresh httpx.AsyncClient is created per test so connection pools don't carry
-    sockets from a previous test's (now-closed) event loop. Session-scoping the
-    httpx client caused "Event loop is closed" on the third test because asyncio
-    transports are pinned to the loop that opened them.
-    """
+    """Function-scoped MCP client exercising the full MCP protocol in-process."""
     http_client = httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
     try:
         mcp = build_mcp(_settings(grocy_base_url), client=http_client)
@@ -149,7 +154,23 @@ async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
         await http_client.aclose()
 
 
-# ── Tool name coverage ───────────────────────────────────────────────────
+def _data(result: Any) -> Any:
+    """Extract unwrapped structured content from a FastMCP CallToolResult.
+
+    FastMCP wraps non-object return types (lists, unions) in {"result": ...}
+    with the x-fastmcp-wrap-result flag. The .data field has type-validated
+    objects; .structured_content has raw dicts/lists. We use structured_content
+    for test assertions (raw JSON-like access) and unwrap the synthetic wrapper.
+    """
+    sc = result.structured_content
+    assert sc is not None, "No structured_content in CallToolResult"
+    # Unwrap FastMCP's synthetic {"result": ...} wrapper for non-object schemas
+    if isinstance(sc, dict) and len(sc) == 1 and "result" in sc:
+        return sc["result"]
+    return sc
+
+
+# -- Tool name coverage ------------------------------------------------------
 
 
 async def test_all_tool_names_are_customized(mcp_client: Client) -> None:
@@ -163,217 +184,183 @@ async def test_all_tool_names_are_customized(mcp_client: Client) -> None:
     )
 
 
-# ── System info tool ─────────────────────────────────────────────────────
+# -- System info tool ---------------------------------------------------------
 
 
 async def test_system_info_tool(mcp_client: Client) -> None:
-    """GET /system/info is exposed as an MCP tool (claude.ai does not expose MCP resources to the AI)."""
-    result = await mcp_client.call_tool("get_system_info", {})
-    sc = result.structured_content
-    assert sc is not None
-    text = str(sc)
-    assert "grocy_version" in text.lower() or "grocy" in text.lower(), f"Unexpected tool result: {text[:200]}"
+    """GET /system/info is exposed as an MCP tool."""
+    data = _data(await mcp_client.call_tool("get_system_info", {}))
+    text = str(data)
+    assert "grocy_version" in text.lower() or "grocy" in text.lower(), f"Unexpected: {text[:200]}"
 
 
-# ── Inventory bootstrap workflow ─────────────────────────────────────────
+# -- Inventory bootstrap workflow ---------------------------------------------
 
 
 async def test_inventory_bootstrap(mcp_client: Client) -> None:
-    """Full batch inventory workflow: create entities → add → get enriched → consume → inventory."""
+    """Full workflow: reference data -> create product -> stock operations -> entries -> shopping list."""
     suffix = uuid.uuid4().hex[:6]
 
-    # 1. Create location and quantity unit in one batch call
-    result = await mcp_client.call_tool(
-        "create_entities",
-        {
-            "items": [
-                {"entity_type": "locations", "body": {"name": f"TestLoc-{suffix}"}},
-                {
-                    "entity_type": "quantity_units",
-                    "body": {"name": f"TestUnit-{suffix}", "name_plural": f"TestUnits-{suffix}"},
-                },
-            ]
-        },
-    )
-    sc = result.structured_content
-    assert sc is not None
-    created = sc["result"]
-    assert created[0]["kind"] == "ok", f"location create failed: {created[0].get('error')}"
-    assert created[1]["kind"] == "ok", f"quantity_unit create failed: {created[1].get('error')}"
-    loc_id = created[0]["created_object_id"]
-    qu_id = created[1]["created_object_id"]
-    qu_name = f"TestUnit-{suffix}"
+    # 1. List reference data (brief mode)
+    locations = _data(await mcp_client.call_tool("list_locations", {"detail": "brief"}))
+    assert len(locations) > 0
+    assert "id" in locations[0]
+    assert "name" in locations[0]
 
-    # 2. Create a product
-    result = await mcp_client.call_tool(
-        "create_entities",
-        {
-            "items": [
-                {
-                    "entity_type": "products",
-                    "body": {
-                        "name": f"TestRice-{suffix}",
-                        "location_id": loc_id,
-                        "qu_id_purchase": qu_id,
-                        "qu_id_stock": qu_id,
-                    },
-                }
-            ]
-        },
-    )
-    sc = result.structured_content
-    assert sc is not None
-    product_create = sc["result"][0]
-    assert product_create["kind"] == "ok", f"product create failed: {product_create.get('error')}"
-    product_id = product_create["created_object_id"]
-    assert product_id is not None
+    qus = _data(await mcp_client.call_tool("list_quantity_units", {"detail": "brief"}))
+    assert len(qus) > 0
+    assert "name_plural" in qus[0]
 
-    # 3. Add stock (qu_name required)
-    result = await mcp_client.call_tool(
-        "add_stock",
-        {"items": [{"product_id": product_id, "amount": 5, "best_before_date": "2030-01-01", "qu_name": qu_name}]},
+    _data(await mcp_client.call_tool("list_product_groups", {"detail": "brief"}))
+
+    loc_name = str(locations[0]["name"])
+    qu_name = str(qus[0]["name"])
+
+    # 2. Create product using typed create_product tool
+    result = _data(
+        await mcp_client.call_tool(
+            "create_product",
+            {
+                "name": f"TestRice-{suffix}",
+                "stock_qu": qu_name,
+                "location": loc_name,
+                "min_stock_amount": 1,
+                "description": "Test product for e2e",
+            },
+        )
     )
-    sc = result.structured_content
-    assert sc is not None
-    op = sc["result"][0]
-    assert op["kind"] == "ok", f"add_stock failed: {op.get('error')}"
+    assert result["kind"] == "ok", f"create_product failed: {result}"
+    product_id = result["created_object_id"]
+
+    # 3. Verify product appears in list_products
+    products = _data(await mcp_client.call_tool("list_products", {"detail": "brief"}))
+    assert f"TestRice-{suffix}" in [p["name"] for p in products]
+
+    # 4. Add stock (name-based references)
+    ops = _data(
+        await mcp_client.call_tool(
+            "add_stock",
+            {"items": [{"product": f"TestRice-{suffix}", "amount": 5, "qu": qu_name, "location": loc_name}]},
+        )
+    )
+    op = ops[0]
+    assert op["kind"] == "ok", f"add_stock failed: {op}"
     assert op["new_amount"] == 5.0
     assert op["qu_name"] == qu_name
+    assert op["product_name"] == f"TestRice-{suffix}"
+    assert op["location_name"] == loc_name
 
-    # 4. Get enriched stock — verify product + QU + location + qu_name
-    result = await mcp_client.call_tool("get_stock", {"include_quantity_unit": True, "include_location": True})
-    sc = result.structured_content
-    assert sc is not None
-    stock = sc["result"]
-    product_stock = [s for s in stock if str(s["product_id"]) == str(product_id)]
-    assert len(product_stock) == 1, f"product {product_id} not found in stock"
-    assert float(product_stock[0]["amount"]) == 5.0
-    assert product_stock[0]["qu_name"] == qu_name
-    assert product_stock[0]["quantity_unit"] is not None, "quantity_unit not enriched"
-    assert product_stock[0]["location"] is not None, "location not enriched"
+    # 5. Get stock — compact response with product filter
+    stock = _data(await mcp_client.call_tool("get_stock", {"products": [f"TestRice-{suffix}"]}))
+    our_stock = [s for s in stock if s["product_name"] == f"TestRice-{suffix}"]
+    assert len(our_stock) == 1
+    assert float(our_stock[0]["amount"]) == 5.0
+    assert our_stock[0]["qu_name"] == qu_name
+    assert our_stock[0]["location_name"] == loc_name
 
-    # 5. Consume some stock
-    result = await mcp_client.call_tool(
-        "consume_stock", {"items": [{"product_id": product_id, "amount": 2, "qu_name": qu_name}]}
+    # 6. Consume stock (name-based, location required)
+    ops = _data(
+        await mcp_client.call_tool(
+            "consume_stock",
+            {"items": [{"product": f"TestRice-{suffix}", "amount": 2, "qu": qu_name, "location": loc_name}]},
+        )
     )
-    sc = result.structured_content
-    assert sc is not None
-    op = sc["result"][0]
-    assert op["kind"] == "ok", f"consume_stock failed: {op.get('error')}"
-    assert op["new_amount"] == 3.0
-    assert op["qu_name"] == qu_name
+    assert ops[0]["kind"] == "ok", f"consume_stock failed: {ops[0]}"
+    assert ops[0]["new_amount"] == 3.0
+    assert ops[0]["qu_name"] == qu_name
 
-    # 6. Inventory — set absolute amount
-    result = await mcp_client.call_tool(
-        "inventory_products", {"items": [{"product_id": product_id, "new_amount": 10, "qu_name": qu_name}]}
+    # 7. Inventory — set absolute amount
+    ops = _data(
+        await mcp_client.call_tool(
+            "inventory_stock",
+            {"items": [{"product": f"TestRice-{suffix}", "new_amount": 10, "qu": qu_name, "location": loc_name}]},
+        )
     )
-    sc = result.structured_content
-    assert sc is not None
-    op = sc["result"][0]
-    assert op["kind"] == "ok", f"inventory_products failed: {op.get('error')}"
-    assert op["new_amount"] == 10.0
-    assert op["qu_name"] == qu_name
+    assert ops[0]["kind"] == "ok", f"inventory_products failed: {ops[0]}"
+    assert ops[0]["new_amount"] == 10.0
 
-    # 7. List entities — fetch products, locations, quantity_units in one call
-    result = await mcp_client.call_tool("list_entities", {"entity_types": ["products", "locations", "quantity_units"]})
-    data = result.structured_content
-    assert data is not None
-    assert "products" in data
-    assert "locations" in data
-    assert "quantity_units" in data
-    product_names = [p["name"] for p in data["products"]]
-    assert f"TestRice-{suffix}" in product_names
+    # 8. Get stock entries by product name
+    entries = _data(await mcp_client.call_tool("get_stock_entries", {"products": [f"TestRice-{suffix}"]}))
+    assert len(entries) > 0
+    assert entries[0]["kind"] == "ok"
+    detail = entries[0]["entry"]
+    assert detail["product_name"] == f"TestRice-{suffix}"
+    assert detail["qu_name"] == qu_name
+    entry_id = detail["entry_id"]
 
-    # 8. Get specific entity by ID
-    result = await mcp_client.call_tool("get_entities", {"entity_type": "products", "object_ids": [product_id]})
-    sc = result.structured_content
-    assert sc is not None
-    entities = sc["result"]
-    assert entities[0]["kind"] == "ok", f"get_entities failed: {entities[0].get('error')}"
-    assert entities[0]["data"]["name"] == f"TestRice-{suffix}"
+    # 9. Edit stock entry — partial update (change price only), verify changes diff
+    edit_result = _data(await mcp_client.call_tool("edit_stock_entry", {"entry_id": entry_id, "price": 9.99}))
+    assert edit_result["kind"] == "ok", f"edit_stock_entry failed: {edit_result}"
+    assert float(edit_result["entry"]["price"]) == 9.99
+    assert edit_result.get("changes") is not None, "edit should return changes diff"
+    assert "price" in edit_result["changes"]
+    assert float(edit_result["changes"]["price"]["new"]) == 9.99
 
-    # 9. List product stock entries — get entry IDs
-    result = await mcp_client.call_tool("list_product_stock_entries", {"productId": product_id})
-    sc = result.structured_content
-    assert sc is not None
-    entries = sc if isinstance(sc, list) else sc.get("result", sc)
-    assert len(entries) > 0, "no stock entries found"
-    entry_id = int(entries[0]["id"])
+    # 10. Get stock entry by ID — verify edit landed
+    entries = _data(await mcp_client.call_tool("get_stock_entries", {"entry_ids": [entry_id]}))
+    assert entries[0]["kind"] == "ok"
+    assert float(entries[0]["entry"]["price"]) == 9.99
 
-    # 10. Get stock entries (batch) — verify entry + qu_name
-    result = await mcp_client.call_tool("get_stock_entries", {"entry_ids": [entry_id]})
-    sc = result.structured_content
-    assert sc is not None
-    entry_result = sc["result"][0]
-    assert entry_result["kind"] == "ok", f"get_stock_entries failed: {entry_result.get('error')}"
-    assert entry_result["qu_name"] == qu_name
-    assert entry_result["entry_id"] == entry_id
-    original_entry = entry_result["data"]
-
-    # 11. Edit stock entry — update price, set open=true
-    result = await mcp_client.call_tool(
-        "edit_stock_entry",
-        {
-            "entry_id": entry_id,
-            "amount": float(original_entry["amount"]),
-            "best_before_date": original_entry["best_before_date"],
-            "purchased_date": original_entry.get("purchased_date", "2030-01-01"),
-            "price": 9.99,
-            "location_id": loc_id,
-            "open": True,
-            "qu_name": qu_name,
-        },
-    )
-    sc = result.structured_content
-    assert sc is not None
-    edit_result = sc.get("result", sc)
-    assert edit_result["kind"] == "ok", f"edit_stock_entry failed: {edit_result.get('error')}"
-    assert edit_result["qu_name"] == qu_name
-
-    # 12. Get stock entry again — verify edit landed
-    result = await mcp_client.call_tool("get_stock_entries", {"entry_ids": [entry_id]})
-    sc = result.structured_content
-    assert sc is not None
-    entry_result = sc["result"][0]
-    assert entry_result["kind"] == "ok"
-    assert float(entry_result["data"]["price"]) == 9.99
-    assert entry_result["data"]["open"] in (True, 1, "1"), f"open not set: {entry_result['data']['open']}"
-
-    # 13. Get product stock — verify product-level view works
-    result = await mcp_client.call_tool("get_product_stock", {"productId": product_id})
-    sc = result.structured_content
-    assert sc is not None
-
-    # 14. List location stock — verify location-level view works
-    result = await mcp_client.call_tool("list_location_stock", {"locationId": loc_id})
-    sc = result.structured_content
-    assert sc is not None
-
-    # 15. List volatile stock — verify endpoint works (may return empty)
-    result = await mcp_client.call_tool("list_volatile_stock", {})
-    sc = result.structured_content
-    assert sc is not None
-
-    # 16. Update entity — rename product
+    # 11. Edit product — rename via partial update, verify other fields preserved
     new_name = f"TestRice-Renamed-{suffix}"
-    result = await mcp_client.call_tool(
-        "update_entity", {"entity": "products", "objectId": product_id, "body": {"name": new_name}}
+    edit_result = _data(await mcp_client.call_tool("edit_product", {"product": f"TestRice-{suffix}", "name": new_name}))
+    assert edit_result["kind"] == "ok", f"edit_product failed: {edit_result}"
+
+    # 12. Verify rename landed AND other fields weren't clobbered
+    products = _data(await mcp_client.call_tool("list_products", {"detail": "full"}))
+    our_product = [p for p in products if p["name"] == new_name]
+    assert len(our_product) == 1
+    # min_stock_amount was set to 1 at creation — verify it survived the edit
+    assert float(our_product[0]["min_stock_amount"]) == 1
+    assert our_product[0]["description"] == "Test product for e2e"
+
+    # 13. Shopping list — add product-linked and note-only items
+    sl_results = _data(
+        await mcp_client.call_tool(
+            "add_to_shopping_list",
+            {
+                "items": [
+                    {"product": new_name, "amount": 2, "shopping_list": 1},
+                    {"note": "Check paper towels", "shopping_list": 1},
+                ]
+            },
+        )
     )
-    # update_entity is OpenAPI-generated, response varies
+    assert sl_results[0]["kind"] == "ok"
+    assert sl_results[1]["kind"] == "ok"
+    sl_item_id = sl_results[0]["item_id"]
 
-    # 17. Verify rename via get_entities
-    result = await mcp_client.call_tool("get_entities", {"entity_type": "products", "object_ids": [product_id]})
-    sc = result.structured_content
-    assert sc is not None
-    assert sc["result"][0]["data"]["name"] == new_name
+    # 14. Get shopping list — verify items present
+    sl_data = _data(await mcp_client.call_tool("get_shopping_list", {"shopping_list": 1}))
+    assert "items" in sl_data
+    our_items = [i for i in sl_data["items"] if i.get("product_name") == new_name]
+    assert len(our_items) >= 1
 
-    # 18. Get db changed time — verify system tool
-    result = await mcp_client.call_tool("get_db_changed_time", {})
-    sc = result.structured_content
-    assert sc is not None
+    # 15. Edit shopping list item — mark as done
+    edit_sl = _data(await mcp_client.call_tool("edit_shopping_list_item", {"item_id": sl_item_id, "done": True}))
+    assert edit_sl["kind"] == "ok"
 
-    # 19. Delete entity — cleanup
-    result = await mcp_client.call_tool("delete_entity", {"entity": "products", "objectId": product_id})
+    # 16. Remove from shopping list
+    _data(await mcp_client.call_tool("remove_from_shopping_list", {"item_ids": [sl_item_id]}))
+
+    # 17. Query tools — exercise endpoints (may return empty, just verify no error)
+    _data(await mcp_client.call_tool("get_expiring_stock", {"days_ahead": 30}))
+    _data(await mcp_client.call_tool("get_below_minimum_stock", {}))
+    _data(await mcp_client.call_tool("get_expired_stock", {}))
+
+    # 18. System tools
+    _data(await mcp_client.call_tool("get_db_changed_time", {}))
+
+    # 19. Generic entity CRUD still works
+    entities = _data(
+        await mcp_client.call_tool("get_entities", {"entity_type": "products", "object_ids": [product_id]})
+    )
+    assert entities[0]["kind"] == "ok"
+    assert entities[0]["data"]["name"] == new_name
+
+    # 20. Delete product — cleanup
+    del_result = _data(await mcp_client.call_tool("delete_product", {"product": new_name}))
+    assert del_result["kind"] == "ok"
 
 
 if __name__ == "__main__":
