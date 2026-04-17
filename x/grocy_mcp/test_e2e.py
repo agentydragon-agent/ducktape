@@ -276,7 +276,7 @@ async def test_inventory_bootstrap(mcp_client: Client) -> None:
             {"items": [{"product": f"TestRice-{suffix}", "new_amount": 10, "qu": qu_name, "location": loc_name}]},
         )
     )
-    assert ops[0]["kind"] == "ok", f"inventory_products failed: {ops[0]}"
+    assert ops[0]["kind"] == "ok", f"inventory_stock failed: {ops[0]}"
     assert ops[0]["new_amount"] == 10.0
 
     # 8. Get stock entries by product name

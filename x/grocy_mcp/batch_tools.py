@@ -42,6 +42,7 @@ def _parse_date(value: str | None) -> date | None:
     try:
         return date.fromisoformat(value)
     except ValueError:
+        logger.warning("unparseable date from Grocy: %r", value)
         return None
 
 
@@ -546,7 +547,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             stock_r = await client.get(f"/stock/products/{product_id}")
             stock_r.raise_for_status()
             return float(stock_r.json().get("stock_amount", 0))
-        except Exception:
+        except (httpx.HTTPStatusError, httpx.TimeoutException):
             logger.warning("failed to read new_amount for product %d after mutation", product_id)
             return None
 
@@ -1219,6 +1220,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         Cannot change the product — delete and re-add instead.
         To clear the note, use clear_fields=["note"].
         """
+        resolver = EntityResolver(client)
         try:
             r = await client.get(f"/objects/shopping_list/{item_id}")
             r.raise_for_status()
@@ -1241,7 +1243,6 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
             r.raise_for_status()
 
-            resolver = EntityResolver(client)
             product_id = body.get("product_id")
             product_name = None
             qu_name = None
@@ -1263,6 +1264,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     ) -> list[ShoppingListItemResult | ShoppingListItemError]:
         """Remove items from a shopping list by item ID (from get_shopping_list). Max 20."""
         _check_batch_size(item_ids, "item_ids")
+        resolver = EntityResolver(client)
 
         async def _one(item_id: int) -> ShoppingListItemResult | ShoppingListItemError:
             try:
@@ -1273,7 +1275,6 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 r = await client.delete(f"/objects/shopping_list/{item_id}")
                 r.raise_for_status()
 
-                resolver = EntityResolver(client)
                 product_id = item.get("product_id")
                 product_name = None
                 qu_name = None

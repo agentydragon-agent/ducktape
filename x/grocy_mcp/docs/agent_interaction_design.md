@@ -449,13 +449,13 @@ name, description; names are unique). A default list named "Shopping list"
 is nullable). The same product can appear multiple times on a list (no
 uniqueness constraint), so the item's own `id` is the real key.
 
-| Tool                        | Purpose                        | Notes                                                                                  |
-| --------------------------- | ------------------------------ | -------------------------------------------------------------------------------------- |
-| `get_shopping_list`         | Get items on a shopping list   | `shopping_list: int\|str  (required)`. Returns list metadata + items.                  |
-| `add_to_shopping_list`      | Add items to a shopping list   | Batch. Product-linked or note-only. `shopping_list` per item, default "Shopping list". |
-| `edit_shopping_list_item`   | Partial-update a shopping item | By `item_id`. Can change amount, note, done. Not product (delete + re-add instead).    |
-| `remove_from_shopping_list` | Remove items by item ID        | `item_ids: list[int]`. Item ID is the key (product is not unique).                     |
-| `clear_shopping_list`       | Clear all items from a list    | `shopping_list: int\|str  (required)`.                                                 |
+| Tool                        | Purpose                        | Notes                                                                                |
+| --------------------------- | ------------------------------ | ------------------------------------------------------------------------------------ |
+| `get_shopping_list`         | Get items on a shopping list   | `shopping_list: int\|str  (required)`. Returns list metadata + items.                |
+| `add_to_shopping_list`      | Add items to a shopping list   | Batch. Product-linked or note-only. `shopping_list` per item (required, no default). |
+| `edit_shopping_list_item`   | Partial-update a shopping item | By `item_id`. Can change amount, note, done. Not product (delete + re-add instead).  |
+| `remove_from_shopping_list` | Remove items by item ID        | `item_ids: list[int]`. Item ID is the key (product is not unique).                   |
+| `clear_shopping_list`       | Clear all items from a list    | `shopping_list: int\|str  (required)`.                                               |
 
 To discover what shopping lists exist, use the generic
 `list_entities(["shopping_lists"])` — it's a rare operation.
