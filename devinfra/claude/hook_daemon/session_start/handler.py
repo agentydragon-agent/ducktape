@@ -398,6 +398,27 @@ async def handle(
     )
     write_config(bbr_bazelrc, bbr_bazelrc_content, "bbr bazelrc")
 
+    # Pick a JVM truststore: the session-local one built by auth_proxy setup
+    # has priority (explicitly tuned for the current session), else fall back to
+    # Debian's /etc/ssl/certs/java/cacerts (ca-certificates-java regenerates it
+    # from the system PEM bundle, so it picks up Anthropic's TLS inspection CA
+    # on web containers). None means no JVM truststore override — Bazel falls
+    # back to its bundled JDK cacerts (works on CLI/NixOS where no MITM happens).
+    system_java_cacerts = Path("/etc/ssl/certs/java/cacerts")
+    truststore_path: Path | None
+    truststore_password: str | None
+    if profile.setup_auth_proxy and combined_ca is not None:
+        truststore_path = session.paths.auth_proxy_truststore
+        truststore_password = proxy_setup.TRUSTSTORE_PASSWORD
+    elif system_java_cacerts.exists():
+        truststore_path = system_java_cacerts
+        # ca-certificates-java uses the JDK default storepass; documented in
+        # /etc/default/cacerts (storepass='' means default = 'changeit').
+        truststore_password = "changeit"
+    else:
+        truststore_path = None
+        truststore_password = None
+
     # Render session bazelrc
     with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
         bazelrc_template = Template(
@@ -407,8 +428,8 @@ async def handle(
             setup_auth_proxy=profile.setup_auth_proxy and combined_ca is not None,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
-            truststore_path=session.paths.auth_proxy_truststore,
-            truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
+            truststore_path=truststore_path,
+            truststore_password=truststore_password,
             combined_ca_path=combined_ca,
             buildbuddy_bazelrc=setup.buildbuddy_setup.bazelrc_path
             if isinstance(setup.buildbuddy_setup, buildbuddy.BuildbuddyConfigured)
