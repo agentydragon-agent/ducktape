@@ -5,13 +5,16 @@ container. Exercises the pip-install + session-start path end-to-end so that
 wheel packaging bugs (missing deps, bad entry points, ImportError at runtime)
 surface in CI rather than in a live session.
 
-Current containers have direct internet via a transparent proxy — no egress
-proxy setup. Earlier versions of this test stood up a mitmproxy sidecar and
-an isolated Docker network to exercise the legacy `auth_proxy` subsystem;
-that machinery was removed when we stopped supporting explicit
-`HTTPS_PROXY`-based setups (see `devinfra/claude/README.md` "Historical:
-Explicit Egress Proxy"). The test now runs against the default Docker bridge
-with direct internet, same as real web containers.
+Current containers reach the internet without any per-tool proxy
+configuration (no `HTTPS_PROXY` env vars); whether that's via a
+transparent network-layer MITM or direct egress is not something the
+session start hook tries to distinguish. Earlier versions of this test
+stood up a mitmproxy sidecar and an isolated Docker network to exercise
+the legacy `auth_proxy` subsystem; that machinery was removed when we
+stopped supporting explicit `HTTPS_PROXY`-based setups (see
+`devinfra/claude/README.md` "Historical: Explicit Egress Proxy"). The
+test now runs against the default Docker bridge with direct internet,
+same as real web containers.
 """
 
 import json
