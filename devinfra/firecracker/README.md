@@ -3,6 +3,13 @@
 Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 <DESIGN.md> for architecture, prior art, and decisions.
 
+> **Not to be confused with BuildBuddy's Firecracker VMs.** `bbr` runs Bazel
+> on BuildBuddy's infrastructure, which also uses Firecracker for workload
+> isolation (configured via `recycle-runner`, `remote-snapshot-save-policy`,
+> etc. in `devinfra/bbr.json`). That is entirely BB-managed infrastructure.
+> This directory is a separate, local Firecracker setup on wyrm2 for running
+> Claude Code dev sessions.
+
 ## Components
 
 | Component          | Path                                             | Purpose                            |
