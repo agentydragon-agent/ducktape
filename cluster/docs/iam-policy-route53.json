@@ -2,12 +2,13 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "ManageGlueRecords",
+      "Sid": "ManageZoneRecords",
       "Effect": "Allow",
       "Action": [
         "route53:ChangeResourceRecordSets",
         "route53:GetHostedZone",
         "route53:ListResourceRecordSets",
+        "route53:ListTagsForResource",
         "route53:GetChange"
       ],
       "Resource": ["arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I", "arn:aws:route53:::change/*"]
