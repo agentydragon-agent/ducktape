@@ -337,6 +337,40 @@
       failed_when: false
       tags: [cups, services]
 
+    # Disable all sleep states — atlas is a server running VMs with VFIO GPU
+    # passthrough. Host suspend kills VFIO-passed GPUs (GSP-RM firmware doesn't
+    # survive S3) and causes cascading watchdog timeouts in guests.
+    # See debug/atlas/wyrm_gpu_lockup.md.
+    - name: Mask all sleep/suspend/hibernate targets
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+        masked: true
+      loop:
+        - sleep.target
+        - suspend.target
+        - hibernate.target
+        - hybrid-sleep.target
+      tags: [power_management, vfio]
+
+    - name: Disable logind idle/lid suspend actions
+      ansible.builtin.copy:
+        dest: /etc/systemd/logind.conf.d/no-suspend.conf
+        content: |
+          # Managed by Ansible — see atlas.yaml
+          # Atlas is a server; never suspend/hibernate.
+          [Login]
+          HandleSuspendKey=ignore
+          HandleHibernateKey=ignore
+          HandleLidSwitch=ignore
+          HandleLidSwitchExternalPower=ignore
+          HandleLidSwitchDocked=ignore
+          IdleAction=ignore
+        mode: "0644"
+      notify: Restart logind
+      tags: [power_management, vfio]
+
     # TODO: WiFi Configuration - MediaTek MT7927 (14c3:7927)
     # The atlas host has a MediaTek MT7927 WiFi 7 card. MT7927 support was added
     # to the mt76 driver in Linux 6.12. Upgrade to Proxmox VE 9 (kernel 6.12+)
@@ -354,6 +388,11 @@
         cmd: udevadm control --reload-rules
       register: udev_result
       changed_when: udev_result.rc == 0
+
+    - name: Restart logind
+      ansible.builtin.systemd:
+        name: systemd-logind
+        state: restarted
 
     - name: Restart zramswap
       ansible.builtin.systemd:

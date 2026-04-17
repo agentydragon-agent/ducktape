@@ -181,13 +181,48 @@ the lockup. See `gpu_lockup_20260417/` for captured diagnostics.
 **Driver**: NVIDIA 580.142 Open Kernel Module (up from 580.82.09 at time of
 original investigation). Proprietary module does not support RTX 5090.
 
+## Known Causes
+
+### Host suspend (confirmed)
+
+Host S3 suspend kills VFIO-passed GPUs. The GSP-RM firmware (runs on the GPU's
+RISC-V processor) doesn't survive being frozen mid-operation. On resume, the
+guest sees all GPU registers read `0xBADF4100`, GSP RPC timeouts (Xid 119),
+and both GPUs enter FULLCHIP_RESET. The guest also sees cascading watchdog
+timeouts in systemd services (journald, resolved, oomd, udevd) because from
+the guest's perspective, hours pass instantly.
+
+**Fix**: Masked all sleep targets and disabled logind idle/lid suspend on atlas
+via Ansible (`ansible/atlas.yaml`, tags `power_management`).
+
+All observed GPU lockups correlate with host suspend events. Atlas has been
+suspending repeatedly due to default `systemd-logind` idle action:
+
+- **Feb 24**: 03:41–03:41 (14s)
+- **Apr 01**: 05:39–11:24 (~6h)
+- **Apr 15**: 12:02–20:49 (~8h47m) — previously thought to be ~25h uptime lockup
+- **Apr 17**: 12:30–16:23 (~3h53m) — confirmed as cause
+
+Whether there are additional causes beyond host suspend remains unknown.
+The `nvidia-drm.modeset` conflict, GSP-RM firmware bugs under VFIO, or PCIe
+link issues remain possible contributing factors. GPU telemetry monitoring
+(`nix/nixos/modules/gpu-monitor.nix`) is deployed to capture pre-failure
+state for future occurrences that happen without a host suspend.
+
 ## Timeline
 
-- **2026-04-17**: GPUs locked up again on wyrm2 (current boot). Both GPUs in
-  FULLCHIP_RESET. gnome-shell falls back to llvmpipe (380% CPU), causing audio
-  choppiness. Discovered `nvidia-drm.modeset` conflict — `modeset=1` is active
-  despite `modeset=0` in boot.kernelParams. Atlas host is stable (zero SATA
-  errors, zero soft lockups across 7 recent boots).
+- **2026-04-17 (second instance)**: GPUs locked up again after atlas host
+  resumed from ~4h S3 suspend. Root cause confirmed: `systemd-logind` on atlas
+  triggered idle suspend at 12:30 PDT, host resumed at 16:23 PDT. Guest dmesg
+  shows Xid 119 (GSP-RM RPC timeout) at t=14870s, immediately on resume.
+  Multiple systemd services watchdog-killed. Fix: disabled all sleep states on
+  atlas via Ansible.
+- **2026-04-17 (first investigation)**: GPUs locked up on wyrm2 (previous boot).
+  Both GPUs in FULLCHIP_RESET. gnome-shell falls back to llvmpipe (380% CPU),
+  causing audio choppiness. Discovered `nvidia-drm.modeset` conflict —
+  `modeset=1` is active despite `modeset=0` in boot.kernelParams.
+- **2026-04-15**: GPU lockup at ~25h guest uptime. Host had suspended at 12:02
+  and resumed at 20:49 (~8h47m). Lockup correlates with resume.
 - **2026-02-01**: First investigated. Found GPUs locked (`initial_count=0` in
   Ollama, `nvidia-smi` failing). Initially misdiagnosed as Ollama/CUDA library
   issue; actual cause was hardware-level GPU lockup visible in kernel logs.
