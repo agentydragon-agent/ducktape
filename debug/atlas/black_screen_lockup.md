@@ -21,9 +21,48 @@ Six chipset-level incidents documented (incidents 1–6), plus a new pattern of 
 
 ## Current Status
 
-**Mar 20 ~19:58 CET** (boot `5dadd617`, kernel 6.17.13-1-pve, `pcie_aspm=off`, `ahci.mobile_lpm_policy=1`): Rebooted after incident 16 (hard power-off due to memory pressure freeze). Current boot clean — zero SATA/GPU/lockup errors. Memory already at 119 GiB used / 123 GiB total (3.7 GiB available) with wyrm2 running. virtiofsd `cache=never` confirmed active.
+**Apr 17** (boot `552b7b89`, kernel 6.17.13-2-pve, `pcie_aspm=off`,
+`ahci.mobile_lpm_policy=1`): Current boot started Apr 15 11:47, **1.5 days and
+counting**. Zero SATA errors, zero soft lockups. Atlas host healthy: 6.9 GiB
+free, ZFS ARC 6.1 GiB (`memory_available_bytes` = 2.4 GiB, positive), PSI
+`full avg300=0.00`, zram swap 3 GiB / 61.7 GiB used. VFIO GPU resets completed
+cleanly at boot (2x RTX 5090 to wyrm2 VM 110).
 
-**Incident 16** (Mar 20): Boot `978abe76` survived **9 days** (Mar 11 19:50 → Mar 20 ~19:52) — the longest uptime since incidents began. No SATA errors, no GPU/VFIO crashes for the entire run. System died from **memory pressure**: `systemd-journald: Under memory pressure, flushing caches` at 19:52:17, then journal silence. A terminal scope consumed 5.2 GiB peak memory (likely a Bazel build), and `pve-firewall`/`pvestatd` updates took 5–6 seconds (normally sub-second). The chipset PCIe and VFIO issues appear fully mitigated; the remaining instability is memory overcommit with wyrm2 at 96 GiB on a 128 GiB host.
+**Stability since mitigations**: After incident 16 (Mar 20, memory pressure),
+all subsequent boots have been clean shutdowns or suspend/resume — **zero
+chipset/SATA/VFIO crashes in 28 days** (7 boots since Mar 20). Recent uptimes:
+~1 day (boot -6, `5dadd617`), **10 days** (boot -5, `02c45aa0`, Mar 21 → Mar
+31), ~2 min (boot -4, `7b92ee26`, quick reboot), ~12h (boot -3, `9f80d680`,
+ended in suspend), **4.5 days** (boot -2, `0a887715`, Apr 1 → Apr 5), **~10
+days** (boot -1, `22856ecb`, Apr 5 → Apr 15).
+
+**All three original failure modes are effectively mitigated:**
+
+1. **Slow-onset chipset failures**: Zero `ata` SError events across all 7 recent
+   boots. `ahci.mobile_lpm_policy=1` confirmed effective at preventing SATA DIPM.
+2. **VFIO instant crashes**: Zero VFIO-related crashes. Full 2x RTX 5090
+   passthrough running continuously. VFIO FLR resets succeed cleanly every boot.
+3. **Memory pressure**: zram swap (61.7 GiB, zstd, priority 100) replaced ZFS
+   zvol swap. `virtiofsd cache=never` active. ZFS ARC healthy.
+
+**Remaining issue (wyrm2 guest-side)**: Both RTX 5090 GPUs are currently locked
+up inside the wyrm2 guest (`nvidia-smi` shows ERR, dmesg shows
+`GPU_IN_FULLCHIP_RESET` assertions starting at kernel timestamp ~91025s). This
+is a **guest-side GPU lockup** (not the host-level VFIO crash), likely the same
+pattern as `wyrm_gpu_lockup.md`. The host is unaffected. A wyrm2 VM reboot
+should recover the GPUs. With GPUs locked, gnome-shell falls back to llvmpipe
+(software rendering, 378% CPU), which causes PipeWire audio xruns — see
+`spice_audio/README.md`.
+
+**Incident 16** (Mar 20): Boot `978abe76` survived **9 days** (Mar 11 19:50 →
+Mar 20 ~19:52) — the longest uptime since incidents began. No SATA errors, no
+GPU/VFIO crashes for the entire run. System died from **memory pressure**:
+`systemd-journald: Under memory pressure, flushing caches` at 19:52:17, then
+journal silence. A terminal scope consumed 5.2 GiB peak memory (likely a Bazel
+build), and `pve-firewall`/`pvestatd` updates took 5–6 seconds (normally
+sub-second). The chipset PCIe and VFIO issues appear fully mitigated; the
+remaining instability was memory overcommit with wyrm2 at 96 GiB on a 128 GiB
+host — resolved by zram swap.
 
 ## Recurrence Log
 

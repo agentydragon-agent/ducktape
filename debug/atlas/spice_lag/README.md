@@ -2,7 +2,10 @@
 
 > **Status: Resolved (display latency).** Burst latency fixed (462ms -> 152ms) by disabling videostreaming. Current config: `vga: virtio` (no VirGL), GNOME 49 on Wayland, 4K (3840x2081). Display latency feels acceptable as of 2026-04-16 despite running Wayland (earlier notes predicted "deadly slow" — not observed in practice).
 >
-> **Remaining issue**: Audio over SPICE is slightly choppy. `pw-top` shows ~168 xruns on the ALSA sink. PipeWire quantum is 1024 @ 48kHz (default). Root cause not yet identified.
+> **Remaining issue**: Audio over SPICE is choppy. Root cause identified
+> (2026-04-17): CPU contention from gnome-shell llvmpipe software rendering
+> when NVIDIA GPUs are locked up. See `../spice_audio/README.md` for details
+> and fix options.
 
 ## Conclusions
 

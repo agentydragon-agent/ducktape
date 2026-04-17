@@ -164,8 +164,12 @@ nvidia-drm.modeset=0 ... nvidia-drm.modeset=1   ← contradictory (last wins →
 nvidia.NVreg_OpenRmEnableUnsupportedGpus=1       ← duplicated
 ```
 
-Multiple NixOS config sources adding conflicting params. Harmless but should be
-cleaned up.
+Multiple NixOS config sources adding conflicting params. **Not harmless** —
+`modeset=1` (last wins) defeats the VFIO FLR workaround from
+`wyrm_gpu_lockup.md`. Source: `boot.kernelParams` adds `modeset=0`,
+`hardware.nvidia.modesetting.enable = true` adds `modeset=1`. Fix: set
+`hardware.nvidia.modesetting.enable = false` in
+`nix/nixos/hosts/wyrm2/default.nix`. Still unfixed as of 2026-04-17.
 
 ### Host diagnostics
 

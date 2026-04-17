@@ -159,8 +159,35 @@ journalctl -k | grep -i nvidia
 Monitor `dmesg -w` on both host and guest during GPU load to catch early
 warnings.
 
+## Current Status (Apr 2026)
+
+The **host-level** VFIO instability is resolved — atlas has been stable for 28+
+days with full 2x RTX 5090 passthrough (see `black_screen_lockup.md`). The
+`iommu=pt`, `pcie_aspm=off`, and `ahci.mobile_lpm_policy=1` fixes are all
+active on the current atlas boot (`552b7b89`, kernel 6.17.13-2-pve).
+
+However, **guest-side GPU lockups still occur**. On the current wyrm2 boot
+(Apr 15 → present), both GPUs locked up at ~25h uptime (kernel timestamp
+~91025s). `nvidia-smi` shows ERR on both GPUs, dmesg shows
+`GPU_IN_FULLCHIP_RESET` assertions. No processes are using the GPUs. A VM
+reboot recovers them.
+
+**`nvidia-drm.modeset` conflict**: the NixOS config has both
+`nvidia-drm.modeset=0` (boot.kernelParams) and `nvidia-drm.modeset=1`
+(hardware.nvidia.modesetting.enable=true). Last on cmdline wins → `modeset=1`
+is active, defeating the FLR workaround. Unknown whether this contributed to
+the lockup. See `gpu_lockup_20260417/` for captured diagnostics.
+
+**Driver**: NVIDIA 580.142 Open Kernel Module (up from 580.82.09 at time of
+original investigation). Proprietary module does not support RTX 5090.
+
 ## Timeline
 
+- **2026-04-17**: GPUs locked up again on wyrm2 (current boot). Both GPUs in
+  FULLCHIP_RESET. gnome-shell falls back to llvmpipe (380% CPU), causing audio
+  choppiness. Discovered `nvidia-drm.modeset` conflict — `modeset=1` is active
+  despite `modeset=0` in boot.kernelParams. Atlas host is stable (zero SATA
+  errors, zero soft lockups across 7 recent boots).
 - **2026-02-01**: First investigated. Found GPUs locked (`initial_count=0` in
   Ollama, `nvidia-smi` failing). Initially misdiagnosed as Ollama/CUDA library
   issue; actual cause was hardware-level GPU lockup visible in kernel logs.

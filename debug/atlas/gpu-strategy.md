@@ -18,46 +18,71 @@ Use 2x RTX 5090 GPUs flexibly:
 - **BIOS**: AMI v1512 (2025-06-05)
 - **Kernel cmdline**: `amd_iommu=on iommu=pt pcie_aspm=off`
 
-## Current State (Mar 2026)
+## Current State (Apr 2026)
 
-- **GPUs idle** — no passthrough, no host driver, nobody using them
-- **VM autostart disabled** after VFIO crashes
-- **ASPM L1 and PCIe runtime PM disabled** via udev rules (mitigates chipset hangs)
-- **IOMMU passthrough mode fix applied** (was missing due to systemd-boot
-  misconfiguration — Ansible wrote to grub instead of `/etc/kernel/cmdline`)
+- **GPUs passed through to wyrm2 (VM 110)** via VFIO — both RTX 5090s
+- **VFIO passthrough stable** — zero host-level crashes in 28 days (7 boots
+  since Mar 20). Full production config: wyrm2 (96 GiB, 2x GPUs) + Talos CP VM
+- **VM autostart re-enabled** (`onboot: 1` on VM 110)
+- **ASPM L1 and PCIe runtime PM disabled** via udev rules
+- **SATA DIPM disabled** via `ahci.mobile_lpm_policy=1` (kernel 6.17 default
+  was `min_power` which caused chipset instability — see `black_screen_lockup.md`)
+- **Guest-side GPU lockups still occur** — `nvidia-smi` shows ERR after
+  extended uptime. Guest VM reboot recovers. When GPUs are locked, gnome-shell
+  falls back to llvmpipe (software rendering), causing high CPU usage and audio
+  choppiness. See `spice_audio/README.md`
+- **`nvidia-drm.modeset` conflict**: NixOS config sets both `modeset=0`
+  (boot.kernelParams) and `modeset=1` (hardware.nvidia.modesetting.enable=true).
+  Last wins → `modeset=1` is active, defeating the VFIO FLR workaround. Needs
+  fix in `nix/nixos/hosts/wyrm2/default.nix`
 
 ## Known Problems
 
-### 1. Chipset PCIe fabric instability (incidents 1–6)
+### 1. ~~Chipset PCIe fabric instability (incidents 1–6)~~ — MITIGATED
 
 Slow-onset: SATA errors start ~5-6h after boot, escalate to full chipset dropout
-(SATA + USB + NIC all on same root port `0000:02.1`). Soft lockups in
-`pci_pm_runtime_resume` → `pci_mmcfg_read` returning `0xFFFFFFFF`.
+(SATA + USB + NIC all on same root port `0000:02.1`).
 
-**Trigger**: ASPM L1 power state transitions.
-**Mitigation**: Disabled ASPM L1 + runtime PM. System stable without VMs since.
-**Root cause**: Unknown — firmware, thermal, or silicon defect.
+**Root cause**: Kernel 6.17 AHCI driver defaults to `min_power` LPM policy,
+enabling SATA DIPM. DIPM link power state transitions destabilize the chipset.
+**Fix**: `ahci.mobile_lpm_policy=1` (max_performance). Zero SATA errors in 28+
+days since deployment. Also: ASPM L1 disabled, PCIe runtime PM disabled.
 
-### 2. VFIO GPU reset crashes (incidents 7–10)
+### 2. ~~VFIO GPU reset crashes (incidents 7–10, 12, 14)~~ — MITIGATED
 
-System freezes within 30–60 seconds of boot when VFIO resets 2x RTX 5090 for
-wyrm2 VM. Same chipset PCIe fabric failure pattern. VFIO reset generates heavy
-PCIe traffic that destabilizes the chipset.
+System freezes within 30–120 seconds of VFIO GPU reset. Known Blackwell FLR bug.
+**Mitigated by**: combination of `ahci.mobile_lpm_policy=1`, `pcie_aspm=off`,
+PCIe bridge D3cold disabled, and `nvidia-drm.modeset=0` (though last is
+currently overridden — see above). Zero VFIO crashes in 28+ days with full 2x
+GPU passthrough.
 
-### 3. Blackwell VFIO is bleeding edge
+### 3. Guest-side GPU lockups (ongoing)
 
-RTX 5090 + open kernel module + VFIO is very new. Proprietary driver may be
-more stable but hasn't been tested. Driver 580.x VFIO support may have bugs.
+Both RTX 5090s intermittently lock up inside the wyrm2 guest. `nvidia-smi` shows
+ERR, dmesg shows `GPU_IN_FULLCHIP_RESET` assertions. Requires VM reboot to
+recover. This is different from the host-level VFIO crash — the host remains
+stable. See `wyrm_gpu_lockup.md`.
+
+### 4. Blackwell VFIO is bleeding edge
+
+RTX 5090 + open kernel module + VFIO is very new. Proprietary driver does not
+support RTX 5090 at all — open module is the only option. Driver 580.142
+currently in use.
 
 ## What We Don't Know
 
 - [ ] Can NVIDIA drivers load on the Proxmox host? (`nvidia-smi` from host)
-- [ ] Does VFIO with only 1 GPU also crash? (never tested)
-- [ ] Is there a BIOS update? (current is v1512, could be behind)
-- [ ] Does the IOMMU passthrough fix (was missing before) change VFIO stability?
-- [ ] Would proprietary NVIDIA driver help VFIO stability?
+- [x] Does VFIO with only 1 GPU also crash? → Tested in incident 15; 1 GPU
+      survived 33 min alone. With mitigations, 2 GPUs are now stable (28+ days)
+- [x] Is there a BIOS update? → Updated to BIOS 2102 (AGESA 1.3.0.0a) on
+      2026-03-11
+- [x] Does the IOMMU passthrough fix change VFIO stability? → Yes, part of
+      the fix set that stabilized the system
+- [ ] Would proprietary NVIDIA driver help? → Not applicable; proprietary
+      driver does not support RTX 5090 (Blackwell)
 - [ ] Is it thermal? (chipset heatsink condition unknown)
 - [ ] Would a PCIe HBA card for SATA reduce root-port contention?
+- [ ] What causes guest-side GPU lockups? (different from host VFIO crashes)
 
 ## Options
 

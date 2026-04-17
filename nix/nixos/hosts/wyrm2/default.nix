@@ -42,6 +42,7 @@ in
     ../../modules/bazel
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
+    ../../modules/gpu-monitor.nix
   ];
 
   # Passwordless sudo for system inspection commands
@@ -76,6 +77,10 @@ in
     nvidiaSettings = false; # No X settings app for headless GPU compute
   };
   hardware.nvidia-container-toolkit.enable = true;
+
+  # GPU health monitoring — periodic telemetry + dmesg error watcher.
+  # See debug/atlas/gpu_lockup_20260417/README.md for context.
+  ducktape.gpuMonitor.enable = true;
 
   # Ollama with CUDA for local GPU inference (also used by k8s ollama pod, but
   # useful standalone when cluster is down or for ad-hoc tasks).
