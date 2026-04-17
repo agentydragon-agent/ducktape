@@ -84,5 +84,5 @@ See <troubleshooting.md> for diagnostic commands and known issues.
 
 ### Privileged Ports (Port < 1024)
 
-Services binding to privileged ports (e.g., PowerDNS on port 53) as non-root need
+Services binding to privileged ports (e.g., port 53) as non-root need
 `NET_BIND_SERVICE` capability with `drop: ["ALL"]` for PSS "restricted" compliance.

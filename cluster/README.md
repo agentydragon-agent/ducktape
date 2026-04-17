@@ -123,11 +123,11 @@ which reads the env var and injects GPU devices/libraries via host CDI specs.
 
 The following services **MUST** work/recover with VPS only (without Proxmox):
 
-- **DNS** (PowerDNS) — all external name resolution depends on this
+- **DNS** (AWS Route 53) — all external name resolution depends on this
 - **Website** (`allegedly.works`) — public-facing
 
 These services must not depend on `proxmox-csi-retain` storage or Proxmox-pinned nodes.
-Both PowerDNS and Authentik now use CloudNativePG on `local-path`.
+Authentik uses CloudNativePG on `local-path`.
 See <docs/plan.md> for the full invariant definition, compliance tracking, and fix plan.
 
 ## SSO (Authentik)

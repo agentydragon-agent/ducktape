@@ -278,15 +278,17 @@ To verify the CSI token: `tofu state show 'proxmox_virtual_environment_user_toke
 ### DNS & cert-manager
 
 ```bash
-kubectl exec -n dns-system deployment/powerdns -- pdnsutil list-zone allegedly.works
-dig @ns1.allegedly.works allegedly.works NS
+# Check Route 53 records
+dig allegedly.works A +short
+dig api.allegedly.works A +short
+dig allegedly.works NS
 ```
 
 **cert-manager DNS-01 failures**:
 
-1. "propagation check failed: no such host" -- DNS cache, wait for TTL expiry
-2. "webhook call failed" -- check pdns-webhook pod and PowerDNS API reachability
-3. Challenge TXT not created -- check PowerDNS + webhook logs, verify `powerdns-api-key` secret
+1. "propagation check failed: no such host" — DNS cache, wait for TTL expiry
+2. "unable to assume role" / "AccessDenied" — check `aws-route53-credentials` secret in `cert-manager` namespace
+3. Challenge TXT not created — check cert-manager logs, verify IAM permissions on Route 53 zone
 
 **Force retry**: `kubectl delete challenge,order,certificaterequest -n <namespace> --all`
 

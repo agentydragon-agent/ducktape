@@ -94,9 +94,8 @@ via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
 
 ### DNS Delegation
 
-1. Route 53 delegates `allegedly.works` → VPS PowerDNS
-2. PowerDNS runs on VPS nodes (public IPs)
-3. cert-manager uses DNS-01 challenges
+1. Route 53 is the authoritative DNS for `allegedly.works` (zone + records managed by Terraform)
+2. cert-manager uses Route 53 DNS-01 solver for ACME challenges
 
 ### Ingress (Gateway API)
 
