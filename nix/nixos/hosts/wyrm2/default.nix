@@ -12,7 +12,7 @@ let
   keys = import ../../../ssh-keys.nix;
   sshKeys = with keys; [
     wyrm2
-    atlas_rsa
+    atlas
     rugged
     rugged_wyrm
   ];

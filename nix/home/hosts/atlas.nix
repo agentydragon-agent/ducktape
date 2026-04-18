@@ -15,9 +15,12 @@ in
 {
   imports = [
     ../home.nix
+    ../modules/github-ssh.nix
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
   ];
+
+  ducktape.githubSsh.sopsFile = ../../../secrets/home/atlas/github-ssh.yaml;
 
   # Atlas runs on Proxmox VE (Debian-based), not NixOS.
   # User authorized keys managed here (root keys in ansible/atlas.yaml).

@@ -123,6 +123,11 @@ creation_rules:
       - age:
           - *admin
           - *iguana-agentydragon
+  - path_regex: secrets/home/atlas/.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *atlas-agentydragon
 
   # --- Talos machine secrets (admin-only, state recovery backup) ---
   - path_regex: secrets/talos-machine-secrets\.sops\.yaml$

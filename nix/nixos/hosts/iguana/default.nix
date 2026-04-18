@@ -147,7 +147,7 @@ in
     openssh.authorizedKeys.keys = with keys; [
       iguana
       wyrm2
-      atlas_rsa
+      atlas
       rugged
     ];
   };
