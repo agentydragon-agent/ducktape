@@ -11,6 +11,7 @@
 #   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
 #
 # Allowed egress from Loki:
+#   - kube-apiserver (k8s-sidecar needs to list/watch secrets for rule sync)
 #   - MinIO (minio-hil namespace, S3 chunk/index storage)
 ---
 apiVersion: cilium.io/v2
@@ -73,6 +74,16 @@ spec:
               protocol: TCP
 
   egress:
+    # Loki → kube-apiserver (sc-rules sidecar watches secrets)
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+
     # Loki → kube-dns (DNS resolution)
     - toEndpoints:
         - matchLabels:
