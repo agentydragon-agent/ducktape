@@ -152,6 +152,17 @@ in
   # OpenEBS node agent runs privileged and uses host LVM tools via nsenter.
   boot.kernelModules = [ "dm_thin_pool" ];
 
+  # dmeventd monitors thin pools and auto-extends them before they fill up.
+  # Without this, OpenEBS creates a tiny thin pool (sized to the first PVC)
+  # and mke2fs fails once it's full.
+  services.lvm.dmeventd.enable = true;
+  environment.etc."lvm/lvm.conf".text = lib.mkAfter ''
+    activation {
+      thin_pool_autoextend_threshold = 75
+      thin_pool_autoextend_percent = 20
+    }
+  '';
+
   # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
   #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
   #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)
