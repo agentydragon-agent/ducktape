@@ -31,7 +31,7 @@ will recommend limits.
 Talos enforces `baseline` Pod Security Standards by default via PSA.
 Explicit `securityContext` on Deployments is defense-in-depth. Low urgency.
 
-Missing securityContext: litellm, ollama, devbot, grocy, proxmox-proxy,
+Missing securityContext: litellm, ollama, devbot, grocy-sf, grocy-vallejo, proxmox-proxy,
 tana-mcp, openclaw/mitmproxy, props, atuin.
 
 ## `ghcr.io/servercontainers/samba:latest`

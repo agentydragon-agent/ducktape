@@ -16,8 +16,9 @@ _K8S_SUBPATH = Path("cluster/k8s")
 # Non-K8s YAML files that live under cluster/k8s/ but aren't manifests.
 # Excluded from orphan detection and resource parsing.
 _EXCLUDED_FILES = {
-    # rules_distroless APT manifest for the token rotation image
-    "agents/claude-token-rotation/bookworm_token_rotation.yaml"
+    # rules_distroless APT manifests for CronJob images
+    "agents/claude-token-rotation/bookworm_token_rotation.yaml",
+    "agents/claude-cert-rotation/bookworm_cert_rotation.yaml",
 }
 
 

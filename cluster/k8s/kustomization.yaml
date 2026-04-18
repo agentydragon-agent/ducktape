@@ -40,6 +40,7 @@ resources:
   - agents/claude-rbac/flux-kustomization.yaml
   - agents/claude-sandbox-secrets/flux-kustomization.yaml
   - agents/claude-token-rotation/flux-kustomization.yaml
+  - agents/claude-cert-rotation/flux-kustomization.yaml
   - agents/claude-sandbox-firecracker/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - agents/airlock-oidc-proxy-tf/flux-kustomization.yaml

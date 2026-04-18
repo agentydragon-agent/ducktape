@@ -33,8 +33,7 @@ ServiceAccount and never triggers permission prompts.
   node-feature-discovery, local-path-storage, cert-manager, litellm, docker-ci,
   matrix, grocy-sf, grocy-vallejo,
   logs/configmaps via namespaced rolebindings (monitoring, kube-system,
-  longhorn-system, flux-system, grocy-mcp-sf, grocy-mcp-vallejo, grocy-sf,
-  grocy-vallejo, airlock, authentik).
+  longhorn-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik).
 
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
 session kubeconfig (web) for operations needing higher privileges or other namespaces.

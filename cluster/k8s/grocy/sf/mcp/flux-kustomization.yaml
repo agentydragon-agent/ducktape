@@ -17,7 +17,7 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: grocy-mcp-server
-      namespace: grocy-mcp-sf
+      namespace: grocy-sf
   dependsOn:
     - name: gateway
     - name: grocy-sf

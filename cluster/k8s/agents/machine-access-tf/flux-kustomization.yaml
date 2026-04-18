@@ -20,9 +20,9 @@ spec:
   dependsOn:
     - name: tofu-controller
     - name: authentik
-    # TF writes the `grocy-mcp-oidc` secret into the `grocy-mcp-oidc`
-    # namespace, so that namespace must exist first.
-    - name: grocy-mcp-oidc-namespace
+    # TF writes grocy-mcp-oidc secrets into per-household namespaces.
+    - name: grocy-sf
+    - name: grocy-vallejo
     # TF writes the `kubectl-sandbox-mcp` secret into the `kubectl-sandbox-mcp`
     # namespace, so that namespace must exist first.
     - name: kubectl-sandbox-mcp-namespace

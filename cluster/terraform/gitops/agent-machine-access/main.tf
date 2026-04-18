@@ -179,7 +179,7 @@ resource "authentik_policy_binding" "grocy_mcp_sf_admins" {
 resource "kubernetes_secret" "grocy_mcp_oidc_sf" {
   metadata {
     name      = "grocy-mcp-oidc-sf"
-    namespace = "grocy-mcp-sf"
+    namespace = "grocy-sf"
   }
 
   data = {
@@ -262,7 +262,7 @@ resource "authentik_policy_binding" "grocy_mcp_vallejo_admins" {
 resource "kubernetes_secret" "grocy_mcp_oidc_vallejo" {
   metadata {
     name      = "grocy-mcp-oidc-vallejo"
-    namespace = "grocy-mcp-vallejo"
+    namespace = "grocy-vallejo"
   }
 
   data = {
