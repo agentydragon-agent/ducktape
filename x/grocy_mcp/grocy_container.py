@@ -24,31 +24,36 @@ def make_settings(grocy_url: str) -> ServerSettings:
     return ServerSettings(grocy_url=grocy_url)
 
 
-def _prepare_custom_init_dir() -> str:
-    """Create a dir with a script that strips IPv6 listen directives from nginx config.
+@contextmanager
+def grocy_custom_init_dir() -> Generator[str]:
+    """Yield a tempdir containing an init script that strips IPv6 listen directives.
 
     LinuxServer s6-overlay runs scripts in /custom-cont-init.d/ after
     migrations (which generate the nginx config) but before services start.
+    The dir is bind-mounted read-only into the container and removed on exit
+    so repeated calls (e.g. from the eval CLI) don't leak under /tmp.
     """
-    init_dir = tempfile.mkdtemp(prefix="grocy-custom-init-")
-    script = Path(init_dir) / "disable-ipv6.sh"
-    script.write_text(
-        "#!/bin/bash\n"
-        "echo 'disable-ipv6: patching nginx configs'\n"
-        "sed -i '/listen \\[/d' /config/nginx/site-confs/*.conf\n"
-        "echo 'disable-ipv6: done, resulting config:'\n"
-        "cat /config/nginx/site-confs/default.conf\n"
-    )
-    script.chmod(0o755)
-    return init_dir
+    with tempfile.TemporaryDirectory(prefix="grocy-custom-init-") as d:
+        script = Path(d) / "disable-ipv6.sh"
+        script.write_text(
+            "#!/bin/bash\n"
+            "echo 'disable-ipv6: patching nginx configs'\n"
+            "sed -i '/listen \\[/d' /config/nginx/site-confs/*.conf\n"
+            "echo 'disable-ipv6: done, resulting config:'\n"
+            "cat /config/nginx/site-confs/default.conf\n"
+        )
+        script.chmod(0o755)
+        yield d
 
 
-def configure_grocy_container(container: DockerContainer, *, data_dir: Path | None) -> None:
+def configure_grocy_container(container: DockerContainer, *, init_dir: str, data_dir: Path | None) -> None:
     """Apply the env / volume / port config every Grocy test container needs.
 
-    If `data_dir` is provided, it's bind-mounted to Grocy's `/config/data`, so
-    the SQLite DB lives at `data_dir/grocy.db` on the host throughout the run
-    — no post-hoc copy needed. LinuxServer chowns the mount point on startup.
+    `init_dir` is the tempdir from `grocy_custom_init_dir()`; it must stay
+    alive until the container exits. If `data_dir` is provided, it's
+    bind-mounted to Grocy's `/config/data`, so the SQLite DB lives at
+    `data_dir/grocy.db` on the host throughout the run — no post-hoc copy
+    needed. LinuxServer chowns the mount point on startup.
     """
     container.with_exposed_ports(80)
     container.with_env("PUID", "1000")
@@ -56,7 +61,7 @@ def configure_grocy_container(container: DockerContainer, *, data_dir: Path | No
     container.with_env("TZ", "UTC")
     container.with_env("GROCY_MODE", "production")
     container.with_env("GROCY_DISABLE_AUTH", "true")
-    container.with_volume_mapping(_prepare_custom_init_dir(), "/custom-cont-init.d", "ro")
+    container.with_volume_mapping(init_dir, "/custom-cont-init.d", "ro")
     if data_dir is not None:
         data_dir.mkdir(parents=True, exist_ok=True)
         container.with_volume_mapping(str(data_dir), "/config/data")
@@ -91,8 +96,9 @@ def wait_for_grocy_ready(container: DockerContainer, *, timeout_s: float = 90) -
 def run_grocy_container(*, data_dir: Path | None = None) -> Generator[DockerContainer]:
     """Run a fresh Grocy container with auth disabled; yield it once ready."""
     load_oci_image(GROCY)
-    container = DockerContainer(GROCY.tag)
-    configure_grocy_container(container, data_dir=data_dir)
-    with container:
-        wait_for_grocy_ready(container)
-        yield container
+    with grocy_custom_init_dir() as init_dir:
+        container = DockerContainer(GROCY.tag)
+        configure_grocy_container(container, init_dir=init_dir, data_dir=data_dir)
+        with container:
+            wait_for_grocy_ready(container)
+            yield container

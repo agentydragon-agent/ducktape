@@ -56,22 +56,25 @@ async def _serve_mcp(grocy_base_url: str) -> AsyncGenerator[str]:
 
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(config)
-
     serve_task = asyncio.create_task(server.serve())
-    for _ in range(50):
-        await asyncio.sleep(0.1)
-        if server.started:
-            break
-    else:
-        raise TimeoutError("MCP server did not start within 5s")
-
-    mcp_url = f"http://127.0.0.1:{port}/mcp"
-    logger.info("MCP server ready at %s", mcp_url)
     try:
+        for _ in range(50):
+            await asyncio.sleep(0.1)
+            if server.started:
+                break
+        else:
+            raise TimeoutError("MCP server did not start within 5s")
+
+        mcp_url = f"http://127.0.0.1:{port}/mcp"
+        logger.info("MCP server ready at %s", mcp_url)
         yield mcp_url
     finally:
         server.should_exit = True
-        await serve_task
+        try:
+            await asyncio.wait_for(serve_task, timeout=5.0)
+        except TimeoutError:
+            serve_task.cancel()
+            await asyncio.gather(serve_task, return_exceptions=True)
         await http_client.aclose()
 
 
