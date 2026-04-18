@@ -1,6 +1,12 @@
 #!/usr/bin/bash
 set -euo pipefail
 
+# rules_distroless doesn't run update-ca-certificates, so /etc/ssl/certs/ is
+# empty. Build a CA bundle from the raw cert files for git/libcurl.
+CA_BUNDLE="/tmp/ca-bundle.crt"
+cat /usr/share/ca-certificates/mozilla/*.crt >"$CA_BUNDLE"
+export GIT_SSL_CAINFO="$CA_BUNDLE"
+
 CSR_NAME="claude-code-web-$(date +%s)"
 KEY_FILE="/tmp/client.key"
 CSR_FILE="/tmp/client.csr"
