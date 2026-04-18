@@ -15,17 +15,23 @@ import pytest
 from third_party.containers.rlocations import GROCY
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
-from x.grocy_mcp.grocy_container import configure_grocy_container, grocy_url, wait_for_grocy_ready
+from x.grocy_mcp.grocy_container import (
+    configure_grocy_container,
+    grocy_custom_init_dir,
+    grocy_url,
+    wait_for_grocy_ready,
+)
 
 
 @contextmanager
 def run_logged_grocy_container() -> Generator[LoggedContainer]:
     load_oci_image(GROCY)
-    container = LoggedContainer(GROCY.tag, test_name="grocy")
-    configure_grocy_container(container, data_dir=None)
-    with container:
-        wait_for_grocy_ready(container)
-        yield container
+    with grocy_custom_init_dir() as init_dir:
+        container = LoggedContainer(GROCY.tag, test_name="grocy")
+        configure_grocy_container(container, init_dir=init_dir, data_dir=None)
+        with container:
+            wait_for_grocy_ready(container)
+            yield container
 
 
 @pytest.fixture(scope="session")
