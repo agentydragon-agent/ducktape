@@ -24,10 +24,19 @@ spec:
             - name: rotate-script
               configMap:
                 name: claude-cert-rotation-script
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: rotate
               image: ghcr.io/agentydragon/claude-cert-rotation:devel-20260418100917-47bd9ce # {"$imagepolicy": "flux-system:claude-cert-rotation"}
               command: ["/usr/bin/bash", "/scripts/rotate.sh"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
               volumeMounts:
                 - name: github-pat
                   mountPath: /var/run/secrets/github-pat

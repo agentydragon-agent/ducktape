@@ -283,10 +283,10 @@ inter-node CIDRs. Keep 80/443/53 public.
 | `~/.kube/config` (wyrm2)      | `localhost:7445`         | Via local haproxy                                     |
 
 `api.allegedly.works` exists on port 443 behind the cluster Cilium Gateway
-(HTTPRoute in `k8s/kube-api-proxy/` fronts an nginx Deployment that re-encrypts
-to the in-cluster `kubernetes` Service). This is what Claude Code web sandboxes
-use to reach the k8s API — Anthropic's egress proxy only allows port 443
-outbound, so a non-standard port would not work.
+(TLSRoute in `k8s/kube-api-proxy/` with TLS passthrough to the `kubernetes`
+Service). This is what Claude Code web sandboxes use to reach the k8s API —
+Anthropic's egress proxy only allows port 443 outbound, so a non-standard port
+would not work. TLS passthrough preserves client certificates for x509 auth.
 
 ### OpenTofu State Backend
 
@@ -306,7 +306,7 @@ directly — no port-forward. From non-workers, fall back to `kubectl port-forwa
 
 - [ ] Eliminate port-forward for non-workers. Cilium Gateway API does not support TCPRoute
       ([cilium#21929](https://github.com/cilium/cilium/issues/21929)). Options when available:
-      TCPRoute + NodePort, or dedicated nginx TCP proxy (like `kube-api-proxy` pattern).
+      TCPRoute + NodePort, or TLS passthrough (like `kube-api-proxy` TLSRoute pattern).
 
 ### GitHub Webhook Reconciliation
 

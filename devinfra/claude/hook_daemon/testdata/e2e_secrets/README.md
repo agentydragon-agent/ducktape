@@ -31,7 +31,7 @@ age-keygen -o test_age.key
 # 2. Re-encrypt fixtures (each file is independent; key is in test_age.key)
 TEST_AGE_PUB=$(grep 'public key' test_age.key | awk '{print $NF}')
 for f in buildbuddy.yaml github-pat-agentydragon-agent.yaml \
-         github-ci-read-pat.yaml claude-web-k8s-token.yaml; do
+         github-ci-read-pat.yaml claude-web-k8s-cert.yaml; do
   # Edit the plaintext content inline, then re-encrypt with only the test key.
   # SOPS --age flag avoids inheriting the repo's .sops.yaml creation rules.
   sops encrypt --age "$TEST_AGE_PUB" <(echo "<plaintext YAML>") > "$f"

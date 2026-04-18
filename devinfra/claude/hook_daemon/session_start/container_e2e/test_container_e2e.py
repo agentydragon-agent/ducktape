@@ -117,7 +117,7 @@ def staged_project(tmp_path: Path) -> Path:
       devinfra/secrets/{web_env.sh,_common.sh}              (real scripts)
       secrets/{buildbuddy,github-pat-...,
                github-ci-read-pat,
-               claude-web-k8s-token}.yaml                   (test-encrypted)
+               claude-web-k8s-cert}.yaml                    (test-encrypted)
       .git/                                                 (pre-commit needs a repo)
     """
     project = tmp_path / "project"
