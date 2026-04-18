@@ -34,6 +34,15 @@ Explicit `securityContext` on Deployments is defense-in-depth. Low urgency.
 Missing securityContext: litellm, ollama, devbot, grocy-sf, grocy-vallejo, proxmox-proxy,
 tana-mcp, openclaw/mitmproxy, props, atuin.
 
+## Grocy MCP startup probe
+
+The MCP servers (grocy-mcp-sf, grocy-mcp-vallejo) crash-loop on first boot
+until Grocy receives its first HTTP request (which triggers database migrations).
+The MCP server tries to fetch Grocy's OpenAPI spec at startup, but Grocy returns
+errors until migrations complete. After a manual visit to the Grocy web UI,
+the MCP server starts successfully. Consider an init container or startup probe
+that pokes Grocy's `/login` endpoint before the MCP server starts.
+
 ## `ghcr.io/servercontainers/samba:latest`
 
 No semver tags published. Keep `:latest` until upstream adopts versioned releases.
