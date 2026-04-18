@@ -21,17 +21,24 @@ pkg_tar(
     package_dir = "/wheel",
 )
 
-# Bazelisk binary baked into /tools/ (on PATH via oci_image env).
+# Bazelisk + sops baked into /tools/ (on PATH). Neither is in Debian main,
+# so we fetch them as static binaries via http_file.
 pkg_tar(
-    name = "e2e_bazelisk",
+    name = "e2e_tools",
     testonly = True,
-    srcs = ["@bazelisk_linux_amd64//file"],
+    srcs = [
+        "@bazelisk_linux_amd64//file",
+        "@sops_linux_amd64//file",
+    ],
     package_dir = "/tools",
-    remap_paths = {"/file/bazelisk": "bazelisk"},
+    remap_paths = {
+        "/file/bazelisk": "bazelisk",
+        "/file/sops": "sops",
+    },
 )
 
-# E2E test container: python:3.13-slim base + git + JDK from rules_distroless.
-# See trixie_e2e.yaml for the deb manifest.
+# E2E test container: python:3.13-slim base + curl + git + JDK from trixie,
+# bazelisk + sops as static binaries. See trixie_e2e.yaml.
 oci_image(
     name = "e2e_container_image",
     testonly = True,
@@ -44,7 +51,7 @@ oci_image(
     tars = [
         "@trixie_e2e//:flat",
         ":e2e_wheels",
-        ":e2e_bazelisk",
+        ":e2e_tools",
     ],
 )
 
@@ -59,8 +66,12 @@ py_test(
     size = "large",
     srcs = ["test_container_e2e.py"],
     data = [
+        "test_profile.yaml",
         ":e2e_container",
+        "//devinfra/claude/hook_daemon/testdata/e2e_secrets:e2e_secrets_files",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
+        "//devinfra/secrets:_common.sh",
+        "//devinfra/secrets:web_env.sh",
     ],
     requires_docker = True,
     tags = [
@@ -69,6 +80,7 @@ py_test(
     ],
     deps = [
         "//devinfra/claude:conftest",
+        "//devinfra/claude:env_file",
         "//devinfra/claude/testing:conftest",
         "//util:oci",
         "//util/bazel:runfiles",
@@ -76,5 +88,6 @@ py_test(
         "@pypi//docker",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
