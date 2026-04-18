@@ -129,6 +129,13 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "bookworm-slim",
 )
+oci.pull(
+    name = "debian_trixie_slim",
+    digest = "sha256:4ffb3a1511099754cddc70eb1b12e50ffdb67619aa0ab6c13fcd800a78ef7c7a",
+    image = "docker.io/library/debian",
+    platforms = ["linux/amd64"],
+    tag = "trixie-slim",
+)
 
 # Test infrastructure: PostgreSQL for Testcontainers (match production version)
 oci.pull(
@@ -229,7 +236,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "11",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
