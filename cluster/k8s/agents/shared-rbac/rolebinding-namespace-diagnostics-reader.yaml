@@ -8,9 +8,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -25,9 +22,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
@@ -45,9 +39,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -62,9 +53,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -79,9 +67,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -96,9 +81,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -113,9 +95,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -130,9 +109,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -147,9 +123,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -164,9 +137,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -181,9 +151,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -198,9 +165,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -215,9 +179,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -232,9 +193,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -249,9 +207,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io
@@ -266,9 +221,6 @@ roleRef:
   kind: ClusterRole
   name: namespace-diagnostics-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
     apiGroup: rbac.authorization.k8s.io

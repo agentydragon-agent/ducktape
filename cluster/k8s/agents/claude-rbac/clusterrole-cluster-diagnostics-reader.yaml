@@ -185,5 +185,5 @@ rules:
       - externalsecrets
     verbs: ["get", "list", "watch"]
 # pods/log and configmaps granted via namespaced Roles in monitoring, kube-system,
-# longhorn-system, flux-system, grocy-mcp, grocy-mcp-oidc, airlock, authentik
+# longhorn-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik
 # (see role-logs-configmaps-reader.yaml).

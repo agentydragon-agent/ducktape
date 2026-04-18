@@ -8,9 +8,6 @@ roleRef:
   name: cluster-diagnostics-reader
 subjects:
   - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
-  - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
   - kind: Group

@@ -264,8 +264,9 @@ repos:
             cluster/k8s/litellm/app/proxy-config\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml|
-            # APT manifest for Bazel rules_distroless, not a K8s manifest
+            # APT manifests for Bazel rules_distroless, not K8s manifests
             cluster/k8s/agents/claude-token-rotation/bookworm_token_rotation\.yaml|
+            cluster/k8s/agents/claude-cert-rotation/trixie_cert_rotation\.yaml|
             # Authelia app config files, not K8s manifests
             cluster/k8s/authelia/app/configuration\.yml|
             cluster/k8s/authelia/app/users\.yml

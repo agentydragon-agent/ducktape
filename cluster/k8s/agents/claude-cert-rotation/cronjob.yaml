@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: claude-cert-rotation
+  namespace: agents-infra
+  annotations:
+    description: >-
+      Rotates a client certificate for Claude Code web cluster access.
+      Generates a CSR, approves it, and commits the SOPS-encrypted cert+key to git.
+spec:
+  schedule: "0 0 1,15 * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: claude-cert-rotator
+          restartPolicy: OnFailure
+          volumes:
+            - name: github-pat
+              secret:
+                secretName: github-secrets-sync-pat
+            - name: rotate-script
+              configMap:
+                name: claude-cert-rotation-script
+          containers:
+            - name: rotate
+              image: ghcr.io/agentydragon/claude-cert-rotation:devel-latest # {"$imagepolicy": "flux-system:claude-cert-rotation"}
+              command: ["/bin/bash", "/scripts/rotate.sh"]
+              env:
+                - name: GIT_SSL_CAPATH
+                  value: /usr/share/ca-certificates/mozilla
+              volumeMounts:
+                - name: github-pat
+                  mountPath: /var/run/secrets/github-pat
+                  readOnly: true
+                - name: rotate-script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi

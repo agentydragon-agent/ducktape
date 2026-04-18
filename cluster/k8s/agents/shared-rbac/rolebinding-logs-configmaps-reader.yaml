@@ -9,9 +9,6 @@ roleRef:
   name: logs-configmaps-reader
 subjects:
   - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
-  - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
   - kind: Group
@@ -28,9 +25,6 @@ roleRef:
   kind: ClusterRole
   name: logs-configmaps-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
@@ -49,9 +43,6 @@ roleRef:
   name: logs-configmaps-reader
 subjects:
   - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
-  - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
   - kind: Group
@@ -68,9 +59,6 @@ roleRef:
   kind: ClusterRole
   name: logs-configmaps-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
@@ -89,9 +77,6 @@ roleRef:
   name: logs-configmaps-reader
 subjects:
   - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
-  - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
   - kind: Group
@@ -108,9 +93,6 @@ roleRef:
   kind: ClusterRole
   name: logs-configmaps-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
@@ -129,9 +111,6 @@ roleRef:
   name: logs-configmaps-reader
 subjects:
   - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
-  - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
   - kind: Group
@@ -148,9 +127,6 @@ roleRef:
   kind: ClusterRole
   name: logs-configmaps-reader
 subjects:
-  - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
   - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox

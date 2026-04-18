@@ -1,4 +1,4 @@
-"""Materialize a service-account kubeconfig from SOPS-encrypted secrets.
+"""Materialize a client-certificate kubeconfig from SOPS-encrypted secrets.
 
 Standalone repo-specific script (not part of the generic hook daemon).
 Invoked as a profile background command during SessionStart and by the
@@ -8,7 +8,7 @@ Usage:
     python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" \\
         [OPTIONS] OUTPUT_PATH
 
-Requires CLAUDE_PROJECT_DIR (to locate secrets/claude-web-k8s-token.yaml)
+Requires CLAUDE_PROJECT_DIR (to locate secrets/claude-web-k8s-cert.yaml)
 and SOPS_AGE_KEY (for sops decryption) in the environment.
 """
 
@@ -24,34 +24,45 @@ from pathlib import Path
 
 import yaml
 
-_K8S_TOKEN_SOPS_PATH = "secrets/claude-web-k8s-token.yaml"
-_K8S_TOKEN_SOPS_EXTRACT = '["k8s_token"]'
+_K8S_CERT_SOPS_PATH = "secrets/claude-web-k8s-cert.yaml"
 _SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 
 _DEFAULT_SERVER = "https://api.allegedly.works"
-_DEFAULT_SERVICE_ACCOUNT = "claude-code-web"
+_DEFAULT_USER = "claude-code-web"
 _DEFAULT_NAMESPACE = "claude-sandbox"
 
 
-def decrypt_k8s_token(project_dir: Path) -> str:
-    sops_path = project_dir / _K8S_TOKEN_SOPS_PATH
-    if not sops_path.is_file():
-        raise RuntimeError(f"k8s token SOPS file not found: {sops_path}")
-    result = subprocess.run(
-        ["sops", "-d", "--extract", _K8S_TOKEN_SOPS_EXTRACT, str(sops_path)], capture_output=True, check=False
-    )
+def _sops_extract(sops_path: Path, key: str) -> str:
+    result = subprocess.run(["sops", "-d", "--extract", f'["{key}"]', str(sops_path)], capture_output=True, check=False)
     if result.returncode != 0:
         raise RuntimeError(
-            f"sops -d {sops_path} failed (exit {result.returncode}): {result.stderr.decode(errors='replace').strip()}"
+            f"sops -d --extract {key} {sops_path} failed (exit {result.returncode}): "
+            f"{result.stderr.decode(errors='replace').strip()}"
         )
-    token = result.stdout.decode(errors="replace").strip()
-    if not token:
-        raise RuntimeError(f"sops decrypted empty k8s token from {sops_path}")
-    return token
+    value = result.stdout.decode(errors="replace").strip()
+    if not value:
+        raise RuntimeError(f"sops decrypted empty {key} from {sops_path}")
+    return value
+
+
+def decrypt_client_cert(project_dir: Path) -> tuple[str, str]:
+    """Return (client_cert_pem, client_key_pem) from the SOPS-encrypted file."""
+    sops_path = project_dir / _K8S_CERT_SOPS_PATH
+    if not sops_path.is_file():
+        raise RuntimeError(f"k8s cert SOPS file not found: {sops_path}")
+    client_cert = _sops_extract(sops_path, "client_cert")
+    client_key = _sops_extract(sops_path, "client_key")
+    return client_cert, client_key
 
 
 def build_kubeconfig(
-    token: str, server: str, service_account: str, namespace: str, ca_path: Path | None, proxy_url: str | None
+    client_cert: str,
+    client_key: str,
+    server: str,
+    user: str,
+    namespace: str,
+    ca_path: Path | None,
+    proxy_url: str | None,
 ) -> dict:
     cluster_config: dict[str, str] = {"server": server}
     if ca_path and ca_path.exists():
@@ -63,14 +74,17 @@ def build_kubeconfig(
         "apiVersion": "v1",
         "kind": "Config",
         "clusters": [{"cluster": cluster_config, "name": "cluster"}],
-        "contexts": [
+        "contexts": [{"context": {"cluster": "cluster", "namespace": namespace, "user": user}, "name": user}],
+        "current-context": user,
+        "users": [
             {
-                "context": {"cluster": "cluster", "namespace": namespace, "user": service_account},
-                "name": service_account,
+                "name": user,
+                "user": {
+                    "client-certificate-data": base64.b64encode(client_cert.encode()).decode(),
+                    "client-key-data": base64.b64encode(client_key.encode()).decode(),
+                },
             }
         ],
-        "current-context": service_account,
-        "users": [{"name": service_account, "user": {"token": token}}],
     }
 
 
@@ -94,9 +108,6 @@ def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     serialized = yaml.safe_dump(kubeconfig, default_flow_style=False, sort_keys=False)
-    # mkstemp: unique name (no concurrent clobber) + default 0o600 + returns fd
-    # we must close ourselves. fdopen takes ownership of the fd so any later
-    # failure still closes it via the 'with'.
     fd, tmp_name = tempfile.mkstemp(prefix=f".{output_path.name}.", suffix=".tmp", dir=output_path.parent)
     tmp_path = Path(tmp_name)
     try:
@@ -109,10 +120,10 @@ def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Write a k8s service-account kubeconfig from SOPS secrets.")
+    parser = argparse.ArgumentParser(description="Write a k8s client-certificate kubeconfig from SOPS secrets.")
     parser.add_argument("output_path", type=Path)
     parser.add_argument("--server", default=_DEFAULT_SERVER)
-    parser.add_argument("--service-account", default=_DEFAULT_SERVICE_ACCOUNT)
+    parser.add_argument("--user", default=_DEFAULT_USER)
     parser.add_argument("--namespace", default=_DEFAULT_NAMESPACE)
     args = parser.parse_args(argv)
 
@@ -122,7 +133,7 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
     project_dir = Path(project_dir_str)
 
-    token = decrypt_k8s_token(project_dir)
+    client_cert, client_key = decrypt_client_cert(project_dir)
     ca_path = _SYSTEM_CA_BUNDLE if _SYSTEM_CA_BUNDLE.is_file() else None
     proxy_url = (
         os.environ.get("HTTPS_PROXY")
@@ -132,9 +143,10 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     kubeconfig = build_kubeconfig(
-        token=token,
+        client_cert=client_cert,
+        client_key=client_key,
         server=args.server,
-        service_account=args.service_account,
+        user=args.user,
         namespace=args.namespace,
         ca_path=ca_path,
         proxy_url=proxy_url,

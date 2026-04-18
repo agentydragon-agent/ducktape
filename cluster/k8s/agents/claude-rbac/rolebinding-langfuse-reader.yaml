@@ -9,9 +9,6 @@ roleRef:
   name: langfuse-log-reader
 subjects:
   - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
-  - kind: ServiceAccount
     name: default
     namespace: claude-sandbox
   - kind: Group

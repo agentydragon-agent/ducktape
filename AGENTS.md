@@ -17,8 +17,9 @@ The root cause is always a broken session start hook — notify the user if reco
 ## Kubernetes MCP Server (`claude-sandbox-kubectl`)
 
 Prefer the `claude-sandbox-kubectl` MCP server tools over `Bash(kubectl ...)` for
-`claude-sandbox` namespace operations. The MCP server uses the `claude-code-web`
-ServiceAccount and never triggers permission prompts.
+`claude-sandbox` namespace operations. The MCP server uses a client certificate
+(CN=`claude-code-web`, group `oidc-ksbx-groups:kubectl-sandbox-users`) and never
+triggers permission prompts.
 
 **RBAC** (see <cluster/k8s/agents/claude-rbac/>):
 

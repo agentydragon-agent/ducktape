@@ -41,58 +41,22 @@ Namespaced Roles + RoleBindings for specific namespaces:
 - Extended read in langfuse, ollama (read + consumer), openclaw, props (+ jobs, constrained secrets)
 - Logs/configmaps in monitoring, kube-system, longhorn-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik
 
-## ServiceAccount
+## Authentication
 
-- **Name**: `claude-code-web`
-- **Namespace**: `default`
+Claude Code web sessions authenticate via **client certificate** with
+`O=oidc-ksbx-groups:kubectl-sandbox-users` (maps to the OIDC sandbox group).
+The cert is auto-rotated by a CronJob in `agents-infra` namespace — see
+<../claude-cert-rotation/>.
 
-## Generating a Kubeconfig
-
-To generate a kubeconfig for Claude to use:
-
-```bash
-# Create a token (valid for 1 year)
-kubectl create token claude-code-web -n default --duration=8760h > /tmp/claude-token.txt
-
-# Get cluster info
-CLUSTER_NAME=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')
-SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
-
-# Get CA certificate
-kubectl config view --raw --minify --flatten \
-  -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' \
-  | base64 -d > /tmp/ca.crt
-
-# Generate kubeconfig
-cat <<EOF > /tmp/claude-kubeconfig.yaml
-apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    certificate-authority-data: $(base64 -w0 < /tmp/ca.crt)
-    server: $SERVER
-  name: $CLUSTER_NAME
-contexts:
-- context:
-    cluster: $CLUSTER_NAME
-    user: claude-code-web
-    namespace: default
-  name: claude-code-web
-current-context: claude-code-web
-users:
-- name: claude-code-web
-  user:
-    token: $(cat /tmp/claude-token.txt)
-EOF
-
-chmod 600 /tmp/claude-kubeconfig.yaml
-```
+OIDC users from the `kubectl-sandbox-mcp` Authentik application also get
+these permissions via the same group.
 
 ## Kubeconfig Provisioning
 
 Kubeconfig is generated automatically by the session start hook via
-`devinfra/claude/hook_daemon/session_start/secret_sources.py`. The SA token is stored as a k8s Secret in the
-`claude-sandbox` namespace and read at session start. No manual encryption needed.
+<devinfra/claude/scripts/write_kubeconfig.py>. It decrypts the SOPS-encrypted
+client cert+key from `secrets/claude-web-k8s-cert.yaml` and writes a
+kubeconfig with `client-certificate-data`/`client-key-data` auth.
 
 ## Security Considerations
 

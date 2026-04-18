@@ -57,6 +57,7 @@ _TEST_SECRET_FILES = [
     "buildbuddy.yaml",
     "github-pat-agentydragon-agent.yaml",
     "github-ci-read-pat.yaml",
+    "claude-web-k8s-cert.yaml",
     "claude-web-k8s-token.yaml",
 ]
 
@@ -263,7 +264,9 @@ def test_container_e2e(container: docker.models.containers.Container) -> None:
     _, kubeconfig_raw, _ = _exec(container, ["cat", "/root/.kube/config"])
     kube = yaml.safe_load(kubeconfig_raw)
     assert kube["current-context"] == "claude-code-web"
-    assert kube["users"][0]["user"]["token"] == "test-fake-k8s-token"
+    user_data = kube["users"][0]["user"]
+    assert "client-certificate-data" in user_data
+    assert "client-key-data" in user_data
     assert kube["clusters"][0]["cluster"]["server"] == "https://api.allegedly.works"
     _, stat_out, _ = _exec(container, ["stat", "-c", "%a", "/root/.kube/config"])
     assert stat_out.strip() == b"600"
