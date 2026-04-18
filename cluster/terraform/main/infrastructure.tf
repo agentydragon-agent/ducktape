@@ -111,7 +111,18 @@ locals {
           groups   = { claim = "groups", prefix = "oidc-groups:" }
         }
       },
-      # kubectl-sandbox-mcp: sandbox-scoped kubectl MCP server
+      # kubectl-passthrough-mcp: passthrough kubectl MCP (caller's own permissions)
+      {
+        issuer = {
+          url       = "https://auth.${var.cluster_domain}/application/o/kubectl-passthrough-mcp/"
+          audiences = ["kubectl-passthrough-mcp"]
+        }
+        claimMappings = {
+          username = { claim = "preferred_username", prefix = "oidc-ksbx:" }
+          groups   = { claim = "groups", prefix = "oidc-ksbx-groups:" }
+        }
+      },
+      # kubectl-sandbox-mcp: scoped kubectl MCP (token exchange → sandbox group only)
       {
         issuer = {
           url       = "https://auth.${var.cluster_domain}/application/o/kubectl-sandbox-mcp/"

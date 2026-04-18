@@ -21,7 +21,7 @@ Its job is to make every session look the same to the agent:
 - Dangerous or footgun git operations are blocked by a PATH shim.
 - Pre-commit lint/format hooks run automatically on Edit/Write and their
   failures are reported back to the agent.
-- The `claude-sandbox-kubectl` MCP server is configured to talk to the
+- The `kubectl-local` MCP server is configured to talk to the
   cluster as the expected Claude identity.
 - Hook activity is traced to the central OpenTelemetry collector.
 
@@ -88,7 +88,7 @@ project's `pre-commit` configuration against the touched files as a
 
 ### MCP servers
 
-- The `claude-sandbox-kubectl` MCP server is configured and authenticated so
+- The `kubectl-local` MCP server is configured and authenticated so
   that `kubectl`-equivalent calls act as the cluster's designated Claude
   identity (see <../../../cluster/k8s/agents/claude-rbac/>). The agent
   should always prefer it over raw `Bash(kubectl ...)` for `claude-sandbox`
@@ -181,7 +181,7 @@ identity; the daemon is responsible for standing up everything else.
 - **Kubernetes access as `claude-code-web` ServiceAccount.** The daemon
   writes a kubeconfig pointing at the cluster API, authenticated as the
   `claude-code-web` ServiceAccount. `KUBECONFIG` is exported into the
-  agent's environment, and the `claude-sandbox-kubectl` MCP server uses the
+  agent's environment, and the `kubectl-local` MCP server uses the
   same identity. Both `kubectl` and MCP calls land with the RBAC documented
   in <../../../AGENTS.md>.
 
@@ -257,7 +257,7 @@ applicable criteria for its profile.
 ### Web only
 
 1. `kubectl get pods -n claude-sandbox` works, authenticated as
-   `claude-code-web`. The `claude-sandbox-kubectl` MCP server returns the
+   `claude-code-web`. The `kubectl-local` MCP server returns the
    same pod list.
 2. `$GITHUB_TOKEN` resolves to the `agentydragon-agent` machine user (not a
    personal account).

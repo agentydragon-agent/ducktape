@@ -262,7 +262,7 @@ Pass: `1` (or whatever var your `.envrc` exports).
 kubectl -n claude-sandbox get pods 2>&1 | tail -5
 ```
 
-Then invoke the `mcp__claude-sandbox-kubectl__pods_list_in_namespace` tool
+Then invoke the `mcp__kubectl-local__pods_list_in_namespace` tool
 with `namespace=claude-sandbox` and compare. Pass: both succeed and agree.
 
 **W2 — `$GITHUB_TOKEN` identifies as `agentydragon-agent`.**

@@ -14,9 +14,9 @@ doing any other work.** Follow <devinfra/claude/hook_daemon/docs/session_start_r
 Do not bypass proxy/certificate errors with `--noverify`, `SSL_VERIFY=false`, or similar.
 The root cause is always a broken session start hook — notify the user if recovery fails.
 
-## Kubernetes MCP Server (`claude-sandbox-kubectl`)
+## Kubernetes MCP Server (`kubectl-local`)
 
-Prefer the `claude-sandbox-kubectl` MCP server tools over `Bash(kubectl ...)` for
+Prefer the `kubectl-local` MCP server tools over `Bash(kubectl ...)` for
 `claude-sandbox` namespace operations. The MCP server uses a client certificate
 (CN=`claude-code-web`, group `oidc-ksbx-groups:kubectl-sandbox-users`) and never
 triggers permission prompts.

@@ -273,10 +273,8 @@ resource "kubernetes_secret" "grocy_mcp_oidc_vallejo" {
 }
 
 # ============================================================================
-# kubectl-sandbox-mcp — Sandbox kubectl MCP server with OIDC auth
+# Shared: kubectl-sandbox-users group
 # ============================================================================
-# Users in kubectl-sandbox-users group can authenticate to the MCP server
-# and get kube-apiserver access scoped to claude-sandbox SA permissions.
 
 data "authentik_user" "agentydragon" {
   username = "agentydragon"
@@ -286,6 +284,99 @@ resource "authentik_group" "kubectl_sandbox_users" {
   name  = "kubectl-sandbox-users"
   users = [data.authentik_user.agentydragon.id]
 }
+
+# ============================================================================
+# kubectl-passthrough-mcp — Passthrough kubectl MCP (caller's own permissions)
+# ============================================================================
+# Forwards the caller's Authentik JWT directly to kube-apiserver. The caller
+# gets their own OIDC permissions — not sandbox-scoped.
+
+resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
+  name               = "kubectl-passthrough-mcp"
+  client_id          = "kubectl-passthrough-mcp"
+  client_type        = "confidential"
+  authorization_flow = data.authentik_flow.implicit_consent.id
+  invalidation_flow  = data.authentik_flow.invalidation.id
+  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+  issuer_mode                = "per_provider"
+  include_claims_in_id_token = true
+
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+  ]
+
+  allowed_redirect_uris = [
+    {
+      matching_mode = "strict"
+      url           = "https://kubectl-passthrough-mcp.allegedly.works/oauth/callback"
+    },
+  ]
+}
+
+moved {
+  from = authentik_provider_oauth2.kubectl_sandbox_mcp
+  to   = authentik_provider_oauth2.kubectl_passthrough_mcp
+}
+
+resource "authentik_application" "kubectl_passthrough_mcp" {
+  name              = "kubectl-passthrough-mcp"
+  slug              = "kubectl-passthrough-mcp"
+  protocol_provider = authentik_provider_oauth2.kubectl_passthrough_mcp.id
+  meta_description  = "Passthrough kubectl MCP — forwards caller's JWT to kube-apiserver (caller's own permissions)"
+  meta_launch_url   = "https://kubectl-passthrough-mcp.allegedly.works"
+}
+
+moved {
+  from = authentik_application.kubectl_sandbox_mcp
+  to   = authentik_application.kubectl_passthrough_mcp
+}
+
+resource "authentik_policy_binding" "kubectl_passthrough_mcp_users" {
+  target = authentik_application.kubectl_passthrough_mcp.uuid
+  group  = authentik_group.kubectl_sandbox_users.id
+  order  = 0
+}
+
+moved {
+  from = authentik_policy_binding.kubectl_sandbox_mcp_users
+  to   = authentik_policy_binding.kubectl_passthrough_mcp_users
+}
+
+resource "kubernetes_secret" "kubectl_passthrough_mcp" {
+  metadata {
+    name      = "kubectl-passthrough-mcp"
+    namespace = "kubectl-passthrough-mcp"
+  }
+
+  data = {
+    "config.toml" = <<-EOT
+      require_oauth = true
+      authorization_url = "https://auth.allegedly.works/application/o/kubectl-passthrough-mcp/"
+      oauth_audience = "kubectl-passthrough-mcp"
+      sts_client_id     = "${authentik_provider_oauth2.kubectl_passthrough_mcp.client_id}"
+      sts_client_secret = "${authentik_provider_oauth2.kubectl_passthrough_mcp.client_secret}"
+      cluster_auth_mode = "passthrough"
+      cluster_provider_strategy = "in-cluster"
+      server_url = "https://kubectl-passthrough-mcp.allegedly.works"
+      port = "8080"
+    EOT
+  }
+}
+
+moved {
+  from = kubernetes_secret.kubectl_sandbox_mcp
+  to   = kubernetes_secret.kubectl_passthrough_mcp
+}
+
+# ============================================================================
+# kubectl-sandbox-mcp — Scoped kubectl MCP (token exchange → sandbox only)
+# ============================================================================
+# Authenticates callers via Authentik consent, then exchanges the caller's
+# token for one scoped to kubectl-sandbox-users group. Even if the caller is
+# a cluster admin, the exchanged token only carries sandbox-level permissions.
 
 resource "authentik_provider_oauth2" "kubectl_sandbox_mcp" {
   name               = "kubectl-sandbox-mcp"
@@ -307,17 +398,33 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_mcp" {
   allowed_redirect_uris = [
     {
       matching_mode = "strict"
-      # /oauth/callback is the hardcoded callback path in containers/kubernetes-mcp-server.
-      url = "https://kubectl-sandbox-mcp.allegedly.works/oauth/callback"
+      url           = "https://kubectl-sandbox-mcp.allegedly.works/oauth/callback"
     },
   ]
+}
+
+# Proxy provider used as the token exchange target. The exchanged token
+# carries only the scoped claims from this provider (kubectl-sandbox-users
+# group), regardless of the caller's actual groups/permissions.
+resource "authentik_provider_proxy" "kubectl_sandbox_mcp" {
+  name                  = "kubectl-sandbox-mcp-proxy"
+  external_host         = "https://kubectl-sandbox-mcp.allegedly.works"
+  internal_host         = "http://localhost"
+  mode                  = "proxy"
+  authentication_flow   = data.authentik_flow.authentication.id
+  authorization_flow    = data.authentik_flow.implicit_consent.id
+  invalidation_flow     = data.authentik_flow.invalidation.id
+  access_token_validity = "hours=1"
+
+  # Allow the OAuth2 provider's tokens to be exchanged for proxy-scoped ones.
+  jwt_federation_providers = [authentik_provider_oauth2.kubectl_sandbox_mcp.id]
 }
 
 resource "authentik_application" "kubectl_sandbox_mcp" {
   name              = "kubectl-sandbox-mcp"
   slug              = "kubectl-sandbox-mcp"
   protocol_provider = authentik_provider_oauth2.kubectl_sandbox_mcp.id
-  meta_description  = "Sandbox kubectl MCP — cluster access scoped to claude-sandbox SA permissions"
+  meta_description  = "Sandbox kubectl MCP — token exchange scopes to sandbox permissions"
   meta_launch_url   = "https://kubectl-sandbox-mcp.allegedly.works"
 }
 
@@ -327,11 +434,6 @@ resource "authentik_policy_binding" "kubectl_sandbox_mcp_users" {
   order  = 0
 }
 
-# K8s secret with complete config.toml for containers/kubernetes-mcp-server.
-# Includes sts_client_id/sts_client_secret used for the authorization-code
-# exchange with Authentik (confidential client leg). Namespace created by
-# kubectl-sandbox-mcp-namespace Flux Kustomization; agent-machine-access-tf
-# dependsOn that kustomization so TF runs after the namespace exists.
 resource "kubernetes_secret" "kubectl_sandbox_mcp" {
   metadata {
     name      = "kubectl-sandbox-mcp"
@@ -340,31 +442,21 @@ resource "kubernetes_secret" "kubectl_sandbox_mcp" {
 
   data = {
     "config.toml" = <<-EOT
-      # OAuth is required — clients must authenticate via Authentik before calling tools.
       require_oauth = true
-
-      # Authentik issuer URL for the kubectl-sandbox-mcp OAuth2 provider.
       authorization_url = "https://auth.allegedly.works/application/o/kubectl-sandbox-mcp/"
-
-      # Audience must match what Authentik issues (client_id) and what kube-apiserver
-      # accepts (AuthenticationConfiguration audiences entry for kubectl-sandbox-mcp).
       oauth_audience = "kubectl-sandbox-mcp"
 
-      # Confidential client credentials for the authorization-code exchange with Authentik.
+      # Token exchange: swap caller's token for a sandbox-scoped one via the
+      # proxy provider. The exchanged token carries only kubectl-sandbox-users
+      # group, regardless of the caller's actual permissions.
+      cluster_auth_mode = "passthrough"
+      cluster_provider_strategy = "in-cluster"
+      token_exchange_strategy = "rfc8693"
       sts_client_id     = "${authentik_provider_oauth2.kubectl_sandbox_mcp.client_id}"
       sts_client_secret = "${authentik_provider_oauth2.kubectl_sandbox_mcp.client_secret}"
+      sts_audience      = "${authentik_provider_proxy.kubectl_sandbox_mcp.client_id}"
 
-      # passthrough: forward the caller's JWT directly to kube-apiserver. No token
-      # exchange needed because kube-apiserver is configured to accept this audience.
-      cluster_auth_mode = "passthrough"
-
-      # Use in-cluster service account discovery for the kube-apiserver endpoint.
-      cluster_provider_strategy = "in-cluster"
-
-      # Public base URL of this MCP server (for well-known OAuth metadata).
       server_url = "https://kubectl-sandbox-mcp.allegedly.works"
-
-      # HTTP port
       port = "8080"
     EOT
   }

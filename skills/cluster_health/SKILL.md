@@ -9,7 +9,7 @@ allowed-tools: Bash, Read, Grep, Glob, Agent
 Comprehensive cluster health scan. Collect results from all checks, then produce a
 single structured report with an actionable fix plan.
 
-Use the `claude-sandbox-kubectl` MCP server tools for all read queries — the SA has a
+Use the `kubectl-local` MCP server tools for all read queries — the SA has a
 `cluster-diagnostics-reader` ClusterRole with cluster-wide read access to nodes, pods,
 deployments, Flux kustomizations, HelmReleases, cert-manager, CNPG, metrics, Longhorn,
 Gateway API, Kyverno, and more (see

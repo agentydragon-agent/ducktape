@@ -2,7 +2,7 @@
 
 Standalone repo-specific script (not part of the generic hook daemon).
 Invoked as a profile background command during SessionStart and by the
-claude-sandbox-kubectl MCP server script.
+kubectl-local MCP server script.
 
 Usage:
     python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" \\
