@@ -17,7 +17,7 @@
     ../modules/talosconfig.nix
   ];
 
-  ducktape.githubSsh.sopsFile = ../../../secrets/home/iguana/github-ssh.yaml;
+  ducktape.githubSsh.sopsFile = ../../../ssh_keys/iguana-github.sops.key;
 
   home.stateVersion = "24.11";
 }

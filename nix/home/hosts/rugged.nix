@@ -15,14 +15,14 @@
     ../modules/talosconfig.nix
   ];
 
-  ducktape.githubSsh.sopsFile = ../../../secrets/home/rugged/github-ssh.yaml;
+  ducktape.githubSsh.sopsFile = ../../../ssh_keys/rugged-github.sops.key;
 
   ducktape.attic = {
     enable = true;
     sopsFile = ../../../secrets/home/rugged/attic.yaml;
   };
 
-  # SSH keys for wyrm and vps, decrypted from SOPS at activation time.
+  # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
   sops.secrets = builtins.listToAttrs (
     map
       (
@@ -34,8 +34,8 @@
         {
           inherit name;
           value = {
-            sopsFile = ../../../secrets/home/rugged/${sopsFile};
-            key = "ssh_private_key";
+            sopsFile = ../../../ssh_keys/${sopsFile};
+            format = "binary";
             path = "${config.home.homeDirectory}/.ssh/${filename}";
             mode = "0600";
           };
@@ -44,17 +44,17 @@
       [
         {
           name = "wyrm_ssh_key";
-          sopsFile = "wyrm-ssh.yaml";
+          sopsFile = "rugged-wyrm.sops.key";
           filename = "wyrm_agentydragon_user_id_ed25519";
         }
         {
           name = "vps_root_ssh_key";
-          sopsFile = "vps-root-ssh.yaml";
+          sopsFile = "rugged-vps-root.sops.key";
           filename = "vps_root_id_ed25519";
         }
         {
           name = "vps_user_ssh_key";
-          sopsFile = "vps-user-ssh.yaml";
+          sopsFile = "rugged-vps-user.sops.key";
           filename = "vps_agentydragon_user_id_ed25519";
         }
       ]

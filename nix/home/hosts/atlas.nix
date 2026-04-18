@@ -20,7 +20,7 @@ in
     ../modules/talosconfig.nix
   ];
 
-  ducktape.githubSsh.sopsFile = ../../../secrets/home/atlas/github-ssh.yaml;
+  ducktape.githubSsh.sopsFile = ../../../ssh_keys/atlas-github.sops.key;
 
   # Atlas runs on Proxmox VE (Debian-based), not NixOS.
   # User authorized keys managed here (root keys in ansible/atlas.yaml).

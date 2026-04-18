@@ -11,13 +11,13 @@ in
 {
   options.ducktape.githubSsh.sopsFile = lib.mkOption {
     type = lib.types.path;
-    description = "Path to the SOPS-encrypted YAML file containing the GitHub SSH key.";
+    description = "Path to the SOPS binary-encrypted GitHub SSH private key.";
   };
 
   config = {
     sops.secrets.github_ssh_key = {
       inherit (cfg) sopsFile;
-      key = "ssh_private_key";
+      format = "binary";
       path = "${config.home.homeDirectory}/.ssh/agentydragon_github_id_ed25519";
       mode = "0600";
     };
