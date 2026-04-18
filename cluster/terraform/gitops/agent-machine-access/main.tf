@@ -378,7 +378,7 @@ moved {
 # token for one scoped to kubectl-sandbox-users group. Even if the caller is
 # a cluster admin, the exchanged token only carries sandbox-level permissions.
 
-resource "authentik_provider_oauth2" "kubectl_sandbox_mcp" {
+resource "authentik_provider_oauth2" "kubectl_sandbox_scoped" {
   name               = "kubectl-sandbox-mcp"
   client_id          = "kubectl-sandbox-mcp"
   client_type        = "confidential"
@@ -406,7 +406,7 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_mcp" {
 # Proxy provider used as the token exchange target. The exchanged token
 # carries only the scoped claims from this provider (kubectl-sandbox-users
 # group), regardless of the caller's actual groups/permissions.
-resource "authentik_provider_proxy" "kubectl_sandbox_mcp" {
+resource "authentik_provider_proxy" "kubectl_sandbox_scoped" {
   name                  = "kubectl-sandbox-mcp-proxy"
   external_host         = "https://kubectl-sandbox-mcp.allegedly.works"
   internal_host         = "http://localhost"
@@ -417,24 +417,24 @@ resource "authentik_provider_proxy" "kubectl_sandbox_mcp" {
   access_token_validity = "hours=1"
 
   # Allow the OAuth2 provider's tokens to be exchanged for proxy-scoped ones.
-  jwt_federation_providers = [authentik_provider_oauth2.kubectl_sandbox_mcp.id]
+  jwt_federation_providers = [authentik_provider_oauth2.kubectl_sandbox_scoped.id]
 }
 
-resource "authentik_application" "kubectl_sandbox_mcp" {
+resource "authentik_application" "kubectl_sandbox_scoped" {
   name              = "kubectl-sandbox-mcp"
   slug              = "kubectl-sandbox-mcp"
-  protocol_provider = authentik_provider_oauth2.kubectl_sandbox_mcp.id
+  protocol_provider = authentik_provider_oauth2.kubectl_sandbox_scoped.id
   meta_description  = "Sandbox kubectl MCP — token exchange scopes to sandbox permissions"
   meta_launch_url   = "https://kubectl-sandbox-mcp.allegedly.works"
 }
 
-resource "authentik_policy_binding" "kubectl_sandbox_mcp_users" {
-  target = authentik_application.kubectl_sandbox_mcp.uuid
+resource "authentik_policy_binding" "kubectl_sandbox_scoped_users" {
+  target = authentik_application.kubectl_sandbox_scoped.uuid
   group  = authentik_group.kubectl_sandbox_users.id
   order  = 0
 }
 
-resource "kubernetes_secret" "kubectl_sandbox_mcp" {
+resource "kubernetes_secret" "kubectl_sandbox_scoped" {
   metadata {
     name      = "kubectl-sandbox-mcp"
     namespace = "kubectl-sandbox-mcp"
@@ -452,9 +452,9 @@ resource "kubernetes_secret" "kubectl_sandbox_mcp" {
       cluster_auth_mode = "passthrough"
       cluster_provider_strategy = "in-cluster"
       token_exchange_strategy = "rfc8693"
-      sts_client_id     = "${authentik_provider_oauth2.kubectl_sandbox_mcp.client_id}"
-      sts_client_secret = "${authentik_provider_oauth2.kubectl_sandbox_mcp.client_secret}"
-      sts_audience      = "${authentik_provider_proxy.kubectl_sandbox_mcp.client_id}"
+      sts_client_id     = "${authentik_provider_oauth2.kubectl_sandbox_scoped.client_id}"
+      sts_client_secret = "${authentik_provider_oauth2.kubectl_sandbox_scoped.client_secret}"
+      sts_audience      = "${authentik_provider_proxy.kubectl_sandbox_scoped.client_id}"
 
       server_url = "https://kubectl-sandbox-mcp.allegedly.works"
       port = "8080"
