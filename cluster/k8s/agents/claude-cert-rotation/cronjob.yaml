@@ -28,7 +28,7 @@ spec:
           containers:
             - name: rotate
               image: ghcr.io/agentydragon/claude-cert-rotation:devel-20260418091844-62f358f # {"$imagepolicy": "flux-system:claude-cert-rotation"}
-              command: ["/bin/bash", "/scripts/rotate.sh"]
+              command: ["/usr/bin/bash", "/scripts/rotate.sh"]
               env:
                 - name: GIT_SSL_CAPATH
                   value: /usr/share/ca-certificates/mozilla

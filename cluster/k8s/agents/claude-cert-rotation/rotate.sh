@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 set -euo pipefail
 
 CSR_NAME="claude-code-web-$(date +%s)"

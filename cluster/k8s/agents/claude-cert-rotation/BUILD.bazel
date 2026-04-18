@@ -18,7 +18,7 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = ["/bin/bash"],
+    entrypoint = ["/usr/bin/bash"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         "@trixie_cert_rotation//:flat",
