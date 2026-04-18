@@ -354,6 +354,13 @@
         - hybrid-sleep.target
       tags: [power_management, vfio]
 
+    - name: Ensure logind.conf.d directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/logind.conf.d
+        state: directory
+        mode: "0755"
+      tags: [power_management, vfio]
+
     - name: Disable logind idle/lid suspend actions
       ansible.builtin.copy:
         dest: /etc/systemd/logind.conf.d/no-suspend.conf
