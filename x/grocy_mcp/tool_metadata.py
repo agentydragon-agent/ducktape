@@ -62,8 +62,15 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # Stripped from the OpenAPI spec by fix_openapi_spec.py.
     ("POST", "/stock/products/{productId}/transfer"): _disabled("transfer_product_stock"),
     ("POST", "/stock/products/{productId}/open"): _enabled("open_product_stock"),
-    ("GET", "/stock/products/{productId}/entries"): _enabled("list_product_stock_entries"),
-    ("GET", "/stock/products/{productId}/locations"): _enabled("list_product_locations"),
+    # TODO(grocy-mcp): re-enable as a manual batch_tools implementation; the
+    # OpenAPI-generated tool carries a `query[]` property name that Anthropic
+    # rejects, and get_stock_entries(products=[...]) already covers the
+    # common case for this route.
+    ("GET", "/stock/products/{productId}/entries"): _disabled("list_product_stock_entries"),
+    # TODO(grocy-mcp): re-enable as a manual implementation if needed.
+    # Same `query[]` issue; the OpenAPI surface can't be wired through
+    # Anthropic until someone writes a hand-rolled version.
+    ("GET", "/stock/products/{productId}/locations"): _disabled("list_product_locations"),
     ("GET", "/stock/products/{productId}/price-history"): _disabled("get_product_price_history"),
     ("GET", "/stock/products/{productId}/printlabel"): _disabled("print_product_label"),
     # ── Product stock operations (by barcode) ────────────────────────
@@ -76,7 +83,10 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # ── Product merge ────────────────────────────────────────────────
     ("POST", "/stock/products/{productIdToKeep}/merge/{productIdToRemove}"): _enabled("merge_products"),
     # ── Location stock ───────────────────────────────────────────────
-    ("GET", "/stock/locations/{locationId}/entries"): _enabled("list_location_stock"),
+    # Disabled: get_stock(locations=[...]) in batch_tools already covers
+    # filtered-by-location stock listing, and the OpenAPI surface here
+    # carries the Anthropic-incompatible `query[]` property.
+    ("GET", "/stock/locations/{locationId}/entries"): _disabled("list_location_stock"),
     # ── Shopping list ────────────────────────────────────────────────
     # Shopping list bulk helpers — disabled for now (low usage, custom tools cover the core).
     ("POST", "/stock/shoppinglist/add-missing-products"): _disabled("shopping_list_add_missing"),
@@ -129,7 +139,10 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("PUT", "/files/{group}/{fileName}"): _enabled("upload_file"),
     ("DELETE", "/files/{group}/{fileName}"): _disabled("delete_file"),
     # ── Users ────────────────────────────────────────────────────────
-    ("GET", "/users"): _enabled("list_users"),
+    # TODO(grocy-mcp): re-enable as a manual implementation if an eval
+    # actually needs the Grocy user list. Same `query[]` Anthropic-
+    # incompatibility as the other list_* endpoints on this spec.
+    ("GET", "/users"): _disabled("list_users"),
     ("POST", "/users"): _disabled("create_user"),
     ("PUT", "/users/{userId}"): _disabled("update_user"),
     ("DELETE", "/users/{userId}"): _disabled("delete_user"),

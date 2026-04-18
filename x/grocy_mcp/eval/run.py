@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 import uvicorn
-from agent_framework import Agent, AgentSession, MCPStreamableHTTPTool, Message
+from agent_framework import Agent, AgentSession, InMemoryHistoryProvider, MCPStreamableHTTPTool, Message
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.openai import OpenAIChatCompletionClient
 
@@ -89,12 +89,23 @@ async def run_grocy_eval(
     summary_path = output_dir / f"grocy_eval_{ts}_summary.json"
 
     model_client = _build_model_client(api=api, model=model, base_url=base_url)
+    # agent_framework scopes each provider's state under its `source_id` —
+    # `InMemoryHistoryProvider.DEFAULT_SOURCE_ID = "in_memory"` — so we
+    # retrieve the full transcript via the provider's own `get_messages`
+    # rather than poking at `session.state` directly.
+    history = InMemoryHistoryProvider()
     session = AgentSession()
 
     async with _serve_mcp(grocy_base_url) as mcp_url:
         mcp_tool = MCPStreamableHTTPTool(name="grocy", url=mcp_url)
         async with mcp_tool:
-            agent = Agent(client=model_client, name="grocy-eval", instructions=SYSTEM_PROMPT, tools=[mcp_tool])
+            agent = Agent(
+                client=model_client,
+                name="grocy-eval",
+                instructions=SYSTEM_PROMPT,
+                tools=[mcp_tool],
+                context_providers=[history],
+            )
 
             logger.info("Phase 1: Task execution (model=%s, api=%s)", model, api)
             task_response = await agent.run(TASK_PROMPT, session=session)
@@ -105,7 +116,7 @@ async def run_grocy_eval(
             postmortem_text = postmortem_response.text or ""
             logger.info("Postmortem: %s", postmortem_text[:500])
 
-    all_messages: list[Message] = list(session.state.get("messages", []))
+    all_messages = await history.get_messages(session.session_id, state=session.state.get(history.source_id))
     _write_messages_jsonl(all_messages, transcript_path)
     logger.info("Transcript: %d messages written to %s", len(all_messages), transcript_path)
 
