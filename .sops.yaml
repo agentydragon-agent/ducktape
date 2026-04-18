@@ -180,16 +180,6 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # Claude web K8s token (auto-rotated by in-cluster CronJob) — legacy, remove after migration
-  - path_regex: secrets/claude-web-k8s-token\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *claude-web
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
   # Claude web K8s client certificate (auto-rotated by in-cluster CronJob)
   - path_regex: secrets/claude-web-k8s-cert\.yaml$
     key_groups:

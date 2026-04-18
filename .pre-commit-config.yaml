@@ -265,7 +265,6 @@ repos:
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml|
             # APT manifests for Bazel rules_distroless, not K8s manifests
-            cluster/k8s/agents/claude-token-rotation/bookworm_token_rotation\.yaml|
             cluster/k8s/agents/claude-cert-rotation/trixie_cert_rotation\.yaml|
             # Authelia app config files, not K8s manifests
             cluster/k8s/authelia/app/configuration\.yml|

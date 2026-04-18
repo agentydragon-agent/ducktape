@@ -1,8 +1,8 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: claude-token-rotation
+  name: claude-cert-rotation
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/claude-token-rotation
+  image: ghcr.io/agentydragon/claude-cert-rotation
   interval: 5m

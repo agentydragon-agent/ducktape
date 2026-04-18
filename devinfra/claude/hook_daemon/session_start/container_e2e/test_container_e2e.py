@@ -58,7 +58,6 @@ _TEST_SECRET_FILES = [
     "github-pat-agentydragon-agent.yaml",
     "github-ci-read-pat.yaml",
     "claude-web-k8s-cert.yaml",
-    "claude-web-k8s-token.yaml",
 ]
 
 _E2E = OciImage(

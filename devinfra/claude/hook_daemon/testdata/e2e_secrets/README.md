@@ -13,7 +13,6 @@ test profile itself lives next to the test as `test_profile.yaml`.
 | `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                     |
 | `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                                 |
 | `claude-web-k8s-cert.yaml`           | Encrypted `client_cert`/`client_key` — mounted at `/project/secrets/claude-web-k8s-cert.yaml`, consumed by the daemon's kubeconfig writer. |
-| `claude-web-k8s-token.yaml`          | Legacy (kept for reference). Encrypted `k8s_token: test-fake-k8s-token`.                                                                   |
 
 ## Why Fake Encrypted Files?
 
