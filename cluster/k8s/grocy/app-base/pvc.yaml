@@ -8,4 +8,4 @@ spec:
   storageClassName: lvm-proxmox-hdd
   resources:
     requests:
-      storage: 5Gi
+      storage: 1Gi

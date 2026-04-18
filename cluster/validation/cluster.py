@@ -18,7 +18,7 @@ _K8S_SUBPATH = Path("cluster/k8s")
 _EXCLUDED_FILES = {
     # rules_distroless APT manifests for CronJob images
     "agents/claude-token-rotation/bookworm_token_rotation.yaml",
-    "agents/claude-cert-rotation/bookworm_cert_rotation.yaml",
+    "agents/claude-cert-rotation/trixie_cert_rotation.yaml",
 }
 
 

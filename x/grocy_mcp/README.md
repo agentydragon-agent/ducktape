@@ -14,8 +14,13 @@ token that Grocy's `ReverseProxyAuthMiddleware` accepts.
 
 ## Architecture
 
+There are now two households, each with its own MCP server and Grocy instance:
+
+- `grocy-mcp-sf.allegedly.works` → `grocy-sf.allegedly.works`
+- `grocy-mcp-vallejo.allegedly.works` → `grocy-vallejo.allegedly.works`
+
 ```
-claude.ai ──OAuth (MCP spec)──▶ https://grocy-mcp.allegedly.works/mcp
+claude.ai ──OAuth (MCP spec)──▶ https://grocy-mcp-{sf,vallejo}.allegedly.works/mcp
                                  (FastMCP + OIDCProxy, direct uvicorn)
                                       │
                                       │ generated tool call
@@ -30,12 +35,12 @@ claude.ai ──OAuth (MCP spec)──▶ https://grocy-mcp.allegedly.works/mcp
                                       │            scope=openid email profile ak_proxy
                                       │       3. request.headers["Authorization"] = f"Bearer {new JWT}"
                                       ▼
-                              https://grocy.allegedly.works/api/...
+                              https://grocy-{sf,vallejo}.allegedly.works/api/...
                                       │
                               Authentik embedded proxy outpost
                               (introspects token, injects X-Authentik-{Username,Email,...})
                                       ▼
-                              http://grocy.grocy.svc.cluster.local:80/api/...
+                              http://grocy.grocy-{sf,vallejo}.svc.cluster.local:80/api/...
 ```
 
 The MCP server itself is **not** behind the outpost — claude.ai drives
@@ -112,10 +117,9 @@ request-scoped contextvars via `get_access_token()`. See
     wraps.
   - `jwt_federation_providers` on the existing Grocy proxy provider,
     pointing at the OAuth2 provider above.
-  - `kubernetes_secret "grocy-mcp-oidc"` in the `grocy-mcp-oidc`
-    namespace, carrying `client_id`, `client_secret`, and
-    `grocy_proxy_client_id`.
-- **K8s manifests** live at <../../cluster/k8s/agents/grocy-mcp-oidc/>
+  - Kubernetes secrets in the `grocy-sf` / `grocy-vallejo` namespaces,
+    carrying `client_id`, `client_secret`, and `grocy_proxy_client_id`.
+- **K8s manifests** live at <../../cluster/k8s/grocy/{sf,vallejo}/mcp/>
   and follow the POC's three-layer pattern (namespace / TF / app) minus
   the `tf/` layer since TF is shared with `agent-machine-access`.
 
@@ -141,15 +145,15 @@ bbr test //x/grocy_mcp:test_server
 ## End-to-end verification
 
 Same shape as <../authentik_mcp_poc/README.md>'s "Verification in the
-cluster" section. After Flux reconciles `grocy-mcp-oidc-namespace` →
-`agent-machine-access-tf` → `grocy-mcp-oidc`:
+cluster" section. After Flux reconciles the per-household grocy namespace →
+`agent-machine-access-tf` → grocy MCP app:
 
 ```bash
-curl -i https://grocy-mcp.allegedly.works/mcp
+curl -i https://grocy-mcp-sf.allegedly.works/mcp
 # HTTP/2 401 Unauthorized
 # WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"
 
-claude mcp add --transport http grocy-mcp https://grocy-mcp.allegedly.works/mcp
+claude mcp add --transport http grocy-mcp-sf https://grocy-mcp-sf.allegedly.works/mcp
 # Browser → Authentik consent → connected.
 
 # In /mcp → grocy-mcp, call one of the auto-generated tools, e.g. the
