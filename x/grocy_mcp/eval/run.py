@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import socket
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -18,6 +17,7 @@ from agent_framework import Agent, AgentSession, MCPStreamableHTTPTool, Message
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.openai import OpenAIChatCompletionClient
 
+from util.net import pick_free_port
 from x.grocy_mcp.config import ServerSettings
 from x.grocy_mcp.eval.prompts import POSTMORTEM_PROMPT, SYSTEM_PROMPT, TASK_PROMPT
 from x.grocy_mcp.eval.result_types import EvalResult
@@ -39,17 +39,10 @@ def _build_model_client(*, api: str, model: str, base_url: str | None = None) ->
     raise ValueError(f"Unsupported API: {api!r}")
 
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        port: int = s.getsockname()[1]
-        return port
-
-
 @asynccontextmanager
 async def _serve_mcp(grocy_base_url: str) -> AsyncGenerator[str]:
     """Serve the Grocy MCP server on a local port and yield its URL."""
-    port = _find_free_port()
+    port = pick_free_port()
     http_client = httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
     mcp = build_mcp(ServerSettings(grocy_url=grocy_base_url), client=http_client)
     app = mcp.http_app(path="/mcp")
