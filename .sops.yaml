@@ -150,6 +150,7 @@ creation_rules:
           - *admin
           - *wyrm2-agentydragon
           - *rugged-agentydragon
+          - *atlas-agentydragon
           - *iguana-agentydragon
   # --- All-user secrets (admin + all user SSH keys) ---
   # cluster-secrets-age: Flux SOPS decryption key (TODO: consider narrowing to admin-only)
