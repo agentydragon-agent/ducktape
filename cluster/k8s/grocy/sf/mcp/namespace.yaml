@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grocy-mcp-sf
+  labels:
+    name: grocy-mcp-sf
+    goldilocks.fairwinds.com/enabled: "false"

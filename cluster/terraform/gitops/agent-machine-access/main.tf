@@ -106,144 +106,40 @@ resource "kubernetes_secret" "agent_bearer_token" {
   }
 }
 
-# --- Grocy (proxy provider + machine auth via M2M app password) ---
-# Replaces the grocy-sso.yaml blueprint. TF is the sole manager.
-# Humans authenticate via browser session through the proxy outpost.
-# Agents authenticate via Authentik M2M: POST to /application/o/token/
-# with grant_type=client_credentials, client_id, username, password
-# (app_password) → JWT → Bearer token against grocy.allegedly.works.
-# The proxy outpost only accepts JWTs from its own provider.
+# --- Grocy SF household (proxy provider + MCP OAuth2) ---
 
-resource "authentik_provider_proxy" "grocy" {
-  name                  = "grocy"
-  external_host         = "https://grocy.allegedly.works"
-  internal_host         = "http://grocy.grocy.svc.cluster.local:80"
+resource "authentik_provider_proxy" "grocy_sf" {
+  name                  = "grocy-sf"
+  external_host         = "https://grocy-sf.allegedly.works"
+  internal_host         = "http://grocy.grocy-sf.svc.cluster.local:80"
   mode                  = "proxy"
   authentication_flow   = data.authentik_flow.authentication.id
   authorization_flow    = data.authentik_flow.implicit_consent.id
   invalidation_flow     = data.authentik_flow.invalidation.id
   access_token_validity = "hours=24"
 
-  # Lets the grocy-mcp server's tool handlers mint Grocy-scoped JWTs on
-  # behalf of the calling MCP user, via the RFC 7521 jwt-bearer client-
-  # credentials path. See x/authentik_mcp_poc/NOTES.md §4-§5 for the full
-  # trace through Authentik's __validate_jwt_from_provider.
-  jwt_federation_providers = [authentik_provider_oauth2.grocy_mcp.id]
+  jwt_federation_providers = [authentik_provider_oauth2.grocy_mcp_sf.id]
 }
 
-resource "authentik_application" "grocy" {
-  name              = "Grocy"
-  slug              = "grocy"
-  protocol_provider = authentik_provider_proxy.grocy.id
-  meta_description  = "Groceries & household management"
+resource "authentik_application" "grocy_sf" {
+  name              = "Grocy SF"
+  slug              = "grocy-sf"
+  protocol_provider = authentik_provider_proxy.grocy_sf.id
+  meta_description  = "Groceries & household management (SF)"
   meta_icon         = "https://cdn.simpleicons.org/grocy"
-  meta_launch_url   = "https://grocy.allegedly.works"
+  meta_launch_url   = "https://grocy-sf.allegedly.works"
   open_in_new_tab   = true
 }
 
-# Human access: admins group.
-resource "authentik_policy_binding" "grocy_admins" {
-  target = authentik_application.grocy.uuid
+resource "authentik_policy_binding" "grocy_sf_admins" {
+  target = authentik_application.grocy_sf.uuid
   group  = data.authentik_group.admins.id
   order  = 0
 }
 
-# Machine access: service account for agent M2M auth via app password.
-resource "authentik_user" "grocy_machine_sa" {
-  username = "grocy-machine"
-  name     = "Grocy Machine Agent"
-  type     = "service_account"
-  path     = "goauthentik.io/service-accounts"
-}
-
-resource "authentik_token" "grocy_machine_app_password" {
-  identifier   = "grocy-machine-app-password"
-  user         = authentik_user.grocy_machine_sa.id
-  intent       = "app_password"
-  expiring     = true
-  retrieve_key = true
-  description  = "App password for Grocy machine auth (M2M via proxy provider)"
-}
-
-resource "authentik_policy_binding" "grocy_machine_sa" {
-  target = authentik_application.grocy.uuid
-  user   = authentik_user.grocy_machine_sa.id
-  order  = 10
-}
-
-# K8s secret with M2M credentials for agents to authenticate to Grocy.
-#
-# Authentik's M2M flow for proxy providers authenticates with a service-account
-# user's username + app_password. Envoy's envoy.filters.http.credential_injector
-# filter only speaks the standard OAuth2 client_credentials shape
-# (client_id + client_secret), so we encode the credential as
-# client_secret_b64 = base64("<username>:<app_password>") — Authentik accepts
-# this as an equivalent form. The grocy-mcp Envoy sidecar consumes these two
-# fields directly via secretKeyRef.
-resource "kubernetes_secret" "grocy_machine_credentials" {
-  metadata {
-    name      = "grocy-machine-credentials"
-    namespace = "claude-sandbox"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "openclaw-sandbox,grocy-mcp"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "openclaw-sandbox,grocy-mcp"
-    }
-  }
-
-  data = {
-    client_id         = authentik_provider_proxy.grocy.client_id
-    client_secret_b64 = base64encode("${authentik_user.grocy_machine_sa.username}:${authentik_token.grocy_machine_app_password.key}")
-  }
-}
-
-# Flux postBuild.substituteFrom variables for the grocy-mcp Kustomization's
-# Envoy sidecar config. Flux resolves substituteFrom references in the same
-# namespace as the Kustomization itself, which lives in flux-system — so the
-# substitution source has to live there too.
-#
-# Only client_id needs build-time substitution: it's a plain string field
-# in Envoy's OAuth2 filter config and has no DataSource variant. client_id
-# isn't sensitive (it's a public OAuth client identifier), so a plain
-# ConfigMap is appropriate — same pattern as cert-manager-issuer-config.
-#
-# The actual secret (client_secret_b64) is read by Envoy at startup from
-# an env var populated via secretKeyRef on the Envoy container
-# (DataSource.environment_variable), so it never passes through flux-system
-# or the rendered bootstrap file.
-#
-# Keys are upper-case because Flux substituteFrom substitutes by raw key
-# name into `${KEY}` placeholders in the built manifests.
-resource "kubernetes_config_map" "grocy_envoy_vars" {
-  metadata {
-    name      = "grocy-envoy-vars"
-    namespace = "flux-system"
-  }
-
-  data = {
-    CLIENT_ID = authentik_provider_proxy.grocy.client_id
-  }
-}
-
-# --- Grocy MCP: OAuth2 provider for user-login (OIDCProxy upstream) ---
-#
-# Wiring for x/grocy_mcp — an auth-aware MCP server that drives Grocy's
-# REST API on behalf of the calling user. The server uses FastMCP's
-# OIDCProxy, which requires a dedicated confidential OAuth2 client so
-# claude.ai / Claude Code can drive OAuth 2.1 + PKCE + RFC 7591 DCR
-# against it. The existing `grocy` proxy provider above cannot be reused
-# for this (its OAuth2 client is locked to the outpost's internal
-# callback URL). The new provider is then listed in the proxy provider's
-# `jwt_federation_providers` so the tool handlers can exchange the
-# caller's upstream token for a Grocy-scoped one via the RFC 7521
-# jwt-bearer client-credentials path — see
-# <x/authentik_mcp_poc/NOTES.md> §4-§6 for why each piece is
-# load-bearing.
-
-resource "authentik_provider_oauth2" "grocy_mcp" {
-  name               = "grocy-mcp"
-  client_id          = "grocy-mcp"
+resource "authentik_provider_oauth2" "grocy_mcp_sf" {
+  name               = "grocy-mcp-sf"
+  client_id          = "grocy-mcp-sf"
   client_type        = "confidential"
   authorization_flow = data.authentik_flow.implicit_consent.id
   invalidation_flow  = data.authentik_flow.invalidation.id
@@ -261,45 +157,118 @@ resource "authentik_provider_oauth2" "grocy_mcp" {
   allowed_redirect_uris = [
     {
       matching_mode = "strict"
-      # OIDCProxy's redirect path defaults to "/auth/callback" relative
-      # to its `base_url`. x/grocy_mcp/server.py sets base_url to the
-      # bare public URL (no /mcp) — see the `_build_auth` comment for
-      # why.
-      url = "https://grocy-mcp.allegedly.works/auth/callback"
+      url           = "https://grocy-mcp-sf.allegedly.works/auth/callback"
     },
   ]
 }
 
-resource "authentik_application" "grocy_mcp" {
-  name              = "Grocy MCP"
-  slug              = "grocy-mcp"
-  protocol_provider = authentik_provider_oauth2.grocy_mcp.id
-  meta_description  = "Auth-aware MCP server for Grocy — OIDCProxy upstream for user login"
-  meta_launch_url   = "https://grocy-mcp.allegedly.works"
+resource "authentik_application" "grocy_mcp_sf" {
+  name              = "Grocy MCP SF"
+  slug              = "grocy-mcp-sf"
+  protocol_provider = authentik_provider_oauth2.grocy_mcp_sf.id
+  meta_description  = "Auth-aware MCP server for Grocy SF household"
+  meta_launch_url   = "https://grocy-mcp-sf.allegedly.works"
 }
 
-resource "authentik_policy_binding" "grocy_mcp_admins" {
-  target = authentik_application.grocy_mcp.uuid
+resource "authentik_policy_binding" "grocy_mcp_sf_admins" {
+  target = authentik_application.grocy_mcp_sf.uuid
   group  = data.authentik_group.admins.id
   order  = 0
 }
 
-# K8s secret with OIDC client credentials and the grocy proxy provider's
-# auto-generated client_id that the server uses as the `client_id` in its
-# RFC 7521 jwt-bearer token exchange. Namespace ownership: the
-# `grocy-mcp-oidc-namespace` Flux Kustomization creates the namespace
-# first; `agent-machine-access-tf` depends on it so TF runs after the
-# namespace exists.
-resource "kubernetes_secret" "grocy_mcp_oidc" {
+resource "kubernetes_secret" "grocy_mcp_oidc_sf" {
   metadata {
-    name      = "grocy-mcp-oidc"
-    namespace = "grocy-mcp-oidc"
+    name      = "grocy-mcp-oidc-sf"
+    namespace = "grocy-mcp-sf"
   }
 
   data = {
-    client_id             = authentik_provider_oauth2.grocy_mcp.client_id
-    client_secret         = authentik_provider_oauth2.grocy_mcp.client_secret
-    grocy_proxy_client_id = authentik_provider_proxy.grocy.client_id
+    client_id             = authentik_provider_oauth2.grocy_mcp_sf.client_id
+    client_secret         = authentik_provider_oauth2.grocy_mcp_sf.client_secret
+    grocy_proxy_client_id = authentik_provider_proxy.grocy_sf.client_id
+  }
+}
+
+# --- Grocy Vallejo household (proxy provider + MCP OAuth2) ---
+
+resource "authentik_provider_proxy" "grocy_vallejo" {
+  name                  = "grocy-vallejo"
+  external_host         = "https://grocy-vallejo.allegedly.works"
+  internal_host         = "http://grocy.grocy-vallejo.svc.cluster.local:80"
+  mode                  = "proxy"
+  authentication_flow   = data.authentik_flow.authentication.id
+  authorization_flow    = data.authentik_flow.implicit_consent.id
+  invalidation_flow     = data.authentik_flow.invalidation.id
+  access_token_validity = "hours=24"
+
+  jwt_federation_providers = [authentik_provider_oauth2.grocy_mcp_vallejo.id]
+}
+
+resource "authentik_application" "grocy_vallejo" {
+  name              = "Grocy Vallejo"
+  slug              = "grocy-vallejo"
+  protocol_provider = authentik_provider_proxy.grocy_vallejo.id
+  meta_description  = "Groceries & household management (Vallejo)"
+  meta_icon         = "https://cdn.simpleicons.org/grocy"
+  meta_launch_url   = "https://grocy-vallejo.allegedly.works"
+  open_in_new_tab   = true
+}
+
+resource "authentik_policy_binding" "grocy_vallejo_admins" {
+  target = authentik_application.grocy_vallejo.uuid
+  group  = data.authentik_group.admins.id
+  order  = 0
+}
+
+resource "authentik_provider_oauth2" "grocy_mcp_vallejo" {
+  name               = "grocy-mcp-vallejo"
+  client_id          = "grocy-mcp-vallejo"
+  client_type        = "confidential"
+  authorization_flow = data.authentik_flow.implicit_consent.id
+  invalidation_flow  = data.authentik_flow.invalidation.id
+  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+  issuer_mode                = "per_provider"
+  include_claims_in_id_token = true
+
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+  ]
+
+  allowed_redirect_uris = [
+    {
+      matching_mode = "strict"
+      url           = "https://grocy-mcp-vallejo.allegedly.works/auth/callback"
+    },
+  ]
+}
+
+resource "authentik_application" "grocy_mcp_vallejo" {
+  name              = "Grocy MCP Vallejo"
+  slug              = "grocy-mcp-vallejo"
+  protocol_provider = authentik_provider_oauth2.grocy_mcp_vallejo.id
+  meta_description  = "Auth-aware MCP server for Grocy Vallejo household"
+  meta_launch_url   = "https://grocy-mcp-vallejo.allegedly.works"
+}
+
+resource "authentik_policy_binding" "grocy_mcp_vallejo_admins" {
+  target = authentik_application.grocy_mcp_vallejo.uuid
+  group  = data.authentik_group.admins.id
+  order  = 0
+}
+
+resource "kubernetes_secret" "grocy_mcp_oidc_vallejo" {
+  metadata {
+    name      = "grocy-mcp-oidc-vallejo"
+    namespace = "grocy-mcp-vallejo"
+  }
+
+  data = {
+    client_id             = authentik_provider_oauth2.grocy_mcp_vallejo.client_id
+    client_secret         = authentik_provider_oauth2.grocy_mcp_vallejo.client_secret
+    grocy_proxy_client_id = authentik_provider_proxy.grocy_vallejo.client_id
   }
 }
 

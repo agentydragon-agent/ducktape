@@ -51,9 +51,8 @@ resources:
   - agents/kagent/namespace/flux-kustomization.yaml
   - agents/kagent/secrets/flux-kustomization.yaml
   - agents/kagent/app/flux-kustomization.yaml
-  - agents/grocy-mcp/flux-kustomization.yaml
-  - agents/grocy-mcp-oidc/namespace/flux-kustomization.yaml
-  - agents/grocy-mcp-oidc/app/flux-kustomization.yaml
+  - grocy/sf/mcp/flux-kustomization.yaml
+  - grocy/vallejo/mcp/flux-kustomization.yaml
   - agents/kubectl-sandbox-mcp/namespace/flux-kustomization.yaml
   - agents/kubectl-sandbox-mcp/app/flux-kustomization.yaml
   - agents/homeassistant-proxy/flux-kustomization.yaml
@@ -229,7 +228,8 @@ resources:
   - activitywatch/flux-kustomization.yaml
 
   # --- grocy ---
-  - grocy/flux-kustomization.yaml
+  - grocy/sf/app/flux-kustomization.yaml
+  - grocy/vallejo/app/flux-kustomization.yaml
 
   # --- tandoor ---
   - tandoor/namespace/flux-kustomization.yaml

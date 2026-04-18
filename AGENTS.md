@@ -31,9 +31,10 @@ ServiceAccount and never triggers permission prompts.
 - **Cross-namespace read**: harbor, langfuse, ollama, openclaw, props, gatus,
   csi-proxmox, openebs, proxmox-proxy, cnpg-system, nvidia-device-plugin,
   node-feature-discovery, local-path-storage, cert-manager, litellm, docker-ci,
-  matrix, grocy,
+  matrix, grocy-sf, grocy-vallejo,
   logs/configmaps via namespaced rolebindings (monitoring, kube-system,
-  longhorn-system, flux-system, grocy-mcp, grocy-mcp-oidc, airlock, authentik).
+  longhorn-system, flux-system, grocy-mcp-sf, grocy-mcp-vallejo, grocy-sf,
+  grocy-vallejo, airlock, authentik).
 
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
 session kubeconfig (web) for operations needing higher privileges or other namespaces.

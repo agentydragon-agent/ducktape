@@ -4,7 +4,8 @@ resources:
   - hubble-httproute.yaml
   - openclaw-httproute.yaml
   - alloy-otlp-httproute.yaml
-  - grocy-httproute.yaml
+  - grocy-sf-httproute.yaml
+  - grocy-vallejo-httproute.yaml
   - filebrowser-httproute.yaml
   - openclaw-mitmproxy-httproute.yaml
   - proxmox-httproute.yaml

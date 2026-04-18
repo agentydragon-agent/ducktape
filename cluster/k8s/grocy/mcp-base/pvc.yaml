@@ -1,12 +1,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: grocy-config
-  namespace: grocy
+  name: grocy-mcp-fastmcp-state
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: lvm-proxmox-hdd
+  storageClassName: local-path-proxmox
   resources:
     requests:
-      storage: 5Gi
+      storage: 100Mi

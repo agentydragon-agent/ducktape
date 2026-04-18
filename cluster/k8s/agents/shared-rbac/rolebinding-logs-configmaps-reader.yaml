@@ -82,7 +82,27 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: agent-logs-configmaps-reader
-  namespace: grocy-mcp
+  namespace: grocy-mcp-sf
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: logs-configmaps-reader
+subjects:
+  - kind: ServiceAccount
+    name: claude-code-web
+    namespace: default
+  - kind: ServiceAccount
+    name: default
+    namespace: openclaw-sandbox
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-logs-configmaps-reader
+  namespace: grocy-mcp-vallejo
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -122,7 +142,27 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: agent-logs-configmaps-reader
-  namespace: grocy-mcp-oidc
+  namespace: grocy-sf
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: logs-configmaps-reader
+subjects:
+  - kind: ServiceAccount
+    name: claude-code-web
+    namespace: default
+  - kind: ServiceAccount
+    name: default
+    namespace: openclaw-sandbox
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-logs-configmaps-reader
+  namespace: grocy-vallejo
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

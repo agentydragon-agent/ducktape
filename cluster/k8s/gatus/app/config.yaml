@@ -207,9 +207,16 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
-  - name: Grocy
+  - name: Grocy SF
     group: services
-    url: http://grocy.grocy.svc.cluster.local:80/login
+    url: http://grocy.grocy-sf.svc.cluster.local:80/login
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Grocy Vallejo
+    group: services
+    url: http://grocy.grocy-vallejo.svc.cluster.local:80/login
     interval: 60s
     conditions:
       - "[STATUS] == 200"
