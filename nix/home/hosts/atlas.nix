@@ -27,6 +27,7 @@ in
   # home.file creates as 0444 which satisfies sshd (requires not group/world-writable).
   home.file.".ssh/authorized_keys".text = with keys; ''
     ${atlas}
+    ${wyrm2}
     ${rugged}
   '';
 
