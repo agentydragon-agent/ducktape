@@ -9,7 +9,6 @@ backends:
 public_base_url: "https://airlock.allegedly.works"
 oidc_issuer: "https://auth.allegedly.works/application/o/airlock/"
 oidc_client_id: "airlock-operator"
-db_path: "/data/airlock.db"
 predicate_path: "/etc/airlock/predicate.py"
 port: 8765
 default_wait_mode:

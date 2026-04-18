@@ -22,5 +22,5 @@ spec:
     - name: gateway
     - name: cert-manager-environment
     - name: monitoring-stack-secrets
-    - name: authentik-blueprint-grafana-secret
+    - name: sso-providers-tf
     - name: grafana-db
