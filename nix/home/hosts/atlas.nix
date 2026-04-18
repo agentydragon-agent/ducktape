@@ -22,16 +22,13 @@ in
 
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/atlas-github.sops.key;
 
-  # Atlas runs on Proxmox VE (Debian-based), not NixOS.
-  # User authorized keys managed here (root keys in ansible/atlas.yaml).
-  # mode = "0600" is required — sshd rejects authorized_keys that are group/world writable.
-  home.file.".ssh/authorized_keys" = {
-    text = with keys; ''
-      ${atlas}
-      ${rugged}
-    '';
-    mode = "0600";
-  };
+  # Atlas runs on Proxmox VE (Debian-based), not NixOS — no users.users.*.openssh module.
+  # home-manager has no authorized_keys option (nix-community/home-manager#4327).
+  # home.file creates as 0444 which satisfies sshd (requires not group/world-writable).
+  home.file.".ssh/authorized_keys".text = with keys; ''
+    ${atlas}
+    ${rugged}
+  '';
 
   # Atlas-specific configuration (Proxmox host with GUI)
   home.stateVersion = "24.05";
