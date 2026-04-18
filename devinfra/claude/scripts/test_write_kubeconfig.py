@@ -38,7 +38,7 @@ def test_build_kubeconfig_proxy_url() -> None:
         server="https://k8s.example.com",
         user="test-user",
         namespace="secrets-ns",
-        ca_path=None,
+        ca_data=None,
         proxy_url="http://localhost:18081",
     )
     assert kc["clusters"][0]["cluster"]["proxy-url"] == "http://localhost:18081"
@@ -51,25 +51,24 @@ def test_build_kubeconfig_no_proxy_url() -> None:
         server="https://k8s.example.com",
         user="test-user",
         namespace="secrets-ns",
-        ca_path=None,
+        ca_data=None,
         proxy_url=None,
     )
     assert "proxy-url" not in kc["clusters"][0]["cluster"]
 
 
-def test_build_kubeconfig_ca_data(tmp_path: Path) -> None:
-    ca_file = tmp_path / "ca.pem"
-    ca_file.write_text("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n")
+def test_build_kubeconfig_ca_data() -> None:
+    ca_pem = b"-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n"
     kc = write_kubeconfig.build_kubeconfig(
         client_cert=_FAKE_CERT,
         client_key=_FAKE_KEY,
         server="https://k8s.example.com",
         user="test-user",
         namespace="secrets-ns",
-        ca_path=ca_file,
+        ca_data=ca_pem,
         proxy_url=None,
     )
-    assert "certificate-authority-data" in kc["clusters"][0]["cluster"]
+    assert kc["clusters"][0]["cluster"]["certificate-authority-data"] == base64.b64encode(ca_pem).decode()
 
 
 def test_build_kubeconfig_client_cert_data() -> None:
@@ -79,7 +78,7 @@ def test_build_kubeconfig_client_cert_data() -> None:
         server="https://k8s.example.com",
         user="test-user",
         namespace="ns",
-        ca_path=None,
+        ca_data=None,
         proxy_url=None,
     )
     user_data = kc["users"][0]["user"]
@@ -138,9 +137,12 @@ def test_main_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     (project_dir / "secrets").mkdir(parents=True)
     (project_dir / "secrets" / "claude-web-k8s-cert.yaml").write_text("stub")
 
+    cluster_ca = "-----BEGIN CERTIFICATE-----\nFAKE-CLUSTER-CA\n-----END CERTIFICATE-----\n"
+    (project_dir / "secrets" / "k8s-ca.crt").write_text(cluster_ca)
+
     fake_system_ca = tmp_path / "system-ca.pem"
-    ca_pem = "-----BEGIN CERTIFICATE-----\nFAKE-CA-DATA\n-----END CERTIFICATE-----\n"
-    fake_system_ca.write_text(ca_pem)
+    system_ca = "-----BEGIN CERTIFICATE-----\nFAKE-SYSTEM-CA\n-----END CERTIFICATE-----\n"
+    fake_system_ca.write_text(system_ca)
     monkeypatch.setattr(write_kubeconfig, "_SYSTEM_CA_BUNDLE", fake_system_ca)
 
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
@@ -154,7 +156,9 @@ def test_main_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     cluster = kubeconfig["clusters"][0]["cluster"]
     assert cluster["server"] == "https://api.example.test:443"
     assert cluster["proxy-url"] == "http://egress.example.test:3128"
-    assert cluster["certificate-authority-data"] == base64.b64encode(ca_pem.encode()).decode()
+    # CA bundle combines cluster CA + system CA
+    combined_ca = cluster_ca.encode() + b"\n" + system_ca.encode()
+    assert cluster["certificate-authority-data"] == base64.b64encode(combined_ca).decode()
     user_data = kubeconfig["users"][0]["user"]
     assert base64.b64decode(user_data["client-certificate-data"]).decode() == _FAKE_CERT.strip()
     assert base64.b64decode(user_data["client-key-data"]).decode() == _FAKE_KEY.strip()

@@ -25,6 +25,7 @@ from pathlib import Path
 import yaml
 
 _K8S_CERT_SOPS_PATH = "secrets/claude-web-k8s-cert.yaml"
+_K8S_CA_PATH = "secrets/k8s-ca.crt"
 _SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 
 _DEFAULT_SERVER = "https://api.allegedly.works"
@@ -61,12 +62,12 @@ def build_kubeconfig(
     server: str,
     user: str,
     namespace: str,
-    ca_path: Path | None,
+    ca_data: bytes | None,
     proxy_url: str | None,
 ) -> dict:
     cluster_config: dict[str, str] = {"server": server}
-    if ca_path and ca_path.exists():
-        cluster_config["certificate-authority-data"] = base64.b64encode(ca_path.read_bytes()).decode()
+    if ca_data:
+        cluster_config["certificate-authority-data"] = base64.b64encode(ca_data).decode()
     if proxy_url:
         cluster_config["proxy-url"] = proxy_url
 
@@ -134,7 +135,19 @@ def main(argv: list[str] | None = None) -> None:
     project_dir = Path(project_dir_str)
 
     client_cert, client_key = decrypt_client_cert(project_dir)
-    ca_path = _SYSTEM_CA_BUNDLE if _SYSTEM_CA_BUNDLE.is_file() else None
+
+    # The API server cert is signed by the cluster CA (not publicly trusted).
+    # On Claude Code web, traffic goes through Anthropic's TLS-inspecting proxy
+    # whose CA is in the system bundle. Combine both so the chain validates in
+    # all environments.
+    ca_parts: list[bytes] = []
+    cluster_ca = project_dir / _K8S_CA_PATH
+    if cluster_ca.is_file():
+        ca_parts.append(cluster_ca.read_bytes())
+    if _SYSTEM_CA_BUNDLE.is_file():
+        ca_parts.append(_SYSTEM_CA_BUNDLE.read_bytes())
+    ca_data = b"\n".join(ca_parts) if ca_parts else None
+
     proxy_url = (
         os.environ.get("HTTPS_PROXY")
         or os.environ.get("https_proxy")
@@ -148,12 +161,18 @@ def main(argv: list[str] | None = None) -> None:
         server=args.server,
         user=args.user,
         namespace=args.namespace,
-        ca_path=ca_path,
+        ca_data=ca_data,
         proxy_url=proxy_url,
     )
     write_kubeconfig_file(kubeconfig, args.output_path)
+    ca_sources = []
+    if cluster_ca.is_file():
+        ca_sources.append("cluster")
+    if _SYSTEM_CA_BUNDLE.is_file():
+        ca_sources.append("system")
     print(
-        f"wrote {args.output_path} — server={args.server} ca={ca_path} proxy={'set' if proxy_url else 'unset'}",
+        f"wrote {args.output_path} — server={args.server} ca={'+'.join(ca_sources) or 'none'} "
+        f"proxy={'set' if proxy_url else 'unset'}",
         file=sys.stderr,
     )
 
