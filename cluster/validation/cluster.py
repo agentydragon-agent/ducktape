@@ -15,6 +15,8 @@ _K8S_SUBPATH = Path("cluster/k8s")
 
 # Non-K8s YAML files that live under cluster/k8s/ but aren't manifests.
 # Excluded from orphan detection and resource parsing.
+# TODO: This list is baked into the installed ducktape-precommit binary.
+# Changes here don't take effect until the binary is rebuilt and reinstalled.
 _EXCLUDED_FILES = {
     # rules_distroless APT manifests for CronJob images
     "agents/claude-token-rotation/bookworm_token_rotation.yaml",
