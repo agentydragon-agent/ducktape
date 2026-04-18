@@ -17,6 +17,7 @@ py_library(
     deps = [
         ":prompts",
         ":result_types",
+        "//util:net",
         "//x/grocy_mcp:config",
         "//x/grocy_mcp:server",
         "@pypi//agent_framework_anthropic",
