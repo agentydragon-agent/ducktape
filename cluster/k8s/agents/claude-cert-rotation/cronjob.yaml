@@ -5,8 +5,7 @@ metadata:
   namespace: agents-infra
   annotations:
     description: >-
-      Rotates a client certificate for Claude Code web cluster access.
-      Generates a CSR, approves it, and commits the SOPS-encrypted cert+key to git.
+      Rotates a client certificate for Claude Code web cluster access. Generates a CSR, approves it, and commits the SOPS-encrypted cert+key to git.
 spec:
   schedule: "0 0 1,15 * *"
   successfulJobsHistoryLimit: 3
@@ -27,7 +26,7 @@ spec:
                 name: claude-cert-rotation-script
           containers:
             - name: rotate
-              image: ghcr.io/agentydragon/claude-cert-rotation:devel-20260418091844-62f358f # {"$imagepolicy": "flux-system:claude-cert-rotation"}
+              image: ghcr.io/agentydragon/claude-cert-rotation:devel-20260418095822-7ad189c # {"$imagepolicy": "flux-system:claude-cert-rotation"}
               command: ["/usr/bin/bash", "/scripts/rotate.sh"]
               env:
                 - name: GIT_SSL_CAPATH
