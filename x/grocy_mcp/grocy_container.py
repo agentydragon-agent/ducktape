@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
 import time
 from collections.abc import Generator
@@ -17,6 +18,16 @@ from util.oci import load_oci_image
 from x.grocy_mcp.config import ServerSettings
 
 logger = logging.getLogger(__name__)
+
+# When set to "1", run the Grocy container with --network=host and connect
+# directly to 127.0.0.1:80 instead of relying on Docker port publishing.
+# Required on environments where IPv4 forwarding is disabled (e.g. gvisor
+# sandboxes), where `testcontainers.get_exposed_port(80)` otherwise fails.
+_HOST_NETWORK_ENV = "GROCY_MCP_HOST_NETWORK"
+
+
+def _host_network_enabled() -> bool:
+    return os.environ.get(_HOST_NETWORK_ENV) == "1"
 
 
 def make_settings(grocy_url: str) -> ServerSettings:
@@ -55,7 +66,10 @@ def configure_grocy_container(container: DockerContainer, *, init_dir: str, data
     `data_dir/grocy.db` on the host throughout the run — no post-hoc copy
     needed. LinuxServer chowns the mount point on startup.
     """
-    container.with_exposed_ports(80)
+    if _host_network_enabled():
+        container.with_kwargs(network_mode="host")
+    else:
+        container.with_exposed_ports(80)
     container.with_env("PUID", "1000")
     container.with_env("PGID", "1000")
     container.with_env("TZ", "UTC")
@@ -68,6 +82,8 @@ def configure_grocy_container(container: DockerContainer, *, init_dir: str, data
 
 
 def grocy_url(container: DockerContainer) -> str:
+    if _host_network_enabled():
+        return "http://127.0.0.1:80"
     host = container.get_container_host_ip()
     port = container.get_exposed_port(80)
     return f"http://{host}:{port}"
