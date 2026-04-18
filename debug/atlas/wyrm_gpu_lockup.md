@@ -161,22 +161,20 @@ warnings.
 
 ## Current Status (Apr 2026)
 
-The **host-level** VFIO instability is resolved — atlas has been stable for 28+
-days with full 2x RTX 5090 passthrough (see `black_screen_lockup.md`). The
-`iommu=pt`, `pcie_aspm=off`, and `ahci.mobile_lpm_policy=1` fixes are all
-active on the current atlas boot (`552b7b89`, kernel 6.17.13-2-pve).
+Root cause identified: **all observed GPU lockups were caused by atlas host
+suspending** (systemd-logind idle action). Fix applied on 2026-04-17: masked
+all sleep targets and disabled logind suspend via Ansible
+(`ansible/atlas.yaml`, tags `power_management`). Verified active after reboot:
+all four sleep targets masked, `iommu=pt pcie_aspm=off` on cmdline.
 
-However, **guest-side GPU lockups still occur**. On the current wyrm2 boot
-(Apr 15 → present), both GPUs locked up at ~25h uptime (kernel timestamp
-~91025s). `nvidia-smi` shows ERR on both GPUs, dmesg shows
-`GPU_IN_FULLCHIP_RESET` assertions. No processes are using the GPUs. A VM
-reboot recovers them.
+After reboot, both GPUs healthy (P3/P8, 30°C/38°C, Gen5/Gen1 x8). GPU
+telemetry monitoring (`gpu-monitor-poll.service`) running on wyrm2.
 
-**`nvidia-drm.modeset` conflict**: the NixOS config has both
-`nvidia-drm.modeset=0` (boot.kernelParams) and `nvidia-drm.modeset=1`
-(hardware.nvidia.modesetting.enable=true). Last on cmdline wins → `modeset=1`
-is active, defeating the FLR workaround. Unknown whether this contributed to
-the lockup. See `gpu_lockup_20260417/` for captured diagnostics.
+**Open question**: whether GPU lockups can occur without host suspend. The
+`nvidia-drm.modeset` conflict (both `=0` and `=1` on cmdline, `=1` wins),
+GSP-RM firmware bugs under VFIO, or PCIe link issues remain possible
+contributing factors. Monitoring is in place to capture pre-failure state if
+a lockup occurs without a suspend event.
 
 **Driver**: NVIDIA 580.142 Open Kernel Module (up from 580.82.09 at time of
 original investigation). Proprietary module does not support RTX 5090.
@@ -193,7 +191,8 @@ timeouts in systemd services (journald, resolved, oomd, udevd) because from
 the guest's perspective, hours pass instantly.
 
 **Fix**: Masked all sleep targets and disabled logind idle/lid suspend on atlas
-via Ansible (`ansible/atlas.yaml`, tags `power_management`).
+via Ansible (`ansible/atlas.yaml`, tags `power_management`). Note: restarting
+logind kills the graphical session, so expect a session restart when applying.
 
 All observed GPU lockups correlate with host suspend events. Atlas has been
 suspending repeatedly due to default `systemd-logind` idle action:
