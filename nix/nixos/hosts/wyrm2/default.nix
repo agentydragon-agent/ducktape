@@ -82,6 +82,9 @@ in
   # See debug/atlas/gpu_lockup_20260417/README.md for context.
   ducktape.gpuMonitor.enable = true;
 
+  # MT7921 USB WiFi stick firmware (for CPAP ez Share sync)
+  hardware.firmware = [ pkgs.linux-firmware ];
+
   # Ollama with CUDA for local GPU inference (also used by k8s ollama pod, but
   # useful standalone when cluster is down or for ad-hoc tasks).
   # Models stored on Proxmox CSI PVC (200Gi) or ~/downloads/ollama-models/.
