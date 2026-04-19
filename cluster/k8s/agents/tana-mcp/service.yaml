@@ -6,7 +6,7 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app: tana-mcp
+    app.kubernetes.io/name: tana-mcp
   ports:
     - name: mcp-proxy
       port: 8263

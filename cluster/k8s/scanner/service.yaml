@@ -6,7 +6,7 @@ metadata:
 spec:
   type: NodePort
   selector:
-    app: scanner
+    app.kubernetes.io/name: scanner
   ports:
     - name: http
       port: 8080

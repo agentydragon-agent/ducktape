@@ -6,7 +6,8 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app: firecrawl-api
+    app.kubernetes.io/name: firecrawl
+    app.kubernetes.io/component: api
   ports:
     - protocol: TCP
       port: 3002
@@ -20,7 +21,8 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app: firecrawl-playwright
+    app.kubernetes.io/name: firecrawl
+    app.kubernetes.io/component: playwright
   ports:
     - protocol: TCP
       port: 3000
@@ -34,7 +36,8 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app: firecrawl-redis
+    app.kubernetes.io/name: firecrawl
+    app.kubernetes.io/component: redis
   ports:
     - protocol: TCP
       port: 6379
