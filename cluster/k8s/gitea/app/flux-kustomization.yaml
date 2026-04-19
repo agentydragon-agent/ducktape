@@ -25,7 +25,6 @@ spec:
     - name: gitea-db
     - name: gateway
     - name: cert-manager
-    - name: vault
     - name: gitea-secrets
     - name: authentik # Wait for Authentik worker to apply SSO blueprints
     - name: authentik-blueprint-gitea-secret # Wait for OAuth secret to be synced from Vault

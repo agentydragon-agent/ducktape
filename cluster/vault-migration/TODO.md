@@ -51,7 +51,7 @@ Suspended (do when unsuspending):
 
 ---
 
-## Phase 3 — Tear Down Vault
+## Phase 3 — Tear Down Vault (done 2026-04-19)
 
 Prerequisites: all ExternalSecrets deleted, `vault-backend` ClusterSecretStore has no consumers.
 

@@ -57,7 +57,6 @@ HTTPRoutes):
 | Authentik      | <https://auth.allegedly.works>     | SSO provider                  |
 | Gitea          | <https://git.allegedly.works>      | Git hosting (suspended)       |
 | Harbor         | <https://registry.allegedly.works> | Container registry            |
-| Vault          | <https://vault.allegedly.works>    | Secrets management            |
 | Matrix/Element | <https://chat.allegedly.works>     | Chat                          |
 | Grafana        | <https://grafana.allegedly.works>  | Monitoring                    |
 | Nix Cache      | <https://cache.allegedly.works>    | Binary cache                  |
@@ -78,7 +77,7 @@ All storage is region-local — no cross-site synchronous replication.
 | StorageClass         | Provisioner            | Region    | Notes                                                                    |
 | -------------------- | ---------------------- | --------- | ------------------------------------------------------------------------ |
 | `local-path`         | local-path-provisioner | Any       | CNPG (all databases), Gatus, MinIO, Nix cache                            |
-| `local-path-hetzner` | local-path-provisioner | `hil`     | Vault Raft, Loki, Mimir, Alertmanager, Grafana DB                        |
+| `local-path-hetzner` | local-path-provisioner | `hil`     | Loki, Mimir, Alertmanager, Grafana DB                                    |
 | `local-path-proxmox` | local-path-provisioner | `proxmox` | Matrix, ActivityWatch, Scanner, OpenClaw, Google Workspace MCP, Tana MCP |
 | `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning: Firecracker                                      |
 | `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Langfuse, Docker CI, Grocy                |

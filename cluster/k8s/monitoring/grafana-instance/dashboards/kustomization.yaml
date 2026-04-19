@@ -6,7 +6,6 @@ resources:
   - harbor.yaml
   - cert-manager.yaml
   - authentik.yaml
-  - vault.yaml
   - cloudnative-pg.yaml
   - longhorn.yaml
   - cilium-agent.yaml

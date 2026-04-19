@@ -21,7 +21,6 @@ class _DependencyRule:
 _DEPENDENCY_RULES: list[_DependencyRule] = [
     # CRD-based operator ordering (ExternalSecret->external-secrets-config, ServiceMonitor->monitoring-stack, etc.)
     # is enforced dynamically by validate_operator_dependencies() using CRD_TO_OPERATOR from crd_layering.py.
-    # vault -> external-secrets ordering is enforced by CRD layering checks in test_kustomize.py.
     _DependencyRule(
         prerequisite="cert-manager",
         must_come_before=["gateway", "authentik", "gitea", "harbor"],

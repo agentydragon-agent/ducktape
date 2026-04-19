@@ -3,28 +3,17 @@
 ## TL;DR
 
 - **Bootstrap secrets**: SOPS-encrypted in git (`*.sops.yaml`), decrypted by Flux
-- **Runtime secrets**: Vault → External Secrets Operator → K8s Secrets
 - **Encryption keys**: Age keypairs in `.sops.yaml` (admin + cluster keys)
 - **Full dependency graph**: <bootstrap_dependencies.md>
 
 ## Architecture
 
-### Two-Layer Model
+Secrets are age-encrypted YAML files committed to git (`*.sops.yaml`). Flux
+decrypts them using the cluster age key (`sops-age-cluster-secrets` in `flux-system`).
 
-**Layer 1 — SOPS Secrets** (git → Flux → cluster)
-
-Secrets are age-encrypted YAML files committed to git. Flux decrypts them
-using the cluster age key (`sops-age-cluster-secrets` in `flux-system`).
-
-Files in `cluster/k8s/**/*.sops.yaml` (26 files) contain app credentials,
-API keys, and infrastructure tokens. Files in `secrets/*.yaml` contain
-infrastructure secrets (Nebula CA, Flux deploy key, cluster age keypair).
-
-**Layer 2 — Vault + ESO** (runtime secrets)
-
-External Secrets Operator reads from Vault KV and creates K8s Secrets.
-Used for: SSO client secrets, database passwords, application credentials.
-Terraform generates passwords → stores in Vault → ESO syncs to K8s.
+Files in `cluster/k8s/**/*.sops.yaml` contain app credentials, API keys, and
+infrastructure tokens. Files in `secrets/*.yaml` contain infrastructure secrets
+(Nebula CA, Flux deploy key, cluster age keypair).
 
 ## Age Keys
 

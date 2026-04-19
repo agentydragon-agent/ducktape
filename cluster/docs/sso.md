@@ -21,7 +21,7 @@ in authentik namespace → worker `envFrom` → blueprint `!Env` tags.
 
 **App-side secrets**: ESO in `k8s/authentik/blueprints/{app}-secret/` reads from same Vault path.
 
-**Currently managed**: gitea, harbor, matrix, vault, inventree.
+**Currently managed**: gitea, harbor, matrix, inventree. All via sso-providers TF module.
 
 **Why migrate**: `!Env` in blueprints causes silent drift — Authentik doesn't re-apply
 when env vars change. TF-managed providers eliminate this class of bug.

@@ -77,7 +77,6 @@ resources:
   - external-secrets/crds/flux-kustomization.yaml
   - external-secrets/operator/flux-kustomization.yaml
   - external-secrets/config/flux-kustomization.yaml
-  - external-secrets/vault-config/flux-kustomization.yaml
 
   # --- cert-manager ---
   - cert-manager/issuer-config/flux-kustomization.yaml
@@ -111,11 +110,6 @@ resources:
   - monitoring/grafana-instance/flux-kustomization.yaml
 
 
-  # --- vault ---
-  - vault/operator/flux-kustomization.yaml
-  - vault/app/flux-kustomization.yaml
-  - vault/servicemonitor/flux-kustomization.yaml
-  - vault/ingress/flux-kustomization.yaml
 
   # --- authelia ---
   - authelia/namespace/flux-kustomization.yaml

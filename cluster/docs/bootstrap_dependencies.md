@@ -32,7 +32,7 @@ L5  Flux GitOps ─────────────────────�
         │  decrypts: all k8s/**/*.sops.yaml
         │
 L6  Cluster Services ────────────────────────────────────────────────────
-    (cert-manager, Vault, ESO, Authentik, PowerDNS, apps...)
+    (cert-manager, ESO, Authentik, PowerDNS, apps...)
         │  reads: L1 SOPS app credentials
         │
 L7  NixOS Worker Integration ────────────────────────────────────────────

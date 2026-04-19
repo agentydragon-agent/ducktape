@@ -172,10 +172,6 @@ rules:
       - clusterzones
       - clusterrrsets
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["vault.banzaicloud.com"]
-    resources:
-      - vaults
-    verbs: ["get", "list", "watch"]
   - apiGroups: ["trust.cert-manager.io"]
     resources:
       - bundles
