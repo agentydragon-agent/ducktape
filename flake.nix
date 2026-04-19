@@ -250,7 +250,6 @@
       devToolsCommon = [
         ducktapePkgs.bb
         ducktapePkgs.bbapi
-        ducktapePkgs.bbr
         ducktapePkgs.skills
         # Dev tools
         pkgs.pre-commit

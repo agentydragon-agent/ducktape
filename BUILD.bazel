@@ -196,6 +196,7 @@ py_package(
         "proto",
     ],
     deps = [
+        "//devinfra:bbr",
         "//devinfra/claude/hook_daemon:hook_dispatch_lib",
         "//devinfra/claude/hook_daemon:main_lib",
         "//devinfra/claude/hook_daemon:shim_lib",
@@ -209,6 +210,7 @@ py_wheel(
     distribution = "claude_hooks",
     entry_points = {
         "console_scripts": [
+            "bbr = devinfra.bbr:main",
             "claude-hook = devinfra.claude.hook_daemon.hook_dispatch:main",
             "claude-statusline = devinfra.claude.statusline:main",
             "ducktape-precommit = devinfra.precommit.git_hook:main_pre_commit",
