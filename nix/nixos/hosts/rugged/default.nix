@@ -32,7 +32,9 @@ in
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ../../modules/ipu7-camera.nix
+    ../../modules/foxconn-wwan.nix
     ../../modules/local_llm_arc
+    ../../modules/local_llm_npu
   ];
 
   # Passwordless sudo for system inspection commands
@@ -50,9 +52,9 @@ in
   # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
   ducktape.ipu7Camera.enable = true;
 
-  # Local LLM inference (Arc GPU)
-  # TODO: add NPU LLM inference
+  # Local LLM inference (Arc GPU + NPU)
   ducktape.localLlm.arc.enable = true;
+  ducktape.localLlm.npu.enable = true;
 
   # Separate btrfs subvolumes for containerd and local-path-provisioner storage.
   # Create them before first boot with:
@@ -103,6 +105,7 @@ in
 
   # WWAN/5G modem support (Foxconn DP25-42843-47)
   networking.modemmanager.enable = true;
+  ducktape.foxconnWwan.enable = true;
   programs.nm-applet.enable = true;
 
   # Native Wayland for Chrome and Electron apps. Without this, they run under
