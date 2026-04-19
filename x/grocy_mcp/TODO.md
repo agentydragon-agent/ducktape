@@ -49,6 +49,15 @@ Options to explore:
 - Grocy's built-in demo-mode reset endpoint (if one exists).
 - Per-test database reset via direct SQLite file swap.
 
+## Per-turn eval logging
+
+`agent.run()` is a black box — no per-turn callbacks in
+agent_framework. Replace with a manual conversation loop (like
+`skills/info_gathering/evals/function_learning/function_learning.py`)
+to log timestamps, token counts, and tool call names on every LLM
+turn. This would let us see which tool calls are slow and where time
+is spent during eval runs.
+
 ## `shopping_list_clear` checks each DELETE (landed in #1345)
 
 Tombstone — keep until the next design pass so we remember it was an

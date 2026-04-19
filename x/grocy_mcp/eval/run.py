@@ -166,7 +166,9 @@ async def run_grocy_eval(
         logger.info("Seeding case %r", case.id)
         async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as seed_client:
             await case.seed(seed_client)
+        logger.info("Seeding complete for case %r", case.id)
 
+    logger.info("Building model client: api=%s model=%s", api, model)
     model_client = _build_model_client(api=api, model=model, base_url=base_url)
     session = AgentSession()
     # Attach explicitly instead of relying on Agent's auto-inject: if any
@@ -195,15 +197,17 @@ async def run_grocy_eval(
 
             logger.info("Phase 1: Task (case=%s, model=%s, api=%s)", case.id, model, api)
             task_response = await agent.run(case.task_prompt, session=session)
-            logger.info("Task complete: %s", (task_response.text or "")[:200])
+            logger.info("Phase 1 complete (case=%s): %s", case.id, (task_response.text or "")[:200])
 
-            logger.info("Phase 2: Postmortem")
+            logger.info("Phase 2: Postmortem (case=%s)", case.id)
             postmortem_response = await agent.run(POSTMORTEM_PROMPT, session=session)
             postmortem_text = postmortem_response.text or ""
-            logger.info("Postmortem: %s", postmortem_text[:500])
+            logger.info("Phase 2 complete (case=%s)", case.id)
 
+    logger.info("Phase 3: Snapshotting final state (case=%s)", case.id)
     final_state = await _snapshot_final_state(grocy_base_url)
     final_state_path.write_text(json.dumps(final_state, indent=2, ensure_ascii=False, default=str))
+    logger.info("Snapshot complete (case=%s)", case.id)
 
     # History providers store their messages under `session.state[source_id]`,
     # not `session.state` itself — see agent_framework._agents._run_after_hooks

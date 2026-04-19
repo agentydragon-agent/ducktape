@@ -19,16 +19,17 @@ from x.grocy_mcp.eval.result_types import EvalResult
 from x.grocy_mcp.eval.run import DEFAULT_MODELS, run_grocy_eval
 from x.grocy_mcp.grocy_container import grocy_url, run_grocy_container
 
+logger = logging.getLogger(__name__)
+
 
 async def _run_case(*, case: EvalCase, api: str, model: str, output_dir: Path, base_url: str | None) -> EvalResult:
     case_dir = output_dir / case.id
-    # Don't bind-mount the DB: on gvisor sandboxes bind-mount propagation of
-    # Grocy's config.php creation is racy (see grocy_container.py). Final
-    # state is captured via REST API into final_state.json, so the SQLite DB
-    # is ephemeral.
+    logger.info("Starting container for case %r", case.id)
     with run_grocy_container() as container:
+        base_url_str = grocy_url(container)
+        logger.info("Container ready at %s for case %r", base_url_str, case.id)
         return await run_grocy_eval(
-            case=case, api=api, model=model, grocy_base_url=grocy_url(container), output_dir=case_dir, base_url=base_url
+            case=case, api=api, model=model, grocy_base_url=base_url_str, output_dir=case_dir, base_url=base_url
         )
 
 
@@ -72,7 +73,7 @@ def main() -> None:
     output_dir = raw if raw.is_absolute() else (cwd / raw).resolve()
     cases = [CASES[cid] for cid in (args.case or sorted(CASES))]
 
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     results = asyncio.run(
         _run_all(cases=cases, api=args.api, model=args.model, output_dir=output_dir, base_url=args.base_url)
