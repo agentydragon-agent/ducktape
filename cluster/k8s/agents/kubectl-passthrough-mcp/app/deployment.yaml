@@ -30,10 +30,9 @@ spec:
           image: ghcr.io/agentydragon/kubernetes-mcp-server:devel-20260419044600-0b18cc9 # {"$imagepolicy": "flux-system:kubernetes-mcp-server"}
           imagePullPolicy: IfNotPresent
           args:
-            # Base config (ConfigMap) + drop-in dir for secrets. The Secret's
-            # 01-secret.toml adds sts_client_secret.
+            # Config is public-only — the OAuth2 provider is public (PKCE),
+            # and passthrough mode does no token exchange, so no secrets needed.
             - --config=/etc/kubectl-passthrough-mcp/00-public.toml
-            - --config-dir=/etc/kubectl-passthrough-mcp/conf.d
             - --log-level=4
           ports:
             - name: http
@@ -43,9 +42,6 @@ spec:
             - name: public
               mountPath: /etc/kubectl-passthrough-mcp/00-public.toml
               subPath: 00-public.toml
-              readOnly: true
-            - name: secret
-              mountPath: /etc/kubectl-passthrough-mcp/conf.d
               readOnly: true
           resources:
             requests:
@@ -70,6 +66,3 @@ spec:
         - name: public
           configMap:
             name: kubectl-passthrough-mcp-public
-        - name: secret
-          secret:
-            secretName: kubectl-passthrough-mcp

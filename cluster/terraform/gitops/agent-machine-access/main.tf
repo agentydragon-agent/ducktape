@@ -294,7 +294,7 @@ resource "authentik_group" "kubectl_sandbox_users" {
 resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
   name               = "kubectl-passthrough-mcp"
   client_id          = "kubectl-passthrough-mcp"
-  client_type        = "confidential"
+  client_type        = "public" # PKCE-based; no client secret distributed to users.
   authorization_flow = data.authentik_flow.implicit_consent.id
   invalidation_flow  = data.authentik_flow.invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
@@ -309,6 +309,10 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
   ]
 
   allowed_redirect_uris = [
+    {
+      matching_mode = "regex"
+      url           = "^http://localhost:[0-9]+/callback$"
+    },
     {
       matching_mode = "strict"
       url           = "https://kubectl-passthrough-mcp.allegedly.works/oauth/callback"
@@ -345,24 +349,10 @@ moved {
   to   = authentik_policy_binding.kubectl_passthrough_mcp_users
 }
 
-resource "kubernetes_secret" "kubectl_passthrough_mcp" {
-  metadata {
-    name      = "kubectl-passthrough-mcp"
-    namespace = "kubectl-passthrough-mcp"
-  }
-
-  data = {
-    # Drop-in override: loaded after 00-public.toml, adds the client secret.
-    "01-secret.toml" = <<-EOT
-      sts_client_secret = "${authentik_provider_oauth2.kubectl_passthrough_mcp.client_secret}"
-    EOT
-  }
-}
-
-moved {
-  from = kubernetes_secret.kubectl_sandbox_mcp
-  to   = kubernetes_secret.kubectl_passthrough_mcp
-}
+## Passthrough server needs no Secret — the OAuth2 provider is public (PKCE)
+## so there's no client_secret, and passthrough mode doesn't do token exchange.
+## The previous kubernetes_secret.kubectl_passthrough_mcp was deleted above;
+## TF will destroy the state-only resource on the next apply.
 
 # ============================================================================
 # kubectl-sandbox-mcp — Scoped kubectl MCP (token exchange → sandbox only)
@@ -371,9 +361,46 @@ moved {
 # token for one scoped to kubectl-sandbox-users group. Even if the caller is
 # a cluster admin, the exchanged token only carries sandbox-level permissions.
 
+## User-facing public OAuth2 client (Claude Code / other MCP clients). No
+## client secret — relies on PKCE. Users only need client_id to connect.
 resource "authentik_provider_oauth2" "kubectl_sandbox_scoped" {
   name               = "kubectl-sandbox-mcp"
   client_id          = "kubectl-sandbox-mcp"
+  client_type        = "public"
+  authorization_flow = data.authentik_flow.implicit_consent.id
+  invalidation_flow  = data.authentik_flow.invalidation.id
+  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+  issuer_mode                = "per_provider"
+  include_claims_in_id_token = true
+
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+  ]
+
+  # Claude Code uses http://localhost:<port>/callback for the OAuth dance.
+  allowed_redirect_uris = [
+    {
+      matching_mode = "regex"
+      url           = "^http://localhost:[0-9]+/callback$"
+    },
+    {
+      matching_mode = "strict"
+      url           = "https://kubectl-sandbox-mcp.allegedly.works/oauth/callback"
+    },
+  ]
+}
+
+## Confidential exchange client. Only the in-cluster pod uses this to
+## authenticate its RFC 8693 token-exchange calls to Authentik. The
+## client_secret lives in a k8s Secret; it's not distributed to users.
+## Accepts the user-facing token as subject_token and issues a
+## proxy-scoped token (sandbox group).
+resource "authentik_provider_oauth2" "kubectl_sandbox_exchange" {
+  name               = "kubectl-sandbox-mcp-exchange"
+  client_id          = "kubectl-sandbox-mcp-exchange"
   client_type        = "confidential"
   authorization_flow = data.authentik_flow.implicit_consent.id
   invalidation_flow  = data.authentik_flow.invalidation.id
@@ -388,12 +415,9 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_scoped" {
     data.authentik_property_mapping_provider_scope.profile.id,
   ]
 
-  allowed_redirect_uris = [
-    {
-      matching_mode = "strict"
-      url           = "https://kubectl-sandbox-mcp.allegedly.works/oauth/callback"
-    },
-  ]
+  # No redirect URIs — this client never does browser-based flows. It's
+  # only used server-side (pod → Authentik) for token exchange.
+  allowed_redirect_uris = []
 }
 
 # Proxy provider used as the token exchange target. The exchanged token
@@ -409,8 +433,13 @@ resource "authentik_provider_proxy" "kubectl_sandbox_scoped" {
   invalidation_flow     = data.authentik_flow.invalidation.id
   access_token_validity = "hours=1"
 
-  # Allow the OAuth2 provider's tokens to be exchanged for proxy-scoped ones.
-  jwt_federation_providers = [authentik_provider_oauth2.kubectl_sandbox_scoped.id]
+  # Tokens from the user-facing public client are valid subject_tokens for
+  # the exchange; the pod authenticates as the confidential exchange client
+  # to perform the actual exchange.
+  jwt_federation_providers = [
+    authentik_provider_oauth2.kubectl_sandbox_scoped.id,
+    authentik_provider_oauth2.kubectl_sandbox_exchange.id,
+  ]
 }
 
 resource "authentik_application" "kubectl_sandbox_scoped" {
@@ -434,11 +463,14 @@ resource "kubernetes_secret" "kubectl_sandbox_scoped" {
   }
 
   data = {
-    # Drop-in override: loaded after 00-public.toml. Consolidates TF-generated
-    # values (proxy client_id + client_secret) into one Secret.
+    # Drop-in override: loaded after 00-public.toml. TF-generated values only:
+    #   - sts_client_id/sts_client_secret: the CONFIDENTIAL exchange client
+    #     used for RFC 8693 token exchange (not the user-facing public client).
+    #   - sts_audience: the proxy provider's client_id (exchanged token target).
     "01-secret.toml" = <<-EOT
+      sts_client_id     = "${authentik_provider_oauth2.kubectl_sandbox_exchange.client_id}"
+      sts_client_secret = "${authentik_provider_oauth2.kubectl_sandbox_exchange.client_secret}"
       sts_audience      = "${authentik_provider_proxy.kubectl_sandbox_scoped.client_id}"
-      sts_client_secret = "${authentik_provider_oauth2.kubectl_sandbox_scoped.client_secret}"
     EOT
   }
 }

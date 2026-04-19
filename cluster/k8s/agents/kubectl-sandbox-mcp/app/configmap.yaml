@@ -15,7 +15,9 @@ data:
     cluster_auth_mode = "passthrough"
     cluster_provider_strategy = "in-cluster"
     token_exchange_strategy = "rfc8693"
-    sts_client_id = "kubectl-sandbox-mcp"
+    # sts_client_id/sts_client_secret/sts_audience come from the Secret drop-in
+    # (01-secret.toml). Those point to the confidential exchange client, not the
+    # public user-facing one.
 
     server_url = "https://kubectl-sandbox-mcp.allegedly.works"
     port = "8080"
