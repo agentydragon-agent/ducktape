@@ -12,8 +12,6 @@ configMapGenerator:
   - name: authentik-sso-blueprints
     files:
       - blueprints/users.yaml
-      - blueprints/gitea-sso.yaml
-      - blueprints/inventree-sso.yaml
       - blueprints/hubble-sso.yaml
       - blueprints/longhorn-sso.yaml
       - blueprints/openclaw-sso.yaml

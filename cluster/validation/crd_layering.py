@@ -24,8 +24,6 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "cluster-ca": set(),
     "kyverno": {"ClusterPolicy", "Policy"},
     "kyverno-policies": set(),
-    "vault-operator": {"Vault"},
-    "vault": set(),
     "tofu-controller": {"Terraform"},
     "monitoring-stack": {"ServiceMonitor", "PodMonitor"},
     "cnpg": {

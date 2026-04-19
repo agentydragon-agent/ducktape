@@ -15,7 +15,7 @@ to the authentik shared proxy outpost pod (per AGENTS.md):
 openclaw-mitmproxy, proxmox.
 
 **Critical unprotected services** (no NetworkPolicy at all):
-vault, external-secrets, gitea, harbor.
+external-secrets, gitea, harbor.
 
 ## Missing resource limits
 
