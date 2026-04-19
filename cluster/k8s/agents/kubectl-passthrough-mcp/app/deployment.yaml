@@ -27,14 +27,21 @@ spec:
           image: ghcr.io/containers/kubernetes-mcp-server:v0.0.60
           imagePullPolicy: IfNotPresent
           args:
-            - --config=/etc/kubectl-passthrough-mcp/config.toml
+            # Drop-in config dir: ConfigMap provides 00-public.toml (URLs, audiences);
+            # Secret provides 01-secret.toml (sts_client_secret).
+            - --config-dir=/etc/kubectl-passthrough-mcp
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
           volumeMounts:
-            - name: config
-              mountPath: /etc/kubectl-passthrough-mcp
+            - name: public
+              mountPath: /etc/kubectl-passthrough-mcp/00-public.toml
+              subPath: 00-public.toml
+              readOnly: true
+            - name: secret
+              mountPath: /etc/kubectl-passthrough-mcp/01-secret.toml
+              subPath: 01-secret.toml
               readOnly: true
           resources:
             requests:
@@ -44,16 +51,21 @@ spec:
               memory: "256Mi"
               cpu: "200m"
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
               port: 8080
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 20
       volumes:
-        - name: config
+        - name: public
+          configMap:
+            name: kubectl-passthrough-mcp-public
+        - name: secret
           secret:
             secretName: kubectl-passthrough-mcp

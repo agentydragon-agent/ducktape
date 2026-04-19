@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubectl-sandbox-mcp-public
+  namespace: kubectl-sandbox-mcp
+data:
+  00-public.toml: |
+    require_oauth = true
+    authorization_url = "https://auth.allegedly.works/application/o/kubectl-sandbox-mcp/"
+    oauth_audience = "kubectl-sandbox-mcp"
+
+    # Token exchange: swap caller's token for a sandbox-scoped one via the
+    # proxy provider. The exchanged token carries only kubectl-sandbox-users
+    # group, regardless of the caller's actual permissions.
+    cluster_auth_mode = "passthrough"
+    cluster_provider_strategy = "in-cluster"
+    token_exchange_strategy = "rfc8693"
+    sts_client_id = "kubectl-sandbox-mcp"
+
+    server_url = "https://kubectl-sandbox-mcp.allegedly.works"
+    port = "8080"

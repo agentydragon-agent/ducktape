@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubectl-passthrough-mcp-public
+  namespace: kubectl-passthrough-mcp
+data:
+  00-public.toml: |
+    require_oauth = true
+    authorization_url = "https://auth.allegedly.works/application/o/kubectl-passthrough-mcp/"
+    oauth_audience = "kubectl-passthrough-mcp"
+    sts_client_id = "kubectl-passthrough-mcp"
+    cluster_auth_mode = "passthrough"
+    cluster_provider_strategy = "in-cluster"
+    server_url = "https://kubectl-passthrough-mcp.allegedly.works"
+    port = "8080"

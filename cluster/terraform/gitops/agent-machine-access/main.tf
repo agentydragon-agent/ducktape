@@ -352,16 +352,9 @@ resource "kubernetes_secret" "kubectl_passthrough_mcp" {
   }
 
   data = {
-    "config.toml" = <<-EOT
-      require_oauth = true
-      authorization_url = "https://auth.allegedly.works/application/o/kubectl-passthrough-mcp/"
-      oauth_audience = "kubectl-passthrough-mcp"
-      sts_client_id     = "${authentik_provider_oauth2.kubectl_passthrough_mcp.client_id}"
+    # Drop-in override: loaded after 00-public.toml, adds the client secret.
+    "01-secret.toml" = <<-EOT
       sts_client_secret = "${authentik_provider_oauth2.kubectl_passthrough_mcp.client_secret}"
-      cluster_auth_mode = "passthrough"
-      cluster_provider_strategy = "in-cluster"
-      server_url = "https://kubectl-passthrough-mcp.allegedly.works"
-      port = "8080"
     EOT
   }
 }
@@ -441,24 +434,11 @@ resource "kubernetes_secret" "kubectl_sandbox_scoped" {
   }
 
   data = {
-    "config.toml" = <<-EOT
-      require_oauth = true
-      # In-cluster URL for OIDC discovery (pods can't hairpin to external VPS IPs).
-      authorization_url = "http://authentik-server.authentik.svc.cluster.local/application/o/kubectl-sandbox-mcp/"
-      oauth_audience = "kubectl-sandbox-mcp"
-
-      # Token exchange: swap caller's token for a sandbox-scoped one via the
-      # proxy provider. The exchanged token carries only kubectl-sandbox-users
-      # group, regardless of the caller's actual permissions.
-      cluster_auth_mode = "passthrough"
-      cluster_provider_strategy = "in-cluster"
-      token_exchange_strategy = "rfc8693"
-      sts_client_id     = "${authentik_provider_oauth2.kubectl_sandbox_scoped.client_id}"
-      sts_client_secret = "${authentik_provider_oauth2.kubectl_sandbox_scoped.client_secret}"
+    # Drop-in override: loaded after 00-public.toml. Consolidates TF-generated
+    # values (proxy client_id + client_secret) into one Secret.
+    "01-secret.toml" = <<-EOT
       sts_audience      = "${authentik_provider_proxy.kubectl_sandbox_scoped.client_id}"
-
-      server_url = "https://kubectl-sandbox-mcp.allegedly.works"
-      port = "8080"
+      sts_client_secret = "${authentik_provider_oauth2.kubectl_sandbox_scoped.client_secret}"
     EOT
   }
 }

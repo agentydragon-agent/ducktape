@@ -25,14 +25,22 @@ spec:
           image: ghcr.io/containers/kubernetes-mcp-server:v0.0.60
           imagePullPolicy: IfNotPresent
           args:
-            - --config=/etc/kubectl-sandbox-mcp/config.toml
+            # Drop-in config dir: ConfigMap provides 00-public.toml (URLs, audiences);
+            # Secret provides 01-secret.toml (sts_client_secret, sts_audience).
+            # Files load in lexical order; later files override earlier.
+            - --config-dir=/etc/kubectl-sandbox-mcp
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
           volumeMounts:
-            - name: config
-              mountPath: /etc/kubectl-sandbox-mcp
+            - name: public
+              mountPath: /etc/kubectl-sandbox-mcp/00-public.toml
+              subPath: 00-public.toml
+              readOnly: true
+            - name: secret
+              mountPath: /etc/kubectl-sandbox-mcp/01-secret.toml
+              subPath: 01-secret.toml
               readOnly: true
           resources:
             requests:
@@ -42,16 +50,21 @@ spec:
               memory: "256Mi"
               cpu: "200m"
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
               port: 8080
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 20
       volumes:
-        - name: config
+        - name: public
+          configMap:
+            name: kubectl-sandbox-mcp-public
+        - name: secret
           secret:
             secretName: kubectl-sandbox-mcp
