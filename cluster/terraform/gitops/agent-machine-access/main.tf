@@ -354,10 +354,7 @@ resource "kubernetes_secret" "kubectl_passthrough_mcp" {
   data = {
     "config.toml" = <<-EOT
       require_oauth = true
-      # In-cluster URL for OIDC discovery (pods can't hairpin to external VPS IPs).
-      # Client-facing auth endpoints (authorize, token) come from the OIDC config
-      # itself, which Authentik returns with public URLs regardless of fetch origin.
-      authorization_url = "http://authentik-server.authentik.svc.cluster.local/application/o/kubectl-passthrough-mcp/"
+      authorization_url = "https://auth.allegedly.works/application/o/kubectl-passthrough-mcp/"
       oauth_audience = "kubectl-passthrough-mcp"
       sts_client_id     = "${authentik_provider_oauth2.kubectl_passthrough_mcp.client_id}"
       sts_client_secret = "${authentik_provider_oauth2.kubectl_passthrough_mcp.client_secret}"
