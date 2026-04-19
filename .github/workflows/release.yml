@@ -28,6 +28,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - pkg: bbr
+            target: //:bbr_wheel
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl
+            tests: //devinfra:test_bbr
           - pkg: claude-hooks
             target: //:claude_hooks_wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl

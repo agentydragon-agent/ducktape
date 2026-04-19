@@ -155,6 +155,27 @@ platform(
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )
 
+# bbr wheel — standalone `bb remote` wrapper (own package, not bundled into
+# claude-hooks, so it's available when using the Rust claude-hook binary).
+py_package(
+    name = "bbr_pkg",
+    packages = ["devinfra"],
+    deps = ["//devinfra:bbr"],
+)
+
+py_wheel(
+    name = "bbr_wheel",
+    distribution = "bbr",
+    entry_points = {
+        "console_scripts": ["bbr = devinfra.bbr:main"],
+    },
+    python_requires = ">=3.13",
+    requires = ["pygit2>=1.14"],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":bbr_pkg"],
+)
+
 # Claude hooks wheel - Claude Code session hooks, statusline
 py_package(
     name = "claude_hooks_pkg",
@@ -175,7 +196,6 @@ py_package(
         "proto",
     ],
     deps = [
-        "//devinfra:bbr",
         "//devinfra/claude/hook_daemon:hook_dispatch_lib",
         "//devinfra/claude/hook_daemon:main_lib",
         "//devinfra/claude/hook_daemon:shim_lib",
@@ -196,7 +216,6 @@ py_wheel(
             "ducktape-prepare-commit-msg = devinfra.precommit.git_hook:main_prepare_commit_msg",
             "ducktape-commit-msg = devinfra.precommit.git_hook:main_commit_msg",
             "ducktape-enforce-bazel-tests = devinfra.precommit.git_hook:main_enforce_bazel_tests",
-            "bbr = devinfra.bbr:main",
         ],
     },
     python_requires = ">=3.13",
