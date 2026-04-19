@@ -115,6 +115,11 @@ Then regenerate `requirements_bazel.txt` via RBE.
 
 ## Future
 
+- **USB stick placement (declarative)**: The WiFi stick is currently manually plugged into
+  wyrm2. Ideally this is declared in Proxmox/Terraform — either as a USB passthrough device
+  on the wyrm2 VM definition in `terraform/main/proxmox-nodes.tf`, or via a Proxmox USB
+  device mapping. Investigate `proxmox_virtual_environment_vm` USB device block in
+  `terraform-provider-bpg/proxmox`.
 - Firmware update for the ez Share card (newer firmware has a cleaner API, no 8.3 short
   filenames)
 - Consolidate `bookworm_cpap_sync.yaml` to trixie once other bookworm apt manifests are
