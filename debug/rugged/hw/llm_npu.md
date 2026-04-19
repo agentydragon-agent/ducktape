@@ -10,13 +10,16 @@ llama.cpp with OpenVINO backend ([PR #15307](https://github.com/ggml-org/llama.c
 March 2026). Built from source as Docker image `llama-openvino:server`.
 Standard `llama-server` with OpenAI-compatible API, no custom wrappers.
 
-**Tested (2026-04-18)**: Llama 3.2 1B Q4_0 on NPU:
+**Benchmarks (2026-04-18)**, context 512:
 
-- Prompt eval: **277 tok/s**
-- Generation: **46.7 tok/s**
-- Context: 512 tokens
+| Model              | Prompt eval | Generation     |
+| ------------------ | ----------- | -------------- |
+| Llama 3.2 1B Q4_0  | 277 tok/s   | **46.7 tok/s** |
+| Qwen 2.5 1.5B Q4_0 | 210 tok/s   | **35.0 tok/s** |
+| Qwen3 4B Q4_0      | 54 tok/s    | **10 tok/s**   |
 
-For comparison, Arc GPU with Qwen3 4B (larger model): ~23 tok/s.
+For comparison, Arc GPU (SYCL) with Qwen3 4B Q4_K_M: **~23 tok/s**.
+NPU is ~2.3x slower on the same 4B model but competitive on 1-1.5B.
 
 ### Running
 
