@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# npu-llm: manage OpenVINO GenAI models on Intel NPU
+# npu-llm: run LLMs on Intel NPU via OpenVINO GenAI
 #
-# Requires PYTHON_BIN and SCRIPT_DIR to be set by the nix wrapper.
+# Requires PYTHON_BIN, SCRIPT_DIR, NPU_COMPILER_SO to be set by the nix wrapper.
 set -euo pipefail
 
 VENV_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/npu-llm/venv"
@@ -13,12 +13,17 @@ usage() {
 Usage: npu-llm <command> [args]
 
 Commands:
-  setup               Create/update pip venv with OpenVINO + optimum-intel
-  export <model-id>   Export HuggingFace model to OpenVINO IR
-  chat <model-id>     Interactive chat with exported model on NPU
-  bench <model-id>    Benchmark model on NPU
-  list                List exported models
-  server <model-id>   Start OpenAI-compatible API server on port 11435
+  setup                  Create/update pip venv with openvino-genai
+  pull <hf-model-id>     Download pre-converted model from HuggingFace
+  chat <model-name>      Interactive chat on NPU
+  bench <model-name>     Benchmark tok/s on NPU
+  list                   List downloaded models
+  server <model-name>    Start OpenAI-compatible API server on port 11435
+
+Models are stored in $MODEL_DIR. Use HuggingFace model IDs from the
+OpenVINO NPU-optimized collection, e.g.:
+  npu-llm pull OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov
+  npu-llm chat Qwen2.5-1.5B-Instruct-int4-ov
 EOF
   exit 1
 }
@@ -30,8 +35,9 @@ ensure_venv() {
   fi
   # Ensure the nix-patched NPU compiler .so is symlinked into the venv's
   # openvino libs directory (pip ships the plugin but not the compiler)
-  local ov_libs="$VENV_DIR/lib/python3.13/site-packages/openvino/libs"
-  if [ -n "${NPU_COMPILER_SO:-}" ] && [ -d "$ov_libs" ]; then
+  local ov_libs
+  ov_libs="$(find "$VENV_DIR/lib" -type d -name libs -path "*/openvino/libs" 2>/dev/null | head -1)"
+  if [ -n "${NPU_COMPILER_SO:-}" ] && [ -n "$ov_libs" ]; then
     ln -sf "$NPU_COMPILER_SO" "$ov_libs/libopenvino_intel_npu_compiler.so"
   fi
 }
@@ -43,10 +49,12 @@ model_dir_for() {
   echo "$MODEL_DIR/$model_name"
 }
 
-require_exported() {
-  local out="$1" model_id="$2"
+require_model() {
+  local out="$1" name="$2"
   if [ ! -d "$out" ]; then
-    echo "Model not exported. Run: npu-llm export $model_id" >&2
+    echo "Model '$name' not found. Run: npu-llm pull <hf-model-id>" >&2
+    echo "Available models:" >&2
+    ls -1 "$MODEL_DIR" 2>/dev/null || echo "  (none)" >&2
     exit 1
   fi
 }
@@ -58,48 +66,46 @@ case "$1" in
     echo "Creating venv at $VENV_DIR ..."
     "$PYTHON_BIN" -m venv --clear "$VENV_DIR"
     "$VENV_DIR/bin/pip" install --upgrade pip
-    # Install CPU-only torch to avoid downloading ~1.5GB of CUDA deps
     "$VENV_DIR/bin/pip" install \
-      torch --index-url https://download.pytorch.org/whl/cpu
-    "$VENV_DIR/bin/pip" install \
+      openvino-genai \
       openvino \
-      'optimum-intel[openvino]' \
-      transformers \
-      sentencepiece \
-      protobuf \
+      openvino-tokenizers \
+      huggingface-hub \
       fastapi \
       uvicorn
     echo "Done. Venv ready at $VENV_DIR"
     ;;
-  export)
+  pull)
     [ $# -lt 2 ] && usage
     ensure_venv
     out="$(model_dir_for "$2")"
-    exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/export.py" "$2" "$out"
+    echo "Downloading $2 to $out ..."
+    "$VENV_DIR/bin/huggingface-cli" download "$2" --local-dir "$out"
+    echo "Done. Run: npu-llm chat $(basename "$2")"
     ;;
   chat)
     [ $# -lt 2 ] && usage
     ensure_venv
     out="$(model_dir_for "$2")"
-    require_exported "$out" "$2"
+    require_model "$out" "$2"
     exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/chat.py" "$out"
     ;;
   bench)
     [ $# -lt 2 ] && usage
     ensure_venv
     out="$(model_dir_for "$2")"
-    require_exported "$out" "$2"
+    require_model "$out" "$2"
     exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/bench.py" "$out"
     ;;
   list)
-    echo "Exported models in $MODEL_DIR:"
+    echo "Models in $MODEL_DIR:"
     ls -1 "$MODEL_DIR" 2>/dev/null || echo "(none)"
     ;;
   server)
     [ $# -lt 2 ] && usage
     ensure_venv
     out="$(model_dir_for "$2")"
-    require_exported "$out" "$2"
+    require_model "$out" "$2"
     echo "Starting OpenAI-compatible server on :11435 with $(basename "$2") on NPU..."
     exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/server.py" "$out"
     ;;

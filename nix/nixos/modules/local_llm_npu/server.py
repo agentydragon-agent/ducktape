@@ -1,6 +1,6 @@
-"""Minimal OpenAI-compatible API server for OpenVINO NPU inference.
+"""Minimal OpenAI-compatible API server for Intel NPU inference via OpenVINO GenAI.
 
-Usage: python local-llm-npu-server.py <model-dir>
+Usage: python server.py <model-dir>
 
 Serves POST /v1/chat/completions on port 11435.
 """
@@ -8,21 +8,19 @@ Serves POST /v1/chat/completions on port 11435.
 import sys
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
+import openvino_genai as ov_genai
 import uvicorn
 from fastapi import FastAPI
-from optimum.intel import OVModelForCausalLM
 from pydantic import BaseModel
-from transformers import AutoTokenizer
 
 app = FastAPI()
 
 
 @dataclass
 class _State:
-    model: OVModelForCausalLM = field(default=None)
-    tokenizer: AutoTokenizer = field(default=None)
+    pipe: ov_genai.LLMPipeline | None = None
     model_name: str = "npu-model"
 
 
@@ -38,30 +36,30 @@ class ChatRequest(BaseModel):
     model: str = ""
     messages: list[Message]
     max_tokens: int = 512
-    temperature: float = 0.7
 
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatRequest):
-    inputs = _state.tokenizer.apply_chat_template(
-        [m.model_dump() for m in request.messages], return_tensors="pt", add_generation_prompt=True
-    )
+    prompt = "\n".join(f"{m.role}: {m.content}" for m in request.messages)
+
+    n_tokens = 0
+
+    def count_tokens(_subword):
+        nonlocal n_tokens
+        n_tokens += 1
+        return False
+
     start = time.perf_counter()
-    output = _state.model.generate(inputs, max_new_tokens=request.max_tokens)
+    result = _state.pipe.generate(prompt, max_new_tokens=request.max_tokens, streamer=count_tokens)
     elapsed = time.perf_counter() - start
-    response_text = _state.tokenizer.decode(output[0][inputs.shape[1] :], skip_special_tokens=True)
-    n_tokens = output.shape[1] - inputs.shape[1]
+
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
         "object": "chat.completion",
         "model": _state.model_name,
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": response_text}, "finish_reason": "stop"}],
-        "usage": {
-            "prompt_tokens": inputs.shape[1],
-            "completion_tokens": n_tokens,
-            "total_tokens": inputs.shape[1] + n_tokens,
-        },
-        "_meta": {"elapsed_s": round(elapsed, 2), "tok_per_s": round(n_tokens / elapsed, 1)},
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": result}, "finish_reason": "stop"}],
+        "usage": {"completion_tokens": n_tokens},
+        "_meta": {"elapsed_s": round(elapsed, 2), "tok_per_s": round(n_tokens / elapsed, 1) if elapsed > 0 else 0},
     }
 
 
@@ -79,8 +77,7 @@ def main():
     _state.model_name = model_dir.rstrip("/").rsplit("/", 1)[-1]
 
     print(f"Loading {_state.model_name} from {model_dir} on NPU...")
-    _state.tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
-    _state.model = OVModelForCausalLM.from_pretrained(model_dir, device="NPU", trust_remote_code=True)
+    _state.pipe = ov_genai.LLMPipeline(model_dir, "NPU", {"MAX_PROMPT_LEN": 1024, "MIN_RESPONSE_LEN": 512})
     print("Ready. Serving on http://127.0.0.1:11435/v1/chat/completions")
     uvicorn.run(app, host="127.0.0.1", port=11435)
 
