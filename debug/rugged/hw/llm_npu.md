@@ -1,44 +1,85 @@
-# LLM Inference — NPU (OpenVINO GenAI)
+# LLM Inference — NPU (llama.cpp + OpenVINO)
 
 **Goal**: Run small LLMs on the NPU for background/offline inference.
 
-**Hardware**: Lunar Lake NPU (~45 TOPS int8, "Intel AI Boost"). NixOS module:
-<nix/nixos/modules/local_llm_npu/default.nix>.
+**Hardware**: Lunar Lake NPU (~45 TOPS int8, "Intel AI Boost").
 
-## Current setup — testing
+## Current setup — working (Docker)
 
-Uses `openvino_genai.LLMPipeline` (the only path that works on NPU — `optimum-intel`
-exports dynamic shapes which the NPU compiler rejects, see
-[openvinotoolkit/openvino#34617](https://github.com/openvinotoolkit/openvino/issues/34617)).
+llama.cpp with OpenVINO backend ([PR #15307](https://github.com/ggml-org/llama.cpp/pull/15307),
+March 2026). Built from source as Docker image `llama-openvino:server`.
+Standard `llama-server` with OpenAI-compatible API, no custom wrappers.
 
-Pip venv with `openvino-genai`. Model storage: `/var/lib/local-llm/openvino`.
+**Tested (2026-04-18)**: Llama 3.2 1B Q4_0 on NPU:
+
+- Prompt eval: **277 tok/s**
+- Generation: **46.7 tok/s**
+- Context: 512 tokens
+
+For comparison, Arc GPU with Qwen3 4B (larger model): ~23 tok/s.
+
+### Running
 
 ```bash
-npu-llm setup                                          # one-time: create pip venv
-npu-llm pull OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov    # download pre-converted model
-npu-llm chat Qwen2.5-1.5B-Instruct-int4-ov             # interactive chat on NPU
-npu-llm bench Qwen2.5-1.5B-Instruct-int4-ov            # benchmark tok/s
-npu-llm server Qwen2.5-1.5B-Instruct-int4-ov           # API on :11435
+# Model at ~/llm-npu-test/Llama-3.2-1B-Instruct-Q4_0.gguf
+docker run --rm -d --name llama-npu \
+  --device=/dev/accel --device=/dev/dri \
+  -p 8080:8080 \
+  -v ~/llm-npu-test:/models \
+  --env=GGML_OPENVINO_DEVICE=NPU \
+  llama-openvino:server \
+  --no-warmup -c 512 -m /models/Llama-3.2-1B-Instruct-Q4_0.gguf
+
+# Test
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Hello"}],"max_tokens":50}'
 ```
 
-Pre-converted models: [OpenVINO HuggingFace NPU collection](https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu).
+### Building the image
 
-Expected performance: **~8-10 tok/s** for 7-8B int4 models on Lunar Lake NPU.
+No prebuilt image available — built from source:
 
-## NixOS packaging details
+```bash
+cd ~/llm-npu-test/llama.cpp  # cloned from b8840
+docker build --target=server -t llama-openvino:server -f .devops/openvino.Dockerfile .
+```
 
-The pip `openvino` package ships the NPU plugin (`libopenvino_intel_npu_plugin.so`)
-but NOT the NPU compiler (`libopenvino_intel_npu_compiler.so`). The nix module
-extracts the compiler from Intel's OpenVINO archive tarball and patches it with
-`autoPatchelfHook` (deps: `libtbb`, `libzstd`, `libstdc++`). The patched `.so` is
-symlinked into the venv at runtime.
+### Models
 
-The wrapper also adds `intel-npu-driver` and `level-zero` to `LD_LIBRARY_PATH` so
-OpenVINO can discover the NPU device via Level Zero.
+Standard GGUF files work. Q4_0 is the primary supported quantization on NPU.
+Download from HuggingFace:
+
+```bash
+wget https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf
+```
+
+Validated models: Llama 3.2 1B, Llama 3.1 8B, Phi-3-mini, Qwen 2.5 1.5B,
+Qwen3-8B, MiniCPM-1B, Mistral 7B, DeepSeek-R1-Distill-Llama-8B.
+
+## TODO
+
+- Nixify as a podman container service (like the Arc GPU `local_llm_arc` module)
+- Test larger models (Qwen 2.5 1.5B, Phi-3-mini) on NPU
+- Compare NPU vs Arc GPU vs CPU on same model sizes
+- Consider running both Arc GPU and NPU servers simultaneously (different ports,
+  different model sizes)
+- The `local_llm_npu` nix module with `openvino_genai` Python scripts can probably
+  be simplified or removed in favor of the Docker approach
 
 ## NPU constraints
 
-- **Greedy decoding only** (`do_sample=False`) — beam search not supported
-- **Static shapes required** — `LLMPipeline` handles this internally
-- **Context length**: up to 8K tokens
-- **No existing LLM server** (ollama, vLLM, etc.) supports NPU as of April 2026
+- **Context**: small contexts recommended (`-c 512`), large contexts may fail
+- **Quantization**: Q4_0 primary, Q4_1/Q4_K_M/Q6_K partial support
+- **No model caching** on NPU yet
+- **Single chat session** only with `GGML_OPENVINO_STATEFUL_EXECUTION=1`
+- **No `--context-shift`** support
+
+## Dead ends encountered
+
+1. **`optimum-intel` + `OVModelForCausalLM`**: Exports dynamic shapes, NPU compiler
+   rejects them ([openvinotoolkit/openvino#34617](https://github.com/openvinotoolkit/openvino/issues/34617))
+2. **`openvino_genai.LLMPipeline`**: Works but requires custom Python server wrapper,
+   pip venv with missing NPU compiler `.so`, and many NixOS `LD_LIBRARY_PATH` hacks
+3. **Ollama NPU**: Draft PR [#15205](https://github.com/ollama/ollama/pull/15205), not
+   working yet
