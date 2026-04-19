@@ -27,9 +27,10 @@ spec:
           image: ghcr.io/containers/kubernetes-mcp-server:v0.0.60
           imagePullPolicy: IfNotPresent
           args:
-            # Drop-in config dir: ConfigMap provides 00-public.toml (URLs, audiences);
-            # Secret provides 01-secret.toml (sts_client_secret).
-            - --config-dir=/etc/kubectl-passthrough-mcp
+            # Base config (ConfigMap) + drop-in dir for secrets. The Secret's
+            # 01-secret.toml adds sts_client_secret.
+            - --config=/etc/kubectl-passthrough-mcp/00-public.toml
+            - --config-dir=/etc/kubectl-passthrough-mcp/conf.d
           ports:
             - name: http
               containerPort: 8080
@@ -40,8 +41,7 @@ spec:
               subPath: 00-public.toml
               readOnly: true
             - name: secret
-              mountPath: /etc/kubectl-passthrough-mcp/01-secret.toml
-              subPath: 01-secret.toml
+              mountPath: /etc/kubectl-passthrough-mcp/conf.d
               readOnly: true
           resources:
             requests:

@@ -25,10 +25,11 @@ spec:
           image: ghcr.io/containers/kubernetes-mcp-server:v0.0.60
           imagePullPolicy: IfNotPresent
           args:
-            # Drop-in config dir: ConfigMap provides 00-public.toml (URLs, audiences);
-            # Secret provides 01-secret.toml (sts_client_secret, sts_audience).
-            # Files load in lexical order; later files override earlier.
-            - --config-dir=/etc/kubectl-sandbox-mcp
+            # Base config (ConfigMap) + drop-in dir for secrets. Drop-ins load in
+            # lexical order and override the base; the Secret's 01-secret.toml adds
+            # sts_client_secret and sts_audience.
+            - --config=/etc/kubectl-sandbox-mcp/00-public.toml
+            - --config-dir=/etc/kubectl-sandbox-mcp/conf.d
           ports:
             - name: http
               containerPort: 8080
@@ -39,8 +40,7 @@ spec:
               subPath: 00-public.toml
               readOnly: true
             - name: secret
-              mountPath: /etc/kubectl-sandbox-mcp/01-secret.toml
-              subPath: 01-secret.toml
+              mountPath: /etc/kubectl-sandbox-mcp/conf.d
               readOnly: true
           resources:
             requests:
