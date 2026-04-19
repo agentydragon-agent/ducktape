@@ -3,6 +3,14 @@
     "kubectl-local": {
       "command": "bash",
       "args": ["devinfra/claude/kubectl-local-mcp.sh"]
+    },
+    "cluster-kubectl-sandbox-diagnostics": {
+      "type": "http",
+      "url": "https://kubectl-sandbox-mcp.allegedly.works/mcp",
+      "oauth": {
+        "clientId": "kubectl-sandbox-mcp",
+        "callbackPort": 8080
+      }
     }
   }
 }
