@@ -111,7 +111,7 @@ request-scoped contextvars via `get_access_token()`. See
 ## Deploying
 
 - **Terraform** (Authentik providers + K8s secret) is bundled into the
-  existing `cluster/terraform/gitops/agent-machine-access` module, which
+  existing `tf/gitops/agent-machine-access` module, which
   already owns the Grocy proxy provider. That module now also creates:
   - `authentik_provider_oauth2.grocy_mcp` — user-login AS that OIDCProxy
     wraps.

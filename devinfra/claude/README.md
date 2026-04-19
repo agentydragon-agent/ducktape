@@ -195,7 +195,7 @@ and export it as `DUCKTAPE_OTEL_BEARER_TOKEN`.
 
 Configured in the profile path (`otel.endpoint`, `secrets.otel_bearer_token`).
 
-Key files: TF module in <cluster/terraform/gitops/alloy-otlp-bearer-token/>
+Key files: TF module in <tf/gitops/alloy-otlp-bearer-token/>
 (provisions proxy provider, application, service account, token, policy
 binding, and the K8s Secret). Rotation: `tofu taint
 authentik_token.alloy_otlp` and let tofu-controller reconcile, or delete the

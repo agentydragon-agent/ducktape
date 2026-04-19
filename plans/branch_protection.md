@@ -22,7 +22,7 @@ branch deletion, which is a cheap extra we'd also pick up.
 ## What we tried in PR #1312
 
 A tofu-controller-managed `github_repository_ruleset` at
-`cluster/terraform/gitops/github-repo-rulesets/`, wired into Flux via
+`tf/gitops/github-repo-rulesets/`, wired into Flux via
 `cluster/k8s/github-repo-rulesets/`. The module was shaped like the existing
 `github-secrets-sync`, `flux-webhook-token`, and `harbor-ci` modules (same k8s
 backend, same PAT data source, same pattern).
@@ -141,7 +141,7 @@ Decision deferred — see tracking issue.
 
 - GitHub issue: agentydragon/ducktape#1314
 - Related files to restore when the second attempt lands:
-  - `cluster/terraform/gitops/github-repo-rulesets/` (module)
+  - `tf/gitops/github-repo-rulesets/` (module)
   - `cluster/k8s/github-repo-rulesets/` (Flux wiring)
   - `cluster/k8s/kustomization.yaml` (root resource list)
 - The PAT must have `Administration: Read and write` fine-grained scope before

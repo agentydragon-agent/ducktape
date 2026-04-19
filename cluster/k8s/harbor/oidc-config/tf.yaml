@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./cluster/terraform/gitops/sso/harbor-config
+  path: ./tf/gitops/sso/harbor-config
   sourceRef:
     kind: GitRepository
     name: flux-system

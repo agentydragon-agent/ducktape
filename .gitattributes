@@ -34,6 +34,7 @@ devinfra/claude/web_env/live-dpkg-versions.txt rules-lint-ignored=true
 # kebab-case filenames are conventional in HCL and k8s manifests
 cluster/** filename-conventions-ignored=true
 terraform/** filename-conventions-ignored=true
+tf/** filename-conventions-ignored=true
 
 # Logseq page names - dashes are part of the page title
 llm/instruct_logseq/pages/** filename-conventions-ignored=true

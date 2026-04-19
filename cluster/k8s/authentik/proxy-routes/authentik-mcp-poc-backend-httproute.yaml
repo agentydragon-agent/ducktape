@@ -2,7 +2,7 @@
 # embedded Authentik proxy outpost. Traffic: Gateway → outpost (auth) →
 # authentik-mcp-poc-backend.authentik-mcp-poc.svc:8080.
 #
-# The proxy provider (created by cluster/terraform/gitops/authentik-mcp-poc)
+# The proxy provider (created by tf/gitops/authentik-mcp-poc)
 # has `jwt_federation_providers` pointing at the authentik-mcp-poc OAuth2
 # provider, so the outpost accepts Bearer JWTs minted by the MCP server's
 # OIDCProxy upstream.

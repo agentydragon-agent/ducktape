@@ -224,7 +224,7 @@ scratch:
 
 ## Current Files
 
-### `/home/agentydragon/code/cluster/terraform/gitops/sso/kagent/main.tf`
+### `/home/agentydragon/code/tf/gitops/sso/kagent/main.tf`
 
 Creates:
 

@@ -6,7 +6,7 @@ metadata:
 spec:
   interval: 15m
   approvePlan: "auto"
-  path: ./cluster/terraform/gitops/airlock-oidc-proxy
+  path: ./tf/gitops/airlock-oidc-proxy
   sourceRef:
     kind: GitRepository
     name: flux-system

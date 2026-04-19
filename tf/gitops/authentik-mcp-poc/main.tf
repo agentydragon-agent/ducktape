@@ -14,8 +14,8 @@
 #      on the backend. The outpost then rewrites to internal_host and
 #      injects X-Authentik-* headers that the backend trusts.
 #
-# See cluster/terraform/gitops/airlock-oidc-proxy/main.tf (OAuth2 side) and
-# cluster/terraform/gitops/agent-machine-access/main.tf (proxy side) for
+# See tf/gitops/airlock-oidc-proxy/main.tf (OAuth2 side) and
+# tf/gitops/agent-machine-access/main.tf (proxy side) for
 # the templates this module is stitched from.
 
 terraform {

@@ -165,8 +165,7 @@ cluster/
 ├── shell.nix, .envrc      # direnv (KUBECONFIG, TALOSCONFIG, CLI tools)
 ├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
 ├── terraform/
-│   ├── main/               # Single TF root (PG backend, all resources)
-│   └── gitops/             # tofu-controller managed (DNS, SSO, secrets)
+│   └── main/               # Single TF root (PG backend, all resources)
 ├── k8s/                    # Flux-managed manifests
 │   ├── agents/             # Agent infra (openclaw, airlock, claude-rbac, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)

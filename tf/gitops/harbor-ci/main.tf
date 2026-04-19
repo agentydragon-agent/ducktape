@@ -141,7 +141,7 @@ resource "random_password" "harbor_webhook_token" {
 }
 
 # CLEANUP(2026-04-14): github_webhook_token and flux_receiver webhook migrated
-# to cluster/terraform/gitops/flux-webhook-token to decouple flux-webhook from
+# to tf/gitops/flux-webhook-token to decouple flux-webhook from
 # the harbor dependency chain (issue #1291). Remove these removed blocks once
 # the flux-webhook-token TF module has been applied and the old GitHub webhook
 # (registered with the harbor-ci token) has been manually deleted from GitHub.

@@ -22,7 +22,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" '["github_token"]' "GitHub PAT for agentydragon-agent bot — used by gh CLI automatically. PR workflow: origin is a local proxy; PRs must come from a fork (fork remote + push/PR instructions delivered via mailbox)."
 
 # OTEL bearer token (Grafana Alloy via Authentik) — canonical source is Authentik,
-# TF writes it into this K8s Secret (cluster/terraform/gitops/alloy-otlp-bearer-token).
+# TF writes it into this K8s Secret (tf/gitops/alloy-otlp-bearer-token).
 #
 # Gated because `kubectl get secret` blocks for ~30s per retry when the k8s API
 # is unreachable. Unconditional call → wedged daemon startup → dispatcher

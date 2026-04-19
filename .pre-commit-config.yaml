@@ -282,7 +282,7 @@ repos:
     hooks:
       - id: checkov_diff
         args: ["--framework", "terraform", "--skip-check", "CKV_TF_1,CKV2_AWS_23", "-f"]
-        files: "^cluster/terraform/.*\\.tf$"
+        files: "^(cluster/terraform|tf)/.*\\.tf$"
         additional_dependencies: ["urllib3", "python-dateutil"]
 
   # TFLint - Terraform linter — tflint provided by devShell / web-session via Nix
@@ -295,7 +295,7 @@ repos:
         name: tflint (cluster)
         language: system
         entry: devinfra/precommit/run_tflint.sh
-        files: "^cluster/terraform/.*\\.tf$"
+        files: "^(cluster/terraform|tf)/.*\\.tf$"
 
   # NOTE: terraform_validate hook removed — Bazel rules_tf now covers all
   # terraform modules via :validate and :lint targets with hermetic providers.

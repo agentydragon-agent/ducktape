@@ -6,7 +6,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./cluster/terraform/gitops/github-secrets-sync
+  path: ./tf/gitops/github-secrets-sync
   sourceRef:
     kind: GitRepository
     name: flux-system

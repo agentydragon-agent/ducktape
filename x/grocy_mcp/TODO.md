@@ -26,8 +26,6 @@ remainder needs a bit more care:
   `get_current_user`. These are zero-argument reads on singleton
   resources; dropping the verb (`system_info`, `db_changed_time`,
   `current_user`) reads more naturally as MCP resources than as tools.
-  May warrant promoting them to actual MCP resources (see `TOOL_OVERRIDES`
-  `resource=True` flag) rather than just renaming.
 - **Product stock helpers** (OpenAPI) — `get_product_stock`,
   `open_product_stock`, `transfer_product_stock` (already disabled). The
   `<entity>_<verb>` rename is mechanical (`product_stock_get`,

@@ -14,7 +14,7 @@ The real fix is to mirror the Authentik-generated token into a SOPS-encrypted
 file and `try_export` from it, matching the pattern used for every other
 secret. Sketch:
 
-1. Extend `cluster/terraform/gitops/alloy-otlp-bearer-token/` to also write
+1. Extend `tf/gitops/alloy-otlp-bearer-token/` to also write
    the token into `secrets/alloy-otlp-bearer-token.yaml` via `sops_file` or
    an equivalent provider — re-encrypted for the `claude-web` age recipient
    on every TF apply.

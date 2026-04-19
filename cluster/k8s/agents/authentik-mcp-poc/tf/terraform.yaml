@@ -6,7 +6,7 @@ metadata:
 spec:
   interval: 15m
   approvePlan: "auto"
-  path: ./cluster/terraform/gitops/authentik-mcp-poc
+  path: ./tf/gitops/authentik-mcp-poc
   sourceRef:
     kind: GitRepository
     name: flux-system
