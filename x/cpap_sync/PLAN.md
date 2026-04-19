@@ -4,20 +4,23 @@ Nightly sync of ResMed CPAP data from the ez Share WiFi SD card to the cluster.
 
 ## Status
 
-Implementation done. Pending wyrm2 restart + first sync validation.
+Implementation done. Flux applied (as of `d84b32f0`): namespace, CronJob, secret all
+live. PVC pending (WaitForFirstConsumer — binds on first pod run). CI building image.
+Pending: wyrm2 restart to activate USB hotplug + pick up WiFi stick.
 
 ## Next Steps (after wyrm2 restart)
 
 1. **Verify stick visible in wyrm2**: `lsusb | grep 0e8d` and `ip link show | grep wlx`
-2. **Push commits + wait for CI image build**: `git push` → CI builds and pushes
-   `ghcr.io/agentydragon/cpap-sync:devel-*` → Flux ImagePolicy picks it up
-3. **Apply cluster changes**: `git push` triggers Flux reconcile — namespace, PVC,
-   CronJob, secret should all appear in `cpap-sync` namespace
-4. **Trigger a manual test run**: `kubectl create job -n cpap-sync --from=cronjob/cpap-sync cpap-sync-test`
-   then `kubectl logs -n cpap-sync -f job/cpap-sync-test`
-5. **Check data landed on PVC**: exec into a debug pod and verify EDF files under
+2. **Wait for CI image**: `gh run watch` — once push-images completes, Flux ImagePolicy
+   picks up `ghcr.io/agentydragon/cpap-sync:devel-*` and updates the CronJob
+3. **Trigger a manual test run**:
+   ```
+   kubectl create job -n cpap-sync --from=cronjob/cpap-sync cpap-sync-test
+   kubectl logs -n cpap-sync -f job/cpap-sync-test
+   ```
+4. **Check data landed on PVC**: exec into a debug pod, verify EDF files under
    `/data/cpap/DATALOG/`
-6. **Verify no routing damage**: check wyrm2's default route is intact after the job
+5. **Verify no routing damage**: check wyrm2's default route is intact after job
    completes (`ip route show` on wyrm2)
 
 ## Background
