@@ -6,4 +6,3 @@ resources:
   - anthropic-api-key.sops.yaml
   - sandbox-sa-token-eso.yaml
   - telegram-bot-token.sops.yaml
-  - matrix-bot-password-eso.yaml

@@ -19,5 +19,4 @@ spec:
     - name: openclaw-gateway-namespace
     - name: openclaw-sandbox
     - name: external-secrets-config
-    - name: matrix-secrets
     - name: reflector
