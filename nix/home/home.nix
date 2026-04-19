@@ -91,6 +91,7 @@ in
     ./modules/datetime-format.nix
     ./modules/sops-env.nix
     ./services/activitywatch.nix
+    ./opencode
   ];
   ducktape.sopsEnv = {
     HF_TOKEN = {

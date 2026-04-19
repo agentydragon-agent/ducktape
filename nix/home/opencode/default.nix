@@ -44,6 +44,22 @@ let
   # Docs: https://opencode.ai/docs/providers/
   opencodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
+    mcp = {
+      # TODO: Auth not yet working - MCP servers require OAuth but auth flow not triggered
+      # Plan: Add oauth config with client credentials or verify .well-known/opencode endpoint
+      "cluster-kubectl-sandbox-diagnostics" = {
+        type = "remote";
+        url = "https://kubectl-sandbox-mcp.allegedly.works/mcp";
+      };
+      "grocy-sf" = {
+        type = "remote";
+        url = "https://grocy-mcp-sf.allegedly.works/mcp";
+      };
+      "grocy-vallejo" = {
+        type = "remote";
+        url = "https://grocy-mcp-vallejo.allegedly.works/mcp";
+      };
+    };
     provider = {
       # === vLLM: Tensor parallelism for better throughput ===
       # Start server: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
