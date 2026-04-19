@@ -6,7 +6,6 @@ namespace: agents
 resources:
   - namespace.yaml
   - pvcs.yaml
-  - externalsecret.yaml
   - deployment.yaml
   - service.yaml
   - remotemcpserver.yaml
