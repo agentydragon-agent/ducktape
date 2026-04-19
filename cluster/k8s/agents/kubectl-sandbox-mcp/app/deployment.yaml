@@ -30,6 +30,7 @@ spec:
             # sts_client_secret and sts_audience.
             - --config=/etc/kubectl-sandbox-mcp/00-public.toml
             - --config-dir=/etc/kubectl-sandbox-mcp/conf.d
+            - --log-level=4
           ports:
             - name: http
               containerPort: 8080

@@ -31,6 +31,7 @@ spec:
             # 01-secret.toml adds sts_client_secret.
             - --config=/etc/kubectl-passthrough-mcp/00-public.toml
             - --config-dir=/etc/kubectl-passthrough-mcp/conf.d
+            - --log-level=4
           ports:
             - name: http
               containerPort: 8080
