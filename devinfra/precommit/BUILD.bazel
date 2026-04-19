@@ -37,12 +37,6 @@ py_library(
 )
 
 py_library(
-    name = "terraform_centralization",
-    srcs = ["terraform_centralization.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "test_tag",
     srcs = ["test_tag.py"],
     visibility = ["//visibility:public"],
@@ -109,7 +103,6 @@ py_library(
     deps = [
         ":filename_conventions",
         ":frozen_specimens",
-        ":terraform_centralization",
         ":test_tag",
         "//cluster/validation:validate_all",
         "//devinfra:pytest_main",

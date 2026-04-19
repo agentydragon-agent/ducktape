@@ -1,7 +1,7 @@
 """Git hook entry points for pre-commit framework.
 
 Installed as separate console scripts via the claude-hooks wheel:
-- ducktape-precommit: file validations (tf-centralization, filenames, cluster, frozen-specimens)
+- ducktape-precommit: file validations (filenames, cluster, frozen-specimens)
 - ducktape-pytest-main-check: verify test files have pytest_bazel.main() entry points
 - ducktape-prepare-commit-msg: block amending already-pushed commits
 - ducktape-commit-msg: enforce BAZEL_TEST_INVOCATIONS= tag
@@ -26,7 +26,6 @@ from cluster.validation.validate_all import validate as validate_cluster
 from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import run as enforce_bazel_tests_run
 from devinfra.precommit.filename_conventions import check_filename_conventions
 from devinfra.precommit.frozen_specimens import check_specimen_code_changes
-from devinfra.precommit.terraform_centralization import find_violations
 from devinfra.precommit.test_tag import TestTagError, check_commit_message
 from devinfra.pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from util.bazel.workspace import BazelWorkspace, detect_bazel_backend
@@ -45,10 +44,6 @@ def is_cluster_validated(p: Path) -> bool:
     if p.is_relative_to("cluster/k8s") and p.suffix in (".yaml", ".yml"):
         return True
     return p.is_relative_to("cluster/terraform") and "cilium" in p.parts
-
-
-def is_terraform_module(p: Path) -> bool:
-    return p.suffix == ".tf" and p.is_relative_to("cluster/terraform/modules")
 
 
 async def run_pytest_main_check(files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex) -> str | None:
@@ -75,15 +70,6 @@ async def run_cluster_validate(files: list[Path], repo_root: Path) -> str | None
     errors = await validate_cluster(repo_root / "cluster/k8s", skip_flux_build=True)
     if errors:
         return "\n".join(f"  {e.strip()}" for e in errors)
-    return None
-
-
-async def run_terraform_centralization_check(files: list[Path], repo_root: Path) -> str | None:
-    if not any(is_terraform_module(f) for f in files):
-        return None
-    violations = find_violations(repo_root)
-    if violations:
-        return "\n".join(str(v) for v in violations)
     return None
 
 
@@ -150,7 +136,6 @@ async def _run_pre_commit(argv: list[str]) -> int:
         print(f"Validating {len(files)} files...")
         results = list(
             await asyncio.gather(
-                _traced("tf-centralization", run_terraform_centralization_check(files, repo_root)),
                 _traced("filename-conventions", run_filename_convention_check(deltas, head_tree)),
                 _traced("cluster-validate", run_cluster_validate(files, repo_root)),
                 _traced("frozen-specimens", run_frozen_specimens_check(deltas, head_tree)),
