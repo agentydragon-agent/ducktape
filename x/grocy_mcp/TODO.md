@@ -1,28 +1,17 @@
-# grocy_mcp follow-ups
+## Fold `server_instructions.md` conventions into tool descriptions
 
-Running backlog of improvements surfaced by Haiku eval audits and review
-feedback. Items here are cross-cutting or non-trivial enough that they
-shouldn't get lost between sessions.
+claude.ai does not expose MCP `initialize.instructions` to the LLM
+(verified 2026-04-19). The eval harness compensates by prepending the
+markdown to the system prompt manually; claude.ai has no equivalent
+injection point.
 
-## Verification pending
+Make tool descriptions more self-contained so they work well without
+server-level instructions. Key conventions that currently live only in
+`server_instructions.md` (e.g. `amount_opened` semantics, when to use
+`stock_set` vs `stock_add`, unit handling) should be folded into the
+relevant tool descriptions themselves.
 
-### Does claude.ai's MCP connector forward `initialize.instructions` to the LLM?
-
-Commit that added `server_instructions.md` publishes the markdown via
-`FastMCP.from_openapi(instructions=…)`. `agent_framework` **does not**
-forward it (verified by reading `agent_framework/_mcp.py`: it calls
-`session.initialize()` and discards the result); the eval harness
-prepends the markdown to the system prompt manually to compensate.
-Once claude.ai is connected to a deployed `grocy-mcp`, check whether
-the model spontaneously demonstrates awareness of the conventions (e.g.
-mentions `amount_opened` semantics, picks `stock_set` for a "we counted
-and have X" framing). If it doesn't, follow the same manual-prepend
-approach at the connector side — or file a bug upstream on whichever
-client dropped the field.
-
-## Tool naming
-
-### Finish the `<entity>_<verb>` rename
+## Finish the `<entity>_<verb>` rename
 
 The first pass renamed the CRUD / stock / shopping-list families. The
 remainder needs a bit more care:
@@ -47,9 +36,7 @@ remainder needs a bit more care:
   `stock_entries` filtered by product. Worth thinking about whether to
   promote to a batch tool that groups with `stock_*`.
 
-## Operational safety
-
-### `shopping_list_clear` checks each DELETE (landed in #1345)
+## `shopping_list_clear` checks each DELETE (landed in #1345)
 
 Tombstone — keep until the next design pass so we remember it was an
 intentional fix rather than an oversight.
