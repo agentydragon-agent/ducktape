@@ -24,7 +24,10 @@ spec:
       enableServiceLinks: false
       containers:
         - name: server
-          image: ghcr.io/containers/kubernetes-mcp-server:v0.0.60
+          # CLEANUP: switch back to ghcr.io/containers/kubernetes-mcp-server:<version>
+          # when upstream releases a version with the /.well-known/oauth-authorization-server
+          # 404 fallback (currently pinned at our fork build via third_party/kubernetes-mcp-server-pin.txt).
+          image: ghcr.io/agentydragon/kubernetes-mcp-server:devel-latest # {"$imagepolicy": "flux-system:kubernetes-mcp-server"}
           imagePullPolicy: IfNotPresent
           args:
             # Base config (ConfigMap) + drop-in dir for secrets. The Secret's
