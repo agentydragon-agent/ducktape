@@ -6,6 +6,11 @@
 # Hardware: Intel Core Ultra (Lunar Lake) with IPU7 (PCI 8086:645d)
 # Sensors: OmniVision OV08X40 (rear), OVTI00AB (front)
 # Dependencies: IVSC (Intel Visual Sensing Controller) for camera power gating
+#
+# Camera access paths:
+# - PipeWire-native apps (Chrome with WebRtcPipeWireCamera, GNOME Snapshot):
+#   use the libcamera PipeWire source directly via the camera portal.
+# - V4L2-only apps (Zoom): need v4l2loopback bridge. See debug/rugged/hw/README.md.
 {
   config,
   lib,

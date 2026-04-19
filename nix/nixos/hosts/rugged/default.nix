@@ -11,8 +11,6 @@
 # TODO: zram - consider zramSwap.enable for memory compression (swap file already exists at /swap/swapfile)
 # TODO: Vulkan crash on Lunar Lake - Snapshot (and likely other GTK4 apps) segfault with VK_ERROR_DEVICE_LOST.
 #   Workaround: GSK_RENDERER=gl. Consider adding to environment.sessionVariables or wrapping affected apps.
-# TODO: IPU7 camera not visible to Zoom and browsers. Likely need PipeWire camera portal / xdg-desktop-portal
-#   integration so non-libcamera apps can access the camera. Snapshot with GSK_RENDERER=gl works.
 # TODO: PipeWire - explicit audio config (services.pipewire with pulse/alsa/jack support)
 # TODO: bluetooth group - add to extraGroups if direct bluetooth access needed beyond blueman
 {
@@ -106,6 +104,26 @@ in
   # WWAN/5G modem support (Foxconn DP25-42843-47)
   networking.modemmanager.enable = true;
   programs.nm-applet.enable = true;
+
+  # Native Wayland for Chrome and Electron apps. Without this, they run under
+  # XWayland and can't use the PipeWire camera portal (or screen sharing portal).
+  # TODO: Check if NIXOS_OZONE_WL is actually needed for PipeWire camera, or if
+  #   WebRtcPipeWireCamera alone suffices (the portal is D-Bus, not display-tied).
+  #   We only tested both together.
+  environment.sessionVariables.NIXOS_OZONE_WL = "1";
+
+  # Enable PipeWire camera portal in Chrome. IPU7 raw V4L2 nodes are non-functional
+  # (the ISP pipeline requires libcamera), so Chrome must use the PipeWire camera
+  # source via xdg-desktop-portal instead of enumerating /dev/video* directly.
+  # TODO: Check if WebRtcPipeWireCamera alone is enough, or if NIXOS_OZONE_WL is
+  #   also required. We only tested both together.
+  nixpkgs.overlays = [
+    (_final: prev: {
+      google-chrome = prev.google-chrome.override {
+        commandLineArgs = "--enable-features=WebRtcPipeWireCamera";
+      };
+    })
+  ];
 
   hardware.enableAllFirmware = true;
 
