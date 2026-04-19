@@ -71,47 +71,26 @@ After step 5, the modem registers on Google Fi (5G NR, 92% signal observed).
 - `mmcli -m 0 --reset` — radio stays off
 - ~~`fwupd`~~: Firmware already at latest (checked March 2026)
 
+### Completed
+
+- ~~**Declarative NixOS setup**~~: Done. See <nix/nixos/modules/foxconn-wwan.nix>.
+  FoxFlss packaged, wired as MM `fcc-unlock.d` script, declarative NM profile
+  with `ipv6.never-default` and IPv4 failover (metric 1050).
+- ~~**NM connection**~~: Done. Declarative "Google Fi" profile via
+  `networking.networkmanager.ensureProfiles`. IPv6 `never-default` prevents
+  cellular from hijacking IPv6 traffic when WiFi only has ULA addresses.
+
 ### Remaining work
 
-- **Declarative NixOS setup** — make the FCC unlock automatic on boot. Plan:
-  1. **Package FoxFlss** as a Nix derivation (it's a single ELF binary with only
-     glibc dependency). Fetch from the fii_linux GitHub repo, `patchelf` the
-     interpreter, install binary + RF data files.
-
-  2. **Write an FCC unlock wrapper script** that MM calls via `fcc-unlock.d`.
-     Based on the `DW593Xe` script from fii_linux — it finds the MBIM port,
-     calls `FoxFlss`, and exits. Must have `dmidecode` and `FoxFlss` on PATH.
-
-  3. **Wire via `networking.modemmanager.fccUnlockScripts`**:
-
-     ```nix
-     networking.modemmanager.fccUnlockScripts = [{
-       id = "105b:e11d";
-       path = "${foxflss-fcc-unlock-script}";
-     }];
-     ```
-
-     This creates a symlink in `/etc/ModemManager/fcc-unlock.d/105b:e11d` so MM
-     runs the script automatically when the modem is detected.
-
-  4. **Add `dmidecode`** to system packages (FoxFlss shells out to it).
-
-  The MM `fcc-unlock.d` mechanism runs the script automatically during modem
-  probing, so no manual `FoxFlss` + MM restart cycle is needed — MM handles it.
-
-- **NM connection**: After FCC unlock + MM restart + `mmcli --enable` +
-  `mmcli --simple-connect`, GNOME Settings can manage the cellular connection
-  and configures IP automatically (IPv4 + IPv6). The `nmcli` CLI showed
-  `wwan0mbim0` as `gsm / unavailable` during testing, but GNOME GUI was able
-  to activate the connection. Some apps (pip) had IPv4 connectivity issues —
-  may need DNS or routing investigation when WiFi is off.
-- **libqmi 1.38.0 overlay**: Once nixpkgs updates (or via overlay), the FCC unlock
-  could be done via `qmicli --fox-set-fcc-authentication` instead of the closed-source
-  binary. The FOX service (0xE3) works on this modem (confirmed: `--fox-get-firmware-version`
-  returns `FDE2.F0.0.0.1.2.TO.003.062`).
-- **Suspend**: `mhi_pci_suspend` returns EBUSY (-16). FoxFlss v1.0.9+ has
-  `--test-quick-suspend-resume` for MM, and the fii_linux repo includes
+- **Cold boot verification**: FCC unlock + auto-connect has only been tested
+  after `nixos-rebuild switch`. Verify it works from a cold boot.
+- **Suspend/resume**: `mhi_pci_suspend` returns EBUSY (-16). FoxFlss v1.0.9+
+  has `--test-quick-suspend-resume` for MM, and the fii_linux repo includes
   `mm-suspend-resume-options.conf`. Needs investigation.
+- **libqmi 1.38.0**: Once nixpkgs updates (or via overlay), the FCC unlock
+  could use `qmicli --fox-set-fcc-authentication` instead of the closed-source
+  binary. The FOX service (0xE3) works on this modem (confirmed:
+  `--fox-get-firmware-version` returns `FDE2.F0.0.0.1.2.TO.003.062`).
 
 ### Google Fi APN
 

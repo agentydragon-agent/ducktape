@@ -2,19 +2,17 @@
 
 **Goal**: Google Fi internet on the tablet.
 
-**Current state (2026-04-18)**: FCC lock **solved** using Foxconn `FoxFlss` binary.
-Modem registers on Google Fi (5G NR, 92% signal). Bearer connects successfully via
-`mmcli --simple-connect`. Remaining: NixOS declarative setup (package FoxFlss, wire
-as `fcc-unlock.d` script, configure NM or systemd-networkd for automatic IP).
+**Current state (2026-04-18)**: Fully declarative. FCC unlock, modem enable, and
+Google Fi connection all happen automatically via NixOS module
+<nix/nixos/modules/foxconn-wwan.nix>. Works alongside WiFi (IPv6 `never-default`
+prevents cellular from hijacking IPv6 traffic).
 
-See <esim.md> for full FCC unlock details, sequencing, and remaining work.
+See <esim.md> for FCC unlock details, sequencing, and research notes.
 
-**Next steps**:
+**TODO**:
 
-1. Package `FoxFlss` for NixOS and wire via `networking.modemmanager.fccUnlockScripts`
-2. Fix NetworkManager integration (NM sees `wwan0mbim0` as `gsm / unavailable`)
-   or use systemd-networkd for automatic IP configuration on `wwan0`
-3. Investigate suspend issue (`mhi_pci_suspend` returns EBUSY, error -16)
-
-**Suspend issue**: `mhi_pci_suspend` returns EBUSY. FoxFlss repo includes
-`mm-suspend-resume-options.conf` and `--test-quick-suspend-resume` MM flag.
+- Verify FCC unlock + auto-connect works from cold boot (only tested after
+  `nixos-rebuild switch` so far)
+- Investigate suspend/resume behavior (`mhi_pci_suspend` returns EBUSY, error -16).
+  FoxFlss repo includes `mm-suspend-resume-options.conf` and
+  `--test-quick-suspend-resume` MM flag.
