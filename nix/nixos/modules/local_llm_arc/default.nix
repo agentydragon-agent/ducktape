@@ -8,7 +8,7 @@
 # gaps (no DPC++/SYCL compiler in nixpkgs, nixpkgs#367722).
 #
 # Usage after enable:
-#   docker exec ipex-ollama ollama pull qwen3:4b
+#   podman exec ipex-ollama ollama pull qwen3:4b
 #   curl http://localhost:11434/api/generate -d '{"model":"qwen3:4b","prompt":"Hello"}'
 {
   config,
@@ -32,6 +32,12 @@ in
       level-zero
     ];
 
+    # Model storage: /var/lib/local-llm/ollama (shared parent with NPU models)
+    systemd.tmpfiles.rules = [
+      "d /var/lib/local-llm 0755 root root -"
+      "d /var/lib/local-llm/ollama 0755 root root -"
+    ];
+
     virtualisation.oci-containers.containers.ipex-ollama = {
       image = "intelanalytics/ipex-llm-inference-cpp-xpu:latest";
       extraOptions = [
@@ -46,14 +52,18 @@ in
         OLLAMA_HOST = "0.0.0.0";
         no_proxy = "localhost,127.0.0.1";
         SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS = "1";
+        ONEAPI_DEVICE_SELECTOR = "level_zero:gpu";
+        SYCL_DEVICE_FILTER = "gpu";
       };
       volumes = [
-        "/var/lib/ipex-ollama:/root/.ollama"
+        "/var/lib/local-llm/ollama:/root/.ollama"
       ];
       entrypoint = "/bin/bash";
       cmd = [
         "-c"
-        "cd /llm/scripts && source ipex-llm-init --gpu --device Arc 2>/dev/null; bash start-ollama.sh"
+        # ipex-llm-init sets oneAPI env; init-ollama symlinks the IPEX-LLM ollama binary + libs to /llm/ollama/;
+        # LD_LIBRARY_PATH must include /llm/ollama so libggml-sycl.so and libggml-base.so are found
+        "cd /llm/scripts && source ipex-llm-init --gpu --device Arc 2>/dev/null; mkdir -p /llm/ollama && cd /llm/ollama && init-ollama && export LD_LIBRARY_PATH=/llm/ollama:$LD_LIBRARY_PATH && exec ./ollama serve"
       ];
     };
   };

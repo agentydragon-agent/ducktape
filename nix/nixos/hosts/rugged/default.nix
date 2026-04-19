@@ -34,6 +34,7 @@ in
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ../../modules/ipu7-camera.nix
+    ../../modules/local_llm_arc
   ];
 
   # Passwordless sudo for system inspection commands
@@ -50,6 +51,10 @@ in
 
   # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
   ducktape.ipu7Camera.enable = true;
+
+  # Local LLM inference (Arc GPU)
+  # TODO: add NPU LLM inference
+  ducktape.localLlm.arc.enable = true;
 
   # Separate btrfs subvolumes for containerd and local-path-provisioner storage.
   # Create them before first boot with:
