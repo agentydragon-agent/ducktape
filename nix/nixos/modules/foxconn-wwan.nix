@@ -92,6 +92,33 @@ in
     # FoxFlss needs dmidecode to read the system SKU
     environment.systemPackages = [ pkgs.dmidecode ];
 
+    # Google Fi cellular connection profile.
+    # IPv6 never-default: many WiFi networks only provide ULA IPv6 (no default
+    # route). Cellular provides global IPv6 with a default route, which causes
+    # all IPv6 traffic to silently route over cellular — breaking apps that
+    # can't traverse carrier NAT. Disabling the IPv6 default is conservative
+    # but safe on all networks. TODO: revisit if true IPv6 failover is needed.
+    # IPv4 route-metric 1050: WiFi (metric 600) is preferred when available;
+    # cellular is used as failover when WiFi is down.
+    networking.networkmanager.ensureProfiles.profiles.google-fi = {
+      connection = {
+        id = "Google Fi";
+        type = "gsm";
+        autoconnect = true;
+      };
+      gsm = {
+        apn = "h2g2";
+      };
+      ipv4 = {
+        method = "auto";
+        route-metric = 1050;
+      };
+      ipv6 = {
+        method = "auto";
+        never-default = true;
+      };
+    };
+
     # TODO: FoxFlss hardcodes /opt/foxconn/data/{DW5932e,DW5934e}_RF.dat for RF
     # calibration data (used by -f Set_RF_SSKU, not by FCC unlock). Symlink them
     # there if RF calibration is ever needed. NixOS doesn't manage /opt by default
