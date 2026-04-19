@@ -75,7 +75,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     usb3 = true
   }
 
-  hotplug = "network,disk,cpu,memory,usb"
+  hotplug = "network,disk,cpu,usb"  # note: memory hotplug requires NUMA
 
   vga {
     type   = "virtio"
