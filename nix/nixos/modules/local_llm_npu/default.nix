@@ -19,9 +19,33 @@
 let
   cfg = config.ducktape.localLlm.npu;
 
+  # The pip openvino package ships the NPU plugin but NOT the NPU compiler
+  # (libopenvino_intel_npu_compiler.so). The compiler is only in Intel's
+  # archive tarball. We extract just that .so and add it to LD_LIBRARY_PATH.
+  openvino-npu-compiler = pkgs.stdenv.mkDerivation {
+    pname = "openvino-npu-compiler";
+    version = "2026.1.2";
+    src = pkgs.fetchurl {
+      url = "https://storage.openvinotoolkit.org/repositories/openvino/packages/2026.1.2/linux/openvino_toolkit_ubuntu24_2026.1.2.21379.f3a30a671d3_x86_64.tgz";
+      hash = "sha256-veDDlRl2RR8dEgowjkCSK7gTyz7B6Bdzwp7z7nyp9vE=";
+    };
+    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+    buildInputs = [
+      pkgs.stdenv.cc.cc.lib # libstdc++
+      pkgs.tbb # libtbb.so.12
+      pkgs.zstd # libzstd
+    ];
+    dontBuild = true;
+    installPhase = ''
+      mkdir -p $out/lib
+      cp runtime/lib/intel64/libopenvino_intel_npu_compiler.so $out/lib/
+    '';
+  };
+
   npu-llm = pkgs.writeShellScriptBin "npu-llm" ''
     export PYTHON_BIN="${pkgs.python313}/bin/python"
     export SCRIPT_DIR="${./.}"
+    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${openvino-npu-compiler}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     exec ${pkgs.bash}/bin/bash "${./npu-llm.sh}" "$@"
   '';
 in

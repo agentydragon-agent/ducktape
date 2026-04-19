@@ -27,3 +27,4 @@ spec:
     - name: gateway
     - name: sso-providers-tf
     - name: cnpg
+    - name: external-secrets-config

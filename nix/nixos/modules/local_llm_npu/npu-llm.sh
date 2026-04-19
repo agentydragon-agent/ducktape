@@ -52,11 +52,13 @@ case "$1" in
     echo "Creating venv at $VENV_DIR ..."
     "$PYTHON_BIN" -m venv --clear "$VENV_DIR"
     "$VENV_DIR/bin/pip" install --upgrade pip
+    # Install CPU-only torch to avoid downloading ~1.5GB of CUDA deps
+    "$VENV_DIR/bin/pip" install \
+      torch --index-url https://download.pytorch.org/whl/cpu
     "$VENV_DIR/bin/pip" install \
       openvino \
       'optimum-intel[openvino]' \
       transformers \
-      torch \
       sentencepiece \
       protobuf \
       fastapi \

@@ -129,10 +129,7 @@ resources:
   - authentik/secrets/flux-kustomization.yaml
   - authentik/sso-secrets/flux-kustomization.yaml
   - authentik/proxy-routes/flux-kustomization.yaml
-  - authentik/blueprints/sso-secrets/flux-kustomization.yaml
-  - authentik/blueprints/gitea-secret/flux-kustomization.yaml
   - authentik/sso-providers-tf/flux-kustomization.yaml
-  - authentik/blueprints/inventree-secret/flux-kustomization.yaml
 
   # --- harbor ---
   - harbor/namespace/flux-kustomization.yaml

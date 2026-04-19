@@ -17,12 +17,5 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  healthChecks:
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: authentik-sso-client-secrets
-      namespace: authentik
   dependsOn:
     - name: authentik-namespace
-    - name: external-secrets-config
-    - name: authentik-blueprint-sso-secrets
