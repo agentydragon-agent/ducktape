@@ -87,7 +87,6 @@ _REPLACED_ROUTES: set[tuple[str, str]] = {
     ("post", "/stock/products/{productId}/transfer"),
     ("get", "/stock/entry/{entryId}"),
     ("put", "/stock/entry/{entryId}"),
-    # Shopping list — replaced by custom tools in batch_tools.py.
     ("post", "/stock/shoppinglist/add-product"),
     ("post", "/stock/shoppinglist/remove-product"),
     ("post", "/stock/shoppinglist/clear"),
