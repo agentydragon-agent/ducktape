@@ -308,6 +308,15 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
     data.authentik_property_mapping_provider_scope.profile.id,
   ]
 
+  # - Claude Code: http://localhost:<port>/callback
+  # - kubernetes-mcp-server's built-in callback (browser testing): /oauth/callback
+  #
+  # TODO: Consider adding https://claude.ai/api/mcp/auth_callback for Claude.ai
+  # Custom Connectors. Intentionally omitted for now — using the passthrough
+  # server from Claude.ai would give the caller full (admin) cluster access
+  # through the web UI, which may be more exposure than we want. The
+  # kubectl-sandbox-mcp provider includes it because its scope mapping keeps
+  # the caller sandbox-only regardless.
   allowed_redirect_uris = [
     {
       matching_mode = "regex"
@@ -387,11 +396,17 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_scoped" {
     authentik_property_mapping_provider_scope.kubectl_sandbox_fixed_groups.id,
   ]
 
-  # Claude Code uses http://localhost:<port>/callback for the OAuth dance.
+  # - Claude Code: http://localhost:<port>/callback
+  # - Claude.ai web (custom connectors): https://claude.ai/api/mcp/auth_callback
+  # - kubernetes-mcp-server's built-in callback (browser testing): /oauth/callback
   allowed_redirect_uris = [
     {
       matching_mode = "regex"
       url           = "^http://localhost:[0-9]+/callback$"
+    },
+    {
+      matching_mode = "strict"
+      url           = "https://claude.ai/api/mcp/auth_callback"
     },
     {
       matching_mode = "strict"
