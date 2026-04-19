@@ -374,10 +374,17 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_scoped" {
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
 
+  # Custom scope mapping overrides the `groups` claim to a fixed
+  # `["kubectl-sandbox-users"]` regardless of the authenticating user's actual
+  # groups. This achieves privilege scoping at token-issue time — no RFC 8693
+  # exchange needed, no confidential secondary client. Even a cluster admin
+  # who logs in here only gets sandbox-level RBAC (via the OIDC group claim
+  # mapping in kube-apiserver's AuthenticationConfiguration).
   property_mappings = [
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    authentik_property_mapping_provider_scope.kubectl_sandbox_fixed_groups.id,
   ]
 
   # Claude Code uses http://localhost:<port>/callback for the OAuth dance.
@@ -393,60 +400,26 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_scoped" {
   ]
 }
 
-## Confidential exchange client. Only the in-cluster pod uses this to
-## authenticate its RFC 8693 token-exchange calls to Authentik. The
-## client_secret lives in a k8s Secret; it's not distributed to users.
-## Accepts the user-facing token as subject_token and issues a
-## proxy-scoped token (sandbox group).
-resource "authentik_provider_oauth2" "kubectl_sandbox_exchange" {
-  name               = "kubectl-sandbox-mcp-exchange"
-  client_id          = "kubectl-sandbox-mcp-exchange"
-  client_type        = "confidential"
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-  issuer_mode                = "per_provider"
-  include_claims_in_id_token = true
-
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-    data.authentik_property_mapping_provider_scope.email.id,
-    data.authentik_property_mapping_provider_scope.profile.id,
-  ]
-
-  # No redirect URIs — this client never does browser-based flows. It's
-  # only used server-side (pod → Authentik) for token exchange.
-  allowed_redirect_uris = []
-}
-
-# Proxy provider used as the token exchange target. The exchanged token
-# carries only the scoped claims from this provider (kubectl-sandbox-users
-# group), regardless of the caller's actual groups/permissions.
-resource "authentik_provider_proxy" "kubectl_sandbox_scoped" {
-  name                  = "kubectl-sandbox-mcp-proxy"
-  external_host         = "https://kubectl-sandbox-mcp.allegedly.works"
-  internal_host         = "http://localhost"
-  mode                  = "proxy"
-  authentication_flow   = data.authentik_flow.authentication.id
-  authorization_flow    = data.authentik_flow.implicit_consent.id
-  invalidation_flow     = data.authentik_flow.invalidation.id
-  access_token_validity = "hours=1"
-
-  # Tokens from the user-facing public client are valid subject_tokens for
-  # the exchange; the pod authenticates as the confidential exchange client
-  # to perform the actual exchange.
-  jwt_federation_providers = [
-    authentik_provider_oauth2.kubectl_sandbox_scoped.id,
-    authentik_provider_oauth2.kubectl_sandbox_exchange.id,
-  ]
+## Scope mapping: hardcodes `groups = ["kubectl-sandbox-users"]` on the issued
+## token. This is what makes kubectl-sandbox-mcp scope-safe: the user's actual
+## group memberships are NOT forwarded into the token; kube-apiserver only
+## sees the sandbox group.
+resource "authentik_property_mapping_provider_scope" "kubectl_sandbox_fixed_groups" {
+  name       = "kubectl-sandbox-mcp-fixed-groups"
+  scope_name = "groups"
+  expression = <<-EXPR
+    # Overrides the user's real groups with a fixed sandbox-only group.
+    # The kubectl-sandbox-mcp application authenticates users via consent,
+    # but the issued token only carries this group — no privilege escalation.
+    return {"groups": ["kubectl-sandbox-users"]}
+  EXPR
 }
 
 resource "authentik_application" "kubectl_sandbox_scoped" {
   name              = "kubectl-sandbox-mcp"
   slug              = "kubectl-sandbox-mcp"
   protocol_provider = authentik_provider_oauth2.kubectl_sandbox_scoped.id
-  meta_description  = "Sandbox kubectl MCP — token exchange scopes to sandbox permissions"
+  meta_description  = "Sandbox kubectl MCP — token issued with fixed sandbox group"
   meta_launch_url   = "https://kubectl-sandbox-mcp.allegedly.works"
 }
 
@@ -456,21 +429,7 @@ resource "authentik_policy_binding" "kubectl_sandbox_scoped_users" {
   order  = 0
 }
 
-resource "kubernetes_secret" "kubectl_sandbox_scoped" {
-  metadata {
-    name      = "kubectl-sandbox-mcp"
-    namespace = "kubectl-sandbox-mcp"
-  }
-
-  data = {
-    # Drop-in override: loaded after 00-public.toml. TF-generated values only:
-    #   - sts_client_id/sts_client_secret: the CONFIDENTIAL exchange client
-    #     used for RFC 8693 token exchange (not the user-facing public client).
-    #   - sts_audience: the proxy provider's client_id (exchanged token target).
-    "01-secret.toml" = <<-EOT
-      sts_client_id     = "${authentik_provider_oauth2.kubectl_sandbox_exchange.client_id}"
-      sts_client_secret = "${authentik_provider_oauth2.kubectl_sandbox_exchange.client_secret}"
-      sts_audience      = "${authentik_provider_proxy.kubectl_sandbox_scoped.client_id}"
-    EOT
-  }
-}
+## No Kubernetes Secret needed — the OAuth2 provider is public (PKCE) and
+## the pod runs in plain passthrough mode (no token exchange). The previous
+## kubernetes_secret.kubectl_sandbox_scoped resource will be destroyed on
+## the next TF apply.
