@@ -25,8 +25,7 @@ Pattern reference: Grafana/Headlamp in `sso-providers/main.tf`.
   - Note: harbor-sso.yaml and matrix-sso.yaml blueprints set to `state: absent` (CLEANUP tombstone 2026-04-18);
     delete the files once Authentik confirms the old providers are gone.
 
-- [ ] **Airlock** (already in `sso-providers` as `openclaw_agent` — verify complete, no Vault reference remains)
-  - Check `k8s/agents/` for any remaining Vault ESO reading airlock secrets
+- [x] **Airlock** — verified complete 2026-04-18; `airlock-secrets` k8s secret written by sso-providers TF, flux-kustomization depends on `sso-providers-tf`, no Vault ESO refs
 
 **Skip until unsuspended**: Gitea (`kv/sso/gitea`), InvenTree (`kv/sso/inventree`).
 **Vault OIDC** (`kv/sso/vault`): removed from `sso-secrets` TF and `sso-client-secrets` ESO 2026-04-18.
@@ -47,8 +46,7 @@ Active services first:
   - synapse admin credentials
   - Remove `cluster/terraform/gitops/matrix-secrets/`
 
-- [ ] **Harbor admin** (`kv/harbor/admin`)
-  - Remove `cluster/terraform/gitops/harbor-admin/`
+- [x] **Harbor admin** (`kv/harbor/admin`) — done 2026-04-18, new password in SOPS
 
 - [ ] **Devbot credentials** (`kv/agents/devbot`) — Anthropic key, Gitea token, Harbor password, VNC password
   - These are manually maintained; just move to SOPS k8s secret
@@ -106,7 +104,7 @@ Prerequisites: all ExternalSecrets deleted, `vault-backend` ClusterSecretStore h
 | `kv/matrix/secrets`            | 2     | todo      |
 | `kv/matrix/openclaw-bot`       | 2     | todo      |
 | `kv/matrix/admin`              | 2     | todo      |
-| `kv/harbor/admin`              | 2     | todo      |
+| `kv/harbor/admin`              | 2     | done      |
 | `kv/agents/devbot`             | 2     | todo      |
 | `kv/authentik/passwords`       | 2     | todo      |
 | `kv/sso/client-secrets`        | 2     | todo      |

@@ -34,6 +34,13 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **Evaluate lighter registry to replace Harbor** — Harbor is only used for (a) pull-through
+      proxy cache (Docker Hub, GHCR, GCR, Quay, k8s.io) configured as Talos containerd mirrors,
+      and (b) props agent image storage. Candidates: [Zot](https://zotregistry.dev/) (single binary,
+      multi-upstream proxy + private images), or separate `registry:2` per upstream + GHCR for props.
+      Would drop the Harbor Helm chart, CNPG cluster, 32Gi HDD PVC, ~700Mi RAM, and all
+      Harbor-specific TF modules.
+
 - [ ] **Apply kube-apiserver auth-config migration to VPS CPs** (unblocked once wyrm2 is
       back): `secrets/nebula/ca.sops.key` now has all agentydragon user keys as recipients
       but the file needs re-encryption before `tofu apply` works from any user machine.
