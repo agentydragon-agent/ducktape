@@ -14,7 +14,7 @@ import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from x.grocy_mcp.config import ServerSettings
+from x.grocy_mcp.mcp_types import ServerSettings
 from x.grocy_mcp.server import build_mcp
 
 # Tool-ish identifiers that appear in docstrings but aren't live tools — MCP

@@ -23,14 +23,52 @@ import logging
 import traceback
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
-from enum import StrEnum
 from typing import Annotated, Any, Literal
 
 import httpx
 from fastmcp import FastMCP
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field
 
-from x.grocy_mcp.config import ServerSettings
+from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType
+from x.grocy_mcp.mcp_types import (
+    BEST_BEFORE_DESC,
+    DETAIL_DESC,
+    PRODUCT_DESC,
+    QU_DESC,
+    AddItem,
+    BriefListItem,
+    BriefQuantityUnit,
+    ConsumeItem,
+    CreateError,
+    CreateItem,
+    CreateLocationItem,
+    CreateOk,
+    CreateProductGroupItem,
+    CreateProductItem,
+    CreateQuantityUnitItem,
+    CreateShoppingListItem,
+    EditProductField,
+    EditShoppingListField,
+    EditStockEntryField,
+    FullLocation,
+    FullProduct,
+    FullProductGroup,
+    FullQuantityUnit,
+    FullShoppingList,
+    GetError,
+    GetOk,
+    ServerSettings,
+    SetItem,
+    ShoppingItem,
+    ShoppingListItemError,
+    ShoppingListItemOk,
+    StockEntry,
+    StockEntryDetail,
+    StockEntryError,
+    StockEntryOk,
+    StockOpError,
+    StockOpOk,
+)
 from x.grocy_mcp.resolver import EntityResolver
 
 logger = logging.getLogger(__name__)
@@ -55,16 +93,14 @@ def _date_to_str(value: date | None) -> str | None:
 def _format_exc(e: Exception) -> str:
     """Format exception with full traceback for error reporting.
 
-    On `HTTPStatusError`, append Grocy's response body so the agent sees
-    the actual failure reason (Grocy returns a JSON `error_message` on
+    On ``HTTPStatusError``, append Grocy's response body so the agent sees
+    the actual failure reason (Grocy returns a JSON ``error_message`` on
     most 4xx/5xx); httpx's default error is just the status + URL.
     """
     tb = "".join(traceback.format_exception(e))
     if isinstance(e, httpx.HTTPStatusError):
         body = e.response.text.strip()
         if body:
-            # Truncate so a ~1MB HTML error page doesn't swamp the agent
-            # context; the first ~1.5KB carries Grocy's JSON error message.
             return f"{tb}\nGrocy response body: {body[:1500]}"
     return tb
 
@@ -93,512 +129,6 @@ async def _with_retry[T](
                 )
                 await asyncio.sleep(delay)
         raise AssertionError("unreachable")
-
-
-# ── Entity types ──────────────────────────────────────────────────────────────
-
-
-class WriteableEntityType(StrEnum):
-    """Grocy entity types that accept create / edit / delete via `/objects/{entity}`.
-
-    Used by `entities_create`. Strict subset of `ReadableEntityType`:
-    excludes the view-only `_view` / `_resolved` variants and the computed
-    aggregates Grocy itself marks `ExposedEntityNoEdit`, and excludes
-    `shopping_list` — the typed shopping-list tools cover items end-to-end
-    (`shopping_list_items_add`, `shopping_list_item_edit`,
-    `shopping_list_items_remove`, `shopping_list_clear`).
-    """
-
-    PRODUCTS = "products"
-    PRODUCT_BARCODES = "product_barcodes"
-    PRODUCT_GROUPS = "product_groups"
-    LOCATIONS = "locations"
-    SHOPPING_LOCATIONS = "shopping_locations"
-    SHOPPING_LISTS = "shopping_lists"  # list metadata; items via the typed shopping_list tools
-    QUANTITY_UNITS = "quantity_units"
-    QUANTITY_UNIT_CONVERSIONS = "quantity_unit_conversions"
-    RECIPES = "recipes"
-    RECIPES_POS = "recipes_pos"
-    RECIPES_NESTINGS = "recipes_nestings"
-    MEAL_PLAN = "meal_plan"
-    MEAL_PLAN_SECTIONS = "meal_plan_sections"
-    TASKS = "tasks"
-    TASK_CATEGORIES = "task_categories"
-    CHORES = "chores"
-    BATTERIES = "batteries"
-    EQUIPMENT = "equipment"
-    USERFIELDS = "userfields"
-    USERENTITIES = "userentities"
-    USEROBJECTS = "userobjects"
-    API_KEYS = "api_keys"
-
-
-class ReadableEntityType(StrEnum):
-    """Grocy entity types exposed for read via `entities_list` / `entities_get`.
-
-    Superset of `WriteableEntityType` plus the entities Grocy publishes as
-    `ExposedEntityNoEdit`: SQL views (`_view` / `_resolved`), append-only
-    audit tables (`stock_log`, `chores_log`, `battery_charge_cycles`), and
-    computed aggregates (`stock`, `stock_current_locations`,
-    `products_last_purchased`, `products_average_price`,
-    `permission_hierarchy`).
-    """
-
-    # ── Writeable ────────────────────────────────────────────────────────
-    PRODUCTS = "products"
-    PRODUCT_BARCODES = "product_barcodes"
-    PRODUCT_GROUPS = "product_groups"
-    LOCATIONS = "locations"
-    SHOPPING_LOCATIONS = "shopping_locations"
-    SHOPPING_LISTS = "shopping_lists"
-    QUANTITY_UNITS = "quantity_units"
-    QUANTITY_UNIT_CONVERSIONS = "quantity_unit_conversions"
-    RECIPES = "recipes"
-    RECIPES_POS = "recipes_pos"
-    RECIPES_NESTINGS = "recipes_nestings"
-    MEAL_PLAN = "meal_plan"
-    MEAL_PLAN_SECTIONS = "meal_plan_sections"
-    TASKS = "tasks"
-    TASK_CATEGORIES = "task_categories"
-    CHORES = "chores"
-    BATTERIES = "batteries"
-    EQUIPMENT = "equipment"
-    USERFIELDS = "userfields"
-    USERENTITIES = "userentities"
-    USEROBJECTS = "userobjects"
-    API_KEYS = "api_keys"
-    # ── Read-only (Grocy ExposedEntityNoEdit) ────────────────────────────
-    STOCK = "stock"
-    STOCK_LOG = "stock_log"
-    STOCK_CURRENT_LOCATIONS = "stock_current_locations"
-    CHORES_LOG = "chores_log"
-    PRODUCTS_LAST_PURCHASED = "products_last_purchased"
-    PRODUCTS_AVERAGE_PRICE = "products_average_price"
-    QUANTITY_UNIT_CONVERSIONS_RESOLVED = "quantity_unit_conversions_resolved"
-    RECIPES_POS_RESOLVED = "recipes_pos_resolved"
-    BATTERY_CHARGE_CYCLES = "battery_charge_cycles"
-    PRODUCT_BARCODES_VIEW = "product_barcodes_view"
-    PERMISSION_HIERARCHY = "permission_hierarchy"
-
-
-# Sanity check: every WriteableEntityType must be a valid ReadableEntityType.
-assert {t.value for t in WriteableEntityType} <= {t.value for t in ReadableEntityType}
-
-
-# ── Shared input/output types ────────────────────────────────────────────────
-
-
-class CreateItem(BaseModel):
-    entity_type: WriteableEntityType
-    body: dict[str, Any]
-
-
-class CreateOk(BaseModel):
-    kind: Literal["ok"] = "ok"
-    created_object_id: int | None = None
-
-
-class CreateError(BaseModel):
-    kind: Literal["error"] = "error"
-    error: str
-
-
-class GetOk(BaseModel):
-    kind: Literal["ok"] = "ok"
-    entity_type: ReadableEntityType
-    object_id: int
-    data: dict[str, Any]
-
-
-class GetError(BaseModel):
-    kind: Literal["error"] = "error"
-    entity_type: ReadableEntityType
-    object_id: int
-    error: str
-
-
-# ── Stock overview response ──────────────────────────────────────────────────
-
-
-class StockEntry(BaseModel):
-    """Compact stock overview entry. Names always included, no nested dicts."""
-
-    product_id: int
-    product_name: str
-    amount: float
-    amount_opened: float
-    qu_name: str
-    location_name: str
-    best_before_date: date | None = None
-
-
-# ── Stock mutation input/output ──────────────────────────────────────────────
-
-
-# Reused field descriptions for stock-mutation item fields. Stating the QU
-# constraint in one place keeps `stock_add` / `stock_consume` /
-# `stock_set` / `stock_transfer` honest about it.
-_PRODUCT_DESC = "Product. Name or ID."
-_QU_DESC = (
-    "Quantity unit. Name or ID. Must match the product's stock QU or have a defined conversion "
-    "(see the `quantity_unit_conversions` entity)."
-)
-_BEST_BEFORE_DESC = "Best-before date in `YYYY-MM-DD` format. Omit for no expiry."
-_PRICE_DESC = "Per-unit price. Omit to use the last recorded price."
-_DETAIL_DESC = "`brief` returns only `id` + `name`. `full` returns every column."
-
-
-class AddItem(BaseModel):
-    """One stock addition for `stock_add`."""
-
-    product: int | str = Field(description=_PRODUCT_DESC)
-    amount: float = Field(description="Amount to add, in `qu` units.")
-    qu: int | str = Field(description=_QU_DESC)
-    location: int | str = Field(description="Storage location to add to. Name or ID.")
-    best_before_date: date | None = Field(default=None, description=_BEST_BEFORE_DESC)
-    price: float | None = Field(default=None, description=_PRICE_DESC)
-    note: str | None = Field(default=None, description="Free-text note attached to the resulting stock entry.")
-
-
-class ConsumeItem(BaseModel):
-    """One stock consumption for `stock_consume`."""
-
-    product: int | str = Field(description=_PRODUCT_DESC)
-    amount: float = Field(description="Amount to consume, in `qu` units.")
-    qu: int | str = Field(description=_QU_DESC)
-    location: int | str = Field(
-        description="Location to consume from. Name or ID. Use `stock_get` first if you don't know where the product is."
-    )
-    spoiled: bool = Field(default=False, description="Mark the consumption as spoilage rather than normal use.")
-    allow_subproduct_substitution: bool = Field(
-        default=False,
-        description="If the product has sub-products configured, allow Grocy to consume from sub-product stock when the product itself is short.",
-    )
-
-
-class SetItem(BaseModel):
-    """One absolute-amount correction for `stock_set`."""
-
-    product: int | str = Field(description=_PRODUCT_DESC)
-    new_amount: float = Field(
-        description="Absolute target stock amount in `qu` units. Grocy computes the delta and adds or removes to reach it."
-    )
-    qu: int | str = Field(description=_QU_DESC)
-    location: int | str = Field(description="Location for any units being added by the correction. Name or ID.")
-    best_before_date: date | None = Field(
-        default=None, description=f"Applies to units being added: {_BEST_BEFORE_DESC.lower()}"
-    )
-    price: float | None = Field(
-        default=None, description="Per-unit price for units being added. Omit to use the last recorded price."
-    )
-
-
-class StockOpOk(BaseModel):
-    """Per-item success returned by `stock_add` / `stock_consume` / `stock_set` / `stock_transfer`."""
-
-    kind: Literal["ok"] = "ok"
-    product_name: str
-    transaction_id: str | None = Field(
-        default=None, description="Grocy transaction ID. Pass to `transaction_undo` to revert this single op."
-    )
-    amount_delta: float | None = Field(
-        default=None, description="Net stock change in stock QU. Negative for consume; null for transfer."
-    )
-    new_amount: float | None = Field(
-        default=None,
-        description="Resulting total stock for this product, in stock QU. Best-effort: null if the follow-up read fails.",
-    )
-    qu_name: str = Field(description="Name of the quantity unit the input `amount` was specified in.")
-    stock_qu_name: str | None = Field(
-        default=None,
-        description=(
-            "Name of the product's stock QU when a conversion was applied. Null on a normal success "
-            "where the input `qu` already matched the product's stock QU (no conversion needed)."
-        ),
-    )
-    location_name: str = Field(
-        description="Name of the storage location. For `stock_transfer`, formatted as `from -> to`."
-    )
-
-
-class StockOpError(BaseModel):
-    kind: Literal["error"] = "error"
-    error: str
-
-
-# ── Stock entry input/output ─────────────────────────────────────────────────
-
-
-class StockEntryDetail(BaseModel):
-    """Detailed stock entry with names."""
-
-    entry_id: int
-    product_id: int
-    product_name: str
-    amount: float
-    qu_name: str
-    location_name: str
-    best_before_date: date | None = None
-    purchased_date: date | None = None
-    price: float | None = None
-    open: bool = False
-    note: str | None = None
-
-
-class StockEntryOk(BaseModel):
-    kind: Literal["ok"] = "ok"
-    entry: StockEntryDetail
-    changes: dict[str, dict[str, Any]] | None = Field(
-        default=None, description="For edits: {field: {old: ..., new: ...}} diff of changed fields."
-    )
-
-
-class StockEntryError(BaseModel):
-    kind: Literal["error"] = "error"
-    entry_id: int | None = None
-    error: str
-
-
-class EditStockEntryField(StrEnum):
-    """Nullable stock-entry fields that `stock_entry_edit.clear_fields` can null out.
-
-    Other stock-entry fields (`amount`, `location_id`, `open`) are NOT
-    NULL in Grocy's schema and must be assigned a value if changed.
-    """
-
-    PRICE = "price"
-    BEST_BEFORE_DATE = "best_before_date"
-    PURCHASED_DATE = "purchased_date"
-    NOTE = "note"
-
-
-# ── Reference data create types ──────────────────────────────────────────────
-
-
-class CreateProductItem(BaseModel):
-    """One product to create via `products_create`."""
-
-    name: str = Field(description="Product name. Must be unique across all products.")
-    stock_qu: int | str = Field(description="Stock quantity unit. Name or ID. The unit Grocy stores stock totals in.")
-    location: int | str = Field(description="Default storage location. Name or ID.")
-    purchase_qu: int | str | None = Field(
-        default=None, description="Purchase quantity unit. Name or ID. Defaults to `stock_qu`."
-    )
-    min_stock_amount: float = Field(
-        default=0,
-        description="Threshold (in stock QU) below which `get_below_minimum_stock` flags this product. 0 disables.",
-    )
-    default_best_before_days: int = Field(
-        default=0, description="Auto-fill best-before date this many days ahead when `stock_add` omits it. 0 disables."
-    )
-    product_group: int | str | None = Field(default=None, description="Product group / category. Name or ID.")
-    description: str | None = Field(default=None, description="Free-text description.")
-
-
-class CreateLocationItem(BaseModel):
-    """One storage location to create via `locations_create`."""
-
-    name: str = Field(description="Location name (e.g. Pantry, Fridge, Freezer). Must be unique across all locations.")
-    description: str | None = Field(default=None, description="Free-text description.")
-    is_freezer: bool = Field(
-        default=False,
-        description=(
-            "True if this is a freezer. Grocy applies frozen/thawed best-before-days adjustments to "
-            "stock entries moved into or out of freezer locations."
-        ),
-    )
-
-
-class CreateQuantityUnitItem(BaseModel):
-    """One quantity unit to create via `quantity_units_create`."""
-
-    name: str = Field(description="Singular form (e.g. Liter, Bag, Piece). Must be unique across all units.")
-    name_plural: str = Field(description="Plural form (e.g. Liters, Bags, Pieces).")
-    description: str | None = Field(default=None, description="Free-text description.")
-    plural_forms: str | None = Field(
-        default=None,
-        description="Optional Gettext-style plural rules for non-English locales (e.g. `nplurals=3; plural=…;`).",
-    )
-
-
-class CreateShoppingListItem(BaseModel):
-    """One shopping-list metadata row to create via `shopping_lists_create`.
-
-    The list itself, not an item on a list — individual items go through
-    `shopping_list_items_add`.
-    """
-
-    name: str = Field(description="List name (e.g. Weekly, Costco run). Must be unique across all shopping lists.")
-    description: str | None = Field(default=None, description="Free-text description.")
-
-
-class CreateProductGroupItem(BaseModel):
-    """One product group (category) to create via `product_groups_create`."""
-
-    name: str = Field(description="Group name (e.g. Dairy, Produce). Must be unique across all product groups.")
-    description: str | None = Field(default=None, description="Free-text description.")
-
-
-# ── Product edit types ────────────────────────────────────────────────────────
-
-
-class EditProductField(StrEnum):
-    """Nullable product fields that `product_edit.clear_fields` can null out.
-
-    Other product fields are NOT NULL in Grocy's schema and cannot be cleared
-    — to remove a product entirely, use `product_delete`.
-    """
-
-    DESCRIPTION = "description"
-    PRODUCT_GROUP = "product_group"
-    PARENT_PRODUCT = "parent_product"
-    CALORIES = "calories"
-
-
-# Writable columns on the products table (migration 0207 + 0210 + 0219).
-# Grocy's GET returns computed view fields (has_sub_products, qu_factor_*, etc.)
-# that are rejected on PUT. Only send these columns.
-_PRODUCT_WRITABLE_FIELDS: set[str] = {
-    "name",
-    "description",
-    "product_group_id",
-    "active",
-    "location_id",
-    "shopping_location_id",
-    "qu_id_purchase",
-    "qu_id_stock",
-    "qu_id_consume",
-    "qu_id_price",
-    "min_stock_amount",
-    "default_best_before_days",
-    "default_best_before_days_after_open",
-    "default_best_before_days_after_freezing",
-    "default_best_before_days_after_thawing",
-    "picture_file_name",
-    "enable_tare_weight_handling",
-    "tare_weight",
-    "not_check_stock_fulfillment_for_recipes",
-    "parent_product_id",
-    "calories",
-    "cumulate_min_stock_amount_of_sub_products",
-    "due_type",
-    "quick_consume_amount",
-    "hide_on_stock_overview",
-    "default_stock_label_type",
-    "should_not_be_frozen",
-    "treat_opened_as_out_of_stock",
-    "no_own_stock",
-}
-
-
-# ── Shopping list types ──────────────────────────────────────────────────────
-
-
-class ShoppingItem(BaseModel):
-    """One shopping-list item to add via `shopping_list_items_add`.
-
-    Three valid shapes: product-only (`product` set), note-only (`note`
-    set), or product + note (e.g. "Milk — buy the organic brand"). At
-    least one of the two must be provided.
-    """
-
-    shopping_list: int | str = Field(description="Target shopping list. Name or ID.")
-    product: int | str | None = Field(default=None, description="Product to add. Name or ID. Omit for note-only items.")
-    amount: float = Field(default=1, description="Quantity to buy, in the product's stock QU.")
-    note: str | None = Field(
-        default=None,
-        description="Free-text note. May accompany a `product` to qualify it, or stand alone for note-only items.",
-    )
-
-    @model_validator(mode="after")
-    def _at_least_one_of_product_or_note(self) -> ShoppingItem:
-        if self.product is None and self.note is None:
-            raise ValueError("ShoppingItem requires at least one of `product` or `note`.")
-        return self
-
-
-class ShoppingListItemOk(BaseModel):
-    """Per-item success returned by every shopping-list mutation tool."""
-
-    kind: Literal["ok"] = "ok"
-    item_id: int = Field(description="Grocy shopping-list item ID.")
-    product_name: str | None = Field(default=None, description="Product name; null for note-only items.")
-    amount: float
-    qu_name: str | None = Field(default=None, description="Stock QU name; null for note-only items.")
-
-
-class ShoppingListItemError(BaseModel):
-    kind: Literal["error"] = "error"
-    error: str
-
-
-class EditShoppingListField(StrEnum):
-    """Nullable shopping-list-item fields that `shopping_list_item_edit.clear_fields` can null out.
-
-    Other fields (`amount`, `done`, `shopping_list_id`) are NOT NULL in
-    Grocy's schema. To re-point an item at a different product, remove
-    it via `shopping_list_items_remove` and re-add via
-    `shopping_list_items_add`.
-    """
-
-    NOTE = "note"
-
-
-# ── Reference-data list result shapes ────────────────────────────────────────
-
-
-class BriefListItem(BaseModel):
-    """Minimal `list_*` row returned when `detail="brief"`: just `id` + `name`."""
-
-    id: int
-    name: str
-
-
-class BriefQuantityUnit(BriefListItem):
-    """Brief QU entry; adds `name_plural` since it's frequently needed at call sites."""
-
-    name_plural: str | None = None
-
-
-class FullProduct(BaseModel):
-    """Full product row — Grocy's schema varies by version, so unlisted columns are passed through."""
-
-    model_config = ConfigDict(extra="allow")
-    id: int
-    name: str
-
-
-class FullLocation(BaseModel):
-    """Full location row — `is_freezer`, description, and any Grocy extras pass through."""
-
-    model_config = ConfigDict(extra="allow")
-    id: int
-    name: str
-
-
-class FullQuantityUnit(BaseModel):
-    """Full QU row — `name_plural`, description, and any Grocy extras pass through."""
-
-    model_config = ConfigDict(extra="allow")
-    id: int
-    name: str
-    name_plural: str | None = None
-
-
-class FullProductGroup(BaseModel):
-    """Full product-group row — description and any Grocy extras pass through."""
-
-    model_config = ConfigDict(extra="allow")
-    id: int
-    name: str
-
-
-class FullShoppingList(BaseModel):
-    """Full shopping-list metadata row — description and any Grocy extras pass through."""
-
-    model_config = ConfigDict(extra="allow")
-    id: int
-    name: str
 
 
 # ── Tool registration ────────────────────────────────────────────────────────
@@ -634,14 +164,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         Caller fetches once, then calls `_enrich_stock_entry` in a loop with
         these maps — state can't mutate mid-call so the local maps are safe.
         """
-        products, qus, locations = await asyncio.gather(
-            resolver.all_products(), resolver.all_qus(), resolver.all_locations()
+        products_raw, qu_names, location_names = await asyncio.gather(
+            resolver.all(EntityType.PRODUCT),
+            resolver.name_map(EntityType.QUANTITY_UNIT),
+            resolver.name_map(EntityType.LOCATION),
         )
-        return (
-            {int(p["id"]): p for p in products},
-            {int(q["id"]): str(q["name"]) for q in qus},
-            {int(row["id"]): str(row["name"]) for row in locations},
-        )
+        return ({int(p["id"]): p for p in products_raw}, qu_names, location_names)
 
     async def _enrich_stock_entry(
         entry_data: dict[str, Any],
@@ -808,12 +336,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         product_ids: set[int] = set()
         for ref in products:
-            resolved = await resolver.resolve_product(ref)
+            resolved = await resolver.resolve(EntityType.PRODUCT, ref)
             product_ids.add(resolved.id)
 
         location_ids: set[int] = set()
         for ref in locations:
-            resolved = await resolver.resolve_location(ref)
+            resolved = await resolver.resolve(EntityType.LOCATION, ref)
             location_ids.add(resolved.id)
 
         result = []
@@ -830,8 +358,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 continue
 
             qu_id_raw = product.get("qu_id_stock")
-            qu_name = await resolver.qu_name(int(qu_id_raw)) if qu_id_raw is not None else "unknown"
-            location_name = await resolver.location_name(loc_id) if loc_id is not None else "unknown"
+            qu_name = (
+                await resolver.name(EntityType.QUANTITY_UNIT, int(qu_id_raw)) if qu_id_raw is not None else "unknown"
+            )
+            location_name = await resolver.name(EntityType.LOCATION, loc_id) if loc_id is not None else "unknown"
             product_name = str(product.get("name", f"product_id={pid}"))
 
             result.append(
@@ -877,8 +407,8 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         async def _one(item: AddItem) -> StockOpOk | StockOpError:
             try:
-                product = await resolver.resolve_product(item.product)
-                location = await resolver.resolve_location(item.location)
+                product = await resolver.resolve(EntityType.PRODUCT, item.product)
+                location = await resolver.resolve(EntityType.LOCATION, item.location)
                 rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
 
                 stock_amount = item.amount * rqu.conversion_factor
@@ -930,8 +460,8 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         async def _one(item: ConsumeItem) -> StockOpOk | StockOpError:
             try:
-                product = await resolver.resolve_product(item.product)
-                location = await resolver.resolve_location(item.location)
+                product = await resolver.resolve(EntityType.PRODUCT, item.product)
+                location = await resolver.resolve(EntityType.LOCATION, item.location)
                 rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
 
                 stock_amount = item.amount * rqu.conversion_factor
@@ -982,8 +512,8 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         async def _one(item: SetItem) -> StockOpOk | StockOpError:
             try:
-                product = await resolver.resolve_product(item.product)
-                location = await resolver.resolve_location(item.location)
+                product = await resolver.resolve(EntityType.PRODUCT, item.product)
+                location = await resolver.resolve(EntityType.LOCATION, item.location)
                 rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
 
                 stock_amount = item.new_amount * rqu.conversion_factor
@@ -1045,7 +575,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             products_by_id, qu_names, location_names = await _build_enrichment_maps()
             all_results: list[StockEntryOk | StockEntryError] = []
             for product_ref in products:
-                resolved = await resolver.resolve_product(product_ref)
+                resolved = await resolver.resolve(EntityType.PRODUCT, product_ref)
                 try:
                     r = await _retry(functools.partial(client.get, f"/stock/products/{resolved.id}/entries"))
                     r.raise_for_status()
@@ -1090,7 +620,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     async def stock_entry_edit(
         entry_id: Annotated[int, Field(description="Stock-entry ID (from `stock_entries_list`).")],
         amount: Annotated[float | None, Field(description="New amount, in the entry's stock QU.")] = None,
-        best_before_date: Annotated[date | None, Field(description=f"New {_BEST_BEFORE_DESC.lower()}")] = None,
+        best_before_date: Annotated[date | None, Field(description=f"New {BEST_BEFORE_DESC.lower()}")] = None,
         purchased_date: Annotated[date | None, Field(description="New purchase date in `YYYY-MM-DD` format.")] = None,
         price: Annotated[float | None, Field(description="New per-unit price.")] = None,
         location: Annotated[int | str | None, Field(description="New storage location. Name or ID.")] = None,
@@ -1142,7 +672,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             if price is not None:
                 body["price"] = price
             if location is not None:
-                resolved_loc = await resolver.resolve_location(location)
+                resolved_loc = await resolver.resolve(EntityType.LOCATION, location)
                 body["location_id"] = resolved_loc.id
             if open is not None:
                 body["open"] = open
@@ -1186,7 +716,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     @mcp.tool()
     async def products_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=_DETAIL_DESC)] = "brief",
+        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
     ) -> list[BriefListItem] | list[FullProduct]:
         """Returns every product defined in this Grocy instance. Create new ones with `products_create`.
 
@@ -1194,14 +724,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         need this when you want the full catalogue or the `full` shape
         (default location, stock QU, etc.).
         """
-        rows = await resolver.all_products()
+        rows = await resolver.all(EntityType.PRODUCT)
         if detail == "brief":
             return [BriefListItem(id=int(r["id"]), name=str(r["name"])) for r in rows]
         return [FullProduct.model_validate(r) for r in rows]
 
     @mcp.tool()
     async def locations_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=_DETAIL_DESC)] = "brief",
+        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
     ) -> list[BriefListItem] | list[FullLocation]:
         """Returns every storage location defined in this Grocy instance. Create new ones with `locations_create`.
 
@@ -1209,14 +739,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         you want to see what already exists before `products_create` or
         `stock_add`.
         """
-        rows = await resolver.all_locations()
+        rows = await resolver.all(EntityType.LOCATION)
         if detail == "brief":
             return [BriefListItem(id=int(r["id"]), name=str(r["name"])) for r in rows]
         return [FullLocation.model_validate(r) for r in rows]
 
     @mcp.tool()
     async def quantity_units_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=_DETAIL_DESC)] = "brief",
+        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
     ) -> list[BriefQuantityUnit] | list[FullQuantityUnit]:
         """Returns every quantity unit defined in this Grocy instance. Create new ones with `quantity_units_create`.
 
@@ -1226,7 +756,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         conversions between units, list `quantity_unit_conversions` via
         `entities_list`.
         """
-        rows = await resolver.all_qus()
+        rows = await resolver.all(EntityType.QUANTITY_UNIT)
         if detail == "brief":
             return [
                 BriefQuantityUnit(id=int(r["id"]), name=str(r["name"]), name_plural=r.get("name_plural")) for r in rows
@@ -1235,21 +765,21 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     @mcp.tool()
     async def product_groups_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=_DETAIL_DESC)] = "brief",
+        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
     ) -> list[BriefListItem] | list[FullProductGroup]:
         """Returns every product-group (category) defined in this Grocy instance.
 
         Pass product-group names or IDs to `products_create` /
         `product_edit`. Create new ones with `product_groups_create`.
         """
-        rows = await resolver.all_product_groups()
+        rows = await resolver.all(EntityType.PRODUCT_GROUP)
         if detail == "brief":
             return [BriefListItem(id=int(r["id"]), name=str(r["name"])) for r in rows]
         return [FullProductGroup.model_validate(r) for r in rows]
 
     @mcp.tool()
     async def shopping_lists_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=_DETAIL_DESC)] = "brief",
+        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
     ) -> list[BriefListItem] | list[FullShoppingList]:
         """Returns every shopping list defined in this Grocy instance.
 
@@ -1267,25 +797,17 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     # ── Reference data creation ──────────────────────────────────────────
 
-    @mcp.tool()
-    async def locations_create(items: list[CreateLocationItem]) -> list[CreateOk | CreateError]:
-        """Create one or more storage locations. Max 20 items per call.
-
-        Locations are referenced by name everywhere else (stock ops,
-        product creation, etc.) — pick stable, distinctive names. Use
-        `locations_list` to discover what already exists. Failed items
-        return errors without aborting the others.
-        """
+    async def _simple_batch_create[T](
+        items: list[T], entity_path: str, to_body: Callable[[T], dict[str, Any]]
+    ) -> list[CreateOk | CreateError]:
+        """Shared implementation for simple entity creation tools."""
         _check_batch_size(items, "items")
 
-        async def _one(item: CreateLocationItem) -> CreateOk | CreateError:
+        async def _one(item: T) -> CreateOk | CreateError:
             try:
 
                 async def _do() -> CreateOk:
-                    body: dict[str, Any] = {"name": item.name, "is_freezer": int(item.is_freezer)}
-                    if item.description is not None:
-                        body["description"] = item.description
-                    r = await client.post("/objects/locations", json=body)
+                    r = await client.post(entity_path, json=to_body(item))
                     r.raise_for_status()
                     raw_id = r.json().get("created_object_id")
                     return CreateOk(created_object_id=int(raw_id) if raw_id is not None else None)
@@ -1295,6 +817,23 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 return CreateError(error=_format_exc(e))
 
         return list(await asyncio.gather(*[_one(item) for item in items]))
+
+    @mcp.tool()
+    async def locations_create(items: list[CreateLocationItem]) -> list[CreateOk | CreateError]:
+        """Create one or more storage locations. Max 20 items per call.
+
+        Locations are referenced by name everywhere else (stock ops,
+        product creation, etc.) — pick stable, distinctive names. Use
+        `locations_list` to discover what already exists. Failed items
+        return errors without aborting the others.
+        """
+
+        def _body(item: CreateLocationItem) -> dict[str, Any]:
+            body = item.model_dump(exclude_none=True)
+            body["is_freezer"] = int(body["is_freezer"])  # Grocy wants 0/1
+            return body
+
+        return await _simple_batch_create(items, "/objects/locations", _body)
 
     @mcp.tool()
     async def quantity_units_create(items: list[CreateQuantityUnitItem]) -> list[CreateOk | CreateError]:
@@ -1307,27 +846,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         create entries in `quantity_unit_conversions` via `entities_create`
         afterwards. Failed items return errors without aborting the others.
         """
-        _check_batch_size(items, "items")
-
-        async def _one(item: CreateQuantityUnitItem) -> CreateOk | CreateError:
-            try:
-
-                async def _do() -> CreateOk:
-                    body: dict[str, Any] = {"name": item.name, "name_plural": item.name_plural}
-                    if item.description is not None:
-                        body["description"] = item.description
-                    if item.plural_forms is not None:
-                        body["plural_forms"] = item.plural_forms
-                    r = await client.post("/objects/quantity_units", json=body)
-                    r.raise_for_status()
-                    raw_id = r.json().get("created_object_id")
-                    return CreateOk(created_object_id=int(raw_id) if raw_id is not None else None)
-
-                return await _retry(_do)
-            except Exception as e:
-                return CreateError(error=_format_exc(e))
-
-        return list(await asyncio.gather(*[_one(item) for item in items]))
+        return await _simple_batch_create(
+            items, "/objects/quantity_units", lambda item: item.model_dump(exclude_none=True)
+        )
 
     @mcp.tool()
     async def product_groups_create(items: list[CreateProductGroupItem]) -> list[CreateOk | CreateError]:
@@ -1338,25 +859,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         to discover existing groups. Failed items return errors without
         aborting the others.
         """
-        _check_batch_size(items, "items")
-
-        async def _one(item: CreateProductGroupItem) -> CreateOk | CreateError:
-            try:
-
-                async def _do() -> CreateOk:
-                    body: dict[str, Any] = {"name": item.name}
-                    if item.description is not None:
-                        body["description"] = item.description
-                    r = await client.post("/objects/product_groups", json=body)
-                    r.raise_for_status()
-                    raw_id = r.json().get("created_object_id")
-                    return CreateOk(created_object_id=int(raw_id) if raw_id is not None else None)
-
-                return await _retry(_do)
-            except Exception as e:
-                return CreateError(error=_format_exc(e))
-
-        return list(await asyncio.gather(*[_one(item) for item in items]))
+        return await _simple_batch_create(
+            items, "/objects/product_groups", lambda item: item.model_dump(exclude_none=True)
+        )
 
     @mcp.tool()
     async def shopping_lists_create(items: list[CreateShoppingListItem]) -> list[CreateOk | CreateError]:
@@ -1368,25 +873,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `shopping_lists_list` to discover existing lists. Failed items
         return errors without aborting the others.
         """
-        _check_batch_size(items, "items")
-
-        async def _one(item: CreateShoppingListItem) -> CreateOk | CreateError:
-            try:
-
-                async def _do() -> CreateOk:
-                    body: dict[str, Any] = {"name": item.name}
-                    if item.description is not None:
-                        body["description"] = item.description
-                    r = await client.post("/objects/shopping_lists", json=body)
-                    r.raise_for_status()
-                    raw_id = r.json().get("created_object_id")
-                    return CreateOk(created_object_id=int(raw_id) if raw_id is not None else None)
-
-                return await _retry(_do)
-            except Exception as e:
-                return CreateError(error=_format_exc(e))
-
-        return list(await asyncio.gather(*[_one(item) for item in items]))
+        return await _simple_batch_create(
+            items, "/objects/shopping_lists", lambda item: item.model_dump(exclude_none=True)
+        )
 
     # ── Product management ───────────────────────────────────────────────
 
@@ -1409,9 +898,13 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         async def _one(item: CreateProductItem) -> CreateOk | CreateError:
             try:
-                loc = await resolver.resolve_location(item.location)
-                squ = await resolver.resolve_qu(item.stock_qu)
-                pqu = await resolver.resolve_qu(item.purchase_qu) if item.purchase_qu is not None else squ
+                loc = await resolver.resolve(EntityType.LOCATION, item.location)
+                squ = await resolver.resolve(EntityType.QUANTITY_UNIT, item.stock_qu)
+                pqu = (
+                    await resolver.resolve(EntityType.QUANTITY_UNIT, item.purchase_qu)
+                    if item.purchase_qu is not None
+                    else squ
+                )
 
                 body: dict[str, Any] = {
                     "name": item.name,
@@ -1422,7 +915,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     "default_best_before_days": item.default_best_before_days,
                 }
                 if item.product_group is not None:
-                    pg = await resolver.resolve_product_group(item.product_group)
+                    pg = await resolver.resolve(EntityType.PRODUCT_GROUP, item.product_group)
                     body["product_group_id"] = pg.id
                 if item.description is not None:
                     body["description"] = item.description
@@ -1472,28 +965,28 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `products_create`, `product_delete`, `products_list`.
         """
         try:
-            resolved = await resolver.resolve_product(product)
+            resolved = await resolver.resolve(EntityType.PRODUCT, product)
             r = await client.get(f"/objects/products/{resolved.id}")
             r.raise_for_status()
             current: dict[str, Any] = r.json()
 
             # Filter to writable columns — Grocy's GET returns computed view
             # fields that are rejected on PUT.
-            body = {k: v for k, v in current.items() if k in _PRODUCT_WRITABLE_FIELDS}
+            body = {k: v for k, v in current.items() if k in PRODUCT_WRITABLE_FIELDS}
             if name is not None:
                 body["name"] = name
             if stock_qu is not None:
-                body["qu_id_stock"] = (await resolver.resolve_qu(stock_qu)).id
+                body["qu_id_stock"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, stock_qu)).id
             if location is not None:
-                body["location_id"] = (await resolver.resolve_location(location)).id
+                body["location_id"] = (await resolver.resolve(EntityType.LOCATION, location)).id
             if purchase_qu is not None:
-                body["qu_id_purchase"] = (await resolver.resolve_qu(purchase_qu)).id
+                body["qu_id_purchase"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, purchase_qu)).id
             if min_stock_amount is not None:
                 body["min_stock_amount"] = min_stock_amount
             if default_best_before_days is not None:
                 body["default_best_before_days"] = default_best_before_days
             if product_group is not None:
-                body["product_group_id"] = (await resolver.resolve_product_group(product_group)).id
+                body["product_group_id"] = (await resolver.resolve(EntityType.PRODUCT_GROUP, product_group)).id
             if description is not None:
                 body["description"] = description
 
@@ -1520,7 +1013,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     ) -> CreateOk | CreateError:
         """Delete a product. Also removes every stock entry for the product — irreversible."""
         try:
-            resolved = await resolver.resolve_product(product)
+            resolved = await resolver.resolve(EntityType.PRODUCT, product)
             r = await client.delete(f"/objects/products/{resolved.id}")
             r.raise_for_status()
             return CreateOk(created_object_id=resolved.id)
@@ -1531,9 +1024,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     @mcp.tool()
     async def stock_transfer(
-        product: Annotated[int | str, Field(description=_PRODUCT_DESC)],
+        product: Annotated[int | str, Field(description=PRODUCT_DESC)],
         amount: Annotated[float, Field(description="Amount to transfer, in `qu` units.")],
-        qu: Annotated[int | str, Field(description=_QU_DESC)],
+        qu: Annotated[int | str, Field(description=QU_DESC)],
         from_location: Annotated[int | str, Field(description="Source location. Name or ID.")],
         to_location: Annotated[int | str, Field(description="Destination location. Name or ID.")],
     ) -> StockOpOk | StockOpError:
@@ -1546,9 +1039,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `stock_consume`, `stock_set`.
         """
         try:
-            prod = await resolver.resolve_product(product)
-            from_loc = await resolver.resolve_location(from_location)
-            to_loc = await resolver.resolve_location(to_location)
+            prod = await resolver.resolve(EntityType.PRODUCT, product)
+            from_loc = await resolver.resolve(EntityType.LOCATION, from_location)
+            to_loc = await resolver.resolve(EntityType.LOCATION, to_location)
             rqu = await resolver.resolve_qu_for_product(qu, prod.id)
 
             stock_amount = amount * rqu.conversion_factor
@@ -1577,6 +1070,17 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     # ── Shopping list ────────────────────────────────────────────────────
 
+    async def _shopping_product_info(product_id: Any) -> tuple[str | None, str | None]:
+        """Look up product name and stock QU name for a shopping-list item's product_id."""
+        if product_id is None:
+            return None, None
+        product_name = await resolver.name(EntityType.PRODUCT, int(product_id))
+        product_data = await resolver.get(EntityType.PRODUCT, int(product_id))
+        qu_name = None
+        if product_data:
+            qu_name = await resolver.name(EntityType.QUANTITY_UNIT, int(product_data["qu_id_stock"]))
+        return product_name, qu_name
+
     @mcp.tool()
     async def shopping_list_get(
         shopping_list: Annotated[int | str, Field(description="Shopping list. Name or ID.")],
@@ -1589,7 +1093,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `note`, and `done`. Add items with `shopping_list_items_add`; empty
         the list with `shopping_list_clear`.
         """
-        sl = await resolver.resolve_shopping_list(shopping_list)
+        sl = await resolver.resolve(EntityType.SHOPPING_LIST, shopping_list)
 
         r = await client.get(f"/objects/shopping_lists/{sl.id}")
         r.raise_for_status()
@@ -1603,13 +1107,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         result_items = []
         for item in items:
             product_id = item.get("product_id")
-            product_name = None
-            qu_name = None
-            if product_id is not None:
-                product_name = await resolver.product_name(int(product_id))
-                product_data = await resolver.get_product(int(product_id))
-                if product_data:
-                    qu_name = await resolver.qu_name(int(product_data["qu_id_stock"]))
+            product_name, qu_name = await _shopping_product_info(product_id)
 
             result_items.append(
                 {
@@ -1648,17 +1146,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
         async def _one(item: ShoppingItem) -> ShoppingListItemOk | ShoppingListItemError:
             try:
-                sl = await resolver.resolve_shopping_list(item.shopping_list)
+                sl = await resolver.resolve(EntityType.SHOPPING_LIST, item.shopping_list)
                 body: dict[str, Any] = {"shopping_list_id": sl.id, "amount": item.amount}
                 product_name = None
                 qu_name = None
                 if item.product is not None:
-                    prod = await resolver.resolve_product(item.product)
+                    prod = await resolver.resolve(EntityType.PRODUCT, item.product)
                     body["product_id"] = prod.id
-                    product_name = prod.name
-                    product_data = await resolver.get_product(prod.id)
-                    if product_data:
-                        qu_name = await resolver.qu_name(int(product_data["qu_id_stock"]))
+                    product_name, qu_name = await _shopping_product_info(prod.id)
                 if item.note is not None:
                     body["note"] = item.note
 
@@ -1722,14 +1217,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
             r.raise_for_status()
 
-            product_id = body.get("product_id")
-            product_name = None
-            qu_name = None
-            if product_id is not None:
-                product_name = await resolver.product_name(int(product_id))
-                product_data = await resolver.get_product(int(product_id))
-                if product_data:
-                    qu_name = await resolver.qu_name(int(product_data["qu_id_stock"]))
+            product_name, qu_name = await _shopping_product_info(body.get("product_id"))
 
             return ShoppingListItemOk(
                 item_id=item_id, product_name=product_name, amount=float(body.get("amount", 1)), qu_name=qu_name
@@ -1757,14 +1245,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 r = await client.delete(f"/objects/shopping_list/{item_id}")
                 r.raise_for_status()
 
-                product_id = item.get("product_id")
-                product_name = None
-                qu_name = None
-                if product_id is not None:
-                    product_name = await resolver.product_name(int(product_id))
-                    product_data = await resolver.get_product(int(product_id))
-                    if product_data:
-                        qu_name = await resolver.qu_name(int(product_data["qu_id_stock"]))
+                product_name, qu_name = await _shopping_product_info(item.get("product_id"))
 
                 return ShoppingListItemOk(
                     item_id=item_id, product_name=product_name, amount=float(item.get("amount", 1)), qu_name=qu_name
@@ -1783,7 +1264,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         Returns `{kind: "ok", cleared: N}` with the number removed. To
         remove specific items only, use `shopping_list_items_remove`.
         """
-        sl = await resolver.resolve_shopping_list(shopping_list)
+        sl = await resolver.resolve(EntityType.SHOPPING_LIST, shopping_list)
 
         r = await client.get("/objects/shopping_list")
         r.raise_for_status()
@@ -1801,6 +1282,24 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     # ── Query tools ──────────────────────────────────────────────────────
 
+    async def _fetch_volatile_with_maps() -> tuple[dict[str, Any], dict[int, str], dict[int, str]]:
+        """Fetch ``/stock/volatile`` and build QU + location name maps in one shot."""
+        r = await _retry(lambda: client.get("/stock/volatile"))
+        r.raise_for_status()
+        data: dict[str, Any] = r.json()
+        qu_names, location_names = await asyncio.gather(
+            resolver.name_map(EntityType.QUANTITY_UNIT), resolver.name_map(EntityType.LOCATION)
+        )
+        return data, qu_names, location_names
+
+    def _volatile_qu_name(product: dict[str, Any], qu_names: dict[int, str]) -> str:
+        qu_id = product.get("qu_id_stock")
+        return qu_names.get(int(qu_id), "unknown") if qu_id is not None else "unknown"
+
+    def _volatile_location_name(product: dict[str, Any], location_names: dict[int, str]) -> str:
+        loc_id = product.get("location_id")
+        return location_names.get(int(loc_id), "unknown") if loc_id is not None else "unknown"
+
     @mcp.tool()
     async def get_expiring_stock(
         days_ahead: Annotated[int, Field(description="Window to look ahead, in days.")],
@@ -1812,46 +1311,25 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         already-expired stock use `get_expired_stock`; for low-stock use
         `get_below_minimum_stock`.
         """
-        r = await _retry(lambda: client.get("/stock/volatile"))
-        r.raise_for_status()
-        data: dict[str, Any] = r.json()
-
-        # Prefetch reference tables once — the resolver is intentionally
-        # non-caching across tool calls, but within one call the state can't
-        # mutate so local id->name maps are safe and save O(rows * 2) fetches.
-        qu_names = {int(q["id"]): str(q["name"]) for q in await resolver.all_qus()}
-        location_names = {int(row["id"]): str(row["name"]) for row in await resolver.all_locations()}
-
+        data, qu_names, location_names = await _fetch_volatile_with_maps()
         cutoff = datetime.now(tz=UTC).date() + timedelta(days=days_ahead)
         result = []
 
         for entry in data.get("due_products", []):
             product = entry.get("product") or {}
-            bbd = entry.get("best_before_date")
-            if not bbd:
+            expiry_date = _parse_date(entry.get("best_before_date"))
+            if expiry_date is None or expiry_date > cutoff:
                 continue
-            try:
-                expiry_date = datetime.strptime(bbd, "%Y-%m-%d").date()
-            except ValueError:
-                continue
-            if expiry_date > cutoff:
-                continue
-
-            days_until = (expiry_date - datetime.now(tz=UTC).date()).days
-            qu_id = product.get("qu_id_stock")
-            qu_name = qu_names.get(int(qu_id), "unknown") if qu_id is not None else "unknown"
-            loc_id = product.get("location_id")
-            location_name = location_names.get(int(loc_id), "unknown") if loc_id is not None else "unknown"
 
             result.append(
                 {
                     "product_id": int(entry["product_id"]),
                     "product_name": str(product.get("name", "")),
                     "amount": float(entry.get("amount", 0)),
-                    "qu_name": qu_name,
-                    "location_name": location_name,
-                    "best_before_date": bbd,
-                    "days_until_expiry": days_until,
+                    "qu_name": _volatile_qu_name(product, qu_names),
+                    "location_name": _volatile_location_name(product, location_names),
+                    "best_before_date": entry.get("best_before_date"),
+                    "days_until_expiry": (expiry_date - datetime.now(tz=UTC).date()).days,
                 }
             )
         return result
@@ -1866,18 +1344,11 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         via `products_create` / `product_edit`. See also
         `get_expiring_stock` and `get_expired_stock`.
         """
-        r = await _retry(lambda: client.get("/stock/volatile"))
-        r.raise_for_status()
-        data: dict[str, Any] = r.json()
-
-        qu_names = {int(q["id"]): str(q["name"]) for q in await resolver.all_qus()}
+        data, qu_names, _ = await _fetch_volatile_with_maps()
 
         result = []
         for entry in data.get("missing_products", []):
             product = entry.get("product") or {}
-            qu_id = product.get("qu_id_stock")
-            qu_name = qu_names.get(int(qu_id), "unknown") if qu_id is not None else "unknown"
-
             amount_missing = float(entry.get("amount_missing", 0))
             min_amount = float(product.get("min_stock_amount", 0))
             current = min_amount - amount_missing if amount_missing > 0 else 0
@@ -1888,7 +1359,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     "product_name": str(product.get("name", "")),
                     "amount": current,
                     "min_amount": min_amount,
-                    "qu_name": qu_name,
+                    "qu_name": _volatile_qu_name(product, qu_names),
                     "deficit": amount_missing,
                 }
             )
@@ -1903,39 +1374,22 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         but not yet expired, use `get_expiring_stock`. For low-stock,
         use `get_below_minimum_stock`.
         """
-
-        r = await _retry(lambda: client.get("/stock/volatile"))
-        r.raise_for_status()
-        data: dict[str, Any] = r.json()
-
-        qu_names = {int(q["id"]): str(q["name"]) for q in await resolver.all_qus()}
-        location_names = {int(row["id"]): str(row["name"]) for row in await resolver.all_locations()}
+        data, qu_names, location_names = await _fetch_volatile_with_maps()
 
         result = []
         for entry in data.get("expired_products", []):
             product = entry.get("product") or {}
-            bbd = entry.get("best_before_date")
-            qu_id = product.get("qu_id_stock")
-            qu_name = qu_names.get(int(qu_id), "unknown") if qu_id is not None else "unknown"
-            loc_id = product.get("location_id")
-            location_name = location_names.get(int(loc_id), "unknown") if loc_id is not None else "unknown"
-
-            days_overdue = 0
-            if bbd:
-                try:
-                    expiry_date = datetime.strptime(bbd, "%Y-%m-%d").date()
-                    days_overdue = (datetime.now(tz=UTC).date() - expiry_date).days
-                except ValueError:
-                    pass
+            expiry_date = _parse_date(entry.get("best_before_date"))
+            days_overdue = (datetime.now(tz=UTC).date() - expiry_date).days if expiry_date else 0
 
             result.append(
                 {
                     "product_id": int(entry.get("product_id", 0)),
                     "product_name": str(product.get("name", "")),
                     "amount": float(entry.get("amount", 0)),
-                    "qu_name": qu_name,
-                    "location_name": location_name,
-                    "best_before_date": bbd,
+                    "qu_name": _volatile_qu_name(product, qu_names),
+                    "location_name": _volatile_location_name(product, location_names),
+                    "best_before_date": entry.get("best_before_date"),
                     "days_overdue": days_overdue,
                 }
             )

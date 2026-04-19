@@ -1,12 +1,8 @@
-"""E2E test: Grocy container + MCP server -> inventory bootstrap workflow.
+"""E2E tests: Grocy container + MCP server -> tool verification.
 
 Starts a real Grocy container (LinuxServer image, auth disabled, demo mode),
-wires the MCP server to it, and exercises a realistic sequence of tool calls
-that mirrors how an LLM would bootstrap a Grocy inventory from scratch.
-
-All tool calls go through the full MCP protocol via fastmcp.Client with
-FastMCPTransport. This ensures output schema validation and error propagation
-match what real MCP clients (e.g. Claude) experience.
+wires the MCP server to it, and exercises tool calls through the full MCP
+protocol via fastmcp.Client with FastMCPTransport.
 """
 
 from __future__ import annotations
@@ -14,7 +10,6 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
 
 import httpx
 import pytest
@@ -24,6 +19,7 @@ from fastmcp.client.transports import FastMCPTransport
 
 from x.grocy_mcp.grocy_container import make_settings
 from x.grocy_mcp.server import build_mcp
+from x.grocy_mcp.test_helpers import RefData, _data, create_ref_data
 from x.grocy_mcp.tool_metadata import TOOL_OVERRIDES
 
 logger = logging.getLogger(__name__)
@@ -87,20 +83,10 @@ async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
         await http_client.aclose()
 
 
-def _data(result: Any) -> Any:
-    """Extract unwrapped structured content from a FastMCP CallToolResult.
-
-    FastMCP wraps non-object return types (lists, unions) in {"result": ...}
-    with the x-fastmcp-wrap-result flag. The .data field has type-validated
-    objects; .structured_content has raw dicts/lists. We use structured_content
-    for test assertions (raw JSON-like access) and unwrap the synthetic wrapper.
-    """
-    sc = result.structured_content
-    assert sc is not None, "No structured_content in CallToolResult"
-    # Unwrap FastMCP's synthetic {"result": ...} wrapper for non-object schemas
-    if isinstance(sc, dict) and len(sc) == 1 and "result" in sc:
-        return sc["result"]
-    return sc
+@pytest.fixture
+async def ref_data(mcp_client: Client) -> RefData:
+    """Create reference data (location, QU, group, two products) with uuid suffixes."""
+    return await create_ref_data(mcp_client)
 
 
 # -- Tool name coverage ------------------------------------------------------
@@ -127,215 +113,218 @@ async def test_system_info_tool(mcp_client: Client) -> None:
     assert "grocy_version" in text.lower() or "grocy" in text.lower(), f"Unexpected: {text[:200]}"
 
 
-# -- Inventory bootstrap workflow ---------------------------------------------
+# -- Reference data CRUD -----------------------------------------------------
 
 
-async def test_inventory_bootstrap(mcp_client: Client) -> None:
-    """Full workflow: reference data -> create products -> stock operations -> entries -> shopping list."""
+async def test_reference_data_crud(mcp_client: Client) -> None:
+    """Create and list product groups, shopping lists, locations, QUs."""
     suffix = uuid.uuid4().hex[:6]
 
-    # List reference data (brief mode)
-    _data(await mcp_client.call_tool("product_groups_list", {"detail": "brief"}))
-
-    # Create a product group via the typed batch creator and verify round-trip
+    # Product groups
     new_group_name = f"TestGroupTyped-{suffix}"
     group_results = _data(
         await mcp_client.call_tool(
             "product_groups_create", {"items": [{"name": new_group_name, "description": "e2e fixture group"}]}
         )
     )
-    assert group_results[0]["kind"] == "ok", f"product_groups_create failed: {group_results[0]}"
+    assert group_results[0]["kind"] == "ok"
     groups = _data(await mcp_client.call_tool("product_groups_list", {"detail": "brief"}))
     assert new_group_name in [g["name"] for g in groups]
 
-    # Create a shopping list and verify it appears in shopping_lists_list
+    # Shopping lists
     new_list_name = f"TestList-{suffix}"
     list_results = _data(
         await mcp_client.call_tool(
             "shopping_lists_create", {"items": [{"name": new_list_name, "description": "e2e fixture list"}]}
         )
     )
-    assert list_results[0]["kind"] == "ok", f"shopping_lists_create failed: {list_results[0]}"
+    assert list_results[0]["kind"] == "ok"
     shopping_lists = _data(await mcp_client.call_tool("shopping_lists_list", {"detail": "brief"}))
     assert new_list_name in [sl["name"] for sl in shopping_lists]
 
-    # Create a fresh location and quantity unit via the typed batch creators
-    new_loc_name = f"TestPantry-{suffix}"
-    new_qu_name = f"TestBag-{suffix}"
+    # Locations
+    new_loc_name = f"TestLoc-{suffix}"
     loc_results = _data(
         await mcp_client.call_tool(
             "locations_create",
             {"items": [{"name": new_loc_name, "description": "e2e fixture location", "is_freezer": False}]},
         )
     )
-    assert loc_results[0]["kind"] == "ok", f"locations_create failed: {loc_results[0]}"
+    assert loc_results[0]["kind"] == "ok"
+    locations = _data(await mcp_client.call_tool("locations_list", {"detail": "brief"}))
+    assert new_loc_name in [loc["name"] for loc in locations]
+
+    # Quantity units
+    new_qu_name = f"TestQU-{suffix}"
     qu_results = _data(
         await mcp_client.call_tool(
             "quantity_units_create",
             {"items": [{"name": new_qu_name, "name_plural": f"{new_qu_name}s", "description": "e2e fixture QU"}]},
         )
     )
-    assert qu_results[0]["kind"] == "ok", f"quantity_units_create failed: {qu_results[0]}"
-
-    # Verify the new location and QU show up in their list_* tools
-    locations = _data(await mcp_client.call_tool("locations_list", {"detail": "brief"}))
-    assert new_loc_name in [loc["name"] for loc in locations]
+    assert qu_results[0]["kind"] == "ok"
     qus = _data(await mcp_client.call_tool("quantity_units_list", {"detail": "brief"}))
     assert new_qu_name in [q["name"] for q in qus]
 
-    loc_name = new_loc_name
-    qu_name = new_qu_name
 
-    # Batch-create two products using the typed products_create tool
-    create_results = _data(
-        await mcp_client.call_tool(
-            "products_create",
-            {
-                "items": [
-                    {
-                        "name": f"TestRice-{suffix}",
-                        "stock_qu": qu_name,
-                        "location": loc_name,
-                        "min_stock_amount": 1,
-                        "description": "Test product for e2e",
-                    },
-                    {"name": f"TestFlour-{suffix}", "stock_qu": qu_name, "location": loc_name},
-                ]
-            },
-        )
-    )
-    assert all(r["kind"] == "ok" for r in create_results), f"products_create failed: {create_results}"
-    product_id = create_results[0]["created_object_id"]
-    assert create_results[1]["created_object_id"] is not None
+# -- Product lifecycle -------------------------------------------------------
 
-    # Verify both products appear in products_list
+
+async def test_product_lifecycle(mcp_client: Client, ref_data: RefData) -> None:
+    """Create products, edit (rename), verify preserved fields, delete."""
+    # Verify products exist
     products = _data(await mcp_client.call_tool("products_list", {"detail": "brief"}))
     product_names = [p["name"] for p in products]
-    assert f"TestRice-{suffix}" in product_names
-    assert f"TestFlour-{suffix}" in product_names
+    assert ref_data.products[0] in product_names
+    assert ref_data.products[1] in product_names
 
-    # Add stock (name-based references)
+    # Edit product — rename, verify other fields preserved
+    new_name = f"TestRice-Renamed-{ref_data.suffix}"
+    edit_result = _data(await mcp_client.call_tool("product_edit", {"product": ref_data.products[0], "name": new_name}))
+    assert edit_result["kind"] == "ok"
+
+    products = _data(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    our_product = [p for p in products if p["name"] == new_name]
+    assert len(our_product) == 1
+    assert float(our_product[0]["min_stock_amount"]) == 1
+    assert our_product[0]["description"] == "Test product for e2e"
+
+    # Delete both products
+    for name in (new_name, ref_data.products[1]):
+        del_result = _data(await mcp_client.call_tool("product_delete", {"product": name}))
+        assert del_result["kind"] == "ok", f"product_delete({name}) failed: {del_result}"
+
+
+# -- Stock operations --------------------------------------------------------
+
+
+async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
+    """Add, consume, set stock; verify amounts via stock_get and stock_entries."""
+    product = ref_data.products[0]
+    qu = ref_data.qu
+    loc = ref_data.location
+
+    # Add stock
     ops = _data(
         await mcp_client.call_tool(
-            "stock_add",
-            {"items": [{"product": f"TestRice-{suffix}", "amount": 5, "qu": qu_name, "location": loc_name}]},
+            "stock_add", {"items": [{"product": product, "amount": 5, "qu": qu, "location": loc}]}
         )
     )
-    op = ops[0]
-    assert op["kind"] == "ok", f"stock_add failed: {op}"
-    assert op["new_amount"] == 5.0
-    assert op["qu_name"] == qu_name
-    assert op["product_name"] == f"TestRice-{suffix}"
-    assert op["location_name"] == loc_name
+    assert ops[0]["kind"] == "ok"
+    assert ops[0]["new_amount"] == 5.0
+    assert ops[0]["qu_name"] == qu
+    assert ops[0]["location_name"] == loc
 
-    # Get stock — compact response with product filter
-    stock = _data(await mcp_client.call_tool("stock_get", {"products": [f"TestRice-{suffix}"]}))
-    our_stock = [s for s in stock if s["product_name"] == f"TestRice-{suffix}"]
+    # Get stock with product filter
+    stock = _data(await mcp_client.call_tool("stock_get", {"products": [product]}))
+    our_stock = [s for s in stock if s["product_name"] == product]
     assert len(our_stock) == 1
     assert float(our_stock[0]["amount"]) == 5.0
-    assert our_stock[0]["qu_name"] == qu_name
-    assert our_stock[0]["location_name"] == loc_name
 
-    # Consume stock (name-based, location required)
+    # Consume stock
     ops = _data(
         await mcp_client.call_tool(
-            "stock_consume",
-            {"items": [{"product": f"TestRice-{suffix}", "amount": 2, "qu": qu_name, "location": loc_name}]},
+            "stock_consume", {"items": [{"product": product, "amount": 2, "qu": qu, "location": loc}]}
         )
     )
-    assert ops[0]["kind"] == "ok", f"stock_consume failed: {ops[0]}"
+    assert ops[0]["kind"] == "ok"
     assert ops[0]["new_amount"] == 3.0
-    assert ops[0]["qu_name"] == qu_name
 
     # Set absolute stock amount
     ops = _data(
         await mcp_client.call_tool(
-            "stock_set",
-            {"items": [{"product": f"TestRice-{suffix}", "new_amount": 10, "qu": qu_name, "location": loc_name}]},
+            "stock_set", {"items": [{"product": product, "new_amount": 10, "qu": qu, "location": loc}]}
         )
     )
-    assert ops[0]["kind"] == "ok", f"stock_set failed: {ops[0]}"
+    assert ops[0]["kind"] == "ok"
     assert ops[0]["new_amount"] == 10.0
 
-    # Get stock entries by product name
-    entries = _data(await mcp_client.call_tool("stock_entries_list", {"products": [f"TestRice-{suffix}"]}))
+    # Stock entries by product name
+    entries = _data(await mcp_client.call_tool("stock_entries_list", {"products": [product]}))
     assert len(entries) > 0
     assert entries[0]["kind"] == "ok"
     detail = entries[0]["entry"]
-    assert detail["product_name"] == f"TestRice-{suffix}"
-    assert detail["qu_name"] == qu_name
+    assert detail["product_name"] == product
     entry_id = detail["entry_id"]
 
-    # Edit stock entry — partial update (change price only), verify changes diff
+    # Edit stock entry — change price, verify diff
     edit_result = _data(await mcp_client.call_tool("stock_entry_edit", {"entry_id": entry_id, "price": 9.99}))
-    assert edit_result["kind"] == "ok", f"stock_entry_edit failed: {edit_result}"
+    assert edit_result["kind"] == "ok"
     assert float(edit_result["entry"]["price"]) == 9.99
-    assert edit_result.get("changes") is not None, "edit should return changes diff"
+    assert edit_result.get("changes") is not None
     assert "price" in edit_result["changes"]
-    assert float(edit_result["changes"]["price"]["new"]) == 9.99
 
-    # Get stock entry by ID — verify edit landed
+    # Verify edit landed via re-fetch
     entries = _data(await mcp_client.call_tool("stock_entries_list", {"entry_ids": [entry_id]}))
-    assert entries[0]["kind"] == "ok"
     assert float(entries[0]["entry"]["price"]) == 9.99
 
-    # Edit product — rename via partial update, verify other fields preserved
-    new_name = f"TestRice-Renamed-{suffix}"
-    edit_result = _data(await mcp_client.call_tool("product_edit", {"product": f"TestRice-{suffix}", "name": new_name}))
-    assert edit_result["kind"] == "ok", f"product_edit failed: {edit_result}"
 
-    # Verify rename landed AND other fields weren't clobbered
-    products = _data(await mcp_client.call_tool("products_list", {"detail": "full"}))
-    our_product = [p for p in products if p["name"] == new_name]
-    assert len(our_product) == 1
-    # min_stock_amount was set to 1 at creation — verify it survived the edit
-    assert float(our_product[0]["min_stock_amount"]) == 1
-    assert our_product[0]["description"] == "Test product for e2e"
+# -- Shopping list operations ------------------------------------------------
 
-    # Shopping list — add product-linked and note-only items
+
+async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -> None:
+    """Add items (product-linked, note-only, product+note), get list, edit item, remove item."""
+    product = ref_data.products[0]
+
+    # Add stock first so the product exists with stock
+    _data(
+        await mcp_client.call_tool(
+            "stock_add",
+            {"items": [{"product": product, "amount": 1, "qu": ref_data.qu, "location": ref_data.location}]},
+        )
+    )
+
+    # Add items to default shopping list
     sl_results = _data(
         await mcp_client.call_tool(
             "shopping_list_items_add",
             {
                 "items": [
-                    {"product": new_name, "amount": 2, "shopping_list": 1},
+                    {"product": product, "amount": 2, "shopping_list": 1},
                     {"note": "Check paper towels", "shopping_list": 1},
-                    # Product + note together: "Milk — get the organic brand"
-                    {"product": new_name, "amount": 1, "note": "get the organic brand", "shopping_list": 1},
+                    {"product": product, "amount": 1, "note": "get the organic brand", "shopping_list": 1},
                 ]
             },
         )
     )
-    assert sl_results[0]["kind"] == "ok"
-    assert sl_results[1]["kind"] == "ok"
-    assert sl_results[2]["kind"] == "ok"
+    assert all(r["kind"] == "ok" for r in sl_results)
     sl_item_id = sl_results[0]["item_id"]
 
-    # Get shopping list — verify items present (including the product+note one)
+    # Get shopping list — verify items present
     sl_data = _data(await mcp_client.call_tool("shopping_list_get", {"shopping_list": 1}))
     assert "items" in sl_data
-    our_items = [i for i in sl_data["items"] if i.get("product_name") == new_name]
+    our_items = [i for i in sl_data["items"] if i.get("product_name") == product]
     assert len(our_items) >= 2
     product_plus_note = [i for i in our_items if i.get("note") == "get the organic brand"]
-    assert len(product_plus_note) == 1, f"product+note item missing: {our_items}"
+    assert len(product_plus_note) == 1
 
-    # Edit shopping list item — mark as done
+    # Edit item — mark as done
     edit_sl = _data(await mcp_client.call_tool("shopping_list_item_edit", {"item_id": sl_item_id, "done": True}))
     assert edit_sl["kind"] == "ok"
 
-    # Remove from shopping list
+    # Remove item
     _data(await mcp_client.call_tool("shopping_list_items_remove", {"item_ids": [sl_item_id]}))
 
-    # Query tools — exercise endpoints (may return empty, just verify no error)
+
+# -- Volatile stock queries --------------------------------------------------
+
+
+async def test_volatile_stock_queries(mcp_client: Client) -> None:
+    """Smoke test: expiring, below-minimum, expired queries don't error."""
     _data(await mcp_client.call_tool("get_expiring_stock", {"days_ahead": 30}))
     _data(await mcp_client.call_tool("get_below_minimum_stock", {}))
     _data(await mcp_client.call_tool("get_expired_stock", {}))
-
-    # System tools
     _data(await mcp_client.call_tool("get_db_changed_time", {}))
 
-    # Generic entity CRUD path: entities_create + entities_get (writeable type),
-    # plus entities_list against a read-only view (`stock`) for the read/write split.
+
+# -- Generic entity CRUD ----------------------------------------------------
+
+
+async def test_generic_entity_crud(mcp_client: Client, ref_data: RefData) -> None:
+    """entities_create, entities_get, entities_list with read-only types."""
+    suffix = uuid.uuid4().hex[:6]
+
+    # Create via generic path
     pg_create = _data(
         await mcp_client.call_tool(
             "entities_create",
@@ -344,47 +333,37 @@ async def test_inventory_bootstrap(mcp_client: Client) -> None:
     )
     assert pg_create[0]["kind"] == "ok"
     pg_id = pg_create[0]["created_object_id"]
+
+    # Fetch by ID
     pg_fetched = _data(
         await mcp_client.call_tool("entities_get", {"entity_type": "product_groups", "object_ids": [pg_id]})
     )
     assert pg_fetched[0]["kind"] == "ok"
     assert pg_fetched[0]["data"]["name"] == f"TestGroupGeneric-{suffix}"
-    # Read-only entity types are accepted by entities_list.
+
+    # Read-only entity types accepted by entities_list
     stock_rows = _data(await mcp_client.call_tool("entities_list", {"entity_types": ["stock"]}))
     assert "stock" in stock_rows
 
+    # Fetch product via generic path
     entities = _data(
-        await mcp_client.call_tool("entities_get", {"entity_type": "products", "object_ids": [product_id]})
+        await mcp_client.call_tool("entities_get", {"entity_type": "products", "object_ids": [ref_data.product_ids[0]]})
     )
     assert entities[0]["kind"] == "ok"
-    assert entities[0]["data"]["name"] == new_name
-
-    # Cleanup — delete both products (location/QU stay; harmless across runs).
-    for name in (new_name, f"TestFlour-{suffix}"):
-        del_result = _data(await mcp_client.call_tool("product_delete", {"product": name}))
-        assert del_result["kind"] == "ok", f"product_delete({name}) failed: {del_result}"
+    assert entities[0]["data"]["name"] == ref_data.products[0]
 
 
 # -- Read / write entity-type split ------------------------------------------
 
 
 async def test_create_entities_rejects_view_only_type(mcp_client: Client) -> None:
-    """`entities_create` only accepts `WriteableEntityType`.
-
-    Calling it with a read-only entity type (e.g. `stock` — a computed
-    view, no underlying writeable table) is rejected at the schema
-    layer before the request even leaves FastMCP.
-    """
+    """``entities_create`` only accepts ``WriteableEntityType``."""
     with pytest.raises(Exception, match="entity_type"):
         await mcp_client.call_tool("entities_create", {"items": [{"entity_type": "stock", "body": {"amount": 1}}]})
 
 
 async def test_list_entities_accepts_view_only_type(mcp_client: Client) -> None:
-    """`entities_list` accepts the broader `ReadableEntityType` set.
-
-    The same `stock` value `entities_create` rejects is fine here,
-    along with the other view-only / computed entities.
-    """
+    """``entities_list`` accepts the broader ``ReadableEntityType`` set."""
     rows = _data(
         await mcp_client.call_tool(
             "entities_list", {"entity_types": ["stock", "products_last_purchased", "permission_hierarchy"]}

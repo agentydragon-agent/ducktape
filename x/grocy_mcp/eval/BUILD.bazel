@@ -35,7 +35,7 @@ py_library(
         ":result_types",
         "//util:net",
         "//util/bazel:runfiles",
-        "//x/grocy_mcp:config",
+        "//x/grocy_mcp:mcp_types",
         "//x/grocy_mcp:server",  # transitively provides server_instructions.md via runfiles
         "@pypi//agent_framework_anthropic",
         "@pypi//agent_framework_claude",

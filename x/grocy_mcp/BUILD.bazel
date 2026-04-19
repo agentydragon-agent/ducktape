@@ -27,10 +27,17 @@ genrule(
 # ── Libraries ────────────────────────────────────────────────────────────────
 
 py_library(
-    name = "config",
-    srcs = ["config.py"],
+    name = "grocy_types",
+    srcs = ["grocy_types.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "mcp_types",
+    srcs = ["mcp_types.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":grocy_types",
         "//mcp_infra/authentik_auth:auth",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -42,6 +49,7 @@ py_library(
     srcs = ["resolver.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":grocy_types",
         "@pypi//httpx",
     ],
 )
@@ -51,7 +59,8 @@ py_library(
     srcs = ["batch_tools.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":config",
+        ":grocy_types",
+        ":mcp_types",
         ":resolver",
         "@pypi//fastmcp",
         "@pypi//httpx",
@@ -69,7 +78,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":batch_tools",
-        ":config",
+        ":mcp_types",
         ":tool_metadata",
         "//mcp_infra/authentik_auth:auth",
         "//util/bazel:runfiles",
@@ -94,7 +103,7 @@ py_library(
     data = ["//third_party/containers:grocy"],
     visibility = ["//x/grocy_mcp:__subpackages__"],
     deps = [
-        ":config",
+        ":mcp_types",
         "//third_party/containers:rlocations",
         "//util:oci",
         "@pypi//httpx",
@@ -133,8 +142,8 @@ py_test(
     name = "test_config",
     srcs = ["test_config.py"],
     deps = [
-        ":config",
         ":conftest",
+        ":mcp_types",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -145,8 +154,8 @@ py_test(
     name = "test_server",
     srcs = ["test_server.py"],
     deps = [
-        ":config",
         ":conftest",
+        ":mcp_types",
         ":server",
         "//:conftest",
         "@pypi//httpx",
@@ -158,8 +167,8 @@ py_test(
     name = "test_docstring_cross_links",
     srcs = ["test_docstring_cross_links.py"],
     deps = [
-        ":config",
         ":conftest",
+        ":mcp_types",
         ":server",
         "//:conftest",
         "@pypi//fastmcp",
@@ -184,7 +193,7 @@ py_binary(
     srcs = ["dump_tools.py"],
     main_module = "x.grocy_mcp.dump_tools",
     deps = [
-        ":config",
+        ":mcp_types",
         ":server",
         "@pypi//httpx",
     ],
@@ -195,8 +204,8 @@ py_test(
     srcs = ["test_retry_safety.py"],
     deps = [
         ":batch_tools",
-        ":config",
         ":conftest",
+        ":mcp_types",
         "//:conftest",
         "@pypi//fastmcp",
         "@pypi//httpx",
@@ -211,12 +220,23 @@ py_test(
     srcs = ["test_resolver.py"],
     deps = [
         ":conftest",
+        ":grocy_types",
         ":resolver",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//respx",
+    ],
+)
+
+py_library(
+    name = "test_helpers",
+    testonly = True,
+    srcs = ["test_helpers.py"],
+    visibility = ["//x/grocy_mcp:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp",
     ],
 )
 
@@ -230,6 +250,7 @@ py_test(
         ":grocy_container",
         ":grocy_fixtures",
         ":server",
+        ":test_helpers",
         ":tool_metadata",
         "//:conftest",
         "@pypi//fastmcp",

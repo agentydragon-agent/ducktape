@@ -18,10 +18,10 @@ from agent_framework.openai import OpenAIChatCompletionClient
 
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
-from x.grocy_mcp.config import ServerSettings
 from x.grocy_mcp.eval.cases import EvalCase
 from x.grocy_mcp.eval.prompts import POSTMORTEM_PROMPT, SYSTEM_PROMPT
 from x.grocy_mcp.eval.result_types import EvalResult
+from x.grocy_mcp.mcp_types import ServerSettings
 from x.grocy_mcp.server import build_mcp
 
 logger = logging.getLogger(__name__)

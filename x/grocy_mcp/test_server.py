@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest_bazel
 
-from x.grocy_mcp.config import ServerSettings
+from x.grocy_mcp.mcp_types import ServerSettings
 from x.grocy_mcp.server import build_mcp
 
 

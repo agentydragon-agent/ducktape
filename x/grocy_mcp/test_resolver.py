@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 import respx
 
+from x.grocy_mcp.grocy_types import EntityType
 from x.grocy_mcp.resolver import EntityResolver, Resolved, ResolvedQU
 
 BASE_URL = "http://grocy.test/api"
@@ -62,53 +63,53 @@ def resolver(mock_router: respx.MockRouter) -> EntityResolver:
 
 
 async def test_resolve_product_by_id(resolver: EntityResolver) -> None:
-    result = await resolver.resolve_product(1)
+    result = await resolver.resolve(EntityType.PRODUCT, 1)
     assert result == Resolved(id=1, name="Rice")
 
 
 async def test_resolve_product_by_name(resolver: EntityResolver) -> None:
-    result = await resolver.resolve_product("Rice")
+    result = await resolver.resolve(EntityType.PRODUCT, "Rice")
     assert result == Resolved(id=1, name="Rice")
 
 
 async def test_resolve_product_by_name_case_insensitive(resolver: EntityResolver) -> None:
-    result = await resolver.resolve_product("rice")
+    result = await resolver.resolve(EntityType.PRODUCT, "rice")
     assert result == Resolved(id=1, name="Rice")
 
 
 async def test_resolve_product_unknown_id(resolver: EntityResolver) -> None:
     with pytest.raises(ValueError, match="No product with id=99"):
-        await resolver.resolve_product(99)
+        await resolver.resolve(EntityType.PRODUCT, 99)
 
 
 async def test_resolve_product_unknown_name_suggests_similar(resolver: EntityResolver) -> None:
     with pytest.raises(ValueError, match=r"No product named 'Ric'.*Similar"):
-        await resolver.resolve_product("Ric")
+        await resolver.resolve(EntityType.PRODUCT, "Ric")
 
 
 # -- Location resolution ---------------------------------------------------
 
 
 async def test_resolve_location_by_name(resolver: EntityResolver) -> None:
-    result = await resolver.resolve_location("Fridge")
+    result = await resolver.resolve(EntityType.LOCATION, "Fridge")
     assert result == Resolved(id=2, name="Fridge")
 
 
 async def test_resolve_location_unknown(resolver: EntityResolver) -> None:
     with pytest.raises(ValueError, match="No location named 'Garage'"):
-        await resolver.resolve_location("Garage")
+        await resolver.resolve(EntityType.LOCATION, "Garage")
 
 
 # -- QU resolution ---------------------------------------------------------
 
 
 async def test_resolve_qu_by_name(resolver: EntityResolver) -> None:
-    result = await resolver.resolve_qu("Kilogram")
+    result = await resolver.resolve(EntityType.QUANTITY_UNIT, "Kilogram")
     assert result == Resolved(id=3, name="Kilogram")
 
 
 async def test_resolve_qu_by_id(resolver: EntityResolver) -> None:
-    result = await resolver.resolve_qu(5)
+    result = await resolver.resolve(EntityType.QUANTITY_UNIT, 5)
     assert result == Resolved(id=5, name="Liter")
 
 
@@ -165,10 +166,10 @@ async def test_product_specific_conversion_overrides_global() -> None:
         router.get("/objects/quantity_unit_conversions_resolved").respond(json=conversions_with_global)
 
         client = httpx.AsyncClient(base_url=BASE_URL)
-        resolver = EntityResolver(client)
+        r = EntityResolver(client)
 
         # Should use product-specific factor (0.8), not global (1.0)
-        result = await resolver.resolve_qu_for_product("Liter", product_id=1)
+        result = await r.resolve_qu_for_product("Liter", product_id=1)
         assert result.conversion_factor == 0.8
 
 
@@ -176,16 +177,16 @@ async def test_product_specific_conversion_overrides_global() -> None:
 
 
 async def test_product_name_lookup(resolver: EntityResolver) -> None:
-    assert await resolver.product_name(1) == "Rice"
-    assert await resolver.product_name(999) == "id=999"
+    assert await resolver.name(EntityType.PRODUCT, 1) == "Rice"
+    assert await resolver.name(EntityType.PRODUCT, 999) == "id=999"
 
 
 async def test_location_name_lookup(resolver: EntityResolver) -> None:
-    assert await resolver.location_name(2) == "Fridge"
+    assert await resolver.name(EntityType.LOCATION, 2) == "Fridge"
 
 
 async def test_qu_name_lookup(resolver: EntityResolver) -> None:
-    assert await resolver.qu_name(3) == "Kilogram"
+    assert await resolver.name(EntityType.QUANTITY_UNIT, 3) == "Kilogram"
 
 
 # -- Freshness -------------------------------------------------------------
@@ -204,11 +205,11 @@ async def test_resolver_fetches_fresh_per_call() -> None:
         router.get("/objects/quantity_units").respond(json=QUS)
 
         client = httpx.AsyncClient(base_url=BASE_URL)
-        resolver = EntityResolver(client)
+        r = EntityResolver(client)
 
-        await resolver.resolve_product("Rice")
-        await resolver.resolve_product("Milk")
-        await resolver.resolve_product(1)
+        await r.resolve(EntityType.PRODUCT, "Rice")
+        await r.resolve(EntityType.PRODUCT, "Milk")
+        await r.resolve(EntityType.PRODUCT, 1)
 
         assert products_route.call_count == 3
 

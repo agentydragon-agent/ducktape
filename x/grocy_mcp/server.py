@@ -33,7 +33,7 @@ from pydantic.networks import AnyUrl
 from mcp_infra.authentik_auth.auth import AuthentikExchangeAuth, build_authentik_auth
 from util.bazel.runfiles import get_required_path
 from x.grocy_mcp.batch_tools import register_batch_tools
-from x.grocy_mcp.config import ServerSettings
+from x.grocy_mcp.mcp_types import ServerSettings
 from x.grocy_mcp.tool_metadata import TOOL_OVERRIDES
 
 logger = logging.getLogger(__name__)

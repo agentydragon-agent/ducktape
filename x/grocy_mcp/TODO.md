@@ -34,6 +34,21 @@ remainder needs a bit more care:
   `stock_entries` filtered by product. Worth thinking about whether to
   promote to a batch tool that groups with `stock_*`.
 
+## Consider per-test container isolation for e2e tests
+
+Tests currently share a session-scoped Grocy container and use uuid
+suffixes to avoid name collisions. Container startup is ~25-30s
+(LinuxServer image runs s6-overlay + nginx + PHP + SQLite migrations),
+so function-scoped containers would make the suite too slow (~4-5 min
+for 9 tests).
+
+Options to explore:
+
+- Lighter Grocy container image (skip nginx/s6, run PHP built-in server
+  directly against a fresh SQLite DB).
+- Grocy's built-in demo-mode reset endpoint (if one exists).
+- Per-test database reset via direct SQLite file swap.
+
 ## `shopping_list_clear` checks each DELETE (landed in #1345)
 
 Tombstone — keep until the next design pass so we remember it was an
