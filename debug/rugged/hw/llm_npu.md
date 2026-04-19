@@ -3,7 +3,7 @@
 **Goal**: Run small LLMs on the NPU for background/offline inference.
 
 **Hardware**: Lunar Lake NPU (~45 TOPS int8). NixOS module:
-<nix/nixos/modules/local-llm-npu.nix>.
+<nix/nixos/modules/local_llm_npu/default.nix> (not yet committed).
 
 ## Current setup — venv being set up
 
