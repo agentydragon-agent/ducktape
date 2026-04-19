@@ -19,7 +19,7 @@ from fastmcp.client.transports import FastMCPTransport
 
 from x.grocy_mcp.grocy_container import make_settings
 from x.grocy_mcp.server import build_mcp
-from x.grocy_mcp.test_helpers import RefData, _data, create_ref_data
+from x.grocy_mcp.test_helpers import RefData, create_refunwrap_result, unwrap_result
 from x.grocy_mcp.tool_metadata import TOOL_OVERRIDES
 
 logger = logging.getLogger(__name__)
@@ -84,9 +84,9 @@ async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
 
 
 @pytest.fixture
-async def ref_data(mcp_client: Client) -> RefData:
+async def refunwrap_result(mcp_client: Client) -> RefData:
     """Create reference data (location, QU, group, two products) with uuid suffixes."""
-    return await create_ref_data(mcp_client)
+    return await create_refunwrap_result(mcp_client)
 
 
 # -- Tool name coverage ------------------------------------------------------
@@ -108,7 +108,7 @@ async def test_all_tool_names_are_customized(mcp_client: Client) -> None:
 
 async def test_system_info_tool(mcp_client: Client) -> None:
     """GET /system/info is exposed as an MCP tool."""
-    data = _data(await mcp_client.call_tool("get_system_info", {}))
+    data = unwrap_result(await mcp_client.call_tool("get_system_info", {}))
     text = str(data)
     assert "grocy_version" in text.lower() or "grocy" in text.lower(), f"Unexpected: {text[:200]}"
 
@@ -116,96 +116,98 @@ async def test_system_info_tool(mcp_client: Client) -> None:
 # -- Reference data CRUD -----------------------------------------------------
 
 
-async def test_reference_data_crud(mcp_client: Client) -> None:
+async def test_referenceunwrap_result_crud(mcp_client: Client) -> None:
     """Create and list product groups, shopping lists, locations, QUs."""
     suffix = uuid.uuid4().hex[:6]
 
     # Product groups
     new_group_name = f"TestGroupTyped-{suffix}"
-    group_results = _data(
+    group_results = unwrap_result(
         await mcp_client.call_tool(
             "product_groups_create", {"items": [{"name": new_group_name, "description": "e2e fixture group"}]}
         )
     )
     assert group_results[0]["kind"] == "ok"
-    groups = _data(await mcp_client.call_tool("product_groups_list", {"detail": "brief"}))
+    groups = unwrap_result(await mcp_client.call_tool("product_groups_list", {"detail": "brief"}))
     assert new_group_name in [g["name"] for g in groups]
 
     # Shopping lists
     new_list_name = f"TestList-{suffix}"
-    list_results = _data(
+    list_results = unwrap_result(
         await mcp_client.call_tool(
             "shopping_lists_create", {"items": [{"name": new_list_name, "description": "e2e fixture list"}]}
         )
     )
     assert list_results[0]["kind"] == "ok"
-    shopping_lists = _data(await mcp_client.call_tool("shopping_lists_list", {"detail": "brief"}))
+    shopping_lists = unwrap_result(await mcp_client.call_tool("shopping_lists_list", {"detail": "brief"}))
     assert new_list_name in [sl["name"] for sl in shopping_lists]
 
     # Locations
     new_loc_name = f"TestLoc-{suffix}"
-    loc_results = _data(
+    loc_results = unwrap_result(
         await mcp_client.call_tool(
             "locations_create",
             {"items": [{"name": new_loc_name, "description": "e2e fixture location", "is_freezer": False}]},
         )
     )
     assert loc_results[0]["kind"] == "ok"
-    locations = _data(await mcp_client.call_tool("locations_list", {"detail": "brief"}))
+    locations = unwrap_result(await mcp_client.call_tool("locations_list", {"detail": "brief"}))
     assert new_loc_name in [loc["name"] for loc in locations]
 
     # Quantity units
     new_qu_name = f"TestQU-{suffix}"
-    qu_results = _data(
+    qu_results = unwrap_result(
         await mcp_client.call_tool(
             "quantity_units_create",
             {"items": [{"name": new_qu_name, "name_plural": f"{new_qu_name}s", "description": "e2e fixture QU"}]},
         )
     )
     assert qu_results[0]["kind"] == "ok"
-    qus = _data(await mcp_client.call_tool("quantity_units_list", {"detail": "brief"}))
+    qus = unwrap_result(await mcp_client.call_tool("quantity_units_list", {"detail": "brief"}))
     assert new_qu_name in [q["name"] for q in qus]
 
 
 # -- Product lifecycle -------------------------------------------------------
 
 
-async def test_product_lifecycle(mcp_client: Client, ref_data: RefData) -> None:
+async def test_product_lifecycle(mcp_client: Client, refunwrap_result: RefData) -> None:
     """Create products, edit (rename), verify preserved fields, delete."""
     # Verify products exist
-    products = _data(await mcp_client.call_tool("products_list", {"detail": "brief"}))
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "brief"}))
     product_names = [p["name"] for p in products]
-    assert ref_data.products[0] in product_names
-    assert ref_data.products[1] in product_names
+    assert refunwrap_result.products[0] in product_names
+    assert refunwrap_result.products[1] in product_names
 
     # Edit product — rename, verify other fields preserved
-    new_name = f"TestRice-Renamed-{ref_data.suffix}"
-    edit_result = _data(await mcp_client.call_tool("product_edit", {"product": ref_data.products[0], "name": new_name}))
+    new_name = f"TestRice-Renamed-{refunwrap_result.suffix}"
+    edit_result = unwrap_result(
+        await mcp_client.call_tool("product_edit", {"product": refunwrap_result.products[0], "name": new_name})
+    )
     assert edit_result["kind"] == "ok"
 
-    products = _data(await mcp_client.call_tool("products_list", {"detail": "full"}))
+    products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
     our_product = [p for p in products if p["name"] == new_name]
     assert len(our_product) == 1
     assert float(our_product[0]["min_stock_amount"]) == 1
     assert our_product[0]["description"] == "Test product for e2e"
 
     # Delete both products
-    for name in (new_name, ref_data.products[1]):
-        del_result = _data(await mcp_client.call_tool("product_delete", {"product": name}))
+    for name in (new_name, refunwrap_result.products[1]):
+        del_result = unwrap_result(await mcp_client.call_tool("product_delete", {"product": name}))
         assert del_result["kind"] == "ok", f"product_delete({name}) failed: {del_result}"
 
 
 # -- Stock operations --------------------------------------------------------
 
 
-async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
+async def test_stock_operations(mcp_client: Client, refunwrap_result: RefData) -> None:
     """Add, consume, set stock; verify amounts via stock_get and stock_entries."""
-    product = ref_data.products[0]
-    qu = ref_data.qu
-    loc = ref_data.location
+    product = refunwrap_result.products[0]
+    qu = refunwrap_result.qu
+    loc = refunwrap_result.location
 
     # Add stock
-    ops = _data(
+    ops = unwrap_result(
         await mcp_client.call_tool(
             "stock_add", {"items": [{"product": product, "amount": 5, "qu": qu, "location": loc}]}
         )
@@ -216,13 +218,13 @@ async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
     assert ops[0]["location_name"] == loc
 
     # Get stock with product filter
-    stock = _data(await mcp_client.call_tool("stock_get", {"products": [product]}))
+    stock = unwrap_result(await mcp_client.call_tool("stock_get", {"products": [product]}))
     our_stock = [s for s in stock if s["product_name"] == product]
     assert len(our_stock) == 1
     assert float(our_stock[0]["amount"]) == 5.0
 
     # Consume stock
-    ops = _data(
+    ops = unwrap_result(
         await mcp_client.call_tool(
             "stock_consume", {"items": [{"product": product, "amount": 2, "qu": qu, "location": loc}]}
         )
@@ -231,7 +233,7 @@ async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
     assert ops[0]["new_amount"] == 3.0
 
     # Set absolute stock amount
-    ops = _data(
+    ops = unwrap_result(
         await mcp_client.call_tool(
             "stock_set", {"items": [{"product": product, "new_amount": 10, "qu": qu, "location": loc}]}
         )
@@ -240,7 +242,7 @@ async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
     assert ops[0]["new_amount"] == 10.0
 
     # Stock entries by product name
-    entries = _data(await mcp_client.call_tool("stock_entries_list", {"products": [product]}))
+    entries = unwrap_result(await mcp_client.call_tool("stock_entries_list", {"products": [product]}))
     assert len(entries) > 0
     assert entries[0]["kind"] == "ok"
     detail = entries[0]["entry"]
@@ -248,34 +250,38 @@ async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
     entry_id = detail["entry_id"]
 
     # Edit stock entry — change price, verify diff
-    edit_result = _data(await mcp_client.call_tool("stock_entry_edit", {"entry_id": entry_id, "price": 9.99}))
+    edit_result = unwrap_result(await mcp_client.call_tool("stock_entry_edit", {"entry_id": entry_id, "price": 9.99}))
     assert edit_result["kind"] == "ok"
     assert float(edit_result["entry"]["price"]) == 9.99
     assert edit_result.get("changes") is not None
     assert "price" in edit_result["changes"]
 
     # Verify edit landed via re-fetch
-    entries = _data(await mcp_client.call_tool("stock_entries_list", {"entry_ids": [entry_id]}))
+    entries = unwrap_result(await mcp_client.call_tool("stock_entries_list", {"entry_ids": [entry_id]}))
     assert float(entries[0]["entry"]["price"]) == 9.99
 
 
 # -- Shopping list operations ------------------------------------------------
 
 
-async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -> None:
+async def test_shopping_list_operations(mcp_client: Client, refunwrap_result: RefData) -> None:
     """Add items (product-linked, note-only, product+note), get list, edit item, remove item."""
-    product = ref_data.products[0]
+    product = refunwrap_result.products[0]
 
     # Add stock first so the product exists with stock
-    _data(
+    unwrap_result(
         await mcp_client.call_tool(
             "stock_add",
-            {"items": [{"product": product, "amount": 1, "qu": ref_data.qu, "location": ref_data.location}]},
+            {
+                "items": [
+                    {"product": product, "amount": 1, "qu": refunwrap_result.qu, "location": refunwrap_result.location}
+                ]
+            },
         )
     )
 
     # Add items to default shopping list
-    sl_results = _data(
+    sl_results = unwrap_result(
         await mcp_client.call_tool(
             "shopping_list_items_add",
             {
@@ -291,19 +297,21 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     sl_item_id = sl_results[0]["item_id"]
 
     # Get shopping list — verify items present
-    sl_data = _data(await mcp_client.call_tool("shopping_list_get", {"shopping_list": 1}))
-    assert "items" in sl_data
-    our_items = [i for i in sl_data["items"] if i.get("product_name") == product]
+    slunwrap_result = unwrap_result(await mcp_client.call_tool("shopping_list_get", {"shopping_list": 1}))
+    assert "items" in slunwrap_result
+    our_items = [i for i in slunwrap_result["items"] if i.get("product_name") == product]
     assert len(our_items) >= 2
     product_plus_note = [i for i in our_items if i.get("note") == "get the organic brand"]
     assert len(product_plus_note) == 1
 
     # Edit item — mark as done
-    edit_sl = _data(await mcp_client.call_tool("shopping_list_item_edit", {"item_id": sl_item_id, "done": True}))
+    edit_sl = unwrap_result(
+        await mcp_client.call_tool("shopping_list_item_edit", {"item_id": sl_item_id, "done": True})
+    )
     assert edit_sl["kind"] == "ok"
 
     # Remove item
-    _data(await mcp_client.call_tool("shopping_list_items_remove", {"item_ids": [sl_item_id]}))
+    unwrap_result(await mcp_client.call_tool("shopping_list_items_remove", {"item_ids": [sl_item_id]}))
 
 
 # -- Volatile stock queries --------------------------------------------------
@@ -311,21 +319,21 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
 
 async def test_volatile_stock_queries(mcp_client: Client) -> None:
     """Smoke test: expiring, below-minimum, expired queries don't error."""
-    _data(await mcp_client.call_tool("get_expiring_stock", {"days_ahead": 30}))
-    _data(await mcp_client.call_tool("get_below_minimum_stock", {}))
-    _data(await mcp_client.call_tool("get_expired_stock", {}))
-    _data(await mcp_client.call_tool("get_db_changed_time", {}))
+    unwrap_result(await mcp_client.call_tool("get_expiring_stock", {"days_ahead": 30}))
+    unwrap_result(await mcp_client.call_tool("get_below_minimum_stock", {}))
+    unwrap_result(await mcp_client.call_tool("get_expired_stock", {}))
+    unwrap_result(await mcp_client.call_tool("get_db_changed_time", {}))
 
 
 # -- Generic entity CRUD ----------------------------------------------------
 
 
-async def test_generic_entity_crud(mcp_client: Client, ref_data: RefData) -> None:
+async def test_generic_entity_crud(mcp_client: Client, refunwrap_result: RefData) -> None:
     """entities_create, entities_get, entities_list with read-only types."""
     suffix = uuid.uuid4().hex[:6]
 
     # Create via generic path
-    pg_create = _data(
+    pg_create = unwrap_result(
         await mcp_client.call_tool(
             "entities_create",
             {"items": [{"entity_type": "product_groups", "body": {"name": f"TestGroupGeneric-{suffix}"}}]},
@@ -335,22 +343,24 @@ async def test_generic_entity_crud(mcp_client: Client, ref_data: RefData) -> Non
     pg_id = pg_create[0]["created_object_id"]
 
     # Fetch by ID
-    pg_fetched = _data(
+    pg_fetched = unwrap_result(
         await mcp_client.call_tool("entities_get", {"entity_type": "product_groups", "object_ids": [pg_id]})
     )
     assert pg_fetched[0]["kind"] == "ok"
     assert pg_fetched[0]["data"]["name"] == f"TestGroupGeneric-{suffix}"
 
     # Read-only entity types accepted by entities_list
-    stock_rows = _data(await mcp_client.call_tool("entities_list", {"entity_types": ["stock"]}))
+    stock_rows = unwrap_result(await mcp_client.call_tool("entities_list", {"entity_types": ["stock"]}))
     assert "stock" in stock_rows
 
     # Fetch product via generic path
-    entities = _data(
-        await mcp_client.call_tool("entities_get", {"entity_type": "products", "object_ids": [ref_data.product_ids[0]]})
+    entities = unwrap_result(
+        await mcp_client.call_tool(
+            "entities_get", {"entity_type": "products", "object_ids": [refunwrap_result.product_ids[0]]}
+        )
     )
     assert entities[0]["kind"] == "ok"
-    assert entities[0]["data"]["name"] == ref_data.products[0]
+    assert entities[0]["data"]["name"] == refunwrap_result.products[0]
 
 
 # -- Read / write entity-type split ------------------------------------------
@@ -364,7 +374,7 @@ async def test_create_entities_rejects_view_only_type(mcp_client: Client) -> Non
 
 async def test_list_entities_accepts_view_only_type(mcp_client: Client) -> None:
     """``entities_list`` accepts the broader ``ReadableEntityType`` set."""
-    rows = _data(
+    rows = unwrap_result(
         await mcp_client.call_tool(
             "entities_list", {"entity_types": ["stock", "products_last_purchased", "permission_hierarchy"]}
         )

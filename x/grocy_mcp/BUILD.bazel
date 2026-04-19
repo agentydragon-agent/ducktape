@@ -65,6 +65,7 @@ py_library(
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//tenacity",
     ],
 )
 

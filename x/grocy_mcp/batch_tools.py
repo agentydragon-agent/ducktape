@@ -28,6 +28,7 @@ from typing import Annotated, Any, Literal
 import httpx
 from fastmcp import FastMCP
 from pydantic import Field
+from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType
 from x.grocy_mcp.mcp_types import (
@@ -105,30 +106,11 @@ def _format_exc(e: Exception) -> str:
     return tb
 
 
-def _is_retryable(exc: Exception) -> bool:
+def _is_retryable(exc: BaseException) -> bool:
     """Whether an exception is transient and worth retrying."""
     if isinstance(exc, httpx.TimeoutException):
         return True
     return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {429, 500, 502, 503, 504}
-
-
-async def _with_retry[T](
-    fn: Callable[[], Awaitable[T]], semaphore: asyncio.Semaphore, *, max_retries: int, base_delay: float
-) -> T:
-    """Run fn under semaphore with retry on transient errors."""
-    async with semaphore:
-        for attempt in range(1 + max_retries):
-            try:
-                return await fn()
-            except Exception as e:
-                if not _is_retryable(e) or attempt == max_retries:
-                    raise
-                delay = base_delay * (2**attempt)
-                logger.warning(
-                    "retryable error (attempt %d/%d, next in %.1fs): %s", attempt + 1, 1 + max_retries, delay, e
-                )
-                await asyncio.sleep(delay)
-        raise AssertionError("unreachable")
 
 
 # ── Tool registration ────────────────────────────────────────────────────────
@@ -138,13 +120,6 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     """Register custom batch tools on an existing FastMCP instance."""
     sem = asyncio.Semaphore(settings.max_concurrent_requests)
     max_batch = settings.max_batch_size
-    max_retries = settings.max_retries
-    base_delay = settings.retry_base_delay
-    # One stateless resolver shared by every tool — saves the
-    # `EntityResolver(client)` boilerplate at each call site. Caching is
-    # intentionally absent (see resolver.py): the MCP server isn't the
-    # only client of a Grocy instance, so any cache could go stale
-    # behind us.
     resolver = EntityResolver(client)
 
     def _check_batch_size(items: list[Any] | set[Any], label: str) -> None:
@@ -152,7 +127,17 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             raise ValueError(f"batch too large: {len(items)} {label} exceeds maximum of {max_batch}")
 
     async def _retry[T](fn: Callable[[], Awaitable[T]]) -> T:
-        return await _with_retry(fn, sem, max_retries=max_retries, base_delay=base_delay)
+        """Run fn under semaphore with tenacity retry on transient errors."""
+        async with sem:
+            async for attempt in AsyncRetrying(
+                retry=retry_if_exception(_is_retryable),
+                stop=stop_after_attempt(1 + settings.max_retries),
+                wait=wait_exponential(multiplier=settings.retry_base_delay, exp_base=2),
+                reraise=True,
+            ):
+                with attempt:
+                    return await fn()
+        raise AssertionError("unreachable")
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -330,9 +315,13 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         instead.
         """
 
-        r = await _retry(lambda: client.get("/stock"))
-        r.raise_for_status()
-        stock_data: list[dict[str, Any]] = r.json()
+        stock_r, qu_names, location_names = await asyncio.gather(
+            _retry(lambda: client.get("/stock")),
+            resolver.name_map(EntityType.QUANTITY_UNIT),
+            resolver.name_map(EntityType.LOCATION),
+        )
+        stock_r.raise_for_status()
+        stock_data: list[dict[str, Any]] = stock_r.json()
 
         product_ids: set[int] = set()
         for ref in products:
@@ -357,17 +346,13 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             if location_ids and (loc_id is None or loc_id not in location_ids):
                 continue
 
-            qu_id_raw = product.get("qu_id_stock")
-            qu_name = (
-                await resolver.name(EntityType.QUANTITY_UNIT, int(qu_id_raw)) if qu_id_raw is not None else "unknown"
-            )
-            location_name = await resolver.name(EntityType.LOCATION, loc_id) if loc_id is not None else "unknown"
-            product_name = str(product.get("name", f"product_id={pid}"))
+            qu_name = _lookup_name(product, "qu_id_stock", qu_names)
+            location_name = _lookup_name(product, "location_id", location_names)
 
             result.append(
                 StockEntry(
                     product_id=pid,
-                    product_name=product_name,
+                    product_name=str(product.get("name", f"product_id={pid}")),
                     amount=float(entry["amount"]),
                     amount_opened=float(entry["amount_opened"]),
                     qu_name=qu_name,
@@ -389,6 +374,54 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             logger.warning("failed to read new_amount for product %d after mutation", product_id)
             return None
 
+    async def _stock_mutate(item: AddItem | ConsumeItem | SetItem) -> StockOpOk | StockOpError:
+        """Shared implementation for stock_add / stock_consume / stock_set."""
+        try:
+            match item:
+                case AddItem():
+                    endpoint, input_amount = "add", item.amount
+                case ConsumeItem():
+                    endpoint, input_amount = "consume", item.amount
+                case SetItem():
+                    endpoint, input_amount = "inventory", item.new_amount
+
+            product = await resolver.resolve(EntityType.PRODUCT, item.product)
+            location = await resolver.resolve(EntityType.LOCATION, item.location)
+            rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
+            stock_amount = input_amount * rqu.conversion_factor
+
+            body: dict[str, Any] = {"location_id": location.id}
+            if endpoint == "inventory":
+                body["new_amount"] = stock_amount
+            else:
+                body["amount"] = stock_amount
+            for key in ("best_before_date", "price", "note", "spoiled", "allow_subproduct_substitution"):
+                val = getattr(item, key, None)
+                if val is not None:
+                    body[key] = _date_to_str(val) if isinstance(val, date) else val
+
+            async def _do_post() -> tuple[str | None, float | None]:
+                r = await client.post(f"/stock/products/{product.id}/{endpoint}", json=body)
+                r.raise_for_status()
+                entries: list[dict[str, Any]] = r.json()
+                tx_id = entries[0]["transaction_id"] if entries else None
+                amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
+                return tx_id, amount_delta
+
+            tx_id, amount_delta = await _retry(_do_post)
+            new_amount = await _best_effort_new_amount(product.id)
+            return StockOpOk(
+                product_name=product.name,
+                transaction_id=tx_id,
+                amount_delta=amount_delta,
+                new_amount=new_amount,
+                qu_name=rqu.name,
+                stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
+                location_name=location.name,
+            )
+        except Exception as e:
+            return StockOpError(error=_format_exc(e))
+
     @mcp.tool()
     async def stock_add(items: list[AddItem]) -> list[StockOpOk | StockOpError]:
         """Add stock for one or more products. Max 20 items per call.
@@ -404,46 +437,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `stock_set`, `stock_transfer`.
         """
         _check_batch_size(items, "items")
-
-        async def _one(item: AddItem) -> StockOpOk | StockOpError:
-            try:
-                product = await resolver.resolve(EntityType.PRODUCT, item.product)
-                location = await resolver.resolve(EntityType.LOCATION, item.location)
-                rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
-
-                stock_amount = item.amount * rqu.conversion_factor
-
-                async def _do_post() -> tuple[str | None, float | None]:
-                    body: dict[str, Any] = {"amount": stock_amount}
-                    if item.best_before_date is not None:
-                        body["best_before_date"] = _date_to_str(item.best_before_date)
-                    if item.price is not None:
-                        body["price"] = item.price
-                    body["location_id"] = location.id
-                    if item.note is not None:
-                        body["note"] = item.note
-                    r = await client.post(f"/stock/products/{product.id}/add", json=body)
-                    r.raise_for_status()
-                    entries: list[dict[str, Any]] = r.json()
-                    tx_id = entries[0]["transaction_id"] if entries else None
-                    amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
-                    return tx_id, amount_delta
-
-                tx_id, amount_delta = await _retry(_do_post)
-                new_amount = await _best_effort_new_amount(product.id)
-                return StockOpOk(
-                    product_name=product.name,
-                    transaction_id=tx_id,
-                    amount_delta=amount_delta,
-                    new_amount=new_amount,
-                    qu_name=rqu.name,
-                    stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
-                    location_name=location.name,
-                )
-            except Exception as e:
-                return StockOpError(error=_format_exc(e))
-
-        return list(await asyncio.gather(*[_one(item) for item in items]))
+        return list(await asyncio.gather(*[_stock_mutate(item) for item in items]))
 
     @mcp.tool()
     async def stock_consume(items: list[ConsumeItem]) -> list[StockOpOk | StockOpError]:
@@ -457,44 +451,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `transaction_undo`.
         """
         _check_batch_size(items, "items")
-
-        async def _one(item: ConsumeItem) -> StockOpOk | StockOpError:
-            try:
-                product = await resolver.resolve(EntityType.PRODUCT, item.product)
-                location = await resolver.resolve(EntityType.LOCATION, item.location)
-                rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
-
-                stock_amount = item.amount * rqu.conversion_factor
-
-                async def _do_post() -> tuple[str | None, float | None]:
-                    body: dict[str, Any] = {
-                        "amount": stock_amount,
-                        "spoiled": item.spoiled,
-                        "allow_subproduct_substitution": item.allow_subproduct_substitution,
-                        "location_id": location.id,
-                    }
-                    r = await client.post(f"/stock/products/{product.id}/consume", json=body)
-                    r.raise_for_status()
-                    entries: list[dict[str, Any]] = r.json()
-                    tx_id = entries[0]["transaction_id"] if entries else None
-                    amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
-                    return tx_id, amount_delta
-
-                tx_id, amount_delta = await _retry(_do_post)
-                new_amount = await _best_effort_new_amount(product.id)
-                return StockOpOk(
-                    product_name=product.name,
-                    transaction_id=tx_id,
-                    amount_delta=amount_delta,
-                    new_amount=new_amount,
-                    qu_name=rqu.name,
-                    stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
-                    location_name=location.name,
-                )
-            except Exception as e:
-                return StockOpError(error=_format_exc(e))
-
-        return list(await asyncio.gather(*[_one(item) for item in items]))
+        return list(await asyncio.gather(*[_stock_mutate(item) for item in items]))
 
     @mcp.tool()
     async def stock_set(items: list[SetItem]) -> list[StockOpOk | StockOpError]:
@@ -509,43 +466,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         See also `stock_add`, `stock_consume`, `stock_transfer`.
         """
         _check_batch_size(items, "items")
-
-        async def _one(item: SetItem) -> StockOpOk | StockOpError:
-            try:
-                product = await resolver.resolve(EntityType.PRODUCT, item.product)
-                location = await resolver.resolve(EntityType.LOCATION, item.location)
-                rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
-
-                stock_amount = item.new_amount * rqu.conversion_factor
-
-                async def _do_post() -> tuple[str | None, float | None]:
-                    body: dict[str, Any] = {"new_amount": stock_amount, "location_id": location.id}
-                    if item.best_before_date is not None:
-                        body["best_before_date"] = _date_to_str(item.best_before_date)
-                    if item.price is not None:
-                        body["price"] = item.price
-                    r = await client.post(f"/stock/products/{product.id}/inventory", json=body)
-                    r.raise_for_status()
-                    entries: list[dict[str, Any]] = r.json()
-                    tx_id = entries[0]["transaction_id"] if entries else None
-                    amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
-                    return tx_id, amount_delta
-
-                tx_id, amount_delta = await _retry(_do_post)
-                new_amount = await _best_effort_new_amount(product.id)
-                return StockOpOk(
-                    product_name=product.name,
-                    transaction_id=tx_id,
-                    amount_delta=amount_delta,
-                    new_amount=new_amount,
-                    qu_name=rqu.name,
-                    stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
-                    location_name=location.name,
-                )
-            except Exception as e:
-                return StockOpError(error=_format_exc(e))
-
-        return list(await asyncio.gather(*[_one(item) for item in items]))
+        return list(await asyncio.gather(*[_stock_mutate(item) for item in items]))
 
     # ── Stock entry read/edit ────────────────────────────────────────────
 
@@ -600,6 +521,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         # Entry ID mode: batch GET /stock/entry/{id}
         assert entry_ids is not None
         _check_batch_size(entry_ids, "entry_ids")
+        products_by_id, qu_names, location_names = await _build_enrichment_maps()
 
         async def _one(entry_id: int) -> StockEntryOk | StockEntryError:
             try:
@@ -607,7 +529,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 async def _do() -> StockEntryOk:
                     r = await client.get(f"/stock/entry/{entry_id}")
                     r.raise_for_status()
-                    detail = await _enrich_stock_entry(r.json())
+                    detail = await _enrich_stock_entry(
+                        r.json(), products_by_id=products_by_id, qu_names=qu_names, location_names=location_names
+                    )
                     return StockEntryOk(entry=detail)
 
                 return await _retry(_do)
@@ -679,17 +603,15 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             if note is not None:
                 body["note"] = note
 
-            # Apply clears
-            if clear_fields:
-                for field_name in clear_fields:
-                    if field_name == EditStockEntryField.PRICE:
-                        body["price"] = None
-                    elif field_name == EditStockEntryField.BEST_BEFORE_DATE:
-                        body["best_before_date"] = None
-                    elif field_name == EditStockEntryField.PURCHASED_DATE:
-                        body["purchased_date"] = None
-                    elif field_name == EditStockEntryField.NOTE:
-                        body["note"] = None
+            for field_name in clear_fields or ():
+                if field_name == EditStockEntryField.PRICE:
+                    body["price"] = None
+                elif field_name == EditStockEntryField.BEST_BEFORE_DATE:
+                    body["best_before_date"] = None
+                elif field_name == EditStockEntryField.PURCHASED_DATE:
+                    body["purchased_date"] = None
+                elif field_name == EditStockEntryField.NOTE:
+                    body["note"] = None
 
             # Compute diff before writing
             diff_fields = {"amount", "best_before_date", "purchased_date", "price", "location_id", "open", "note"}
@@ -788,9 +710,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         for items use `shopping_list_get`. Create new lists with
         `shopping_lists_create`.
         """
-        r = await _retry(lambda: client.get("/objects/shopping_lists"))
-        r.raise_for_status()
-        rows: list[dict[str, Any]] = r.json()
+        rows = await resolver.all(EntityType.SHOPPING_LIST)
         if detail == "brief":
             return [BriefListItem(id=int(row["id"]), name=str(row["name"])) for row in rows]
         return [FullShoppingList.model_validate(row) for row in rows]
@@ -990,16 +910,15 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             if description is not None:
                 body["description"] = description
 
-            if clear_fields:
-                for field in clear_fields:
-                    if field == EditProductField.DESCRIPTION:
-                        body["description"] = None
-                    elif field == EditProductField.PRODUCT_GROUP:
-                        body["product_group_id"] = None
-                    elif field == EditProductField.PARENT_PRODUCT:
-                        body["parent_product_id"] = None
-                    elif field == EditProductField.CALORIES:
-                        body["calories"] = None
+            for field in clear_fields or ():
+                if field == EditProductField.DESCRIPTION:
+                    body["description"] = None
+                elif field == EditProductField.PRODUCT_GROUP:
+                    body["product_group_id"] = None
+                elif field == EditProductField.PARENT_PRODUCT:
+                    body["parent_product_id"] = None
+                elif field == EditProductField.CALORIES:
+                    body["calories"] = None
 
             r = await client.put(f"/objects/products/{resolved.id}", json=body)
             r.raise_for_status()
@@ -1074,12 +993,11 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         """Look up product name and stock QU name for a shopping-list item's product_id."""
         if product_id is None:
             return None, None
-        product_name = await resolver.name(EntityType.PRODUCT, int(product_id))
-        product_data = await resolver.get(EntityType.PRODUCT, int(product_id))
-        qu_name = None
-        if product_data:
-            qu_name = await resolver.name(EntityType.QUANTITY_UNIT, int(product_data["qu_id_stock"]))
-        return product_name, qu_name
+        product = await resolver.get(EntityType.PRODUCT, int(product_id))
+        if product is None:
+            return f"id={product_id}", None
+        qu_name = await resolver.name(EntityType.QUANTITY_UNIT, int(product["qu_id_stock"]))
+        return str(product["name"]), qu_name
 
     @mcp.tool()
     async def shopping_list_get(
@@ -1209,10 +1127,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 body["note"] = note
             if done is not None:
                 body["done"] = int(done)
-            if clear_fields:
-                for field in clear_fields:
-                    if field == EditShoppingListField.NOTE:
-                        body["note"] = None
+            for field in clear_fields or ():
+                if field == EditShoppingListField.NOTE:
+                    body["note"] = None
 
             r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
             r.raise_for_status()
@@ -1292,13 +1209,11 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         )
         return data, qu_names, location_names
 
-    def _volatile_qu_name(product: dict[str, Any], qu_names: dict[int, str]) -> str:
-        qu_id = product.get("qu_id_stock")
-        return qu_names.get(int(qu_id), "unknown") if qu_id is not None else "unknown"
-
-    def _volatile_location_name(product: dict[str, Any], location_names: dict[int, str]) -> str:
-        loc_id = product.get("location_id")
-        return location_names.get(int(loc_id), "unknown") if loc_id is not None else "unknown"
+    def _lookup_name(product: dict[str, Any], key: str, name_map: dict[int, str]) -> str:
+        raw_id = product.get(key)
+        if raw_id is None:
+            raise ValueError(f"product {product.get('id')} has no {key}")
+        return name_map[int(raw_id)]
 
     @mcp.tool()
     async def get_expiring_stock(
@@ -1326,8 +1241,8 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     "product_id": int(entry["product_id"]),
                     "product_name": str(product.get("name", "")),
                     "amount": float(entry.get("amount", 0)),
-                    "qu_name": _volatile_qu_name(product, qu_names),
-                    "location_name": _volatile_location_name(product, location_names),
+                    "qu_name": _lookup_name(product, "qu_id_stock", qu_names),
+                    "location_name": _lookup_name(product, "location_id", location_names),
                     "best_before_date": entry.get("best_before_date"),
                     "days_until_expiry": (expiry_date - datetime.now(tz=UTC).date()).days,
                 }
@@ -1359,7 +1274,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     "product_name": str(product.get("name", "")),
                     "amount": current,
                     "min_amount": min_amount,
-                    "qu_name": _volatile_qu_name(product, qu_names),
+                    "qu_name": _lookup_name(product, "qu_id_stock", qu_names),
                     "deficit": amount_missing,
                 }
             )
@@ -1387,8 +1302,8 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     "product_id": int(entry.get("product_id", 0)),
                     "product_name": str(product.get("name", "")),
                     "amount": float(entry.get("amount", 0)),
-                    "qu_name": _volatile_qu_name(product, qu_names),
-                    "location_name": _volatile_location_name(product, location_names),
+                    "qu_name": _lookup_name(product, "qu_id_stock", qu_names),
+                    "location_name": _lookup_name(product, "location_id", location_names),
                     "best_before_date": entry.get("best_before_date"),
                     "days_overdue": days_overdue,
                 }

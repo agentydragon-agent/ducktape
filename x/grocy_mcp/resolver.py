@@ -64,12 +64,6 @@ class ResolvedQU:
 
 
 class EntityResolver:
-    """Stateless entity resolver shared across all batch tools on one MCP server.
-
-    Every call re-fetches from Grocy (no caching). Sharing one instance
-    is just about avoiding boilerplate at each tool's call site.
-    """
-
     def __init__(self, client: httpx.AsyncClient) -> None:
         self._client = client
 

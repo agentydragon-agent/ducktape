@@ -9,7 +9,7 @@ from typing import Any
 from fastmcp.client import Client
 
 
-def _data(result: Any) -> Any:
+def unwrap_result(result: Any) -> Any:
     """Extract unwrapped structured content from a FastMCP CallToolResult.
 
     FastMCP wraps non-object return types (lists, unions) in {"result": ...}
@@ -35,7 +35,7 @@ class RefData:
     product_ids: list[int] = field(default_factory=list)
 
 
-async def create_ref_data(client: Client) -> RefData:
+async def create_refunwrap_result(client: Client) -> RefData:
     """Create a location, QU, product group, and two products with uuid suffixes.
 
     Returns a ``RefData`` with the created names and IDs. Each call creates
@@ -47,7 +47,7 @@ async def create_ref_data(client: Client) -> RefData:
     qu_name = f"TestBag-{suffix}"
     group_name = f"TestGroup-{suffix}"
 
-    loc_results = _data(
+    loc_results = unwrap_result(
         await client.call_tool(
             "locations_create",
             {"items": [{"name": loc_name, "description": "e2e fixture location", "is_freezer": False}]},
@@ -55,7 +55,7 @@ async def create_ref_data(client: Client) -> RefData:
     )
     assert loc_results[0]["kind"] == "ok", f"locations_create failed: {loc_results[0]}"
 
-    qu_results = _data(
+    qu_results = unwrap_result(
         await client.call_tool(
             "quantity_units_create",
             {"items": [{"name": qu_name, "name_plural": f"{qu_name}s", "description": "e2e fixture QU"}]},
@@ -63,7 +63,7 @@ async def create_ref_data(client: Client) -> RefData:
     )
     assert qu_results[0]["kind"] == "ok", f"quantity_units_create failed: {qu_results[0]}"
 
-    group_results = _data(
+    group_results = unwrap_result(
         await client.call_tool(
             "product_groups_create", {"items": [{"name": group_name, "description": "e2e fixture group"}]}
         )
@@ -71,7 +71,7 @@ async def create_ref_data(client: Client) -> RefData:
     assert group_results[0]["kind"] == "ok", f"product_groups_create failed: {group_results[0]}"
 
     product_names = [f"TestRice-{suffix}", f"TestFlour-{suffix}"]
-    create_results = _data(
+    create_results = unwrap_result(
         await client.call_tool(
             "products_create",
             {
