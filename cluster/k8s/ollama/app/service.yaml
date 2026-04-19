@@ -8,7 +8,7 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app: ollama
+    app.kubernetes.io/name: ollama
   ports:
     - name: http
       port: 11434
