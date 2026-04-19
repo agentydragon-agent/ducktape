@@ -13,8 +13,6 @@ configMapGenerator:
     files:
       - blueprints/users.yaml
       - blueprints/gitea-sso.yaml
-      - blueprints/harbor-sso.yaml
-      - blueprints/matrix-sso.yaml
       - blueprints/inventree-sso.yaml
       - blueprints/hubble-sso.yaml
       - blueprints/longhorn-sso.yaml
