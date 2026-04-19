@@ -17,7 +17,8 @@ def main():
     model_id, out_dir = sys.argv[1], sys.argv[2]
     print(f"Exporting {model_id} to OpenVINO IR at {out_dir} ...")
 
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
+    # NPU requires static shapes — export with fixed batch_size=1
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, batch_size=1)
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     model.save_pretrained(out_dir)
     tokenizer.save_pretrained(out_dir)

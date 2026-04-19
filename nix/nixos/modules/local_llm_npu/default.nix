@@ -46,7 +46,7 @@ let
     export PYTHON_BIN="${pkgs.python313}/bin/python"
     export SCRIPT_DIR="${./.}"
     export NPU_COMPILER_SO="${openvino-npu-compiler}/lib/libopenvino_intel_npu_compiler.so"
-    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.intel-npu-driver}/lib:${pkgs.level-zero}/lib:${pkgs.zlib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     exec ${pkgs.bash}/bin/bash "${./npu-llm.sh}" "$@"
   '';
 in
