@@ -10,7 +10,7 @@
 # Camera access paths:
 # - PipeWire-native apps (Chrome with WebRtcPipeWireCamera, GNOME Snapshot):
 #   use the libcamera PipeWire source directly via the camera portal.
-# - V4L2-only apps (Zoom): need v4l2loopback bridge. See debug/rugged/hw/README.md.
+# - V4L2-only apps (Zoom): need v4l2loopback bridge. See debug/rugged/hw/webcam.md.
 {
   config,
   lib,

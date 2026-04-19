@@ -22,8 +22,6 @@
 
 **Next steps**:
 
-- Make Chrome config permanent: set `NIXOS_OZONE_WL=1` in
-  `environment.sessionVariables` and add `WebRtcPipeWireCamera` to Chrome flags
 - Test if green tint fix resolves color issues
 
 ## v4l2loopback recipe for Zoom
