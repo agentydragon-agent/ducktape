@@ -22,52 +22,15 @@ Surface pending followups, natural next steps, and quality improvements. Verify 
 
 ## Process
 
-### Phase 1: Verify Session Work Still Exists (CRITICAL)
+### Phase 1: Check Session Work Status
 
-**Consider delegating to subagent** for read-only verification tasks:
+Run `git status` and `git log --oneline origin/HEAD..HEAD` to determine whether session work is:
 
-- Good for: Checking multiple files, searching for patterns, reading git status
-- Provides distinct scope: "Verify these N files contain expected changes"
+- **Uncommitted** — suggest committing
+- **Committed but not pushed** — suggest pushing
+- **Pushed but not deployed** — note if relevant (e.g., Flux reconciliation pending)
 
-**Accessing session history for delegation:**
-If delegating conversation analysis to subagent, use the `session_logs` skill for finding and analyzing Claude Code session logs.
-
-See: `~/.claude/skills/session_logs/SKILL.md` for complete documentation.
-
-Quick reference:
-
-```bash
-# Find current session file
-CURRENT_SESSION=$(~/.claude/skills/session_logs/find-current-session.sh)
-
-# Get session analysis and statistics
-~/.claude/skills/session_logs/analyze-session.sh
-
-# Or analyze specific session
-~/.claude/skills/session_logs/analyze-session.sh /path/to/session.jsonl
-```
-
-The session_logs skill provides:
-
-- Automatic current session discovery (scores by cwd, git branch, recency)
-- Session log format documentation (JSONL structure, field meanings)
-- Common query examples (Extract tool calls, find modified files, get user messages)
-- Helper scripts for analysis
-
-Check all files created/modified in this session:
-
-- Read file to confirm changes are present
-- Check git status shows them as modified/untracked
-- If missing: ALERT prominently - "⚠️ Work lost: [file] no longer contains [change]"
-- If stashed: Note "📦 Stashed: Changes in stash - user may want to pop"
-
-**Output:**
-
-```
-✅ All session work verified on disk
-or
-⚠️ MISSING: file.py - expected changes not found (stashed? reverted?)
-```
+Brief output, one line per state.
 
 ### Phase 2: Extract What We Talked About But Didn't Do
 
@@ -82,6 +45,8 @@ Scan conversation for:
 - "maybe add...", "consider...", "might want to..."
 - Incomplete actions ("let's do X" → did it actually get done?)
 - Questions asked but not fully answered
+
+**Check `/later` items**: Scan `TODO.md` files and `plans/` for items added during this session (via `/later` or manually). Surface any that haven't been addressed yet.
 
 ### Phase 3: Find Natural Followups
 
