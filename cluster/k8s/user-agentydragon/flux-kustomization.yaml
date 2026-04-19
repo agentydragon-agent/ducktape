@@ -11,13 +11,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: user-passwords
-      namespace: flux-system
   timeout: 10m
   dependsOn:
     - name: external-secrets-config
-    - name: tofu-controller
     - name: vault

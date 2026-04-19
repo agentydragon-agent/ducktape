@@ -13,6 +13,10 @@ spec:
   path: ./cluster/k8s/authentik/sso-secrets
   prune: true
   wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
