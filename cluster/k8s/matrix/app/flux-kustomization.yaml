@@ -24,8 +24,10 @@ spec:
     - name: matrix-db
     - name: gateway
     - name: cert-manager
-    - name: authentik # Wait for Authentik worker to apply SSO blueprints
+    - name: authentik
     - name: matrix-secrets
+    - name: sso-providers-tf # writes matrix-oidc-config to authentik ns
+    - name: reflector # mirrors matrix-oidc-config to matrix ns
     - name: local-path-provisioner
 # Note: Matrix Synapse needs OIDC discovery endpoint at startup (from provider),
 # but oauth-client-secret (from matrix-secret) is only needed for OAuth login flows later

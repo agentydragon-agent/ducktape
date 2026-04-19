@@ -40,35 +40,6 @@ resource "random_password" "gitea_client_secret" {
   }
 }
 
-resource "random_password" "harbor_client_secret" {
-  length  = 32
-  special = false
-  keepers = { rotation_version = var.rotation_version }
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
-resource "random_password" "matrix_client_secret" {
-  length  = 32
-  special = false
-  keepers = { rotation_version = var.rotation_version }
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
-resource "random_password" "vault_client_secret" {
-  length  = 32
-  special = false
-  keepers = { rotation_version = var.rotation_version }
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
 
 resource "random_password" "inventree_client_secret" {
   length  = 32
@@ -92,35 +63,6 @@ resource "vault_kv_secret_v2" "gitea_oidc" {
   })
 }
 
-resource "vault_kv_secret_v2" "harbor_oidc" {
-  mount = "kv"
-  name  = "sso/harbor"
-
-  data_json = jsonencode({
-    client_id     = "harbor"
-    client_secret = random_password.harbor_client_secret.result
-  })
-}
-
-resource "vault_kv_secret_v2" "matrix_oidc" {
-  mount = "kv"
-  name  = "sso/matrix"
-
-  data_json = jsonencode({
-    client_id     = "matrix"
-    client_secret = random_password.matrix_client_secret.result
-  })
-}
-
-resource "vault_kv_secret_v2" "vault_oidc" {
-  mount = "kv"
-  name  = "sso/vault"
-
-  data_json = jsonencode({
-    client_id     = "vault"
-    client_secret = random_password.vault_client_secret.result
-  })
-}
 
 resource "vault_kv_secret_v2" "inventree_oidc" {
   mount = "kv"
@@ -129,40 +71,5 @@ resource "vault_kv_secret_v2" "inventree_oidc" {
   data_json = jsonencode({
     client_id     = "inventree"
     client_secret = random_password.inventree_client_secret.result
-  })
-}
-
-# --- Vault Storage: Full OIDC Provider Configs ---
-# These are consumed by application-side ESO to configure OIDC in the app itself.
-
-resource "vault_kv_secret_v2" "matrix_oidc_config" {
-  mount = "kv"
-  name  = "sso/oidc-providers/matrix"
-
-  data_json = jsonencode({
-    oidc_providers = [
-      {
-        idp_id        = "authentik"
-        idp_name      = "Authentik SSO"
-        discover      = true
-        issuer        = "https://auth.allegedly.works/application/o/matrix/"
-        client_id     = "matrix"
-        client_secret = random_password.matrix_client_secret.result
-        scopes = [
-          "openid",
-          "profile",
-          "email"
-        ]
-        user_mapping_provider = {
-          config = {
-            localpart_template    = "{{ user.preferred_username }}"
-            display_name_template = "{{ user.name }}"
-            email_template        = "{{ user.email }}"
-          }
-        }
-        allow_existing_users = true
-        enable_registration  = true
-      }
-    ]
   })
 }

@@ -15,7 +15,6 @@ configMapGenerator:
       - blueprints/gitea-sso.yaml
       - blueprints/harbor-sso.yaml
       - blueprints/matrix-sso.yaml
-      - blueprints/vault-sso.yaml
       - blueprints/inventree-sso.yaml
       - blueprints/hubble-sso.yaml
       - blueprints/longhorn-sso.yaml
