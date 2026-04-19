@@ -39,6 +39,20 @@ triggers permission prompts.
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
 session kubeconfig (web) for operations needing higher privileges or other namespaces.
 
+**In-cluster MCP variants** (also available to any MCP client — Claude Code, claude.ai):
+
+- `kubectl-sandbox-mcp` at `https://kubectl-sandbox-mcp.allegedly.works/mcp` —
+  Authentik OAuth + custom scope mapping forces the issued token's `groups`
+  claim to `["kubectl-sandbox-users"]` regardless of caller. Even an admin
+  only gets sandbox access through this server.
+- `kubectl-passthrough-mcp` at `https://kubectl-passthrough-mcp.allegedly.works/mcp` —
+  Authentik OAuth + passthrough; caller's own OIDC group claims go to kube-apiserver
+  (i.e., admin gets admin).
+
+Both are public OAuth2 clients (PKCE, no client_secret). For design rationale,
+DCR workaround, and the whole OAuth-dance saga, see
+<cluster/docs/mcp_oauth_authentik_notes.md>.
+
 ## Sandbox
 
 Run `bb`, `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
