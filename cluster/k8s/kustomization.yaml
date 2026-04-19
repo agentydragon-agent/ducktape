@@ -245,3 +245,6 @@ resources:
   # --- standalone applications ---
   - buildbuddy-executor/flux-kustomization.yaml
   - website/flux-kustomization.yaml
+
+  # --- cpap-sync ---
+  - cpap-sync/flux-kustomization.yaml

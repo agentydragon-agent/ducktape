@@ -1287,6 +1287,10 @@ ezdxf==1.4.3 \
     --hash=sha256:eb40fc4912ff648b869be87f9002a81b7ace228f5caf2ee6677a889eeeaf41b6 \
     --hash=sha256:f50c39894c517f69604ea64e2f7d311bb47e75d22d9eefff5a7709c300d1294d
     # via ducktape (pyproject.toml)
+ezshare==0.0.11 \
+    --hash=sha256:37c484dd247e4299591c0eb1604ed88fa36c55561dd5c315efd3872fe0d081b6 \
+    --hash=sha256:3e1e013d14195f65ac38cb961dd3ecc2e04ed64b2746706b4d50d6453a6f3ec2
+    # via ducktape (pyproject.toml)
 farama-notifications==0.0.4 \
     --hash=sha256:13fceff2d14314cf80703c8266462ebf3733c7d165336eee998fc58e545efd18 \
     --hash=sha256:14de931035a41961f7c056361dc7f980762a143d05791ef5794a751a2caf05ae
@@ -2678,7 +2682,9 @@ lxml==6.0.2 \
     --hash=sha256:fb8dae0b6b8b7f9e96c26fdd8121522ce5de9bb5538010870bd538683d30e9a2 \
     --hash=sha256:fbc74f42c3525ac4ffa4b89cbdd00057b6196bcefe8bce794abd42d33a018092 \
     --hash=sha256:fe659f6b5d10fb5a17f00a50eb903eb277a71ee35df4615db573c069bcf967ac
-    # via ducktape (pyproject.toml)
+    # via
+    #   ducktape (pyproject.toml)
+    #   ezshare
 makefun==1.16.0 \
     --hash=sha256:43baa4c3e7ae2b17de9ceac20b669e9a67ceeadff31581007cca20a07bbe42c4 \
     --hash=sha256:e14601831570bff1f6d7e68828bcd30d2f5856f24bad5de0ccb22921ceebc947
@@ -3655,6 +3661,12 @@ paramiko==4.0.0 \
     --hash=sha256:0e20e00ac666503bf0b4eda3b6d833465a2b7aff2e2b3d79a8bba5ef144ee3b9 \
     --hash=sha256:6a25f07b380cc9c9a88d2b920ad37167ac4667f8d9886ccebd8f90f654b5d69f
     # via ducktape (pyproject.toml)
+parse==1.21.1 \
+    --hash=sha256:55339ca698019815df3b8e8b550e5933933527e623b0cdf1ca2f404da35ffb47 \
+    --hash=sha256:825e1a88e9d9fb481b8d2ca709c6195558b6eaa97c559ad3a9a20aa2d12815a3
+    # via
+    #   ducktape (pyproject.toml)
+    #   ezshare
 parso==0.8.6 \
     --hash=sha256:2b9a0332696df97d454fa67b81618fd69c35a7b90327cbe6ba5c92d2c68a7bfd \
     --hash=sha256:2c549f800b70a5c4952197248825584cb00f033b29c692671d3bf08bf380baff
@@ -5392,6 +5404,7 @@ requests==2.32.5 \
     #   ducktape (pyproject.toml)
     #   aw-client
     #   docker
+    #   ezshare
     #   google-api-core
     #   hcloud
     #   homeassistant-api
@@ -6193,6 +6206,7 @@ tqdm==4.67.3 \
     # via
     #   ducktape (pyproject.toml)
     #   chromadb
+    #   ezshare
     #   huggingface-hub
     #   openai
 traitlets==5.14.3 \
