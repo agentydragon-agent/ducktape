@@ -13,20 +13,20 @@ IPEX-LLM Docker container (`intelanalytics/ipex-llm-inference-cpp-xpu`) runs as
 
 - API at `http://localhost:11434` (OpenAI-compatible)
 - Model storage: `/var/lib/local-llm/ollama`
-- Qwen3 4B (Q4_K_M) installed, **26 tok/s on CPU** (2026-04-18)
+- Qwen3 4B (Q4_K_M) installed, **~23 tok/s on Arc GPU** (2026-04-18)
+- All 37/37 layers offloaded to SYCL GPU
+- Note: `ollama ps` misreports `100% CPU` — this is an IPEX-LLM display bug.
+  Confirmed GPU via `journalctl -u podman-ipex-ollama.service` (`loaded SYCL backend`,
+  `offloaded 37/37 layers to GPU`).
 
 ```bash
 # Pull models:
 sudo podman exec ipex-ollama /llm/ollama/ollama pull qwen3:4b
-# Test:
+# Interactive chat:
+sudo podman exec -it ipex-ollama /llm/ollama/ollama run qwen3:4b
+# API test:
 curl http://localhost:11434/api/generate -d '{"model":"qwen3:4b","prompt":"Hello","stream":false}'
 ```
-
-**TODO**: Ollama reports `library=cpu` — model runs on CPU, not Arc GPU.
-Root cause found: `LD_LIBRARY_PATH` inside the container didn't include `/llm/ollama/`,
-so `libggml-sycl.so` and `libggml-base.so` were not found. Fix applied: added
-`export LD_LIBRARY_PATH=/llm/ollama:$LD_LIBRARY_PATH` to the container cmd.
-Needs verification after rebuild.
 
 **NixOS native ollama blockers** (why container is needed):
 
