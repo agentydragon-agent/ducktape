@@ -28,6 +28,12 @@ ensure_venv() {
     echo "Venv not found. Run: npu-llm setup" >&2
     exit 1
   fi
+  # Ensure the nix-patched NPU compiler .so is symlinked into the venv's
+  # openvino libs directory (pip ships the plugin but not the compiler)
+  local ov_libs="$VENV_DIR/lib/python3.13/site-packages/openvino/libs"
+  if [ -n "${NPU_COMPILER_SO:-}" ] && [ -d "$ov_libs" ]; then
+    ln -sf "$NPU_COMPILER_SO" "$ov_libs/libopenvino_intel_npu_compiler.so"
+  fi
 }
 
 model_dir_for() {
