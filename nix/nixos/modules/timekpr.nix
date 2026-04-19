@@ -77,7 +77,12 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.timekpr;
+      # nixpkgs timekpr omits libayatana-appindicator from buildInputs, so
+      # AyatanaAppIndicator3 is absent from GI_TYPELIB_PATH and the client
+      # silently falls back to the legacy GTK StatusIcon (invisible in GNOME 3+).
+      default = pkgs.timekpr.overrideAttrs (old: {
+        buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.libayatana-appindicator ];
+      });
       defaultText = lib.literalExpression "pkgs.timekpr";
       description = "The timekpr package to use.";
     };

@@ -732,7 +732,7 @@ in
   # GNOME Shell extensions — managed via programs.gnome-shell module.
   # This sets dconf enabled-extensions and installs packages automatically.
   # Night-theme-switcher is added by solarized module.
-  # Appindicator is added by NixOS host files (rugged, wyrm2).
+  # Appindicator is added by NixOS host files (iguana, rugged, wyrm2).
   #
   # Other GNOME tiling options to consider:
   #   - gnomeExtensions.forge: tree-based auto-tiling (i3-style), good keybinding customization

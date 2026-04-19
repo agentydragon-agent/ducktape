@@ -19,5 +19,10 @@
 
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/iguana-github.sops.key;
 
+  # AppIndicator support — needed for timekpr-client tray icon in GNOME.
+  programs.gnome-shell.extensions = [
+    { package = pkgs.gnomeExtensions.appindicator; }
+  ];
+
   home.stateVersion = "24.11";
 }
