@@ -33,7 +33,6 @@ spec:
             # Config is public-only — the OAuth2 provider is public (PKCE),
             # and passthrough mode does no token exchange, so no secrets needed.
             - --config=/etc/kubectl-passthrough-mcp/00-public.toml
-            - --log-level=4
           ports:
             - name: http
               containerPort: 8080

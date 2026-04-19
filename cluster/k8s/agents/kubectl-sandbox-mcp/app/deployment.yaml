@@ -32,7 +32,6 @@ spec:
             # exchange, so no client_secret. Scoping is done via Authentik scope
             # mapping that hardcodes the `groups` claim on issued tokens.
             - --config=/etc/kubectl-sandbox-mcp/00-public.toml
-            - --log-level=4
           ports:
             - name: http
               containerPort: 8080
