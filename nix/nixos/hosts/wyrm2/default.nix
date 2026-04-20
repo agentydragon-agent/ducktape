@@ -88,7 +88,7 @@ in
   # CPAP ez Share WiFi network — NM connection rendered from SOPS secret.
   # never-default=true keeps wyrm2's default route on ens18.
   sops.secrets.cpap_wifi_password = {
-    sopsFile = ../../../secrets/shared/cpap-ezshare.yaml;
+    sopsFile = ../../../../secrets/shared/cpap-ezshare.yaml;
     key = "wifi_password";
   };
   sops.templates.cpap_nm_connection = {
