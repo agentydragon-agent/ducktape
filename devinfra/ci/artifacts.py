@@ -42,6 +42,7 @@ class Artifact(BaseModel, frozen=True):
 
 
 ARTIFACTS = [
+    Artifact(pkg="bbr", filename="bbr-0.1.0-py3-none-any.whl"),
     Artifact(pkg="claude-hooks", filename="claude_hooks-0.1.0-py3-none-any.whl"),
     Artifact(pkg="claude-hook-rs", filename="claude_hook"),
     Artifact(pkg="ducktape-util", filename="ducktape_util-0.1.0-py3-none-any.whl"),

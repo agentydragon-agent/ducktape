@@ -275,7 +275,7 @@
         pkgs.ssh-to-age
         ducktapePkgs.kubernetes-mcp-server
       ];
-      # Python claude-hook (bbr provided by the wheel's console_scripts).
+      # Python claude-hook.
       devToolPackages = devToolsCommon ++ [ ducktapePkgs.claude-hooks ];
       # Rust claude-hook (static binary, no Python runtime).
       devToolPackagesRust = devToolsCommon ++ [ ducktapePkgs.claude-hook-rs ];
