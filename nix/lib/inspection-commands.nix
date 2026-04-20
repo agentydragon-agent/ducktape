@@ -87,7 +87,21 @@ let
     (mkPrefix "users")
     (mkPrefix "id")
     (mkPrefix "groups")
-  ];
+  ]
+  ++ (mkPrefixMulti "gsettings" [
+    "get"
+    "list-recursively"
+    "list-schemas"
+  ])
+  ++ (mkPrefixMulti "dconf" [
+    "dump"
+    "read"
+  ])
+  ++ (mkPrefixMulti "gnome-extensions" [
+    "list"
+    "info"
+    "show"
+  ]);
 
   # Commands needing sudo
   # Only include commands where ALL possible flags/arguments are safe (read-only)
@@ -102,9 +116,7 @@ let
     (mkPrefix "inxi")
     (mkPrefix "acpi")
     (mkPrefix "ipmi-sensors")
-    # System information
     (mkPrefix "uname")
-    # Process information
     (mkPrefix "iotop")
     (mkPrefix "pidstat")
     # Memory information
@@ -130,7 +142,11 @@ let
     (mkPrefix "iostat")
     (mkPrefix "mpstat")
     (mkPrefix "sar")
-
+    # ACPI information - ONLY query flags
+    (mkExact "acpitool") # TODO: check that this is safe
+    (mkExact "lastlog")
+    (mkExactArgs "localectl" "status")
+    (mkExactArgs "hostnamectl" "status")
     # GPU information - ONLY query subcommands
     (mkExact "nvidia-smi")
   ]
@@ -140,11 +156,6 @@ let
     "pmon"
     "dmon"
   ]
-  ++ [
-
-    # ACPI information - ONLY query flags
-    (mkExact "acpitool")
-  ]
   ++ mkExactMulti "acpitool" [
     "-B"
     "-a"
@@ -152,20 +163,11 @@ let
     "-f"
     "-e"
   ]
-  ++ [
-
-    # Last login information
-    (mkExact "lastlog")
-
-    # System information - read-only subcommands
-    (mkExactArgs "hostnamectl" "status")
-  ]
   ++ mkExactMulti "timedatectl" [
     "status"
     "show"
     "timesync-status"
   ]
-  ++ [ (mkExactArgs "localectl" "status") ]
   ++ mkExactMulti "loginctl" [
     "list-sessions"
     "list-users"
@@ -174,8 +176,18 @@ let
     "status"
     "list"
   ]
-
-  # Firmware - query subcommands
+  ++ mkPrefixMulti "resolvectl" [
+    "query"
+    "service"
+    "openpgp"
+    "tlsa"
+    "status"
+    "statistics"
+  ]
+  ++ mkPrefixMulti "nmcli" [
+    "-L"
+    "connection show"
+  ]
   ++ mkExactMulti "fwupdmgr" [
     "get-devices"
     "get-updates"
@@ -193,26 +205,17 @@ let
     "lan print"
     "chassis status"
   ]
-
   ++ [
-    # Disk partitioning - read-only list modes
     (mkExactArgs "fdisk" "-l")
     (mkExactArgs "parted" "-l")
-
-    # NVMe info - read operations
     (mkExactArgs "nvme" "list")
+    (mkPrefixArgs "wg" "show")
+    (mkPrefix "ping")
   ]
   ++ mkPrefixMulti "nvme" [
     "smart-log"
     "id-ctrl"
     "id-ns"
-  ]
-  ++ [
-
-    # WireGuard - show tunnel status (prefix to allow interface name)
-    (mkPrefixArgs "wg" "show")
-
-    # Network information - show/list operations
   ]
   ++ mkExactMulti "ip" [
     "addr show"
@@ -233,6 +236,11 @@ let
     "list-sockets"
     "status"
     "show"
+  ]
+  ++ mkPrefixMulti "nix" [
+    "build"
+    "hash"
+    "search"
   ]
 
   # Session/user info (prefix - needs session/user ID)
