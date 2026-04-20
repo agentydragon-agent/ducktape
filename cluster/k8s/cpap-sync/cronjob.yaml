@@ -25,6 +25,9 @@ spec:
             - name: data
               persistentVolumeClaim:
                 claimName: cpap-data
+            - name: dbus
+              hostPath:
+                path: /run/dbus
           containers:
             - name: sync
               image: ghcr.io/agentydragon/cpap-sync:devel-20260420011057-f92d305 # {"$imagepolicy": "flux-system:cpap-sync"}
@@ -32,20 +35,13 @@ spec:
                 capabilities:
                   add: ["NET_ADMIN"]
               env:
-                - name: WIFI_IFACE
-                  value: wlx9cefd5f62ee0
-                - name: WIFI_SSID
-                  value: "Rai CPAP ez Share"
-                - name: WIFI_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: cpap-ezshare
-                      key: wifi_password
                 - name: OUTPUT_DIR
                   value: /data/cpap
               volumeMounts:
                 - name: data
                   mountPath: /data/cpap
+                - name: dbus
+                  mountPath: /run/dbus
               resources:
                 requests:
                   cpu: 100m

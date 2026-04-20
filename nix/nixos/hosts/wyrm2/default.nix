@@ -85,6 +85,37 @@ in
   # MT7921 USB WiFi stick firmware (for CPAP ez Share sync)
   hardware.firmware = [ pkgs.linux-firmware ];
 
+  # CPAP ez Share WiFi network — NM connection rendered from SOPS secret.
+  # never-default=true keeps wyrm2's default route on ens18.
+  sops.secrets.cpap_wifi_password = {
+    sopsFile = ../../../secrets/shared/cpap-ezshare.yaml;
+    key = "wifi_password";
+  };
+  sops.templates.cpap_nm_connection = {
+    content = ''
+      [connection]
+      id=cpap-ezshare
+      type=wifi
+
+      [wifi]
+      ssid=Rai CPAP ez Share
+      mode=infrastructure
+
+      [wifi-security]
+      key-mgmt=wpa-psk
+      psk=${config.sops.placeholder.cpap_wifi_password}
+
+      [ipv4]
+      method=auto
+      never-default=true
+
+      [ipv6]
+      method=ignore
+    '';
+    path = "/etc/NetworkManager/system-connections/cpap-ezshare.nmconnection";
+    mode = "0600";
+  };
+
   # Ollama with CUDA for local GPU inference (also used by k8s ollama pod, but
   # useful standalone when cluster is down or for ad-hoc tasks).
   # Models stored on Proxmox CSI PVC (200Gi) or ~/downloads/ollama-models/.
