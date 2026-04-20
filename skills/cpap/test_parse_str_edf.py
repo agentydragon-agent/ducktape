@@ -14,10 +14,9 @@ import pytest_bazel
 from skills.cpap.examples.generate_test_edf import generate_str_edf
 from skills.cpap.examples.parse_str_edf import read_str_edf, report
 
-EPOCH = datetime(1970, 1, 1)
 START = datetime(2026, 4, 10)
 
-TEST_DAYS = [
+TEST_DAYS: list[dict[str, float]] = [
     {
         "Duration": 480,
         "AHI": 2.5,
@@ -46,47 +45,36 @@ def edf_path(tmp_path: Path) -> Path:
     return path
 
 
-def test_roundtrip_signal_count(edf_path: Path) -> None:
-    labels, records = read_str_edf(edf_path)
-    assert len(labels) == 15
-    assert len(records) == 5
+def test_column_count(edf_path: Path) -> None:
+    df = read_str_edf(edf_path)
+    # 15 signals minus 2 multi-sample (MaskOn, MaskOff) = 13 columns
+    assert len(df.columns) == 13
+    assert len(df) == 5
 
 
-def test_roundtrip_dates(edf_path: Path) -> None:
-    _, records = read_str_edf(edf_path)
-    for i, rec in enumerate(records):
+def test_dates(edf_path: Path) -> None:
+    df = read_str_edf(edf_path)
+    for i, row in df.iterrows():
         expected = START + timedelta(days=i)
-        actual = EPOCH + timedelta(days=int(rec["Date"]))
-        assert actual.date() == expected.date()
+        assert row["Date"].date() == expected.date()
 
 
-def test_roundtrip_duration(edf_path: Path) -> None:
-    _, records = read_str_edf(edf_path)
-    for day_in, rec in zip(TEST_DAYS, records, strict=True):
-        assert abs(rec["Duration"] - day_in.get("Duration", 0)) < 0.1
-
-
-def test_roundtrip_ahi(edf_path: Path) -> None:
-    _, records = read_str_edf(edf_path)
-    for day_in, rec in zip(TEST_DAYS, records, strict=True):
-        assert abs(rec["AHI"] - day_in.get("AHI", 0)) < 0.05
+def test_roundtrip_values(edf_path: Path) -> None:
+    df = read_str_edf(edf_path)
+    for day_in, (_, row) in zip(TEST_DAYS, df.iterrows(), strict=True):
+        assert abs(row["Duration"] - day_in.get("Duration", 0)) < 0.1
+        assert abs(row["AHI"] - day_in.get("AHI", 0)) < 0.05
 
 
 def test_report_json(edf_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _, records = read_str_edf(edf_path)
-    report(records, days=10)
-    output = json.loads(capsys.readouterr().out)
+    df = read_str_edf(edf_path)
+    report(df, days=10)
+    nights = json.loads(capsys.readouterr().out)
 
-    assert len(output["nights"]) == 4  # excludes Duration=0 night
-    assert output["summary"]["ahi_mean"] == 3.0  # round((2.5+1.2+8.0+0.5)/4, 1)
-    assert "3/4 nights >= 4h" in output["summary"]["compliance"]
-    assert "2026-04-12" in output["summary"]["missing_nights"]
-
-
-def test_zero_duration_excluded(edf_path: Path) -> None:
-    _, records = read_str_edf(edf_path)
-    used = [r for r in records if r["Duration"] > 0]
-    assert len(used) == 4
+    assert len(nights) == 4  # excludes Duration=0 night
+    assert nights[0]["Date"] == "2026-04-10"
+    assert abs(nights[0]["AHI"] - 2.5) < 0.1
+    assert "MaskPress.50" in nights[0]
 
 
 if __name__ == "__main__":

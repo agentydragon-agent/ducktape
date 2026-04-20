@@ -10,6 +10,10 @@ py_library(
     srcs = ["parse_str_edf.py"],
     imports = ["../../.."],
     visibility = ["//skills/cpap:__pkg__"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//pandas",
+    ],
 )
 
 py_library(
