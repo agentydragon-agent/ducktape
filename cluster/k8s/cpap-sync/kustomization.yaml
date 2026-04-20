@@ -5,3 +5,7 @@ resources:
   - pvc.yaml
   - cronjob.yaml
   - cpap-ezshare.sops.yaml
+  - webdav.yaml
+  - webdav-auth.sops.yaml
+  - webdav-httproute.yaml
+  - webdav-networkpolicy.yaml
