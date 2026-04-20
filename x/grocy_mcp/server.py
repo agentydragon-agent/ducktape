@@ -25,12 +25,13 @@ import sys
 
 import httpx
 import uvicorn
-from fastmcp import FastMCP
+from fastmcp import FastMCP, settings as fastmcp_settings
 from fastmcp.server.providers.openapi import MCPType, OpenAPIResource, OpenAPIResourceTemplate, OpenAPITool, RouteMap
 from fastmcp.utilities.openapi import HTTPRoute
 from pydantic.networks import AnyUrl
 
 from mcp_infra.authentik_auth.auth import AuthentikExchangeAuth, build_authentik_auth
+from mcp_infra.authentik_auth.store import create_file_store
 from util.bazel.runfiles import get_required_path
 from x.grocy_mcp.batch_tools import register_batch_tools
 from x.grocy_mcp.mcp_types import ServerSettings
@@ -116,13 +117,14 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP
 def build_server(settings: ServerSettings) -> FastMCP:
     if settings.auth is None:
         raise ValueError("build_server requires ServerSettings.auth to be set (production path)")
+    store = create_file_store(fastmcp_settings.home / "auth-state")
     client = httpx.AsyncClient(
         base_url=f"{settings.grocy_url.rstrip('/')}/api",
-        auth=AuthentikExchangeAuth(settings.auth),
+        auth=AuthentikExchangeAuth(settings.auth, token_store=store),
         timeout=settings.grocy_timeout,
     )
     mcp = build_mcp(settings, client=client)
-    mcp.auth = build_authentik_auth(settings.auth)
+    mcp.auth = build_authentik_auth(settings.auth, client_storage=store)
     return mcp
 
 

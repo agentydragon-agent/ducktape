@@ -82,6 +82,7 @@ py_library(
         ":mcp_types",
         ":tool_metadata",
         "//mcp_infra/authentik_auth:auth",
+        "//mcp_infra/authentik_auth:store",
         "//util/bazel:runfiles",
         "@pypi//fastmcp",
         "@pypi//httpx",

@@ -14,16 +14,18 @@ Three components:
 
 3. `AuthentikExchangeAuth` — an httpx.Auth subclass that transparently exchanges
    the MCP user's upstream Authentik JWT for a proxy-provider-scoped JWT via
-   RFC 7521 jwt-bearer client_credentials. Tokens are cached per upstream JWT
-   using authlib's `OAuth2Token` for expiry tracking. Uses a long-lived
-   `AsyncOAuth2Client` for the exchange calls (consistent with FastMCP's own
-   auth internals).
+   RFC 7521 jwt-bearer client_credentials. Tokens are cached in-memory and
+   optionally persisted to an ``AsyncKeyValue`` store (same interface FastMCP's
+   OIDCProxy uses for its state). Uses a long-lived ``AsyncOAuth2Client`` for
+   the exchange calls.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
@@ -35,6 +37,7 @@ from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
@@ -132,23 +135,39 @@ def build_authentik_auth(
 
 # ── Token exchange auth ───────────────────────────────────────────────────
 
+_EXCHANGE_TOKEN_COLLECTION = "mcp-exchange-tokens"
+
+
+def _cache_key(upstream_token: str) -> str:
+    """Derive a stable, collision-free cache key from an upstream JWT."""
+    return hashlib.sha256(upstream_token.encode()).hexdigest()
+
+
+def _token_expired(token_data: dict[str, Any]) -> bool:
+    """Check if a token dict has expired (with leeway)."""
+    expires_at = token_data.get("expires_at")
+    if expires_at is None:
+        return True
+    return time.time() >= float(expires_at) - _EXPIRY_LEEWAY
+
 
 class AuthentikExchangeAuth(httpx.Auth):
     """httpx Auth that mints a proxy-provider-scoped JWT per request.
 
     Wraps a long-lived `AsyncOAuth2Client` for making token exchange calls
-    to Authentik. Exchanged tokens are cached per upstream user JWT using
-    authlib's `OAuth2Token` for expiry tracking.
+    to Authentik. Exchanged tokens are cached in-memory and optionally
+    persisted to an ``AsyncKeyValue`` store for survival across pod restarts.
 
     Call `aclose()` to release the underlying HTTP client when done.
     """
 
-    def __init__(self, config: AuthentikAuthConfig) -> None:
+    def __init__(self, config: AuthentikAuthConfig, *, token_store: AsyncKeyValue | None = None) -> None:
         if config.proxy_client_id is None:
             raise ValueError("proxy_client_id is required for AuthentikExchangeAuth")
         self._config = config
         self._exchange_client = AsyncOAuth2Client(client_id=config.proxy_client_id, timeout=config.exchange_timeout)
-        # Per-user cache: upstream JWT → OAuth2Token (with expires_at tracking).
+        self._token_store = token_store
+        # In-memory cache: upstream JWT hash → OAuth2Token.
         self._cache: dict[str, OAuth2Token] = {}
         self._lock = asyncio.Lock()
 
@@ -156,19 +175,46 @@ class AuthentikExchangeAuth(httpx.Auth):
         """Close the underlying exchange client."""
         await self._exchange_client.aclose()
 
+    async def _load_from_store(self, key: str) -> OAuth2Token | None:
+        """Try to load a non-expired token from the persistent store."""
+        if self._token_store is None:
+            return None
+        stored = await self._token_store.get(key, collection=_EXCHANGE_TOKEN_COLLECTION)
+        if stored is None or _token_expired(stored):
+            return None
+        return OAuth2Token(stored)
+
+    async def _save_to_store(self, key: str, token_data: OAuth2Token) -> None:
+        """Persist a token to the store with TTL matching its lifetime."""
+        if self._token_store is None:
+            return
+        expires_in = token_data.get("expires_in")
+        ttl = max(float(expires_in) - _EXPIRY_LEEWAY, 0) if expires_in is not None else None
+        await self._token_store.put(key, dict(token_data), collection=_EXCHANGE_TOKEN_COLLECTION, ttl=ttl)
+
     async def _get_exchanged_token(self, upstream_token: str) -> str:
         """Return a cached or freshly exchanged proxy-scoped token."""
-        # Fast path: check cache without lock.
-        cached = self._cache.get(upstream_token)
+        key = _cache_key(upstream_token)
+
+        # Fast path: in-memory cache (no lock).
+        cached = self._cache.get(key)
         if cached is not None and not cached.is_expired(leeway=_EXPIRY_LEEWAY):
             return str(cached["access_token"])
 
-        # Slow path: acquire lock, re-check, then exchange.
         async with self._lock:
-            cached = self._cache.get(upstream_token)
+            # Re-check in-memory after acquiring lock.
+            cached = self._cache.get(key)
             if cached is not None and not cached.is_expired(leeway=_EXPIRY_LEEWAY):
                 return str(cached["access_token"])
 
+            # Check persistent store.
+            restored = await self._load_from_store(key)
+            if restored is not None:
+                self._cache[key] = restored
+                logger.debug("restored exchanged token from store (expires_at=%s)", restored.get("expires_at"))
+                return str(restored["access_token"])
+
+            # Cache miss everywhere — exchange.
             token_data: OAuth2Token = await self._exchange_client.fetch_token(
                 url=self._config.authentik_token_endpoint(),
                 grant_type="client_credentials",
@@ -176,9 +222,10 @@ class AuthentikExchangeAuth(httpx.Auth):
                 client_assertion=upstream_token,
                 scope=EXCHANGE_SCOPES,
             )
-            self._cache[upstream_token] = token_data
+            self._cache[key] = token_data
+            await self._save_to_store(key, token_data)
             logger.debug(
-                "cached exchanged token (expires_in=%s, expires_at=%s)",
+                "exchanged and cached token (expires_in=%s, expires_at=%s)",
                 token_data.get("expires_in"),
                 token_data.get("expires_at"),
             )

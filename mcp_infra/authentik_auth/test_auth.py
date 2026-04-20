@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_bazel
 from authlib.oauth2.rfc6749.wrappers import OAuth2Token
+from key_value.aio.stores.memory import MemoryStore
 
-from mcp_infra.authentik_auth.auth import _EXPIRY_LEEWAY, AuthentikAuthConfig, AuthentikExchangeAuth
+from mcp_infra.authentik_auth.auth import (
+    _EXCHANGE_TOKEN_COLLECTION,
+    _EXPIRY_LEEWAY,
+    AuthentikAuthConfig,
+    AuthentikExchangeAuth,
+    _cache_key,
+)
 
 # ── AuthentikAuthConfig tests ─────────────────────────────────────────────
 
@@ -69,6 +77,10 @@ def _exchange_config() -> AuthentikAuthConfig:
     return _config(proxy_client_id="proxy-id")
 
 
+def _make_token(access_token: str = "exchanged-jwt", expires_in: int = 3600) -> OAuth2Token:
+    return OAuth2Token({"access_token": access_token, "expires_in": expires_in, "token_type": "bearer"})
+
+
 def test_exchange_auth_requires_proxy_client_id() -> None:
     with pytest.raises(ValueError, match="proxy_client_id is required"):
         AuthentikExchangeAuth(_config())
@@ -76,7 +88,7 @@ def test_exchange_auth_requires_proxy_client_id() -> None:
 
 async def test_exchange_auth_fetches_and_caches_token() -> None:
     auth = AuthentikExchangeAuth(_exchange_config())
-    mock_token = OAuth2Token({"access_token": "exchanged-jwt", "expires_in": 3600, "token_type": "bearer"})
+    mock_token = _make_token()
 
     with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock, return_value=mock_token) as fetch:
         # First call: cache miss → fetch.
@@ -90,7 +102,7 @@ async def test_exchange_auth_fetches_and_caches_token() -> None:
         assert fetch.call_count == 1
 
         # Different upstream token: cache miss → fetch again.
-        mock_token2 = OAuth2Token({"access_token": "exchanged-jwt-2", "expires_in": 3600, "token_type": "bearer"})
+        mock_token2 = _make_token(access_token="exchanged-jwt-2")
         fetch.return_value = mock_token2
         token = await auth._get_exchanged_token("upstream-jwt-2")
         assert token == "exchanged-jwt-2"
@@ -104,7 +116,7 @@ async def test_exchange_auth_refetches_expired_token() -> None:
 
     # Token that expires immediately (expires_at in the past).
     expired_token = OAuth2Token({"access_token": "old", "expires_at": int(time.time()) - 1, "token_type": "bearer"})
-    fresh_token = OAuth2Token({"access_token": "fresh", "expires_in": 3600, "token_type": "bearer"})
+    fresh_token = _make_token(access_token="fresh")
 
     with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock) as fetch:
         fetch.return_value = expired_token
@@ -128,7 +140,7 @@ async def test_exchange_auth_respects_leeway() -> None:
     almost_expired = OAuth2Token(
         {"access_token": "almost", "expires_at": int(time.time()) + _EXPIRY_LEEWAY - 1, "token_type": "bearer"}
     )
-    fresh = OAuth2Token({"access_token": "fresh", "expires_in": 3600, "token_type": "bearer"})
+    fresh = _make_token(access_token="fresh")
 
     with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock) as fetch:
         fetch.return_value = almost_expired
@@ -138,6 +150,93 @@ async def test_exchange_auth_respects_leeway() -> None:
         token = await auth._get_exchanged_token("upstream")
         assert token == "fresh"
         assert fetch.call_count == 2
+
+    await auth.aclose()
+
+
+# ── Token store persistence tests ─────────────────────────────────────────
+
+
+async def test_exchange_auth_persists_to_store() -> None:
+    store = MemoryStore()
+    auth = AuthentikExchangeAuth(_exchange_config(), token_store=store)
+    mock_token = _make_token()
+
+    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock, return_value=mock_token):
+        await auth._get_exchanged_token("upstream-jwt")
+
+    # Verify token was persisted.
+    key = _cache_key("upstream-jwt")
+    stored = await store.get(key, collection=_EXCHANGE_TOKEN_COLLECTION)
+    assert stored is not None
+    assert stored["access_token"] == "exchanged-jwt"
+
+    await auth.aclose()
+
+
+async def test_exchange_auth_restores_from_store() -> None:
+    store = MemoryStore()
+    upstream = "upstream-jwt"
+    key = _cache_key(upstream)
+
+    # Pre-populate the store with a valid token.
+    token_data: dict[str, Any] = {
+        "access_token": "stored-jwt",
+        "expires_at": int(time.time()) + 3600,
+        "expires_in": 3600,
+        "token_type": "bearer",
+    }
+    await store.put(key, token_data, collection=_EXCHANGE_TOKEN_COLLECTION)
+
+    auth = AuthentikExchangeAuth(_exchange_config(), token_store=store)
+
+    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock) as fetch:
+        token = await auth._get_exchanged_token(upstream)
+        assert token == "stored-jwt"
+        assert fetch.call_count == 0
+
+    await auth.aclose()
+
+
+async def test_exchange_auth_ignores_expired_store_entry() -> None:
+    store = MemoryStore()
+    upstream = "upstream-jwt"
+    key = _cache_key(upstream)
+
+    # Pre-populate with an expired token.
+    expired_data: dict[str, Any] = {
+        "access_token": "stale-jwt",
+        "expires_at": int(time.time()) - 1,
+        "token_type": "bearer",
+    }
+    await store.put(key, expired_data, collection=_EXCHANGE_TOKEN_COLLECTION)
+
+    auth = AuthentikExchangeAuth(_exchange_config(), token_store=store)
+    fresh = _make_token(access_token="fresh-jwt")
+
+    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock, return_value=fresh) as fetch:
+        token = await auth._get_exchanged_token(upstream)
+        assert token == "fresh-jwt"
+        assert fetch.call_count == 1
+
+    await auth.aclose()
+
+
+async def test_exchange_auth_works_without_store() -> None:
+    """Backward compat: no store → pure in-memory caching."""
+    auth = AuthentikExchangeAuth(_exchange_config())
+    assert auth._token_store is None
+    mock_token = _make_token()
+
+    with patch.object(auth._exchange_client, "fetch_token", new_callable=AsyncMock, return_value=mock_token) as fetch:
+        token = await auth._get_exchanged_token("upstream")
+        assert token == "exchanged-jwt"
+        assert fetch.call_count == 1
+
+        # Cache hit.
+        token = await auth._get_exchanged_token("upstream")
+        assert token == "exchanged-jwt"
+        assert fetch.call_count == 1
 
     await auth.aclose()
 

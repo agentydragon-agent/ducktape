@@ -4,3 +4,4 @@ metadata:
   name: cpap-sync
   labels:
     name: cpap-sync
+    pod-security.kubernetes.io/enforce: privileged
