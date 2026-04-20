@@ -152,7 +152,7 @@ class EZShareClient:
         return self.listdir_url(url)
 
     def walk(self) -> Iterator[FileEntry]:
-        """Yield all file (non-directory) entries on the card via BFS from root."""
+        """Yield all file (non-directory) entries on the card via DFS from root."""
         queue = list(self.listdir())
         visited: set[str] = set()
         while queue:
