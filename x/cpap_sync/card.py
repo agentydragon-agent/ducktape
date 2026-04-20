@@ -153,18 +153,16 @@ class EZShareClient:
 
     def walk(self) -> Iterator[FileEntry]:
         """Yield all file (non-directory) entries on the card via BFS from root."""
-        queue = [f"{self._base}/client?command=GETFILELIST&dir=A%3A"]
+        queue = list(self.listdir())
         visited: set[str] = set()
         while queue:
-            url = queue.pop()
-            if url in visited:
-                continue
-            visited.add(url)
-            for entry in self.listdir_url(url):
-                if entry.is_dir:
-                    queue.append(entry.img_url)
-                else:
-                    yield entry
+            entry = queue.pop()
+            if entry.is_dir:
+                if entry.img_url not in visited:
+                    visited.add(entry.img_url)
+                    queue.extend(self.listdir_url(entry.img_url))
+            else:
+                yield entry
 
     # === File transfer ===
 
