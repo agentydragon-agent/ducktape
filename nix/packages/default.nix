@@ -65,6 +65,13 @@ in
 {
   inherit ducktape-util;
 
+  bbr = mkWheel {
+    pname = "bbr";
+    description = "bb remote wrapper with repo-level config from devinfra/bbr.json";
+    mainProgram = "bbr";
+    propagatedBuildInputs = with pkgs.python3Packages; [ pygit2 ];
+  };
+
   ducktape = mkWheel {
     pname = "ducktape";
     description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
