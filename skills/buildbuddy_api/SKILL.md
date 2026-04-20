@@ -1,7 +1,7 @@
 ---
 name: buildbuddy_api
 description: >
-  Reference for querying the BuildBuddy API. Use when investigating failed or slow
+  Reference for querying BuildBuddy API. Use when investigating failed or slow
   CI builds, inspecting invocations by commit or branch, reading build or test logs,
   checking remote execution (RBE) details (exit codes, stderr, worker logs), analyzing
   cache hit/miss rates, downloading undeclared test outputs from RBE workers,
@@ -14,7 +14,6 @@ description: >
   that broke this test", "re-run CI", "trigger a workflow", "build stats by branch",
   "ask BuildBuddy about this failure", or any task that requires fetching data from
   BuildBuddy.
-allowed-tools: Bash
 ---
 
 # BuildBuddy API

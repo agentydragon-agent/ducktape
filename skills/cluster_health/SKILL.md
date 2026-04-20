@@ -1,7 +1,6 @@
 ---
 name: cluster_health
 description: Scan cluster health — Flux kustomizations, pod status, recurring crashes, node conditions, CNPG databases, certificate expiry — and output an actionable summary with fix plan. Use when user asks "how's the cluster", "cluster health", "what's broken", "check the cluster", or similar.
-allowed-tools: Bash, Read, Grep, Glob, Agent
 ---
 
 # Cluster Health Check

@@ -2,7 +2,6 @@
 name: reverse_engineer
 description: Systematic binary reverse engineering toolkit. Extract source code, understand functions, document protocols, compare versions. Uses strings, symbols, disassembly, and differential verification.
 argument-hint: "<path/to/binary> [language]"
-allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task, WebFetch
 ---
 
 # Reverse Engineering Toolkit
@@ -14,8 +13,6 @@ allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task, WebFetch
 **Every binary is reversible.** Stripping removes metadata, not behavior. Obfuscation renames symbols, not logic. The CPU executes the same instructions regardless of whether you have debug info. You always have: the full instruction stream, string literals, the syscall interface, and runtime behavior. Adjust techniques, not ambition.
 
 **When a tool fails, diagnose and build.** A tool returning an error or empty output is not a dead end — it is a precise description of what the binary violates. Read the error, find the exact check that failed, determine what the binary does instead, and write the minimal fix. Add the fix to `examples/` and record it in the Defeating Obfuscation section below. This skill is a living document: every obfuscation technique you defeat belongs here so the next run starts ahead.
-
----
 
 ## Classify First
 
@@ -47,8 +44,6 @@ strings "$BINARY" | grep -cE '(error|fail|flag|usage|http|/v[0-9])'
 | **Unstripped** | Yes     | Yes   | DWARF + symbol extraction → source reconstruction |
 | **Stripped**   | No      | No    | String-anchored Ghidra/objdump decompilation      |
 | **Obfuscated** | Mangled | No    | Disassembly + runtime probing + string analysis   |
-
----
 
 ## Workflow
 
@@ -123,8 +118,6 @@ strace -f "$YOURS" <args> 2>/tmp/my.strace &
 grep -rn 'TODO(re)' src/ | tee /tmp/todo_re.txt
 ```
 
----
-
 ## Stripped Binaries
 
 No symbols — use strings as your primary anchor and disassembly for everything else.
@@ -144,8 +137,6 @@ No symbols — use strings as your primary anchor and disassembly for everything
   `Result<T,E>` (tag+union), `Vec<T>` (ptr+len+cap), `String` (same),
   trait object vtables. For Go: slice headers, interface values, goroutine
   spawn patterns.
-
----
 
 ## Obfuscated Binaries
 
@@ -404,8 +395,6 @@ same function across versions, and v2-only strings identifying the new function.
 - For functions with partial matches (same strings but different size):
   changed logic — compare disassembly and update RE
 
----
-
 ## Marking Incomplete Work
 
 Use exactly `// TODO(re):` (or `# TODO(re):`) prefix for all reconstruction
@@ -426,23 +415,15 @@ The marker makes the gap visible and greppable.
 **No dead code.** Optimized binaries don't contain dead code. Everything is
 reachable. If nothing calls your code, your call graph is wrong.
 
-**No `#[allow(dead_code)]` / `// nolint` suppression.** These mean you failed
-to find the caller.
-
----
+**No `#[allow(dead_code)]` / `// nolint` suppression.** These mean you failed to find the caller.
 
 ## Confidence Levels
 
 When documenting RE provenance, mark each module/function:
 
-- `VERIFIED` — behavior confirmed against the target binary (runtime test,
-  string match, or disassembly match)
-- `CARRIED` — copied from a prior version's RE, not re-verified against
-  current binary
-- `INFERRED` — reconstructed from string/behavioral evidence only, internal
-  logic unconfirmed
-
----
+- `VERIFIED` — behavior confirmed against the target binary (runtime test, string match, or disassembly match)
+- `CARRIED` — copied from a prior version's RE, not re-verified against current binary
+- `INFERRED` — reconstructed from string/behavioral evidence only, internal logic unconfirmed
 
 ## Principles
 

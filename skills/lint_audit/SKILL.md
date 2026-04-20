@@ -2,8 +2,6 @@
 name: lint_audit
 description: "Audit and improve linter/checker configuration across any repo and language. Discovers languages, proposes useful checks to enable with real examples, creates PRs for approved checks, documents rejected ones. Also fixes misconfigurations, updates outdated versions, removes stale exclusions, and proposes tightenings."
 argument-hint: "[focus area, e.g. 'python', 'security', 'all']"
-allowed-tools: Agent, Bash, Read, Write, Edit, Grep, Glob, WebFetch, WebSearch
-model: opus
 ---
 
 # Lint Audit

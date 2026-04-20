@@ -5,7 +5,6 @@ description: >
   quality issues, and "what's next" suggestions. Verify session work is on disk.
   Use when wrapping up a task or session, or when user asks "what's next",
   "anything else", "what did we miss".
-allowed-tools: Bash, Read, Glob, Grep, Agent, AskUserQuestion
 ---
 
 Surface pending followups, natural next steps, and quality improvements. Verify session work is on disk.
@@ -109,11 +108,11 @@ Examples:
 
 **Unwired components:**
 
-- If the session created a Dockerfile/image but no CI workflow builds it
-- If the session created a k8s manifest but nothing applies/reconciles it
-- If the session created a library/module but nothing imports it yet
-- If the session added a config option but no documentation mentions it
-- If the session added infrastructure (fixture, helper, env var) but the consumers aren't connected yet
+- Session created a Dockerfile/image but no CI workflow builds it
+- Session created a k8s manifest but nothing applies/reconciles it
+- Session created a library/module but nothing imports it yet
+- Session added a config option but no documentation mentions it
+- Session added infrastructure (fixture, helper, env var) but the consumers aren't connected yet
 
 Example: "Created Docker mTLS test fixture and env var setup — but the firewall port isn't open, and no tests actually use the fixture yet."
 
@@ -134,15 +133,15 @@ Example: "Renamed `FooClass` to `BarClass` but it still lives in `foo.py` with t
 
 **Tests must move with the code they test:**
 
-- If the session refactored config, APIs, or function signatures, check whether tests still compile and match the new interfaces. Don't leave test fixes for later commits.
+- If session refactored config, APIs, or function signatures, check whether tests still compile and match the new interfaces. Don't leave test fixes for later commits.
 
 Example: "Deleted `HookConfig` class and switched to standalone profile YAML — 5 test files still import `HookConfig` and pass it to `configure()`. These will break."
 
 **Optimizations and correctness:**
 
-- If the session added functionality, are there edge cases not handled?
-- If the session touched performance-sensitive code, are there obvious improvements?
-- If the session changed data formats, are there consumers that need updating?
+- If session added functionality, are there edge cases not handled?
+- If session touched performance-sensitive code, are there obvious improvements?
+- If session changed data formats, are there consumers that need updating?
 
 Surface these with enough context for the user to judge value, not just "you could also do X." Include what specifically would change and why.
 
