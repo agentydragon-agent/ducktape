@@ -270,12 +270,7 @@ apt.install(
     lock = "//cluster/k8s/agents/claude-cert-rotation:trixie_cert_rotation.lock.json",
     manifest = "//cluster/k8s/agents/claude-cert-rotation:trixie_cert_rotation.yaml",
 )
-apt.install(
-    name = "bookworm_cpap_sync",
-    lock = "@@//x/cpap_sync:bookworm_cpap_sync.lock.json",
-    manifest = "//x/cpap_sync:bookworm_cpap_sync.yaml",
-)
-use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "trixie_cert_rotation", "trixie_e2e")
+use_repo(apt, "bookworm_fc_vm_pod", "trixie_cert_rotation", "trixie_e2e")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
