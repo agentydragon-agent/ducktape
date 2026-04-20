@@ -29,7 +29,11 @@ class ToolOverride:
 
 
 _enabled = ToolOverride
-_disabled = lambda name, **kw: ToolOverride(name, enabled=False, **kw)  # noqa: E731
+
+
+def _disabled(name: str) -> ToolOverride:
+    return ToolOverride(name, enabled=False)
+
 
 TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # ── Generic entity CRUD ──────────────────────────────────────────

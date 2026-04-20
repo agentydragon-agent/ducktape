@@ -377,28 +377,37 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     async def _stock_mutate(item: AddItem | ConsumeItem | SetItem) -> StockOpOk | StockOpError:
         """Shared implementation for stock_add / stock_consume / stock_set."""
         try:
-            match item:
-                case AddItem():
-                    endpoint, input_amount = "add", item.amount
-                case ConsumeItem():
-                    endpoint, input_amount = "consume", item.amount
-                case SetItem():
-                    endpoint, input_amount = "inventory", item.new_amount
-
             product = await resolver.resolve(EntityType.PRODUCT, item.product)
             location = await resolver.resolve(EntityType.LOCATION, item.location)
             rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
+            input_amount = item.new_amount if isinstance(item, SetItem) else item.amount
             stock_amount = input_amount * rqu.conversion_factor
 
             body: dict[str, Any] = {"location_id": location.id}
-            if endpoint == "inventory":
-                body["new_amount"] = stock_amount
-            else:
-                body["amount"] = stock_amount
-            for key in ("best_before_date", "price", "note", "spoiled", "allow_subproduct_substitution"):
-                val = getattr(item, key, None)
-                if val is not None:
-                    body[key] = _date_to_str(val) if isinstance(val, date) else val
+            match item:
+                case AddItem():
+                    endpoint = "add"
+                    body["amount"] = stock_amount
+                    if item.best_before_date is not None:
+                        body["best_before_date"] = _date_to_str(item.best_before_date)
+                    if item.price is not None:
+                        body["price"] = item.price
+                    if item.note is not None:
+                        body["note"] = item.note
+                case ConsumeItem():
+                    endpoint = "consume"
+                    body["amount"] = stock_amount
+                    if item.spoiled:
+                        body["spoiled"] = True
+                    if item.allow_subproduct_substitution:
+                        body["allow_subproduct_substitution"] = True
+                case SetItem():
+                    endpoint = "inventory"
+                    body["new_amount"] = stock_amount
+                    if item.best_before_date is not None:
+                        body["best_before_date"] = _date_to_str(item.best_before_date)
+                    if item.price is not None:
+                        body["price"] = item.price
 
             async def _do_post() -> tuple[str | None, float | None]:
                 r = await client.post(f"/stock/products/{product.id}/{endpoint}", json=body)
@@ -837,15 +846,25 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     else squ
                 )
 
+                cqu = (
+                    await resolver.resolve(EntityType.QUANTITY_UNIT, item.consume_qu)
+                    if item.consume_qu is not None
+                    else squ
+                )
+
                 body: dict[str, Any] = {
                     "name": item.name,
                     "location_id": loc.id,
                     "qu_id_stock": squ.id,
                     "qu_id_purchase": pqu.id,
+                    "qu_id_consume": cqu.id,
                     "min_stock_amount": item.min_stock_amount,
                     "default_best_before_days": item.default_best_before_days,
                     "due_type": item.due_type,
                 }
+                if item.parent_product is not None:
+                    parent = await resolver.resolve(EntityType.PRODUCT, item.parent_product)
+                    body["parent_product_id"] = parent.id
                 if item.product_group is not None:
                     pg = await resolver.resolve(EntityType.PRODUCT_GROUP, item.product_group)
                     body["product_group_id"] = pg.id
@@ -893,12 +912,16 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     body["location_id"] = (await resolver.resolve(EntityType.LOCATION, item.location)).id
                 if item.purchase_qu is not None:
                     body["qu_id_purchase"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, item.purchase_qu)).id
+                if item.consume_qu is not None:
+                    body["qu_id_consume"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, item.consume_qu)).id
                 if item.min_stock_amount is not None:
                     body["min_stock_amount"] = item.min_stock_amount
                 if item.default_best_before_days is not None:
                     body["default_best_before_days"] = item.default_best_before_days
                 if item.due_type is not None:
                     body["due_type"] = item.due_type
+                if item.parent_product is not None:
+                    body["parent_product_id"] = (await resolver.resolve(EntityType.PRODUCT, item.parent_product)).id
                 if item.product_group is not None:
                     body["product_group_id"] = (await resolver.resolve(EntityType.PRODUCT_GROUP, item.product_group)).id
                 if item.description is not None:

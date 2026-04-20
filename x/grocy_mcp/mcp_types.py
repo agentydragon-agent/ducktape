@@ -269,8 +269,12 @@ class CreateProductItem(BaseModel):
         default=0,
         description="Threshold (in stock QU) below which `get_below_minimum_stock` flags this product. 0 disables.",
     )
+    consume_qu: int | str | None = Field(
+        default=None, description="Consume quantity unit. Name or ID. Defaults to `stock_qu`."
+    )
     default_best_before_days: int = Field(default=0, description=DEFAULT_BBD_DESC)
     due_type: Literal[1, 2] = Field(default=1, description=DUE_TYPE_DESC)
+    parent_product: int | str | None = Field(default=None, description="Parent product for grouping. Name or ID.")
     product_group: int | str | None = Field(default=None, description="Product group / category. Name or ID.")
     description: str | None = Field(default=None, description="Free-text description.")
 
@@ -343,11 +347,13 @@ class EditProductItem(BaseModel):
     stock_qu: int | str | None = Field(default=None, description="New stock quantity unit. Name or ID.")
     location: int | str | None = Field(default=None, description="New default storage location. Name or ID.")
     purchase_qu: int | str | None = Field(default=None, description="New purchase quantity unit. Name or ID.")
+    consume_qu: int | str | None = Field(default=None, description="New consume quantity unit. Name or ID.")
     min_stock_amount: float | None = Field(
         default=None, description="New low-stock threshold (in stock QU). 0 disables."
     )
     default_best_before_days: int | None = Field(default=None, description=DEFAULT_BBD_DESC)
     due_type: Literal[1, 2] | None = Field(default=None, description=DUE_TYPE_DESC)
+    parent_product: int | str | None = Field(default=None, description="New parent product. Name or ID.")
     product_group: int | str | None = Field(default=None, description="New product group. Name or ID.")
     description: str | None = Field(default=None, description="New free-text description.")
     clear_fields: set[EditProductField] | None = Field(
