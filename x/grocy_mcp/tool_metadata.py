@@ -40,8 +40,10 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
         "entity_update",
         "WARNING: full replace, not a partial update — every field you omit gets nulled. Read the "
         "current row with `entities_get` first, then send the complete object with your changes "
-        "applied. For products specifically, prefer the typed `product_edit` (does the read-merge-write "
-        "for you and only touches writable columns).",
+        "applied. For products, prefer `products_edit` for common fields (does the read-merge-write "
+        "for you). Use `entity_update` for advanced product fields not exposed by `products_edit` "
+        "(e.g. `default_best_before_days_after_freezing`, `should_not_be_frozen`, `qu_id_consume`). "
+        "Never set `best_before_date` to null on stock entries — use `2999-12-31` for never-expires.",
     ),
     ("DELETE", "/objects/{entity}/{objectId}"): _enabled("entity_delete"),
     # ── Stock overview ───────────────────────────────────────────────

@@ -32,7 +32,6 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait
 
 from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType
 from x.grocy_mcp.mcp_types import (
-    BEST_BEFORE_DESC,
     DETAIL_DESC,
     PRODUCT_DESC,
     QU_DESC,
@@ -49,6 +48,7 @@ from x.grocy_mcp.mcp_types import (
     CreateQuantityUnitItem,
     CreateShoppingListItem,
     EditProductField,
+    EditProductItem,
     EditShoppingListField,
     EditStockEntryField,
     FullLocation,
@@ -544,7 +544,15 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     async def stock_entry_edit(
         entry_id: Annotated[int, Field(description="Stock-entry ID (from `stock_entries_list`).")],
         amount: Annotated[float | None, Field(description="New amount, in the entry's stock QU.")] = None,
-        best_before_date: Annotated[date | None, Field(description=f"New {BEST_BEFORE_DESC.lower()}")] = None,
+        best_before_date: Annotated[
+            date | None,
+            Field(
+                description=(
+                    "New best-before / expiration date in `YYYY-MM-DD` format. "
+                    "Omit to keep the current value. Use `2999-12-31` for never-expires."
+                )
+            ),
+        ] = None,
         purchased_date: Annotated[date | None, Field(description="New purchase date in `YYYY-MM-DD` format.")] = None,
         price: Annotated[float | None, Field(description="New per-unit price.")] = None,
         location: Annotated[int | str | None, Field(description="New storage location. Name or ID.")] = None,
@@ -606,8 +614,6 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             for field_name in clear_fields or ():
                 if field_name == EditStockEntryField.PRICE:
                     body["price"] = None
-                elif field_name == EditStockEntryField.BEST_BEFORE_DATE:
-                    body["best_before_date"] = None
                 elif field_name == EditStockEntryField.PURCHASED_DATE:
                     body["purchased_date"] = None
                 elif field_name == EditStockEntryField.NOTE:
@@ -692,7 +698,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         """Returns every product-group (category) defined in this Grocy instance.
 
         Pass product-group names or IDs to `products_create` /
-        `product_edit`. Create new ones with `product_groups_create`.
+        `products_edit`. Create new ones with `product_groups_create`.
         """
         rows = await resolver.all(EntityType.PRODUCT_GROUP)
         if detail == "brief":
@@ -807,11 +813,16 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         references (`stock_qu`, `location`, `purchase_qu`, `product_group`)
         take names or IDs and resolve via `quantity_units_list` /
         `locations_list` / `product_groups_list`. `purchase_qu` defaults to
-        `stock_qu` when omitted. Failed items return errors without
+        `stock_qu` when omitted. When `purchase_qu` differs from
+        `stock_qu`, Grocy auto-creates a product-specific factor=1
+        `quantity_unit_conversions` row (unless a matching conversion
+        already exists, e.g. from a global default). Adjust it via
+        `entities_list` / `entity_update` on `quantity_unit_conversions`
+        if the real factor is not 1. Failed items return errors without
         aborting the others.
 
         Pair with `locations_create` and `quantity_units_create` to bring
-        up a fresh Grocy instance from scratch; use `product_edit` /
+        up a fresh Grocy instance from scratch; use `products_edit` /
         `product_delete` for mutations after creation.
         """
         _check_batch_size(items, "items")
@@ -833,6 +844,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     "qu_id_purchase": pqu.id,
                     "min_stock_amount": item.min_stock_amount,
                     "default_best_before_days": item.default_best_before_days,
+                    "due_type": item.due_type,
                 }
                 if item.product_group is not None:
                     pg = await resolver.resolve(EntityType.PRODUCT_GROUP, item.product_group)
@@ -853,78 +865,62 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return list(await asyncio.gather(*[_one(item) for item in items]))
 
     @mcp.tool()
-    async def product_edit(
-        product: Annotated[int | str, Field(description="Product to edit. Name or ID.")],
-        name: Annotated[str | None, Field(description="New name.")] = None,
-        stock_qu: Annotated[int | str | None, Field(description="New stock quantity unit. Name or ID.")] = None,
-        location: Annotated[int | str | None, Field(description="New default storage location. Name or ID.")] = None,
-        purchase_qu: Annotated[int | str | None, Field(description="New purchase quantity unit. Name or ID.")] = None,
-        min_stock_amount: Annotated[
-            float | None, Field(description="New low-stock threshold (in stock QU). 0 disables.")
-        ] = None,
-        default_best_before_days: Annotated[
-            int | None, Field(description="New auto-fill best-before days for `stock_add`. 0 disables.")
-        ] = None,
-        product_group: Annotated[int | str | None, Field(description="New product group. Name or ID.")] = None,
-        description: Annotated[str | None, Field(description="New free-text description.")] = None,
-        clear_fields: Annotated[
-            set[EditProductField] | None,
-            Field(
-                description=(
-                    "Fields to explicitly null out. Only the values in `EditProductField` are nullable in "
-                    "Grocy's schema; everything else is NOT NULL."
-                )
-            ),
-        ] = None,
-    ) -> CreateOk | CreateError:
-        """Partial update of a product — only the fields you pass change.
+    async def products_edit(items: list[EditProductItem]) -> list[CreateOk | CreateError]:
+        """Partial update of one or more products. Max 20 items per call.
 
-        The server reads the current product, merges your changes, and
-        writes back. To remove a nullable field's value (vs setting it
-        to a new one), name it in `clear_fields`. See also
-        `products_create`, `product_delete`, `products_list`.
+        Only the fields you set on each item change — the rest are
+        preserved. The server reads each product, merges your changes,
+        and writes back. To null out a nullable field (vs setting it to
+        a new value), name it in `clear_fields`. Failed items return
+        errors without aborting the others. See also `products_create`,
+        `product_delete`, `products_list`.
         """
-        try:
-            resolved = await resolver.resolve(EntityType.PRODUCT, product)
-            r = await client.get(f"/objects/products/{resolved.id}")
-            r.raise_for_status()
-            current: dict[str, Any] = r.json()
+        _check_batch_size(items, "items")
 
-            # Filter to writable columns — Grocy's GET returns computed view
-            # fields that are rejected on PUT.
-            body = {k: v for k, v in current.items() if k in PRODUCT_WRITABLE_FIELDS}
-            if name is not None:
-                body["name"] = name
-            if stock_qu is not None:
-                body["qu_id_stock"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, stock_qu)).id
-            if location is not None:
-                body["location_id"] = (await resolver.resolve(EntityType.LOCATION, location)).id
-            if purchase_qu is not None:
-                body["qu_id_purchase"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, purchase_qu)).id
-            if min_stock_amount is not None:
-                body["min_stock_amount"] = min_stock_amount
-            if default_best_before_days is not None:
-                body["default_best_before_days"] = default_best_before_days
-            if product_group is not None:
-                body["product_group_id"] = (await resolver.resolve(EntityType.PRODUCT_GROUP, product_group)).id
-            if description is not None:
-                body["description"] = description
+        async def _one(item: EditProductItem) -> CreateOk | CreateError:
+            try:
+                resolved = await resolver.resolve(EntityType.PRODUCT, item.product)
+                r = await client.get(f"/objects/products/{resolved.id}")
+                r.raise_for_status()
+                current: dict[str, Any] = r.json()
 
-            for field in clear_fields or ():
-                if field == EditProductField.DESCRIPTION:
-                    body["description"] = None
-                elif field == EditProductField.PRODUCT_GROUP:
-                    body["product_group_id"] = None
-                elif field == EditProductField.PARENT_PRODUCT:
-                    body["parent_product_id"] = None
-                elif field == EditProductField.CALORIES:
-                    body["calories"] = None
+                body = {k: v for k, v in current.items() if k in PRODUCT_WRITABLE_FIELDS}
+                if item.name is not None:
+                    body["name"] = item.name
+                if item.stock_qu is not None:
+                    body["qu_id_stock"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, item.stock_qu)).id
+                if item.location is not None:
+                    body["location_id"] = (await resolver.resolve(EntityType.LOCATION, item.location)).id
+                if item.purchase_qu is not None:
+                    body["qu_id_purchase"] = (await resolver.resolve(EntityType.QUANTITY_UNIT, item.purchase_qu)).id
+                if item.min_stock_amount is not None:
+                    body["min_stock_amount"] = item.min_stock_amount
+                if item.default_best_before_days is not None:
+                    body["default_best_before_days"] = item.default_best_before_days
+                if item.due_type is not None:
+                    body["due_type"] = item.due_type
+                if item.product_group is not None:
+                    body["product_group_id"] = (await resolver.resolve(EntityType.PRODUCT_GROUP, item.product_group)).id
+                if item.description is not None:
+                    body["description"] = item.description
 
-            r = await client.put(f"/objects/products/{resolved.id}", json=body)
-            r.raise_for_status()
-            return CreateOk(created_object_id=resolved.id)
-        except Exception as e:
-            return CreateError(error=_format_exc(e))
+                for field in item.clear_fields or ():
+                    if field == EditProductField.DESCRIPTION:
+                        body["description"] = None
+                    elif field == EditProductField.PRODUCT_GROUP:
+                        body["product_group_id"] = None
+                    elif field == EditProductField.PARENT_PRODUCT:
+                        body["parent_product_id"] = None
+                    elif field == EditProductField.CALORIES:
+                        body["calories"] = None
+
+                r = await client.put(f"/objects/products/{resolved.id}", json=body)
+                r.raise_for_status()
+                return CreateOk(created_object_id=resolved.id)
+            except Exception as e:
+                return CreateError(error=_format_exc(e))
+
+        return list(await asyncio.gather(*[_one(item) for item in items]))
 
     @mcp.tool()
     async def product_delete(
@@ -951,9 +947,13 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     ) -> StockOpOk | StockOpError:
         """Move stock from one location to another (e.g. Cellar → Fridge).
 
-        Stock totals don't change; only the per-location split does. The
-        result's `amount_delta` and `new_amount` are null for transfers —
-        Grocy doesn't return them. The `transaction_id` works with
+        Stock totals don't change; only the per-location split does.
+        **Freezer warning**: transferring to/from a freezer location
+        silently changes the best-before date (using the product's
+        `default_best_before_days_after_freezing` /
+        `default_best_before_days_after_thawing`). The result's
+        `amount_delta` and `new_amount` are null for transfers — Grocy
+        doesn't return them. The `transaction_id` works with
         `transaction_undo` to revert. See also `stock_add`,
         `stock_consume`, `stock_set`.
         """
@@ -1256,7 +1256,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         Each row gives product name, current amount, minimum amount,
         unit, and `deficit` (how much is missing). Products with
         `min_stock_amount = 0` never appear here — set the threshold
-        via `products_create` / `product_edit`. See also
+        via `products_create` / `products_edit`. See also
         `get_expiring_stock` and `get_expired_stock`.
         """
         data, qu_names, _ = await _fetch_volatile_with_maps()

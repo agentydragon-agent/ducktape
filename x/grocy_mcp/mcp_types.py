@@ -50,9 +50,24 @@ QU_DESC = (
     "Quantity unit. Name or ID. Must match the product's stock QU or have a defined conversion "
     "(see the `quantity_unit_conversions` entity)."
 )
-BEST_BEFORE_DESC = "Best-before date in `YYYY-MM-DD` format. Omit for no expiry."
+BEST_BEFORE_DESC = (
+    "Best-before / expiration date in `YYYY-MM-DD` format. "
+    "Omit to use the product's `default_best_before_days`. "
+    "Use `2999-12-31` for never-expires."
+)
 PRICE_DESC = "Per-unit price. Omit to use the last recorded price."
 DETAIL_DESC = "`brief` returns only `id` + `name`. `full` returns every column."
+DEFAULT_BBD_DESC = (
+    "Auto-fill best-before date when `stock_add` omits it. "
+    "-1 = never expires, 0 (default) = today, N > 0 = today + N days."
+)
+DUE_TYPE_DESC = (
+    "How to treat the best-before date. "
+    "1 (default) = 'best before' (possibly still safe after date, "
+    "`get_expired_stock` ignores these). "
+    "2 = 'expiration' (unsafe after date, `get_expired_stock` returns these). "
+    "Use 2 for perishables (meat, dairy, medicine)."
+)
 
 
 # ── Shared input/output types ──────────────────────────────────────────────
@@ -221,10 +236,13 @@ class EditStockEntryField(StrEnum):
 
     Other stock-entry fields (``amount``, ``location_id``, ``open``) are NOT
     NULL in Grocy's schema and must be assigned a value if changed.
+
+    ``best_before_date`` is intentionally excluded: setting it to NULL makes
+    the product invisible in Grocy's stock overview. Use
+    ``best_before_date="2999-12-31"`` for never-expires instead.
     """
 
     PRICE = "price"
-    BEST_BEFORE_DATE = "best_before_date"
     PURCHASED_DATE = "purchased_date"
     NOTE = "note"
 
@@ -239,15 +257,20 @@ class CreateProductItem(BaseModel):
     stock_qu: int | str = Field(description="Stock quantity unit. Name or ID. The unit Grocy stores stock totals in.")
     location: int | str = Field(description="Default storage location. Name or ID.")
     purchase_qu: int | str | None = Field(
-        default=None, description="Purchase quantity unit. Name or ID. Defaults to `stock_qu`."
+        default=None,
+        description=(
+            "Purchase quantity unit. Name or ID. Defaults to `stock_qu`. "
+            "When different from `stock_qu`, Grocy auto-creates a "
+            "product-specific factor=1 conversion (unless one already "
+            "exists); update it afterwards if the real factor is not 1."
+        ),
     )
     min_stock_amount: float = Field(
         default=0,
         description="Threshold (in stock QU) below which `get_below_minimum_stock` flags this product. 0 disables.",
     )
-    default_best_before_days: int = Field(
-        default=0, description="Auto-fill best-before date this many days ahead when `stock_add` omits it. 0 disables."
-    )
+    default_best_before_days: int = Field(default=0, description=DEFAULT_BBD_DESC)
+    due_type: Literal[1, 2] = Field(default=1, description=DUE_TYPE_DESC)
     product_group: int | str | None = Field(default=None, description="Product group / category. Name or ID.")
     description: str | None = Field(default=None, description="Free-text description.")
 
@@ -300,7 +323,7 @@ class CreateProductGroupItem(BaseModel):
 
 
 class EditProductField(StrEnum):
-    """Nullable product fields that ``product_edit.clear_fields`` can null out.
+    """Nullable product fields that ``products_edit.clear_fields`` can null out.
 
     Other product fields are NOT NULL in Grocy's schema and cannot be cleared
     — to remove a product entirely, use ``product_delete``.
@@ -310,6 +333,30 @@ class EditProductField(StrEnum):
     PRODUCT_GROUP = "product_group"
     PARENT_PRODUCT = "parent_product"
     CALORIES = "calories"
+
+
+class EditProductItem(BaseModel):
+    """One product edit operation for ``products_edit``."""
+
+    product: int | str = Field(description="Product to edit. Name or ID.")
+    name: str | None = Field(default=None, description="New name.")
+    stock_qu: int | str | None = Field(default=None, description="New stock quantity unit. Name or ID.")
+    location: int | str | None = Field(default=None, description="New default storage location. Name or ID.")
+    purchase_qu: int | str | None = Field(default=None, description="New purchase quantity unit. Name or ID.")
+    min_stock_amount: float | None = Field(
+        default=None, description="New low-stock threshold (in stock QU). 0 disables."
+    )
+    default_best_before_days: int | None = Field(default=None, description=DEFAULT_BBD_DESC)
+    due_type: Literal[1, 2] | None = Field(default=None, description=DUE_TYPE_DESC)
+    product_group: int | str | None = Field(default=None, description="New product group. Name or ID.")
+    description: str | None = Field(default=None, description="New free-text description.")
+    clear_fields: set[EditProductField] | None = Field(
+        default=None,
+        description=(
+            "Fields to explicitly null out. Only the values in `EditProductField` are nullable in "
+            "Grocy's schema; everything else is NOT NULL."
+        ),
+    )
 
 
 # ── Shopping list types ────────────────────────────────────────────────────

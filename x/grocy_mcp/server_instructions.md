@@ -52,7 +52,7 @@ typed wrapper covers the entity.
 
 | Entity              | Typed tools                                                                                  | Notes                                                                                         |
 | ------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| products            | `products_create` / `products_list` / `product_edit` / `product_delete` / `products_merge`   | Full typed CRUD                                                                               |
+| products            | `products_create` / `products_list` / `products_edit` / `product_delete` / `products_merge`  | Full typed CRUD                                                                               |
 | locations           | `locations_create` / `locations_list`                                                        | Create + list; edit/delete via generic                                                        |
 | quantity_units      | `quantity_units_create` / `quantity_units_list`                                              | Grocy ships only `Piece`                                                                      |
 | product_groups      | `product_groups_create` / `product_groups_list`                                              | Optional category on products                                                                 |
@@ -91,6 +91,12 @@ no valid conversion exists, the mutation fails with an error naming the
 stock QU and any available substitutes; create a
 `quantity_unit_conversions` row via `entities_create` to unblock.
 
+When `products_create` sets a `purchase_qu` different from `stock_qu`, Grocy
+auto-creates a product-specific factor=1 `quantity_unit_conversions` row
+(unless a matching conversion already exists, e.g. from a global default).
+If the real factor is not 1 (e.g. 1 Bag = 500 g), update the auto-created
+conversion via `entity_update` on `quantity_unit_conversions`.
+
 ## Absolute vs delta stock ops
 
 - `stock_add` / `stock_consume` / `stock_transfer` take **deltas** — the
@@ -105,8 +111,42 @@ Every stock mutation returns a `transaction_id`. Pass it to
 `transaction_undo` to revert that operation. There is no cross-tool
 atomicity; undo covers exactly the one mutation whose id you pass.
 
-## Dates
+## Dates and expiry
 
-All date parameters and returns use `YYYY-MM-DD`. `best_before_date` is
-nullable on stock entries and on product defaults; omit it when there's no
-meaningful expiry (salt, etc.).
+All date parameters and returns use `YYYY-MM-DD`. Grocy's "never expires"
+sentinel is `2999-12-31`.
+
+**`default_best_before_days`** on a product controls what happens when
+`stock_add` omits `best_before_date`:
+
+- `-1` → never expires (`2999-12-31`)
+- `0` (default) → **today** (not "disabled" — stock appears due immediately)
+- `N > 0` → today + N days
+
+For products that don't expire (salt, vinegar, etc.), set
+`default_best_before_days = -1` at creation time, or pass
+`best_before_date = "2999-12-31"` on every `stock_add`.
+
+**`due_type`** on a product (settable via `products_edit` or
+`entity_update`) controls how Grocy treats the best-before date:
+
+- `1` (default) = "Best before date" — item is _possibly_ still safe
+  after the date. Shows as warning. `get_expired_stock` does **not**
+  return these items.
+- `2` = "Expiration date" — item is _unsafe_ after the date. Shows as
+  danger. `get_expired_stock` **only** returns `due_type=2` items.
+
+Set `due_type=2` for perishables (meat, dairy, medicine) where past-date
+means discard.
+
+**Freezer transfers** silently change the best-before date using the
+product's `default_best_before_days_after_freezing` (to freezer) or
+`default_best_before_days_after_thawing` (from freezer). Both default
+to `0` (= today). Set these to `-1` on products that don't expire when
+frozen/thawed.
+
+**Never set `best_before_date` to NULL.** A NULL date makes the product
+invisible in Grocy's stock overview (the UI view filters out entries
+where `best_before_date IS NULL`). Always use `2999-12-31` for
+never-expires. The `stock_entry_edit` tool blocks clearing
+`best_before_date` for this reason.

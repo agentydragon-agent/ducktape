@@ -53,7 +53,7 @@ CUSTOM_TOOL_NAMES = {
     "shopping_lists_list",
     "shopping_lists_create",
     # Product mutations
-    "product_edit",
+    "products_edit",
     "product_delete",
     # Shopping list
     "shopping_list_get",
@@ -180,10 +180,15 @@ async def test_product_lifecycle(mcp_client: Client, refunwrap_result: RefData) 
 
     # Edit product — rename, verify other fields preserved
     new_name = f"TestRice-Renamed-{refunwrap_result.suffix}"
-    edit_result = unwrap_result(
-        await mcp_client.call_tool("product_edit", {"product": refunwrap_result.products[0], "name": new_name})
+    edit_results = unwrap_result(
+        await mcp_client.call_tool(
+            "products_edit", {"items": [{"product": refunwrap_result.products[0], "name": new_name}]}
+        )
     )
-    assert edit_result["kind"] == "ok"
+    assert edit_results[0]["kind"] == "ok"
+    # TODO: test batch edit (multiple items in one call)
+    # TODO: test editing due_type, default_best_before_days, clear_fields
+    # TODO: test that clear_fields nulls product_group while preserving other fields
 
     products = unwrap_result(await mcp_client.call_tool("products_list", {"detail": "full"}))
     our_product = [p for p in products if p["name"] == new_name]

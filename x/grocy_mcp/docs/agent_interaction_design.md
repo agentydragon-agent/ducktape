@@ -421,7 +421,7 @@ Notes:
 | ---------------- | ------------------------ | ------------------------ | -------------------------------------------------------------------------------- |
 | `products_list`  | All products             | (none)                   | `detail: "brief"\|"full"`, default brief (id + name)                             |
 | `create_product` | Create a new product     | name, stock_qu, location | Optional: min_stock_amount, default_best_before_days, product_group, description |
-| `product_edit`   | Partial-update a product | product + changed fields |                                                                                  |
+| `products_edit`  | Partial-update a product | product + changed fields |                                                                                  |
 | `product_delete` | Delete a product         | product                  |                                                                                  |
 
 ### Reference Data
@@ -480,7 +480,7 @@ fields, not just the ones you want to change. Fields you omit will be set
 to null. First use `entities_get` to read the current state, then send the
 complete object with your changes applied." This is acceptable for simple
 entities (locations, QUs — 1-3 fields) but dangerous for complex ones.
-Products have a dedicated `product_edit` with partial-update semantics
+Products have a dedicated `products_edit` with partial-update semantics
 specifically to avoid this.
 
 ### System
@@ -589,7 +589,7 @@ unchanged" (both would be absent from the request). Each edit tool has a
 
 - `stock_entry_edit`: clearable fields are `price`, `best_before_date`,
   `purchased_date`, `note` (all nullable in the `stock` table).
-- `product_edit`: clearable fields are `description`, `product_group`,
+- `products_edit`: clearable fields are `description`, `product_group`,
   `parent_product`, `calories` (nullable in the `products` table).
 - `shopping_list_item_edit`: clearable field is `note`.
 

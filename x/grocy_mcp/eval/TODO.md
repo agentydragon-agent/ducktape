@@ -83,6 +83,107 @@ Tools: `stock_entries_list` → `stock_entry_edit` with
 Tests whether the agent asks for clarification, picks the exact-match, or
 falls back to fuzzy matching and exposes that choice.
 
+### Purchase-QU bulk stocking with auto-created conversions
+
+> "Product X comes in boxes of 30 pieces and product Y comes in boxes of
+> 12 pieces. I bought 3 boxes of X and 5 boxes of Y, stock them all."
+
+Seed products with `stock_qu=Piece` and `purchase_qu=Box`. On creation,
+Grocy auto-creates a product-specific factor=1 Box→Piece conversion.
+The agent must notice the factor is wrong (or create the correct one
+up front), update each product's conversion to the real factor (30, 12),
+then `stock_add` using the Box QU. Validates: (1) awareness of the
+auto-created factor=1 footgun, (2) correcting conversions before
+stocking, (3) using purchase QU directly instead of pre-multiplying.
+
+Tools: `products_create` → `entities_list` (`quantity_unit_conversions`)
+→ `entity_update` (fix factors) → `stock_add` (in Box QU).
+
+### Bulk stock take with non-expiring products
+
+> "I just moved in. Set up these pantry staples: salt, sugar, vinegar,
+> rice, olive oil. I have 1 of each. None of them expire."
+
+The agent must create products with `default_best_before_days=-1` (or
+pass `best_before_date="2999-12-31"` on each `stock_add`). Validates
+that the agent doesn't leave the default of 0, which would set all
+best-before dates to today — making every item appear as expiring
+immediately.
+
+Grader checks: no stock entry has a `best_before_date` equal to today.
+All entries should be `2999-12-31`.
+
+### Expired stock check with due_type
+
+> "Create: milk (expires in 7 days), canned beans (best before 30 days),
+> chicken breast (expires in 3 days). Add 1 of each to stock. Then tell
+> me what's expired or expiring within a week."
+
+The agent should set `due_type=2` for milk and chicken (perishable —
+unsafe after date) and `due_type=1` for beans (best-before — possibly
+safe after date). It should then use `get_expiring_stock` to find
+items due within 7 days (chicken), and `get_expired_stock` to find
+truly expired items (none yet). Validates: (1) agent knows `due_type`
+exists and sets it correctly, (2) agent understands `get_expired_stock`
+only returns `due_type=2` items.
+
+Grader checks: chicken and milk have `due_type=2`, beans have
+`due_type=1`.
+
+### Stock correction no-op handling
+
+> "I just counted: we have exactly 5 bags of rice."
+
+Seed a product with exactly 5 bags already in stock. The agent calls
+`stock_set(new_amount=5)` and gets an error ("new amount cannot equal
+current stock amount"). Validates the agent handles this gracefully
+(reports "stock is already correct") rather than retrying or crashing.
+
+### Freezer transfer date side-effect
+
+> "Move the chicken from the fridge to the freezer."
+
+Seed a product with `default_best_before_days_after_freezing=0`
+(the default), stock in a Fridge location, best-before date 7 days
+from now. After `stock_transfer` to a Freezer location, Grocy silently
+resets the best-before date to today. Validates the agent either:
+(a) warns the user about the date change, (b) sets
+`default_best_before_days_after_freezing=-1` first, or (c) checks
+the entry afterwards.
+
+Grader checks: agent acknowledges or handles the date side-effect
+rather than silently letting stock appear as expiring today.
+
+### Clearing expiry on a stock entry
+
+> "The expiry date on the canned tomatoes is wrong — they don't expire.
+> Fix it."
+
+Seed a product with stock that has a `best_before_date` set. The agent
+should set `best_before_date="2999-12-31"` via `stock_entry_edit`.
+`best_before_date` is not clearable via `clear_fields` (NULL makes the
+product invisible in Grocy's stock overview). Validates the agent knows
+the `2999-12-31` never-expires convention.
+
+### Sensible expiry defaults for mixed product types
+
+> "Set up my kitchen: salt, white vinegar, fresh strawberries, sliced
+> deli turkey, canned chickpeas, ground coffee. Add 1 of each to stock."
+
+The agent must pick reasonable `default_best_before_days` and `due_type`
+for each product based on common knowledge:
+
+- Salt, vinegar: `default_best_before_days=-1` (never expires)
+- Strawberries: short expiry (< 14 days), `due_type=2`
+- Deli turkey: short expiry (< 14 days), `due_type=2`
+- Canned chickpeas: long expiry (months+), `due_type=1`
+- Ground coffee: medium expiry (weeks to months), `due_type=1`
+
+Grader checks: (1) salt and vinegar have `default_best_before_days=-1`
+or stock entries with `best_before_date=2999-12-31`, (2) strawberries
+and turkey have `due_type=2` and best-before date < 4 weeks out,
+(3) no product has best-before date set to today (the `0` footgun).
+
 ### Product merge / deduplication
 
 > "I just noticed we have both `Rice` and `rice` — merge them."
