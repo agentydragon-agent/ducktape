@@ -4,7 +4,13 @@ resources:
   - namespace.yaml
   - rtl-tcp-deployment.yaml
   - rtl-tcp-service.yaml
-  - openwebrx-configmap.yaml
   - openwebrx-pvc.yaml
   - openwebrx-deployment.yaml
   - openwebrx-service.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: openwebrx-settings
+    namespace: sdr
+    files:
+      - config_webrx.py

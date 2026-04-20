@@ -27,8 +27,8 @@ spec:
               name: http
           volumeMounts:
             - name: settings
-              mountPath: /etc/openwebrx/openwebrx.conf.d/settings.py
-              subPath: settings.py
+              mountPath: /etc/openwebrx/config_webrx.py
+              subPath: config_webrx.py
             - name: data
               mountPath: /var/lib/openwebrx
           resources:
