@@ -14,6 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libusb-1.0-0 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/bin/rtl_tcp /usr/bin/rtl_tcp
-COPY --from=build /usr/lib/librtlsdr.so* /usr/lib/
+COPY --from=build /usr/lib/x86_64-linux-gnu/librtlsdr.so* /usr/lib/x86_64-linux-gnu/
 RUN ldconfig
 ENTRYPOINT ["rtl_tcp", "-a", "0.0.0.0"]
