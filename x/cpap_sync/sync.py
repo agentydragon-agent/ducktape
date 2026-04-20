@@ -1,68 +1,46 @@
 #!/usr/bin/env python3
 """Sync all files from an ez Share WiFi SD card to a local directory.
 
-Usage: sync.py [--base-url URL] [--output-dir DIR] [--root-dir DIR]
+Uses the card's XML API (/client?command=Getallfiles) instead of HTML parsing.
 
-The card exposes:
-  /dir?dir=A:\\PATH   — HTML directory listing
-  /download?file=... — file download (URL-encoded Windows path)
+Usage: sync.py [--base-url URL] [--output-dir DIR]
 """
 
 import argparse
 import sys
 import urllib.parse
 import urllib.request
-from html.parser import HTMLParser
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
-DEFAULT_BASE = "http://ezshare.card"
-DEFAULT_ROOT = "A:"
+DEFAULT_BASE = "http://192.168.4.1"
 DEFAULT_OUTPUT = "/data/cpap"
 
 
-class _LinkParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.links: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "a":
-            for k, v in attrs:
-                if k == "href" and v:
-                    self.links.append(v)
+def _get_xml(base: str, path: str) -> ET.Element:
+    with urllib.request.urlopen(f"{base}{path}") as r:
+        return ET.fromstring(r.read())
 
 
-def _listdir(base: str, path: str) -> tuple[list[str], list[str]]:
-    """Return (subdirs, download_urls) for a card directory path like 'A:\\DATALOG'."""
-    url = f"{base}/dir?dir={urllib.parse.quote(path, safe=':')}"
-    with urllib.request.urlopen(url) as r:
-        html = r.read().decode("gb2312", errors="replace")
-
-    p = _LinkParser()
-    p.feed(html)
-
-    dirs: list[str] = []
-    files: list[str] = []
-    for link in p.links:
-        if link.startswith("dir?dir="):
-            raw = urllib.parse.unquote(link[len("dir?dir=") :])
-            name = raw.split("\\")[-1]
-            if name not in (".", ".."):
-                dirs.append(raw)
-        elif "/download?file=" in link:
-            files.append(link if link.startswith("http") else f"{base}/{link}")
-    return dirs, files
+def _all_files(base: str) -> list[tuple[str, str]]:
+    """Return (dir_attr, name) for every file on the card via Getallfiles XML API."""
+    root = _get_xml(base, "/client?command=Getallfiles&fileType=0&ctime=0")
+    return [(f.get("dir", ""), f.get("name", "")) for f in root.findall("file")]
 
 
-def _local_path(output_dir: Path, download_url: str) -> Path:
-    """Map a download URL to a local path under output_dir.
+def _local_path(output_dir: Path, dir_attr: str, name: str) -> Path:
+    """Map a card FileEntry (dir, name) to a local path under output_dir.
 
-    The card returns file params like "DATALOG\\\\20251004\\\\202510~1.EDF".
+    dir_attr is a Windows path like "A:\\DATALOG\\20260418" or "A:" for root.
     """
-    qs = urllib.parse.urlparse(download_url).query
-    file_param = urllib.parse.parse_qs(qs).get("file", [""])[0]
-    rel = file_param.replace("\\", "/").lstrip("/")
-    return output_dir / rel
+    rel = dir_attr.removeprefix("A:\\").removeprefix("A:").replace("\\", "/")
+    return output_dir / rel / name if rel else output_dir / name
+
+
+def _download_url(base: str, dir_attr: str, name: str) -> str:
+    rel = dir_attr.removeprefix("A:\\").removeprefix("A:")
+    file_param = f"{rel}\\{name}" if rel else name
+    return f"{base}/download?file={urllib.parse.quote(file_param, safe='')}"
 
 
 def _download(url: str, dest: Path) -> None:
@@ -74,37 +52,28 @@ def _download(url: str, dest: Path) -> None:
     tmp.rename(dest)
 
 
-def sync(base: str, root: str, output_dir: Path) -> None:
-    queue = [root]
-    visited: set[str] = set()
-    while queue:
-        path = queue.pop()
-        if path in visited:
+def sync(base: str, output_dir: Path) -> None:
+    for dir_attr, name in _all_files(base):
+        dest = _local_path(output_dir, dir_attr, name)
+        if dest.exists():
+            print(f"skip  {dest}")
             continue
-        visited.add(path)
-        dirs, files = _listdir(base, path)
-        queue.extend(dirs)
-        for url in files:
-            dest = _local_path(output_dir, url)
-            if dest.exists():
-                print(f"skip  {dest}")
-                continue
-            print(f"get   {dest}", flush=True)
-            _download(url, dest)
-            print(f"done  {dest} ({dest.stat().st_size} bytes)", flush=True)
+        url = _download_url(base, dir_attr, name)
+        print(f"get   {dest}", flush=True)
+        _download(url, dest)
+        print(f"done  {dest} ({dest.stat().st_size} bytes)", flush=True)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--base-url", default=DEFAULT_BASE)
     ap.add_argument("--output-dir", default=DEFAULT_OUTPUT)
-    ap.add_argument("--root-dir", default=DEFAULT_ROOT)
     args = ap.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Syncing {args.root_dir} -> {output_dir}", flush=True)
-    sync(args.base_url, args.root_dir, output_dir)
+    print(f"Syncing card -> {output_dir}", flush=True)
+    sync(args.base_url, output_dir)
     print("Sync complete.", flush=True)
 
 
