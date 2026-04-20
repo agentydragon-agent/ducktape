@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sync all files from an ez Share WiFi SD card to a local directory.
 
-Uses the card's XML API (/client?command=Getallfiles) instead of HTML parsing.
+Uses the card's XML API (/client?command=GETFILELIST) to walk the directory tree.
 
 Usage: sync.py [--base-url URL] [--output-dir DIR]
 """
@@ -17,30 +17,39 @@ DEFAULT_BASE = "http://192.168.4.1"
 DEFAULT_OUTPUT = "/data/cpap"
 
 
-def _get_xml(base: str, path: str) -> ET.Element:
-    with urllib.request.urlopen(f"{base}{path}") as r:
-        return ET.fromstring(r.read())
+def _listdir(url: str) -> tuple[list[str], list[str]]:
+    """Fetch a GETFILELIST response and return (dir_urls, file_download_urls).
 
-
-def _all_files(base: str) -> list[tuple[str, str]]:
-    """Return (dir_attr, name) for every file on the card via Getallfiles XML API."""
-    root = _get_xml(base, "/client?command=Getallfiles&fileType=0&ctime=0")
-    return [(f.get("dir", ""), f.get("name", "")) for f in root.findall("file")]
-
-
-def _local_path(output_dir: Path, dir_attr: str, name: str) -> Path:
-    """Map a card FileEntry (dir, name) to a local path under output_dir.
-
-    dir_attr is a Windows path like "A:\\DATALOG\\20260418" or "A:" for root.
+    type=3 entries are directories; their imgURL is the recursive GETFILELIST URL.
+    type=4 entries are files; their imgURL is the download URL (8.3 short filename).
+    Entries named '.' and '..' are skipped.
     """
-    rel = dir_attr.removeprefix("A:\\").removeprefix("A:").replace("\\", "/")
-    return output_dir / rel / name if rel else output_dir / name
+    with urllib.request.urlopen(url) as r:
+        data = r.read().replace(b'encoding="gb2312"', b"")
+    root = ET.fromstring(data)
+    dirs: list[str] = []
+    files: list[str] = []
+    for f in root.findall(".//file"):
+        name = f.findtext("name") or ""
+        img_url = f.findtext("imgURL") or ""
+        if f.get("type") == "3":
+            if name not in (".", ".."):
+                dirs.append(img_url)
+        elif f.get("type") == "4":
+            files.append(img_url)
+    return dirs, files
 
 
-def _download_url(base: str, dir_attr: str, name: str) -> str:
-    rel = dir_attr.removeprefix("A:\\").removeprefix("A:")
-    file_param = f"{rel}\\{name}" if rel else name
-    return f"{base}/download?file={urllib.parse.quote(file_param, safe='')}"
+def _local_path(output_dir: Path, download_url: str) -> Path:
+    """Map a download URL to a local path, preserving the card's directory structure.
+
+    Download URLs look like: /download?file=DATALOG%5C20260418%5C202604~1.EDF
+    Uses 8.3 short filenames (matching what's already on the PVC from initial sync).
+    """
+    qs = urllib.parse.urlparse(download_url).query
+    file_param = urllib.parse.parse_qs(qs).get("file", [""])[0]
+    rel = file_param.replace("\\", "/").lstrip("/")
+    return output_dir / rel
 
 
 def _download(url: str, dest: Path) -> None:
@@ -53,15 +62,23 @@ def _download(url: str, dest: Path) -> None:
 
 
 def sync(base: str, output_dir: Path) -> None:
-    for dir_attr, name in _all_files(base):
-        dest = _local_path(output_dir, dir_attr, name)
-        if dest.exists():
-            print(f"skip  {dest}")
+    queue = [f"{base}/client?command=GETFILELIST&dir=A%3A"]
+    visited: set[str] = set()
+    while queue:
+        url = queue.pop()
+        if url in visited:
             continue
-        url = _download_url(base, dir_attr, name)
-        print(f"get   {dest}", flush=True)
-        _download(url, dest)
-        print(f"done  {dest} ({dest.stat().st_size} bytes)", flush=True)
+        visited.add(url)
+        dirs, files = _listdir(url)
+        queue.extend(dirs)
+        for file_url in files:
+            dest = _local_path(output_dir, file_url)
+            if dest.exists():
+                print(f"skip  {dest}")
+                continue
+            print(f"get   {dest}", flush=True)
+            _download(file_url, dest)
+            print(f"done  {dest} ({dest.stat().st_size} bytes)", flush=True)
 
 
 def main() -> None:
