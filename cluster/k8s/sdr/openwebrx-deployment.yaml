@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openwebrx
+  namespace: sdr
+  annotations:
+    description: "OpenWebRX+ SDR receiver web UI — waterfall, demodulation, digital modes"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openwebrx
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openwebrx
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: openwebrx
+          image: slechev/openwebrxplus:latest
+          ports:
+            - containerPort: 8073
+              name: http
+          volumeMounts:
+            - name: settings
+              mountPath: /etc/openwebrx/openwebrx.conf.d/settings.py
+              subPath: settings.py
+            - name: data
+              mountPath: /var/lib/openwebrx
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: settings
+          configMap:
+            name: openwebrx-settings
+        - name: data
+          persistentVolumeClaim:
+            claimName: openwebrx-data

@@ -85,6 +85,10 @@ in
   # MT7921 USB WiFi stick firmware (for CPAP ez Share sync)
   hardware.firmware = [ pkgs.linux-firmware ];
 
+  # RTL-SDR Blog V4 — blacklist dvb_usb_rtl28xxu kernel module and install
+  # udev rules for non-root USB access to the RTL2838 dongle.
+  hardware.rtl-sdr.enable = true;
+
   # CPAP ez Share WiFi network — NM connection rendered from SOPS secret.
   # never-default=true keeps wyrm2's default route on ens18.
   # TODO: Consider cleaner secret integration — sops NM secret agent, or

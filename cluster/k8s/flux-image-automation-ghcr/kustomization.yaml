@@ -36,3 +36,5 @@ resources:
   # the well-known 404 fallback (see third_party/kubernetes-mcp-server-pin.txt).
   - kubernetes-mcp-server-image-repository.yaml
   - kubernetes-mcp-server-image-policy.yaml
+  - rtl-tcp-image-repository.yaml
+  - rtl-tcp-image-policy.yaml

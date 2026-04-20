@@ -1,0 +1,19 @@
+# Deb packages for the rtl-tcp container image.
+# RTL-SDR tools on debian:bookworm-slim for IQ streaming via rtl_tcp.
+#
+# Regenerate the lock file after any change:
+#   bazel run @bookworm_rtl_tcp//:lock
+version: 1
+
+sources:
+  - channel: bookworm main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: bookworm-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  - "rtl-sdr"
+  - "libusb-1.0-0"

@@ -248,3 +248,6 @@ resources:
 
   # --- cpap-sync ---
   - cpap-sync/flux-kustomization.yaml
+
+  # --- sdr ---
+  - sdr/flux-kustomization.yaml

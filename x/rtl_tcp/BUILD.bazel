@@ -1,0 +1,21 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = [
+        "/usr/bin/rtl_tcp",
+        "-a",
+        "0.0.0.0",
+    ],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        "@bookworm_rtl_tcp//:flat",
+    ],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["rtl-tcp:latest"],
+)

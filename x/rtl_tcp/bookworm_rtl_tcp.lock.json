@@ -1,0 +1,134 @@
+{
+  "packages": [
+    {
+      "arch": "amd64",
+      "dependencies": [
+        {
+          "key": "libc6_2.36-9-p-deb12u13_amd64",
+          "name": "libc6",
+          "version": "2.36-9+deb12u13"
+        },
+        {
+          "key": "libgcc-s1_12.2.0-14-p-deb12u1_amd64",
+          "name": "libgcc-s1",
+          "version": "12.2.0-14+deb12u1"
+        },
+        {
+          "key": "gcc-12-base_12.2.0-14-p-deb12u1_amd64",
+          "name": "gcc-12-base",
+          "version": "12.2.0-14+deb12u1"
+        },
+        {
+          "key": "librtlsdr0_0.6.0-4_amd64",
+          "name": "librtlsdr0",
+          "version": "0.6.0-4"
+        },
+        {
+          "key": "libusb-1.0-0_2-1.0.26-1_amd64",
+          "name": "libusb-1.0-0",
+          "version": "2:1.0.26-1"
+        },
+        {
+          "key": "libudev1_252.39-1_deb12u1_amd64",
+          "name": "libudev1",
+          "version": "252.39-1~deb12u1"
+        }
+      ],
+      "key": "rtl-sdr_0.6.0-4_amd64",
+      "name": "rtl-sdr",
+      "sha256": "f8137efb7267042dd6dd9b748840c39f8a57cb174f85a552a4e0f78914f133da",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/r/rtl-sdr/rtl-sdr_0.6.0-4_amd64.deb"
+      ],
+      "version": "0.6.0-4"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libc6_2.36-9-p-deb12u13_amd64",
+      "name": "libc6",
+      "sha256": "3d8072c73b017e907bbf44b7db870687888a991961d74f1ecbba6b9458f32a2c",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/glibc/libc6_2.36-9+deb12u13_amd64.deb"
+      ],
+      "version": "2.36-9+deb12u13"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libgcc-s1_12.2.0-14-p-deb12u1_amd64",
+      "name": "libgcc-s1",
+      "sha256": "3016e62cb4b7cd8038822870601f5ed131befe942774d0f745622cc77d8a88f7",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/gcc-12/libgcc-s1_12.2.0-14+deb12u1_amd64.deb"
+      ],
+      "version": "12.2.0-14+deb12u1"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "gcc-12-base_12.2.0-14-p-deb12u1_amd64",
+      "name": "gcc-12-base",
+      "sha256": "1896a2aacf4ad681ff5eacc24a5b0ca4d5d9c9b9c9e4b6de5197bc1e116ea619",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/gcc-12/gcc-12-base_12.2.0-14+deb12u1_amd64.deb"
+      ],
+      "version": "12.2.0-14+deb12u1"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "librtlsdr0_0.6.0-4_amd64",
+      "name": "librtlsdr0",
+      "sha256": "31d2dad8ddac98eeee3376ab5e08fec47604a598f9a4820e8e6cd7f6d57fbd1b",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/r/rtl-sdr/librtlsdr0_0.6.0-4_amd64.deb"
+      ],
+      "version": "0.6.0-4"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [
+        {
+          "key": "libudev1_252.39-1_deb12u1_amd64",
+          "name": "libudev1",
+          "version": "252.39-1~deb12u1"
+        },
+        {
+          "key": "libc6_2.36-9-p-deb12u13_amd64",
+          "name": "libc6",
+          "version": "2.36-9+deb12u13"
+        },
+        {
+          "key": "libgcc-s1_12.2.0-14-p-deb12u1_amd64",
+          "name": "libgcc-s1",
+          "version": "12.2.0-14+deb12u1"
+        },
+        {
+          "key": "gcc-12-base_12.2.0-14-p-deb12u1_amd64",
+          "name": "gcc-12-base",
+          "version": "12.2.0-14+deb12u1"
+        }
+      ],
+      "key": "libusb-1.0-0_2-1.0.26-1_amd64",
+      "name": "libusb-1.0-0",
+      "sha256": "0a8a6c4a7d944538f2820cbde2a313f2fe6f94c21ffece9e6f372fc2ab8072e1",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/libu/libusb-1.0/libusb-1.0-0_1.0.26-1_amd64.deb"
+      ],
+      "version": "2:1.0.26-1"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libudev1_252.39-1_deb12u1_amd64",
+      "name": "libudev1",
+      "sha256": "849127705aaf4408f569870843ab26cb531c1361d5f6d7851f5a5ecbed54a0c7",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/s/systemd/libudev1_252.39-1~deb12u1_amd64.deb"
+      ],
+      "version": "252.39-1~deb12u1"
+    }
+  ],
+  "version": 1
+}

@@ -74,6 +74,11 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     host = "0e8d:7961"
     usb3 = true
   }
+  # RTL-SDR Blog V4 (Realtek RTL2838) — for SDR streaming via rtl_tcp.
+  usb {
+    host = "0bda:2838"
+    usb3 = true
+  }
 
   hotplug = "network,disk,cpu,usb"  # note: memory hotplug requires NUMA
 
