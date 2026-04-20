@@ -20,9 +20,12 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from opentelemetry import trace
+
 from util.bazel import runfiles
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 _CRANE_RLOCATION = "crane/crane"
 
@@ -167,22 +170,25 @@ def push_to_daemon(oci_layout: Path, tag: str) -> None:
     # dereferencing, tar records them as symlink entries with absolute target
     # paths. Docker extracts the tarball and tries to follow those symlinks,
     # which fail when the daemon runs outside Bazel's sandbox.
-    with tarfile.open(fileobj=buf, mode="w", dereference=True) as tar:
-        # Add manifest.json
-        manifest_data = json.dumps(docker_manifest).encode()
-        info = tarfile.TarInfo(name="manifest.json")
-        info.size = len(manifest_data)
-        tar.addfile(info, io.BytesIO(manifest_data))
-        # Add config blob
-        tar.add(oci_layout / config_blob_rel, arcname=config_blob_rel)
-        # Add layer blobs
-        for layer_rel in layer_rels:
-            tar.add(oci_layout / layer_rel, arcname=layer_rel)
+    with tracer.start_as_current_span("oci_build_tarball") as span:
+        with tarfile.open(fileobj=buf, mode="w", dereference=True) as tar:
+            # Add manifest.json
+            manifest_data = json.dumps(docker_manifest).encode()
+            info = tarfile.TarInfo(name="manifest.json")
+            info.size = len(manifest_data)
+            tar.addfile(info, io.BytesIO(manifest_data))
+            # Add config blob
+            tar.add(oci_layout / config_blob_rel, arcname=config_blob_rel)
+            # Add layer blobs
+            for layer_rel in layer_rels:
+                tar.add(oci_layout / layer_rel, arcname=layer_rel)
+        span.set_attribute("tarball_bytes", buf.tell())
 
     docker = shutil.which("docker") or shutil.which("podman")
     if not docker:
         raise RuntimeError("Neither docker nor podman CLI found")
     buf.seek(0)
-    result = subprocess.run([docker, "load"], input=buf.read(), check=False, capture_output=True)
+    with tracer.start_as_current_span("docker_load"):
+        result = subprocess.run([docker, "load"], input=buf.read(), check=False, capture_output=True)
     if result.returncode != 0:
         raise RuntimeError(f"docker load failed: {result.stderr.decode()}")

@@ -109,6 +109,7 @@ py_library(
         "//third_party/containers:rlocations",
         "//util:oci",
         "@pypi//httpx",
+        "@pypi//opentelemetry_api",
         "@pypi//tenacity",
         "@pypi//testcontainers",
     ],
@@ -125,6 +126,7 @@ py_library(
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/testing:container_logs",
+        "@pypi//opentelemetry_api",
         "@pypi//pytest",
     ],
 )
@@ -135,6 +137,8 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":grocy_fixtures",
+        "//util/testing:otel_tracing",
+        "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
     ],
@@ -257,6 +261,7 @@ py_test(
         "//:conftest",
         "@pypi//fastmcp",
         "@pypi//httpx",
+        "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

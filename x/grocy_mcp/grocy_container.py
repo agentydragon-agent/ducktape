@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
+from opentelemetry import trace
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core.container import DockerContainer
 
@@ -18,6 +19,7 @@ from util.oci import load_oci_image
 from x.grocy_mcp.mcp_types import ServerSettings
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 # Required on gvisor sandboxes where IPv4 forwarding is off, so Docker
 # port publishing is a no-op and `testcontainers.get_exposed_port(80)`
@@ -102,8 +104,11 @@ def _probe_grocy_ready(base_url: str) -> None:
     table: users"). Raises `_NotReadyError` — meant to be retried — when Grocy
     is reachable but the API isn't serving JSON yet.
     """
-    httpx.get(f"{base_url}/", timeout=10)
-    r = httpx.get(f"{base_url}/api/objects/locations", timeout=10)
+    with tracer.start_as_current_span("GET /"):
+        httpx.get(f"{base_url}/", timeout=10)
+    with tracer.start_as_current_span("GET /api/objects/locations") as span:
+        r = httpx.get(f"{base_url}/api/objects/locations", timeout=10)
+        span.set_attribute("http.status_code", r.status_code)
     if r.status_code != 200:
         raise _NotReadyError(f"HTTP {r.status_code}: {r.text[:120]!r}")
     try:
@@ -122,6 +127,7 @@ def wait_for_grocy_ready(container: DockerContainer, *, timeout_s: float = 60) -
     JSON decode error, connection refused) rather than a generic timeout.
     """
     base_url = grocy_url(container)
+    attempt_num = 0
     for attempt in Retrying(
         stop=stop_after_delay(timeout_s),
         wait=wait_fixed(1),
@@ -129,7 +135,14 @@ def wait_for_grocy_ready(container: DockerContainer, *, timeout_s: float = 60) -
         reraise=True,
     ):
         with attempt:
-            _probe_grocy_ready(base_url)
+            attempt_num += 1
+            with tracer.start_as_current_span("grocy_readiness_probe") as span:
+                span.set_attribute("attempt", attempt_num)
+                try:
+                    _probe_grocy_ready(base_url)
+                except Exception as e:
+                    span.set_attribute("error", type(e).__name__)
+                    raise
     logger.info("Grocy ready at %s", base_url)
 
 

@@ -82,6 +82,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//opentelemetry_api",
     ],
 )
 

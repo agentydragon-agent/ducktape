@@ -11,6 +11,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 
 import pytest
+from opentelemetry import trace
 
 from third_party.containers.rlocations import GROCY
 from util.oci import load_oci_image
@@ -22,6 +23,8 @@ from x.grocy_mcp.grocy_container import (
     wait_for_grocy_ready,
 )
 
+tracer = trace.get_tracer(__name__)
+
 
 @contextmanager
 def run_logged_grocy_container() -> Generator[LoggedContainer]:
@@ -29,9 +32,14 @@ def run_logged_grocy_container() -> Generator[LoggedContainer]:
     with grocy_custom_init_dir() as init_dir:
         container = LoggedContainer(GROCY.tag, test_name="grocy")
         configure_grocy_container(container, init_dir=init_dir, data_dir=None)
-        with container:
-            wait_for_grocy_ready(container)
+        with tracer.start_as_current_span("grocy_container_start"):
+            container.__enter__()
+        try:
+            with tracer.start_as_current_span("wait_for_grocy_ready"):
+                wait_for_grocy_ready(container)
             yield container
+        finally:
+            container.__exit__(None, None, None)
 
 
 @pytest.fixture(scope="session")

@@ -3,6 +3,28 @@
 Starts a real Grocy container (LinuxServer image, auth disabled, demo mode),
 wires the MCP server to it, and exercises tool calls through the full MCP
 protocol via fastmcp.Client with FastMCPTransport.
+
+Timing profile (RBE, 2026-04-20, OTEL spans in undeclared outputs):
+
+  Session-scoped setup (runs once, charged to first test):
+    load_oci_image        14.7s  (tarball build 1.4s + docker load 13.3s for 82MB image)
+    container start        3.1s  (Docker create + s6-overlay init + SSL keygen)
+    wait_for_grocy_ready   3.5s  (3 probes: ReadError, HTTP 500, then 1.3s migration on GET /)
+
+  Per-test fixture overhead:
+    build_mcp             ~70ms  (FastMCP.from_openapi parses the Grocy spec)
+
+  Tests (wall clock, excluding setup):
+    test_all_tool_names    <1ms  (just set comparison after build_mcp)
+    test_system_info       108ms
+    test_referencedata     288ms
+    test_product_lifecycle 379ms
+    test_stock_operations  696ms  (heaviest: add/consume/set/transfer/edit)
+    test_shopping_list     577ms
+    test_volatile_queries  201ms
+    test_generic_crud      293ms
+    test_rejects_viewonly   94ms
+    test_accepts_viewonly  336ms
 """
 
 from __future__ import annotations
@@ -16,6 +38,7 @@ import pytest
 import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
+from opentelemetry import trace
 
 from x.grocy_mcp.grocy_container import make_settings
 from x.grocy_mcp.server import build_mcp
@@ -23,6 +46,7 @@ from x.grocy_mcp.test_helpers import RefData, create_refunwrap_result, unwrap_re
 from x.grocy_mcp.tool_metadata import TOOL_OVERRIDES
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 # Names of the custom batch tools registered by register_batch_tools.
 CUSTOM_TOOL_NAMES = {
@@ -76,7 +100,8 @@ async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
     """Function-scoped MCP client exercising the full MCP protocol in-process."""
     http_client = httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
     try:
-        mcp = build_mcp(make_settings(grocy_base_url), client=http_client)
+        with tracer.start_as_current_span("build_mcp"):
+            mcp = build_mcp(make_settings(grocy_base_url), client=http_client)
         async with Client(FastMCPTransport(mcp)) as client:
             yield client
     finally:
