@@ -13,4 +13,4 @@ trap cleanup EXIT
 nmcli connection up "$NM_CONNECTION"
 
 mkdir -p "$OUTPUT_DIR"
-python3 /sync.py --output-dir "$OUTPUT_DIR"
+python3 /sync.py --output-dir "$OUTPUT_DIR" --base-url http://192.168.4.1
