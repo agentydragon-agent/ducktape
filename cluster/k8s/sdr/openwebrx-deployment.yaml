@@ -21,7 +21,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       containers:
         - name: openwebrx
-          image: slechev/openwebrxplus:latest
+          image: slechev/openwebrxplus:1.2.111
           ports:
             - containerPort: 8073
               name: http

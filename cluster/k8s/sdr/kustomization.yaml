@@ -7,6 +7,7 @@ resources:
   - openwebrx-pvc.yaml
   - openwebrx-deployment.yaml
   - openwebrx-service.yaml
+  - networkpolicy.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
