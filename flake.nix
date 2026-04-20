@@ -278,7 +278,6 @@
       ];
       # Python claude-hook.
       devToolPackages = devToolsCommon ++ [ ducktapePkgs.claude-hooks ];
-      # Rust claude-hook (static binary, no Python runtime).
       devToolPackagesRust = devToolsCommon ++ [ ducktapePkgs.claude-hook-rs ];
     in
     {

@@ -135,19 +135,6 @@ impl AppState {
     }
 }
 
-// Non-REPL hook events: Claude Code delivers system_message only to the UI
-// notification callback on these, not into the model conversation. Flushing
-// mailbox here would waste the messages. Matches `_NON_REPL_HOOK_TYPES` in
-// `server.py`.
-fn is_repl_hook(hook: &AnyHookInput) -> bool {
-    !matches!(
-        hook,
-        AnyHookInput::SessionStart(_) | AnyHookInput::WorktreeCreate(_) | AnyHookInput::Unknown
-    )
-    // Python's list also includes SessionEnd/Setup/CwdChanged/etc., which we
-    // deserialize as Unknown (our enum only names the 4 we care about).
-}
-
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
@@ -331,7 +318,7 @@ async fn handle_hook(
     state.touch();
 
     let session_env_file = req.env.get("CLAUDE_ENV_FILE").map(PathBuf::from);
-    let session_id = hook_session_id(&req.hook);
+    let session_id = req.hook.session_id();
 
     let session = session_id
         .as_deref()
@@ -355,7 +342,7 @@ async fn handle_hook(
     };
 
     // Drain mailbox into output.system_message for REPL hooks.
-    if is_repl_hook(&req.hook) {
+    if req.hook.is_repl() {
         if let Some(s) = session {
             let mailbox = s.drain_messages();
             let bg = s.drain_bg_output();
@@ -370,16 +357,6 @@ async fn handle_hook(
     }
 
     Json(HookResponse { output })
-}
-
-fn hook_session_id(hook: &AnyHookInput) -> Option<String> {
-    match hook {
-        AnyHookInput::SessionStart(h) => Some(h.base.session_id.clone()),
-        AnyHookInput::PreToolUse(h) => Some(h.base.session_id.clone()),
-        AnyHookInput::PostToolUse(h) => Some(h.base.session_id.clone()),
-        AnyHookInput::WorktreeCreate(h) => Some(h.base.session_id.clone()),
-        AnyHookInput::Unknown => None,
-    }
 }
 
 fn resolve_binary_from_env(
