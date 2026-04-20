@@ -2,7 +2,7 @@
 # doesn't support the R828D tuner (fails with "PLL not locked" / i2c errors).
 FROM debian:bookworm-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake git pkg-config libusb-1.0-0-dev \
+    build-essential cmake git pkg-config libusb-1.0-0-dev ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 RUN git clone https://github.com/rtlsdrblog/rtl-sdr-blog.git /src \
     && cd /src && mkdir build && cd build \
