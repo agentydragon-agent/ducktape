@@ -400,6 +400,7 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_scoped" {
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    data.authentik_property_mapping_provider_scope.offline_access.id,
     authentik_property_mapping_provider_scope.kubectl_sandbox_fixed_groups.id,
   ]
 
