@@ -5,8 +5,7 @@ metadata:
   namespace: cpap-sync
   annotations:
     description: >-
-      Connects to the ez Share WiFi SD card in the ResMed CPAP and syncs all
-      EDF data files to the cpap-data PVC.
+      Connects to the ez Share WiFi SD card in the ResMed CPAP and syncs all EDF data files to the cpap-data PVC.
 spec:
   schedule: "0 10 * * *"
   successfulJobsHistoryLimit: 3
@@ -28,7 +27,7 @@ spec:
                 claimName: cpap-data
           containers:
             - name: sync
-              image: ghcr.io/agentydragon/cpap-sync:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:cpap-sync"}
+              image: ghcr.io/agentydragon/cpap-sync:devel-20260420011057-f92d305 # {"$imagepolicy": "flux-system:cpap-sync"}
               securityContext:
                 capabilities:
                   add: ["NET_ADMIN"]
