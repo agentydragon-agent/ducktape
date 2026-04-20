@@ -108,6 +108,7 @@ in
       [ipv4]
       method=auto
       never-default=true
+      dns-search=~ezshare.card
 
       [ipv6]
       method=ignore

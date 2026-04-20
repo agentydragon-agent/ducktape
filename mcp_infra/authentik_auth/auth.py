@@ -51,7 +51,7 @@ EXCHANGE_SCOPES = "openid email profile ak_proxy"
 # OAuth2Token.is_expired(leeway=N) subtracts this from expires_at.
 _EXPIRY_LEEWAY = 30
 
-DEFAULT_VALID_SCOPES = ["openid", "email", "profile"]
+DEFAULT_VALID_SCOPES = ["openid", "email", "profile", "offline_access"]
 
 
 # ── Config ────────────────────────────────────────────────────────────────
