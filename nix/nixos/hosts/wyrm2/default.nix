@@ -87,6 +87,9 @@ in
 
   # CPAP ez Share WiFi network — NM connection rendered from SOPS secret.
   # never-default=true keeps wyrm2's default route on ens18.
+  # TODO: Consider cleaner secret integration — sops NM secret agent, or
+  # materializing SOPS secrets into GNOME keyring so networking.networkmanager.ensureProfiles
+  # can be used without inlining the password into the rendered keyfile.
   sops.secrets.cpap_wifi_password = {
     sopsFile = ../../../../secrets/shared/cpap-ezshare.yaml;
     key = "wifi_password";
