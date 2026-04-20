@@ -51,6 +51,7 @@ from x.grocy_mcp.mcp_types import (
     EditProductItem,
     EditShoppingListField,
     EditStockEntryField,
+    EditStockEntryItem,
     FullLocation,
     FullProduct,
     FullProductGroup,
@@ -550,104 +551,83 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return list(await asyncio.gather(*[_one(eid) for eid in entry_ids]))
 
     @mcp.tool()
-    async def stock_entry_edit(
-        entry_id: Annotated[int, Field(description="Stock-entry ID (from `stock_entries_list`).")],
-        amount: Annotated[float | None, Field(description="New amount, in the entry's stock QU.")] = None,
-        best_before_date: Annotated[
-            date | None,
-            Field(
-                description=(
-                    "New best-before / expiration date in `YYYY-MM-DD` format. "
-                    "Omit to keep the current value. Use `2999-12-31` for never-expires."
-                )
-            ),
-        ] = None,
-        purchased_date: Annotated[date | None, Field(description="New purchase date in `YYYY-MM-DD` format.")] = None,
-        price: Annotated[float | None, Field(description="New per-unit price.")] = None,
-        location: Annotated[int | str | None, Field(description="New storage location. Name or ID.")] = None,
-        open: Annotated[bool | None, Field(description="Mark the entry as opened or unopened.")] = None,
-        note: Annotated[str | None, Field(description="New free-text note.")] = None,
-        clear_fields: Annotated[
-            set[EditStockEntryField] | None,
-            Field(
-                description=(
-                    "Fields to explicitly null out. Only the values in `EditStockEntryField` are nullable in "
-                    "Grocy's schema; everything else is NOT NULL and must be assigned a value if changed."
-                )
-            ),
-        ] = None,
-    ) -> StockEntryOk | StockEntryError:
-        """Partial update of a stock entry — only the fields you pass change.
+    async def stock_entry_edit(items: list[EditStockEntryItem]) -> list[StockEntryOk | StockEntryError]:
+        """Partial update of one or more stock entries. Max 20 items per call.
 
-        The server reads the current entry, merges your changes, and
-        writes back, so you don't have to copy-paste unchanged fields.
-        Returns the post-edit entry plus a `changes` diff. To remove a
-        nullable field's value (vs setting it to a new value), name it
-        in `clear_fields`. See also `stock_entries_list` to discover IDs.
+        For each item, the server reads the current entry, merges your
+        changes, and writes back — you don't have to copy-paste unchanged
+        fields. Returns one result per input item, in order. Each success
+        carries the post-edit entry plus a `changes` diff. To remove a
+        nullable field's value (vs setting it to a new value), name it in
+        `clear_fields`. See also `stock_entries_list` to discover IDs.
         """
+        _check_batch_size(items, "items")
 
-        try:
-            # Read current entry
-            entry_r = await client.get(f"/stock/entry/{entry_id}")
-            entry_r.raise_for_status()
-            current: dict[str, Any] = entry_r.json()
+        async def _edit_one(item: EditStockEntryItem) -> StockEntryOk | StockEntryError:
+            try:
+                # Read current entry
+                entry_r = await client.get(f"/stock/entry/{item.entry_id}")
+                entry_r.raise_for_status()
+                current: dict[str, Any] = entry_r.json()
 
-            # Build merged body
-            body: dict[str, Any] = {
-                "amount": current.get("amount"),
-                "best_before_date": current.get("best_before_date"),
-                "purchased_date": current.get("purchased_date"),
-                "price": current.get("price"),
-                "location_id": current.get("location_id"),
-                "open": current.get("open") in (True, 1, "1"),
-                "note": current.get("note"),
-            }
+                # Build merged body
+                body: dict[str, Any] = {
+                    "amount": current.get("amount"),
+                    "best_before_date": current.get("best_before_date"),
+                    "purchased_date": current.get("purchased_date"),
+                    "price": current.get("price"),
+                    "location_id": current.get("location_id"),
+                    "open": current.get("open") in (True, 1, "1"),
+                    "note": current.get("note"),
+                }
 
-            # Apply explicit changes
-            if amount is not None:
-                body["amount"] = amount
-            if best_before_date is not None:
-                body["best_before_date"] = _date_to_str(best_before_date)
-            if purchased_date is not None:
-                body["purchased_date"] = _date_to_str(purchased_date)
-            if price is not None:
-                body["price"] = price
-            if location is not None:
-                resolved_loc = await resolver.resolve(EntityType.LOCATION, location)
-                body["location_id"] = resolved_loc.id
-            if open is not None:
-                body["open"] = open
-            if note is not None:
-                body["note"] = note
+                # Apply explicit changes
+                if item.amount is not None:
+                    body["amount"] = item.amount
+                if item.best_before_date is not None:
+                    body["best_before_date"] = _date_to_str(item.best_before_date)
+                if item.purchased_date is not None:
+                    body["purchased_date"] = _date_to_str(item.purchased_date)
+                if item.price is not None:
+                    body["price"] = item.price
+                if item.location is not None:
+                    resolved_loc = await resolver.resolve(EntityType.LOCATION, item.location)
+                    body["location_id"] = resolved_loc.id
+                if item.open is not None:
+                    body["open"] = item.open
+                if item.note is not None:
+                    body["note"] = item.note
 
-            for field_name in clear_fields or ():
-                if field_name == EditStockEntryField.PRICE:
-                    body["price"] = None
-                elif field_name == EditStockEntryField.PURCHASED_DATE:
-                    body["purchased_date"] = None
-                elif field_name == EditStockEntryField.NOTE:
-                    body["note"] = None
+                for field_name in item.clear_fields or ():
+                    if field_name == EditStockEntryField.PRICE:
+                        body["price"] = None
+                    elif field_name == EditStockEntryField.PURCHASED_DATE:
+                        body["purchased_date"] = None
+                    elif field_name == EditStockEntryField.NOTE:
+                        body["note"] = None
 
-            # Compute diff before writing
-            diff_fields = {"amount", "best_before_date", "purchased_date", "price", "location_id", "open", "note"}
-            changes: dict[str, dict[str, Any]] = {}
-            for field in diff_fields:
-                old_val = current.get(field)
-                new_val = body.get(field)
-                if old_val != new_val:
-                    changes[field] = {"old": old_val, "new": new_val}
+                # Compute diff before writing
+                diff_fields = {"amount", "best_before_date", "purchased_date", "price", "location_id", "open", "note"}
+                changes: dict[str, dict[str, Any]] = {}
+                for field in diff_fields:
+                    old_val = current.get(field)
+                    new_val = body.get(field)
+                    if old_val != new_val:
+                        changes[field] = {"old": old_val, "new": new_val}
 
-            # Write back
-            r = await client.put(f"/stock/entry/{entry_id}", json=body)
-            r.raise_for_status()
+                # Write back
+                r = await client.put(f"/stock/entry/{item.entry_id}", json=body)
+                r.raise_for_status()
 
-            # Re-fetch to return updated state
-            updated_r = await client.get(f"/stock/entry/{entry_id}")
-            updated_r.raise_for_status()
-            detail = await _enrich_stock_entry(updated_r.json())
-            return StockEntryOk(entry=detail, changes=changes or None)
-        except Exception as e:
-            return StockEntryError(entry_id=entry_id, error=_format_exc(e))
+                # Re-fetch to return updated state
+                updated_r = await client.get(f"/stock/entry/{item.entry_id}")
+                updated_r.raise_for_status()
+                detail = await _enrich_stock_entry(updated_r.json())
+                return StockEntryOk(entry=detail, changes=changes or None)
+            except Exception as e:
+                return StockEntryError(entry_id=item.entry_id, error=_format_exc(e))
+
+        return list(await asyncio.gather(*[_edit_one(item) for item in items]))
 
     # ── Reference data ───────────────────────────────────────────────────
 

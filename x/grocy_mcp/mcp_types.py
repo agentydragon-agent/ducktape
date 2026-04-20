@@ -247,6 +247,32 @@ class EditStockEntryField(StrEnum):
     NOTE = "note"
 
 
+class EditStockEntryItem(BaseModel):
+    """One stock-entry edit for ``stock_entry_edit``."""
+
+    entry_id: int = Field(description="Stock-entry ID (from `stock_entries_list`).")
+    amount: float | None = Field(default=None, description="New amount, in the entry's stock QU.")
+    best_before_date: date | None = Field(
+        default=None,
+        description=(
+            "New best-before / expiration date in `YYYY-MM-DD` format. "
+            "Omit to keep the current value. Use `2999-12-31` for never-expires."
+        ),
+    )
+    purchased_date: date | None = Field(default=None, description="New purchase date in `YYYY-MM-DD` format.")
+    price: float | None = Field(default=None, description="New per-unit price.")
+    location: int | str | None = Field(default=None, description="New storage location. Name or ID.")
+    open: bool | None = Field(default=None, description="Mark the entry as opened or unopened.")
+    note: str | None = Field(default=None, description="New free-text note.")
+    clear_fields: set[EditStockEntryField] | None = Field(
+        default=None,
+        description=(
+            "Fields to explicitly null out. Only the values in `EditStockEntryField` are nullable in "
+            "Grocy's schema; everything else is NOT NULL and must be assigned a value if changed."
+        ),
+    )
+
+
 # ── Reference data create types ────────────────────────────────────────────
 
 

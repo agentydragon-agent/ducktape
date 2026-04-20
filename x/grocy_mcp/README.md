@@ -66,15 +66,17 @@ These replace the equivalent single-shot OpenAPI routes to enable efficient
 multi-item operations via `asyncio.gather`. Each failed item is collected with
 `ok=False`; failures do not abort the others.
 
-| Tool              | Replaces                | Description                                             |
-| ----------------- | ----------------------- | ------------------------------------------------------- |
-| `entities_create` | `create_entity`         | Create N entities of any type in one call               |
-| `entities_list`   | `list_entities`         | Fetch N entity types concurrently                       |
-| `entities_get`    | `get_entity`            | Fetch N objects of one type by ID                       |
-| `stock_get`       | `list_stock`            | Stock list with optional QU + location enrichment       |
-| `stock_add`       | `add_product_stock`     | Add stock for N products; returns `new_amount` per item |
-| `stock_consume`   | `consume_product_stock` | Consume stock for N products                            |
-| `stock_set`       | `inventory_product`     | Set absolute amounts for N products                     |
+| Tool                 | Replaces                | Description                                             |
+| -------------------- | ----------------------- | ------------------------------------------------------- |
+| `entities_create`    | `create_entity`         | Create N entities of any type in one call               |
+| `entities_list`      | `list_entities`         | Fetch N entity types concurrently                       |
+| `entities_get`       | `get_entity`            | Fetch N objects of one type by ID                       |
+| `stock_get`          | `list_stock`            | Stock list with optional QU + location enrichment       |
+| `stock_add`          | `add_product_stock`     | Add stock for N products; returns `new_amount` per item |
+| `stock_consume`      | `consume_product_stock` | Consume stock for N products                            |
+| `stock_set`          | `inventory_product`     | Set absolute amounts for N products                     |
+| `stock_entries_list` | `GET /stock/entry/{id}` | Fetch entries by product or ID, with enrichment         |
+| `stock_entry_edit`   | `PUT /stock/entry/{id}` | Partial-update N stock entries concurrently             |
 
 Stock operations return `transaction_id` per item for per-operation undo via the
 `transaction_undo` tool. There is no cross-item atomicity — Grocy has no
@@ -85,9 +87,8 @@ client-initiated batch transaction API.
 All remaining enabled routes from `/objects/*` and `/stock/*`:
 `entity_update`, `entity_delete`, `get_product_stock`, `transfer_product_stock`,
 `open_product_stock`, `list_product_stock_entries`, `list_product_locations`,
-`products_merge`, `list_location_stock`, `get_stock_entry`, `stock_entry_edit`,
-`list_volatile_stock`, `shopping_list_*`, and others. See <tool_metadata.py> for
-the full list.
+`products_merge`, `list_location_stock`, `list_volatile_stock`,
+`shopping_list_*`, and others. See <tool_metadata.py> for the full list.
 
 Explicitly excluded: `/chores`, `/batteries`, `/recipes`, `/tasks`, `/calendar`,
 `/print`, `/files`, `/users`, `/user`, `/userfields`, and most `/system/*` routes

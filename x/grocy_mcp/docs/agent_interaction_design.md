@@ -196,7 +196,7 @@ Notes:
 ### Scenario 5: "Change the price of that rice entry to 9.99"
 
 ```
-Agent: stock_entry_edit(entry_id: 42, price: 9.99)
+Agent: stock_entry_edit(items: [{entry_id: 42, price: 9.99}])
   Response:
     {kind: "ok", entry_id: 42, product_name: "Rice",
      qu_name: "Kilogram",

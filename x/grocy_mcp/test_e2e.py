@@ -279,8 +279,12 @@ async def test_stock_operations(mcp_client: Client, refunwrap_result: RefData) -
     assert detail["product_name"] == product
     entry_id = detail["entry_id"]
 
-    # Edit stock entry — change price, verify diff
-    edit_result = unwrap_result(await mcp_client.call_tool("stock_entry_edit", {"entry_id": entry_id, "price": 9.99}))
+    # Edit stock entry — change price, verify diff (batch API)
+    edit_results = unwrap_result(
+        await mcp_client.call_tool("stock_entry_edit", {"items": [{"entry_id": entry_id, "price": 9.99}]})
+    )
+    assert len(edit_results) == 1
+    edit_result = edit_results[0]
     assert edit_result["kind"] == "ok"
     assert float(edit_result["entry"]["price"]) == 9.99
     assert edit_result.get("changes") is not None
