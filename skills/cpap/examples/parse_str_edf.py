@@ -1,4 +1,4 @@
-"""Parse a ResMed STR.EDF daily summary file and print a nightly report.
+"""Parse a ResMed STR.EDF daily summary file.
 
 Stdlib-only — no external dependencies. Reads the EDF binary format directly.
 
@@ -7,6 +7,7 @@ Usage:
 """
 
 import argparse
+import json
 import struct
 import sys
 from datetime import datetime, timedelta
@@ -66,7 +67,7 @@ def read_str_edf(path: Path) -> tuple[list[str], list[dict[str, float]]]:
 
 
 def report(records: list[dict], days: int) -> None:
-    """Print a summary table for the last N days with usage."""
+    """Print a JSON summary for the last N days with usage."""
     used = [(EPOCH + timedelta(days=int(r["Date"])), r) for r in records if r.get("Duration", 0) > 0]
     used.sort(key=lambda x: x[0])
     last_n = used[-days:]
@@ -75,52 +76,54 @@ def report(records: list[dict], days: int) -> None:
         print("No usage data found.")
         return
 
-    print(
-        f"{'Date':12s} {'Hours':>6s} {'AHI':>6s}  {'HI':>4s} {'OAI':>4s} {'CAI':>4s}"
-        f"  {'P50':>5s} {'P95':>5s}  {'Lk50':>5s} {'Lk95':>5s}  {'RR':>5s}  {'TV':>5s}"
-    )
-    print("-" * 90)
-
-    total_hours = 0.0
-    ahis = []
+    nights = []
     for date, rec in last_n:
-        hours = rec["Duration"] / 60
-        total_hours += hours
-        ahi = rec["AHI"]
-        ahis.append(ahi)
-        lk50 = rec.get("Leak.50", 0) * 60
-        lk95 = rec.get("Leak.95", 0) * 60
-
-        dur_flag = " " if hours >= 4 else "!"
-        print(
-            f"{dur_flag}{date.strftime('%Y-%m-%d'):11s} {hours:5.1f}h {ahi:5.1f}"
-            f"  {rec.get('HI', 0):4.1f} {rec.get('OAI', 0):4.1f} {rec.get('CAI', 0):4.1f}"
-            f"  {rec.get('MaskPress.50', 0):5.1f} {rec.get('MaskPress.95', 0):5.1f}"
-            f"  {lk50:5.1f} {lk95:5.1f}"
-            f"  {rec.get('RespRate.50', 0):5.1f}  {rec.get('TidVol.50', 0):4.2f}L"
+        nights.append(
+            {
+                "date": date.strftime("%Y-%m-%d"),
+                "hours": round(rec["Duration"] / 60, 1),
+                "ahi": round(rec["AHI"], 1),
+                "hi": round(rec.get("HI", 0), 1),
+                "oai": round(rec.get("OAI", 0), 1),
+                "cai": round(rec.get("CAI", 0), 1),
+                "pressure_50": round(rec.get("MaskPress.50", 0), 1),
+                "pressure_95": round(rec.get("MaskPress.95", 0), 1),
+                "leak_50_lpm": round(rec.get("Leak.50", 0) * 60, 1),
+                "leak_95_lpm": round(rec.get("Leak.95", 0) * 60, 1),
+                "resp_rate": round(rec.get("RespRate.50", 0), 1),
+                "tidal_volume": round(rec.get("TidVol.50", 0), 2),
+            }
         )
 
-    print("-" * 90)
-    avg_ahi = sum(ahis) / len(ahis)
-    avg_hours = total_hours / len(last_n)
-    compliant = sum(1 for _, r in last_n if r["Duration"] >= 240)
-    pct = compliant / len(last_n) * 100
+    ahis = [n["ahi"] for n in nights]
+    compliant = sum(1 for n in nights if n["hours"] >= 4)
 
-    print(f"\nSummary ({len(last_n)} nights, {last_n[0][0]:%Y-%m-%d} to {last_n[-1][0]:%Y-%m-%d}):")
-    print(f"  AHI:        {avg_ahi:.1f} avg  ({min(ahis):.1f}-{max(ahis):.1f})  {'OK' if avg_ahi < 5 else 'ELEVATED'}")
-    print(f"  Usage:      {avg_hours:.1f} h/night avg  ({total_hours:.0f}h total)")
-    print(f"  Compliance: {compliant}/{len(last_n)} nights >= 4h ({pct:.0f}%)  {'OK' if pct >= 70 else 'BELOW 70%'}")
-
-    # Missing nights
-    d = last_n[0][0]
-    actual = {dt.strftime("%Y-%m-%d") for dt, _ in last_n}
+    # Missing nights in the date range
+    first = datetime.strptime(nights[0]["date"], "%Y-%m-%d")
+    last = datetime.strptime(nights[-1]["date"], "%Y-%m-%d")
+    actual = {n["date"] for n in nights}
     missing = []
-    while d <= last_n[-1][0]:
-        if d.strftime("%Y-%m-%d") not in actual:
-            missing.append(d.strftime("%Y-%m-%d"))
+    d = first
+    while d <= last:
+        ds = d.strftime("%Y-%m-%d")
+        if ds not in actual:
+            missing.append(ds)
         d += timedelta(days=1)
-    if missing:
-        print(f"  Missing:    {len(missing)} nights ({', '.join(missing[:5])}{'...' if len(missing) > 5 else ''})")
+
+    summary = {
+        "nights": nights,
+        "summary": {
+            "count": len(nights),
+            "range": f"{nights[0]['date']} to {nights[-1]['date']}",
+            "ahi_mean": round(sum(ahis) / len(ahis), 1),
+            "ahi_min": min(ahis),
+            "ahi_max": max(ahis),
+            "avg_hours": round(sum(n["hours"] for n in nights) / len(nights), 1),
+            "compliance": f"{compliant}/{len(nights)} nights >= 4h ({round(compliant / len(nights) * 100)}%)",
+            "missing_nights": missing,
+        },
+    }
+    print(json.dumps(summary, indent=2))
 
 
 def main() -> None:
