@@ -5,6 +5,8 @@
 #   freecad-test  — FreeCAD test runner (skills/freecad/Dockerfile.test)
 #   cpap-sync     — CPAP ez Share sync job (x/cpap_sync/Dockerfile); Flux ImagePolicy,
 #                   no digest pin needed
+#   rtl-tcp       — RTL-SDR Blog V4 rtl_tcp server (x/rtl_tcp/Dockerfile); Flux ImagePolicy,
+#                   no digest pin needed. Uses rtl-sdr-blog fork for V4 R828D support.
 #
 # Independent of CI — bazel-ci uses the pinned image from image_pins.json.
 # When a Dockerfile changes, this workflow builds, pins, and the next CI run
@@ -20,6 +22,7 @@ on:
       - "third_party/kubernetes-mcp-server-pin.txt"
       - "x/cpap_sync/Dockerfile"
       - "x/cpap_sync/sync.sh"
+      - "x/rtl_tcp/Dockerfile"
       - ".github/workflows/container-images.yml"
   workflow_dispatch:
 
@@ -127,6 +130,24 @@ jobs:
           context: x/cpap_sync
           cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/cpap-sync:buildcache
           cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/cpap-sync:buildcache,mode=max
+
+  rtl-tcp-image:
+    name: RTL-TCP
+    # Only push from devel — Flux ImagePolicy filters on devel-* tags.
+    if: github.ref_name == 'devel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: ./.github/actions/ghcr-build-push
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/rtl-tcp
+          context: x/rtl_tcp
+          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache
+          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache,mode=max
 
   pin-digests:
     name: Pin Digests
