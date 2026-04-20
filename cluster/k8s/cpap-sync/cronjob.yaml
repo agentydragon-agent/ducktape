@@ -30,7 +30,7 @@ spec:
                 path: /run/dbus
           containers:
             - name: sync
-              image: ghcr.io/agentydragon/cpap-sync:devel-20260420031302-c074e96 # {"$imagepolicy": "flux-system:cpap-sync"}
+              image: ghcr.io/agentydragon/cpap-sync:devel-20260420032354-5764664 # {"$imagepolicy": "flux-system:cpap-sync"}
               securityContext:
                 capabilities:
                   add: ["NET_ADMIN"]
