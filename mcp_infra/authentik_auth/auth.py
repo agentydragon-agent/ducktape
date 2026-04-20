@@ -54,6 +54,11 @@ EXCHANGE_SCOPES = "openid email profile ak_proxy"
 # OAuth2Token.is_expired(leeway=N) subtracts this from expires_at.
 _EXPIRY_LEEWAY = 30
 
+# Scopes that OIDCProxy's DCR endpoint will accept from MCP clients.
+# These must also be configured as property_mappings on the Authentik OAuth2
+# provider (Authentik silently drops scopes without a matching ScopeMapping).
+# - offline_access: triggers Authentik to issue a refresh token, so claude.ai
+#   can silently renew sessions without re-authenticating.
 DEFAULT_VALID_SCOPES = ["openid", "email", "profile", "offline_access"]
 
 
@@ -114,7 +119,7 @@ def build_authentik_auth(
     Args:
         config: Authentik auth configuration.
         valid_scopes: Scopes OIDCProxy's DCR endpoint will accept. Defaults
-            to ``["openid", "email", "profile"]``.
+            to ``DEFAULT_VALID_SCOPES``.
         client_storage: Optional ``AsyncKeyValue`` backend for OIDCProxy state
             (DCR registrations, tokens). Defaults to FastMCP's file-based
             encrypted store under ``FASTMCP_HOME``.

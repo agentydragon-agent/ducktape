@@ -68,6 +68,10 @@ data "authentik_property_mapping_provider_scope" "profile" {
   managed = "goauthentik.io/providers/oauth2/scope-profile"
 }
 
+data "authentik_property_mapping_provider_scope" "offline_access" {
+  managed = "goauthentik.io/providers/oauth2/scope-offline_access"
+}
+
 # --- Service Account ---
 # Shared service account for Claude/OpenClaw sandbox agents.
 # Used for Authentik API access (e.g., querying user info).
@@ -152,6 +156,7 @@ resource "authentik_provider_oauth2" "grocy_mcp_sf" {
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    data.authentik_property_mapping_provider_scope.offline_access.id,
   ]
 
   allowed_redirect_uris = [
@@ -235,6 +240,7 @@ resource "authentik_provider_oauth2" "grocy_mcp_vallejo" {
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    data.authentik_property_mapping_provider_scope.offline_access.id,
   ]
 
   allowed_redirect_uris = [
@@ -306,6 +312,7 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    data.authentik_property_mapping_provider_scope.offline_access.id,
   ]
 
   # - Claude Code: http://localhost:<port>/callback

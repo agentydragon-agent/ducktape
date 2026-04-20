@@ -135,6 +135,7 @@ in
     pkgs.freecad
     pkgs.unzip
     pkgs.usbutils # lsusb
+    pkgs.nethogs
   ];
 
   # Podman
