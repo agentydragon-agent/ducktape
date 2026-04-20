@@ -29,7 +29,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: server
-          image: ghcr.io/agentydragon/authentik-mcp-poc-server:devel-20260417235157-9de8c45 # {"$imagepolicy": "flux-system:authentik-mcp-poc-server"}
+          image: ghcr.io/agentydragon/authentik-mcp-poc-server:devel-20260420015951-e227a65 # {"$imagepolicy": "flux-system:authentik-mcp-poc-server"}
           imagePullPolicy: Always
           ports:
             - name: http
