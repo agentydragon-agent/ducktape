@@ -8,6 +8,10 @@ resources:
   - openwebrx-deployment.yaml
   - openwebrx-service.yaml
   - networkpolicy.yaml
+  - ultrafeeder-deployment.yaml
+  - ultrafeeder-service.yaml
+  - ultrafeeder-pvc.yaml
+  - ultrafeeder-networkpolicy.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

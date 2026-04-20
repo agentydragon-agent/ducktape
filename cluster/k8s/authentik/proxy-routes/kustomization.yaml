@@ -15,3 +15,4 @@ resources:
   - tandoor-httproute.yaml
   - authentik-mcp-poc-backend-httproute.yaml
   - sdr-httproute.yaml
+  - adsb-httproute.yaml

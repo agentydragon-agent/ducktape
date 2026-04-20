@@ -27,4 +27,5 @@ configMapGenerator:
       - blueprints/airlock-sso.yaml
       - blueprints/claude-code-airlock-oauth2.yaml
       - blueprints/sdr-sso.yaml
+      - blueprints/adsb-sso.yaml
     namespace: authentik

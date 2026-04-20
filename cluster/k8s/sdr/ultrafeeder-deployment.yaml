@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ultrafeeder
+  namespace: sdr
+  annotations:
+    description: >-
+      ADS-B decoder + tar1090 map UI + ADS-B Exchange feeder.
+      Connects to the rtl-tcp service for IQ data (shared tuner with OpenWebRX+).
+      While running, the SDR is tuned to 1090 MHz — OpenWebRX+ won't be useful
+      for other frequencies. Buy a second RTL-SDR stick and switch to Option B
+      (dedicated ADS-B stick) when this becomes annoying.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ultrafeeder
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ultrafeeder
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: ultrafeeder
+          image: ghcr.io/sdr-enthusiasts/docker-adsb-ultrafeeder:latest
+          ports:
+            - containerPort: 80
+              name: http
+            - containerPort: 9273
+              name: metrics
+          env:
+            # SDR source: connect to rtl-tcp pod over cluster network.
+            - name: READSB_NET_CONNECTOR
+              value: "rtl-tcp.sdr.svc.cluster.local,1234,rtl_tcp"
+            # Receiver location (San Francisco, approximate).
+            - name: READSB_LAT
+              value: "37.7926"
+            - name: READSB_LON
+              value: "-122.4199"
+            - name: FEEDER_ALT_M
+              value: "30"
+            # ADS-B Exchange feeder.
+            - name: ADSBX_UUID
+              value: "144ae52d-df97-4bc7-a4c1-14fc20051f6a"
+            # tar1090 UI settings.
+            - name: UPDATE_TAR1090
+              value: "true"
+            - name: TAR1090_DEFAULTCENTERLAT
+              value: "37.7926"
+            - name: TAR1090_DEFAULTCENTERLON
+              value: "-122.4199"
+            - name: TAR1090_MESSAGERATEINTITLE
+              value: "true"
+            - name: TAR1090_PAGETITLE
+              value: "ADS-B"
+          volumeMounts:
+            - name: data
+              mountPath: /run/readsb
+              subPath: readsb
+            - name: data
+              mountPath: /var/globe_history
+              subPath: globe_history
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ultrafeeder-data
