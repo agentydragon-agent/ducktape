@@ -11,6 +11,8 @@ spec:
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: claude-sandbox
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: gateway-system
       toPorts:
         - ports:
             - port: "8080"
