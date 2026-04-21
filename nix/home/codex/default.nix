@@ -17,19 +17,20 @@ let
         base_url = "http://localhost:11434/v1";
         wire_api = "responses";
       };
-      vllm = {
-        name = "vLLM Local";
-        base_url = "http://localhost:8000/v1";
-        # vLLM's Responses API has incorrect GPT-OSS handling:
-        # https://github.com/vllm-project/vllm/issues/28262
-        # Returns reasoning_text in format Codex can't parse.
-        wire_api = "chat";
-      };
+      # vllm provider disabled: wire_api = "chat" is no longer supported (2026-04-21).
+      # vLLM's Responses API has incorrect GPT-OSS handling:
+      # https://github.com/vllm-project/vllm/issues/28262
+      # Re-enable with wire_api = "responses" once that issue is fixed.
+      # vllm = {
+      #   name = "vLLM Local";
+      #   base_url = "http://localhost:8000/v1";
+      #   wire_api = "responses";
+      # };
       cluster = {
         name = "Cluster (litellm.allegedly.works)";
         base_url = "https://litellm.allegedly.works/v1";
         env_key = "OLLAMA_API_KEY";
-        wire_api = "chat";
+        wire_api = "responses";
       };
     };
 
