@@ -34,9 +34,16 @@ Run checks in parallel where possible.
 ### Pod & Workload Health
 
 - Non-running pods (Pending, CrashLoopBackOff, ImagePullBackOff, Error, etc.)
-- Flapping pods — containers with high restart counts (>3)
+- Flapping pods — containers with restart counts >3 **where restarts are recent**
 - Recent OOMKill and Eviction events
 - Failed jobs
+
+**Important**: When checking restart counts, always check if restarts are _recent_.
+The `kubectl get pods` output shows restart count AND time since last restart, e.g.
+`1256 (41h ago)`. A high total count accumulated over many days means nothing if
+the last restart was days ago. Focus on pods where restarts are happening _now_
+(last restart within the last hour or so). Check the pod's AGE and the "(Xh ago)"
+suffix to determine recency.
 
 ### Node Health
 
