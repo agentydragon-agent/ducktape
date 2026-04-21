@@ -33,8 +33,8 @@ in
     ../../modules/k8s-worker.nix
     ../../modules/ipu7-camera.nix
     ../../modules/foxconn-wwan.nix
-    ./local_llm_arc
-    ./local_llm_npu
+    ./local_llm_arc.nix
+    ./local_llm_npu.nix
   ];
 
   # Passwordless sudo for system inspection commands
