@@ -4,7 +4,7 @@
 
 **Current state (2026-04-18)**: Fully declarative. FCC unlock, modem enable, and
 Google Fi connection all happen automatically via NixOS module
-<nix/nixos/modules/foxconn-wwan.nix>. Works alongside WiFi (IPv6 `never-default`
+<nix/nixos/hosts/rugged/foxconn-wwan.nix>. Works alongside WiFi (IPv6 `never-default`
 prevents cellular from hijacking IPv6 traffic).
 
 See <esim.md> for FCC unlock details, sequencing, and research notes.

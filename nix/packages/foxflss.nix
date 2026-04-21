@@ -6,39 +6,68 @@
 #     tables, and NR carrier aggregation configs to modem non-volatile storage.
 #   - DW5932e_RF.dat, DW5934e_RF.dat: platform-specific RF calibration data files.
 #
+# FoxFlss shells out to: lspci, grep, pgrep, tar -zxf. The binary is wrapped
+# with these tools on PATH so callers don't need to compose the PATH themselves.
+#
 # FoxFlss hardcodes /opt/foxconn/data/ for the .dat files; see foxconn-wwan.nix
 # for the systemd-tmpfiles symlinks that put them there.
 { pkgs, lib }:
 
-pkgs.stdenv.mkDerivation {
-  pname = "foxflss";
-  version = "1.0.15";
+let
+  foxflss-unwrapped = pkgs.stdenv.mkDerivation {
+    pname = "foxflss";
+    version = "1.0.15";
 
-  src = pkgs.fetchFromGitHub {
-    owner = "foxconn-pc";
-    repo = "fii_linux";
-    rev = "c4a3f92f1a1d11dd08b92f5adb5bc1800a115f28";
-    hash = "sha256-z/hIWJOyHSM3xN99cKSIXJwfu6+/q3NbV6SSNO4md7g=";
+    src = pkgs.fetchFromGitHub {
+      owner = "foxconn-pc";
+      repo = "fii_linux";
+      rev = "c4a3f92f1a1d11dd08b92f5adb5bc1800a115f28";
+      hash = "sha256-z/hIWJOyHSM3xN99cKSIXJwfu6+/q3NbV6SSNO4md7g=";
+    };
+
+    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+    buildInputs = [ pkgs.glibc ];
+
+    dontBuild = true;
+
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 Application/FoxFlss/bin/FoxFlss $out/libexec/foxflss/FoxFlss
+      install -Dm644 Application/FoxFlss/data/DW5932e_RF.dat $out/share/foxflss/DW5932e_RF.dat
+      install -Dm644 Application/FoxFlss/data/DW5934e_RF.dat $out/share/foxflss/DW5934e_RF.dat
+      runHook postInstall
+    '';
   };
 
-  nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-  buildInputs = [ pkgs.glibc ];
+  # Tools FoxFlss actually shells out to (from strings analysis):
+  #   lspci -n | grep -i  — detect PCIe device
+  #   pgrep mbH          — check mbim-proxy
+  #   tar -zxf           — extract RF calibration data archive
+  runtimePATH = lib.makeBinPath [
+    pkgs.pciutils # lspci
+    pkgs.gnugrep # grep
+    pkgs.procps # pgrep
+    pkgs.gnutar # tar (with gzip support)
+  ];
 
-  dontBuild = true;
-
-  installPhase = ''
-    runHook preInstall
-    install -Dm755 Application/FoxFlss/bin/FoxFlss $out/bin/FoxFlss
-    install -Dm644 Application/FoxFlss/data/DW5932e_RF.dat $out/share/foxflss/DW5932e_RF.dat
-    install -Dm644 Application/FoxFlss/data/DW5934e_RF.dat $out/share/foxflss/DW5934e_RF.dat
-    runHook postInstall
+  # Wrapped FoxFlss with the correct PATH pre-set. The wrapper script
+  # sets PATH then execs the real binary so callers get a ready-to-use binary.
+  foxflss-wrapped = pkgs.runCommand "${foxflss-unwrapped.pname}-wrapped" { } ''
+    mkdir -p $out/bin
+    cat > $out/bin/FoxFlss << WRAPPER
+    #!${pkgs.bash}/bin/bash
+    export PATH="${runtimePATH}:$PATH"
+    exec ${foxflss-unwrapped}/libexec/foxflss/FoxFlss "$@"
+    WRAPPER
+    chmod +x $out/bin/FoxFlss
+    ln -s ${foxflss-unwrapped}/share $out/share
   '';
 
-  meta = {
-    description = "Foxconn FCC unlock and RF calibration tool for DW5932e/DW5934e WWAN modems";
-    homepage = "https://github.com/foxconn-pc/fii_linux";
-    license = lib.licenses.unfree;
-    platforms = [ "x86_64-linux" ];
-    mainProgram = "FoxFlss";
-  };
+in
+pkgs.symlinkJoin {
+  name = foxflss-unwrapped.pname;
+  paths = [
+    foxflss-wrapped
+    foxflss-unwrapped
+  ];
 }

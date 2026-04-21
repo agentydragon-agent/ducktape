@@ -31,8 +31,8 @@ in
     ../../modules/bazel
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
-    ../../modules/ipu7-camera.nix
-    ../../modules/foxconn-wwan.nix
+    ./ipu7-camera.nix
+    ./foxconn-wwan.nix
     ./local_llm_arc.nix
     ./local_llm_npu.nix
   ];

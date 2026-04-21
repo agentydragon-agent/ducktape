@@ -4,7 +4,7 @@
 
 **Working path**: libcamera + SoftISP + PipeWire camera portal.
 
-- NixOS module: <nix/nixos/modules/ipu7-camera.nix> (enabled)
+- NixOS module: <nix/nixos/hosts/rugged/ipu7-camera.nix> (enabled)
 - `snapshot` works (with `GSK_RENDERER=gl`).
 - PipeWire camera portal (`org.freedesktop.portal.Camera`) is active and
   `IsCameraPresent=true`. WirePlumber exposes PipeWire node 97 ("Built-in Front

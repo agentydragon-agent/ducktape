@@ -28,25 +28,7 @@
 let
   cfg = config.ducktape.foxconnWwan;
 
-  foxflss = pkgs.callPackage ../../packages/foxflss.nix { };
-
-  # FoxFlss shells out to many standard Unix tools. The systemd transient
-  # service has a minimal PATH, so we supply everything FoxFlss needs:
-  #   dmidecode    — read system SKU for platform detection
-  #   procps       — pgrep, to check if mbim-proxy is running
-  #   gnutar+gzip  — extract RF calibration data from the .dat archive
-  #   gnugrep+gnused+gawk — parse dmidecode/proc output for platform ID
-  #   coreutils    — cp, mkdir, sleep, etc.
-  foxflssPath = lib.makeBinPath [
-    pkgs.dmidecode
-    pkgs.procps
-    pkgs.gnutar
-    pkgs.gzip
-    pkgs.gnugrep
-    pkgs.gnused
-    pkgs.gawk
-    pkgs.coreutils
-  ];
+  foxflss = pkgs.callPackage ../../../packages/foxflss.nix { };
 
   # Script run by the NM dispatcher on wwan0 up: FCC unlock warm-up, then
   # RF calibration. Bare FoxFlss first because on Ubuntu, ModemManager runs
@@ -54,18 +36,12 @@ let
   # MBIM CIDs and makes Check_RF_SSKU reliable. Here fcc-unlock.d never fires
   # (modem boots with power state: on), so we replicate that warm-up explicitly.
   foxflssRfCalRun = pkgs.writeShellScript "foxflss-rf-cal-run" ''
-    export PATH="${foxflssPath}:$PATH"
     ${foxflss}/bin/FoxFlss && sleep 5 && ${foxflss}/bin/FoxFlss -f Check_RF_SSKU
   '';
 
-  # FoxFlss shells out to dmidecode to read the system SKU. ModemManager's
-  # service PATH includes libqmi and libmbim (when fccUnlockScripts is set)
-  # but not dmidecode, so we must put it on PATH explicitly.
+  # FCC unlock + RF calibration for ModemManager fcc-unlock.d.
+  # Called by MM with: <script> <dbus-path> <port1> [<port2> ...]
   fccUnlockScript = pkgs.writeShellScript "foxconn-dw593xe-fcc-unlock" ''
-    # Foxconn DW5932e/DW5934e FCC unlock for ModemManager fcc-unlock.d
-    # Called by MM with: <script> <dbus-path> <port1> [<port2> ...]
-    export PATH="${foxflssPath}:$PATH"
-
     [ $# -lt 2 ] && exit 1
     shift  # discard DBus path
 
@@ -113,9 +89,6 @@ in
         path = "${fccUnlockScript}";
       }
     ];
-
-    # FoxFlss needs dmidecode to read the system SKU
-    environment.systemPackages = [ pkgs.dmidecode ];
 
     # Google Fi cellular connection profile.
     # IPv6 never-default: many WiFi networks only provide ULA IPv6 (no default

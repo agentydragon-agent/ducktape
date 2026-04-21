@@ -73,7 +73,7 @@ After step 5, the modem registers on Google Fi (5G NR, 92% signal observed).
 
 ### Completed
 
-- ~~**Declarative NixOS setup**~~: Done. See <nix/nixos/modules/foxconn-wwan.nix>.
+- ~~**Declarative NixOS setup**~~: Done. See <nix/nixos/hosts/rugged/foxconn-wwan.nix>.
   FoxFlss packaged, wired as MM `fcc-unlock.d` script, declarative NM profile
   with `ipv6.never-default` and IPv4 failover (metric 1050).
 - ~~**NM connection**~~: Done. Declarative "Google Fi" profile via

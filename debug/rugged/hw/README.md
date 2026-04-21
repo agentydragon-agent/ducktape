@@ -55,6 +55,6 @@
 ## Related Files
 
 - <nix/nixos/hosts/rugged/default.nix> — NixOS system configuration
-- <nix/nixos/modules/ipu7-camera.nix> — IPU7 webcam NixOS module
+- <nix/nixos/hosts/rugged/ipu7-camera.nix> — IPU7 webcam NixOS module
 - <nix/nixos/hosts/rugged/local_llm_arc.nix> — Arc GPU LLM inference (IPEX-LLM container)
 - <nix/nixos/hosts/rugged/local_llm_npu.nix> — NPU LLM inference (OpenVINO)
