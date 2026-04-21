@@ -45,7 +45,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data/cpap
-              readOnly: true
+              readOnly: false
           ports:
             - containerPort: 8080
           resources:
