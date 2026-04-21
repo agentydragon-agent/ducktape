@@ -10,7 +10,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-nmcli connection up "$NM_CONNECTION"
+nmcli connection up "$NM_CONNECTION" || {
+  echo "ERROR: Failed to connect to CPAP WiFi ($NM_CONNECTION). Is the CPAP powered on and in range?" >&2
+  exit 1
+}
 
 mkdir -p "$OUTPUT_DIR"
 python3 /sync.py --output-dir "$OUTPUT_DIR" --base-url http://192.168.4.1
