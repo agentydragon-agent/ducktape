@@ -42,12 +42,15 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # they are replaced by batch tools in batch_tools.py.
     ("PUT", "/objects/{entity}/{objectId}"): _enabled(
         "entity_update",
-        "WARNING: full replace, not a partial update — every field you omit gets nulled. Read the "
-        "current row with `entities_get` first, then send the complete object with your changes "
-        "applied. For products, prefer `products_edit` for common fields (does the read-merge-write "
-        "for you). Use `entity_update` for advanced product fields not exposed by `products_edit` "
-        "(e.g. `default_best_before_days_after_freezing`, `should_not_be_frozen`, `qu_id_consume`). "
-        "Never set `best_before_date` to null on stock entries — use `2999-12-31` for never-expires.",
+        "Partial update: send only the writable columns you want to change. Omitted fields are "
+        "preserved. To null a nullable field, include it explicitly with value null. "
+        "Do NOT blindly round-trip the full `entities_get` response — GET returns server-computed "
+        "columns (e.g. `qu_factor_*`, `has_sub_products` on products, `userfields`) that Grocy "
+        "rejects on PUT with 400. For common fields prefer the typed helpers — `products_edit`, "
+        "`stock_entry_edit`, `shopping_list_item_edit` — and reserve `entity_update` for advanced "
+        "fields those don't cover (e.g. `default_best_before_days_after_freezing`, "
+        "`should_not_be_frozen`, `qu_id_consume` on products). Never set `best_before_date` to "
+        "null on stock entries — use `2999-12-31` for never-expires.",
     ),
     ("DELETE", "/objects/{entity}/{objectId}"): _enabled("entity_delete"),
     # ── Stock overview ───────────────────────────────────────────────

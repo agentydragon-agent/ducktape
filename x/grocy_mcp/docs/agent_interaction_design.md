@@ -398,15 +398,15 @@ Notes:
 
 ### Stock Operations (the core)
 
-| Tool               | Purpose                    | Required Params                                 | Notes                                                                     |
-| ------------------ | -------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| `stock_get`        | Current stock overview     | (none; optional product/location filters)       | Compact. Filters: `products: list[int\|str]`, `locations: list[int\|str]` |
-| `stock_add`        | Add stock                  | product, amount, qu, location                   | All `int\|str`. All required, no defaults. Batch.                         |
-| `stock_consume`    | Consume stock              | product, amount, qu, location                   | All required — prevents cross-household mistakes.                         |
-| `stock_transfer`   | Move between locations     | product, amount, qu, from_location, to_location | Both locations required.                                                  |
-| `stock_set`        | Set absolute amount        | product, new_amount, qu, location               | All required — same rationale as consume.                                 |
-| `open_stock`       | Mark stock entry as opened | product, amount, qu                             |                                                                           |
-| `transaction_undo` | Undo a stock operation     | transaction_id                                  |                                                                           |
+| Tool               | Purpose                    | Required Params                                 | Notes                                                                             |
+| ------------------ | -------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
+| `stock_get`        | Current stock overview     | (none; optional product/location filters)       | Compact. Filters: `products: list[int\|str]`, `locations: list[int\|str]`         |
+| `stock_add`        | Add stock                  | product, amount, qu, location                   | All `int\|str`. All required, no defaults. Batch.                                 |
+| `stock_consume`    | Consume stock              | product, amount, qu, location                   | All required — prevents cross-household mistakes.                                 |
+| `stock_transfer`   | Move between locations     | product, amount, qu, from_location, to_location | Both locations required.                                                          |
+| `stock_set`        | Set absolute amount        | product, new_amount, qu, location               | `qu` optional when `new_amount=0` (zeroing-out shortcut); otherwise all required. |
+| `open_stock`       | Mark stock entry as opened | product, amount, qu                             |                                                                                   |
+| `transaction_undo` | Undo a stock operation     | transaction_id                                  |                                                                                   |
 
 ### Stock Entry Operations
 
@@ -471,17 +471,18 @@ QU + product, list, get by ID, update, delete).
 | `entities_create` | Batch create         | `[{entity_type, body: dict}]`. Body is opaque — agent must know fields. |
 | `entities_list`   | Batch list by type   | `[entity_type]` → `{type: [dicts]}`. `detail: "brief"\|"full"`.         |
 | `entities_get`    | Batch get by ID      | `entity_type, [ids]` → `[ok\|error]`.                                   |
-| `entity_update`   | Update single entity | **WARNING: full replace, not partial update.** See note below.          |
+| `entity_update`   | Partial update       | Only fields you send are written; omitted fields preserved.             |
 | `entity_delete`   | Delete single entity | By entity type + ID.                                                    |
 
-**`entity_update` is a full replace.** The tool description must warn the
-agent prominently: "This replaces the entire entity. You must include ALL
-fields, not just the ones you want to change. Fields you omit will be set
-to null. First use `entities_get` to read the current state, then send the
-complete object with your changes applied." This is acceptable for simple
-entities (locations, QUs — 1-3 fields) but dangerous for complex ones.
-Products have a dedicated `products_edit` with partial-update semantics
-specifically to avoid this.
+**`entity_update` is a partial update.** Grocy's `BaseApiController`
+UPDATEs only the writable columns you send, so omitted fields are
+preserved. To null a nullable field, send it explicitly with value null.
+**But** Grocy rejects the full `entities_get` response on PUT with 400 —
+GET surfaces server-computed columns (`qu_factor_*`, `has_sub_products`,
+`userfields`, …) that PUT doesn't accept. So: send only writable columns.
+Typed helpers (`products_edit`, `stock_entry_edit`,
+`shopping_list_item_edit`) are preferred for their validation and
+change-diff and do the writable-column filtering for you.
 
 ### System
 

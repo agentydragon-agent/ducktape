@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import date, timedelta
 
 import httpx
 import pytest
@@ -227,6 +228,71 @@ async def test_product_lifecycle(mcp_client: Client, refunwrap_result: RefData) 
         assert del_result["kind"] == "ok", f"product_delete({name}) failed: {del_result}"
 
 
+# -- entity_update PATCH semantics -------------------------------------------
+
+
+async def test_entity_update_patch_semantics(
+    mcp_client: Client, grocy_base_url: str, refunwrap_result: RefData
+) -> None:
+    """Grocy's ``PUT /objects/{entity}/{objectId}`` is a partial update.
+
+    Locks in the three claims the ``entity_update`` tool description makes
+    to agents, so a future Grocy version that flipped the behavior (or a
+    misread of the server code) would break this test rather than silently
+    corrupting user data:
+
+      1. Omitted writable fields are preserved, not nulled.
+      2. Unknown / server-computed columns echoed back in the body are
+         silently dropped (no 400), so agents can safely round-trip
+         ``entities_get`` output.
+      3. Sending a nullable field with value ``null`` nulls it, without
+         affecting other omitted fields.
+    """
+    product_id = refunwrap_result.product_ids[0]
+
+    before = unwrap_result(
+        await mcp_client.call_tool("entities_get", {"entity_type": "products", "object_ids": [product_id]})
+    )[0]["data"]
+    # Fixture populates name, description, min_stock_amount, location_id, qu_id_stock.
+    assert before["description"] == "Test product for e2e"
+    assert float(before["min_stock_amount"]) == 1
+
+    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http:
+        # (1) Partial: only `description` in body.
+        new_desc = f"patched-{refunwrap_result.suffix}"
+        r = await http.put(f"/objects/products/{product_id}", json={"description": new_desc})
+        assert r.status_code < 400, f"partial PUT failed: {r.status_code} {r.text!r}"
+
+        after = unwrap_result(
+            await mcp_client.call_tool("entities_get", {"entity_type": "products", "object_ids": [product_id]})
+        )[0]["data"]
+        assert after["description"] == new_desc
+        # Omitted writable fields preserved — the core PATCH claim.
+        assert after["name"] == before["name"]
+        assert float(after["min_stock_amount"]) == float(before["min_stock_amount"])
+        assert after["location_id"] == before["location_id"]
+        assert after["qu_id_stock"] == before["qu_id_stock"]
+
+        # (2) Echoing the full GET row back fails with 400: Grocy rejects
+        # server-computed columns (qu_factor_*, has_sub_products, etc.) on
+        # PUT. Agents must send only writable columns — this is why the
+        # docstring warns against blindly round-tripping `entities_get`.
+        echo_body = dict(after)
+        echo_body["description"] = f"echoed-{refunwrap_result.suffix}"
+        r = await http.put(f"/objects/products/{product_id}", json=echo_body)
+        assert r.status_code == 400, f"Expected 400 when echoing computed columns back, got {r.status_code}: {r.text!r}"
+
+        # (3) Explicit null nulls the field; other omitted fields still preserved.
+        r = await http.put(f"/objects/products/{product_id}", json={"description": None})
+        assert r.status_code < 400, f"null PUT failed: {r.status_code} {r.text!r}"
+        after3 = unwrap_result(
+            await mcp_client.call_tool("entities_get", {"entity_type": "products", "object_ids": [product_id]})
+        )[0]["data"]
+        assert after3["description"] in (None, "")  # Grocy normalizes null→"" on some columns
+        assert after3["name"] == before["name"]
+        assert float(after3["min_stock_amount"]) == float(before["min_stock_amount"])
+
+
 # -- Stock operations --------------------------------------------------------
 
 
@@ -293,6 +359,157 @@ async def test_stock_operations(mcp_client: Client, refunwrap_result: RefData) -
     # Verify edit landed via re-fetch
     entries = unwrap_result(await mcp_client.call_tool("stock_entries_list", {"entry_ids": [entry_id]}))
     assert float(entries[0]["entry"]["price"]) == 9.99
+
+
+# -- stock_set: qu-optional when zeroing ------------------------------------
+
+
+async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, refunwrap_result: RefData) -> None:
+    """`qu` is optional on `stock_set` when `new_amount=0`; required otherwise.
+
+    Motivated by the "nuke the Freezer" workflow: emptying a location bulk
+    should not require the agent to preflight each product's `qu_id_stock`.
+    For any nonzero amount, `qu` is still required (Grocy needs to know
+    the unit for the add side of the correction).
+    """
+    product = refunwrap_result.products[0]
+    qu = refunwrap_result.qu
+    loc = refunwrap_result.location
+
+    # Seed: put something on the shelf.
+    seed = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 7, "qu": qu, "location": loc}]}
+        )
+    )
+    assert seed[0]["kind"] == "ok", seed
+
+    # (1) Zero out without passing `qu` — succeeds, falls back to stock QU.
+    zero_ops = unwrap_result(
+        await mcp_client.call_tool("stock_set", {"items": [{"product": product, "new_amount": 0, "location": loc}]})
+    )
+    assert zero_ops[0]["kind"] == "ok", zero_ops
+    assert zero_ops[0]["new_amount"] == 0.0
+    # Fallback uses the product's own stock QU, which is the fixture's QU.
+    assert zero_ops[0]["qu_name"] == qu
+
+    # (2) Nonzero without `qu` — batch tools collect per-item errors rather
+    # than raising, so the batch succeeds but this item reports an error
+    # naming the omitted `qu`.
+    nonzero_ops = unwrap_result(
+        await mcp_client.call_tool("stock_set", {"items": [{"product": product, "new_amount": 3, "location": loc}]})
+    )
+    assert nonzero_ops[0]["kind"] == "error", nonzero_ops
+    assert "qu" in nonzero_ops[0]["error"]
+
+    # (3) Nonzero with `qu` — still works (regression check for the happy path).
+    set_ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_set", {"items": [{"product": product, "new_amount": 3, "qu": qu, "location": loc}]}
+        )
+    )
+    assert set_ops[0]["kind"] == "ok", set_ops
+    assert set_ops[0]["new_amount"] == 3.0
+
+
+# -- stock_add: default_best_before_days -----------------------------------
+
+
+async def test_stock_add_applies_default_best_before_days(mcp_client: Client, refunwrap_result: RefData) -> None:
+    """`stock_add` without `best_before_date` honors the product's configured shelf life.
+
+    The tool contracts "Omit to use the product's `default_best_before_days`",
+    but Grocy v4.6.0 has a bug in `StockService::AddProduct`: when the
+    destination is a freezer location and the product has not configured
+    `default_best_before_days_after_freezing` (schema default 0), Grocy's
+    freezing branch fires anyway (guard `>= -1` instead of the correct
+    `> 0 || == -1`) and overwrites BBD with today — the product's
+    `default_best_before_days` is never consulted. Our batch tool fills
+    the date in client-side so the contract holds on both freezer and
+    non-freezer locations.
+    """
+    product = refunwrap_result.products[0]
+    qu = refunwrap_result.qu
+    non_freezer_loc = refunwrap_result.location
+
+    async def _latest_bbd() -> str:
+        entries = unwrap_result(await mcp_client.call_tool("stock_entries_list", {"products": [product]}))
+        latest = max((e["entry"] for e in entries if e["kind"] == "ok"), key=lambda e: e["entry_id"])
+        return str(latest["best_before_date"])
+
+    # Case 1: non-freezer, default_best_before_days=300 → today + 300.
+    edit = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product, "default_best_before_days": 300}]})
+    )
+    assert edit[0]["kind"] == "ok", edit
+    ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 1, "qu": qu, "location": non_freezer_loc}]}
+        )
+    )
+    assert ops[0]["kind"] == "ok", ops
+    assert await _latest_bbd() == (date.today() + timedelta(days=300)).isoformat()
+
+    # Case 2: non-freezer, default_best_before_days=-1 → 2999-12-31.
+    edit = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product, "default_best_before_days": -1}]})
+    )
+    assert edit[0]["kind"] == "ok", edit
+    ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 1, "qu": qu, "location": non_freezer_loc}]}
+        )
+    )
+    assert ops[0]["kind"] == "ok", ops
+    assert await _latest_bbd() == "2999-12-31"
+
+    # Case 3 (regression for the reported bug): freezer location,
+    # default_best_before_days=300 and default_best_before_days_after_freezing=0
+    # (the schema default). Without the client-side fallback Grocy would
+    # return BBD=today; our tool must return today+300.
+    freezer_name = f"TestFreezer-{refunwrap_result.suffix}"
+    freezer_create = unwrap_result(
+        await mcp_client.call_tool("locations_create", {"items": [{"name": freezer_name, "is_freezer": True}]})
+    )
+    assert freezer_create[0]["kind"] == "ok", freezer_create
+    edit = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product, "default_best_before_days": 300}]})
+    )
+    assert edit[0]["kind"] == "ok", edit
+    ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 1, "qu": qu, "location": freezer_name}]}
+        )
+    )
+    assert ops[0]["kind"] == "ok", ops
+    expected = (date.today() + timedelta(days=300)).isoformat()
+    actual = await _latest_bbd()
+    assert actual == expected, (
+        f"Freezer-location stock_add with default_best_before_days=300 and "
+        f"default_best_before_days_after_freezing=0 returned BBD={actual}, expected {expected}. "
+        f"Grocy's freezer branch is known buggy here; the MCP tool is supposed to compute the date client-side."
+    )
+
+    # Case 4: explicit override always wins, freezer or not.
+    override = date.today() + timedelta(days=7)
+    ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add",
+            {
+                "items": [
+                    {
+                        "product": product,
+                        "amount": 1,
+                        "qu": qu,
+                        "location": freezer_name,
+                        "best_before_date": override.isoformat(),
+                    }
+                ]
+            },
+        )
+    )
+    assert ops[0]["kind"] == "ok", ops
+    assert await _latest_bbd() == override.isoformat()
 
 
 # -- Shopping list operations ------------------------------------------------

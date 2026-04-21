@@ -74,7 +74,7 @@ from x.grocy_mcp.mcp_types import (
     StockOpError,
     StockOpOk,
 )
-from x.grocy_mcp.resolver import EntityResolver
+from x.grocy_mcp.resolver import EntityResolver, ResolvedQU
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,40 @@ def _parse_date(value: str | None) -> date | None:
 def _date_to_str(value: date | None) -> str | None:
     """Convert a date to ISO string for Grocy API. None stays None."""
     return value.isoformat() if value is not None else None
+
+
+# Grocy sentinel: this string stored in `best_before_date` means "never expires".
+_NEVER_EXPIRES_BBD = "2999-12-31"
+
+
+def _compute_default_bbd(product: dict[str, Any], *, is_freezer: bool) -> str:
+    """Compute BBD from product settings, matching Grocy's documented intent.
+
+    Grocy's per-column sentinels:
+      ``-1`` = never expires (returned as ``2999-12-31``)
+      ``0``  = unconfigured → today
+      ``N > 0`` = today + N days
+
+    We compute client-side instead of letting Grocy fill in the default
+    because ``StockService::AddProduct`` in v4.6.0 has a bug in its
+    freezer branch: it uses guard ``default_best_before_days_after_freezing >= -1``
+    (true for unconfigured products whose freezing default is the schema
+    default 0), ignoring ``default_best_before_days`` entirely and
+    returning today. The non-freezer branch is correct, so we apply the
+    freezer-branch logic here with the guard the transfer branch uses
+    (``> 0 || == -1``) and fall through to ``default_best_before_days``
+    when the product has no freezing-specific shelf life.
+    """
+    if is_freezer:
+        days_after_freezing = int(product.get("default_best_before_days_after_freezing") or 0)
+        if days_after_freezing == -1:
+            return _NEVER_EXPIRES_BBD
+        if days_after_freezing > 0:
+            return (date.today() + timedelta(days=days_after_freezing)).isoformat()
+    days = int(product.get("default_best_before_days") or 0)
+    if days == -1:
+        return _NEVER_EXPIRES_BBD
+    return (date.today() + timedelta(days=days)).isoformat()
 
 
 def _format_exc(e: Exception) -> str:
@@ -392,7 +426,26 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         try:
             product = await resolver.resolve(EntityType.PRODUCT, item.product)
             location = await resolver.resolve(EntityType.LOCATION, item.location)
-            rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
+            qu_ref = item.qu
+            if qu_ref is None:
+                # SetItem-only zeroing-out shortcut: no unit needed since
+                # the amount is 0. AddItem/ConsumeItem keep qu required.
+                assert isinstance(item, SetItem)
+                if item.new_amount != 0:
+                    raise ValueError("`qu` is required unless `new_amount` is 0 (zeroing-out shortcut).")
+                product_row = await resolver.get(EntityType.PRODUCT, product.id)
+                assert product_row is not None  # just resolved
+                stock_qu_id = int(product_row["qu_id_stock"])
+                stock_qu_name = await resolver.name(EntityType.QUANTITY_UNIT, stock_qu_id)
+                rqu = ResolvedQU(
+                    id=stock_qu_id,
+                    name=stock_qu_name,
+                    stock_qu_id=stock_qu_id,
+                    stock_qu_name=stock_qu_name,
+                    conversion_factor=1.0,
+                )
+            else:
+                rqu = await resolver.resolve_qu_for_product(qu_ref, product.id)
             input_amount = item.new_amount if isinstance(item, SetItem) else item.amount
             stock_amount = input_amount * rqu.conversion_factor
 
@@ -403,6 +456,18 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                     body["amount"] = stock_amount
                     if item.best_before_date is not None:
                         body["best_before_date"] = _date_to_str(item.best_before_date)
+                    else:
+                        # Compute the default client-side: the tool contract says
+                        # omitting `best_before_date` uses the product's shelf-life
+                        # defaults, but Grocy's native default-filling has a
+                        # freezer-branch bug (see `_compute_default_bbd`).
+                        product_row = await resolver.get(EntityType.PRODUCT, product.id)
+                        location_row = await resolver.get(EntityType.LOCATION, location.id)
+                        assert product_row is not None  # just resolved
+                        assert location_row is not None  # just resolved
+                        body["best_before_date"] = _compute_default_bbd(
+                            product_row, is_freezer=bool(int(location_row.get("is_freezer") or 0))
+                        )
                     if item.price is not None:
                         body["price"] = item.price
                     if item.note is not None:
@@ -490,6 +555,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `stock_add` / `stock_consume`. Grocy figures out whether to add
         or remove to reach `new_amount`. `best_before_date` and `price`
         apply only to units being added; ignored when removing.
+
+        `qu` is optional when `new_amount` is 0: the unit is irrelevant
+        when you're just zeroing stock out, so you can omit it and skip
+        the per-product `stock_qu` lookup (useful for bulk "empty this
+        location" operations). For any nonzero amount, `qu` is required.
+
         Each success carries a `transaction_id` for `transaction_undo`.
         See also `stock_add`, `stock_consume`, `stock_transfer`.
         """
