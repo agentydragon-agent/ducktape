@@ -129,13 +129,8 @@ in
   # Models stored on Proxmox CSI PVC (200Gi) or ~/downloads/ollama-models/.
   environment.systemPackages = [
     pkgs.ollama-cuda
-    pkgs.poppler-utils # pdftoppm, pdftotext — PDF rendering/extraction
-    pkgs.tesseract # OCR
     pkgs.lvm2_dmeventd # LVM tools with dmeventd client support for thin pool autoextend
     pkgs.freecad
-    pkgs.unzip
-    pkgs.usbutils # lsusb
-    pkgs.nethogs
   ];
 
   # Podman
@@ -283,8 +278,6 @@ in
     ];
   };
 
-  time.timeZone = "America/Los_Angeles";
-
   services = {
     avahi = {
       enable = true;
@@ -292,9 +285,6 @@ in
     };
     printing.enable = true;
   };
-
-  # Zsh as default shell
-  programs.zsh.enable = true;
 
   # User configuration
   users.users.${username} = {
@@ -306,7 +296,13 @@ in
   users.users.root.openssh.authorizedKeys.keys = sshKeys;
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
-  boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
+  # SPICE USB redirection helper (setuid root for USB device passthrough)
+  security.wrappers.spice-client-glib-usb-acl-helper = {
+    setuid = true;
+    owner = "root";
+    group = "root";
+    source = "${pkgs.spice-gtk}/bin/spice-client-glib-usb-acl-helper";
+  };
 
   # MOTD
   users.motd = "🐉 Welcome to wyrm2!\n";

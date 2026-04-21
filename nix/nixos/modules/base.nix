@@ -18,6 +18,9 @@
   networking.hostName = hostname;
   networking.networkmanager.enable = true;
 
+  # Timezone
+  time.timeZone = "America/Los_Angeles";
+
   # Nix settings - enable flakes
   nix = {
     settings = {
@@ -60,6 +63,12 @@
   # Override in agent-sandbox modules if needed
   security.sudo.wheelNeedsPassword = true;
 
+  # Zsh as default shell
+  programs.zsh.enable = true;
+
+  # Allow reading kernel logs without sudo
+  boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
+
   # SSH
   services.openssh = {
     enable = true;
@@ -93,6 +102,41 @@
     pv
     mosh
     ripgrep
+
+    # Network diagnostics
+    dig
+    tcpdump
+    iperf3
+    openssl
+    conntrack-tools
+    ethtool
+    bpftools
+    net-tools
+    traceroute
+
+    # System diagnostics
+    strace
+    usbutils
+    pciutils
+    acpi
+    nethogs
+
+    # Compression
+    zip
+    unzip
+
+    # Serial/network utilities
+    socat
+    minicom
+    zbar
+    speedtest-cli
+
+    # Secrets/credentials
+    libsecret
+
+    # PDF/OCR
+    poppler-utils
+    tesseract
   ];
 
   system.stateVersion = "25.11";

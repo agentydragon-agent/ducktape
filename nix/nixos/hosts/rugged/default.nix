@@ -73,9 +73,6 @@ in
     options = [ "subvol=@local-path-provisioner" ];
   };
 
-  # Timezone
-  time.timeZone = "America/Los_Angeles";
-
   # Bluetooth
   hardware.bluetooth = {
     enable = true;
@@ -92,7 +89,6 @@ in
     blueman.enable = true;
     fwupd.enable = true; # Firmware updates
     printing.enable = true;
-    openssh.enable = true;
     thermald.enable = true; # Intel thermal management
     upower.enable = true; # Battery status (dual battery support)
     logind.settings.Login = {
@@ -134,44 +130,16 @@ in
 
   # System packages
   environment.systemPackages = with pkgs; [
-    acpi
-    unzip
-    zip
     powertop # Power consumption analysis (useful for tablet battery)
-    pciutils # lspci
-    usbutils # lsusb
-    strace # Syscall tracing for debugging
-    # TODO: Remove bandwhich, nethogs (already in home-manager), libsecret (already in gui.nix)
-    bandwhich # Per-process/connection/host bandwidth monitor
-    nethogs
     snapshot # GNOME camera app (uses libcamera/PipeWire natively)
-    libsecret # secret-tool for keyring access (used by ansible vault)
     telegram-desktop
-    vlc
     xdg-terminal-exec # Used by custom Ctrl+Alt+T keybinding; configure via xdg-terminals.list
     zoom-us
-    gimp
-    # Network diagnostics
-    dig # DNS queries (dig, nslookup)
-    traceroute # traceroute
-    mtr # Combined traceroute + ping
-    tcpdump # Packet capture
-    nmap # Port/host scanning, also provides nping
-    iperf3 # Bandwidth measurement
-    net-tools # netstat, ifconfig, route
-    openssl # TLS inspection (openssl s_client)
-    conntrack-tools # conntrack - NAT/connection tracking inspection
-    ethtool # NIC settings, offload flags, link stats
-    bpftools # Inspect loaded BPF programs (Cilium hooks etc.)
+
     # WWAN / eSIM management
     lpac # eUICC/eSIM profile management (lpac profile list/download/enable)
     libmbim # mbimcli for MBIM modem queries (signal, UICC, registration)
     libqmi # qmicli for QMI-over-MBIM queries (UIM card status)
-    socat # Serial port access (AT commands via /dev/wwan0at0)
-    zbar # QR code decoder (zbarimg) for eSIM activation codes
-    minicom # Interactive serial terminal for AT command sessions
-    speedtest-cli # Proper speed testing
-    wireshark-cli # tshark — protocol-level packet analysis (QUIC, TLS, MBIM)
   ];
 
   # Local file sharing across devices (LAN)
@@ -181,9 +149,6 @@ in
   };
 
   programs.steam.enable = true;
-
-  # Zsh as default shell
-  programs.zsh.enable = true;
 
   # User configuration
   users.users.${username} = {
@@ -197,8 +162,13 @@ in
     ];
   };
 
-  # Allow reading kernel logs without sudo
-  boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
+  # SPICE USB redirection helper (setuid root for USB device passthrough)
+  security.wrappers.spice-client-glib-usb-acl-helper = {
+    setuid = true;
+    owner = "root";
+    group = "root";
+    source = "${pkgs.spice-gtk}/bin/spice-client-glib-usb-acl-helper";
+  };
 
   # User groups provided by base.nix: wheel, networkmanager, video, audio
 }

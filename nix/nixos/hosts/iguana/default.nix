@@ -46,12 +46,10 @@ in
     enable = true;
     nodeLabels = {
       "topology.kubernetes.io/region" = "roaming";
-      "node.kubernetes.io/role" = "worker";
+      "node.kubernetes.io/role" = "roaming";
     };
+    nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
-
-  # Timezone
-  time.timeZone = "America/Los_Angeles";
 
   # Bluetooth
   hardware.bluetooth = {
@@ -102,8 +100,6 @@ in
     blueman.enable = true;
     fwupd.enable = true; # Firmware updates
     printing.enable = true;
-    openssh.enable = true;
-
     thermald.enable = true;
 
     # Lid/power button behavior
@@ -117,17 +113,9 @@ in
 
   # System packages
   environment.systemPackages = with pkgs; [
-    acpi
     powertop # Power consumption analysis
-    pciutils # lspci
-    usbutils # lsusb
-    strace
-    bandwhich
-    nethogs
     telegram-desktop
-    vlc
     zoom-us
-    gimp
     # nvidia-offload wrapper is provided by hardware.nvidia.prime.offload.enableOffloadCmd
   ];
 
@@ -136,9 +124,6 @@ in
     enable = true;
     openFirewall = true;
   };
-
-  # Zsh as default shell
-  programs.zsh.enable = true;
 
   # User configuration
   users.users.${username} = {
@@ -152,8 +137,13 @@ in
     ];
   };
 
-  # Allow reading kernel logs without sudo
-  boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
+  # SPICE USB redirection helper (setuid root for USB device passthrough)
+  security.wrappers.spice-client-glib-usb-acl-helper = {
+    setuid = true;
+    owner = "root";
+    group = "root";
+    source = "${pkgs.spice-gtk}/bin/spice-client-glib-usb-acl-helper";
+  };
 
   # ThinkPad-specific optimizations
   # TrackPoint configuration (if desired)

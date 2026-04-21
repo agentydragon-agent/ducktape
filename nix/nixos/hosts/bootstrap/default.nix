@@ -16,7 +16,6 @@ let
 in
 {
   hardware.enableAllFirmware = true;
-  time.timeZone = "America/Los_Angeles";
 
   users.users.${username} = {
     shell = pkgs.bash;
