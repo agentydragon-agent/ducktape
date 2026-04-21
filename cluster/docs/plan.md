@@ -52,6 +52,11 @@ CloudNativePG `local-path`.
       once atlas is back. 4. Verify kube-apiserver restarts cleanly on each CP before moving to the next.
       Note: etcd quorum is safe for rolling VPS CP updates (2/3 members, can lose 1).
 
+- [ ] Verify dmeventd thin pool monitoring after wyrm2 reboot: NixOS config changed
+      `pkgs.lvm2` → `pkgs.lvm2_dmeventd` so `lvchange --monitor y` actually registers
+      with dmeventd. After next wyrm2 reboot, verify with
+      `lvs -o lv_name,seg_monitor -S "lv_attr=~^t"` — Monitor column should show
+      `monitored`. See `nix/nixos/hosts/wyrm2/default.nix` openebs setup services.
 - [ ] Fast token rotation on cluster reprovision: `claude-token-rotation` CronJob runs
       biweekly (1st/15th), so after a cluster rebuild the SOPS-encrypted token in
       `secrets/claude-web-k8s-token.yaml` is stale until the next scheduled run. Need a

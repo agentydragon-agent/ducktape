@@ -131,7 +131,7 @@ in
     pkgs.ollama-cuda
     pkgs.poppler-utils # pdftoppm, pdftotext — PDF rendering/extraction
     pkgs.tesseract # OCR
-    pkgs.lvm2 # LVM tools for OpenEBS LVM LocalPV
+    pkgs.lvm2_dmeventd # LVM tools with dmeventd client support for thin pool autoextend
     pkgs.freecad
     pkgs.unzip
     pkgs.usbutils # lsusb
@@ -218,7 +218,7 @@ in
           wantedBy = [ "multi-user.target" ];
           before = [ "kubelet.service" ];
           after = [ "systemd-udev-settle.service" ];
-          path = [ pkgs.lvm2 ];
+          path = [ pkgs.lvm2_dmeventd ];
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
@@ -235,6 +235,15 @@ in
               vgcreate openebs-proxmox-${vg} ${dev}
             fi
             vgchange -ay openebs-proxmox-${vg}
+
+            # Enable dmeventd monitoring on thin pools for autoextend.
+            # OpenEBS's container can't reach the host dmeventd socket, so pools
+            # are created without monitoring (openebs/lvm-localpv#93, WONTFIX).
+            # On boot, lvm2-monitor.service runs before VGs are active so misses them.
+            for pool in $(lvs --noheadings -o lv_name -S "lv_attr=~^t,vg_name=openebs-proxmox-${vg}" | tr -d ' '); do
+              echo "Enabling dmeventd monitoring on openebs-proxmox-${vg}/$pool"
+              lvchange --monitor y "openebs-proxmox-${vg}/$pool"
+            done
           '';
         }
       )
