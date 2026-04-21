@@ -1,11 +1,21 @@
-# Foxconn DW5932e/DW5934e WWAN modem FCC unlock
+# Foxconn DW5932e/DW5934e WWAN modem setup
 #
-# These modems have an FCC lock that prevents the software radio from turning on.
-# The closed-source FoxFlss binary from foxconn-pc/fii_linux performs the unlock
-# handshake via the FOX QMI service (0xE3) over MBIM.
+# Initialization: two phases, each triggered differently.
 #
-# ModemManager's fcc-unlock.d mechanism runs the script automatically during
-# modem probing, so no manual intervention is needed after boot.
+# 1. FCC unlock — FoxFlss (bare): allows the software radio to turn on.
+#    Wired via ModemManager's fcc-unlock.d; MM calls the script when the modem
+#    reports needing FCC unlock. The DW5934e typically boots with power state: on
+#    so this may not fire on every boot, but is kept for correctness.
+#
+# 2. RF calibration — FoxFlss -f Check_RF_SSKU: writes RF tuner settings, DPR
+#    tables, and NR carrier aggregation configs from the platform-specific .dat
+#    file into the modem's non-volatile storage. Required for full signal quality
+#    and 5G NR operation. Idempotent: no-ops if data already matches.
+#    Triggered by an NM dispatcher script when wwan0 comes up — at that point
+#    the bearer is fully established and MM is in steady state, so FoxFlss can
+#    access the MBIM device through mbim-proxy without contention.
+#    The .dat files are packaged in the foxflss derivation and symlinked to the
+#    path FoxFlss hardcodes (/opt/foxconn/data/) via systemd-tmpfiles.
 #
 # Hardware: Foxconn DP25-42843-47 (DW5934e, SDX72) — PCI 105b:e11d
 # See: debug/rugged/hw/esim.md
@@ -18,30 +28,35 @@
 let
   cfg = config.ducktape.foxconnWwan;
 
-  foxflss = pkgs.stdenv.mkDerivation {
-    pname = "foxflss";
-    version = "1.0.15";
+  foxflss = pkgs.callPackage ../../packages/foxflss.nix { };
 
-    src = pkgs.fetchFromGitHub {
-      owner = "foxconn-pc";
-      repo = "fii_linux";
-      rev = "c4a3f92f1a1d11dd08b92f5adb5bc1800a115f28";
-      hash = "sha256-z/hIWJOyHSM3xN99cKSIXJwfu6+/q3NbV6SSNO4md7g=";
-    };
+  # FoxFlss shells out to many standard Unix tools. The systemd transient
+  # service has a minimal PATH, so we supply everything FoxFlss needs:
+  #   dmidecode    — read system SKU for platform detection
+  #   procps       — pgrep, to check if mbim-proxy is running
+  #   gnutar+gzip  — extract RF calibration data from the .dat archive
+  #   gnugrep+gnused+gawk — parse dmidecode/proc output for platform ID
+  #   coreutils    — cp, mkdir, sleep, etc.
+  foxflssPath = lib.makeBinPath [
+    pkgs.dmidecode
+    pkgs.procps
+    pkgs.gnutar
+    pkgs.gzip
+    pkgs.gnugrep
+    pkgs.gnused
+    pkgs.gawk
+    pkgs.coreutils
+  ];
 
-    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-    buildInputs = [ pkgs.glibc ];
-
-    dontBuild = true;
-
-    installPhase = ''
-      runHook preInstall
-      install -Dm755 Application/FoxFlss/bin/FoxFlss $out/bin/FoxFlss
-      install -Dm644 Application/FoxFlss/data/DW5932e_RF.dat $out/share/foxflss/DW5932e_RF.dat
-      install -Dm644 Application/FoxFlss/data/DW5934e_RF.dat $out/share/foxflss/DW5934e_RF.dat
-      runHook postInstall
-    '';
-  };
+  # Script run by the NM dispatcher on wwan0 up: FCC unlock warm-up, then
+  # RF calibration. Bare FoxFlss first because on Ubuntu, ModemManager runs
+  # fcc-unlock.d (bare FoxFlss) before FoxFlss.service, which flushes stale
+  # MBIM CIDs and makes Check_RF_SSKU reliable. Here fcc-unlock.d never fires
+  # (modem boots with power state: on), so we replicate that warm-up explicitly.
+  foxflssRfCalRun = pkgs.writeShellScript "foxflss-rf-cal-run" ''
+    export PATH="${foxflssPath}:$PATH"
+    ${foxflss}/bin/FoxFlss && sleep 5 && ${foxflss}/bin/FoxFlss -f Check_RF_SSKU
+  '';
 
   # FoxFlss shells out to dmidecode to read the system SKU. ModemManager's
   # service PATH includes libqmi and libmbim (when fccUnlockScripts is set)
@@ -49,7 +64,7 @@ let
   fccUnlockScript = pkgs.writeShellScript "foxconn-dw593xe-fcc-unlock" ''
     # Foxconn DW5932e/DW5934e FCC unlock for ModemManager fcc-unlock.d
     # Called by MM with: <script> <dbus-path> <port1> [<port2> ...]
-    export PATH="${pkgs.dmidecode}/bin:$PATH"
+    export PATH="${foxflssPath}:$PATH"
 
     [ $# -lt 2 ] && exit 1
     shift  # discard DBus path
@@ -71,8 +86,18 @@ let
     UNLOCK_RESULT=$?
     if [ $UNLOCK_RESULT -ne 0 ]; then
       echo "Foxconn FCC unlock FAILED" >&2
+      exit $UNLOCK_RESULT
     fi
-    exit $UNLOCK_RESULT
+
+    # RF calibration: write RF tuner/NR-CA/MCFG settings to modem non-volatile
+    # storage. Reads /opt/foxconn/data/DW5934e_RF.dat (symlinked via
+    # systemd-tmpfiles to the nix store). Idempotent.
+    ${foxflss}/bin/FoxFlss -f Check_RF_SSKU
+    RF_RESULT=$?
+    if [ $RF_RESULT -ne 0 ]; then
+      echo "Foxconn RF calibration (Check_RF_SSKU) FAILED: $RF_RESULT" >&2
+    fi
+    exit $RF_RESULT
   '';
 in
 {
@@ -108,20 +133,63 @@ in
       };
       gsm = {
         apn = "h2g2";
+        # MTU 1200: outgoing path MTU on Google Fi is ~1228 bytes (confirmed by
+        # DF-bit ping probing) and ICMP Fragmentation Needed is suppressed, so
+        # PMTU discovery never fires. Bearer-reported MTU is 1436 but the actual
+        # path drops packets silently above ~1228B. With MTU 1200, TCP MSS=1160
+        # and max IP packet=1200B, safely under the path limit.
+        # gsm.mtu is the correct NM property for cellular interface MTU;
+        # ipv4.mtu is ignored for GSM connections (ModemManager owns the bearer).
+        mtu = 1200;
       };
       ipv4 = {
         method = "auto";
         route-metric = 1050;
       };
       ipv6 = {
-        method = "auto";
-        never-default = true;
+        # Disabled: Linux enforces a 1280-byte minimum MTU on IPv6-enabled
+        # interfaces (RFC 2460). With ipv4v6 bearer, this overrides gsm.mtu=1200
+        # and pins the interface at 1280, which exceeds the ~1256B path MTU
+        # ceiling on Google Fi (confirmed by DF-bit probing). Disabling IPv6
+        # removes the floor and lets gsm.mtu=1200 actually take effect.
+        method = "disabled";
       };
     };
 
-    # TODO: FoxFlss hardcodes /opt/foxconn/data/{DW5932e,DW5934e}_RF.dat for RF
-    # calibration data (used by -f Set_RF_SSKU, not by FCC unlock). Symlink them
-    # there if RF calibration is ever needed. NixOS doesn't manage /opt by default
-    # so this would need a systemd-tmpfiles rule or activation script.
+    # Run RF calibration when wwan0 comes up, via NM dispatcher.
+    # This fires after the bearer is fully established (MM in steady state, not
+    # mid-reconnect), which avoids the MBIM contention that a plain
+    # After=ModemManager.service oneshot suffers during nixos-rebuild switch.
+    # Runs on every connect: boot, reconnect, and resume from suspend.
+    # FoxFlss is backgrounded so the dispatcher doesn't stall NM.
+    networking.networkmanager.dispatcherScripts = [
+      {
+        source = pkgs.writeShellScript "foxflss-rf-cal-dispatcher" ''
+          [ "$1" = "wwan0" ] || exit 0
+          [ "$2" = "up" ] || exit 0
+
+          # Run in background — NM waits for dispatcher scripts to finish
+          # and we don't want to delay the connection appearing active.
+          # --collect: auto-remove the transient unit after it finishes so
+          # the next 'up' event can reuse the foxflss-rf-cal unit name.
+          ${pkgs.systemd}/bin/systemd-run \
+            --no-block \
+            --collect \
+            --unit=foxflss-rf-cal \
+            --description="Foxconn DW5934e FCC unlock and RF calibration" \
+            ${foxflssRfCalRun}
+        '';
+        type = "basic";
+      }
+    ];
+
+    # FoxFlss hardcodes /opt/foxconn/data/ for RF calibration data. Symlink the
+    # packaged .dat files there via systemd-tmpfiles (NixOS doesn't manage /opt).
+    systemd.tmpfiles.rules = [
+      "d /opt/foxconn 0755 root root - -"
+      "d /opt/foxconn/data 0755 root root - -"
+      "L+ /opt/foxconn/data/DW5932e_RF.dat - - - - ${foxflss}/share/foxflss/DW5932e_RF.dat"
+      "L+ /opt/foxconn/data/DW5934e_RF.dat - - - - ${foxflss}/share/foxflss/DW5934e_RF.dat"
+    ];
   };
 }

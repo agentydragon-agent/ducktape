@@ -123,7 +123,9 @@ in
   nixpkgs.overlays = [
     (_final: prev: {
       google-chrome = prev.google-chrome.override {
-        commandLineArgs = "--enable-features=WebRtcPipeWireCamera";
+        # WebRtcPipeWireCamera: IPU7 camera requires PipeWire portal (can't enumerate /dev/video* directly)
+        # disable-quic: Google Fi carrier blocks UDP, causing QUIC handshake timeouts before TCP fallback
+        commandLineArgs = "--enable-features=WebRtcPipeWireCamera --disable-quic";
       };
     })
   ];
@@ -149,6 +151,27 @@ in
     xdg-terminal-exec # Used by custom Ctrl+Alt+T keybinding; configure via xdg-terminals.list
     zoom-us
     gimp
+    # Network diagnostics
+    dig # DNS queries (dig, nslookup)
+    traceroute # traceroute
+    mtr # Combined traceroute + ping
+    tcpdump # Packet capture
+    nmap # Port/host scanning, also provides nping
+    iperf3 # Bandwidth measurement
+    net-tools # netstat, ifconfig, route
+    openssl # TLS inspection (openssl s_client)
+    conntrack-tools # conntrack - NAT/connection tracking inspection
+    ethtool # NIC settings, offload flags, link stats
+    bpftools # Inspect loaded BPF programs (Cilium hooks etc.)
+    # WWAN / eSIM management
+    lpac # eUICC/eSIM profile management (lpac profile list/download/enable)
+    libmbim # mbimcli for MBIM modem queries (signal, UICC, registration)
+    libqmi # qmicli for QMI-over-MBIM queries (UIM card status)
+    socat # Serial port access (AT commands via /dev/wwan0at0)
+    zbar # QR code decoder (zbarimg) for eSIM activation codes
+    minicom # Interactive serial terminal for AT command sessions
+    speedtest-cli # Proper speed testing
+    wireshark-cli # tshark — protocol-level packet analysis (QUIC, TLS, MBIM)
   ];
 
   # Local file sharing across devices (LAN)
@@ -157,7 +180,6 @@ in
     openFirewall = true;
   };
 
-  # Steam
   programs.steam.enable = true;
 
   # Zsh as default shell

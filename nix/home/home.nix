@@ -749,6 +749,7 @@ in
       { package = pkgs.gnomeExtensions.pop-shell; }
       # Phone integration (firewall ports opened by programs.kdeconnect in gui.nix).
       { package = pkgs.gnomeExtensions.gsconnect; }
+      { package = pkgs.gnomeExtensions.display-scale-switcher; }
     ];
   };
 
