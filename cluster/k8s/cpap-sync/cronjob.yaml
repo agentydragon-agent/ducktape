@@ -28,6 +28,9 @@ spec:
             - name: dbus
               hostPath:
                 path: /run/dbus
+            - name: network-manager
+              hostPath:
+                path: /var/run/NetworkManager
           containers:
             - name: sync
               image: ghcr.io/agentydragon/cpap-sync:devel-20260420062825-dc59fe2 # {"$imagepolicy": "flux-system:cpap-sync"}
@@ -42,6 +45,8 @@ spec:
                   mountPath: /data/cpap
                 - name: dbus
                   mountPath: /run/dbus
+                - name: network-manager
+                  mountPath: /var/run/NetworkManager
               resources:
                 requests:
                   cpu: 100m
