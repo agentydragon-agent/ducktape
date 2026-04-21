@@ -59,7 +59,6 @@ spec:
     # Persistence configuration
     persistence:
       enabled: true
-      resourcePolicy: "keep"
       persistentVolumeClaim:
         registry:
           storageClass: lvm-proxmox-hdd
