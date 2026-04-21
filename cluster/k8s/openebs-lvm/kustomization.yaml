@@ -6,4 +6,5 @@ resources:
   - sc-lvm-proxmox-ssd.yaml
   - sc-lvm-proxmox-ssd-block.yaml
   - sc-lvm-proxmox-hdd.yaml
+  - sc-lvm-proxmox-hdd-shared.yaml
   - sc-lvm-proxmox-hdd-block.yaml

@@ -7,7 +7,7 @@ spec:
   accessModes:
     - ReadWriteOnce
   # OpenEBS LVM HDD on wyrm2 — co-located with the WiFi stick
-  storageClassName: lvm-proxmox-hdd
+  storageClassName: lvm-proxmox-hdd-shared
   resources:
     requests:
       storage: 50Gi
