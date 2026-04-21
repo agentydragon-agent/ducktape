@@ -9,7 +9,7 @@ completions, summarization). Separate from cluster ollama at `ollama.allegedly.w
 
 IPEX-LLM Docker container (`intelanalytics/ipex-llm-inference-cpp-xpu`) runs as
 `podman-ipex-ollama.service` via `virtualisation.oci-containers`. NixOS module:
-<nix/nixos/modules/local_llm_arc/default.nix>.
+<nix/nixos/hosts/rugged/local_llm_arc/default.nix>.
 
 - API at `http://localhost:11434` (OpenAI-compatible)
 - Model storage: `/var/lib/local-llm/ollama`
