@@ -20,3 +20,4 @@ spec:
   dependsOn:
     - name: tofu-controller
     - name: authentik
+    - name: authentik-sso-secrets
