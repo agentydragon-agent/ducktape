@@ -35,11 +35,11 @@
   config,
   pkgs,
   lib,
-  siderolabs-docs,
-  skills-tar,
+  sharedSkillsArgs,
   ...
 }:
 let
+  mkSkills = import ../skills.nix sharedSkillsArgs;
   # OpenCode configuration as JSON
   # Docs: https://opencode.ai/docs/providers/
   opencodeConfig = {
@@ -380,14 +380,5 @@ in
   };
 
   # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
-  home.file =
-    (import ../skills.nix {
-      inherit
-        lib
-        pkgs
-        siderolabs-docs
-        skills-tar
-        ;
-    })
-      ".config/opencode";
+  home.file = mkSkills ".config/opencode";
 }

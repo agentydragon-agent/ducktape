@@ -125,6 +125,16 @@
         nixGLPackages = nixGL.packages.${system};
         ducktape-artifacts = artifacts;
         skills-tar = skillsUnpacked;
+        sharedSkillsArgs = {
+          inherit (pkgs)
+            lib
+            ;
+          inherit
+            pkgs
+            siderolabs-docs
+            ;
+          skills-tar = skillsUnpacked;
+        };
       };
 
       mkHome =

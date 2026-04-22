@@ -4,19 +4,13 @@
   pkgsUnstable,
   lib,
   config,
+  sharedSkillsArgs,
   ...
 }:
 let
   codexSettings = {
-    model = "gpt-5.1-codex";
-
     # Local model providers for GPT-OSS
     model_providers = {
-      ollama = {
-        name = "Ollama Local";
-        base_url = "http://localhost:11434/v1";
-        wire_api = "responses";
-      };
       # vllm provider disabled: wire_api = "chat" is no longer supported (2026-04-21).
       # vLLM's Responses API has incorrect GPT-OSS handling:
       # https://github.com/vllm-project/vllm/issues/28262
@@ -50,26 +44,20 @@ let
       openai = {
         model = "gpt-5.1-codex";
         # Web search requires OpenAI backend.
-        features = {
-          web_search_request = true;
-        };
+        web_search = "live";
       };
       # GPT-OSS-20B via vLLM with Responses API
       gpt-oss = {
         model = "gpt-oss-20b";
         model_provider = "vllm";
         model_reasoning_effort = "high";
-        features = {
-          web_search_request = false;
-        };
+        web_search = "disabled";
       };
       # GPT-OSS-20B via Ollama
       gpt-oss-ollama = {
         model = "gpt-oss:20b";
         model_provider = "ollama";
-        features = {
-          web_search_request = false;
-        };
+        web_search = "disabled";
       };
       # GPT-OSS 20B via cluster LiteLLM (228 t/s decode, 100% GPU)
       # Run: codex --config profile=gpt-oss-20b
@@ -77,9 +65,7 @@ let
         model = "gpt-oss-20b-128k";
         model_provider = "cluster";
         model_reasoning_effort = "high";
-        features = {
-          web_search_request = false;
-        };
+        web_search = "disabled";
       };
       # GPT-OSS 120B via cluster LiteLLM (10 t/s decode, 91% GPU)
       # Run: codex --config profile=gpt-oss-120b
@@ -87,9 +73,7 @@ let
         model = "gpt-oss-120b-128k";
         model_provider = "cluster";
         model_reasoning_effort = "high";
-        features = {
-          web_search_request = false;
-        };
+        web_search = "disabled";
       };
     };
     # Persist command history to disk.
@@ -109,7 +93,6 @@ let
         "/home/agentydragon/.cache/sccache"
         "/home/agentydragon/.cache/nix"
         "/nix"
-        "/nix/var/nix"
         "/home/agentydragon/.cache/pre-commit"
         # Allow Codex sandboxed pre-commit runs to write their hook log.
         "/home/agentydragon/.cache/pre-commit/pre-commit.log"
@@ -135,8 +118,11 @@ let
   baseFileRelative = "${codexHomeRelative}/config.nix-base.toml";
   baseFileAbsolute = "${codexHomeAbsolute}/config.nix-base.toml";
   liveFileAbsolute = "${codexHomeAbsolute}/config.toml";
+  skillPrefix = if useXdgDirectories then "${xdgConfigHomeRelative}/codex" else ".codex";
 
   pythonMerge = pkgs.python3.withPackages (ps: [ ps."tomli-w" ]);
+  mkSkills = import ../skills.nix sharedSkillsArgs;
+  skillFiles = mkSkills skillPrefix;
 
   mergeScript = ''
     set -euo pipefail
@@ -164,7 +150,10 @@ in
   };
 
   home = {
-    file."${baseFileRelative}".source = baseConfigFile;
+    file = {
+      "${baseFileRelative}".source = baseConfigFile;
+    }
+    // skillFiles;
     activation.codexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] mergeScript;
     sessionVariables = lib.mkIf useXdgDirectories {
       CODEX_HOME = "${config.xdg.configHome}/codex";

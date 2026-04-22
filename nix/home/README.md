@@ -8,7 +8,7 @@ Home-manager user configurations for multiple machines.
 nix/home/
 ├── programs/              # Generic home-manager-style modules (could be upstreamed)
 ├── modules/               # Custom modules (solarized, gnome-shell-keybindings, etc.)
-├── skills/                # Shared skills for Claude Code and Gemini CLI
+├── skills/                # Shared skills for Claude Code, Codex, Gemini CLI, OpenCode
 ├── tests/                 # Nix tests for modules and integrations
 ├── allowed-commands.nix   # Personal SSOT: allowed bash commands
 ├── claude_code/            # Personal integration: Claude Code
@@ -60,6 +60,9 @@ in {
 - **`allowed-commands.nix`**: Allowed bash commands for both Claude Code and Gemini CLI
   - Shared between personal integrations
   - Defines command permissions used by both CLIs
+
+- **`skills.nix`**: Shared skill deployment helper for Claude Code, Codex, Gemini CLI, and OpenCode
+  - Expands the CI-built `skills-tar` into each tool's config home under `skills/`
 
 Shared data used by both home-manager and NixOS lives in `../lib/`:
 

@@ -1,4 +1,4 @@
-# Shared skill deployment for AI agents (Claude Code, Gemini CLI, OpenCode, etc.)
+# Shared skill deployment for AI agents (Claude Code, Codex, Gemini CLI, OpenCode, etc.)
 #
 # Returns a function: prefix -> home.file entries that deploy skills to ~/{prefix}/skills/.
 # Skills are consumed from a CI-built tarball (skills-tar flake input).

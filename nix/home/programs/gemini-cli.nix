@@ -47,12 +47,12 @@
   config,
   lib,
   pkgs,
-  siderolabs-docs,
-  skills-tar,
+  sharedSkillsArgs,
   ...
 }:
 let
   cfg = config.programs.gemini-cli;
+  mkSkills = import ../skills.nix sharedSkillsArgs;
 
   # Use pkgs.formats.toml for proper TOML generation
   tomlFormat = pkgs.formats.toml { };
@@ -120,15 +120,6 @@ in
     ) cfg.policies;
 
     # Deploy skills to ~/.gemini/skills/ (local + external, shared with Claude Code)
-    home.file =
-      (import ../skills.nix {
-        inherit
-          lib
-          pkgs
-          siderolabs-docs
-          skills-tar
-          ;
-      })
-        ".gemini";
+    home.file = mkSkills ".gemini";
   };
 }
