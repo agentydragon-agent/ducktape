@@ -46,27 +46,41 @@ spec:
               memory: 512Mi
             limits:
               memory: 2Gi
+          # Tana only serves /health on loopback inside the container. Kubelet
+          # httpGet probes target the pod IP, which stays unreachable even when
+          # Tana is healthy, so probe from inside the container instead.
           # Generous startup probe: /health won't respond until Tana is logged in
           # and MCP server is enabled (done manually via noVNC).
           startupProbe:
-            httpGet:
-              path: /health
-              port: 8262
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8262/health
             failureThreshold: 120
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /health
-              port: 8262
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8262/health
             periodSeconds: 30
             failureThreshold: 5
           readinessProbe:
-            httpGet:
-              path: /health
-              port: 8262
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:8262/health
             periodSeconds: 15
         # nginx sidecar: rewrites Host/Origin to localhost so Tana's MCP server
-        # accepts requests from cluster clients
+        # accepts requests from cluster clients. Probe the proxy over HTTP so
+        # readiness reflects the actual cluster-facing path on :8263, not just
+        # that the port is open.
         - name: proxy
           image: nginx:alpine
           ports:
@@ -84,11 +98,13 @@ spec:
             limits:
               memory: 64Mi
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /health
               port: 8263
             periodSeconds: 30
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /health
               port: 8263
             periodSeconds: 10
       volumes:
