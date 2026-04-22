@@ -4,12 +4,46 @@ Runs the [Tana](https://tana.inc) desktop app in a Kubernetes container with an
 nginx proxy that rewrites `Host`/`Origin` headers to `localhost` so Tana's MCP
 server accepts requests from cluster clients.
 
+## Purpose
+
+This deployment exists to turn Tana's desktop-only local MCP server into a
+cluster-consumable MCP endpoint without exposing Tana's OAuth approval flow to
+other cluster clients.
+
+Tana normally exposes MCP only on loopback inside the desktop app process. This
+deployment adds:
+
+- a graphical desktop wrapper so an operator can do the one-time Tana login and
+  enable the Local API/MCP server
+- a cluster-internal proxy so workloads can reach `/mcp` even though Tana
+  itself only listens on `localhost`
+- a token-broker sidecar that registers as `Claude Code`, completes the
+  auto-approved OAuth+PKCE flow against the pod-local Tana server, and keeps
+  the resulting access/refresh tokens fresh in a Kubernetes secret
+
+## Security Model
+
+- `tana-desktop` listens on `127.0.0.1:8262` inside the pod
+- the `token-broker` talks directly to that pod-local listener and is the only
+  component that should reach Tana's `/oauth/register`, `/oauth/authorize`, and
+  `/oauth/token` endpoints
+- the nginx sidecar on `8263` exposes only `/mcp` and `/health` to cluster
+  clients and explicitly blocks `/oauth/*`
+
+This matters because the token broker relies on Tana auto-approving OAuth
+clients that identify themselves as `Claude Code`. If the proxied service also
+exposed Tana's OAuth endpoints, another cluster client could attempt the same
+dynamic registration flow and impersonate that client identity. Restricting the
+cluster-visible surface to `/mcp` and `/health` keeps the privileged OAuth flow
+pod-local.
+
 ## Architecture
 
 - **tana-desktop container**: Ubuntu + Xvfb + noVNC + Openbox + Tana Desktop.
   Tana's MCP server listens on `localhost:8262` inside the pod.
 - **proxy sidecar**: `nginx:alpine` rewrites `Host`/`Origin` to localhost before
-  proxying to port 8262. Exposed on port 8263 (cluster-internal only).
+  proxying only `/mcp` and `/health` to port 8262. Exposed on port 8263
+  (cluster-internal only).
 - **token-broker sidecar**: Performs OAuth 2.1 + PKCE flow against Tana's MCP
   server, obtains access/refresh tokens, and writes them to the
   `tana-mcp-oauth-tokens` K8s secret. Refreshes automatically before expiry.
@@ -119,6 +153,8 @@ The MCP endpoint is cluster-internal only (no public ingress).
 - **Auth**: The token-broker sidecar obtains OAuth tokens automatically. Clients
   can read the `tana-mcp-oauth-tokens` secret for the access token and include
   `Authorization: Bearer <token>` in requests.
+- **Exposed paths**: only `/mcp` and `/health`. Tana's `/oauth/*` endpoints are
+  intentionally not reachable through the proxy.
 
 ### Health Check
 
@@ -134,6 +170,13 @@ kubectl port-forward -n tana-mcp svc/tana-mcp 8263:8263
 curl http://localhost:8263/health
 ```
 
+Expected path behavior through the proxy:
+
+- `POST /mcp`: allowed
+- `GET /health`: allowed
+- `/oauth/*`: `403`
+- anything else: `404`
+
 ## Troubleshooting
 
 - **Deployment stays `0/1`, pod stays `2/3`**: This is normal until the Tana
@@ -144,6 +187,9 @@ curl http://localhost:8263/health
   then reconnect via noVNC.
 - **MCP health check failing**: Tana may not be running or MCP not enabled.
   Connect via noVNC to check.
+- **Proxy returns `403` on `/oauth/*`**: This is intentional. Only the
+  token-broker sidecar should perform Tana OAuth against the pod-local `8262`
+  listener.
 - **`Logging in using browser...` but no browser appears**: The pod is likely
   running an older `tana-desktop` image without the browser-launching
   dependencies (`xdg-utils` + GUI browser), or a browser that still has its
