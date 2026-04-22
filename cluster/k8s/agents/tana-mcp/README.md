@@ -6,8 +6,8 @@ server accepts requests from cluster clients.
 
 ## Architecture
 
-- **tana-desktop container**: Ubuntu + Xvfb + noVNC + Tana Desktop. Tana's MCP
-  server listens on `localhost:8262` inside the pod.
+- **tana-desktop container**: Ubuntu + Xvfb + noVNC + Openbox + Tana Desktop.
+  Tana's MCP server listens on `localhost:8262` inside the pod.
 - **proxy sidecar**: `nginx:alpine` rewrites `Host`/`Origin` to localhost before
   proxying to port 8262. Exposed on port 8263 (cluster-internal only).
 - **token-broker sidecar**: Performs OAuth 2.1 + PKCE flow against Tana's MCP
@@ -69,6 +69,8 @@ desktop session.
   desktop via `xdg-open`
 - If the Tana window says `Logging in using browser...`, stay in noVNC and look
   for the browser window there rather than on your host desktop
+- The desktop now runs a lightweight window manager, so you can move/focus the
+  browser and Tana windows instead of interacting with a bare root window
 
 ### 4. Enable the MCP Server
 

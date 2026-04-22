@@ -14,6 +14,10 @@ Xvfb :99 -screen 0 "$RESOLUTION" &
 XVFB_PID=$!
 sleep 1
 
+# Start a lightweight window manager so spawned windows can be moved/focused in
+# noVNC instead of landing on a bare X root window.
+openbox-session &
+
 # Start VNC server (listens on localhost only — noVNC proxies it)
 x11vnc -display :99 -forever -nopw -listen 127.0.0.1 -rfbport 5900 &
 

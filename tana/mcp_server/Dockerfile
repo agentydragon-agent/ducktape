@@ -7,12 +7,12 @@ ENV BROWSER=/usr/bin/epiphany-browser
 ENV WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 ENV GTK_A11Y=none
 
-# Electron / Chromium runtime deps, Xvfb, x11vnc, noVNC, and a GUI browser for
-# Tana's "continue in browser" login handoff. Ubuntu 24.04 ships chromium as a
-# snap transition package, so use epiphany-browser for an apt-installable GUI
-# browser inside the container.
+# Electron / Chromium runtime deps, Xvfb, x11vnc, noVNC, a lightweight window
+# manager, and a GUI browser for Tana's "continue in browser" login handoff.
+# Ubuntu 24.04 ships chromium as a snap transition package, so use
+# epiphany-browser for an apt-installable GUI browser inside the container.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    xvfb x11vnc novnc websockify xdg-utils epiphany-browser \
+    xvfb x11vnc novnc websockify xdg-utils epiphany-browser openbox xterm \
     # Electron / Chromium shared libraries
     libgtk-3-0 libnotify4 libnss3 libxss1 libasound2t64 \
     libgbm1 libsecret-1-0 libatk-bridge2.0-0 libatk1.0-0 \
