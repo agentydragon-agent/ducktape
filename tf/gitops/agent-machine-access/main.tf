@@ -288,7 +288,7 @@ data "authentik_user" "agentydragon" {
 
 resource "authentik_group" "kubectl_sandbox_users" {
   name  = "kubectl-sandbox-users"
-  users = [data.authentik_user.agentydragon.id]
+  users = [data.authentik_user.agentydragon.pk]
 }
 
 # ============================================================================
