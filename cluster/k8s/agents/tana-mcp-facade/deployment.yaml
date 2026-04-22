@@ -23,7 +23,7 @@ spec:
         - name: harbor-pull-robot
       containers:
         - name: server
-          image: ghcr.io/agentydragon/tana-mcp-facade:devel-20260422205335-d9cfcf8 # {"$imagepolicy": "flux-system:tana-mcp-facade"}
+          image: ghcr.io/agentydragon/tana-mcp-facade:devel-20260422225958-52fef48 # {"$imagepolicy": "flux-system:tana-mcp-facade"}
           imagePullPolicy: Always
           ports:
             - name: http
