@@ -69,6 +69,10 @@ CloudNativePG `local-path`.
       current VPS IPs, but Hetzner assigns IPs at server creation time and they can
       change across teardown/rebuild. Currently manual — tofu should write it, or
       bootstrap should update it from `hcloud server list` output.
+- [ ] Require every workload to declare Stakater Reloader explicitly as enabled or
+      intentionally disabled. No implicit default. Enforce via review/docs and
+      add missing `reloader.stakater.com/auto: "true"` or an explicit opt-out
+      comment/setting on existing Deployments, StatefulSets, and Helm releases.
 - [ ] Restore docker-ci Gateway routing: docker-ci needs TLS passthrough on port 2376.
       Previously used a dedicated `docker-ci-tls` Gateway listener + TLSRoute, but Cilium
       bug [#42159](https://github.com/cilium/cilium/issues/42159) caused that listener's
