@@ -87,6 +87,7 @@ let
     (mkPrefix "users")
     (mkPrefix "id")
     (mkPrefix "groups")
+    (mkPrefix "lpstat")
   ]
   ++ (mkPrefixMulti "gsettings" [
     "get"
