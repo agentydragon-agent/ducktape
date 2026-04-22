@@ -35,10 +35,35 @@ resource "authentik_source_oauth" "google" {
   name                = "Google"
   slug                = "google"
   provider_type       = "google"
+  authorization_url   = "https://accounts.google.com/o/oauth2/v2/auth"
+  access_token_url    = "https://oauth2.googleapis.com/token"
+  profile_url         = "https://openidconnect.googleapis.com/v1/userinfo"
+  oidc_jwks_url       = "https://www.googleapis.com/oauth2/v3/certs"
   consumer_key        = local.google_client_id
   consumer_secret     = local.google_client_secret
   authentication_flow = data.authentik_flow.default_source_authentication[0].id
   # On first Google login, link to existing user with matching email
   # If user doesn't exist in authentik, login fails (no auto-creation)
   user_matching_mode = "email_link"
+}
+
+resource "authentik_stage_identification" "google" {
+  count = local.google_client_id != "" ? 1 : 0
+
+  name                      = "google-authentication-identification"
+  user_fields               = ["email", "username"]
+  case_insensitive_matching = true
+  show_matched_user         = true
+  pretend_user_exists       = true
+  enable_remember_me        = false
+  show_source_labels        = false
+  sources                   = [authentik_source_oauth.google[0].uuid]
+}
+
+resource "authentik_flow_stage_binding" "google_identification" {
+  count = local.google_client_id != "" ? 1 : 0
+
+  target = data.authentik_flow.custom_authentication.id
+  stage  = authentik_stage_identification.google[0].id
+  order  = 10
 }

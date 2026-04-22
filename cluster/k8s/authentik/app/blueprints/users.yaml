@@ -21,13 +21,6 @@ entries:
     state: present
     identifiers:
       target: !KeyOf custom-auth-flow
-      stage: !Find [authentik_stages_identification.identificationstage, [name, default-authentication-identification]]
-      order: 10
-
-  - model: authentik_flows.flowstagebinding
-    state: present
-    identifiers:
-      target: !KeyOf custom-auth-flow
       stage: !Find [authentik_stages_password.passwordstage, [name, default-authentication-password]]
       order: 20
 
@@ -37,26 +30,6 @@ entries:
       target: !KeyOf custom-auth-flow
       stage: !Find [authentik_stages_user_login.userloginstage, [name, default-authentication-login]]
       order: 30
-
-  # Grafana Admins group (referenced by Grafana OIDC role_attribute_path)
-  - model: authentik_core.group
-    id: grafana-admins
-    state: present
-    identifiers:
-      name: Grafana Admins
-
-  # Admin user
-  - model: authentik_core.user
-    state: present
-    identifiers:
-      username: agentydragon
-    attrs:
-      name: Rai
-      email: agentydragon@gmail.com
-      password: !Env USER_PASSWORD
-      groups:
-        - !Find [authentik_core.group, [name, authentik Admins]]
-        - !KeyOf grafana-admins
 
   # Domain-matched brand for allegedly.works
   - model: authentik_brands.brand

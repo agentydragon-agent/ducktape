@@ -32,8 +32,15 @@ data "kubernetes_secret" "authentik_bootstrap" {
   }
 }
 
+data "kubernetes_secret" "authentik_user_password" {
+  metadata {
+    name      = "authentik-user-password"
+    namespace = "authentik"
+  }
+}
+
 provider "authentik" {
-  url   = "http://authentik-server.authentik.svc.cluster.local"
+  url   = var.authentik_url_override != "" ? var.authentik_url_override : "http://authentik-server.authentik.svc.cluster.local"
   token = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
 }
 
@@ -43,12 +50,38 @@ data "authentik_flow" "implicit_consent" {
   slug = "default-provider-authorization-implicit-consent"
 }
 
+data "authentik_flow" "custom_authentication" {
+  slug = "custom-authentication-flow"
+}
+
 data "authentik_flow" "invalidation" {
   slug = "default-provider-invalidation-flow"
 }
 
 data "authentik_group" "admins" {
   name = "authentik Admins"
+}
+
+data "authentik_user" "akadmin" {
+  username = "akadmin"
+}
+
+resource "authentik_user" "agentydragon" {
+  username = "agentydragon"
+  name     = "Rai"
+  email    = "agentydragon@gmail.com"
+  password = data.kubernetes_secret.authentik_user_password.data["USER_PASSWORD"]
+}
+
+resource "authentik_group" "authentik_admins" {
+  name         = "authentik Admins"
+  is_superuser = true
+  users        = [data.authentik_user.akadmin.pk, tonumber(authentik_user.agentydragon.id)]
+}
+
+resource "authentik_group" "grafana_admins" {
+  name  = "Grafana Admins"
+  users = [tonumber(authentik_user.agentydragon.id)]
 }
 
 data "authentik_certificate_key_pair" "self_signed" {
