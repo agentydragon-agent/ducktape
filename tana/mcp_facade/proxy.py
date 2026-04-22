@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from fastmcp import FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.server.proxy import ProxyClient
+from fastmcp.server import create_proxy
+from fastmcp.server.providers.proxy import ProxyClient
 
 from tana.mcp_facade.config import ServerSettings
 
 
-def build_proxy_server(settings: ServerSettings, **kwargs: object) -> FastMCP:
+def build_proxy_server(settings: ServerSettings, **kwargs: object):
     """Create a FastMCP proxy to the downstream Tana MCP server."""
     transport = StreamableHttpTransport(settings.downstream_url, auth=settings.static_bearer_token)
-    return FastMCP.as_proxy(
+    return create_proxy(
         ProxyClient(transport),
         name="Tana MCP Facade",
         instructions=(

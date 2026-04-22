@@ -21,7 +21,6 @@ py_library(
     deps = [
         ":config",
         "@pypi//fastmcp",
-        "@pypi//pyjwt",
     ],
 )
 
