@@ -2,6 +2,9 @@
 set -e
 
 RESOLUTION="${RESOLUTION:-1280x800x24}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-tana}"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
 
 # Start dbus session bus (required by Chromium/Electron)
 eval "$(dbus-launch --sh-syntax)"
