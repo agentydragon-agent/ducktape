@@ -53,12 +53,13 @@ Wait until the new pod is `Running` and shows `2/3` ready.
 kubectl port-forward -n tana-mcp svc/tana-mcp 6080:6080
 ```
 
-Open <http://localhost:6080> in your browser. You'll see the Tana desktop app
-running in a virtual display.
-
-If the root page does not auto-connect cleanly, open:
+Open this exact URL in your browser:
 
 - <http://localhost:6080/vnc.html?autoconnect=true&resize=scale>
+
+Do not use bare <http://localhost:6080> as the operator entrypoint. That is
+just the noVNC web root and may show an index page instead of attaching to the
+desktop session.
 
 ### 3. Sign into Tana
 
@@ -143,8 +144,9 @@ curl http://localhost:8263/health
   Connect via noVNC to check.
 - **`Logging in using browser...` but no browser appears**: The pod is likely
   running an older `tana-desktop` image without the browser-launching
-  dependencies (`xdg-utils` + GUI browser). Rebuild and redeploy the image,
-  then retry the login flow.
+  dependencies (`xdg-utils` + GUI browser), or a browser that still has its
+  own sandbox enabled inside the container. Rebuild and redeploy the image,
+  then retry the login flow from the `vnc.html` URL above.
 - **`tana-mcp-oauth-tokens` secret missing**: The broker only creates it after
   Tana is healthy. Check `kubectl -n tana-mcp logs deploy/tana-mcp -c token-broker`
   first.

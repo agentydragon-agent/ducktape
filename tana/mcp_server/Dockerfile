@@ -4,6 +4,8 @@ LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99
 ENV BROWSER=/usr/bin/epiphany-browser
+ENV WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+ENV GTK_A11Y=none
 
 # Electron / Chromium runtime deps, Xvfb, x11vnc, noVNC, and a GUI browser for
 # Tana's "continue in browser" login handoff. Ubuntu 24.04 ships chromium as a
