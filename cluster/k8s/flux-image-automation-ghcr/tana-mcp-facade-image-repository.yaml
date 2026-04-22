@@ -1,0 +1,8 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: tana-mcp-facade
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/tana-mcp-facade
+  interval: 5m

@@ -19,7 +19,6 @@ spec:
       labels:
         app.kubernetes.io/name: tana-mcp
     spec:
-      serviceAccountName: tana-token-broker
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       imagePullSecrets:
@@ -92,16 +91,6 @@ spec:
             tcpSocket:
               port: 8263
             periodSeconds: 10
-        # OAuth token broker: performs OAuth 2.1 + PKCE flow against Tana's
-        # MCP server and writes tokens to a K8s secret
-        - name: token-broker
-          image: ghcr.io/agentydragon/tana-token-broker:devel-20260412033212-0370fd8 # {"$imagepolicy": "flux-system:tana-token-broker"}
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              memory: 128Mi
       volumes:
         - name: tana-config
           persistentVolumeClaim:

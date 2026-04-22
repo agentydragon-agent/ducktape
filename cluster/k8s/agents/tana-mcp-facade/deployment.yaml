@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tana-mcp-facade
+  namespace: tana-mcp
+  labels:
+    app.kubernetes.io/name: tana-mcp-facade
+  annotations:
+    description: "Public Authentik-backed MCP facade for Tana. Access is enforced by Authentik group membership and the server injects the downstream PAT."
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tana-mcp-facade
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tana-mcp-facade
+    spec:
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: harbor-pull-robot
+      containers:
+        - name: server
+          image: ghcr.io/agentydragon/tana-mcp-facade:devel-20260422205335-d9cfcf8 # {"$imagepolicy": "flux-system:tana-mcp-facade"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          env:
+            - name: FASTMCP_HOME
+              value: "/tmp/fastmcp"
+            - name: TANA_MCP_FACADE_AUTH__OIDC_ISSUER
+              value: "https://auth.allegedly.works/application/o/tana-mcp-facade/"
+            - name: TANA_MCP_FACADE_AUTH__PUBLIC_BASE_URL
+              value: "https://tana-mcp-facade.allegedly.works"
+            - name: TANA_MCP_FACADE_DOWNSTREAM_URL
+              value: "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
+            - name: TANA_MCP_FACADE_AUTH__OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: tana-mcp-facade-oidc
+                  key: client_id
+            - name: TANA_MCP_FACADE_AUTH__OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tana-mcp-facade-oidc
+                  key: client_secret
+            - name: TANA_MCP_FACADE_STATIC_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tana-agentydragon-gmail-com-account-pat
+                  key: token
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20

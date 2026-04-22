@@ -73,6 +73,9 @@ spec:
       name: tana-mcp
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: tana-mcp-facade
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: tana-token-broker
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

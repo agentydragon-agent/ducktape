@@ -23,6 +23,7 @@ spec:
     # TF writes grocy-mcp-oidc secrets into per-household namespaces.
     - name: grocy-sf
     - name: grocy-vallejo
+    - name: tana-mcp
     # TF writes the `kubectl-sandbox-mcp` secret into the `kubectl-sandbox-mcp`
     # namespace, so that namespace must exist first.
     - name: kubectl-sandbox-mcp-namespace

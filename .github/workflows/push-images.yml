@@ -76,6 +76,7 @@ jobs:
               image_name: tana-token-broker,
               test_target: "//tana/token_broker/...",
             }
+          - { image: "//tana/mcp_facade:image", image_name: tana-mcp-facade, test_target: "//tana/mcp_facade/..." }
           - {
               image: "//x/authentik_mcp_poc:server_image",
               image_name: authentik-mcp-poc-server,
