@@ -20,22 +20,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 libcairo2 libcups2 libdbus-1-3 libexpat1 \
     libxkbcommon0 \
     # Misc
-    dbus-x11 fonts-noto-core ca-certificates curl unzip \
+    dbus-x11 fonts-noto-core ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash tana \
  && mkdir -p /home/tana/.config/Tana \
  && chown -R tana:tana /home/tana
 
-# Download and extract Tana Desktop from GitHub releases.
-# The zip contains a directory with the Electron app.
-ARG TANA_VERSION=1.513.10
+# Install Tana Desktop from the official Debian package so desktop integration
+# files (.desktop launcher, MIME/protocol handlers) are present in the image.
+ARG TANA_VERSION=1.515.0
 RUN curl -fsSL \
-      "https://github.com/tanainc/tana-desktop-releases/releases/download/v${TANA_VERSION}/Tana-linux-x64-${TANA_VERSION}.zip" \
-      -o /tmp/tana.zip \
- && unzip -q /tmp/tana.zip -d /opt/tana \
- && rm /tmp/tana.zip \
- && chmod -R a+rX /opt/tana/Tana-linux-x64
+      "https://github.com/tanainc/tana-desktop-releases/releases/download/v${TANA_VERSION}/tana_${TANA_VERSION}_amd64.deb" \
+      -o /tmp/tana.deb \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends /tmp/tana.deb \
+ && test -x /usr/bin/tana \
+ && mkdir -p /opt/tana \
+ && ln -sf /usr/bin/tana /opt/tana/Tana \
+ && rm /tmp/tana.deb \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
