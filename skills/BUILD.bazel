@@ -1,4 +1,5 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # All skill tars combined into one archive for web deployment.
 # Extract with: tar xf skills.tar -C ~/.claude/skills/
@@ -29,5 +30,32 @@ pkg_tar(
         "//skills/update_deps:update_deps_tar",
         "//skills/verify_docs:verify_docs_tar",
         "//skills/web_selfcheck:web_selfcheck_tar",
+    ],
+)
+
+py_library(
+    name = "frontmatter_validation",
+    srcs = ["frontmatter_validation.py"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_library(
+    name = "skill_frontmatter_test_lib",
+    srcs = ["skill_frontmatter_test.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":frontmatter_validation",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_frontmatter",
+    srcs = ["test_frontmatter.py"],
+    deps = [
+        ":frontmatter_validation",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

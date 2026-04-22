@@ -120,6 +120,6 @@ in
     ) cfg.policies;
 
     # Deploy skills to ~/.gemini/skills/ (local + external, shared with Claude Code)
-    home.file = mkSkills ".gemini";
+    home.file = mkSkills { prefix = ".gemini"; };
   };
 }

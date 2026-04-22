@@ -63,6 +63,7 @@ in {
 
 - **`skills.nix`**: Shared skill deployment helper for Claude Code, Codex, Gemini CLI, and OpenCode
   - Expands the CI-built `skills-tar` into each tool's config home under `skills/`
+  - Codex uses directory symlinks for skills because its current loader skips symlinked `SKILL.md` files
 
 Shared data used by both home-manager and NixOS lives in `../lib/`:
 

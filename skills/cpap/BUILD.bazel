@@ -1,31 +1,21 @@
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_test")
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
-pkg_files(
-    name = "cpap_local_files",
-    srcs = ["SKILL.md"],
-    strip_prefix = strip_prefix.from_pkg(),
-)
-
-pkg_files(
-    name = "cpap_example_files",
-    srcs = [
-        "//skills/cpap/examples:parse_str_edf.py",
-        "//skills/cpap/examples:read_waveforms.py",
+skill_package(
+    name = "cpap",
+    contents = [
+        skill_mapping(
+            srcs = ["SKILL.md"],
+            preserve_paths = True,
+        ),
+        skill_mapping(
+            srcs = [
+                "//skills/cpap/examples:parse_str_edf.py",
+                "//skills/cpap/examples:read_waveforms.py",
+            ],
+            prefix = "examples",
+        ),
     ],
-    prefix = "examples",
-    strip_prefix = strip_prefix.files_only(),
-)
-
-pkg_tar(
-    name = "cpap_tar",
-    srcs = [
-        ":cpap_example_files",
-        ":cpap_local_files",
-    ],
-    package_dir = "cpap",
-    visibility = ["//visibility:public"],
 )
 
 py_test(

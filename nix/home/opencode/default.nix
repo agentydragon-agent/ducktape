@@ -380,5 +380,5 @@ in
   };
 
   # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
-  home.file = mkSkills ".config/opencode";
+  home.file = mkSkills { prefix = ".config/opencode"; };
 }

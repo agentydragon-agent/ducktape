@@ -1,83 +1,55 @@
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
-# skill_package can't handle cross-package srcs (strip_prefix.from_pkg() loses
-# subdirectory structure for files from other packages). Build the tarball manually.
-pkg_files(
-    name = "freecad_local_files",
-    srcs = [
-        "SKILL.md",
-        "debug/qt_shutdown_segfault.md",
-        "gotchas.md",
-        "interactive.md",
-        "partdesign.md",
-        "sketcher.md",
-        "techdraw.md",
+skill_package(
+    name = "freecad",
+    contents = [
+        skill_mapping(
+            srcs = [
+                "SKILL.md",
+                "debug/qt_shutdown_segfault.md",
+                "gotchas.md",
+                "interactive.md",
+                "partdesign.md",
+                "sketcher.md",
+                "techdraw.md",
+            ],
+            preserve_paths = True,
+        ),
+        skill_mapping(
+            srcs = [
+                "//skills/freecad/examples:export_page.py",
+                "//skills/freecad/examples:freecad_helpers.py",
+                "//skills/freecad/examples:render_debug_edges.py",
+                "//skills/freecad/examples:render_debug_faces.py",
+                "//skills/freecad/examples:render_dxf.py",
+                "//skills/freecad/examples:render_fcstd.py",
+                "//skills/freecad/examples:render_multi_angle.py",
+                "//skills/freecad/examples:verify_fcstd_load.py",
+            ],
+            prefix = "examples",
+        ),
+        skill_mapping(
+            srcs = [
+                "//skills/freecad/examples/bearing_block:build.py",
+                "//skills/freecad/examples/bearing_block:build_techdraw.py",
+            ],
+            prefix = "examples/bearing_block",
+        ),
+        skill_mapping(
+            srcs = ["//skills/freecad/examples/bracket:parametric_sketch.py"],
+            prefix = "examples/bracket",
+        ),
+        skill_mapping(
+            srcs = ["//skills/freecad/examples/compound:build.py"],
+            prefix = "examples/compound",
+        ),
+        skill_mapping(
+            srcs = ["//skills/freecad/examples/cube_with_hole:build.py"],
+            prefix = "examples/cube_with_hole",
+        ),
     ],
-    strip_prefix = strip_prefix.from_pkg(),
-)
-
-pkg_files(
-    name = "freecad_examples_files",
-    srcs = [
-        "//skills/freecad/examples:export_page.py",
-        "//skills/freecad/examples:freecad_helpers.py",
-        "//skills/freecad/examples:render_debug_edges.py",
-        "//skills/freecad/examples:render_debug_faces.py",
-        "//skills/freecad/examples:render_dxf.py",
-        "//skills/freecad/examples:render_fcstd.py",
-        "//skills/freecad/examples:render_multi_angle.py",
-        "//skills/freecad/examples:verify_fcstd_load.py",
-    ],
-    prefix = "examples",
-    strip_prefix = strip_prefix.files_only(),
-)
-
-pkg_files(
-    name = "freecad_bearing_block_files",
-    srcs = [
-        "//skills/freecad/examples/bearing_block:build.py",
-        "//skills/freecad/examples/bearing_block:build_techdraw.py",
-    ],
-    prefix = "examples/bearing_block",
-    strip_prefix = strip_prefix.files_only(),
-)
-
-pkg_files(
-    name = "freecad_bracket_files",
-    srcs = ["//skills/freecad/examples/bracket:parametric_sketch.py"],
-    prefix = "examples/bracket",
-    strip_prefix = strip_prefix.files_only(),
-)
-
-pkg_files(
-    name = "freecad_compound_files",
-    srcs = ["//skills/freecad/examples/compound:build.py"],
-    prefix = "examples/compound",
-    strip_prefix = strip_prefix.files_only(),
-)
-
-pkg_files(
-    name = "freecad_cube_with_hole_files",
-    srcs = ["//skills/freecad/examples/cube_with_hole:build.py"],
-    prefix = "examples/cube_with_hole",
-    strip_prefix = strip_prefix.files_only(),
-)
-
-pkg_tar(
-    name = "freecad_tar",
-    srcs = [
-        ":freecad_bearing_block_files",
-        ":freecad_bracket_files",
-        ":freecad_compound_files",
-        ":freecad_cube_with_hole_files",
-        ":freecad_examples_files",
-        ":freecad_local_files",
-    ],
-    package_dir = "freecad",
-    visibility = ["//visibility:public"],
 )
 
 # FreeCAD conda binaries for subprocess-based tests.

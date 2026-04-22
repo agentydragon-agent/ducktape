@@ -285,7 +285,7 @@ let
 
   # Shared skill files — generates home.file entries for ~/.claude/skills/
   mkSkills = import ../skills.nix sharedSkillsArgs;
-  skillFiles = mkSkills ".claude";
+  skillFiles = mkSkills { prefix = ".claude"; };
 
   # Parse "name@marketplace" plugin specs into { name, marketplace } attrsets
   parsedPlugins = map (

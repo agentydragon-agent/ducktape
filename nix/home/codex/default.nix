@@ -122,7 +122,11 @@ let
 
   pythonMerge = pkgs.python3.withPackages (ps: [ ps."tomli-w" ]);
   mkSkills = import ../skills.nix sharedSkillsArgs;
-  skillFiles = mkSkills skillPrefix;
+  # Codex currently skips symlinked SKILL.md files, so deploy each skill as a directory symlink.
+  skillFiles = mkSkills {
+    prefix = skillPrefix;
+    mode = "directory-symlink";
+  };
 
   mergeScript = ''
     set -euo pipefail

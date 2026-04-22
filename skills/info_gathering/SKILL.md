@@ -1,20 +1,13 @@
 ---
 name: info-gathering
 description: >
-  Optimal information gathering under uncertainty. Use this skill whenever you need to
-  reduce uncertainty about something — whether to learn a true value, make a decision,
-  design an experiment, elicit user preferences, prioritize research, or plan any
-  investigation where you don't know enough yet and want to learn efficiently. Trigger
-  whenever: the user asks "what should I find out", "help me figure out", "what questions
-  should I ask", "help me research", "design an experiment", "interview me about my
-  preferences", "what do I need to know to decide", or any situation where Claude
-  recognizes it has meaningful uncertainty that could be reduced by gathering information
-  and wants to do so optimally. Also trigger when the user wants to compare options
-  (housing, jobs, investments, algorithms, products) and the comparison requires obtaining
-  information that isn't yet available. Even if the user doesn't explicitly frame it as
-  "information gathering," use this skill when the core bottleneck is uncertainty that
-  could be resolved by asking questions, running searches, consulting data, or running
-  experiments.
+  Optimal information gathering under uncertainty. Use when the main bottleneck is
+  missing information and the right next step is to reduce uncertainty efficiently:
+  research, compare options, design an experiment, elicit preferences, or decide what
+  questions to ask next. Trigger on requests like "help me figure this out", "what
+  should I find out", "what do I need to know to decide", or any situation where
+  targeted questions, searches, data collection, or experiments would materially improve
+  the answer.
 ---
 
 # Optimal Information Gathering
