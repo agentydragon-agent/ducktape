@@ -31,7 +31,7 @@ spec:
               protocol: TCP
           env:
             - name: FASTMCP_HOME
-              value: "/tmp/fastmcp"
+              value: "/var/lib/fastmcp"
             - name: TANA_MCP_FACADE_AUTH__OIDC_ISSUER
               value: "https://auth.allegedly.works/application/o/tana-mcp-facade/"
             - name: TANA_MCP_FACADE_AUTH__PUBLIC_BASE_URL
@@ -53,6 +53,9 @@ spec:
                 secretKeyRef:
                   name: tana-agentydragon-gmail-com-account-pat
                   key: token
+          volumeMounts:
+            - name: fastmcp-state
+              mountPath: /var/lib/fastmcp
           resources:
             requests:
               memory: "128Mi"
@@ -72,3 +75,7 @@ spec:
               port: 8765
             initialDelaySeconds: 15
             periodSeconds: 20
+      volumes:
+        - name: fastmcp-state
+          persistentVolumeClaim:
+            claimName: tana-mcp-facade-fastmcp-state
