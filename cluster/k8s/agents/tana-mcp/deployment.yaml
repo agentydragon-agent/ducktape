@@ -39,7 +39,7 @@ spec:
               value: "1280x800x24"
           volumeMounts:
             - name: tana-config
-              mountPath: /home/tana/.config/Tana
+              mountPath: /home/tana/.config/tana
           resources:
             requests:
               cpu: 200m
