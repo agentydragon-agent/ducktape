@@ -47,23 +47,7 @@ resource "authentik_source_oauth" "google" {
   user_matching_mode = "email_link"
 }
 
-resource "authentik_stage_identification" "google" {
-  count = local.google_client_id != "" ? 1 : 0
-
-  name                      = "google-authentication-identification"
-  user_fields               = ["email", "username"]
-  case_insensitive_matching = true
-  show_matched_user         = true
-  pretend_user_exists       = true
-  enable_remember_me        = false
-  show_source_labels        = false
-  sources                   = [authentik_source_oauth.google[0].uuid]
-}
-
-resource "authentik_flow_stage_binding" "google_identification" {
-  count = local.google_client_id != "" ? 1 : 0
-
-  target = data.authentik_flow.custom_authentication.id
-  stage  = authentik_stage_identification.google[0].id
-  order  = 10
-}
+# The Google source is wired into the login UI via a blueprint patch on the
+# built-in `default-authentication-identification` stage — see
+# cluster/k8s/authentik/app/blueprints/users.yaml. No dedicated stage or
+# binding is needed here.
