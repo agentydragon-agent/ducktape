@@ -14,18 +14,22 @@ metadata:
 # Authentik's built-in default-authentication-flow for everything, and
 # patch its two relevant stages below.
 #
-# Both entries are upserts on Authentik-owned built-ins: they change one
-# field each and leave the other fields alone, which is exactly what the
-# blueprint `state: present` semantic provides. TF can't express that
-# cleanly without taking full ownership of every field — fragile across
-# Authentik upgrades that tweak built-in defaults.
+# Both entries are upserts on Authentik-owned built-ins: they patch only
+# the relevant fields and leave the other fields alone, which is exactly
+# what the blueprint `state: present` semantic provides. TF can't express
+# that cleanly without taking full ownership of every field — fragile
+# across Authentik upgrades that tweak built-in defaults.
 
 entries:
-  # Google as a source on the identification stage. Source itself is
-  # provisioned in tf/gitops/sso-providers/source_google.tf; `!Find`
-  # resolves the UUID at blueprint-apply time, which runs after the
-  # sso-providers TF Kustomization per the flux-kustomization dependsOn
-  # chain.
+  # Google as a source on the identification stage. The source itself is
+  # provisioned in tf/gitops/sso-providers/source_google.tf, and `!Find`
+  # resolves the referenced Authentik object by slug at blueprint-apply
+  # time. The Flux dep chain actually runs `sso-providers-tf` AFTER
+  # `authentik` (see cluster/k8s/authentik/sso-providers-tf/
+  # flux-kustomization.yaml), so on a cold bootstrap this blueprint's
+  # first apply can fail to resolve the source; Authentik's blueprint
+  # reconciler retries, and the next pass after TF creates the source
+  # succeeds. Keep this reference's slug aligned with the TF resource.
   - model: authentik_stages_identification.identificationstage
     state: present
     identifiers:
