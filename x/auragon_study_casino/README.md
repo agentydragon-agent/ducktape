@@ -8,21 +8,25 @@ Lives at <https://casino.allegedly.works>.
 
 ## Layout
 
-| Path                                   | What it is                                             |
-| -------------------------------------- | ------------------------------------------------------ |
-| `app.py`                               | FastAPI backend: `/state` GET/PUT + static PWA mount   |
-| `config.py`                            | Pydantic settings (DATA_DIR, host, port)               |
-| `storage.py`                           | SQLite state store with content-addressed ETag         |
-| `test_app.py`, `test_storage.py`       | pytest smoke tests                                     |
-| `frontend/src/study_casino.jsx`        | The React component (originally a claude.ai artifact)  |
-| `frontend/src/storage.js`              | Offline-first state sync (IndexedDB + backend PUT)     |
-| `frontend/src/main.jsx`                | Entry — renders into `#root`, registers service worker |
-| `frontend/index.html`                  | App shell (manifest link, theme color, apple-\* meta)  |
-| `frontend/manifest.webmanifest`        | PWA manifest                                           |
-| `frontend/sw.js`                       | Service worker (cache app shell, network-only /state)  |
-| `frontend/icon.svg`                    | App icon                                               |
-| `frontend/esbuild.config.mjs`          | Production bundler config                              |
-| `BUILD.bazel` / `frontend/BUILD.bazel` | Bazel wiring                                           |
+| Path                                   | What it is                                                |
+| -------------------------------------- | --------------------------------------------------------- |
+| `app.py`                               | FastAPI backend: `/state` GET, `/events` POST/GET, static |
+| `config.py`                            | Pydantic settings (DATA_DIR, host, port)                  |
+| `models.py`                            | SQLAlchemy models: `events` log + `snapshot` cache        |
+| `reducer.py`                           | Pure reducer: fold events into state                      |
+| `store.py`                             | EventStore: append events, re-reduce snapshot, ETag       |
+| `test_reducer.py`                      | Per-event-type reducer semantics                          |
+| `test_store.py`                        | EventStore round-trip + ETag concurrency                  |
+| `test_app.py`                          | HTTP-surface integration tests                            |
+| `frontend/src/study_casino.jsx`        | The React component (originally a claude.ai artifact)     |
+| `frontend/src/storage.js`              | Thin event-append client (GET /state, POST /events)       |
+| `frontend/src/main.jsx`                | Entry — renders into `#root`, registers service worker    |
+| `frontend/index.html`                  | App shell (manifest link, theme color, apple-\* meta)     |
+| `frontend/manifest.webmanifest`        | PWA manifest                                              |
+| `frontend/sw.js`                       | Service worker (cache app shell, network-only /state)     |
+| `frontend/icon.svg`                    | App icon                                                  |
+| `frontend/esbuild.config.mjs`          | Production bundler config                                 |
+| `BUILD.bazel` / `frontend/BUILD.bazel` | Bazel wiring                                              |
 
 ## Auth
 
@@ -36,15 +40,28 @@ public hostname route.
 
 ## State sync
 
-The frontend writes to IndexedDB immediately for snappy UX, then pushes
-to the backend's `PUT /state` with an `If-Match` ETag. On 412 (another
-device wrote since our last read) the frontend pulls the remote copy and
-reloads — "last device to edit wins", which is the right trade-off for
-a single user with two devices and no expectation of simultaneous edits.
+Event-sourced. The server stores an append-only `events` log plus a cached
+`snapshot` row. Every user action emits one or more events via
+`POST /events`; the server appends them, re-reduces the snapshot, and
+returns the authoritative state. Clients use `If-Match` on the snapshot
+ETag for optimistic concurrency — on 412 (another device wrote since our
+last read) the client reloads; last-device-wins, no merge. Credits,
+tokens, sessions, and the prize log are all derived from events — the
+only non-derivable state is the current prize catalog (events:
+`prize_added`, `prize_deleted`).
 
-The service worker serves the app shell offline but is configured to
-bypass the cache for `/state` so a stale GET can't defeat cross-device
-sync.
+Event types: `session_{started,paused,resumed,completed,cancelled,edited,deleted}`,
+`roulette_spin`, `slot_spin`, `blackjack_hand`, `prize_redeemed`,
+`prize_added`, `prize_deleted`, `credits_delta`, `tokens_delta`,
+`credits_to_tokens`, `import`, `reset`. The full reducer lives in
+`reducer.py` (Python source of truth); the React frontend emits events
+but does not re-reduce locally.
+
+`GET /events?since_id=N&limit=M` returns the raw log (paginated) for
+debugging and future analytics UIs.
+
+The service worker serves the app shell offline but bypasses the cache
+for `/state` so a stale GET can't defeat cross-device sync.
 
 ## Build
 

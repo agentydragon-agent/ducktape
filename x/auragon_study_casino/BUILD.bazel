@@ -14,9 +14,27 @@ py_library(
 )
 
 py_library(
-    name = "storage",
-    srcs = ["storage.py"],
+    name = "reducer",
+    srcs = ["reducer.py"],
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":reducer",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 py_library(
@@ -26,8 +44,9 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
-        ":storage",
+        ":store",
         "@pypi//fastapi",
+        "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
 )
@@ -42,10 +61,20 @@ py_binary(
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 py_test(
-    name = "test_storage",
-    srcs = ["test_storage.py"],
+    name = "test_reducer",
+    srcs = ["test_reducer.py"],
     deps = [
-        ":storage",
+        ":reducer",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    srcs = ["test_store.py"],
+    deps = [
+        ":store",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
