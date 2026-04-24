@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
-import { loadState, saveState } from "./storage.js";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { loadState, appendEvents, StaleStateError } from "./storage.js";
 
 const SUBJECTS = [
   "Biochemistry",
@@ -145,41 +145,64 @@ export default function StudyCasino() {
   const [showSaved, setShowSaved] = useState(false);
 
   const [, setTick] = useState(0);
-  const saveTimer = useRef(null);
+  const [etag, setEtag] = useState(null);
   const savedTimer = useRef(null);
 
-  // Load from storage
+  // Replace all UI state from a backend snapshot {credits, tokens, ...}.
+  // The shape matches the reducer's `initial_state()` output plus the
+  // `activeSession` field.
+  const applySnapshot = (snap) => {
+    setCredits(snap.credits ?? 0);
+    setTokens(snap.tokens ?? 0);
+    setSessions(snap.sessions ?? []);
+    // Only fall back to defaults when `prizes` is missing from the snapshot —
+    // an empty array is a legitimate "user deleted everything" state and must
+    // not be reinterpreted as "needs seeding" or deleted prizes reappear.
+    setPrizes(Array.isArray(snap.prizes) ? snap.prizes : DEFAULT_PRIZES);
+    setPrizeLog(snap.prizeLog ?? []);
+    setActiveSession(snap.activeSession ?? null);
+  };
+
+  // Load snapshot from backend on mount.
   useEffect(() => {
     (async () => {
-      const d = await loadState();
-      if (d) {
-        setCredits(d.credits || 0);
-        setTokens(d.tokens || 0);
-        setSessions(d.sessions || []);
-        setPrizes(d.prizes || DEFAULT_PRIZES);
-        setPrizeLog(d.prizeLog || []);
-        setActiveSession(d.activeSession || null);
+      const body = await loadState();
+      if (body) {
+        applySnapshot(body.state ?? body); // tolerate IDB-cached v1 blob shape
+        if (body.etag) setEtag(body.etag);
       }
       setLoaded(true);
     })();
   }, []);
 
-  // Debounced save
-  useEffect(() => {
-    if (!loaded) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
+  // Append events to backend and reconcile local state from authoritative
+  // response. On StaleStateError (another device wrote), apply the freshly
+  // reloaded backend state (fetched by appendEvents via a follow-up GET,
+  // not returned in the 412 body) and surface a console warning — the
+  // user's action is effectively dropped, which is the simplest safe
+  // behavior for a single-user app used from at most two devices.
+  const emitEvents = useCallback(
+    async (events) => {
+      if (!events.length) return;
       try {
-        await saveState({ credits, tokens, sessions, prizes, prizeLog, activeSession });
+        const body = await appendEvents(events, etag);
+        applySnapshot(body.state);
+        setEtag(body.etag);
         setShowSaved(true);
         if (savedTimer.current) clearTimeout(savedTimer.current);
         savedTimer.current = setTimeout(() => setShowSaved(false), 1400);
       } catch (e) {
-        console.error("save failed", e);
+        if (e instanceof StaleStateError && e.fresh) {
+          console.warn("state was stale; reloading from server");
+          applySnapshot(e.fresh.state ?? e.fresh);
+          if (e.fresh.etag) setEtag(e.fresh.etag);
+        } else {
+          console.error("event emit failed", e);
+        }
       }
-    }, 300);
-    return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [credits, tokens, sessions, prizes, prizeLog, activeSession, loaded]);
+    },
+    [etag]
+  );
 
   // Tick for timer display
   useEffect(() => {
@@ -189,47 +212,66 @@ export default function StudyCasino() {
   }, [activeSession?.startTime, activeSession?.paused]);
 
   // === Actions ===
+  // Every mutation is optimistic: we call the local setX for snappy UI,
+  // then emit the matching event. Backend reduces and responds with the
+  // authoritative snapshot, which overwrites local state via applySnapshot.
+
   const startSession = (subject) => {
-    setActiveSession({
-      subject,
-      startTime: Date.now(),
-      paused: false,
-      pausedDuration: 0,
-      pauseStartedAt: null,
-    });
+    const now = Date.now();
+    setActiveSession({ subject, startTime: now, paused: false, pausedDuration: 0, pauseStartedAt: null });
+    emitEvents([{ type: "session_started", ts_ms: now, payload: { subject, start_time_ms: now } }]);
   };
 
   const pauseSession = () => {
     if (!activeSession || activeSession.paused) return;
-    setActiveSession({ ...activeSession, paused: true, pauseStartedAt: Date.now() });
+    const now = Date.now();
+    setActiveSession({ ...activeSession, paused: true, pauseStartedAt: now });
+    emitEvents([{ type: "session_paused", ts_ms: now, payload: { at_ms: now } }]);
   };
 
   const resumeSession = () => {
     if (!activeSession || !activeSession.paused) return;
-    const pausedFor = Date.now() - (activeSession.pauseStartedAt || Date.now());
+    const now = Date.now();
+    const pausedFor = now - (activeSession.pauseStartedAt || now);
     setActiveSession({
       ...activeSession,
       paused: false,
       pauseStartedAt: null,
       pausedDuration: (activeSession.pausedDuration || 0) + pausedFor,
     });
+    emitEvents([{ type: "session_resumed", ts_ms: now, payload: { at_ms: now } }]);
   };
 
   const stopSession = () => {
     if (!activeSession) return;
     const sec = getElapsedSec(activeSession);
     const min = Math.floor(sec / 60);
+    const now = Date.now();
+    const id = now.toString();
     if (min > 0) {
-      setSessions([
-        { id: Date.now().toString(), subject: activeSession.subject, seconds: sec, endedAt: Date.now() },
-        ...sessions,
-      ]);
+      setSessions([{ id, subject: activeSession.subject, seconds: sec, endedAt: now }, ...sessions]);
       setCredits((c) => c + min);
     }
     setActiveSession(null);
+    emitEvents([
+      {
+        type: "session_completed",
+        ts_ms: now,
+        payload: {
+          id,
+          subject: activeSession.subject,
+          seconds: sec,
+          ended_at_ms: now,
+          credits_earned: min,
+        },
+      },
+    ]);
   };
 
-  const cancelSession = () => setActiveSession(null);
+  const cancelSession = () => {
+    setActiveSession(null);
+    emitEvents([{ type: "session_cancelled", ts_ms: Date.now(), payload: {} }]);
+  };
 
   const editSession = (id, updates) => {
     const old = sessions.find((s) => s.id === id);
@@ -238,10 +280,16 @@ export default function StudyCasino() {
     const newSec = typeof updates.seconds === "number" ? Math.max(0, updates.seconds) : old.seconds;
     const newMin = Math.floor(newSec / 60);
     const delta = newMin - oldMin;
-    setSessions(
-      sessions.map((s) => (s.id === id ? { ...s, subject: updates.subject || s.subject, seconds: newSec } : s))
-    );
+    const newSubject = updates.subject || old.subject;
+    setSessions(sessions.map((s) => (s.id === id ? { ...s, subject: newSubject, seconds: newSec } : s)));
     if (delta !== 0) setCredits((c) => Math.max(0, c + delta));
+    emitEvents([
+      {
+        type: "session_edited",
+        ts_ms: Date.now(),
+        payload: { id, subject: newSubject, seconds: newSec, credits_delta: delta },
+      },
+    ]);
   };
 
   const deleteSession = (id) => {
@@ -250,28 +298,47 @@ export default function StudyCasino() {
     const min = Math.floor(old.seconds / 60);
     setSessions(sessions.filter((s) => s.id !== id));
     setCredits((c) => Math.max(0, c - min));
+    emitEvents([{ type: "session_deleted", ts_ms: Date.now(), payload: { id, credits_refund: min } }]);
   };
 
   const redeemPrize = (prize) => {
     if (tokens < prize.cost) return;
+    const now = Date.now();
+    const id = now.toString();
     setTokens((t) => t - prize.cost);
-    setPrizeLog([{ id: Date.now().toString(), name: prize.name, cost: prize.cost, at: Date.now() }, ...prizeLog]);
+    setPrizeLog([{ id, name: prize.name, cost: prize.cost, at: now }, ...prizeLog]);
+    emitEvents([
+      {
+        type: "prize_redeemed",
+        ts_ms: now,
+        payload: { id, name: prize.name, cost: prize.cost, at_ms: now },
+      },
+    ]);
   };
 
   const addPrize = (name, cost) => {
     if (!name || cost <= 0) return;
-    setPrizes([...prizes, { id: "p" + Date.now(), name, cost }]);
+    const id = "p" + Date.now();
+    setPrizes([...prizes, { id, name, cost }]);
+    emitEvents([{ type: "prize_added", ts_ms: Date.now(), payload: { id, name, cost } }]);
   };
 
-  const deletePrize = (id) => setPrizes(prizes.filter((p) => p.id !== id));
+  const deletePrize = (id) => {
+    setPrizes(prizes.filter((p) => p.id !== id));
+    emitEvents([{ type: "prize_deleted", ts_ms: Date.now(), payload: { id } }]);
+  };
 
-  const addCredits = (n) => setCredits((c) => Math.max(0, c + n));
+  // Passed to gambling components so they can persist spins/hands. `events`
+  // is an array so a single game action (bet + outcome) goes in as one
+  // logical append.
+  const emitGameEvents = useCallback((events) => emitEvents(events), [emitEvents]);
 
   const convertToTokens = (amount) => {
     const n = Math.max(0, Math.floor(amount));
     if (n <= 0 || n > credits) return;
     setCredits((c) => c - n);
     setTokens((t) => t + n);
+    emitEvents([{ type: "credits_to_tokens", ts_ms: Date.now(), payload: { amount: n } }]);
   };
 
   const exportData = () => {
@@ -297,21 +364,21 @@ export default function StudyCasino() {
   };
 
   const importData = (data) => {
-    setCredits(typeof data.credits === "number" ? data.credits : 0);
-    setTokens(typeof data.tokens === "number" ? data.tokens : 0);
-    setSessions(Array.isArray(data.sessions) ? data.sessions : []);
-    setPrizes(Array.isArray(data.prizes) && data.prizes.length > 0 ? data.prizes : DEFAULT_PRIZES);
-    setPrizeLog(Array.isArray(data.prizeLog) ? data.prizeLog : []);
-    setActiveSession(data.activeSession || null);
+    const state = {
+      credits: typeof data.credits === "number" ? data.credits : 0,
+      tokens: typeof data.tokens === "number" ? data.tokens : 0,
+      sessions: Array.isArray(data.sessions) ? data.sessions : [],
+      prizes: Array.isArray(data.prizes) && data.prizes.length > 0 ? data.prizes : DEFAULT_PRIZES,
+      prizeLog: Array.isArray(data.prizeLog) ? data.prizeLog : [],
+      activeSession: data.activeSession || null,
+    };
+    applySnapshot(state);
+    emitEvents([{ type: "import", ts_ms: Date.now(), payload: { state } }]);
   };
 
   const resetData = () => {
-    setCredits(0);
-    setTokens(0);
-    setSessions([]);
-    setPrizes(DEFAULT_PRIZES);
-    setPrizeLog([]);
-    setActiveSession(null);
+    applySnapshot({ credits: 0, tokens: 0, sessions: [], prizes: DEFAULT_PRIZES, prizeLog: [], activeSession: null });
+    emitEvents([{ type: "reset", ts_ms: Date.now(), payload: {} }]);
   };
 
   // === Derived values ===
@@ -670,7 +737,7 @@ export default function StudyCasino() {
             cancel={cancelSession}
           />
         )}
-        {view === "casino" && <CasinoView credits={credits} addCredits={addCredits} />}
+        {view === "casino" && <CasinoView credits={credits} setCredits={setCredits} emitEvents={emitGameEvents} />}
         {view === "prizes" && (
           <PrizesView
             credits={credits}
@@ -898,7 +965,7 @@ function StudyView({
 // ============================================================
 // CASINO VIEW
 // ============================================================
-function CasinoView({ credits, addCredits }) {
+function CasinoView({ credits, setCredits, emitEvents }) {
   const [game, setGame] = useState("roulette");
 
   return (
@@ -926,9 +993,9 @@ function CasinoView({ credits, addCredits }) {
         ))}
       </div>
 
-      {game === "roulette" && <Roulette credits={credits} addCredits={addCredits} />}
-      {game === "blackjack" && <Blackjack credits={credits} addCredits={addCredits} />}
-      {game === "slots" && <Slots credits={credits} addCredits={addCredits} />}
+      {game === "roulette" && <Roulette credits={credits} setCredits={setCredits} emitEvents={emitEvents} />}
+      {game === "blackjack" && <Blackjack credits={credits} setCredits={setCredits} emitEvents={emitEvents} />}
+      {game === "slots" && <Slots credits={credits} setCredits={setCredits} emitEvents={emitEvents} />}
     </div>
   );
 }
@@ -936,7 +1003,7 @@ function CasinoView({ credits, addCredits }) {
 // ============================================================
 // ROULETTE
 // ============================================================
-function Roulette({ credits, addCredits }) {
+function Roulette({ credits, setCredits, emitEvents }) {
   const [betAmount, setBetAmount] = useState(10);
   const [betType, setBetType] = useState("red"); // red, black, odd, even, low, high, dozen1, dozen2, dozen3, number
   const [betNumber, setBetNumber] = useState(7);
@@ -980,8 +1047,9 @@ function Roulette({ credits, addCredits }) {
     const pickedIdx = Math.floor(Math.random() * WHEEL.length);
     const picked = WHEEL[pickedIdx];
 
-    // Take the bet now
-    addCredits(-betAmount);
+    // Take the bet optimistically; the authoritative credit change arrives
+    // via emitEvents -> applySnapshot at end of animation.
+    setCredits((c) => Math.max(0, c - betAmount));
     setSpinning(true);
     setResult(null);
 
@@ -989,18 +1057,29 @@ function Roulette({ credits, addCredits }) {
     const anglePer = 360 / WHEEL.length;
     const targetAngle = -(pickedIdx * anglePer); // minus because we rotate the wheel; pointer is fixed at top
     const fullSpins = 6 + Math.floor(Math.random() * 3);
-    const newRotation = rotation - fullSpins * 360 - (Math.abs(rotation % 360) - Math.abs(targetAngle % 360));
-    // Simpler: just set a new target
     const finalRotation = rotation - fullSpins * 360 + (targetAngle - (rotation % 360));
     setRotation(finalRotation);
 
     setTimeout(() => {
       const w = checkWin(picked);
       const winAmount = w.won ? betAmount * w.mult : 0;
-      if (winAmount > 0) addCredits(winAmount);
+      if (winAmount > 0) setCredits((c) => c + winAmount);
       setResult({ number: picked, won: w.won, payout: winAmount });
       setHistory((h) => [{ number: picked, won: w.won }, ...h].slice(0, 10));
       setSpinning(false);
+      emitEvents([
+        {
+          type: "roulette_spin",
+          ts_ms: Date.now(),
+          payload: {
+            bet_amount: betAmount,
+            bet_type: betType,
+            bet_number: betType === "number" ? betNumber : null,
+            winning_number: picked,
+            payout: winAmount,
+          },
+        },
+      ]);
     }, 4200);
   };
 
@@ -1340,7 +1419,7 @@ function Roulette({ credits, addCredits }) {
 // ============================================================
 // SLOTS
 // ============================================================
-function Slots({ credits, addCredits }) {
+function Slots({ credits, setCredits, emitEvents }) {
   const [bet, setBet] = useState(5);
   const [targets, setTargets] = useState([SLOT_SYMBOLS[2], SLOT_SYMBOLS[3], SLOT_SYMBOLS[4]]);
   const [spinning, setSpinning] = useState(false);
@@ -1350,7 +1429,7 @@ function Slots({ credits, addCredits }) {
 
   const spin = () => {
     if (!canSpin) return;
-    addCredits(-bet);
+    setCredits((c) => Math.max(0, c - bet));
     setSpinning(true);
     setLastResult(null);
 
@@ -1370,8 +1449,20 @@ function Slots({ credits, addCredits }) {
       } else {
         label = "No match";
       }
-      if (payout > 0) addCredits(payout);
+      if (payout > 0) setCredits((c) => c + payout);
       setLastResult({ picks, payout, label });
+      emitEvents([
+        {
+          type: "slot_spin",
+          ts_ms: Date.now(),
+          payload: {
+            bet_amount: bet,
+            symbols: picks.map((p) => p.id),
+            payout,
+            label,
+          },
+        },
+      ]);
       setSpinning(false);
     }, 4000);
   };
@@ -1588,7 +1679,7 @@ function SlotReel({ target, index, spinning }) {
 // ============================================================
 // BLACKJACK
 // ============================================================
-function Blackjack({ credits, addCredits }) {
+function Blackjack({ credits, setCredits, emitEvents }) {
   const [shoe, setShoe] = useState(() => makeShoe(BLACKJACK_DECKS));
   const [playerHand, setPlayerHand] = useState([]);
   const [dealerHand, setDealerHand] = useState([]);
@@ -1657,10 +1748,25 @@ function Blackjack({ credits, addCredits }) {
       text = "Dealer wins.";
     }
 
-    if (payout > 0) addCredits(payout);
+    if (payout > 0) setCredits((c) => c + payout);
     setResult({ outcome, payout, text });
     setPhase("done");
     setHoleHidden(false);
+    emitEvents([
+      {
+        type: "blackjack_hand",
+        ts_ms: Date.now(),
+        payload: {
+          bet_amount: currentWager,
+          player_hand: finalPlayer.map((c) => `${c.rank}${c.suit}`),
+          dealer_hand: finalDealer.map((c) => `${c.rank}${c.suit}`),
+          player_value: pv,
+          dealer_value: dv,
+          outcome,
+          payout,
+        },
+      },
+    ]);
   };
 
   const playDealer = (currentDealer, currentShoe, finalPlayer, currentWager) => {
@@ -1687,7 +1793,7 @@ function Blackjack({ credits, addCredits }) {
     let workingShoe = shoe;
     if (workingShoe.length < 52) workingShoe = makeShoe(BLACKJACK_DECKS);
 
-    addCredits(-betInput);
+    setCredits((c) => Math.max(0, c - betInput));
     setWager(betInput);
     setResult(null);
     setHoleHidden(true);
@@ -1739,7 +1845,7 @@ function Blackjack({ credits, addCredits }) {
 
   const doubleDown = () => {
     if (!canDouble) return;
-    addCredits(-wager);
+    setCredits((c) => Math.max(0, c - wager));
     const newWager = wager * 2;
     setWager(newWager);
     const [drawn, rest] = drawCards(shoe, 1);

@@ -1,99 +1,79 @@
-// Offline-first state storage.
+// Event-sourced state sync.
 //
-// Reads:  backend first (cross-device sync), IndexedDB fallback on network fail.
-// Writes: IndexedDB immediately, backend in background with ETag-based conflict
-//         detection. On 412 Precondition Failed (another device wrote between
-//         our read and our write) we pull the server copy into IDB and reload
-//         the page — last-device-wins, no merge. A per-field merge would be
-//         the "right" answer but this is a single-user app, so the simpler
-//         behavior is fine.
+// Reads:  GET /state -> {state, last_event_id, etag}. Cached in IndexedDB so
+//         the PWA can render something instantly on cold load.
+// Writes: POST /events with a batch of events and an If-Match ETag. On 412
+//         (another device wrote in the meantime) we pull the server copy and
+//         the UI reconciles. On network failure we don't queue — the caller
+//         decides whether to retry; losing an emit here just means the action
+//         didn't happen from the server's perspective, which for a casino app
+//         is fine (user retries the action).
 //
-// The state blob is stored under a single IndexedDB key `state-v1`. Along with
-// it we track `etag-v1`, the ETag last seen from the backend, so PUT can use
-// If-Match and the backend can reject stale writes. When we have never seen a
-// server ETag (first-launch-offline-then-online) we send If-Match: "empty" so
-// the first PUT can't blind-clobber state another device already wrote — the
-// backend's empty-state ETag is "empty", so this matches a genuinely-empty
-// server and 412s otherwise.
+// There is no PUT /state — the server is the source of truth and is only
+// mutated by appending events. The only reason IDB still exists here is
+// offline cold-load cache; it is NOT authoritative.
 
 import { get as idbGet, set as idbSet } from "idb-keyval";
 
-const STATE_KEY = "state-v1";
-const ETAG_KEY = "etag-v1";
-const EMPTY_ETAG = '"empty"';
-const BACKEND_URL = "/state";
+const STATE_CACHE_KEY = "state-cache-v2";
+const ETAG_CACHE_KEY = "etag-cache-v2";
+
+export const BACKEND_STATE_URL = "/state";
+export const BACKEND_EVENTS_URL = "/events";
 
 export async function loadState() {
   try {
-    const response = await fetch(BACKEND_URL, { credentials: "same-origin" });
+    const response = await fetch(BACKEND_STATE_URL, { credentials: "same-origin" });
     if (response.ok) {
-      const etag = response.headers.get("ETag");
-      const remote = await response.json();
-      await idbSet(STATE_KEY, remote);
-      if (etag) await idbSet(ETAG_KEY, etag);
-      return remote;
-    }
-    // 404 on first run — no state yet on the backend. Fall through to IDB.
-  } catch (e) {
-    // Offline or backend down — fall back to IndexedDB.
-  }
-  return (await idbGet(STATE_KEY)) ?? null;
-}
-
-let pendingSync = null;
-
-export async function saveState(state) {
-  await idbSet(STATE_KEY, state);
-  // Coalesce rapid successive saves into a single backend PUT.
-  if (!pendingSync) {
-    pendingSync = (async () => {
-      try {
-        // Let the microtask queue settle so the last saveState() wins.
-        await new Promise((r) => setTimeout(r, 0));
-        await pushToBackend(await idbGet(STATE_KEY));
-      } catch (e) {
-        // pushToBackend swallows network errors, so reaching here means
-        // something unexpected (IDB failure, etc.). Log rather than letting
-        // it surface as an unhandled rejection — the next saveState will
-        // retry the push anyway.
-        console.error("sync failed", e);
-      } finally {
-        pendingSync = null;
-      }
-    })();
-  }
-}
-
-async function pushToBackend(state) {
-  // Default to the backend's empty-store ETag so we always send If-Match.
-  // Omitting it would let an offline-first-launch blind-overwrite whatever
-  // another device wrote while we were disconnected.
-  const etag = (await idbGet(ETAG_KEY)) ?? EMPTY_ETAG;
-  const headers = { "Content-Type": "application/json", "If-Match": etag };
-  try {
-    const response = await fetch(BACKEND_URL, {
-      method: "PUT",
-      credentials: "same-origin",
-      headers,
-      body: JSON.stringify(state),
-    });
-    if (response.ok) {
-      const newEtag = response.headers.get("ETag");
-      if (newEtag) await idbSet(ETAG_KEY, newEtag);
-    } else if (response.status === 412) {
-      // Conflict — another device wrote since our last read. Reload + retry.
-      // Simplest correct behavior: pull remote, let the user's next edit
-      // overwrite. Since this is a single-user app, conflicts only happen
-      // across devices. We accept "last device to edit wins" — the
-      // alternative (per-field updatedAt merge) is needlessly complex.
-      const remote = await (await fetch(BACKEND_URL, { credentials: "same-origin" })).json();
-      await idbSet(STATE_KEY, remote);
-      // Note: the caller's in-memory React state is now stale. A full reload
-      // is the cleanest recovery and rare in practice.
-      window.location.reload();
+      const body = await response.json();
+      await idbSet(STATE_CACHE_KEY, body);
+      await idbSet(ETAG_CACHE_KEY, body.etag);
+      return body;
     }
   } catch (e) {
-    // Offline — IDB already has the write; next successful saveState will
-    // push the latest blob.
+    // Offline or backend down — fall back to IDB cache.
+  }
+  return (await idbGet(STATE_CACHE_KEY)) ?? null;
+}
+
+/** POST a batch of events. Returns the new authoritative snapshot.
+ *
+ * `events` is an array of `{type, ts_ms, payload}` objects.
+ * `etag` is the client's last-known ETag; send null to skip If-Match
+ * (useful on first launch when no prior state exists, but then concurrent
+ * writes from another device can blind-overwrite — the server treats a
+ * missing If-Match as "I accept any current state").
+ */
+export async function appendEvents(events, etag) {
+  const headers = { "Content-Type": "application/json" };
+  if (etag) headers["If-Match"] = etag;
+  const response = await fetch(BACKEND_EVENTS_URL, {
+    method: "POST",
+    credentials: "same-origin",
+    headers,
+    body: JSON.stringify(events),
+  });
+  if (response.status === 412) {
+    // Stale ETag — another device wrote since our last read. Pull remote
+    // and let the caller reconcile (typically by refreshing local state
+    // and asking the user to retry, or auto-retrying with fresh ETag).
+    const fresh = await loadState();
+    throw new StaleStateError(fresh);
+  }
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`append failed: HTTP ${response.status} ${body}`);
+  }
+  const body = await response.json();
+  await idbSet(STATE_CACHE_KEY, body);
+  await idbSet(ETAG_CACHE_KEY, body.etag);
+  return body;
+}
+
+export class StaleStateError extends Error {
+  constructor(fresh) {
+    super("state stale; caller should reconcile");
+    this.name = "StaleStateError";
+    this.fresh = fresh;
   }
 }
