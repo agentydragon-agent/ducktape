@@ -96,6 +96,14 @@ resource "authentik_group" "grafana_admins" {
   users = [tonumber(authentik_user.agentydragon.id)]
 }
 
+resource "authentik_group" "study_casino" {
+  name  = "study-casino"
+  users = [
+    tonumber(authentik_user.agentydragon.id),
+    tonumber(authentik_user.auragon.id),
+  ]
+}
+
 data "authentik_certificate_key_pair" "self_signed" {
   name = "authentik Self-signed Certificate"
 }

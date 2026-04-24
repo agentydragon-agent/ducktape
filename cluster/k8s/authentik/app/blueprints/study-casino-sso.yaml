@@ -37,3 +37,10 @@ entries:
       target: !KeyOf study-casino-app
       group: !Find [authentik_core.group, [name, authentik Admins]]
       order: 0
+
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !KeyOf study-casino-app
+      group: !Find [authentik_core.group, [name, study-casino]]
+      order: 1
