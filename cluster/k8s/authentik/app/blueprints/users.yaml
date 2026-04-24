@@ -40,3 +40,19 @@ entries:
       default: false
       flow_authentication: !KeyOf custom-auth-flow
       branding_title: "allegedly.works"
+
+  # Add Google as a source on the built-in default-authentication-identification
+  # stage. That stage is bound to `default-authentication-flow` at order 10, so
+  # any app whose proxy provider points at `default-authentication-flow` gets
+  # the "Sign in with Google" button on fresh-session login. The Google source
+  # itself is provisioned in tf/gitops/sso-providers/source_google.tf.
+  # `!Find` resolves the source's UUID at blueprint-apply time, which runs
+  # after the TF kustomization (sso-providers-tf → authentik app).
+  - model: authentik_stages_identification.identificationstage
+    state: present
+    identifiers:
+      name: default-authentication-identification
+    attrs:
+      sources:
+        - !Find [authentik_sources_oauth.oauthsource, [slug, google]]
+      show_source_labels: false
