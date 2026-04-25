@@ -26,9 +26,7 @@ js_library(
     name = "puppeteer_lib",
     srcs = ["puppeteer-lib.mjs"],
     tags = ["no-lint"],
-    visibility = [
-        "//devinfra/js/debundle/harness:__pkg__",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         ":node_modules/puppeteer",
     ],

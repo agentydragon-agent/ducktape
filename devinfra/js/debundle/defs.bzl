@@ -25,25 +25,61 @@ def js_debundle_live_proxy_binary(name, data = [], fixed_args = [], no_copy_to_b
         **kwargs
     )
 
-def js_debundle_live_proxy_load_test(name, data = [], env = {}, fixed_args = [], no_copy_to_bin = [], **kwargs):
+def js_debundle_live_proxy_load_test(
+        name,
+        app_manifest = None,
+        browser_binary = None,
+        data = [],
+        env = {},
+        fixed_args = [],
+        goto_timeout_ms = None,
+        no_copy_to_bin = [],
+        wait_for_selector = None,
+        wait_timeout_ms = None,
+        **kwargs):
+    if browser_binary == None:
+        browser_binary = "@playwright_browsers//:chromium-headless-shell"
+
+    computed_args = []
+    if app_manifest != None:
+        computed_args.extend([
+            "--app-manifest",
+            "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath %s)" % app_manifest,
+        ])
+    if wait_for_selector != None:
+        computed_args.extend([
+            "--wait-for-selector",
+            wait_for_selector,
+        ])
+    if wait_timeout_ms != None:
+        computed_args.extend([
+            "--wait-timeout-ms",
+            str(wait_timeout_ms),
+        ])
+    if goto_timeout_ms != None:
+        computed_args.extend([
+            "--goto-timeout-ms",
+            str(goto_timeout_ms),
+        ])
+
     runtime_deps = [
         Label("//devinfra/js/debundle/live_proxy:libs"),
         Label("//util/testing/frontend_visual:puppeteer_lib"),
     ] + data
     passthrough_files = runtime_deps + [
         Label("//devinfra/js/debundle/live_proxy:browser_load_test_entry_point"),
-        Label("@playwright_browsers//:chromium-headless-shell"),
+        browser_binary,
     ] + no_copy_to_bin
     test_env = {
-        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath %s)" % browser_binary,
     }
     test_env.update(env)
     js_test(
         name = name,
-        data = runtime_deps + [Label("@playwright_browsers//:chromium-headless-shell")],
+        data = runtime_deps + [browser_binary],
         entry_point = Label("//devinfra/js/debundle/live_proxy:browser_load_test_entry_point"),
         env = test_env,
-        fixed_args = fixed_args,
+        fixed_args = computed_args + fixed_args,
         no_copy_to_bin = passthrough_files,
         **kwargs
     )
