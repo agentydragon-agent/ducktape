@@ -343,7 +343,7 @@ npm.npm_translate_lock(
         # (@playwright_browsers//:chromium-headless-shell) and PUPPETEER_EXECUTABLE_PATH.
         "puppeteer",
     ],
-    npmrc = "@@//:.npmrc",
+    npmrc = "//:.npmrc",
     # Root pnpm-lock.yaml with workspace packages
     pnpm_lock = "//:pnpm-lock.yaml",
     # Hoist ESLint plugins for runtime discovery
@@ -387,7 +387,7 @@ npm_activitywatch.npm_translate_lock(
     # resolve in the http_archive where npm_link_all_packages() creates them,
     # not in the main workspace where the lockfile lives.
     link_workspace = "aw_webui",
-    npmrc = "@@//:.npmrc",
+    npmrc = "//:.npmrc",
     # vue-demi's postinstall switches lib/index.mjs to the correct Vue version
     # variant, but lifecycle hooks are disabled in sandboxed builds.  Patch the
     # default (Vue 3) stub to add the missing hasInjectionContext export that
