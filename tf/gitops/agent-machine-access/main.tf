@@ -606,6 +606,20 @@ resource "authentik_policy_binding" "kubectl_sandbox_client_credentials" {
   order  = 0
 }
 
+# Authentik auto-creates an internal service account for client_credentials
+# grants (username: ak-<slug>-client_credentials). The client_credentials flow
+# authenticates as THIS user, not the TF-managed one above. Without a policy
+# binding for it, the grant is rejected with invalid_grant.
+data "authentik_user" "kubectl_sandbox_cc_auto" {
+  username = "ak-kubectl-sandbox-client-credentials-client_credentials"
+}
+
+resource "authentik_policy_binding" "kubectl_sandbox_cc_auto_user" {
+  target = authentik_application.kubectl_sandbox_client_credentials.uuid
+  user   = data.authentik_user.kubectl_sandbox_cc_auto.pk
+  order  = 1
+}
+
 # K8s Secret holding the client_id + client_secret. Lives in agents-infra
 # (where the claude-jwt-rotation CronJob runs) and is the only place this
 # credential exists outside Authentik — the CC web sandbox only ever holds
