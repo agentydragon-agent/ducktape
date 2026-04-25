@@ -416,6 +416,14 @@ Evaluate a web UI for managing cluster infrastructure via TF/OpenTofu — plan/a
 a dashboard instead of CLI. Candidates: Spacelift (SaaS), env0, Atlantis (self-hosted,
 PR-based), Terrateam, Scalr, or the OpenTofu-native options. Self-hosted preferred.
 
+### Tekton / Argo Workflows for in-cluster CI
+
+Evaluate Tekton Pipelines or Argo Workflows for in-cluster automations that need
+to write back to git (e.g., JWT rotation, secret rotation, image pin updates).
+Currently these are ad-hoc CronJobs with sparse clones and `git push`. A
+lightweight workflow engine would give structured retries, DAG dependencies,
+artifact passing, and a UI for debugging failed runs.
+
 ## Future Directions
 
 ### GPU: DRA
