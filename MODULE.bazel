@@ -280,9 +280,9 @@ bazel_dep(name = "aspect_rules_ts", version = "3.8.7")
 bazel_dep(name = "rules_nodejs", version = "6.7.3")
 
 # Browser testing (provides hermetic Chromium for Puppeteer/Playwright tests)
-bazel_dep(name = "rules_playwright", version = "0.5.3")
+bazel_dep(name = "rules_playwright", version = "0.5.3", dev_dependency = True)
 
-playwright = use_extension("@rules_playwright//playwright:extensions.bzl", "playwright")
+playwright = use_extension("@rules_playwright//playwright:extensions.bzl", "playwright", dev_dependency = True)
 playwright.repo(
     # Use Playwright 1.50.x for Chromium compatibility with Puppeteer 23.x
     playwright_version = "1.50.1",
