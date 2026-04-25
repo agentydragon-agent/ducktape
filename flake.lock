@@ -57,12 +57,12 @@
         ]
       },
       "locked": {
-        "lastModified": 1775676289,
+        "lastModified": 1777086242,
         "lfs": true,
-        "narHash": "sha256-1kPY7GuDtdBOaCY4NMD5PoPX+6OXSCnqD4BXVuJKaW4=",
+        "narHash": "sha256-DFbatqmg8VB3Snj/DGn8scUGUuZncjtrUMMaWwV6gCc=",
         "ref": "refs/heads/main",
-        "rev": "f2b8ec0fb878505563a016023af18c93635ca471",
-        "revCount": 17,
+        "rev": "06ce7afd10d786555dfeec9ce4dd5562bff52147",
+        "revCount": 92,
         "type": "git",
         "url": "ssh://git@github.com/agentydragon/gaffer-private"
       },
