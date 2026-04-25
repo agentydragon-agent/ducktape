@@ -23,7 +23,7 @@ from fastmcp.client import Client
 from mcp.types import TextContent
 from pydantic import BaseModel
 
-from skills.info_gathering.evals.docker_exec import scratch_exec_server
+from skills.eval_infra.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction
 from skills.info_gathering.evals.function_learning.prompts import build_system_prompt, first_user_message
 from skills.info_gathering.evals.function_learning.result_types import (

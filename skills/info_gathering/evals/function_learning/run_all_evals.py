@@ -11,7 +11,7 @@ import anyio
 from fastmcp.client import Client
 from pydantic import BaseModel
 
-from skills.info_gathering.evals.docker_exec import scratch_exec_server
+from skills.eval_infra.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.function_learning.function_learning import make_exec_tool, run_game
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS
 from skills.info_gathering.evals.function_learning.result_types import FunctionLearningResult, TokenUsage

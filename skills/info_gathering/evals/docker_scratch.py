@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastmcp.client import Client
 
 from agent_core.mcp_provider import MCPToolProvider
-from skills.info_gathering.evals.docker_exec import scratch_exec_server
+from skills.eval_infra.docker_exec import scratch_exec_server
 from third_party.containers.rlocations import DEBIAN_SLIM
 from util.oci import load_oci_image
 

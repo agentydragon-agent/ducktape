@@ -21,7 +21,7 @@ from agent_framework.openai import OpenAIChatCompletionClient
 from fastmcp.client import Client
 from mcp.types import TextContent
 
-from skills.info_gathering.evals.docker_exec import scratch_exec_server
+from skills.eval_infra.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
