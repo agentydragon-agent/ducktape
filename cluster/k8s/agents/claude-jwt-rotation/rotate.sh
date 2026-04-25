@@ -99,7 +99,7 @@ fi
 
 # --- Mint a fresh JWT via client_credentials -------------------------------
 JWT=$(curl -sSf -u "${CLIENT_ID}:${CLIENT_SECRET}" \
-  -d 'grant_type=client_credentials&scope=openid groups' \
+  -d 'grant_type=client_credentials&scope=openid profile email groups' \
   "${TOKEN_URL}" | jq -r .access_token)
 
 if [ -z "$JWT" ] || [ "$JWT" = "null" ]; then
