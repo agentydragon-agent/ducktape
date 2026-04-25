@@ -62,6 +62,10 @@
   # Sudo requires password by default (security)
   # Override in agent-sandbox modules if needed
   security.sudo.wheelNeedsPassword = true;
+  security.sudo.extraConfig = lib.mkAfter ''
+    # Show asterisks while typing sudo passwords.
+    Defaults pwfeedback
+  '';
 
   # Zsh as default shell
   programs.zsh.enable = true;
