@@ -53,7 +53,10 @@ async def _run_with_replay(
     hint: bool = True,
     turn_limit: int = _TEST_TURNS,
 ) -> RunSummary:
-    client = ReplayChatClient(responses=completions)
+    # function_learning hand-rolls its tool-dispatch loop, so disable the
+    # FunctionInvocationLayer's auto-dispatch to keep one model_client.get_response()
+    # call per scripted response.
+    client = ReplayChatClient(responses=completions, function_invocation_configuration={"enabled": False})
 
     async with aiodocker.Docker() as docker:
         container = await docker.containers.run(
