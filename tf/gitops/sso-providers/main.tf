@@ -97,7 +97,7 @@ resource "authentik_group" "grafana_admins" {
 }
 
 resource "authentik_group" "study_casino" {
-  name  = "study-casino"
+  name = "study-casino"
   users = [
     tonumber(authentik_user.agentydragon.id),
     tonumber(authentik_user.auragon.id),
