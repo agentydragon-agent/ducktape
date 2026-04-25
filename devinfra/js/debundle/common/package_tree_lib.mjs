@@ -16,8 +16,8 @@ export function defaultPackagesRoot() {
   );
 }
 
-export function readInstalledPackageMetadata(packageName, { packageRoot, packagesRoot } = {}) {
-  const resolvedPackageRoot = packageRoot ?? resolvePackageRoot(packageName, { packagesRoot });
+export function readInstalledPackageMetadata(packageName, { packageRoot, packageRoots, packagesRoot } = {}) {
+  const resolvedPackageRoot = packageRoot ?? resolvePackageRoot(packageName, { packageRoots, packagesRoot });
   const metadataPath = join(resolvedPackageRoot, "package.json");
   if (!existsSync(metadataPath)) {
     throw new Error(`Package metadata missing for ${packageName}: ${metadataPath}`);
@@ -25,7 +25,18 @@ export function readInstalledPackageMetadata(packageName, { packageRoot, package
   return JSON.parse(readFileSync(metadataPath, "utf8"));
 }
 
-export function resolvePackageRoot(packageName, { packagesRoot } = {}) {
+export function resolvePackageRoot(packageName, { packageRoots, packagesRoot } = {}) {
+  const mappedRoot = packageRoots?.[packageName];
+  if (mappedRoot !== undefined) {
+    const resolvedPackageRoot = resolve(mappedRoot);
+    if (!existsSync(resolvedPackageRoot)) {
+      throw new Error(`Package root not found for ${packageName}: ${resolvedPackageRoot}`);
+    }
+    return resolvedPackageRoot;
+  }
+  if (packageRoots && packagesRoot === undefined) {
+    throw new Error(`Package root not provided for ${packageName}`);
+  }
   const resolvedPackagesRoot = resolve(packagesRoot ?? defaultPackagesRoot());
   const packageSegments = packagePathSegments(packageName);
   const packageRoot = resolve(resolvedPackagesRoot, ...packageSegments);
@@ -36,8 +47,8 @@ export function resolvePackageRoot(packageName, { packagesRoot } = {}) {
   return packageRoot;
 }
 
-export function resolvePackageSubpath(packageName, subpath, { packageRoot, packagesRoot } = {}) {
-  const resolvedPackageRoot = packageRoot ?? resolvePackageRoot(packageName, { packagesRoot });
+export function resolvePackageSubpath(packageName, subpath, { packageRoot, packageRoots, packagesRoot } = {}) {
+  const resolvedPackageRoot = packageRoot ?? resolvePackageRoot(packageName, { packageRoots, packagesRoot });
   const filePath = resolve(resolvedPackageRoot, subpath);
   assertPathWithinRoot(
     filePath,

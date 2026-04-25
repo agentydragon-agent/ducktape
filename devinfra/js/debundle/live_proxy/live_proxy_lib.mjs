@@ -26,6 +26,8 @@ export function parseLiveProxyArgs(argv) {
     assetPort: DEFAULT_ASSET_PORT,
     help: false,
     internalPrefix: undefined,
+    packageRoots: undefined,
+    packagesRoot: undefined,
     proxyHost: DEFAULT_PROXY_HOST,
     proxyPort: DEFAULT_PROXY_PORT,
     stateDir: undefined,
@@ -49,6 +51,15 @@ export function parseLiveProxyArgs(argv) {
         break;
       case "--internal-prefix":
         options.internalPrefix = requireValue(argv, ++index, arg);
+        break;
+      case "--package-root": {
+        const { packageName, packageRoot } = parsePackageRootArg(requireValue(argv, ++index, arg), arg);
+        options.packageRoots ??= {};
+        options.packageRoots[packageName] = resolvePath(packageRoot);
+        break;
+      }
+      case "--packages-root":
+        options.packagesRoot = resolvePath(requireValue(argv, ++index, arg));
         break;
       case "--proxy-host":
         options.proxyHost = requireValue(argv, ++index, arg);
@@ -85,6 +96,8 @@ export function formatLiveProxyHelp() {
     `  --asset-host <host>     Local HTTPS asset server host (default: ${DEFAULT_ASSET_HOST})`,
     `  --asset-port <port>     Local HTTPS asset server port (default: ${DEFAULT_ASSET_PORT})`,
     "  --internal-prefix <p>   Internal same-origin prefix used for local JS assets",
+    "  --package-root <p>=<d>  Explicit package dir for swapped vendor chunks (repeatable)",
+    "  --packages-root <path>  Package tree root for swapped vendor chunks",
     "  --state-dir <path>      Cache/certificate directory",
     "  --help                  Show this message",
     "",
@@ -100,6 +113,8 @@ export function loadLiveProxyConfiguration(rawOptions) {
   const options = {
     ...rawOptions,
     appManifestPath: resolvePath(rawOptions.appManifestPath),
+    packageRoots: rawOptions.packageRoots ? resolvePackageRoots(rawOptions.packageRoots) : undefined,
+    packagesRoot: rawOptions.packagesRoot ? resolvePath(rawOptions.packagesRoot) : undefined,
     stateDir: resolvePath(rawOptions.stateDir ?? defaultStateDir()),
   };
 
@@ -120,7 +135,8 @@ export function loadLiveProxyConfiguration(rawOptions) {
   const vendorRuntimeIndex = loadVendorRuntimeIndex({
     manifestPath: vendorManifestPath,
     outRoot,
-    ...(rawOptions.packagesRoot ? { packagesRoot: rawOptions.packagesRoot } : {}),
+    ...(options.packageRoots ? { packageRoots: options.packageRoots } : {}),
+    ...(options.packagesRoot ? { packagesRoot: options.packagesRoot } : {}),
   });
   const bootstrapPath = join(outRoot, "app", "bootstrap.js");
   if (!existsSync(bootstrapPath)) {
@@ -537,6 +553,23 @@ function defaultStateDir() {
 
 function resolvePath(path) {
   return resolveWorkspacePath(path);
+}
+
+function resolvePackageRoots(packageRoots) {
+  return Object.fromEntries(
+    Object.entries(packageRoots).map(([packageName, packageRoot]) => [packageName, resolvePath(packageRoot)])
+  );
+}
+
+function parsePackageRootArg(value, flag) {
+  const separator = value.indexOf("=");
+  if (separator <= 0 || separator === value.length - 1) {
+    throw new Error(`${flag} must be in <package>=<dir> form, got ${value}`);
+  }
+  return {
+    packageName: value.slice(0, separator),
+    packageRoot: value.slice(separator + 1),
+  };
 }
 
 function parsePort(value, flag) {

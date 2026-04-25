@@ -36,13 +36,13 @@ const STAGE_HANDLERS = Object.freeze({
   write_js_tree: writeJsTree,
 });
 
-export async function runTransformSpec(specPath) {
+export async function runTransformSpec(specPath, { packageRoots, packagesRoot } = {}) {
   const absoluteSpecPath = resolveWorkspacePath(specPath);
   const spec = parseJsonWithComments(readFileSync(absoluteSpecPath, "utf8"), absoluteSpecPath);
-  return runTransformSpecObject(spec, { specPath: absoluteSpecPath });
+  return runTransformSpecObject(spec, { packageRoots, packagesRoot, specPath: absoluteSpecPath });
 }
 
-export async function runTransformSpecObject(spec, { specPath = "<object>" } = {}) {
+export async function runTransformSpecObject(spec, { packageRoots, packagesRoot, specPath = "<object>" } = {}) {
   validateSpec(spec);
   const operations = spec.operations ?? [];
 
@@ -62,7 +62,13 @@ export async function runTransformSpecObject(spec, { specPath = "<object>" } = {
     const args = stage.args ?? {};
     const startedAt = process.hrtime.bigint();
     logProgress(`stage start id=${stage.id} operation=${stage.operation}`);
-    const result = await handler({ artifact, ...args, operations });
+    const result = await handler({
+      artifact,
+      ...(packageRoots ? { packageRoots } : {}),
+      ...(packagesRoot ? { packagesRoot } : {}),
+      ...args,
+      operations,
+    });
     if (!result?.artifact) {
       throw new Error(`Stage ${stage.id} did not return an artifact`);
     }

@@ -59,9 +59,17 @@ function writeBaseLiveProxyFixture(prefix, { uiVersion = "example", vendorManife
 }
 
 test("parseLiveProxyArgs resolves manifest path and numeric ports", () => {
-  const { appManifestPath } = writeBaseLiveProxyFixture("debundle-live-proxy-args-");
-  const options = parseLiveProxyArgs(["--app-manifest", appManifestPath, "--proxy-port", "9001"]);
+  const { appManifestPath, packagesRoot } = writeBaseLiveProxyFixture("debundle-live-proxy-args-");
+  const options = parseLiveProxyArgs([
+    "--app-manifest",
+    appManifestPath,
+    "--package-root",
+    `katex=${packagesRoot}/katex`,
+    "--proxy-port",
+    "9001",
+  ]);
   assert.equal(options.appManifestPath, appManifestPath);
+  assert.deepEqual(options.packageRoots, { katex: `${packagesRoot}/katex` });
   assert.equal(options.proxyPort, 9001);
 });
 

@@ -18,7 +18,6 @@ import {
   setArtifactVendorAnnotations,
 } from "../common/pipeline_artifact_lib.mjs";
 import {
-  defaultPackagesRoot,
   readInstalledPackageMetadata,
   resolvePackageSubpath,
 } from "../common/package_tree_lib.mjs";
@@ -30,7 +29,8 @@ export function swapVendorChunks({
   artifact,
   operations,
   operationCatalog,
-  packagesRoot = defaultPackagesRoot(),
+  packageRoots,
+  packagesRoot,
   outputManifestPath,
   outputWrapperDir,
   write = true,
@@ -64,7 +64,7 @@ export function swapVendorChunks({
     }
 
     // 1. Resolve upstream version from the Bazel-provided package tree.
-    const installed = readInstalledPackageMetadata(op.package, { packagesRoot }).version;
+    const installed = readInstalledPackageMetadata(op.package, { packageRoots, packagesRoot }).version;
     if (installed !== op.version) {
       throw new Error(
         `swapVendorChunks operation ${op.id} version mismatch for ${op.package}: op=${op.version}, installed=${installed}`
@@ -72,7 +72,7 @@ export function swapVendorChunks({
     }
 
     // 2. Locate upstream file with containment guard.
-    const upstreamPath = resolvePackageSubpath(op.package, op.subpath, { packagesRoot });
+    const upstreamPath = resolvePackageSubpath(op.package, op.subpath, { packageRoots, packagesRoot });
 
     const vendorExports = collectVendorExportedNames(entryFile.ast);
     const upstreamCode = readFileSync(upstreamPath, "utf8");

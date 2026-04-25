@@ -17,6 +17,7 @@ export function loadVendorResolutionManifest(manifestPath) {
 export function loadVendorRuntimeIndex({
   manifestPath,
   outRoot,
+  packageRoots,
   packagesRoot,
 }) {
   const resolutions = loadVendorResolutionManifest(manifestPath);
@@ -32,7 +33,7 @@ export function loadVendorRuntimeIndex({
     const entryFile = resolveVendorManifestEntryFile(entry, { chunkPath, manifestPath });
     const filePath = entry.generatedWrapperPath
       ? resolve(outRoot ?? dirname(dirname(manifestPath)), entry.generatedWrapperPath)
-      : resolvePackageSubpath(entry.package, entry.subpath, { packagesRoot });
+      : resolvePackageSubpath(entry.package, entry.subpath, { packageRoots, packagesRoot });
     const mountRoot = resolveMountRoot(filePath, entryFile);
     const mountedEntryFile = normalizeMountedRelativePath(relative(mountRoot, filePath));
     byChunkId.set(chunkId, {
