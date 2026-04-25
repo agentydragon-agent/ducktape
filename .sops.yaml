@@ -167,9 +167,9 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # Fine-grained GitHub PAT for authenticated Nix fetches of private
-  # gaffer-private release assets. Only the consuming hosts need to decrypt it
-  # at activation time; admin keeps recovery/rotation access.
+  # Dedicated PAT kept in SOPS for now even though the GitHub release-asset
+  # fetch path is being removed. TODO: decide whether to keep, rotate, or
+  # delete it once private-cache delivery is in place.
   - path_regex: secrets/shared/gaffer-private-fetch-pat\.yaml$
     key_groups:
       - age:

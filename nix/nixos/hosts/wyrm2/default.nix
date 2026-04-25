@@ -40,7 +40,6 @@ in
     ../../modules/gui.nix
     ../../modules/workstation.nix
     ../../modules/bazel
-    ../../modules/github-fetch-token.nix
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ../../modules/gpu-monitor.nix
@@ -48,10 +47,6 @@ in
 
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
-  ducktape.githubFetchToken = {
-    enable = true;
-    sopsFile = ../../../../secrets/shared/gaffer-private-fetch-pat.yaml;
-  };
 
   ducktape.k8sWorker = {
     enable = true;
