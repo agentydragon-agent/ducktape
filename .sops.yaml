@@ -167,6 +167,15 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # Fine-grained GitHub PAT for authenticated Nix fetches of private
+  # gaffer-private release assets. Only the consuming hosts need to decrypt it
+  # at activation time; admin keeps recovery/rotation access.
+  - path_regex: secrets/shared/gaffer-private-fetch-pat\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+          - *rugged-host
   # --- All-user secrets (admin + all user SSH keys) ---
   # cluster-secrets-age: Flux SOPS decryption key (TODO: consider narrowing to admin-only)
   # flux-deploy-key: ED25519 SSH key registered as GitHub deploy key
