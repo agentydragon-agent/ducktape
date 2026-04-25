@@ -49,18 +49,26 @@ def initial_state() -> dict[str, Any]:
 
 
 def _apply_wager(state: dict[str, Any], bet_amount: int, payout: int) -> None:
-    """Shared bet+payout validation for roulette/slots/blackjack. Mutates
-    `state["credits"]`. Raises ValueError on invariant violations so a
-    malformed/hostile event can't mint credits by betting more than the
-    user has (`max(0, credits - bet)` + `credits += payout` is net-positive
-    when `bet > credits` and `payout > 0`)."""
+    """Shared bet+payout validation for roulette/slots/blackjack.
+
+    The bet comes off `credits`; the entire gross `payout` (principal +
+    winnings, in old casino convention — 0 on a loss, equal to `bet_amount`
+    on a blackjack push, `bet_amount * mult` on a true win) lands in
+    `tokens`. The casino is therefore a pure credits-to-tokens funnel:
+    gambling can never mint credits, only convert them (at unfavorable
+    expected value) into tokens, which are spendable on prizes only.
+
+    Raises ValueError on invariant violations so a malformed/hostile event
+    can't bet more credits than the user has.
+    """
     if bet_amount < 0:
         raise ValueError(f"invalid bet amount: {bet_amount}")
     if payout < 0:
         raise ValueError(f"invalid payout: {payout}")
     if bet_amount > state["credits"]:
         raise ValueError(f"insufficient credits: have {state['credits']}, need {bet_amount}")
-    state["credits"] += payout - bet_amount
+    state["credits"] -= bet_amount
+    state["tokens"] += payout
 
 
 def reduce_event(state: dict[str, Any], event_type: str, payload: dict[str, Any]) -> dict[str, Any]:

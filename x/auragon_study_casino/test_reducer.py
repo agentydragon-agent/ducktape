@@ -122,19 +122,23 @@ def test_roulette_spin_loss() -> None:
         ]
     )
     assert s["credits"] == 90
+    assert s["tokens"] == 0
 
 
-def test_roulette_spin_win() -> None:
+def test_roulette_spin_win_pays_full_payout_in_tokens() -> None:
+    # The casino is a pure credits-to-tokens funnel: bet goes off credits,
+    # entire gross payout lands in tokens.
     s = _reduce(
         [
             ("credits_delta", {"amount": 100}),
             ("roulette_spin", {"bet_amount": 10, "bet_type": "number", "winning_number": 7, "payout": 360}),
         ]
     )
-    assert s["credits"] == 450  # 100 - 10 + 360
+    assert s["credits"] == 90
+    assert s["tokens"] == 360
 
 
-def test_blackjack_and_slots_also_affect_credits() -> None:
+def test_slot_win_pays_full_payout_in_tokens() -> None:
     s = _reduce(
         [
             ("credits_delta", {"amount": 100}),
@@ -142,7 +146,19 @@ def test_blackjack_and_slots_also_affect_credits() -> None:
             ("blackjack_hand", {"bet_amount": 20, "result": "lose", "payout": 0}),
         ]
     )
-    assert s["credits"] == 325  # 100 - 5 + 250 - 20
+    # Slots: -5 credits, +250 tokens. Blackjack loss: -20 credits, +0 tokens.
+    assert s["credits"] == 75
+    assert s["tokens"] == 250
+
+
+def test_blackjack_push_converts_bet_to_tokens() -> None:
+    # Push: payout == bet_amount. Bet comes off credits, equivalent tokens
+    # land — push is a forced 1:1 credits-to-tokens conversion.
+    s = _reduce(
+        [("credits_delta", {"amount": 100}), ("blackjack_hand", {"bet_amount": 30, "result": "push", "payout": 30})]
+    )
+    assert s["credits"] == 70
+    assert s["tokens"] == 30
 
 
 def test_prize_redeemed_spends_tokens_and_logs() -> None:
