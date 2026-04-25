@@ -120,6 +120,7 @@ EXPIRES_ISO=$(date -u -d "@${EXP_TS}" +%Y-%m-%dT%H:%M:%SZ)
 # --- Write + commit + push -------------------------------------------------
 # `expires_unencrypted` matches SOPS's default unencrypted_suffix (`_unencrypted`),
 # so it stays plaintext after `sops encrypt --in-place`.
+mkdir -p "$(dirname "$SOPS_FILE")"
 cat >"$SOPS_FILE" <<EOF
 expires_unencrypted: $EXPIRES_ISO
 jwt: $JWT
