@@ -1,0 +1,31 @@
+load("@aspect_rules_js//js:defs.bzl", "js_info_files", "js_library", "js_test")
+
+js_info_files(
+    name = "sources",
+    srcs = [":libs"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "libs",
+    srcs = [
+        "compute_js_asts_lib.mjs",
+        "js_module_lib.mjs",
+        "load_js_tree_lib.mjs",
+        "package_tree_lib.mjs",
+        "pipeline_artifact_lib.mjs",
+        "vendor_runtime_lib.mjs",
+        "workspace_io_lib.mjs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "vendor_runtime_lib_test",
+    data = [
+        ":sources",
+        "vendor_runtime_lib.mjs",
+        "//devinfra/js/debundle/test_support:sources",
+    ],
+    entry_point = "vendor_runtime_lib_test.mjs",
+)

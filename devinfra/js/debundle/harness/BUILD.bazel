@@ -1,0 +1,25 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+
+js_library(
+    name = "libs",
+    srcs = [
+        "emit_browser_harness_lib.mjs",
+    ],
+    deps = [
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/split:libs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "emit_browser_harness_test",
+    data = [
+        "emit_browser_harness_lib.mjs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:sources",
+        "//devinfra/js/debundle/vendor:libs",
+    ],
+    entry_point = "emit_browser_harness_test.mjs",
+)

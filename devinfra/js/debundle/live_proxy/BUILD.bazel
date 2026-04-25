@@ -1,0 +1,37 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+
+js_library(
+    name = "libs",
+    srcs = ["live_proxy_lib.mjs"],
+    deps = [
+        "//:node_modules/http-mitm-proxy",
+        "//:node_modules/node-forge",
+        "//devinfra/js/debundle/common:libs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_binary(
+    name = "serve_live_proxy",
+    data = [
+        "live_proxy_lib.mjs",
+        "serve_live_proxy.mjs",
+        "//:node_modules/http-mitm-proxy",
+        "//:node_modules/node-forge",
+        "//devinfra/js/debundle/common:libs",
+    ],
+    entry_point = "serve_live_proxy.mjs",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "live_proxy_test",
+    data = [
+        "live_proxy_lib.mjs",
+        "//:node_modules/http-mitm-proxy",
+        "//:node_modules/node-forge",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/test_support:sources",
+    ],
+    entry_point = "live_proxy_test.mjs",
+)

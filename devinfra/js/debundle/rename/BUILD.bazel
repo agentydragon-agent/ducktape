@@ -1,0 +1,31 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+
+_BABEL_DEPS = [
+    "//:node_modules/@babel/generator",
+    "//:node_modules/@babel/parser",
+    "//:node_modules/@babel/traverse",
+    "//:node_modules/@babel/types",
+]
+
+js_library(
+    name = "libs",
+    srcs = [
+        "rename_bindings_lib.mjs",
+    ],
+    deps = [
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/split:libs",
+    ] + _BABEL_DEPS,
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "rename_bindings_test",
+    data = [
+        "rename_bindings_lib.mjs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:sources",
+    ] + _BABEL_DEPS,
+    entry_point = "rename_bindings_test.mjs",
+)

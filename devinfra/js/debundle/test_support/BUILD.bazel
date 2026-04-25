@@ -1,0 +1,35 @@
+load("@aspect_rules_js//js:defs.bzl", "js_info_files", "js_library")
+
+js_info_files(
+    name = "sources",
+    srcs = [
+        ":libs",
+        ":pipeline_fixture_lib",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "libs",
+    srcs = [
+        "fixture_lib.mjs",
+    ],
+    deps = [
+        "//:node_modules/@babel/parser",
+        "//devinfra/js/debundle/common:libs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "pipeline_fixture_lib",
+    srcs = [
+        "pipeline_fixture_lib.mjs",
+    ],
+    deps = [
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:libs",
+    ],
+    visibility = ["//visibility:public"],
+)

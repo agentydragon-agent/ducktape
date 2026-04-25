@@ -1,0 +1,44 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+
+_BABEL_DEPS = [
+    "//:node_modules/@babel/generator",
+    "//:node_modules/@babel/parser",
+    "//:node_modules/@babel/traverse",
+    "//:node_modules/@babel/types",
+]
+
+js_library(
+    name = "libs",
+    srcs = [
+        "split_chunk_lib.mjs",
+        "split_js_tree_lib.mjs",
+        "split_js_tree_worker.mjs",
+    ],
+    deps = [
+        "//devinfra/js/debundle/common:libs",
+    ] + _BABEL_DEPS,
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "split_chunk_test",
+    data = [
+        "split_chunk_lib.mjs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/test_support:sources",
+    ] + _BABEL_DEPS,
+    entry_point = "split_chunk_test.mjs",
+)
+
+js_test(
+    name = "split_js_tree_test",
+    data = [
+        "split_chunk_lib.mjs",
+        "split_js_tree_lib.mjs",
+        "split_js_tree_worker.mjs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/transforms:libs",
+        "//devinfra/js/debundle/test_support:sources",
+    ] + _BABEL_DEPS,
+    entry_point = "split_js_tree_test.mjs",
+)

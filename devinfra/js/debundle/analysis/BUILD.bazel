@@ -1,0 +1,39 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+
+_BABEL_DEPS = [
+    "//:node_modules/@babel/parser",
+    "//:node_modules/@babel/traverse",
+    "//:node_modules/@babel/types",
+]
+
+js_library(
+    name = "libs",
+    srcs = [
+        "runtime_boundary_metadata_lib.mjs",
+        "scrambled_identifier_frequency_lib.mjs",
+    ],
+    deps = [
+        "//devinfra/js/debundle/common:libs",
+    ] + _BABEL_DEPS,
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "runtime_boundary_metadata_test",
+    data = [
+        "runtime_boundary_metadata_lib.mjs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/test_support:sources",
+    ] + _BABEL_DEPS,
+    entry_point = "runtime_boundary_metadata_test.mjs",
+)
+
+js_test(
+    name = "scrambled_identifier_frequency_test",
+    data = [
+        "scrambled_identifier_frequency_lib.mjs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/test_support:sources",
+    ] + _BABEL_DEPS,
+    entry_point = "scrambled_identifier_frequency_test.mjs",
+)

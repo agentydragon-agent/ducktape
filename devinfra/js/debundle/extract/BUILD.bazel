@@ -1,0 +1,99 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+
+_BABEL_DEPS = [
+    "//:node_modules/@babel/generator",
+    "//:node_modules/@babel/parser",
+    "//:node_modules/@babel/traverse",
+    "//:node_modules/@babel/types",
+]
+
+js_library(
+    name = "libs",
+    srcs = [
+        "declaration_component_graph_lib.mjs",
+        "extract_ordered_init_region_lib.mjs",
+        "extract_ordered_init_regions_lib.mjs",
+        "guided_selected_owner_modules_lib.mjs",
+        "guided_selected_owner_modules_stage_lib.mjs",
+        "owner_closure_plan_report_lib.mjs",
+    ],
+    deps = [
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/split:libs",
+    ] + _BABEL_DEPS,
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "extract_ordered_init_region_test",
+    data = [
+        "declaration_component_graph_lib.mjs",
+        "extract_ordered_init_region_lib.mjs",
+        "guided_selected_owner_modules_lib.mjs",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:sources",
+    ] + _BABEL_DEPS,
+    entry_point = "extract_ordered_init_region_test.mjs",
+)
+
+js_test(
+    name = "declaration_component_graph_test",
+    data = [
+        "declaration_component_graph_lib.mjs",
+        "extract_ordered_init_region_lib.mjs",
+        "guided_selected_owner_modules_lib.mjs",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:sources",
+    ] + _BABEL_DEPS,
+    entry_point = "declaration_component_graph_test.mjs",
+)
+
+js_test(
+    name = "owner_closure_plan_report_test",
+    data = [
+        "declaration_component_graph_lib.mjs",
+        "owner_closure_plan_report_lib.mjs",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/rename:libs",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:sources",
+        "//devinfra/js/debundle/transforms:libs",
+    ] + _BABEL_DEPS,
+    entry_point = "owner_closure_plan_report_test.mjs",
+)
+
+js_test(
+    name = "guided_selected_owner_modules_test",
+    data = [
+        "declaration_component_graph_lib.mjs",
+        "extract_ordered_init_region_lib.mjs",
+        "guided_selected_owner_modules_lib.mjs",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:sources",
+    ] + _BABEL_DEPS,
+    entry_point = "guided_selected_owner_modules_test.mjs",
+)
+
+js_test(
+    name = "extract_ordered_init_regions_test",
+    data = [
+        "declaration_component_graph_lib.mjs",
+        "extract_ordered_init_region_lib.mjs",
+        "extract_ordered_init_regions_lib.mjs",
+        "guided_selected_owner_modules_lib.mjs",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:sources",
+        "//devinfra/js/debundle/transforms:libs",
+    ] + _BABEL_DEPS,
+    entry_point = "extract_ordered_init_regions_test.mjs",
+)

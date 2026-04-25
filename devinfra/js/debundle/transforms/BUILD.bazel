@@ -1,0 +1,36 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
+
+_JSONC_DEPS = [
+    "//:node_modules/jsonc-parser",
+]
+
+js_library(
+    name = "libs",
+    srcs = [
+        "run_transform_lib.mjs",
+        "write_js_tree_lib.mjs",
+    ],
+    deps = [
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/extract:libs",
+        "//devinfra/js/debundle/harness:libs",
+        "//devinfra/js/debundle/rename:libs",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/vendor:libs",
+    ] + _JSONC_DEPS,
+    visibility = ["//visibility:public"],
+)
+
+js_binary(
+    name = "run_transform",
+    data = [
+        ":libs",
+        "run_transform.mjs",
+    ],
+    entry_point = "run_transform.mjs",
+    node_options = [
+        "--max-old-space-size=8192",
+    ],
+    visibility = ["//visibility:public"],
+)
