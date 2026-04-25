@@ -1,0 +1,11 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "docker_exec",
+    srcs = ["docker_exec.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = [
+        "//mcp_infra/exec:docker",
+        "@pypi//aiodocker",
+    ],
+)

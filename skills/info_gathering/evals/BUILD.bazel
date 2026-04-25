@@ -25,16 +25,6 @@ py_library(
 )
 
 py_library(
-    name = "docker_exec",
-    srcs = ["docker_exec.py"],
-    visibility = ["//skills/info_gathering/evals:__subpackages__"],
-    deps = [
-        "//mcp_infra/exec:docker",
-        "@pypi//aiodocker",
-    ],
-)
-
-py_library(
     name = "replay_client",
     srcs = ["replay_client.py"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
@@ -51,8 +41,8 @@ py_library(
     srcs = ["docker_scratch.py"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
-        ":docker_exec",
         "//agent_core:mcp_provider",
+        "//skills/eval_infra:docker_exec",
         "//third_party/containers:rlocations",
         "//util:oci",
         "@pypi//fastmcp",

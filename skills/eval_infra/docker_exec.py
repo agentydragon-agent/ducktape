@@ -15,7 +15,7 @@ from pathlib import Path
 import aiodocker
 
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.exec.docker.types import AlwaysSetTo, ContainerExecServerConfig
+from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -30,25 +30,34 @@ def _proxy_env() -> dict[str, str]:
 
 
 @asynccontextmanager
-async def scratch_exec_server(image: str = "python:3.13-slim") -> AsyncGenerator[ContainerExecServer]:
+async def scratch_exec_server(
+    image: str = "python:3.13-slim", *, binds: list[BindMount] | None = None, working_dir: Path = Path("/tmp")
+) -> AsyncGenerator[ContainerExecServer]:
     """Create a scratch container with an MCP exec tool server.
 
     The server exposes an `exec` tool with cmd (list[str]) and timeout_ms (int).
-    cwd is fixed to /tmp (hidden from the model). User and env fields are disabled.
-    Uses host networking and proxy env vars for internet access.
+    cwd is hidden from the model and pinned to `working_dir`. User and env
+    fields are disabled. Uses host networking and proxy env vars for
+    internet access. Optional `binds` are mounted into the container.
     """
     async with aiodocker.Docker() as docker_client:
         server = ContainerExecServer(
             docker_client,
             ContainerExecServerConfig(
                 image=image,
-                working_dir=Path("/tmp"),
+                working_dir=working_dir,
                 network_mode="host",
                 environment=_proxy_env(),
                 allow_user_field=False,
                 allow_env_field=False,
-                cwd_policy=AlwaysSetTo(value=Path("/tmp")),
+                cwd_policy=AlwaysSetTo(value=working_dir),
+                binds=list(binds or []),
             ),
         )
-        logger.info("Scratch exec server created (image=%s, network=host)", image)
+        logger.info(
+            "Scratch exec server created (image=%s, network=host, working_dir=%s, binds=%d)",
+            image,
+            working_dir,
+            len(binds or []),
+        )
         yield server

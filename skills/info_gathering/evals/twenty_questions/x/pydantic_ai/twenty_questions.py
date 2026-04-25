@@ -22,7 +22,7 @@ from pydantic_ai.toolsets.fastmcp import FastMCPToolset
 from pydantic_ai.toolsets.function import FunctionToolset
 
 from mcp_infra.exec.docker.server import ContainerExecServer
-from skills.info_gathering.evals.docker_exec import scratch_exec_server
+from skills.eval_infra.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
