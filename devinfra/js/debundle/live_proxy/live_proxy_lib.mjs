@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, extname, join, normalize, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { createServer as createHttpsServer } from "node:https";
 import { Agent as HttpsAgent } from "node:https";
 
@@ -119,18 +119,23 @@ export function loadLiveProxyConfiguration(rawOptions) {
   };
 
   const appManifest = JSON.parse(readFileSync(options.appManifestPath, "utf8"));
-  const assetSummaryPath = resolvePath(appManifest.assetSummaryPath);
+  const manifestContext = {
+    appManifest,
+    appManifestPath: options.appManifestPath,
+  };
+  const assetSummaryPath = resolveManifestReferencedPath(appManifest.assetSummaryPath, manifestContext);
   const assetSummary = JSON.parse(readFileSync(assetSummaryPath, "utf8"));
-  const sourceHtmlPath = resolvePath(appManifest.sourceHtml);
+  const sourceHtmlPath = resolveManifestReferencedPath(appManifest.sourceHtml, manifestContext);
   const sourceHtml = readFileSync(sourceHtmlPath, "utf8");
-  const targetUrl = new URL(assetSummary.baseUrl ?? "https://example.test");
+  const targetUrl = new URL(resolveAppBaseUrl({ appManifest, assetSummary, manifestContext }) ?? "https://example.test");
   const uiVersion = appManifest.uiVersion ?? assetSummary.uiVersion ?? "unknown";
   const internalPrefix = normalizeInternalPrefix(
     options.internalPrefix ?? `${targetUrl.pathname.replace(/\/$/, "")}/_debundle/live/${uiVersion}`
   );
-  const outRoot = resolvePath(dirname(resolvePath(appManifest.outDir)));
+  const outDir = resolveManifestReferencedPath(appManifest.outDir, manifestContext);
+  const outRoot = dirname(outDir);
   const vendorManifestPath = appManifest.vendorManifestPath
-    ? resolvePath(appManifest.vendorManifestPath)
+    ? resolveManifestReferencedPath(appManifest.vendorManifestPath, manifestContext)
     : join(outRoot, "vendors", "manifest.json");
   const vendorRuntimeIndex = loadVendorRuntimeIndex({
     manifestPath: vendorManifestPath,
@@ -174,6 +179,49 @@ export function loadLiveProxyConfiguration(rawOptions) {
     vendorManifestPath,
     vendorRuntimeIndex,
   };
+}
+
+function resolveAppBaseUrl({ appManifest, assetSummary, manifestContext }) {
+  if (assetSummary.baseUrl) {
+    return assetSummary.baseUrl;
+  }
+  if (appManifest.baseUrl) {
+    return appManifest.baseUrl;
+  }
+  const sourceMetadataPath = join(resolveManifestReferencedPath(appManifest.outDir, manifestContext), "SOURCE.json");
+  if (!existsSync(sourceMetadataPath)) {
+    return null;
+  }
+  const sourceMetadata = JSON.parse(readFileSync(sourceMetadataPath, "utf8"));
+  return sourceMetadata.baseUrl ?? null;
+}
+
+function resolveManifestReferencedPath(value, { appManifest, appManifestPath }) {
+  if (isAbsolute(value)) {
+    return resolvePath(value);
+  }
+  const workspaceRoot = deriveManifestWorkspaceRoot(appManifestPath, appManifest);
+  if (workspaceRoot) {
+    return resolve(workspaceRoot, value);
+  }
+  return resolveWorkspacePath(value);
+}
+
+function deriveManifestWorkspaceRoot(appManifestPath, appManifest) {
+  if (!appManifestPath || !appManifest?.outDir) {
+    return null;
+  }
+  const normalizedManifestPath = resolvePath(appManifestPath).split(sep).join("/");
+  const normalizedOutDir = normalizeRelativePath(appManifest.outDir);
+  const suffix = `/${normalizedOutDir}/manifest.json`;
+  if (!normalizedManifestPath.endsWith(suffix)) {
+    return null;
+  }
+  return normalizedManifestPath.slice(0, -suffix.length);
+}
+
+function normalizeRelativePath(value) {
+  return value.split(/[\\/]+/).filter((segment) => segment !== "").join("/");
 }
 
 export function rewriteHtmlForLiveProxy(sourceHtml, { bootstrapUrl, uiVersion }) {

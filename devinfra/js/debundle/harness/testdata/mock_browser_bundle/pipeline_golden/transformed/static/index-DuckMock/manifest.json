@@ -1,0 +1,434 @@
+{
+  "schemaVersion": 1,
+  "chunkId": "static/index-DuckMock",
+  "parser": {
+    "allowUndeclaredExports": true,
+    "plugins": [
+      "jsx",
+      "typescript",
+      "importAssertions",
+      "topLevelAwait"
+    ],
+    "sourceType": "module"
+  },
+  "sourcePath": "static/index-DuckMock.js",
+  "entryFile": "entry.js",
+  "counts": {
+    "dynamicImports": 2,
+    "exportAliases": 0,
+    "importDeclarations": 0,
+    "keptTopLevelDeclarationOwners": 18,
+    "parts": 0,
+    "splitFunctionDeclarations": 0,
+    "topLevelBindings": 18,
+    "topLevelDeclarationOwners": 18,
+    "topLevelSideEffects": 1,
+    "unresolvedExports": 0
+  },
+  "files": [
+    {
+      "file": "entry.js",
+      "role": "entry"
+    }
+  ],
+  "imports": [],
+  "exportAliases": [],
+  "unresolvedExports": [],
+  "keptTopLevelDeclarations": [
+    {
+      "id": "owner_00000",
+      "line": 1,
+      "names": [
+        "scriptRel"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00001",
+      "line": 5,
+      "names": [
+        "assetsURL"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00002",
+      "line": 8,
+      "names": [
+        "seen"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00003",
+      "line": 9,
+      "names": [
+        "__vitePreload"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00004",
+      "line": 78,
+      "names": [
+        "e$3"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00005",
+      "line": 79,
+      "names": [
+        "t"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00006",
+      "line": 80,
+      "names": [
+        "a"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00007",
+      "line": 81,
+      "names": [
+        "o$1"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00008",
+      "line": 82,
+      "names": [
+        "e$2"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00009",
+      "line": 83,
+      "names": [
+        "o"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00010",
+      "line": 84,
+      "names": [
+        "n"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00011",
+      "line": 85,
+      "names": [
+        "e$1"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00012",
+      "line": 86,
+      "names": [
+        "e"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00013",
+      "line": 87,
+      "names": [
+        "A"
+      ],
+      "type": "ClassDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:ClassDeclaration"
+    },
+    {
+      "id": "owner_00014",
+      "line": 100,
+      "names": [
+        "s"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00015",
+      "line": 101,
+      "names": [
+        "d"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00016",
+      "line": 107,
+      "names": [
+        "h"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00017",
+      "line": 112,
+      "names": [
+        "g"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    }
+  ],
+  "parts": [],
+  "ownerToPart": {},
+  "renames": [
+    {
+      "id": "rename_profile_id",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "e$3",
+      "to": "profileId",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "\"profile-7\"",
+        "kind": "VariableDeclarator",
+        "name": "e$3",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_profile_name",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "t",
+      "to": "profileName",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "\"Ada Lovelace\"",
+        "kind": "VariableDeclarator",
+        "name": "t",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_profile_tags",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "a",
+      "to": "profileTags",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "[\"analysis\", \"dom\"]",
+        "kind": "VariableDeclarator",
+        "name": "a",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_profile_loader",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "o$1",
+      "to": "loadProfileRecord",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "() => ({\n  id: e$3,\n  name: t,\n  tags: [...a]\n})",
+        "kind": "VariableDeclarator",
+        "name": "o$1",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_sum_numbers",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "e$2",
+      "to": "sumNumbersImpl",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "(t2, a2) => t2 + a2",
+        "kind": "VariableDeclarator",
+        "name": "e$2",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_join_tags",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "o",
+      "to": "joinTagList",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "t2 => t2.join(\"|\")",
+        "kind": "VariableDeclarator",
+        "name": "o",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_count_unique_items",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "n",
+      "to": "countUniqueItems",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "t2 => Array.from(new Set(t2)).length",
+        "kind": "VariableDeclarator",
+        "name": "n",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_runtime_info",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "e$1",
+      "to": "bundleRuntimeInfo",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "{\n  stamp: \"mock-dashboard@7\"\n}",
+        "kind": "VariableDeclarator",
+        "name": "e$1",
+        "objectPropertyNames": [
+          "stamp"
+        ]
+      }
+    },
+    {
+      "id": "rename_compute_total",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "e",
+      "to": "computeDashboardTotal",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "a2 => e$2(a2.id.length, n(a2.tags))",
+        "kind": "VariableDeclarator",
+        "name": "e",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_model_class",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "A",
+      "to": "MockDashboardModel",
+      "preserveRuntimeName": true,
+      "owner": null,
+      "fingerprint": {
+        "kind": "ClassDeclaration",
+        "name": "A",
+        "superClass": null,
+        "memberNames": [
+          "constructor",
+          "snapshot"
+        ]
+      }
+    },
+    {
+      "id": "rename_model_builder",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "s",
+      "to": "buildDashboardModel",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "a2 => new A(a2, e(a2))",
+        "kind": "VariableDeclarator",
+        "name": "s",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_summary_builder",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "d",
+      "to": "buildSummaryCard",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "a2 => ({\n  headline: `${a2.profile.name}:${a2.total}`,\n  total: a2.total,\n  tags: o(a2.profile.tags),\n  stamp: e$1.stamp\n})",
+        "kind": "VariableDeclarator",
+        "name": "d",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_dom_renderer",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "h",
+      "to": "renderSummaryDom",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "a2 => {\n  const t2 = document.querySelector(\"#app\");\n  t2.dataset.bundle = \"tana-like\";\n  t2.textContent = JSON.stringify(a2);\n}",
+        "kind": "VariableDeclarator",
+        "name": "h",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_app_renderer",
+      "operation": "rename_binding",
+      "chunkId": "static/index-DuckMock",
+      "file": "entry.js",
+      "from": "g",
+      "to": "renderDashboard",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "async () => {\n  const a2 = o$1();\n  const t2 = s(a2);\n  const o2 = d(t2);\n  globalThis.__mockBundleState = {\n    model: t2.snapshot(),\n    summary: o2,\n    lazy: null,\n    chip: null\n  };\n  h(o2);\n  const [{\n    l: e2\n  }, {\n    s: i\n  }] = await Promise.all([__vitePreload(() => import(\"../ActivityPanel-DuckMock/entry.js\"), true ? [] : void 0), __vitePreload(() => import(\"../SummaryChip-DuckMock/entry.js\"), true ? [] : void 0)]);\n  e2(a2, o2);\n  i(o2);\n}",
+        "kind": "VariableDeclarator",
+        "name": "g",
+        "objectPropertyNames": []
+      }
+    }
+  ]
+}

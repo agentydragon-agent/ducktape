@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_test")
 
 def js_debundle_transform_binary(name, data = [], fixed_args = [], no_copy_to_bin = [], node_options = [], **kwargs):
     runtime_deps = [Label("//devinfra/js/debundle/transforms:libs")] + data
@@ -20,6 +20,29 @@ def js_debundle_live_proxy_binary(name, data = [], fixed_args = [], no_copy_to_b
         name = name,
         data = runtime_deps,
         entry_point = Label("//devinfra/js/debundle/live_proxy:serve_live_proxy_entry_point"),
+        fixed_args = fixed_args,
+        no_copy_to_bin = passthrough_files,
+        **kwargs
+    )
+
+def js_debundle_live_proxy_load_test(name, data = [], env = {}, fixed_args = [], no_copy_to_bin = [], **kwargs):
+    runtime_deps = [
+        Label("//devinfra/js/debundle/live_proxy:libs"),
+        Label("//util/testing/frontend_visual:puppeteer_lib"),
+    ] + data
+    passthrough_files = runtime_deps + [
+        Label("//devinfra/js/debundle/live_proxy:browser_load_test_entry_point"),
+        Label("@playwright_browsers//:chromium-headless-shell"),
+    ] + no_copy_to_bin
+    test_env = {
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    }
+    test_env.update(env)
+    js_test(
+        name = name,
+        data = runtime_deps + [Label("@playwright_browsers//:chromium-headless-shell")],
+        entry_point = Label("//devinfra/js/debundle/live_proxy:browser_load_test_entry_point"),
+        env = test_env,
         fixed_args = fixed_args,
         no_copy_to_bin = passthrough_files,
         **kwargs

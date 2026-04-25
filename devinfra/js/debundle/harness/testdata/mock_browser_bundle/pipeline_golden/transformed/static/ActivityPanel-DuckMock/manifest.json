@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "chunkId": "static/ActivityPanel-DuckMock",
+  "parser": {
+    "allowUndeclaredExports": true,
+    "plugins": [
+      "jsx",
+      "typescript",
+      "importAssertions",
+      "topLevelAwait"
+    ],
+    "sourceType": "module"
+  },
+  "sourcePath": "static/ActivityPanel-DuckMock.js",
+  "entryFile": "entry.js",
+  "counts": {
+    "dynamicImports": 0,
+    "exportAliases": 1,
+    "importDeclarations": 1,
+    "keptTopLevelDeclarationOwners": 1,
+    "parts": 0,
+    "splitFunctionDeclarations": 0,
+    "topLevelBindings": 1,
+    "topLevelDeclarationOwners": 1,
+    "topLevelSideEffects": 0,
+    "unresolvedExports": 0
+  },
+  "files": [
+    {
+      "file": "entry.js",
+      "role": "entry"
+    }
+  ],
+  "imports": [
+    {
+      "id": "import_00000",
+      "line": 1,
+      "source": "./chunk-DuckMock.js",
+      "specifiers": [
+        {
+          "imported": "e",
+          "kind": "named",
+          "local": "e"
+        }
+      ]
+    }
+  ],
+  "exportAliases": [
+    {
+      "exported": "l",
+      "line": 12,
+      "local": "o"
+    }
+  ],
+  "unresolvedExports": [],
+  "keptTopLevelDeclarations": [
+    {
+      "id": "owner_00000",
+      "line": 2,
+      "names": [
+        "o"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    }
+  ],
+  "parts": [],
+  "ownerToPart": {},
+  "renames": [
+    {
+      "id": "rename_activity_badge_import",
+      "operation": "rename_binding",
+      "chunkId": "static/ActivityPanel-DuckMock",
+      "file": "entry.js",
+      "from": "e",
+      "to": "formatActivityBadge",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "imported": "e",
+        "kind": "ImportSpecifier",
+        "local": "e",
+        "name": "e",
+        "source": "../chunk-DuckMock/entry.js"
+      }
+    },
+    {
+      "id": "rename_activity_panel",
+      "operation": "rename_binding",
+      "chunkId": "static/ActivityPanel-DuckMock",
+      "file": "entry.js",
+      "from": "o",
+      "to": "renderActivityPanel",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "(t, a) => {\n  const o2 = {\n    badge: e(t, a),\n    stamp: a.stamp,\n    tags: t.tags.join(\",\")\n  };\n  globalThis.__mockBundleState.lazy = o2;\n  document.querySelector(\"#status\").textContent = o2.badge;\n  return o2;\n}",
+        "kind": "VariableDeclarator",
+        "name": "o",
+        "objectPropertyNames": []
+      }
+    }
+  ]
+}

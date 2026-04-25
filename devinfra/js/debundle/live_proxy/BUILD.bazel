@@ -6,6 +6,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "browser_load_test_entry_point",
+    srcs = ["live_proxy_browser_load_test.mjs"],
+    visibility = ["//visibility:public"],
+)
+
 js_library(
     name = "libs",
     srcs = ["live_proxy_lib.mjs"],

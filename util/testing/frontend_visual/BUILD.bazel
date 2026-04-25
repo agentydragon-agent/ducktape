@@ -22,6 +22,18 @@ js_library(
     ],
 )
 
+js_library(
+    name = "puppeteer_lib",
+    srcs = ["puppeteer-lib.mjs"],
+    tags = ["no-lint"],
+    visibility = [
+        "//devinfra/js/debundle/harness:__pkg__",
+    ],
+    deps = [
+        ":node_modules/puppeteer",
+    ],
+)
+
 # Font files for hermetic rendering.
 filegroup(
     name = "fonts",

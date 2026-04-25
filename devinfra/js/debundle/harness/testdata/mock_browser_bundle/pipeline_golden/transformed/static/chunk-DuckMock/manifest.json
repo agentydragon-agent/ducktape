@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "chunkId": "static/chunk-DuckMock",
+  "parser": {
+    "allowUndeclaredExports": true,
+    "plugins": [
+      "jsx",
+      "typescript",
+      "importAssertions",
+      "topLevelAwait"
+    ],
+    "sourceType": "module"
+  },
+  "sourcePath": "static/chunk-DuckMock.js",
+  "entryFile": "entry.js",
+  "counts": {
+    "dynamicImports": 0,
+    "exportAliases": 2,
+    "importDeclarations": 0,
+    "keptTopLevelDeclarationOwners": 2,
+    "parts": 0,
+    "splitFunctionDeclarations": 0,
+    "topLevelBindings": 2,
+    "topLevelDeclarationOwners": 2,
+    "topLevelSideEffects": 0,
+    "unresolvedExports": 0
+  },
+  "files": [
+    {
+      "file": "entry.js",
+      "role": "entry"
+    }
+  ],
+  "imports": [],
+  "exportAliases": [
+    {
+      "exported": "e",
+      "line": 3,
+      "local": "e"
+    },
+    {
+      "exported": "o",
+      "line": 3,
+      "local": "o"
+    }
+  ],
+  "unresolvedExports": [],
+  "keptTopLevelDeclarations": [
+    {
+      "id": "owner_00000",
+      "line": 1,
+      "names": [
+        "e"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    },
+    {
+      "id": "owner_00001",
+      "line": 2,
+      "names": [
+        "o"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    }
+  ],
+  "parts": [],
+  "ownerToPart": {},
+  "renames": [
+    {
+      "id": "rename_format_activity_badge",
+      "operation": "rename_binding",
+      "chunkId": "static/chunk-DuckMock",
+      "file": "entry.js",
+      "from": "e",
+      "to": "formatActivityBadge",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "(t, a) => `${t.name}:${a.total}`",
+        "kind": "VariableDeclarator",
+        "name": "e",
+        "objectPropertyNames": []
+      }
+    },
+    {
+      "id": "rename_format_chip_text",
+      "operation": "rename_binding",
+      "chunkId": "static/chunk-DuckMock",
+      "file": "entry.js",
+      "from": "o",
+      "to": "formatChipText",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "t => `chip:${t.stamp}`",
+        "kind": "VariableDeclarator",
+        "name": "o",
+        "objectPropertyNames": []
+      }
+    }
+  ]
+}

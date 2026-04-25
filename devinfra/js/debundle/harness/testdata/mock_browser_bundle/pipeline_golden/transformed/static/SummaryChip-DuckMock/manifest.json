@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "chunkId": "static/SummaryChip-DuckMock",
+  "parser": {
+    "allowUndeclaredExports": true,
+    "plugins": [
+      "jsx",
+      "typescript",
+      "importAssertions",
+      "topLevelAwait"
+    ],
+    "sourceType": "module"
+  },
+  "sourcePath": "static/SummaryChip-DuckMock.js",
+  "entryFile": "entry.js",
+  "counts": {
+    "dynamicImports": 0,
+    "exportAliases": 1,
+    "importDeclarations": 1,
+    "keptTopLevelDeclarationOwners": 1,
+    "parts": 0,
+    "splitFunctionDeclarations": 0,
+    "topLevelBindings": 1,
+    "topLevelDeclarationOwners": 1,
+    "topLevelSideEffects": 0,
+    "unresolvedExports": 0
+  },
+  "files": [
+    {
+      "file": "entry.js",
+      "role": "entry"
+    }
+  ],
+  "imports": [
+    {
+      "id": "import_00000",
+      "line": 1,
+      "source": "./chunk-DuckMock.js",
+      "specifiers": [
+        {
+          "imported": "o",
+          "kind": "named",
+          "local": "o$1"
+        }
+      ]
+    }
+  ],
+  "exportAliases": [
+    {
+      "exported": "s",
+      "line": 8,
+      "local": "o"
+    }
+  ],
+  "unresolvedExports": [],
+  "keptTopLevelDeclarations": [
+    {
+      "id": "owner_00000",
+      "line": 2,
+      "names": [
+        "o"
+      ],
+      "type": "VariableDeclaration",
+      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+    }
+  ],
+  "parts": [],
+  "ownerToPart": {},
+  "renames": [
+    {
+      "id": "rename_chip_text_import",
+      "operation": "rename_binding",
+      "chunkId": "static/SummaryChip-DuckMock",
+      "file": "entry.js",
+      "from": "o$1",
+      "to": "formatChipText",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "imported": "o",
+        "kind": "ImportSpecifier",
+        "local": "o$1",
+        "name": "o$1",
+        "source": "../chunk-DuckMock/entry.js"
+      }
+    },
+    {
+      "id": "rename_summary_chip",
+      "operation": "rename_binding",
+      "chunkId": "static/SummaryChip-DuckMock",
+      "file": "entry.js",
+      "from": "o",
+      "to": "renderSummaryChip",
+      "preserveRuntimeName": false,
+      "owner": null,
+      "fingerprint": {
+        "init": "t => {\n  const o2 = {\n    text: o$1(t)\n  };\n  globalThis.__mockBundleState.chip = o2;\n  document.querySelector(\"#chip\").textContent = o2.text;\n  return o2;\n}",
+        "kind": "VariableDeclarator",
+        "name": "o",
+        "objectPropertyNames": []
+      }
+    }
+  ]
+}

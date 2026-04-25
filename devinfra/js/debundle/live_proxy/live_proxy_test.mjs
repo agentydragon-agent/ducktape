@@ -12,7 +12,7 @@ import {
   rewriteHtmlForLiveProxy,
 } from "./live_proxy_lib.mjs";
 
-function writeBaseLiveProxyFixture(prefix, { uiVersion = "example", vendorManifestPath = null } = {}) {
+function writeBaseLiveProxyFixture(prefix, { sourceBaseUrl = null, uiVersion = "example", vendorManifestPath = null } = {}) {
   const { appRoot, packagesRoot, root, sourceRoot, vendorsRoot } = createWebFixtureRoots(prefix);
   const assetSummaryPath = join(root, "asset-summary.json");
   const sourceHtmlPath = join(sourceRoot, "index.html");
@@ -46,6 +46,12 @@ function writeBaseLiveProxyFixture(prefix, { uiVersion = "example", vendorManife
     uiVersion,
     ...(vendorManifestPath ? { vendorManifestPath } : {}),
   });
+  if (sourceBaseUrl) {
+    writeJsonFile(join(appRoot, "SOURCE.json"), {
+      baseUrl: sourceBaseUrl,
+      uiVersion,
+    });
+  }
 
   return {
     appManifestPath,
@@ -98,6 +104,55 @@ test("loadLiveProxyConfiguration rewrites the app shell to load the generated bo
   assert.ok(!rewritten.includes("/static/index-Example.js"));
   assert.ok(!rewritten.includes("/static/vendor-Example.js"));
   assert.ok(rewritten.includes("/static/index.css"));
+});
+
+test("loadLiveProxyConfiguration falls back to SOURCE.json for the target base URL", () => {
+  const fixture = writeBaseLiveProxyFixture("debundle-live-proxy-source-base-url-", {
+    sourceBaseUrl: "https://app.tana.inc",
+    uiVersion: "source-fallback",
+  });
+  writeJsonFile(fixture.assetSummaryPath, {});
+
+  const config = loadLiveProxyConfiguration({
+    appManifestPath: fixture.appManifestPath,
+    assetHost: "127.0.0.1",
+    assetPort: 9903,
+    proxyHost: "127.0.0.1",
+    proxyPort: 9803,
+    stateDir: join(fixture.root, "state"),
+  });
+
+  assert.equal(config.targetOrigin, "https://app.tana.inc");
+  assert.equal(config.targetUrl, "https://app.tana.inc/");
+  assert.equal(config.bootstrapUrl, "/_debundle/live/source-fallback/app/bootstrap.js");
+});
+
+test("loadLiveProxyConfiguration resolves manifest-relative workspace paths from an absolute manifest location", () => {
+  const fixture = writeBaseLiveProxyFixture("debundle-live-proxy-runfiles-manifest-", {
+    sourceBaseUrl: "https://app.tana.inc",
+    uiVersion: "runfiles",
+  });
+  writeJsonFile(fixture.assetSummaryPath, {});
+  writeJsonFile(fixture.appManifestPath, {
+    assetSummaryPath: "asset-summary.json",
+    outDir: "app",
+    sourceHtml: "source/index.html",
+    uiVersion: "runfiles",
+  });
+
+  const config = loadLiveProxyConfiguration({
+    appManifestPath: fixture.appManifestPath,
+    assetHost: "127.0.0.1",
+    assetPort: 9904,
+    proxyHost: "127.0.0.1",
+    proxyPort: 9804,
+    stateDir: join(fixture.root, "state"),
+  });
+
+  assert.equal(config.assetSummaryPath, fixture.assetSummaryPath);
+  assert.equal(config.sourceHtmlPath, fixture.sourceHtmlPath);
+  assert.equal(config.outRoot, fixture.root);
+  assert.equal(config.targetOrigin, "https://app.tana.inc");
 });
 
 test("isTargetDocumentRequest recognizes top-level HTML navigations", () => {
