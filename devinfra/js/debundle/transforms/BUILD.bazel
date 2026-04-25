@@ -1,5 +1,11 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
 
+filegroup(
+    name = "run_transform_entry_point",
+    srcs = ["run_transform.mjs"],
+    visibility = ["//visibility:public"],
+)
+
 _JSONC_DEPS = [
     "//:node_modules/jsonc-parser",
 ]
@@ -25,10 +31,10 @@ js_library(
 js_binary(
     name = "run_transform",
     data = [
-        "run_transform.mjs",
         ":libs",
+        ":run_transform_entry_point",
     ],
-    entry_point = "run_transform.mjs",
+    entry_point = ":run_transform_entry_point",
     node_options = [
         "--max-old-space-size=8192",
     ],

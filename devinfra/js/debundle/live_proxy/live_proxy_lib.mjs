@@ -425,7 +425,7 @@ function liveProxyPreludeScript({ bootstrapUrl, uiVersion }) {
 
   return `<script>
       (() => {
-        const tag = "[gaffer-live-proxy]";
+        const tag = "[js-debundle-live-proxy]";
         const noopRegistration = {
           ...${registrationLiteral},
           addEventListener() {},
@@ -442,12 +442,12 @@ function liveProxyPreludeScript({ bootstrapUrl, uiVersion }) {
           getRegistrations: async () => [],
           startMessages() {},
         };
-        globalThis.__gafferLiveProxy = {
+        globalThis.__jsDebundleLiveProxy = {
           active: true,
           bootstrapUrl: ${JSON.stringify(bootstrapUrl)},
           uiVersion: ${JSON.stringify(uiVersion)},
         };
-        document.documentElement.dataset.gafferLiveProxy = "true";
+        document.documentElement.dataset.jsDebundleLiveProxy = "true";
         const existing = navigator.serviceWorker;
         if (existing && typeof existing.getRegistrations === "function") {
           existing.getRegistrations().then((registrations) => {
@@ -470,7 +470,7 @@ function liveProxyPreludeScript({ bootstrapUrl, uiVersion }) {
           }
           console.warn(tag, "unable to replace navigator.serviceWorker directly", error);
         }
-        console.info(tag, "active", globalThis.__gafferLiveProxy);
+        console.info(tag, "active", globalThis.__jsDebundleLiveProxy);
       })();
     </script>`;
 }
@@ -532,7 +532,7 @@ function normalizeHost(host) {
 }
 
 function defaultStateDir() {
-  return join("/tmp", "gaffer-private", "debundle-live-proxy");
+  return join("/tmp", "js-debundle-live-proxy");
 }
 
 function resolvePath(path) {

@@ -1,5 +1,11 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 
+filegroup(
+    name = "serve_live_proxy_entry_point",
+    srcs = ["serve_live_proxy.mjs"],
+    visibility = ["//visibility:public"],
+)
+
 js_library(
     name = "libs",
     srcs = ["live_proxy_lib.mjs"],
@@ -15,12 +21,12 @@ js_binary(
     name = "serve_live_proxy",
     data = [
         "live_proxy_lib.mjs",
-        "serve_live_proxy.mjs",
+        ":serve_live_proxy_entry_point",
         "//:node_modules/http-mitm-proxy",
         "//:node_modules/node-forge",
         "//devinfra/js/debundle/common:libs",
     ],
-    entry_point = "serve_live_proxy.mjs",
+    entry_point = ":serve_live_proxy_entry_point",
     visibility = ["//visibility:public"],
 )
 

@@ -80,7 +80,7 @@ test("loadLiveProxyConfiguration rewrites the app shell to load the generated bo
   assert.equal(config.bootstrapUrl, "/_debundle/live/example/app/bootstrap.js");
   assert.equal(config.controlPaths.liveIndex, "/_debundle/live/example/live-index.html");
   assert.ok(config.injectedHtml.includes('src="/_debundle/live/example/app/bootstrap.js"'));
-  assert.ok(config.injectedHtml.includes("gaffer-live-proxy"));
+  assert.ok(config.injectedHtml.includes("js-debundle-live-proxy"));
 
   const rewritten = rewriteHtmlForLiveProxy(readUtf8(sourceHtmlPath), {
     bootstrapUrl: "/_debundle/live/example/app/bootstrap.js",
@@ -144,7 +144,7 @@ test("mapLocalAssetPath serves bootstrap, live index, and service worker from th
 
   const htmlMapping = mapLocalAssetPath("/_debundle/live/example/live-index.html", config);
   assert.equal(htmlMapping.kind, "live-index");
-  assert.match(htmlMapping.body.toString("utf8"), /gaffer-live-proxy/);
+  assert.match(htmlMapping.body.toString("utf8"), /js-debundle-live-proxy/);
 
   const swMapping = mapLocalAssetPath("/_debundle/live/example/sw.js", config);
   assert.equal(swMapping.kind, "service-worker");
