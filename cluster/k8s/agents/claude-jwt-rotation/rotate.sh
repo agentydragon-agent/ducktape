@@ -122,7 +122,7 @@ EXPIRES_ISO=$(date -u -d "@${EXP_TS}" +%Y-%m-%dT%H:%M:%SZ)
 # so it stays plaintext after `sops encrypt --in-place`.
 mkdir -p "$(dirname "$SOPS_FILE")"
 cat >"$SOPS_FILE" <<EOF
-expires_unencrypted: $EXPIRES_ISO
+expires_unencrypted: "$EXPIRES_ISO"
 jwt: $JWT
 EOF
 
