@@ -6,6 +6,7 @@ metadata:
 spec:
   interval: 15m
   approvePlan: "auto"
+  refreshBeforeApply: true
   path: ./tf/gitops/gatus-sso
   sourceRef:
     kind: GitRepository

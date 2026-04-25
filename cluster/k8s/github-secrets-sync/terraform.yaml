@@ -6,6 +6,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
+  refreshBeforeApply: true
   path: ./tf/gitops/github-secrets-sync
   sourceRef:
     kind: GitRepository

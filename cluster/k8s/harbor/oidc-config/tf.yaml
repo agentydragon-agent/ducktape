@@ -5,6 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
+  refreshBeforeApply: true
   path: ./tf/gitops/sso/harbor-config
   sourceRef:
     kind: GitRepository

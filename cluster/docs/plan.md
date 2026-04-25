@@ -329,6 +329,12 @@ directly — no port-forward. From non-workers, fall back to `kubectl port-forwa
 Flux `Receiver` at `flux-webhook.allegedly.works`. GitHub webhook registered by
 `harbor-ci` Terraform (`github_repository_webhook.flux_receiver`).
 
+### SOPS-encrypt talosconfig and kubeconfig
+
+- [ ] Store `terraform/main/talosconfig.yml` and `terraform/main/kubeconfig` in SOPS
+      instead of plaintext local files. These contain cluster admin credentials and
+      should not be unencrypted on disk.
+
 ### etcd Backup
 
 Deploy [talos-backup](https://github.com/siderolabs/talos-backup) CronJob with age
@@ -403,6 +409,12 @@ Deploy [alertmanager-ntfy](https://github.com/alexbakker/alertmanager-ntfy).
 ### SLO Definitions
 
 Deploy Pyrra or Sloth. Targets: ingress 99.5%, DNS 99.9%, Vault 99.9%.
+
+### GUI for Terraform/OpenTofu
+
+Evaluate a web UI for managing cluster infrastructure via TF/OpenTofu — plan/apply from
+a dashboard instead of CLI. Candidates: Spacelift (SaaS), env0, Atlantis (self-hosted,
+PR-based), Terrateam, Scalr, or the OpenTofu-native options. Self-hosted preferred.
 
 ## Future Directions
 

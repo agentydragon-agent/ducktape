@@ -37,7 +37,7 @@ ROTATE_BELOW_HOURS=24
 SOPS_FILE="secrets/claude-web-k8s-jwt.yaml"
 SOPS_CONFIG=".sops.yaml"
 GITHUB_REPO="agentydragon/ducktape"
-TOKEN_URL="https://auth.allegedly.works/application/o/kubectl-sandbox-client-credentials/token/"
+TOKEN_URL="https://auth.allegedly.works/application/o/token/"
 
 # rules_distroless doesn't run update-ca-certificates, so /etc/ssl/certs/ is
 # empty. Build a CA bundle from the raw cert files for git/libcurl.
