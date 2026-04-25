@@ -1,69 +1,90 @@
-# Tofu-controller silent state divergence (2026-04-25)
+# JWT rotation pipeline failures (2026-04-25)
 
 ## Incident
 
-The `claude-jwt-rotation` CronJob failed with HTTP 400 `invalid_grant` when
-requesting a JWT via `client_credentials` grant from Authentik. Investigation
-revealed that the `authentik_application` objects for all three kubectl MCP
-providers (`kubectl-passthrough-mcp`, `kubectl-sandbox-mcp`,
-`kubectl-sandbox-client-credentials`) were missing from Authentik, despite the
-corresponding OAuth2 **providers** existing. Without an application binding, Authentik
-rejects token requests for the client_id.
+The `claude-jwt-rotation` CronJob failed to mint and commit a working JWT for
+Claude Code web sessions. Multiple layered issues were discovered and fixed
+during a single debugging session.
 
-The tofu-controller's `agent-machine-access` Terraform resource reported
-"No drift" — its state file said the applications existed, and it never checked.
+## Root causes (5 issues, in order of discovery)
 
-## Root cause
+1. **Wrong token endpoint URL**: `rotate.sh` used a per-application token path
+   (`/application/o/kubectl-sandbox-client-credentials/token/`) which returns
+   HTTP 405. Authentik uses a shared token endpoint (`/application/o/token/`).
 
-1. **Authentik DB data loss**: At some point after the April 11 bootstrap, the
-   Authentik CNPG database lost the `authentik_application` rows created by
-   Terraform. The most likely cause is a PVC wipe/recreate during a prior
-   bootstrap cycle or maintenance operation. The OAuth2 providers survived
-   (possibly recreated by a different mechanism or partially restored), but the
-   applications did not.
+2. **Missing policy binding for auto-created user**: Authentik auto-creates an
+   internal service account (`ak-<slug>-client_credentials`) for
+   `client_credentials` grants. The TF-managed policy binding only authorized
+   the TF-created service account (different user). The auto-created user
+   was rejected with `invalid_grant` even at the correct endpoint.
 
-2. **`refreshBeforeApply: false` (default)**: All 15 tofu-controller `Terraform`
-   custom resources used the default setting, which skips `tofu refresh` before
-   planning. The controller trusts the state file unconditionally — if state says
-   a resource exists, the plan shows no drift, and no apply happens. This is a
-   silent failure mode: reality can diverge from state indefinitely without any
-   alert or corrective action.
+3. **Missing `secrets/` directory on first rotation**: The script writes to
+   `secrets/claude-web-k8s-jwt.yaml` but the sparse checkout doesn't create
+   the parent directory when bootstrapping. Fixed with `mkdir -p`.
+
+4. **SOPS `time.Time` parse failure**: Unquoted ISO 8601 timestamps in YAML
+   are parsed by SOPS as Go `time.Time` values, which SOPS can't encrypt.
+   Fixed by quoting the `expires_unencrypted` value.
+
+5. **Missing `profile` and `email` scopes**: The `client_credentials` grant
+   only requested `openid groups`. kube-apiserver's `AuthenticationConfiguration`
+   maps `preferred_username` (from the `profile` scope) to the username claim.
+   Without it, the JWT was minted successfully but rejected by the apiserver
+   as Unauthorized.
+
+### Preventive issue (not directly causal)
+
+**`refreshBeforeApply: false`** on all 15 tofu-controller Terraform CRs.
+During investigation we initially suspected Authentik data loss (applications
+missing from the DB while providers existed). This turned out to be a
+pagination bug in the API query, but the vulnerability is real: without
+refresh, the controller trusts state unconditionally and would silently miss
+any future state/reality divergence. Enabled `refreshBeforeApply: true` on
+all CRs as a preventive measure.
 
 ## Detection
 
-- The JWT rotation CronJob failed with `curl: (22) ... 400`.
-- Loki logs (via `promtail`) preserved the pod output even after the
-  `backoffLimit: 0` Job deleted the pod.
-- Manual Authentik API query (`/api/v3/core/applications/`) confirmed the
-  applications were missing while providers existed.
+- CronJob failed with `curl: (22) ... 405` / `400`.
+- Loki logs (via `promtail`) preserved pod output even after the
+  `backoffLimit: 0` Job deleted the pod — critical for debugging.
+- Manual `curl` against Authentik token endpoint and API to trace each
+  failure layer.
 
-## Fix
+## Fixes applied
 
-1. **Enable `refreshBeforeApply: true`** on all 15 tofu-controller Terraform CRs.
-   This adds a `tofu refresh` before each plan cycle, so the controller discovers
-   state/reality divergence and triggers corrective applies automatically.
-
-2. **Fix `TOKEN_URL` in `rotate.sh`**: The script used a per-application token
-   endpoint (`/application/o/kubectl-sandbox-client-credentials/token/`) which
-   returns HTTP 405. Authentik uses a shared token endpoint
-   (`/application/o/token/`). This bug was masked by the missing application
-   (which caused the earlier 400 error), but would have surfaced once the
-   application was recreated.
+| Commit    | Fix                                                                         |
+| --------- | --------------------------------------------------------------------------- |
+| `47bc0db` | `refreshBeforeApply: true` on all 15 TF CRs; `TOKEN_URL` fix; roadmap TODOs |
+| `3374ba4` | Policy binding for Authentik auto-created `client_credentials` user         |
+| `1e17f8a` | `mkdir -p` before writing SOPS file                                         |
+| `777a84f` | Quote ISO timestamp to avoid SOPS `time.Time` parse                         |
+| `dc60597` | Request `profile email` scopes for `preferred_username` claim               |
+| `07c8cec` | Strip quotes in freshness check `sed` → `date` pipeline                     |
 
 ## Lessons
 
-- **Always enable `refreshBeforeApply: true`** for tofu-controller Terraform
-  resources that manage external state (Authentik, DNS, Harbor, etc.). The cost
-  is one extra API call per reconcile interval; the benefit is automatic
-  detection and repair of state/reality divergence. The default `false` is only
-  safe when the managed infrastructure is guaranteed immutable between applies
-  (e.g., purely K8s-native resources that can't be modified outside TF).
+- **Authentik `client_credentials` creates its own user.** The flow
+  authenticates as `ak-<slug>-client_credentials`, not as any user you
+  manually create. Policy bindings must include this auto-created user.
 
 - **Authentik token endpoints are shared**, not per-application. The OIDC
   discovery document (`.well-known/openid-configuration`) returns the correct
-  `token_endpoint` — always use it rather than constructing URLs manually.
+  `token_endpoint` — always use discovery rather than constructing URLs.
 
-- **Partial data loss is harder to detect than total loss.** If all of Authentik
-  had been wiped, everything would have broken visibly. Because only the
-  applications were lost while providers survived, the failure was narrow
-  (only `client_credentials` grants broke) and silent (TF saw no drift).
+- **Request all scopes your consumer needs.** `client_credentials` grants only
+  include claims for requested scopes. If kube-apiserver maps
+  `preferred_username`, you must request the `profile` scope that provides it.
+
+- **Always enable `refreshBeforeApply: true`** for tofu-controller Terraform
+  resources that manage external state. The cost is one extra API call per
+  reconcile; the benefit is automatic state/reality divergence detection.
+
+- **SOPS and YAML datetime literals don't mix.** Always quote ISO 8601
+  timestamps in SOPS-encrypted YAML files. Unquoted values are parsed as
+  Go `time.Time`, which SOPS can't walk. The freshness-check reader must
+  also strip the quotes.
+
+- **Test the full pipeline, not just individual steps.** Each fix exposed the
+  next failure. A single end-to-end test (mint → encrypt → commit → build
+  kubeconfig → `kubectl auth whoami`) would have caught all five issues at
+  once.
