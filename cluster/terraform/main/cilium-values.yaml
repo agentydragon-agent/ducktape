@@ -36,6 +36,7 @@ MTU: 1412
 # hostNetwork binds ports 80/443 directly on VPS nodes.
 gatewayAPI:
   enabled: true
+  enableAppProtocol: true
   hostNetwork:
     enabled: true
     nodes:

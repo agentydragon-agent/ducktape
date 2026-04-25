@@ -1,0 +1,55 @@
+# Wrapper Service for the Kubernetes API with appProtocol: https.
+#
+# The built-in `kubernetes` Service doesn't set appProtocol, and we can't
+# modify it (it's managed by the apiserver). Cilium Gateway API uses
+# appProtocol to decide whether to connect to backends over HTTPS.
+# Without it, the gateway sends plain HTTP to the apiserver's TLS port,
+# which 404s.
+#
+# This Service selects nothing (no selector) — the EndpointSlice below
+# manually targets the same apiserver IPs as the `kubernetes` Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubeapi-https
+  namespace: default
+  annotations:
+    description: |
+      Wrapper around the kubernetes Service with appProtocol: https for
+      Cilium Gateway API BackendTLS (via GEP-1911 appProtocol).
+spec:
+  ports:
+    - name: https
+      port: 443
+      targetPort: 6443
+      protocol: TCP
+      appProtocol: https
+  clusterIP: None
+  type: ClusterIP
+---
+# EndpointSlice targeting the same apiserver IPs as the `kubernetes` Service.
+# These are the Nebula mesh IPs of the control plane nodes.
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: kubeapi-https
+  namespace: default
+  labels:
+    kubernetes.io/service-name: kubeapi-https
+  annotations:
+    description: |
+      Static endpoints for the apiserver control plane nodes. Must be
+      updated if CP node IPs change (rare — only on full rebuild).
+addressType: IPv4
+ports:
+  - name: https
+    port: 6443
+    protocol: TCP
+    appProtocol: https
+endpoints:
+  - addresses:
+      - "10.42.0.1" # talos-vps-cp-0
+  - addresses:
+      - "10.42.0.2" # talos-vps-cp-1
+  - addresses:
+      - "10.42.0.10" # talos-pve-cp-0

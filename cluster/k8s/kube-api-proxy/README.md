@@ -53,9 +53,9 @@ Client (possibly behind Anthropic L7 MITM proxy)
    ▼
 Cilium Gateway (:443, `https-wildcard` listener, mode=Terminate, LE wildcard)
    │ HTTP (JWT preserved in Authorization header)
-   ▼ (BackendTLSPolicy re-encrypts, validates via kube-root-ca.crt ConfigMap)
+   ▼ (appProtocol: https on kubeapi-https Service → Envoy connects via HTTPS)
    ▼
-kubernetes.default.svc.cluster.local:443 (apiserver)
+kubeapi-https Service → apiserver :6443
    ▲
    └─ JWT validated via AuthenticationConfiguration (kubectl-sandbox-client-credentials issuer)
       groups claim → oidc-ksbx-groups:kubectl-sandbox-users → existing RBAC
@@ -63,10 +63,10 @@ kubernetes.default.svc.cluster.local:443 (apiserver)
 
 ## Resources
 
-| File                      | Purpose                                                                                      |
-| ------------------------- | -------------------------------------------------------------------------------------------- |
-| `tlsroute.yaml`           | TLSRoute on `api.allegedly.works` to `kubernetes:443` (default namespace, passthrough)       |
-| `httproute.yaml`          | HTTPRoute on `kubeapi.allegedly.works` to `kubernetes:443` (terminate at gateway)            |
-| `backendtlspolicy.yaml`   | BackendTLSPolicy re-encrypting to the apiserver, validating via `kube-root-ca.crt` ConfigMap |
-| `kustomization.yaml`      | Flux kustomization root                                                                      |
-| `flux-kustomization.yaml` | Flux Kustomization (no `dependsOn`)                                                          |
+| File                      | Purpose                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| `tlsroute.yaml`           | TLSRoute on `api.allegedly.works` to `kubernetes:443` (default namespace, passthrough) |
+| `httproute.yaml`          | HTTPRoute on `kubeapi.allegedly.works` to `kubeapi-https:443` (terminate at gateway)   |
+| `service.yaml`            | Wrapper Service + EndpointSlice with `appProtocol: https` for backend re-encryption    |
+| `kustomization.yaml`      | Flux kustomization root                                                                |
+| `flux-kustomization.yaml` | Flux Kustomization (no `dependsOn`)                                                    |

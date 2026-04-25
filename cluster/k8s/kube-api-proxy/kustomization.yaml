@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - tlsroute.yaml
   - httproute.yaml
-  - backendtlspolicy.yaml
+  - service.yaml
