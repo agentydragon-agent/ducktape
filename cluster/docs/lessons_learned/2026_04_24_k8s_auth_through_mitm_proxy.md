@@ -98,9 +98,10 @@ deployed apiserver `AuthenticationConfiguration`.
 
 Added `kubeapi.allegedly.works` (`cluster/k8s/kube-api-proxy/httproute.yaml`)
 on the existing `https-wildcard` listener. Cilium Gateway terminates the
-wildcard LE cert, then re-encrypts to `kubernetes:443` via a
-`BackendTLSPolicy` that validates the apiserver cert against the cluster
-root CA (auto-mounted `kube-root-ca.crt` ConfigMap in `default`).
+wildcard LE cert. An nginx reverse proxy pod (`kubeapi-proxy`) bridges
+HTTP→HTTPS to `kubernetes.default.svc:443`, since Cilium doesn't support
+backend TLS re-encryption (no BackendTLSPolicy, no `appProtocol: https` —
+see <2026_04_25_kubeapi_backend_tls.md> for the full investigation).
 
 The Anthropic proxy's upstream validation now sees a publicly-trusted cert,
 passes, and the proxy relays the HTTP request (with the Authorization
