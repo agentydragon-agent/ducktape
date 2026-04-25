@@ -8,11 +8,11 @@ from pathlib import Path
 
 import aiodocker
 import anyio
-from fastmcp.client import Client
 from pydantic import BaseModel
 
-from skills.eval_infra.docker_exec import scratch_exec_server
-from skills.info_gathering.evals.function_learning.function_learning import make_exec_tool, run_game
+from skills.eval_infra.af_chat_client import build_model_client
+from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.info_gathering.evals.function_learning.function_learning import _MAX_STEPS, run_game
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS
 from skills.info_gathering.evals.function_learning.result_types import FunctionLearningResult, TokenUsage
 
@@ -37,6 +37,7 @@ async def run_one(
     run_idx: int,
     exec_tool,
     scoring_container,
+    model_client,
     sem: asyncio.Semaphore,
     model: str,
     api: str,
@@ -57,6 +58,7 @@ async def run_one(
                 output_dir=output_dir,
                 exec_tool=exec_tool,
                 scoring_container=scoring_container,
+                model_client=model_client,
                 no_skill=arm_no_skill,
             )
             record = RunRecord(
@@ -84,36 +86,37 @@ async def _async_main(args: argparse.Namespace) -> None:
     await anyio.Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     sem = asyncio.Semaphore(args.concurrency)
+    model_client = build_model_client(
+        api=args.api, model=args.model, function_invocation_configuration={"max_iterations": _MAX_STEPS}
+    )
 
-    async with scratch_exec_server() as scratch_server, Client(scratch_server) as scratch_client:
-        exec_tool = make_exec_tool(scratch_client)
-
-        async with aiodocker.Docker() as docker:
-            container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
-            scoring_container = await docker.containers.run(
-                config={"Image": "python:3.13-slim", "Cmd": ["sleep", "7200"]}, name=container_name
-            )
-            try:
-                tasks = [
-                    run_one(
-                        fn_name,
-                        no_skill,
-                        run_idx,
-                        exec_tool,
-                        scoring_container,
-                        sem,
-                        model=args.model,
-                        api=args.api,
-                        turn_limit=args.turn_limit,
-                        output_dir=output_dir / fn_name / ("no_skill" if no_skill else "skill") / f"run_{run_idx}",
-                    )
-                    for fn_name in FUNCTIONS_LIST
-                    for no_skill in [False, True]
-                    for run_idx in range(args.runs_per_cell)
-                ]
-                raw_results = await asyncio.gather(*tasks)
-            finally:
-                await scoring_container.delete(force=True)
+    async with scratch_exec_mcp_tool() as exec_tool, aiodocker.Docker() as docker:
+        container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
+        scoring_container = await docker.containers.run(
+            config={"Image": "python:3.13-slim", "Cmd": ["sleep", "7200"]}, name=container_name
+        )
+        try:
+            tasks = [
+                run_one(
+                    fn_name,
+                    no_skill,
+                    run_idx,
+                    exec_tool,
+                    scoring_container,
+                    model_client,
+                    sem,
+                    model=args.model,
+                    api=args.api,
+                    turn_limit=args.turn_limit,
+                    output_dir=output_dir / fn_name / ("no_skill" if no_skill else "skill") / f"run_{run_idx}",
+                )
+                for fn_name in FUNCTIONS_LIST
+                for no_skill in [False, True]
+                for run_idx in range(args.runs_per_cell)
+            ]
+            raw_results = await asyncio.gather(*tasks)
+        finally:
+            await scoring_container.delete(force=True)
 
     records = [r for r in raw_results if r is not None]
     error_count = len(raw_results) - len(records)

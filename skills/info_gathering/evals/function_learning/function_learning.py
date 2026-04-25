@@ -1,29 +1,46 @@
-"""Function learning eval using Microsoft Agent Framework.
+"""Function learning eval using Microsoft Agent Framework's `Agent.run()`.
 
 The model plays a function-learning game: each turn it queries one input of a
-secret boolean function and submits a Python program guess. The scaffold evaluates
-the program against all 2^N inputs in a Docker container and reports Hamming loss.
+secret boolean function and submits a Python program guess. The scaffold
+evaluates the program against all 2^N inputs in a Docker container and reports
+Hamming loss.
+
+`Agent.run()` drives the tool-dispatch loop. Each LLM round-trip and each
+tool dispatch is dumped to JSONL using AF's standard `Message.to_json()`
+format — one assistant `Message` per LLM call, one tool `Message` per
+function dispatch. Token usage (incl. Anthropic prompt-cache reads/creations)
+is aggregated alongside, and a `_GameEndMiddleware` raises
+`MiddlewareTermination` once `game.finished` (turn-limit reached or solved).
 """
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Any, Literal, cast
+from typing import IO, Any, cast
 
 import aiodocker
-from agent_framework import ChatResponse, Content, FunctionTool, Message, UsageDetails
-from agent_framework.anthropic import AnthropicClient
-from agent_framework.openai import OpenAIChatCompletionClient
-from fastmcp.client import Client
-from mcp.types import TextContent
-from pydantic import BaseModel
+from agent_framework import (
+    Agent,
+    AgentSession,
+    BaseChatClient,
+    ChatContext,
+    ChatMiddleware,
+    ChatResponse,
+    FunctionInvocationContext,
+    FunctionMiddleware,
+    FunctionTool,
+    MCPStdioTool,
+    Message,
+    MiddlewareTermination,
+)
 
-from skills.eval_infra.docker_exec import scratch_exec_server
+from skills.eval_infra.af_chat_client import build_model_client
+from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction
 from skills.info_gathering.evals.function_learning.prompts import build_system_prompt, first_user_message
 from skills.info_gathering.evals.function_learning.result_types import (
@@ -39,54 +56,6 @@ from skills.info_gathering.evals.twenty_questions.x.shared.output import run_out
 logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 200
-
-
-# --- Structured log entry types (written to calls.jsonl) ---
-
-
-class GameStartLog(BaseModel):
-    kind: Literal["game_start"] = "game_start"
-    timestamp: str
-    function_name: str
-    n_bits: int
-    m_bits: int
-    no_skill: bool
-    system_prompt: str
-    opening_message: str
-
-
-class FunctionCallLog(BaseModel):
-    id: str
-    name: str
-    arguments: str  # raw JSON string as returned by the model
-
-
-class LlmResponseLog(BaseModel):
-    kind: Literal["llm_response"] = "llm_response"
-    timestamp: str
-    text: str | None
-    tool_calls: list[FunctionCallLog] | None
-    input_tokens: int
-    output_tokens: int
-    cache_read_tokens: int | None
-    cache_creation_tokens: int | None
-
-
-class ToolResultLog(BaseModel):
-    kind: Literal["tool_result"] = "tool_result"
-    timestamp: str
-    tool_name: str
-    call_id: str
-    arguments: dict
-    result: str
-
-
-class GameEndLog(BaseModel):
-    kind: Literal["game_end"] = "game_end"
-    timestamp: str
-    turns: int
-    solved_at_turn: int | None
-    total_hamming_loss: int
 
 
 # --- Game state ---
@@ -108,23 +77,12 @@ class GameContext:
     def finished(self) -> bool:
         return self.turn >= self.turn_limit or self.solved
 
-    def log(self, entry: BaseModel) -> None:
-        self.log_file.write(entry.model_dump_json() + "\n")
+    def write_message(self, message: Message) -> None:
+        self.log_file.write(message.to_json() + "\n")
         self.log_file.flush()
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _extract_function_calls(response: ChatResponse) -> list[Content]:
-    """Extract function call Content items from a ChatResponse."""
-    msg = response.messages[0]
-    return [c for c in msg.contents if c.type == "function_call"]
-
-
-def _extract_usage(response: ChatResponse) -> UsageDetails | None:
-    return response.usage_details
+# --- Tools ---
 
 
 def _make_play_turn_tool(
@@ -184,24 +142,49 @@ def _make_play_turn_tool(
     )
 
 
-def make_exec_tool(mcp_client: Client) -> FunctionTool:
-    async def exec(cmd: list[str], timeout_ms: int = 30000) -> str:
-        """Run a command in a scratch container for computation."""
-        arguments: dict[str, object] = {"cmd": cmd, "timeout_ms": timeout_ms}
-        result = await mcp_client.call_tool("exec", arguments)
-        return "\n".join(block.text for block in result.content if isinstance(block, TextContent))
-
-    return FunctionTool(
-        name="exec", description="Run a command in a scratch container. cmd is a list of strings (no shell).", func=exec
-    )
+# --- Middleware ---
 
 
-def _build_model_client(*, api: str, model: str) -> Any:
-    if api == "openai":
-        return OpenAIChatCompletionClient(model=model)
-    if api == "anthropic":
-        return AnthropicClient(model=model)
-    raise ValueError(f"Unsupported API: {api!r}")
+class _AssistantLogMiddleware(ChatMiddleware):
+    """Per-LLM-call: dump assistant Messages and aggregate token usage."""
+
+    def __init__(self, game: GameContext) -> None:
+        self._game = game
+
+    async def process(self, context: ChatContext, call_next: Any) -> None:
+        await call_next()
+        if not isinstance(context.result, ChatResponse):
+            return  # streaming path; not used here
+
+        usage = context.result.usage_details
+        if usage:
+            self._game.total_input_tokens += usage.get("input_token_count") or 0
+            self._game.total_output_tokens += usage.get("output_token_count") or 0
+            # The two Anthropic-specific keys aren't declared on the UsageDetails
+            # TypedDict, so `.get()` is typed `object | None`; cast for the sum.
+            self._game.total_cache_read_tokens += cast(int, usage.get("anthropic.cache_read_input_tokens") or 0)
+            self._game.total_cache_creation_tokens += cast(int, usage.get("anthropic.cache_creation_input_tokens") or 0)
+
+        for msg in context.result.messages:
+            self._game.write_message(msg)
+
+
+class _ToolLogMiddleware(FunctionMiddleware):
+    """Per-tool-dispatch: dump tool-result Message; terminate when game.finished."""
+
+    def __init__(self, game: GameContext) -> None:
+        self._game = game
+
+    async def process(self, context: FunctionInvocationContext, call_next: Any) -> None:
+        await call_next()
+        # `tool.invoke()` returns `list[Content]`; wrap as a tool Message.
+        if isinstance(context.result, list):
+            self._game.write_message(Message("tool", context.result))
+        if self._game.finished:
+            raise MiddlewareTermination("game finished")
+
+
+# --- Main ---
 
 
 _NO_HINT = "The function class is unknown. You must discover its structure from queries alone."
@@ -215,138 +198,47 @@ async def run_game(
     model: str,
     api: str,
     output_dir: Path,
-    exec_tool: FunctionTool,
+    exec_tool: MCPStdioTool | FunctionTool,
     scoring_container: aiodocker.docker.DockerContainer,
-    model_client: Any | None = None,
+    model_client: BaseChatClient[Any],
     no_skill: bool = False,
 ) -> RunSummary:
-    """Execute one function learning game and persist results."""
+    """Execute one function learning game and persist results.
+
+    The caller owns `model_client`'s lifecycle; this function neither
+    constructs nor closes it.
+    """
     secret_fn = FUNCTIONS[function_name]
     description = secret_fn.description if hint else _NO_HINT
 
     system = build_system_prompt(skill="" if no_skill else load_skill_prompt(), has_scratch=True)
     opening = first_user_message(secret_fn, turn_limit, description, eval_timeout_s=EVAL_TIMEOUT_S)
 
-    owns_client = model_client is None
-    if model_client is None:
-        model_client = _build_model_client(api=api, model=model)
-
     calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
 
     with calls_path.open("w") as log_f:
         game = GameContext(turn_limit=turn_limit, log_file=log_f)
         play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
-        all_tools = [play_turn_tool, exec_tool]
-        tool_map = {t.name: t for t in all_tools}
-        game.log(
-            GameStartLog(
-                timestamp=_now(),
-                function_name=function_name,
-                n_bits=secret_fn.n,
-                m_bits=secret_fn.m,
-                no_skill=no_skill,
-                system_prompt=system,
-                opening_message=opening,
-            )
+
+        # Seed the JSONL with system + opening so a reader has the full context.
+        game.write_message(Message("system", [system]))
+        game.write_message(Message("user", [opening]))
+
+        agent = Agent(
+            client=model_client,
+            instructions=system,
+            tools=[play_turn_tool, exec_tool],
+            middleware=[_AssistantLogMiddleware(game), _ToolLogMiddleware(game)],
+            default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
         )
 
-        history: list[Message] = [Message("system", [system]), Message("user", [opening])]
+        # _ToolLogMiddleware terminates the loop once `game.finished`.
+        with contextlib.suppress(MiddlewareTermination):
+            await agent.run(opening, session=AgentSession())
 
-        for _ in range(_MAX_STEPS):
-            if game.finished:
-                break
-
-            response = await model_client.get_response(
-                history, options={"tools": all_tools, "tool_choice": "required", "allow_multiple_tool_calls": False}
-            )
-
-            usage = _extract_usage(response)
-            if usage:
-                game.total_input_tokens += usage.get("input_token_count") or 0
-                game.total_output_tokens += usage.get("output_token_count") or 0
-                cache_read = usage.get("anthropic.cache_read_input_tokens")
-                cache_create = usage.get("anthropic.cache_creation_input_tokens")
-                game.total_cache_read_tokens += cast(int, cache_read) if cache_read is not None else 0
-                game.total_cache_creation_tokens += cast(int, cache_create) if cache_create is not None else 0
-
-            function_calls = _extract_function_calls(response)
-
-            if not function_calls:
-                text_content = response.messages[0].text
-                cache_read = usage.get("anthropic.cache_read_input_tokens") if usage else None
-                cache_creation = usage.get("anthropic.cache_creation_input_tokens") if usage else None
-                game.log(
-                    LlmResponseLog(
-                        timestamp=_now(),
-                        text=text_content,
-                        tool_calls=None,
-                        input_tokens=usage.get("input_token_count", 0) or 0 if usage else 0,
-                        output_tokens=usage.get("output_token_count", 0) or 0 if usage else 0,
-                        cache_read_tokens=cache_read,
-                        cache_creation_tokens=cache_creation,
-                    )
-                )
-                history.append(response.messages[0])
-                continue
-
-            assert len(function_calls) == 1, f"expected 1 tool call, got {len(function_calls)}"
-            fc = function_calls[0]
-            cache_read = usage.get("anthropic.cache_read_input_tokens") if usage else None
-            cache_creation = usage.get("anthropic.cache_creation_input_tokens") if usage else None
-            game.log(
-                LlmResponseLog(
-                    timestamp=_now(),
-                    text=None,
-                    tool_calls=[
-                        FunctionCallLog(
-                            id=fc.call_id,
-                            name=fc.name,
-                            arguments=fc.arguments if isinstance(fc.arguments, str) else json.dumps(fc.arguments),
-                        )
-                    ],
-                    input_tokens=usage.get("input_token_count", 0) or 0 if usage else 0,
-                    output_tokens=usage.get("output_token_count", 0) or 0 if usage else 0,
-                    cache_read_tokens=cache_read,
-                    cache_creation_tokens=cache_creation,
-                )
-            )
-            history.append(response.messages[0])
-
-            results: list[Content] = []
-            for fc in function_calls:
-                assert fc.call_id is not None, f"function_call missing call_id: {fc}"
-                tool = tool_map.get(fc.name) if fc.name is not None else None
-                args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else (fc.arguments or {})
-                if tool is None:
-                    content = f"Error: unknown tool '{fc.name}'"
-                    logger.warning("Unknown tool name: %s", fc.name)
-                else:
-                    try:
-                        tool_result = await tool.invoke(arguments=args)
-                        content = tool_result[0].text if tool_result and tool_result[0].text else ""
-                    except Exception as e:
-                        content = f"Error: {e}"
-                        logger.warning("Tool %s error: %s", fc.name, e)
-                game.log(
-                    ToolResultLog(
-                        timestamp=_now(), tool_name=fc.name, call_id=fc.call_id, arguments=args, result=content
-                    )
-                )
-                results.append(Content.from_function_result(fc.call_id, result=content))
-            history.append(Message("tool", results))
-
-        per_turn = [tr.score.hamming_loss for tr in game.turn_results]
-        per_turn += [0] * (turn_limit - len(per_turn))
-        total_hamming = sum(per_turn)
-
-        game.log(
-            GameEndLog(
-                timestamp=_now(),
-                turns=game.turn,
-                solved_at_turn=game.turn if game.solved else None,
-                total_hamming_loss=total_hamming,
-            )
-        )
+    per_turn = [tr.score.hamming_loss for tr in game.turn_results]
+    per_turn += [0] * (turn_limit - len(per_turn))
+    total_hamming = sum(per_turn)
 
     fl_result = FunctionLearningResult(
         total_hamming_loss=total_hamming, per_turn_losses=per_turn, solved_at_turn=game.turn if game.solved else None
@@ -371,9 +263,6 @@ async def run_game(
     )
     summary_path.write_text(summary.model_dump_json(indent=2))
     logger.info("Saved results to %s", summary_path.parent)
-
-    if owns_client and hasattr(model_client, "close"):
-        await model_client.close()
     return summary
 
 
@@ -381,9 +270,11 @@ async def _async_main(args: argparse.Namespace) -> None:
     output_dir = Path(args.output_dir) if args.output_dir else Path("eval_results") / "function_learning"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    async with scratch_exec_server() as scratch_server, Client(scratch_server) as scratch_client:
-        exec_tool = make_exec_tool(scratch_client)
+    model_client = build_model_client(
+        api=args.api, model=args.model, function_invocation_configuration={"max_iterations": _MAX_STEPS}
+    )
 
+    async with scratch_exec_mcp_tool() as exec_tool:
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         async with aiodocker.Docker() as docker:
             container = await docker.containers.run(
@@ -398,6 +289,7 @@ async def _async_main(args: argparse.Namespace) -> None:
                     output_dir=output_dir,
                     exec_tool=exec_tool,
                     scoring_container=container,
+                    model_client=model_client,
                     no_skill=args.no_skill,
                     turn_limit=args.turn_limit,
                 )
