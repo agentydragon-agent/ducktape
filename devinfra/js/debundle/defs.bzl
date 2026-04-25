@@ -1,7 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_test")
-
-def _shell_quote(value):
-    return "'%s'" % value.replace("'", "'\"'\"'")
+load("@bazel_skylib//lib:shell.bzl", "shell")
 
 def js_debundle_transform_binary(name, data = [], fixed_args = [], no_copy_to_bin = [], node_options = [], **kwargs):
     runtime_deps = [Label("//devinfra/js/debundle/transforms:libs")] + data
@@ -52,7 +50,7 @@ def js_debundle_live_proxy_load_test(
     if wait_for_selector != None:
         computed_args.extend([
             "--wait-for-selector",
-            _shell_quote(wait_for_selector),
+            shell.quote(wait_for_selector),
         ])
     if wait_timeout_ms != None:
         computed_args.extend([
