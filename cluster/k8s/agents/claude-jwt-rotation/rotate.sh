@@ -80,7 +80,7 @@ git checkout -q FETCH_HEAD
 
 # --- Freshness check on existing JWT (no decryption needed) ---------------
 if [ -f "$SOPS_FILE" ]; then
-  EXISTING_EXPIRES=$(sed -n 's/^expires_unencrypted:[[:space:]]*//p' "$SOPS_FILE" | head -n1)
+  EXISTING_EXPIRES=$(sed -n 's/^expires_unencrypted:[[:space:]]*//p' "$SOPS_FILE" | head -n1 | tr -d '"')
   if [ -n "$EXISTING_EXPIRES" ]; then
     EXPIRES_TS=$(date -u -d "$EXISTING_EXPIRES" +%s)
     NOW_TS=$(date +%s)
