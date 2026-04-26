@@ -50,28 +50,6 @@
         "type": "github"
       }
     },
-    "gaffer-private": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1777098920,
-        "lfs": true,
-        "narHash": "sha256-7ZBpOFCD+HQL1XaX199wx4YaubcTbfcsyqphZB+af44=",
-        "ref": "refs/heads/main",
-        "rev": "902be829f9cb1920a406edbdd6715fd79e7c97d9",
-        "revCount": 102,
-        "type": "git",
-        "url": "ssh://git@github.com/agentydragon/gaffer-private"
-      },
-      "original": {
-        "lfs": true,
-        "type": "git",
-        "url": "ssh://git@github.com/agentydragon/gaffer-private"
-      }
-    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -184,7 +162,6 @@
     "root": {
       "inputs": {
         "claude-plugins-official": "claude-plugins-official",
-        "gaffer-private": "gaffer-private",
         "home-manager": "home-manager",
         "nix-colors": "nix-colors",
         "nixGL": "nixGL",

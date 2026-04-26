@@ -45,11 +45,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Private repo: Google Drive File Stream + drivectl
-    gaffer-private = {
-      url = "git+ssh://git@github.com/agentydragon/gaffer-private?lfs=1";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # Disabled: private input causes nixos-rebuild failures (SSH agent
+    # forwarding, git-lfs not on root PATH). See nix/docs/private_flake_inputs.md
+    # gaffer-private = {
+    #   url = "git+ssh://git@github.com/agentydragon/gaffer-private?lfs=1";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    # };
   };
 
   outputs =
@@ -115,7 +116,8 @@
           claude-plugins-official
           siderolabs-docs
           ;
-        inherit (inputs) gaffer-private;
+        # gaffer-private disabled — see nix/docs/private_flake_inputs.md
+        # inherit (inputs) gaffer-private;
         solarizedLight = nix-colors.colorSchemes.solarized-light;
         solarizedDark = nix-colors.colorSchemes.solarized-dark;
         terminalFont = {
@@ -150,7 +152,8 @@
 
           modules = [
             inputs.sops-nix.homeManagerModules.sops
-            inputs.gaffer-private.homeManagerModules.google-drive
+            # gaffer-private disabled — see nix/docs/private_flake_inputs.md
+            # inputs.gaffer-private.homeManagerModules.google-drive
             ./nix/home/hosts/${hostname}.nix
             {
               _module.args = hmCommonArgs // {
@@ -211,7 +214,8 @@
                   home-manager.extraSpecialArgs = hmExtraSpecialArgs;
                   home-manager.sharedModules = [
                     inputs.sops-nix.homeManagerModules.sops
-                    inputs.gaffer-private.homeManagerModules.google-drive
+                    # gaffer-private disabled — see nix/docs/private_flake_inputs.md
+                    # inputs.gaffer-private.homeManagerModules.google-drive
                   ];
                   home-manager.users.${username} = inlineHomeManager.module;
                 }

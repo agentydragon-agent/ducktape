@@ -75,7 +75,8 @@
     { package = pkgs.gnomeExtensions.appindicator; }
   ];
 
-  services.google-drive.enable = true;
+  # gaffer-private disabled — see nix/docs/private_flake_inputs.md
+  # services.google-drive.enable = true;
 
   home.stateVersion = "25.11";
 }

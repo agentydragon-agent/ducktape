@@ -12,7 +12,8 @@
   solarizedDark,
   terminalFont,
   ducktape-artifacts,
-  gaffer-private,
+  # gaffer-private disabled — see nix/docs/private_flake_inputs.md
+  # gaffer-private,
   ...
 }:
 let
@@ -74,7 +75,7 @@ in
 
   imports = [
 
-    # google-drive module imported via mkHome extraModules (avoids _module.args cycle)
+    # google-drive module disabled — see nix/docs/private_flake_inputs.md
     ./codex
     ./crush
     ./modules/solarized.nix
@@ -128,7 +129,8 @@ in
     videos = "$HOME";
   };
 
-  services.google-drive.enable = lib.mkDefault false;
+  # gaffer-private disabled — see nix/docs/private_flake_inputs.md
+  # services.google-drive.enable = lib.mkDefault false;
 
   nix.package = lib.mkDefault pkgs.nix;
 
