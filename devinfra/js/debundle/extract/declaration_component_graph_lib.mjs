@@ -3,6 +3,7 @@ const ORDERED_INIT_SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "Clas
 const RUNTIME_SENSITIVE_EFFECTS = new Set(["containsDirectEval", "containsImportMeta", "containsTopLevelAwait"]);
 const ORDERED_INIT_ACCESS_VIEW_CACHE = new WeakMap();
 const ORDERED_INIT_PLANNER_STATE_CACHE = new WeakMap();
+const ORDERED_INIT_STAGED_SHELL_OWNER_ADJACENCY_CACHE = new WeakMap();
 
 export function expandOrderedInitOwnerClosurePassOperations(analysis, operations, context = {}) {
   const expanded = [];
@@ -117,19 +118,24 @@ export function planOrderedInitOwnerClosureExtractions(analysis, options = {}) {
 }
 
 export function packOrderedInitOwnerClosures(plan, options = {}) {
+  const startedAt = process.hrtime.bigint();
   const lowering = options.lowering ?? "staged_shell";
   if (lowering !== "staged_shell") {
     throw new Error(`Unsupported ordered-init owner closure lowering: ${lowering}`);
   }
-  const candidateBatchPlans = buildStagedShellBatchPlans(plan, options);
+  const { candidateBatchPlans, timingsMs: buildTimingsMs } = buildStagedShellBatchPlans(plan, options);
+  const selectStartedAt = process.hrtime.bigint();
+  const batchPlans = selectPackedOwnerClosureBatchPlans(candidateBatchPlans, options);
   return {
     kind: "js.ordered_init_owner_closure_batch_plan",
     lowering,
     candidateBatchPlans,
-    batchPlans: selectPackedOwnerClosureBatchPlans(
-      candidateBatchPlans,
-      options
-    ),
+    batchPlans,
+    timingsMs: {
+      ...buildTimingsMs,
+      selectPacked: durationMsSince(selectStartedAt),
+      total: durationMsSince(startedAt),
+    },
   };
 }
 
@@ -408,31 +414,54 @@ function compareOwnerClosurePlans(left, right) {
 }
 
 function buildStagedShellBatchPlans(plan, options) {
+  const startedAt = process.hrtime.bigint();
   const { analysisContext } = plan;
   if (!analysisContext) {
     throw new Error("Owner closure plan is missing analysisContext for staged-shell lowering");
   }
   const ownerById = new Map(analysisContext.owners.map((owner) => [owner.id, owner]));
   const plannerState = getOrderedInitPlannerState(analysisContext, ownerById);
+  const ownerAdjacency = getStagedShellOwnerAdjacency(analysisContext, ownerById);
   const recordById = new Map([
     ...analysisContext.owners.map((owner) => [owner.id, owner]),
     ...analysisContext.sideEffects.map((sideEffect) => [sideEffect.id, sideEffect]),
   ]);
   const programItemByOrdinal = new Map(analysisContext.programItems.map((item) => [item.ordinal, item]));
-
-  return [...plan.closurePlans]
+  const timingTotals = {
+    collectAttachableSideEffectIds: 0,
+    expandStagedAttachedOwners: 0,
+    finalizeBatchPlan: 0,
+    shellScan: 0,
+    stageRuns: 0,
+    summarizeEnvelope: 0,
+  };
+  const buildCandidatePlansStartedAt = process.hrtime.bigint();
+  const candidateBatchPlans = [...plan.closurePlans]
     .map((closurePlan) =>
       buildStagedShellBatchPlan(closurePlan, {
         options,
         owners: analysisContext.owners,
         ownerById,
+        ownerAdjacency,
         plannerState,
         programItemByOrdinal,
         recordById,
         sideEffects: analysisContext.sideEffects,
+        timingTotals,
       })
-    )
-    .sort(compareOwnerClosureBatchPlans);
+    );
+  const buildCandidatePlansMs = durationMsSince(buildCandidatePlansStartedAt);
+  const sortCandidatePlansStartedAt = process.hrtime.bigint();
+  candidateBatchPlans.sort(compareOwnerClosureBatchPlans);
+  return {
+    candidateBatchPlans,
+    timingsMs: {
+      buildCandidatePlans: buildCandidatePlansMs,
+      sortCandidatePlans: durationMsSince(sortCandidatePlansStartedAt),
+      totalBuildCandidates: durationMsSince(startedAt),
+      ...timingTotals,
+    },
+  };
 }
 
 function selectPackedOwnerClosureBatchPlans(candidateBatchPlans, options) {
@@ -476,49 +505,42 @@ function selectPackedOwnerClosureBatchPlans(candidateBatchPlans, options) {
   return selected.sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
 }
 
-function buildStagedShellBatchPlan(plan, { options, owners, ownerById, plannerState, programItemByOrdinal, recordById, sideEffects }) {
-  const expandedOwners = expandStagedAttachedOwners(plan.ownerIds, { owners, ownerById });
+function buildStagedShellBatchPlan(
+  plan,
+  { options, owners, ownerAdjacency, ownerById, plannerState, programItemByOrdinal, recordById, sideEffects, timingTotals }
+) {
+  const expandStartedAt = process.hrtime.bigint();
+  const expandedOwners = expandStagedAttachedOwners(plan.ownerIds, { ownerAdjacency, ownerById });
   const expandedOwnerIds = expandedOwners.map((owner) => owner.id);
+  recordTiming(timingTotals, "expandStagedAttachedOwners", durationMsSince(expandStartedAt));
+  const collectSideEffectsStartedAt = process.hrtime.bigint();
   const attachedSideEffectIds = collectAttachableSideEffectIds(expandedOwnerIds, {
     ownerById,
     plannerState,
     sideEffects,
   });
+  recordTiming(timingTotals, "collectAttachableSideEffectIds", durationMsSince(collectSideEffectsStartedAt));
   const selectedItemIds = new Set([...expandedOwnerIds, ...attachedSideEffectIds]);
-  const selectedItems = [
-    ...expandedOwners.map((owner) => ({
-      id: owner.id,
-      kind: "declaration",
-      memberNames: [...owner.names],
-      ordinal: owner.ordinal,
-      ownerIds: [owner.id],
-    })),
-    ...attachedSideEffectIds.map((sideEffectId) => {
-      const sideEffect = recordById.get(sideEffectId);
-      return {
-        id: sideEffect.id,
-        kind: "side_effect",
-        memberNames: [],
-        ordinal: sideEffect.ordinal,
-        ownerIds: [],
-      };
-    }),
-  ].sort((left, right) => left.ordinal - right.ordinal || left.id.localeCompare(right.id));
+  const selectedItems = buildSelectedItems(expandedOwners, attachedSideEffectIds, recordById);
 
+  const stageRunsStartedAt = process.hrtime.bigint();
   const stageRuns = buildStagedSelectedItemRuns(plan.id, selectedItems);
+  recordTiming(timingTotals, "stageRuns", durationMsSince(stageRunsStartedAt));
+  const summarizeStartedAt = process.hrtime.bigint();
   const summary = summarizeStagedAttachedEnvelope({
     attachedSideEffectIds,
     ownerById,
     owners,
     plannerState,
     regionOwners: expandedOwners,
-    sideEffects,
   });
+  recordTiming(timingTotals, "summarizeEnvelope", durationMsSince(summarizeStartedAt));
 
   const shellItemIds = [];
   const shellBlockingReasons = new Set();
   const firstOrdinal = selectedItems[0]?.ordinal ?? 0;
   const lastOrdinal = selectedItems.at(-1)?.ordinal ?? firstOrdinal;
+  const shellScanStartedAt = process.hrtime.bigint();
   for (let ordinal = firstOrdinal; ordinal <= lastOrdinal; ordinal++) {
     const item = programItemByOrdinal.get(ordinal);
     if (!item || selectedItemIds.has(item.id)) {
@@ -540,14 +562,15 @@ function buildStagedShellBatchPlan(plan, { options, owners, ownerById, plannerSt
       shellBlockingReasons.add(`shell_item_eagerly_uses_later_owner:${item.id}:${access.ownerId}`);
     }
   }
+  recordTiming(timingTotals, "shellScan", durationMsSince(shellScanStartedAt));
 
   if (typeof options.minLineSpan === "number" && lineSpanForRegion(summary) < options.minLineSpan) {
     shellBlockingReasons.add(`below_min_line_span:${options.minLineSpan}`);
   }
 
   const addedOwnerIds = expandedOwnerIds.filter((ownerId) => !plan.ownerIds.includes(ownerId));
-
-  return {
+  const finalizeStartedAt = process.hrtime.bigint();
+  const batchPlan = {
     attachedItemIds: [...attachedSideEffectIds],
     blockingReasons: [...new Set([...summary.orderedInitBlockingReasons, ...shellBlockingReasons])].sort(),
     closureComponentIds: [...plan.closureComponentIds],
@@ -571,6 +594,8 @@ function buildStagedShellBatchPlan(plan, { options, owners, ownerById, plannerSt
     stageRuns,
     startOrdinal: summary.startOrdinal,
   };
+  recordTiming(timingTotals, "finalizeBatchPlan", durationMsSince(finalizeStartedAt));
+  return batchPlan;
 }
 
 function compareOwnerClosureBatchPlans(left, right) {
@@ -583,42 +608,49 @@ function compareOwnerClosureBatchPlans(left, right) {
   );
 }
 
-function expandStagedAttachedOwners(seedOwnerIds, { owners, ownerById }) {
+function expandStagedAttachedOwners(seedOwnerIds, { ownerAdjacency, ownerById }) {
   const selectedOwnerIds = new Set(seedOwnerIds);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const ownerId of [...selectedOwnerIds]) {
-      const owner = ownerById.get(ownerId);
-      if (!owner) {
+  const stack = [...selectedOwnerIds];
+  while (stack.length > 0) {
+    const ownerId = stack.pop();
+    for (const adjacentOwnerId of ownerAdjacency.get(ownerId) ?? []) {
+      if (selectedOwnerIds.has(adjacentOwnerId)) {
         continue;
       }
-      for (const access of orderedInitAccessView(owner).all) {
-        if (access.kind !== "local_declaration" || !access.ownerId || selectedOwnerIds.has(access.ownerId)) {
-          continue;
-        }
-        selectedOwnerIds.add(access.ownerId);
-        changed = true;
-      }
-    }
-    for (const owner of owners) {
-      if (selectedOwnerIds.has(owner.id)) {
-        continue;
-      }
-      const writesSelectedOwner = orderedInitAccessView(owner).writeLike.some(
-        (access) => access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId)
-      );
-      if (!writesSelectedOwner) {
-        continue;
-      }
-      selectedOwnerIds.add(owner.id);
-      changed = true;
+      selectedOwnerIds.add(adjacentOwnerId);
+      stack.push(adjacentOwnerId);
     }
   }
   return [...selectedOwnerIds]
     .map((ownerId) => ownerById.get(ownerId))
     .filter(Boolean)
     .sort((left, right) => left.ordinal - right.ordinal);
+}
+
+function getStagedShellOwnerAdjacency(analysis, ownerById) {
+  const cached = ORDERED_INIT_STAGED_SHELL_OWNER_ADJACENCY_CACHE.get(analysis);
+  if (cached) {
+    return cached;
+  }
+  const adjacency = new Map(analysis.owners.map((owner) => [owner.id, new Set()]));
+  for (const owner of analysis.owners) {
+    const accessView = orderedInitAccessView(owner);
+    const ownerAdjacency = adjacency.get(owner.id);
+    for (const access of accessView.all) {
+      if (access.kind !== "local_declaration" || !access.ownerId || !ownerById.has(access.ownerId)) {
+        continue;
+      }
+      ownerAdjacency.add(access.ownerId);
+    }
+    for (const access of accessView.writeLike) {
+      if (access.kind !== "local_declaration" || !access.ownerId || !ownerById.has(access.ownerId)) {
+        continue;
+      }
+      adjacency.get(access.ownerId)?.add(owner.id);
+    }
+  }
+  ORDERED_INIT_STAGED_SHELL_OWNER_ADJACENCY_CACHE.set(analysis, adjacency);
+  return adjacency;
 }
 
 function collectAttachableSideEffectIds(selectedOwnerIds, { ownerById, plannerState, sideEffects }) {
@@ -679,17 +711,64 @@ function buildStagedSelectedItemRuns(batchId, selectedItems) {
   }));
 }
 
-function summarizeStagedAttachedEnvelope({ attachedSideEffectIds, ownerById, owners, plannerState, regionOwners, sideEffects }) {
+function buildSelectedItems(expandedOwners, attachedSideEffectIds, recordById) {
+  const selectedSideEffects = attachedSideEffectIds
+    .map((sideEffectId) => recordById.get(sideEffectId))
+    .filter(Boolean)
+    .sort((left, right) => left.ordinal - right.ordinal || left.id.localeCompare(right.id));
+  const selectedItems = [];
+  let ownerIndex = 0;
+  let sideEffectIndex = 0;
+
+  while (ownerIndex < expandedOwners.length || sideEffectIndex < selectedSideEffects.length) {
+    const owner = expandedOwners[ownerIndex] ?? null;
+    const sideEffect = selectedSideEffects[sideEffectIndex] ?? null;
+    if (
+      owner &&
+      (!sideEffect ||
+        owner.ordinal < sideEffect.ordinal ||
+        (owner.ordinal === sideEffect.ordinal && owner.id.localeCompare(sideEffect.id) <= 0))
+    ) {
+      selectedItems.push({
+        id: owner.id,
+        kind: "declaration",
+        memberNames: [...owner.names],
+        ordinal: owner.ordinal,
+        ownerIds: [owner.id],
+      });
+      ownerIndex++;
+      continue;
+    }
+    selectedItems.push({
+      id: sideEffect.id,
+      kind: "side_effect",
+      memberNames: [],
+      ordinal: sideEffect.ordinal,
+      ownerIds: [],
+    });
+    sideEffectIndex++;
+  }
+
+  return selectedItems;
+}
+
+function summarizeStagedAttachedEnvelope({ attachedSideEffectIds, ownerById, owners, plannerState, regionOwners }) {
   const selectedOwnerIds = new Set(regionOwners.map((owner) => owner.id));
   const selectedItemIds = new Set([...selectedOwnerIds, ...attachedSideEffectIds]);
   const selectedAttachedSideEffectIds = new Set(attachedSideEffectIds);
-  const selectedAttachedSideEffects = sideEffects.filter((sideEffect) => selectedAttachedSideEffectIds.has(sideEffect.id));
-  const selectedOrdinals = [
-    ...regionOwners.map((owner) => owner.ordinal),
-    ...selectedAttachedSideEffects.map((sideEffect) => sideEffect.ordinal),
-  ].sort((left, right) => left - right);
-  const startOrdinal = selectedOrdinals[0] ?? 0;
-  const endOrdinal = selectedOrdinals.at(-1) ?? startOrdinal;
+  const selectedAttachedSideEffects = [...selectedAttachedSideEffectIds]
+    .map((sideEffectId) => plannerState.recordById.get(sideEffectId))
+    .filter(Boolean);
+  let startOrdinal = regionOwners[0]?.ordinal ?? 0;
+  let endOrdinal = regionOwners.at(-1)?.ordinal ?? startOrdinal;
+  for (const sideEffect of selectedAttachedSideEffects) {
+    if (sideEffect.ordinal < startOrdinal) {
+      startOrdinal = sideEffect.ordinal;
+    }
+    if (sideEffect.ordinal > endOrdinal) {
+      endOrdinal = sideEffect.ordinal;
+    }
+  }
   const outsideLocalDependencyOwnerIds = new Set();
   const earlierEagerUseItemIds = new Set();
   const outsideWriteItemIds = new Set();
@@ -1068,6 +1147,17 @@ function collectOutsideRecordEffects({
       }
     }
   }
+}
+
+function recordTiming(timingTotals, key, durationMs) {
+  if (!timingTotals) {
+    return;
+  }
+  timingTotals[key] = (timingTotals[key] ?? 0) + durationMs;
+}
+
+function durationMsSince(startedAt) {
+  return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 }
 
 function topLevelAccesses(record, bucket, phase) {
