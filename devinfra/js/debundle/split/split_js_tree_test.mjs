@@ -13,8 +13,9 @@ import {
 } from "../test_support/fixture_lib.mjs";
 import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
 import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
+import { rewriteChunkEntrySpecifiers } from "../transforms/rewrite_chunk_entry_specifiers_lib.mjs";
 import { writeJsTree } from "../transforms/write_js_tree_lib.mjs";
-import { splitJsTree } from "./split_js_tree_lib.mjs";
+import { normalizeJsChunks, splitJsTree } from "./split_js_tree_lib.mjs";
 
 const ENTRY_FILE = "entry.js";
 
@@ -32,7 +33,7 @@ function writeSplitSnapshotFixture(prefix) {
   return { extractedRoot, outDir, snapshotRoot };
 }
 
-test("splitJsTree rewrites cross-chunk imports and worker URLs", async () => {
+test("normalizeJsChunks preserves original cross-chunk imports and worker URLs", async () => {
   const { extractedRoot, outDir, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-test-");
 
   const loaded = loadJsChunks({
@@ -42,7 +43,7 @@ test("splitJsTree rewrites cross-chunk imports and worker URLs", async () => {
   const parsed = computeJsAsts({
     artifact: loaded.artifact,
   });
-  const { artifact, manifest } = await splitJsTree({
+  const { artifact, manifest } = await normalizeJsChunks({
     artifact: parsed.artifact,
     jobs: 2,
   });
@@ -60,9 +61,10 @@ test("splitJsTree rewrites cross-chunk imports and worker URLs", async () => {
   const aRuntime = readUtf8(join(outDir, "static", "a", ENTRY_FILE));
   const aChunkManifest = JSON.parse(readUtf8(join(outDir, "static", "a", "manifest.json")));
   assert.equal(aChunkManifest.entryFile, ENTRY_FILE);
-  assert.match(aRuntime, /from "\.\.\/b\/entry\.js"/);
-  assert.match(aRuntime, /import\("\.\.\/b\/entry\.js"\)/);
-  assert.match(aRuntime, /new Worker\(new URL\("\.\.\/b\/entry\.js", import\.meta\.url\),/);
+  assert.match(aRuntime, /from "\.\/b\.js"/);
+  assert.match(aRuntime, /import\("\.\/b\.js"\)/);
+  assert.match(aRuntime, /new Worker\("\/static\/b\.js", \{/);
+  assert.doesNotMatch(aRuntime, /new URL\(/);
   assert.equal(
     listJsFiles(join(outDir, "static", "a")).some((file) => file.startsWith("module-")),
     false
@@ -72,7 +74,7 @@ test("splitJsTree rewrites cross-chunk imports and worker URLs", async () => {
   assert.equal(existsSync(join(outDir, "static", "a", "parts")), false);
 });
 
-test("splitJsTree writes runnable parseable JS tree output", async () => {
+test("rewriteChunkEntrySpecifiers writes runnable parseable JS tree output", async () => {
   const { extractedRoot, outDir, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-runnable-");
 
   const loaded = loadJsChunks({
@@ -82,9 +84,12 @@ test("splitJsTree writes runnable parseable JS tree output", async () => {
   const parsed = computeJsAsts({
     artifact: loaded.artifact,
   });
-  const { artifact } = await splitJsTree({
+  const normalized = await normalizeJsChunks({
     artifact: parsed.artifact,
     jobs: 2,
+  });
+  const { artifact } = rewriteChunkEntrySpecifiers({
+    artifact: normalized.artifact,
   });
   writeJsTree({
     artifact,
@@ -108,7 +113,7 @@ test("splitJsTree writes runnable parseable JS tree output", async () => {
   assert.equal(pipelineManifest.counts.parts, 0);
 });
 
-test("splitJsTree supports nested entry file paths", async () => {
+test("rewriteChunkEntrySpecifiers supports nested entry file paths", async () => {
   const { extractedRoot, outDir, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-nested-entry-");
 
   const loaded = loadJsChunks({
@@ -118,10 +123,13 @@ test("splitJsTree supports nested entry file paths", async () => {
   const parsed = computeJsAsts({
     artifact: loaded.artifact,
   });
-  const { artifact } = await splitJsTree({
+  const normalized = await normalizeJsChunks({
     artifact: parsed.artifact,
     entryFile: "shell/entry.js",
     jobs: 2,
+  });
+  const { artifact } = rewriteChunkEntrySpecifiers({
+    artifact: normalized.artifact,
   });
   writeJsTree({
     artifact,
@@ -140,4 +148,24 @@ test("splitJsTree supports nested entry file paths", async () => {
     runNodeScript(join(outDir, "static", "a", "shell", "entry.js")),
     runNodeScript(join(snapshotRoot, "static", "a.js"))
   );
+});
+
+test("splitJsTree emits parts when a chunk has safely splittable owners", async () => {
+  const { extractedRoot, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-parts-");
+
+  const loaded = loadJsChunks({
+    jsListPath: join(extractedRoot, "js-files.txt"),
+    inputRoot: snapshotRoot,
+  });
+  const parsed = computeJsAsts({
+    artifact: loaded.artifact,
+  });
+  const { manifest } = await splitJsTree({
+    artifact: parsed.artifact,
+    jobs: 2,
+  });
+
+  const aChunk = manifest.chunks.find((chunk) => chunk.chunkId === "static/a");
+  assert.ok(aChunk);
+  assert.ok(manifest.counts.parts > 0);
 });

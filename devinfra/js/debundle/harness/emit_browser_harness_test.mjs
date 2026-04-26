@@ -13,7 +13,8 @@ import {
   runNodeScript,
   writeSnapshotFixture,
 } from "../test_support/fixture_lib.mjs";
-import { buildSplitPipelineArtifactFromSnapshot } from "../test_support/pipeline_fixture_lib.mjs";
+import { buildNormalizedPipelineArtifactFromSnapshot } from "../test_support/pipeline_fixture_lib.mjs";
+import { rewriteChunkEntrySpecifiers } from "../transforms/rewrite_chunk_entry_specifiers_lib.mjs";
 import { swapVendorChunks } from "../vendor/swap_vendor_chunks_lib.mjs";
 import { emitBrowserHarness } from "./emit_browser_harness_lib.mjs";
 
@@ -65,13 +66,13 @@ test("emitBrowserHarness materializes pipeline artifacts into a local runnable a
     snapshotRoot,
   });
 
-  const splitResult = await buildSplitPipelineArtifactFromSnapshot({
+  const splitResult = await buildNormalizedPipelineArtifactFromSnapshot({
     jsListPath: join(extractedRoot, "js-files.txt"),
     snapshotRoot,
   });
 
   const { manifest } = emitBrowserHarness({
-    artifact: splitResult.artifact,
+    artifact: rewriteChunkEntrySpecifiers({ artifact: splitResult.artifact }).artifact,
     assetSummaryPath: join(extractedRoot, "asset-summary.json"),
     force: true,
     outDir: appRoot,
@@ -194,13 +195,13 @@ test("emitBrowserHarness records vendor resolutions and omits swapped chunks fro
     },
   });
 
-  const splitResult = await buildSplitPipelineArtifactFromSnapshot({
+  const splitResult = await buildNormalizedPipelineArtifactFromSnapshot({
     jsListPath: join(extractedRoot, "js-files.txt"),
     snapshotRoot,
   });
 
   const { manifest: metadataHarnessManifest } = emitBrowserHarness({
-    artifact: splitResult.artifact,
+    artifact: rewriteChunkEntrySpecifiers({ artifact: splitResult.artifact }).artifact,
     assetSummaryPath: join(extractedRoot, "asset-summary.json"),
     force: true,
     outDir: appRoot,
@@ -239,7 +240,7 @@ test("emitBrowserHarness records vendor resolutions and omits swapped chunks fro
 
   const artifactVendorAppRoot = join(root, "app-artifact");
   const { manifest: artifactVendorHarnessManifest } = emitBrowserHarness({
-    artifact: swappedArtifact.artifact,
+    artifact: rewriteChunkEntrySpecifiers({ artifact: swappedArtifact.artifact }).artifact,
     assetSummaryPath: join(extractedRoot, "asset-summary.json"),
     force: true,
     outDir: artifactVendorAppRoot,
@@ -272,7 +273,7 @@ test("emitBrowserHarness records vendor resolutions and omits swapped chunks fro
   });
 
   const { manifest: wrapperHarnessManifest } = emitBrowserHarness({
-    artifact: swappedArtifact.artifact,
+    artifact: rewriteChunkEntrySpecifiers({ artifact: swappedArtifact.artifact }).artifact,
     assetSummaryPath: join(extractedRoot, "asset-summary.json"),
     force: true,
     outDir: appRoot,

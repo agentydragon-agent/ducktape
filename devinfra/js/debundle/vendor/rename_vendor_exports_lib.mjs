@@ -6,6 +6,7 @@ import {
   listChunkIds,
   listChunkFiles,
   resolveArtifactImportReference,
+  resolveArtifactSourceImportReference,
   requirePipelineArtifact,
 } from "../common/pipeline_artifact_lib.mjs";
 
@@ -150,7 +151,9 @@ function rewriteImportsInFile({ artifact, ast, callerChunkId, callerFile, target
     if (typeof source !== "string") {
       continue;
     }
-    const resolved = resolveArtifactImportReference(artifact, source, { callerChunkId, callerFile });
+    const resolved =
+      resolveArtifactImportReference(artifact, source, { callerChunkId, callerFile }) ??
+      resolveArtifactSourceImportReference(artifact, source, { callerChunkId, callerFile });
     if (!resolved || resolved.chunkId !== targetChunkId || resolved.file !== targetEntryFile) {
       continue;
     }
@@ -183,7 +186,11 @@ function rewriteImportsInFile({ artifact, ast, callerChunkId, callerFile, target
 }
 
 export function resolveImportToChunkId(artifact, source, callerChunkId, callerFile) {
-  return resolveArtifactImportReference(artifact, source, { callerChunkId, callerFile })?.chunkId ?? null;
+  return (
+    resolveArtifactImportReference(artifact, source, { callerChunkId, callerFile })?.chunkId ??
+    resolveArtifactSourceImportReference(artifact, source, { callerChunkId, callerFile })?.chunkId ??
+    null
+  );
 }
 
 function chunkIdFromChunkPath(chunkPath, opId) {

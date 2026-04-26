@@ -397,7 +397,7 @@ export function createMockBrowserBundleTransformSpec({
       },
       {
         id: "split_mock_bundle",
-        operation: "split_scope_hoisted_js_tree",
+        operation: "normalize_js_chunks",
         args: {
           entryFile: "entry.js",
           jobs: 1,
@@ -406,6 +406,10 @@ export function createMockBrowserBundleTransformSpec({
       {
         id: "rename_mock_bundle",
         operation: "rename_bindings",
+      },
+      {
+        id: "rewrite_mock_bundle_chunk_links",
+        operation: "rewrite_chunk_entry_specifiers",
       },
       {
         id: "write_mock_bundle",

@@ -13,20 +13,23 @@ import { extractOrderedInitRegions } from "../extract/extract_ordered_init_regio
 import { extractGuidedSelectedOwnerModules } from "../extract/guided_selected_owner_modules_stage_lib.mjs";
 import { emitBrowserHarness } from "../harness/emit_browser_harness_lib.mjs";
 import { renameBindingsInArtifact } from "../rename/rename_bindings_lib.mjs";
-import { splitJsTree } from "../split/split_js_tree_lib.mjs";
+import { normalizeJsChunks, splitJsTree } from "../split/split_js_tree_lib.mjs";
 import { applyVendorAnnotations } from "../vendor/apply_vendor_annotations_lib.mjs";
 import { renameVendorExports } from "../vendor/rename_vendor_exports_lib.mjs";
 import { swapVendorChunks } from "../vendor/swap_vendor_chunks_lib.mjs";
 import { formatDuration, logProgress, relativeWorkspacePath, resolveWorkspacePath } from "../common/workspace_io_lib.mjs";
+import { rewriteChunkEntrySpecifiers } from "./rewrite_chunk_entry_specifiers_lib.mjs";
 import { writeJsTree } from "./write_js_tree_lib.mjs";
 
 const STAGE_HANDLERS = Object.freeze({
   load_js_chunks: loadJsChunks,
   compute_js_asts: computeJsAsts,
+  normalize_js_chunks: normalizeJsChunks,
   split_scope_hoisted_js_tree: splitJsTree,
   apply_vendor_annotations: applyVendorAnnotations,
   rename_vendor_exports: renameVendorExports,
   rename_bindings: renameBindingsInArtifact,
+  rewrite_chunk_entry_specifiers: rewriteChunkEntrySpecifiers,
   extract_runtime_boundary_metadata: extractRuntimeBoundaryMetadata,
   swap_vendor_chunks: swapVendorChunks,
   extract_scrambled_identifier_frequencies: extractScrambledIdentifierFrequencies,

@@ -19,8 +19,8 @@ function chunkCode(artifact, chunkId) {
   return genCode(requireChunkFile(artifact, chunkId, entryFile, "renameVendorExportsTest").ast);
 }
 
-function makeChunk(chunkId, files) {
-  return makePipelineChunk(chunkId, files);
+function makeChunk(chunkId, files, options) {
+  return makePipelineChunk(chunkId, files, options);
 }
 
 function makeArtifact(chunks) {
@@ -57,6 +57,44 @@ test("happy path: scrambled import rewritten to real upstream name", () => {
   assert.equal(manifest.counts.chunksWithMapping, 1);
   assert.equal(manifest.counts.rewrites, 1);
   assert.match(chunkCode(artifact, "static/index-DI2GynTv"), /import\s*\{\s*render as r\s*\}\s*from\s*"\.\.\/katex-BZy9Y_85\/runtime\.js"/);
+});
+
+test("source-path imports are rewritten before late chunk-entry realization", () => {
+  const artifact = makeArtifact([
+    makeChunk(
+      "static/katex-BZy9Y_85",
+      {
+        "entry.js": `const ua = () => {};\nexport { ua as render };\n`,
+      },
+      {
+        manifest: {
+          sourcePath: "static/katex-BZy9Y_85.js",
+        },
+      }
+    ),
+    makeChunk(
+      "static/index-DI2GynTv",
+      {
+        "entry.js": `import { ua as r } from "./katex-BZy9Y_85.js";\nr();\n`,
+      },
+      {
+        manifest: {
+          sourcePath: "static/index-DI2GynTv.js",
+        },
+      }
+    ),
+  ]);
+
+  const { manifest } = renameVendorExports({
+    artifact,
+    operations: [vendorOp()],
+  });
+
+  assert.equal(manifest.counts.rewrites, 1);
+  assert.match(
+    chunkCode(artifact, "static/index-DI2GynTv"),
+    /import\s*\{\s*render as r\s*\}\s*from\s*"\.\/katex-BZy9Y_85\.js"/
+  );
 });
 
 test("already aligned consumer is a no-op", () => {

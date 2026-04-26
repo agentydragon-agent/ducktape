@@ -93,6 +93,7 @@ js_test(
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
+        "//devinfra/js/debundle/transforms:libs",
         "//devinfra/js/debundle/vendor:libs",
     ],
     entry_point = "emit_browser_harness_test.mjs",

@@ -1,8 +1,8 @@
 import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
 import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
-import { splitJsTree } from "../split/split_js_tree_lib.mjs";
+import { normalizeJsChunks } from "../split/split_js_tree_lib.mjs";
 
-export async function buildSplitPipelineArtifactFromSnapshot({
+export async function buildNormalizedPipelineArtifactFromSnapshot({
   entryFile,
   jobs = 1,
   jsListPath,
@@ -10,7 +10,7 @@ export async function buildSplitPipelineArtifactFromSnapshot({
 }) {
   const loaded = loadJsChunks({ inputRoot: snapshotRoot, jsListPath });
   const parsed = computeJsAsts({ artifact: loaded.artifact });
-  return splitJsTree({
+  return normalizeJsChunks({
     artifact: parsed.artifact,
     ...(entryFile ? { entryFile } : {}),
     jobs,

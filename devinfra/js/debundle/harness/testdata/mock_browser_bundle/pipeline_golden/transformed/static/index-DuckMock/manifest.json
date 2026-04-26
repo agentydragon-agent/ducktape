@@ -424,7 +424,7 @@
       "preserveRuntimeName": false,
       "owner": null,
       "fingerprint": {
-        "init": "async () => {\n  const a2 = o$1();\n  const t2 = s(a2);\n  const o2 = d(t2);\n  globalThis.__mockBundleState = {\n    model: t2.snapshot(),\n    summary: o2,\n    lazy: null,\n    chip: null\n  };\n  h(o2);\n  const [{\n    l: e2\n  }, {\n    s: i\n  }] = await Promise.all([__vitePreload(() => import(\"../ActivityPanel-DuckMock/entry.js\"), true ? [] : void 0), __vitePreload(() => import(\"../SummaryChip-DuckMock/entry.js\"), true ? [] : void 0)]);\n  e2(a2, o2);\n  i(o2);\n}",
+        "init": "async () => {\n  const a2 = o$1();\n  const t2 = s(a2);\n  const o2 = d(t2);\n  globalThis.__mockBundleState = {\n    model: t2.snapshot(),\n    summary: o2,\n    lazy: null,\n    chip: null\n  };\n  h(o2);\n  const [{\n    l: e2\n  }, {\n    s: i\n  }] = await Promise.all([__vitePreload(() => import(\"./ActivityPanel-DuckMock.js\"), true ? [] : void 0), __vitePreload(() => import(\"./SummaryChip-DuckMock.js\"), true ? [] : void 0)]);\n  e2(a2, o2);\n  i(o2);\n}",
         "kind": "VariableDeclarator",
         "name": "g",
         "objectPropertyNames": []

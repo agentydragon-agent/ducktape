@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import { cloneDefaultParserOptions } from "./js_module_lib.mjs";
 
 const FILE_INDEX_CACHE = new WeakMap();
+const SOURCE_CHUNK_INDEX_CACHE = new WeakMap();
 
 export function createArtifact({ chunks = [], extras = {} } = {}) {
   const artifact = {
@@ -280,6 +281,18 @@ export function getChunkEntryFile(artifact, chunkId) {
   return getChunkFile(artifact, chunkId, entryFile);
 }
 
+export function getChunkSourcePath(artifact, chunkId) {
+  const chunk = getChunk(artifact, chunkId);
+  if (!chunk) {
+    return null;
+  }
+  return normalizeOptionalSourceJsPath(
+    getArtifactChunkManifest(artifact, chunkId)?.sourcePath ??
+      chunk.metadata?.sourcePath ??
+      getChunkEntryFile(artifact, chunkId)?.metadata?.sourcePath
+  );
+}
+
 export function resolveArtifactImportReference(artifact, source, { callerChunkId, callerFile } = {}) {
   requirePipelineArtifact(artifact, "resolveArtifactImportReference");
   if (typeof source !== "string" || source === "" || typeof callerChunkId !== "string" || typeof callerFile !== "string") {
@@ -302,6 +315,41 @@ export function resolveArtifactImportReference(artifact, source, { callerChunkId
     chunkId: targetChunkId,
     file: targetFile.path,
     path: resolvedPath,
+  };
+}
+
+export function resolveArtifactSourceImportReference(artifact, source, { callerChunkId, callerFile } = {}) {
+  requirePipelineArtifact(artifact, "resolveArtifactSourceImportReference");
+  if (typeof source !== "string" || source === "" || typeof callerChunkId !== "string" || typeof callerFile !== "string") {
+    return null;
+  }
+  if (!source.startsWith(".") && !source.startsWith("/")) {
+    return null;
+  }
+
+  const callerSourcePath = sourcePathForArtifactFile(artifact, callerChunkId, callerFile);
+  if (!callerSourcePath) {
+    return null;
+  }
+
+  const importedSourcePath = resolveChunkSourcePathReference(source, callerSourcePath);
+  if (!importedSourcePath) {
+    return null;
+  }
+
+  const targetChunkId = sourceChunkIndex(artifact).get(importedSourcePath);
+  if (!targetChunkId) {
+    return null;
+  }
+  const targetEntryFile = getChunkEntryPath(artifact, targetChunkId);
+  if (!targetEntryFile) {
+    return null;
+  }
+  return {
+    chunkId: targetChunkId,
+    file: targetEntryFile,
+    path: serializeArtifactFilePath(targetChunkId, targetEntryFile),
+    sourcePath: importedSourcePath,
   };
 }
 
@@ -402,11 +450,16 @@ export function setArtifactChunkManifest(artifact, chunkId, manifest) {
       chunk.entryFile = entryFile;
     }
   }
+  clearArtifactIndexes(artifact);
   return artifact;
 }
 
 export function deleteArtifactChunkManifest(artifact, chunkId) {
-  return ensureArtifactExtras(artifact).manifests.chunks.delete(normalizeChunkId(chunkId));
+  const deleted = ensureArtifactExtras(artifact).manifests.chunks.delete(normalizeChunkId(chunkId));
+  if (deleted) {
+    clearArtifactIndexes(artifact);
+  }
+  return deleted;
 }
 
 export function listArtifactChunkManifests(artifact) {
@@ -549,19 +602,39 @@ function fileIndex(artifact) {
   return FILE_INDEX_CACHE.get(artifact) ?? primeArtifactIndexes(artifact).fileIndex;
 }
 
+function sourceChunkIndex(artifact) {
+  requirePipelineArtifact(artifact, "sourceChunkIndex");
+  return SOURCE_CHUNK_INDEX_CACHE.get(artifact) ?? primeArtifactIndexes(artifact).sourceChunkIndex;
+}
+
 function primeArtifactIndexes(artifact) {
   const index = new Map();
+  const sourceIndex = new Map();
   for (const [chunkId, chunk] of artifact.chunks.entries()) {
     for (const file of chunk.files.values()) {
       index.set(serializeArtifactFilePath(chunkId, file.path), file);
     }
+    const sourcePath = normalizeOptionalSourceJsPath(
+      artifact.extras?.manifests?.chunks?.get(chunkId)?.sourcePath ??
+        chunk.metadata?.sourcePath ??
+        chunk.files.get(chunk.entryFile ?? "")?.metadata?.sourcePath
+    );
+    if (sourcePath) {
+      const existingChunkId = sourceIndex.get(sourcePath);
+      if (existingChunkId && existingChunkId !== chunkId) {
+        throw new Error(`Duplicate chunk sourcePath ${sourcePath}: ${existingChunkId} and ${chunkId}`);
+      }
+      sourceIndex.set(sourcePath, chunkId);
+    }
   }
   FILE_INDEX_CACHE.set(artifact, index);
-  return { fileIndex: index };
+  SOURCE_CHUNK_INDEX_CACHE.set(artifact, sourceIndex);
+  return { fileIndex: index, sourceChunkIndex: sourceIndex };
 }
 
 function clearArtifactIndexes(artifact) {
   FILE_INDEX_CACHE.delete(artifact);
+  SOURCE_CHUNK_INDEX_CACHE.delete(artifact);
 }
 
 function normalizeChunkId(value) {
@@ -588,6 +661,33 @@ function normalizeRelativePath(value) {
     throw new Error(`Invalid relative path: ${value}`);
   }
   return normalized;
+}
+
+function normalizeOptionalSourceJsPath(value) {
+  if (typeof value !== "string" || value === "") {
+    return null;
+  }
+  const normalized = normalizeRelativePath(value);
+  if (!normalized.endsWith(".js")) {
+    throw new Error(`Expected a .js source path, got: ${value}`);
+  }
+  return normalized;
+}
+
+function sourcePathForArtifactFile(artifact, chunkId, file) {
+  const artifactFile = getChunkFile(artifact, chunkId, file);
+  return normalizeOptionalSourceJsPath(artifactFile?.metadata?.sourcePath ?? getChunkSourcePath(artifact, chunkId));
+}
+
+function resolveChunkSourcePathReference(source, callerSourcePath) {
+  try {
+    const importedPath = source.startsWith("/")
+      ? normalizeRelativePath(source.slice(1))
+      : normalizeRelativePath(posix.join(posix.dirname(callerSourcePath), source));
+    return importedPath.endsWith(".js") ? importedPath : null;
+  } catch {
+    return null;
+  }
 }
 
 function serializeArtifactFilePath(chunkId, file) {

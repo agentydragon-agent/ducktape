@@ -81,7 +81,7 @@
         "kind": "ImportSpecifier",
         "local": "o$1",
         "name": "o$1",
-        "source": "../chunk-DuckMock/entry.js"
+        "source": "./chunk-DuckMock.js"
       }
     },
     {

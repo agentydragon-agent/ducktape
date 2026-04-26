@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { FIXTURE_UI_VERSION, createWebFixtureRoots, readUtf8, writeSnapshotFixture } from "../test_support/fixture_lib.mjs";
 import { renameBindingsInArtifact } from "../rename/rename_bindings_lib.mjs";
-import { buildSplitPipelineArtifactFromSnapshot } from "../test_support/pipeline_fixture_lib.mjs";
+import { buildNormalizedPipelineArtifactFromSnapshot } from "../test_support/pipeline_fixture_lib.mjs";
 import { extractOwnerClosurePlanReport } from "./owner_closure_plan_report_lib.mjs";
 
 const SPLIT_ENTRY_FILE = "entry.js";
@@ -37,7 +37,7 @@ export { render as b };
     snapshotRoot,
   });
 
-  const splitResult = await buildSplitPipelineArtifactFromSnapshot({
+  const splitResult = await buildNormalizedPipelineArtifactFromSnapshot({
     jsListPath: join(extractedRoot, "js-files.txt"),
     snapshotRoot,
   });
@@ -136,7 +136,7 @@ export { render as b };
     snapshotRoot,
   });
 
-  const splitResult = await buildSplitPipelineArtifactFromSnapshot({
+  const splitResult = await buildNormalizedPipelineArtifactFromSnapshot({
     jsListPath: join(extractedRoot, "js-files.txt"),
     snapshotRoot,
   });
