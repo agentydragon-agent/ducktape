@@ -64,6 +64,15 @@ data "authentik_property_mapping_provider_scope" "profile" {
 # by a dedicated client_credentials OAuth2 provider. Keeping this separate from
 # kubectl-sandbox-client-credentials ensures leaked tracing credentials do not
 # grant Kubernetes access.
+#
+# The proxy provider predates this module and already exists in Authentik, so
+# tofu-controller must adopt it into state before it can update
+# jwt_federation_providers declaratively.
+
+import {
+  to = authentik_provider_proxy.alloy_otlp
+  id = "19"
+}
 
 resource "authentik_provider_proxy" "alloy_otlp" {
   name                  = "alloy-otlp"
