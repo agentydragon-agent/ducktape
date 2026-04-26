@@ -8,6 +8,8 @@
   ...
 }:
 let
+  execPolicyRules = import ./execpolicy-rules.nix { inherit lib; };
+
   codexSettings = {
     # Local model providers for GPT-OSS
     model_providers = {
@@ -81,6 +83,10 @@ let
     history = {
       persistence = "save-all";
     };
+    # Pair the built-in trusted-command heuristic with our generated execpolicy
+    # allow rules under $CODEX_HOME/rules/default.rules so non-whitelisted
+    # commands prompt by default.
+    approval_policy = "untrusted";
     shell_environment_policy = {
       "inherit" = "all";
       "set" = {
@@ -118,6 +124,8 @@ let
   baseFileRelative = "${codexHomeRelative}/config.nix-base.toml";
   baseFileAbsolute = "${codexHomeAbsolute}/config.nix-base.toml";
   liveFileAbsolute = "${codexHomeAbsolute}/config.toml";
+  rulesFileRelative = "${codexHomeRelative}/rules/default.rules";
+  rulesReadmeRelative = "${codexHomeRelative}/rules/README.md";
   skillPrefix = if useXdgDirectories then "${xdgConfigHomeRelative}/codex" else ".codex";
 
   pythonMerge = pkgs.python3.withPackages (ps: [ ps."tomli-w" ]);
@@ -156,6 +164,36 @@ in
   home = {
     file = {
       "${baseFileRelative}".source = baseConfigFile;
+      "${rulesFileRelative}".text = execPolicyRules.text;
+      "${rulesReadmeRelative}".text = ''
+        Codex execpolicy rules
+        =====================
+
+        This directory is managed by Home Manager.
+
+        - `default.rules` is generated from `nix/home/allowed-commands.nix`.
+        - Codex loads every `*.rules` file in this directory automatically.
+        - The generated rules are prefix-based `allow` entries.
+
+        Syntax pointers:
+
+        - `prefix_rule(pattern=["git", "status"], decision="allow")`
+        - `prefix_rule(pattern=["git", "commit"], decision="prompt", justification="history-changing")`
+        - `prefix_rule(pattern=["rm"], decision="forbidden", justification="destructive")`
+
+        Local checks:
+
+        - `codex-execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- git status`
+        - `codex-execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- bash -lc 'git status'`
+
+        Notes:
+
+        - Matching `decision="allow"` rules bypass Codex's shell sandbox for
+          the matched command prefix.
+        - `match=` / `not_match=` are validation examples at rule-load time.
+        - They are not exact-match enforcement, so this generator refuses
+          `type = "exact"` entries from the shared SSOT.
+      '';
     }
     // skillFiles;
     activation.codexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] mergeScript;

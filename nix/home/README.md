@@ -57,9 +57,9 @@ in {
 
 ### Single Source of Truth (SSOT) Files
 
-- **`allowed-commands.nix`**: Allowed bash commands for both Claude Code and Gemini CLI
+- **`allowed-commands.nix`**: Allowed bash commands for Claude Code, Gemini CLI, and Codex execpolicy
   - Shared between personal integrations
-  - Defines command permissions used by both CLIs
+  - Defines command permissions used by all three agent integrations
 
 - **`skills.nix`**: Shared skill deployment helper for Claude Code, Codex, Gemini CLI, and OpenCode
   - Expands the CI-built `skills-tar` into each tool's config home under `skills/`
