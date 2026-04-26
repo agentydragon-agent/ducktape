@@ -101,6 +101,260 @@ test("mergeModules merges selected extracted modules and preserves behavior", as
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("mergeModules resolves moduleSelectors by exact member-name sets", async () => {
+  const { artifact, selectedOwnerIds, snapshotRoot } = await prepareAtomicFixture("debundle-merge-modules-symbol-selectors-");
+  const extracted = extractAtomicModules({
+    artifact,
+    chunkIds: ["static/app"],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk: {
+      "static/app": selectedOwnerIds,
+    },
+  });
+  const stateBefore = getChunk(extracted.artifact, "static/app")?.metadata?.moduleExtractionState;
+  assert.ok(stateBefore);
+  assert.ok(stateBefore.currentModules.length >= 3);
+
+  const merged = mergeModules({
+    artifact: extracted.artifact,
+    operations: [
+      {
+        id: "merge__seed_and_first",
+        operation: "merge_module",
+        selector: {
+          chunkId: "static/app",
+          moduleSelectors: [
+            moduleSelectorForModulePlan(stateBefore.currentModules[0]),
+            {
+              ...moduleSelectorForModulePlan(stateBefore.currentModules[1]),
+              nearbyStructure: {
+                nextSymbols: [...stateBefore.currentModules[2].memberNames],
+                previousSymbols: [...stateBefore.currentModules[0].memberNames],
+              },
+              ordinalWindow: {
+                end: stateBefore.currentModules[1].startOrdinal,
+                start: stateBefore.currentModules[1].startOrdinal,
+              },
+            },
+          ],
+          validation: {
+            ordered: true,
+          },
+        },
+        target: {
+          basename: "seed_and_first",
+        },
+      },
+    ],
+  });
+
+  const chunk = getChunk(merged.artifact, "static/app");
+  const stateAfter = chunk?.metadata?.moduleExtractionState;
+  assert.ok(stateAfter);
+  assert.equal(stateAfter.currentModules.length, stateBefore.currentModules.length - 1);
+  assert.ok(stateAfter.currentModules.some((modulePlan) => modulePlan.id === "merge__seed_and_first"));
+  assert.ok(chunk.files.has("modules/seed_and_first.js"));
+
+  const { outRoot } = createWebFixtureRoots("debundle-merge-modules-symbol-selectors-write-");
+  writeJsTree({
+    artifact: merged.artifact,
+    force: true,
+    outDir: outRoot,
+  });
+
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("mergeModules matches exact selector symbols against the full current member-name set", async () => {
+  const { artifact, selectedOwnerIds, snapshotRoot } = await prepareAtomicFixture("debundle-merge-modules-full-set-selectors-");
+  const extracted = extractAtomicModules({
+    artifact,
+    chunkIds: ["static/app"],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk: {
+      "static/app": selectedOwnerIds,
+    },
+  });
+  const stateBefore = getChunk(extracted.artifact, "static/app")?.metadata?.moduleExtractionState;
+  assert.ok(stateBefore);
+  assert.ok(stateBefore.currentModules.length >= 4);
+
+  const mergedSeedPair = mergeModules({
+    artifact: extracted.artifact,
+    operations: [
+      {
+        id: "merge__seed_pair",
+        operation: "merge_module",
+        selector: {
+          chunkId: "static/app",
+          moduleIds: [stateBefore.currentModules[0].id, stateBefore.currentModules[1].id],
+        },
+        target: {
+          basename: "seed_pair",
+        },
+      },
+    ],
+  });
+  const stateAfterSeedPair = getChunk(mergedSeedPair.artifact, "static/app")?.metadata?.moduleExtractionState;
+  assert.ok(stateAfterSeedPair);
+
+  const merged = mergeModules({
+    artifact: mergedSeedPair.artifact,
+    operations: [
+      {
+        id: "merge__seed_and_first",
+        operation: "merge_module",
+        selector: {
+          chunkId: "static/app",
+          moduleSelectors: [
+            { symbols: ["readSeed", "seed"] },
+            { symbols: ["first"] },
+          ],
+          validation: {
+            ordered: true,
+          },
+        },
+        target: {
+          basename: "seed_and_first",
+        },
+      },
+    ],
+  });
+
+  const chunk = getChunk(merged.artifact, "static/app");
+  const stateAfter = chunk?.metadata?.moduleExtractionState;
+  assert.ok(stateAfter);
+  assert.equal(stateAfter.currentModules.length, stateAfterSeedPair.currentModules.length - 1);
+  assert.ok(stateAfter.currentModules.some((modulePlan) => modulePlan.id === "merge__seed_and_first"));
+  assert.ok(chunk.files.has("modules/seed_and_first.js"));
+
+  const { outRoot } = createWebFixtureRoots("debundle-merge-modules-full-set-selectors-write-");
+  writeJsTree({
+    artifact: merged.artifact,
+    force: true,
+    outDir: outRoot,
+  });
+
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("mergeModules resolves representative symbol subsets against the full current member-name set", async () => {
+  const { artifact, selectedOwnerIds, snapshotRoot } = await prepareAtomicFixture(
+    "debundle-merge-modules-representative-symbol-selectors-"
+  );
+  const extracted = extractAtomicModules({
+    artifact,
+    chunkIds: ["static/app"],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk: {
+      "static/app": selectedOwnerIds,
+    },
+  });
+  const stateBefore = getChunk(extracted.artifact, "static/app")?.metadata?.moduleExtractionState;
+  assert.ok(stateBefore);
+  assert.ok(stateBefore.currentModules.length >= 4);
+
+  const mergedSeedPair = mergeModules({
+    artifact: extracted.artifact,
+    operations: [
+      {
+        id: "merge__seed_pair",
+        operation: "merge_module",
+        selector: {
+          chunkId: "static/app",
+          moduleIds: [stateBefore.currentModules[0].id, stateBefore.currentModules[1].id],
+        },
+        target: {
+          basename: "seed_pair",
+        },
+      },
+    ],
+  });
+  const stateAfterSeedPair = getChunk(mergedSeedPair.artifact, "static/app")?.metadata?.moduleExtractionState;
+  assert.ok(stateAfterSeedPair);
+
+  const merged = mergeModules({
+    artifact: mergedSeedPair.artifact,
+    operations: [
+      {
+        id: "merge__seed_and_first",
+        operation: "merge_module",
+        selector: {
+          chunkId: "static/app",
+          moduleSelectors: [
+            { symbols: ["seed"] },
+            { symbols: ["first"] },
+          ],
+          validation: {
+            ordered: true,
+          },
+        },
+        target: {
+          basename: "seed_and_first",
+        },
+      },
+    ],
+  });
+
+  const chunk = getChunk(merged.artifact, "static/app");
+  const stateAfter = chunk?.metadata?.moduleExtractionState;
+  assert.ok(stateAfter);
+  assert.equal(stateAfter.currentModules.length, stateAfterSeedPair.currentModules.length - 1);
+  assert.ok(stateAfter.currentModules.some((modulePlan) => modulePlan.id === "merge__seed_and_first"));
+  assert.ok(chunk.files.has("modules/seed_and_first.js"));
+
+  const { outRoot } = createWebFixtureRoots("debundle-merge-modules-representative-symbol-selectors-write-");
+  writeJsTree({
+    artifact: merged.artifact,
+    force: true,
+    outDir: outRoot,
+  });
+
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("mergeModules ordered selector validation rejects reversed module selector order", async () => {
+  const { artifact, selectedOwnerIds } = await prepareAtomicFixture("debundle-merge-modules-selector-order-");
+  const extracted = extractAtomicModules({
+    artifact,
+    chunkIds: ["static/app"],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk: {
+      "static/app": selectedOwnerIds,
+    },
+  });
+  const stateBefore = getChunk(extracted.artifact, "static/app")?.metadata?.moduleExtractionState;
+  assert.ok(stateBefore);
+  assert.ok(stateBefore.currentModules.length >= 3);
+
+  assert.throws(
+    () =>
+      mergeModules({
+        artifact: extracted.artifact,
+        operations: [
+          {
+            id: "merge__seed_and_first",
+            operation: "merge_module",
+            selector: {
+              chunkId: "static/app",
+              moduleSelectors: [
+                moduleSelectorForModulePlan(stateBefore.currentModules[1]),
+                moduleSelectorForModulePlan(stateBefore.currentModules[0]),
+              ],
+              validation: {
+                ordered: true,
+              },
+            },
+            target: {
+              basename: "seed_and_first",
+            },
+          },
+        ],
+      }),
+    /ordered moduleSelectors did not match ascending startOrdinal order/
+  );
+});
+
 test("mergeModules writes post-merge reports with before/after counts", async () => {
   const { artifact, selectedOwnerIds } = await prepareAtomicFixture("debundle-merge-modules-report-");
   const extracted = extractAtomicModules({
@@ -214,6 +468,28 @@ test("extract_atomic_modules and merge_modules compose in a pipeline spec", asyn
   const { extractedRoot, outRoot, selectedOwnerIds, snapshotRoot } = await writeAtomicSnapshotFixture(
     "debundle-atomic-modules-pipeline-"
   );
+  const previewLoaded = loadJsChunks({
+    inputRoot: snapshotRoot,
+    jsListPath: join(extractedRoot, "js-files.txt"),
+  });
+  const previewParsed = computeJsAsts({
+    artifact: previewLoaded.artifact,
+  });
+  const previewNormalized = await normalizeJsChunks({
+    artifact: previewParsed.artifact,
+    jobs: 1,
+  });
+  const previewExtracted = extractAtomicModules({
+    artifact: previewNormalized.artifact,
+    chunkIds: ["static/app"],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk: {
+      "static/app": selectedOwnerIds,
+    },
+  });
+  const previewState = getChunk(previewExtracted.artifact, "static/app")?.metadata?.moduleExtractionState;
+  assert.ok(previewState);
+
   const result = await runTransformSpecObject({
     kind: "js.ast_transform_spec",
     operations: [
@@ -222,7 +498,13 @@ test("extract_atomic_modules and merge_modules compose in a pipeline spec", asyn
         operation: "merge_module",
         selector: {
           chunkId: "static/app",
-          moduleIds: ["atomic_module_0000", "atomic_module_0001"],
+          moduleSelectors: [
+            moduleSelectorForModulePlan(previewState.currentModules[0]),
+            moduleSelectorForModulePlan(previewState.currentModules[1]),
+          ],
+          validation: {
+            ordered: true,
+          },
         },
         target: {
           basename: "seed_and_first",
@@ -346,6 +628,12 @@ async function writeAtomicSnapshotFixture(prefix) {
     outRoot,
     selectedOwnerIds,
     snapshotRoot,
+  };
+}
+
+function moduleSelectorForModulePlan(modulePlan) {
+  return {
+    symbols: [...modulePlan.memberNames],
   };
 }
 

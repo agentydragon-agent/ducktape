@@ -239,14 +239,30 @@ function normalizeMergeOperations(operations) {
         throw new Error(`${operation.operation} ${operation.id} requires selector.chunkId`);
       }
       if (operation.operation === "merge_module") {
-        if (!Array.isArray(operation?.selector?.moduleIds) || operation.selector.moduleIds.length === 0) {
-          throw new Error(`merge_module ${operation.id} requires selector.moduleIds`);
+        const hasModuleIds = Array.isArray(operation?.selector?.moduleIds) && operation.selector.moduleIds.length > 0;
+        const hasModuleSelectors =
+          Array.isArray(operation?.selector?.moduleSelectors) && operation.selector.moduleSelectors.length > 0;
+        if (hasModuleIds === hasModuleSelectors) {
+          throw new Error(`merge_module ${operation.id} requires exactly one of selector.moduleIds or selector.moduleSelectors`);
         }
         return {
           ...operation,
           selector: {
             chunkId: normalizeRelativeFile(operation.selector.chunkId),
-            moduleIds: [...new Set(operation.selector.moduleIds)],
+            ...(hasModuleIds
+              ? {
+                  moduleIds: [...new Set(operation.selector.moduleIds)],
+                }
+              : {
+                  moduleSelectors: operation.selector.moduleSelectors.map((moduleSelector, index) =>
+                    normalizeModuleSelector(moduleSelector, operation.id, index)
+                  ),
+                  ...(operation.selector.validation
+                    ? {
+                        validation: normalizeModuleSelectorValidation(operation.selector.validation, operation.id),
+                      }
+                    : {}),
+                }),
           },
           target: operation.target ?? {},
         };
@@ -264,8 +280,16 @@ function normalizeMergeOperations(operations) {
 function buildMergedModulePlans(currentModules, operations, { targetDir }) {
   const moduleById = new Map(currentModules.map((modulePlan) => [modulePlan.id, modulePlan]));
   const operationByModuleId = new Map();
+  const resolvedOperations = operations.map((operation) =>
+    operation.operation === "merge_module"
+      ? {
+          ...operation,
+          resolvedModuleIds: resolveMergeModuleIds(currentModules, operation),
+        }
+      : operation
+  );
   let residualOperation = null;
-  for (const operation of operations) {
+  for (const operation of resolvedOperations) {
     if (operation.operation === "merge_remaining_modules") {
       if (residualOperation) {
         throw new Error(`merge_remaining_modules operations overlap on chunk ${operation.selector.chunkId}`);
@@ -273,7 +297,7 @@ function buildMergedModulePlans(currentModules, operations, { targetDir }) {
       residualOperation = operation;
       continue;
     }
-    for (const moduleId of operation.selector.moduleIds) {
+    for (const moduleId of operation.resolvedModuleIds) {
       if (!moduleById.has(moduleId)) {
         throw new Error(`merge_module ${operation.id} references unknown module ${moduleId}`);
       }
@@ -307,12 +331,194 @@ function buildMergedModulePlans(currentModules, operations, { targetDir }) {
       continue;
     }
     emittedOperations.add(operation.id);
-    const selectedModules = operation.selector.moduleIds
+    const selectedModules = operation.resolvedModuleIds
       .map((moduleId) => moduleById.get(moduleId))
       .sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
     nextModules.push(mergeModuleGroup(selectedModules, operation, nextModules.length, { targetDir }));
   }
   return nextModules.sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
+}
+
+function resolveMergeModuleIds(currentModules, operation) {
+  if (Array.isArray(operation.selector.moduleIds) && operation.selector.moduleIds.length > 0) {
+    return [...operation.selector.moduleIds];
+  }
+  return resolveModuleSelectors(currentModules, operation);
+}
+
+function resolveModuleSelectors(currentModules, operation) {
+  const orderedModules = [...currentModules].sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
+  const resolvedModules = operation.selector.moduleSelectors.map((moduleSelector, selectorIndex) =>
+    resolveModuleSelector(orderedModules, moduleSelector, {
+      operationId: operation.id,
+      selectorIndex,
+    })
+  );
+  const resolvedModuleIds = resolvedModules.map((modulePlan) => modulePlan.id);
+  const uniqueResolvedModuleIds = new Set(resolvedModuleIds);
+  if (uniqueResolvedModuleIds.size !== resolvedModuleIds.length) {
+    throw new Error(`merge_module ${operation.id} matched the same module more than once`);
+  }
+  if (operation.selector.validation?.ordered) {
+    const sortedResolvedModuleIds = [...resolvedModules]
+      .sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id))
+      .map((modulePlan) => modulePlan.id);
+    if (!sameStringArray(resolvedModuleIds, sortedResolvedModuleIds)) {
+      throw new Error(`merge_module ${operation.id} ordered moduleSelectors did not match ascending startOrdinal order`);
+    }
+  }
+  return resolvedModuleIds;
+}
+
+function resolveModuleSelector(orderedModules, moduleSelector, { operationId, selectorIndex }) {
+  const matches = [];
+  for (let index = 0; index < orderedModules.length; index++) {
+    const modulePlan = orderedModules[index];
+    if (matchesModuleSelector(modulePlan, moduleSelector, orderedModules, index)) {
+      matches.push(modulePlan);
+    }
+  }
+  if (matches.length === 0) {
+    throw new Error(`merge_module ${operationId} moduleSelector[${selectorIndex}] matched no modules`);
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `merge_module ${operationId} moduleSelector[${selectorIndex}] matched multiple modules: ${matches
+        .map((modulePlan) => modulePlan.id)
+        .join(", ")}`
+    );
+  }
+  return matches[0];
+}
+
+function matchesModuleSelector(modulePlan, moduleSelector, orderedModules, moduleIndex) {
+  // Selectors match against the full current `memberNames` set on each module
+  // plan. Authors can provide an exact full set or a unique identifying subset;
+  // ambiguity is rejected at resolution time rather than guessed away here.
+  if (!containsAllStrings(modulePlan.memberNames, moduleSelector.symbols)) {
+    return false;
+  }
+  if (moduleSelector.ordinalWindow) {
+    const { end, start } = moduleSelector.ordinalWindow;
+    if (modulePlan.startOrdinal < start || modulePlan.startOrdinal > end) {
+      return false;
+    }
+  }
+  if (moduleSelector.nearbyStructure?.previousSymbols) {
+    const previousModule = orderedModules[moduleIndex - 1];
+    if (!previousModule || !containsAllStrings(previousModule.memberNames, moduleSelector.nearbyStructure.previousSymbols)) {
+      return false;
+    }
+  }
+  if (moduleSelector.nearbyStructure?.nextSymbols) {
+    const nextModule = orderedModules[moduleIndex + 1];
+    if (!nextModule || !containsAllStrings(nextModule.memberNames, moduleSelector.nearbyStructure.nextSymbols)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function normalizeModuleSelector(moduleSelector, operationId, index) {
+  if (!moduleSelector || typeof moduleSelector !== "object") {
+    throw new Error(`merge_module ${operationId} moduleSelector[${index}] must be an object`);
+  }
+  if (!Array.isArray(moduleSelector.symbols) || moduleSelector.symbols.length === 0) {
+    throw new Error(`merge_module ${operationId} moduleSelector[${index}] requires symbols`);
+  }
+  const normalized = {
+    symbols: normalizeSelectorNameList(moduleSelector.symbols, `merge_module ${operationId} moduleSelector[${index}].symbols`),
+  };
+  if (moduleSelector.nearbyStructure) {
+    const nearbyStructure = {};
+    if (moduleSelector.nearbyStructure.previousSymbols) {
+      nearbyStructure.previousSymbols = normalizeSelectorNameList(
+        moduleSelector.nearbyStructure.previousSymbols,
+        `merge_module ${operationId} moduleSelector[${index}].nearbyStructure.previousSymbols`
+      );
+    }
+    if (moduleSelector.nearbyStructure.nextSymbols) {
+      nearbyStructure.nextSymbols = normalizeSelectorNameList(
+        moduleSelector.nearbyStructure.nextSymbols,
+        `merge_module ${operationId} moduleSelector[${index}].nearbyStructure.nextSymbols`
+      );
+    }
+    if (Object.keys(nearbyStructure).length > 0) {
+      normalized.nearbyStructure = nearbyStructure;
+    }
+  }
+  if (moduleSelector.ordinalWindow) {
+    const start = requireSafeInteger(
+      moduleSelector.ordinalWindow.start,
+      `merge_module ${operationId} moduleSelector[${index}].ordinalWindow.start`
+    );
+    const end = requireSafeInteger(
+      moduleSelector.ordinalWindow.end,
+      `merge_module ${operationId} moduleSelector[${index}].ordinalWindow.end`
+    );
+    if (end < start) {
+      throw new Error(`merge_module ${operationId} moduleSelector[${index}] requires ordinalWindow.end >= ordinalWindow.start`);
+    }
+    normalized.ordinalWindow = { end, start };
+  }
+  return normalized;
+}
+
+function normalizeModuleSelectorValidation(validation, operationId) {
+  if (!validation || typeof validation !== "object") {
+    throw new Error(`merge_module ${operationId} selector.validation must be an object`);
+  }
+  const normalized = {};
+  if ("ordered" in validation) {
+    if (typeof validation.ordered !== "boolean") {
+      throw new Error(`merge_module ${operationId} selector.validation.ordered must be boolean`);
+    }
+    normalized.ordered = validation.ordered;
+  }
+  return normalized;
+}
+
+function normalizeSelectorNameList(values, label) {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error(`${label} must be a non-empty array`);
+  }
+  return [...new Set(values.map((value, index) => normalizeSelectorName(value, `${label}[${index}]`)))].sort();
+}
+
+function normalizeSelectorName(value, label) {
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requireSafeInteger(value, label) {
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`${label} must be a safe integer`);
+  }
+  return value;
+}
+
+function sameStringArray(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index++) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function containsAllStrings(haystack, needles) {
+  const haystackSet = new Set(haystack);
+  for (const needle of needles) {
+    if (!haystackSet.has(needle)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function mergeModuleGroup(selectedModules, operation, index, { targetDir }) {
