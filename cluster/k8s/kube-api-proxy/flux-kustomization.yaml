@@ -14,5 +14,13 @@ spec:
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
-      name: kube-api-proxy
-      namespace: kube-api-proxy
+      name: kubeapi-proxy
+      namespace: default
+    - apiVersion: gateway.networking.k8s.io/v1
+      kind: HTTPRoute
+      name: kubeapi-allegedly-works
+      namespace: default
+    - apiVersion: gateway.networking.k8s.io/v1
+      kind: TLSRoute
+      name: kube-api-passthrough
+      namespace: default
