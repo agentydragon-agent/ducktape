@@ -20,56 +20,65 @@ nix/
 
 All commands run from `~/code/ducktape/`.
 
-### NixOS Machines (rugged, wyrm2)
+### NixOS Hosts (iguana, rugged, wyrm2)
+
+These hosts inline home-manager through the NixOS system configuration, so a
+single `nixos-rebuild` applies both system and user config.
 
 ```bash
-# System configuration (requires sudo)
+# System + inline home-manager configuration (requires sudo)
 sudo nixos-rebuild switch --flake ~/code/ducktape#<hostname>
-
-# User configuration
-home-manager switch --flake ~/code/ducktape#<hostname> --impure
 ```
 
-### Non-NixOS Machines (atlas, gpd)
+### Standalone Home-Manager Configs (atlas, nixos-vm)
 
-Only home-manager (user config):
+These are the current standalone `homeConfigurations` exposed by the flake:
 
 ```bash
-home-manager switch --flake ~/code/ducktape#<hostname> --impure
+home-manager switch --flake ~/code/ducktape#nixos-vm
+home-manager switch --impure --flake ~/code/ducktape#atlas
 ```
 
-Note: `--impure` is required for nixGL (GPU driver detection).
+Note: `atlas` needs `--impure` because it uses nixGL on a non-NixOS system.
 
 ## Available Hosts
 
 ### NixOS System Configs (`nixosConfigurations`)
 
-| Host     | Type     | Description                  |
-| -------- | -------- | ---------------------------- |
-| `iguana` | Physical | ThinkPad X1 Extreme          |
-| `rugged` | Physical | Dell Rugged 12 tablet        |
-| `wyrm2`  | VM       | Dev workstation VM (Proxmox) |
+| Host        | Type     | Description                  |
+| ----------- | -------- | ---------------------------- |
+| `iguana`    | Physical | ThinkPad X1 Extreme          |
+| `rugged`    | Physical | Dell Rugged 12 tablet        |
+| `wyrm2`     | VM       | Dev workstation VM (Proxmox) |
+| `bootstrap` | VM/Image | Minimal bootstrap image      |
 
 ### Home-Manager Configs (`homeConfigurations`)
 
-| Host  | OS       | Description   |
-| ----- | -------- | ------------- |
-| `gpd` | Pop!\_OS | GPD Win Max 2 |
+| Host       | OS       | Description                     |
+| ---------- | -------- | ------------------------------- |
+| `atlas`    | Proxmox  | Proxmox VE host home config     |
+| `nixos-vm` | NixOS VM | Simplified standalone HM config |
 
 ## Common Commands
 
 ```bash
-# Test build without applying
+# Test NixOS host build without applying
 sudo nixos-rebuild build --flake ~/code/ducktape#<hostname>
-home-manager build --flake ~/code/ducktape#<hostname> --impure
 
-# Build from GitHub directly (no local checkout needed)
+# Test standalone home-manager config without applying
+home-manager build --flake ~/code/ducktape#nixos-vm
+home-manager build --impure --flake ~/code/ducktape#atlas
+
+# Apply a NixOS host directly from GitHub (system + inline HM)
 sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#<hostname>
-home-manager switch --flake github:agentydragon/ducktape?ref=devel#<hostname> --impure
 
-# List home-manager generations
+# Apply a standalone home-manager config directly from GitHub
+home-manager switch --flake github:agentydragon/ducktape?ref=devel#nixos-vm
+home-manager switch --impure --flake github:agentydragon/ducktape?ref=devel#atlas
+
+# List standalone home-manager generations
 home-manager generations
 
-# Rollback home-manager
+# Roll back a standalone home-manager config
 home-manager rollback
 ```

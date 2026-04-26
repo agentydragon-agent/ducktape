@@ -3,23 +3,36 @@
 ## Current State
 
 Nix home-manager (flakes, nixpkgs 25.11) manages user-level configuration.
-Ansible handles system-level setup (apt packages, services, udev rules).
+NixOS hosts inline home-manager through `nixos-rebuild`; standalone
+`homeConfigurations` remain for non-NixOS and test-only hosts. Ansible handles
+system-level setup on non-NixOS machines (apt packages, services, udev rules).
 
 ### Deployment
 
+For NixOS hosts (`iguana`, `rugged`, `wyrm2`):
+
 ```bash
-home-manager switch --flake ~/code/ducktape#<hostname>
+sudo nixos-rebuild switch --flake ~/code/ducktape#<hostname>
+```
+
+For standalone home-manager configs:
+
+```bash
+home-manager switch --flake ~/code/ducktape#nixos-vm
+home-manager switch --impure --flake ~/code/ducktape#atlas
 ```
 
 ### Per-Host Status
 
-| Host       | Nix                | Ansible roles                                                              | Notes                                     |
-| ---------- | ------------------ | -------------------------------------------------------------------------- | ----------------------------------------- |
-| **iguana** | Full               | (NixOS-managed, no Ansible playbook)                                       | Fully NixOS (was Pop!\_OS "agentydragon") |
-| **wyrm**   | Full               | (NixOS-managed, no Ansible playbook)                                       | Fully NixOS                               |
-| **atlas**  | Full               | `cli`, `nix`, `system_inspection_nopasswd`, `nebula`                       | Minimal Proxmox host                      |
-| **gpd**    | Flake entry exists | `cli`, `legacy_cli`, `gui`, `legacy_gui`, `laptop`, `legacy_vpn_uninstall` | Still uses legacy roles — last holdout    |
-| **vps**    | Flake entry exists | `common`, `system_inspection_nopasswd`                                     | Server, no GUI/dev tools                  |
+| Host         | Nix status          | Ansible roles                                                              | Notes                                     |
+| ------------ | ------------------- | -------------------------------------------------------------------------- | ----------------------------------------- |
+| **iguana**   | Inline via NixOS    | (NixOS-managed, no Ansible playbook)                                       | Fully NixOS (was Pop!\_OS "agentydragon") |
+| **rugged**   | Inline via NixOS    | (NixOS-managed, no Ansible playbook)                                       | Fully NixOS tablet                        |
+| **wyrm2**    | Inline via NixOS    | (NixOS-managed, no Ansible playbook)                                       | Fully NixOS VM                            |
+| **atlas**    | Standalone HM entry | `cli`, `nix`, `system_inspection_nopasswd`, `nebula`                       | Minimal Proxmox host                      |
+| **nixos-vm** | Standalone HM entry | (test-only config, no Ansible playbook)                                    | Simplified standalone home-manager config |
+| **gpd**      | No current output   | `cli`, `legacy_cli`, `gui`, `legacy_gui`, `laptop`, `legacy_vpn_uninstall` | Still uses legacy roles — last holdout    |
+| **vps**      | No current output   | `common`, `system_inspection_nopasswd`                                     | Server, no GUI/dev tools                  |
 
 ### What Nix Manages
 
@@ -80,6 +93,10 @@ the legacy roles from `gpd.yaml` and delete:
 ## Rollback
 
 ```bash
-home-manager generations  # List generations
-home-manager rollback     # Go to previous
+# Standalone home-manager configs
+home-manager generations
+home-manager rollback
+
+# NixOS hosts with inline home-manager
+sudo nixos-rebuild switch --rollback
 ```

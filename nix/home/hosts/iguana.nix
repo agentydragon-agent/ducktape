@@ -2,7 +2,7 @@
 #
 # Previously Pop!_OS (agentydragon.nix), now NixOS.
 #
-# To apply: home-manager switch --flake ~/code/ducktape#iguana
+# To apply: sudo nixos-rebuild switch --flake ~/code/ducktape#iguana
 {
   config,
   pkgs,

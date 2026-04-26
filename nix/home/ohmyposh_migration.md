@@ -78,8 +78,11 @@ Shell config is managed by Nix home-manager (`nix/home/home.nix`), init scripts 
 ### Build/Test
 
 ```bash
-# Rebuild home-manager (on wyrm needs --impure for nixGL)
-home-manager switch --flake .#iguana
+# Rebuild on a NixOS host with inline home-manager
+sudo nixos-rebuild switch --flake .#iguana
+
+# For standalone home-manager configs on non-NixOS hosts
+home-manager switch --impure --flake .#atlas
 
 # Test oh-my-posh prompt
 USE_OHMYPOSH=1 zsh -c 'source ~/.zshrc; oh-my-posh print primary --config ~/.config/oh-my-posh/config.json'
@@ -91,7 +94,7 @@ rm -rf ~/.cache/oh-my-posh/*
 ### Key Constraints
 
 - `USE_OHMYPOSH=1` env var enables Oh-My-Posh; otherwise defaults to Powerlevel10k
-- On wyrm, `home-manager switch` requires `--impure` flag for nixGL
+- On non-NixOS hosts such as atlas, `home-manager switch` requires `--impure` for nixGL
 - Oh-My-Posh session segment checks `SSH_CONNECTION`, `SSH_CLIENT` env vars, then `who am i` for IP pattern
 
 ### Oh-My-Posh Source Code Reference
