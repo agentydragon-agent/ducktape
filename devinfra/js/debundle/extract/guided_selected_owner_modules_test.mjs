@@ -2,12 +2,18 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
 import { parse } from "@babel/parser";
-import { analyzeRuntimeBoundaryCode } from "../analysis/runtime_boundary_metadata_lib.mjs";
+import { analyzeRuntimeBoundaryAst, analyzeRuntimeBoundaryCode } from "../analysis/runtime_boundary_metadata_lib.mjs";
+import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
+import { getChunkEntryFile } from "../common/pipeline_artifact_lib.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/js_module_lib.mjs";
+import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
 import { serializeGeneratedJsFile } from "../split/split_chunk_lib.mjs";
-import { createTempFixtureRoot, runNodeScript, writeRunnableFixture } from "../test_support/fixture_lib.mjs";
+import { normalizeJsChunks } from "../split/split_js_tree_lib.mjs";
+import { createTempFixtureRoot, createWebFixtureRoots, runNodeScript, writeRunnableFixture, writeSnapshotFixture } from "../test_support/fixture_lib.mjs";
+import { writeJsTree } from "../transforms/write_js_tree_lib.mjs";
 import { extractGuidedSelectedOwnerModulesInAst } from "./extract_ordered_init_region_lib.mjs";
 import { planGuidedSelectedOwnerModules } from "./guided_selected_owner_modules_lib.mjs";
+import { extractGuidedSelectedOwnerModules } from "./guided_selected_owner_modules_stage_lib.mjs";
 
 test("planGuidedSelectedOwnerModules merges legal atomic units into size-guided modules", () => {
   const source = fixtureSource();
@@ -158,6 +164,71 @@ test("guided selected owner modules lower in one pass and preserve behavior", ()
     source,
     transformedFiles: Object.fromEntries(transformedFiles),
   });
+});
+
+test("guided selected owner stage keeps mixed runtime side effects in the spine", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-guided-selected-owner-stage-mixed-runtime-"
+  );
+  const source = `const runtimeOnly = 7;
+const extractedValue = 42;
+console.log(JSON.stringify({ extractedValue, runtimeOnly }));
+export { extractedValue };
+`;
+
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const loaded = loadJsChunks({
+    inputRoot: snapshotRoot,
+    jsListPath: join(extractedRoot, "js-files.txt"),
+  });
+  const parsed = computeJsAsts({
+    artifact: loaded.artifact,
+  });
+  const normalized = await normalizeJsChunks({
+    artifact: parsed.artifact,
+    jobs: 1,
+  });
+  const runtimeFile = getChunkEntryFile(normalized.artifact, "static/app");
+  const analysis = analyzeRuntimeBoundaryAst(runtimeFile.ast, {
+    chunkId: "static/app",
+    manifestPath: "static/app/manifest.json",
+    runtimePath: "static/app/entry.js",
+    uiVersion: "fixture",
+  });
+  const selectedOwnerId = analysis.owners.find((owner) => owner.names.includes("extractedValue"))?.id;
+  assert.ok(selectedOwnerId);
+
+  const result = extractGuidedSelectedOwnerModules({
+    artifact: normalized.artifact,
+    chunkIds: ["static/app"],
+    filePrefix: "guided_",
+    idPrefix: "guided_fixture",
+    initPrefix: "init_guided_",
+    maxModuleLines: 1000,
+    minModuleLines: 1,
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk: {
+      "static/app": [selectedOwnerId],
+    },
+    targetDir: "modules",
+  });
+
+  writeJsTree({
+    artifact: result.artifact,
+    force: true,
+    outDir: outRoot,
+  });
+
+  assert.equal(result.manifest.chunks[0]?.modules, 1);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
 function fixtureSource() {

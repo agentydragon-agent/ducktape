@@ -74,10 +74,12 @@ js_test(
         "declaration_component_graph_lib.mjs",
         "extract_ordered_init_region_lib.mjs",
         "guided_selected_owner_modules_lib.mjs",
+        "guided_selected_owner_modules_stage_lib.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
+        "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
     entry_point = "guided_selected_owner_modules_test.mjs",
 )

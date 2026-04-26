@@ -133,6 +133,9 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
     if (!isReplayableAttachedSideEffectNode(sideEffect)) {
       continue;
     }
+    if (touchesNonSelectedLocalDeclarations(sideEffect, selectedOwnerIds)) {
+      continue;
+    }
     const touchedOwnerIds = touchedSelectedOwnerIds(sideEffect, selectedOwnerIds);
     if (touchedOwnerIds.length < 2) {
       continue;
@@ -181,6 +184,9 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
     if (!isReplayableAttachedSideEffectNode(sideEffect)) {
       continue;
     }
+    if (touchesNonSelectedLocalDeclarations(sideEffect, selectedOwnerIds)) {
+      continue;
+    }
     const touchedOwnerIds = touchedSelectedOwnerIds(sideEffect, selectedOwnerIds);
     if (touchedOwnerIds.length === 0) {
       continue;
@@ -210,6 +216,22 @@ function touchedSelectedOwnerIds(sideEffect, selectedOwnerIds) {
         .map((access) => access.ownerId)
     ),
   ];
+}
+
+function touchesNonSelectedLocalDeclarations(sideEffect, selectedOwnerIds) {
+  for (const access of [
+    ...orderedInitEagerReadAccesses(sideEffect),
+    ...orderedInitLazyReadAccesses(sideEffect),
+    ...orderedInitWriteAccesses(sideEffect),
+    ...orderedInitLazyWriteAccesses(sideEffect),
+    ...orderedInitEagerMemberWriteAccesses(sideEffect),
+    ...orderedInitLazyMemberWriteAccesses(sideEffect),
+  ]) {
+    if (access.kind === "local_declaration" && access.ownerId && !selectedOwnerIds.has(access.ownerId)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function finalizeAtomicUnit(unit, { code, id, index, itemMetricsById, itemById, ownerById, programBody }) {
