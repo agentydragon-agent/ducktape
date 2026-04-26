@@ -111,6 +111,13 @@ CloudNativePG `local-path`.
       (e.g., Stakater Reloader on Authentik worker to restart pods + a post-start hook that
       clears `last_applied_hash`, or a sidecar/CronJob that calls the Authentik API to force
       re-apply). Until fixed, any secret rotation breaks all SSO logins cluster-wide.
+- [ ] Authentik cache/channels offload: design a Redis-based replacement for the current
+      Postgres-backed cache/channels path (`django_postgres_cache`,
+      `django_channels_postgres`) without regressing single-node-failure resilience on the
+      Hetzner side. Decide whether this needs HA Redis/Sentinel, an acceptable degraded mode,
+      or a different architecture before wiring Authentik to use it. Re-measure steady-state
+      Postgres connections afterward before deciding whether any DB limit or
+      worker-concurrency changes are still needed.
 - [ ] Resync SSO client secrets: Authentik DB has stale secrets for all OAuth2 providers
       (Gitea, Grafana, Gatus, Harbor, Headlamp, InvenTree, Matrix, etc.) after TF state
       loss caused `sso-secrets` to regenerate all `random_password` resources. Fix by
