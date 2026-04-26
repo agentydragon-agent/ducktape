@@ -151,6 +151,65 @@ test("mergeModules writes post-merge reports with before/after counts", async ()
   assert.deepEqual(chunkReport.operationIds, ["merge__seed_and_first"]);
 });
 
+test("merge_remaining_modules folds all unclaimed modules into one residual module", async () => {
+  const { artifact, selectedOwnerIds, snapshotRoot } = await prepareAtomicFixture("debundle-merge-remaining-modules-");
+  const extracted = extractAtomicModules({
+    artifact,
+    chunkIds: ["static/app"],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk: {
+      "static/app": selectedOwnerIds,
+    },
+  });
+  const stateBefore = getChunk(extracted.artifact, "static/app")?.metadata?.moduleExtractionState;
+  assert.ok(stateBefore);
+  assert.ok(stateBefore.currentModules.length >= 3);
+
+  const merged = mergeModules({
+    artifact: extracted.artifact,
+    operations: [
+      {
+        id: "merge__seed_and_first",
+        operation: "merge_module",
+        selector: {
+          chunkId: "static/app",
+          moduleIds: [stateBefore.currentModules[0].id, stateBefore.currentModules[1].id],
+        },
+        target: {
+          basename: "seed_and_first",
+        },
+      },
+      {
+        id: "merge__unhandled",
+        operation: "merge_remaining_modules",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          basename: "unhandled",
+        },
+      },
+    ],
+  });
+
+  const chunk = getChunk(merged.artifact, "static/app");
+  const stateAfter = chunk?.metadata?.moduleExtractionState;
+  assert.ok(stateAfter);
+  assert.equal(stateAfter.currentModules.length, 2);
+  assert.ok(stateAfter.currentModules.some((modulePlan) => modulePlan.id === "merge__seed_and_first"));
+  assert.ok(stateAfter.currentModules.some((modulePlan) => modulePlan.id === "merge__unhandled"));
+  assert.ok(chunk.files.has("modules/unhandled.js"));
+
+  const { outRoot } = createWebFixtureRoots("debundle-merge-remaining-modules-write-");
+  writeJsTree({
+    artifact: merged.artifact,
+    force: true,
+    outDir: outRoot,
+  });
+
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 test("extract_atomic_modules and merge_modules compose in a pipeline spec", async () => {
   const { extractedRoot, outRoot, selectedOwnerIds, snapshotRoot } = await writeAtomicSnapshotFixture(
     "debundle-atomic-modules-pipeline-"

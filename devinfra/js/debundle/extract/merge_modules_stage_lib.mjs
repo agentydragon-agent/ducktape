@@ -227,31 +227,52 @@ export function mergeModules({
 }
 
 function normalizeMergeOperations(operations) {
-  return operations.filter((operation) => operation?.operation === "merge_module").map((operation) => {
-    if (typeof operation?.id !== "string" || operation.id === "") {
-      throw new Error("merge_module operation requires id");
-    }
-    if (typeof operation?.selector?.chunkId !== "string" || operation.selector.chunkId === "") {
-      throw new Error(`merge_module ${operation.id} requires selector.chunkId`);
-    }
-    if (!Array.isArray(operation?.selector?.moduleIds) || operation.selector.moduleIds.length === 0) {
-      throw new Error(`merge_module ${operation.id} requires selector.moduleIds`);
-    }
-    return {
-      ...operation,
-      selector: {
-        chunkId: normalizeRelativeFile(operation.selector.chunkId),
-        moduleIds: [...new Set(operation.selector.moduleIds)],
-      },
-      target: operation.target ?? {},
-    };
-  });
+  return operations
+    .filter(
+      (operation) => operation?.operation === "merge_module" || operation?.operation === "merge_remaining_modules"
+    )
+    .map((operation) => {
+      if (typeof operation?.id !== "string" || operation.id === "") {
+        throw new Error(`${operation?.operation ?? "merge operation"} requires id`);
+      }
+      if (typeof operation?.selector?.chunkId !== "string" || operation.selector.chunkId === "") {
+        throw new Error(`${operation.operation} ${operation.id} requires selector.chunkId`);
+      }
+      if (operation.operation === "merge_module") {
+        if (!Array.isArray(operation?.selector?.moduleIds) || operation.selector.moduleIds.length === 0) {
+          throw new Error(`merge_module ${operation.id} requires selector.moduleIds`);
+        }
+        return {
+          ...operation,
+          selector: {
+            chunkId: normalizeRelativeFile(operation.selector.chunkId),
+            moduleIds: [...new Set(operation.selector.moduleIds)],
+          },
+          target: operation.target ?? {},
+        };
+      }
+      return {
+        ...operation,
+        selector: {
+          chunkId: normalizeRelativeFile(operation.selector.chunkId),
+        },
+        target: operation.target ?? {},
+      };
+    });
 }
 
 function buildMergedModulePlans(currentModules, operations, { targetDir }) {
   const moduleById = new Map(currentModules.map((modulePlan) => [modulePlan.id, modulePlan]));
   const operationByModuleId = new Map();
+  let residualOperation = null;
   for (const operation of operations) {
+    if (operation.operation === "merge_remaining_modules") {
+      if (residualOperation) {
+        throw new Error(`merge_remaining_modules operations overlap on chunk ${operation.selector.chunkId}`);
+      }
+      residualOperation = operation;
+      continue;
+    }
     for (const moduleId of operation.selector.moduleIds) {
       if (!moduleById.has(moduleId)) {
         throw new Error(`merge_module ${operation.id} references unknown module ${moduleId}`);
@@ -264,10 +285,21 @@ function buildMergedModulePlans(currentModules, operations, { targetDir }) {
   }
 
   const emittedOperations = new Set();
+  const unclaimedModules = currentModules.filter((modulePlan) => !operationByModuleId.has(modulePlan.id));
   const nextModules = [];
   for (const currentModule of currentModules) {
     const operation = operationByModuleId.get(currentModule.id);
     if (!operation) {
+      if (residualOperation) {
+        if (emittedOperations.has(residualOperation.id)) {
+          continue;
+        }
+        emittedOperations.add(residualOperation.id);
+        if (unclaimedModules.length > 0) {
+          nextModules.push(mergeModuleGroup(unclaimedModules, residualOperation, nextModules.length, { targetDir }));
+        }
+        continue;
+      }
       nextModules.push(cloneModulePlan(currentModule));
       continue;
     }
