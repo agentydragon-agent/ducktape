@@ -10,12 +10,14 @@ _BABEL_DEPS = [
 js_library(
     name = "libs",
     srcs = [
+        "atomic_modules_stage_lib.mjs",
         "declaration_component_graph_lib.mjs",
         "extract_ordered_init_region_lib.mjs",
         "extract_ordered_init_regions_lib.mjs",
-        "guided_selected_owner_modules_lib.mjs",
-        "guided_selected_owner_modules_stage_lib.mjs",
+        "merge_modules_stage_lib.mjs",
         "owner_closure_plan_report_lib.mjs",
+        "packed_selected_modules_stage_lib.mjs",
+        "selected_module_planning_lib.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -30,7 +32,7 @@ js_test(
     data = [
         "declaration_component_graph_lib.mjs",
         "extract_ordered_init_region_lib.mjs",
-        "guided_selected_owner_modules_lib.mjs",
+        "selected_module_planning_lib.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
@@ -44,7 +46,7 @@ js_test(
     data = [
         "declaration_component_graph_lib.mjs",
         "extract_ordered_init_region_lib.mjs",
-        "guided_selected_owner_modules_lib.mjs",
+        "selected_module_planning_lib.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
@@ -73,15 +75,32 @@ js_test(
     data = [
         "declaration_component_graph_lib.mjs",
         "extract_ordered_init_region_lib.mjs",
-        "guided_selected_owner_modules_lib.mjs",
-        "guided_selected_owner_modules_stage_lib.mjs",
+        "packed_selected_modules_stage_lib.mjs",
+        "selected_module_planning_lib.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
-    entry_point = "guided_selected_owner_modules_test.mjs",
+    entry_point = "selected_module_extraction_test.mjs",
+)
+
+js_test(
+    name = "atomic_modules_test",
+    data = [
+        "atomic_modules_stage_lib.mjs",
+        "declaration_component_graph_lib.mjs",
+        "extract_ordered_init_region_lib.mjs",
+        "merge_modules_stage_lib.mjs",
+        "selected_module_planning_lib.mjs",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:sources",
+        "//devinfra/js/debundle/transforms:libs",
+    ] + _BABEL_DEPS,
+    entry_point = "atomic_modules_test.mjs",
 )
 
 js_test(
@@ -90,7 +109,7 @@ js_test(
         "declaration_component_graph_lib.mjs",
         "extract_ordered_init_region_lib.mjs",
         "extract_ordered_init_regions_lib.mjs",
-        "guided_selected_owner_modules_lib.mjs",
+        "selected_module_planning_lib.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",

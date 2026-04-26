@@ -8,7 +8,10 @@ import {
   expandOrderedInitOwnerClosurePassOperations,
   ORDERED_INIT_OWNER_CLOSURE_PASS_OPERATION,
 } from "./declaration_component_graph_lib.mjs";
-import { buildGuidedSelectedOwnerModuleOperations } from "./guided_selected_owner_modules_lib.mjs";
+import {
+  buildGuidedSelectedOwnerModuleOperations,
+  buildSelectedModuleOperations,
+} from "./selected_module_planning_lib.mjs";
 
 const traverse = traverseModule.default ?? traverseModule;
 
@@ -79,14 +82,18 @@ export function extractOrderedInitRegionsInAst(
 
   const runtimeBody = ast.program.body;
   const moduleFiles = new Map();
-  const replacementRuns = resolved
-    .flatMap((entry) => buildRuntimeReplacementRuns(entry))
-    .sort(
-      (left, right) =>
-        right.startOrdinal - left.startOrdinal ||
-        right.stageIndex - left.stageIndex ||
-        right.entry.id.localeCompare(left.entry.id)
-    );
+  const replacementRuns = [];
+  for (const entry of resolved) {
+    for (const run of buildRuntimeReplacementRuns(entry)) {
+      replacementRuns.push(run);
+    }
+  }
+  replacementRuns.sort(
+    (left, right) =>
+      right.startOrdinal - left.startOrdinal ||
+      right.stageIndex - left.stageIndex ||
+      right.entry.id.localeCompare(left.entry.id)
+  );
   for (const run of replacementRuns) {
     runtimeBody.splice(run.startOrdinal, run.endOrdinal - run.startOrdinal + 1, buildInitCallStatement(run));
   }
@@ -127,10 +134,38 @@ export function extractGuidedSelectedOwnerModulesInAst(
   plan,
   { analysis, chunkId = "<chunk>", file, filePrefix, headerLines = [], idPrefix, initPrefix, targetDir } = {}
 ) {
+  return extractSelectedModulePlanInAst(ast, plan, {
+    analysis,
+    chunkId,
+    ...(file ? { file } : {}),
+    ...(filePrefix ? { filePrefix } : {}),
+    headerLines,
+    ...(idPrefix ? { idPrefix } : {}),
+    ...(initPrefix ? { initPrefix } : {}),
+    ...(targetDir ? { targetDir } : {}),
+    operationBuilder: buildGuidedSelectedOwnerModuleOperations,
+  });
+}
+
+export function extractSelectedModulePlanInAst(
+  ast,
+  plan,
+  {
+    analysis,
+    chunkId = "<chunk>",
+    file,
+    filePrefix,
+    headerLines = [],
+    idPrefix,
+    initPrefix,
+    targetDir,
+    operationBuilder = buildSelectedModuleOperations,
+  } = {}
+) {
   if (!plan?.modulePlans) {
-    throw new Error("extractGuidedSelectedOwnerModulesInAst requires a guided selected-owner plan");
+    throw new Error("extractSelectedModulePlanInAst requires a module plan");
   }
-  const operations = buildGuidedSelectedOwnerModuleOperations(plan, {
+  const operations = operationBuilder(plan, {
     chunkId,
     ...(file ? { file } : {}),
     ...(filePrefix ? { filePrefix } : {}),
@@ -187,7 +222,7 @@ function resolveExtractOperation(
   const selectedFunctionIds = new Set(
     selectedOwners.filter((owner) => owner.type === "FunctionDeclaration").map((owner) => owner.id)
   );
-  const orderedOwners = [...selectedOwners].sort((left, right) => left.ordinal - right.ordinal);
+  const orderedOwners = selectedOwners.sort((left, right) => left.ordinal - right.ordinal);
   const attachedSideEffects = (operation.selector.attachedItemIds ?? []).map((itemId) => {
     const sideEffect = sideEffectById.get(itemId);
     if (!sideEffect) {

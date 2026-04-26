@@ -1,5 +1,8 @@
 import { packOrderedInitOwnerClosures, planOrderedInitOwnerClosureExtractions } from "./declaration_component_graph_lib.mjs";
 
+const SELECTED_ATOMIC_UNIT_ID_PREFIX = "selected_atomic_unit_";
+const ATOMIC_MODULE_ID_PREFIX = "atomic_module_";
+
 export function planGuidedSelectedOwnerModules(
   { analysis, code, itemMetricsById = null, programBody = null },
   {
@@ -15,10 +18,10 @@ export function planGuidedSelectedOwnerModules(
     throw new Error("planGuidedSelectedOwnerModules requires programBody or itemMetricsById");
   }
 
-  const selectedOwnerIds = explicitSelectedOwnerIds
-    ? new Set(explicitSelectedOwnerIds)
-    : selectedOwnerIdsFromDefaultClosureSelection(analysis);
   const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
+  const selectedOwnerIds = explicitSelectedOwnerIds
+    ? requireKnownOwnerIds(explicitSelectedOwnerIds, ownerById, "planGuidedSelectedOwnerModules explicit selectedOwnerIds")
+    : selectedOwnerIdsFromDefaultClosureSelection(analysis, ownerById, "planGuidedSelectedOwnerModules");
   const itemById = new Map(analysis.programItems.map((item) => [item.id, item]));
   const selectedAtomicUnits = buildSelectedAtomicUnits({
     analysis,
@@ -27,7 +30,7 @@ export function planGuidedSelectedOwnerModules(
   }).map((unit, index) =>
     finalizeAtomicUnit(unit, {
       code,
-      id: `guided_selected_owner_atomic_unit_${index.toString().padStart(4, "0")}`,
+      id: `${SELECTED_ATOMIC_UNIT_ID_PREFIX}${index.toString().padStart(4, "0")}`,
       index,
       itemMetricsById,
       itemById,
@@ -39,9 +42,8 @@ export function planGuidedSelectedOwnerModules(
   const modulePlans = mergeAtomicUnitsIntoModules(selectedAtomicUnits, {
     maxModuleLines,
     minModuleLines,
-    ownerById,
   }).map((modulePlan, index) =>
-    finalizeGuidedModulePlan(modulePlan, {
+    finalizeModulePlan(modulePlan, {
       id: `guided_selected_owner_module_${index.toString().padStart(4, "0")}`,
       index,
       ownerById,
@@ -59,17 +61,67 @@ export function planGuidedSelectedOwnerModules(
   };
 }
 
-export function buildGuidedSelectedOwnerModuleOperations(plan, options = {}) {
+export function planSelectedAtomicModules(
+  { analysis, code, itemMetricsById = null, programBody = null },
+  { selectedOwnerIds: explicitSelectedOwnerIds = null } = {}
+) {
+  if (!analysis?.owners || !analysis?.programItems) {
+    throw new Error("planSelectedAtomicModules requires analysis");
+  }
+  if (!Array.isArray(programBody) && !(itemMetricsById instanceof Map)) {
+    throw new Error("planSelectedAtomicModules requires programBody or itemMetricsById");
+  }
+
+  const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
+  const selectedOwnerIds = explicitSelectedOwnerIds
+    ? requireKnownOwnerIds(explicitSelectedOwnerIds, ownerById, "planSelectedAtomicModules explicit selectedOwnerIds")
+    : selectedOwnerIdsFromDefaultClosureSelection(analysis, ownerById, "planSelectedAtomicModules");
+  const itemById = new Map(analysis.programItems.map((item) => [item.id, item]));
+  const atomicUnits = buildSelectedAtomicUnits({
+    analysis,
+    ownerById,
+    selectedOwnerIds,
+  }).map((unit, index) =>
+    finalizeAtomicUnit(unit, {
+      code,
+      id: `${SELECTED_ATOMIC_UNIT_ID_PREFIX}${index.toString().padStart(4, "0")}`,
+      index,
+      itemMetricsById,
+      itemById,
+      ownerById,
+      programBody,
+    })
+  );
+
+  const modulePlans = atomicUnits.map((atomicUnit, index) =>
+    finalizeModulePlan(newModuleFromAtomicUnit(atomicUnit), {
+      id: `${ATOMIC_MODULE_ID_PREFIX}${index.toString().padStart(4, "0")}`,
+      index,
+      ownerById,
+    })
+  );
+
+  return {
+    kind: "js.atomic_module_plan",
+    atomicUnitCount: atomicUnits.length,
+    atomicUnits,
+    modulePlans,
+    selectedOwnerCount: selectedOwnerIds.size,
+  };
+}
+
+export function buildSelectedModuleOperations(plan, options = {}) {
   const chunkId = options.chunkId ?? "<chunk>";
   const file = options.file ? normalizeRelativeFile(options.file) : null;
   const targetDir = normalizeRelativeFile(options.targetDir ?? "regions");
-  const filePrefix = options.filePrefix ?? "guided_";
-  const initPrefix = options.initPrefix ?? "init_guided_";
+  const idPrefix = options.idPrefix ?? "selected_module";
+  const filePrefix = options.filePrefix ?? "";
+  const initPrefix = options.initPrefix ?? "init_";
 
   return plan.modulePlans.map((modulePlan, index) => {
-    const baseName = `${index.toString().padStart(4, "0")}_${modulePlan.nameHint}`;
+    const target = deriveSelectedModuleTarget(modulePlan, index, { filePrefix, initPrefix, targetDir });
     return {
-      id: `${options.idPrefix ?? "guided_selected_owner_module"}__${modulePlan.id}`,
+      id: `${idPrefix}__${modulePlan.id}`,
       graphGenerated: true,
       lowering: "staged_shell",
       operation: "extract_ordered_init_region",
@@ -80,20 +132,64 @@ export function buildGuidedSelectedOwnerModuleOperations(plan, options = {}) {
         ...(file ? { file } : {}),
       },
       target: {
-        file: `${targetDir}/${filePrefix}${baseName}.js`,
-        init: sanitizeIdentifier(`${initPrefix}${baseName}`),
+        file: target.file,
+        init: target.init,
       },
     };
   });
 }
 
-function selectedOwnerIdsFromDefaultClosureSelection(analysis) {
+export function buildGuidedSelectedOwnerModuleOperations(plan, options = {}) {
+  return buildSelectedModuleOperations(plan, {
+    ...options,
+    filePrefix: options.filePrefix ?? "guided_",
+    idPrefix: options.idPrefix ?? "guided_selected_owner_module",
+    initPrefix: options.initPrefix ?? "init_guided_",
+  });
+}
+
+export function deriveSelectedModuleTarget(
+  modulePlan,
+  index,
+  { filePrefix = "", initPrefix = "init_", targetDir = "modules" } = {}
+) {
+  const normalizedTargetDir = normalizeRelativeFile(targetDir);
+  const basename = modulePlan.basename ?? `${modulePlan.id}__${modulePlan.nameHint ?? `module_${index}`}`;
+  return {
+    basename,
+    file: modulePlan.targetFile ?? `${normalizedTargetDir}/${filePrefix}${basename}.js`,
+    init: modulePlan.initName ?? sanitizeIdentifier(`${initPrefix}${basename}`),
+  };
+}
+
+function selectedOwnerIdsFromDefaultClosureSelection(analysis, ownerById, callerName) {
   const plan = planOrderedInitOwnerClosureExtractions(analysis);
   const packed = packOrderedInitOwnerClosures(plan, { lowering: "staged_shell" });
-  return new Set(packed.batchPlans.flatMap((batchPlan) => batchPlan.ownerIds));
+  return requireKnownOwnerIds(
+    packed.batchPlans.flatMap((batchPlan) => batchPlan.ownerIds),
+    ownerById,
+    `${callerName} default closure selection`
+  );
+}
+
+function requireKnownOwnerIds(ownerIds, ownerById, source) {
+  // `analysis.owners` is the authoritative owner universe for a boundary-analysis
+  // snapshot. Selected-owner sets must be subsets of that universe. If we ever see
+  // an unknown id here, that indicates either a bad caller-supplied selector set or
+  // an internal planner inconsistency, and we want to fail at the boundary instead
+  // of silently dropping it and masking the source of the corruption.
+  const normalizedOwnerIds = new Set(ownerIds);
+  const unknownOwnerIds = [...normalizedOwnerIds].filter((ownerId) => !ownerById.has(ownerId));
+  if (unknownOwnerIds.length > 0) {
+    const sample = unknownOwnerIds.slice(0, 8).join(", ");
+    const remainder = unknownOwnerIds.length > 8 ? ` (+${unknownOwnerIds.length - 8} more)` : "";
+    throw new Error(`${source} referenced unknown owner ids outside analysis.owners: ${sample}${remainder}`);
+  }
+  return normalizedOwnerIds;
 }
 
 function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
+  requireKnownOwnerIds(selectedOwnerIds, ownerById, "buildSelectedAtomicUnits selectedOwnerIds");
   const mustLinkAdjacency = new Map([...selectedOwnerIds].map((ownerId) => [ownerId, new Set()]));
   const linkOwners = (leftOwnerId, rightOwnerId) => {
     if (leftOwnerId === rightOwnerId) {
@@ -103,17 +199,28 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
     mustLinkAdjacency.get(rightOwnerId)?.add(leftOwnerId);
   };
 
-  for (const ownerId of selectedOwnerIds) {
-    const owner = ownerById.get(ownerId);
-    if (!owner) {
-      continue;
+  const selectedOwners = [...selectedOwnerIds]
+    .map((ownerId) => ownerById.get(ownerId))
+    .filter((owner) => owner)
+    .sort((left, right) => left.ordinal - right.ordinal);
+
+  for (const owner of selectedOwners) {
+    for (const access of orderedInitWriteAccesses(owner)) {
+      if (access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId)) {
+        linkOwners(owner.id, access.ownerId);
+      }
     }
-    for (const access of [
-      ...orderedInitWriteAccesses(owner),
-      ...orderedInitLazyWriteAccesses(owner),
-      ...orderedInitEagerMemberWriteAccesses(owner),
-      ...orderedInitLazyMemberWriteAccesses(owner),
-    ]) {
+    for (const access of orderedInitLazyWriteAccesses(owner)) {
+      if (access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId)) {
+        linkOwners(owner.id, access.ownerId);
+      }
+    }
+    for (const access of orderedInitEagerMemberWriteAccesses(owner)) {
+      if (access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId)) {
+        linkOwners(owner.id, access.ownerId);
+      }
+    }
+    for (const access of orderedInitLazyMemberWriteAccesses(owner)) {
       if (access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId)) {
         linkOwners(owner.id, access.ownerId);
       }
@@ -133,10 +240,10 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
     if (!isReplayableAttachedSideEffectNode(sideEffect)) {
       continue;
     }
-    if (touchesNonSelectedLocalDeclarations(sideEffect, selectedOwnerIds)) {
+    const touchedOwnerIds = touchedSelectedOwnerIds(sideEffect, selectedOwnerIds);
+    if (!touchedOwnerIds) {
       continue;
     }
-    const touchedOwnerIds = touchedSelectedOwnerIds(sideEffect, selectedOwnerIds);
     if (touchedOwnerIds.length < 2) {
       continue;
     }
@@ -147,13 +254,13 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
 
   const visited = new Set();
   const units = [];
-  for (const ownerId of [...selectedOwnerIds].sort((left, right) => ownerById.get(left).ordinal - ownerById.get(right).ordinal)) {
-    if (visited.has(ownerId)) {
+  for (const owner of selectedOwners) {
+    if (visited.has(owner.id)) {
       continue;
     }
     const ownerIds = [];
-    const stack = [ownerId];
-    visited.add(ownerId);
+    const stack = [owner.id];
+    visited.add(owner.id);
     while (stack.length > 0) {
       const currentOwnerId = stack.pop();
       ownerIds.push(currentOwnerId);
@@ -172,7 +279,6 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
     });
   }
 
-  units.sort((left, right) => ownerById.get(left.ownerIds[0]).ordinal - ownerById.get(right.ownerIds[0]).ordinal);
   const unitIndexByOwnerId = new Map();
   units.forEach((unit, index) => {
     for (const ownerId of unit.ownerIds) {
@@ -184,10 +290,10 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
     if (!isReplayableAttachedSideEffectNode(sideEffect)) {
       continue;
     }
-    if (touchesNonSelectedLocalDeclarations(sideEffect, selectedOwnerIds)) {
+    const touchedOwnerIds = touchedSelectedOwnerIds(sideEffect, selectedOwnerIds);
+    if (!touchedOwnerIds) {
       continue;
     }
-    const touchedOwnerIds = touchedSelectedOwnerIds(sideEffect, selectedOwnerIds);
     if (touchedOwnerIds.length === 0) {
       continue;
     }
@@ -202,52 +308,43 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
 }
 
 function touchedSelectedOwnerIds(sideEffect, selectedOwnerIds) {
-  return [
-    ...new Set(
-      [
-        ...orderedInitEagerReadAccesses(sideEffect),
-        ...orderedInitLazyReadAccesses(sideEffect),
-        ...orderedInitWriteAccesses(sideEffect),
-        ...orderedInitLazyWriteAccesses(sideEffect),
-        ...orderedInitEagerMemberWriteAccesses(sideEffect),
-        ...orderedInitLazyMemberWriteAccesses(sideEffect),
-      ]
-        .filter((access) => access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId))
-        .map((access) => access.ownerId)
-    ),
-  ];
-}
-
-function touchesNonSelectedLocalDeclarations(sideEffect, selectedOwnerIds) {
-  for (const access of [
-    ...orderedInitEagerReadAccesses(sideEffect),
-    ...orderedInitLazyReadAccesses(sideEffect),
-    ...orderedInitWriteAccesses(sideEffect),
-    ...orderedInitLazyWriteAccesses(sideEffect),
-    ...orderedInitEagerMemberWriteAccesses(sideEffect),
-    ...orderedInitLazyMemberWriteAccesses(sideEffect),
-  ]) {
-    if (access.kind === "local_declaration" && access.ownerId && !selectedOwnerIds.has(access.ownerId)) {
+  const touchedOwnerIds = [];
+  const touchedOwnerIdSet = new Set();
+  const seenNonSelected = forEachTopLevelAccess(sideEffect, (access) => {
+    if (access.kind !== "local_declaration" || !access.ownerId) {
       return true;
     }
+    if (!selectedOwnerIds.has(access.ownerId)) {
+      return false;
+    }
+    if (!touchedOwnerIdSet.has(access.ownerId)) {
+      touchedOwnerIdSet.add(access.ownerId);
+      touchedOwnerIds.push(access.ownerId);
+    }
+    return true;
+  });
+  if (!seenNonSelected) {
+    return null;
   }
-  return false;
+  return touchedOwnerIds;
 }
 
 function finalizeAtomicUnit(unit, { code, id, index, itemMetricsById, itemById, ownerById, programBody }) {
   const itemIds = [...unit.ownerIds, ...unit.attachedItemIds];
-  const lines = itemIds.reduce(
-    (sum, itemId) => sum + statementMetricForItem(itemId, { code, itemMetricsById, itemById, programBody }).lines,
-    0
-  );
-  const bytes =
-    typeof code === "string"
-      ? itemIds.reduce(
-          (sum, itemId) =>
-            sum + statementMetricForItem(itemId, { code, itemMetricsById, itemById, programBody }).bytes,
-          0
-        )
-      : null;
+  let lines = 0;
+  let bytes = typeof code === "string" ? 0 : null;
+  let startOrdinal = Number.POSITIVE_INFINITY;
+  for (const itemId of itemIds) {
+    const metrics = statementMetricForItem(itemId, { code, itemMetricsById, itemById, programBody });
+    lines += metrics.lines;
+    if (bytes !== null) {
+      bytes += metrics.bytes;
+    }
+    const ordinal = itemById.get(itemId)?.ordinal ?? Number.POSITIVE_INFINITY;
+    if (ordinal < startOrdinal) {
+      startOrdinal = ordinal;
+    }
+  }
   return {
     attachedItemIds: [...unit.attachedItemIds],
     bytes,
@@ -256,7 +353,7 @@ function finalizeAtomicUnit(unit, { code, id, index, itemMetricsById, itemById, 
     lines,
     memberNames: unit.ownerIds.flatMap((ownerId) => ownerById.get(ownerId)?.names ?? []).sort(),
     ownerIds: [...unit.ownerIds],
-    startOrdinal: Math.min(...itemIds.map((itemId) => itemById.get(itemId)?.ordinal ?? Number.MAX_SAFE_INTEGER)),
+    startOrdinal,
   };
 }
 
@@ -274,7 +371,7 @@ function statementMetricForItem(itemId, { code, itemMetricsById, itemById, progr
   };
 }
 
-function mergeAtomicUnitsIntoModules(atomicUnits, { maxModuleLines, minModuleLines, ownerById }) {
+function mergeAtomicUnitsIntoModules(atomicUnits, { maxModuleLines, minModuleLines }) {
   const modules = [];
   let currentModule = null;
 
@@ -301,8 +398,6 @@ function mergeAtomicUnitsIntoModules(atomicUnits, { maxModuleLines, minModuleLin
   if (currentModule) {
     modules.push(currentModule);
   }
-
-  modules.sort((left, right) => ownerById.get(left.ownerIds[0]).ordinal - ownerById.get(right.ownerIds[0]).ordinal);
   return modules;
 }
 
@@ -327,16 +422,18 @@ function mergeAtomicUnitIntoModule(modulePlan, atomicUnit) {
   modulePlan.unitIds.push(atomicUnit.id);
 }
 
-function finalizeGuidedModulePlan(modulePlan, { id, index, ownerById }) {
+function finalizeModulePlan(modulePlan, { id, index, ownerById, basename = undefined }) {
   const uniqueMemberNames = [...new Set(modulePlan.memberNames)].sort();
+  const nameHint = moduleNameHint(uniqueMemberNames, index);
   return {
     attachedItemIds: [...new Set(modulePlan.attachedItemIds)].sort(),
+    basename: sanitizeIdentifier(basename ?? `${id}__${nameHint}`),
     bytes: modulePlan.bytes,
     id,
     index,
     lines: modulePlan.lines,
     memberNames: uniqueMemberNames,
-    nameHint: moduleNameHint(uniqueMemberNames, index),
+    nameHint,
     ownerIds: [...new Set(modulePlan.ownerIds)].sort(
       (leftOwnerId, rightOwnerId) => ownerById.get(leftOwnerId).ordinal - ownerById.get(rightOwnerId).ordinal
     ),
@@ -415,6 +512,40 @@ function topLevelAccesses(record, bucket, phase) {
     return rawBucket;
   }
   return [];
+}
+
+function forEachTopLevelAccess(record, callback) {
+  for (const access of orderedInitEagerReadAccesses(record)) {
+    if (callback(access) === false) {
+      return false;
+    }
+  }
+  for (const access of orderedInitLazyReadAccesses(record)) {
+    if (callback(access) === false) {
+      return false;
+    }
+  }
+  for (const access of orderedInitWriteAccesses(record)) {
+    if (callback(access) === false) {
+      return false;
+    }
+  }
+  for (const access of orderedInitLazyWriteAccesses(record)) {
+    if (callback(access) === false) {
+      return false;
+    }
+  }
+  for (const access of orderedInitEagerMemberWriteAccesses(record)) {
+    if (callback(access) === false) {
+      return false;
+    }
+  }
+  for (const access of orderedInitLazyMemberWriteAccesses(record)) {
+    if (callback(access) === false) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function isReplayableAttachedSideEffectNode(sideEffectNodeOrRecord) {

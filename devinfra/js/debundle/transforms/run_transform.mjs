@@ -6,9 +6,15 @@ import { runTransformSpec } from "./run_transform_lib.mjs";
 async function main() {
   const { packageRoots, packagesRoot, specPath } = parseArgs(process.argv.slice(2));
   const result = await runTransformSpec(specPath, { packageRoots, packagesRoot });
-  process.stdout.write(`Ran ${result.steps.length} transform steps from ${result.specPath}\n`);
+  process.stdout.write(
+    `Ran ${result.steps.length} transform steps from ${result.specPath} in ${formatDuration(result.durationMs)}\n`
+  );
   for (const step of result.steps) {
-    process.stdout.write(`- ${step.id}: ${step.operation}\n`);
+    process.stdout.write(
+      `- ${step.id}: ${step.operation} (${formatDuration(step.durationMs ?? 0)})${
+        step.manifestKind ? ` [${step.manifestKind}]` : ""
+      }\n`
+    );
   }
 }
 
@@ -57,6 +63,13 @@ function parsePackageRootArg(value, flag) {
     packageName: value.slice(0, separator),
     packageRoot: value.slice(separator + 1),
   };
+}
+
+function formatDuration(durationMs) {
+  if (durationMs >= 1000) {
+    return `${(durationMs / 1000).toFixed(3)}s`;
+  }
+  return `${durationMs.toFixed(3)}ms`;
 }
 
 await main();

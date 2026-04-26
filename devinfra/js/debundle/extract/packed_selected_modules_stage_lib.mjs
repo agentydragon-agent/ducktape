@@ -27,7 +27,7 @@ import {
 } from "../common/workspace_io_lib.mjs";
 import { serializeGeneratedJsFile } from "../split/split_chunk_lib.mjs";
 import { extractGuidedSelectedOwnerModulesInAst } from "./extract_ordered_init_region_lib.mjs";
-import { planGuidedSelectedOwnerModules } from "./guided_selected_owner_modules_lib.mjs";
+import { planGuidedSelectedOwnerModules } from "./selected_module_planning_lib.mjs";
 
 export function extractGuidedSelectedOwnerModules({
   artifact,

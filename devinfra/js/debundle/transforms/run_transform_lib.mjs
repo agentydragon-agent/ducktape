@@ -9,8 +9,10 @@ import {
 import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
 import { createEmptyArtifact } from "../common/pipeline_artifact_lib.mjs";
 import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
+import { extractAtomicModules } from "../extract/atomic_modules_stage_lib.mjs";
 import { extractOrderedInitRegions } from "../extract/extract_ordered_init_regions_lib.mjs";
-import { extractGuidedSelectedOwnerModules } from "../extract/guided_selected_owner_modules_stage_lib.mjs";
+import { extractGuidedSelectedOwnerModules } from "../extract/packed_selected_modules_stage_lib.mjs";
+import { mergeModules } from "../extract/merge_modules_stage_lib.mjs";
 import { emitBrowserHarness } from "../harness/emit_browser_harness_lib.mjs";
 import { renameBindingsInArtifact } from "../rename/rename_bindings_lib.mjs";
 import { normalizeJsChunks, splitJsTree } from "../split/split_js_tree_lib.mjs";
@@ -35,7 +37,9 @@ const STAGE_HANDLERS = Object.freeze({
   extract_scrambled_identifier_frequencies: extractScrambledIdentifierFrequencies,
   emit_browser_harness: emitBrowserHarness,
   extract_ordered_init_regions: extractOrderedInitRegions,
+  extract_atomic_modules: extractAtomicModules,
   extract_guided_selected_owner_modules: extractGuidedSelectedOwnerModules,
+  merge_modules: mergeModules,
   write_js_tree: writeJsTree,
 });
 
@@ -48,6 +52,7 @@ export async function runTransformSpec(specPath, { packageRoots, packagesRoot } 
 export async function runTransformSpecObject(spec, { packageRoots, packagesRoot, specPath = "<object>" } = {}) {
   validateSpec(spec);
   const operations = spec.operations ?? [];
+  const pipelineStartedAt = process.hrtime.bigint();
 
   const steps = [];
   let artifact = createEmptyArtifact();
@@ -82,12 +87,15 @@ export async function runTransformSpecObject(spec, { packageRoots, packagesRoot,
     );
     steps.push({
       artifactMode: "pipeline",
+      durationMs,
       id: stage.id,
+      ...(result?.manifest?.kind ? { manifestKind: result.manifest.kind } : {}),
       operation: stage.operation,
     });
   }
 
   return {
+    durationMs: Number(process.hrtime.bigint() - pipelineStartedAt) / 1_000_000,
     specPath: relativeWorkspacePath(specPath),
     steps,
   };

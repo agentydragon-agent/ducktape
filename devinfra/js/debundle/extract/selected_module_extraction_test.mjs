@@ -12,8 +12,8 @@ import { normalizeJsChunks } from "../split/split_js_tree_lib.mjs";
 import { createTempFixtureRoot, createWebFixtureRoots, runNodeScript, writeRunnableFixture, writeSnapshotFixture } from "../test_support/fixture_lib.mjs";
 import { writeJsTree } from "../transforms/write_js_tree_lib.mjs";
 import { extractGuidedSelectedOwnerModulesInAst } from "./extract_ordered_init_region_lib.mjs";
-import { planGuidedSelectedOwnerModules } from "./guided_selected_owner_modules_lib.mjs";
-import { extractGuidedSelectedOwnerModules } from "./guided_selected_owner_modules_stage_lib.mjs";
+import { planGuidedSelectedOwnerModules, planSelectedAtomicModules } from "./selected_module_planning_lib.mjs";
+import { extractGuidedSelectedOwnerModules } from "./packed_selected_modules_stage_lib.mjs";
 
 test("planGuidedSelectedOwnerModules merges legal atomic units into size-guided modules", () => {
   const source = fixtureSource();
@@ -114,6 +114,50 @@ test("planGuidedSelectedOwnerModules can pack from compact item metrics without 
       ownerIds: modulePlan.ownerIds,
       unitIds: modulePlan.unitIds,
     }))
+  );
+});
+
+test("planSelectedAtomicModules rejects unknown selected owner ids that appear in access edges", () => {
+  const analysis = {
+    owners: [
+      {
+        id: "owner_known",
+        memberWritesTopLevel: { eager: [], lazy: [] },
+        names: ["KnownOwner"],
+        ordinal: 0,
+        readsTopLevel: { eager: [], lazy: [] },
+        type: "VariableDeclaration",
+        writesTopLevel: {
+          eager: [{ kind: "local_declaration", ownerId: "owner_missing" }],
+          lazy: [],
+        },
+      },
+    ],
+    programItems: [{ id: "owner_known", ordinal: 0 }],
+    sideEffects: [],
+  };
+
+  assert.throws(
+    () =>
+      planSelectedAtomicModules(
+        {
+          analysis,
+          code: "const KnownOwner = 1;",
+          itemMetricsById: new Map([
+            [
+              "owner_known",
+              {
+                bytes: 21,
+                lines: 1,
+              },
+            ],
+          ]),
+        },
+        {
+          selectedOwnerIds: ["owner_known", "owner_missing"],
+        }
+      ),
+    /unknown owner ids outside analysis\.owners: owner_missing/
   );
 });
 
