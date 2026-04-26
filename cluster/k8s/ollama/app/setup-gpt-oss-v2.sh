@@ -1,5 +1,9 @@
 #!/bin/sh
 set -eu
+# pipefail makes a curl-failure exit status propagate through the awk filter,
+# so the Job actually fails (and the pod retries) instead of looking healthy.
+# busybox ash supports `set -o pipefail` since 1.34.
+set -o pipefail
 # Sizes are the model-layer size from the ollama registry manifest.
 # Total ~113 GB; PVC `llm-models` is 200Gi.
 #
@@ -7,6 +11,13 @@ set -eu
 # emits a CR-redrawn TTY progress bar that is unreadable in `kubectl logs`.
 # Streaming JSON lets us print one human-readable line per status change and
 # every ~5% of bytes.
+
+# Pod can race ollama's readiness on a co-recreate; wait for the API.
+echo "=== waiting for $OLLAMA_HOST ==="
+until curl -sSf -m 5 "$OLLAMA_HOST/" >/dev/null 2>&1; do
+  sleep 5
+done
+echo "=== ollama is up ==="
 
 pull() {
   model=$1
