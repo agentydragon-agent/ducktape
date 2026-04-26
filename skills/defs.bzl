@@ -1,11 +1,51 @@
 """Macros for packaging skills for deployment."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 _FRONTMATTER_TEST_LIB = "//skills:skill_frontmatter_test_lib"
+_SKILL_STAGING_LIB = "//skills/eval_infra:skill_staging"
+
+def skill_spec_library(name, tar_basename, package_name, visibility = None):
+    """Generate a py_library exporting `SPEC = SkillSpec(...)` for a skill tar.
+
+    Eval rollouts import `<pkg>.<name>.SPEC` and pass it to `stage_skill(...)`
+    to mount the skill into a sandbox container. The tar at
+    `:{tar_basename}` is added as a runtime data dep.
+
+    Args:
+        name: py_library + module name (e.g. "info_gathering_skill_spec").
+        tar_basename: pkg_tar target name in the same package, without ":".
+        package_name: directory the tar's contents are prefixed with (the
+            `package_dir` passed to pkg_tar / skill_package's `name`).
+        visibility: visibility override (default //visibility:public).
+    """
+    spec_src = name + ".py"
+    write_file(
+        name = name + "_src",
+        out = spec_src,
+        content = [
+            '"""Auto-generated SkillSpec for {} (do not edit)."""'.format(package_name),
+            "",
+            "from skills.eval_infra.skill_staging import SkillSpec",
+            "",
+            "SPEC = SkillSpec(",
+            '    tar_rlocation="_main/{}/{}.tar",'.format(native.package_name(), tar_basename),
+            '    package_name="{}",'.format(package_name),
+            ")",
+            "",
+        ],
+    )
+    py_library(
+        name = name,
+        srcs = [spec_src],
+        data = [":" + tar_basename],
+        visibility = visibility or ["//visibility:public"],
+        deps = [_SKILL_STAGING_LIB],
+    )
 
 def skill_mapping(srcs, prefix = "", preserve_paths = False):
     return struct(
@@ -82,4 +122,11 @@ def skill_package(name, srcs = None, contents = None, visibility = None):
         name = name,
         srcs = public_srcs,
         visibility = visibility or ["//visibility:public"],
+    )
+
+    skill_spec_library(
+        name = name + "_skill_spec",
+        tar_basename = name + "_tar",
+        package_name = name,
+        visibility = visibility,
     )

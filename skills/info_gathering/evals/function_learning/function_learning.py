@@ -38,9 +38,13 @@ from agent_framework import (
     Message,
     MiddlewareTermination,
 )
+from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
+from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction
 from skills.info_gathering.evals.function_learning.prompts import build_system_prompt, first_user_message
 from skills.info_gathering.evals.function_learning.result_types import (
@@ -50,12 +54,16 @@ from skills.info_gathering.evals.function_learning.result_types import (
     TurnResult,
 )
 from skills.info_gathering.evals.function_learning.scoring import EVAL_TIMEOUT_S, evaluate_program
-from skills.info_gathering.evals.twenty_questions.prompts import load_skill_prompt
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths
 
 logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 200
+
+# Maps the --skill CLI value to a SkillSpec. The "off" arm uses an empty
+# SKILL.md so the sandbox shape is uniform across arms — there is no
+# `if skill_on:` branch.
+SKILL_BY_ARM: dict[str, SkillSpec] = {"on": INFO_GATHERING_SKILL_SPEC, "off": EMPTY_SKILL_SPEC}
 
 
 # --- Game state ---
@@ -198,20 +206,23 @@ async def run_game(
     model: str,
     api: str,
     output_dir: Path,
-    exec_tool: MCPStdioTool | FunctionTool,
+    exec_tool: MCPStdioTool,
     scoring_container: aiodocker.docker.DockerContainer,
     model_client: BaseChatClient[Any],
-    no_skill: bool = False,
+    skill_md: str,
 ) -> RunSummary:
     """Execute one function learning game and persist results.
 
     The caller owns `model_client`'s lifecycle; this function neither
-    constructs nor closes it.
+    constructs nor closes it. The caller also owns staging the skill
+    (extracting the tar, mounting the dir into `exec_tool`'s container at
+    `SKILL_FILES_PATH`); `skill_md` is the SKILL.md text to inline (empty
+    string for the off-arm — the empty-skill tar has an empty SKILL.md).
     """
     secret_fn = FUNCTIONS[function_name]
     description = secret_fn.description if hint else _NO_HINT
 
-    system = build_system_prompt(skill="" if no_skill else load_skill_prompt(), has_scratch=True)
+    system = build_system_prompt(skill=skill_md, has_scratch=True, skill_files_path=SKILL_FILES_PATH)
     opening = first_user_message(secret_fn, turn_limit, description, eval_timeout_s=EVAL_TIMEOUT_S)
 
     calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
@@ -274,7 +285,10 @@ async def _async_main(args: argparse.Namespace) -> None:
         api=args.api, model=args.model, function_invocation_configuration={"max_iterations": _MAX_STEPS}
     )
 
-    async with scratch_exec_mcp_tool() as exec_tool:
+    staged = stage_skill(SKILL_BY_ARM[args.skill], output_dir / "skill_extract")
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro")
+
+    async with scratch_exec_mcp_tool(binds=[skill_bind]) as exec_tool:
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         async with aiodocker.Docker() as docker:
             container = await docker.containers.run(
@@ -290,7 +304,7 @@ async def _async_main(args: argparse.Namespace) -> None:
                     exec_tool=exec_tool,
                     scoring_container=container,
                     model_client=model_client,
-                    no_skill=args.no_skill,
+                    skill_md=staged.md_text,
                     turn_limit=args.turn_limit,
                 )
             finally:
@@ -305,7 +319,12 @@ def main() -> None:
     parser.add_argument("--model", required=True)
     parser.add_argument("--api", choices=["openai", "anthropic"], default="anthropic")
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--no-skill", action="store_true")
+    parser.add_argument(
+        "--skill",
+        choices=["on", "off"],
+        default="on",
+        help="Skill arm: 'on' mounts info_gathering, 'off' mounts an empty skill tar.",
+    )
     parser.add_argument("--turn-limit", type=int, required=True)
     args = parser.parse_args()
 

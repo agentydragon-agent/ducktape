@@ -1,5 +1,7 @@
 """Prompt loading helpers for the function learning eval."""
 
+from pathlib import Path
+
 from skills.info_gathering.evals.function_learning.functions import SecretFunction
 from skills.info_gathering.evals.twenty_questions.prompts import load_scratch_system_note
 from util.bazel.runfiles import get_required_path
@@ -15,16 +17,29 @@ _BASE_PREAMBLE = (
 )
 
 
-def build_system_prompt(*, skill: str, has_scratch: bool) -> str:
-    """Compose the system prompt for the function learning guesser."""
+def build_system_prompt(*, skill: str, has_scratch: bool, skill_files_path: Path | None) -> str:
+    """Compose the system prompt for the function learning guesser.
+
+    Args:
+        skill: SKILL.md text to inline. Empty string for the off-arm of a
+               mounted-skill rollout (the empty-skill tar's SKILL.md is blank).
+        has_scratch: Include the scratch container exec tool note.
+        skill_files_path: In-container path where the skill tar is bind-mounted
+                          (e.g. ``/work/.skill``), or ``None`` when the rollout
+                          doesn't mount the skill into a sandbox. Pass it
+                          explicitly.
+    """
     parts: list[str] = [_BASE_PREAMBLE]
-
-    if skill:
-        parts.append(f"Follow this information-gathering skill throughout.\n\n<skill>\n{skill}\n</skill>")
-
+    if skill or skill_files_path is not None:
+        skill_block = f"Follow this information-gathering skill throughout.\n\n<skill>\n{skill}\n</skill>"
+        if skill_files_path is not None:
+            skill_block += (
+                f"\n\nThe full skill (SKILL.md and any referenced example files) is available "
+                f"in the container at {skill_files_path}/."
+            )
+        parts.append(skill_block)
     if has_scratch:
         parts.append(load_scratch_system_note())
-
     return "\n\n---\n\n".join(parts)
 
 

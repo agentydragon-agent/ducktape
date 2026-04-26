@@ -35,14 +35,17 @@ from agent_framework import (
     MCPStdioTool,
     MiddlewareTermination,
 )
+from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
+from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
     load_sim_prompt,
-    load_skill_prompt,
 )
 from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Result, RunSummary, Timeout
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
@@ -56,6 +59,11 @@ from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIA
 logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 200
+
+# Maps the --skill CLI value to a SkillSpec. The "off" arm uses an empty
+# SKILL.md so the sandbox shape is uniform across arms — there is no
+# `if skill_on:` branch.
+_SKILL_BY_ARM: dict[str, SkillSpec] = {"on": INFO_GATHERING_SKILL_SPEC, "off": EMPTY_SKILL_SPEC}
 
 
 # -- Game state --
@@ -200,19 +208,20 @@ async def run_game(
     api: str,
     output_dir: Path,
     model_client: BaseChatClient[Any],
-    exec_tool: MCPStdioTool | None = None,
-    no_skill: bool = False,
+    skill_md: str,
+    exec_tool: MCPStdioTool,
 ) -> RunSummary:
     """Execute one Twenty Questions game and persist results.
 
     The caller owns `model_client`'s lifecycle; this function neither
-    constructs nor closes it.
+    constructs nor closes it. The caller also owns staging the skill
+    (extracting the tar, mounting the dir into `exec_tool`'s container at
+    `SKILL_FILES_PATH`); `skill_md` is the SKILL.md text to inline (empty
+    string for the off-arm — the empty-skill tar has an empty SKILL.md).
     """
     variant = VARIANTS[variant_name]
     sim_system = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
-    guesser_system = build_guesser_system(
-        skill="" if no_skill else load_skill_prompt(), has_scratch=exec_tool is not None
-    )
+    guesser_system = build_guesser_system(skill=skill_md, has_scratch=True, skill_files_path=SKILL_FILES_PATH)
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
     game = GameContext(turn_limit=variant.turn_limit)
@@ -226,11 +235,10 @@ async def run_game(
     )
     sim_session = AgentSession()
 
-    guesser_tools: list[FunctionTool | MCPStdioTool] = list(
-        _make_game_tools(game=game, sim_agent=sim_agent, sim_session=sim_session)
-    )
-    if exec_tool is not None:
-        guesser_tools.append(exec_tool)
+    guesser_tools: list[FunctionTool | MCPStdioTool] = [
+        *_make_game_tools(game=game, sim_agent=sim_agent, sim_session=sim_session),
+        exec_tool,
+    ]
 
     guesser_agent = Agent(
         client=model_client,
@@ -273,15 +281,19 @@ async def _async_main(args: argparse.Namespace) -> None:
     model_client = build_model_client(
         api=args.api, model=args.model, function_invocation_configuration={"max_iterations": _MAX_STEPS}
     )
-    async with scratch_exec_mcp_tool() as exec_tool:
+
+    staged = stage_skill(_SKILL_BY_ARM[args.skill], output_dir / "skill_extract")
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro")
+
+    async with scratch_exec_mcp_tool(binds=[skill_bind]) as exec_tool:
         summary = await run_game(
             variant_name=args.variant,
             model=args.model,
             api=args.api,
             output_dir=output_dir,
             model_client=model_client,
+            skill_md=staged.md_text,
             exec_tool=exec_tool,
-            no_skill=getattr(args, "no_skill", False),
         )
     logger.info("Result: %s", summary.result.model_dump_json())
 
@@ -289,7 +301,12 @@ async def _async_main(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Twenty Questions — Agent Framework")
     add_common_args(parser)
-    parser.add_argument("--no-skill", action="store_true", help="Run without info-gathering skill prompt (baseline)")
+    parser.add_argument(
+        "--skill",
+        choices=["on", "off"],
+        default="on",
+        help="Skill arm: 'on' mounts info_gathering, 'off' mounts an empty skill tar.",
+    )
     args = parser.parse_args()
     resolve_args(args)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

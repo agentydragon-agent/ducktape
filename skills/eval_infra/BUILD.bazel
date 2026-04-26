@@ -1,5 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
+# The "skill off" payload (`empty_skill_tar` + `empty_skill_skill_spec`)
+# lives in the `empty_skill/` subpackage so it goes through the regular
+# `skill_package` macro — same sandbox shape as info_gathering and any
+# other skill.
+
 py_library(
     name = "docker_exec",
     srcs = ["docker_exec.py"],
@@ -8,6 +13,13 @@ py_library(
         "//mcp_infra/exec:docker",
         "@pypi//aiodocker",
     ],
+)
+
+py_library(
+    name = "skill_staging",
+    srcs = ["skill_staging.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = ["//util/bazel:runfiles"],
 )
 
 py_library(
