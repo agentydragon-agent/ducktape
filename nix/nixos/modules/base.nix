@@ -83,65 +83,84 @@
   };
 
   # Essential packages
-  environment.systemPackages = with pkgs; [
-    git
-    neovim
-    wget
-    curl
-    htop
-    tmux
-    home-manager
-    nix-du
-    dust
-    ncdu
-    procs
-    bandwhich
-    tree
-    iotop
-    nmap
-    iftop
-    mtr
-    btop
-    bottom
-    pv
-    mosh
-    ripgrep
+  environment.systemPackages =
+    (with pkgs; [
+      git
+      neovim
+      wget
+      curl
+      htop
+      tmux
+      home-manager
+      nix-du
+      dust
+      ncdu
+      procs
+      bandwhich
+      tree
+      iotop
+      nmap
+      iftop
+      mtr
+      btop
+      bottom
+      pv
+      mosh
+      ripgrep
 
-    # Network diagnostics
-    dig
-    tcpdump
-    iperf3
-    openssl
-    conntrack-tools
-    ethtool
-    bpftools
-    net-tools
-    traceroute
+      # Network diagnostics
+      dig
+      tcpdump
+      iperf3
+      openssl
+      conntrack-tools
+      ethtool
+      bpftools
+      net-tools
+      traceroute
 
-    # System diagnostics
-    strace
-    usbutils
-    pciutils
-    acpi
-    nethogs
+      # System diagnostics
+      gdb
+      lsof
+      ltrace
+      strace
+      usbutils
+      pciutils
+      acpi
+      nethogs
+      inotify-tools
 
-    # Compression
-    zip
-    unzip
+      # Binary inspection / debugging
+      file
+      binutils
+      elfutils
+      patchelf
+      valgrind
 
-    # Serial/network utilities
-    socat
-    minicom
-    zbar
-    speedtest-cli
+      # Profiling / performance
+      sysstat
 
-    # Secrets/credentials
-    libsecret
+      # Compression
+      zip
+      unzip
 
-    # PDF/OCR
-    poppler-utils
-    tesseract
-  ];
+      # Serial/network utilities
+      socat
+      minicom
+      zbar
+      speedtest-cli
+
+      # Secrets/credentials
+      libsecret
+
+      # PDF/OCR
+      poppler-utils
+      tesseract
+    ])
+    ++ [
+      # Match perf to the configured kernel.
+      config.boot.kernelPackages.perf
+    ];
 
   system.stateVersion = "25.11";
 }
