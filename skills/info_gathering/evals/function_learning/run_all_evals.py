@@ -1,4 +1,4 @@
-"""Run all function learning eval games: 9 functions x 2 arms (skill/no_skill)."""
+"""Run all function learning eval games: 9 functions x 2 arms (skill on/off)."""
 
 import argparse
 import asyncio

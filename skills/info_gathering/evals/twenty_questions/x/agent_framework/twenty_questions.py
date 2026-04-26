@@ -73,7 +73,7 @@ def _load_skill(tar_rlocation: str, package_name: str, extract_dir: Path) -> tup
     """Extract a skill tar; return (host dir to bind-mount, SKILL.md text)."""
     tar_path = get_required_path(tar_rlocation)
     with tarfile.open(tar_path) as tf:
-        tf.extractall(extract_dir)
+        tf.extractall(extract_dir, filter="data")
     skill_dir = extract_dir / package_name
     skill_md = (skill_dir / "SKILL.md").read_text()
     return skill_dir, skill_md
