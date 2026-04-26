@@ -385,7 +385,7 @@ export function createMockBrowserBundleTransformSpec({
     pipeline: [
       {
         id: "load_mock_bundle",
-        operation: "load_js_tree",
+        operation: "load_js_chunks",
         args: {
           inputRoot: snapshotRoot,
           jsListPath,

@@ -1,14 +1,14 @@
 import { join, posix } from "node:path";
 import {
-  createJsArtifactFile,
+  createFile,
   getArtifactChunkManifest,
   getArtifactManifestOrDerived,
-  getChunkEntryRelativeFile,
-  getJsArtifactFile,
+  getChunkEntryPath,
+  getChunkFile,
   requirePipelineArtifact,
   setArtifactChunkManifest,
   setArtifactManifest,
-  setJsArtifactFile,
+  setFile,
 } from "../common/pipeline_artifact_lib.mjs";
 import {
   formatDuration,
@@ -65,17 +65,17 @@ function applyExtractionsToArtifact(artifact, groupedByChunkId) {
     const chunkApplied = [];
     for (const [targetRelativePath, targetOperations] of chunkTargets) {
       const targetStartedAt = process.hrtime.bigint();
-      const fileArtifact = getJsArtifactFile(artifact, targetRelativePath);
+      const fileArtifact = getChunkFile(artifact, chunkId, targetRelativePath);
       if (!fileArtifact?.ast) {
         throw new Error(`Ordered-init extraction targets missing in-memory file: ${targetRelativePath}`);
       }
-      const file = normalizeRelativeFile(fileArtifact.metadata?.chunkFile ?? relativeChunkFile(chunkId, fileArtifact.path));
+      const file = normalizeRelativeFile(fileArtifact.metadata?.chunkFile ?? fileArtifact.path);
       for (const operation of targetOperations) {
         if (operation.operation === "extract_ordered_init_owner_closure_pass") {
           continue;
         }
         const targetFile = normalizeRelativeFile(operation.target.file);
-        if (targetFile !== file && getJsArtifactFile(artifact, `${chunkId}/${targetFile}`)) {
+        if (targetFile !== file && getChunkFile(artifact, chunkId, targetFile)) {
           throw new Error(
             `Extract operation ${operation.id} target file already exists in chunk ${chunkId}: ${targetFile}`
           );
@@ -88,10 +88,10 @@ function applyExtractionsToArtifact(artifact, groupedByChunkId) {
         headerLines: fileArtifact.headerLines ?? [],
       });
       for (const [relativePath, generatedFile] of result.jsFiles.entries()) {
-        setJsArtifactFile(
+        setFile(
           artifact,
-          createJsArtifactFile({
-            path: `${chunkId}/${relativePath}`,
+          createFile({
+            path: relativePath,
             ast: generatedFile.ast,
             headerLines: generatedFile.headerLines,
             parserOptions: fileArtifact.parserOptions ?? chunkManifest.parser ?? cloneDefaultParserOptions(),
@@ -162,7 +162,7 @@ function groupOperationsByChunkAndTarget(artifact, operations) {
   for (const operation of operations) {
     validateExtractOperationShape(operation);
     const chunkId = normalizeChunkId(operation.selector.chunkId);
-    const relativePath = posix.join(chunkId, resolveOperationTargetFile(artifact, operation, chunkId));
+    const relativePath = resolveOperationTargetFile(artifact, operation, chunkId);
     if (!groupedByChunkId.has(chunkId)) {
       groupedByChunkId.set(chunkId, new Map());
     }
@@ -179,7 +179,7 @@ function resolveOperationTargetFile(artifact, operation, chunkId = operation.sel
   if (operation.selector.file) {
     return normalizeRelativeFile(operation.selector.file);
   }
-  const entryFile = getChunkEntryRelativeFile(artifact, chunkId);
+  const entryFile = getChunkEntryPath(artifact, chunkId);
   if (entryFile) {
     return normalizeRelativeFile(entryFile);
   }
@@ -231,9 +231,6 @@ function normalizeRelativeFile(value) {
   return normalized;
 }
 
-function relativeChunkFile(chunkId, filePath) {
-  return filePath.slice(`${chunkId}/`.length);
-}
 
 function requireChunkManifest(artifact, chunkId) {
   const manifest = getArtifactChunkManifest(artifact, chunkId);
@@ -247,7 +244,7 @@ function resolveChunkEntryFile(artifact, chunkId, chunkManifest) {
   if (chunkManifest?.entryFile) {
     return normalizeRelativeFile(chunkManifest.entryFile);
   }
-  const derivedEntryFile = getChunkEntryRelativeFile(artifact, chunkId);
+  const derivedEntryFile = getChunkEntryPath(artifact, chunkId);
   if (derivedEntryFile) {
     return normalizeRelativeFile(derivedEntryFile);
   }

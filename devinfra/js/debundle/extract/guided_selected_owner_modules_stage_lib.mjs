@@ -6,17 +6,17 @@ import { analyzeRuntimeBoundaryAst } from "../analysis/runtime_boundary_metadata
 import { DEFAULT_PARSER_OPTIONS, writeJsonFile } from "../common/js_module_lib.mjs";
 import {
   deleteArtifactChunkManifest,
-  createJsArtifactFile,
+  createFile,
   getArtifactChunkManifest,
   getArtifactManifest,
-  getChunkEntryArtifactFile,
-  getChunkEntryRelativeFile,
-  getJsArtifactFile,
-  removeJsArtifactFiles,
+  getChunkFile,
+  getChunkEntryFile,
+  getChunkEntryPath,
+  removeFiles,
   requirePipelineArtifact,
   setArtifactChunkManifest,
   setArtifactManifest,
-  setJsArtifactFile,
+  setFile,
 } from "../common/pipeline_artifact_lib.mjs";
 import {
   formatDurationSince,
@@ -81,13 +81,13 @@ export function extractGuidedSelectedOwnerModules({
   for (const chunkId of selectedChunkIds) {
     const targetFile = file
       ? normalizeRelativeFile(file)
-      : getChunkEntryRelativeFile(artifact, chunkId);
+      : getChunkEntryPath(artifact, chunkId);
     if (!targetFile) {
       throw new Error(`extractGuidedSelectedOwnerModules could not determine entry file for chunk: ${chunkId}`);
     }
     const runtimeFile = file
-      ? getJsArtifactFile(artifact, `${chunkId}/${targetFile}`)
-      : getChunkEntryArtifactFile(artifact, chunkId);
+      ? getChunkFile(artifact, chunkId, targetFile)
+      : getChunkEntryFile(artifact, chunkId);
     if (!runtimeFile?.ast) {
       throw new Error(`extractGuidedSelectedOwnerModules missing entry AST for chunk: ${chunkId}`);
     }
@@ -142,10 +142,10 @@ export function extractGuidedSelectedOwnerModules({
     );
 
     for (const [relativePath, fileArtifact] of result.jsFiles.entries()) {
-      setJsArtifactFile(
+      setFile(
         artifact,
-        createJsArtifactFile({
-          path: `${chunkId}/${relativePath}`,
+        createFile({
+          path: relativePath,
           ast: fileArtifact.ast,
           headerLines: fileArtifact.headerLines,
           parserOptions: runtimeFile.parserOptions,
@@ -385,7 +385,7 @@ function mergeRecordsById(existing = [], appended = []) {
 
 function pruneArtifactToChunkIds(artifact, chunkIds) {
   const selectedChunkIds = new Set(chunkIds);
-  removeJsArtifactFiles(artifact, (file) => {
+  removeFiles(artifact, (file) => {
     const chunkId = file.metadata?.chunkId ?? null;
     return chunkId !== null && !selectedChunkIds.has(chunkId);
   });

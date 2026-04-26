@@ -3,7 +3,7 @@ import { modulePackageJson, writeJsonFile, writeTextFile } from "../common/js_mo
 import {
   getArtifactChunkManifest,
   getArtifactManifest,
-  listArtifactChunks,
+  listChunks,
   requirePipelineArtifact,
 } from "../common/pipeline_artifact_lib.mjs";
 import { prepareOutputDir, relativeWorkspacePath, resolveWorkspacePath } from "../common/workspace_io_lib.mjs";
@@ -18,13 +18,13 @@ export function writeJsTree({ artifact, force = false, outDir }) {
 
   prepareOutputDir(resolvedOutDir, { force });
 
-  const chunkEntries = listArtifactChunks(artifact);
+  const chunkEntries = listChunks(artifact);
   const files = [];
   for (const { chunkId, files: chunkFiles } of chunkEntries) {
     for (const file of chunkFiles) {
-      const outputPath = join(resolvedOutDir, ...file.path.split("/"));
+      const outputPath = join(resolvedOutDir, ...chunkId.split("/"), ...file.path.split("/"));
       writeTextFile(outputPath, serializeGeneratedJsFile(file));
-      files.push(file.path);
+      files.push(`${chunkId}/${file.path}`);
     }
   }
 

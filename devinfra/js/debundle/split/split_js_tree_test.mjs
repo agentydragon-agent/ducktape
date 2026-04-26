@@ -12,7 +12,7 @@ import {
   writeSnapshotFixture,
 } from "../test_support/fixture_lib.mjs";
 import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
-import { loadJsTree } from "../common/load_js_tree_lib.mjs";
+import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
 import { writeJsTree } from "../transforms/write_js_tree_lib.mjs";
 import { splitJsTree } from "./split_js_tree_lib.mjs";
 
@@ -35,7 +35,7 @@ function writeSplitSnapshotFixture(prefix) {
 test("splitJsTree rewrites cross-chunk imports and worker URLs", async () => {
   const { extractedRoot, outDir, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-test-");
 
-  const loaded = loadJsTree({
+  const loaded = loadJsChunks({
     jsListPath: join(extractedRoot, "js-files.txt"),
     inputRoot: snapshotRoot,
   });
@@ -75,7 +75,7 @@ test("splitJsTree rewrites cross-chunk imports and worker URLs", async () => {
 test("splitJsTree writes runnable parseable JS tree output", async () => {
   const { extractedRoot, outDir, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-runnable-");
 
-  const loaded = loadJsTree({
+  const loaded = loadJsChunks({
     jsListPath: join(extractedRoot, "js-files.txt"),
     inputRoot: snapshotRoot,
   });
@@ -111,7 +111,7 @@ test("splitJsTree writes runnable parseable JS tree output", async () => {
 test("splitJsTree supports nested entry file paths", async () => {
   const { extractedRoot, outDir, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-nested-entry-");
 
-  const loaded = loadJsTree({
+  const loaded = loadJsChunks({
     jsListPath: join(extractedRoot, "js-files.txt"),
     inputRoot: snapshotRoot,
   });

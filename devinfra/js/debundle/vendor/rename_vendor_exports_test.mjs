@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import generateModule from "@babel/generator";
-import { getChunkEntryRelativeFile, requireJsArtifactFile } from "../common/pipeline_artifact_lib.mjs";
+import { getChunkEntryPath, requireChunkFile } from "../common/pipeline_artifact_lib.mjs";
 import { makePipelineArtifact, makePipelineChunk } from "../test_support/fixture_lib.mjs";
 import { renameVendorExports } from "./rename_vendor_exports_lib.mjs";
 
@@ -12,11 +12,11 @@ function genCode(ast) {
 }
 
 function chunkCode(artifact, chunkId) {
-  const entryFile = getChunkEntryRelativeFile(artifact, chunkId);
+  const entryFile = getChunkEntryPath(artifact, chunkId);
   if (!entryFile) {
     throw new Error(`Missing entry file for chunk ${chunkId}`);
   }
-  return genCode(requireJsArtifactFile(artifact, `${chunkId}/${entryFile}`, "renameVendorExportsTest").ast);
+  return genCode(requireChunkFile(artifact, chunkId, entryFile, "renameVendorExportsTest").ast);
 }
 
 function makeChunk(chunkId, files) {

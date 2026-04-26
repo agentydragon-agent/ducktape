@@ -2,11 +2,11 @@ import { availableParallelism } from "node:os";
 import { posix } from "node:path";
 import { Worker } from "node:worker_threads";
 import {
-  createEmptyPipelineArtifact,
-  createJsArtifactFile,
-  listJsArtifactFiles,
+  createEmptyArtifact,
+  createFile,
+  listChunks,
   requirePipelineArtifact,
-  replaceJsArtifactFiles,
+  replaceChunks,
   setArtifactChunkManifest,
   setArtifactManifest,
 } from "../common/pipeline_artifact_lib.mjs";
@@ -20,28 +20,38 @@ import { DEFAULT_SPLIT_ENTRY_FILE, normalizeChunkEntryFile, splitScopeHoistedChu
 export async function splitJsTree({ artifact, jobs, emitParts = false, entryFile = DEFAULT_SPLIT_ENTRY_FILE }) {
   requirePipelineArtifact(artifact, "splitJsTree");
   const normalizedEntryFile = normalizeChunkEntryFile(entryFile);
-  const sourceFiles = listJsArtifactFiles(artifact);
+  const sourceChunks = listChunks(artifact);
   const effectiveJobs = jobs ?? defaultJobs();
-  const jsPaths = sourceFiles.map((file) => normalizeAssetPath(file.path));
+  const jsPaths = sourceChunks.map(sourcePathForLoadedChunk);
 
-  logProgress(`split start files=${sourceFiles.length} jobs=${effectiveJobs} mode=pipeline`);
+  logProgress(`split start files=${sourceChunks.length} jobs=${effectiveJobs} mode=pipeline`);
   const startedAt = process.hrtime.bigint();
 
   const chunks =
-    effectiveJobs === 1 || sourceFiles.length <= 1
-      ? sourceFiles.map((file) => splitOneJsChunk({ artifactFile: file, emitParts, entryFile: normalizedEntryFile, jsPaths }))
-      : await splitChunksParallel({ artifactFiles: sourceFiles, emitParts, entryFile: normalizedEntryFile, jobs: effectiveJobs, jsPaths });
+    effectiveJobs === 1 || sourceChunks.length <= 1
+      ? sourceChunks.map((chunk) =>
+          splitOneJsChunk({ artifactChunk: chunk, emitParts, entryFile: normalizedEntryFile, jsPaths })
+        )
+      : await splitChunksParallel({
+          artifactChunks: sourceChunks,
+          emitParts,
+          entryFile: normalizedEntryFile,
+          jobs: effectiveJobs,
+          jsPaths,
+        });
 
-  const nextArtifact = createEmptyPipelineArtifact();
+  const nextArtifact = createEmptyArtifact();
   const manifest = buildJsTreeManifest(chunks);
 
-  const outputFiles = [];
+  const outputChunks = [];
   for (const chunk of chunks) {
     setArtifactChunkManifest(nextArtifact, chunk.chunkId, chunk.manifest);
-    for (const [relativeFile, fileArtifact] of chunk.jsFiles.entries()) {
-      outputFiles.push(
-        createJsArtifactFile({
-          path: `${chunk.chunkId}/${relativeFile}`,
+    outputChunks.push({
+      chunkId: chunk.chunkId,
+      entryFile: chunk.manifest.entryFile,
+      files: [...chunk.jsFiles.entries()].map(([relativeFile, fileArtifact]) =>
+        createFile({
+          path: relativeFile,
           ast: fileArtifact.ast,
           headerLines: fileArtifact.headerLines,
           parserOptions: chunk.manifest.parser,
@@ -52,10 +62,13 @@ export async function splitJsTree({ artifact, jobs, emitParts = false, entryFile
             sourcePath: chunk.inputPath,
           },
         })
-      );
-    }
+      ),
+      metadata: {
+        sourcePath: chunk.inputPath,
+      },
+    });
   }
-  replaceJsArtifactFiles(nextArtifact, outputFiles);
+  replaceChunks(nextArtifact, outputChunks);
   setArtifactManifest(nextArtifact, manifest);
 
   const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
@@ -80,17 +93,20 @@ export async function splitJsTree({ artifact, jobs, emitParts = false, entryFile
   };
 }
 
-export function splitOneJsChunk({ artifactFile, emitParts = false, entryFile = DEFAULT_SPLIT_ENTRY_FILE, jsPaths }) {
-  if (!artifactFile?.ast) {
-    throw new Error(`splitOneJsChunk requires AST for file: ${artifactFile?.path ?? "<unknown>"}`);
+export function splitOneJsChunk({ artifactChunk, emitParts = false, entryFile = DEFAULT_SPLIT_ENTRY_FILE, jsPaths }) {
+  const entryArtifactFile = artifactChunk?.files?.find((file) => file.path === artifactChunk.entryFile);
+  if (!entryArtifactFile?.ast) {
+    throw new Error(
+      `splitOneJsChunk requires AST for file: ${artifactChunk?.chunkId ?? "<unknown>"}/${artifactChunk?.entryFile ?? "<entry>"}`
+    );
   }
   const normalizedEntryFile = normalizeChunkEntryFile(entryFile);
   const startedAt = process.hrtime.bigint();
   const jsFileSet = new Set(jsPaths);
-  const jsPath = normalizeAssetPath(artifactFile.path);
-  const chunkId = chunkIdForJsPath(jsPath);
-  const inputBytes = artifactFile.content ? Buffer.byteLength(artifactFile.content) : 0;
-  const result = splitScopeHoistedChunkAst(artifactFile.ast, {
+  const jsPath = sourcePathForLoadedChunk(artifactChunk);
+  const chunkId = artifactChunk.chunkId;
+  const inputBytes = entryArtifactFile.content ? Buffer.byteLength(entryArtifactFile.content) : 0;
+  const result = splitScopeHoistedChunkAst(entryArtifactFile.ast, {
     chunkId,
     entryFile: normalizedEntryFile,
     emitParts,
@@ -111,8 +127,8 @@ export function splitOneJsChunk({ artifactFile, emitParts = false, entryFile = D
   };
 }
 
-function splitChunksParallel({ artifactFiles, emitParts, entryFile, jobs, jsPaths }) {
-  const results = new Array(artifactFiles.length);
+function splitChunksParallel({ artifactChunks, emitParts, entryFile, jobs, jsPaths }) {
+  const results = new Array(artifactChunks.length);
   let nextIndex = 0;
   let active = 0;
   let firstError;
@@ -126,14 +142,14 @@ function splitChunksParallel({ artifactFiles, emitParts, entryFile, jobs, jsPath
           rejectPromise(firstError);
           return;
         }
-        if (nextIndex >= artifactFiles.length && active === 0) {
+        if (nextIndex >= artifactChunks.length && active === 0) {
           resolvePromise(results);
           return;
         }
-        while (active < jobs && nextIndex < artifactFiles.length) {
+        while (active < jobs && nextIndex < artifactChunks.length) {
           const index = nextIndex++;
           active++;
-          runWorker({ artifactFile: artifactFiles[index], emitParts, entryFile, jsPaths })
+          runWorker({ artifactChunk: artifactChunks[index], emitParts, entryFile, jsPaths })
             .then((result) => {
               results[index] = {
                 ...result,
@@ -228,6 +244,10 @@ export function normalizeAssetPath(path) {
 
 export function chunkIdForJsPath(jsPath) {
   return jsPath.slice(0, -".js".length);
+}
+
+function sourcePathForLoadedChunk(chunk) {
+  return normalizeAssetPath(chunk.metadata?.sourcePath ?? `${chunk.chunkId}.js`);
 }
 
 function rewriteEntryImportSource(source, importerJsPath, jsFileSet, entryFile) {

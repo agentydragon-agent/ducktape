@@ -3,7 +3,7 @@ import { join } from "node:path";
 import test from "node:test";
 import generateModule from "@babel/generator";
 import { cloneDefaultParserOptions } from "../common/js_module_lib.mjs";
-import { createJsArtifactFile, createPipelineArtifact, requireJsArtifactFile } from "../common/pipeline_artifact_lib.mjs";
+import { createFile, createArtifact, requireChunkFile } from "../common/pipeline_artifact_lib.mjs";
 import {
   createTempFixtureRoot,
   makePipelineArtifact,
@@ -295,18 +295,24 @@ test("renameBindingsInCode matches split entry import sources by chunk, not lite
 });
 
 test("renameBindingsInArtifact works without precomputed manifests and with no emitted parts", () => {
-  const artifact = createPipelineArtifact({
-    files: [
-      createJsArtifactFile({
-        path: "static/app/runtime.js",
-        ast: parseModuleCode(classSource),
-        parserOptions: cloneDefaultParserOptions(),
-        metadata: {
-          chunkId: "static/app",
-          chunkFile: "runtime.js",
-          role: "entry",
-        },
-      }),
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "runtime.js",
+        files: [
+          createFile({
+            path: "runtime.js",
+            ast: parseModuleCode(classSource),
+            parserOptions: cloneDefaultParserOptions(),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "runtime.js",
+              role: "entry",
+            },
+          }),
+        ],
+      },
     ],
   });
 
@@ -315,7 +321,7 @@ test("renameBindingsInArtifact works without precomputed manifests and with no e
     operations: [classOperation()],
   });
 
-  const renamed = generate(requireJsArtifactFile(artifact, "static/app/runtime.js", "renameBindingsNoManifest").ast).code;
+  const renamed = generate(requireChunkFile(artifact, "static/app", "runtime.js", "renameBindingsNoManifest").ast).code;
   assert.match(renamed, /class ReadableClass/);
   assert.doesNotMatch(renamed, /parts\/part-/);
   assertRunnableEquivalent({ prefix: "debundle-rename-no-manifest-", renamed, source: classSource });
@@ -520,7 +526,7 @@ test("renames snapshots while preserving untouched split part files", () => {
     }
   );
   const originalPart = generate(
-    requireJsArtifactFile(artifact, "static/app/parts/part-0001.js", "renameBindingsTest").ast,
+    requireChunkFile(artifact, "static/app", "parts/part-0001.js", "renameBindingsTest").ast,
     { comments: true }
   ).code;
 
@@ -533,13 +539,13 @@ test("renames snapshots while preserving untouched split part files", () => {
   assert.equal(snapshotManifest.renames[0].from, "A");
   assert.equal(snapshotManifest.renames[0].to, "ReadableClass");
   assert.match(
-    generate(requireJsArtifactFile(renamedArtifact, "static/app/runtime.js", "renameBindingsTest").ast, {
+    generate(requireChunkFile(renamedArtifact, "static/app", "runtime.js", "renameBindingsTest").ast, {
       comments: true,
     }).code,
     /class ReadableClass/
   );
   assert.equal(
-    generate(requireJsArtifactFile(renamedArtifact, "static/app/parts/part-0001.js", "renameBindingsTest").ast, {
+    generate(requireChunkFile(renamedArtifact, "static/app", "parts/part-0001.js", "renameBindingsTest").ast, {
       comments: true,
     }).code,
     originalPart

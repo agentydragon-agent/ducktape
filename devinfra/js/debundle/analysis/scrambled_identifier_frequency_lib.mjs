@@ -8,11 +8,11 @@ import {
   getArtifactChunkManifestOrDerived,
   getArtifactManifestChunks,
   getArtifactManifestOrDerived,
-  getChunkEntryArtifactFile,
-  getChunkEntryRelativeFile,
-  listChunkJsArtifactRelativeFiles,
+  requireChunkFile,
+  getChunkEntryFile,
+  getChunkEntryPath,
+  listChunkFilePaths,
   getArtifactVendorAnnotations,
-  requireJsArtifactFile,
   requirePipelineArtifact,
 } from "../common/pipeline_artifact_lib.mjs";
 import {
@@ -187,9 +187,9 @@ function enumerateArtifactJsFiles(artifact, { excludedSymbolFiles = new Set() } 
     }
     const chunkManifest = getArtifactChunkManifestOrDerived(artifact, chunk.chunkId);
     const parserOptions = chunkManifest.parser ?? DEFAULT_PARSER_OPTIONS;
-    const entryFile = getChunkEntryRelativeFile(artifact, chunk.chunkId);
+    const entryFile = getChunkEntryPath(artifact, chunk.chunkId);
 
-    for (const file of listChunkJsArtifactRelativeFiles(artifact, chunk.chunkId)) {
+    for (const file of listChunkFilePaths(artifact, chunk.chunkId)) {
       files.push({
         ast: requireArtifactAst(artifact, chunk.chunkId, file),
         chunkId: chunk.chunkId,
@@ -203,7 +203,7 @@ function enumerateArtifactJsFiles(artifact, { excludedSymbolFiles = new Set() } 
 }
 
 function requireArtifactAst(artifact, chunkId, file) {
-  const fileArtifact = requireJsArtifactFile(artifact, `${chunkId}/${file}`, "extractScrambledIdentifierFrequencies");
+  const fileArtifact = requireChunkFile(artifact, chunkId, file, "extractScrambledIdentifierFrequencies");
   if (!fileArtifact?.ast) {
     throw new Error(`Artifact snapshot is missing AST for ${chunkId}/${file}`);
   }

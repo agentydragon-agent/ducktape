@@ -14,7 +14,7 @@ test("generic mock bundle runs through split+rename pipeline and passes a browse
   assert.deepEqual(
     result.steps.map((step) => step.operation),
     [
-      "load_js_tree",
+      "load_js_chunks",
       "compute_js_asts",
       "split_scope_hoisted_js_tree",
       "rename_bindings",

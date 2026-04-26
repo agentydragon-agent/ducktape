@@ -1,4 +1,4 @@
-import { getArtifactVendorAnnotations, getChunkEntryArtifactFile, requirePipelineArtifact } from "../common/pipeline_artifact_lib.mjs";
+import { getArtifactVendorAnnotations, getChunkEntryFile, requirePipelineArtifact } from "../common/pipeline_artifact_lib.mjs";
 
 const REQUIRED_FIELDS = ["id", "operation", "level", "chunkPath", "identity", "evidence"];
 const VALID_LEVELS = new Set(["suppress", "boundary-rename", "swap"]);
@@ -17,7 +17,7 @@ export function applyVendorAnnotations({ artifact, operations, operationCatalog 
   for (const op of ops) {
     validateOp(op);
     const chunkId = chunkIdFromChunkPath(op.chunkPath, op.id);
-    if (!getChunkEntryArtifactFile(artifact, chunkId)) {
+    if (!getChunkEntryFile(artifact, chunkId)) {
       throw new Error(
         `mark_vendor operation ${op.id} targets missing chunk: chunkPath=${op.chunkPath} (chunkId=${chunkId})`
       );

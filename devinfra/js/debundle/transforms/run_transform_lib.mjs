@@ -7,8 +7,8 @@ import {
   extractScrambledIdentifierFrequencies,
 } from "../analysis/scrambled_identifier_frequency_lib.mjs";
 import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
-import { createEmptyPipelineArtifact } from "../common/pipeline_artifact_lib.mjs";
-import { loadJsTree } from "../common/load_js_tree_lib.mjs";
+import { createEmptyArtifact } from "../common/pipeline_artifact_lib.mjs";
+import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
 import { extractOrderedInitRegions } from "../extract/extract_ordered_init_regions_lib.mjs";
 import { extractGuidedSelectedOwnerModules } from "../extract/guided_selected_owner_modules_stage_lib.mjs";
 import { emitBrowserHarness } from "../harness/emit_browser_harness_lib.mjs";
@@ -21,7 +21,7 @@ import { formatDuration, logProgress, relativeWorkspacePath, resolveWorkspacePat
 import { writeJsTree } from "./write_js_tree_lib.mjs";
 
 const STAGE_HANDLERS = Object.freeze({
-  load_js_tree: loadJsTree,
+  load_js_chunks: loadJsChunks,
   compute_js_asts: computeJsAsts,
   split_scope_hoisted_js_tree: splitJsTree,
   apply_vendor_annotations: applyVendorAnnotations,
@@ -47,7 +47,7 @@ export async function runTransformSpecObject(spec, { packageRoots, packagesRoot,
   const operations = spec.operations ?? [];
 
   const steps = [];
-  let artifact = createEmptyPipelineArtifact();
+  let artifact = createEmptyArtifact();
   for (const stage of spec.pipeline) {
     if (stage.disabled === true) {
       logProgress(`stage skip id=${stage.id} operation=${stage.operation}`);

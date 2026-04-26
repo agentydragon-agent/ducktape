@@ -11,7 +11,7 @@ js_library(
     srcs = [
         "compute_js_asts_lib.mjs",
         "js_module_lib.mjs",
-        "load_js_tree_lib.mjs",
+        "load_js_chunks_lib.mjs",
         "package_tree_lib.mjs",
         "pipeline_artifact_lib.mjs",
         "vendor_runtime_lib.mjs",

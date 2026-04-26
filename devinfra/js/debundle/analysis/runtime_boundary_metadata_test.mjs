@@ -11,7 +11,7 @@ import {
   makePipelineArtifact,
   makePipelineChunk,
 } from "../test_support/fixture_lib.mjs";
-import { createJsArtifactFile, createPipelineArtifact } from "../common/pipeline_artifact_lib.mjs";
+import { createFile, createArtifact } from "../common/pipeline_artifact_lib.mjs";
 import {
   analyzeRuntimeBoundaryCode,
   extractRuntimeBoundaryMetadata,
@@ -274,17 +274,23 @@ export { readSeed };
     snapshotRoot,
   });
 
-  const artifact = createPipelineArtifact({
-    files: [
-      createJsArtifactFile({
-        path: "static/app/runtime.js",
-        ast: parseModuleCode(readUtf8(join(snapshotRoot, "static", "app.js"))),
-        metadata: {
-          chunkId: "static/app",
-          chunkFile: "runtime.js",
-          role: "entry",
-        },
-      }),
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "runtime.js",
+        files: [
+          createFile({
+            path: "runtime.js",
+            ast: parseModuleCode(readUtf8(join(snapshotRoot, "static", "app.js"))),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "runtime.js",
+              role: "entry",
+            },
+          }),
+        ],
+      },
     ],
   });
 

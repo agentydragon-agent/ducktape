@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "@babel/parser";
 import {
-  createJsArtifactFile,
-  createPipelineArtifact,
+  createFile,
+  createArtifact,
   setArtifactChunkManifest,
   setArtifactManifest,
   setArtifactVendorAnnotations,
@@ -177,8 +177,8 @@ export function makePipelineChunk(chunkId, files, { manifest } = {}) {
             ast: parseModuleCode(value, parser),
           }
         : value;
-    return createJsArtifactFile({
-      path: `${chunkId}/${name}`,
+    return createFile({
+      path: name,
       ...(fileValue.ast ? { ast: fileValue.ast } : {}),
       ...(fileValue.content ? { content: fileValue.content } : {}),
       ...(fileValue.headerLines ? { headerLines: fileValue.headerLines } : {}),
@@ -193,6 +193,7 @@ export function makePipelineChunk(chunkId, files, { manifest } = {}) {
 
   return {
     chunkId,
+    entryFile,
     files: artifactFiles,
     manifest: normalizedManifest,
   };
@@ -202,8 +203,13 @@ export function makePipelineArtifact(
   chunks,
   { annotations, manifest = {} } = {}
 ) {
-  const artifact = createPipelineArtifact({
-    files: chunks.flatMap((chunk) => chunk.files),
+  const artifact = createArtifact({
+    chunks: chunks.map((chunk) => ({
+      chunkId: chunk.chunkId,
+      entryFile: chunk.entryFile ?? chunk.manifest?.entryFile,
+      files: chunk.files,
+      ...(chunk.metadata ? { metadata: chunk.metadata } : {}),
+    })),
   });
   const snapshotManifest = {
     schemaVersion: 1,

@@ -3,8 +3,8 @@ import { dirname, join, resolve } from "node:path";
 import { analyzeRuntimeBoundaryAst } from "../analysis/runtime_boundary_metadata_lib.mjs";
 import {
   getArtifactManifest,
-  getChunkEntryArtifactFile,
-  getChunkEntryRelativeFile,
+  getChunkEntryFile,
+  getChunkEntryPath,
   requirePipelineArtifact,
 } from "../common/pipeline_artifact_lib.mjs";
 import { writeJsonFile } from "../common/js_module_lib.mjs";
@@ -114,8 +114,8 @@ export function extractOwnerClosurePlanReport(options) {
 
   const chunkSummaries = [];
   for (const chunk of selectedChunks) {
-    const entryFile = getChunkEntryArtifactFile(artifact, chunk.chunkId);
-    const entryRelativePath = getChunkEntryRelativeFile(artifact, chunk.chunkId);
+    const entryFile = getChunkEntryFile(artifact, chunk.chunkId);
+    const entryRelativePath = getChunkEntryPath(artifact, chunk.chunkId);
     if (!entryFile?.ast || !entryRelativePath) {
       throw new Error(`extractOwnerClosurePlanReport missing entry AST for chunk: ${chunk.chunkId}`);
     }

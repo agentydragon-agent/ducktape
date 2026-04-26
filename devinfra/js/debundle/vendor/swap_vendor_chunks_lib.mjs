@@ -8,11 +8,11 @@ import {
   deleteArtifactChunkManifest,
   getArtifactManifest,
   getArtifactVendorAnnotations,
-  getChunkEntryArtifactFile,
-  getChunkEntryRelativeFile,
-  listArtifactChunkIds,
-  listChunkJsArtifactFiles,
-  removeJsArtifactFiles,
+  getChunkEntryFile,
+  getChunkEntryPath,
+  listChunkIds,
+  listChunkFiles,
+  removeFiles,
   requirePipelineArtifact,
   setArtifactManifest,
   setArtifactVendorAnnotations,
@@ -50,8 +50,8 @@ export function swapVendorChunks({
 
   for (const op of ops) {
     const chunkId = chunkIdFromChunkPath(op.chunkPath, op.id);
-    const entryFile = getChunkEntryArtifactFile(artifact, chunkId);
-    const entryRelativeFile = getChunkEntryRelativeFile(artifact, chunkId);
+    const entryFile = getChunkEntryFile(artifact, chunkId);
+    const entryRelativeFile = getChunkEntryPath(artifact, chunkId);
     if (!entryFile || !entryRelativeFile) {
       throw new Error(
         `swapVendorChunks operation ${op.id} targets missing chunk: chunkPath=${op.chunkPath} (chunkId=${chunkId})`
@@ -162,7 +162,7 @@ export function swapVendorChunks({
     }
 
     // 5. Remove + record.
-    removeJsArtifactFiles(artifact, (file) => file.metadata?.chunkId === chunkId);
+    removeFiles(artifact, (file) => file.metadata?.chunkId === chunkId);
     deleteArtifactChunkManifest(artifact, chunkId);
     const priorAnnotation = vendorAnnotations.get(chunkId) ?? {};
     const swapEntry = {
@@ -208,7 +208,7 @@ export function swapVendorChunks({
       ...snapshotManifest,
       counts: {
         ...snapshotManifest.counts,
-        chunks: listArtifactChunkIds(artifact).length,
+        chunks: listChunkIds(artifact).length,
       },
       chunks: snapshotManifest.chunks.filter((chunk) => !removedChunkIds.has(chunk.chunkId)),
     });
@@ -348,19 +348,15 @@ function setDiff(left, right) {
   return out;
 }
 
-function relativeChunkFile(chunkId, path) {
-  return path.slice(`${chunkId}/`.length);
-}
-
 function buildImportAlignmentIndex(artifact) {
   const index = new Map();
-  for (const callerChunkId of listArtifactChunkIds(artifact)) {
-    for (const fileArtifact of listChunkJsArtifactFiles(artifact, callerChunkId)) {
+  for (const callerChunkId of listChunkIds(artifact)) {
+    for (const fileArtifact of listChunkFiles(artifact, callerChunkId)) {
       const ast = fileArtifact.ast;
       if (!ast) {
         continue;
       }
-      const callerFile = relativeChunkFile(callerChunkId, fileArtifact.path);
+      const callerFile = fileArtifact.path;
       for (const statement of ast.program.body) {
         if (!t.isImportDeclaration(statement)) {
           continue;

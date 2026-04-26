@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { analyzeRuntimeBoundaryCode } from "../analysis/runtime_boundary_metadata_lib.mjs";
-import { getArtifactChunkManifest, getChunkEntryArtifactFile } from "../common/pipeline_artifact_lib.mjs";
+import { getArtifactChunkManifest, getChunkEntryFile } from "../common/pipeline_artifact_lib.mjs";
 import { createTempFixtureRoot, makePipelineArtifact, makePipelineChunk, runNodeScript, writeRunnableFixture } from "../test_support/fixture_lib.mjs";
 import { extractOrderedInitRegions } from "./extract_ordered_init_regions_lib.mjs";
 
@@ -86,7 +86,7 @@ test("extractOrderedInitRegions resolves a missing selector.file from the chunk 
     outDir,
   });
 
-  const entryFile = getChunkEntryArtifactFile(result.artifact, "static/app");
+  const entryFile = getChunkEntryFile(result.artifact, "static/app");
   assert.equal(entryFile?.metadata?.chunkFile, "entry.js");
   assert.match(entryFile?.ast ? readFileSync(join(outDir, "static", "app", "entry.js"), "utf8") : "", /init_entry_region/);
   assert.equal(existsSync(join(outDir, "static", "app", "entry.js")), true);
@@ -131,7 +131,7 @@ test("extractOrderedInitRegions can update the artifact without writing files", 
     write: false,
   });
 
-  const entryFile = getChunkEntryArtifactFile(result.artifact, "static/app");
+  const entryFile = getChunkEntryFile(result.artifact, "static/app");
   assert.equal(entryFile?.metadata?.chunkFile, "entry.js");
   assert.equal(existsSync(join(outDir, "static", "app", "entry.js")), false);
   assert.equal(existsSync(join(outDir, "static", "app", "regions", "entry_region.js")), false);

@@ -9,8 +9,8 @@ import {
   getArtifactManifestOrDerived,
   getArtifactChunkManifest,
   getArtifactChunkManifestOrDerived,
-  getChunkEntryRelativeFile,
-  requireJsArtifactFile,
+  getChunkEntryPath,
+  requireChunkFile,
   requirePipelineArtifact,
   setArtifactChunkManifest,
   setArtifactManifest,
@@ -39,7 +39,7 @@ export function renameBindingsInArtifact(options) {
     const targetStartedAt = process.hrtime.bigint();
     const chunkId = targetOperations[0].selector.chunkId;
     const file = resolveTargetFile(targetOperations[0], artifact);
-    const fileArtifact = requireJsArtifactFile(artifact, targetRelativePath, "renameBindingsInArtifact");
+    const fileArtifact = requireChunkFile(artifact, chunkId, file, "renameBindingsInArtifact");
     if (!fileArtifact.ast) {
       throw new Error(`renameBindingsInArtifact requires AST for file: ${targetRelativePath}`);
     }
@@ -138,7 +138,7 @@ function targetRelativePath(operation, artifact) {
 }
 
 function resolveTargetFile(operation, artifact) {
-  return operation.selector.file ?? getChunkEntryRelativeFile(artifact, operation.selector.chunkId);
+  return operation.selector.file ?? getChunkEntryPath(artifact, operation.selector.chunkId);
 }
 
 function normalizeChunkId(value) {

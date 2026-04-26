@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { writeJsonFile, writeTextFile } from "../common/js_module_lib.mjs";
-import { createJsArtifactFile, createPipelineArtifact } from "../common/pipeline_artifact_lib.mjs";
+import { createFile, createArtifact } from "../common/pipeline_artifact_lib.mjs";
 import {
   createWebFixtureRoots,
   FIXTURE_UI_VERSION,
@@ -116,17 +116,23 @@ test("emitBrowserHarness works without manifests and with no emitted parts", () 
     snapshotRoot,
   });
 
-  const artifact = createPipelineArtifact({
-    files: [
-      createJsArtifactFile({
-        path: "static/app/entry.js",
-        ast: parseModuleCode(readUtf8(join(snapshotRoot, "static", "app.js"))),
-        metadata: {
-          chunkId: "static/app",
-          chunkFile: "entry.js",
-          role: "entry",
-        },
-      }),
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "entry.js",
+        files: [
+          createFile({
+            path: "entry.js",
+            ast: parseModuleCode(readUtf8(join(snapshotRoot, "static", "app.js"))),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "entry.js",
+              role: "entry",
+            },
+          }),
+        ],
+      },
     ],
   });
 

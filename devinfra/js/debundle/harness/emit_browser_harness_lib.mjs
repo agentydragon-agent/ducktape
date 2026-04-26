@@ -10,9 +10,9 @@ import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { modulePackageJson, writeJsonFile, writeTextFile } from "../common/js_module_lib.mjs";
 import {
   getArtifactManifestChunks,
-  getChunkEntryRelativeFile,
-  listChunkJsArtifactRelativeFiles,
-  requireJsArtifactFile,
+  getChunkEntryPath,
+  listChunkFilePaths,
+  requireChunkFile,
   requirePipelineArtifact,
 } from "../common/pipeline_artifact_lib.mjs";
 import {
@@ -318,8 +318,8 @@ function buildBootstrap({ artifact, entryScripts, outDir, runtimeRoot, scriptSou
 function materializeArtifactScripts({ artifact, outDir }) {
   for (const chunk of getArtifactManifestChunks(artifact)) {
     const chunkOutDir = join(outDir, ...chunk.chunkId.split("/"));
-    for (const file of listChunkJsArtifactRelativeFiles(artifact, chunk.chunkId)) {
-      const fileArtifact = requireJsArtifactFile(artifact, `${chunk.chunkId}/${file}`, "emitBrowserHarness");
+    for (const file of listChunkFilePaths(artifact, chunk.chunkId)) {
+      const fileArtifact = requireChunkFile(artifact, chunk.chunkId, file, "emitBrowserHarness");
       const targetPath = join(chunkOutDir, ...file.split("/"));
       writeTextFile(targetPath, serializeGeneratedJsFile(fileArtifact));
     }
@@ -338,7 +338,7 @@ function scriptHref(jsPath, { artifact, outDir, runtimeRoot, scriptSource }) {
 
 function runtimeJsHref(artifact, jsPath, outDir, runtimeRoot) {
   const chunkId = chunkIdForJsPath(jsPath);
-  const entryFile = getChunkEntryRelativeFile(artifact, chunkId);
+  const entryFile = getChunkEntryPath(artifact, chunkId);
   if (!entryFile) {
     throw new Error(`Missing chunk entry file for ${chunkId}`);
   }

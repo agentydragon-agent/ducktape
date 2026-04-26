@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
-import { posix, resolve } from "node:path";
-import { createEmptyPipelineArtifact, createJsArtifactFile, setJsArtifactFile } from "./pipeline_artifact_lib.mjs";
+import { basename, posix, resolve } from "node:path";
+import { createEmptyArtifact, createFile, createChunk, setChunk } from "./pipeline_artifact_lib.mjs";
 import { requireValue, resolveWorkspacePath } from "./workspace_io_lib.mjs";
 
-export function parseLoadJsTreeArgs(argv) {
+export function parseLoadJsChunksArgs(argv) {
   const options = {
     help: false,
     inputRoot: undefined,
@@ -40,23 +40,33 @@ export function parseLoadJsTreeArgs(argv) {
   return options;
 }
 
-export function loadJsTree({ inputRoot, jsListPath }) {
+export function loadJsChunks({ inputRoot, jsListPath }) {
   const resolvedInputRoot = resolveWorkspacePath(inputRoot);
   const resolvedJsListPath = resolveWorkspacePath(jsListPath);
   const jsFiles = parseJsList(readFileSync(resolvedJsListPath, "utf8"));
-  const artifact = createEmptyPipelineArtifact();
+  const artifact = createEmptyArtifact();
 
-  for (const path of jsFiles) {
-    const absolutePath = resolve(resolvedInputRoot, ...path.split("/"));
-    setJsArtifactFile(
+  for (const sourcePath of jsFiles) {
+    const absolutePath = resolve(resolvedInputRoot, ...sourcePath.split("/"));
+    const chunkId = sourcePath.slice(0, -".js".length);
+    const entryFile = basename(sourcePath);
+    setChunk(
       artifact,
-      createJsArtifactFile({
-        path,
-        content: readFileSync(absolutePath, "utf8"),
+      createChunk({
+        chunkId,
+        entryFile,
+        files: [
+          createFile({
+            path: entryFile,
+            content: readFileSync(absolutePath, "utf8"),
+            metadata: {
+              role: "entry",
+              sourcePath,
+            },
+          }),
+        ],
         metadata: {
-          role: "source",
-          sourcePath: path,
-          chunkId: path.endsWith(".js") ? path.slice(0, -".js".length) : null,
+          sourcePath,
         },
       })
     );
@@ -65,10 +75,16 @@ export function loadJsTree({ inputRoot, jsListPath }) {
   return {
     artifact,
     manifest: {
-      kind: "js.loaded_js_tree",
+      kind: "js.loaded_js_chunks",
       counts: {
+        chunks: jsFiles.length,
         files: jsFiles.length,
       },
+      chunks: jsFiles.map((sourcePath) => ({
+        chunkId: sourcePath.slice(0, -".js".length),
+        entryFile: basename(sourcePath),
+        sourcePath,
+      })),
       jsFiles,
     },
   };

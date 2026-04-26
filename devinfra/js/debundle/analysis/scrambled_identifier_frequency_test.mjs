@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { writeTextFile } from "../common/js_module_lib.mjs";
-import { createJsArtifactFile, createPipelineArtifact } from "../common/pipeline_artifact_lib.mjs";
+import { createFile, createArtifact } from "../common/pipeline_artifact_lib.mjs";
 import { makePipelineArtifact, makePipelineChunk, parseModuleCode, readUtf8 } from "../test_support/fixture_lib.mjs";
 import {
   createWebFixtureRoots,
@@ -276,17 +276,23 @@ test("extractScrambledIdentifierFrequencies merges explicit and annotated exclus
 
 test("extractScrambledIdentifierFrequencies works without manifests and with no emitted parts", () => {
   const { analysisRoot: outDir, root } = createWebFixtureRoots("debundle-scrambled-no-manifest-");
-  const artifact = createPipelineArtifact({
-    files: [
-      createJsArtifactFile({
-        path: "static/app/runtime.js",
-        ast: parseModuleCode(`const qGt = 1; console.log(qGt); export { qGt };\n`),
-        metadata: {
-          chunkId: "static/app",
-          chunkFile: "runtime.js",
-          role: "entry",
-        },
-      }),
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "runtime.js",
+        files: [
+          createFile({
+            path: "runtime.js",
+            ast: parseModuleCode(`const qGt = 1; console.log(qGt); export { qGt };\n`),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "runtime.js",
+              role: "entry",
+            },
+          }),
+        ],
+      },
     ],
   });
 

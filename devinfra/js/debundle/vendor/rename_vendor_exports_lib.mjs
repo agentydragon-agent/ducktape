@@ -1,10 +1,10 @@
 import { posix } from "node:path";
 import * as t from "@babel/types";
 import {
-  getChunkEntryArtifactFile,
-  getChunkEntryRelativeFile,
-  listArtifactChunkIds,
-  listChunkJsArtifactFiles,
+  getChunkEntryFile,
+  getChunkEntryPath,
+  listChunkIds,
+  listChunkFiles,
   resolveArtifactImportReference,
   requirePipelineArtifact,
 } from "../common/pipeline_artifact_lib.mjs";
@@ -24,8 +24,8 @@ export function renameVendorExports({ artifact, operations, operationCatalog }) 
 
   for (const op of ops) {
     const chunkId = chunkIdFromChunkPath(op.chunkPath, op.id);
-    const vendorEntryFile = getChunkEntryArtifactFile(artifact, chunkId);
-    const vendorEntryRelativeFile = getChunkEntryRelativeFile(artifact, chunkId);
+    const vendorEntryFile = getChunkEntryFile(artifact, chunkId);
+    const vendorEntryRelativeFile = getChunkEntryPath(artifact, chunkId);
     if (!vendorEntryFile || !vendorEntryRelativeFile) {
       throw new Error(
         `renameVendorExports operation ${op.id} targets missing chunk: chunkPath=${op.chunkPath} (chunkId=${chunkId})`
@@ -45,15 +45,15 @@ export function renameVendorExports({ artifact, operations, operationCatalog }) 
 
     const callerCounts = new Map();
     let chunkRewrites = 0;
-    for (const otherChunkId of listArtifactChunkIds(artifact)) {
+    for (const otherChunkId of listChunkIds(artifact)) {
       if (otherChunkId === chunkId) {
         continue;
       }
-      for (const fileArtifact of listChunkJsArtifactFiles(artifact, otherChunkId)) {
+      for (const fileArtifact of listChunkFiles(artifact, otherChunkId)) {
         if (!fileArtifact.ast) {
           continue;
         }
-        const file = relativeChunkFile(otherChunkId, fileArtifact.path);
+        const file = fileArtifact.path;
         const callerFile = posix.join(otherChunkId, file);
         const rewrites = rewriteImportsInFile({
           artifact,
@@ -194,8 +194,4 @@ function chunkIdFromChunkPath(chunkPath, opId) {
     throw new Error(`renameVendorExports operation ${opId} chunkPath must end in .js: ${chunkPath}`);
   }
   return chunkPath.slice(0, -".js".length);
-}
-
-function relativeChunkFile(chunkId, path) {
-  return path.slice(`${chunkId}/`.length);
 }

@@ -3,8 +3,8 @@ import test from "node:test";
 import {
   ensureArtifactExtras,
   getArtifactVendorAnnotations,
-  listArtifactChunkIds,
-  requireJsArtifactFile,
+  listChunkIds,
+  requireChunkFile,
 } from "../common/pipeline_artifact_lib.mjs";
 import { makePipelineArtifact, makePipelineChunk } from "../test_support/fixture_lib.mjs";
 import { applyVendorAnnotations } from "./apply_vendor_annotations_lib.mjs";
@@ -48,8 +48,8 @@ function vendorOp(overrides = {}) {
 
 test("happy path: single op annotates the right chunk only", () => {
   const artifact = fakeArtifact();
-  const filesRef = artifact.tree.files;
-  const chunkKeysBefore = listArtifactChunkIds(artifact);
+  const chunksRef = artifact.chunks;
+  const chunkKeysBefore = listChunkIds(artifact);
 
   const { artifact: out, manifest } = applyVendorAnnotations({
     artifact,
@@ -57,8 +57,8 @@ test("happy path: single op annotates the right chunk only", () => {
   });
 
   assert.equal(out, artifact);
-  assert.equal(out.tree.files, filesRef);
-  assert.deepEqual(listArtifactChunkIds(out), chunkKeysBefore);
+  assert.equal(out.chunks, chunksRef);
+  assert.deepEqual(listChunkIds(out), chunkKeysBefore);
 
   const vendor = getArtifactVendorAnnotations(out);
   assert.ok(vendor instanceof Map);
@@ -257,9 +257,9 @@ test("non-mark_vendor entries in operations are ignored silently", () => {
 
 test("AST sentinels are never mutated", () => {
   const artifact = fakeArtifact();
-  const sentinelBefore = requireJsArtifactFile(artifact, "static/pdf.worker-U2G3g_2t/runtime.js").ast;
+  const sentinelBefore = requireChunkFile(artifact, "static/pdf.worker-U2G3g_2t", "runtime.js").ast;
   applyVendorAnnotations({ artifact, operations: [vendorOp()] });
-  const sentinelAfter = requireJsArtifactFile(artifact, "static/pdf.worker-U2G3g_2t/runtime.js").ast;
+  const sentinelAfter = requireChunkFile(artifact, "static/pdf.worker-U2G3g_2t", "runtime.js").ast;
   assert.equal(sentinelBefore, sentinelAfter);
 });
 

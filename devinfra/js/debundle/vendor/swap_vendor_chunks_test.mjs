@@ -6,7 +6,7 @@ import { parse } from "@babel/parser";
 import { writeJsonFile, writeTextFile } from "../common/js_module_lib.mjs";
 import {
   getArtifactVendorAnnotations,
-  listArtifactChunkIds,
+  listChunkIds,
 } from "../common/pipeline_artifact_lib.mjs";
 import { createTempFixtureRoot, makePipelineArtifact, makePipelineChunk } from "../test_support/fixture_lib.mjs";
 import { swapVendorChunks } from "./swap_vendor_chunks_lib.mjs";
@@ -20,7 +20,7 @@ function makeArtifact(entries) {
 }
 
 function hasChunk(artifact, chunkId) {
-  return listArtifactChunkIds(artifact).includes(chunkId);
+  return listChunkIds(artifact).includes(chunkId);
 }
 
 function swapOp(overrides = {}) {

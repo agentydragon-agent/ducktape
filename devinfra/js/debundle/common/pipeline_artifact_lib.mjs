@@ -2,26 +2,23 @@ import { posix } from "node:path";
 import { cloneDefaultParserOptions } from "./js_module_lib.mjs";
 
 const FILE_INDEX_CACHE = new WeakMap();
-const CHUNK_INDEX_CACHE = new WeakMap();
 
-export function createPipelineArtifact({ files = [], extras = {} } = {}) {
+export function createArtifact({ chunks = [], extras = {} } = {}) {
   const artifact = {
     kind: "js.pipeline_artifact",
-    tree: {
-      files: files.map(normalizeJsArtifactFile),
-    },
+    chunks: normalizeChunkMap(chunks),
     extras: normalizeArtifactExtras(extras),
   };
   primeArtifactIndexes(artifact);
   return artifact;
 }
 
-export function createEmptyPipelineArtifact() {
-  return createPipelineArtifact();
+export function createEmptyArtifact() {
+  return createArtifact();
 }
 
 export function isPipelineArtifact(value) {
-  return value?.kind === "js.pipeline_artifact" && Array.isArray(value?.tree?.files);
+  return value?.kind === "js.pipeline_artifact" && value?.chunks instanceof Map;
 }
 
 export function requirePipelineArtifact(artifact, stageName) {
@@ -31,7 +28,52 @@ export function requirePipelineArtifact(artifact, stageName) {
   return artifact;
 }
 
-export function createJsArtifactFile({
+export function createChunk({ chunkId, entryFile = undefined, files = [], metadata = undefined } = {}) {
+  return normalizePipelineChunk({
+    chunkId,
+    entryFile,
+    files,
+    metadata,
+  });
+}
+
+export function getChunk(artifact, chunkId) {
+  return requirePipelineArtifact(artifact, "getChunk").chunks.get(normalizeChunkId(chunkId)) ?? null;
+}
+
+export function requireChunk(artifact, chunkId, stageName = "stage") {
+  const chunk = getChunk(artifact, chunkId);
+  if (!chunk) {
+    throw new Error(`${stageName} missing artifact chunk: ${chunkId}`);
+  }
+  return chunk;
+}
+
+export function setChunk(artifact, chunk) {
+  requirePipelineArtifact(artifact, "setChunk");
+  const normalized = normalizePipelineChunk(chunk);
+  artifact.chunks.set(normalized.chunkId, normalized);
+  clearArtifactIndexes(artifact);
+  return artifact;
+}
+
+export function deleteChunk(artifact, chunkId) {
+  requirePipelineArtifact(artifact, "deleteChunk");
+  const deleted = artifact.chunks.delete(normalizeChunkId(chunkId));
+  if (deleted) {
+    clearArtifactIndexes(artifact);
+  }
+  return deleted;
+}
+
+export function replaceChunks(artifact, chunks) {
+  requirePipelineArtifact(artifact, "replaceChunks");
+  artifact.chunks = normalizeChunkMap(chunks);
+  clearArtifactIndexes(artifact);
+  return artifact;
+}
+
+export function createFile({
   path,
   content = undefined,
   ast = undefined,
@@ -54,12 +96,14 @@ export function createJsArtifactFile({
 }
 
 export function listJsArtifactFiles(artifact) {
-  return requirePipelineArtifact(artifact, "listJsArtifactFiles").tree.files;
+  requirePipelineArtifact(artifact, "listJsArtifactFiles");
+  return listChunkIds(artifact).flatMap((chunkId) => listChunkFiles(artifact, chunkId));
 }
 
 export function getJsArtifactFile(artifact, path) {
+  const normalizedPath = normalizeArtifactFilePath(path);
   const index = fileIndex(artifact);
-  return index.get(path) ?? null;
+  return index.get(normalizedPath) ?? null;
 }
 
 export function requireJsArtifactFile(artifact, path, stageName = "stage") {
@@ -70,110 +114,170 @@ export function requireJsArtifactFile(artifact, path, stageName = "stage") {
   return file;
 }
 
-export function setJsArtifactFile(artifact, file) {
-  requirePipelineArtifact(artifact, "setJsArtifactFile");
-  const normalized = normalizeJsArtifactFile(file);
-  const index = fileIndex(artifact);
-  const existing = index.get(normalized.path);
-  if (existing) {
-    const files = artifact.tree.files;
-    const position = files.indexOf(existing);
-    files[position] = normalized;
-  } else {
-    artifact.tree.files.push(normalized);
+export function getChunkFile(artifact, chunkId, file) {
+  const chunk = getChunk(artifact, chunkId);
+  if (!chunk) {
+    return null;
   }
-  index.set(normalized.path, normalized);
-  updateChunkIndexForSet(artifact, existing, normalized);
+  return chunk.files.get(normalizeRelativePath(file)) ?? null;
+}
+
+export function requireChunkFile(artifact, chunkId, file, stageName = "stage") {
+  const artifactFile = getChunkFile(artifact, chunkId, file);
+  if (!artifactFile) {
+    throw new Error(`${stageName} missing JS artifact file: ${serializeArtifactFilePath(chunkId, file)}`);
+  }
+  return artifactFile;
+}
+
+export function setFile(artifact, file) {
+  requirePipelineArtifact(artifact, "setFile");
+  const chunkId = normalizeChunkId(file?.metadata?.chunkId);
+  const normalized = normalizeJsArtifactFile(file, { chunkId });
+  const chunk = getChunk(artifact, chunkId) ?? createChunk({ chunkId });
+  if (normalized.metadata?.role === "entry" || normalized.metadata?.role === "runtime") {
+    chunk.entryFile = normalized.path;
+  } else if (!chunk.entryFile) {
+    chunk.entryFile = normalized.path;
+  }
+  chunk.files.set(normalized.path, normalized);
+  artifact.chunks.set(chunkId, chunk);
+  clearArtifactIndexes(artifact);
   return artifact;
 }
 
 export function deleteJsArtifactFile(artifact, path) {
   requirePipelineArtifact(artifact, "deleteJsArtifactFile");
-  const index = fileIndex(artifact);
-  const existing = index.get(path);
-  if (!existing) {
+  const artifactFile = getJsArtifactFile(artifact, path);
+  if (!artifactFile) {
     return false;
   }
-  const position = artifact.tree.files.indexOf(existing);
-  if (position >= 0) {
-    artifact.tree.files.splice(position, 1);
+  const chunkId = artifactChunkIdForFile(artifactFile);
+  if (!chunkId) {
+    return false;
   }
-  index.delete(path);
-  removeChunkFileFromIndex(artifact, existing);
+  const chunk = getChunk(artifact, chunkId);
+  if (!chunk) {
+    return false;
+  }
+  chunk.files.delete(artifactFile.path);
+  if (chunk.files.size === 0) {
+    artifact.chunks.delete(chunkId);
+  } else if (chunk.entryFile === artifactFile.path) {
+    chunk.entryFile = deriveChunkEntryFile(chunk);
+  }
+  clearArtifactIndexes(artifact);
   return true;
 }
 
-export function replaceJsArtifactFiles(artifact, files) {
-  requirePipelineArtifact(artifact, "replaceJsArtifactFiles");
-  artifact.tree.files = files.map(normalizeJsArtifactFile);
-  clearArtifactIndexes(artifact);
-  primeArtifactIndexes(artifact);
-  return artifact;
-}
-
-export function removeJsArtifactFiles(artifact, predicate) {
-  requirePipelineArtifact(artifact, "removeJsArtifactFiles");
-  artifact.tree.files = artifact.tree.files.filter((file) => !predicate(file));
-  clearArtifactIndexes(artifact);
-  primeArtifactIndexes(artifact);
-  return artifact;
-}
-
-export function listArtifactChunkIds(artifact) {
-  return [...chunkIndex(artifact).keys()].sort();
-}
-
-export function listArtifactChunks(artifact) {
-  const index = chunkIndex(artifact);
-  return [...index.keys()].sort().map((chunkId) => ({
-    chunkId,
-    files: [...index.get(chunkId)],
-  }));
-}
-
-export function listChunkJsArtifactFiles(artifact, chunkId) {
-  return [...(chunkIndex(artifact).get(chunkId) ?? [])];
-}
-
-export function listChunkJsArtifactRelativeFiles(artifact, chunkId) {
-  const files = listChunkJsArtifactFiles(artifact, chunkId).map((file) => relativeChunkFile(chunkId, file.path));
-  files.sort();
-  const entryFile = getChunkEntryRelativeFile(artifact, chunkId);
-  if (entryFile) {
-    return sortFilesWithEntryFirst(files, entryFile);
+export function replaceFiles(artifact, files) {
+  requirePipelineArtifact(artifact, "replaceFiles");
+  const grouped = new Map();
+  for (const file of files) {
+    const chunkId = normalizeChunkId(file?.metadata?.chunkId);
+    if (!grouped.has(chunkId)) {
+      grouped.set(chunkId, []);
+    }
+    grouped.get(chunkId).push(file);
   }
-  return files;
+  artifact.chunks = normalizeChunkMap(
+    [...grouped.entries()].map(([chunkId, chunkFiles]) => ({
+      chunkId,
+      files: chunkFiles,
+    }))
+  );
+  clearArtifactIndexes(artifact);
+  return artifact;
 }
 
-export function getChunkEntryRelativeFile(artifact, chunkId) {
-  const manifest = getArtifactChunkManifest(artifact, chunkId);
-  const chunkFiles = listChunkJsArtifactFiles(artifact, chunkId);
-  const relativeFiles = chunkFiles.map((file) => relativeChunkFile(chunkId, file.path));
+export function removeFiles(artifact, predicate) {
+  requirePipelineArtifact(artifact, "removeFiles");
+  const nextChunks = [];
+  for (const chunkId of listChunkIds(artifact)) {
+    const chunk = requireChunk(artifact, chunkId, "removeFiles");
+    const keptFiles = listChunkFiles(artifact, chunkId).filter((file) => !predicate(file));
+    if (keptFiles.length === 0) {
+      continue;
+    }
+    nextChunks.push({
+      chunkId,
+      entryFile: keptFiles.some((file) => file.path === chunk.entryFile) ? chunk.entryFile : undefined,
+      files: keptFiles,
+      metadata: chunk.metadata,
+    });
+  }
+  artifact.chunks = normalizeChunkMap(nextChunks);
+  clearArtifactIndexes(artifact);
+  return artifact;
+}
 
-  if (relativeFiles.length === 0) {
+export function listChunkIds(artifact) {
+  return [...requirePipelineArtifact(artifact, "listChunkIds").chunks.keys()].sort();
+}
+
+export function listChunks(artifact) {
+  return listChunkIds(artifact).map((chunkId) => {
+    const chunk = requireChunk(artifact, chunkId, "listChunks");
+    return {
+      chunkId,
+      entryFile: getChunkEntryPath(artifact, chunkId),
+      files: listChunkFiles(artifact, chunkId),
+      metadata: { ...(chunk.metadata ?? {}) },
+    };
+  });
+}
+
+export function listChunkFiles(artifact, chunkId) {
+  const chunk = getChunk(artifact, chunkId);
+  if (!chunk) {
+    return [];
+  }
+  const entryFile = getChunkEntryPath(artifact, chunkId);
+  return sortFilesWithEntryFirst([...chunk.files.keys()], entryFile).map((file) => chunk.files.get(file));
+}
+
+export function listChunkFilePaths(artifact, chunkId) {
+  const chunk = getChunk(artifact, chunkId);
+  if (!chunk) {
+    return [];
+  }
+  return sortFilesWithEntryFirst([...chunk.files.keys()], getChunkEntryPath(artifact, chunkId));
+}
+
+export function getChunkEntryPath(artifact, chunkId) {
+  const chunk = getChunk(artifact, chunkId);
+  if (!chunk || chunk.files.size === 0) {
     return null;
   }
 
-  if (manifest?.entryFile && relativeFiles.includes(manifest.entryFile)) {
-    return manifest.entryFile;
+  if (chunk.entryFile && chunk.files.has(chunk.entryFile)) {
+    return chunk.entryFile;
   }
 
-  const roleEntry = chunkFiles.find(
+  const manifest = getArtifactChunkManifest(artifact, chunkId);
+  if (manifest?.entryFile) {
+    const manifestEntryFile = normalizeRelativePath(manifest.entryFile);
+    if (chunk.files.has(manifestEntryFile)) {
+      return manifestEntryFile;
+    }
+  }
+
+  const roleEntry = [...chunk.files.values()].find(
     (file) => file.metadata?.role === "entry" || file.metadata?.role === "runtime"
   );
   if (roleEntry) {
-    return relativeChunkFile(chunkId, roleEntry.path);
+    return roleEntry.path;
   }
 
-  return [...relativeFiles].sort()[0];
+  return deriveChunkEntryFile(chunk);
 }
 
-export function getChunkEntryArtifactFile(artifact, chunkId) {
-  const entryFile = getChunkEntryRelativeFile(artifact, chunkId);
+export function getChunkEntryFile(artifact, chunkId) {
+  const entryFile = getChunkEntryPath(artifact, chunkId);
   if (!entryFile) {
     return null;
   }
-  return getJsArtifactFile(artifact, `${chunkId}/${entryFile}`);
+  return getChunkFile(artifact, chunkId, entryFile);
 }
 
 export function resolveArtifactImportReference(artifact, source, { callerChunkId, callerFile } = {}) {
@@ -184,7 +288,7 @@ export function resolveArtifactImportReference(artifact, source, { callerChunkId
   if (!source.startsWith(".")) {
     return null;
   }
-  const callerDir = posix.join(callerChunkId, posix.dirname(callerFile));
+  const callerDir = posix.join(normalizeChunkId(callerChunkId), posix.dirname(normalizeRelativePath(callerFile)));
   const resolvedPath = posix.normalize(posix.join(callerDir, source));
   const targetFile = getJsArtifactFile(artifact, resolvedPath);
   if (!targetFile) {
@@ -196,7 +300,7 @@ export function resolveArtifactImportReference(artifact, source, { callerChunkId
   }
   return {
     chunkId: targetChunkId,
-    file: relativeChunkFile(targetChunkId, targetFile.path),
+    file: targetFile.path,
     path: resolvedPath,
   };
 }
@@ -230,7 +334,7 @@ export function getArtifactManifestChunks(artifact) {
   if (Array.isArray(manifest?.chunks)) {
     return manifest.chunks;
   }
-  return listArtifactChunkIds(artifact).map((chunkId) => ({ chunkId }));
+  return listChunkIds(artifact).map((chunkId) => ({ chunkId }));
 }
 
 export function getArtifactManifestOrDerived(artifact) {
@@ -241,7 +345,7 @@ export function getArtifactManifestOrDerived(artifact) {
   return {
     schemaVersion: 1,
     counts: {
-      chunks: listArtifactChunkIds(artifact).length,
+      chunks: listChunkIds(artifact).length,
     },
     chunks: getArtifactManifestChunks(artifact),
   };
@@ -253,31 +357,33 @@ export function setArtifactManifest(artifact, manifest) {
 }
 
 export function getArtifactChunkManifest(artifact, chunkId) {
-  return ensureArtifactExtras(artifact).manifests.chunks.get(chunkId) ?? null;
+  return ensureArtifactExtras(artifact).manifests.chunks.get(normalizeChunkId(chunkId)) ?? null;
 }
 
 export function getArtifactChunkManifestOrDerived(artifact, chunkId) {
   const manifest = getArtifactChunkManifest(artifact, chunkId);
-  const files = listChunkJsArtifactFiles(artifact, chunkId);
+  const files = listChunkFiles(artifact, chunkId);
   if (files.length === 0) {
     return manifest ?? null;
   }
 
-  const relativeFiles = files.map((file) => relativeChunkFile(chunkId, file.path)).sort();
-  const entryFile = getChunkEntryRelativeFile(artifact, chunkId);
+  const entryFile = getChunkEntryPath(artifact, chunkId);
   const parser =
     manifest?.parser ??
-    files.find((file) => file.path === `${chunkId}/${entryFile}`)?.parserOptions ??
+    files.find((file) => file.path === entryFile)?.parserOptions ??
     files[0]?.parserOptions ??
     cloneDefaultParserOptions();
-  const fileRecords = sortFilesWithEntryFirst(relativeFiles, entryFile).map((file) => ({
+  const fileRecords = sortFilesWithEntryFirst(
+    files.map((file) => file.path),
+    entryFile
+  ).map((file) => ({
     file,
     role: file === entryFile ? "entry" : "module",
   }));
 
   return {
     schemaVersion: 1,
-    chunkId,
+    chunkId: normalizeChunkId(chunkId),
     parser,
     ...(manifest ?? {}),
     entryFile,
@@ -287,12 +393,20 @@ export function getArtifactChunkManifestOrDerived(artifact, chunkId) {
 }
 
 export function setArtifactChunkManifest(artifact, chunkId, manifest) {
-  ensureArtifactExtras(artifact).manifests.chunks.set(chunkId, manifest);
+  const normalizedChunkId = normalizeChunkId(chunkId);
+  ensureArtifactExtras(artifact).manifests.chunks.set(normalizedChunkId, manifest);
+  const chunk = getChunk(artifact, normalizedChunkId);
+  if (chunk && typeof manifest?.entryFile === "string") {
+    const entryFile = normalizeRelativePath(manifest.entryFile);
+    if (chunk.files.has(entryFile)) {
+      chunk.entryFile = entryFile;
+    }
+  }
   return artifact;
 }
 
 export function deleteArtifactChunkManifest(artifact, chunkId) {
-  return ensureArtifactExtras(artifact).manifests.chunks.delete(chunkId);
+  return ensureArtifactExtras(artifact).manifests.chunks.delete(normalizeChunkId(chunkId));
 }
 
 export function listArtifactChunkManifests(artifact) {
@@ -312,21 +426,102 @@ export function setArtifactVendorAnnotations(artifact, annotations) {
   return artifact;
 }
 
-function normalizeJsArtifactFile(file) {
+function normalizeChunkMap(chunks) {
+  const map = new Map();
+  const entries =
+    chunks instanceof Map
+      ? [...chunks.values()]
+      : Array.isArray(chunks)
+        ? chunks
+        : (() => {
+            throw new Error("Expected artifact chunks to be an array or Map");
+          })();
+  for (const chunk of entries) {
+    const normalized = normalizePipelineChunk(chunk);
+    if (map.has(normalized.chunkId)) {
+      throw new Error(`Duplicate artifact chunk: ${normalized.chunkId}`);
+    }
+    map.set(normalized.chunkId, normalized);
+  }
+  return map;
+}
+
+function normalizePipelineChunk(chunk) {
+  if (!chunk || typeof chunk !== "object") {
+    throw new Error(`Expected a chunk object, got: ${chunk}`);
+  }
+  const chunkId = normalizeChunkId(chunk.chunkId);
+  const files = new Map();
+  const fileEntries =
+    chunk.files instanceof Map
+      ? [...chunk.files.values()]
+      : Array.isArray(chunk.files)
+        ? chunk.files
+        : [];
+  for (const file of fileEntries) {
+    const normalizedFile = normalizeJsArtifactFile(file, { chunkId });
+    if (files.has(normalizedFile.path)) {
+      throw new Error(`Duplicate artifact file in ${chunkId}: ${normalizedFile.path}`);
+    }
+    files.set(normalizedFile.path, normalizedFile);
+  }
+  const normalizedEntryFile = resolveChunkEntryFile({
+    chunk,
+    files,
+  });
+  return {
+    chunkId,
+    entryFile: normalizedEntryFile,
+    files,
+    metadata: { ...(chunk.metadata ?? {}) },
+  };
+}
+
+function resolveChunkEntryFile({ chunk, files }) {
+  if (typeof chunk.entryFile === "string" && chunk.entryFile !== "") {
+    const explicit = normalizeRelativePath(chunk.entryFile);
+    if (files.size > 0 && !files.has(explicit)) {
+      throw new Error(`Chunk ${chunk.chunkId} entryFile does not exist: ${chunk.entryFile}`);
+    }
+    return explicit;
+  }
+  for (const file of files.values()) {
+    if (file.metadata?.role === "entry" || file.metadata?.role === "runtime") {
+      return file.path;
+    }
+  }
+  return deriveChunkEntryFile({ files });
+}
+
+function deriveChunkEntryFile(chunk) {
+  return [...chunk.files.keys()].sort()[0] ?? null;
+}
+
+function normalizeJsArtifactFile(file, { chunkId = undefined } = {}) {
   if (file?.language && file.language !== "js") {
     throw new Error(`Pipeline artifact only supports js files, got: ${file.language}`);
   }
+  const path = normalizeRelativePath(file.path);
+  const metadata = { ...(file.metadata ?? {}) };
+  if (chunkId !== undefined) {
+    if (metadata.chunkId !== undefined && normalizeChunkId(metadata.chunkId) !== chunkId) {
+      throw new Error(`Artifact file ${path} has mismatched chunkId: ${metadata.chunkId} != ${chunkId}`);
+    }
+    metadata.chunkId = chunkId;
+    metadata.chunkFile = path;
+  } else if (metadata.chunkFile === undefined) {
+    metadata.chunkFile = path;
+  }
   return {
-    path: file.path,
+    path,
     language: "js",
     ...(file.content !== undefined ? { content: file.content } : {}),
     ...(file.ast !== undefined ? { ast: file.ast } : {}),
     ...(file.parserOptions !== undefined ? { parserOptions: file.parserOptions } : {}),
     ...(file.headerLines !== undefined ? { headerLines: [...file.headerLines] } : {}),
-    metadata: { ...(file.metadata ?? {}) },
+    metadata,
   };
 }
-
 
 function normalizeArtifactExtras(extras) {
   const manifests = extras.manifests
@@ -354,81 +549,49 @@ function fileIndex(artifact) {
   return FILE_INDEX_CACHE.get(artifact) ?? primeArtifactIndexes(artifact).fileIndex;
 }
 
-function chunkIndex(artifact) {
-  requirePipelineArtifact(artifact, "chunkIndex");
-  return CHUNK_INDEX_CACHE.get(artifact) ?? primeArtifactIndexes(artifact).chunkIndex;
-}
-
 function primeArtifactIndexes(artifact) {
-  const fileIndex = new Map();
-  const chunkIndex = new Map();
-  for (const file of artifact.tree.files) {
-    fileIndex.set(file.path, file);
-    const chunkId = artifactChunkIdForFile(file);
-    if (!chunkId) {
-      continue;
+  const index = new Map();
+  for (const [chunkId, chunk] of artifact.chunks.entries()) {
+    for (const file of chunk.files.values()) {
+      index.set(serializeArtifactFilePath(chunkId, file.path), file);
     }
-    if (!chunkIndex.has(chunkId)) {
-      chunkIndex.set(chunkId, []);
-    }
-    chunkIndex.get(chunkId).push(file);
   }
-  FILE_INDEX_CACHE.set(artifact, fileIndex);
-  CHUNK_INDEX_CACHE.set(artifact, chunkIndex);
-  return { fileIndex, chunkIndex };
+  FILE_INDEX_CACHE.set(artifact, index);
+  return { fileIndex: index };
 }
 
 function clearArtifactIndexes(artifact) {
   FILE_INDEX_CACHE.delete(artifact);
-  CHUNK_INDEX_CACHE.delete(artifact);
 }
 
-function updateChunkIndexForSet(artifact, existing, normalized) {
-  const index = chunkIndex(artifact);
-  const existingChunkId = existing ? artifactChunkIdForFile(existing) : null;
-  const normalizedChunkId = artifactChunkIdForFile(normalized);
-
-  if (existingChunkId === normalizedChunkId && existingChunkId) {
-    const files = index.get(existingChunkId) ?? [];
-    const position = files.indexOf(existing);
-    if (position >= 0) {
-      files[position] = normalized;
-      return;
-    }
-  } else if (existing) {
-    removeChunkFileFromIndex(artifact, existing);
-  }
-
-  if (!normalizedChunkId) {
-    return;
-  }
-  if (!index.has(normalizedChunkId)) {
-    index.set(normalizedChunkId, []);
-  }
-  index.get(normalizedChunkId).push(normalized);
+function normalizeChunkId(value) {
+  return normalizeRelativePath(value);
 }
 
-function removeChunkFileFromIndex(artifact, file) {
-  const chunkId = artifactChunkIdForFile(file);
-  if (!chunkId) {
-    return;
+function normalizeArtifactFilePath(value) {
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`Expected a non-empty artifact file path, got: ${value}`);
   }
-  const index = chunkIndex(artifact);
-  const files = index.get(chunkId);
-  if (!files) {
-    return;
+  const normalized = posix.normalize(value.split("\\").join("/"));
+  if (normalized === "." || normalized.startsWith("/") || normalized.split("/").includes("..")) {
+    throw new Error(`Invalid artifact file path: ${value}`);
   }
-  const position = files.indexOf(file);
-  if (position >= 0) {
-    files.splice(position, 1);
-  }
-  if (files.length === 0) {
-    index.delete(chunkId);
-  }
+  return normalized;
 }
 
-function relativeChunkFile(chunkId, filePath) {
-  return filePath.slice(`${chunkId}/`.length);
+function normalizeRelativePath(value) {
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`Expected a non-empty relative path, got: ${value}`);
+  }
+  const normalized = posix.normalize(value.split("\\").join("/"));
+  if (normalized === "." || normalized.startsWith("/") || normalized.split("/").includes("..")) {
+    throw new Error(`Invalid relative path: ${value}`);
+  }
+  return normalized;
+}
+
+function serializeArtifactFilePath(chunkId, file) {
+  return posix.join(normalizeChunkId(chunkId), normalizeRelativePath(file));
 }
 
 function sortFilesWithEntryFirst(files, entryFile) {
