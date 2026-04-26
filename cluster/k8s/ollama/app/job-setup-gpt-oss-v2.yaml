@@ -17,7 +17,8 @@ spec:
             defaultMode: 0755
       containers:
         - name: setup
-          image: ollama/ollama:0.18.0
+          # curl + busybox awk; we hit /api/pull directly (no ollama CLI needed).
+          image: curlimages/curl:8.10.1
           command:
             - /scripts/setup-gpt-oss-v2.sh
           env:
