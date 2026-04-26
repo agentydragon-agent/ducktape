@@ -21,9 +21,8 @@ spec:
         name: alloy-config
         key: config.alloy
         create: false
-
-    # Expose OTLP HTTP port so OpenClaw can reach it.
-    service:
+      # The Grafana Alloy chart reads extraPorts from .Values.alloy and reuses
+      # them for both the Service and the container port list.
       extraPorts:
         - name: otlp-http
           port: 4318
@@ -33,10 +32,6 @@ spec:
     controller:
       type: deployment
       replicas: 1
-      extraContainerPorts:
-        - name: otlp-http
-          containerPort: 4318
-          protocol: TCP
 
     serviceMonitor:
       enabled: true
