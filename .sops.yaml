@@ -200,6 +200,16 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # Alloy OTLP bearer JWT (auto-rotated by the alloy-otlp-jwt-rotation CronJob)
+  - path_regex: secrets/alloy-otlp-bearer-token\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Shared dev secrets (all users + claude-web agent + CI)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:

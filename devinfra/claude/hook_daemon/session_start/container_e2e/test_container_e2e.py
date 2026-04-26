@@ -35,6 +35,7 @@ _SECRETS_DIR_MARKER = "_main/devinfra/claude/hook_daemon/testdata/e2e_secrets/te
 _STAGED_FILES = ["devinfra/secrets/web_env.sh", "devinfra/secrets/_common.sh", "devinfra/k8s/kubeconfig.py"]
 
 _TEST_SECRET_FILES = [
+    "alloy-otlp-bearer-token.yaml",
     "buildbuddy.yaml",
     "github-pat-agentydragon-agent.yaml",
     "github-ci-read-pat.yaml",
@@ -176,6 +177,7 @@ def test_container_e2e(impl: str, container: container_e2e.E2EContainer) -> None
     assert agent_env["BUILDBUDDY_API_KEY"] == "test-fake-bb-key"
     assert agent_env["GITHUB_TOKEN"] == "test-fake-gh-agent-token"
     assert agent_env["DUCKTAPE_CI_READ_GITHUB_TOKEN"] == "test-fake-ci-read-token"
+    assert agent_env["DUCKTAPE_OTEL_BEARER_TOKEN"] == "test-fake-otel-jwt"
 
     # Daemon alive on UDS.
     _, stdout, _ = container.exec(["curl", "-sf", "--unix-socket", _DAEMON_SOCK, "http://localhost/health"])

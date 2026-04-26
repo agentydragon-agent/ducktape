@@ -4,8 +4,9 @@ resources:
   - namespace.yaml
   - serviceaccount.yaml
   - cronjob.yaml
+  - alloy-otlp-cronjob.yaml
 configMapGenerator:
-  - name: claude-jwt-rotation-script
+  - name: authentik-jwt-rotation-script
     namespace: agents-infra
     files:
       - rotate.sh

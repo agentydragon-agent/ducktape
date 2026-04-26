@@ -188,18 +188,21 @@ Configuration via environment variable:
 
 Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
 `alloy-otlp.allegedly.works`. Authentik is the canonical source for the bearer
-token: the TF module creates an Authentik service account + token and writes
-the generated value into the `alloy-otlp-bearer-token` Secret in
-`claude-sandbox`. `cli_env.sh` and `web_env.sh` read that Secret via `kubectl`
-and export it as `DUCKTAPE_OTEL_BEARER_TOKEN`.
+JWT: the TF module creates a dedicated `alloy-otlp-client-credentials` OAuth2
+provider, and the `alloy-otlp-jwt-rotation` CronJob mints a JWT hourly when the
+existing token has <24h of validity remaining. The job commits the token
+SOPS-encrypted to `secrets/alloy-otlp-bearer-token.yaml`; `cli_env.sh` and
+`web_env.sh` decrypt that file and export it as `DUCKTAPE_OTEL_BEARER_TOKEN`.
+On first deploy there is an expected bootstrap window: until the CronJob runs
+once successfully, the file does not exist yet and env setup logs a warning
+instead of exporting the OTEL token.
 
 Configured in the profile path (`otel.endpoint`, `secrets.otel_bearer_token`).
 
-Key files: TF module in <tf/gitops/alloy-otlp-bearer-token/>
-(provisions proxy provider, application, service account, token, policy
-binding, and the K8s Secret). Rotation: `tofu taint
-authentik_token.alloy_otlp` and let tofu-controller reconcile, or delete the
-Authentik token via the UI and wait for the next TF apply.
+Key files: TF module in <tf/gitops/alloy-otlp-bearer-token/> and the shared
+rotator in <cluster/k8s/agents/claude-jwt-rotation/>. Rotation is normally
+automatic; to force a refresh, delete `secrets/alloy-otlp-bearer-token.yaml`
+from `devel` or manually run the `alloy-otlp-jwt-rotation` CronJob.
 
 ## Web Setup
 

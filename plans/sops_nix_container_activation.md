@@ -262,7 +262,7 @@ separate (HM sets `sops.age.sshKeyPaths`, container sets `SOPS_AGE_KEY` env).
 | `GITHUB_TOKEN`                  | `secrets/github-pat-agentydragon-agent.yaml` | `sops -d` via `web_env.sh`   | env var                         | GitHub CLI, fork remote    |
 | `DUCKTAPE_CI_READ_GITHUB_TOKEN` | `secrets/github-ci-read-pat.yaml`            | `sops -d` via `web_env.sh`   | env var                         | Reading GHA runs/artifacts |
 | k8s SA token                    | `secrets/claude-web-k8s-jwt.yaml`            | `sops -d` in `kubeconfig.py` | `~/.kube/config` (Python-built) | kubectl, MCP server        |
-| `DUCKTAPE_OTEL_BEARER_TOKEN`    | k8s Secret `alloy-otlp-bearer-token`         | `kubectl get secret`         | env var                         | OTEL traces to Alloy       |
+| `DUCKTAPE_OTEL_BEARER_TOKEN`    | `secrets/alloy-otlp-bearer-token.yaml`       | `sops -d` via `web_env.sh`   | env var                         | OTEL traces to Alloy       |
 | Docker mTLS key _(disabled)_    | `secrets/docker-ci/client-key.sops.pem`      | `sops -d` via `_common.sh`   | env var (base64)                | Docker CI mTLS             |
 
 ### Home-manager secrets (sops-nix)

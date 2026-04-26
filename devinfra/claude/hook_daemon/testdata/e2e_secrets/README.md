@@ -13,6 +13,7 @@ test profile itself lives next to the test as `test_profile.yaml`.
 | `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                  |
 | `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                              |
 | `claude-web-k8s-jwt.yaml`            | Encrypted `jwt: test-fake-k8s-jwt` — mounted at `/project/secrets/claude-web-k8s-jwt.yaml`, consumed by the daemon's kubeconfig writer. |
+| `alloy-otlp-bearer-token.yaml`       | Encrypted `token: test-fake-otel-jwt` — mounted at `/project/secrets/alloy-otlp-bearer-token.yaml`, consumed by `web_env.sh`.           |
 
 ## Why Fake Encrypted Files?
 
@@ -30,8 +31,9 @@ age-keygen -o test_age.key
 
 # 2. Re-encrypt fixtures (each file is independent; key is in test_age.key)
 TEST_AGE_PUB=$(grep 'public key' test_age.key | awk '{print $NF}')
-for f in buildbuddy.yaml github-pat-agentydragon-agent.yaml \
-         github-ci-read-pat.yaml claude-web-k8s-jwt.yaml; do
+for f in alloy-otlp-bearer-token.yaml buildbuddy.yaml \
+         github-pat-agentydragon-agent.yaml github-ci-read-pat.yaml \
+         claude-web-k8s-jwt.yaml; do
   # Edit the plaintext content inline, then re-encrypt with only the test key.
   # SOPS --age flag avoids inheriting the repo's .sops.yaml creation rules.
   sops encrypt --age "$TEST_AGE_PUB" <(echo "<plaintext YAML>") > "$f"

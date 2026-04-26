@@ -43,8 +43,27 @@ data "authentik_flow" "invalidation" {
   slug = "default-provider-invalidation-flow"
 }
 
+data "authentik_certificate_key_pair" "self_signed" {
+  name = "authentik Self-signed Certificate"
+}
+
+data "authentik_property_mapping_provider_scope" "openid" {
+  managed = "goauthentik.io/providers/oauth2/scope-openid"
+}
+
+data "authentik_property_mapping_provider_scope" "email" {
+  managed = "goauthentik.io/providers/oauth2/scope-email"
+}
+
+data "authentik_property_mapping_provider_scope" "profile" {
+  managed = "goauthentik.io/providers/oauth2/scope-profile"
+}
+
 # External OTLP/HTTP ingestion endpoint used by Claude Code hooks to send traces
-# to Grafana Alloy, with Authentik proxy outpost validating Bearer tokens.
+# to Grafana Alloy, with Authentik proxy outpost validating Bearer JWTs minted
+# by a dedicated client_credentials OAuth2 provider. Keeping this separate from
+# kubectl-sandbox-client-credentials ensures leaked tracing credentials do not
+# grant Kubernetes access.
 
 resource "authentik_provider_proxy" "alloy_otlp" {
   name                  = "alloy-otlp"
@@ -55,6 +74,8 @@ resource "authentik_provider_proxy" "alloy_otlp" {
   authorization_flow    = data.authentik_flow.implicit_consent.id
   invalidation_flow     = data.authentik_flow.invalidation.id
   access_token_validity = "hours=24"
+
+  jwt_federation_providers = [authentik_provider_oauth2.alloy_otlp_client_credentials.id]
 }
 
 resource "authentik_application" "alloy_otlp" {
@@ -65,58 +86,91 @@ resource "authentik_application" "alloy_otlp" {
   open_in_new_tab   = false
 }
 
-# Service account for machine-to-machine Bearer token auth. Authentik proxy
-# outposts validate `Authorization: Bearer <token>` by looking up the token in
-# Authentik's API and checking the owning user has application access.
-resource "authentik_user" "alloy_otlp_sa" {
-  username = "alloy-otlp-service-account"
-  name     = "Alloy OTLP Service Account"
+# Dedicated client_credentials provider for Alloy tracing JWTs.
+resource "authentik_provider_oauth2" "alloy_otlp_client_credentials" {
+  name        = "alloy-otlp-client-credentials"
+  client_id   = "alloy-otlp-client-credentials"
+  client_type = "confidential"
+
+  authorization_flow = data.authentik_flow.implicit_consent.id
+  invalidation_flow  = data.authentik_flow.invalidation.id
+  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+  issuer_mode                = "per_provider"
+  include_claims_in_id_token = true
+  access_token_validity      = "hours=1080"
+
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+  ]
+}
+
+resource "authentik_application" "alloy_otlp_client_credentials" {
+  name              = "alloy-otlp-client-credentials"
+  slug              = "alloy-otlp-client-credentials"
+  protocol_provider = authentik_provider_oauth2.alloy_otlp_client_credentials.id
+  meta_description  = "Machine-to-machine OTLP tracing access for Claude hooks"
+}
+
+resource "authentik_user" "alloy_otlp_client_credentials" {
+  username = "alloy-otlp-client-credentials"
+  name     = "Alloy OTLP client_credentials service account"
   type     = "service_account"
   path     = "goauthentik.io/service-accounts"
 }
 
-resource "authentik_token" "alloy_otlp" {
-  identifier   = "alloy-otlp-api-key"
-  user         = authentik_user.alloy_otlp_sa.id
-  intent       = "api"
-  expiring     = false
-  retrieve_key = true
-  description  = "Bearer token for Claude hooks → Alloy OTLP ingestion"
-}
-
-# TODO: rotate this token periodically the way claude-jwt-rotation rotates the
-# k8s JWT. Different mechanism — this is an Authentik *API token* (validated
-# by the proxy outpost via Authentik API lookup), not an OIDC JWT
-# (cryptographically signed, validated via JWKS), so the rotate.sh
-# `client_credentials` exchange in cluster/k8s/agents/claude-jwt-rotation/
-# doesn't apply directly. A rotator here would either (a) call Authentik's
-# admin API to delete + recreate the token periodically, or (b) migrate the
-# OTLP ingestion path off proxy-outpost auth onto OIDC JWT validation so the
-# same client_credentials script can be reused.
-
-resource "authentik_policy_binding" "alloy_otlp_sa" {
-  target = authentik_application.alloy_otlp.uuid
-  user   = authentik_user.alloy_otlp_sa.id
+resource "authentik_policy_binding" "alloy_otlp_client_credentials" {
+  target = authentik_application.alloy_otlp_client_credentials.uuid
+  user   = authentik_user.alloy_otlp_client_credentials.id
   order  = 0
 }
 
-# Canonical K8s Secret holding the Authentik-generated bearer token. Clients
-# (Claude Code hook daemon, CLI env scripts) read this via kubectl and export
-# it as DUCKTAPE_OTEL_BEARER_TOKEN. Reflector annotations allow any namespace
-# that needs the token to mirror it in.
-resource "kubernetes_secret" "alloy_otlp_bearer_token" {
+data "authentik_user" "alloy_otlp_cc_auto" {
+  username = "ak-alloy-otlp-client-credentials-client_credentials"
+}
+
+# Authentik materializes this internal user as part of the client_credentials
+# provider lifecycle. On the very first reconcile, that can lag the provider
+# creation by one apply loop; the established kubectl-sandbox provider uses the
+# same pattern and converges once the user exists.
+resource "authentik_policy_binding" "alloy_otlp_cc_auto_user" {
+  target = authentik_application.alloy_otlp_client_credentials.uuid
+  user   = data.authentik_user.alloy_otlp_cc_auto.pk
+  order  = 1
+}
+
+# The outpost authenticates bearer JWTs from alloy-otlp-client-credentials
+# against the proxy application. Bind both the stable service account identity
+# and Authentik's auto-created client_credentials user to keep the mapping
+# explicit.
+resource "authentik_policy_binding" "alloy_otlp_proxy_user" {
+  target = authentik_application.alloy_otlp.uuid
+  user   = authentik_user.alloy_otlp_client_credentials.id
+  order  = 0
+}
+
+resource "authentik_policy_binding" "alloy_otlp_proxy_auto_user" {
+  target = authentik_application.alloy_otlp.uuid
+  user   = data.authentik_user.alloy_otlp_cc_auto.pk
+  order  = 1
+}
+
+# In-cluster client credentials for the Alloy JWT rotator CronJob. The job
+# mints short-lived-ish OIDC access tokens, commits them SOPS-encrypted to git,
+# and session startup exports DUCKTAPE_OTEL_BEARER_TOKEN from that file.
+resource "kubernetes_secret" "alloy_otlp_client_credentials" {
   metadata {
-    name      = "alloy-otlp-bearer-token"
-    namespace = "claude-sandbox"
+    name      = "alloy-otlp-client-credentials"
+    namespace = "agents-infra"
     annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = ""
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = ""
+      description = "client_id + client_secret for alloy-otlp-client-credentials OIDC provider (mounted by alloy-otlp-jwt-rotation CronJob)"
     }
   }
 
   data = {
-    token = authentik_token.alloy_otlp.key
+    client_id     = authentik_provider_oauth2.alloy_otlp_client_credentials.client_id
+    client_secret = authentik_provider_oauth2.alloy_otlp_client_credentials.client_secret
   }
 }

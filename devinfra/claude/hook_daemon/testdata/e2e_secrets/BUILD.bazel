@@ -8,6 +8,7 @@ filegroup(
     name = "e2e_secrets_files",
     testonly = True,
     srcs = [
+        "alloy-otlp-bearer-token.yaml",
         "buildbuddy.yaml",
         "claude-web-k8s-jwt.yaml",
         "github-ci-read-pat.yaml",

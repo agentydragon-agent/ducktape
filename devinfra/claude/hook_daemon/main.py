@@ -142,10 +142,7 @@ def main() -> None:
 
     startup = StartupResult()
     if profile.startup_env_script:
-        startup = _source_env_script(
-            project_dir / profile.startup_env_script,
-            extra_env={"DUCKTAPE_ENABLE_K8S_OTEL_BEARER_TOKEN": "1" if profile.enable_k8s_otel_bearer_token else "0"},
-        )
+        startup = _source_env_script(project_dir / profile.startup_env_script)
 
     otel_config = _resolve_otel_config(profile, startup.env_overlay)
 
