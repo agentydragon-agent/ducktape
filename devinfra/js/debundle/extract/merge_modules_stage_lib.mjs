@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { parse } from "@babel/parser";
 import { DEFAULT_PARSER_OPTIONS } from "../common/js_module_lib.mjs";
+import { writeJsonFile } from "../common/js_module_lib.mjs";
 import {
   createChunk,
   createFile,
@@ -11,28 +13,51 @@ import {
   setArtifactManifest,
   setChunk,
 } from "../common/pipeline_artifact_lib.mjs";
-import { logProgress } from "../common/workspace_io_lib.mjs";
+import { ensureOutputDir, logProgress, relativeWorkspacePath, resolveWorkspacePath } from "../common/workspace_io_lib.mjs";
 import { extractSelectedModulePlanInAst } from "./extract_ordered_init_region_lib.mjs";
 import { deriveSelectedModuleTarget } from "./selected_module_planning_lib.mjs";
 
-export function mergeModules({ artifact, operations = [] }) {
+export function mergeModules({
+  artifact,
+  force = false,
+  operations = [],
+  reportOutDir = undefined,
+  reportSummaryPath = undefined,
+}) {
   requirePipelineArtifact(artifact, "mergeModules");
   const mergeOperations = normalizeMergeOperations(operations);
   const artifactManifest = getArtifactManifest(artifact);
+  const resolvedReportOutDir = reportOutDir ? resolveWorkspacePath(reportOutDir) : null;
+  const resolvedReportSummaryPath =
+    resolvedReportOutDir && reportSummaryPath
+      ? resolveWorkspacePath(reportSummaryPath)
+      : resolvedReportOutDir
+        ? resolveWorkspacePath(join(reportOutDir, "summary.json"))
+        : null;
+
+  if (resolvedReportOutDir) {
+    ensureOutputDir(resolvedReportOutDir);
+  }
 
   if (mergeOperations.length === 0) {
-    return {
-      artifact,
-      manifest: {
-        kind: "js.merge_module_manifest",
-        schemaVersion: 1,
-        counts: {
-          chunks: 0,
-          mergedModules: 0,
-        },
-        chunks: [],
+    const manifest = {
+      kind: "js.merge_module_manifest",
+      schemaVersion: 1,
+      counts: {
+        chunks: 0,
+        mergeOperations: 0,
+        mergedAway: 0,
+        mergedModules: 0,
+        modulesAfter: 0,
+        modulesBefore: 0,
       },
+      chunks: [],
+      ...(resolvedReportOutDir ? { reportOutDir: relativeWorkspacePath(resolvedReportOutDir) } : {}),
     };
+    if (resolvedReportSummaryPath) {
+      writeJsonFile(resolvedReportSummaryPath, manifest);
+    }
+    return { artifact, manifest };
   }
 
   const operationsByChunk = new Map();
@@ -56,6 +81,7 @@ export function mergeModules({ artifact, operations = [] }) {
     }
 
     const currentModules = state.currentModules.map(cloneModulePlan);
+    const modulesBefore = currentModules.length;
     const resolvedTargetDir = state.targetDir ?? "modules";
     const nextModules = buildMergedModulePlans(currentModules, chunkOperations, {
       targetDir: resolvedTargetDir,
@@ -134,11 +160,31 @@ export function mergeModules({ artifact, operations = [] }) {
       orderedInitExtractions: result.applied,
     });
     applied.push(...result.applied);
-    reports.push({
+    const report = {
       chunkId,
+      counts: {
+        mergeOperations: chunkOperations.length,
+        mergedAway: modulesBefore - nextModules.length,
+        modulesAfter: nextModules.length,
+        modulesBefore,
+      },
       mergedModuleIds: nextModules.map((modulePlan) => modulePlan.id),
+      mergedModules: nextModules
+        .filter((modulePlan) => chunkOperations.some((operation) => operation.id === modulePlan.id))
+        .map((modulePlan) => ({
+          bytes: modulePlan.bytes,
+          file: modulePlan.targetFile ?? deriveSelectedModuleTarget(modulePlan, modulePlan.index, { targetDir: resolvedTargetDir }).file,
+          id: modulePlan.id,
+          lines: modulePlan.lines,
+          ownerCount: modulePlan.ownerIds.length,
+          unitCount: modulePlan.unitIds.length,
+        })),
       operationIds: chunkOperations.map((operation) => operation.id),
-    });
+    };
+    reports.push(report);
+    if (resolvedReportOutDir) {
+      writeJsonFile(join(resolvedReportOutDir, `${chunkId}.json`), report);
+    }
   }
 
   setArtifactManifest(artifact, {
@@ -154,18 +200,29 @@ export function mergeModules({ artifact, operations = [] }) {
     orderedInitExtractions: applied,
   });
 
+  const manifest = {
+    kind: "js.merge_module_manifest",
+    schemaVersion: 1,
+    counts: {
+      chunks: reports.length,
+      mergeOperations: reports.reduce((sum, report) => sum + report.counts.mergeOperations, 0),
+      mergedAway: reports.reduce((sum, report) => sum + report.counts.mergedAway, 0),
+      mergedModules: reports.reduce((sum, report) => sum + report.mergedModuleIds.length, 0),
+      modulesAfter: reports.reduce((sum, report) => sum + report.counts.modulesAfter, 0),
+      modulesBefore: reports.reduce((sum, report) => sum + report.counts.modulesBefore, 0),
+    },
+    chunks: reports,
+    ...(resolvedReportOutDir ? { reportOutDir: relativeWorkspacePath(resolvedReportOutDir) } : {}),
+    ...(force ? { force } : {}),
+  };
+  if (resolvedReportSummaryPath) {
+    writeJsonFile(resolvedReportSummaryPath, manifest);
+  }
+
   logProgress(`merge-modules done chunks=${reports.length}`);
   return {
     artifact,
-    manifest: {
-      kind: "js.merge_module_manifest",
-      schemaVersion: 1,
-      counts: {
-        chunks: reports.length,
-        mergedModules: reports.reduce((sum, report) => sum + report.mergedModuleIds.length, 0),
-      },
-      chunks: reports,
-    },
+    manifest,
   };
 }
 
@@ -231,20 +288,65 @@ function mergeModuleGroup(selectedModules, operation, index, { targetDir }) {
     typeof operation.target?.basename === "string" && operation.target.basename !== ""
       ? sanitizeIdentifier(operation.target.basename)
       : sanitizeIdentifier(operation.id);
+  const attachedItemIds = [];
+  const attachedItemIdSet = new Set();
+  const memberNames = [];
+  const memberNameSet = new Set();
+  const ownerIds = [];
+  const ownerIdSet = new Set();
+  const unitIds = [];
+  const unitIdSet = new Set();
+  let bytes = 0;
+  let hasNullBytes = false;
+  let lines = 0;
+  let startOrdinal = Number.POSITIVE_INFINITY;
+  for (const modulePlan of selectedModules) {
+    lines += modulePlan.lines;
+    if (modulePlan.bytes === null) {
+      hasNullBytes = true;
+    } else if (!hasNullBytes) {
+      bytes += modulePlan.bytes;
+    }
+    if (modulePlan.startOrdinal < startOrdinal) {
+      startOrdinal = modulePlan.startOrdinal;
+    }
+    for (const itemId of modulePlan.attachedItemIds) {
+      if (!attachedItemIdSet.has(itemId)) {
+        attachedItemIdSet.add(itemId);
+        attachedItemIds.push(itemId);
+      }
+    }
+    for (const memberName of modulePlan.memberNames) {
+      if (!memberNameSet.has(memberName)) {
+        memberNameSet.add(memberName);
+        memberNames.push(memberName);
+      }
+    }
+    for (const ownerId of modulePlan.ownerIds) {
+      if (!ownerIdSet.has(ownerId)) {
+        ownerIdSet.add(ownerId);
+        ownerIds.push(ownerId);
+      }
+    }
+    for (const unitId of modulePlan.unitIds) {
+      if (!unitIdSet.has(unitId)) {
+        unitIdSet.add(unitId);
+        unitIds.push(unitId);
+      }
+    }
+  }
   const baseModule = {
-    attachedItemIds: [...new Set(selectedModules.flatMap((modulePlan) => modulePlan.attachedItemIds))].sort(),
+    attachedItemIds: attachedItemIds.sort(),
     basename: targetBasename,
-    bytes: selectedModules.some((modulePlan) => modulePlan.bytes === null)
-      ? null
-      : selectedModules.reduce((sum, modulePlan) => sum + modulePlan.bytes, 0),
+    bytes: hasNullBytes ? null : bytes,
     id: operation.id,
     index,
-    lines: selectedModules.reduce((sum, modulePlan) => sum + modulePlan.lines, 0),
-    memberNames: [...new Set(selectedModules.flatMap((modulePlan) => modulePlan.memberNames))].sort(),
+    lines,
+    memberNames: memberNames.sort(),
     nameHint: targetBasename,
-    ownerIds: dedupeIds(selectedModules.flatMap((modulePlan) => modulePlan.ownerIds)),
-    startOrdinal: Math.min(...selectedModules.map((modulePlan) => modulePlan.startOrdinal)),
-    unitIds: dedupeIds(selectedModules.flatMap((modulePlan) => modulePlan.unitIds)),
+    ownerIds: ownerIds,
+    startOrdinal,
+    unitIds,
   };
   const derivedTarget = deriveSelectedModuleTarget(baseModule, index, { targetDir });
   return {
@@ -276,10 +378,6 @@ function cloneModulePlan(modulePlan) {
     ...(modulePlan.targetFile ? { targetFile: modulePlan.targetFile } : {}),
     unitIds: [...modulePlan.unitIds],
   };
-}
-
-function dedupeIds(values) {
-  return [...new Set(values)];
 }
 
 function normalizeRelativeFile(value) {

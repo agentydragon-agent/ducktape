@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { parse } from "@babel/parser";
@@ -98,6 +99,56 @@ test("mergeModules merges selected extracted modules and preserves behavior", as
   });
 
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("mergeModules writes post-merge reports with before/after counts", async () => {
+  const { artifact, selectedOwnerIds } = await prepareAtomicFixture("debundle-merge-modules-report-");
+  const extracted = extractAtomicModules({
+    artifact,
+    chunkIds: ["static/app"],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk: {
+      "static/app": selectedOwnerIds,
+    },
+  });
+  const stateBefore = getChunk(extracted.artifact, "static/app")?.metadata?.moduleExtractionState;
+  assert.ok(stateBefore);
+
+  const { outRoot } = createWebFixtureRoots("debundle-merge-modules-report-write-");
+  const reportOutDir = join(outRoot, "reports");
+  const merged = mergeModules({
+    artifact: extracted.artifact,
+    operations: [
+      {
+        id: "merge__seed_and_first",
+        operation: "merge_module",
+        selector: {
+          chunkId: "static/app",
+          moduleIds: [stateBefore.currentModules[0].id, stateBefore.currentModules[1].id],
+        },
+        target: {
+          basename: "seed_and_first",
+        },
+      },
+    ],
+    reportOutDir,
+    reportSummaryPath: join(reportOutDir, "summary.json"),
+  });
+
+  assert.equal(merged.manifest.kind, "js.merge_module_manifest");
+  assert.equal(existsSync(join(reportOutDir, "summary.json")), true);
+  assert.equal(existsSync(join(reportOutDir, "static", "app.json")), true);
+
+  const summary = JSON.parse(readFileSync(join(reportOutDir, "summary.json"), "utf8"));
+  const chunkReport = JSON.parse(readFileSync(join(reportOutDir, "static", "app.json"), "utf8"));
+  assert.equal(summary.counts.chunks, 1);
+  assert.equal(summary.counts.mergeOperations, 1);
+  assert.equal(summary.counts.modulesBefore, stateBefore.currentModules.length);
+  assert.equal(summary.counts.modulesAfter, stateBefore.currentModules.length - 1);
+  assert.equal(summary.counts.mergedAway, 1);
+  assert.equal(chunkReport.counts.modulesBefore, stateBefore.currentModules.length);
+  assert.equal(chunkReport.counts.modulesAfter, stateBefore.currentModules.length - 1);
+  assert.deepEqual(chunkReport.operationIds, ["merge__seed_and_first"]);
 });
 
 test("extract_atomic_modules and merge_modules compose in a pipeline spec", async () => {
