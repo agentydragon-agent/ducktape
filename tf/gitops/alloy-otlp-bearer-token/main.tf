@@ -74,6 +74,11 @@ import {
   id = "19"
 }
 
+import {
+  to = authentik_application.alloy_otlp
+  id = "alloy-otlp"
+}
+
 resource "authentik_provider_proxy" "alloy_otlp" {
   name                  = "alloy-otlp"
   external_host         = "https://alloy-otlp.allegedly.works"
