@@ -425,21 +425,59 @@ negative-counter startup race was found in the inspected history.
 
 ## Next Steps
 
-Highest-signal next steps are now:
+The immediate next step is to activate the host-local Mutter patch on `rugged`
+and test the first fresh GNOME session after the switch.
 
-1. Restart the GNOME session (or log out/in) and retest auto-rotate with no other
-   changes.
-   - Rationale: the remaining plausible failure is a compositor/session startup
-     wedge or race in the live sensor claim / subscription path.
-2. Boot the older `2026-04-18` generation and retest there.
-   - If it works there, the regression window is confirmed and the problem is in a
-     newer session/kernel/userspace stack rather than hardware.
-3. If needed after that, instrument the compositor more directly:
-   - attach a D-Bus trace to GNOME Shell / Mutter from outside the sandbox
-   - or run a debug-built Mutter / collect more explicit orientation-manager logs
+### Post-switch validation checklist
 
-At this point, a pure host-config fix is very unlikely. The remaining branches are
-GNOME session startup state or an upstream regression in the current stack.
+1. Run:
+
+```bash
+sudo nixos-rebuild switch --flake .#rugged
+```
+
+2. Start a fresh graphical session:
+   - log out and back in, or reboot
+   - a fresh session is important because the running `gnome-shell` process must
+     load the patched Mutter libraries
+3. Before running `monitor-sensor`, `busctl monitor`, manual D-Bus claims, or any
+   other sensor-debug tooling, test auto-rotate normally:
+   - ideally with no external monitor attached for the first check
+   - enter tablet mode
+   - rotate the device and hold each orientation for `2-3s`
+4. Expected success criteria:
+   - the built-in display rotates on its own
+   - GNOME no longer needs another client to claim the accelerometer first
+
+### If the patch works
+
+1. Confirm it is stable across:
+   - one logout/login cycle
+   - one reboot
+2. Re-test with the external monitor attached if that setup matters.
+3. Use the result to prepare:
+   - an upstream bug report with the captured RCA
+   - and, if appropriate, an upstream patch based on the local fix
+
+### If the patch does not work
+
+1. Verify the patched system is actually active:
+   - confirm the switch completed successfully
+   - confirm the test was done in a fresh GNOME session after the switch
+2. Capture one fresh failure from the patched session before using sensor tools:
+   - check whether auto-rotate is still dead immediately after login
+3. If still broken, return to deep instrumentation on the fresh patched session:
+   - inspect `gnome-shell` state again with `gdb` / core dump
+   - specifically check whether `inhibited_count` is still negative
+   - and whether `panel_orientation_inhibit_tracking` reflects the intended new
+     ownership logic
+4. If the patched session still reaches a bad state, the next branch is either:
+   - another startup-order path not covered by the current fix
+   - or a separate issue downstream of sensor claiming
+
+At this point, a pure host-config fix is no longer the interesting question. The
+main question is whether the host-local Mutter patch eliminates the negative
+`inhibited_count` startup wedge in a fresh session.
 
 ## Local Mitigation
 
