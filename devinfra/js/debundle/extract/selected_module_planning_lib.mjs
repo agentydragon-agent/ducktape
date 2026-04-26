@@ -2,6 +2,9 @@ import { packOrderedInitOwnerClosures, planOrderedInitOwnerClosureExtractions } 
 
 const SELECTED_ATOMIC_UNIT_ID_PREFIX = "selected_atomic_unit_";
 const ATOMIC_MODULE_ID_PREFIX = "atomic_module_";
+const ANALYSIS_OWNER_BY_ID_CACHE = new WeakMap();
+const ANALYSIS_ITEM_BY_ID_CACHE = new WeakMap();
+const ANALYSIS_DEFAULT_SELECTED_OWNER_IDS_CACHE = new WeakMap();
 
 export function planGuidedSelectedOwnerModules(
   { analysis, code, itemMetricsById = null, programBody = null },
@@ -18,11 +21,11 @@ export function planGuidedSelectedOwnerModules(
     throw new Error("planGuidedSelectedOwnerModules requires programBody or itemMetricsById");
   }
 
-  const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
+  const ownerById = getOwnerByIdForAnalysis(analysis);
   const selectedOwnerIds = explicitSelectedOwnerIds
     ? requireKnownOwnerIds(explicitSelectedOwnerIds, ownerById, "planGuidedSelectedOwnerModules explicit selectedOwnerIds")
     : selectedOwnerIdsFromDefaultClosureSelection(analysis, ownerById, "planGuidedSelectedOwnerModules");
-  const itemById = new Map(analysis.programItems.map((item) => [item.id, item]));
+  const itemById = getItemByIdForAnalysis(analysis);
   const selectedAtomicUnits = buildSelectedAtomicUnits({
     analysis,
     ownerById,
@@ -72,16 +75,23 @@ export function planSelectedAtomicModules(
     throw new Error("planSelectedAtomicModules requires programBody or itemMetricsById");
   }
 
-  const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
+  const startedAt = process.hrtime.bigint();
+  const ownerById = getOwnerByIdForAnalysis(analysis);
+  const selectionStartedAt = process.hrtime.bigint();
   const selectedOwnerIds = explicitSelectedOwnerIds
     ? requireKnownOwnerIds(explicitSelectedOwnerIds, ownerById, "planSelectedAtomicModules explicit selectedOwnerIds")
     : selectedOwnerIdsFromDefaultClosureSelection(analysis, ownerById, "planSelectedAtomicModules");
-  const itemById = new Map(analysis.programItems.map((item) => [item.id, item]));
-  const atomicUnits = buildSelectedAtomicUnits({
+  const selectionMs = durationMsSince(selectionStartedAt);
+  const itemById = getItemByIdForAnalysis(analysis);
+  const buildUnitsStartedAt = process.hrtime.bigint();
+  const rawAtomicUnits = buildSelectedAtomicUnits({
     analysis,
     ownerById,
     selectedOwnerIds,
-  }).map((unit, index) =>
+  });
+  const buildUnitsMs = durationMsSince(buildUnitsStartedAt);
+  const finalizeUnitsStartedAt = process.hrtime.bigint();
+  const atomicUnits = rawAtomicUnits.map((unit, index) =>
     finalizeAtomicUnit(unit, {
       code,
       id: `${SELECTED_ATOMIC_UNIT_ID_PREFIX}${index.toString().padStart(4, "0")}`,
@@ -92,7 +102,9 @@ export function planSelectedAtomicModules(
       programBody,
     })
   );
+  const finalizeUnitsMs = durationMsSince(finalizeUnitsStartedAt);
 
+  const finalizeModulesStartedAt = process.hrtime.bigint();
   const modulePlans = atomicUnits.map((atomicUnit, index) =>
     finalizeModulePlan(newModuleFromAtomicUnit(atomicUnit), {
       id: `${ATOMIC_MODULE_ID_PREFIX}${index.toString().padStart(4, "0")}`,
@@ -100,6 +112,7 @@ export function planSelectedAtomicModules(
       ownerById,
     })
   );
+  const finalizeModulesMs = durationMsSince(finalizeModulesStartedAt);
 
   return {
     kind: "js.atomic_module_plan",
@@ -107,6 +120,13 @@ export function planSelectedAtomicModules(
     atomicUnits,
     modulePlans,
     selectedOwnerCount: selectedOwnerIds.size,
+    timingsMs: {
+      buildAtomicUnits: buildUnitsMs,
+      finalizeAtomicUnits: finalizeUnitsMs,
+      finalizeModules: finalizeModulesMs,
+      selectOwners: selectionMs,
+      total: durationMsSince(startedAt),
+    },
   };
 }
 
@@ -163,13 +183,45 @@ export function deriveSelectedModuleTarget(
 }
 
 function selectedOwnerIdsFromDefaultClosureSelection(analysis, ownerById, callerName) {
+  const cachedSelectedOwnerIds = ANALYSIS_DEFAULT_SELECTED_OWNER_IDS_CACHE.get(analysis);
+  if (cachedSelectedOwnerIds) {
+    return cachedSelectedOwnerIds;
+  }
   const plan = planOrderedInitOwnerClosureExtractions(analysis);
   const packed = packOrderedInitOwnerClosures(plan, { lowering: "staged_shell" });
-  return requireKnownOwnerIds(
+  const selectedOwnerIds = requireKnownOwnerIds(
     packed.batchPlans.flatMap((batchPlan) => batchPlan.ownerIds),
     ownerById,
     `${callerName} default closure selection`
   );
+  ANALYSIS_DEFAULT_SELECTED_OWNER_IDS_CACHE.set(analysis, selectedOwnerIds);
+  return selectedOwnerIds;
+}
+
+function getOwnerByIdForAnalysis(analysis) {
+  const cached = ANALYSIS_OWNER_BY_ID_CACHE.get(analysis);
+  if (cached) {
+    return cached;
+  }
+  const ownerById = new Map();
+  for (const owner of analysis.owners) {
+    ownerById.set(owner.id, owner);
+  }
+  ANALYSIS_OWNER_BY_ID_CACHE.set(analysis, ownerById);
+  return ownerById;
+}
+
+function getItemByIdForAnalysis(analysis) {
+  const cached = ANALYSIS_ITEM_BY_ID_CACHE.get(analysis);
+  if (cached) {
+    return cached;
+  }
+  const itemById = new Map();
+  for (const item of analysis.programItems) {
+    itemById.set(item.id, item);
+  }
+  ANALYSIS_ITEM_BY_ID_CACHE.set(analysis, itemById);
+  return itemById;
 }
 
 function requireKnownOwnerIds(ownerIds, ownerById, source) {
@@ -191,6 +243,7 @@ function requireKnownOwnerIds(ownerIds, ownerById, source) {
 function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
   requireKnownOwnerIds(selectedOwnerIds, ownerById, "buildSelectedAtomicUnits selectedOwnerIds");
   const mustLinkAdjacency = new Map([...selectedOwnerIds].map((ownerId) => [ownerId, new Set()]));
+  const replayableSideEffects = [];
   const linkOwners = (leftOwnerId, rightOwnerId) => {
     if (leftOwnerId === rightOwnerId) {
       return;
@@ -201,39 +254,29 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
 
   const selectedOwners = [...selectedOwnerIds]
     .map((ownerId) => ownerById.get(ownerId))
-    .filter((owner) => owner)
     .sort((left, right) => left.ordinal - right.ordinal);
 
   for (const owner of selectedOwners) {
-    for (const access of orderedInitWriteAccesses(owner)) {
-      if (access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId)) {
-        linkOwners(owner.id, access.ownerId);
-      }
-    }
-    for (const access of orderedInitLazyWriteAccesses(owner)) {
-      if (access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId)) {
-        linkOwners(owner.id, access.ownerId);
-      }
-    }
-    for (const access of orderedInitEagerMemberWriteAccesses(owner)) {
-      if (access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId)) {
-        linkOwners(owner.id, access.ownerId);
-      }
-    }
-    for (const access of orderedInitLazyMemberWriteAccesses(owner)) {
-      if (access.kind === "local_declaration" && access.ownerId && selectedOwnerIds.has(access.ownerId)) {
-        linkOwners(owner.id, access.ownerId);
-      }
-    }
-    for (const access of orderedInitEagerReadAccesses(owner)) {
+    forEachTopLevelAccess(owner, (access, bucket, phase) => {
       if (access.kind !== "local_declaration" || !access.ownerId || !selectedOwnerIds.has(access.ownerId)) {
-        continue;
+        return true;
       }
-      const targetOwner = ownerById.get(access.ownerId);
-      if (targetOwner && targetOwner.ordinal > owner.ordinal) {
-        linkOwners(owner.id, targetOwner.id);
+      if (bucket === "reads") {
+        if (phase !== "eager") {
+          return true;
+        }
+        if (access.ownerId === owner.id) {
+          return true;
+        }
+        const targetOwner = ownerById.get(access.ownerId);
+        if (targetOwner && targetOwner.ordinal > owner.ordinal) {
+          linkOwners(owner.id, targetOwner.id);
+        }
+        return true;
       }
-    }
+      linkOwners(owner.id, access.ownerId);
+      return true;
+    });
   }
 
   for (const sideEffect of analysis.sideEffects) {
@@ -244,6 +287,7 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
     if (!touchedOwnerIds) {
       continue;
     }
+    replayableSideEffects.push({ touchedOwnerIds, sideEffectId: sideEffect.id });
     if (touchedOwnerIds.length < 2) {
       continue;
     }
@@ -286,22 +330,25 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
     }
   });
 
-  for (const sideEffect of analysis.sideEffects) {
-    if (!isReplayableAttachedSideEffectNode(sideEffect)) {
-      continue;
-    }
-    const touchedOwnerIds = touchedSelectedOwnerIds(sideEffect, selectedOwnerIds);
-    if (!touchedOwnerIds) {
-      continue;
-    }
+  for (const { touchedOwnerIds, sideEffectId } of replayableSideEffects) {
     if (touchedOwnerIds.length === 0) {
       continue;
     }
-    const unitIndexes = new Set(touchedOwnerIds.map((ownerId) => unitIndexByOwnerId.get(ownerId)));
-    if (unitIndexes.size !== 1) {
+    const firstUnitIndex = unitIndexByOwnerId.get(touchedOwnerIds[0]);
+    if (firstUnitIndex === undefined) {
       continue;
     }
-    units[[...unitIndexes][0]].attachedItemIds.push(sideEffect.id);
+    let sameUnit = true;
+    for (let index = 1; index < touchedOwnerIds.length; index++) {
+      if (unitIndexByOwnerId.get(touchedOwnerIds[index]) !== firstUnitIndex) {
+        sameUnit = false;
+        break;
+      }
+    }
+    if (!sameUnit) {
+      continue;
+    }
+    units[firstUnitIndex].attachedItemIds.push(sideEffectId);
   }
 
   return units;
@@ -516,32 +563,32 @@ function topLevelAccesses(record, bucket, phase) {
 
 function forEachTopLevelAccess(record, callback) {
   for (const access of orderedInitEagerReadAccesses(record)) {
-    if (callback(access) === false) {
+    if (callback(access, "reads", "eager") === false) {
       return false;
     }
   }
   for (const access of orderedInitLazyReadAccesses(record)) {
-    if (callback(access) === false) {
+    if (callback(access, "reads", "lazy") === false) {
       return false;
     }
   }
   for (const access of orderedInitWriteAccesses(record)) {
-    if (callback(access) === false) {
+    if (callback(access, "writes", "eager") === false) {
       return false;
     }
   }
   for (const access of orderedInitLazyWriteAccesses(record)) {
-    if (callback(access) === false) {
+    if (callback(access, "writes", "lazy") === false) {
       return false;
     }
   }
   for (const access of orderedInitEagerMemberWriteAccesses(record)) {
-    if (callback(access) === false) {
+    if (callback(access, "memberWrites", "eager") === false) {
       return false;
     }
   }
   for (const access of orderedInitLazyMemberWriteAccesses(record)) {
-    if (callback(access) === false) {
+    if (callback(access, "memberWrites", "lazy") === false) {
       return false;
     }
   }
@@ -569,4 +616,8 @@ function sanitizeIdentifier(value) {
     .replace(/[^A-Za-z0-9_$]+/g, "_")
     .replace(/^[^A-Za-z_$]+/, "_")
     .replace(/_+/g, "_");
+}
+
+function durationMsSince(startedAt) {
+  return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 }

@@ -33,17 +33,21 @@ export function extractOrderedInitRegionsInCode(code, operations, options = {}) 
 export function extractOrderedInitRegionsInAst(
   ast,
   operations,
-  { chunkId = "<chunk>", file, headerLines = [] } = {}
+  { analysis = null, chunkId = "<chunk>", file, headerLines = [] } = {}
 ) {
   const runtimeFile = resolveOperationFile(operations, file, "extractOrderedInitRegionsInAst");
   const graphAwareOperations = operations.filter((operation) => EXTRACT_OPERATION_TYPES.has(operation.operation));
-  const resolvedChunkId = chunkId === "<chunk>" ? inferredChunkId(graphAwareOperations) ?? chunkId : chunkId;
-  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: resolvedChunkId });
-  const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
+  const suppliedAnalysis = analysis ?? null;
+  const resolvedChunkId =
+    chunkId === "<chunk>"
+      ? suppliedAnalysis?.chunkId ?? inferredChunkId(graphAwareOperations) ?? chunkId
+      : chunkId;
+  const runtimeAnalysis = suppliedAnalysis ?? analyzeRuntimeBoundaryAst(ast, { chunkId: resolvedChunkId });
+  const ownerById = new Map(runtimeAnalysis.owners.map((owner) => [owner.id, owner]));
   const programBody = ast.program.body;
-  const sideEffectById = new Map(analysis.sideEffects.map((sideEffect) => [sideEffect.id, sideEffect]));
+  const sideEffectById = new Map(runtimeAnalysis.sideEffects.map((sideEffect) => [sideEffect.id, sideEffect]));
   const extractOperations = expandOrderedInitOwnerClosurePassOperations(
-    analysis,
+    runtimeAnalysis,
     graphAwareOperations,
     {
       chunkId: resolvedChunkId,
@@ -52,16 +56,16 @@ export function extractOrderedInitRegionsInAst(
   )
     .filter((operation) => operation.operation === "extract_ordered_init_region")
     .filter((operation) => operationSupportsCurrentExtractor(operation, { ownerById }));
-  const topLevelNames = collectTopLevelNames(analysis);
-  const programItemByOrdinal = new Map(analysis.programItems.map((item) => [item.ordinal, item]));
+  const topLevelNames = collectTopLevelNames(runtimeAnalysis);
+  const programItemByOrdinal = new Map(runtimeAnalysis.programItems.map((item) => [item.ordinal, item]));
   const extractionIndex = buildExtractionIndex(extractOperations);
-  const remainingProgramValidationIndex = buildRemainingProgramValidationIndex(analysis);
-  const runtimeImportIndex = buildRuntimeImportIndex(analysis.runtimeImports);
+  const remainingProgramValidationIndex = buildRemainingProgramValidationIndex(runtimeAnalysis);
+  const runtimeImportIndex = buildRuntimeImportIndex(runtimeAnalysis.runtimeImports);
 
   const resolved = extractOperations.map((operation) =>
     resolveExtractOperation(operation, {
       allSelectedOwnerIds: extractionIndex.allSelectedOwnerIds,
-      analysis,
+      analysis: runtimeAnalysis,
       chunkId: resolvedChunkId,
       extractedOwnerToOperation: extractionIndex.ownerToOperation,
       ownerById,
@@ -122,7 +126,7 @@ export function extractOrderedInitRegionsInAst(
   }
 
   return {
-    analysis,
+    analysis: runtimeAnalysis,
     applied,
     jsFiles,
     modules: moduleFiles,
@@ -174,6 +178,7 @@ export function extractSelectedModulePlanInAst(
     ...(targetDir ? { targetDir } : {}),
   });
   const result = extractOrderedInitRegionsInAst(ast, operations, {
+    ...(analysis ? { analysis } : {}),
     chunkId,
     ...(file ? { file } : {}),
     headerLines,

@@ -370,6 +370,42 @@ export { readStatus };
   });
 });
 
+test("extractOrderedInitRegionsInCode reuses caller-supplied boundary analysis", () => {
+  const source = `const seed = 1;
+function render() {
+  return seed + 1;
+}
+console.log(render());
+`;
+  const analysis = analyzeRuntimeBoundaryCode(source, {
+    chunkId: "static/app",
+    runtimePath: "runtime.js",
+    uiVersion: "fixture",
+  });
+  const brokenAnalysis = {
+    ...analysis,
+    owners: analysis.owners.filter((owner) => !owner.names.includes("render")),
+  };
+
+  assert.throws(
+    () =>
+      extractOrderedInitRegionsInCode(
+        source,
+        [
+          orderedInitOperation(source, {
+            init: "init_reused_analysis",
+            ownerNames: ["seed", "render"],
+            targetFile: "regions/reused_analysis.js",
+          }),
+        ],
+        {
+          analysis: brokenAnalysis,
+        }
+      ),
+    /references unknown owner/
+  );
+});
+
 test("rejects selected owners that depend on outside runtime bindings", () => {
   const source = `const shared = 2;
 const extracted = shared + 1;

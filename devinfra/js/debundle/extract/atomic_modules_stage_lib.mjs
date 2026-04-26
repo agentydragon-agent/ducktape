@@ -94,15 +94,12 @@ export function extractAtomicModules({
             uiVersion: artifactManifest?.uiVersion ?? null,
           });
     const analysisMs = durationMsSince(analysisStartedAt);
-    const metricStartedAt = process.hrtime.bigint();
-    const itemMetricsById = buildItemMetricsById(analysis.programItems, runtimeFile.ast.program.body, codeBefore);
-    const metricsMs = durationMsSince(metricStartedAt);
     const planningStartedAt = process.hrtime.bigint();
     const plan = planSelectedAtomicModules(
       {
         analysis,
         code: codeBefore,
-        itemMetricsById,
+        programBody: runtimeFile.ast.program.body,
       },
       {
         selectedOwnerIds: selectedOwnerIdsByChunk?.[chunkId] ?? null,
@@ -114,6 +111,7 @@ export function extractAtomicModules({
     const parseMs = durationMsSince(parseStartedAt);
     const loweringStartedAt = process.hrtime.bigint();
     const result = extractSelectedModulePlanInAst(loweringAst, plan, {
+      analysis,
       chunkId,
       file: targetFile,
       headerLines: runtimeHeaderLines,
@@ -165,6 +163,7 @@ export function extractAtomicModules({
       metadata: {
         ...(chunk?.metadata ?? {}),
         moduleExtractionState: {
+          analysis,
           atomicUnits: plan.atomicUnits.map(cloneAtomicUnit),
           currentModules,
           headerLines: [...runtimeHeaderLines],
@@ -203,7 +202,14 @@ export function extractAtomicModules({
       },
       timingsMs: {
         analysis: analysisMs,
-        metrics: metricsMs,
+        ...(plan.timingsMs
+          ? {
+              planBuildAtomicUnits: plan.timingsMs.buildAtomicUnits,
+              planFinalizeAtomicUnits: plan.timingsMs.finalizeAtomicUnits,
+              planFinalizeModules: plan.timingsMs.finalizeModules,
+              planSelectOwners: plan.timingsMs.selectOwners,
+            }
+          : {}),
         parseLoweringAst: parseMs,
         plan: planningMs,
         total: durationMsSince(chunkStartedAt),
@@ -221,7 +227,15 @@ export function extractAtomicModules({
     logProgress(
       `atomic-modules chunk=${chunkId} modules=${currentModules.length} analysis=${formatDuration(
         analysisMs
-      )} metrics=${formatDuration(metricsMs)} plan=${formatDuration(planningMs)} parse=${formatDuration(
+      )} plan=${formatDuration(planningMs)}${
+        plan.timingsMs
+          ? ` (select=${formatDuration(plan.timingsMs.selectOwners)} build=${formatDuration(
+              plan.timingsMs.buildAtomicUnits
+            )} finalizeUnits=${formatDuration(plan.timingsMs.finalizeAtomicUnits)} finalizeModules=${formatDuration(
+              plan.timingsMs.finalizeModules
+            )})`
+          : ""
+      } parse=${formatDuration(
         parseMs
       )} lower=${formatDuration(loweringMs)} writeback=${formatDuration(writebackMs)} total=${formatDuration(
         report.timingsMs.total
@@ -332,24 +346,6 @@ function pruneArtifactToChunkIds(artifact, chunkIds) {
       deleteArtifactChunkManifest(artifact, chunk.chunkId);
     }
   }
-}
-
-function buildItemMetricsById(programItems, programBody, code) {
-  const metrics = new Map();
-  for (const item of programItems ?? []) {
-    const statement = programBody[item.ordinal];
-    metrics.set(item.id, {
-      bytes:
-        typeof statement?.start === "number" && typeof statement?.end === "number"
-          ? Buffer.byteLength(code.slice(statement.start, statement.end))
-          : 0,
-      lines:
-        statement?.loc
-          ? statement.loc.end.line - statement.loc.start.line + 1
-          : 0,
-    });
-  }
-  return metrics;
 }
 
 function readBoundaryAnalysis(path) {

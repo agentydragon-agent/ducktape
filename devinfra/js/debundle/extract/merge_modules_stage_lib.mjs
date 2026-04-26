@@ -70,6 +70,11 @@ export function mergeModules({
 
   const reports = [];
   const applied = [];
+  let mergedModuleCount = 0;
+  let mergeOperationCount = 0;
+  let mergedAwayCount = 0;
+  let modulesAfterCount = 0;
+  let modulesBeforeCount = 0;
   for (const [chunkId, chunkOperations] of operationsByChunk.entries()) {
     const chunk = getChunk(artifact, chunkId);
     if (!chunk) {
@@ -83,16 +88,22 @@ export function mergeModules({
     const currentModules = state.currentModules.map(cloneModulePlan);
     const modulesBefore = currentModules.length;
     const resolvedTargetDir = state.targetDir ?? "modules";
+    const chunkStartedAt = process.hrtime.bigint();
+    const planStartedAt = process.hrtime.bigint();
     const nextModules = buildMergedModulePlans(currentModules, chunkOperations, {
       targetDir: resolvedTargetDir,
     });
+    const planMs = durationMsSince(planStartedAt);
     const runtimeFile = state.runtimeFile ?? chunk.entryFile;
     if (!runtimeFile) {
       throw new Error(`mergeModules missing runtimeFile for chunk ${chunkId}`);
     }
     const parserOptions = state.parserOptions ?? DEFAULT_PARSER_OPTIONS;
     const headerLines = state.headerLines ?? [];
+    const parseStartedAt = process.hrtime.bigint();
     const loweringAst = parse(state.originalCode, parserOptions);
+    const parseMs = durationMsSince(parseStartedAt);
+    const lowerStartedAt = process.hrtime.bigint();
     const result = extractSelectedModulePlanInAst(
       loweringAst,
       {
@@ -100,6 +111,7 @@ export function mergeModules({
         modulePlans: nextModules,
       },
       {
+        ...(state.analysis ? { analysis: state.analysis } : {}),
         chunkId,
         file: runtimeFile,
         headerLines,
@@ -107,8 +119,27 @@ export function mergeModules({
         targetDir: resolvedTargetDir,
       }
     );
+    const lowerMs = durationMsSince(lowerStartedAt);
+    const chunkOperationIds = new Set(chunkOperations.map((operation) => operation.id));
     const moduleByTargetFile = new Map(nextModules.map((modulePlan) => [modulePlan.targetFile, modulePlan]));
+    const mergedModules = [];
+    for (const modulePlan of nextModules) {
+      if (!chunkOperationIds.has(modulePlan.id)) {
+        continue;
+      }
+      mergedModules.push({
+        bytes: modulePlan.bytes,
+        file:
+          modulePlan.targetFile ?? deriveSelectedModuleTarget(modulePlan, modulePlan.index, { targetDir: resolvedTargetDir }).file,
+        id: modulePlan.id,
+        lines: modulePlan.lines,
+        ownerCount: modulePlan.ownerIds.length,
+        unitCount: modulePlan.unitIds.length,
+      });
+    }
+    const mergedModuleIds = mergedModules.map((modulePlan) => modulePlan.id);
 
+    const writebackStartedAt = process.hrtime.bigint();
     const nextChunk = createChunk({
       chunkId,
       entryFile: runtimeFile,
@@ -148,6 +179,7 @@ export function mergeModules({
       },
     });
     setChunk(artifact, nextChunk);
+    const writebackMs = durationMsSince(writebackStartedAt);
 
     const chunkManifest = getArtifactChunkManifest(artifact, chunkId);
     setArtifactChunkManifest(artifact, chunkId, {
@@ -155,11 +187,16 @@ export function mergeModules({
       entryFile: runtimeFile,
       mergeModules: {
         count: chunkOperations.length,
-        mergedModuleIds: nextModules.map((modulePlan) => modulePlan.id),
+        mergedModuleIds,
       },
       orderedInitExtractions: result.applied,
     });
     applied.push(...result.applied);
+    mergedModuleCount += mergedModuleIds.length;
+    mergeOperationCount += chunkOperations.length;
+    mergedAwayCount += modulesBefore - nextModules.length;
+    modulesAfterCount += nextModules.length;
+    modulesBeforeCount += modulesBefore;
     const report = {
       chunkId,
       counts: {
@@ -168,23 +205,28 @@ export function mergeModules({
         modulesAfter: nextModules.length,
         modulesBefore,
       },
-      mergedModuleIds: nextModules.map((modulePlan) => modulePlan.id),
-      mergedModules: nextModules
-        .filter((modulePlan) => chunkOperations.some((operation) => operation.id === modulePlan.id))
-        .map((modulePlan) => ({
-          bytes: modulePlan.bytes,
-          file: modulePlan.targetFile ?? deriveSelectedModuleTarget(modulePlan, modulePlan.index, { targetDir: resolvedTargetDir }).file,
-          id: modulePlan.id,
-          lines: modulePlan.lines,
-          ownerCount: modulePlan.ownerIds.length,
-          unitCount: modulePlan.unitIds.length,
-        })),
+      mergedModuleIds,
+      mergedModules,
       operationIds: chunkOperations.map((operation) => operation.id),
+      timingsMs: {
+        lower: lowerMs,
+        parse: parseMs,
+        plan: planMs,
+        total: durationMsSince(chunkStartedAt),
+        writeback: writebackMs,
+      },
     };
     reports.push(report);
     if (resolvedReportOutDir) {
       writeJsonFile(join(resolvedReportOutDir, `${chunkId}.json`), report);
     }
+    logProgress(
+      `merge-modules chunk=${chunkId} operations=${chunkOperations.length} before=${modulesBefore} after=${nextModules.length} plan=${formatDuration(
+        planMs
+      )} parse=${formatDuration(parseMs)} lower=${formatDuration(lowerMs)} writeback=${formatDuration(writebackMs)} total=${formatDuration(
+        report.timingsMs.total
+      )}`
+    );
   }
 
   setArtifactManifest(artifact, {
@@ -195,7 +237,7 @@ export function mergeModules({
     },
     mergeModules: {
       chunkCount: reports.length,
-      mergedModuleCount: reports.reduce((sum, report) => sum + report.mergedModuleIds.length, 0),
+      mergedModuleCount,
     },
     orderedInitExtractions: applied,
   });
@@ -205,11 +247,11 @@ export function mergeModules({
     schemaVersion: 1,
     counts: {
       chunks: reports.length,
-      mergeOperations: reports.reduce((sum, report) => sum + report.counts.mergeOperations, 0),
-      mergedAway: reports.reduce((sum, report) => sum + report.counts.mergedAway, 0),
-      mergedModules: reports.reduce((sum, report) => sum + report.mergedModuleIds.length, 0),
-      modulesAfter: reports.reduce((sum, report) => sum + report.counts.modulesAfter, 0),
-      modulesBefore: reports.reduce((sum, report) => sum + report.counts.modulesBefore, 0),
+      mergeOperations: mergeOperationCount,
+      mergedAway: mergedAwayCount,
+      mergedModules: mergedModuleCount,
+      modulesAfter: modulesAfterCount,
+      modulesBefore: modulesBeforeCount,
     },
     chunks: reports,
     ...(resolvedReportOutDir ? { reportOutDir: relativeWorkspacePath(resolvedReportOutDir) } : {}),
@@ -280,14 +322,21 @@ function normalizeMergeOperations(operations) {
 function buildMergedModulePlans(currentModules, operations, { targetDir }) {
   const moduleById = new Map(currentModules.map((modulePlan) => [modulePlan.id, modulePlan]));
   const operationByModuleId = new Map();
-  const resolvedOperations = operations.map((operation) =>
-    operation.operation === "merge_module"
-      ? {
-          ...operation,
-          resolvedModuleIds: resolveMergeModuleIds(currentModules, operation),
-        }
-      : operation
-  );
+  let orderedModules = null;
+  let orderedModuleMemberNameSets = null;
+  const resolvedOperations = operations.map((operation) => {
+    if (operation.operation !== "merge_module") {
+      return operation;
+    }
+    if (!orderedModules) {
+      orderedModules = [...currentModules].sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
+      orderedModuleMemberNameSets = orderedModules.map((modulePlan) => new Set(modulePlan.memberNames));
+    }
+    return {
+      ...operation,
+      resolvedModuleIds: resolveMergeModuleIds(orderedModules, orderedModuleMemberNameSets, operation),
+    };
+  });
   let residualOperation = null;
   for (const operation of resolvedOperations) {
     if (operation.operation === "merge_remaining_modules") {
@@ -309,7 +358,7 @@ function buildMergedModulePlans(currentModules, operations, { targetDir }) {
   }
 
   const emittedOperations = new Set();
-  const unclaimedModules = currentModules.filter((modulePlan) => !operationByModuleId.has(modulePlan.id));
+  let unclaimedModules = null;
   const nextModules = [];
   for (const currentModule of currentModules) {
     const operation = operationByModuleId.get(currentModule.id);
@@ -319,6 +368,14 @@ function buildMergedModulePlans(currentModules, operations, { targetDir }) {
           continue;
         }
         emittedOperations.add(residualOperation.id);
+        if (!unclaimedModules) {
+          unclaimedModules = [];
+          for (const modulePlan of currentModules) {
+            if (!operationByModuleId.has(modulePlan.id)) {
+              unclaimedModules.push(modulePlan);
+            }
+          }
+        }
         if (unclaimedModules.length > 0) {
           nextModules.push(mergeModuleGroup(unclaimedModules, residualOperation, nextModules.length, { targetDir }));
         }
@@ -339,17 +396,16 @@ function buildMergedModulePlans(currentModules, operations, { targetDir }) {
   return nextModules.sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
 }
 
-function resolveMergeModuleIds(currentModules, operation) {
+function resolveMergeModuleIds(orderedModules, orderedModuleMemberNameSets, operation) {
   if (Array.isArray(operation.selector.moduleIds) && operation.selector.moduleIds.length > 0) {
     return [...operation.selector.moduleIds];
   }
-  return resolveModuleSelectors(currentModules, operation);
+  return resolveModuleSelectors(orderedModules, orderedModuleMemberNameSets, operation);
 }
 
-function resolveModuleSelectors(currentModules, operation) {
-  const orderedModules = [...currentModules].sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
+function resolveModuleSelectors(orderedModules, orderedModuleMemberNameSets, operation) {
   const resolvedModules = operation.selector.moduleSelectors.map((moduleSelector, selectorIndex) =>
-    resolveModuleSelector(orderedModules, moduleSelector, {
+    resolveModuleSelector(orderedModules, orderedModuleMemberNameSets, moduleSelector, {
       operationId: operation.id,
       selectorIndex,
     })
@@ -370,11 +426,11 @@ function resolveModuleSelectors(currentModules, operation) {
   return resolvedModuleIds;
 }
 
-function resolveModuleSelector(orderedModules, moduleSelector, { operationId, selectorIndex }) {
+function resolveModuleSelector(orderedModules, orderedModuleMemberNameSets, moduleSelector, { operationId, selectorIndex }) {
   const matches = [];
   for (let index = 0; index < orderedModules.length; index++) {
     const modulePlan = orderedModules[index];
-    if (matchesModuleSelector(modulePlan, moduleSelector, orderedModules, index)) {
+    if (matchesModuleSelector(modulePlan, orderedModuleMemberNameSets[index], moduleSelector, orderedModuleMemberNameSets, index)) {
       matches.push(modulePlan);
     }
   }
@@ -391,11 +447,11 @@ function resolveModuleSelector(orderedModules, moduleSelector, { operationId, se
   return matches[0];
 }
 
-function matchesModuleSelector(modulePlan, moduleSelector, orderedModules, moduleIndex) {
+function matchesModuleSelector(modulePlan, moduleMemberNamesSet, moduleSelector, orderedModuleMemberNameSets, moduleIndex) {
   // Selectors match against the full current `memberNames` set on each module
   // plan. Authors can provide an exact full set or a unique identifying subset;
   // ambiguity is rejected at resolution time rather than guessed away here.
-  if (!containsAllStrings(modulePlan.memberNames, moduleSelector.symbols)) {
+  if (!containsAllStrings(moduleMemberNamesSet, moduleSelector.symbols)) {
     return false;
   }
   if (moduleSelector.ordinalWindow) {
@@ -405,14 +461,14 @@ function matchesModuleSelector(modulePlan, moduleSelector, orderedModules, modul
     }
   }
   if (moduleSelector.nearbyStructure?.previousSymbols) {
-    const previousModule = orderedModules[moduleIndex - 1];
-    if (!previousModule || !containsAllStrings(previousModule.memberNames, moduleSelector.nearbyStructure.previousSymbols)) {
+    const previousModuleMemberNames = orderedModuleMemberNameSets[moduleIndex - 1];
+    if (!previousModuleMemberNames || !containsAllStrings(previousModuleMemberNames, moduleSelector.nearbyStructure.previousSymbols)) {
       return false;
     }
   }
   if (moduleSelector.nearbyStructure?.nextSymbols) {
-    const nextModule = orderedModules[moduleIndex + 1];
-    if (!nextModule || !containsAllStrings(nextModule.memberNames, moduleSelector.nearbyStructure.nextSymbols)) {
+    const nextModuleMemberNames = orderedModuleMemberNameSets[moduleIndex + 1];
+    if (!nextModuleMemberNames || !containsAllStrings(nextModuleMemberNames, moduleSelector.nearbyStructure.nextSymbols)) {
       return false;
     }
   }
@@ -512,7 +568,7 @@ function sameStringArray(left, right) {
 }
 
 function containsAllStrings(haystack, needles) {
-  const haystackSet = new Set(haystack);
+  const haystackSet = haystack instanceof Set ? haystack : new Set(haystack);
   for (const needle of needles) {
     if (!haystackSet.has(needle)) {
       return false;
@@ -634,4 +690,12 @@ function sanitizeIdentifier(value) {
     .replace(/[^A-Za-z0-9_$]+/g, "_")
     .replace(/^[^A-Za-z_$]+/, "_")
     .replace(/_+/g, "_");
+}
+
+function durationMsSince(startedAt) {
+  return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+}
+
+function formatDuration(durationMs) {
+  return `${durationMs.toFixed(3)}ms`;
 }

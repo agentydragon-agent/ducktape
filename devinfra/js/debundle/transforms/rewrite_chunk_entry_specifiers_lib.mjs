@@ -13,7 +13,6 @@ export function rewriteChunkEntrySpecifiers({ artifact }) {
 
   let rewrittenFiles = 0;
   let rewrittenSpecifiers = 0;
-  const details = [];
 
   for (const chunkId of listChunkIds(artifact)) {
     for (const fileArtifact of listChunkFiles(artifact, chunkId)) {
@@ -39,10 +38,6 @@ export function rewriteChunkEntrySpecifiers({ artifact }) {
       if (fileRewrites > 0) {
         rewrittenFiles++;
         rewrittenSpecifiers += fileRewrites;
-        details.push({
-          file: `${chunkId}/${fileArtifact.path}`,
-          rewrites: fileRewrites,
-        });
       }
     }
   }
@@ -55,7 +50,6 @@ export function rewriteChunkEntrySpecifiers({ artifact }) {
         files: rewrittenFiles,
         rewrites: rewrittenSpecifiers,
       },
-      details,
     },
   };
 }
