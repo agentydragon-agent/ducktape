@@ -21,11 +21,16 @@ export function rewriteChunkEntrySpecifiers({ artifact }) {
         continue;
       }
       let fileRewrites = 0;
+      const rewriteCache = new Map();
       transformRuntimeSources(fileArtifact.ast, (source) => {
-        const rewritten = rewriteChunkEntrySpecifierSource(artifact, source, {
-          callerChunkId: chunkId,
-          callerFile: fileArtifact.path,
-        });
+        let rewritten = rewriteCache.get(source);
+        if (rewritten === undefined && !rewriteCache.has(source)) {
+          rewritten = rewriteChunkEntrySpecifierSource(artifact, source, {
+            callerChunkId: chunkId,
+            callerFile: fileArtifact.path,
+          });
+          rewriteCache.set(source, rewritten);
+        }
         if (rewritten !== source) {
           fileRewrites++;
         }

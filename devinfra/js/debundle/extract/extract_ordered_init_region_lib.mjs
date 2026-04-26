@@ -969,7 +969,15 @@ function rewriteStatementsForTarget(statements, targetFile) {
   if (posixDirname(targetFile) === ".") {
     return statements;
   }
-  const rewriteImportSource = (source) => rebaseRuntimeSourceForTarget(source, targetFile);
+  const rewriteCache = new Map();
+  const rewriteImportSource = (source) => {
+    if (rewriteCache.has(source)) {
+      return rewriteCache.get(source);
+    }
+    const rewritten = rebaseRuntimeSourceForTarget(source, targetFile);
+    rewriteCache.set(source, rewritten);
+    return rewritten;
+  };
   for (const statement of statements) {
     rewriteRuntimeSourcesInNode(statement, rewriteImportSource, RUNTIME_CONSTRUCTOR_SHADOW_NONE);
   }
