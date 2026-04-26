@@ -3,7 +3,6 @@ import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
 import { normalizeJsChunks } from "../split/split_js_tree_lib.mjs";
 
 export async function buildNormalizedPipelineArtifactFromSnapshot({
-  entryFile,
   jobs = 1,
   jsListPath,
   snapshotRoot,
@@ -12,7 +11,6 @@ export async function buildNormalizedPipelineArtifactFromSnapshot({
   const parsed = computeJsAsts({ artifact: loaded.artifact });
   return normalizeJsChunks({
     artifact: parsed.artifact,
-    ...(entryFile ? { entryFile } : {}),
     jobs,
   });
 }

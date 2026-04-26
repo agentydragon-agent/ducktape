@@ -4,6 +4,7 @@ import { Worker } from "node:worker_threads";
 import {
   createEmptyArtifact,
   createFile,
+  getArtifactChunkManifest,
   listChunks,
   requirePipelineArtifact,
   replaceChunks,
@@ -11,40 +12,47 @@ import {
   setArtifactManifest,
 } from "../common/pipeline_artifact_lib.mjs";
 import { formatDuration, logProgress } from "../common/workspace_io_lib.mjs";
-import { DEFAULT_SPLIT_ENTRY_FILE, normalizeChunkEntryFile, splitScopeHoistedChunkAst } from "./split_chunk_lib.mjs";
+import { CANONICAL_CHUNK_ENTRY_FILE, normalizeChunkEntryFile, splitScopeHoistedChunkAst } from "./split_chunk_lib.mjs";
 
-export async function normalizeJsChunks({ artifact, jobs, entryFile = DEFAULT_SPLIT_ENTRY_FILE }) {
-  return transformJsChunks({
+export async function normalizeJsChunks({ artifact, jobs, entryFile = undefined }) {
+  if (entryFile !== undefined) {
+    throw new Error("normalizeJsChunks no longer accepts entryFile; normalized chunks always use entry.js");
+  }
+  requirePipelineArtifact(artifact, "normalizeJsChunks");
+  return rebuildJsChunks({
     artifact,
     jobs,
-    emitParts: false,
-    entryFile,
     logLabel: "normalize",
-    stageName: "normalizeJsChunks",
+    transformChunk: (chunk) => normalizeOneJsChunk({ artifactChunk: chunk }),
+    workerDataForChunk: (chunk) => ({
+      artifactChunk: chunk,
+      entryFile: CANONICAL_CHUNK_ENTRY_FILE,
+      mode: "normalize",
+    }),
   });
 }
 
-export async function splitJsTree({ artifact, jobs, emitParts = true, entryFile = DEFAULT_SPLIT_ENTRY_FILE }) {
-  return transformJsChunks({
+export async function splitJsTree({ artifact, jobs, emitParts = undefined, entryFile = undefined }) {
+  if (emitParts !== undefined) {
+    throw new Error("splitJsTree no longer accepts emitParts; it always runs the naive parts pass");
+  }
+  if (entryFile !== undefined) {
+    throw new Error("splitJsTree no longer accepts entryFile; normalizeJsChunks owns entry-file selection");
+  }
+  requireNormalizedArtifact(artifact, "splitJsTree");
+  return rebuildJsChunks({
     artifact,
     jobs,
-    emitParts,
-    entryFile,
     logLabel: "split",
-    stageName: "splitJsTree",
+    transformChunk: (chunk) => splitOneJsChunk({ artifactChunk: chunk }),
+    workerDataForChunk: (chunk) => ({
+      artifactChunk: chunk,
+      mode: "split",
+    }),
   });
 }
 
-async function transformJsChunks({
-  artifact,
-  jobs,
-  emitParts,
-  entryFile,
-  logLabel,
-  stageName,
-}) {
-  requirePipelineArtifact(artifact, stageName);
-  const normalizedEntryFile = normalizeChunkEntryFile(entryFile);
+async function rebuildJsChunks({ artifact, jobs, logLabel, transformChunk, workerDataForChunk }) {
   const sourceChunks = listChunks(artifact);
   const effectiveJobs = jobs ?? defaultJobs();
 
@@ -53,13 +61,9 @@ async function transformJsChunks({
 
   const chunks =
     effectiveJobs === 1 || sourceChunks.length <= 1
-      ? sourceChunks.map((chunk) =>
-          splitOneJsChunk({ artifactChunk: chunk, emitParts, entryFile: normalizedEntryFile })
-        )
+      ? sourceChunks.map(transformChunk)
       : await splitChunksParallel({
-          artifactChunks: sourceChunks,
-          emitParts,
-          entryFile: normalizedEntryFile,
+          workerDataByChunk: sourceChunks.map(workerDataForChunk),
           jobs: effectiveJobs,
         });
 
@@ -116,14 +120,34 @@ async function transformJsChunks({
   };
 }
 
-export function splitOneJsChunk({ artifactChunk, emitParts = true, entryFile = DEFAULT_SPLIT_ENTRY_FILE }) {
+export function normalizeOneJsChunk({ artifactChunk }) {
+  return transformOneJsChunk({
+    artifactChunk,
+    emitParts: false,
+    entryFile: CANONICAL_CHUNK_ENTRY_FILE,
+    stageName: "normalizeOneJsChunk",
+  });
+}
+
+export function splitOneJsChunk({ artifactChunk }) {
+  return transformOneJsChunk({
+    artifactChunk,
+    emitParts: true,
+    entryFile: artifactChunk?.entryFile,
+    stageName: "splitOneJsChunk",
+  });
+}
+
+export function transformOneJsChunk({ artifactChunk, emitParts, entryFile, stageName }) {
   const entryArtifactFile = artifactChunk?.files?.find((file) => file.path === artifactChunk.entryFile);
   if (!entryArtifactFile?.ast) {
     throw new Error(
-      `splitOneJsChunk requires AST for file: ${artifactChunk?.chunkId ?? "<unknown>"}/${artifactChunk?.entryFile ?? "<entry>"}`
+      `${stageName} requires AST for file: ${artifactChunk?.chunkId ?? "<unknown>"}/${artifactChunk?.entryFile ?? "<entry>"}`
     );
   }
-  const normalizedEntryFile = normalizeChunkEntryFile(entryFile);
+  const normalizedEntryFile = normalizeChunkEntryFile(
+    entryFile ?? artifactChunk?.entryFile ?? CANONICAL_CHUNK_ENTRY_FILE
+  );
   const startedAt = process.hrtime.bigint();
   const jsPath = sourcePathForLoadedChunk(artifactChunk);
   const chunkId = artifactChunk.chunkId;
@@ -148,8 +172,8 @@ export function splitOneJsChunk({ artifactChunk, emitParts = true, entryFile = D
   };
 }
 
-function splitChunksParallel({ artifactChunks, emitParts, entryFile, jobs }) {
-  const results = new Array(artifactChunks.length);
+function splitChunksParallel({ workerDataByChunk, jobs }) {
+  const results = new Array(workerDataByChunk.length);
   let nextIndex = 0;
   let active = 0;
   let firstError;
@@ -163,14 +187,14 @@ function splitChunksParallel({ artifactChunks, emitParts, entryFile, jobs }) {
           rejectPromise(firstError);
           return;
         }
-        if (nextIndex >= artifactChunks.length && active === 0) {
+        if (nextIndex >= workerDataByChunk.length && active === 0) {
           resolvePromise(results);
           return;
         }
-        while (active < jobs && nextIndex < artifactChunks.length) {
+        while (active < jobs && nextIndex < workerDataByChunk.length) {
           const index = nextIndex++;
           active++;
-          runWorker({ artifactChunk: artifactChunks[index], emitParts, entryFile })
+          runWorker(workerDataByChunk[index])
             .then((result) => {
               results[index] = {
                 ...result,
@@ -246,6 +270,18 @@ function formatBytes(bytes) {
 
 function defaultJobs() {
   return Math.max(1, Math.min(availableParallelism() - 1, 8));
+}
+
+function requireNormalizedArtifact(artifact, stageName) {
+  requirePipelineArtifact(artifact, stageName);
+  for (const chunk of listChunks(artifact)) {
+    if (!getArtifactChunkManifest(artifact, chunk.chunkId)) {
+      throw new Error(
+        `${stageName} requires normalizeJsChunks first; missing chunk manifest for ${chunk.chunkId}`
+      );
+    }
+  }
+  return artifact;
 }
 
 function slowestChunks(chunks, limit) {

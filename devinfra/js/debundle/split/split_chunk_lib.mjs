@@ -9,12 +9,12 @@ import { requireValue, resolveWorkspacePath } from "../common/workspace_io_lib.m
 
 const generate = generateModule.default ?? generateModule;
 const traverse = traverseModule.default ?? traverseModule;
-export const DEFAULT_SPLIT_ENTRY_FILE = "entry.js";
+export const CANONICAL_CHUNK_ENTRY_FILE = "entry.js";
 
 export function parseArgs(argv) {
   const options = {
     chunkId: undefined,
-    entryFile: DEFAULT_SPLIT_ENTRY_FILE,
+    entryFile: CANONICAL_CHUNK_ENTRY_FILE,
     force: false,
     help: false,
     inputPath: undefined,
@@ -65,7 +65,7 @@ export function splitScopeHoistedChunk(
   code,
   {
     chunkId,
-    entryFile = DEFAULT_SPLIT_ENTRY_FILE,
+    entryFile = CANONICAL_CHUNK_ENTRY_FILE,
     includeJsFileAsts = false,
     rewriteEntryImportSource = undefined,
     rewriteRuntimeImportSource = undefined,
@@ -89,7 +89,7 @@ export function splitScopeHoistedChunkAst(
   ast,
   {
     chunkId,
-    entryFile = DEFAULT_SPLIT_ENTRY_FILE,
+    entryFile = CANONICAL_CHUNK_ENTRY_FILE,
     emitParts = true,
     includeJsFileAsts = false,
     rewriteEntryImportSource = identity,

@@ -113,8 +113,8 @@ test("rewriteChunkEntrySpecifiers writes runnable parseable JS tree output", asy
   assert.equal(pipelineManifest.counts.parts, 0);
 });
 
-test("rewriteChunkEntrySpecifiers supports nested entry file paths", async () => {
-  const { extractedRoot, outDir, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-nested-entry-");
+test("normalizeJsChunks uses a fixed canonical entry path", async () => {
+  const { extractedRoot, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-canonical-entry-");
 
   const loaded = loadJsChunks({
     jsListPath: join(extractedRoot, "js-files.txt"),
@@ -125,28 +125,19 @@ test("rewriteChunkEntrySpecifiers supports nested entry file paths", async () =>
   });
   const normalized = await normalizeJsChunks({
     artifact: parsed.artifact,
-    entryFile: "shell/entry.js",
     jobs: 2,
   });
-  const { artifact } = rewriteChunkEntrySpecifiers({
-    artifact: normalized.artifact,
-  });
-  writeJsTree({
-    artifact,
-    force: true,
-    outDir,
-  });
 
-  const aEntry = readUtf8(join(outDir, "static", "a", "shell", "entry.js"));
-  const aChunkManifest = JSON.parse(readUtf8(join(outDir, "static", "a", "manifest.json")));
-  assert.equal(aChunkManifest.entryFile, "shell/entry.js");
-  assert.match(aEntry, /from "\.\.\/\.\.\/b\/shell\/entry\.js"/);
-  assert.match(aEntry, /import\("\.\.\/\.\.\/b\/shell\/entry\.js"\)/);
-  assert.match(aEntry, /new Worker\(new URL\("\.\.\/\.\.\/b\/shell\/entry\.js", import\.meta\.url\),/);
+  assert.equal(normalized.artifact.chunks.get("static/a")?.entryFile, ENTRY_FILE);
+  assert.equal(normalized.artifact.chunks.get("static/b")?.entryFile, ENTRY_FILE);
 
-  assert.deepEqual(
-    runNodeScript(join(outDir, "static", "a", "shell", "entry.js")),
-    runNodeScript(join(snapshotRoot, "static", "a.js"))
+  await assert.rejects(
+    normalizeJsChunks({
+      artifact: parsed.artifact,
+      entryFile: "shell/entry.js",
+      jobs: 2,
+    }),
+    /no longer accepts entryFile/
   );
 });
 
@@ -160,12 +151,36 @@ test("splitJsTree emits parts when a chunk has safely splittable owners", async 
   const parsed = computeJsAsts({
     artifact: loaded.artifact,
   });
-  const { manifest } = await splitJsTree({
+  const normalized = await normalizeJsChunks({
     artifact: parsed.artifact,
+    jobs: 2,
+  });
+  const { manifest } = await splitJsTree({
+    artifact: normalized.artifact,
     jobs: 2,
   });
 
   const aChunk = manifest.chunks.find((chunk) => chunk.chunkId === "static/a");
   assert.ok(aChunk);
   assert.ok(manifest.counts.parts > 0);
+});
+
+test("splitJsTree requires normalizeJsChunks first", async () => {
+  const { extractedRoot, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-needs-normalize-");
+
+  const loaded = loadJsChunks({
+    jsListPath: join(extractedRoot, "js-files.txt"),
+    inputRoot: snapshotRoot,
+  });
+  const parsed = computeJsAsts({
+    artifact: loaded.artifact,
+  });
+
+  await assert.rejects(
+    splitJsTree({
+      artifact: parsed.artifact,
+      jobs: 2,
+    }),
+    /requires normalizeJsChunks first/
+  );
 });
