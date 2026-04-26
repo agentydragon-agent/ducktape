@@ -87,7 +87,13 @@ resource "authentik_provider_proxy" "alloy_otlp" {
   authentication_flow   = data.authentik_flow.authentication.id
   authorization_flow    = data.authentik_flow.implicit_consent.id
   invalidation_flow     = data.authentik_flow.invalidation.id
-  access_token_validity = "hours=24"
+
+  # The rotator writes the proxy-scoped token that the outpost will actually
+  # introspect, not the source provider token used as the JWT-bearer
+  # assertion. Keep the proxy token long-lived enough that the shared
+  # expires_unencrypted freshness check stays meaningful instead of forcing
+  # hourly commits once the final token's remaining lifetime drops below 24h.
+  access_token_validity = "hours=1080"
 
   jwt_federation_providers = [authentik_provider_oauth2.alloy_otlp_client_credentials.id]
 }
@@ -158,10 +164,11 @@ resource "authentik_policy_binding" "alloy_otlp_cc_auto_user" {
   order  = 1
 }
 
-# The outpost authenticates bearer JWTs from alloy-otlp-client-credentials
-# against the proxy application. Bind both the stable service account identity
-# and Authentik's auto-created client_credentials user to keep the mapping
-# explicit.
+# The outpost only recognizes tokens issued by its own provider. The rotation
+# job therefore mints a source JWT from alloy-otlp-client-credentials and then
+# exchanges it into a proxy-scoped token whose provider is alloy_otlp. Bind
+# both possible source identities here so the exchanged token's preserved user
+# can pass the proxy application's policy check.
 resource "authentik_policy_binding" "alloy_otlp_proxy_user" {
   target = authentik_application.alloy_otlp.uuid
   user   = authentik_user.alloy_otlp_client_credentials.id
@@ -174,20 +181,22 @@ resource "authentik_policy_binding" "alloy_otlp_proxy_auto_user" {
   order  = 1
 }
 
-# In-cluster client credentials for the Alloy JWT rotator CronJob. The job
-# mints short-lived-ish OIDC access tokens, commits them SOPS-encrypted to git,
-# and session startup exports DUCKTAPE_OTEL_BEARER_TOKEN from that file.
+# In-cluster credentials for the Alloy JWT rotator CronJob:
+# - client_id/client_secret mint a source JWT from the dedicated OAuth2 provider
+# - proxy_client_id tells the shared rotator which proxy provider to target for
+#   the second-stage JWT-bearer exchange before writing the final token to SOPS
 resource "kubernetes_secret" "alloy_otlp_client_credentials" {
   metadata {
     name      = "alloy-otlp-client-credentials"
     namespace = "agents-infra"
     annotations = {
-      description = "client_id + client_secret for alloy-otlp-client-credentials OIDC provider (mounted by alloy-otlp-jwt-rotation CronJob)"
+      description = "source OAuth2 client_id/client_secret plus proxy_client_id for the Alloy OTLP JWT rotator"
     }
   }
 
   data = {
     client_id     = authentik_provider_oauth2.alloy_otlp_client_credentials.client_id
     client_secret = authentik_provider_oauth2.alloy_otlp_client_credentials.client_secret
+    proxy_client_id = authentik_provider_proxy.alloy_otlp.client_id
   }
 }

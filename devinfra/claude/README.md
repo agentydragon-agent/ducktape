@@ -189,8 +189,11 @@ Configuration via environment variable:
 Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
 `alloy-otlp.allegedly.works`. Authentik is the canonical source for the bearer
 JWT: the TF module creates a dedicated `alloy-otlp-client-credentials` OAuth2
-provider, and the `alloy-otlp-jwt-rotation` CronJob mints a JWT hourly when the
-existing token has <24h of validity remaining. The job commits the token
+provider, and the `alloy-otlp-jwt-rotation` CronJob mints a source JWT hourly
+when the existing token has <24h of validity remaining. The job immediately
+exchanges that source JWT into an `alloy-otlp` proxy-scoped JWT before writing
+it to git, because Authentik proxy outposts only accept Bearers issued by the
+proxy provider they introspect against. The job commits the final token
 SOPS-encrypted to `secrets/alloy-otlp-bearer-token.yaml`; `cli_env.sh` and
 `web_env.sh` decrypt that file and export it as `DUCKTAPE_OTEL_BEARER_TOKEN`.
 On first deploy there is an expected bootstrap window: until the CronJob runs
