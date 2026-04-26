@@ -20,6 +20,7 @@ import argparse
 import asyncio
 import contextlib
 import logging
+import tarfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,13 +37,13 @@ from agent_framework import (
     MiddlewareTermination,
 )
 
+from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
     load_sim_prompt,
-    load_skill_prompt,
 )
 from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Result, RunSummary, Timeout
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
@@ -52,10 +53,30 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
 )
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
+from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 200
+_SKILL_FILES_PATH = "/work/.skill"
+
+# Maps the --skill CLI value to (rlocation, package_name) of the tar to mount
+# into the scratch container. The "off" arm uses an empty SKILL.md so the
+# sandbox shape is uniform across arms — there is no `if skill_on:` branch.
+_SKILL_TARS: dict[str, tuple[str, str]] = {
+    "on": ("_main/skills/info_gathering/info_gathering_tar.tar", "info_gathering"),
+    "off": ("_main/skills/eval_infra/empty_skill_tar.tar", "empty_skill"),
+}
+
+
+def _load_skill(tar_rlocation: str, package_name: str, extract_dir: Path) -> tuple[Path, str]:
+    """Extract a skill tar; return (host dir to bind-mount, SKILL.md text)."""
+    tar_path = get_required_path(tar_rlocation)
+    with tarfile.open(tar_path) as tf:
+        tf.extractall(extract_dir)
+    skill_dir = extract_dir / package_name
+    skill_md = (skill_dir / "SKILL.md").read_text()
+    return skill_dir, skill_md
 
 
 # -- Game state --
@@ -200,18 +221,23 @@ async def run_game(
     api: str,
     output_dir: Path,
     model_client: BaseChatClient[Any],
+    skill_md: str,
+    skill_files_path: str,
     exec_tool: MCPStdioTool | None = None,
-    no_skill: bool = False,
 ) -> RunSummary:
     """Execute one Twenty Questions game and persist results.
 
     The caller owns `model_client`'s lifecycle; this function neither
-    constructs nor closes it.
+    constructs nor closes it. The caller also owns staging the skill
+    (extracting the tar, mounting the dir into `exec_tool`'s container);
+    `skill_md` is the SKILL.md text to inline (empty string for the
+    off-arm — the empty-skill tar has an empty SKILL.md), and
+    `skill_files_path` is the in-container path the agent can `cat`/`ls`.
     """
     variant = VARIANTS[variant_name]
     sim_system = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
     guesser_system = build_guesser_system(
-        skill="" if no_skill else load_skill_prompt(), has_scratch=exec_tool is not None
+        skill=skill_md, has_scratch=exec_tool is not None, skill_files_path=skill_files_path
     )
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
@@ -273,15 +299,21 @@ async def _async_main(args: argparse.Namespace) -> None:
     model_client = build_model_client(
         api=args.api, model=args.model, function_invocation_configuration={"max_iterations": _MAX_STEPS}
     )
-    async with scratch_exec_mcp_tool() as exec_tool:
+
+    tar_rlocation, package_name = _SKILL_TARS[args.skill]
+    skill_dir, skill_md = _load_skill(tar_rlocation, package_name, output_dir / "skill_extract")
+    skill_bind = BindMount(host_path=skill_dir.resolve(), container_path=Path(_SKILL_FILES_PATH), mode="ro")
+
+    async with scratch_exec_mcp_tool(binds=[skill_bind]) as exec_tool:
         summary = await run_game(
             variant_name=args.variant,
             model=args.model,
             api=args.api,
             output_dir=output_dir,
             model_client=model_client,
+            skill_md=skill_md,
+            skill_files_path=_SKILL_FILES_PATH,
             exec_tool=exec_tool,
-            no_skill=getattr(args, "no_skill", False),
         )
     logger.info("Result: %s", summary.result.model_dump_json())
 
@@ -289,7 +321,12 @@ async def _async_main(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Twenty Questions — Agent Framework")
     add_common_args(parser)
-    parser.add_argument("--no-skill", action="store_true", help="Run without info-gathering skill prompt (baseline)")
+    parser.add_argument(
+        "--skill",
+        choices=["on", "off"],
+        default="on",
+        help="Skill arm: 'on' mounts info_gathering, 'off' mounts an empty skill tar.",
+    )
     args = parser.parse_args()
     resolve_args(args)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

@@ -15,16 +15,25 @@ _BASE_PREAMBLE = (
 )
 
 
-def build_system_prompt(*, skill: str, has_scratch: bool) -> str:
-    """Compose the system prompt for the function learning guesser."""
+def build_system_prompt(*, skill: str, has_scratch: bool, skill_files_path: str) -> str:
+    """Compose the system prompt for the function learning guesser.
+
+    Args:
+        skill: SKILL.md text to inline. Empty string for the off-arm
+               (the empty-skill tar is still mounted; SKILL.md is just blank).
+        has_scratch: Include the scratch container exec tool note.
+        skill_files_path: In-container path where the skill tar is bind-mounted
+                          (e.g. ``/work/.skill``). Always non-empty — every
+                          rollout mounts a skill (real or empty).
+    """
     parts: list[str] = [_BASE_PREAMBLE]
-
-    if skill:
-        parts.append(f"Follow this information-gathering skill throughout.\n\n<skill>\n{skill}\n</skill>")
-
+    parts.append(
+        f"Follow this information-gathering skill throughout.\n\n<skill>\n{skill}\n</skill>\n\n"
+        f"The full skill (SKILL.md and any referenced example files) is available "
+        f"in the container at {skill_files_path}/."
+    )
     if has_scratch:
         parts.append(load_scratch_system_note())
-
     return "\n\n---\n\n".join(parts)
 
 

@@ -29,21 +29,25 @@ def load_scratch_system_note() -> str:
     return get_required_path(_SCRATCH_NOTE_RLOCATION).read_text().strip()
 
 
-def build_guesser_system(*, skill: str, has_scratch: bool) -> str:
+def build_guesser_system(*, skill: str, has_scratch: bool, skill_files_path: str) -> str:
     """Compose the guesser's system prompt from independent pieces.
 
     Args:
-        skill: Skill text to include. Empty string = no skill.
+        skill: Skill text to inline. Empty string for the off-arm
+               (the empty-skill tar is still mounted; SKILL.md is just blank).
         has_scratch: Include the scratch container exec tool note.
+        skill_files_path: In-container path where the skill tar is bind-mounted
+                          (e.g. ``/work/.skill``). Always non-empty — every
+                          rollout mounts a skill (real or empty).
     """
     parts: list[str] = [_BASE_GUESSER_PREAMBLE]
-
-    if skill:
-        parts.append(f"Follow this information-gathering skill throughout.\n\n<skill>\n{skill}\n</skill>")
-
+    parts.append(
+        f"Follow this information-gathering skill throughout.\n\n<skill>\n{skill}\n</skill>\n\n"
+        f"The full skill (SKILL.md and any referenced example files) is available "
+        f"in the container at {skill_files_path}/."
+    )
     if has_scratch:
         parts.append(load_scratch_system_note())
-
     return "\n\n---\n\n".join(parts)
 
 

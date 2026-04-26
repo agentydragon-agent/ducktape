@@ -58,10 +58,6 @@ def _patch_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
         "skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions.load_sim_prompt",
         MagicMock(return_value="You are the simulator."),
     )
-    monkeypatch.setattr(
-        "skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions.load_skill_prompt",
-        MagicMock(return_value="You are skilled."),
-    )
 
 
 async def _run_with_replay(
@@ -74,7 +70,13 @@ async def _run_with_replay(
     """
     client = ReplayChatClient(responses=completions)
     return await run_game(
-        variant_name=variant_name, model="test-model", api="openai", output_dir=tmp_path, model_client=client
+        variant_name=variant_name,
+        model="test-model",
+        api="openai",
+        output_dir=tmp_path,
+        model_client=client,
+        skill_md="You are skilled.",
+        skill_files_path="/work/.skill",
     )
 
 

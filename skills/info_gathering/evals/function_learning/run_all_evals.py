@@ -1,18 +1,27 @@
-"""Run all function learning eval games: 9 functions x 2 arms (skill/no-skill)."""
+"""Run all function learning eval games: 9 functions x 2 arms (skill/no_skill)."""
 
 import argparse
 import asyncio
 import logging
 import uuid
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 import aiodocker
 import anyio
+from agent_framework import MCPStdioTool
 from pydantic import BaseModel
 
+from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
-from skills.info_gathering.evals.function_learning.function_learning import _MAX_STEPS, run_game
+from skills.info_gathering.evals.function_learning.function_learning import (
+    _MAX_STEPS,
+    _SKILL_FILES_PATH,
+    _SKILL_TARS,
+    _load_skill,
+    run_game,
+)
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS
 from skills.info_gathering.evals.function_learning.result_types import FunctionLearningResult, TokenUsage
 
@@ -23,7 +32,7 @@ FUNCTIONS_LIST = list(FUNCTIONS.keys())
 
 class RunRecord(BaseModel):
     function: str
-    arm: str  # "skill" or "no_skill"
+    arm: str  # "on" or "off"
     run_idx: int
     model: str
     turns: int
@@ -33,9 +42,10 @@ class RunRecord(BaseModel):
 
 async def run_one(
     function_name: str,
-    arm_no_skill: bool,
+    arm: str,
     run_idx: int,
-    exec_tool,
+    exec_tool: MCPStdioTool,
+    skill_md: str,
     scoring_container,
     model_client,
     sem: asyncio.Semaphore,
@@ -44,7 +54,6 @@ async def run_one(
     turn_limit: int,
     output_dir: Path,
 ) -> RunRecord | None:
-    arm = "no_skill" if arm_no_skill else "skill"
     label = f"{function_name}/{arm}[{run_idx}]"
     print(f"  START {label}", flush=True)
     async with sem:
@@ -59,7 +68,8 @@ async def run_one(
                 exec_tool=exec_tool,
                 scoring_container=scoring_container,
                 model_client=model_client,
-                no_skill=arm_no_skill,
+                skill_md=skill_md,
+                skill_files_path=_SKILL_FILES_PATH,
             )
             record = RunRecord(
                 function=function_name,
@@ -90,7 +100,17 @@ async def _async_main(args: argparse.Namespace) -> None:
         api=args.api, model=args.model, function_invocation_configuration={"max_iterations": _MAX_STEPS}
     )
 
-    async with scratch_exec_mcp_tool() as exec_tool, aiodocker.Docker() as docker:
+    # Extract each arm's skill tar once and spin up one exec_tool per arm.
+    arms: dict[str, tuple[MCPStdioTool, str]] = {}
+    async with AsyncExitStack() as stack:
+        for arm in ("on", "off"):
+            tar_rlocation, package_name = _SKILL_TARS[arm]
+            skill_dir, skill_md = _load_skill(tar_rlocation, package_name, output_dir / f"skill_extract_{arm}")
+            skill_bind = BindMount(host_path=skill_dir.resolve(), container_path=Path(_SKILL_FILES_PATH), mode="ro")
+            exec_tool = await stack.enter_async_context(scratch_exec_mcp_tool(binds=[skill_bind]))
+            arms[arm] = (exec_tool, skill_md)
+
+        docker = await stack.enter_async_context(aiodocker.Docker())
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         scoring_container = await docker.containers.run(
             config={"Image": "python:3.13-slim", "Cmd": ["sleep", "7200"]}, name=container_name
@@ -99,19 +119,20 @@ async def _async_main(args: argparse.Namespace) -> None:
             tasks = [
                 run_one(
                     fn_name,
-                    no_skill,
+                    arm,
                     run_idx,
-                    exec_tool,
+                    arms[arm][0],
+                    arms[arm][1],
                     scoring_container,
                     model_client,
                     sem,
                     model=args.model,
                     api=args.api,
                     turn_limit=args.turn_limit,
-                    output_dir=output_dir / fn_name / ("no_skill" if no_skill else "skill") / f"run_{run_idx}",
+                    output_dir=output_dir / fn_name / arm / f"run_{run_idx}",
                 )
                 for fn_name in FUNCTIONS_LIST
-                for no_skill in [False, True]
+                for arm in ("on", "off")
                 for run_idx in range(args.runs_per_cell)
             ]
             raw_results = await asyncio.gather(*tasks)
