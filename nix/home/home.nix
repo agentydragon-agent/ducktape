@@ -937,6 +937,9 @@ in
       # Status bar update interval
       set -g status-interval 2
 
+      # Forward terminal focus changes to apps running inside tmux.
+      set -g focus-events on
+
       # Start panes at 1 (like windows)
       setw -g pane-base-index 1
 
