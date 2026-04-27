@@ -67,7 +67,7 @@ _SKILL_BY_ARM: dict[str, SkillSpec] = {"on": REVERSE_ENGINEER_SKILL_SPEC, "off":
 class RunSummary(BaseModel):
     model: str
     skill_on: bool
-    end_reason: Literal["submit", "step_cap", "wall_timeout"]
+    end_reason: Literal["submit", "agent_returned", "wall_timeout"]
     wall_seconds: float
     submit_summary: str | None = None
 
@@ -158,7 +158,7 @@ async def _async_main(args: argparse.Namespace) -> None:
         api="anthropic", model=args.model, function_invocation_configuration={"max_iterations": args.max_steps}
     )
     t_start = time.monotonic()
-    end_reason: Literal["submit", "step_cap", "wall_timeout"]
+    end_reason: Literal["submit", "agent_returned", "wall_timeout"]
 
     with JsonlTranscriptProvider.opened(transcript_path) as transcript:
         async with eval_sandbox(skill=staged, workspace=workspace, inputs=inputs_dir) as exec_tool:
@@ -181,7 +181,12 @@ async def _async_main(args: argparse.Namespace) -> None:
                     ),
                     timeout=args.wall_timeout,
                 )
-                end_reason = "submit" if submit_state.summary is not None else "step_cap"
+                # `agent_returned` is the catch-all when `agent.run()` returns
+                # without `submit` being called. It can be hit because the model
+                # stopped emitting tool calls, AF auto-stopped after consecutive
+                # tool errors, or `max_iterations` was reached -- AF doesn't
+                # surface that distinction. Inspect the transcript to tell.
+                end_reason = "submit" if submit_state.summary is not None else "agent_returned"
             except TimeoutError:
                 end_reason = "wall_timeout"
 
