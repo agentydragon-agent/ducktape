@@ -449,6 +449,25 @@ sudo nixos-rebuild switch --flake .#rugged
    - the built-in display rotates on its own
    - GNOME no longer needs another client to claim the accelerometer first
 
+### First post-patch outcome
+
+- After `nixos-rebuild switch` and a fresh sign-out/sign-in, auto-rotate worked
+  again in normal use.
+- This is consistent with the local Mutter patch fixing the negative
+  `inhibited_count` startup wedge.
+- However, it is only one fresh-session trial so far. Because the suspected root
+  cause is a startup-order race, one success does **not** prove the patch is the
+  only reason it worked; a flaky unpatched session could also have come up in a
+  lucky order.
+
+Current confidence:
+
+1. The patch is plausible and is not obviously wrong.
+2. The original diagnosis is still the best fit to the captured broken-session
+   evidence.
+3. Repeated fresh-session tests are still needed before treating the fix as
+   confirmed.
+
 ### If the patch works
 
 1. Confirm it is stable across:
