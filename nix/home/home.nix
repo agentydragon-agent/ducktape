@@ -614,6 +614,7 @@ in
 
       # Image viewer
       geeqie
+      evince
 
       # System utilities
       scrcpy # Android screen mirroring
@@ -659,10 +660,11 @@ in
 
   };
 
-  # Patch 2 critical MIME associations in-place without replacing the full
+  # Patch a few critical MIME associations in-place without replacing the full
   # mimeapps.list (desktop environment manages the rest).
   home.activation.fixMimeApps = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     run ${pkgs.xdg-utils}/bin/xdg-mime default google-chrome.desktop text/html
+    run ${pkgs.xdg-utils}/bin/xdg-mime default org.gnome.Evince.desktop application/pdf
     run ${pkgs.xdg-utils}/bin/xdg-mime default remote-viewer.desktop application/x-virt-viewer
   '';
 
