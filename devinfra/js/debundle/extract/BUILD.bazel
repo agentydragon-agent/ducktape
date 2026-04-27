@@ -22,7 +22,6 @@ js_library(
     deps = [
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:libs",
-        "//devinfra/js/debundle/rename:core_libs",
         "//devinfra/js/debundle/split:libs",
     ] + _BABEL_DEPS,
 )
@@ -77,7 +76,6 @@ js_test(
         "planner.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
-        "//devinfra/js/debundle/rename:libs",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:libs",

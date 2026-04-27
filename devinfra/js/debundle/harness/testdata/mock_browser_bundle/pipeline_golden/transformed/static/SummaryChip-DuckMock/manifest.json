@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "chunkId": "static/SummaryChip-DuckMock",
+  "sourcePath": "static/SummaryChip-DuckMock.js",
   "parser": {
     "allowUndeclaredExports": true,
     "plugins": [
@@ -11,7 +12,6 @@
     ],
     "sourceType": "module"
   },
-  "sourcePath": "static/SummaryChip-DuckMock.js",
   "entryFile": "entry.js",
   "counts": {
     "dynamicImports": 0,
@@ -61,44 +61,9 @@
         "o"
       ],
       "type": "VariableDeclaration",
-      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+      "unsafeReason": "not_split"
     }
   ],
   "parts": [],
-  "ownerToPart": {},
-  "renames": [
-    {
-      "id": "rename_chip_text_import",
-      "operation": "rename_binding",
-      "chunkId": "static/SummaryChip-DuckMock",
-      "file": "entry.js",
-      "from": "o$1",
-      "to": "formatChipText",
-      "preserveRuntimeName": false,
-      "owner": null,
-      "fingerprint": {
-        "imported": "o",
-        "kind": "ImportSpecifier",
-        "local": "o$1",
-        "name": "o$1",
-        "source": "./chunk-DuckMock.js"
-      }
-    },
-    {
-      "id": "rename_summary_chip",
-      "operation": "rename_binding",
-      "chunkId": "static/SummaryChip-DuckMock",
-      "file": "entry.js",
-      "from": "o",
-      "to": "renderSummaryChip",
-      "preserveRuntimeName": false,
-      "owner": null,
-      "fingerprint": {
-        "init": "t => {\n  const o2 = {\n    text: o$1(t)\n  };\n  globalThis.__mockBundleState.chip = o2;\n  document.querySelector(\"#chip\").textContent = o2.text;\n  return o2;\n}",
-        "kind": "VariableDeclarator",
-        "name": "o",
-        "objectPropertyNames": []
-      }
-    }
-  ]
+  "ownerToPart": {}
 }

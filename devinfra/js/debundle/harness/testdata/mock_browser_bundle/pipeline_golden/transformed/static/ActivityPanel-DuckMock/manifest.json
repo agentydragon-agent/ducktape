@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "chunkId": "static/ActivityPanel-DuckMock",
+  "sourcePath": "static/ActivityPanel-DuckMock.js",
   "parser": {
     "allowUndeclaredExports": true,
     "plugins": [
@@ -11,7 +12,6 @@
     ],
     "sourceType": "module"
   },
-  "sourcePath": "static/ActivityPanel-DuckMock.js",
   "entryFile": "entry.js",
   "counts": {
     "dynamicImports": 0,
@@ -61,44 +61,9 @@
         "o"
       ],
       "type": "VariableDeclaration",
-      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+      "unsafeReason": "not_split"
     }
   ],
   "parts": [],
-  "ownerToPart": {},
-  "renames": [
-    {
-      "id": "rename_activity_badge_import",
-      "operation": "rename_binding",
-      "chunkId": "static/ActivityPanel-DuckMock",
-      "file": "entry.js",
-      "from": "e",
-      "to": "formatActivityBadge",
-      "preserveRuntimeName": false,
-      "owner": null,
-      "fingerprint": {
-        "imported": "e",
-        "kind": "ImportSpecifier",
-        "local": "e",
-        "name": "e",
-        "source": "./chunk-DuckMock.js"
-      }
-    },
-    {
-      "id": "rename_activity_panel",
-      "operation": "rename_binding",
-      "chunkId": "static/ActivityPanel-DuckMock",
-      "file": "entry.js",
-      "from": "o",
-      "to": "renderActivityPanel",
-      "preserveRuntimeName": false,
-      "owner": null,
-      "fingerprint": {
-        "init": "(t, a) => {\n  const o2 = {\n    badge: e(t, a),\n    stamp: a.stamp,\n    tags: t.tags.join(\",\")\n  };\n  globalThis.__mockBundleState.lazy = o2;\n  document.querySelector(\"#status\").textContent = o2.badge;\n  return o2;\n}",
-        "kind": "VariableDeclarator",
-        "name": "o",
-        "objectPropertyNames": []
-      }
-    }
-  ]
+  "ownerToPart": {}
 }

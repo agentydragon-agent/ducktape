@@ -13,8 +13,7 @@ import {
   setChunk,
 } from "../common/artifact.mjs";
 import { ensureOutputDir, logProgress, relativeWorkspacePath, resolveWorkspacePath } from "../common/io.mjs";
-import { buildOrderedInitGeneratedMetadata } from "./generated_artifact_marking.mjs";
-import { extractSelectedModulePlanInAst } from "./init_region.mjs";
+import { buildSelectedModuleLoweringMetadata, extractSelectedModulePlanInAst } from "./init_region.mjs";
 import { deriveSelectedModuleTarget } from "./planner.mjs";
 
 export function mergeModules({
@@ -156,7 +155,7 @@ export function mergeModules({
             chunkFile: relativePath,
             chunkId,
             role: relativePath === runtimeFile ? "entry" : "module",
-            ...(relativePath === runtimeFile ? {} : { generated: buildOrderedInitGeneratedMetadata() }),
+            ...(relativePath === runtimeFile ? {} : { generated: buildSelectedModuleLoweringMetadata() }),
             ...(modulePlan
               ? {
                   moduleExtraction: {

@@ -5,23 +5,53 @@ import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
 import { referencedUndeclaredNames } from "../common/program_analysis.mjs";
 import { serializeGeneratedJsFile } from "../split/chunk.mjs";
 import {
-  expandOrderedInitOwnerClosurePassOperations,
-  ORDERED_INIT_OWNER_CLOSURE_PASS_OPERATION,
+  expandSelectedModuleGroupPlanningOperations,
+  PLAN_SELECTED_MODULE_GROUPS_OPERATION,
 } from "./decl_graph.mjs";
-import {
-  addOrderedInitGeneratedNodeComment,
-  buildOrderedInitGeneratedHeaderLines,
-  orderedInitSnapshotIdentifierName,
-} from "./generated_artifact_marking.mjs";
 import {
   buildSelectedModuleOperations,
 } from "./planner.mjs";
 
+const SELECTED_MODULE_LOWERING_FILE_PRAGMA =
+  "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
+const SELECTED_MODULE_LOWERING_GENERATOR_HEADER =
+  "// @ducktape-generator devinfra/js/debundle/extract/init_region.mjs";
+const SELECTED_MODULE_LOWERING_NODE_PRAGMA =
+  "@ducktape-generated-node kind=lowerer-glue stage=selected_module_lowering";
+const SELECTED_MODULE_SNAPSHOT_PREFIX = "__dt_selected_module_snapshot__";
+const SELECTED_MODULE_LOWERING_METADATA = Object.freeze({
+  kind: "lowerer_helper",
+  stage: "selected_module_lowering",
+  generator: "devinfra/js/debundle/extract/init_region.mjs",
+  ignoreByDefault: true,
+});
 
-export function extractOrderedInitRegionsInCode(code, operations, options = {}) {
+export function buildSelectedModuleLoweringMetadata() {
+  return { ...SELECTED_MODULE_LOWERING_METADATA };
+}
+
+function buildSelectedModuleLoweringHeaderLines(ownerIds) {
+  return [
+    SELECTED_MODULE_LOWERING_FILE_PRAGMA,
+    SELECTED_MODULE_LOWERING_GENERATOR_HEADER,
+    `// Selected-module lowered region; original owners: ${ownerIds.join(", ")}.`,
+  ];
+}
+
+function addSelectedModuleLoweringNodeComment(node) {
+  t.addComment(node, "leading", ` ${SELECTED_MODULE_LOWERING_NODE_PRAGMA} `);
+  return node;
+}
+
+function selectedModuleSnapshotIdentifierName(ownerId) {
+  return `${SELECTED_MODULE_SNAPSHOT_PREFIX}${ownerId.replace(/[^A-Za-z0-9_$]/g, "_")}`;
+}
+
+
+export function lowerSelectedModuleRegionsInCode(code, operations, options = {}) {
   const ast = parse(code, options.parser ?? DEFAULT_PARSER_OPTIONS);
-  const file = resolveOperationFile(operations, options.file, "extractOrderedInitRegionsInCode");
-  const result = extractOrderedInitRegionsInAst(ast, operations, { ...options, file });
+  const file = resolveOperationFile(operations, options.file, "lowerSelectedModuleRegionsInCode");
+  const result = lowerSelectedModuleRegionsInAst(ast, operations, { ...options, file });
   const files = new Map();
   for (const [relativePath, file] of result.jsFiles.entries()) {
     files.set(relativePath, serializeGeneratedJsFile(file));
@@ -33,12 +63,12 @@ export function extractOrderedInitRegionsInCode(code, operations, options = {}) 
   };
 }
 
-export function extractOrderedInitRegionsInAst(
+export function lowerSelectedModuleRegionsInAst(
   ast,
   operations,
   { analysis = null, chunkId = "<chunk>", file, headerLines = [] } = {}
 ) {
-  const runtimeFile = resolveOperationFile(operations, file, "extractOrderedInitRegionsInAst");
+  const runtimeFile = resolveOperationFile(operations, file, "lowerSelectedModuleRegionsInAst");
   const graphAwareOperations = operations.filter((operation) => EXTRACT_OPERATION_TYPES.has(operation.operation));
   const suppliedAnalysis = analysis ?? null;
   const resolvedChunkId =
@@ -49,7 +79,7 @@ export function extractOrderedInitRegionsInAst(
   const ownerById = new Map(runtimeAnalysis.owners.map((owner) => [owner.id, owner]));
   const programBody = ast.program.body;
   const sideEffectById = new Map(runtimeAnalysis.sideEffects.map((sideEffect) => [sideEffect.id, sideEffect]));
-  const extractOperations = expandOrderedInitOwnerClosurePassOperations(
+  const extractOperations = expandSelectedModuleGroupPlanningOperations(
     runtimeAnalysis,
     graphAwareOperations,
     {
@@ -57,7 +87,7 @@ export function extractOrderedInitRegionsInAst(
       file: runtimeFile,
     }
   )
-    .filter((operation) => operation.operation === "extract_ordered_init_region")
+    .filter((operation) => operation.operation === "lower_selected_module_region")
     .filter((operation) => operationSupportsCurrentExtractor(operation, { ownerById }));
   const topLevelNames = collectTopLevelNames(runtimeAnalysis);
   const programItemByOrdinal = new Map(runtimeAnalysis.programItems.map((item) => [item.ordinal, item]));
@@ -162,7 +192,7 @@ export function extractSelectedModulePlanInAst(
     ...(initPrefix ? { initPrefix } : {}),
     ...(targetDir ? { targetDir } : {}),
   });
-  const result = extractOrderedInitRegionsInAst(ast, operations, {
+  const result = lowerSelectedModuleRegionsInAst(ast, operations, {
     ...(analysis ? { analysis } : {}),
     chunkId,
     ...(file ? { file } : {}),
@@ -757,7 +787,7 @@ function buildRuntimeImportDeclaration(entry) {
     ...entry.exportBindings.map((binding) => importSpecifierForLocal(binding.local, binding.exported, "named")),
     ...runtimeInitNamesForEntry(entry).map((name) => importSpecifierForLocal(name, name, "named")),
   ];
-  return addOrderedInitGeneratedNodeComment(
+  return addSelectedModuleLoweringNodeComment(
     t.importDeclaration(specifiers, t.stringLiteral(runtimeImportSourceForTarget(entry.targetFile)))
   );
 }
@@ -772,7 +802,7 @@ function buildRuntimeReplacementRuns(entry) {
 }
 
 function buildInitCallStatement(run) {
-  return addOrderedInitGeneratedNodeComment(
+  return addSelectedModuleLoweringNodeComment(
     t.expressionStatement(t.callExpression(t.identifier(runtimeInitNameForRun(run)), []))
   );
 }
@@ -807,7 +837,7 @@ function buildExtractedModuleFile(entry) {
   );
   return {
     ast: t.file(t.program(body)),
-    headerLines: buildOrderedInitGeneratedHeaderLines(entry.ownerIds),
+    headerLines: buildSelectedModuleLoweringHeaderLines(entry.ownerIds),
   };
 }
 
@@ -856,7 +886,7 @@ function buildSnapshotVariableDeclarationStatements(owner, statement) {
     throw new Error(`Expected VariableDeclaration for snapshot lowering of ${owner.id}, got ${statement?.type}`);
   }
   const bindingNames = topLevelDeclarationNames(statement);
-  const snapshotId = t.identifier(orderedInitSnapshotIdentifierName(owner.id));
+  const snapshotId = t.identifier(selectedModuleSnapshotIdentifierName(owner.id));
   const declarationStatement = t.cloneNode(declaration, true);
   const snapshotObject = t.objectExpression(
     bindingNames.map((name) => t.objectProperty(t.identifier(name), t.identifier(name), false, true))
@@ -1567,7 +1597,7 @@ function buildExtractionIndex(operations) {
   const allSelectedOwnerIds = new Set();
   const ownerToOperation = new Map();
   for (const operation of operations) {
-    if (operation.operation !== "extract_ordered_init_region") {
+    if (operation.operation !== "lower_selected_module_region") {
       continue;
     }
     for (const ownerId of operation.selector.ownerIds ?? []) {
@@ -1722,9 +1752,12 @@ function findDuplicateStrings(values) {
 
 const SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
 const EXTRACT_OPERATION_TYPES = new Set([
-  "extract_ordered_init_region",
-  ORDERED_INIT_OWNER_CLOSURE_PASS_OPERATION,
+  "lower_selected_module_region",
+  PLAN_SELECTED_MODULE_GROUPS_OPERATION,
 ]);
 const RUNTIME_CONSTRUCTOR_SHADOW_NONE = 0;
 const RUNTIME_CONSTRUCTOR_SHADOW_WORKER = 1;
 const RUNTIME_CONSTRUCTOR_SHADOW_SHARED_WORKER = 2;
+
+export const extractOrderedInitRegionsInCode = lowerSelectedModuleRegionsInCode;
+export const extractOrderedInitRegionsInAst = lowerSelectedModuleRegionsInAst;

@@ -4,11 +4,11 @@ import test from "node:test";
 import { analyzeRuntimeBoundaryCode } from "../analysis/boundary.mjs";
 import { createTempFixtureRoot, runNodeScript, writeRunnableFixture } from "../test_support/fixtures.mjs";
 import {
-  buildOrderedInitOwnerClosureOperations,
-  packOrderedInitOwnerClosures,
-  planOrderedInitOwnerClosureExtractions,
+  buildSelectedModuleGroupOperations,
+  packSelectedModuleGroups,
+  planSelectedModuleGroupExtractions,
 } from "./decl_graph.mjs";
-import { extractOrderedInitRegionsInCode } from "./init_region.mjs";
+import { lowerSelectedModuleRegionsInCode } from "./init_region.mjs";
 
 test("owner closure operations can omit selector.file and run against a non-runtime entry file", () => {
   const source = `const helperSeed = 1;
@@ -20,10 +20,10 @@ export { render as publicRender };
 `;
 
   const plan = ownerClosurePlanForCode(source);
-  const batchPlan = packOrderedInitOwnerClosures(plan).batchPlans.find((candidate) =>
+  const batchPlan = packSelectedModuleGroups(plan).batchPlans.find((candidate) =>
     candidate.memberNames.includes("render")
   );
-  const operations = buildOrderedInitOwnerClosureOperations({ batchPlans: [batchPlan] }, {
+  const operations = buildSelectedModuleGroupOperations({ batchPlans: [batchPlan] }, {
     chunkId: "static/app",
     idPrefix: "entry_owner",
     initPrefix: "init_entry_owner_",
@@ -32,8 +32,8 @@ export { render as publicRender };
 
   assert.equal("file" in operations[0].selector, false);
 
-  const result = extractOrderedInitRegionsInCode(source, operations, { file: "entry.js" });
-  assert.match(result.files.get("entry.js"), /from "\.\/regions\/owner_closure_/);
+  const result = lowerSelectedModuleRegionsInCode(source, operations, { file: "entry.js" });
+  assert.match(result.files.get("entry.js"), /from "\.\/regions\/selected_module_group_/);
   assertRunnableEquivalent({
     entryFile: "entry.js",
     prefix: "debundle-owner-closure-entry-file-",
@@ -94,7 +94,7 @@ const localOnly = 2;
 function readLocalOnly() { return localOnly; }
 `);
 
-  const batchPlan = packOrderedInitOwnerClosures(plan);
+  const batchPlan = packSelectedModuleGroups(plan);
   assert.equal(batchPlan.batchPlans.length, 2);
   const renderBatch = findOwnerClosureBatchPlanByName(batchPlan, "render");
   const localBatch = findOwnerClosureBatchPlanByName(batchPlan, "readLocalOnly");
@@ -121,8 +121,8 @@ export { render as publicRender };
 `;
 
   const plan = ownerClosurePlanForCode(source);
-  const batchPlan = packOrderedInitOwnerClosures(plan);
-  const operations = buildOrderedInitOwnerClosureOperations(batchPlan, {
+  const batchPlan = packSelectedModuleGroups(plan);
+  const operations = buildSelectedModuleGroupOperations(batchPlan, {
     chunkId: "static/app",
     file: "runtime.js",
     filePrefix: "owner_",
@@ -130,11 +130,11 @@ export { render as publicRender };
     initPrefix: "init_fixture_owner_",
     targetDir: "regions",
   });
-  const result = extractOrderedInitRegionsInCode(source, operations);
+  const result = lowerSelectedModuleRegionsInCode(source, operations);
 
   const extractedFiles = [...result.files.keys()].filter((file) => file.startsWith("regions/owner_"));
   assert.equal(extractedFiles.length, 1);
-  assert.match(result.code, /from "\.\/regions\/owner_owner_closure_/);
+  assert.match(result.code, /from "\.\/regions\/owner_selected_module_group_/);
   assertRunnableEquivalent({
     prefix: "debundle-owner-closure-pass-",
     source,
@@ -142,7 +142,7 @@ export { render as publicRender };
   });
 });
 
-test("owner closure planner supports staged-shell lowering across retained top-level barriers", () => {
+test("selected module-group planner supports staged-shell lowering across retained top-level barriers", () => {
   const source = `const helperSeed = 1;
 function readHelperSeed() { return helperSeed; }
 console.log("graph-barrier");
@@ -153,7 +153,7 @@ export { render as publicRender };
 `;
 
   const plan = ownerClosurePlanForCode(source);
-  const batchPlan = packOrderedInitOwnerClosures(plan, {
+  const batchPlan = packSelectedModuleGroups(plan, {
     lowering: "staged_shell",
   });
   const renderBatch = findOwnerClosureBatchPlanByName(batchPlan, "render");
@@ -162,7 +162,7 @@ export { render as publicRender };
   assert.equal(renderBatch.stageRuns.length, 2);
   assert.deepEqual(renderBatch.shellItemIds, ["side_effect_00000"]);
 
-  const operations = buildOrderedInitOwnerClosureOperations(batchPlan, {
+  const operations = buildSelectedModuleGroupOperations(batchPlan, {
     chunkId: "static/app",
     file: "runtime.js",
     filePrefix: "owner_",
@@ -171,14 +171,14 @@ export { render as publicRender };
     lowering: "staged_shell",
     targetDir: "regions",
   });
-  const result = extractOrderedInitRegionsInCode(source, operations);
+  const result = lowerSelectedModuleRegionsInCode(source, operations);
 
   const extractedFiles = [...result.files.keys()].filter((file) => file.startsWith("regions/owner_"));
   assert.equal(extractedFiles.length, 1);
-  assert.match(result.code, /init_fixture_staged_owner_owner_closure_.*_stage_0/);
-  assert.match(result.code, /init_fixture_staged_owner_owner_closure_.*_stage_1/);
-  assert.match(result.files.get(extractedFiles[0]), /export function init_fixture_staged_owner_owner_closure_.*_stage_0/s);
-  assert.match(result.files.get(extractedFiles[0]), /export function init_fixture_staged_owner_owner_closure_.*_stage_1/s);
+  assert.match(result.code, /init_fixture_staged_owner_selected_module_group_.*_stage_0/);
+  assert.match(result.code, /init_fixture_staged_owner_selected_module_group_.*_stage_1/);
+  assert.match(result.files.get(extractedFiles[0]), /export function init_fixture_staged_owner_selected_module_group_.*_stage_0/s);
+  assert.match(result.files.get(extractedFiles[0]), /export function init_fixture_staged_owner_selected_module_group_.*_stage_1/s);
   assertRunnableEquivalent({
     prefix: "debundle-owner-closure-staged-pass-",
     source,
@@ -186,7 +186,7 @@ export { render as publicRender };
   });
 });
 
-test("owner closure pass expands staged-shell extractions inside the extractor", () => {
+test("selected module-group planning expands staged-shell lowerings inside the extractor", () => {
   const source = `const helperSeed = 1;
 function readHelperSeed() { return helperSeed; }
 console.log("graph-barrier");
@@ -196,10 +196,10 @@ console.log(JSON.stringify({ helper: readHelperSeed(), value: render() }));
 export { render as publicRender };
 `;
 
-  const result = extractOrderedInitRegionsInCode(source, [
+  const result = lowerSelectedModuleRegionsInCode(source, [
     {
-      id: "fixture_owner_closure_pass",
-      operation: "extract_ordered_init_owner_closure_pass",
+      id: "fixture_selected_module_group_plan",
+      operation: "plan_selected_module_groups",
       selector: {
         chunkId: "static/app",
         file: "runtime.js",
@@ -220,8 +220,8 @@ export { render as publicRender };
 
   const extractedFiles = [...result.files.keys()].filter((file) => file.startsWith("regions/owner_"));
   assert.equal(extractedFiles.length, 1);
-  assert.match(result.code, /init_fixture_staged_owner_owner_closure_.*_stage_0/);
-  assert.match(result.code, /init_fixture_staged_owner_owner_closure_.*_stage_1/);
+  assert.match(result.code, /init_fixture_staged_owner_selected_module_group_.*_stage_0/);
+  assert.match(result.code, /init_fixture_staged_owner_selected_module_group_.*_stage_1/);
   assertRunnableEquivalent({
     prefix: "debundle-owner-closure-pass-expansion-",
     source,
@@ -229,7 +229,7 @@ export { render as publicRender };
   });
 });
 
-test("staged-shell lowering can attach replayable writer side effects to the extracted closure", () => {
+test("staged-shell lowering can attach replayable writer side effects to the extracted module group", () => {
   const source = `let enabled = false;
 const state = { value: 1 };
 console.log("writer-barrier");
@@ -246,7 +246,7 @@ export { render as publicRender };
 `;
 
   const plan = ownerClosurePlanForCode(source);
-  const batchPlan = packOrderedInitOwnerClosures(plan, {
+  const batchPlan = packSelectedModuleGroups(plan, {
     lowering: "staged_shell",
   });
   const renderBatch = findOwnerClosureBatchPlanByName(batchPlan, "render");
@@ -256,7 +256,7 @@ export { render as publicRender };
   assert.deepEqual(renderBatch.attachedItemIds, ["side_effect_00001", "side_effect_00003"]);
   assert.equal(renderBatch.stageRuns.length, 3);
 
-  const operations = buildOrderedInitOwnerClosureOperations(batchPlan, {
+  const operations = buildSelectedModuleGroupOperations(batchPlan, {
     chunkId: "static/app",
     file: "runtime.js",
     filePrefix: "owner_",
@@ -265,13 +265,13 @@ export { render as publicRender };
     lowering: "staged_shell",
     targetDir: "regions",
   });
-  const result = extractOrderedInitRegionsInCode(source, operations);
+  const result = lowerSelectedModuleRegionsInCode(source, operations);
 
   const extractedFiles = [...result.files.keys()].filter((file) => file.startsWith("regions/owner_"));
   assert.equal(extractedFiles.length, 1);
-  assert.match(result.code, /init_fixture_attached_writer_owner_owner_closure_.*_stage_0/);
-  assert.match(result.code, /init_fixture_attached_writer_owner_owner_closure_.*_stage_1/);
-  assert.match(result.code, /init_fixture_attached_writer_owner_owner_closure_.*_stage_2/);
+  assert.match(result.code, /init_fixture_attached_writer_owner_selected_module_group_.*_stage_0/);
+  assert.match(result.code, /init_fixture_attached_writer_owner_selected_module_group_.*_stage_1/);
+  assert.match(result.code, /init_fixture_attached_writer_owner_selected_module_group_.*_stage_2/);
   assertRunnableEquivalent({
     prefix: "debundle-owner-closure-attached-writer-pass-",
     source,
@@ -289,7 +289,7 @@ console.log(rendered);
 `;
 
   const plan = ownerClosurePlanForCode(source);
-  const batchPlan = packOrderedInitOwnerClosures(plan, {
+  const batchPlan = packSelectedModuleGroups(plan, {
     lowering: "staged_shell",
   });
   const readLaterBatch = batchPlan.candidateBatchPlans.find((candidate) =>
@@ -303,7 +303,7 @@ console.log(rendered);
 });
 
 function ownerClosurePlanForCode(source, options) {
-  return planOrderedInitOwnerClosureExtractions(
+  return planSelectedModuleGroupExtractions(
     analyzeRuntimeBoundaryCode(source, {
       chunkId: "static/app",
       runtimePath: "fixture/runtime.js",
@@ -360,7 +360,7 @@ function orderedInitOperation(source, { init, ownerNames, targetFile }) {
   });
   return {
     id: `extract_${init}`,
-    operation: "extract_ordered_init_region",
+    operation: "lower_selected_module_region",
     selector: {
       chunkId: "static/app",
       file: "runtime.js",

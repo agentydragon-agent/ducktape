@@ -27,8 +27,7 @@ import {
   resolveWorkspacePath,
 } from "../common/io.mjs";
 import { serializeGeneratedJsFile } from "../split/chunk.mjs";
-import { buildOrderedInitGeneratedMetadata } from "./generated_artifact_marking.mjs";
-import { extractSelectedModulePlanInAst } from "./init_region.mjs";
+import { buildSelectedModuleLoweringMetadata, extractSelectedModulePlanInAst } from "./init_region.mjs";
 import { deriveSelectedModuleTarget, planSelectedAtomicModules } from "./planner.mjs";
 
 export function extractAtomicModules({
@@ -152,7 +151,7 @@ export function extractAtomicModules({
             chunkFile: relativePath,
             chunkId,
             role: relativePath === targetFile ? "entry" : "module",
-            ...(relativePath === targetFile ? {} : { generated: buildOrderedInitGeneratedMetadata() }),
+            ...(relativePath === targetFile ? {} : { generated: buildSelectedModuleLoweringMetadata() }),
             ...(modulePlan
               ? {
                   moduleExtraction: {

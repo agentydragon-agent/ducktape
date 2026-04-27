@@ -1,17 +1,17 @@
-const OWNER_CLOSURE_PASS_OPERATION = "extract_ordered_init_owner_closure_pass";
+export const PLAN_SELECTED_MODULE_GROUPS_OPERATION = "plan_selected_module_groups";
 const ORDERED_INIT_SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
 const RUNTIME_SENSITIVE_EFFECTS = new Set(["containsDirectEval", "containsImportMeta", "containsTopLevelAwait"]);
 const ORDERED_INIT_ACCESS_VIEW_CACHE = new WeakMap();
 const ORDERED_INIT_PLANNER_STATE_CACHE = new WeakMap();
 const ORDERED_INIT_STAGED_SHELL_OWNER_ADJACENCY_CACHE = new WeakMap();
 
-export function expandOrderedInitOwnerClosurePassOperations(analysis, operations, context = {}) {
+export function expandSelectedModuleGroupPlanningOperations(analysis, operations, context = {}) {
   const expanded = [];
   const selectedOwnerIds = new Set();
   const selectedAttachedItemIds = new Set();
 
   const rememberSelection = (operation) => {
-    if (operation.operation !== "extract_ordered_init_region") {
+    if (operation.operation !== "lower_selected_module_region") {
       return;
     }
     for (const ownerId of operation.selector.ownerIds ?? []) {
@@ -23,7 +23,7 @@ export function expandOrderedInitOwnerClosurePassOperations(analysis, operations
   };
 
   for (const operation of operations) {
-    if (operation.operation !== OWNER_CLOSURE_PASS_OPERATION) {
+    if (operation.operation !== PLAN_SELECTED_MODULE_GROUPS_OPERATION) {
       expanded.push(operation);
       rememberSelection(operation);
       continue;
@@ -45,14 +45,14 @@ export function expandOrderedInitOwnerClosurePassOperations(analysis, operations
     const planningOptions = { ...(operation.options ?? {}) };
     delete planningOptions.lowering;
     delete planningOptions.preselectedClosureIds;
-    const packed = packOrderedInitOwnerClosures(
-      planOrderedInitOwnerClosureExtractions(analysis, planningOptions),
+    const packed = packSelectedModuleGroups(
+      planSelectedModuleGroupExtractions(analysis, planningOptions),
       operation.options ?? {}
     );
     const targetDir = normalizeRelativeFile(operation.target.dir ?? "regions");
     const filePrefix = operation.target.filePrefix ?? "";
     const initPrefix = operation.target.initPrefix ?? "init_";
-    const generated = buildOrderedInitOwnerClosureOperations(packed, {
+    const generated = buildSelectedModuleGroupOperations(packed, {
       chunkId: selectorChunkId,
       file: selectorFile,
       filePrefix,
@@ -77,7 +77,7 @@ export function expandOrderedInitOwnerClosurePassOperations(analysis, operations
   return expanded;
 }
 
-export function planOrderedInitOwnerClosureExtractions(analysis, options = {}) {
+export function planSelectedModuleGroupExtractions(analysis, options = {}) {
   const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
   const programItemByOrdinal = new Map(analysis.programItems.map((item) => [item.ordinal, item]));
   const plannerState = getOrderedInitPlannerState(analysis, ownerById);
@@ -106,7 +106,7 @@ export function planOrderedInitOwnerClosureExtractions(analysis, options = {}) {
     )
   );
   return {
-    kind: "js.ordered_init_owner_closure_plan",
+    kind: "js.selected_module_group_plan",
     analysisContext: {
       owners: analysis.owners,
       programItems: analysis.programItems,
@@ -117,17 +117,17 @@ export function planOrderedInitOwnerClosureExtractions(analysis, options = {}) {
   };
 }
 
-export function packOrderedInitOwnerClosures(plan, options = {}) {
+export function packSelectedModuleGroups(plan, options = {}) {
   const startedAt = process.hrtime.bigint();
   const lowering = options.lowering ?? "staged_shell";
   if (lowering !== "staged_shell") {
-    throw new Error(`Unsupported ordered-init owner closure lowering: ${lowering}`);
+    throw new Error(`Unsupported selected-module group lowering: ${lowering}`);
   }
   const { candidateBatchPlans, timingsMs: buildTimingsMs } = buildStagedShellBatchPlans(plan, options);
   const selectStartedAt = process.hrtime.bigint();
   const batchPlans = selectPackedOwnerClosureBatchPlans(candidateBatchPlans, options);
   return {
-    kind: "js.ordered_init_owner_closure_batch_plan",
+    kind: "js.selected_module_group_batch_plan",
     lowering,
     candidateBatchPlans,
     batchPlans,
@@ -139,22 +139,22 @@ export function packOrderedInitOwnerClosures(plan, options = {}) {
   };
 }
 
-export function buildOrderedInitOwnerClosureOperations(planOrBatchPlan, options = {}) {
+export function buildSelectedModuleGroupOperations(planOrBatchPlan, options = {}) {
   const chunkId = options.chunkId ?? "<chunk>";
   const file = options.file ? normalizeRelativeFile(options.file) : null;
   const targetDir = normalizeRelativeFile(options.targetDir ?? "regions");
-  const filePrefix = options.filePrefix ?? "owner_closure_";
-  const initPrefix = options.initPrefix ?? "init_owner_closure_";
+  const filePrefix = options.filePrefix ?? "selected_module_group_";
+  const initPrefix = options.initPrefix ?? "init_selected_module_group_";
   const lowering = options.lowering ?? "staged_shell";
   if (lowering !== "staged_shell") {
-    throw new Error(`Unsupported ordered-init owner closure lowering: ${lowering}`);
+    throw new Error(`Unsupported selected-module group lowering: ${lowering}`);
   }
-  const batchPlans = planOrBatchPlan.batchPlans ?? packOrderedInitOwnerClosures(planOrBatchPlan, options).batchPlans;
+  const batchPlans = planOrBatchPlan.batchPlans ?? packSelectedModuleGroups(planOrBatchPlan, options).batchPlans;
   return batchPlans.map((batchPlan) => ({
-      id: `${options.idPrefix ?? "owner_closure"}__${batchPlan.id}`,
+      id: `${options.idPrefix ?? "selected_module_group"}__${batchPlan.id}`,
       graphGenerated: true,
       lowering: batchPlan.lowering ?? lowering,
-      operation: "extract_ordered_init_region",
+      operation: "lower_selected_module_region",
       selector: {
         attachedItemIds: [...(batchPlan.attachedItemIds ?? [])],
         chunkId,
@@ -173,7 +173,7 @@ function buildOwnerDependencyComponents(analysis, ownerById) {
   const edgeRecords = new Map();
 
   for (const owner of analysis.owners) {
-    for (const dependency of orderedInitAccessView(owner).all) {
+    for (const dependency of selectedModuleAccessView(owner).all) {
       if (dependency.kind !== "local_declaration" || !dependency.ownerId || !ownerById.has(dependency.ownerId)) {
         continue;
       }
@@ -309,12 +309,12 @@ function buildOwnerClosurePlan(
     sideEffects: analysis.sideEffects,
   });
   const plan = {
-    blockingReasons: [...semanticSummary.orderedInitBlockingReasons],
+    blockingReasons: [...semanticSummary.selectedModuleBlockingReasons],
     closureComponentIds: [...requiredClosureComponentIds],
     directDependencyComponentIds: [...seedComponent.directDependencyComponentIds],
     endOrdinal: semanticSummary.endOrdinal,
     estimatedSize: estimatedRegionSize(semanticSummary),
-    id: `owner_closure_${index.toString().padStart(4, "0")}`,
+    id: `selected_module_group_${index.toString().padStart(4, "0")}`,
     lineSpan: lineSpanForRegion(semanticSummary),
     memberNames: [...semanticSummary.memberNames],
     ownerIds: [...semanticSummary.ownerIds],
@@ -551,7 +551,7 @@ function buildStagedShellBatchPlan(
     if (!record) {
       continue;
     }
-    for (const access of orderedInitAccessView(record).eagerReadLike) {
+    for (const access of selectedModuleAccessView(record).eagerReadLike) {
       if (access.kind !== "local_declaration" || !access.ownerId || !summary.selectedOwnerIds.has(access.ownerId)) {
         continue;
       }
@@ -572,7 +572,7 @@ function buildStagedShellBatchPlan(
   const finalizeStartedAt = process.hrtime.bigint();
   const batchPlan = {
     attachedItemIds: [...attachedSideEffectIds],
-    blockingReasons: [...new Set([...summary.orderedInitBlockingReasons, ...shellBlockingReasons])].sort(),
+    blockingReasons: [...new Set([...summary.selectedModuleBlockingReasons, ...shellBlockingReasons])].sort(),
     closureComponentIds: [...plan.closureComponentIds],
     directDependencyComponentIds: [...plan.directDependencyComponentIds],
     endOrdinal: summary.endOrdinal,
@@ -587,7 +587,7 @@ function buildStagedShellBatchPlan(
     seedComponentId: plan.seedComponentId,
     seedMemberNames: [...plan.seedMemberNames],
     seedOwnerIds: [...plan.seedOwnerIds],
-    semanticBlockingReasons: [...summary.orderedInitBlockingReasons],
+    semanticBlockingReasons: [...summary.selectedModuleBlockingReasons],
     semanticMemberNames: [...summary.memberNames],
     semanticOwnerIds: [...expandedOwnerIds],
     shellItemIds: [...shellItemIds],
@@ -634,7 +634,7 @@ function getStagedShellOwnerAdjacency(analysis, ownerById) {
   }
   const adjacency = new Map(analysis.owners.map((owner) => [owner.id, new Set()]));
   for (const owner of analysis.owners) {
-    const accessView = orderedInitAccessView(owner);
+    const accessView = selectedModuleAccessView(owner);
     const ownerAdjacency = adjacency.get(owner.id);
     for (const access of accessView.all) {
       if (access.kind !== "local_declaration" || !access.ownerId || !ownerById.has(access.ownerId)) {
@@ -794,7 +794,7 @@ function summarizeStagedAttachedEnvelope({ attachedSideEffectIds, ownerById, own
       runtimeSensitiveOwnerIds.add(owner.id);
     }
 
-    const accessView = orderedInitAccessView(owner);
+    const accessView = selectedModuleAccessView(owner);
     for (const access of accessView.all) {
       if (noteRuntimeImportAccess(access, unsupportedRuntimeImportWrites)) {
         continue;
@@ -827,7 +827,7 @@ function summarizeStagedAttachedEnvelope({ attachedSideEffectIds, ownerById, own
     if (isRuntimeSensitiveRecord(sideEffect)) {
       runtimeSensitiveSideEffectIds.add(sideEffect.id);
     }
-    for (const access of orderedInitAccessView(sideEffect).all) {
+    for (const access of selectedModuleAccessView(sideEffect).all) {
       if (noteRuntimeImportAccess(access, unsupportedRuntimeImportWrites)) {
         continue;
       }
@@ -847,7 +847,7 @@ function summarizeStagedAttachedEnvelope({ attachedSideEffectIds, ownerById, own
     startOrdinal,
   });
 
-  const blockingReasons = buildOrderedInitBlockingReasons({
+  const blockingReasons = buildSelectedModuleBlockingReasons({
     earlierEagerUseItemIds,
     extractorIncompatibleOwnerIds,
     outsideLocalDependencyOwnerIds,
@@ -863,7 +863,7 @@ function summarizeStagedAttachedEnvelope({ attachedSideEffectIds, ownerById, own
     endOrdinal,
     lines: regionOwners.map((owner) => owner.line).filter((line) => line !== null),
     memberNames: regionOwners.flatMap((owner) => owner.names).sort(),
-    orderedInitBlockingReasons: blockingReasons.sort(),
+    selectedModuleBlockingReasons: blockingReasons.sort(),
     ownerIds: regionOwners.map((owner) => owner.id),
     selectedOwnerIds,
     selectedItemIds,
@@ -949,7 +949,7 @@ function buildContiguousOwnerClosureEnvelope(
     sideEffects: analysis.sideEffects,
   });
   const blockingReasons = [
-    ...summary.orderedInitBlockingReasons,
+    ...summary.selectedModuleBlockingReasons,
     ...[...envelopeBarrierItemIds].sort().map((itemId) => `non_declaration_in_envelope:${itemId}`),
   ];
   if (typeof options.minLineSpan === "number" && lineSpanForRegion(summary) < options.minLineSpan) {
@@ -992,7 +992,7 @@ function summarizeOwnerClosureEnvelope({ owners, ownerById, plannerState, region
       runtimeSensitiveOwnerIds.add(owner.id);
     }
 
-    const accessView = orderedInitAccessView(owner);
+    const accessView = selectedModuleAccessView(owner);
     for (const access of accessView.all) {
       if (noteRuntimeImportAccess(access, unsupportedRuntimeImportWrites)) {
         continue;
@@ -1030,7 +1030,7 @@ function summarizeOwnerClosureEnvelope({ owners, ownerById, plannerState, region
     startOrdinal,
   });
 
-  const blockingReasons = buildOrderedInitBlockingReasons({
+  const blockingReasons = buildSelectedModuleBlockingReasons({
     earlierEagerUseItemIds,
     extractorIncompatibleOwnerIds,
     outsideLocalDependencyOwnerIds,
@@ -1045,13 +1045,13 @@ function summarizeOwnerClosureEnvelope({ owners, ownerById, plannerState, region
     endOrdinal,
     lines: regionOwners.map((owner) => owner.line).filter((line) => line !== null),
     memberNames: regionOwners.flatMap((owner) => owner.names).sort(),
-    orderedInitBlockingReasons: blockingReasons.sort(),
+    selectedModuleBlockingReasons: blockingReasons.sort(),
     ownerIds: regionOwners.map((owner) => owner.id),
     startOrdinal,
   };
 }
 
-function orderedInitAccessView(record) {
+function selectedModuleAccessView(record) {
   const cached = ORDERED_INIT_ACCESS_VIEW_CACHE.get(record);
   if (cached) {
     return cached;
@@ -1088,7 +1088,7 @@ function getOrderedInitPlannerState(analysis, ownerById = null) {
   const recordById = new Map(allRecords.map((record) => [record.id, record]));
 
   for (const record of allRecords) {
-    const accessView = orderedInitAccessView(record);
+    const accessView = selectedModuleAccessView(record);
     for (const access of accessView.writes) {
       if (access.kind !== "local_declaration" || !access.ownerId || !writeRecordIdsByOwnerId.has(access.ownerId)) {
         continue;
@@ -1110,7 +1110,7 @@ function getOrderedInitPlannerState(analysis, ownerById = null) {
       continue;
     }
     const touchedOwnerIds = [...new Set(
-      orderedInitAccessView(record).all
+      selectedModuleAccessView(record).all
         .filter((access) => access.kind === "local_declaration" && access.ownerId && resolvedOwnerById.has(access.ownerId))
         .map((access) => access.ownerId)
     )].sort();
@@ -1222,7 +1222,7 @@ function isRuntimeSensitiveRecord(record) {
   return false;
 }
 
-function buildOrderedInitBlockingReasons({
+function buildSelectedModuleBlockingReasons({
   earlierEagerUseItemIds,
   extractorIncompatibleOwnerIds,
   outsideLocalDependencyOwnerIds,
@@ -1348,5 +1348,3 @@ function normalizeRelativeFile(value) {
   }
   return normalized;
 }
-
-export const ORDERED_INIT_OWNER_CLOSURE_PASS_OPERATION = OWNER_CLOSURE_PASS_OPERATION;

@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "chunkId": "static/chunk-DuckMock",
+  "sourcePath": "static/chunk-DuckMock.js",
   "parser": {
     "allowUndeclaredExports": true,
     "plugins": [
@@ -11,7 +12,6 @@
     ],
     "sourceType": "module"
   },
-  "sourcePath": "static/chunk-DuckMock.js",
   "entryFile": "entry.js",
   "counts": {
     "dynamicImports": 0,
@@ -53,7 +53,7 @@
         "e"
       ],
       "type": "VariableDeclaration",
-      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+      "unsafeReason": "not_split"
     },
     {
       "id": "owner_00001",
@@ -62,43 +62,9 @@
         "o"
       ],
       "type": "VariableDeclaration",
-      "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
+      "unsafeReason": "not_split"
     }
   ],
   "parts": [],
-  "ownerToPart": {},
-  "renames": [
-    {
-      "id": "rename_format_activity_badge",
-      "operation": "rename_binding",
-      "chunkId": "static/chunk-DuckMock",
-      "file": "entry.js",
-      "from": "e",
-      "to": "formatActivityBadge",
-      "preserveRuntimeName": false,
-      "owner": null,
-      "fingerprint": {
-        "init": "(t, a) => `${t.name}:${a.total}`",
-        "kind": "VariableDeclarator",
-        "name": "e",
-        "objectPropertyNames": []
-      }
-    },
-    {
-      "id": "rename_format_chip_text",
-      "operation": "rename_binding",
-      "chunkId": "static/chunk-DuckMock",
-      "file": "entry.js",
-      "from": "o",
-      "to": "formatChipText",
-      "preserveRuntimeName": false,
-      "owner": null,
-      "fingerprint": {
-        "init": "t => `chip:${t.stamp}`",
-        "kind": "VariableDeclarator",
-        "name": "o",
-        "objectPropertyNames": []
-      }
-    }
-  ]
+  "ownerToPart": {}
 }

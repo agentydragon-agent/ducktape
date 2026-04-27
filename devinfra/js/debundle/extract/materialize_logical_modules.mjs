@@ -26,8 +26,7 @@ import {
   relativeWorkspacePath,
   resolveWorkspacePath,
 } from "../common/io.mjs";
-import { buildOrderedInitGeneratedMetadata } from "./generated_artifact_marking.mjs";
-import { extractSelectedModulePlanInAst } from "./init_region.mjs";
+import { buildSelectedModuleLoweringMetadata, extractSelectedModulePlanInAst } from "./init_region.mjs";
 import { buildLogicalModulePlans } from "./logical_modules.mjs";
 import { deriveSelectedModuleTarget, planSelectedAtomicModules } from "./planner.mjs";
 
@@ -156,7 +155,7 @@ export function materializeLogicalModules({
             chunkFile: relativePath,
             chunkId,
             role: relativePath === targetFile ? "entry" : "module",
-            ...(relativePath === targetFile ? {} : { generated: buildOrderedInitGeneratedMetadata() }),
+            ...(relativePath === targetFile ? {} : { generated: buildSelectedModuleLoweringMetadata() }),
             ...(modulePlan
               ? {
                   moduleExtraction: {

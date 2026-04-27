@@ -49,17 +49,17 @@ console.log(target);
   assert.equal(ownerByName.get("plainB").extractionMode, "plain_import_candidate");
   assert.equal(ownerByName.get("PureBox").extractionMode, "plain_import_candidate");
 
-  assert.equal(ownerByName.get("seed").extractionMode, "ordered_init_candidate");
+  assert.equal(ownerByName.get("seed").extractionMode, "selected_module_candidate");
   assert.match(ownerByName.get("seed").extractionReasons.join(","), /unsupported_plain_import:VariableDeclaration/);
 
-  assert.equal(ownerByName.get("readsSeed").extractionMode, "ordered_init_candidate");
+  assert.equal(ownerByName.get("readsSeed").extractionMode, "selected_module_candidate");
   assert.match(ownerByName.get("readsSeed").extractionReasons.join(","), /blocked_by_non_plain_dependency/);
 
-  assert.equal(ownerByName.get("target").extractionMode, "ordered_init_candidate");
-  assert.equal(ownerByName.get("setTarget").extractionMode, "ordered_init_candidate");
+  assert.equal(ownerByName.get("target").extractionMode, "selected_module_candidate");
+  assert.equal(ownerByName.get("setTarget").extractionMode, "selected_module_candidate");
   assert.match(ownerByName.get("setTarget").extractionReasons.join(","), /blocked_by_non_plain_dependency/);
 
-  assert.equal(ownerByName.get("DerivedBox").extractionMode, "ordered_init_candidate");
+  assert.equal(ownerByName.get("DerivedBox").extractionMode, "selected_module_candidate");
   assert.match(ownerByName.get("DerivedBox").extractionReasons.join(","), /class_has_superclass/);
   assert.match(ownerByName.get("DerivedBox").extractionReasons.join(","), /class_has_static_field_initializer/);
   assert.match(ownerByName.get("DerivedBox").extractionReasons.join(","), /class_has_computed_key/);
@@ -177,7 +177,7 @@ console.log(typeof runner);
   assert.equal(runner.effects.containsTopLevelAwait, false);
   assert.deepEqual(runner.readsTopLevel.eager.map((record) => record.name), []);
   assert.deepEqual(runner.readsTopLevel.lazy.map((record) => record.name), ["shared"]);
-  assert.equal(runner.extractionMode, "ordered_init_candidate");
+  assert.equal(runner.extractionMode, "selected_module_candidate");
   assert.doesNotMatch(runner.extractionReasons.join(","), /contains_top_level_await/);
 });
 
@@ -233,22 +233,22 @@ function readLocalOnly() { return bumpLocalOnly(); }
     }
   );
 
-  const blockedRegion = analysis.orderedInitRegions.find((region) => region.memberNames.includes("inside"));
+  const blockedRegion = analysis.selectedModuleRegions.find((region) => region.memberNames.includes("inside"));
   assert.ok(blockedRegion);
-  assert.equal(blockedRegion.orderedInitExtractable, false);
+  assert.equal(blockedRegion.selectedModuleExtractable, false);
   assert.ok(blockedRegion.memberNames.includes("inside2"));
   assert.ok(blockedRegion.memberNames.includes("state"));
   assert.deepEqual(blockedRegion.outsideLocalDependencyNames, ["helper"]);
   assert.match(
-    blockedRegion.orderedInitBlockingReasons.join(","),
+    blockedRegion.selectedModuleBlockingReasons.join(","),
     /depends_on_outside_local_owner:/
   );
 
-  const extractableRegion = analysis.orderedInitRegions.find((region) => region.memberNames.includes("bumpLocalOnly"));
+  const extractableRegion = analysis.selectedModuleRegions.find((region) => region.memberNames.includes("bumpLocalOnly"));
   assert.ok(extractableRegion);
-  assert.equal(extractableRegion.orderedInitExtractable, true);
+  assert.equal(extractableRegion.selectedModuleExtractable, true);
   assert.deepEqual(extractableRegion.outsideLocalDependencyOwnerIds, []);
-  assert.deepEqual(extractableRegion.orderedInitBlockingReasons, []);
+  assert.deepEqual(extractableRegion.selectedModuleBlockingReasons, []);
 });
 
 test("extractRuntimeBoundaryMetadata works without precomputed manifests and with no emitted parts", () => {
@@ -330,11 +330,11 @@ console.log(first);
     }
   );
 
-  const region = analysis.orderedInitRegions.find((candidate) =>
+  const region = analysis.selectedModuleRegions.find((candidate) =>
     candidate.memberNames.includes("DeferredRenderCounter")
   );
   assert.ok(region);
-  assert.equal(region.orderedInitExtractable, true);
+  assert.equal(region.selectedModuleExtractable, true);
   assert.deepEqual(
     region.memberNames,
     ["DeferredRenderCounter", "counter", "first"]
@@ -367,13 +367,13 @@ console.log(dragSelectionSession.current(), unrelatedFn());
     }
   );
 
-  const region = analysis.orderedInitRegions.find((candidate) =>
+  const region = analysis.selectedModuleRegions.find((candidate) =>
     candidate.memberNames.includes("DragSelectionSession")
   );
   assert.ok(region);
-  assert.equal(region.orderedInitExtractable, false);
+  assert.equal(region.selectedModuleExtractable, false);
   assert.deepEqual(region.outsideLocalDependencyNames, ["readDragSelectionOrigin"]);
-  assert.match(region.orderedInitBlockingReasons.join(","), /depends_on_outside_local_owner:/);
+  assert.match(region.selectedModuleBlockingReasons.join(","), /depends_on_outside_local_owner:/);
 });
 
 test("file-mode extraction writes per-chunk reports and summary", () => {

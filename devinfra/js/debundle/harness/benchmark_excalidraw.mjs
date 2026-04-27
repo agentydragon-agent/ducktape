@@ -2,34 +2,32 @@
 // Debundler benchmark on the Excalidraw bundle.
 //
 // Pipeline: load_js_chunks -> compute_js_asts -> normalize_js_chunks ->
-//           extract_atomic_modules -> merge_modules x N (default 20).
+//           materialize_logical_modules.
 //
-// Atom IDs are read from the artifact after extract_atomic_modules; merges
-// pair-fold consecutive atoms (atom_0+atom_1, atom_2+atom_3, ...) on the
-// chunk that produced the most atoms. Times each stage and total wall.
-//
-// The Excalidraw bundle is sourced via Bazel from the digest-pinned
-// excalidraw/excalidraw OCI image (see devinfra/image_pins.json) and
-// extracted at build time by //devinfra/oci:extract_image_subdir. The
-// extracted directory lives next to this script in runfiles.
+// The benchmark synthesizes a small set of `define_logical_module` operations
+// by first planning atomic modules on the largest chunk and then grouping
+// consecutive atomic modules into pairwise logical modules. This keeps the
+// benchmark aligned with the current first-party materialization path while
+// still exercising non-trivial module regrouping work.
 
 import { mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { Session } from "node:inspector/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
+import { getArtifactManifest, getChunkEntryFile, listChunkIds } from "../common/artifact.mjs";
 import { computeJsAsts } from "../common/parse_asts.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";
-import { getArtifactChunkManifest, listChunkIds } from "../common/artifact.mjs";
-import { extractAtomicModules } from "../extract/atomic_modules.mjs";
-import { mergeModules } from "../extract/merge.mjs";
 import { normalizeJsChunks } from "../common/normalize.mjs";
+import { materializeLogicalModules } from "../extract/materialize_logical_modules.mjs";
+import { planSelectedAtomicModules } from "../extract/planner.mjs";
 
 const DEFAULT_FIXTURE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "excalidraw_bundle_assets");
-const DEFAULT_MERGE_COUNT = 20;
+const DEFAULT_MODULE_COUNT = 20;
 
 async function main() {
-  const { cpuProfilePath, fixtureDir, mergeCount } = parseArgs(process.argv.slice(2));
+  const { cpuProfilePath, fixtureDir, moduleCount } = parseArgs(process.argv.slice(2));
   const jsListPath = writeJsListForFixtureDir(fixtureDir);
 
   const profilerSession = cpuProfilePath ? new Session() : null;
@@ -50,22 +48,16 @@ async function main() {
   artifact = await timeStage("compute_js_asts", stageTimings, () => computeJsAsts({ artifact }));
   artifact = await timeStage("normalize_js_chunks", stageTimings, () => normalizeJsChunks({ artifact }));
 
-  // Production usage extracts atoms from a single entry chunk at a time;
-  // pick the chunk with the most top-level bindings as a proxy for the
-  // deployed entry chunk.
   const entryChunkId = pickChunkWithMostTopLevelBindings(artifact);
-  artifact = await timeStage("extract_atomic_modules", stageTimings, () =>
-    extractAtomicModules({ artifact, chunkIds: [entryChunkId], pruneOtherChunks: false })
-  );
-
-  const { chunkId, atomIds } = pickBenchmarkChunk(artifact);
-  const operations = buildPairMergeOperations(chunkId, atomIds, mergeCount);
-  if (operations.length === 0) {
-    throw new Error(`No merge operations could be synthesized (atomIds=${atomIds.length})`);
-  }
-
-  artifact = await timeStage(`merge_modules x${operations.length}`, stageTimings, () =>
-    mergeModules({ artifact, operations })
+  const operations = buildPairLogicalModuleOperations(artifact, entryChunkId, moduleCount);
+  artifact = await timeStage(`materialize_logical_modules x${operations.length}`, stageTimings, () =>
+    materializeLogicalModules({
+      artifact,
+      chunkIds: [entryChunkId],
+      operations,
+      pruneOtherChunks: false,
+      targetDir: "bench",
+    })
   );
 
   const totalDurationMs = nsToMs(process.hrtime.bigint() - totalStartedAt);
@@ -78,21 +70,21 @@ async function main() {
     process.stdout.write(`cpu profile written to ${cpuProfilePath}\n`);
   }
 
-  reportResults({ chunkId, atomIds, operations, stageTimings, totalDurationMs });
+  reportResults({ chunkId: entryChunkId, operations, stageTimings, totalDurationMs });
 }
 
 function parseArgs(argv) {
   const result = {
     cpuProfilePath: null,
     fixtureDir: DEFAULT_FIXTURE_DIR,
-    mergeCount: DEFAULT_MERGE_COUNT,
+    moduleCount: DEFAULT_MODULE_COUNT,
   };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === "--fixture-dir") {
       result.fixtureDir = resolve(requireValue(argv, ++index, arg));
-    } else if (arg === "--merges") {
-      result.mergeCount = parseMergeCount(requireValue(argv, ++index, arg));
+    } else if (arg === "--modules") {
+      result.moduleCount = parseModuleCount(requireValue(argv, ++index, arg));
     } else if (arg === "--cpu-profile") {
       result.cpuProfilePath = resolve(requireValue(argv, ++index, arg));
     } else if (arg === "--help" || arg === "-h") {
@@ -106,10 +98,6 @@ function parseArgs(argv) {
 }
 
 function writeJsListForFixtureDir(fixtureDir) {
-  // Pick only the largest .js file by on-disk size as a stand-in for the
-  // deployed entry chunk. Production usage extracts atoms from a single
-  // entry chunk at a time; loading + parsing the other 50+ chunks just to
-  // discard them inflates the benchmark wall by several seconds.
   const entries = readdirSync(fixtureDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
     .map((entry) => ({ name: entry.name, size: statSync(join(fixtureDir, entry.name)).size }))
@@ -131,20 +119,20 @@ function requireValue(argv, index, flag) {
   return value;
 }
 
-function parseMergeCount(value) {
+function parseModuleCount(value) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`--merges must be a positive integer, got ${value}`);
+    throw new Error(`--modules must be a positive integer, got ${value}`);
   }
   return parsed;
 }
 
 function printUsage() {
   process.stdout.write(`Usage:
-  benchmark_excalidraw [--fixture-dir DIR] [--merges N]
+  benchmark_excalidraw [--fixture-dir DIR] [--modules N]
 
 Defaults: --fixture-dir ${DEFAULT_FIXTURE_DIR}
-          --merges ${DEFAULT_MERGE_COUNT}
+          --modules ${DEFAULT_MODULE_COUNT}
 `);
 }
 
@@ -161,8 +149,7 @@ function pickChunkWithMostTopLevelBindings(artifact) {
   let bestChunkId = null;
   let bestBindings = -1;
   for (const chunkId of listChunkIds(artifact)) {
-    const manifest = getArtifactChunkManifest(artifact, chunkId);
-    const bindings = manifest?.counts?.topLevelBindings ?? 0;
+    const bindings = artifact.extras?.chunkManifests?.[chunkId]?.counts?.topLevelBindings ?? 0;
     if (bindings > bestBindings) {
       bestBindings = bindings;
       bestChunkId = chunkId;
@@ -174,48 +161,84 @@ function pickChunkWithMostTopLevelBindings(artifact) {
   return bestChunkId;
 }
 
-function pickBenchmarkChunk(artifact) {
-  let bestChunkId = null;
-  let bestAtomIds = [];
-  for (const chunkId of listChunkIds(artifact)) {
-    const manifest = getArtifactChunkManifest(artifact, chunkId);
-    const atomIds = manifest?.atomicModules?.moduleIds ?? [];
-    if (atomIds.length > bestAtomIds.length) {
-      bestChunkId = chunkId;
-      bestAtomIds = atomIds;
-    }
+function buildPairLogicalModuleOperations(artifact, chunkId, moduleCount) {
+  const runtimeFile = getChunkEntryFile(artifact, chunkId);
+  if (!runtimeFile?.ast) {
+    throw new Error(`Missing entry AST for benchmark chunk ${chunkId}`);
   }
-  if (!bestChunkId) {
-    throw new Error("No chunk had any atomic modules");
-  }
-  return { chunkId: bestChunkId, atomIds: bestAtomIds };
-}
+  const artifactManifest = getArtifactManifest(artifact);
+  const analysis = analyzeRuntimeBoundaryAst(runtimeFile.ast, {
+    chunkId,
+    manifestPath: `${chunkId}/manifest.json`,
+    runtimePath: `${chunkId}/${runtimeFile.path}`,
+    uiVersion: artifactManifest?.uiVersion ?? null,
+  });
+  const atomicPlan = planSelectedAtomicModules(
+    {
+      analysis,
+      code: null,
+      programBody: runtimeFile.ast.program.body,
+    },
+    {}
+  );
 
-function buildPairMergeOperations(chunkId, atomIds, mergeCount) {
+  const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
   const operations = [];
-  for (let pairIndex = 0; pairIndex < mergeCount; pairIndex++) {
-    const left = atomIds[pairIndex * 2];
-    const right = atomIds[pairIndex * 2 + 1];
-    if (left === undefined || right === undefined) {
+  for (let pairIndex = 0; pairIndex < moduleCount; pairIndex++) {
+    const left = atomicPlan.modulePlans[pairIndex * 2];
+    const right = atomicPlan.modulePlans[pairIndex * 2 + 1];
+    if (!left || !right) {
       break;
     }
+    const selectedModules = [left, right];
     operations.push({
-      id: `bench_merge_${pairIndex.toString().padStart(3, "0")}`,
-      operation: "merge_module",
-      selector: { chunkId, moduleIds: [left, right] },
+      id: `bench_logical_${pairIndex.toString().padStart(3, "0")}`,
+      operation: "define_logical_module",
+      selector: { chunkId },
       target: { path: `bench/${pairIndex.toString().padStart(3, "0")}` },
+      members: selectedModules.map((modulePlan, moduleIndex) =>
+        createAnchorMember(modulePlan, ownerById, pairIndex, moduleIndex)
+      ),
     });
+  }
+  if (operations.length === 0) {
+    throw new Error(`No logical module operations could be synthesized (modulePlans=${atomicPlan.modulePlans.length})`);
   }
   return operations;
 }
 
-function reportResults({ chunkId, atomIds, operations, stageTimings, totalDurationMs }) {
+function createAnchorMember(modulePlan, ownerById, pairIndex, moduleIndex) {
+  const owner = ownerById.get(modulePlan.ownerIds[0]) ?? null;
+  const sourceName = owner?.names?.[0] ?? modulePlan.memberNames[0];
+  if (!sourceName) {
+    throw new Error(`Could not derive anchor member for ${modulePlan.id}`);
+  }
+  return {
+    id: `bench_member_${pairIndex.toString().padStart(3, "0")}_${moduleIndex.toString().padStart(2, "0")}`,
+    name: sourceName,
+    selector: {
+      binding: {
+        kind: owner ? selectorBindingKindForOwnerType(owner.type) : null,
+        name: sourceName,
+      },
+      ...(owner ? { owner: { id: owner.id } } : {}),
+    },
+  };
+}
+
+function selectorBindingKindForOwnerType(ownerType) {
+  if (ownerType === "VariableDeclaration") {
+    return "VariableDeclarator";
+  }
+  return ownerType;
+}
+
+function reportResults({ chunkId, operations, stageTimings, totalDurationMs }) {
   process.stdout.write("\n=== benchmark_excalidraw results ===\n");
   process.stdout.write(`chunk: ${chunkId}\n`);
-  process.stdout.write(`atoms: ${atomIds.length}\n`);
-  process.stdout.write(`merges: ${operations.length}\n`);
+  process.stdout.write(`logical modules: ${operations.length}\n`);
   for (const { label, durationMs } of stageTimings) {
-    process.stdout.write(`  ${label.padEnd(32)} ${durationMs.toFixed(1)}ms\n`);
+    process.stdout.write(`  ${label.padEnd(36)} ${durationMs.toFixed(1)}ms\n`);
   }
   process.stdout.write(`total: ${totalDurationMs.toFixed(1)}ms\n`);
 }

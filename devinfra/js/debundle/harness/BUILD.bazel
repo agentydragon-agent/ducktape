@@ -3,9 +3,10 @@ load("//devinfra/oci:defs.bzl", "extract_image_subdir")
 
 # Sourced from the digest-pinned excalidraw/excalidraw image (see
 # devinfra/image_pins.json). The extracted /assets/ directory is the deployed
-# Vite/Rollup ESM webapp, used as the debundler benchmark corpus. Tagged
-# `manual` so `bazel build //...` doesn't pull a 30 MB OCI image and run the
-# extraction action — only the manual benchmark targets ever consume it.
+# Vite/Rollup ESM webapp, used as the logical-module materialization benchmark
+# corpus. Tagged `manual` so `bazel build //...` doesn't pull a 30 MB OCI image
+# and run the extraction action — only the manual benchmark targets ever
+# consume it.
 extract_image_subdir(
     name = "excalidraw_bundle_assets",
     image = "@excalidraw_linux_amd64",
@@ -27,8 +28,6 @@ js_binary(
     node_options = ["--max-old-space-size=8192"],
 )
 
-# `bb test` wrapper for the benchmark — convenient because `bb test` reliably
-# builds runfiles, whereas `bb run` skips them with --nobuild_runfile_links.
 js_test(
     name = "benchmark_excalidraw_test",
     size = "enormous",
@@ -173,12 +172,6 @@ js_test(
     entry_point = "mock_equivalence_test.mjs",
 )
 
-# CLEANUP(2026-04-27): The committed pipeline_golden/ fixtures predate the
-# fast metadata-only normalizeOneJsChunk and so embed the legacy
-# splitScopeHoistedChunkAst-driven emit. Byte-exact equivalence is not
-# required (the pipeline still produces semantically identical artifacts);
-# regenerate the goldens by running //devinfra/js/debundle/harness:build_mock_golden
-# and remove the manual tag.
 js_test(
     name = "mock_golden_test",
     size = "small",
@@ -189,5 +182,4 @@ js_test(
         "//devinfra/js/debundle/test_support:sources",
     ],
     entry_point = "mock_golden_test.mjs",
-    tags = ["manual"],
 )

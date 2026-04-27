@@ -1,4 +1,4 @@
-import { packOrderedInitOwnerClosures, planOrderedInitOwnerClosureExtractions } from "./decl_graph.mjs";
+import { packSelectedModuleGroups, planSelectedModuleGroupExtractions } from "./decl_graph.mjs";
 
 const SELECTED_ATOMIC_UNIT_ID_PREFIX = "selected_atomic_unit_";
 const ATOMIC_MODULE_ID_PREFIX = "atomic_module_";
@@ -91,7 +91,7 @@ export function buildSelectedModuleOperations(plan, options = {}) {
         : {}),
       graphGenerated: true,
       lowering: "staged_shell",
-      operation: "extract_ordered_init_region",
+      operation: "lower_selected_module_region",
       selector: {
         attachedItemIds: [...modulePlan.attachedItemIds],
         chunkId,
@@ -126,8 +126,8 @@ function selectedOwnerIdsFromDefaultClosureSelection(analysis, ownerById, caller
   if (cachedSelectedOwnerIds) {
     return cachedSelectedOwnerIds;
   }
-  const plan = planOrderedInitOwnerClosureExtractions(analysis);
-  const packed = packOrderedInitOwnerClosures(plan, { lowering: "staged_shell" });
+  const plan = planSelectedModuleGroupExtractions(analysis);
+  const packed = packSelectedModuleGroups(plan, { lowering: "staged_shell" });
   const selectedOwnerIds = requireKnownOwnerIds(
     packed.batchPlans.flatMap((batchPlan) => batchPlan.ownerIds),
     ownerById,

@@ -311,7 +311,7 @@ export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPa
   const ownerOutput = owners.map((owner) => finalizeOwnerRecord(owner));
   const sideEffectOutput = sideEffects.map((sideEffect) => finalizeSideEffectRecord(sideEffect));
   const programItemOutput = programItems.map((item) => finalizeProgramItem(item, ownerOutput, sideEffectOutput));
-  const orderedInitRegions = buildOrderedInitRegions({
+  const selectedModuleRegions = buildSelectedModuleRegions({
     weakInteractionComponents,
     owners,
     sideEffects,
@@ -324,7 +324,7 @@ export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPa
     imports,
     interactionEdges,
     interactionSccs,
-    orderedInitRegions,
+    selectedModuleRegions,
     ownerOutput,
     programItemOutput,
     sideEffectOutput,
@@ -349,7 +349,7 @@ export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPa
     },
     eagerInitComponents: eagerInitSccs,
     interactionComponents: interactionSccs,
-    orderedInitRegions,
+    selectedModuleRegions,
     eagerInitComponentDag: eagerInitDag,
   };
 }
@@ -1138,7 +1138,7 @@ function finalizeOwnerModes(owners) {
       owner.extractionReasons = reasons.filter((reason) => !reason.startsWith("blocked_by_non_plain_dependency"));
       continue;
     }
-    owner.extractionMode = "ordered_init_candidate";
+    owner.extractionMode = "selected_module_candidate";
     const blockingDependencies = [...(interactionAdjacency.get(owner.id) ?? new Set())]
       .filter((dependencyId) => !plainSeeds.has(dependencyId))
       .sort();
@@ -1376,7 +1376,7 @@ function indexComponentsByOwnerId(components) {
   return index;
 }
 
-function buildOrderedInitRegions({ weakInteractionComponents, owners, sideEffects, programItems }) {
+function buildSelectedModuleRegions({ weakInteractionComponents, owners, sideEffects, programItems }) {
   const ownerById = new Map(owners.map((owner) => [owner.id, owner]));
   const programItemByOrdinal = new Map(programItems.map((item) => [item.ordinal, item]));
   const weakInteractionComponentIndex = indexComponentsByOwnerId(weakInteractionComponents);
@@ -1480,7 +1480,7 @@ function finalizeOrderedInitRegion({ index, owners, ownerById, regionOwners, sid
       runtimeSensitiveOwnerIds.add(owner.id);
     }
 
-    for (const access of orderedInitAccesses(owner)) {
+    for (const access of selectedModuleAccesses(owner)) {
       if (access.kind === "runtime_import") {
         runtimeImportLocals.add(access.name);
         if (access.label === "eager write" || access.label === "lazy write") {
@@ -1553,7 +1553,7 @@ function finalizeOrderedInitRegion({ index, owners, ownerById, regionOwners, sid
   ];
 
   return {
-    id: `ordered_init_region_${index.toString().padStart(4, "0")}`,
+    id: `selected_module_region_${index.toString().padStart(4, "0")}`,
     ownerIds: regionOwners.map((owner) => owner.id),
     startOrdinal,
     endOrdinal,
@@ -1568,12 +1568,12 @@ function finalizeOrderedInitRegion({ index, owners, ownerById, regionOwners, sid
     unsupportedOwnerIds: [...unsupportedOwnerIds].sort(),
     runtimeSensitiveOwnerIds: [...runtimeSensitiveOwnerIds].sort(),
     unsupportedForwardEdges: [...unsupportedForwardEdges].sort(),
-    orderedInitExtractable: blockingReasons.length === 0,
-    orderedInitBlockingReasons: blockingReasons.sort(),
+    selectedModuleExtractable: blockingReasons.length === 0,
+    selectedModuleBlockingReasons: blockingReasons.sort(),
   };
 }
 
-function orderedInitAccesses(owner) {
+function selectedModuleAccesses(owner) {
   return [
     ...owner.eagerReads.values(),
     ...owner.lazyReads.values(),
@@ -1707,7 +1707,7 @@ function summarizeBoundaryCounts({
   imports,
   interactionEdges,
   interactionSccs,
-  orderedInitRegions,
+  selectedModuleRegions,
   ownerOutput,
   programItemOutput,
   sideEffectOutput,
@@ -1721,9 +1721,9 @@ function summarizeBoundaryCounts({
     interactionComponents: interactionSccs.length,
     interactionEdges: interactionEdges.length,
     keepRuntimeCandidates: ownerOutput.filter((owner) => owner.extractionMode === "keep_runtime").length,
-    orderedInitExtractableRegions: orderedInitRegions.filter((region) => region.orderedInitExtractable).length,
-    orderedInitRegions: orderedInitRegions.length,
-    orderedInitCandidates: ownerOutput.filter((owner) => owner.extractionMode === "ordered_init_candidate").length,
+    selectedModuleExtractableRegions: selectedModuleRegions.filter((region) => region.selectedModuleExtractable).length,
+    selectedModuleRegions: selectedModuleRegions.length,
+    selectedModuleCandidates: ownerOutput.filter((owner) => owner.extractionMode === "selected_module_candidate").length,
     plainImportCandidates: ownerOutput.filter((owner) => owner.extractionMode === "plain_import_candidate").length,
     programItems: programItemOutput.length,
     sideEffects: sideEffectOutput.length,
@@ -1742,12 +1742,12 @@ function buildBoundarySummary({ chunkSummaries, inputRoot, inputManifestPath, ou
       declarationOwners: chunkSummaries.reduce((count, chunk) => count + chunk.counts.declarationOwners, 0),
       eagerInitComponents: chunkSummaries.reduce((count, chunk) => count + chunk.counts.eagerInitComponents, 0),
       keepRuntimeCandidates: chunkSummaries.reduce((count, chunk) => count + chunk.counts.keepRuntimeCandidates, 0),
-      orderedInitExtractableRegions: chunkSummaries.reduce(
-        (count, chunk) => count + chunk.counts.orderedInitExtractableRegions,
+      selectedModuleExtractableRegions: chunkSummaries.reduce(
+        (count, chunk) => count + chunk.counts.selectedModuleExtractableRegions,
         0
       ),
-      orderedInitRegions: chunkSummaries.reduce((count, chunk) => count + chunk.counts.orderedInitRegions, 0),
-      orderedInitCandidates: chunkSummaries.reduce((count, chunk) => count + chunk.counts.orderedInitCandidates, 0),
+      selectedModuleRegions: chunkSummaries.reduce((count, chunk) => count + chunk.counts.selectedModuleRegions, 0),
+      selectedModuleCandidates: chunkSummaries.reduce((count, chunk) => count + chunk.counts.selectedModuleCandidates, 0),
       plainImportCandidates: chunkSummaries.reduce((count, chunk) => count + chunk.counts.plainImportCandidates, 0),
       sideEffects: chunkSummaries.reduce((count, chunk) => count + chunk.counts.sideEffects, 0),
     },

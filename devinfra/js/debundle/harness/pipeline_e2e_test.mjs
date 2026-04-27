@@ -7,7 +7,7 @@ import { launchPuppeteerBrowser } from "../../../../util/testing/frontend_visual
 import { readUtf8 } from "../test_support/fixtures.mjs";
 import { runMockBrowserBundlePipeline } from "./mock_pipeline.mjs";
 
-test("generic mock bundle runs through normalize+rename pipeline and passes a browser harness check", async () => {
+test("generic mock bundle runs through the normalize pipeline and passes a browser harness check", async () => {
   const { appRoot, result } = await runMockBrowserBundlePipeline({
     prefix: "debundle-browser-harness-pipeline-e2e-",
   });

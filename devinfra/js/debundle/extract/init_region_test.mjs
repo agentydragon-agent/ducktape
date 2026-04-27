@@ -39,7 +39,12 @@ export { Box as publicBox, loadFeature as publicLoadFeature, result as publicRes
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/fixture_region.js");
+  assert.match(
+    extractedCode,
+    /^\/\/ @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors\n\/\/ @ducktape-generator devinfra\/js\/debundle\/extract\/init_region\.mjs\n\/\/ Selected-module lowered region; original owners:/,
+  );
   assert.match(runtimeCode, /import \{ seed, format, Box, loadFeature, result, init_fixture_region \} from "\.\/regions\/fixture_region\.js"/);
+  assert.match(runtimeCode, /@ducktape-generated-node kind=lowerer-glue stage=selected_module_lowering/);
   assert.match(runtimeCode, /init_fixture_region\(\);/);
   assert.match(extractedCode, /import \{ addOne \} from "\.\.\/helpers\.js"/);
   assert.match(extractedCode, /await import\("\.\.\/feature\.js"\)/);
@@ -288,7 +293,7 @@ export { render as publicRender };
     {
       graphGenerated: true,
       id: "graph_destructuring_alignment",
-      operation: "extract_ordered_init_region",
+      operation: "lower_selected_module_region",
       selector: {
         chunkId: "static/destructuring-alignment",
         file: "runtime.js",
@@ -343,7 +348,7 @@ export { readStatus };
     {
       graphGenerated: true,
       id: "graph_snapshot_variable_owner",
-      operation: "extract_ordered_init_region",
+      operation: "lower_selected_module_region",
       selector: {
         chunkId: "static/snapshot-variable-owner",
         file: "runtime.js",
@@ -360,8 +365,8 @@ export { readStatus };
   });
 
   const extractedCode = result.files.get("regions/snapshot_variable_owner.js");
-  assert.match(extractedCode, /const __snapshot_owner_00000 = \(\(\) =>/);
-  assert.match(extractedCode, /Status = __snapshot_owner_00000\.Status/);
+  assert.match(extractedCode, /const __dt_selected_module_snapshot__owner_00000 = \(\(\) =>/);
+  assert.match(extractedCode, /Status = __dt_selected_module_snapshot__owner_00000\.Status/);
   assertRunnableEquivalent({
     files: {},
     prefix: "debundle-extract-ordered-init-snapshot-variable-owner-",
@@ -546,7 +551,7 @@ export { renderTree, treeSchema };
   ]);
 
   const extractedCode = result.files.get("regions/lazy_schema_region.js");
-  assert.doesNotMatch(extractedCode, /__snapshot_/);
+  assert.doesNotMatch(extractedCode, /__dt_selected_module_snapshot__/);
   assert.match(extractedCode, /renderTree = .*treeSchema\.parse\(leafSchema\.parse\(input\)\)/);
 
   assertRunnableEquivalent({
@@ -576,7 +581,7 @@ export { schema };
   const result = extractOrderedInitRegionsInCode(source, [
     {
       id: "extract_attached_runtime_import",
-      operation: "extract_ordered_init_region",
+      operation: "lower_selected_module_region",
       selector: {
         chunkId: "static/app",
         file: "runtime.js",
@@ -757,7 +762,7 @@ function orderedInitOperation(source, { file = "runtime.js", init, ownerNames, t
   const ownerIds = ownerIdsForNames(source, ownerNames);
   return {
     id: `extract_${init}`,
-    operation: "extract_ordered_init_region",
+    operation: "lower_selected_module_region",
     selector: {
       chunkId: "static/app",
       file,

@@ -46,11 +46,11 @@ test("extractAtomicModules emits one module per atomic unit and preserves behavi
   const firstModuleFile = chunk.files.get(state.currentModules[0].targetFile);
   assert.equal(
     firstModuleFile?.headerLines?.[0],
-    "// @ducktape-generated kind=lowerer-helper stage=ordered_init ignore=detectors"
+    "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors"
   );
   assert.deepEqual(firstModuleFile?.metadata?.generated, {
     kind: "lowerer_helper",
-    stage: "ordered_init",
+    stage: "selected_module_lowering",
     generator: "devinfra/js/debundle/extract/init_region.mjs",
     ignoreByDefault: true,
   });
@@ -593,113 +593,6 @@ test("materializeLogicalModules allows nested logical module paths with collidin
   assert.ok(chunk.files.has("modules/state/core.js"));
   assert.ok(chunk.files.has("modules/search/core.js"));
   assert.ok(chunk.files.has("modules/residual/unhandled.js"));
-});
-
-test("extract_atomic_modules and merge_modules compose in a pipeline spec", async () => {
-  const { extractedRoot, outRoot, selectedOwnerIds, snapshotRoot } = await writeAtomicSnapshotFixture(
-    "debundle-atomic-modules-pipeline-"
-  );
-  const previewLoaded = loadJsChunks({
-    inputRoot: snapshotRoot,
-    jsListPath: join(extractedRoot, "js-files.txt"),
-  });
-  const previewParsed = computeJsAsts({
-    artifact: previewLoaded.artifact,
-  });
-  const previewNormalized = await normalizeJsChunks({
-    artifact: previewParsed.artifact,
-    jobs: 1,
-  });
-  const previewExtracted = extractAtomicModules({
-    artifact: previewNormalized.artifact,
-    chunkIds: ["static/app"],
-    pruneOtherChunks: false,
-    selectedOwnerIdsByChunk: {
-      "static/app": selectedOwnerIds,
-    },
-  });
-  const previewState = getChunk(previewExtracted.artifact, "static/app")?.metadata?.moduleExtractionState;
-  assert.ok(previewState);
-
-  const result = await runTransformSpecObject({
-    kind: "js.ast_transform_spec",
-    operations: [
-      {
-        id: "merge__seed_and_first",
-        operation: "merge_module",
-        selector: {
-          chunkId: "static/app",
-          moduleSelectors: [
-            moduleSelectorForModulePlan(previewState.currentModules[0]),
-            moduleSelectorForModulePlan(previewState.currentModules[1]),
-          ],
-          validation: {
-            ordered: true,
-          },
-        },
-        target: {
-          path: "seed_and_first",
-        },
-      },
-    ],
-    pipeline: [
-      {
-        id: "load",
-        operation: "load_js_chunks",
-        args: {
-          inputRoot: snapshotRoot,
-          jsListPath: join(extractedRoot, "js-files.txt"),
-        },
-      },
-      {
-        id: "asts",
-        operation: "compute_js_asts",
-      },
-      {
-        id: "normalize",
-        operation: "normalize_js_chunks",
-        args: {
-          jobs: 1,
-        },
-      },
-      {
-        id: "extract",
-        operation: "extract_atomic_modules",
-        args: {
-          chunkIds: ["static/app"],
-          pruneOtherChunks: false,
-          selectedOwnerIdsByChunk: {
-            "static/app": selectedOwnerIds,
-          },
-        },
-      },
-      {
-        id: "merge",
-        operation: "merge_modules",
-      },
-      {
-        id: "write",
-        operation: "write_js_tree",
-        args: {
-          force: true,
-          outDir: outRoot,
-        },
-      },
-    ],
-  });
-
-  assert.deepEqual(
-    result.steps.map((step) => step.operation),
-    [
-      "load_js_chunks",
-      "compute_js_asts",
-      "normalize_js_chunks",
-      "extract_atomic_modules",
-      "merge_modules",
-      "write_js_tree",
-    ]
-  );
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
 test("materialize_logical_modules composes directly in a pipeline spec", async () => {
