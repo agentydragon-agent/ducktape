@@ -29,30 +29,22 @@ ensure_line() {
   grep -Fqx "$line" "$file" 2>/dev/null || echo "$line" >>"$file"
 }
 
-load_buildbuddy_api_key_from_sops() {
-  local sops_file="cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml"
-  if [ -n "${BUILDBUDDY_API_KEY:-}" ]; then
-    log "BUILDBUDDY_API_KEY already set"
-    return 0
-  fi
+load_agent_secrets() {
+  # Source the same env script claude-web uses. The codex-cloud-agent age key
+  # is a recipient on every SOPS file web_env.sh decrypts, so this populates
+  # BUILDBUDDY_API_KEY, GITHUB_TOKEN, DUCKTAPE_OTEL_BEARER_TOKEN, and
+  # DUCKTAPE_CI_READ_GITHUB_TOKEN.
   if [ -z "${SOPS_AGE_KEY:-}" ]; then
-    log "SOPS_AGE_KEY not set; cannot decrypt BuildBuddy API key"
+    log "SOPS_AGE_KEY not set; skipping secret decryption"
     return 0
   fi
   if ! command -v sops >/dev/null 2>&1; then
-    log "sops command missing; cannot decrypt BuildBuddy API key"
+    log "sops missing on PATH; skipping secret decryption"
     return 0
   fi
-  if [ ! -f "$sops_file" ]; then
-    log "BuildBuddy sops file missing at $sops_file"
-    return 0
-  fi
-
-  log "decrypting BuildBuddy API key from sops file"
-  BUILDBUDDY_API_KEY="$(
-    sops -d "$sops_file" | python3 -c 'import sys, yaml; print(yaml.safe_load(sys.stdin)["stringData"]["api-key"])'
-  )"
-  export BUILDBUDDY_API_KEY
+  log "sourcing devinfra/secrets/web_env.sh"
+  # shellcheck source=../secrets/web_env.sh
+  source "${REPO_ROOT}/devinfra/secrets/web_env.sh"
 }
 
 source_nix_profile_if_present() {
@@ -128,7 +120,7 @@ install_or_refresh_devtools() {
 
 run_buildbuddy_setup() {
   if [ -f devinfra/setup_buildbuddy.sh ]; then
-    load_buildbuddy_api_key_from_sops
+    load_agent_secrets
     log "running BuildBuddy setup"
     bash devinfra/setup_buildbuddy.sh
   fi
