@@ -110,8 +110,8 @@ export function extractAtomicModules({
     );
     const planningMs = durationMsSince(planningStartedAt);
     // Lowering destructively mutates the AST; clone the runtime AST so the
-    // original chunk file is preserved (and so a subsequent merge_modules
-    // call can clone it again to start from a clean tree).
+    // original chunk file is preserved and later module-regrouping or
+    // logical-materialization work can start from a clean tree.
     const parseStartedAt = process.hrtime.bigint();
     const loweringAst = t.cloneNode(runtimeFile.ast, true);
     const parseMs = durationMsSince(parseStartedAt);
@@ -176,9 +176,10 @@ export function extractAtomicModules({
           headerLines: [...runtimeHeaderLines],
           kind: "js.module_extraction_state",
           mode: "atomic",
-          // Original (pre-lowering) AST kept here so subsequent merge_modules
-          // calls can cloneNode it and re-lower in one cheap shot, instead of
-          // re-serializing + re-parsing the chunk source for every merge.
+          // Original (pre-lowering) AST kept here so later regrouping or
+          // logical-materialization passes can cloneNode it and re-lower in
+          // one cheap shot, instead of re-serializing + re-parsing the chunk
+          // source every time.
           originalAst: runtimeFile.ast,
           parserOptions: runtimeParserOptions,
           runtimeFile: targetFile,
@@ -199,7 +200,7 @@ export function extractAtomicModules({
         targetDir: normalizeRelativeFile(targetDir),
       },
       entryFile: targetFile,
-      orderedInitExtractions: result.applied,
+      selectedModuleLowerings: result.applied,
     });
 
     const report = {
@@ -261,9 +262,9 @@ export function extractAtomicModules({
     },
     counts: {
       ...(artifactManifest?.counts ?? {}),
-      orderedInitExtractions: applied.length,
+      selectedModuleLowerings: applied.length,
     },
-    orderedInitExtractions: applied,
+    selectedModuleLowerings: applied,
   });
 
   const manifest = {

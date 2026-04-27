@@ -11,7 +11,7 @@ import { referencedUndeclaredNames } from "../common/program_analysis.mjs";
 const traverse = traverseModule.default ?? traverseModule;
 
 const RUNTIME_SENSITIVE_EFFECTS = new Set(["containsDirectEval", "containsImportMeta", "containsTopLevelAwait"]);
-const ORDERED_INIT_SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
+const SELECTED_MODULE_SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
 
 
 export function extractRuntimeBoundaryMetadata(options) {
@@ -1473,7 +1473,7 @@ function finalizeOrderedInitRegion({ index, owners, ownerById, regionOwners, sid
   );
 
   for (const owner of regionOwners) {
-    if (!ORDERED_INIT_SUPPORTED_OWNER_TYPES.has(owner.type)) {
+    if (!SELECTED_MODULE_SUPPORTED_OWNER_TYPES.has(owner.type)) {
       unsupportedOwnerIds.add(owner.id);
     }
     for (const effect of [...RUNTIME_SENSITIVE_EFFECTS].filter((effect) => owner.effects[effect])) {
@@ -1495,7 +1495,7 @@ function finalizeOrderedInitRegion({ index, owners, ownerById, regionOwners, sid
       outsideLocalDependencyNames.add(access.name);
     }
 
-    for (const access of orderedInitForwardDependencyAccesses(owner)) {
+    for (const access of selectedModuleForwardDependencyAccesses(owner)) {
       if (access.kind !== "local_declaration" || !access.ownerId || !selectedOwnerIds.has(access.ownerId)) {
         continue;
       }
@@ -1584,7 +1584,7 @@ function selectedModuleAccesses(owner) {
   ];
 }
 
-function orderedInitForwardDependencyAccesses(owner) {
+function selectedModuleForwardDependencyAccesses(owner) {
   return [...owner.eagerReads.values(), ...owner.eagerWrites.values(), ...owner.eagerMemberWrites.values()];
 }
 

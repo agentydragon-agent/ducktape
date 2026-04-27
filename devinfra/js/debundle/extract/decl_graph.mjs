@@ -1,9 +1,9 @@
 export const PLAN_SELECTED_MODULE_GROUPS_OPERATION = "plan_selected_module_groups";
-const ORDERED_INIT_SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
+const SELECTED_MODULE_SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
 const RUNTIME_SENSITIVE_EFFECTS = new Set(["containsDirectEval", "containsImportMeta", "containsTopLevelAwait"]);
-const ORDERED_INIT_ACCESS_VIEW_CACHE = new WeakMap();
-const ORDERED_INIT_PLANNER_STATE_CACHE = new WeakMap();
-const ORDERED_INIT_STAGED_SHELL_OWNER_ADJACENCY_CACHE = new WeakMap();
+const SELECTED_MODULE_ACCESS_VIEW_CACHE = new WeakMap();
+const SELECTED_MODULE_PLANNER_STATE_CACHE = new WeakMap();
+const SELECTED_MODULE_STAGED_SHELL_OWNER_ADJACENCY_CACHE = new WeakMap();
 
 export function expandSelectedModuleGroupPlanningOperations(analysis, operations, context = {}) {
   const expanded = [];
@@ -628,7 +628,7 @@ function expandStagedAttachedOwners(seedOwnerIds, { ownerAdjacency, ownerById })
 }
 
 function getStagedShellOwnerAdjacency(analysis, ownerById) {
-  const cached = ORDERED_INIT_STAGED_SHELL_OWNER_ADJACENCY_CACHE.get(analysis);
+  const cached = SELECTED_MODULE_STAGED_SHELL_OWNER_ADJACENCY_CACHE.get(analysis);
   if (cached) {
     return cached;
   }
@@ -649,7 +649,7 @@ function getStagedShellOwnerAdjacency(analysis, ownerById) {
       adjacency.get(access.ownerId)?.add(owner.id);
     }
   }
-  ORDERED_INIT_STAGED_SHELL_OWNER_ADJACENCY_CACHE.set(analysis, adjacency);
+  SELECTED_MODULE_STAGED_SHELL_OWNER_ADJACENCY_CACHE.set(analysis, adjacency);
   return adjacency;
 }
 
@@ -784,7 +784,7 @@ function summarizeStagedAttachedEnvelope({ attachedSideEffectIds, ownerById, own
   );
 
   for (const owner of regionOwners) {
-    if (!ORDERED_INIT_SUPPORTED_OWNER_TYPES.has(owner.type)) {
+    if (!SELECTED_MODULE_SUPPORTED_OWNER_TYPES.has(owner.type)) {
       unsupportedOwnerIds.add(owner.id);
     }
     if (owner.currentExtractorCompatible === false) {
@@ -982,7 +982,7 @@ function summarizeOwnerClosureEnvelope({ owners, ownerById, plannerState, region
   );
 
   for (const owner of regionOwners) {
-    if (!ORDERED_INIT_SUPPORTED_OWNER_TYPES.has(owner.type)) {
+    if (!SELECTED_MODULE_SUPPORTED_OWNER_TYPES.has(owner.type)) {
       unsupportedOwnerIds.add(owner.id);
     }
     if (owner.currentExtractorCompatible === false) {
@@ -1052,7 +1052,7 @@ function summarizeOwnerClosureEnvelope({ owners, ownerById, plannerState, region
 }
 
 function selectedModuleAccessView(record) {
-  const cached = ORDERED_INIT_ACCESS_VIEW_CACHE.get(record);
+  const cached = SELECTED_MODULE_ACCESS_VIEW_CACHE.get(record);
   if (cached) {
     return cached;
   }
@@ -1069,12 +1069,12 @@ function selectedModuleAccessView(record) {
     writes: [...eagerWrites, ...lazyWrites],
     writeLike: [...eagerWrites, ...lazyWrites, ...eagerMemberWrites, ...lazyMemberWrites],
   };
-  ORDERED_INIT_ACCESS_VIEW_CACHE.set(record, view);
+  SELECTED_MODULE_ACCESS_VIEW_CACHE.set(record, view);
   return view;
 }
 
 function getOrderedInitPlannerState(analysis, ownerById = null) {
-  const cached = ORDERED_INIT_PLANNER_STATE_CACHE.get(analysis);
+  const cached = SELECTED_MODULE_PLANNER_STATE_CACHE.get(analysis);
   if (cached) {
     return cached;
   }
@@ -1134,7 +1134,7 @@ function getOrderedInitPlannerState(analysis, ownerById = null) {
     replayableSideEffectStateById,
     writeRecordIdsByOwnerId,
   };
-  ORDERED_INIT_PLANNER_STATE_CACHE.set(analysis, plannerState);
+  SELECTED_MODULE_PLANNER_STATE_CACHE.set(analysis, plannerState);
   return plannerState;
 }
 

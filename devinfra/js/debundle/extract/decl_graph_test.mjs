@@ -345,7 +345,7 @@ function assertRunnableEquivalent({ entryFile = "runtime.js", prefix, source, tr
   assert.deepEqual(runNodeScript(join(transformedDir, entryFile)), runNodeScript(join(originalDir, entryFile)));
 }
 
-function orderedInitOperation(source, { init, ownerNames, targetFile }) {
+function selectedModuleOperation(source, { init, ownerNames, targetFile }) {
   const analysis = analyzeRuntimeBoundaryCode(source, {
     chunkId: "static/app",
     runtimePath: "fixture/runtime.js",

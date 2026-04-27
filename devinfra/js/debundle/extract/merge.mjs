@@ -191,7 +191,7 @@ export function mergeModules({
         count: chunkOperations.length,
         mergedModuleIds,
       },
-      orderedInitExtractions: result.applied,
+      selectedModuleLowerings: result.applied,
     });
     applied.push(...result.applied);
     mergedModuleCount += mergedModuleIds.length;
@@ -235,13 +235,13 @@ export function mergeModules({
     ...artifactManifest,
     counts: {
       ...(artifactManifest?.counts ?? {}),
-      orderedInitExtractions: applied.length,
+      selectedModuleLowerings: applied.length,
     },
     mergeModules: {
       chunkCount: reports.length,
       mergedModuleCount,
     },
-    orderedInitExtractions: applied,
+    selectedModuleLowerings: applied,
   });
 
   const manifest = {

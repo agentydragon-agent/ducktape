@@ -200,7 +200,7 @@ export function materializeLogicalModules({
         moduleIds: logicalModules.modules.map((modulePlan) => modulePlan.id),
         targetDir: normalizeRelativeFile(targetDir),
       },
-      orderedInitExtractions: result.applied,
+      selectedModuleLowerings: result.applied,
     });
 
     const finalModules = logicalModules.modules.map((modulePlan) => ({
@@ -261,13 +261,13 @@ export function materializeLogicalModules({
     ...artifactManifest,
     counts: {
       ...(artifactManifest?.counts ?? {}),
-      orderedInitExtractions: applied.length,
+      selectedModuleLowerings: applied.length,
     },
     logicalModules: {
       chunkCount: reports.length,
       moduleCount: reports.reduce((sum, report) => sum + report.counts.finalModules, 0),
     },
-    orderedInitExtractions: applied,
+    selectedModuleLowerings: applied,
   });
 
   const manifest = {

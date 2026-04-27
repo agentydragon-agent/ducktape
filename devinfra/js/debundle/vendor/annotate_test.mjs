@@ -241,10 +241,11 @@ test("non-mark_vendor entries in operations are ignored silently", () => {
   const artifact = fakeArtifact({ chunkIds: ["static/pdf.worker-U2G3g_2t"] });
   const ops = [
     {
-      id: "rename_X",
-      operation: "rename_binding",
-      selector: { chunkId: "static/pdf.worker-U2G3g_2t", binding: { name: "X", kind: "ClassDeclaration" } },
-      target: { name: "Y" },
+      id: "noop_define_module",
+      operation: "define_logical_module",
+      selector: { chunkId: "static/pdf.worker-U2G3g_2t" },
+      target: { path: "ui/noop" },
+      members: [],
     },
     vendorOp(),
     { id: "noop", operation: "something_else" },

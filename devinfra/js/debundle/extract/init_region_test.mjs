@@ -30,7 +30,7 @@ console.log(result, asyncValue, Box.name);
 export { Box as publicBox, loadFeature as publicLoadFeature, result as publicResult };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_fixture_region",
       ownerNames: ["seed", "format", "Box", "loadFeature", "result"],
       targetFile: "regions/fixture_region.js",
@@ -71,7 +71,7 @@ console.log(render());
 export { render as publicRender };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       file: "entry.js",
       init: "init_entry_region",
       ownerNames: ["seed", "render"],
@@ -102,7 +102,7 @@ console.log(await loadFeature());
 export { loadFeature };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_dynamic_import_region",
       ownerNames: ["loadFeature"],
       targetFile: "regions/deep/dynamic_import_region.js",
@@ -129,7 +129,7 @@ test("rebases worker constructor literals inside extracted stage bodies", () => 
 export { spawnWorker };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_worker_rebase_region",
       ownerNames: ["spawnWorker"],
       targetFile: "regions/deep/worker_rebase_region.js",
@@ -150,7 +150,7 @@ test("rebases shared worker constructor literals inside extracted stage bodies",
 export { spawnSharedWorker };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_shared_worker_rebase_region",
       ownerNames: ["spawnSharedWorker"],
       targetFile: "regions/deep/shared_worker_rebase_region.js",
@@ -176,7 +176,7 @@ test("keeps shadowed worker constructor literals unchanged inside extracted stag
 export { spawnWorker };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_shadowed_worker_region",
       ownerNames: ["spawnWorker"],
       targetFile: "regions/deep/shadowed_worker_region.js",
@@ -202,7 +202,7 @@ test("keeps var-hoisted worker constructor literals unchanged inside extracted s
 export { spawnWorker };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_var_shadowed_worker_region",
       ownerNames: ["spawnWorker"],
       targetFile: "regions/deep/var_shadowed_worker_region.js",
@@ -221,7 +221,7 @@ const b = 2;
 console.log(a + b);
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_non_contiguous",
       ownerNames: ["a", "b"],
       targetFile: "regions/non_contiguous.js",
@@ -247,7 +247,7 @@ export { render as publicRender };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
     {
-      ...orderedInitOperation(source, {
+      ...selectedModuleOperation(source, {
         init: "init_staged_fixture_region",
         ownerNames: ["helperSeed", "readHelperSeed", "composed", "render"],
         targetFile: "regions/staged_fixture_region.js",
@@ -397,7 +397,7 @@ console.log(render());
       extractOrderedInitRegionsInCode(
         source,
         [
-          orderedInitOperation(source, {
+          selectedModuleOperation(source, {
             init: "init_reused_analysis",
             ownerNames: ["seed", "render"],
             targetFile: "regions/reused_analysis.js",
@@ -419,7 +419,7 @@ console.log(extracted);
   assert.throws(
     () =>
       extractOrderedInitRegionsInCode(source, [
-        orderedInitOperation(source, {
+        selectedModuleOperation(source, {
           init: "init_external_dependency",
           ownerNames: ["extracted"],
           targetFile: "regions/external_dependency.js",
@@ -443,7 +443,7 @@ console.log(read(), bump());
   assert.throws(
     () =>
       extractOrderedInitRegionsInCode(source, [
-        orderedInitOperation(source, {
+        selectedModuleOperation(source, {
           init: "init_write_conflict",
           ownerNames: ["value", "read"],
           targetFile: "regions/write_conflict.js",
@@ -472,7 +472,7 @@ console.log(first, counter.startedAt > 0);
 export { DeferredRenderCounter, counter, first };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_counter_region",
       ownerNames: ["DeferredRenderCounter", "counter", "first"],
       targetFile: "regions/counter_region.js",
@@ -509,7 +509,7 @@ console.log(parseTree("ok"));
 export { parseTree };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_schema_region",
       ownerNames: ["leafSchema", "parseTree"],
       targetFile: "regions/schema_region.js",
@@ -543,7 +543,7 @@ console.log(renderTree("ok"));
 export { renderTree, treeSchema };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_lazy_schema_region",
       ownerNames: ["leafSchema"],
       targetFile: "regions/lazy_schema_region.js",
@@ -619,12 +619,12 @@ console.log(left, right);
 export { left, right };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_left_region",
       ownerNames: ["left"],
       targetFile: "regions/left_region.js",
     }),
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_right_region",
       ownerNames: ["right"],
       targetFile: "regions/right_region.js",
@@ -668,7 +668,7 @@ console.log(initial, next, isOpen());
 export { isOpen, next, toggle };
 `;
   const result = extractOrderedInitRegionsInCode(source, [
-    orderedInitOperation(source, {
+    selectedModuleOperation(source, {
       init: "init_state_region",
       ownerNames: ["open", "toggle", "isOpen", "initial", "next"],
       targetFile: "regions/state_region.js",
@@ -705,7 +705,7 @@ console.log(dragSelectionSession.current());
   assert.throws(
     () =>
       extractOrderedInitRegionsInCode(source, [
-        orderedInitOperation(source, {
+        selectedModuleOperation(source, {
           init: "init_drag_selection_region",
           ownerNames: ["DragSelectionSession", "dragSelectionSession"],
           targetFile: "regions/drag_selection_region.js",
@@ -723,7 +723,7 @@ throw new InvalidNodeIdError("bad id");
   assert.throws(
     () =>
       extractOrderedInitRegionsInCode(source, [
-        orderedInitOperation(source, {
+        selectedModuleOperation(source, {
           init: "init_error_region",
           ownerNames: ["InvalidNodeIdError"],
           targetFile: "regions/error_region.js",
@@ -746,7 +746,7 @@ console.log(rendered);
     () =>
       extractOrderedInitRegionsInCode(source, [
         {
-          ...orderedInitOperation(source, {
+          ...selectedModuleOperation(source, {
             init: "init_staged_later_use_region",
             ownerNames: ["helperSeed", "readLater", "rendered"],
             targetFile: "regions/staged_later_use_region.js",
@@ -758,7 +758,7 @@ console.log(rendered);
   );
 });
 
-function orderedInitOperation(source, { file = "runtime.js", init, ownerNames, targetFile }) {
+function selectedModuleOperation(source, { file = "runtime.js", init, ownerNames, targetFile }) {
   const ownerIds = ownerIdsForNames(source, ownerNames);
   return {
     id: `extract_${init}`,

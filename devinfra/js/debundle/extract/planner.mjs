@@ -422,27 +422,27 @@ function statementByteCountForItem(itemId, { code, itemById, programBody }) {
   return Buffer.byteLength(code.slice(statement.start, statement.end));
 }
 
-function orderedInitEagerReadAccesses(record) {
+function selectedModuleEagerReadAccesses(record) {
   return topLevelAccesses(record, "reads", "eager");
 }
 
-function orderedInitLazyReadAccesses(record) {
+function selectedModuleLazyReadAccesses(record) {
   return topLevelAccesses(record, "reads", "lazy");
 }
 
-function orderedInitWriteAccesses(record) {
+function selectedModuleWriteAccesses(record) {
   return topLevelAccesses(record, "writes", "eager");
 }
 
-function orderedInitLazyWriteAccesses(record) {
+function selectedModuleLazyWriteAccesses(record) {
   return topLevelAccesses(record, "writes", "lazy");
 }
 
-function orderedInitEagerMemberWriteAccesses(record) {
+function selectedModuleEagerMemberWriteAccesses(record) {
   return topLevelAccesses(record, "memberWrites", "eager");
 }
 
-function orderedInitLazyMemberWriteAccesses(record) {
+function selectedModuleLazyMemberWriteAccesses(record) {
   return topLevelAccesses(record, "memberWrites", "lazy");
 }
 
@@ -466,32 +466,32 @@ function topLevelAccesses(record, bucket, phase) {
 }
 
 function forEachTopLevelAccess(record, callback) {
-  for (const access of orderedInitEagerReadAccesses(record)) {
+  for (const access of selectedModuleEagerReadAccesses(record)) {
     if (callback(access, "reads", "eager") === false) {
       return false;
     }
   }
-  for (const access of orderedInitLazyReadAccesses(record)) {
+  for (const access of selectedModuleLazyReadAccesses(record)) {
     if (callback(access, "reads", "lazy") === false) {
       return false;
     }
   }
-  for (const access of orderedInitWriteAccesses(record)) {
+  for (const access of selectedModuleWriteAccesses(record)) {
     if (callback(access, "writes", "eager") === false) {
       return false;
     }
   }
-  for (const access of orderedInitLazyWriteAccesses(record)) {
+  for (const access of selectedModuleLazyWriteAccesses(record)) {
     if (callback(access, "writes", "lazy") === false) {
       return false;
     }
   }
-  for (const access of orderedInitEagerMemberWriteAccesses(record)) {
+  for (const access of selectedModuleEagerMemberWriteAccesses(record)) {
     if (callback(access, "memberWrites", "eager") === false) {
       return false;
     }
   }
-  for (const access of orderedInitLazyMemberWriteAccesses(record)) {
+  for (const access of selectedModuleLazyMemberWriteAccesses(record)) {
     if (callback(access, "memberWrites", "lazy") === false) {
       return false;
     }
