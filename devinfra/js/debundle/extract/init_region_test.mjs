@@ -39,8 +39,8 @@ export { Box as publicBox, loadFeature as publicLoadFeature, result as publicRes
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/fixture_region.js");
-  assert.match(runtimeCode, /import \{ seed, format, Box, loadFeature, result, init_fixture_region_stage_0 \} from "\.\/regions\/fixture_region\.js"/);
-  assert.match(runtimeCode, /init_fixture_region_stage_0\(\);/);
+  assert.match(runtimeCode, /import \{ seed, format, Box, loadFeature, result, init_fixture_region \} from "\.\/regions\/fixture_region\.js"/);
+  assert.match(runtimeCode, /init_fixture_region\(\);/);
   assert.match(extractedCode, /import \{ addOne \} from "\.\.\/helpers\.js"/);
   assert.match(extractedCode, /await import\("\.\.\/feature\.js"\)/);
   assert.match(extractedCode, /format = function format/);
@@ -77,7 +77,7 @@ export { render as publicRender };
   const entryCode = result.files.get("entry.js");
   const extractedCode = result.files.get("regions/entry_region.js");
   assert.match(entryCode, /from "\.\/regions\/entry_region\.js"/);
-  assert.match(entryCode, /init_entry_region_stage_0\(\)/);
+  assert.match(entryCode, /init_entry_region\(\)/);
   assert.match(extractedCode, /export function init_entry_region/);
   assertRunnableEquivalent({
     entryFile: "entry.js",
@@ -476,7 +476,7 @@ export { DeferredRenderCounter, counter, first };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/counter_region.js");
-  assert.match(runtimeCode, /import \{ DeferredRenderCounter, counter, first, init_counter_region_stage_0 \} from "\.\/regions\/counter_region\.js"/);
+  assert.match(runtimeCode, /import \{ DeferredRenderCounter, counter, first, init_counter_region \} from "\.\/regions\/counter_region\.js"/);
   assert.match(extractedCode, /import \{ now \} from "\.\.\/clock\.js"/);
   assert.match(extractedCode, /DeferredRenderCounter = class DeferredRenderCounter/);
 
@@ -671,7 +671,8 @@ export { isOpen, next, toggle };
   ]);
 
   const extractedCode = result.files.get("regions/state_region.js");
-  assert.match(extractedCode, /export let open, toggle, isOpen, initial, next;/);
+  assert.match(extractedCode, /let open, toggle, isOpen, initial, next;/);
+  assert.match(extractedCode, /export \{ open, toggle, isOpen, initial, next \};/);
   assert.match(extractedCode, /open = false/);
   assert.match(extractedCode, /toggle = function toggle/);
 
