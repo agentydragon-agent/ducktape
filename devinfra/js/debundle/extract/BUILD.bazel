@@ -11,10 +11,8 @@ js_library(
     name = "libs",
     srcs = [
         "atomic_modules.mjs",
-        "closure_report.mjs",
         "decl_graph.mjs",
         "init_region.mjs",
-        "init_regions.mjs",
         "merge.mjs",
         "planner.mjs",
     ],
@@ -55,21 +53,6 @@ js_test(
 )
 
 js_test(
-    name = "closure_report_test",
-    data = [
-        "closure_report.mjs",
-        "decl_graph.mjs",
-        "//devinfra/js/debundle/analysis:libs",
-        "//devinfra/js/debundle/common:sources",
-        "//devinfra/js/debundle/rename:libs",
-        "//devinfra/js/debundle/split:libs",
-        "//devinfra/js/debundle/test_support:sources",
-        "//devinfra/js/debundle/transforms:libs",
-    ] + _BABEL_DEPS,
-    entry_point = "closure_report_test.mjs",
-)
-
-js_test(
     name = "extraction_test",
     data = [
         "decl_graph.mjs",
@@ -94,20 +77,4 @@ js_test(
         "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
     entry_point = "atomic_modules_test.mjs",
-)
-
-js_test(
-    name = "init_regions_test",
-    data = [
-        "decl_graph.mjs",
-        "init_region.mjs",
-        "init_regions.mjs",
-        "planner.mjs",
-        "//devinfra/js/debundle/analysis:libs",
-        "//devinfra/js/debundle/common:sources",
-        "//devinfra/js/debundle/split:libs",
-        "//devinfra/js/debundle/test_support:sources",
-        "//devinfra/js/debundle/transforms:libs",
-    ] + _BABEL_DEPS,
-    entry_point = "init_regions_test.mjs",
 )

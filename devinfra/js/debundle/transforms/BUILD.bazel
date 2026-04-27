@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 
 filegroup(
     name = "run_transform_entry_point",
@@ -40,4 +40,12 @@ js_binary(
         "--max-old-space-size=8192",
     ],
     visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "runner_test",
+    data = [
+        ":libs",
+    ],
+    entry_point = "runner_test.mjs",
 )
