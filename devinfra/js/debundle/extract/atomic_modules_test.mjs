@@ -43,6 +43,17 @@ test("extractAtomicModules emits one module per atomic unit and preserves behavi
     [...chunk.files.keys()].filter((file) => file.startsWith("modules/")).length,
     state.currentModules.length
   );
+  const firstModuleFile = chunk.files.get(state.currentModules[0].targetFile);
+  assert.equal(
+    firstModuleFile?.headerLines?.[0],
+    "// @ducktape-generated kind=lowerer-helper stage=ordered_init ignore=detectors"
+  );
+  assert.deepEqual(firstModuleFile?.metadata?.generated, {
+    kind: "lowerer_helper",
+    stage: "ordered_init",
+    generator: "devinfra/js/debundle/extract/init_region.mjs",
+    ignoreByDefault: true,
+  });
 
   const { outRoot } = createWebFixtureRoots("debundle-atomic-modules-stage-write-");
   writeJsTree({
@@ -79,7 +90,7 @@ test("mergeModules merges selected extracted modules and preserves behavior", as
           moduleIds: [stateBefore.currentModules[0].id, stateBefore.currentModules[1].id],
         },
         target: {
-          basename: "seed_and_first",
+          path: "seed_and_first",
         },
       },
     ],
@@ -143,7 +154,7 @@ test("mergeModules resolves moduleSelectors by exact member-name sets", async ()
           },
         },
         target: {
-          basename: "seed_and_first",
+          path: "seed_and_first",
         },
       },
     ],
@@ -191,7 +202,7 @@ test("mergeModules matches exact selector symbols against the full current membe
           moduleIds: [stateBefore.currentModules[0].id, stateBefore.currentModules[1].id],
         },
         target: {
-          basename: "seed_pair",
+          path: "seed_pair",
         },
       },
     ],
@@ -216,7 +227,7 @@ test("mergeModules matches exact selector symbols against the full current membe
           },
         },
         target: {
-          basename: "seed_and_first",
+          path: "seed_and_first",
         },
       },
     ],
@@ -266,7 +277,7 @@ test("mergeModules resolves representative symbol subsets against the full curre
           moduleIds: [stateBefore.currentModules[0].id, stateBefore.currentModules[1].id],
         },
         target: {
-          basename: "seed_pair",
+          path: "seed_pair",
         },
       },
     ],
@@ -291,7 +302,7 @@ test("mergeModules resolves representative symbol subsets against the full curre
           },
         },
         target: {
-          basename: "seed_and_first",
+          path: "seed_and_first",
         },
       },
     ],
@@ -347,7 +358,7 @@ test("mergeModules ordered selector validation rejects reversed module selector 
               },
             },
             target: {
-              basename: "seed_and_first",
+              path: "seed_and_first",
             },
           },
         ],
@@ -382,7 +393,7 @@ test("mergeModules writes post-merge reports with before/after counts", async ()
           moduleIds: [stateBefore.currentModules[0].id, stateBefore.currentModules[1].id],
         },
         target: {
-          basename: "seed_and_first",
+          path: "seed_and_first",
         },
       },
     ],
@@ -431,7 +442,7 @@ test("merge_remaining_modules folds all unclaimed modules into one residual modu
           moduleIds: [stateBefore.currentModules[0].id, stateBefore.currentModules[1].id],
         },
         target: {
-          basename: "seed_and_first",
+          path: "seed_and_first",
         },
       },
       {
@@ -441,7 +452,7 @@ test("merge_remaining_modules folds all unclaimed modules into one residual modu
           chunkId: "static/app",
         },
         target: {
-          basename: "unhandled",
+          path: "residual/unhandled",
         },
       },
     ],
@@ -453,7 +464,7 @@ test("merge_remaining_modules folds all unclaimed modules into one residual modu
   assert.equal(stateAfter.currentModules.length, 2);
   assert.ok(stateAfter.currentModules.some((modulePlan) => modulePlan.id === "merge__seed_and_first"));
   assert.ok(stateAfter.currentModules.some((modulePlan) => modulePlan.id === "merge__unhandled"));
-  assert.ok(chunk.files.has("modules/unhandled.js"));
+  assert.ok(chunk.files.has("modules/residual/unhandled.js"));
 
   const { outRoot } = createWebFixtureRoots("debundle-merge-remaining-modules-write-");
   writeJsTree({
@@ -488,7 +499,7 @@ test("materializeLogicalModules lowers final logical modules directly from combi
   assert.equal(materialized.manifest.counts.explicitLogicalModules, 2);
   assert.equal(materialized.manifest.counts.residualLogicalModules, 1);
   assert.deepEqual(
-    materialized.manifest.chunks[0].finalModuleContents.map((modulePlan) => modulePlan.path ?? modulePlan.basename),
+    materialized.manifest.chunks[0].finalModuleContents.map((modulePlan) => modulePlan.path),
     ["state/seed_state", "state/first_state", "residual/unhandled"]
   );
 
@@ -627,7 +638,7 @@ test("extract_atomic_modules and merge_modules compose in a pipeline spec", asyn
           },
         },
         target: {
-          basename: "seed_and_first",
+          path: "seed_and_first",
         },
       },
     ],

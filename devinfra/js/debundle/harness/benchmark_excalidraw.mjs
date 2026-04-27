@@ -203,7 +203,7 @@ function buildPairMergeOperations(chunkId, atomIds, mergeCount) {
       id: `bench_merge_${pairIndex.toString().padStart(3, "0")}`,
       operation: "merge_module",
       selector: { chunkId, moduleIds: [left, right] },
-      target: { basename: `bench_merge_${pairIndex.toString().padStart(3, "0")}` },
+      target: { path: `bench/${pairIndex.toString().padStart(3, "0")}` },
     });
   }
   return operations;

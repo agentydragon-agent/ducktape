@@ -83,7 +83,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     }
     if (selectedModules.length === 0) {
       reports.push({
-        basename: operation.target.basename,
+        path: operation.target.path,
         emittedMemberNames: [],
         id: operation.id,
         materialized: false,
@@ -112,7 +112,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     });
     explicitModulePlans.push(mergedPlan);
     reports.push({
-      basename: mergedPlan.basename,
+      path: mergedPlan.modulePath,
       emittedMemberNames: [...mergedPlan.memberNames],
       id: operation.id,
       materialized: true,
@@ -135,7 +135,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     const residualPlan = mergeModuleGroup(residualModules, residualOperation, finalPlans.length, { targetDir });
     finalPlans.push(residualPlan);
     reports.push({
-      basename: residualPlan.basename,
+      path: residualPlan.modulePath,
       emittedMemberNames: [...residualPlan.memberNames],
       id: residualOperation.id,
       matchedAtomicModuleIds: residualModules.map((modulePlan) => modulePlan.id),
@@ -224,21 +224,13 @@ function normalizeLogicalTarget(target, operationId) {
   if (!target || typeof target !== "object") {
     throw new Error(`logical module ${operationId} requires target`);
   }
-  const targetPath =
-    typeof target.path === "string" && target.path !== "" ? normalizeRelativeModulePath(target.path) : null;
-  const targetBasename =
-    typeof target.basename === "string" && target.basename !== ""
-      ? sanitizeIdentifier(target.basename)
-      : targetPath
-        ? sanitizeIdentifier(targetPath.split("/").at(-1))
-        : null;
-  if (!targetPath && !targetBasename) {
-    throw new Error(`logical module ${operationId} requires target.path or target.basename`);
+  const targetPath = typeof target.path === "string" && target.path !== "" ? normalizeRelativeModulePath(target.path) : null;
+  if (!targetPath) {
+    throw new Error(`logical module ${operationId} requires target.path`);
   }
   return {
     ...target,
-    ...(targetPath ? { path: targetPath } : {}),
-    basename: targetBasename,
+    path: targetPath,
     ...(target.file ? { file: normalizeRelativeFile(target.file) } : {}),
   };
 }
@@ -357,14 +349,14 @@ function groupLogicalModuleOperations(logicalOperations) {
       continue;
     }
     const key = JSON.stringify({
-      basename: operation.target.basename,
       file: operation.target.file ?? null,
       init: operation.target.init ?? null,
-      path: operation.target.path ?? null,
+      path: operation.target.path,
     });
     if (!grouped.has(key)) {
+      const targetPath = operation.target.path;
       grouped.set(key, {
-        id: `logical_module__${operation.target.basename}`,
+        id: `logical_module__${sanitizeIdentifier(targetPath.split("/").join("__"))}`,
         members: [],
         operation: "define_logical_module",
         operationIds: [],
@@ -380,8 +372,7 @@ function groupLogicalModuleOperations(logicalOperations) {
 }
 
 function mergeModuleGroup(selectedModules, operation, index, { requestedBindings = [], targetDir }) {
-  const targetBasename = operation.target.basename;
-  const targetPath = operation.target.path ?? null;
+  const targetPath = operation.target.path;
   const attachedItemIds = [];
   const attachedItemIdSet = new Set();
   const memberNames = [];
@@ -440,14 +431,13 @@ function mergeModuleGroup(selectedModules, operation, index, { requestedBindings
   }
   const baseModule = {
     attachedItemIds: attachedItemIds.sort(),
-    basename: targetBasename,
     bytes: hasNullBytes ? null : bytes,
     id: operation.id,
     index,
-    ...(targetPath ? { modulePath: targetPath } : {}),
+    modulePath: targetPath,
     lines,
     memberNames: applyBindingPlacementsToMemberNames(memberNames, bindingPlacements),
-    nameHint: targetBasename,
+    nameHint: sanitizeIdentifier(targetPath.split("/").at(-1) ?? targetPath),
     ownerIds,
     bindingPlacements,
     requestedBindings: requestedBindings.map((binding) => ({ ...binding })),
@@ -471,14 +461,13 @@ function mergeModuleGroup(selectedModules, operation, index, { requestedBindings
 function cloneModulePlan(modulePlan) {
   return {
     attachedItemIds: [...modulePlan.attachedItemIds],
-    basename: modulePlan.basename,
     ...(modulePlan.bytes === null ? { bytes: null } : { bytes: modulePlan.bytes }),
     id: modulePlan.id,
     index: modulePlan.index,
     ...(modulePlan.initName ? { initName: modulePlan.initName } : {}),
     lines: modulePlan.lines,
     memberNames: [...modulePlan.memberNames],
-    ...(modulePlan.modulePath ? { modulePath: modulePlan.modulePath } : {}),
+    modulePath: modulePlan.modulePath,
     nameHint: modulePlan.nameHint,
     ownerIds: [...modulePlan.ownerIds],
     ...(Array.isArray(modulePlan.bindingPlacements)

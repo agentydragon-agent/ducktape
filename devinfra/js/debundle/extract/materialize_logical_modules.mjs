@@ -26,6 +26,7 @@ import {
   relativeWorkspacePath,
   resolveWorkspacePath,
 } from "../common/io.mjs";
+import { buildOrderedInitGeneratedMetadata } from "./generated_artifact_marking.mjs";
 import { extractSelectedModulePlanInAst } from "./init_region.mjs";
 import { buildLogicalModulePlans } from "./logical_modules.mjs";
 import { deriveSelectedModuleTarget, planSelectedAtomicModules } from "./planner.mjs";
@@ -155,6 +156,7 @@ export function materializeLogicalModules({
             chunkFile: relativePath,
             chunkId,
             role: relativePath === targetFile ? "entry" : "module",
+            ...(relativePath === targetFile ? {} : { generated: buildOrderedInitGeneratedMetadata() }),
             ...(modulePlan
               ? {
                   moduleExtraction: {
@@ -203,11 +205,10 @@ export function materializeLogicalModules({
     });
 
     const finalModules = logicalModules.modules.map((modulePlan) => ({
-      basename: modulePlan.basename,
       file: modulePlan.targetFile,
       id: modulePlan.id,
       memberNames: [...modulePlan.memberNames],
-      ...(modulePlan.modulePath ? { path: modulePlan.modulePath } : {}),
+      path: modulePlan.modulePath,
       ownerIds: [...modulePlan.ownerIds],
       startOrdinal: modulePlan.startOrdinal,
       unitIds: [...modulePlan.unitIds],
@@ -313,13 +314,13 @@ function cloneAtomicUnit(unit) {
 function cloneModulePlan(modulePlan) {
   return {
     attachedItemIds: [...modulePlan.attachedItemIds],
-    basename: modulePlan.basename,
     ...(modulePlan.bytes === null ? { bytes: null } : { bytes: modulePlan.bytes }),
     id: modulePlan.id,
     index: modulePlan.index,
     ...(modulePlan.initName ? { initName: modulePlan.initName } : {}),
     lines: modulePlan.lines,
     memberNames: [...modulePlan.memberNames],
+    modulePath: modulePlan.modulePath,
     nameHint: modulePlan.nameHint,
     ownerIds: [...modulePlan.ownerIds],
     ...(Array.isArray(modulePlan.bindingPlacements)

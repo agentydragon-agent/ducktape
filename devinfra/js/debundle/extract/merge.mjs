@@ -13,6 +13,7 @@ import {
   setChunk,
 } from "../common/artifact.mjs";
 import { ensureOutputDir, logProgress, relativeWorkspacePath, resolveWorkspacePath } from "../common/io.mjs";
+import { buildOrderedInitGeneratedMetadata } from "./generated_artifact_marking.mjs";
 import { extractSelectedModulePlanInAst } from "./init_region.mjs";
 import { deriveSelectedModuleTarget } from "./planner.mjs";
 
@@ -155,6 +156,7 @@ export function mergeModules({
             chunkFile: relativePath,
             chunkId,
             role: relativePath === runtimeFile ? "entry" : "module",
+            ...(relativePath === runtimeFile ? {} : { generated: buildOrderedInitGeneratedMetadata() }),
             ...(modulePlan
               ? {
                   moduleExtraction: {
@@ -307,7 +309,7 @@ function normalizeMergeOperations(operations) {
                     : {}),
                 }),
           },
-          target: operation.target ?? {},
+          target: normalizeMergeTarget(operation.target, operation.id),
         };
       }
       return {
@@ -315,7 +317,7 @@ function normalizeMergeOperations(operations) {
         selector: {
           chunkId: normalizeRelativeFile(operation.selector.chunkId),
         },
-        target: operation.target ?? {},
+        target: normalizeMergeTarget(operation.target, operation.id),
       };
     });
 }
@@ -579,10 +581,7 @@ function containsAllStrings(haystack, needles) {
 }
 
 function mergeModuleGroup(selectedModules, operation, index, { targetDir }) {
-  const targetBasename =
-    typeof operation.target?.basename === "string" && operation.target.basename !== ""
-      ? sanitizeIdentifier(operation.target.basename)
-      : sanitizeIdentifier(operation.id);
+  const targetPath = operation.target.path;
   const attachedItemIds = [];
   const attachedItemIdSet = new Set();
   const memberNames = [];
@@ -632,13 +631,13 @@ function mergeModuleGroup(selectedModules, operation, index, { targetDir }) {
   }
   const baseModule = {
     attachedItemIds: attachedItemIds.sort(),
-    basename: targetBasename,
     bytes: hasNullBytes ? null : bytes,
     id: operation.id,
     index,
     lines,
     memberNames: memberNames.sort(),
-    nameHint: targetBasename,
+    modulePath: targetPath,
+    nameHint: sanitizeIdentifier(targetPath.split("/").at(-1) ?? targetPath),
     ownerIds: ownerIds,
     startOrdinal,
     unitIds,
@@ -660,13 +659,13 @@ function mergeModuleGroup(selectedModules, operation, index, { targetDir }) {
 function cloneModulePlan(modulePlan) {
   return {
     attachedItemIds: [...modulePlan.attachedItemIds],
-    basename: modulePlan.basename,
     ...(modulePlan.bytes === null ? { bytes: null } : { bytes: modulePlan.bytes }),
     id: modulePlan.id,
     index: modulePlan.index,
     ...(modulePlan.initName ? { initName: modulePlan.initName } : {}),
     lines: modulePlan.lines,
     memberNames: [...modulePlan.memberNames],
+    ...(modulePlan.modulePath ? { modulePath: modulePlan.modulePath } : {}),
     nameHint: modulePlan.nameHint,
     ownerIds: [...modulePlan.ownerIds],
     startOrdinal: modulePlan.startOrdinal,
@@ -684,6 +683,20 @@ function normalizeRelativeFile(value) {
     throw new Error(`Invalid relative path: ${value}`);
   }
   return normalized;
+}
+
+function normalizeMergeTarget(target, operationId) {
+  if (!target || typeof target !== "object") {
+    throw new Error(`merge operation ${operationId} requires target`);
+  }
+  if (typeof target.path !== "string" || target.path === "") {
+    throw new Error(`merge operation ${operationId} requires target.path`);
+  }
+  return {
+    ...target,
+    path: normalizeRelativeFile(target.path),
+    ...(typeof target.file === "string" && target.file !== "" ? { file: normalizeRelativeFile(target.file) } : {}),
+  };
 }
 
 function sanitizeIdentifier(value) {

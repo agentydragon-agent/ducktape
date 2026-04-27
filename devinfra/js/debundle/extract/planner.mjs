@@ -114,11 +114,8 @@ export function deriveSelectedModuleTarget(
   const normalizedTargetDir = normalizeRelativeFile(targetDir);
   const modulePath =
     modulePlan.modulePath ??
-    modulePlan.basename ??
     `${modulePlan.id}__${modulePlan.nameHint ?? `module_${index}`}`;
-  const basename = basenameFromModulePath(modulePath);
   return {
-    basename,
     file: modulePlan.targetFile ?? `${normalizedTargetDir}/${filePrefix}${modulePath}.js`,
     init: modulePlan.initName ?? sanitizeIdentifier(`${initPrefix}${modulePath}`),
   };
@@ -372,17 +369,18 @@ function newModuleFromAtomicUnit(atomicUnit) {
   };
 }
 
-function finalizeModulePlan(modulePlan, { id, index, ownerById, basename = undefined }) {
+function finalizeModulePlan(modulePlan, { id, index, ownerById }) {
   const uniqueMemberNames = [...new Set(modulePlan.memberNames)].sort();
   const nameHint = moduleNameHint(uniqueMemberNames, index);
+  const modulePath = normalizeRelativeFile(modulePlan.modulePath ?? sanitizeIdentifier(`${id}__${nameHint}`));
   return {
     attachedItemIds: [...new Set(modulePlan.attachedItemIds)].sort(),
-    basename: sanitizeIdentifier(basename ?? `${id}__${nameHint}`),
     bytes: modulePlan.bytes,
     id,
     index,
     lines: modulePlan.lines,
     memberNames: uniqueMemberNames,
+    modulePath,
     nameHint,
     ownerIds: [...new Set(modulePlan.ownerIds)].sort(
       (leftOwnerId, rightOwnerId) => ownerById.get(leftOwnerId).ordinal - ownerById.get(rightOwnerId).ordinal
@@ -515,12 +513,6 @@ function isReplayableAttachedSideEffectNode(sideEffectNodeOrRecord) {
 
 function normalizeRelativeFile(value) {
   return value.replace(/^\.\/+/, "").replace(/\\/g, "/");
-}
-
-function basenameFromModulePath(value) {
-  const normalized = normalizeRelativeFile(value);
-  const segments = normalized.split("/");
-  return segments.at(-1);
 }
 
 function sanitizeIdentifier(value) {
