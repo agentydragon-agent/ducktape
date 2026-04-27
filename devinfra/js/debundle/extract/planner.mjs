@@ -6,64 +6,6 @@ const ANALYSIS_OWNER_BY_ID_CACHE = new WeakMap();
 const ANALYSIS_ITEM_BY_ID_CACHE = new WeakMap();
 const ANALYSIS_DEFAULT_SELECTED_OWNER_IDS_CACHE = new WeakMap();
 
-export function planGuidedSelectedOwnerModules(
-  { analysis, code, itemMetricsById = null, programBody = null },
-  {
-    maxModuleLines = 20_000,
-    minModuleLines = 500,
-    selectedOwnerIds: explicitSelectedOwnerIds = null,
-  } = {}
-) {
-  if (!analysis?.owners || !analysis?.programItems) {
-    throw new Error("planGuidedSelectedOwnerModules requires analysis");
-  }
-  if (!Array.isArray(programBody) && !(itemMetricsById instanceof Map)) {
-    throw new Error("planGuidedSelectedOwnerModules requires programBody or itemMetricsById");
-  }
-
-  const ownerById = getOwnerByIdForAnalysis(analysis);
-  const selectedOwnerIds = explicitSelectedOwnerIds
-    ? requireKnownOwnerIds(explicitSelectedOwnerIds, ownerById, "planGuidedSelectedOwnerModules explicit selectedOwnerIds")
-    : selectedOwnerIdsFromDefaultClosureSelection(analysis, ownerById, "planGuidedSelectedOwnerModules");
-  const itemById = getItemByIdForAnalysis(analysis);
-  const selectedAtomicUnits = buildSelectedAtomicUnits({
-    analysis,
-    ownerById,
-    selectedOwnerIds,
-  }).map((unit, index) =>
-    finalizeAtomicUnit(unit, {
-      code,
-      id: `${SELECTED_ATOMIC_UNIT_ID_PREFIX}${index.toString().padStart(4, "0")}`,
-      index,
-      itemMetricsById,
-      itemById,
-      ownerById,
-      programBody,
-    })
-  );
-
-  const modulePlans = mergeAtomicUnitsIntoModules(selectedAtomicUnits, {
-    maxModuleLines,
-    minModuleLines,
-  }).map((modulePlan, index) =>
-    finalizeModulePlan(modulePlan, {
-      id: `guided_selected_owner_module_${index.toString().padStart(4, "0")}`,
-      index,
-      ownerById,
-    })
-  );
-
-  return {
-    kind: "js.guided_selected_owner_module_plan",
-    atomicUnitCount: selectedAtomicUnits.length,
-    atomicUnits: selectedAtomicUnits,
-    maxModuleLines,
-    minModuleLines,
-    modulePlans,
-    selectedOwnerCount: selectedOwnerIds.size,
-  };
-}
-
 export function planSelectedAtomicModules(
   { analysis, code, itemMetricsById = null, programBody = null },
   { selectedOwnerIds: explicitSelectedOwnerIds = null } = {}
@@ -156,15 +98,6 @@ export function buildSelectedModuleOperations(plan, options = {}) {
         init: target.init,
       },
     };
-  });
-}
-
-export function buildGuidedSelectedOwnerModuleOperations(plan, options = {}) {
-  return buildSelectedModuleOperations(plan, {
-    ...options,
-    filePrefix: options.filePrefix ?? "guided_",
-    idPrefix: options.idPrefix ?? "guided_selected_owner_module",
-    initPrefix: options.initPrefix ?? "init_guided_",
   });
 }
 
@@ -418,36 +351,6 @@ function statementMetricForItem(itemId, { code, itemMetricsById, itemById, progr
   };
 }
 
-function mergeAtomicUnitsIntoModules(atomicUnits, { maxModuleLines, minModuleLines }) {
-  const modules = [];
-  let currentModule = null;
-
-  for (const atomicUnit of atomicUnits) {
-    if (!currentModule) {
-      currentModule = newModuleFromAtomicUnit(atomicUnit);
-      continue;
-    }
-
-    const nextLineCount = currentModule.lines + atomicUnit.lines;
-    if (currentModule.lines < minModuleLines && nextLineCount <= maxModuleLines) {
-      mergeAtomicUnitIntoModule(currentModule, atomicUnit);
-      continue;
-    }
-    if (currentModule.lines < minModuleLines) {
-      mergeAtomicUnitIntoModule(currentModule, atomicUnit);
-      continue;
-    }
-
-    modules.push(currentModule);
-    currentModule = newModuleFromAtomicUnit(atomicUnit);
-  }
-
-  if (currentModule) {
-    modules.push(currentModule);
-  }
-  return modules;
-}
-
 function newModuleFromAtomicUnit(atomicUnit) {
   return {
     attachedItemIds: [...atomicUnit.attachedItemIds],
@@ -458,15 +361,6 @@ function newModuleFromAtomicUnit(atomicUnit) {
     startOrdinal: atomicUnit.startOrdinal,
     unitIds: [atomicUnit.id],
   };
-}
-
-function mergeAtomicUnitIntoModule(modulePlan, atomicUnit) {
-  modulePlan.attachedItemIds.push(...atomicUnit.attachedItemIds);
-  modulePlan.bytes = modulePlan.bytes === null || atomicUnit.bytes === null ? null : modulePlan.bytes + atomicUnit.bytes;
-  modulePlan.lines += atomicUnit.lines;
-  modulePlan.memberNames.push(...atomicUnit.memberNames);
-  modulePlan.ownerIds.push(...atomicUnit.ownerIds);
-  modulePlan.unitIds.push(atomicUnit.id);
 }
 
 function finalizeModulePlan(modulePlan, { id, index, ownerById, basename = undefined }) {

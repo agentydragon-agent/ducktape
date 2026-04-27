@@ -11,7 +11,6 @@ import { createEmptyArtifact } from "../common/artifact.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";
 import { extractAtomicModules } from "../extract/atomic_modules.mjs";
 import { extractOrderedInitRegions } from "../extract/init_regions.mjs";
-import { extractGuidedSelectedOwnerModules } from "../extract/packed_modules.mjs";
 import { mergeModules } from "../extract/merge.mjs";
 import { emitBrowserHarness } from "../harness/emit.mjs";
 import { renameBindingsInArtifact } from "../rename/bindings.mjs";
@@ -39,7 +38,6 @@ const STAGE_HANDLERS = Object.freeze({
   emit_browser_harness: emitBrowserHarness,
   extract_ordered_init_regions: extractOrderedInitRegions,
   extract_atomic_modules: extractAtomicModules,
-  extract_guided_selected_owner_modules: extractGuidedSelectedOwnerModules,
   merge_modules: mergeModules,
   write_js_tree: writeJsTree,
 });

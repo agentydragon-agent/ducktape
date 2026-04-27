@@ -9,7 +9,6 @@ import {
   ORDERED_INIT_OWNER_CLOSURE_PASS_OPERATION,
 } from "./decl_graph.mjs";
 import {
-  buildGuidedSelectedOwnerModuleOperations,
   buildSelectedModuleOperations,
 } from "./planner.mjs";
 
@@ -131,24 +130,6 @@ export function extractOrderedInitRegionsInAst(
     jsFiles,
     modules: moduleFiles,
   };
-}
-
-export function extractGuidedSelectedOwnerModulesInAst(
-  ast,
-  plan,
-  { analysis, chunkId = "<chunk>", file, filePrefix, headerLines = [], idPrefix, initPrefix, targetDir } = {}
-) {
-  return extractSelectedModulePlanInAst(ast, plan, {
-    analysis,
-    chunkId,
-    ...(file ? { file } : {}),
-    ...(filePrefix ? { filePrefix } : {}),
-    headerLines,
-    ...(idPrefix ? { idPrefix } : {}),
-    ...(initPrefix ? { initPrefix } : {}),
-    ...(targetDir ? { targetDir } : {}),
-    operationBuilder: buildGuidedSelectedOwnerModuleOperations,
-  });
 }
 
 export function extractSelectedModulePlanInAst(

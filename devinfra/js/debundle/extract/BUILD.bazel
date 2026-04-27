@@ -16,7 +16,6 @@ js_library(
         "init_region.mjs",
         "init_regions.mjs",
         "merge.mjs",
-        "packed_modules.mjs",
         "planner.mjs",
     ],
     visibility = ["//visibility:public"],
@@ -71,17 +70,11 @@ js_test(
 )
 
 js_test(
-    name = "guided_selected_owner_modules_test",
+    name = "extraction_test",
     data = [
         "decl_graph.mjs",
-        "init_region.mjs",
-        "packed_modules.mjs",
         "planner.mjs",
-        "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
-        "//devinfra/js/debundle/split:libs",
-        "//devinfra/js/debundle/test_support:sources",
-        "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
     entry_point = "extraction_test.mjs",
 )
