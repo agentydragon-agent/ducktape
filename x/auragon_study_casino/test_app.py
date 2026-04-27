@@ -105,5 +105,37 @@ def test_two_clients_converge_via_server(client: TestClient) -> None:
     assert int(laptop.balance["credits"]) == 30
 
 
+def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
+    """Without OIDC config, /me always returns the 'default' user."""
+    r = client.get("/me")
+    assert r.status_code == 200
+    assert r.json() == {"username": "default"}
+
+
+def test_users_have_isolated_state(tmp_path: Path) -> None:
+    """Two users sharing one data_dir get separate, independent doc states."""
+    app = create_app(Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist"))
+    dep = app.state.current_user_dep
+
+    with TestClient(app) as client:
+        # Alice earns 50 credits.
+        app.dependency_overrides[dep] = lambda: "alice"
+        boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+        casino = Casino.from_update(_unb64(boot["update_b64"]))
+        sv = casino.get_state()
+        casino.balance["credits"] = 50
+        client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+
+        # Bob's state is independent — still at 0.
+        app.dependency_overrides[dep] = lambda: "bob"
+        boot_bob = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+        bob_casino = Casino.from_update(_unb64(boot_bob["update_b64"]))
+        assert int(bob_casino.balance["credits"]) == 0
+
+        # Separate DB files confirm per-user storage.
+        assert (tmp_path / "casino-alice.db").exists()
+        assert (tmp_path / "casino-bob.db").exists()
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
