@@ -12,7 +12,9 @@ import { normalizeJsChunks } from "../common/normalize.mjs";
 import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "../test_support/fixtures.mjs";
 import { runTransformSpecObject } from "../transforms/runner.mjs";
 import { writeJsTree } from "../transforms/write.mjs";
+import { renameBindingsInArtifact } from "../rename/bindings.mjs";
 import { extractAtomicModules } from "./atomic_modules.mjs";
+import { materializeLogicalModules } from "./materialize_logical_modules.mjs";
 import { mergeModules } from "./merge.mjs";
 
 test("extractAtomicModules emits one module per atomic unit and preserves behavior", async () => {
@@ -464,6 +466,44 @@ test("merge_remaining_modules folds all unclaimed modules into one residual modu
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules lowers final logical modules directly from combined ops", async () => {
+  const { artifact, snapshotRoot } = await prepareAtomicFixture("debundle-materialize-logical-modules-stage-");
+  const operations = logicalModuleOpsForFixture();
+  const renamed = renameBindingsForFixture(artifact, operations);
+
+  const materialized = materializeLogicalModules({
+    artifact: renamed.artifact,
+    chunkIds: ["static/app"],
+    operations,
+    pruneOtherChunks: false,
+  });
+
+  const chunk = getChunk(materialized.artifact, "static/app");
+  const state = chunk?.metadata?.moduleExtractionState;
+  assert.ok(state);
+  assert.equal(state.mode, "logical");
+  assert.equal(state.currentModules.length, 3);
+  assert.ok(chunk.files.has("modules/seed_state.js"));
+  assert.ok(chunk.files.has("modules/first_state.js"));
+  assert.ok(chunk.files.has("modules/unhandled.js"));
+  assert.equal(materialized.manifest.kind, "js.logical_module_manifest");
+  assert.equal(materialized.manifest.counts.explicitLogicalModules, 2);
+  assert.equal(materialized.manifest.counts.residualLogicalModules, 1);
+  assert.deepEqual(
+    materialized.manifest.chunks[0].finalModuleContents.map((modulePlan) => modulePlan.basename),
+    ["seed_state", "first_state", "unhandled"]
+  );
+
+  const { outRoot } = createWebFixtureRoots("debundle-materialize-logical-modules-stage-write-");
+  writeJsTree({
+    artifact: materialized.artifact,
+    force: true,
+    outDir: outRoot,
+  });
+
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 test("extract_atomic_modules and merge_modules compose in a pipeline spec", async () => {
   const { extractedRoot, outRoot, selectedOwnerIds, snapshotRoot } = await writeAtomicSnapshotFixture(
     "debundle-atomic-modules-pipeline-"
@@ -571,6 +611,63 @@ test("extract_atomic_modules and merge_modules compose in a pipeline spec", asyn
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("rename_bindings and materialize_logical_modules compose in a pipeline spec", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = await writeAtomicSnapshotFixture(
+    "debundle-logical-modules-pipeline-"
+  );
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: logicalModuleOpsForFixture(),
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "rename",
+        operation: "rename_bindings",
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "rename_bindings", "materialize_logical_modules", "write_js_tree"]
+  );
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 async function prepareAtomicFixture(prefix) {
   const { extractedRoot, selectedOwnerIds, snapshotRoot } = await writeAtomicSnapshotFixture(prefix);
   const loaded = loadJsChunks({
@@ -589,6 +686,13 @@ async function prepareAtomicFixture(prefix) {
     selectedOwnerIds,
     snapshotRoot,
   };
+}
+
+function renameBindingsForFixture(artifact, operations) {
+  return renameBindingsInArtifact({
+    artifact,
+    operations,
+  });
 }
 
 async function writeAtomicSnapshotFixture(prefix) {
@@ -635,6 +739,93 @@ function moduleSelectorForModulePlan(modulePlan) {
   return {
     symbols: [...modulePlan.memberNames],
   };
+}
+
+function logicalModuleOpsForFixture() {
+  return [
+    {
+      id: "logical__seed_state",
+      operation: "define_logical_module",
+      selector: {
+        chunkId: "static/app",
+      },
+      target: {
+        basename: "seed_state",
+      },
+      members: [
+        {
+          id: "rename__seed",
+          selector: {
+            binding: {
+              kind: "VariableDeclarator",
+              name: "seed",
+            },
+          },
+          target: {
+            name: "seedValue",
+          },
+        },
+        {
+          id: "rename__readSeed",
+          selector: {
+            binding: {
+              kind: "FunctionDeclaration",
+              name: "readSeed",
+            },
+          },
+          target: {
+            name: "readSeedValue",
+          },
+        },
+      ],
+    },
+    {
+      id: "logical__first_state",
+      operation: "define_logical_module",
+      selector: {
+        chunkId: "static/app",
+      },
+      target: {
+        basename: "first_state",
+      },
+      members: [
+        {
+          id: "rename__first",
+          selector: {
+            binding: {
+              kind: "VariableDeclarator",
+              name: "first",
+            },
+          },
+          target: {
+            name: "firstValue",
+          },
+        },
+        {
+          id: "rename__readFirst",
+          selector: {
+            binding: {
+              kind: "FunctionDeclaration",
+              name: "readFirst",
+            },
+          },
+          target: {
+            name: "readFirstValue",
+          },
+        },
+      ],
+    },
+    {
+      id: "logical__unhandled",
+      operation: "define_residual_module",
+      selector: {
+        chunkId: "static/app",
+      },
+      target: {
+        basename: "unhandled",
+      },
+    },
+  ];
 }
 
 function ownerIdsForNames(analysis, names) {

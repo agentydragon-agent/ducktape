@@ -10,6 +10,7 @@ import { computeJsAsts } from "../common/parse_asts.mjs";
 import { createEmptyArtifact } from "../common/artifact.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";
 import { extractAtomicModules } from "../extract/atomic_modules.mjs";
+import { materializeLogicalModules } from "../extract/materialize_logical_modules.mjs";
 import { mergeModules } from "../extract/merge.mjs";
 import { emitBrowserHarness } from "../harness/emit.mjs";
 import { renameBindingsInArtifact } from "../rename/bindings.mjs";
@@ -34,6 +35,7 @@ const STAGE_HANDLERS = Object.freeze({
   extract_scrambled_identifier_frequencies: extractScrambledIdentifierFrequencies,
   emit_browser_harness: emitBrowserHarness,
   extract_atomic_modules: extractAtomicModules,
+  materialize_logical_modules: materializeLogicalModules,
   merge_modules: mergeModules,
   write_js_tree: writeJsTree,
 });

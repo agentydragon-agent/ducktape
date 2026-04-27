@@ -15,6 +15,7 @@ js_library(
     visibility = ["//visibility:public"],
     deps = [
         "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/extract:libs",
         "//devinfra/js/debundle/split:libs",
     ] + _BABEL_DEPS,
 )
@@ -24,6 +25,7 @@ js_test(
     data = [
         "bindings.mjs",
         "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/extract:libs",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
     ] + _BABEL_DEPS,

@@ -20,6 +20,7 @@ import {
   formatDurationSince,
   logProgress,
 } from "../common/io.mjs";
+import { expandLogicalModuleRenameOperations } from "../extract/logical_modules.mjs";
 
 const generate = generateModule.default ?? generateModule;
 const traverse = traverseModule.default ?? traverseModule;
@@ -96,13 +97,12 @@ function logRenameDone({ applied, startedAt, targetTimings }) {
 }
 
 function loadOperations(options) {
-  if (Array.isArray(options.operations)) {
-    return options.operations;
-  }
-  if (options.operationsPath) {
-    return JSON.parse(readFileSync(options.operationsPath, "utf8"));
-  }
-  return [];
+  const operations = Array.isArray(options.operations)
+    ? options.operations
+    : options.operationsPath
+      ? JSON.parse(readFileSync(options.operationsPath, "utf8"))
+      : [];
+  return [...operations, ...expandLogicalModuleRenameOperations(operations)];
 }
 
 function groupOperationsByTarget(operations, artifact) {
