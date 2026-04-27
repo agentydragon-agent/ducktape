@@ -50,7 +50,7 @@ from util.bazel.runfiles import get_required_path
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-_DEFAULT_MAX_STEPS = 200
+_DEFAULT_MAX_STEPS = 1000
 _DEFAULT_WALL_TIMEOUT_SECONDS = 600
 
 _TARGET_BINARY_RLOCATION = "_main/skills/reverse_engineer/evals/specimens/go_crypto_server/go_crypto_server_garbled.bin"
@@ -101,7 +101,7 @@ def _build_system_prompt(*, skill_md_text: str) -> str:
 
 _FIRST_USER_MESSAGE = (
     f"Reverse-engineer the binary at {_TARGET_PATH}. Recover its source as Go files under "
-    f"{WORK_PATH}/. You have a 10-minute wall-clock budget and at most 200 turns. "
+    f"{WORK_PATH}/. You have a 10-minute wall-clock budget and at most {_DEFAULT_MAX_STEPS} turns. "
     "When done, call `submit` with a one-paragraph summary."
 )
 
