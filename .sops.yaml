@@ -12,6 +12,9 @@ keys:
   - &iguana-agentydragon age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
   # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
   - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
+  # Codex cloud agent key (OpenAI Codex, private key stored in Codex env secrets)
+  # TODO: consider splitting shared tokens (buildbuddy, k8s jwt) into codex-specific variants
+  - &codex-cloud-agent age1hy7al8s2cxjhehgf93mnkfdv2plr579t9uhvtdaxlmh3rx0j2g7sludsex
   # CI key (GitHub Actions + BuildBuddy, narrow access to CI-only secrets)
   # Private key: k8s Secret in github-secrets-sync namespace, synced to GHA as SOPS_AGE_KEY.
   # Manual paste into BuildBuddy org secrets.
@@ -41,6 +44,7 @@ creation_rules:
       - age:
           - *admin
           - *claude-web
+          - *codex-cloud-agent
           - *ci
 
   # --- CI secrets (admin + CI key) ---
@@ -196,6 +200,7 @@ creation_rules:
       - age:
           - *admin
           - *claude-web
+          - *codex-cloud-agent
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon
@@ -206,11 +211,12 @@ creation_rules:
       - age:
           - *admin
           - *claude-web
+          - *codex-cloud-agent
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # Shared dev secrets (all users + claude-web agent + CI)
+  # Shared dev secrets (all users + claude-web agent + codex agent + CI)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:
       - age:
@@ -220,6 +226,7 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
           - *claude-web
+          - *codex-cloud-agent
           - *ci
   # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
   - path_regex: secrets/github-ci-read-pat\.yaml$
@@ -227,6 +234,7 @@ creation_rules:
       - age:
           - *admin
           - *claude-web
+          - *codex-cloud-agent
   # GitHub PAT for agentydragon-agent machine user (Claude Code, OpenClaw, CI)
   - path_regex: secrets/github-pat-agentydragon-agent\.yaml$
     key_groups:
@@ -236,4 +244,5 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *claude-web
+          - *codex-cloud-agent
           - *ci
