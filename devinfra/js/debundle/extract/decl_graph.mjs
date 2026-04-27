@@ -900,14 +900,14 @@ function buildContiguousOwnerClosureEnvelope(
   { analysis, componentById, componentByOwnerId, options, ownerById, plannerState, programItemByOrdinal, seedComponent }
 ) {
   const selectedComponentIds = new Set(requiredClosureComponentIds);
+  const selectedOwners = ownersForComponentIds(selectedComponentIds, componentById, ownerById);
   const envelopeBarrierItemIds = new Set();
+  let startOrdinal = selectedOwners[0]?.ordinal ?? seedComponent.startOrdinal;
+  let endOrdinal = selectedOwners.at(-1)?.ordinal ?? seedComponent.endOrdinal;
 
   let changed = true;
   while (changed && envelopeBarrierItemIds.size === 0) {
     changed = false;
-    const selectedOwners = ownersForComponentIds(selectedComponentIds, componentById, ownerById);
-    const startOrdinal = selectedOwners[0]?.ordinal ?? seedComponent.startOrdinal;
-    const endOrdinal = selectedOwners.at(-1)?.ordinal ?? seedComponent.endOrdinal;
     for (let ordinal = startOrdinal; ordinal <= endOrdinal; ordinal++) {
       const programItem = programItemByOrdinal.get(ordinal);
       if (!programItem || programItem.kind !== "declaration") {
@@ -922,6 +922,21 @@ function buildContiguousOwnerClosureEnvelope(
       if (!selectedComponentIds.has(componentId)) {
         selectedComponentIds.add(componentId);
         changed = true;
+        const addedComponent = componentById.get(componentId);
+        if (addedComponent) {
+          for (const ownerId of addedComponent.ownerIds) {
+            const addedOwner = ownerById.get(ownerId);
+            if (addedOwner) {
+              selectedOwners.push(addedOwner);
+            }
+          }
+          if (addedComponent.startOrdinal < startOrdinal) {
+            startOrdinal = addedComponent.startOrdinal;
+          }
+          if (addedComponent.endOrdinal > endOrdinal) {
+            endOrdinal = addedComponent.endOrdinal;
+          }
+        }
       }
     }
   }
@@ -930,7 +945,7 @@ function buildContiguousOwnerClosureEnvelope(
     owners: analysis.owners,
     ownerById,
     plannerState,
-    regionOwners: ownersForComponentIds(selectedComponentIds, componentById, ownerById),
+    regionOwners: selectedOwners.sort((left, right) => left.ordinal - right.ordinal),
     sideEffects: analysis.sideEffects,
   });
   const blockingReasons = [
