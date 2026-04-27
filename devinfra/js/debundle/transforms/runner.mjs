@@ -15,7 +15,6 @@ import { mergeModules } from "../extract/merge.mjs";
 import { emitBrowserHarness } from "../harness/emit.mjs";
 import { renameBindingsInArtifact } from "../rename/bindings.mjs";
 import { normalizeJsChunks } from "../common/normalize.mjs";
-import { splitFunctionParts } from "../split/function_parts.mjs";
 import { applyVendorAnnotations } from "../vendor/annotate.mjs";
 import { renameVendorExports } from "../vendor/exports.mjs";
 import { swapVendorChunks } from "../vendor/swap.mjs";
@@ -27,7 +26,6 @@ const STAGE_HANDLERS = Object.freeze({
   load_js_chunks: loadJsChunks,
   compute_js_asts: computeJsAsts,
   normalize_js_chunks: normalizeJsChunks,
-  split_function_parts: splitFunctionParts,
   apply_vendor_annotations: applyVendorAnnotations,
   rename_vendor_exports: renameVendorExports,
   rename_bindings: renameBindingsInArtifact,
