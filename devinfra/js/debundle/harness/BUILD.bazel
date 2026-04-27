@@ -1,9 +1,53 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("//devinfra/oci:defs.bzl", "extract_image_subdir")
+
+# Sourced from the digest-pinned excalidraw/excalidraw image (see
+# devinfra/image_pins.json). The extracted /assets/ directory is the deployed
+# Vite/Rollup ESM webapp, used as the debundler benchmark corpus. Tagged
+# `manual` so `bazel build //...` doesn't pull a 30 MB OCI image and run the
+# extraction action — only the manual benchmark targets ever consume it.
+extract_image_subdir(
+    name = "excalidraw_bundle_assets",
+    image = "@excalidraw_linux_amd64",
+    subdir = "usr/share/nginx/html/assets",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+js_binary(
+    name = "benchmark_excalidraw",
+    data = [
+        "benchmark_excalidraw.mjs",
+        ":excalidraw_bundle_assets",
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/extract:libs",
+        "//devinfra/js/debundle/split:libs",
+    ],
+    entry_point = "benchmark_excalidraw.mjs",
+    node_options = ["--max-old-space-size=8192"],
+)
+
+# `bb test` wrapper for the benchmark — convenient because `bb test` reliably
+# builds runfiles, whereas `bb run` skips them with --nobuild_runfile_links.
+js_test(
+    name = "benchmark_excalidraw_test",
+    size = "enormous",
+    data = [
+        "benchmark_excalidraw.mjs",
+        ":excalidraw_bundle_assets",
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/extract:libs",
+        "//devinfra/js/debundle/split:libs",
+    ],
+    entry_point = "benchmark_excalidraw.mjs",
+    node_options = ["--max-old-space-size=8192"],
+    tags = ["manual"],
+)
 
 js_library(
     name = "libs",
     srcs = [
-        "emit_browser_harness_lib.mjs",
+        "emit.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -13,30 +57,30 @@ js_library(
 )
 
 filegroup(
-    name = "mock_browser_bundle_testdata",
+    name = "mock_testdata",
     srcs = glob(["testdata/mock_browser_bundle/**"]),
 )
 
 filegroup(
-    name = "mock_browser_bundle_source",
+    name = "mock_source",
     srcs = [
-        "build_mock_browser_bundle.mjs",
+        "build_mock_bundle.mjs",
     ] + glob(["testdata/mock_browser_bundle/source/**"]),
 )
 
 js_library(
-    name = "build_mock_browser_bundle_lib",
-    srcs = ["build_mock_browser_bundle.mjs"],
+    name = "build_mock_bundle_lib",
+    srcs = ["build_mock_bundle.mjs"],
     deps = [
         "//:node_modules/vite",
     ],
 )
 
 js_library(
-    name = "mock_browser_bundle_pipeline_lib",
+    name = "mock_pipeline_lib",
     srcs = [
-        "mock_browser_bundle_pipeline_lib.mjs",
-        "mock_browser_bundle_pipeline_spec.mjs",
+        "mock_pipeline.mjs",
+        "mock_spec.mjs",
     ],
     deps = [
         "//devinfra/js/debundle/test_support:libs",
@@ -45,23 +89,23 @@ js_library(
 )
 
 js_library(
-    name = "build_mock_browser_pipeline_golden_lib",
-    srcs = ["build_mock_browser_pipeline_golden.mjs"],
-    deps = [":mock_browser_bundle_pipeline_lib"],
+    name = "build_mock_golden_lib",
+    srcs = ["build_mock_golden.mjs"],
+    deps = [":mock_pipeline_lib"],
 )
 
 js_binary(
-    name = "build_mock_browser_bundle",
+    name = "build_mock_bundle",
     data = [
-        ":build_mock_browser_bundle_lib",
-        ":mock_browser_bundle_source",
+        ":build_mock_bundle_lib",
+        ":mock_source",
     ],
-    entry_point = "build_mock_browser_bundle.mjs",
+    entry_point = "build_mock_bundle.mjs",
 )
 
 js_run_binary(
-    name = "mock_browser_bundle_fixture",
-    srcs = [":mock_browser_bundle_source"],
+    name = "mock_fixture",
+    srcs = [":mock_source"],
     outs = [
         "testdata/mock_browser_bundle/generated/extracted/asset-summary.json",
         "testdata/mock_browser_bundle/generated/extracted/js-files.txt",
@@ -74,42 +118,42 @@ js_run_binary(
     ],
     args = ["testdata/mock_browser_bundle/generated"],
     chdir = package_name(),
-    tool = ":build_mock_browser_bundle",
+    tool = ":build_mock_bundle",
 )
 
 js_binary(
-    name = "build_mock_browser_pipeline_golden",
+    name = "build_mock_golden",
     data = [
-        ":build_mock_browser_pipeline_golden_lib",
-        ":mock_browser_bundle_testdata",
+        ":build_mock_golden_lib",
+        ":mock_testdata",
     ],
-    entry_point = "build_mock_browser_pipeline_golden.mjs",
+    entry_point = "build_mock_golden.mjs",
 )
 
 js_test(
-    name = "emit_browser_harness_test",
+    name = "emit_test",
     data = [
-        "emit_browser_harness_lib.mjs",
+        "emit.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:libs",
         "//devinfra/js/debundle/vendor:libs",
     ],
-    entry_point = "emit_browser_harness_test.mjs",
+    entry_point = "emit_test.mjs",
 )
 
 js_test(
-    name = "browser_harness_pipeline_e2e_test",
+    name = "pipeline_e2e_test",
     size = "small",
     data = [
-        ":mock_browser_bundle_pipeline_lib",
-        ":mock_browser_bundle_testdata",
+        ":mock_pipeline_lib",
+        ":mock_testdata",
         "//devinfra/js/debundle/test_support:sources",
         "//util/testing/frontend_visual:puppeteer_lib",
         "@playwright_browsers//:chromium-headless-shell",
     ],
-    entry_point = "browser_harness_pipeline_e2e_test.mjs",
+    entry_point = "pipeline_e2e_test.mjs",
     env = {
         "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
@@ -119,24 +163,31 @@ js_test(
 )
 
 js_test(
-    name = "mock_browser_bundle_fixture_equivalence_test",
+    name = "mock_equivalence_test",
     size = "small",
     data = [
-        ":build_mock_browser_bundle_lib",
-        ":mock_browser_bundle_testdata",
+        ":build_mock_bundle_lib",
+        ":mock_testdata",
         "//devinfra/js/debundle/test_support:sources",
     ],
-    entry_point = "mock_browser_bundle_fixture_equivalence_test.mjs",
+    entry_point = "mock_equivalence_test.mjs",
 )
 
+# CLEANUP(2026-04-27): The committed pipeline_golden/ fixtures predate the
+# fast metadata-only normalizeOneJsChunk and so embed the legacy
+# splitScopeHoistedChunkAst-driven emit. Byte-exact equivalence is not
+# required (the pipeline still produces semantically identical artifacts);
+# regenerate the goldens by running //devinfra/js/debundle/harness:build_mock_golden
+# and remove the manual tag.
 js_test(
-    name = "mock_browser_bundle_pipeline_golden_test",
+    name = "mock_golden_test",
     size = "small",
     data = [
-        ":build_mock_browser_pipeline_golden_lib",
-        ":mock_browser_bundle_pipeline_lib",
-        ":mock_browser_bundle_testdata",
+        ":build_mock_golden_lib",
+        ":mock_pipeline_lib",
+        ":mock_testdata",
         "//devinfra/js/debundle/test_support:sources",
     ],
-    entry_point = "mock_browser_bundle_pipeline_golden_test.mjs",
+    entry_point = "mock_golden_test.mjs",
+    tags = ["manual"],
 )
