@@ -12,7 +12,6 @@ import { normalizeJsChunks } from "../common/normalize.mjs";
 import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "../test_support/fixtures.mjs";
 import { runTransformSpecObject } from "../transforms/runner.mjs";
 import { writeJsTree } from "../transforms/write.mjs";
-import { renameBindingsInArtifact } from "../rename/bindings.mjs";
 import { extractAtomicModules } from "./atomic_modules.mjs";
 import { materializeLogicalModules } from "./materialize_logical_modules.mjs";
 import { mergeModules } from "./merge.mjs";
@@ -469,10 +468,9 @@ test("merge_remaining_modules folds all unclaimed modules into one residual modu
 test("materializeLogicalModules lowers final logical modules directly from combined ops", async () => {
   const { artifact, snapshotRoot } = await prepareAtomicFixture("debundle-materialize-logical-modules-stage-");
   const operations = logicalModuleOpsForFixture();
-  const renamed = renameBindingsForFixture(artifact, operations);
 
   const materialized = materializeLogicalModules({
-    artifact: renamed.artifact,
+    artifact,
     chunkIds: ["static/app"],
     operations,
     pruneOtherChunks: false,
@@ -611,7 +609,7 @@ test("extract_atomic_modules and merge_modules compose in a pipeline spec", asyn
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
-test("rename_bindings and materialize_logical_modules compose in a pipeline spec", async () => {
+test("materialize_logical_modules composes directly in a pipeline spec", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = await writeAtomicSnapshotFixture(
     "debundle-logical-modules-pipeline-"
   );
@@ -639,10 +637,6 @@ test("rename_bindings and materialize_logical_modules compose in a pipeline spec
         },
       },
       {
-        id: "rename",
-        operation: "rename_bindings",
-      },
-      {
         id: "logical",
         operation: "materialize_logical_modules",
         args: {
@@ -663,7 +657,7 @@ test("rename_bindings and materialize_logical_modules compose in a pipeline spec
 
   assert.deepEqual(
     result.steps.map((step) => step.operation),
-    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "rename_bindings", "materialize_logical_modules", "write_js_tree"]
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
   );
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
@@ -686,13 +680,6 @@ async function prepareAtomicFixture(prefix) {
     selectedOwnerIds,
     snapshotRoot,
   };
-}
-
-function renameBindingsForFixture(artifact, operations) {
-  return renameBindingsInArtifact({
-    artifact,
-    operations,
-  });
 }
 
 async function writeAtomicSnapshotFixture(prefix) {

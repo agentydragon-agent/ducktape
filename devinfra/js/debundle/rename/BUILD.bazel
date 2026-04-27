@@ -8,22 +8,34 @@ _BABEL_DEPS = [
 ]
 
 js_library(
+    name = "core_libs",
+    srcs = [
+        "core.mjs",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/split:libs",
+    ] + _BABEL_DEPS,
+)
+
+js_library(
     name = "libs",
     srcs = [
         "bindings.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//devinfra/js/debundle/common:libs",
+        ":core_libs",
         "//devinfra/js/debundle/extract:libs",
-        "//devinfra/js/debundle/split:libs",
-    ] + _BABEL_DEPS,
+    ],
 )
 
 js_test(
     name = "bindings_test",
     data = [
         "bindings.mjs",
+        "core.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/extract:libs",
         "//devinfra/js/debundle/split:libs",

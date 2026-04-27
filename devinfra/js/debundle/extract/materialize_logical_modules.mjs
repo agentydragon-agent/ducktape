@@ -26,12 +26,14 @@ import {
   relativeWorkspacePath,
   resolveWorkspacePath,
 } from "../common/io.mjs";
+import { renameBindingsInArtifact as renameBindingsInArtifactCore } from "../rename/core.mjs";
 import { extractSelectedModulePlanInAst } from "./init_region.mjs";
-import { buildLogicalModulePlans } from "./logical_modules.mjs";
+import { buildLogicalModulePlans, expandLogicalModuleRenameOperations } from "./logical_modules.mjs";
 import { deriveSelectedModuleTarget, planSelectedAtomicModules } from "./planner.mjs";
 
 export function materializeLogicalModules({
   artifact,
+  applyRenames = true,
   boundaryAnalysisDir = undefined,
   chunkIds,
   file = undefined,
@@ -54,6 +56,7 @@ export function materializeLogicalModules({
   const resolvedBoundaryAnalysisDir = boundaryAnalysisDir ? resolveWorkspacePath(boundaryAnalysisDir) : null;
   const reports = [];
   const applied = [];
+  let renameMs = 0;
 
   let resolvedReportOutDir = null;
   let resolvedReportSummaryPath = null;
@@ -66,6 +69,27 @@ export function materializeLogicalModules({
   if (pruneOtherChunks) {
     pruneArtifactToChunkIds(artifact, selectedChunkIds);
     artifactManifest = getArtifactManifest(artifact);
+  }
+
+  if (applyRenames && resolvedBoundaryAnalysisDir) {
+    throw new Error(
+      "materializeLogicalModules with applyRenames=true does not support boundaryAnalysisDir; run in-stage analysis or set applyRenames=false"
+    );
+  }
+
+  if (applyRenames) {
+    const renameOperations = expandLogicalModuleRenameOperations(operations).filter((operation) =>
+      selectedChunkIds.includes(operation.selector.chunkId)
+    );
+    if (renameOperations.length > 0) {
+      const renameStartedAt = process.hrtime.bigint();
+      renameBindingsInArtifactCore({
+        artifact,
+        operations: renameOperations,
+      });
+      renameMs = durationMsSince(renameStartedAt);
+      artifactManifest = getArtifactManifest(artifact);
+    }
   }
 
   logProgress(`logical-modules start chunks=${selectedChunkIds.length}`);
@@ -238,6 +262,7 @@ export function materializeLogicalModules({
         lower: loweringMs,
         parseLoweringAst: parseMs,
         plan: planningMs,
+        rename: renameMs,
         total: durationMsSince(chunkStartedAt),
         writeback: writebackMs,
       },
