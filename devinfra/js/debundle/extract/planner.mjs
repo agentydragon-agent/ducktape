@@ -84,6 +84,11 @@ export function buildSelectedModuleOperations(plan, options = {}) {
     const target = deriveSelectedModuleTarget(modulePlan, index, { filePrefix, initPrefix, targetDir });
     return {
       id: `${idPrefix}__${modulePlan.id}`,
+      ...(Array.isArray(modulePlan.bindingPlacements)
+        ? {
+            bindingPlacements: modulePlan.bindingPlacements.map((entry) => ({ ...entry })),
+          }
+        : {}),
       graphGenerated: true,
       lowering: "staged_shell",
       operation: "extract_ordered_init_region",

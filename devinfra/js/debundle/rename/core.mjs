@@ -177,6 +177,30 @@ export function renameBindingsInCode(code, operations, { chunkManifest, file } =
   };
 }
 
+export function renameTopLevelBindingsInAst(ast, specs) {
+  const operations = specs.map((spec, index) => ({
+    id: spec.id ?? `generated_rename_${index.toString().padStart(4, "0")}`,
+    operation: "rename_binding",
+    renameImportImportedName: spec.renameImportImportedName === true,
+    selector: {
+      binding: {
+        kind: spec.kind,
+        name: spec.from,
+      },
+      chunkId: spec.chunkId ?? "<generated>",
+    },
+    skipManifestValidation: true,
+    target: {
+      name: spec.to,
+    },
+  }));
+  return renameBindingsInAst(ast, operations, {});
+}
+
+export function applyFinalTopLevelNamesInAst(ast, specs) {
+  return renameTopLevelBindingsInAst(ast, specs);
+}
+
 function renameBindingsInAst(ast, operations, { chunkManifest, file } = {}) {
   const resolvedFile = resolveRenameFile({ chunkManifest, file });
   const applied = [];
@@ -251,7 +275,9 @@ function renameBindingsInAst(ast, operations, { chunkManifest, file } = {}) {
     }
     assertNoReferenceShadowing(operation, binding, targetName);
 
-    renameBindingInProgramScope(programPath, binding, oldName, targetName);
+    renameBindingInProgramScope(programPath, binding, oldName, targetName, {
+      renameImportImportedName: operation.renameImportImportedName === true,
+    });
     if (preserveRuntimeName) {
       declarationPath.insertAfter(runtimeNamePreservationStatement(targetName, oldName));
     }
@@ -334,9 +360,9 @@ function resolveUniqueBindingMatch(operation, { fingerprintCache, programPath, t
   return matches[0];
 }
 
-function renameBindingInProgramScope(programPath, binding, oldName, targetName) {
+function renameBindingInProgramScope(programPath, binding, oldName, targetName, { renameImportImportedName = false } = {}) {
   const declarationPath = bindingDeclarationPath(binding);
-  renameBindingIdentifierPath(declarationPath, targetName);
+  renameBindingIdentifierPath(declarationPath, oldName, targetName, { renameImportImportedName });
   for (const referencePath of binding.referencePaths) {
     renameReferencePath(referencePath, targetName);
   }
@@ -350,7 +376,7 @@ function renameBindingInProgramScope(programPath, binding, oldName, targetName) 
   programPath.scope.bindings[targetName] = binding;
 }
 
-function renameBindingIdentifierPath(declarationPath, targetName) {
+function renameBindingIdentifierPath(declarationPath, oldName, targetName, { renameImportImportedName = false } = {}) {
   if (declarationPath.isClassDeclaration() || declarationPath.isFunctionDeclaration()) {
     declarationPath.node.id.name = targetName;
     return;
@@ -361,6 +387,13 @@ function renameBindingIdentifierPath(declarationPath, targetName) {
     declarationPath.isImportNamespaceSpecifier()
   ) {
     declarationPath.node.local.name = targetName;
+    if (
+      renameImportImportedName &&
+      declarationPath.isImportSpecifier() &&
+      importedNameForImportBinding(declarationPath) === oldName
+    ) {
+      declarationPath.node.imported = importExportNameNode(targetName);
+    }
     return;
   }
   if (declarationPath.isVariableDeclarator() && t.isIdentifier(declarationPath.node.id)) {
@@ -371,6 +404,18 @@ function renameBindingIdentifierPath(declarationPath, targetName) {
 }
 
 function renameReferencePath(referencePath, targetName) {
+  if (referencePath.isExportNamedDeclaration() && referencePath.node.declaration) {
+    return;
+  }
+  if (referencePath.isExportSpecifier()) {
+    if (t.isIdentifier(referencePath.node.local)) {
+      referencePath.node.local.name = targetName;
+    }
+    if (t.isIdentifier(referencePath.node.exported)) {
+      referencePath.node.exported.name = targetName;
+    }
+    return;
+  }
   if (!("name" in referencePath.node)) {
     throw new Error(`Unsupported reference path for rename: ${referencePath.type}`);
   }
@@ -421,6 +466,9 @@ function validateIdentifier(name, label) {
 
 function validateManifestOwner(operation, chunkManifest) {
   if (!chunkManifest) {
+    return;
+  }
+  if (operation.skipManifestValidation === true) {
     return;
   }
   if (chunkManifest.chunkId !== operation.selector.chunkId) {
@@ -726,6 +774,9 @@ function bindingFingerprint(path) {
 }
 
 function topLevelBindingCandidates(statementPath) {
+  if (statementPath.isExportNamedDeclaration() && statementPath.node.declaration) {
+    return topLevelBindingCandidates(statementPath.get("declaration"));
+  }
   if (statementPath.isImportDeclaration()) {
     return statementPath.get("specifiers");
   }
@@ -821,6 +872,10 @@ function importSpecifierImportedName(node) {
     return node.imported.value;
   }
   return generate(node.imported).code;
+}
+
+function importExportNameNode(name) {
+  return t.isValidIdentifier(name) ? t.identifier(name) : t.stringLiteral(name);
 }
 
 function objectPropertyNames(node) {

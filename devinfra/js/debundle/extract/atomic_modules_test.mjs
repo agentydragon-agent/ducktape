@@ -499,6 +499,14 @@ test("materializeLogicalModules lowers final logical modules directly from combi
     outDir: outRoot,
   });
 
+  const seedModuleCode = readFileSync(join(outRoot, "static", "app", "modules", "seed_state.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+  assert.match(seedModuleCode, /\bseedValue\b/);
+  assert.match(seedModuleCode, /\breadSeedValue\b/);
+  assert.doesNotMatch(seedModuleCode, /\bexport let seed\b/);
+  assert.match(entryCode, /\bseedValue\b/);
+  assert.match(entryCode, /\breadSeedValue\b/);
+
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
@@ -742,26 +750,22 @@ function logicalModuleOpsForFixture() {
       members: [
         {
           id: "rename__seed",
+          name: "seedValue",
           selector: {
             binding: {
               kind: "VariableDeclarator",
               name: "seed",
             },
           },
-          target: {
-            name: "seedValue",
-          },
         },
         {
           id: "rename__readSeed",
+          name: "readSeedValue",
           selector: {
             binding: {
               kind: "FunctionDeclaration",
               name: "readSeed",
             },
-          },
-          target: {
-            name: "readSeedValue",
           },
         },
       ],
@@ -778,26 +782,22 @@ function logicalModuleOpsForFixture() {
       members: [
         {
           id: "rename__first",
+          name: "firstValue",
           selector: {
             binding: {
               kind: "VariableDeclarator",
               name: "first",
             },
           },
-          target: {
-            name: "firstValue",
-          },
         },
         {
           id: "rename__readFirst",
+          name: "readFirstValue",
           selector: {
             binding: {
               kind: "FunctionDeclaration",
               name: "readFirst",
             },
-          },
-          target: {
-            name: "readFirstValue",
           },
         },
       ],

@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { expandLogicalModuleRenameOperations } from "../extract/logical_modules.mjs";
 import {
   renameBindingsInArtifact as renameBindingsInArtifactCore,
   renameBindingsInCode,
@@ -15,10 +14,9 @@ export function renameBindingsInArtifact(options) {
 }
 
 function loadOperations(options) {
-  const operations = Array.isArray(options.operations)
+  return Array.isArray(options.operations)
     ? options.operations
     : options.operationsPath
       ? JSON.parse(readFileSync(options.operationsPath, "utf8"))
       : [];
-  return [...operations, ...expandLogicalModuleRenameOperations(operations)];
 }

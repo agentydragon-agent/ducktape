@@ -249,6 +249,7 @@ function resolveExtractOperation(
     }))
     .sort((left, right) => left.sideEffect.ordinal - right.sideEffect.ordinal);
   const exportedNames = collectOwnerExportNames(programBody, orderedOwners);
+  const exportBindings = finalizeExportBindings(exportedNames, operation.bindingPlacements ?? [], operation.id);
   if (exportedNames.includes(initName)) {
     throw new Error(`Extract operation ${operation.id} target.init ${initName} conflicts with an extracted binding`);
   }
@@ -313,6 +314,7 @@ function resolveExtractOperation(
   return {
     endOrdinal,
     exportedNames,
+    exportBindings,
     id: operation.id,
     initName,
     lowering,
@@ -747,7 +749,7 @@ function validateResolvedOperations(resolved) {
 
 function buildRuntimeImportDeclaration(entry) {
   const specifiers = [
-    ...entry.exportedNames.map((name) => importSpecifierForLocal(name, name, "named")),
+    ...entry.exportBindings.map((binding) => importSpecifierForLocal(binding.local, binding.exported, "named")),
     ...runtimeInitNamesForEntry(entry).map((name) => importSpecifierForLocal(name, name, "named")),
   ];
   return t.importDeclaration(specifiers, t.stringLiteral(runtimeImportSourceForTarget(entry.targetFile)));
@@ -775,12 +777,7 @@ function buildExtractedModuleFile(entry) {
     body.push(importDeclarationFromRuntimeImportRecord(importRecord, entry.targetFile));
   }
   body.push(
-    t.exportNamedDeclaration(
-      t.variableDeclaration(
-        "let",
-        entry.exportedNames.map((name) => t.variableDeclarator(t.identifier(name)))
-      )
-    )
+    t.variableDeclaration("let", entry.exportBindings.map((binding) => t.variableDeclarator(t.identifier(binding.local))))
   );
   for (const stage of moduleStagesForEntry(entry)) {
     body.push(
@@ -806,6 +803,12 @@ function buildExtractedModuleFile(entry) {
           )
         )
       )
+    )
+  );
+  body.push(
+    t.exportNamedDeclaration(
+      null,
+      entry.exportBindings.map((binding) => t.exportSpecifier(t.identifier(binding.local), exportNameNode(binding.exported)))
     )
   );
   return {
@@ -1667,18 +1670,59 @@ function finalizeResolvedEntryImports(entry, resolvedByOwnerId) {
       importsByTargetFile.set(providerEntry.targetFile, new Set());
     }
     for (const name of names) {
-      importsByTargetFile.get(providerEntry.targetFile).add(name);
+      importsByTargetFile.get(providerEntry.targetFile).add(
+        JSON.stringify({
+          imported: exportNameForLocal(providerEntry, name),
+          local: name,
+        })
+      );
     }
   }
   entry.usedExtractedImports = [...importsByTargetFile.entries()]
     .map(([sourceTargetFile, names]) => ({
       sourceTargetFile,
-      specifiers: [...names].sort().map((name) => ({
-        local: name,
-        imported: name,
-      })),
+      specifiers: [...names].sort().map((encodedSpecifier) => JSON.parse(encodedSpecifier)),
     }))
     .sort((left, right) => left.sourceTargetFile.localeCompare(right.sourceTargetFile));
+}
+
+function finalizeExportBindings(exportedNames, bindingPlacements, operationId) {
+  const exportBindings = exportedNames.map((local) => ({
+    exported: local,
+    local,
+  }));
+  const exportBindingByLocal = new Map(exportBindings.map((binding) => [binding.local, binding]));
+  for (const placement of bindingPlacements) {
+    const binding = exportBindingByLocal.get(placement.sourceName);
+    if (!binding) {
+      continue;
+    }
+    binding.exported = placement.name;
+  }
+  const duplicateExportNames = findDuplicateStrings(exportBindings.map((binding) => binding.exported));
+  if (duplicateExportNames.length > 0) {
+    throw new Error(
+      `Extract operation ${operationId} assigns duplicate exported logical names: ${duplicateExportNames.join(", ")}`
+    );
+  }
+  return exportBindings;
+}
+
+function exportNameForLocal(entry, localName) {
+  return entry.exportBindings?.find((binding) => binding.local === localName)?.exported ?? localName;
+}
+
+function findDuplicateStrings(values) {
+  const seen = new Set();
+  const duplicates = new Set();
+  for (const value of values) {
+    if (seen.has(value)) {
+      duplicates.add(value);
+      continue;
+    }
+    seen.add(value);
+  }
+  return [...duplicates].sort();
 }
 
 const SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);

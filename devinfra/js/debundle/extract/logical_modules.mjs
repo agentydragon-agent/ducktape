@@ -9,38 +9,7 @@ export function getLogicalModuleOperations(operations) {
   );
 }
 
-export function expandLogicalModuleRenameOperations(operations) {
-  const renameOperations = [];
-  for (const operation of getLogicalModuleOperations(operations)) {
-    if (operation.operation !== "define_logical_module") {
-      continue;
-    }
-    for (const member of operation.members) {
-      const originalName = member.selector.binding.name;
-      const targetName = member.target?.name ?? null;
-      if (!targetName || targetName === originalName) {
-        continue;
-      }
-      renameOperations.push({
-        id: member.id,
-        operation: "rename_binding",
-        selector: {
-          chunkId: operation.selector.chunkId,
-          ...(operation.selector.file ? { file: operation.selector.file } : {}),
-          ...member.selector,
-          ...(member.selector.file ? { file: member.selector.file } : {}),
-        },
-        ...(member.selector.fingerprint ? { fingerprint: member.selector.fingerprint } : {}),
-        target: {
-          name: targetName,
-        },
-      });
-    }
-  }
-  return renameOperations;
-}
-
-export function buildLogicalModulePlans(currentModules, operations, { chunkId, targetDir }) {
+export function buildLogicalModulePlans(currentModules, operations, { analysis = null, chunkId, targetDir }) {
   const logicalOperations = getLogicalModuleOperations(operations).filter(
     (operation) => operation.selector.chunkId === normalizeRelativeFile(chunkId)
   );
@@ -60,6 +29,7 @@ export function buildLogicalModulePlans(currentModules, operations, { chunkId, t
   const atomicModules = [...currentModules].sort(
     (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
   );
+  const moduleByOwnerId = buildModuleByOwnerId(atomicModules);
   const modulesBySymbol = buildModulesBySymbol(atomicModules);
   const claimedModuleIds = new Map();
   const explicitModulePlans = [];
@@ -77,34 +47,35 @@ export function buildLogicalModulePlans(currentModules, operations, { chunkId, t
     }
     const selectedModules = [];
     const selectedModuleIdSet = new Set();
-    const requestedMembers = [];
+    const requestedBindings = [];
     for (const member of operation.members) {
-      const resolvedName = member.target?.name ?? member.selector.binding.name;
       const importMember = isImportKind(member.selector.binding.kind ?? null);
-      requestedMembers.push({
-        anchor: !importMember,
-        id: member.id,
-        matched: true,
-        name: resolvedName,
-        renamed: Boolean(member.target?.name && member.target.name !== member.selector.binding.name),
+      const resolvedMember = resolveLogicalMember(member, {
+        analysis,
+        moduleByOwnerId,
+        modulesBySymbol,
+        operationId: operation.id,
       });
+      const requestedBinding = {
+        anchor: !importMember,
+        name: member.name,
+        id: member.id,
+        kind: member.selector.binding.kind,
+        matched: resolvedMember.matched,
+        moduleId: resolvedMember.modulePlan?.id ?? null,
+        sourceName: member.selector.binding.name,
+        ownerId: resolvedMember.ownerId ?? null,
+        changedName: member.name !== member.selector.binding.name,
+      };
+      requestedBindings.push(requestedBinding);
       if (importMember) {
         continue;
       }
-      const matches = modulesBySymbol.get(resolvedName) ?? [];
-      if (matches.length === 0) {
-        requestedMembers[requestedMembers.length - 1].matched = false;
+      if (!resolvedMember.modulePlan) {
         unmatchedMembers += 1;
         continue;
       }
-      if (matches.length > 1) {
-        throw new Error(
-          `define_logical_module ${operation.id} member ${member.id} matched multiple atomic modules for ${resolvedName}: ${matches
-            .map((modulePlan) => modulePlan.id)
-            .join(", ")}`
-        );
-      }
-      const modulePlan = matches[0];
+      const modulePlan = resolvedMember.modulePlan;
       if (!selectedModuleIdSet.has(modulePlan.id)) {
         selectedModuleIdSet.add(modulePlan.id);
         selectedModules.push(modulePlan);
@@ -119,8 +90,8 @@ export function buildLogicalModulePlans(currentModules, operations, { chunkId, t
         matchedAtomicModuleIds: [],
         matchedAtomicModules: [],
         operationIds: [...operation.operationIds],
-        renamedMemberCount: requestedMembers.filter((member) => member.renamed).length,
-        requestedMembers,
+        changedNameCount: requestedBindings.filter((binding) => binding.changedName).length,
+        requestedBindings,
         residual: false,
       });
       continue;
@@ -135,7 +106,10 @@ export function buildLogicalModulePlans(currentModules, operations, { chunkId, t
       }
       claimedModuleIds.set(modulePlan.id, operation.id);
     }
-    const mergedPlan = mergeModuleGroup(selectedModules, operation, explicitModulePlans.length, { targetDir });
+    const mergedPlan = mergeModuleGroup(selectedModules, operation, explicitModulePlans.length, {
+      requestedBindings,
+      targetDir,
+    });
     explicitModulePlans.push(mergedPlan);
     reports.push({
       basename: mergedPlan.basename,
@@ -149,8 +123,8 @@ export function buildLogicalModulePlans(currentModules, operations, { chunkId, t
         startOrdinal: modulePlan.startOrdinal,
       })),
       operationIds: [...operation.operationIds],
-      renamedMemberCount: requestedMembers.filter((member) => member.renamed).length,
-      requestedMembers,
+      changedNameCount: requestedBindings.filter((binding) => binding.changedName).length,
+      requestedBindings,
       residual: false,
     });
   }
@@ -170,8 +144,8 @@ export function buildLogicalModulePlans(currentModules, operations, { chunkId, t
         memberNames: [...modulePlan.memberNames],
         startOrdinal: modulePlan.startOrdinal,
       })),
-      renamedMemberCount: 0,
-      requestedMembers: [],
+      changedNameCount: 0,
+      requestedBindings: [],
       residual: true,
     });
   } else {
@@ -275,6 +249,7 @@ function normalizeLogicalMember(member, operation, index) {
   }
   return {
     ...member,
+    name: normalizeLogicalMemberName(member, operation, index),
     selector: {
       ...member.selector,
       binding: {
@@ -282,8 +257,24 @@ function normalizeLogicalMember(member, operation, index) {
       },
       ...(member.selector.file ? { file: normalizeRelativeFile(member.selector.file) } : {}),
     },
-    ...(member.target ? { target: { ...member.target } } : {}),
   };
+}
+
+function normalizeLogicalMemberName(member, operation, index) {
+  const legacyTargetName = member.target?.name;
+  if (member.name !== undefined) {
+    if (typeof member.name !== "string" || member.name === "") {
+      throw new Error(`define_logical_module ${operation.id} member[${index}] requires member.name to be a non-empty string`);
+    }
+    if (legacyTargetName && legacyTargetName !== member.name) {
+      throw new Error(`define_logical_module ${operation.id} member ${member.id} has conflicting member.name and target.name`);
+    }
+    return member.name;
+  }
+  if (typeof legacyTargetName === "string" && legacyTargetName !== "") {
+    return legacyTargetName;
+  }
+  return member.selector.binding.name;
 }
 
 function buildModulesBySymbol(modulePlans) {
@@ -297,6 +288,56 @@ function buildModulesBySymbol(modulePlans) {
     }
   }
   return modulesBySymbol;
+}
+
+function buildModuleByOwnerId(modulePlans) {
+  const moduleByOwnerId = new Map();
+  for (const modulePlan of modulePlans) {
+    for (const ownerId of modulePlan.ownerIds) {
+      moduleByOwnerId.set(ownerId, modulePlan);
+    }
+  }
+  return moduleByOwnerId;
+}
+
+function resolveLogicalMember(member, { analysis, moduleByOwnerId, modulesBySymbol, operationId }) {
+  if (isImportKind(member.selector.binding.kind ?? null)) {
+    return {
+      matched: true,
+      modulePlan: null,
+      ownerId: null,
+    };
+  }
+  const ownerId =
+    member.selector.owner?.id ??
+    (analysis ? resolveOwnerIdFromAnalysis(analysis, member, { operationId }) : null);
+  if (ownerId) {
+    return {
+      matched: moduleByOwnerId.has(ownerId),
+      modulePlan: moduleByOwnerId.get(ownerId) ?? null,
+      ownerId,
+    };
+  }
+  const matches = modulesBySymbol.get(member.selector.binding.name) ?? [];
+  if (matches.length === 0) {
+    return {
+      matched: false,
+      modulePlan: null,
+      ownerId: null,
+    };
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `define_logical_module ${operationId} member ${member.id} matched multiple atomic modules for ${member.selector.binding.name}: ${matches
+        .map((modulePlan) => modulePlan.id)
+        .join(", ")}`
+    );
+  }
+  return {
+    matched: true,
+    modulePlan: matches[0],
+    ownerId: null,
+  };
 }
 
 function groupLogicalModuleOperations(logicalOperations) {
@@ -328,7 +369,7 @@ function groupLogicalModuleOperations(logicalOperations) {
   return [...grouped.values(), ...residualOperations.map((operation) => ({ ...operation, operationIds: [operation.id] }))];
 }
 
-function mergeModuleGroup(selectedModules, operation, index, { targetDir }) {
+function mergeModuleGroup(selectedModules, operation, index, { requestedBindings = [], targetDir }) {
   const targetBasename = operation.target.basename;
   const attachedItemIds = [];
   const attachedItemIdSet = new Set();
@@ -342,6 +383,15 @@ function mergeModuleGroup(selectedModules, operation, index, { targetDir }) {
   let hasNullBytes = false;
   let lines = 0;
   let startOrdinal = Number.POSITIVE_INFINITY;
+  const bindingPlacements = requestedBindings
+    .filter((binding) => binding.matched && binding.name !== binding.sourceName)
+    .map((binding) => ({
+      id: binding.id,
+      kind: binding.kind,
+      name: binding.name,
+      ownerId: binding.ownerId,
+      sourceName: binding.sourceName,
+    }));
   for (const modulePlan of selectedModules) {
     lines += modulePlan.lines;
     if (modulePlan.bytes === null) {
@@ -384,9 +434,11 @@ function mergeModuleGroup(selectedModules, operation, index, { targetDir }) {
     id: operation.id,
     index,
     lines,
-    memberNames: memberNames.sort(),
+    memberNames: applyBindingPlacementsToMemberNames(memberNames, bindingPlacements),
     nameHint: targetBasename,
     ownerIds,
+    bindingPlacements,
+    requestedBindings: requestedBindings.map((binding) => ({ ...binding })),
     startOrdinal,
     unitIds,
   };
@@ -416,10 +468,28 @@ function cloneModulePlan(modulePlan) {
     memberNames: [...modulePlan.memberNames],
     nameHint: modulePlan.nameHint,
     ownerIds: [...modulePlan.ownerIds],
+    ...(Array.isArray(modulePlan.bindingPlacements)
+      ? {
+          bindingPlacements: modulePlan.bindingPlacements.map((entry) => ({ ...entry })),
+        }
+      : {}),
+    ...(Array.isArray(modulePlan.requestedBindings)
+      ? {
+          requestedBindings: modulePlan.requestedBindings.map((binding) => ({ ...binding })),
+        }
+      : {}),
     startOrdinal: modulePlan.startOrdinal,
     ...(modulePlan.targetFile ? { targetFile: modulePlan.targetFile } : {}),
     unitIds: [...modulePlan.unitIds],
   };
+}
+
+function applyBindingPlacementsToMemberNames(memberNames, bindingPlacements) {
+  const renamed = new Map(bindingPlacements.map((entry) => [entry.sourceName, entry.name]));
+  return memberNames
+    .map((memberName) => renamed.get(memberName) ?? memberName)
+    .filter((memberName, index, array) => array.indexOf(memberName) === index)
+    .sort();
 }
 
 function normalizeRelativeFile(value) {
@@ -440,14 +510,17 @@ function sanitizeIdentifier(value) {
     .replace(/_+/g, "_");
 }
 
-function resolveOwnerIdFromAnalysis(analysis, member) {
-  const resolvedName = member.target?.name ?? member.selector.binding.name;
+function resolveOwnerIdFromAnalysis(analysis, member, { operationId = "<logical-module>" } = {}) {
+  const resolvedName = member.selector.binding.name;
   const expectedType = manifestDeclarationKind(member.selector.binding.kind ?? null);
   const matches = analysis.owners.filter((owner) => {
     if (!owner.names?.includes(resolvedName)) {
       return false;
     }
     if (expectedType && owner.type !== expectedType) {
+      return false;
+    }
+    if (member.selector.owner?.line && owner.line !== member.selector.owner.line) {
       return false;
     }
     return true;
@@ -457,7 +530,7 @@ function resolveOwnerIdFromAnalysis(analysis, member) {
   }
   if (matches.length > 1) {
     throw new Error(
-      `logical member ${member.id} matched multiple analysis owners for ${resolvedName}: ${matches
+      `logical member ${member.id} in ${operationId} matched multiple analysis owners for ${resolvedName}: ${matches
         .map((owner) => owner.id)
         .join(", ")}`
     );
