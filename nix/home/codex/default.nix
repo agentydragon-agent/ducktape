@@ -84,9 +84,14 @@ let
       persistence = "save-all";
     };
     # Pair the built-in trusted-command heuristic with our generated execpolicy
-    # allow rules under $CODEX_HOME/rules/default.rules so non-whitelisted
-    # commands prompt by default.
-    approval_policy = "untrusted";
+    # allow rules under $CODEX_HOME/rules/default.rules so safe commands auto-run,
+    # while the agent can explicitly request approval to run other commands
+    # outside the sandbox when needed.
+    #
+    # Note: a surrounding web/host harness can still override this at runtime.
+    # This setting controls locally launched Codex sessions that read
+    # ~/.codex/config.toml.
+    approval_policy = "on-request";
     shell_environment_policy = {
       "inherit" = "all";
       "set" = {
