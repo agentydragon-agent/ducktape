@@ -12,7 +12,7 @@ import {
   runNodeScript,
   writeRunnableFixture,
 } from "../test_support/fixtures.mjs";
-import { renameBindingsInArtifact, renameBindingsInCode } from "./bindings.mjs";
+import { renameBindingsInArtifact, renameBindingsInCode } from "./core.mjs";
 
 const generate = generateModule.default ?? generateModule;
 

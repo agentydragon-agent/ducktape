@@ -262,18 +262,11 @@ function normalizeLogicalMember(member, operation, index) {
 }
 
 function normalizeLogicalMemberName(member, operation, index) {
-  const legacyTargetName = member.target?.name;
   if (member.name !== undefined) {
     if (typeof member.name !== "string" || member.name === "") {
       throw new Error(`define_logical_module ${operation.id} member[${index}] requires member.name to be a non-empty string`);
     }
-    if (legacyTargetName && legacyTargetName !== member.name) {
-      throw new Error(`define_logical_module ${operation.id} member ${member.id} has conflicting member.name and target.name`);
-    }
     return member.name;
-  }
-  if (typeof legacyTargetName === "string" && legacyTargetName !== "") {
-    return legacyTargetName;
   }
   return member.selector.binding.name;
 }

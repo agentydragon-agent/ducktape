@@ -23,7 +23,6 @@ js_library(
         "//devinfra/js/debundle/common:libs",
         "//devinfra/js/debundle/extract:libs",
         "//devinfra/js/debundle/harness:libs",
-        "//devinfra/js/debundle/rename:libs",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/vendor:libs",
     ] + _JSONC_DEPS,

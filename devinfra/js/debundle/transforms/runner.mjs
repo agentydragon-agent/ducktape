@@ -13,7 +13,6 @@ import { extractAtomicModules } from "../extract/atomic_modules.mjs";
 import { materializeLogicalModules } from "../extract/materialize_logical_modules.mjs";
 import { mergeModules } from "../extract/merge.mjs";
 import { emitBrowserHarness } from "../harness/emit.mjs";
-import { renameBindingsInArtifact } from "../rename/bindings.mjs";
 import { normalizeJsChunks } from "../common/normalize.mjs";
 import { applyVendorAnnotations } from "../vendor/annotate.mjs";
 import { renameVendorExports } from "../vendor/exports.mjs";
@@ -28,7 +27,6 @@ const STAGE_HANDLERS = Object.freeze({
   normalize_js_chunks: normalizeJsChunks,
   apply_vendor_annotations: applyVendorAnnotations,
   rename_vendor_exports: renameVendorExports,
-  rename_bindings: renameBindingsInArtifact,
   rewrite_chunk_entry_specifiers: rewriteChunkEntrySpecifiers,
   extract_runtime_boundary_metadata: extractRuntimeBoundaryMetadata,
   swap_vendor_chunks: swapVendorChunks,

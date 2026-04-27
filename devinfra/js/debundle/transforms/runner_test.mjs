@@ -16,3 +16,18 @@ test("runTransformSpecObject rejects the retired extract_ordered_init_regions st
     /No registered stage handler for operation extract_ordered_init_regions/
   );
 });
+
+test("runTransformSpecObject rejects the retired rename_bindings stage", async () => {
+  await assert.rejects(
+    runTransformSpecObject({
+      kind: "js.ast_transform_spec",
+      pipeline: [
+        {
+          id: "legacy_rename",
+          operation: "rename_bindings",
+        },
+      ],
+    }),
+    /No registered stage handler for operation rename_bindings/
+  );
+});

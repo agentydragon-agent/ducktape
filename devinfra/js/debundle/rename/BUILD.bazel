@@ -22,7 +22,7 @@ js_library(
 js_library(
     name = "libs",
     srcs = [
-        "bindings.mjs",
+        "core.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -34,7 +34,6 @@ js_library(
 js_test(
     name = "bindings_test",
     data = [
-        "bindings.mjs",
         "core.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/extract:libs",

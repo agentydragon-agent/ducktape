@@ -17,7 +17,6 @@ test("generic mock bundle runs through normalize+rename pipeline and passes a br
       "load_js_chunks",
       "compute_js_asts",
       "normalize_js_chunks",
-      "rename_bindings",
       "rewrite_chunk_entry_specifiers",
       "write_js_tree",
       "emit_browser_harness",

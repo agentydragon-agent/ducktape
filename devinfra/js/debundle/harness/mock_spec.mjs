@@ -403,10 +403,6 @@ export function createMockBrowserBundleTransformSpec({
         },
       },
       {
-        id: "rename_mock_bundle",
-        operation: "rename_bindings",
-      },
-      {
         id: "rewrite_mock_bundle_chunk_links",
         operation: "rewrite_chunk_entry_specifiers",
       },
