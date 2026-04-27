@@ -481,15 +481,15 @@ test("materializeLogicalModules lowers final logical modules directly from combi
   assert.ok(state);
   assert.equal(state.mode, "logical");
   assert.equal(state.currentModules.length, 3);
-  assert.ok(chunk.files.has("modules/seed_state.js"));
-  assert.ok(chunk.files.has("modules/first_state.js"));
-  assert.ok(chunk.files.has("modules/unhandled.js"));
+  assert.ok(chunk.files.has("modules/state/seed_state.js"));
+  assert.ok(chunk.files.has("modules/state/first_state.js"));
+  assert.ok(chunk.files.has("modules/residual/unhandled.js"));
   assert.equal(materialized.manifest.kind, "js.logical_module_manifest");
   assert.equal(materialized.manifest.counts.explicitLogicalModules, 2);
   assert.equal(materialized.manifest.counts.residualLogicalModules, 1);
   assert.deepEqual(
-    materialized.manifest.chunks[0].finalModuleContents.map((modulePlan) => modulePlan.basename),
-    ["seed_state", "first_state", "unhandled"]
+    materialized.manifest.chunks[0].finalModuleContents.map((modulePlan) => modulePlan.path ?? modulePlan.basename),
+    ["state/seed_state", "state/first_state", "residual/unhandled"]
   );
 
   const { outRoot } = createWebFixtureRoots("debundle-materialize-logical-modules-stage-write-");
@@ -499,15 +499,89 @@ test("materializeLogicalModules lowers final logical modules directly from combi
     outDir: outRoot,
   });
 
-  const seedModuleCode = readFileSync(join(outRoot, "static", "app", "modules", "seed_state.js"), "utf8");
+  const seedModuleCode = readFileSync(join(outRoot, "static", "app", "modules", "state", "seed_state.js"), "utf8");
   const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
   assert.match(seedModuleCode, /\bseedValue\b/);
   assert.match(seedModuleCode, /\breadSeedValue\b/);
+  assert.match(seedModuleCode, /\binit_state_seed_state\b/);
+  assert.doesNotMatch(seedModuleCode, /\binit_state_seed_state_stage_0\b/);
   assert.doesNotMatch(seedModuleCode, /\bexport let seed\b/);
   assert.match(entryCode, /\bseedValue\b/);
   assert.match(entryCode, /\breadSeedValue\b/);
 
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materializeLogicalModules allows nested logical module paths with colliding leaf basenames", async () => {
+  const { artifact } = await prepareAtomicFixture("debundle-materialize-logical-modules-nested-collisions-");
+  const operations = [
+    {
+      id: "logical__state_core",
+      operation: "define_logical_module",
+      selector: {
+        chunkId: "static/app",
+      },
+      target: {
+        path: "state/core",
+      },
+      members: [
+        {
+          id: "rename__seed",
+          name: "seedValue",
+          selector: {
+            binding: {
+              kind: "VariableDeclarator",
+              name: "seed",
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: "logical__search_core",
+      operation: "define_logical_module",
+      selector: {
+        chunkId: "static/app",
+      },
+      target: {
+        path: "search/core",
+      },
+      members: [
+        {
+          id: "rename__first",
+          name: "firstValue",
+          selector: {
+            binding: {
+              kind: "VariableDeclarator",
+              name: "first",
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: "logical__unhandled",
+      operation: "define_residual_module",
+      selector: {
+        chunkId: "static/app",
+      },
+      target: {
+        path: "residual/unhandled",
+      },
+    },
+  ];
+
+  const materialized = materializeLogicalModules({
+    artifact,
+    chunkIds: ["static/app"],
+    operations,
+    pruneOtherChunks: false,
+  });
+
+  const chunk = getChunk(materialized.artifact, "static/app");
+  assert.ok(chunk.files.has("modules/state/core.js"));
+  assert.ok(chunk.files.has("modules/search/core.js"));
+  assert.ok(chunk.files.has("modules/residual/unhandled.js"));
 });
 
 test("extract_atomic_modules and merge_modules compose in a pipeline spec", async () => {
@@ -745,7 +819,7 @@ function logicalModuleOpsForFixture() {
         chunkId: "static/app",
       },
       target: {
-        basename: "seed_state",
+        path: "state/seed_state",
       },
       members: [
         {
@@ -777,7 +851,7 @@ function logicalModuleOpsForFixture() {
         chunkId: "static/app",
       },
       target: {
-        basename: "first_state",
+        path: "state/first_state",
       },
       members: [
         {
@@ -809,7 +883,7 @@ function logicalModuleOpsForFixture() {
         chunkId: "static/app",
       },
       target: {
-        basename: "unhandled",
+        path: "residual/unhandled",
       },
     },
   ];

@@ -792,21 +792,6 @@ function buildExtractedModuleFile(entry) {
   }
   body.push(
     t.exportNamedDeclaration(
-      t.functionDeclaration(
-        t.identifier(entry.initName),
-        [],
-        t.blockStatement(
-          entry.stageRuns.map((stageRun, stageIndex) =>
-            t.expressionStatement(
-              t.callExpression(t.identifier(stageInitName(entry.initName, stageIndex)), [])
-            )
-          )
-        )
-      )
-    )
-  );
-  body.push(
-    t.exportNamedDeclaration(
       null,
       entry.exportBindings.map((binding) => t.exportSpecifier(t.identifier(binding.local), exportNameNode(binding.exported)))
     )
@@ -885,18 +870,22 @@ function buildSnapshotVariableDeclarationStatements(owner, statement) {
 }
 
 function runtimeInitNamesForEntry(entry) {
-  return entry.stageRuns.map((stageRun, stageIndex) => stageInitName(entry.initName, stageIndex));
+  return entry.stageRuns.map((stageRun, stageIndex) => publicStageInitName(entry, stageIndex));
 }
 
 function runtimeInitNameForRun(run) {
-  return stageInitName(run.entry.initName, run.stageIndex);
+  return publicStageInitName(run.entry, run.stageIndex);
 }
 
 function moduleStagesForEntry(entry) {
   return entry.stageRuns.map((stageRun, stageIndex) => ({
-    initName: stageInitName(entry.initName, stageIndex),
+    initName: publicStageInitName(entry, stageIndex),
     stageEntries: stageRun.stageEntries,
   }));
+}
+
+function publicStageInitName(entry, stageIndex) {
+  return entry.stageRuns.length === 1 ? entry.initName : stageInitName(entry.initName, stageIndex);
 }
 
 function stageInitName(initName, stageIndex) {

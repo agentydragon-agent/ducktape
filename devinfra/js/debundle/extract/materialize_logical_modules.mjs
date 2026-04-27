@@ -207,6 +207,7 @@ export function materializeLogicalModules({
       file: modulePlan.targetFile,
       id: modulePlan.id,
       memberNames: [...modulePlan.memberNames],
+      ...(modulePlan.modulePath ? { path: modulePlan.modulePath } : {}),
       ownerIds: [...modulePlan.ownerIds],
       startOrdinal: modulePlan.startOrdinal,
       unitIds: [...modulePlan.unitIds],

@@ -112,11 +112,15 @@ export function deriveSelectedModuleTarget(
   { filePrefix = "", initPrefix = "init_", targetDir = "modules" } = {}
 ) {
   const normalizedTargetDir = normalizeRelativeFile(targetDir);
-  const basename = modulePlan.basename ?? `${modulePlan.id}__${modulePlan.nameHint ?? `module_${index}`}`;
+  const modulePath =
+    modulePlan.modulePath ??
+    modulePlan.basename ??
+    `${modulePlan.id}__${modulePlan.nameHint ?? `module_${index}`}`;
+  const basename = basenameFromModulePath(modulePath);
   return {
     basename,
-    file: modulePlan.targetFile ?? `${normalizedTargetDir}/${filePrefix}${basename}.js`,
-    init: modulePlan.initName ?? sanitizeIdentifier(`${initPrefix}${basename}`),
+    file: modulePlan.targetFile ?? `${normalizedTargetDir}/${filePrefix}${modulePath}.js`,
+    init: modulePlan.initName ?? sanitizeIdentifier(`${initPrefix}${modulePath}`),
   };
 }
 
@@ -511,6 +515,12 @@ function isReplayableAttachedSideEffectNode(sideEffectNodeOrRecord) {
 
 function normalizeRelativeFile(value) {
   return value.replace(/^\.\/+/, "").replace(/\\/g, "/");
+}
+
+function basenameFromModulePath(value) {
+  const normalized = normalizeRelativeFile(value);
+  const segments = normalized.split("/");
+  return segments.at(-1);
 }
 
 function sanitizeIdentifier(value) {

@@ -224,12 +224,21 @@ function normalizeLogicalTarget(target, operationId) {
   if (!target || typeof target !== "object") {
     throw new Error(`logical module ${operationId} requires target`);
   }
-  if (typeof target.basename !== "string" || target.basename === "") {
-    throw new Error(`logical module ${operationId} requires target.basename`);
+  const targetPath =
+    typeof target.path === "string" && target.path !== "" ? normalizeRelativeModulePath(target.path) : null;
+  const targetBasename =
+    typeof target.basename === "string" && target.basename !== ""
+      ? sanitizeIdentifier(target.basename)
+      : targetPath
+        ? sanitizeIdentifier(targetPath.split("/").at(-1))
+        : null;
+  if (!targetPath && !targetBasename) {
+    throw new Error(`logical module ${operationId} requires target.path or target.basename`);
   }
   return {
     ...target,
-    basename: sanitizeIdentifier(target.basename),
+    ...(targetPath ? { path: targetPath } : {}),
+    basename: targetBasename,
     ...(target.file ? { file: normalizeRelativeFile(target.file) } : {}),
   };
 }
@@ -351,6 +360,7 @@ function groupLogicalModuleOperations(logicalOperations) {
       basename: operation.target.basename,
       file: operation.target.file ?? null,
       init: operation.target.init ?? null,
+      path: operation.target.path ?? null,
     });
     if (!grouped.has(key)) {
       grouped.set(key, {
@@ -371,6 +381,7 @@ function groupLogicalModuleOperations(logicalOperations) {
 
 function mergeModuleGroup(selectedModules, operation, index, { requestedBindings = [], targetDir }) {
   const targetBasename = operation.target.basename;
+  const targetPath = operation.target.path ?? null;
   const attachedItemIds = [];
   const attachedItemIdSet = new Set();
   const memberNames = [];
@@ -433,6 +444,7 @@ function mergeModuleGroup(selectedModules, operation, index, { requestedBindings
     bytes: hasNullBytes ? null : bytes,
     id: operation.id,
     index,
+    ...(targetPath ? { modulePath: targetPath } : {}),
     lines,
     memberNames: applyBindingPlacementsToMemberNames(memberNames, bindingPlacements),
     nameHint: targetBasename,
@@ -466,6 +478,7 @@ function cloneModulePlan(modulePlan) {
     ...(modulePlan.initName ? { initName: modulePlan.initName } : {}),
     lines: modulePlan.lines,
     memberNames: [...modulePlan.memberNames],
+    ...(modulePlan.modulePath ? { modulePath: modulePlan.modulePath } : {}),
     nameHint: modulePlan.nameHint,
     ownerIds: [...modulePlan.ownerIds],
     ...(Array.isArray(modulePlan.bindingPlacements)
@@ -501,6 +514,11 @@ function normalizeRelativeFile(value) {
     throw new Error(`Invalid relative path: ${value}`);
   }
   return normalized;
+}
+
+function normalizeRelativeModulePath(value) {
+  const normalized = normalizeRelativeFile(value);
+  return normalized.endsWith(".js") ? normalized.slice(0, -3) : normalized;
 }
 
 function sanitizeIdentifier(value) {
