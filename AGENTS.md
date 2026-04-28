@@ -71,6 +71,24 @@ bbr query '...'
 bb run --remote_executor="" //devinfra:gazelle
 ```
 
+**`bb` ignores the session bazelrc; use `bazelisk` for local runs that need it.**
+The Claude Code session start hook writes per-session Bazel config (JVM
+truststore startup args, RBE headers, etc.) to
+`<session_dir>/bazelrc`. The `bazelisk` shim auto-injects
+`--bazelrc=<session_dir>/bazelrc`; the `bb` shim does **not**. `bb` also
+passes `--nohome_rc --noworkspace_rc --nosystem_rc` and reconstructs
+the workspace `.bazelrc` flags itself, but it never sources the session
+bazelrc. If the invocation requires the session config — e.g. fetching
+new external repos through TLS-inspected egress — `bb` will start a fresh
+Bazel server without the truststore and fail with
+`TLS error: (certificate_unknown) PKIX path building failed` against
+`bcr.bazel.build` and friends. Cached invocations look fine because they
+piggyback on the warmed-up `bazelisk` server, but the moment the server
+restarts (option mismatch, idle timeout, fresh repo fetch) you get cert
+errors. For local-only execution that needs session config, use
+`bazelisk run //target -- ...`. RBE-bound work (`bbr ...`) is unaffected
+because runner VMs don't depend on the session truststore.
+
 **Updating `requirements_bazel.txt`**: `bb run --remote_executor="" //:requirements.update`
 fails on NixOS (no `/bin/bash`). Use RBE instead:
 
