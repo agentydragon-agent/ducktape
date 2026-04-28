@@ -477,6 +477,77 @@ export { s7t };
   });
 });
 
+test("graph-generated extraction renames return-object aliases to readable shorthand locals", () => {
+  const source = `function r8t(n) {
+  const includeTitle = n.includeTitle;
+  const l = n.includeDescription;
+  return {
+    includeTitle: includeTitle,
+    includeDescription: l,
+  };
+}
+console.log(JSON.stringify(r8t({
+  includeTitle: true,
+  includeDescription: false,
+})));
+export { r8t };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_return_object_readable_names",
+      ownerNames: ["r8t"],
+      targetFile: "regions/return_object_readable_names.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/return_object_readable_names.js");
+  assert.match(extractedCode, /\bconst includeTitle = n\.includeTitle;/);
+  assert.match(extractedCode, /\bconst includeDescription = n\.includeDescription;/);
+  assert.match(extractedCode, /return \{\s*includeTitle,\s*includeDescription\s*\};/s);
+  assert.doesNotMatch(extractedCode, /includeTitle: includeTitle/);
+  assert.doesNotMatch(extractedCode, /includeDescription: l/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-return-object-readable-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("graph-generated extraction keeps return-object aliases when a readable rename would collide with an existing local binding", () => {
+  const source = `function s8t(n) {
+  const includeTitle = n.currentTitle;
+  const i = n.overrideTitle;
+  return {
+    includeTitle: i,
+    fallbackTitle: includeTitle,
+  };
+}
+console.log(JSON.stringify(s8t({
+  currentTitle: "current",
+  overrideTitle: "override",
+})));
+export { s8t };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_return_object_collision_guard",
+      ownerNames: ["s8t"],
+      targetFile: "regions/return_object_collision_guard.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/return_object_collision_guard.js");
+  assert.match(extractedCode, /return \{\s*includeTitle: i,\s*fallbackTitle: includeTitle\s*\};/s);
+  assert.doesNotMatch(extractedCode, /return \{\s*includeTitle,\s*fallbackTitle: includeTitle\s*\};/s);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-return-object-collision-guard-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("graph-generated extraction snapshots self-referential variable declarations when bindings stay immutable", () => {
   const source = `var Status = ((Status2) => {
   Status2.Idle = "idle";

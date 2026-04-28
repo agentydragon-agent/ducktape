@@ -872,6 +872,138 @@ export { r7t, s7t };
   );
 });
 
+test("materializeLogicalModules renames return-object aliases to readable shorthand locals", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-readable-return-object-"
+  );
+  const source = `function r8t(n) {
+  const includeTitle = n.includeTitle;
+  const l = n.includeDescription;
+  return {
+    includeTitle: includeTitle,
+    includeDescription: l,
+  };
+}
+function s8t(payload) {
+  return r8t(payload);
+}
+export { r8t, s8t };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__metadata_options",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/metadata/options",
+        },
+        members: [
+          {
+            id: "member__build_metadata_options",
+            name: "buildMetadataOptions",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "r8t",
+              },
+            },
+          },
+          {
+            id: "member__read_metadata_options",
+            name: "readMetadataOptions",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "s8t",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "parse",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  const moduleCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "metadata", "options.js"), "utf8");
+  const normalizedModuleCode = moduleCode
+    .replace(/^\/\/ @ducktape-generated.*\n/gm, "")
+    .replace(/^\/\/ @ducktape-generator.*\n/gm, "")
+    .replace(/^\/\/ Selected-module lowered region.*\n/gm, "")
+    .replace(/\/\/ Selected-module lowered region.*?(?=function|export|let|const|class)/g, "")
+    .replace(/\/\* @ducktape-atomic-boundary[^*]*\*\//g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  assert.equal(
+    normalizedModuleCode,
+    `function buildMetadataOptions(n) { const includeTitle = n.includeTitle; const includeDescription = n.includeDescription; return { includeTitle, includeDescription }; } function readMetadataOptions(payload) { return buildMetadataOptions(payload); } export { buildMetadataOptions, readMetadataOptions };`
+  );
+  assert.doesNotMatch(moduleCode, /includeTitle: includeTitle/);
+  assert.doesNotMatch(moduleCode, /includeDescription: l/);
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
+});
+
 test("materializeLogicalModules rejects propagated final-name collisions in consumer modules", async () => {
   const { artifact } = await prepareAtomicFixture("debundle-materialize-logical-modules-propagated-collision-");
   assert.throws(

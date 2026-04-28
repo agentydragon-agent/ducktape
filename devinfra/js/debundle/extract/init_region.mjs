@@ -1370,6 +1370,9 @@ function buildReadableObjectPatternRenameGroups(programPath) {
         candidatesByScope
       );
     },
+    ObjectExpression(objectExpressionPath) {
+      collectReadableObjectExpressionScopeCandidates(objectExpressionPath, candidatesByScope);
+    },
   });
 
   const renameGroups = [];
@@ -1403,6 +1406,27 @@ function buildReadableObjectPatternRenameGroups(programPath) {
 function collectReadableObjectPatternScopeCandidates(scopePath, pattern, candidatesByScope) {
   const rawCandidates = [];
   collectReadableObjectPatternRenameCandidates(pattern, rawCandidates);
+  for (const candidate of rawCandidates) {
+    const binding = scopePath.scope.getBinding(candidate.from);
+    if (!binding) {
+      continue;
+    }
+    const bindingScopePath = binding.scope.path;
+    const bindingScopeCandidates = candidatesByScope.get(bindingScopePath) ?? {
+      scopePath: bindingScopePath,
+      candidates: [],
+    };
+    bindingScopeCandidates.candidates.push({
+      ...candidate,
+      binding,
+    });
+    candidatesByScope.set(bindingScopePath, bindingScopeCandidates);
+  }
+}
+
+function collectReadableObjectExpressionScopeCandidates(scopePath, candidatesByScope) {
+  const rawCandidates = [];
+  collectReadableObjectExpressionRenameCandidates(scopePath.node, rawCandidates);
   for (const candidate of rawCandidates) {
     const binding = scopePath.scope.getBinding(candidate.from);
     if (!binding) {
@@ -1546,6 +1570,24 @@ function collectReadablePropertyValueRenameCandidates(value, desiredName, candid
   collectReadableObjectPatternRenameCandidates(value, candidates);
 }
 
+function collectReadableObjectExpressionRenameCandidates(node, candidates) {
+  if (!t.isObjectExpression(node)) {
+    return;
+  }
+  for (const property of node.properties) {
+    if (!t.isObjectProperty(property)) {
+      continue;
+    }
+    const desiredName = readableObjectPropertyBindingName(property);
+    if (t.isIdentifier(property.value) && desiredName) {
+      candidates.push({
+        from: property.value.name,
+        to: desiredName,
+      });
+    }
+  }
+}
+
 function readableObjectPropertyBindingName(property) {
   if (property.computed) {
     return null;
@@ -1562,7 +1604,7 @@ function readableObjectPropertyBindingName(property) {
 function normalizeReadableObjectPatternShorthandInProgram(programPath) {
   programPath.traverse({
     ObjectProperty(propertyPath) {
-      if (!propertyPath.parentPath.isObjectPattern()) {
+      if (!propertyPath.parentPath.isObjectPattern() && !propertyPath.parentPath.isObjectExpression()) {
         return;
       }
       if (
