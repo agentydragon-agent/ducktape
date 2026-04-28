@@ -1,8 +1,11 @@
 """Shared assembly of skill-eval system prompts.
 
-`compose_system_prompt` joins four pieces with `\\n\\n---\\n\\n` separators:
+`compose_system_prompt` joins up to four pieces with `\\n\\n---\\n\\n`
+separators:
 
-1. An eval-specific preamble (what task is being performed).
+1. An optional eval-specific preamble (what task is being performed).
+   Some evals (RE) put task framing entirely in the first user message
+   instead, so the preamble is omitted from the system prompt.
 2. A skill block — generic skill-intro line + inlined SKILL.md + a one-line
    pointer at the in-container skill mount (always `SKILL_PATH`; the
    off-arm of a mounted-skill rollout uses the empty-skill tar so the
@@ -15,7 +18,7 @@
 4. Optional eval-specific tool guidance (game tools, submit, etc.).
 
 Used by TQ's `build_guesser_system`, FL's `build_system_prompt`, and RE's
-`_build_system_prompt` to give every eval the same skill-block + exec-note
+`re_rollout._async_main` to give every eval the same skill-block + exec-note
 shape.
 """
 
@@ -31,14 +34,18 @@ _EXEC_TOOL_NOTE = (
 )
 
 
-def compose_system_prompt(*, preamble: str, skill_md: str, tool_guidance: str | None) -> str:
+def compose_system_prompt(*, preamble: str | None = None, skill_md: str, tool_guidance: str | None = None) -> str:
     """See module docstring."""
     skill_block = (
         f"{_SKILL_INTRO}\n\n<skill>\n{skill_md}\n</skill>\n\n"
         f"The full skill (SKILL.md and any referenced example files) is available in the "
         f"container at {SKILL_PATH}/."
     )
-    parts: list[str] = [preamble, skill_block, _EXEC_TOOL_NOTE]
+    parts: list[str] = []
+    if preamble is not None:
+        parts.append(preamble)
+    parts.append(skill_block)
+    parts.append(_EXEC_TOOL_NOTE)
     if tool_guidance is not None:
         parts.append(tool_guidance)
     return "\n\n---\n\n".join(parts)
