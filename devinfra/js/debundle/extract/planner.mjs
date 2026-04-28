@@ -7,6 +7,7 @@ const ATOMIC_MODULE_ID_PREFIX = "atomic_module_";
 const GENERATED_INIT_PREFIX = "__dt_generated_init__";
 const ANALYSIS_OWNER_BY_ID_CACHE = new WeakMap();
 const ANALYSIS_ITEM_BY_ID_CACHE = new WeakMap();
+const ANALYSIS_SIDE_EFFECT_BY_ID_CACHE = new WeakMap();
 const ANALYSIS_DEFAULT_SELECTED_OWNER_IDS_CACHE = new WeakMap();
 
 export function planSelectedAtomicModules(
@@ -28,6 +29,7 @@ export function planSelectedAtomicModules(
     : selectedOwnerIdsFromDefaultClosureSelection(analysis, ownerById, "planSelectedAtomicModules");
   const selectionMs = durationMsSince(selectionStartedAt);
   const itemById = getItemByIdForAnalysis(analysis);
+  const sideEffectById = getSideEffectByIdForAnalysis(analysis);
   const buildUnitsStartedAt = process.hrtime.bigint();
   const rawAtomicUnits = buildSelectedAtomicUnits({
     analysis,
@@ -37,6 +39,7 @@ export function planSelectedAtomicModules(
   const expandedAtomicUnits = splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, {
     ownerById,
     programBody,
+    sideEffectById,
   });
   const buildUnitsMs = durationMsSince(buildUnitsStartedAt);
   const finalizeUnitsStartedAt = process.hrtime.bigint();
@@ -195,6 +198,19 @@ function getItemByIdForAnalysis(analysis) {
   return itemById;
 }
 
+function getSideEffectByIdForAnalysis(analysis) {
+  const cached = ANALYSIS_SIDE_EFFECT_BY_ID_CACHE.get(analysis);
+  if (cached) {
+    return cached;
+  }
+  const sideEffectById = new Map();
+  for (const sideEffect of analysis.sideEffects ?? []) {
+    sideEffectById.set(sideEffect.id, sideEffect);
+  }
+  ANALYSIS_SIDE_EFFECT_BY_ID_CACHE.set(analysis, sideEffectById);
+  return sideEffectById;
+}
+
 function requireKnownOwnerIds(ownerIds, ownerById, source) {
   // `analysis.owners` is the authoritative owner universe for a boundary-analysis
   // snapshot. Selected-owner sets must be subsets of that universe. If we ever see
@@ -325,17 +341,17 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
   return units;
 }
 
-function splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, { ownerById, programBody }) {
+function splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, { ownerById, programBody, sideEffectById }) {
   const expanded = [];
   for (const unit of rawAtomicUnits) {
-    const splitUnits = splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, programBody });
+    const splitUnits = splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, programBody, sideEffectById });
     expanded.push(...(splitUnits ?? [unit]));
   }
   return expanded;
 }
 
-function splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, programBody }) {
-  if (unit.attachedItemIds.length > 0 || unit.ownerIds.length !== 1) {
+function splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, programBody, sideEffectById }) {
+  if (unit.ownerIds.length !== 1) {
     return null;
   }
   const [ownerId] = unit.ownerIds;
@@ -352,11 +368,17 @@ function splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, program
   if (!splitUnits || splitUnits.length <= 1) {
     return null;
   }
-  return splitUnits.map((ownerFragment) => ({
-    attachedItemIds: [],
-    ownerFragments: [ownerFragment],
-    ownerIds: [owner.id],
-  }));
+  if (unit.attachedItemIds.length === 0) {
+    return splitUnits.map((ownerFragment) => ({
+      attachedItemIds: [],
+      ownerFragments: [ownerFragment],
+      ownerIds: [owner.id],
+    }));
+  }
+  return splitVariableDeclarationUnitWithAttachedSideEffects(unit, splitUnits, {
+    owner,
+    sideEffectById,
+  });
 }
 
 function buildSplittableVariableDeclarationUnits(owner, declarators) {
@@ -415,6 +437,117 @@ function buildGroupedVariableDeclaratorFragment(owner, declarators, declaratorIn
       .sort(),
     orderIndex: declaratorIndices[0] ?? 0,
     ownerId: owner.id,
+  };
+}
+
+function splitVariableDeclarationUnitWithAttachedSideEffects(unit, fragments, { owner, sideEffectById }) {
+  if (!(sideEffectById instanceof Map)) {
+    return null;
+  }
+  const fragmentIndexByMemberName = new Map();
+  fragments.forEach((fragment, fragmentIndex) => {
+    for (const memberName of fragment.memberNames) {
+      fragmentIndexByMemberName.set(memberName, fragmentIndex);
+    }
+  });
+  const disjoint = createDisjointSet(fragments.length);
+  const sideEffects = [];
+  for (const sideEffectId of unit.attachedItemIds) {
+    const sideEffect = sideEffectById.get(sideEffectId);
+    if (!sideEffect) {
+      return null;
+    }
+    const touchedFragmentIndices = touchedFragmentIndicesForSideEffect(sideEffect, {
+      fragmentIndexByMemberName,
+      ownerId: owner.id,
+    });
+    if (!touchedFragmentIndices || touchedFragmentIndices.length === 0) {
+      return null;
+    }
+    for (let index = 1; index < touchedFragmentIndices.length; index++) {
+      disjoint.union(touchedFragmentIndices[0], touchedFragmentIndices[index]);
+    }
+    sideEffects.push({
+      sideEffectId,
+      touchedFragmentIndices,
+    });
+  }
+  const groupsByRoot = new Map();
+  fragments.forEach((fragment, fragmentIndex) => {
+    const root = disjoint.find(fragmentIndex);
+    if (!groupsByRoot.has(root)) {
+      groupsByRoot.set(root, {
+        attachedItemIds: [],
+        fragments: [],
+        orderIndex: fragment.orderIndex ?? fragmentIndex,
+        ownerIds: [owner.id],
+      });
+    }
+    const group = groupsByRoot.get(root);
+    group.fragments.push(fragment);
+    group.orderIndex = Math.min(group.orderIndex, fragment.orderIndex ?? fragmentIndex);
+  });
+  for (const { sideEffectId, touchedFragmentIndices } of sideEffects) {
+    const root = disjoint.find(touchedFragmentIndices[0]);
+    groupsByRoot.get(root)?.attachedItemIds.push(sideEffectId);
+  }
+  return [...groupsByRoot.values()]
+    .sort((left, right) => left.orderIndex - right.orderIndex)
+    .map((group) => ({
+      attachedItemIds: [...group.attachedItemIds],
+      ownerFragments: [...group.fragments].sort(
+        (left, right) => (left.orderIndex ?? 0) - (right.orderIndex ?? 0) || left.id.localeCompare(right.id)
+      ),
+      ownerIds: [...group.ownerIds],
+    }));
+}
+
+function touchedFragmentIndicesForSideEffect(sideEffect, { fragmentIndexByMemberName, ownerId }) {
+  const touched = new Set();
+  let failed = false;
+  forEachTopLevelAccess(sideEffect, (access) => {
+    if (access.kind !== "local_declaration" || access.ownerId !== ownerId) {
+      return true;
+    }
+    const fragmentIndex = fragmentIndexByMemberName.get(access.name);
+    if (fragmentIndex === undefined) {
+      failed = true;
+      return false;
+    }
+    touched.add(fragmentIndex);
+    return true;
+  });
+  if (failed) {
+    return null;
+  }
+  return [...touched].sort((left, right) => left - right);
+}
+
+function createDisjointSet(size) {
+  const parent = Array.from({ length: size }, (_, index) => index);
+  const rank = Array.from({ length: size }, () => 0);
+  return {
+    find(index) {
+      if (parent[index] !== index) {
+        parent[index] = this.find(parent[index]);
+      }
+      return parent[index];
+    },
+    union(left, right) {
+      let leftRoot = this.find(left);
+      let rightRoot = this.find(right);
+      if (leftRoot === rightRoot) {
+        return leftRoot;
+      }
+      if (rank[leftRoot] < rank[rightRoot]) {
+        [leftRoot, rightRoot] = [rightRoot, leftRoot];
+      }
+      parent[rightRoot] = leftRoot;
+      if (rank[leftRoot] === rank[rightRoot]) {
+        rank[leftRoot] += 1;
+      }
+      return leftRoot;
+    },
   };
 }
 

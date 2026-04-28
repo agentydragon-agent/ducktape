@@ -704,7 +704,7 @@ test("materializeLogicalModules rejects propagated final-name collisions in cons
         ],
         pruneOtherChunks: false,
       }),
-    /propagated final name collision|conflicts with existing top-level binding|duplicate binding name/i
+    /propagated final name collision|conflicts with existing top-level binding|duplicate binding name|duplicate exported logical names/i
   );
 });
 
@@ -907,6 +907,313 @@ export { readAlpha, readBeta };
   assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_1/);
 
   assert.match(entryCode, /modules\/constants\/alpha\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materializeLogicalModules can split declarator fragments even when an attached side effect touches only one fragment", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-side-effect-fragments-"
+  );
+  const source = `globalThis.window = {};
+const createPlatformClient = () => ({ ok: true }), indexedDbOutgoingTxSendQueue = new Map();
+window.indexedDbSendQueue = indexedDbOutgoingTxSendQueue;
+function reportQueueSize() {
+  return indexedDbOutgoingTxSendQueue.size;
+}
+function reportPlatformClient() {
+  return createPlatformClient().ok;
+}
+
+console.log(reportQueueSize(), reportPlatformClient());
+
+export { reportPlatformClient, reportQueueSize };`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__platform_client",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "platform/client",
+        },
+        members: [
+          {
+            id: "member__create_platform_client",
+            name: "createPlatformClient",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "createPlatformClient",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__outgoing_tx_debug",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "sync/outgoing_tx/debug",
+        },
+        members: [
+          {
+            id: "member__indexed_db_queue",
+            name: "indexedDbOutgoingTxSendQueue",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "indexedDbOutgoingTxSendQueue",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const platformCode = readFileSync(join(outRoot, "static", "app", "modules", "platform", "client.js"), "utf8");
+  const outgoingTxCode = readFileSync(join(outRoot, "static", "app", "modules", "sync", "outgoing_tx", "debug.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(platformCode, /\bcreatePlatformClient\b/);
+  assert.doesNotMatch(platformCode, /\bindexedDbOutgoingTxSendQueue\b/);
+  assert.match(platformCode, /fragments=owner_[^,\s]+::declarator_0/);
+
+  assert.match(outgoingTxCode, /\bindexedDbOutgoingTxSendQueue\b/);
+  assert.doesNotMatch(outgoingTxCode, /\bcreatePlatformClient\b/);
+  assert.match(outgoingTxCode, /fragments=owner_[^,\s]+::declarator_group_1/);
+  assert.match(outgoingTxCode, /window\.indexedDbSendQueue = indexedDbOutgoingTxSendQueue/);
+
+  assert.match(entryCode, /modules\/platform\/client\.js/);
+  assert.match(entryCode, /modules\/sync\/outgoing_tx\/debug\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materializeLogicalModules closes explicit modules over selected helper dependencies", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-helper-closure-"
+  );
+  const source = `const symbolFor = (name, existing) => ((existing = Symbol[name]) ? existing : Symbol.for("Symbol." + name)),
+  failExpected = (message) => {
+    throw TypeError(message);
+  };
+const addDisposableResource = (stack, value, isAsync) => {
+    if (value != null) {
+      typeof value != "object" && typeof value != "function" && failExpected("Object expected");
+      let dispose;
+      isAsync && (dispose = value[symbolFor("asyncDispose")]);
+      dispose === void 0 && (dispose = value[symbolFor("dispose")]);
+      typeof dispose != "function" && failExpected("Object not disposable");
+      stack.push([isAsync, dispose, value]);
+    } else if (isAsync) stack.push([isAsync]);
+    return value;
+  },
+  disposeResources = (stack, error, didSuppress) => {
+    const SuppressedErrorCtor =
+      typeof SuppressedError == "function"
+        ? SuppressedError
+        : function (inner, outer, message, created) {
+            return ((created = Error(message)), (created.name = "SuppressedError"), (created.error = inner), (created.suppressed = outer), created);
+          };
+    const suppress = (inner) =>
+      (error = didSuppress ? new SuppressedErrorCtor(inner, error, "An error was suppressed during disposal") : ((didSuppress = true), inner));
+    const run = (record) => {
+      for (; (record = stack.pop()); )
+        try {
+          const result = record[1] && record[1].call(record[2]);
+          if (record[0]) return Promise.resolve(result).then(run, (inner) => (suppress(inner), run()));
+        } catch (inner) {
+          suppress(inner);
+        }
+      if (didSuppress) throw error;
+    };
+    return run();
+  };
+function buildDisposableStack() {
+  const stack = [];
+  addDisposableResource(stack, {
+    [Symbol.dispose]() {},
+  }, false);
+  return stack;
+}
+function drainDisposableStack() {
+  return disposeResources(buildDisposableStack(), void 0, false);
+}
+
+console.log(typeof drainDisposableStack);
+
+export { drainDisposableStack };`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__runtime_disposal",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "runtime/disposal",
+        },
+        members: [
+          {
+            id: "member__add_disposable_resource",
+            name: "addDisposableResource",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "addDisposableResource",
+              },
+            },
+          },
+          {
+            id: "member__dispose_resources",
+            name: "disposeResources",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "disposeResources",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__residual",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  const disposalCode = readFileSync(join(outRoot, "static", "app", "modules", "runtime", "disposal.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+
+  assert.match(disposalCode, /\baddDisposableResource\b/);
+  assert.match(disposalCode, /\bdisposeResources\b/);
+  assert.match(disposalCode, /\bsymbolFor\b/);
+  assert.match(disposalCode, /\bfailExpected\b/);
+  assert.doesNotMatch(residualCode, /\bsymbolFor\b/);
+  assert.doesNotMatch(residualCode, /\bfailExpected\b/);
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
@@ -1278,7 +1585,7 @@ export { readDelta };`;
         ],
         pruneOtherChunks: false,
       }),
-    /propagated final name collision|conflicts with existing top-level binding|duplicate binding name/i
+    /propagated final name collision|conflicts with existing top-level binding|duplicate binding name|duplicate exported logical names/i
   );
 });
 
@@ -1784,6 +2091,87 @@ export { readIndependentValue, useFocusService };
   assert.match(entryCode, /import \{[^}]*focusServiceLabel[^}]*FriendlyFocusService[^}]*useFriendlyFocusService[^}]*__dt_generated_init__ui_focus_service_stage_0[^}]*__dt_generated_init__ui_focus_service_stage_1[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/);
   assert.match(residualCode, /\breadIndependentValue\b/);
   assert.doesNotMatch(residualCode, /\bFriendlyFocusService\b/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materializeLogicalModules closes a supplied selected-owner base over owner dependencies before lowering residual", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-selected-owner-closure-pipeline-"
+  );
+  const source = `const focusLabel = "focus";
+class FocusService {
+  static label() {
+    return focusLabel;
+  }
+}
+function useFocusService() {
+  return FocusService.label();
+}
+
+console.log(useFocusService());
+
+export { useFocusService };`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const loaded = loadJsChunks({
+    inputRoot: snapshotRoot,
+    jsListPath: join(extractedRoot, "js-files.txt"),
+  });
+  const parsed = computeJsAsts({
+    artifact: loaded.artifact,
+  });
+  const normalized = await normalizeJsChunks({
+    artifact: parsed.artifact,
+    jobs: 1,
+  });
+  const runtimeFile = getChunkEntryFile(normalized.artifact, "static/app");
+  const analysis = analyzeRuntimeBoundaryAst(runtimeFile.ast, {
+    chunkId: "static/app",
+    manifestPath: "static/app/manifest.json",
+    runtimePath: "static/app/entry.js",
+    uiVersion: "fixture",
+  });
+  const selectedOwnerIdsByChunk = {
+    "static/app": ownerIdsForNames(analysis, ["useFocusService"]),
+  };
+
+  const materialized = materializeLogicalModules({
+    artifact: normalized.artifact,
+    chunkIds: ["static/app"],
+    operations: [
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk,
+  });
+
+  writeJsTree({
+    artifact: materialized.artifact,
+    force: true,
+    outDir: outRoot,
+  });
+
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  assert.match(withoutGeneratedHeader(residualCode), /Selected-module lowered region; original owners: owner_00000, owner_00001, owner_00002\./);
+  assert.match(residualCode, /\bfocusLabel = "focus"/);
+  assert.match(residualCode, /\bFocusService = class FocusService\b/);
+  assert.match(residualCode, /\buseFocusService = function useFocusService\b/);
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 

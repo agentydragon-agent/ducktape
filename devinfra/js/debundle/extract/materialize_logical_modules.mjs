@@ -27,7 +27,11 @@ import {
   resolveWorkspacePath,
 } from "../common/io.mjs";
 import { buildSelectedModuleLoweringMetadata, extractSelectedModulePlanInAst } from "./init_region.mjs";
-import { buildLogicalModulePlans, logicalSelectedOwnerIdsForChunk } from "./logical_modules.mjs";
+import {
+  buildLogicalModulePlans,
+  closeSelectedOwnerIdsOverDependencyGraph,
+  logicalSelectedOwnerIdsForChunk,
+} from "./logical_modules.mjs";
 import { defaultSelectedOwnerIdsForAnalysis, deriveSelectedModuleTarget, planSelectedAtomicModules } from "./planner.mjs";
 
 export function materializeLogicalModules({
@@ -95,7 +99,16 @@ export function materializeLogicalModules({
     const planningStartedAt = process.hrtime.bigint();
     const baseSelectedOwnerIds = selectedOwnerIdsByChunk?.[chunkId] ?? defaultSelectedOwnerIdsForAnalysis(analysis);
     const logicalClaimOwnerIds = logicalSelectedOwnerIdsForChunk(operations, { analysis, chunkId });
-    const selectedOwnerIds = mergeSelectedOwnerIds(baseSelectedOwnerIds, logicalClaimOwnerIds);
+    // The auto-selected owner base and the logical-member claim set are both only seeds.
+    // Before atomic planning, close the merged seed set over the full owner dependency graph
+    // so later lowering never depends on a provider owner that stayed behind in the runtime shell.
+    const selectedOwnerIds = closeSelectedOwnerIdsOverDependencyGraph(
+      mergeSelectedOwnerIds(baseSelectedOwnerIds, logicalClaimOwnerIds),
+      {
+        analysis,
+        callerName: `materializeLogicalModules chunk=${chunkId}`,
+      }
+    );
     const atomicPlan = planSelectedAtomicModules(
       {
         analysis,
