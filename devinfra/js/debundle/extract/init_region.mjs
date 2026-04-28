@@ -1340,42 +1340,32 @@ function applyReadableObjectPatternRenamesInGeneratedFile(ast) {
 
 function applyReadableObjectPatternRenamesInProgram(programPath) {
   const renameGroups = buildReadableObjectPatternRenameGroups(programPath);
+  const renameByBinding = new Map();
   for (const { scopePath, renameSpecs } of renameGroups) {
-    applyReadableRenameSpecsInScope(scopePath, renameSpecs);
+    for (const renameSpec of renameSpecs) {
+      const binding = scopePath.scope.getOwnBinding(renameSpec.from);
+      if (!binding) {
+        continue;
+      }
+      renameByBinding.set(binding, renameSpec.to);
+    }
+  }
+  if (renameByBinding.size > 0) {
+    programPath.traverse({
+      Identifier(identifierPath) {
+        if (!shouldRenameIdentifierPath(identifierPath)) {
+          return;
+        }
+        const binding = identifierPath.scope.getBinding(identifierPath.node.name);
+        const renameTarget = binding ? renameByBinding.get(binding) : null;
+        if (!renameTarget) {
+          return;
+        }
+        identifierPath.node.name = renameTarget;
+      },
+    });
   }
   normalizeReadableObjectPatternShorthandInProgram(programPath);
-}
-
-function applyReadableRenameSpecsInScope(scopePath, renameSpecs) {
-  if (!Array.isArray(renameSpecs) || renameSpecs.length === 0) {
-    return;
-  }
-  const bindingBySourceName = new Map();
-  const renameBySourceName = new Map();
-  for (const renameSpec of renameSpecs) {
-    const binding = scopePath.scope.getOwnBinding(renameSpec.from);
-    if (!binding) {
-      continue;
-    }
-    bindingBySourceName.set(renameSpec.from, binding);
-    renameBySourceName.set(renameSpec.from, renameSpec);
-  }
-  if (renameBySourceName.size === 0) {
-    return;
-  }
-  scopePath.traverse({
-    Identifier(identifierPath) {
-      const renameSpec = renameBySourceName.get(identifierPath.node.name);
-      if (!renameSpec || !shouldRenameIdentifierPath(identifierPath)) {
-        return;
-      }
-      const binding = identifierPath.scope.getBinding(identifierPath.node.name);
-      if (!binding || binding !== bindingBySourceName.get(renameSpec.from)) {
-        return;
-      }
-      identifierPath.node.name = renameSpec.to;
-    },
-  });
 }
 
 function buildReadableObjectPatternRenameGroups(programPath) {
