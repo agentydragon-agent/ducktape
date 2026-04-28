@@ -111,10 +111,10 @@ export { beta, Delta };`,
   assert.ok(fragments.some((fragment) => fragment.memberNames.length === 1 && fragment.memberNames[0] === "Delta"));
 });
 
-test("planSelectedAtomicModules does not split declarators across eager top-level intra-owner reads", () => {
+test("planSelectedAtomicModules keeps eager intra-owner dependency groups together while still splitting unrelated declarators", () => {
   const ast = parse(
-    `const alpha = beta, beta = function beta() { return "b"; };
-export { alpha, beta };`,
+    `const beta = function beta() { return "b"; }, alpha = beta.name, gamma = function gamma() { return "g"; };
+export { beta, alpha, gamma };`,
     { sourceType: "module" }
   );
   const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
@@ -129,8 +129,25 @@ export { alpha, beta };`,
   );
 
   const ownerWithAlphaAndBeta = plan.atomicUnits.find((unit) => unit.memberNames.includes("alpha") && unit.memberNames.includes("beta"));
+  const gammaUnit = plan.atomicUnits.find((unit) => unit.memberNames.includes("gamma"));
+
   assert.ok(ownerWithAlphaAndBeta);
-  assert.equal(ownerWithAlphaAndBeta.ownerFragments?.length ?? 0, 0);
+  assert.ok(gammaUnit);
+  assert.notEqual(ownerWithAlphaAndBeta.id, gammaUnit.id);
+  assert.ok(
+    ownerWithAlphaAndBeta.ownerFragments?.some(
+      (fragment) => fragment.memberNames.length === 1 && fragment.memberNames[0] === "beta"
+    )
+  );
+  assert.ok(
+    ownerWithAlphaAndBeta.ownerFragments?.some(
+      (fragment) =>
+        fragment.kind === "variable_declarator_group" &&
+        fragment.memberNames.length === 1 &&
+        fragment.memberNames[0] === "alpha"
+    )
+  );
+  assert.ok(gammaUnit.ownerFragments?.some((fragment) => fragment.memberNames.length === 1 && fragment.memberNames[0] === "gamma"));
 });
 
 test("planSelectedAtomicModules does not split class declarators across eager class-definition reads", () => {
@@ -256,6 +273,75 @@ export { useFocusService, readIndependentValue };`,
   assert.ok(selectedNames.has("focusLabel"));
   assert.ok(!selectedNames.has("independentValue"));
   assert.ok(!selectedNames.has("readIndependentValue"));
+});
+
+test("logicalSelectedOwnerIdsForChunk resolves canonical binding owners from analysis instead of stale owner hints", () => {
+  const ast = parse(
+    `const palette = "picker", pickerStyles = { root: palette };
+const aliasMap = { js: "javascript" };
+function readAliasMap() {
+  return aliasMap.js;
+}
+export { readAliasMap };`,
+    { sourceType: "module" }
+  );
+  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
+
+  const selectedOwnerIds = logicalSelectedOwnerIdsForChunk(
+    [
+      {
+        id: "logical__language_picker",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/code/language_picker",
+        },
+        members: [
+          {
+            id: "member__picker_styles",
+            name: "pickerStyles",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "pickerStyles",
+              },
+              owner: {
+                id: "owner_stale_picker_styles",
+                line: 1,
+              },
+            },
+          },
+          {
+            id: "member__alias_map",
+            name: "languageAliasMap",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "aliasMap",
+              },
+              owner: {
+                id: "owner_stale_alias_map",
+                line: 2,
+              },
+            },
+          },
+        ],
+      },
+    ],
+    { analysis, chunkId: "static/app" }
+  );
+
+  const selectedNames = new Set(
+    analysis.owners
+      .filter((owner) => selectedOwnerIds.has(owner.id))
+      .flatMap((owner) => owner.names)
+  );
+  assert.ok(selectedNames.has("palette"));
+  assert.ok(selectedNames.has("pickerStyles"));
+  assert.ok(selectedNames.has("aliasMap"));
+  assert.ok(!selectedNames.has("readAliasMap"));
 });
 
 test("closeSelectedOwnerIdsOverDependencyGraph repairs an arbitrary preselected owner base", () => {

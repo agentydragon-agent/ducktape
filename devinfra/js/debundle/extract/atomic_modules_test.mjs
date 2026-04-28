@@ -1381,6 +1381,138 @@ export { render };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules can extract an unrelated lazy declarator from an owner with eager intra-owner dependencies", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-eager-dependency-group-fragments-"
+  );
+  const source = `const beta = function beta() { return "b"; }, alpha = beta.name, gamma = function gamma() { return "g"; };
+function render() {
+  return gamma() + ":" + beta();
+}
+
+console.log(render());
+
+export { render };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const loaded = loadJsChunks({
+    inputRoot: snapshotRoot,
+    jsListPath: join(extractedRoot, "js-files.txt"),
+  });
+  computeJsAsts({ artifact: loaded.artifact });
+  await normalizeJsChunks({
+    artifact: loaded.artifact,
+    jobs: 1,
+  });
+  const entryAst = getChunkEntryFile(loaded.artifact, "static/app")?.ast;
+  assert.ok(entryAst);
+  const analysis = analyzeRuntimeBoundaryAst(entryAst, { chunkId: "static/app" });
+  const selectedOwnerIdsByChunk = {
+    "static/app": analysis.owners.map((owner) => owner.id),
+  };
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__gamma",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "runtime/gamma",
+        },
+        members: [
+          {
+            id: "member__gamma",
+            name: "renderGamma",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "gamma",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+          selectedOwnerIdsByChunk,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const gammaCode = readFileSync(join(outRoot, "static", "app", "modules", "runtime", "gamma.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(gammaCode, /\brenderGamma\b/);
+  assert.match(gammaCode, /fragments=owner_[^,\s]+::declarator_2/);
+  assert.match(residualCode, /\bbeta = function beta/);
+  assert.match(residualCode, /alpha = beta\.name/);
+  assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_0,owner_[^,\s]+::declarator_group_1/);
+  assert.match(entryCode, /modules\/runtime\/gamma\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 test("materializeLogicalModules can split inert class declarators with lazy cross-fragment reads", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
     "debundle-logical-modules-lazy-class-fragments-"
@@ -1500,6 +1632,145 @@ export { render };
   assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_0/);
 
   assert.match(entryCode, /modules\/classes\/delta\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materializeLogicalModules resolves stale owner hints through analysis before selecting split declaration fragments", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-stale-owner-hints-"
+  );
+  const source = `const palette = "picker", pickerStyles = { root: palette };
+const aliasMap = { js: "javascript" };
+function renderPicker() {
+  return pickerStyles.root + ":" + aliasMap.js;
+}
+
+console.log(renderPicker());
+
+export { renderPicker };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__language_picker",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/code/language_picker",
+        },
+        members: [
+          {
+            id: "member__picker_styles",
+            name: "pickerStyles",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "pickerStyles",
+              },
+              owner: {
+                id: "owner_stale_picker_styles",
+                line: 1,
+              },
+            },
+          },
+          {
+            id: "member__alias_map",
+            name: "languageAliasMap",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "aliasMap",
+              },
+              owner: {
+                id: "owner_stale_alias_map",
+                line: 2,
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const languagePickerCode = readFileSync(
+    join(outRoot, "static", "app", "modules", "ui", "code", "language_picker.js"),
+    "utf8"
+  );
+  const residualCode = readFileSync(
+    join(outRoot, "static", "app", "modules", "residual", "unhandled.js"),
+    "utf8"
+  );
+
+  assert.match(languagePickerCode, /\bpalette = "picker"/);
+  assert.match(languagePickerCode, /\bpickerStyles = \{\s+root: palette\s+\};/);
+  assert.match(languagePickerCode, /\blanguageAliasMap = \{\s+js: "javascript"\s+\};/);
+  assert.doesNotMatch(languagePickerCode, /import \{ .*pickerStyles.* \} from "\.\.\/\.\.\/residual\/unhandled\.js"/);
+
+  assert.match(residualCode, /import \{ languageAliasMap, pickerStyles \} from "\.\.\/ui\/code\/language_picker\.js";/);
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 

@@ -356,7 +356,7 @@ function splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, program
   }
   const [ownerId] = unit.ownerIds;
   const owner = ownerById.get(ownerId);
-  if (!owner || owner.type !== "VariableDeclaration" || ownerHasAnyEagerTopLevelAccess(owner)) {
+  if (!owner || owner.type !== "VariableDeclaration") {
     return null;
   }
   const statement = programBody?.[owner.ordinal];
@@ -368,17 +368,20 @@ function splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, program
   if (!splitUnits || splitUnits.length <= 1) {
     return null;
   }
-  if (unit.attachedItemIds.length === 0) {
-    return splitUnits.map((ownerFragment) => ({
-      attachedItemIds: [],
-      ownerFragments: [ownerFragment],
-      ownerIds: [owner.id],
-    }));
+  const dependencyDisjoint = buildVariableDeclarationFragmentDependencyDisjointSet(owner, declaration.declarations, splitUnits);
+  if (!dependencyDisjoint) {
+    return null;
   }
-  return splitVariableDeclarationUnitWithAttachedSideEffects(unit, splitUnits, {
+  if (unit.attachedItemIds.length === 0) {
+    const groupedUnits = buildVariableDeclarationAtomicUnitsFromGroupedFragments(splitUnits, dependencyDisjoint, { owner });
+    return groupedUnits.length > 1 ? groupedUnits : null;
+  }
+  const groupedUnits = splitVariableDeclarationUnitWithAttachedSideEffects(unit, splitUnits, {
     owner,
     sideEffectById,
+    dependencyDisjoint,
   });
+  return groupedUnits && groupedUnits.length > 1 ? groupedUnits : null;
 }
 
 function buildSplittableVariableDeclarationUnits(owner, declarators) {
@@ -440,17 +443,21 @@ function buildGroupedVariableDeclaratorFragment(owner, declarators, declaratorIn
   };
 }
 
-function splitVariableDeclarationUnitWithAttachedSideEffects(unit, fragments, { owner, sideEffectById }) {
+function splitVariableDeclarationUnitWithAttachedSideEffects(unit, fragments, { dependencyDisjoint, owner, sideEffectById }) {
   if (!(sideEffectById instanceof Map)) {
     return null;
   }
   const fragmentIndexByMemberName = new Map();
+  const fragmentIndexByDeclaratorIndex = new Map();
   fragments.forEach((fragment, fragmentIndex) => {
     for (const memberName of fragment.memberNames) {
       fragmentIndexByMemberName.set(memberName, fragmentIndex);
     }
+    for (const declaratorIndex of fragment.declaratorIndices ?? []) {
+      fragmentIndexByDeclaratorIndex.set(declaratorIndex, fragmentIndex);
+    }
   });
-  const disjoint = createDisjointSet(fragments.length);
+  const disjoint = cloneDisjointSet(dependencyDisjoint ?? createDisjointSet(fragments.length));
   const sideEffects = [];
   for (const sideEffectId of unit.attachedItemIds) {
     const sideEffect = sideEffectById.get(sideEffectId);
@@ -472,34 +479,18 @@ function splitVariableDeclarationUnitWithAttachedSideEffects(unit, fragments, { 
       touchedFragmentIndices,
     });
   }
-  const groupsByRoot = new Map();
-  fragments.forEach((fragment, fragmentIndex) => {
-    const root = disjoint.find(fragmentIndex);
-    if (!groupsByRoot.has(root)) {
-      groupsByRoot.set(root, {
-        attachedItemIds: [],
-        fragments: [],
-        orderIndex: fragment.orderIndex ?? fragmentIndex,
-        ownerIds: [owner.id],
-      });
-    }
-    const group = groupsByRoot.get(root);
-    group.fragments.push(fragment);
-    group.orderIndex = Math.min(group.orderIndex, fragment.orderIndex ?? fragmentIndex);
-  });
+  const attachedItemIdsByRoot = new Map();
   for (const { sideEffectId, touchedFragmentIndices } of sideEffects) {
     const root = disjoint.find(touchedFragmentIndices[0]);
-    groupsByRoot.get(root)?.attachedItemIds.push(sideEffectId);
+    if (!attachedItemIdsByRoot.has(root)) {
+      attachedItemIdsByRoot.set(root, []);
+    }
+    attachedItemIdsByRoot.get(root).push(sideEffectId);
   }
-  return [...groupsByRoot.values()]
-    .sort((left, right) => left.orderIndex - right.orderIndex)
-    .map((group) => ({
-      attachedItemIds: [...group.attachedItemIds],
-      ownerFragments: [...group.fragments].sort(
-        (left, right) => (left.orderIndex ?? 0) - (right.orderIndex ?? 0) || left.id.localeCompare(right.id)
-      ),
-      ownerIds: [...group.ownerIds],
-    }));
+  return buildVariableDeclarationAtomicUnitsFromGroupedFragments(fragments, disjoint, {
+    attachedItemIdsByRoot,
+    owner,
+  });
 }
 
 function touchedFragmentIndicesForSideEffect(sideEffect, { fragmentIndexByMemberName, ownerId }) {
@@ -548,7 +539,273 @@ function createDisjointSet(size) {
       }
       return leftRoot;
     },
+    snapshot() {
+      return {
+        parent: [...parent],
+        rank: [...rank],
+      };
+    },
   };
+}
+
+function cloneDisjointSet(disjoint) {
+  if (!disjoint?.snapshot) {
+    return createDisjointSet(0);
+  }
+  const snapshot = disjoint.snapshot();
+  const parent = [...snapshot.parent];
+  const rank = [...snapshot.rank];
+  return {
+    find(index) {
+      if (parent[index] !== index) {
+        parent[index] = this.find(parent[index]);
+      }
+      return parent[index];
+    },
+    union(left, right) {
+      let leftRoot = this.find(left);
+      let rightRoot = this.find(right);
+      if (leftRoot === rightRoot) {
+        return leftRoot;
+      }
+      if (rank[leftRoot] < rank[rightRoot]) {
+        [leftRoot, rightRoot] = [rightRoot, leftRoot];
+      }
+      parent[rightRoot] = leftRoot;
+      if (rank[leftRoot] === rank[rightRoot]) {
+        rank[leftRoot] += 1;
+      }
+      return leftRoot;
+    },
+    snapshot() {
+      return {
+        parent: [...parent],
+        rank: [...rank],
+      };
+    },
+  };
+}
+
+function buildVariableDeclarationAtomicUnitsFromGroupedFragments(
+  fragments,
+  disjoint,
+  { attachedItemIdsByRoot = new Map(), owner }
+) {
+  const groupsByRoot = new Map();
+  fragments.forEach((fragment, fragmentIndex) => {
+    const root = disjoint.find(fragmentIndex);
+    if (!groupsByRoot.has(root)) {
+      groupsByRoot.set(root, {
+        fragments: [],
+        orderIndex: fragment.orderIndex ?? fragmentIndex,
+      });
+    }
+    const group = groupsByRoot.get(root);
+    group.fragments.push(fragment);
+    group.orderIndex = Math.min(group.orderIndex, fragment.orderIndex ?? fragmentIndex);
+  });
+  return [...groupsByRoot.entries()]
+    .map(([root, group]) => ({
+      attachedItemIds: [...(attachedItemIdsByRoot.get(root) ?? [])],
+      ownerFragments: [...group.fragments].sort(
+        (left, right) => (left.orderIndex ?? 0) - (right.orderIndex ?? 0) || left.id.localeCompare(right.id)
+      ),
+      ownerIds: [owner.id],
+      orderIndex: group.orderIndex,
+    }))
+    .sort((left, right) => left.orderIndex - right.orderIndex)
+    .map(({ orderIndex, ...unit }) => unit);
+}
+
+function buildVariableDeclarationFragmentDependencyDisjointSet(owner, declarators, fragments) {
+  const disjoint = createDisjointSet(fragments.length);
+  const fragmentIndexByMemberName = new Map();
+  const fragmentIndexByDeclaratorIndex = new Map();
+  for (const [fragmentIndex, fragment] of fragments.entries()) {
+    for (const memberName of fragment.memberNames) {
+      fragmentIndexByMemberName.set(memberName, fragmentIndex);
+    }
+    for (const declaratorIndex of fragment.declaratorIndices ?? []) {
+      fragmentIndexByDeclaratorIndex.set(declaratorIndex, fragmentIndex);
+    }
+  }
+  const sameOwnerBindingNames = new Set(fragments.flatMap((fragment) => fragment.memberNames));
+  for (const [declaratorIndex, declarator] of declarators.entries()) {
+    const sourceFragmentIndex = fragmentIndexByDeclaratorIndex.get(declaratorIndex);
+    if (sourceFragmentIndex === undefined) {
+      return null;
+    }
+    const eagerDependencies = collectEagerLocalDeclarationDependenciesForInitializer(
+      declarator.init,
+      sameOwnerBindingNames
+    );
+    for (const dependencyName of eagerDependencies) {
+      const targetFragmentIndex = fragmentIndexByMemberName.get(dependencyName);
+      if (targetFragmentIndex === undefined) {
+        return null;
+      }
+      disjoint.union(sourceFragmentIndex, targetFragmentIndex);
+    }
+  }
+  return disjoint;
+}
+
+function collectEagerLocalDeclarationDependenciesForInitializer(node, sameOwnerBindingNames) {
+  const dependencies = new Set();
+  collectEagerLocalDeclarationDependencies(node, sameOwnerBindingNames, dependencies);
+  return [...dependencies];
+}
+
+function collectEagerLocalDeclarationDependencies(node, sameOwnerBindingNames, dependencies) {
+  if (!node) {
+    return;
+  }
+  if (t.isIdentifier(node)) {
+    if (sameOwnerBindingNames.has(node.name)) {
+      dependencies.add(node.name);
+    }
+    return;
+  }
+  if (
+    t.isFunctionExpression(node) ||
+    t.isArrowFunctionExpression(node)
+  ) {
+    return;
+  }
+  if (t.isClassExpression(node)) {
+    if (node.superClass) {
+      collectEagerLocalDeclarationDependencies(node.superClass, sameOwnerBindingNames, dependencies);
+    }
+    for (const decorator of node.decorators ?? []) {
+      collectEagerLocalDeclarationDependencies(decorator.expression, sameOwnerBindingNames, dependencies);
+    }
+    for (const member of node.body.body) {
+      if ("computed" in member && member.computed) {
+        collectEagerLocalDeclarationDependencies(member.key, sameOwnerBindingNames, dependencies);
+      }
+      for (const decorator of member.decorators ?? []) {
+        collectEagerLocalDeclarationDependencies(decorator.expression, sameOwnerBindingNames, dependencies);
+      }
+      if (t.isClassProperty(member) || t.isClassPrivateProperty(member) || t.isClassAccessorProperty(member)) {
+        if (member.static) {
+          collectEagerLocalDeclarationDependencies(member.value, sameOwnerBindingNames, dependencies);
+        }
+      }
+      if (t.isStaticBlock?.(member)) {
+        for (const statement of member.body) {
+          collectEagerLocalDeclarationDependencies(statement, sameOwnerBindingNames, dependencies);
+        }
+      }
+    }
+    return;
+  }
+  if (t.isObjectProperty(node)) {
+    if (node.computed) {
+      collectEagerLocalDeclarationDependencies(node.key, sameOwnerBindingNames, dependencies);
+    }
+    collectEagerLocalDeclarationDependencies(node.value, sameOwnerBindingNames, dependencies);
+    return;
+  }
+  if (t.isObjectMethod(node) || t.isClassMethod(node) || t.isClassPrivateMethod(node) || t.isTSDeclareMethod(node)) {
+    if (node.computed) {
+      collectEagerLocalDeclarationDependencies(node.key, sameOwnerBindingNames, dependencies);
+    }
+    return;
+  }
+  if (t.isObjectExpression(node)) {
+    for (const property of node.properties) {
+      if (t.isSpreadElement(property)) {
+        collectEagerLocalDeclarationDependencies(property.argument, sameOwnerBindingNames, dependencies);
+      } else {
+        collectEagerLocalDeclarationDependencies(property, sameOwnerBindingNames, dependencies);
+      }
+    }
+    return;
+  }
+  if (t.isArrayExpression(node)) {
+    for (const element of node.elements) {
+      if (!element) {
+        continue;
+      }
+      if (t.isSpreadElement(element)) {
+        collectEagerLocalDeclarationDependencies(element.argument, sameOwnerBindingNames, dependencies);
+      } else {
+        collectEagerLocalDeclarationDependencies(element, sameOwnerBindingNames, dependencies);
+      }
+    }
+    return;
+  }
+  if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) {
+    collectEagerLocalDeclarationDependencies(node.object, sameOwnerBindingNames, dependencies);
+    if (node.computed) {
+      collectEagerLocalDeclarationDependencies(node.property, sameOwnerBindingNames, dependencies);
+    }
+    return;
+  }
+  if (t.isCallExpression(node) || t.isOptionalCallExpression(node) || t.isNewExpression(node)) {
+    collectEagerLocalDeclarationDependencies(node.callee, sameOwnerBindingNames, dependencies);
+    for (const argument of node.arguments ?? []) {
+      if (t.isSpreadElement(argument)) {
+        collectEagerLocalDeclarationDependencies(argument.argument, sameOwnerBindingNames, dependencies);
+      } else {
+        collectEagerLocalDeclarationDependencies(argument, sameOwnerBindingNames, dependencies);
+      }
+    }
+    return;
+  }
+  if (t.isAssignmentExpression(node)) {
+    collectEagerLocalDeclarationDependencies(node.left, sameOwnerBindingNames, dependencies);
+    collectEagerLocalDeclarationDependencies(node.right, sameOwnerBindingNames, dependencies);
+    return;
+  }
+  if (t.isUpdateExpression(node) || t.isUnaryExpression(node) || t.isSpreadElement(node)) {
+    collectEagerLocalDeclarationDependencies(node.argument, sameOwnerBindingNames, dependencies);
+    return;
+  }
+  if (t.isBinaryExpression(node) || t.isLogicalExpression(node)) {
+    collectEagerLocalDeclarationDependencies(node.left, sameOwnerBindingNames, dependencies);
+    collectEagerLocalDeclarationDependencies(node.right, sameOwnerBindingNames, dependencies);
+    return;
+  }
+  if (t.isConditionalExpression(node)) {
+    collectEagerLocalDeclarationDependencies(node.test, sameOwnerBindingNames, dependencies);
+    collectEagerLocalDeclarationDependencies(node.consequent, sameOwnerBindingNames, dependencies);
+    collectEagerLocalDeclarationDependencies(node.alternate, sameOwnerBindingNames, dependencies);
+    return;
+  }
+  if (t.isSequenceExpression(node)) {
+    for (const expression of node.expressions) {
+      collectEagerLocalDeclarationDependencies(expression, sameOwnerBindingNames, dependencies);
+    }
+    return;
+  }
+  if (t.isParenthesizedExpression(node) || t.isTSAsExpression(node) || t.isTSSatisfiesExpression(node) || t.isTypeCastExpression?.(node)) {
+    collectEagerLocalDeclarationDependencies(node.expression, sameOwnerBindingNames, dependencies);
+    return;
+  }
+  if (t.isExpressionStatement(node)) {
+    collectEagerLocalDeclarationDependencies(node.expression, sameOwnerBindingNames, dependencies);
+    return;
+  }
+  if (t.isReturnStatement(node) || t.isThrowStatement(node)) {
+    collectEagerLocalDeclarationDependencies(node.argument, sameOwnerBindingNames, dependencies);
+    return;
+  }
+  if (t.isVariableDeclarator(node)) {
+    collectEagerLocalDeclarationDependencies(node.init, sameOwnerBindingNames, dependencies);
+    return;
+  }
+  if (t.isVariableDeclaration(node)) {
+    for (const declarator of node.declarations) {
+      collectEagerLocalDeclarationDependencies(declarator, sameOwnerBindingNames, dependencies);
+    }
+    return;
+  }
+  if (t.isBlockStatement(node) || t.isStaticBlock?.(node)) {
+    for (const statement of node.body) {
+      collectEagerLocalDeclarationDependencies(statement, sameOwnerBindingNames, dependencies);
+    }
+  }
 }
 
 function isStaticallyPureFragmentInitializer(node) {

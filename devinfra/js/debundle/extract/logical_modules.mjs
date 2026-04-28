@@ -229,10 +229,10 @@ export function logicalSelectedOwnerIdsForChunk(operations, { analysis = null, c
       continue;
     }
     for (const member of operation.members) {
-      let ownerId = member.selector.owner?.id ?? null;
-      if (!ownerId && analysis && !isImportKind(member.selector.binding.kind ?? null)) {
-        ownerId = resolveOwnerIdFromAnalysis(analysis, member);
-      }
+      const ownerId = resolveCanonicalOwnerIdForLogicalMember(member, {
+        analysis,
+        operationId: operation.id,
+      });
       if (typeof ownerId === "string" && ownerId !== "") {
         ownerIds.add(ownerId);
       }
@@ -545,50 +545,68 @@ function resolveLogicalMember(member, { analysis, modulesByOwnerId, modulesBySym
       ownerId: null,
     };
   }
-  const ownerId =
-    member.selector.owner?.id ??
-    (analysis ? resolveOwnerIdFromAnalysis(analysis, member, { operationId }) : null);
+  const ownerId = resolveCanonicalOwnerIdForLogicalMember(member, {
+    analysis,
+    operationId,
+  });
+  const symbolMatches = modulesBySymbol.get(member.selector.binding.name) ?? [];
   if (ownerId) {
     const ownerMatches = modulesByOwnerId.get(ownerId) ?? [];
     if (ownerMatches.length === 0) {
-      return {
-        matched: false,
-        modulePlan: null,
+      return resolveUniqueSymbolMatch(symbolMatches, {
+        member,
+        operationId,
         ownerId,
-      };
+      });
     }
-    const symbolMatches = ownerMatches.filter((modulePlan) => modulePlan.memberNames.includes(member.selector.binding.name));
-    if (symbolMatches.length === 1) {
+    const ownerSymbolMatches = ownerMatches.filter((modulePlan) => modulePlan.memberNames.includes(member.selector.binding.name));
+    if (ownerSymbolMatches.length === 1) {
       return {
         matched: true,
-        modulePlan: symbolMatches[0],
+        modulePlan: ownerSymbolMatches[0],
         ownerId,
       };
     }
-    if (symbolMatches.length > 1) {
+    if (ownerSymbolMatches.length > 1) {
       throw new Error(
-        `define_logical_module ${operationId} member ${member.id} matched multiple owner fragments for ${member.selector.binding.name}: ${symbolMatches
+        `define_logical_module ${operationId} member ${member.id} matched multiple owner fragments for ${member.selector.binding.name}: ${ownerSymbolMatches
           .map((modulePlan) => modulePlan.id)
           .join(", ")}`
       );
     }
-    if (ownerMatches.length > 1) {
-      throw new Error(
-        `define_logical_module ${operationId} member ${member.id} matched owner ${ownerId} but no fragment exposed ${member.selector.binding.name}`
-      );
-    }
-    return {
-      matched: true,
-      modulePlan: ownerMatches[0],
+    return resolveUniqueSymbolMatch(symbolMatches, {
+      member,
+      operationId,
       ownerId,
-    };
+    });
   }
-  const matches = modulesBySymbol.get(member.selector.binding.name) ?? [];
-  if (matches.length === 0) {
+  if (symbolMatches.length === 0) {
     return {
       matched: false,
       modulePlan: null,
       ownerId: null,
+    };
+  }
+  if (symbolMatches.length > 1) {
+    throw new Error(
+      `define_logical_module ${operationId} member ${member.id} matched multiple atomic modules for ${member.selector.binding.name}: ${symbolMatches
+        .map((modulePlan) => modulePlan.id)
+        .join(", ")}`
+    );
+  }
+  return {
+    matched: true,
+    modulePlan: symbolMatches[0],
+    ownerId: null,
+  };
+}
+
+function resolveUniqueSymbolMatch(matches, { member, operationId, ownerId }) {
+  if (matches.length === 0) {
+    return {
+      matched: false,
+      modulePlan: null,
+      ownerId,
     };
   }
   if (matches.length > 1) {
@@ -601,7 +619,7 @@ function resolveLogicalMember(member, { analysis, modulesByOwnerId, modulesBySym
   return {
     matched: true,
     modulePlan: matches[0],
-    ownerId: null,
+    ownerId,
   };
 }
 
@@ -829,6 +847,19 @@ function sanitizeIdentifier(value) {
     .replace(/[^A-Za-z0-9_$]+/g, "_")
     .replace(/^[^A-Za-z_$]+/, "_")
     .replace(/_+/g, "_");
+}
+
+function resolveCanonicalOwnerIdForLogicalMember(member, { analysis = null, operationId = "<logical-module>" } = {}) {
+  const selectorOwnerId = member.selector.owner?.id ?? null;
+  if (!analysis || isImportKind(member.selector.binding.kind ?? null)) {
+    return selectorOwnerId;
+  }
+  // For logical-module planning, boundary analysis is the authoritative source of
+  // binding ownership. Checked-in owner ids are useful disambiguation hints, but
+  // they can drift as we refine fragment splitting. We therefore resolve against
+  // the analyzed binding first and only fall back to the selector owner hint when
+  // analysis cannot identify the binding.
+  return resolveOwnerIdFromAnalysis(analysis, member, { operationId }) ?? selectorOwnerId;
 }
 
 function resolveOwnerIdFromAnalysis(analysis, member, { operationId = "<logical-module>" } = {}) {
