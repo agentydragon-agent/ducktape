@@ -5,7 +5,7 @@ import test from "node:test";
 import { parse } from "@babel/parser";
 import { analyzeRuntimeBoundaryAst, analyzeRuntimeBoundaryCode } from "../analysis/boundary.mjs";
 import { computeJsAsts } from "../common/parse_asts.mjs";
-import { getChunk, getChunkEntryFile, setArtifactManifest } from "../common/artifact.mjs";
+import { getArtifactChunkManifest, getChunk, getChunkEntryFile, setArtifactManifest } from "../common/artifact.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";
 import { normalizeJsChunks } from "../common/normalize.mjs";
@@ -1897,6 +1897,28 @@ test("materializeLogicalModules does not require a root artifact manifest", asyn
   assert.ok(chunk.files.has("modules/state/first_state.js"));
 });
 
+test("materializeLogicalModules can emit logical modules directly at the chunk root", async () => {
+  const { artifact } = await prepareAtomicFixture("debundle-logical-modules-root-target-dir-");
+
+  const materialized = materializeLogicalModules({
+    artifact,
+    chunkIds: ["static/app"],
+    operations: logicalModuleOpsForFixture(),
+    pruneOtherChunks: false,
+    targetDir: null,
+  });
+
+  const chunk = getChunk(materialized.artifact, "static/app");
+  assert.ok(chunk);
+  assert.ok(chunk.files.has("entry.js"));
+  assert.ok(chunk.files.has("state/seed_state.js"));
+  assert.ok(chunk.files.has("state/first_state.js"));
+  assert.ok(chunk.files.has("residual/unhandled.js"));
+  assert.equal(chunk.files.has("modules/state/seed_state.js"), false);
+  const chunkManifest = getArtifactChunkManifest(materialized.artifact, "static/app");
+  assert.equal(chunkManifest.logicalModules.targetDir, null);
+});
+
 test("materialize_logical_modules composes directly in a pipeline spec", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = await writeAtomicSnapshotFixture(
     "debundle-logical-modules-pipeline-"
@@ -1930,6 +1952,7 @@ test("materialize_logical_modules composes directly in a pipeline spec", async (
         args: {
           chunkIds: ["static/app"],
           pruneOtherChunks: false,
+          targetDir: null,
         },
       },
       {
@@ -1947,6 +1970,9 @@ test("materialize_logical_modules composes directly in a pipeline spec", async (
     result.steps.map((step) => step.operation),
     ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
   );
+  assert.equal(existsSync(join(outRoot, "static", "app", "modules")), false);
+  assert.equal(existsSync(join(outRoot, "static", "app", "state", "seed_state.js")), true);
+  assert.equal(existsSync(join(outRoot, "static", "app", "residual", "unhandled.js")), true);
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 

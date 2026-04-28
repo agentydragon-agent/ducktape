@@ -146,12 +146,16 @@ export function deriveSelectedModuleTarget(
   index,
   { filePrefix = "", initPrefix = GENERATED_INIT_PREFIX, targetDir = "modules" } = {}
 ) {
-  const normalizedTargetDir = normalizeRelativeFile(targetDir);
+  const normalizedTargetDir = normalizeOptionalRelativeDir(targetDir);
   const modulePath =
     modulePlan.modulePath ??
     `${modulePlan.id}__${modulePlan.nameHint ?? `module_${index}`}`;
   return {
-    file: modulePlan.targetFile ?? `${normalizedTargetDir}/${filePrefix}${modulePath}.js`,
+    file:
+      modulePlan.targetFile ??
+      (normalizedTargetDir
+        ? `${normalizedTargetDir}/${filePrefix}${modulePath}.js`
+        : `${filePrefix}${modulePath}.js`),
     init: modulePlan.initName ?? sanitizeIdentifier(`${initPrefix}${modulePath}`),
   };
 }
@@ -1218,6 +1222,13 @@ function isReplayableAttachedSideEffectNode(sideEffectNodeOrRecord) {
 
 function normalizeRelativeFile(value) {
   return value.replace(/^\.\/+/, "").replace(/\\/g, "/");
+}
+
+function normalizeOptionalRelativeDir(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return normalizeRelativeFile(value);
 }
 
 function sanitizeIdentifier(value) {

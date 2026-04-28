@@ -53,6 +53,7 @@ export function materializeLogicalModules({
   const selectedChunkIds = normalizeChunkIds(chunkIds);
   const startedAt = process.hrtime.bigint();
   const resolvedBoundaryAnalysisDir = boundaryAnalysisDir ? resolveWorkspacePath(boundaryAnalysisDir) : null;
+  const normalizedTargetDir = normalizeOptionalRelativeDir(targetDir);
   const reports = [];
   const applied = [];
 
@@ -218,7 +219,7 @@ export function materializeLogicalModules({
           parserOptions: runtimeParserOptions,
           runtimeFile: targetFile,
           sourceAtomicModules: atomicModules.map(cloneModulePlan),
-          targetDir: normalizeRelativeFile(targetDir),
+          targetDir: normalizedTargetDir,
         },
       },
     });
@@ -233,7 +234,7 @@ export function materializeLogicalModules({
       logicalModules: {
         count: logicalModules.modules.length,
         moduleIds: logicalModules.modules.map((modulePlan) => modulePlan.id),
-        targetDir: normalizeRelativeFile(targetDir),
+        targetDir: normalizedTargetDir,
       },
       selectedModuleLowerings: result.applied,
     });
@@ -424,6 +425,13 @@ function normalizeRelativeFile(value) {
     throw new Error(`Invalid relative path: ${value}`);
   }
   return normalized;
+}
+
+function normalizeOptionalRelativeDir(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return normalizeRelativeFile(value);
 }
 
 function pruneArtifactToChunkIds(artifact, chunkIds) {
