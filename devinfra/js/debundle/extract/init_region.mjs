@@ -1293,7 +1293,7 @@ function renamedLocalIdentifierName(name, localRenameMap) {
 
 function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) {
   if (!Array.isArray(renameSpecs) || renameSpecs.length === 0) {
-    applyReadableObjectParameterRenamesInGeneratedFile(ast);
+    applyReadableObjectPatternRenamesInGeneratedFile(ast);
     return;
   }
   traverse(ast, {
@@ -1325,84 +1325,191 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
           identifierPath.node.name = renameSpec.to;
         },
       });
-      applyReadableObjectParameterRenamesInProgram(path);
+      applyReadableObjectPatternRenamesInProgram(path);
     },
   });
 }
 
-function applyReadableObjectParameterRenamesInGeneratedFile(ast) {
+function applyReadableObjectPatternRenamesInGeneratedFile(ast) {
   traverse(ast, {
     Program(path) {
-      applyReadableObjectParameterRenamesInProgram(path);
+      applyReadableObjectPatternRenamesInProgram(path);
     },
   });
 }
 
-function applyReadableObjectParameterRenamesInProgram(programPath) {
-  programPath.traverse({
-    Function(functionPath) {
-      const renameSpecs = buildReadableObjectParameterRenameSpecs(functionPath);
-      for (const renameSpec of renameSpecs) {
-        functionPath.scope.rename(renameSpec.from, renameSpec.to);
-      }
-    },
-  });
+function applyReadableObjectPatternRenamesInProgram(programPath) {
+  const renameGroups = buildReadableObjectPatternRenameGroups(programPath);
+  for (const { scopePath, renameSpecs } of renameGroups) {
+    for (const renameSpec of renameSpecs) {
+      scopePath.scope.rename(renameSpec.from, renameSpec.to);
+    }
+  }
   normalizeReadableObjectPatternShorthandInProgram(programPath);
 }
 
-function buildReadableObjectParameterRenameSpecs(functionPath) {
-  const candidates = [];
-  for (const param of functionPath.node.params ?? []) {
-    collectReadableObjectParameterRenameCandidates(param, candidates);
-  }
-  if (candidates.length === 0) {
-    return [];
-  }
-  const candidateBySourceName = new Map();
-  const targetCounts = new Map();
-  for (const candidate of candidates) {
-    const existing = candidateBySourceName.get(candidate.from);
-    if (existing && existing.to !== candidate.to) {
-      continue;
+function buildReadableObjectPatternRenameGroups(programPath) {
+  const candidatesByScope = new Map();
+  programPath.traverse({
+    Function(functionPath) {
+      for (const param of functionPath.node.params ?? []) {
+        collectReadableObjectPatternScopeCandidates(functionPath, param, candidatesByScope);
+      }
+    },
+    VariableDeclarator(variableDeclaratorPath) {
+      collectReadableObjectPatternScopeCandidates(
+        variableDeclaratorPath,
+        variableDeclaratorPath.node.id,
+        candidatesByScope
+      );
+    },
+    AssignmentExpression(assignmentPath) {
+      collectReadableObjectPatternScopeCandidates(
+        assignmentPath,
+        assignmentPath.node.left,
+        candidatesByScope
+      );
+    },
+  });
+
+  const renameGroups = [];
+  for (const { scopePath, candidates } of candidatesByScope.values()) {
+    const candidateBySourceName = new Map();
+    const targetCounts = new Map();
+    for (const candidate of candidates) {
+      const existing = candidateBySourceName.get(candidate.from);
+      if (existing && existing.to !== candidate.to) {
+        continue;
+      }
+      candidateBySourceName.set(candidate.from, candidate);
+      targetCounts.set(candidate.to, (targetCounts.get(candidate.to) ?? 0) + 1);
     }
-    candidateBySourceName.set(candidate.from, candidate);
-    targetCounts.set(candidate.to, (targetCounts.get(candidate.to) ?? 0) + 1);
+    const renameSpecs = [...candidateBySourceName.values()]
+      .filter((candidate) => isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts))
+      .map((candidate) => ({
+        from: candidate.from,
+        to: candidate.to,
+      }));
+    if (renameSpecs.length > 0) {
+      renameGroups.push({
+        scopePath,
+        renameSpecs,
+      });
+    }
   }
-  return [...candidateBySourceName.values()].filter((candidate) =>
-    isSafeReadableObjectParameterRename(functionPath, candidate, targetCounts)
-  );
+  return renameGroups;
 }
 
-function isSafeReadableObjectParameterRename(functionPath, candidate, targetCounts) {
+function collectReadableObjectPatternScopeCandidates(scopePath, pattern, candidatesByScope) {
+  const rawCandidates = [];
+  collectReadableObjectPatternRenameCandidates(pattern, rawCandidates);
+  for (const candidate of rawCandidates) {
+    const binding = scopePath.scope.getBinding(candidate.from);
+    if (!binding) {
+      continue;
+    }
+    const bindingScopePath = binding.scope.path;
+    const bindingScopeCandidates = candidatesByScope.get(bindingScopePath) ?? {
+      scopePath: bindingScopePath,
+      candidates: [],
+    };
+    bindingScopeCandidates.candidates.push({
+      ...candidate,
+      binding,
+    });
+    candidatesByScope.set(bindingScopePath, bindingScopeCandidates);
+  }
+}
+
+function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts) {
   if (candidate.from === candidate.to || !isScrambledIdentifier(candidate.from)) {
     return false;
   }
-  const binding = functionPath.scope.getBinding(candidate.from);
-  if (!binding || binding.scope !== functionPath.scope || binding.kind !== "param") {
+  const binding = candidate.binding ?? scopePath.scope.getOwnBinding(candidate.from);
+  if (
+    !binding ||
+    binding.scope !== scopePath.scope ||
+    !["param", "const", "let", "var"].includes(binding.kind)
+  ) {
     return false;
   }
   if ((targetCounts.get(candidate.to) ?? 0) > 1) {
     return false;
   }
-  const existingBinding = functionPath.scope.getBinding(candidate.to);
-  return !existingBinding || existingBinding === binding;
+  const existingBinding = scopePath.scope.getOwnBinding(candidate.to);
+  if (existingBinding && existingBinding !== binding) {
+    return false;
+  }
+  if (scopeWouldCaptureExistingReadableTargetReferences(scopePath, binding, candidate.to)) {
+    return false;
+  }
+  return !bindingWouldBeShadowedAfterReadableRename(binding, candidate.to);
 }
 
-function collectReadableObjectParameterRenameCandidates(pattern, candidates) {
+function scopeWouldCaptureExistingReadableTargetReferences(scopePath, binding, targetName) {
+  let capturesExistingReference = false;
+  scopePath.traverse({
+    Identifier(identifierPath) {
+      if (capturesExistingReference || identifierPath.node.name !== targetName || !shouldRenameIdentifierPath(identifierPath)) {
+        return;
+      }
+      const resolvedBinding = identifierPath.scope.getBinding(targetName);
+      if (!resolvedBinding || resolvedBinding === binding) {
+        return;
+      }
+      if (pathHasDescendantShadowBinding(identifierPath, binding.scope, targetName)) {
+        return;
+      }
+      capturesExistingReference = true;
+      identifierPath.stop();
+    },
+  });
+  return capturesExistingReference;
+}
+
+function bindingWouldBeShadowedAfterReadableRename(binding, targetName) {
+  if (binding.identifier?.name === targetName) {
+    return false;
+  }
+  for (const referencePath of binding.referencePaths ?? []) {
+    if (pathHasDescendantShadowBinding(referencePath, binding.scope, targetName)) {
+      return true;
+    }
+  }
+  for (const violationPath of binding.constantViolations ?? []) {
+    if (pathHasDescendantShadowBinding(violationPath, binding.scope, targetName)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function pathHasDescendantShadowBinding(path, ownerScope, targetName) {
+  let currentScope = path.scope;
+  while (currentScope && currentScope !== ownerScope) {
+    if (currentScope.hasOwnBinding(targetName)) {
+      return true;
+    }
+    currentScope = currentScope.parent;
+  }
+  return false;
+}
+
+function collectReadableObjectPatternRenameCandidates(pattern, candidates) {
   if (!pattern) {
     return;
   }
   if (t.isAssignmentPattern(pattern)) {
-    collectReadableObjectParameterRenameCandidates(pattern.left, candidates);
+    collectReadableObjectPatternRenameCandidates(pattern.left, candidates);
     return;
   }
   if (t.isRestElement(pattern)) {
-    collectReadableObjectParameterRenameCandidates(pattern.argument, candidates);
+    collectReadableObjectPatternRenameCandidates(pattern.argument, candidates);
     return;
   }
   if (t.isArrayPattern(pattern)) {
     for (const element of pattern.elements) {
-      collectReadableObjectParameterRenameCandidates(element, candidates);
+      collectReadableObjectPatternRenameCandidates(element, candidates);
     }
     return;
   }
@@ -1411,7 +1518,7 @@ function collectReadableObjectParameterRenameCandidates(pattern, candidates) {
   }
   for (const property of pattern.properties) {
     if (t.isRestElement(property)) {
-      collectReadableObjectParameterRenameCandidates(property.argument, candidates);
+      collectReadableObjectPatternRenameCandidates(property.argument, candidates);
       continue;
     }
     if (!t.isObjectProperty(property)) {
@@ -1436,7 +1543,7 @@ function collectReadablePropertyValueRenameCandidates(value, desiredName, candid
     collectReadablePropertyValueRenameCandidates(value.left, desiredName, candidates);
     return;
   }
-  collectReadableObjectParameterRenameCandidates(value, candidates);
+  collectReadableObjectPatternRenameCandidates(value, candidates);
 }
 
 function readableObjectPropertyBindingName(property) {

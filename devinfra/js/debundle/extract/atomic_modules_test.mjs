@@ -743,6 +743,135 @@ export { c7t, readQuery };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules renames simple object destructuring statements to readable locals", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-readable-object-statements-"
+  );
+  const source = `function r7t(n) {
+  const { hostNode: e, hostParent: t } = n;
+  return e.id + ":" + t.id;
+}
+function s7t(payload) {
+  return r7t(payload);
+}
+export { r7t, s7t };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__host_reader",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/host/reader",
+        },
+        members: [
+          {
+            id: "member__build_host_path",
+            name: "buildHostPath",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "r7t",
+              },
+            },
+          },
+          {
+            id: "member__read_host_path",
+            name: "readHostPath",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "s7t",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "parse",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  const moduleCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "host", "reader.js"), "utf8");
+  const normalizedModuleCode = moduleCode
+    .replace(/^\/\/ @ducktape-generated.*\n/gm, "")
+    .replace(/^\/\/ @ducktape-generator.*\n/gm, "")
+    .replace(/^\/\/ Selected-module lowered region.*\n/gm, "")
+    .replace(/\/\/ Selected-module lowered region.*?(?=function|export|let|const|class)/g, "")
+    .replace(/\/\* @ducktape-atomic-boundary[^*]*\*\//g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  assert.equal(
+    normalizedModuleCode,
+    `function buildHostPath(n) { const { hostNode, hostParent } = n; return hostNode.id + ":" + hostParent.id; } function readHostPath(payload) { return buildHostPath(payload); } export { buildHostPath, readHostPath };`
+  );
+  assert.doesNotMatch(moduleCode, /hostNode: e/);
+  assert.doesNotMatch(moduleCode, /hostParent: t/);
+  assert.doesNotMatch(moduleCode, /return e\.id \+ ":" \+ t\.id;/);
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
+});
+
 test("materializeLogicalModules rejects propagated final-name collisions in consumer modules", async () => {
   const { artifact } = await prepareAtomicFixture("debundle-materialize-logical-modules-propagated-collision-");
   assert.throws(

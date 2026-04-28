@@ -408,6 +408,75 @@ export { c7t };
   });
 });
 
+test("graph-generated extraction renames simple object destructuring assignments to readable locals", () => {
+  const source = `function r7t(n) {
+  let e, t;
+  ({ hostNode: e, hostParent: t } = n);
+  return [e.id, t.id].join(":");
+}
+console.log(r7t({
+  hostNode: { id: "node" },
+  hostParent: { id: "parent" },
+}));
+export { r7t };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_object_assignment_readable_names",
+      ownerNames: ["r7t"],
+      targetFile: "regions/object_assignment_readable_names.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/object_assignment_readable_names.js");
+  assert.match(extractedCode, /\blet hostNode, hostParent;/);
+  assert.match(extractedCode, /\(\{\s*hostNode,\s*hostParent\s*\} = n\);/s);
+  assert.match(extractedCode, /return \[hostNode\.id, hostParent\.id\]\.join\(":"\);/);
+  assert.doesNotMatch(extractedCode, /hostNode: e/);
+  assert.doesNotMatch(extractedCode, /hostParent: t/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-object-assignment-readable-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("graph-generated extraction keeps destructuring assignment aliases when a readable rename would be shadowed in a nested scope", () => {
+  const source = `function s7t(n) {
+  let e;
+  function readShadow() {
+    const hostNode = "shadow";
+    return e + ":" + hostNode;
+  }
+  ({ hostNode: e } = n);
+  return readShadow();
+}
+console.log(s7t({
+  hostNode: "outer",
+}));
+export { s7t };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_object_assignment_shadow_guard",
+      ownerNames: ["s7t"],
+      targetFile: "regions/object_assignment_shadow_guard.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/object_assignment_shadow_guard.js");
+  assert.match(extractedCode, /\(\{\s*hostNode: e\s*\} = n\);/s);
+  assert.match(extractedCode, /return e \+ ":" \+ hostNode;/);
+  assert.doesNotMatch(extractedCode, /\(\{\s*hostNode\s*\} = n\);/s);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-object-assignment-shadow-guard-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("graph-generated extraction snapshots self-referential variable declarations when bindings stay immutable", () => {
   const source = `var Status = ((Status2) => {
   Status2.Idle = "idle";
