@@ -1,0 +1,14 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gaffer-private
+  namespace: flux-system
+  annotations:
+    description: "Private companion monorepo. Reconciled from main branch via SSH deploy key (write-scoped — image automation pushes back here)."
+spec:
+  interval: 1m
+  ref:
+    branch: main
+  secretRef:
+    name: gaffer-private-deploy-key
+  url: ssh://git@github.com/agentydragon/gaffer-private.git

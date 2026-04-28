@@ -1,0 +1,23 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: gaffer-private-flux
+  namespace: flux-system
+  annotations:
+    description: "Generates the gaffer-private flux deploy keypair, registers it on GitHub, and writes the flux Secret. Sourced from the flux-system GitRepository (NOT gaffer-private — chicken-and-egg)."
+spec:
+  interval: 15m
+  refreshBeforeApply: true
+  approvePlan: "auto"
+  path: ./tf/gitops/gaffer-private-flux
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix = "gaffer-private-flux"
+        namespace     = "flux-system"
+      }
