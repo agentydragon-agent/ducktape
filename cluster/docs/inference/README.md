@@ -39,6 +39,15 @@ Full table in <backend_comparison.md#current-state-2026-04-28>.
 Add new lessons here as we accumulate them. When investigating a specific
 incident or migration, write a focused doc and link it from this README.
 
+## TODO
+
+- **Consolidate per-run `bench.py` copies into one shared script.** Each
+  `runs/<date>_<name>/` currently carries a `bench.py` snapshot to
+  preserve the run-as-commit invariant. As the bench stabilizes, move it
+  to e.g. `cluster/docs/inference/bench/bench.py` and have run dirs only
+  store a manifest, env, and output. The snapshot invariant can then be
+  preserved by recording the bench commit hash in the run README.
+
 ## See also
 
 - <../../k8s/ollama/> — current cluster Ollama deployment

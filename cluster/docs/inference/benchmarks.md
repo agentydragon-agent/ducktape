@@ -44,11 +44,14 @@ see <../../../x/local_llm/start-vllm-deepseek-r1.sh> and siblings.
 | `h-qwen3c-awq` | 128 K | 28 600 (cold)    | —                               | —              | <qwen3_coder_vram_analysis.md#real-world-awq-performance-2026-01-24> |
 | `h-qwen3c-awq` | 130 K | 100 000 (cached) | —                               | —              | <qwen3_coder_vram_analysis.md#real-world-awq-performance-2026-01-24> |
 
-(1) gemma4 returned `completion_tokens=256` but zero `delta.content`
-chunks; Ollama's streaming format for this model puts tokens in a
-different field. End-to-end times are real (~30 tok/s implied) but
-per-phase decomposition isn't recoverable without re-running with chunk-
-shape dumps.
+(1) **gemma4 reasons by default** and uses `delta.reasoning` (not
+`delta.reasoning_content` like gpt-oss), so the initial parser missed
+its tokens entirely. End-to-end times are real (~30 tok/s implied) but
+per-phase decomposition isn't recovered. Followup at
+<runs/2026-04-28_gemma_followup/README.md> patched the parser and tried
+to suppress reasoning via `think: false` — but `/v1/chat/completions`
+silently ignores that field, so gemma kept reasoning. Throughput
+reported as combined decode (no split) is the right next move; deferred.
 
 (2) Confirmed CPU-offload-bound: `ollama ps` shows
 `19%/81% CPU/GPU` for the resident model; ~13 GB of weights in CPU RAM.
