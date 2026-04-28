@@ -34,6 +34,8 @@ _CTX_VARIANTS: list[tuple[str, int | None]] = [("128k", None), ("256k", 262_144)
 _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
     ("gpt-oss:20b", _CTX_VARIANTS),
     ("gpt-oss:120b", [("128k", None)]),
+    # gemma4 trains at 128k; expose only that ctx variant.
+    ("gemma4:31b-it-q8_0", [("128k", None)]),
 ]
 
 
