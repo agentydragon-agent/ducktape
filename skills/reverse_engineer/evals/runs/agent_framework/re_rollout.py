@@ -78,31 +78,20 @@ class RunSummary(BaseModel):
 _TARGET_PATH = INPUT_PATH / "target"
 
 
-_RE_PREAMBLE = (
-    f"You are reverse-engineering a stripped Go binary located at {_TARGET_PATH}.\n"
-    f"Recover its source as Go files under {WORK_PATH}/ (your working directory)."
-)
-
-_RE_TOOL_GUIDANCE = (
-    "When you have gone as far as you can, call `submit` with a one-paragraph summary "
-    "of what the program does and which parts you are confident vs unsure about."
-)
-
-
-def _build_system_prompt(*, skill_md_text: str) -> str:
-    """Compose the RE system prompt via the shared scaffold.
-
-    `skill_md_text` is inlined verbatim. The off-arm passes an empty string
-    (the empty-skill tar's SKILL.md is blank), keeping the sandbox shape
-    uniform across arms.
-    """
-    return compose_system_prompt(preamble=_RE_PREAMBLE, skill_md=skill_md_text, tool_guidance=_RE_TOOL_GUIDANCE)
-
-
+# All RE-specific task framing lives in the first user message — the system
+# prompt carries only the shared skill block + exec-tool note from
+# `compose_system_prompt`. Wall-clock and per-turn budgets are enforced by
+# the harness (asyncio.wait_for around agent.run; AF caps consecutive tool
+# calls) and are NOT disclosed to the agent to avoid biasing it toward
+# early submission.
 _FIRST_USER_MESSAGE = (
-    f"Reverse-engineer the binary at {_TARGET_PATH}. Recover its source as Go files under "
-    f"{WORK_PATH}/. You have a 10-minute wall-clock budget and at most {_DEFAULT_MAX_STEPS} turns. "
-    "When done, call `submit` with a one-paragraph summary."
+    f"Reverse-engineer the stripped Go binary at {_TARGET_PATH} into a complete, "
+    f"human-readable Go source tree under {WORK_PATH}/ (your working directory). "
+    "The recovered source should compile and be behaviorally equivalent to the binary — "
+    "same protocol, same endpoints, same crypto/encoding/MAC/storage semantics — not "
+    "stubs, placeholders, or TODOs. Pick reasonable, idiomatic Go names where the "
+    "binary's were obfuscated. When done, call `submit` with a one-paragraph summary "
+    "noting which parts you are confident vs unsure about."
 )
 
 
@@ -149,7 +138,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     shutil.copy(get_required_path(_TARGET_BINARY_RLOCATION), inputs_dir / "target")
 
     staged = stage_skill(_SKILL_BY_ARM[args.skill], out_dir / f"skill_extract_{suffix}")
-    system_prompt = _build_system_prompt(skill_md_text=staged.md_text)
+    system_prompt = compose_system_prompt(skill_md=staged.md_text)
 
     submit_state = _SubmitState()
     submit_tool = _make_submit_tool(submit_state)
