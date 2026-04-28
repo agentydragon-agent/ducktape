@@ -6,7 +6,7 @@ import * as t from "@babel/types";
 import { DEFAULT_PARSER_OPTIONS, writeJsonFile } from "../common/parser_options.mjs";
 import { getArtifactManifestChunks, getChunkEntryFile, getChunkEntryPath, requirePipelineArtifact } from "../common/artifact.mjs";
 import { formatDurationSince, logProgress, prepareOutputDir, relativeWorkspacePath, resolveWorkspacePath } from "../common/io.mjs";
-import { referencedUndeclaredNames } from "../common/program_analysis.mjs";
+import { referencedUndeclaredNames, referencedUndeclaredNamesInVariableDeclarator } from "../common/program_analysis.mjs";
 
 const traverse = traverseModule.default ?? traverseModule;
 
@@ -1026,20 +1026,20 @@ function extractorCompatibilityReasonsForOwner(owner, writeSourcesByOwner) {
     return [`unexpected_statement_type:${declaration?.type ?? "unknown"}`];
   }
   const declaredNames = declaration.declarations.flatMap((entry) => bindingNames(entry.id));
+  const declaredNameSet = new Set(declaredNames);
   const availableNames = new Set();
   for (const entry of declaration.declarations) {
-    if (!t.isIdentifier(entry.id)) {
-      return ["unsupported_destructuring"];
-    }
-    for (const referencedName of referencedUndeclaredNames(entry.init)) {
-      if (!declaredNames.includes(referencedName)) {
+    for (const referencedName of referencedUndeclaredNamesInVariableDeclarator(entry)) {
+      if (!declaredNameSet.has(referencedName)) {
         continue;
       }
       if (!availableNames.has(referencedName)) {
         return snapshotCompatibleForwardSelfReferenceReasons(owner, writeSourcesByOwner, referencedName);
       }
     }
-    availableNames.add(entry.id.name);
+    for (const declaredName of bindingNames(entry.id)) {
+      availableNames.add(declaredName);
+    }
   }
   return [];
 }
@@ -1053,13 +1053,11 @@ function extractorLoweringForOwner(owner, writeSourcesByOwner) {
     return "blocked";
   }
   const declaredNames = declaration.declarations.flatMap((entry) => bindingNames(entry.id));
+  const declaredNameSet = new Set(declaredNames);
   const availableNames = new Set();
   for (const entry of declaration.declarations) {
-    if (!t.isIdentifier(entry.id)) {
-      return "blocked";
-    }
-    for (const referencedName of referencedUndeclaredNames(entry.init)) {
-      if (!declaredNames.includes(referencedName)) {
+    for (const referencedName of referencedUndeclaredNamesInVariableDeclarator(entry)) {
+      if (!declaredNameSet.has(referencedName)) {
         continue;
       }
       if (!availableNames.has(referencedName)) {
@@ -1068,7 +1066,9 @@ function extractorLoweringForOwner(owner, writeSourcesByOwner) {
           : "blocked";
       }
     }
-    availableNames.add(entry.id.name);
+    for (const declaredName of bindingNames(entry.id)) {
+      availableNames.add(declaredName);
+    }
   }
   return "standard";
 }

@@ -224,6 +224,18 @@ export function referencedUndeclaredNames(node) {
   return [...names];
 }
 
+export function referencedUndeclaredNamesInVariableDeclarator(node) {
+  if (!node) return [];
+  const names = new Set();
+  if (node.type === "VariableDeclarator") {
+    collectReferencedIdentifierNamesInBindingPattern(node.id, names);
+    collectReferencedIdentifierNames(node.init, names);
+    return [...names];
+  }
+  collectReferencedIdentifierNames(node, names);
+  return [...names];
+}
+
 const FUNCTION_TYPES = new Set([
   "FunctionExpression",
   "FunctionDeclaration",
@@ -282,6 +294,51 @@ function collectReferencedIdentifierNames(node, names) {
         collectReferencedIdentifierNames(node[key], names);
       }
     }
+  }
+}
+
+function collectReferencedIdentifierNamesInBindingPattern(node, names) {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const child of node) collectReferencedIdentifierNamesInBindingPattern(child, names);
+    return;
+  }
+  switch (node.type) {
+    case "Identifier":
+      return;
+    case "RestElement":
+      collectReferencedIdentifierNamesInBindingPattern(node.argument, names);
+      return;
+    case "AssignmentPattern":
+      collectReferencedIdentifierNamesInBindingPattern(node.left, names);
+      collectReferencedIdentifierNames(node.right, names);
+      return;
+    case "ArrayPattern":
+      for (const element of node.elements) {
+        collectReferencedIdentifierNamesInBindingPattern(element, names);
+      }
+      return;
+    case "ObjectPattern":
+      for (const property of node.properties) {
+        if (property.type === "RestElement") {
+          collectReferencedIdentifierNamesInBindingPattern(property.argument, names);
+          continue;
+        }
+        if (property.computed) {
+          collectReferencedIdentifierNames(property.key, names);
+        }
+        collectReferencedIdentifierNamesInBindingPattern(property.value, names);
+      }
+      return;
+    case "ParenthesizedExpression":
+    case "TSAsExpression":
+    case "TSSatisfiesExpression":
+    case "TSNonNullExpression":
+    case "TypeCastExpression":
+      collectReferencedIdentifierNamesInBindingPattern(node.expression, names);
+      return;
+    default:
+      collectReferencedIdentifierNames(node, names);
   }
 }
 

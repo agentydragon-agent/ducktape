@@ -1,5 +1,5 @@
 import * as t from "@babel/types";
-import { referencedUndeclaredNames } from "../common/program_analysis.mjs";
+import { referencedUndeclaredNames, referencedUndeclaredNamesInVariableDeclarator } from "../common/program_analysis.mjs";
 import { packSelectedModuleGroups, planSelectedModuleGroupExtractions } from "./decl_graph.mjs";
 
 const SELECTED_ATOMIC_UNIT_ID_PREFIX = "selected_atomic_unit_";
@@ -414,7 +414,8 @@ function buildSplittableVariableDeclarationUnits(owner, declarators) {
 }
 
 function buildSplittableVariableDeclaratorFragment(owner, declarator, index) {
-  if (!t.isIdentifier(declarator.id)) {
+  const memberNames = bindingNamesForVariableDeclarator(declarator).sort();
+  if (memberNames.length === 0) {
     return null;
   }
   if (
@@ -428,7 +429,7 @@ function buildSplittableVariableDeclaratorFragment(owner, declarator, index) {
     declaratorIndices: [index],
     id: `${owner.id}::declarator_${index}`,
     kind: "variable_declarator",
-    memberNames: [declarator.id.name],
+    memberNames,
     orderIndex: index,
     ownerId: owner.id,
   };
@@ -639,9 +640,8 @@ function buildVariableDeclarationFragmentDependencyDisjointSet(owner, declarator
     if (sourceFragmentIndex === undefined) {
       return null;
     }
-    const eagerDependencies = collectEagerLocalDeclarationDependenciesForInitializer(
-      declarator.init,
-      sameOwnerBindingNames
+    const eagerDependencies = referencedUndeclaredNamesInVariableDeclarator(declarator).filter((name) =>
+      sameOwnerBindingNames.has(name)
     );
     for (const dependencyName of eagerDependencies) {
       const targetFragmentIndex = fragmentIndexByMemberName.get(dependencyName);
@@ -652,164 +652,6 @@ function buildVariableDeclarationFragmentDependencyDisjointSet(owner, declarator
     }
   }
   return disjoint;
-}
-
-function collectEagerLocalDeclarationDependenciesForInitializer(node, sameOwnerBindingNames) {
-  const dependencies = new Set();
-  collectEagerLocalDeclarationDependencies(node, sameOwnerBindingNames, dependencies);
-  return [...dependencies];
-}
-
-function collectEagerLocalDeclarationDependencies(node, sameOwnerBindingNames, dependencies) {
-  if (!node) {
-    return;
-  }
-  if (t.isIdentifier(node)) {
-    if (sameOwnerBindingNames.has(node.name)) {
-      dependencies.add(node.name);
-    }
-    return;
-  }
-  if (
-    t.isFunctionExpression(node) ||
-    t.isArrowFunctionExpression(node)
-  ) {
-    return;
-  }
-  if (t.isClassExpression(node)) {
-    if (node.superClass) {
-      collectEagerLocalDeclarationDependencies(node.superClass, sameOwnerBindingNames, dependencies);
-    }
-    for (const decorator of node.decorators ?? []) {
-      collectEagerLocalDeclarationDependencies(decorator.expression, sameOwnerBindingNames, dependencies);
-    }
-    for (const member of node.body.body) {
-      if ("computed" in member && member.computed) {
-        collectEagerLocalDeclarationDependencies(member.key, sameOwnerBindingNames, dependencies);
-      }
-      for (const decorator of member.decorators ?? []) {
-        collectEagerLocalDeclarationDependencies(decorator.expression, sameOwnerBindingNames, dependencies);
-      }
-      if (t.isClassProperty(member) || t.isClassPrivateProperty(member) || t.isClassAccessorProperty(member)) {
-        if (member.static) {
-          collectEagerLocalDeclarationDependencies(member.value, sameOwnerBindingNames, dependencies);
-        }
-      }
-      if (t.isStaticBlock?.(member)) {
-        for (const statement of member.body) {
-          collectEagerLocalDeclarationDependencies(statement, sameOwnerBindingNames, dependencies);
-        }
-      }
-    }
-    return;
-  }
-  if (t.isObjectProperty(node)) {
-    if (node.computed) {
-      collectEagerLocalDeclarationDependencies(node.key, sameOwnerBindingNames, dependencies);
-    }
-    collectEagerLocalDeclarationDependencies(node.value, sameOwnerBindingNames, dependencies);
-    return;
-  }
-  if (t.isObjectMethod(node) || t.isClassMethod(node) || t.isClassPrivateMethod(node) || t.isTSDeclareMethod(node)) {
-    if (node.computed) {
-      collectEagerLocalDeclarationDependencies(node.key, sameOwnerBindingNames, dependencies);
-    }
-    return;
-  }
-  if (t.isObjectExpression(node)) {
-    for (const property of node.properties) {
-      if (t.isSpreadElement(property)) {
-        collectEagerLocalDeclarationDependencies(property.argument, sameOwnerBindingNames, dependencies);
-      } else {
-        collectEagerLocalDeclarationDependencies(property, sameOwnerBindingNames, dependencies);
-      }
-    }
-    return;
-  }
-  if (t.isArrayExpression(node)) {
-    for (const element of node.elements) {
-      if (!element) {
-        continue;
-      }
-      if (t.isSpreadElement(element)) {
-        collectEagerLocalDeclarationDependencies(element.argument, sameOwnerBindingNames, dependencies);
-      } else {
-        collectEagerLocalDeclarationDependencies(element, sameOwnerBindingNames, dependencies);
-      }
-    }
-    return;
-  }
-  if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) {
-    collectEagerLocalDeclarationDependencies(node.object, sameOwnerBindingNames, dependencies);
-    if (node.computed) {
-      collectEagerLocalDeclarationDependencies(node.property, sameOwnerBindingNames, dependencies);
-    }
-    return;
-  }
-  if (t.isCallExpression(node) || t.isOptionalCallExpression(node) || t.isNewExpression(node)) {
-    collectEagerLocalDeclarationDependencies(node.callee, sameOwnerBindingNames, dependencies);
-    for (const argument of node.arguments ?? []) {
-      if (t.isSpreadElement(argument)) {
-        collectEagerLocalDeclarationDependencies(argument.argument, sameOwnerBindingNames, dependencies);
-      } else {
-        collectEagerLocalDeclarationDependencies(argument, sameOwnerBindingNames, dependencies);
-      }
-    }
-    return;
-  }
-  if (t.isAssignmentExpression(node)) {
-    collectEagerLocalDeclarationDependencies(node.left, sameOwnerBindingNames, dependencies);
-    collectEagerLocalDeclarationDependencies(node.right, sameOwnerBindingNames, dependencies);
-    return;
-  }
-  if (t.isUpdateExpression(node) || t.isUnaryExpression(node) || t.isSpreadElement(node)) {
-    collectEagerLocalDeclarationDependencies(node.argument, sameOwnerBindingNames, dependencies);
-    return;
-  }
-  if (t.isBinaryExpression(node) || t.isLogicalExpression(node)) {
-    collectEagerLocalDeclarationDependencies(node.left, sameOwnerBindingNames, dependencies);
-    collectEagerLocalDeclarationDependencies(node.right, sameOwnerBindingNames, dependencies);
-    return;
-  }
-  if (t.isConditionalExpression(node)) {
-    collectEagerLocalDeclarationDependencies(node.test, sameOwnerBindingNames, dependencies);
-    collectEagerLocalDeclarationDependencies(node.consequent, sameOwnerBindingNames, dependencies);
-    collectEagerLocalDeclarationDependencies(node.alternate, sameOwnerBindingNames, dependencies);
-    return;
-  }
-  if (t.isSequenceExpression(node)) {
-    for (const expression of node.expressions) {
-      collectEagerLocalDeclarationDependencies(expression, sameOwnerBindingNames, dependencies);
-    }
-    return;
-  }
-  if (t.isParenthesizedExpression(node) || t.isTSAsExpression(node) || t.isTSSatisfiesExpression(node) || t.isTypeCastExpression?.(node)) {
-    collectEagerLocalDeclarationDependencies(node.expression, sameOwnerBindingNames, dependencies);
-    return;
-  }
-  if (t.isExpressionStatement(node)) {
-    collectEagerLocalDeclarationDependencies(node.expression, sameOwnerBindingNames, dependencies);
-    return;
-  }
-  if (t.isReturnStatement(node) || t.isThrowStatement(node)) {
-    collectEagerLocalDeclarationDependencies(node.argument, sameOwnerBindingNames, dependencies);
-    return;
-  }
-  if (t.isVariableDeclarator(node)) {
-    collectEagerLocalDeclarationDependencies(node.init, sameOwnerBindingNames, dependencies);
-    return;
-  }
-  if (t.isVariableDeclaration(node)) {
-    for (const declarator of node.declarations) {
-      collectEagerLocalDeclarationDependencies(declarator, sameOwnerBindingNames, dependencies);
-    }
-    return;
-  }
-  if (t.isBlockStatement(node) || t.isStaticBlock?.(node)) {
-    for (const statement of node.body) {
-      collectEagerLocalDeclarationDependencies(statement, sameOwnerBindingNames, dependencies);
-    }
-  }
 }
 
 function isStaticallyPureFragmentInitializer(node) {

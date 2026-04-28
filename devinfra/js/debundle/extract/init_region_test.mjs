@@ -321,6 +321,62 @@ export { render as publicRender };
   });
 });
 
+test("graph-generated extraction lowers safe destructuring declarations directly", () => {
+  const source = `globalThis.sharedCodec = {
+  decode(value) {
+    return value.toUpperCase();
+  },
+};
+const { decode: decodeUpper } = globalThis.sharedCodec;
+function readDecodedValue() {
+  return decodeUpper("ok");
+}
+console.log(readDecodedValue());
+export { readDecodedValue };
+`;
+  const analysis = analyzeRuntimeBoundaryCode(source, {
+    chunkId: "static/destructuring-standard",
+    runtimePath: "fixture/runtime.js",
+    uiVersion: "fixture",
+  });
+  const ownerByName = new Map(
+    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
+  );
+
+  assert.equal(ownerByName.get("decodeUpper").currentExtractorCompatible, true);
+  assert.equal(ownerByName.get("decodeUpper").currentExtractorLowering, "standard");
+
+  const result = extractOrderedInitRegionsInCode(source, [
+    {
+      graphGenerated: true,
+      id: "graph_destructuring_standard",
+      operation: "lower_selected_module_region",
+      selector: {
+        chunkId: "static/destructuring-standard",
+        file: "runtime.js",
+        ownerIds: [ownerByName.get("decodeUpper").id, ownerByName.get("readDecodedValue").id],
+      },
+      target: {
+        file: "regions/destructuring_standard.js",
+        init: "init_destructuring_standard",
+      },
+    },
+  ], {
+    chunkId: "static/destructuring-standard",
+    file: "runtime.js",
+  });
+
+  const extractedCode = result.files.get("regions/destructuring_standard.js");
+  assert.match(extractedCode, /\(\{\s*decode: decodeUpper\s*\} = globalThis\.sharedCodec\);/s);
+  assert.doesNotMatch(extractedCode, /__dt_selected_module_snapshot__/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-destructuring-standard-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("graph-generated extraction snapshots self-referential variable declarations when bindings stay immutable", () => {
   const source = `var Status = ((Status2) => {
   Status2.Idle = "idle";
@@ -373,6 +429,68 @@ export { readStatus };
     source,
     transformedFiles: Object.fromEntries(result.files),
   });
+});
+
+test("graph-generated extraction snapshots destructuring declarations with forward references when bindings stay immutable", () => {
+  const source = `const { chosen = fallbackLabel } = {}, fallbackLabel = "fallback";
+function readChosen() {
+  return chosen;
+}
+console.log(readChosen());
+export { readChosen };
+`;
+  const analysis = analyzeRuntimeBoundaryCode(source, {
+    chunkId: "static/snapshot-destructuring-owner",
+    runtimePath: "fixture/runtime.js",
+    uiVersion: "fixture",
+  });
+  const ownerByName = new Map(
+    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
+  );
+  assert.equal(ownerByName.get("chosen").currentExtractorCompatible, true);
+  assert.equal(ownerByName.get("chosen").currentExtractorLowering, "snapshot_variable_declaration");
+
+  const result = extractOrderedInitRegionsInCode(source, [
+    {
+      graphGenerated: true,
+      id: "graph_snapshot_destructuring_owner",
+      operation: "lower_selected_module_region",
+      selector: {
+        chunkId: "static/snapshot-destructuring-owner",
+        file: "runtime.js",
+        ownerIds: [ownerByName.get("chosen").id, ownerByName.get("readChosen").id],
+      },
+      target: {
+        file: "regions/snapshot_destructuring_owner.js",
+        init: "init_snapshot_destructuring_owner",
+      },
+    },
+  ], {
+    chunkId: "static/snapshot-destructuring-owner",
+    file: "runtime.js",
+  });
+
+  const extractedCode = result.files.get("regions/snapshot_destructuring_owner.js");
+  assert.match(extractedCode, /const __dt_selected_module_snapshot__owner_00000 = \(\(\) =>/);
+  assert.match(extractedCode, /\{\s*chosen = fallbackLabel\s*\} = \{\}/s);
+  assert.match(extractedCode, /chosen = __dt_selected_module_snapshot__owner_00000\.chosen/);
+  const originalDir = createTempFixtureRoot("debundle-extract-ordered-init-snapshot-destructuring-owner-original-");
+  const transformedDir = createTempFixtureRoot("debundle-extract-ordered-init-snapshot-destructuring-owner-transformed-");
+  writeRunnableFixture(originalDir, {
+    files: {
+      "runtime.js": source,
+    },
+  });
+  writeRunnableFixture(transformedDir, {
+    files: Object.fromEntries(result.files),
+  });
+  const originalRun = runNodeScript(join(originalDir, "runtime.js"));
+  const transformedRun = runNodeScript(join(transformedDir, "runtime.js"));
+  assert.equal(originalRun.status, 1);
+  assert.equal(transformedRun.status, 1);
+  assert.match(originalRun.stderr, /ReferenceError: Cannot access 'fallbackLabel' before initialization/);
+  assert.match(transformedRun.stderr, /ReferenceError: Cannot access 'fallbackLabel' before initialization/);
+  assert.equal(originalRun.stdout, transformedRun.stdout);
 });
 
 test("extractOrderedInitRegionsInCode reuses caller-supplied boundary analysis", () => {

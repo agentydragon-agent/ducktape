@@ -4,7 +4,7 @@ import * as t from "@babel/types";
 import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
 import { logProgress } from "../common/io.mjs";
-import { referencedUndeclaredNames } from "../common/program_analysis.mjs";
+import { referencedUndeclaredNames, referencedUndeclaredNamesInVariableDeclarator } from "../common/program_analysis.mjs";
 import { serializeGeneratedJsFile } from "../split/chunk.mjs";
 import {
   expandSelectedModuleGroupPlanningOperations,
@@ -1512,15 +1512,13 @@ function classDeclarationAssignmentStatement(statement, localRenameMap) {
 }
 
 function variableDeclaratorAssignmentStatement(declaration) {
-  if (!t.isIdentifier(declaration.id)) {
-    throw new Error(`Unsupported extracted variable declarator ${declaration.id?.type}`);
-  }
+  const assignment = t.assignmentExpression(
+    "=",
+    t.cloneNode(declaration.id, true),
+    declaration.init ? t.cloneNode(declaration.init, true) : t.identifier("undefined")
+  );
   return t.expressionStatement(
-    t.assignmentExpression(
-      "=",
-      t.identifier(declaration.id.name),
-      declaration.init ? t.cloneNode(declaration.init, true) : t.identifier("undefined")
-    )
+    t.isIdentifier(declaration.id) ? assignment : t.parenthesizedExpression(assignment)
   );
 }
 
@@ -1987,17 +1985,12 @@ function validateVariableDeclarators(statement, operationId, ownerId) {
   if (!t.isVariableDeclaration(statement)) {
     throw new Error(`Expected VariableDeclaration for ${ownerId}, got ${statement?.type}`);
   }
-  const declaredNames = statement.declarations.map((declaration) => {
-    if (!t.isIdentifier(declaration.id)) {
-      throw new Error(`Extract operation ${operationId} does not support destructuring in ${ownerId}`);
-    }
-    return declaration.id.name;
-  });
+  const declaredNames = statement.declarations.flatMap((declaration) => bindingNames(declaration.id));
+  const declaredNameSet = new Set(declaredNames);
   const availableNames = new Set();
   for (const declaration of statement.declarations) {
-    const declarationName = declaration.id.name;
-    for (const referencedName of referencedUndeclaredNames(declaration.init)) {
-      if (!declaredNames.includes(referencedName)) {
+    for (const referencedName of referencedUndeclaredNamesInVariableDeclarator(declaration)) {
+      if (!declaredNameSet.has(referencedName)) {
         continue;
       }
       if (!availableNames.has(referencedName)) {
@@ -2006,7 +1999,9 @@ function validateVariableDeclarators(statement, operationId, ownerId) {
         );
       }
     }
-    availableNames.add(declarationName);
+    for (const declaredName of bindingNames(declaration.id)) {
+      availableNames.add(declaredName);
+    }
   }
 }
 

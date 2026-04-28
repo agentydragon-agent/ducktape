@@ -911,6 +911,127 @@ export { readAlpha, readBeta };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules can split pure destructuring declarators into fragment-backed modules", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-destructuring-fragments-"
+  );
+  const source = `const { focus: focusLabel } = { focus: "focus" }, otherLabel = "other";
+function readFocusLabel() {
+  return focusLabel;
+}
+function readOtherLabel() {
+  return otherLabel;
+}
+
+console.log(readFocusLabel(), readOtherLabel());
+
+export { readFocusLabel, readOtherLabel };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__focus_label",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/focus/label",
+        },
+        members: [
+          {
+            id: "member__focus_label",
+            name: "focusServiceLabel",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "focusLabel",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const focusCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "focus", "label.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(focusCode, /\(\{\s*focus: focusServiceLabel\s*\} = \{\s*focus: "focus"\s*\}\);/s);
+  assert.doesNotMatch(focusCode, /\botherLabel\b/);
+  assert.match(focusCode, /fragments=owner_[^,\s]+::declarator_0/);
+
+  assert.match(residualCode, /\botherLabel = "other"/);
+  assert.doesNotMatch(residualCode, /\bfocusServiceLabel\b/);
+  assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_1/);
+
+  assert.match(entryCode, /modules\/ui\/focus\/label\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 test("materializeLogicalModules can split declarator fragments even when an attached side effect touches only one fragment", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
     "debundle-logical-modules-side-effect-fragments-"

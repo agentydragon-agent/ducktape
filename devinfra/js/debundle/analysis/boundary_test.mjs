@@ -342,6 +342,57 @@ console.log(first);
   assert.deepEqual(region.outsideLocalDependencyNames, []);
 });
 
+test("marks safe top-level destructuring declarations current-extractor compatible", () => {
+  const analysis = analyzeRuntimeBoundaryCode(
+    `globalThis.sharedCodec = {
+  decode(value) {
+    return value.toUpperCase();
+  },
+};
+const { decode: decodeUpper } = globalThis.sharedCodec;
+function readDecodedValue() {
+  return decodeUpper("ok");
+}
+export { readDecodedValue };
+`,
+    {
+      chunkId: "static/destructuring-extractor",
+      runtimePath: "fixture/runtime.js",
+      uiVersion: "fixture",
+    }
+  );
+
+  const ownerByName = new Map(
+    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
+  );
+
+  assert.equal(ownerByName.get("decodeUpper").currentExtractorCompatible, true);
+  assert.equal(ownerByName.get("decodeUpper").currentExtractorLowering, "standard");
+});
+
+test("uses snapshot lowering for snapshot-compatible destructuring declarations with forward references", () => {
+  const analysis = analyzeRuntimeBoundaryCode(
+    `const { chosen = fallbackLabel } = {}, fallbackLabel = "fallback";
+function readChosen() {
+  return chosen;
+}
+export { readChosen };
+`,
+    {
+      chunkId: "static/destructuring-snapshot",
+      runtimePath: "fixture/runtime.js",
+      uiVersion: "fixture",
+    }
+  );
+
+  const ownerByName = new Map(
+    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
+  );
+
+  assert.equal(ownerByName.get("chosen").currentExtractorCompatible, true);
+  assert.equal(ownerByName.get("chosen").currentExtractorLowering, "snapshot_variable_declaration");
+});
+
 test("reports drag-selection style lazy helper dependencies as blockers", () => {
   const analysis = analyzeRuntimeBoundaryCode(
     `const dragSelectionState = { origin: 2 };
