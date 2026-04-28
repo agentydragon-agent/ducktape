@@ -1,44 +1,32 @@
-# Local LLM Inference
+# Local LLM scripts (wyrm2 host)
 
-Running local LLMs on 2x RTX 5090 (64GB VRAM).
-
-## Backends
-
-| Backend | Port  | Tensor Parallel | Quantization  | Use Case                      |
-| ------- | ----- | --------------- | ------------- | ----------------------------- |
-| Ollama  | 11434 | No              | GGUF (Q4, Q8) | Easy setup, interactive       |
-| vLLM    | 8000  | Yes             | HF, AWQ, GPTQ | Best throughput, long context |
+Runnable artifacts for local inference on wyrm2 (2× RTX 5090, 64 GB VRAM).
+Analysis, comparisons, and lessons-learned have moved to the hub at
+<../../cluster/docs/inference/>.
 
 ## Quick Start
 
 ```bash
-cd experimental/local-llm
+cd ~/code/ducktape/x/local_llm
 
-# Ollama (already running as systemd service)
+# Ollama (already running as systemd service on wyrm2)
 ollama list
 ollama run qwen3-coder-long
 
-# vLLM (tensor parallel)
-# First time: uv pip install vllm --system
-./start-vllm.sh
+# vLLM with AWQ + FP8 KV cache (tensor parallel, 262K context)
+./start-vllm-awq.sh
 ```
-
-## Models
-
-See <model-download-list.md> for the full model search log, experiment history, and download status.
-
-See <vram-analysis.md> for detailed VRAM calculations and memory debugging.
 
 ## OpenCode Integration
 
 Both backends are configured in opencode. Select model in opencode UI:
 
-- **Qwen3-Coder 30B 131k (local)** - Ollama backend
-- **Qwen3-Coder 30B TP2 (vLLM)** - vLLM backend (must start server first)
+- **Qwen3-Coder 30B 131k (local)** — Ollama backend
+- **Qwen3-Coder 30B TP2 (vLLM)** — vLLM backend (must start server first)
 
-Config: `nix/home/opencode/default.nix`
+Config: <../../nix/home/opencode/default.nix>
 
-## Storage
+## Storage (host paths)
 
 - Ollama models: `/wyrmhdd/ollama-models`
 - HuggingFace cache: `/wyrmhdd/huggingface`
@@ -46,7 +34,6 @@ Config: `nix/home/opencode/default.nix`
 ## Creating Ollama Model Variants
 
 ```bash
-# Extended context variant
 ollama create qwen3-coder-long -f Modelfile.qwen3-coder-long
 
 # Or interactively
@@ -55,3 +42,12 @@ ollama run qwen3-coder:30b
 /save qwen3-coder-long
 /bye
 ```
+
+## See also (hub)
+
+- <../../cluster/docs/inference/README.md> — docs hub index
+- <../../cluster/docs/inference/backend_comparison.md> — engine comparison + current state
+- <../../cluster/docs/inference/vllm_history.md> — distilled vLLM lessons
+- <../../cluster/docs/inference/qwen3_coder_vram_analysis.md> — full VRAM math + debug logs
+- <../../cluster/docs/inference/model_download_history.md> — model search/download log
+- <../../cluster/docs/inference/kv_cache_quantization.md> — KV cache dtype research
