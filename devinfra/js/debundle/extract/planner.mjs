@@ -381,7 +381,11 @@ function buildSplittableVariableDeclaratorFragment(owner, declarator, index) {
   if (!t.isIdentifier(declarator.id)) {
     return null;
   }
-  if (!isStaticallyPureFragmentInitializer(declarator.init) && !isLazyCallableFragmentInitializer(declarator.init)) {
+  if (
+    !isStaticallyPureFragmentInitializer(declarator.init) &&
+    !isLazyCallableFragmentInitializer(declarator.init) &&
+    !isLazyClassFragmentInitializer(declarator.init)
+  ) {
     return null;
   }
   return {
@@ -467,6 +471,22 @@ function isStaticallyPureFragmentInitializer(node) {
 
 function isLazyCallableFragmentInitializer(node) {
   return t.isFunctionExpression(node) || t.isArrowFunctionExpression(node);
+}
+
+function isLazyClassFragmentInitializer(node) {
+  if (!t.isClassExpression(node) || node.superClass || (node.decorators?.length ?? 0) > 0) {
+    return false;
+  }
+  return node.body.body.every((member) => {
+    if (
+      t.isClassMethod(member) ||
+      t.isClassPrivateMethod(member) ||
+      t.isTSDeclareMethod(member)
+    ) {
+      return !member.computed && (member.decorators?.length ?? 0) === 0;
+    }
+    return false;
+  });
 }
 
 function bindingNamesForVariableDeclarator(declarator) {

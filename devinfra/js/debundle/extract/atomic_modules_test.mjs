@@ -914,13 +914,9 @@ test("materializeLogicalModules can split lazy callable declarators and grouped 
   const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
     "debundle-logical-modules-lazy-callable-fragments-"
   );
-  const source = `const alpha = "a", buildLabel = function buildLabel() { return "label:" + alpha; }, delta = class Delta {
-  static value() {
-    return 7;
-  }
-};
+  const source = `const alpha = "a", buildLabel = function buildLabel() { return "label:" + alpha; }, delta = new Map([["value", 7]]);
 function readDelta() {
-  return delta.value();
+  return delta.get("value");
 }
 function render() {
   return buildLabel() + ":" + readDelta();
@@ -1070,12 +1066,220 @@ export { render };
   assert.match(labelCode, /fragments=owner_[^,\s]+::declarator_1/);
   assert.match(labelCode, /import \{ alphaConstant \} from "\.\.\/constants\/alpha\.js"/);
 
-  assert.match(residualCode, /\bdelta = class Delta/);
+  assert.match(residualCode, /\bdelta = new Map/);
   assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_group_2/);
 
   assert.match(entryCode, /modules\/constants\/alpha\.js/);
   assert.match(entryCode, /modules\/labels\/build_label\.js/);
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materializeLogicalModules can split inert class declarators with lazy cross-fragment reads", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-lazy-class-fragments-"
+  );
+  const source = `const beta = "b", Delta = class Delta {
+  static label() {
+    return beta + ":" + Delta.name;
+  }
+};
+function render() {
+  return Delta.label();
+}
+
+console.log(render());
+
+export { render };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__delta",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "classes/delta",
+        },
+        members: [
+          {
+            id: "member__delta",
+            name: "Delta",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "Delta",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const deltaCode = readFileSync(join(outRoot, "static", "app", "modules", "classes", "delta.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(deltaCode, /\bDelta = class Delta/);
+  assert.match(deltaCode, /fragments=owner_[^,\s]+::declarator_1/);
+  assert.match(deltaCode, /import \{ beta \} from "\.\.\/residual\/unhandled\.js"/);
+
+  assert.match(residualCode, /\bbeta = "b"/);
+  assert.doesNotMatch(residualCode, /\bDelta = class Delta/);
+  assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_0/);
+
+  assert.match(entryCode, /modules\/classes\/delta\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materializeLogicalModules rejects propagated final-name collisions for split class declarators", async () => {
+  const { extractedRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-materialize-logical-modules-class-propagated-collision-"
+  );
+  const source = `const beta = "b", Delta = class Delta {
+  static label() {
+    return beta + ":" + Delta.name;
+  }
+};
+function readDelta() {
+  return Delta.label();
+}
+export { readDelta };`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+  const loaded = loadJsChunks({
+    inputRoot: snapshotRoot,
+    jsListPath: join(extractedRoot, "js-files.txt"),
+  });
+  computeJsAsts({ artifact: loaded.artifact });
+  const normalized = await normalizeJsChunks({
+    artifact: loaded.artifact,
+    jobs: 1,
+  });
+
+  assert.throws(
+    () =>
+      materializeLogicalModules({
+        artifact: normalized.artifact,
+        chunkIds: ["static/app"],
+        operations: [
+          {
+            id: "logical__delta",
+            operation: "define_logical_module",
+            selector: {
+              chunkId: "static/app",
+            },
+            target: {
+              path: "classes/delta",
+            },
+            members: [
+              {
+                id: "rename__delta",
+                name: "beta",
+                selector: {
+                  binding: {
+                    kind: "VariableDeclarator",
+                    name: "Delta",
+                  },
+                },
+              },
+              {
+                id: "rename__readDelta",
+                name: "readDeltaValue",
+                selector: {
+                  binding: {
+                    kind: "FunctionDeclaration",
+                    name: "readDelta",
+                  },
+                },
+              },
+            ],
+          },
+          {
+            id: "logical__unhandled",
+            operation: "define_residual_module",
+            selector: {
+              chunkId: "static/app",
+            },
+            target: {
+              path: "residual/unhandled",
+            },
+          },
+        ],
+        pruneOtherChunks: false,
+      }),
+    /propagated final name collision|conflicts with existing top-level binding|duplicate binding name/i
+  );
 });
 
 test("extractAtomicModules does not require a root artifact manifest", async () => {

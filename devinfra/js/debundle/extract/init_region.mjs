@@ -1119,7 +1119,10 @@ function buildInitStatements(stageEntries, targetFile, entry) {
 }
 
 function buildOwnerInitStatements(owner, statement, localRenameMap, fragment = null) {
-  if (owner.currentExtractorLowering === "snapshot_variable_declaration") {
+  if (
+    owner.currentExtractorLowering === "snapshot_variable_declaration" &&
+    !supportsDirectFragmentVariableLowering(fragment)
+  ) {
     return buildSnapshotVariableDeclarationStatements(owner, statement);
   }
   if (t.isClassDeclaration(statement)) {
@@ -1132,6 +1135,10 @@ function buildOwnerInitStatements(owner, statement, localRenameMap, fragment = n
     return declarations.map((declaration) => variableDeclaratorAssignmentStatement(declaration));
   }
   throw new Error(`Unsupported extracted owner statement type ${statement?.type}`);
+}
+
+function supportsDirectFragmentVariableLowering(fragment) {
+  return fragment?.kind === "variable_declarator" && Array.isArray(fragment.declaratorIndices) && fragment.declaratorIndices.length === 1;
 }
 
 function buildEntryBindingRenames(entry) {

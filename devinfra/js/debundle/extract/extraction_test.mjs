@@ -80,6 +80,32 @@ export { readBuildBeta };`,
   );
 });
 
+test("planSelectedAtomicModules splits inert class declarators with only lazy intra-owner reads", () => {
+  const ast = parse(
+    `const beta = "b", Delta = class Delta {
+  static label() {
+    return beta + ":" + Delta.name;
+  }
+};
+export { beta, Delta };`,
+    { sourceType: "module" }
+  );
+  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
+
+  const plan = planSelectedAtomicModules(
+    {
+      analysis,
+      code: null,
+      programBody: ast.program.body,
+    },
+    {}
+  );
+
+  const fragments = plan.atomicUnits.flatMap((unit) => unit.ownerFragments ?? []);
+  assert.ok(fragments.some((fragment) => fragment.memberNames.length === 1 && fragment.memberNames[0] === "beta"));
+  assert.ok(fragments.some((fragment) => fragment.memberNames.length === 1 && fragment.memberNames[0] === "Delta"));
+});
+
 test("planSelectedAtomicModules does not split declarators across eager top-level intra-owner reads", () => {
   const ast = parse(
     `const alpha = beta, beta = function beta() { return "b"; };
@@ -100,4 +126,28 @@ export { alpha, beta };`,
   const ownerWithAlphaAndBeta = plan.atomicUnits.find((unit) => unit.memberNames.includes("alpha") && unit.memberNames.includes("beta"));
   assert.ok(ownerWithAlphaAndBeta);
   assert.equal(ownerWithAlphaAndBeta.ownerFragments?.length ?? 0, 0);
+});
+
+test("planSelectedAtomicModules does not split class declarators across eager class-definition reads", () => {
+  const ast = parse(
+    `const Base = class Base {}, Derived = class Derived extends Base {};
+export { Base, Derived };`,
+    { sourceType: "module" }
+  );
+  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
+
+  const plan = planSelectedAtomicModules(
+    {
+      analysis,
+      code: null,
+      programBody: ast.program.body,
+    },
+    {}
+  );
+
+  const ownerWithBaseAndDerived = plan.atomicUnits.find(
+    (unit) => unit.memberNames.includes("Base") && unit.memberNames.includes("Derived")
+  );
+  assert.ok(ownerWithBaseAndDerived);
+  assert.equal(ownerWithBaseAndDerived.ownerFragments?.length ?? 0, 0);
 });
