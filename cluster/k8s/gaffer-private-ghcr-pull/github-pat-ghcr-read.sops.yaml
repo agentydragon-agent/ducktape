@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-pat-ghcr-read
+  namespace: flux-system
+  annotations:
+    description: "Fine-grained GitHub PAT with `read:packages` on agentydragon's GHCR namespace. Consumed by the gaffer-private-ghcr-pull Terraform module to mint dockerconfigjson Secrets in flux-system and house-vallejo namespaces."
+type: Opaque
+stringData:
+  token: REPLACE_WITH_PAT_THEN_RUN_SOPS_E_I

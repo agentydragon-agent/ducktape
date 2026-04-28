@@ -1,0 +1,23 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: gaffer-private-ghcr-pull
+  namespace: flux-system
+  annotations:
+    description: "Synthesizes dockerconfigjson Secrets (gaffer-ghcr-pull-flux in flux-system, gaffer-ghcr-pull in house-vallejo) from the PAT in `github-pat-ghcr-read`. Sourced from flux-system; runs after the gaffer-private bridge Kustomization creates the house-vallejo namespace."
+spec:
+  interval: 15m
+  refreshBeforeApply: true
+  approvePlan: "auto"
+  path: ./tf/gitops/gaffer-private-ghcr-pull
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix = "gaffer-private-ghcr-pull"
+        namespace     = "flux-system"
+      }

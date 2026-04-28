@@ -8,6 +8,7 @@ resources:
   - flux-grafana-secrets/flux-kustomization.yaml
   - flux-image-automation-ghcr/flux-kustomization.yaml
   - gaffer-private-source/flux-kustomization.yaml
+  - gaffer-private-ghcr-pull/flux-kustomization.yaml
 
   # --- core infrastructure (standalone) ---
   - tofu-controller/flux-kustomization.yaml
