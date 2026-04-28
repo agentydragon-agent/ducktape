@@ -11,11 +11,10 @@ export async function buildMockBrowserPipelineGolden(outRoot) {
   rmSync(root, { force: true, recursive: true });
   mkdirSync(root, { recursive: true });
 
-  const { appRoot, root: pipelineRoot, transformedRoot } = await runMockBrowserBundlePipeline({
+  const { appRoot, root: pipelineRoot } = await runMockBrowserBundlePipeline({
     prefix: "debundle-browser-pipeline-golden-",
   });
   cpSync(appRoot, join(root, "app"), { recursive: true });
-  cpSync(transformedRoot, join(root, "transformed"), { recursive: true });
   rewritePipelineRootReferences(root, pipelineRoot);
 }
 

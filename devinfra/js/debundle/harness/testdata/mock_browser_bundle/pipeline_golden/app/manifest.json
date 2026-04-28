@@ -4,7 +4,7 @@
   "sourceHtml": "__PIPELINE_ROOT__/snapshot/index.html",
   "snapshotRoot": "__PIPELINE_ROOT__/snapshot",
   "assetSummaryPath": "__PIPELINE_ROOT__/extracted/asset-summary.json",
-  "runtimeManifestPath": "__PIPELINE_ROOT__/app/transformed-manifest.json",
+  "chunksManifestPath": "__PIPELINE_ROOT__/app/chunks.manifest.json",
   "runtimeRoot": "__PIPELINE_ROOT__/app",
   "outDir": "__PIPELINE_ROOT__/app",
   "copiedAssets": [
@@ -23,7 +23,7 @@
   "vendorResolutions": [],
   "generated": {
     "bootstrap": "__PIPELINE_ROOT__/app/bootstrap.js",
-    "indexHtml": "__PIPELINE_ROOT__/app/index.html",
-    "transformedManifest": "__PIPELINE_ROOT__/app/transformed-manifest.json"
+    "chunksManifest": "__PIPELINE_ROOT__/app/chunks.manifest.json",
+    "indexHtml": "__PIPELINE_ROOT__/app/index.html"
   }
 }

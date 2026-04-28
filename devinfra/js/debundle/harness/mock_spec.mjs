@@ -3,7 +3,6 @@ export function createMockBrowserBundleTransformSpec({
   assetSummaryPath,
   jsListPath,
   snapshotRoot,
-  transformedRoot,
 }) {
   return {
     kind: "js.ast_transform_spec",
@@ -30,14 +29,6 @@ export function createMockBrowserBundleTransformSpec({
       {
         id: "rewrite_mock_bundle_chunk_links",
         operation: "rewrite_chunk_entry_specifiers",
-      },
-      {
-        id: "write_mock_bundle",
-        operation: "write_js_tree",
-        args: {
-          force: true,
-          outDir: transformedRoot,
-        },
       },
       {
         id: "emit_mock_harness",

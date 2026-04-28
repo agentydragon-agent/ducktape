@@ -1,8 +1,25 @@
-import { chmodSync, copyFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { modulePackageJson, writeJsonFile, writeTextFile } from "../common/parser_options.mjs";
-import { getArtifactManifestChunks, getChunkEntryPath, listChunkFilePaths, requireChunkFile, requirePipelineArtifact } from "../common/artifact.mjs";
-import { prepareOutputDir, relativeWorkspacePath, resolveWorkspacePath } from "../common/io.mjs";
+import {
+  getArtifactChunkManifest,
+  getArtifactManifestChunks,
+  getChunkEntryPath,
+  listChunkFilePaths,
+  requireChunkFile,
+  requirePipelineArtifact,
+} from "../common/artifact.mjs";
+import { relativeWorkspacePath, resolveWorkspacePath } from "../common/io.mjs";
 import { loadVendorResolutionManifest } from "../common/vendor_runtime.mjs";
 import { serializeGeneratedJsFile } from "../split/chunk.mjs";
 
@@ -47,7 +64,10 @@ export function emitBrowserHarness(options) {
     }
   }
 
-  prepareOutputDir(outDir, { force: options.force });
+  prepareHarnessOutputDir(outDir, {
+    force: options.force,
+    preserveTopLevelNames: ["analysis", "vendors"],
+  });
   const vendorManifestPath = options.vendorManifestPath ? resolveWorkspacePath(options.vendorManifestPath) : undefined;
   const vendorResolutions = describeVendorResolutions(vendorManifestPath);
   materializeArtifactScripts({ artifact, outDir });
@@ -55,7 +75,7 @@ export function emitBrowserHarness(options) {
 
   const bootstrapPath = join(outDir, "bootstrap.js");
   const indexPath = join(outDir, "index.html");
-  const transformedManifestPath = join(outDir, "transformed-manifest.json");
+  const chunksManifestPath = join(outDir, "chunks.manifest.json");
   const bootstrap = buildBootstrap({ artifact, entryScripts, outDir, runtimeRoot: outDir, scriptSource });
   const indexHtml = rewriteIndexHtml(sourceHtml, {
     artifact,
@@ -69,7 +89,7 @@ export function emitBrowserHarness(options) {
     sourceHtml: relativeWorkspacePath(sourceHtmlPath),
     snapshotRoot: relativeWorkspacePath(snapshotRoot),
     assetSummaryPath: relativeWorkspacePath(assetSummaryPath),
-    runtimeManifestPath: relativeWorkspacePath(transformedManifestPath),
+    chunksManifestPath: relativeWorkspacePath(chunksManifestPath),
     runtimeRoot: relativeWorkspacePath(outDir),
     outDir: relativeWorkspacePath(outDir),
     copiedAssets,
@@ -84,14 +104,14 @@ export function emitBrowserHarness(options) {
     })),
     generated: {
       bootstrap: relativeWorkspacePath(bootstrapPath),
+      chunksManifest: relativeWorkspacePath(chunksManifestPath),
       indexHtml: relativeWorkspacePath(indexPath),
-      transformedManifest: relativeWorkspacePath(transformedManifestPath),
     },
   };
 
   writeFileSync(indexPath, indexHtml);
   writeFileSync(bootstrapPath, bootstrap);
-  writeJsonFile(transformedManifestPath, snapshotManifest);
+  writeJsonFile(chunksManifestPath, snapshotManifest);
   writeJsonFile(join(outDir, "manifest.json"), manifest);
   writeJsonFile(join(outDir, "package.json"), modulePackageJson());
   return {
@@ -247,7 +267,30 @@ function materializeArtifactScripts({ artifact, outDir }) {
       const targetPath = join(chunkOutDir, ...file.split("/"));
       writeTextFile(targetPath, serializeGeneratedJsFile(fileArtifact));
     }
+    const chunkManifest = getArtifactChunkManifest(artifact, chunk.chunkId);
+    if (chunkManifest) {
+      writeJsonFile(join(chunkOutDir, "manifest.json"), chunkManifest);
+    }
   }
+}
+
+function prepareHarnessOutputDir(outDir, { force, preserveTopLevelNames = [] }) {
+  const preserved = new Set(preserveTopLevelNames);
+  if (existsSync(outDir)) {
+    if (!statSync(outDir).isDirectory()) {
+      throw new Error(`Output path exists and is not a directory: ${outDir}`);
+    }
+    const removableEntries = readdirSync(outDir).filter((entry) => !preserved.has(entry));
+    if (removableEntries.length > 0 && !force) {
+      throw new Error(`Output directory is not empty: ${outDir}. Pass --force to replace it.`);
+    }
+    if (force) {
+      for (const entry of removableEntries) {
+        rmSync(join(outDir, entry), { force: true, recursive: true });
+      }
+    }
+  }
+  mkdirSync(outDir, { recursive: true });
 }
 
 function scriptHref(jsPath, { artifact, outDir, runtimeRoot, scriptSource }) {

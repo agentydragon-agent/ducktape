@@ -18,7 +18,6 @@ test("generic mock bundle runs through the normalize pipeline and passes a brows
       "compute_js_asts",
       "normalize_js_chunks",
       "rewrite_chunk_entry_specifiers",
-      "write_js_tree",
       "emit_browser_harness",
     ]
   );

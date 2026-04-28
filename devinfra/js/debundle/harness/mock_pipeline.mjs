@@ -19,7 +19,6 @@ export async function runMockBrowserBundlePipeline({
     assetSummaryPath: join(roots.extractedRoot, "asset-summary.json"),
     jsListPath: join(roots.extractedRoot, "js-files.txt"),
     snapshotRoot: roots.snapshotRoot,
-    transformedRoot: roots.transformedRoot,
   });
 
   const result = await runTransformSpecObject(spec);

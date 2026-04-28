@@ -81,12 +81,15 @@ test("emitBrowserHarness materializes pipeline artifacts into a local runnable a
   });
 
   assert.equal(manifest.scriptSource, "split");
+  assert.equal(manifest.chunksManifestPath, join(appRoot, "chunks.manifest.json"));
   assert.deepEqual(manifest.entryScripts, ["static/app.js"]);
   assert.deepEqual(manifest.modulePreloads, ["static/vendor.js"]);
   assert.ok(existsSync(join(appRoot, "preload", "style.css")));
   assert.equal(existsSync(join(appRoot, "static", "app.js")), false);
   assert.ok(existsSync(join(appRoot, "static", "app", SPLIT_ENTRY_FILE)));
+  assert.ok(existsSync(join(appRoot, "static", "app", "manifest.json")));
   assert.ok(existsSync(join(appRoot, "static", "vendor", SPLIT_ENTRY_FILE)));
+  assert.ok(existsSync(join(appRoot, "static", "vendor", "manifest.json")));
 
   const indexHtml = readUtf8(join(appRoot, "index.html"));
   assert.match(indexHtml, /Generated local harness/);
@@ -150,8 +153,65 @@ test("emitBrowserHarness works without manifests and with no emitted parts", () 
   assert.ok(existsSync(join(appRoot, "static", "app", "entry.js")));
   assert.equal(existsSync(join(appRoot, "static", "app", "parts")), false);
   assert.equal(existsSync(join(appRoot, "static", "app", "manifest.json")), false);
+  assert.ok(existsSync(join(appRoot, "chunks.manifest.json")));
   assert.match(readUtf8(join(appRoot, "bootstrap.js")), /import "\.\/static\/app\/entry\.js";/);
   assert.deepEqual(runNodeScript(join(appRoot, "bootstrap.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("emitBrowserHarness preserves sibling analysis and vendor outputs under the app root", () => {
+  const { appRoot, extractedRoot, snapshotRoot } = createWebFixtureRoots("debundle-browser-harness-preserve-siblings-");
+
+  writeHarnessFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": `export const value = 1;\n`,
+    },
+    html: `<!doctype html><html><head><script type="module" src="/static/app.js"></script></head><body></body></html>\n`,
+    jsEntries: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "entry.js",
+        files: [
+          createFile({
+            path: "entry.js",
+            ast: parseModuleCode(readUtf8(join(snapshotRoot, "static", "app.js"))),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "entry.js",
+              role: "entry",
+            },
+          }),
+        ],
+      },
+    ],
+  });
+
+  const analysisPath = join(appRoot, "analysis", "scrambled-identifiers.json");
+  const vendorManifestPath = join(appRoot, "vendors", "manifest.json");
+  const wrapperPath = join(appRoot, "vendors", "generated", "static", "fixture", "entry.js");
+  writeJsonFile(analysisPath, { kind: "analysis.fixture" });
+  writeJsonFile(vendorManifestPath, { kind: "js.vendor_resolution_manifest", resolutions: {} });
+  writeTextFile(wrapperPath, "export const wrapper = true;\n");
+
+  emitBrowserHarness({
+    artifact,
+    assetSummaryPath: join(extractedRoot, "asset-summary.json"),
+    force: true,
+    outDir: appRoot,
+    scriptSource: "split",
+    snapshotRoot,
+    vendorManifestPath,
+  });
+
+  assert.equal(readUtf8(analysisPath), '{\n  "kind": "analysis.fixture"\n}\n');
+  assert.equal(readUtf8(vendorManifestPath), '{\n  "kind": "js.vendor_resolution_manifest",\n  "resolutions": {}\n}\n');
+  assert.equal(readUtf8(wrapperPath), "export const wrapper = true;\n");
+  assert.ok(existsSync(join(appRoot, "static", "app", "entry.js")));
 });
 
 test("emitBrowserHarness records vendor resolutions and omits swapped chunks from the app tree", async () => {
