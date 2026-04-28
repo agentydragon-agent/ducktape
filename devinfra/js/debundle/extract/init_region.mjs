@@ -159,7 +159,7 @@ export function lowerSelectedModuleRegionsInAst(
     runtimeBody.splice(
       group.startOrdinal,
       group.endOrdinal - group.startOrdinal + 1,
-      ...group.runs.map(buildInitCallStatement)
+      ...group.runs.flatMap(buildRuntimeReplacementStatements)
     );
   }
 
@@ -426,6 +426,12 @@ function resolveExtractOperation(
     ownerEntries,
     orderedOwners,
     ownerIds: orderedOwners.map((owner) => owner.id),
+    plainImportEligible: isPlainImportEligibleEntry({
+      attachedEntries,
+      orderedOwners,
+      ownerEntries,
+      stageRuns,
+    }),
     stageRuns,
     startOrdinal,
     targetFile,
@@ -433,6 +439,20 @@ function resolveExtractOperation(
     usedRuntimeImportLocals,
     usedRuntimeImports: materializeUsedRuntimeImports(runtimeImportIndex, usedRuntimeImportLocals),
   };
+}
+
+function isPlainImportEligibleEntry({ attachedEntries, orderedOwners, ownerEntries, stageRuns }) {
+  if (attachedEntries.length > 0 || stageRuns.length !== 1 || ownerEntries.some((entry) => entry.fragment)) {
+    return false;
+  }
+  if (stageRuns[0].stageEntries.some((entry) => entry.kind !== "declaration")) {
+    return false;
+  }
+  return orderedOwners.every(
+    (owner) =>
+      owner.extractionMode === "plain_import_candidate" &&
+      (owner.type === "FunctionDeclaration" || owner.type === "ClassDeclaration")
+  );
 }
 
 function validateSelectedOwner(
@@ -925,6 +945,19 @@ function buildRuntimeImportDeclaration(entry) {
 }
 
 function buildRuntimeReplacementRuns(entry) {
+  if (entry.plainImportEligible) {
+    const [stageRun] = entry.stageRuns;
+    return [
+      {
+        endOrdinal: stageRun.endOrdinal,
+        entry,
+        omitInitCall: true,
+        sortIndex: stageRun.sortIndex ?? 0,
+        stageIndex: 0,
+        startOrdinal: stageRun.startOrdinal,
+      },
+    ];
+  }
   return entry.stageRuns.map((stageRun, stageIndex) => ({
     endOrdinal: stageRun.endOrdinal,
     entry,
@@ -1040,7 +1073,14 @@ function buildInitCallStatement(run) {
   );
 }
 
+function buildRuntimeReplacementStatements(run) {
+  return run.omitInitCall ? [] : [buildInitCallStatement(run)];
+}
+
 function buildExtractedModuleFile(entry) {
+  if (entry.plainImportEligible) {
+    return buildPlainImportModuleFile(entry);
+  }
   const body = [];
   for (const importRecord of entry.usedExtractedImports ?? []) {
     body.push(importDeclarationFromExtractedImportRecord(importRecord, entry.targetFile));
@@ -1076,6 +1116,50 @@ function buildExtractedModuleFile(entry) {
     ast,
     headerLines: buildSelectedModuleLoweringHeaderLines(entry.ownerIds),
   };
+}
+
+function buildPlainImportModuleFile(entry) {
+  const body = [];
+  for (const importRecord of entry.usedExtractedImports ?? []) {
+    body.push(importDeclarationFromExtractedImportRecord(importRecord, entry.targetFile));
+  }
+  for (const importRecord of entry.usedRuntimeImports) {
+    body.push(importDeclarationFromRuntimeImportRecord(importRecord, entry.targetFile));
+  }
+  const atomicBoundaryIndex = buildAtomicBoundaryIndex(entry.atomicBoundaryUnits ?? []);
+  let previousAtomicBoundaryUnitId = null;
+  for (const stageEntry of entry.stageRuns[0].stageEntries) {
+    if (stageEntry.kind !== "declaration") {
+      throw new Error(`Plain-import lowering received non-declaration stage entry in ${entry.targetFile}`);
+    }
+    const nextStatements = buildPlainImportOwnerStatements(stageEntry.statement);
+    const boundaryUnit = atomicBoundaryIndex.get(ownerEntryBoundaryKey(stageEntry));
+    annotateAtomicBoundary(nextStatements, boundaryUnit, previousAtomicBoundaryUnitId);
+    previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, boundaryUnit);
+    body.push(...nextStatements);
+  }
+  body.push(
+    t.exportNamedDeclaration(
+      null,
+      entry.exportBindings.map((binding) => t.exportSpecifier(t.identifier(binding.local), exportNameNode(binding.exported)))
+    )
+  );
+  const rewrittenBody = rewriteStatementsForTarget(body, entry.targetFile);
+  const ast = t.file(t.program(rewrittenBody));
+  applyFinalBindingRenamesToGeneratedFile(ast, buildEntryBindingRenames(entry), {
+    context: `${entry.targetFile} selected-module lowering`,
+  });
+  return {
+    ast,
+    headerLines: buildSelectedModuleLoweringHeaderLines(entry.ownerIds),
+  };
+}
+
+function buildPlainImportOwnerStatements(statement) {
+  if (t.isFunctionDeclaration(statement) || t.isClassDeclaration(statement)) {
+    return [t.cloneNode(statement, true)];
+  }
+  throw new Error(`Plain-import lowering does not support ${statement?.type}`);
 }
 
 function buildInitStatements(stageEntries, targetFile, entry) {
@@ -1363,6 +1447,9 @@ function buildSnapshotVariableDeclarationStatements(owner, statement) {
 }
 
 function runtimeInitNamesForEntry(entry) {
+  if (entry.plainImportEligible) {
+    return [];
+  }
   return entry.stageRuns.map((stageRun, stageIndex) => publicStageInitName(entry, stageIndex));
 }
 

@@ -495,6 +495,73 @@ export { DeferredRenderCounter, counter, first };
   });
 });
 
+test("lowers single-stage pure class/function regions as plain imports without init wrappers", () => {
+  const source = `class PureBox {
+  static label() {
+    return "pure-box";
+  }
+}
+function renderPureBox() {
+  return PureBox.label();
+}
+const result = renderPureBox();
+console.log(result);
+export { result };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_plain_pure_region",
+      ownerNames: ["PureBox", "renderPureBox"],
+      targetFile: "regions/plain_pure_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/plain_pure_region.js");
+  assert.match(runtimeCode, /import \{ PureBox, renderPureBox \} from "\.\/regions\/plain_pure_region\.js"/);
+  assert.doesNotMatch(runtimeCode, /\binit_plain_pure_region\b/);
+  assert.match(extractedCode, /\bclass PureBox\b/);
+  assert.match(extractedCode, /\bfunction renderPureBox\b/);
+  assert.doesNotMatch(extractedCode, /export function init_plain_pure_region/);
+  assert.doesNotMatch(extractedCode, /\bPureBox = class PureBox\b/);
+
+  assertRunnableEquivalent({
+    prefix: "debundle-extract-plain-import-class-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("keeps init wrappers for class declarations with eager definition-time extends behavior", () => {
+  const source = `class BaseBox {}
+class DerivedBox extends BaseBox {
+  static label() {
+    return "derived";
+  }
+}
+function renderDerivedBox() {
+  return DerivedBox.label();
+}
+const result = renderDerivedBox();
+console.log(result);
+export { result };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_derived_box_region",
+      ownerNames: ["BaseBox", "DerivedBox", "renderDerivedBox"],
+      targetFile: "regions/derived_box_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/derived_box_region.js");
+  assert.match(runtimeCode, /import \{ BaseBox, DerivedBox, renderDerivedBox, init_derived_box_region \} from "\.\/regions\/derived_box_region\.js"/);
+  assert.match(runtimeCode, /init_derived_box_region\(\);/);
+  assert.match(extractedCode, /export function init_derived_box_region/);
+  assert.match(extractedCode, /\bDerivedBox = class DerivedBox extends BaseBox\b/);
+});
+
 test("extracts schema-style regions with forward/self references via snapshot lowering", () => {
   const source = `import { buildLeaf, buildNode } from "./schema.js";
 

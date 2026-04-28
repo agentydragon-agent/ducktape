@@ -1524,6 +1524,129 @@ export { ToolApprovalRequest, renderDialog };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules emits plain-import pure class/function modules without init wrappers", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-plain-import-class-pipeline-"
+  );
+  const source = `class PureBox {
+  static label() {
+    return "pure-box";
+  }
+}
+function renderPureBox() {
+  return PureBox.label();
+}
+export { renderPureBox };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__pure_box",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/pure_box",
+        },
+        members: [
+          {
+            id: "member__pure_box",
+            name: "FriendlyPureBox",
+            selector: {
+              binding: {
+                kind: "ClassDeclaration",
+                name: "PureBox",
+              },
+            },
+          },
+          {
+            id: "member__render_pure_box",
+            name: "renderFriendlyPureBox",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "renderPureBox",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+  const pureBoxCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "pure_box.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+  assert.match(pureBoxCode, /\bclass FriendlyPureBox\b/);
+  assert.match(pureBoxCode, /\bfunction renderFriendlyPureBox\b/);
+  assert.doesNotMatch(pureBoxCode, /export function __dt_generated_init__/);
+  assert.doesNotMatch(pureBoxCode, /\bPureBox = class PureBox\b/);
+  assert.match(entryCode, /import \{ FriendlyPureBox, renderFriendlyPureBox \} from "\.\/modules\/ui\/pure_box\.js";/);
+  assert.doesNotMatch(entryCode, /__dt_generated_init__ui_pure_box/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 async function prepareAtomicFixture(prefix) {
   const { extractedRoot, selectedOwnerIds, snapshotRoot } = await writeAtomicSnapshotFixture(prefix);
   const loaded = loadJsChunks({
