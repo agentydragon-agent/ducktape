@@ -59,6 +59,7 @@ js_test(
     data = [
         "decl_graph.mjs",
         "planner.mjs",
+        "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
     ] + _BABEL_DEPS,
     entry_point = "extraction_test.mjs",

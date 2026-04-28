@@ -3,6 +3,7 @@ import traverseModule from "@babel/traverse";
 import * as t from "@babel/types";
 import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
+import { logProgress } from "../common/io.mjs";
 import { referencedUndeclaredNames } from "../common/program_analysis.mjs";
 import { serializeGeneratedJsFile } from "../split/chunk.mjs";
 import {
@@ -30,6 +31,14 @@ const SELECTED_MODULE_LOWERING_METADATA = Object.freeze({
   generator: "devinfra/js/debundle/extract/init_region.mjs",
   ignoreByDefault: true,
 });
+
+function durationMsSince(startedAt) {
+  return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+}
+
+function formatDurationMs(durationMs) {
+  return `${durationMs.toFixed(3)}ms`;
+}
 
 export function buildSelectedModuleLoweringMetadata() {
   return { ...SELECTED_MODULE_LOWERING_METADATA };
@@ -73,6 +82,7 @@ export function lowerSelectedModuleRegionsInAst(
   operations,
   { analysis = null, chunkId = "<chunk>", file, headerLines = [] } = {}
 ) {
+  const loweringStartedAt = process.hrtime.bigint();
   const runtimeFile = resolveOperationFile(operations, file, "lowerSelectedModuleRegionsInAst");
   const graphAwareOperations = operations.filter((operation) => EXTRACT_OPERATION_TYPES.has(operation.operation));
   const suppliedAnalysis = analysis ?? null;
@@ -100,6 +110,7 @@ export function lowerSelectedModuleRegionsInAst(
   const remainingProgramValidationIndex = buildRemainingProgramValidationIndex(runtimeAnalysis);
   const runtimeImportIndex = buildRuntimeImportIndex(runtimeAnalysis.runtimeImports);
 
+  const resolveStartedAt = process.hrtime.bigint();
   const resolved = extractOperations.map((operation) =>
     resolveExtractOperation(operation, {
       allSelectedOwnerIds: extractionIndex.allSelectedOwnerIds,
@@ -116,13 +127,25 @@ export function lowerSelectedModuleRegionsInAst(
       topLevelNames,
     })
   );
+  logProgress(
+    `selected-modules lower=${runtimeFile} phase=resolve_extract_operations operations=${resolved.length} duration=${formatDurationMs(durationMsSince(resolveStartedAt))}`
+  );
+  const validateStartedAt = process.hrtime.bigint();
   validateResolvedOperations(resolved);
+  logProgress(
+    `selected-modules lower=${runtimeFile} phase=validate_resolved_operations duration=${formatDurationMs(durationMsSince(validateStartedAt))}`
+  );
+  const finalizeImportsStartedAt = process.hrtime.bigint();
   const resolvedByOwnerId = indexResolvedEntriesByOwnerId(resolved);
   for (const entry of resolved) {
     finalizeResolvedEntryImports(entry, resolvedByOwnerId);
   }
+  logProgress(
+    `selected-modules lower=${runtimeFile} phase=finalize_entry_imports duration=${formatDurationMs(durationMsSince(finalizeImportsStartedAt))}`
+  );
 
   const runtimeBody = ast.program.body;
+  const runtimeRewriteStartedAt = process.hrtime.bigint();
   const moduleFiles = new Map();
   const replacementRuns = [];
   for (const entry of resolved) {
@@ -144,13 +167,21 @@ export function lowerSelectedModuleRegionsInAst(
     const importInsertIndex = countLeadingImports(runtimeBody);
     runtimeBody.splice(importInsertIndex, 0, ...resolved.map(buildRuntimeImportDeclaration));
   }
+  logProgress(
+    `selected-modules lower=${runtimeFile} phase=rewrite_runtime_body duration=${formatDurationMs(durationMsSince(runtimeRewriteStartedAt))}`
+  );
 
+  const runtimeRenameStartedAt = process.hrtime.bigint();
   applyFinalBindingRenamesToGeneratedFile(ast, buildRuntimeBindingRenames(resolved), {
     context: `${runtimeFile} runtime lowering`,
   });
+  logProgress(
+    `selected-modules lower=${runtimeFile} phase=rename_runtime_bindings duration=${formatDurationMs(durationMsSince(runtimeRenameStartedAt))}`
+  );
 
   const jsFiles = new Map([[runtimeFile, { ast, headerLines }]]);
   const applied = [];
+  const buildModulesStartedAt = process.hrtime.bigint();
   for (const entry of resolved) {
     const moduleFile = buildExtractedModuleFile(entry);
     moduleFiles.set(entry.targetFile, moduleFile);
@@ -166,6 +197,12 @@ export function lowerSelectedModuleRegionsInAst(
       targetFile: entry.targetFile,
     });
   }
+  logProgress(
+    `selected-modules lower=${runtimeFile} phase=build_extracted_modules modules=${resolved.length} duration=${formatDurationMs(durationMsSince(buildModulesStartedAt))}`
+  );
+  logProgress(
+    `selected-modules lower=${runtimeFile} phase=done duration=${formatDurationMs(durationMsSince(loweringStartedAt))}`
+  );
 
   return {
     analysis: runtimeAnalysis,
@@ -316,14 +353,20 @@ function resolveExtractOperation(
 
   const usedRuntimeImportLocals = new Set();
   const usedExtractedDependencyNames = new Map();
-  for (const owner of orderedOwners) {
-    validateSelectedOwner(owner, {
+  const selectedBindingCoverage = buildSelectedBindingCoverage(ownerEntries);
+  for (const ownerEntry of ownerEntries) {
+    validateSelectedOwner(ownerEntry.owner, {
       extractedOwnerToOperation,
       operation,
+      ownerFragmentSelected: Boolean(ownerEntry.fragment),
       ownerById,
+      selectedBindingCoverage,
       selectedOwnerIds,
       selectedFunctionIds,
-      statementNode: programBody[owner.ordinal],
+      selectedLocalNames: new Set(
+        ownerEntry.fragment?.memberNames ?? topLevelDeclarationNames(ownerEntry.statement)
+      ),
+      statementNode: ownerEntry.statement,
       usedExtractedDependencyNames,
       usedRuntimeImportLocals,
     });
@@ -333,6 +376,7 @@ function resolveExtractOperation(
       extractedOwnerToOperation,
       operation,
       ownerById,
+      selectedBindingCoverage,
       selectedOwnerIds,
       usedExtractedDependencyNames,
       usedRuntimeImportLocals,
@@ -396,9 +440,12 @@ function validateSelectedOwner(
   {
     extractedOwnerToOperation,
     operation,
+    ownerFragmentSelected,
     ownerById,
+    selectedBindingCoverage,
     selectedOwnerIds,
     selectedFunctionIds,
+    selectedLocalNames,
     statementNode,
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
@@ -411,11 +458,19 @@ function validateSelectedOwner(
     throw new Error(`Extract operation ${operation.id} cannot extract runtime-sensitive owner ${owner.id}`);
   }
   if (owner.currentExtractorCompatible === false) {
+    if (owner.type === "VariableDeclaration" && ownerFragmentSelected) {
+      // Fragment-aware extraction can legalize otherwise incompatible declaration packs.
+    } else {
     throw new Error(
       `Extract operation ${operation.id} cannot extract owner ${owner.id}: ${owner.currentExtractorBlockingReasons.join(",")}`
     );
+    }
   }
-  if (owner.type === "VariableDeclaration" && owner.currentExtractorLowering !== "snapshot_variable_declaration") {
+  if (
+    owner.type === "VariableDeclaration" &&
+    owner.currentExtractorLowering !== "snapshot_variable_declaration" &&
+    !ownerFragmentSelected
+  ) {
     validateVariableDeclarators(statementNode, operation.id, owner.id);
   }
 
@@ -425,7 +480,9 @@ function validateSelectedOwner(
     ownerId: owner.id,
     ownerById,
     ownerOrdinal: owner.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames,
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: false,
@@ -436,7 +493,9 @@ function validateSelectedOwner(
     ownerId: owner.id,
     ownerById,
     ownerOrdinal: owner.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames,
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: false,
@@ -447,7 +506,9 @@ function validateSelectedOwner(
     ownerId: owner.id,
     ownerById,
     ownerOrdinal: owner.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames,
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
@@ -458,7 +519,9 @@ function validateSelectedOwner(
     ownerId: owner.id,
     ownerById,
     ownerOrdinal: owner.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames,
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
@@ -469,7 +532,9 @@ function validateSelectedOwner(
     ownerId: owner.id,
     ownerById,
     ownerOrdinal: owner.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames,
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
@@ -480,7 +545,9 @@ function validateSelectedOwner(
     ownerId: owner.id,
     ownerById,
     ownerOrdinal: owner.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames,
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
@@ -518,6 +585,7 @@ function validateAttachedSideEffect(
     extractedOwnerToOperation,
     operation,
     ownerById,
+    selectedBindingCoverage,
     selectedOwnerIds,
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
@@ -537,7 +605,9 @@ function validateAttachedSideEffect(
     ownerId: sideEffect.id,
     ownerById,
     ownerOrdinal: sideEffect.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames: new Set(),
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: false,
@@ -548,7 +618,9 @@ function validateAttachedSideEffect(
     ownerId: sideEffect.id,
     ownerById,
     ownerOrdinal: sideEffect.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames: new Set(),
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: false,
@@ -559,7 +631,9 @@ function validateAttachedSideEffect(
     ownerId: sideEffect.id,
     ownerById,
     ownerOrdinal: sideEffect.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames: new Set(),
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
@@ -570,7 +644,9 @@ function validateAttachedSideEffect(
     ownerId: sideEffect.id,
     ownerById,
     ownerOrdinal: sideEffect.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames: new Set(),
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
@@ -581,7 +657,9 @@ function validateAttachedSideEffect(
     ownerId: sideEffect.id,
     ownerById,
     ownerOrdinal: sideEffect.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames: new Set(),
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
@@ -592,7 +670,9 @@ function validateAttachedSideEffect(
     ownerId: sideEffect.id,
     ownerById,
     ownerOrdinal: sideEffect.ordinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames: new Set(),
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
@@ -608,7 +688,9 @@ function validateSelectedOwnerAccesses(
     ownerId,
     ownerById,
     ownerOrdinal,
+    selectedBindingCoverage,
     selectedOwnerIds,
+    selectedLocalNames,
     usedExtractedDependencyNames,
     usedRuntimeImportLocals,
     allowSelectedLocalWrite,
@@ -628,11 +710,20 @@ function validateSelectedOwnerAccesses(
       continue;
     }
     if (selectedOwnerIds.has(access.ownerId)) {
-      if (!allowSelectedLocalWrite && accessLabel.includes("write")) {
+      if (currentOperationSelectsBinding(selectedBindingCoverage, access.ownerId, access.name)) {
+        if (!allowSelectedLocalWrite && accessLabel.includes("write")) {
+          throw new Error(
+            `Extract operation ${operationId} owner ${ownerId} has unsupported ${accessLabel} to extracted owner ${access.ownerId}`
+          );
+        }
+        continue;
+      }
+      if (accessLabel.includes("write")) {
         throw new Error(
-          `Extract operation ${operationId} owner ${ownerId} has unsupported ${accessLabel} to extracted owner ${access.ownerId}`
+          `Extract operation ${operationId} owner ${ownerId} has unsupported ${accessLabel} to separately extracted binding ${access.name}`
         );
       }
+      recordExtractedDependencyName(usedExtractedDependencyNames, access.ownerId, access.name);
       continue;
     }
     if (extractedOwnerToOperation.has(access.ownerId)) {
@@ -844,27 +935,103 @@ function buildRuntimeReplacementRuns(entry) {
 }
 
 function groupRuntimeReplacementRuns(runs) {
-  const groups = new Map();
-  for (const run of runs) {
-    const key = `${run.startOrdinal}:${run.endOrdinal}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
+  const sortedRuns = [...runs].sort(
+    (left, right) =>
+      left.startOrdinal - right.startOrdinal ||
+      right.endOrdinal - left.endOrdinal ||
+      compareRuntimeRuns(left, right)
+  );
+  const groups = [];
+  for (const run of sortedRuns) {
+    const currentGroup = groups.at(-1);
+    if (!currentGroup || run.startOrdinal > currentGroup.endOrdinal) {
+      groups.push({
         endOrdinal: run.endOrdinal,
-        runs: [],
+        runs: [run],
         startOrdinal: run.startOrdinal,
       });
+      continue;
     }
-    groups.get(key).runs.push(run);
+    currentGroup.endOrdinal = Math.max(currentGroup.endOrdinal, run.endOrdinal);
+    currentGroup.runs.push(run);
   }
-  return [...groups.values()].map((group) => ({
+  return groups.map((group) => ({
     ...group,
-    runs: group.runs.sort(
-      (left, right) =>
-        left.sortIndex - right.sortIndex ||
-        left.stageIndex - right.stageIndex ||
-        left.entry.id.localeCompare(right.entry.id)
-    ),
+    runs: sortRuntimeRunsWithinGroup(group.runs),
   }));
+}
+
+function compareRuntimeRuns(left, right) {
+  const leftSpan = left.endOrdinal - left.startOrdinal;
+  const rightSpan = right.endOrdinal - right.startOrdinal;
+  return (
+    leftSpan - rightSpan ||
+    left.sortIndex - right.sortIndex ||
+    left.stageIndex - right.stageIndex ||
+    left.entry.id.localeCompare(right.entry.id)
+  );
+}
+
+function sortRuntimeRunsWithinGroup(runs) {
+  const outgoing = new Map(runs.map((run) => [run, new Set()]));
+  const incomingCount = new Map(runs.map((run) => [run, 0]));
+  const runsByTargetFile = new Map();
+  for (const run of runs) {
+    if (!runsByTargetFile.has(run.entry.targetFile)) {
+      runsByTargetFile.set(run.entry.targetFile, []);
+    }
+    runsByTargetFile.get(run.entry.targetFile).push(run);
+  }
+
+  for (const providerRuns of runsByTargetFile.values()) {
+    providerRuns.sort((left, right) => left.stageIndex - right.stageIndex || compareRuntimeRuns(left, right));
+    for (let index = 1; index < providerRuns.length; index++) {
+      addRuntimeRunDependency(providerRuns[index - 1], providerRuns[index], { outgoing, incomingCount });
+    }
+  }
+
+  for (const consumerRun of runs) {
+    for (const importRecord of consumerRun.entry.usedExtractedImports ?? []) {
+      for (const providerRun of runsByTargetFile.get(importRecord.sourceTargetFile) ?? []) {
+        addRuntimeRunDependency(providerRun, consumerRun, { outgoing, incomingCount });
+      }
+    }
+  }
+
+  const ready = runs
+    .filter((run) => incomingCount.get(run) === 0)
+    .sort(compareRuntimeRuns);
+  const ordered = [];
+  while (ready.length > 0) {
+    const nextRun = ready.shift();
+    ordered.push(nextRun);
+    const neighbours = [...(outgoing.get(nextRun) ?? [])].sort(compareRuntimeRuns);
+    for (const neighbour of neighbours) {
+      const nextIncomingCount = (incomingCount.get(neighbour) ?? 0) - 1;
+      incomingCount.set(neighbour, nextIncomingCount);
+      if (nextIncomingCount === 0) {
+        ready.push(neighbour);
+        ready.sort(compareRuntimeRuns);
+      }
+    }
+  }
+
+  if (ordered.length !== runs.length) {
+    return [...runs].sort(compareRuntimeRuns);
+  }
+  return ordered;
+}
+
+function addRuntimeRunDependency(providerRun, consumerRun, { outgoing, incomingCount }) {
+  if (providerRun === consumerRun) {
+    return;
+  }
+  const providerOutgoing = outgoing.get(providerRun);
+  if (!providerOutgoing || providerOutgoing.has(consumerRun)) {
+    return;
+  }
+  providerOutgoing.add(consumerRun);
+  incomingCount.set(consumerRun, (incomingCount.get(consumerRun) ?? 0) + 1);
 }
 
 function buildInitCallStatement(run) {
@@ -1039,11 +1206,56 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
   traverse(ast, {
     Program(path) {
       validateRenameSpecsAgainstProgramScope(path, renameSpecs, context);
+      const bindingBySourceName = new Map();
+      const renameBySourceName = new Map();
       for (const renameSpec of renameSpecs) {
-        path.scope.rename(renameSpec.from, renameSpec.to);
+        const binding = path.scope.getOwnBinding(renameSpec.from);
+        if (!binding) {
+          continue;
+        }
+        bindingBySourceName.set(renameSpec.from, binding);
+        renameBySourceName.set(renameSpec.from, renameSpec);
       }
+      if (renameBySourceName.size === 0) {
+        return;
+      }
+      path.traverse({
+        Identifier(identifierPath) {
+          const renameSpec = renameBySourceName.get(identifierPath.node.name);
+          if (!renameSpec || !shouldRenameIdentifierPath(identifierPath)) {
+            return;
+          }
+          const binding = identifierPath.scope.getBinding(identifierPath.node.name);
+          if (!binding || binding !== bindingBySourceName.get(renameSpec.from)) {
+            return;
+          }
+          identifierPath.node.name = renameSpec.to;
+        },
+      });
     },
   });
+}
+
+function shouldRenameIdentifierPath(identifierPath) {
+  if (identifierPath.isReferencedIdentifier() || identifierPath.isBindingIdentifier()) {
+    return true;
+  }
+  if (identifierPath.parentPath.isExportSpecifier() && identifierPath.key === "local") {
+    return true;
+  }
+  if (identifierPath.parentPath.isAssignmentExpression({ left: identifierPath.node })) {
+    return true;
+  }
+  if (identifierPath.parentPath.isUpdateExpression({ argument: identifierPath.node })) {
+    return true;
+  }
+  if (identifierPath.parentPath.isUnaryExpression({ argument: identifierPath.node, operator: "delete" })) {
+    return true;
+  }
+  if (identifierPath.parentPath.isObjectProperty({ value: identifierPath.node }) && identifierPath.parent.shorthand) {
+    return true;
+  }
+  return false;
 }
 
 function validateRenameSpecsAgainstProgramScope(programPath, renameSpecs, context) {
@@ -1722,6 +1934,36 @@ function topLevelDeclarationNames(node) {
   return [];
 }
 
+function buildSelectedBindingCoverage(ownerEntries) {
+  const coverage = new Map();
+  for (const ownerEntry of ownerEntries) {
+    if (!coverage.has(ownerEntry.owner.id)) {
+      coverage.set(ownerEntry.owner.id, {
+        fullOwner: false,
+        names: new Set(),
+      });
+    }
+    const ownerCoverage = coverage.get(ownerEntry.owner.id);
+    if (!ownerEntry.fragment) {
+      ownerCoverage.fullOwner = true;
+      ownerCoverage.names = new Set(topLevelDeclarationNames(ownerEntry.statement));
+      continue;
+    }
+    for (const name of ownerEntry.fragment.memberNames ?? []) {
+      ownerCoverage.names.add(name);
+    }
+  }
+  return coverage;
+}
+
+function currentOperationSelectsBinding(selectedBindingCoverage, ownerId, name) {
+  const coverage = selectedBindingCoverage.get(ownerId);
+  if (!coverage) {
+    return false;
+  }
+  return coverage.fullOwner || coverage.names.has(name);
+}
+
 function unwrapTopLevelDeclarationNode(node) {
   if (t.isExportNamedDeclaration(node) && node.declaration) {
     return node.declaration;
@@ -1941,12 +2183,16 @@ function operationSupportsCurrentExtractor(operation, { ownerById }) {
   if (!operation.graphGenerated) {
     return true;
   }
+  const ownerFragmentsByOwnerId = buildOwnerFragmentsByOwnerId(operation.selector.ownerFragments ?? [], operation.id);
   for (const ownerId of operation.selector.ownerIds ?? []) {
     const owner = ownerById.get(ownerId);
     if (!owner) {
       return false;
     }
     if (owner.currentExtractorCompatible === false) {
+      if (owner.type === "VariableDeclaration" && (ownerFragmentsByOwnerId.get(ownerId)?.length ?? 0) > 0) {
+        continue;
+      }
       return false;
     }
   }

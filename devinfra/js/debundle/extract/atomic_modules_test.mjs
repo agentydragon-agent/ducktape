@@ -910,6 +910,174 @@ export { readAlpha, readBeta };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules can split lazy callable declarators and grouped remainders from one top-level declaration", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-lazy-callable-fragments-"
+  );
+  const source = `const alpha = "a", buildLabel = function buildLabel() { return "label:" + alpha; }, delta = class Delta {
+  static value() {
+    return 7;
+  }
+};
+function readDelta() {
+  return delta.value();
+}
+function render() {
+  return buildLabel() + ":" + readDelta();
+}
+
+console.log(render());
+
+export { render };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const loaded = loadJsChunks({
+    inputRoot: snapshotRoot,
+    jsListPath: join(extractedRoot, "js-files.txt"),
+  });
+  computeJsAsts({ artifact: loaded.artifact });
+  await normalizeJsChunks({
+    artifact: loaded.artifact,
+    jobs: 1,
+  });
+  const entryAst = getChunkEntryFile(loaded.artifact, "static/app")?.ast;
+  assert.ok(entryAst);
+  const analysis = analyzeRuntimeBoundaryAst(entryAst, { chunkId: "static/app" });
+  const selectedOwnerIdsByChunk = {
+    "static/app": analysis.owners.map((owner) => owner.id),
+  };
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__alpha",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "constants/alpha",
+        },
+        members: [
+          {
+            id: "member__alpha",
+            name: "alphaConstant",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "alpha",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__label",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "labels/build_label",
+        },
+        members: [
+          {
+            id: "member__build_label",
+            name: "buildLabel",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "buildLabel",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+          selectedOwnerIdsByChunk,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const alphaCode = readFileSync(join(outRoot, "static", "app", "modules", "constants", "alpha.js"), "utf8");
+  const labelCode = readFileSync(join(outRoot, "static", "app", "modules", "labels", "build_label.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(alphaCode, /\balphaConstant\b/);
+  assert.match(alphaCode, /fragments=owner_[^,\s]+::declarator_0/);
+
+  assert.match(labelCode, /\bbuildLabel\b/);
+  assert.match(labelCode, /fragments=owner_[^,\s]+::declarator_1/);
+  assert.match(labelCode, /import \{ alphaConstant \} from "\.\.\/constants\/alpha\.js"/);
+
+  assert.match(residualCode, /\bdelta = class Delta/);
+  assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_group_2/);
+
+  assert.match(entryCode, /modules\/constants\/alpha\.js/);
+  assert.match(entryCode, /modules\/labels\/build_label\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 test("extractAtomicModules does not require a root artifact manifest", async () => {
   const { artifact, selectedOwnerIds } = await prepareAtomicFixture("debundle-atomic-modules-without-root-manifest-");
   setArtifactManifest(artifact, null);

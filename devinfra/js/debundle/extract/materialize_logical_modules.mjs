@@ -91,6 +91,7 @@ export function materializeLogicalModules({
             uiVersion: artifactManifest?.uiVersion ?? null,
           });
     const analysisMs = durationMsSince(analysisStartedAt);
+    logProgress(`logical-modules chunk=${chunkId} analysis done duration=${formatDuration(analysisMs)}`);
     const planningStartedAt = process.hrtime.bigint();
     const atomicPlan = planSelectedAtomicModules(
       {
@@ -103,6 +104,9 @@ export function materializeLogicalModules({
       }
     );
     const planningMs = durationMsSince(planningStartedAt);
+    logProgress(
+      `logical-modules chunk=${chunkId} planning done atomicUnits=${atomicPlan.atomicUnitCount} selectedOwners=${atomicPlan.selectedOwnerCount} duration=${formatDuration(planningMs)}`
+    );
 
     const atomicModules = atomicPlan.modulePlans.map((modulePlan, index) => {
       const target = deriveSelectedModuleTarget(modulePlan, index, { targetDir });
@@ -113,10 +117,14 @@ export function materializeLogicalModules({
       };
     });
     const logicalModules = buildLogicalModulePlans(atomicModules, operations, { analysis, chunkId, targetDir });
+    logProgress(
+      `logical-modules chunk=${chunkId} logical-plan done final=${logicalModules.modules.length} explicit=${logicalModules.counts.explicitModules} residual=${logicalModules.counts.residualModules}`
+    );
 
     const parseStartedAt = process.hrtime.bigint();
     const loweringAst = t.cloneNode(runtimeFile.ast, true);
     const parseMs = durationMsSince(parseStartedAt);
+    logProgress(`logical-modules chunk=${chunkId} clone-ast done duration=${formatDuration(parseMs)}`);
     const loweringStartedAt = process.hrtime.bigint();
     const result = extractSelectedModulePlanInAst(
       loweringAst,
@@ -134,6 +142,9 @@ export function materializeLogicalModules({
       }
     );
     const loweringMs = durationMsSince(loweringStartedAt);
+    logProgress(
+      `logical-modules chunk=${chunkId} lowering done files=${result.jsFiles.size} applied=${result.applied.length} duration=${formatDuration(loweringMs)}`
+    );
 
     const moduleByTargetFile = new Map(logicalModules.modules.map((modulePlan) => [modulePlan.targetFile, modulePlan]));
     const chunk = getChunk(artifact, chunkId);
@@ -197,6 +208,7 @@ export function materializeLogicalModules({
     });
     setChunk(artifact, nextChunk);
     const writebackMs = durationMsSince(writebackStartedAt);
+    logProgress(`logical-modules chunk=${chunkId} writeback done duration=${formatDuration(writebackMs)}`);
 
     const chunkManifest = getArtifactChunkManifest(artifact, chunkId);
     setArtifactChunkManifest(artifact, chunkId, {

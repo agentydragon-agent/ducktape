@@ -34,7 +34,7 @@ export function planSelectedAtomicModules(
     ownerById,
     selectedOwnerIds,
   });
-  const expandedAtomicUnits = splitPureVariableDeclarationAtomicUnits(rawAtomicUnits, {
+  const expandedAtomicUnits = splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, {
     ownerById,
     programBody,
   });
@@ -318,22 +318,22 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
   return units;
 }
 
-function splitPureVariableDeclarationAtomicUnits(rawAtomicUnits, { ownerById, programBody }) {
+function splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, { ownerById, programBody }) {
   const expanded = [];
   for (const unit of rawAtomicUnits) {
-    const splitUnits = splitPureVariableDeclarationAtomicUnit(unit, { ownerById, programBody });
+    const splitUnits = splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, programBody });
     expanded.push(...(splitUnits ?? [unit]));
   }
   return expanded;
 }
 
-function splitPureVariableDeclarationAtomicUnit(unit, { ownerById, programBody }) {
+function splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, programBody }) {
   if (unit.attachedItemIds.length > 0 || unit.ownerIds.length !== 1) {
     return null;
   }
   const [ownerId] = unit.ownerIds;
   const owner = ownerById.get(ownerId);
-  if (!owner || owner.type !== "VariableDeclaration" || ownerHasAnyTopLevelAccess(owner)) {
+  if (!owner || owner.type !== "VariableDeclaration" || ownerHasAnyEagerTopLevelAccess(owner)) {
     return null;
   }
   const statement = programBody?.[owner.ordinal];
@@ -341,27 +341,47 @@ function splitPureVariableDeclarationAtomicUnit(unit, { ownerById, programBody }
   if (!t.isVariableDeclaration(declaration) || declaration.declarations.length <= 1) {
     return null;
   }
-  const fragments = declaration.declarations.map((declarator, index) =>
-    buildPureVariableDeclaratorFragment(owner, declarator, index)
-  );
-  if (fragments.some((fragment) => fragment === null)) {
+  const splitUnits = buildSplittableVariableDeclarationUnits(owner, declaration.declarations);
+  if (!splitUnits || splitUnits.length <= 1) {
     return null;
   }
-  return fragments.map((fragment) => ({
+  return splitUnits.map((ownerFragment) => ({
     attachedItemIds: [],
-    ownerFragments: [fragment],
+    ownerFragments: [ownerFragment],
     ownerIds: [owner.id],
   }));
 }
 
-function buildPureVariableDeclaratorFragment(owner, declarator, index) {
+function buildSplittableVariableDeclarationUnits(owner, declarators) {
+  const splittableFragments = [];
+  const remainderDeclaratorIndices = [];
+  for (const [index, declarator] of declarators.entries()) {
+    const fragment = buildSplittableVariableDeclaratorFragment(owner, declarator, index);
+    if (fragment) {
+      splittableFragments.push(fragment);
+      continue;
+    }
+    remainderDeclaratorIndices.push(index);
+  }
+  if (splittableFragments.length === 0) {
+    return null;
+  }
+  const fragments = [...splittableFragments];
+  if (remainderDeclaratorIndices.length > 0) {
+    fragments.push(buildGroupedVariableDeclaratorFragment(owner, declarators, remainderDeclaratorIndices));
+  }
+  return fragments.sort(
+    (left, right) =>
+      (left.orderIndex ?? 0) - (right.orderIndex ?? 0) ||
+      left.id.localeCompare(right.id)
+  );
+}
+
+function buildSplittableVariableDeclaratorFragment(owner, declarator, index) {
   if (!t.isIdentifier(declarator.id)) {
     return null;
   }
-  if (!isStaticallyPureFragmentInitializer(declarator.init)) {
-    return null;
-  }
-  if (referencedUndeclaredNames(declarator.init).length > 0) {
+  if (!isStaticallyPureFragmentInitializer(declarator.init) && !isLazyCallableFragmentInitializer(declarator.init)) {
     return null;
   }
   return {
@@ -370,6 +390,19 @@ function buildPureVariableDeclaratorFragment(owner, declarator, index) {
     kind: "variable_declarator",
     memberNames: [declarator.id.name],
     orderIndex: index,
+    ownerId: owner.id,
+  };
+}
+
+function buildGroupedVariableDeclaratorFragment(owner, declarators, declaratorIndices) {
+  return {
+    declaratorIndices: [...declaratorIndices],
+    id: `${owner.id}::declarator_group_${declaratorIndices.join("_")}`,
+    kind: "variable_declarator_group",
+    memberNames: declaratorIndices
+      .flatMap((index) => bindingNamesForVariableDeclarator(declarators[index]))
+      .sort(),
+    orderIndex: declaratorIndices[0] ?? 0,
     ownerId: owner.id,
   };
 }
@@ -432,6 +465,58 @@ function isStaticallyPureFragmentInitializer(node) {
   return false;
 }
 
+function isLazyCallableFragmentInitializer(node) {
+  return t.isFunctionExpression(node) || t.isArrowFunctionExpression(node);
+}
+
+function bindingNamesForVariableDeclarator(declarator) {
+  if (!declarator?.id) {
+    return [];
+  }
+  if (t.isIdentifier(declarator.id)) {
+    return [declarator.id.name];
+  }
+  if (t.isObjectPattern(declarator.id)) {
+    return declarator.id.properties.flatMap((property) => {
+      if (t.isRestElement(property)) {
+        return bindingNamesForPattern(property.argument);
+      }
+      return bindingNamesForPattern(property.value);
+    });
+  }
+  if (t.isArrayPattern(declarator.id)) {
+    return declarator.id.elements.flatMap((element) => bindingNamesForPattern(element));
+  }
+  return bindingNamesForPattern(declarator.id);
+}
+
+function bindingNamesForPattern(pattern) {
+  if (!pattern) {
+    return [];
+  }
+  if (t.isIdentifier(pattern)) {
+    return [pattern.name];
+  }
+  if (t.isRestElement(pattern)) {
+    return bindingNamesForPattern(pattern.argument);
+  }
+  if (t.isAssignmentPattern(pattern)) {
+    return bindingNamesForPattern(pattern.left);
+  }
+  if (t.isObjectPattern(pattern)) {
+    return pattern.properties.flatMap((property) => {
+      if (t.isRestElement(property)) {
+        return bindingNamesForPattern(property.argument);
+      }
+      return bindingNamesForPattern(property.value);
+    });
+  }
+  if (t.isArrayPattern(pattern)) {
+    return pattern.elements.flatMap((element) => bindingNamesForPattern(element));
+  }
+  return [];
+}
+
 function ownerHasAnyTopLevelAccess(owner) {
   let hasAccess = false;
   forEachTopLevelAccess(owner, () => {
@@ -439,6 +524,14 @@ function ownerHasAnyTopLevelAccess(owner) {
     return false;
   });
   return hasAccess;
+}
+
+function ownerHasAnyEagerTopLevelAccess(owner) {
+  return (
+    selectedModuleEagerReadAccesses(owner).length > 0 ||
+    selectedModuleWriteAccesses(owner).length > 0 ||
+    selectedModuleEagerMemberWriteAccesses(owner).length > 0
+  );
 }
 
 function touchedSelectedOwnerIds(sideEffect, selectedOwnerIds) {
