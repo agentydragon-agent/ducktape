@@ -408,6 +408,75 @@ export { c7t };
   });
 });
 
+test("graph-generated extraction renames destructured function-expression params when object shorthand reuses the same bindings", () => {
+  const source = `const _Wt = async function _Wt({ nodeSpace: n, text: e, tagsAsPromptSection: t }) {
+  return {
+    nodeSpace: n,
+    text: e,
+    tagsAsPromptSection: t,
+  };
+};
+console.log(JSON.stringify(await _Wt({
+  nodeSpace: "space",
+  text: "hello",
+  tagsAsPromptSection: true,
+})));
+export { _Wt };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_function_expression_param_readable_names",
+      ownerNames: ["_Wt"],
+      targetFile: "regions/function_expression_param_readable_names.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/function_expression_param_readable_names.js");
+  assert.match(
+    extractedCode,
+    /async function _Wt\(\{\s*nodeSpace,\s*text,\s*tagsAsPromptSection\s*\}\)/s
+  );
+  assert.match(extractedCode, /return \{\s*nodeSpace,\s*text,\s*tagsAsPromptSection\s*\};/s);
+  assert.doesNotMatch(extractedCode, /\{\s*nodeSpace: n,\s*text: e,\s*tagsAsPromptSection: t\s*\}/s);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-function-expression-param-readable-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("graph-generated extraction keeps function-expression param aliases when a readable rename would shadow an outer binding", () => {
+  const source = `const nodeSpace = "outer";
+const _Wt = async function _Wt({ nodeSpace: n, text: e }) {
+  return nodeSpace + ":" + n + ":" + e;
+};
+console.log(await _Wt({
+  nodeSpace: "inner",
+  text: "hello",
+}));
+export { _Wt };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_function_expression_param_shadow_guard",
+      ownerNames: ["nodeSpace", "_Wt"],
+      targetFile: "regions/function_expression_param_shadow_guard.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/function_expression_param_shadow_guard.js");
+  assert.match(extractedCode, /nodeSpace: n,\s*text/s);
+  assert.match(extractedCode, /return nodeSpace \+ ":" \+ n \+ ":" \+ text;/);
+  assert.doesNotMatch(extractedCode, /\{\s*nodeSpace,\s*text\s*\}/s);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-function-expression-param-shadow-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("graph-generated extraction renames simple object destructuring assignments to readable locals", () => {
   const source = `function r7t(n) {
   let e, t;

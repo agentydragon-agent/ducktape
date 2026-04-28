@@ -743,6 +743,139 @@ export { c7t, readQuery };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules renames function-expression params even when returned object shorthand reuses the same bindings", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-readable-function-expression-params-"
+  );
+  const source = `let _Wt;
+_Wt = async function _Wt({ nodeSpace: n, text: e, tagsAsPromptSection: t }) {
+  return {
+    nodeSpace: n,
+    text: e,
+    tagsAsPromptSection: t,
+  };
+};
+async function readPayload() {
+  return _Wt({
+    nodeSpace: "space",
+    text: "hello",
+    tagsAsPromptSection: true,
+  });
+}
+console.log(JSON.stringify(await readPayload()));
+export { _Wt, readPayload };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__tag_candidate_input",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "commands/ai/tag_candidate_input",
+        },
+        members: [
+          {
+            id: "member__build_input",
+            name: "buildTagCandidateInput",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "_Wt",
+              },
+            },
+          },
+          {
+            id: "member__read_payload",
+            name: "readPayload",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "readPayload",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "parse",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  const moduleCode = readFileSync(
+    join(outRoot, "static", "app", "modules", "commands", "ai", "tag_candidate_input.js"),
+    "utf8"
+  );
+  assert.match(
+    moduleCode,
+    /buildTagCandidateInput = async function _Wt\(\{\s*nodeSpace,\s*text,\s*tagsAsPromptSection\s*\}\)/s
+  );
+  assert.match(moduleCode, /return \{\s*nodeSpace,\s*text,\s*tagsAsPromptSection\s*\};/s);
+  assert.doesNotMatch(moduleCode, /\{\s*nodeSpace: n,\s*text: e,\s*tagsAsPromptSection: t\s*\}/s);
+  assert.doesNotMatch(moduleCode, /return \{\s*nodeSpace: n,\s*text: e,\s*tagsAsPromptSection: t\s*\};/s);
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
+});
+
 test("materializeLogicalModules renames simple object destructuring statements to readable locals", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
     "debundle-logical-modules-readable-object-statements-"

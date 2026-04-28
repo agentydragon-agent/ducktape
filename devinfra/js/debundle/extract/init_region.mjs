@@ -1401,7 +1401,10 @@ function buildReadableObjectPatternRenameGroups(programPath) {
     const targetCounts = new Map();
     for (const candidate of candidates) {
       const existing = candidateBySourceName.get(candidate.from);
-      if (existing && existing.to !== candidate.to) {
+      if (existing) {
+        if (existing.to !== candidate.to) {
+          continue;
+        }
         continue;
       }
       candidateBySourceName.set(candidate.from, candidate);
