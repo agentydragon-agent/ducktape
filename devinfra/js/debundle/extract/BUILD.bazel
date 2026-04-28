@@ -58,6 +58,7 @@ js_test(
     name = "extraction_test",
     data = [
         "decl_graph.mjs",
+        "logical_modules.mjs",
         "planner.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",

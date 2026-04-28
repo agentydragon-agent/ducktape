@@ -1647,6 +1647,146 @@ export { renderPureBox };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules derives logical claimability from the owner graph instead of the preselected owner base", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-entry-claimability-pipeline-"
+  );
+  const source = `const independentValue = "independent";
+function readIndependentValue() {
+  return independentValue;
+}
+
+console.log("entry-barrier");
+
+const focusLabel = "focus";
+class FocusService {
+  static label() {
+    return focusLabel;
+  }
+}
+function useFocusService() {
+  return FocusService.label();
+}
+
+console.log(readIndependentValue());
+console.log(useFocusService());
+
+export { readIndependentValue, useFocusService };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const loaded = loadJsChunks({
+    inputRoot: snapshotRoot,
+    jsListPath: join(extractedRoot, "js-files.txt"),
+  });
+  const parsed = computeJsAsts({
+    artifact: loaded.artifact,
+  });
+  const normalized = await normalizeJsChunks({
+    artifact: parsed.artifact,
+    jobs: 1,
+  });
+  const runtimeFile = getChunkEntryFile(normalized.artifact, "static/app");
+  const analysis = analyzeRuntimeBoundaryAst(runtimeFile.ast, {
+    chunkId: "static/app",
+    manifestPath: "static/app/manifest.json",
+    runtimePath: "static/app/entry.js",
+    uiVersion: "fixture",
+  });
+  const selectedOwnerIdsByChunk = {
+    "static/app": ownerIdsForNames(analysis, ["independentValue", "readIndependentValue"]),
+  };
+
+  const materialized = materializeLogicalModules({
+    artifact: normalized.artifact,
+    chunkIds: ["static/app"],
+    operations: [
+      {
+        id: "logical__focus_service",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/focus/service",
+        },
+        members: [
+          {
+            id: "member__focus_label",
+            name: "focusServiceLabel",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "focusLabel",
+              },
+            },
+          },
+          {
+            id: "member__focus_service",
+            name: "FriendlyFocusService",
+            selector: {
+              binding: {
+                kind: "ClassDeclaration",
+                name: "FocusService",
+              },
+            },
+          },
+          {
+            id: "member__use_focus_service",
+            name: "useFriendlyFocusService",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "useFocusService",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk,
+  });
+
+  writeJsTree({
+    artifact: materialized.artifact,
+    force: true,
+    outDir: outRoot,
+  });
+
+  const focusCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "focus", "service.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(withoutGeneratedHeader(focusCode), /Selected-module lowered region; original owners: owner_00002, owner_00003, owner_00004\./);
+  assert.match(focusCode, /\bfocusServiceLabel = "focus"/);
+  assert.match(focusCode, /\bFriendlyFocusService = class FriendlyFocusService\b/);
+  assert.match(focusCode, /\buseFriendlyFocusService = function useFriendlyFocusService\b/);
+  assert.match(focusCode, /__dt_generated_init__ui_focus_service_stage_0/);
+  assert.match(focusCode, /__dt_generated_init__ui_focus_service_stage_1/);
+  assert.match(entryCode, /import \{[^}]*focusServiceLabel[^}]*FriendlyFocusService[^}]*useFriendlyFocusService[^}]*__dt_generated_init__ui_focus_service_stage_0[^}]*__dt_generated_init__ui_focus_service_stage_1[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/);
+  assert.match(residualCode, /\breadIndependentValue\b/);
+  assert.doesNotMatch(residualCode, /\bFriendlyFocusService\b/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 async function prepareAtomicFixture(prefix) {
   const { extractedRoot, selectedOwnerIds, snapshotRoot } = await writeAtomicSnapshotFixture(prefix);
   const loaded = loadJsChunks({
@@ -1803,6 +1943,14 @@ function ownerIdsForNames(analysis, names) {
 function readFileSyncFromArtifactFile(fileArtifact) {
   assert.ok(fileArtifact?.ast, "missing artifact file AST");
   return serializeGeneratedJsFile(fileArtifact);
+}
+
+function withoutGeneratedHeader(source) {
+  const lines = source.split("\n");
+  if (lines[0]?.startsWith("// @ducktape-")) {
+    return lines.slice(1).join("\n");
+  }
+  return source;
 }
 
 function fixtureSource() {

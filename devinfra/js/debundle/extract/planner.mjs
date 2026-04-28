@@ -79,6 +79,13 @@ export function planSelectedAtomicModules(
   };
 }
 
+export function defaultSelectedOwnerIdsForAnalysis(analysis, callerName = "defaultSelectedOwnerIdsForAnalysis") {
+  if (!analysis?.owners || !analysis?.programItems) {
+    throw new Error(`${callerName} requires analysis`);
+  }
+  return selectedOwnerIdsFromDefaultClosureSelection(analysis, getOwnerByIdForAnalysis(analysis), callerName);
+}
+
 export function buildSelectedModuleOperations(plan, options = {}) {
   const chunkId = options.chunkId ?? "<chunk>";
   const file = options.file ? normalizeRelativeFile(options.file) : null;

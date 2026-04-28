@@ -27,8 +27,8 @@ import {
   resolveWorkspacePath,
 } from "../common/io.mjs";
 import { buildSelectedModuleLoweringMetadata, extractSelectedModulePlanInAst } from "./init_region.mjs";
-import { buildLogicalModulePlans } from "./logical_modules.mjs";
-import { deriveSelectedModuleTarget, planSelectedAtomicModules } from "./planner.mjs";
+import { buildLogicalModulePlans, logicalSelectedOwnerIdsForChunk } from "./logical_modules.mjs";
+import { defaultSelectedOwnerIdsForAnalysis, deriveSelectedModuleTarget, planSelectedAtomicModules } from "./planner.mjs";
 
 export function materializeLogicalModules({
   artifact,
@@ -93,6 +93,9 @@ export function materializeLogicalModules({
     const analysisMs = durationMsSince(analysisStartedAt);
     logProgress(`logical-modules chunk=${chunkId} analysis done duration=${formatDuration(analysisMs)}`);
     const planningStartedAt = process.hrtime.bigint();
+    const baseSelectedOwnerIds = selectedOwnerIdsByChunk?.[chunkId] ?? defaultSelectedOwnerIdsForAnalysis(analysis);
+    const logicalClaimOwnerIds = logicalSelectedOwnerIdsForChunk(operations, { analysis, chunkId });
+    const selectedOwnerIds = mergeSelectedOwnerIds(baseSelectedOwnerIds, logicalClaimOwnerIds);
     const atomicPlan = planSelectedAtomicModules(
       {
         analysis,
@@ -100,7 +103,7 @@ export function materializeLogicalModules({
         programBody: runtimeFile.ast.program.body,
       },
       {
-        selectedOwnerIds: selectedOwnerIdsByChunk?.[chunkId] ?? null,
+        selectedOwnerIds,
       }
     );
     const planningMs = durationMsSince(planningStartedAt);
@@ -324,6 +327,19 @@ export function materializeLogicalModules({
     artifact,
     manifest,
   };
+}
+
+function mergeSelectedOwnerIds(...ownerIdCollections) {
+  const mergedOwnerIds = new Set();
+  for (const ownerIds of ownerIdCollections) {
+    if (!ownerIds) {
+      continue;
+    }
+    for (const ownerId of ownerIds) {
+      mergedOwnerIds.add(ownerId);
+    }
+  }
+  return mergedOwnerIds;
 }
 
 function cloneAtomicUnit(unit) {

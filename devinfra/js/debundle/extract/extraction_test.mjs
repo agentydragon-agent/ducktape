@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parse } from "@babel/parser";
 import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
+import { logicalSelectedOwnerIdsForChunk } from "./logical_modules.mjs";
 import { planSelectedAtomicModules } from "./planner.mjs";
 
 test("planSelectedAtomicModules rejects unknown selected owner ids that appear in access edges", () => {
@@ -150,4 +151,64 @@ export { Base, Derived };`,
   );
   assert.ok(ownerWithBaseAndDerived);
   assert.equal(ownerWithBaseAndDerived.ownerFragments?.length ?? 0, 0);
+});
+
+test("logicalSelectedOwnerIdsForChunk expands direct logical members through the full owner dependency graph", () => {
+  const ast = parse(
+    `const independentValue = "independent";
+const focusLabel = "focus";
+class FocusService {
+  static label() {
+    return focusLabel;
+  }
+}
+function useFocusService() {
+  return FocusService.label();
+}
+function readIndependentValue() {
+  return independentValue;
+}
+export { useFocusService, readIndependentValue };`,
+    { sourceType: "module" }
+  );
+  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
+
+  const selectedOwnerIds = logicalSelectedOwnerIdsForChunk(
+    [
+      {
+        id: "logical__focus_service",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/focus/service",
+        },
+        members: [
+          {
+            id: "member__use_focus_service",
+            name: "useFocusService",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "useFocusService",
+              },
+            },
+          },
+        ],
+      },
+    ],
+    { analysis, chunkId: "static/app" }
+  );
+
+  const selectedNames = new Set(
+    analysis.owners
+      .filter((owner) => selectedOwnerIds.has(owner.id))
+      .flatMap((owner) => owner.names)
+  );
+  assert.ok(selectedNames.has("useFocusService"));
+  assert.ok(selectedNames.has("FocusService"));
+  assert.ok(selectedNames.has("focusLabel"));
+  assert.ok(!selectedNames.has("independentValue"));
+  assert.ok(!selectedNames.has("readIndependentValue"));
 });

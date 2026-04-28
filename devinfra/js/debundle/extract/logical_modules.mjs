@@ -186,7 +186,20 @@ export function logicalSelectedOwnerIdsForChunk(operations, { analysis = null, c
       }
     }
   }
-  return ownerIds.size > 0 ? ownerIds : null;
+  if (ownerIds.size === 0) {
+    return null;
+  }
+  if (!analysis?.owners) {
+    return ownerIds;
+  }
+  const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
+  const unknownOwnerIds = [...ownerIds].filter((ownerId) => !ownerById.has(ownerId));
+  if (unknownOwnerIds.length > 0) {
+    const sample = unknownOwnerIds.slice(0, 8).join(", ");
+    const remainder = unknownOwnerIds.length > 8 ? ` (+${unknownOwnerIds.length - 8} more)` : "";
+    throw new Error(`logicalSelectedOwnerIdsForChunk referenced unknown owners outside analysis.owners: ${sample}${remainder}`);
+  }
+  return expandLogicalOwnerDependencyClosure(ownerIds, ownerById);
 }
 
 function normalizeLogicalModuleOperations(operations) {
@@ -617,6 +630,43 @@ function resolveOwnerIdFromAnalysis(analysis, member, { operationId = "<logical-
     );
   }
   return matches[0].id;
+}
+
+function expandLogicalOwnerDependencyClosure(seedOwnerIds, ownerById) {
+  const selectedOwnerIds = new Set(seedOwnerIds);
+  const stack = [...selectedOwnerIds];
+  while (stack.length > 0) {
+    const owner = ownerById.get(stack.pop());
+    if (!owner) {
+      continue;
+    }
+    for (const dependencyOwnerId of localDeclarationDependencyOwnerIds(owner, ownerById)) {
+      if (selectedOwnerIds.has(dependencyOwnerId)) {
+        continue;
+      }
+      selectedOwnerIds.add(dependencyOwnerId);
+      stack.push(dependencyOwnerId);
+    }
+  }
+  return selectedOwnerIds;
+}
+
+function localDeclarationDependencyOwnerIds(owner, ownerById) {
+  const dependencyOwnerIds = new Set();
+  for (const bucket of [owner.readsTopLevel, owner.writesTopLevel, owner.memberWritesTopLevel]) {
+    for (const phase of ["eager", "lazy"]) {
+      for (const access of bucket?.[phase] ?? []) {
+        if (access.kind !== "local_declaration" || !access.ownerId || access.ownerId === owner.id) {
+          continue;
+        }
+        if (!ownerById.has(access.ownerId)) {
+          continue;
+        }
+        dependencyOwnerIds.add(access.ownerId);
+      }
+    }
+  }
+  return dependencyOwnerIds;
 }
 
 function manifestDeclarationKind(kind) {
