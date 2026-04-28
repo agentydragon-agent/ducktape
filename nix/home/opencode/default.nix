@@ -6,7 +6,7 @@
 #   Start: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
 #   Model: qwen3-coder-awq (262K context, 8.5 GiB/GPU, FP8 KV cache)
 #
-# Critical vLLM fixes (see qwen3-coder-vram-analysis.md):
+# Critical vLLM fixes (see cluster/docs/inference/qwen3_coder_vram_analysis.md):
 #   - --max-num-seqs 32 (default 256 causes OOM during warmup)
 #   - --kv-cache-dtype fp8 (doubles context capacity)
 #   - Don't use --quantization awq (model auto-detects compressed-tensors)
@@ -30,7 +30,7 @@
 #   deepseek-r1-distill-llama-70b | ✓         | ✓     | 128k    | ~19 GB   | Best quality, needs TP=2
 #   qwen3-32b-awq                 | ✓         | ✓     | 128k    | ~17 GB   | General model, thinking works
 #
-# See model-download-list.md for download status and benchmarks.
+# See cluster/docs/inference/model_download_history.md for download status and benchmarks.
 {
   config,
   pkgs,
@@ -74,7 +74,7 @@ let
           # AWQ quantization: ~8.5 GB/GPU weights (vs 28.5 GB bf16)
           # FP8 KV cache: ~23 GB available per GPU = 262K context
           # ⚠️ AWQ model does NOT support thinking mode (per model card)
-          # See: experimental/local-llm/qwen3-coder-vram-analysis.md
+          # See: cluster/docs/inference/qwen3_coder_vram_analysis.md
           "qwen3-coder-awq" = {
             name = "Qwen3-Coder 30B AWQ (vLLM)";
             reasoning = false; # AWQ model removes thinking support
@@ -211,7 +211,7 @@ let
 
           # Qwen3-Coder 30B with 131k context - recommended for large codebases
           # Q4_K_M (19GB) + FP16 KV cache supports ~218k context on 2x5090
-          # See: experimental/local-llm/qwen3-coder-vram-analysis.md
+          # See: cluster/docs/inference/qwen3_coder_vram_analysis.md
           # Create variant:
           #   cd ~/code/ducktape/experimental/local-llm
           #   ollama create qwen3-coder-long -f Modelfile.qwen3-coder-long

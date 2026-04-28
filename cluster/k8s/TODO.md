@@ -2,6 +2,38 @@
 
 Audit findings deferred for later.
 
+## Reconsider mitmproxy auto-injection in `claude-sandbox`
+
+`cluster/k8s/kyverno/policies/inject-mitmproxy.yaml` injects
+`HTTP_PROXY=http://mitmproxy.openclaw-mitmproxy:8080` (and CA bundles) into
+every pod in `claude-sandbox`, `openclaw-sandbox`, `openclaw-gateway`. This
+is sensible for the openclaw agent sandboxes (mitmproxy enforces egress
+allowlists and provides per-agent audit), but it adds friction to
+`claude-sandbox` ad-hoc Jobs that talk to in-cluster Services
+(`ollama.ollama:11434` etc.) — Python `urllib`'s `NO_PROXY` matching is
+hostname-based and doesn't resolve `<svc>.<ns>` against the
+`10.0.0.0/8` CIDR, so requests go to mitmproxy and time out. Curl works
+because it does post-DNS NO_PROXY matching.
+
+Workarounds in use today:
+
+- bench scripts build a `urllib.request.ProxyHandler({})` opener (see
+  `cluster/docs/inference/runs/2026-04-28_initial/bench.py`).
+- General-purpose Python in `claude-sandbox` would have to do the same.
+
+Options to evaluate:
+
+1. **Drop `claude-sandbox` from the Kyverno policy match list** — the
+   sandbox is for trusted ad-hoc work, not untrusted agent egress. If
+   we want audit, add it back per-Job opt-in via a label.
+2. **Keep mitmproxy but extend `NO_PROXY` to include in-cluster Service
+   FQDNs** (`ollama.ollama,ollama.ollama.svc,ollama.ollama.svc.cluster.local`,
+   etc.). Brittle as Services proliferate.
+3. **Status quo** — every script disables proxies programmatically.
+
+Decision deferred. See <../docs/inference/runs/2026-04-28_initial/README.md>
+for the incident that motivated this entry.
+
 ## OpenClaw secrets
 
 - [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
