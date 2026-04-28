@@ -16,6 +16,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
   if (logicalOperations.length === 0) {
     return {
       counts: {
+        blockedMembers: 0,
         explicitModules: 0,
         residualModules: 0,
         totalModules: currentModules.length,
@@ -27,16 +28,19 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
   }
 
   const ownerById = new Map((analysis?.owners ?? []).map((owner) => [owner.id, owner]));
-  const extractorAvailableModuleIds = computeExtractorAvailableModuleIds(currentModules, { analysis, ownerById });
-  const atomicModules = [...currentModules]
-    .filter((modulePlan) => extractorAvailableModuleIds.has(modulePlan.id))
+  const { availableModuleIds, blockingReasonsByModuleId } = computeExtractorAvailability(currentModules, {
+    analysis,
+    ownerById,
+  });
+  const claimableAtomicModules = [...currentModules]
     .sort(
-    (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
-  );
-  const moduleById = new Map(atomicModules.map((modulePlan) => [modulePlan.id, modulePlan]));
-  const modulesByOwnerId = buildModulesByOwnerId(atomicModules);
-  const modulesBySymbol = buildModulesBySymbol(atomicModules);
-  const dependencyIdsByModuleId = buildModuleDependencyIdsByModuleId(atomicModules, {
+      (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
+    );
+  const lowerableAtomicModules = claimableAtomicModules.filter((modulePlan) => availableModuleIds.has(modulePlan.id));
+  const moduleById = new Map(claimableAtomicModules.map((modulePlan) => [modulePlan.id, modulePlan]));
+  const modulesByOwnerId = buildModulesByOwnerId(claimableAtomicModules);
+  const modulesBySymbol = buildModulesBySymbol(claimableAtomicModules);
+  const dependencyIdsByModuleId = buildModuleDependencyIdsByModuleId(claimableAtomicModules, {
     analysis,
     modulesByOwnerId,
   });
@@ -46,6 +50,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
   const explicitModulePlans = [];
   const reports = [];
   let residualOperation = null;
+  let blockedMembers = 0;
   let unmatchedMembers = 0;
 
   for (const operation of groupLogicalModuleOperations(logicalOperations)) {
@@ -62,19 +67,25 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     for (const member of operation.members) {
       const importMember = isImportKind(member.selector.binding.kind ?? null);
       const resolvedMember = resolveLogicalMember(member, {
+        availableModuleIds,
         analysis,
+        blockingReasonsByModuleId,
         modulesByOwnerId,
         modulesBySymbol,
         operationId: operation.id,
       });
       const requestedBinding = {
+        blockingReasons: [...resolvedMember.blockingReasons],
+        blocked: resolvedMember.blocked,
         anchor: !importMember,
+        lowerable: resolvedMember.lowerable,
         name: member.name,
         id: member.id,
         kind: member.selector.binding.kind,
         matched: resolvedMember.matched,
         moduleId: resolvedMember.modulePlan?.id ?? null,
         sourceName: member.selector.binding.name,
+        status: resolvedMember.status,
         ownerId: resolvedMember.ownerId ?? null,
         changedName: member.name !== member.selector.binding.name,
       };
@@ -82,8 +93,12 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
       if (importMember) {
         continue;
       }
-      if (!resolvedMember.modulePlan) {
+      if (!resolvedMember.matched) {
         unmatchedMembers += 1;
+        continue;
+      }
+      if (!resolvedMember.lowerable || !resolvedMember.modulePlan) {
+        blockedMembers += 1;
         continue;
       }
       const modulePlan = resolvedMember.modulePlan;
@@ -181,7 +196,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     });
   }
 
-  const residualModules = atomicModules.filter((modulePlan) => !finalClaimedModuleIds.has(modulePlan.id));
+  const residualModules = lowerableAtomicModules.filter((modulePlan) => !finalClaimedModuleIds.has(modulePlan.id));
   const finalPlans = [...explicitModulePlans];
   if (residualOperation && residualModules.length > 0) {
     const residualPlan = mergeModuleGroup(residualModules, residualOperation, finalPlans.length, { targetDir });
@@ -209,6 +224,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
   finalPlans.sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
   return {
     counts: {
+      blockedMembers,
       explicitModules: explicitModulePlans.length,
       residualModules: residualOperation ? (residualModules.length > 0 ? 1 : 0) : residualModules.length,
       totalModules: finalPlans.length,
@@ -373,7 +389,8 @@ function buildModulesByOwnerId(modulePlans) {
   return modulesByOwnerId;
 }
 
-function modulePlanSupportsCurrentExtractor(modulePlan, ownerById) {
+function currentExtractorCompatibilityReasons(modulePlan, ownerById) {
+  const reasons = [];
   for (const ownerId of modulePlan.ownerIds ?? []) {
     const owner = ownerById.get(ownerId);
     if (!owner || owner.currentExtractorCompatible !== false) {
@@ -383,21 +400,29 @@ function modulePlanSupportsCurrentExtractor(modulePlan, ownerById) {
     if (owner.type === "VariableDeclaration" && fragmentCount > 0) {
       continue;
     }
-    return false;
+    reasons.push(`owner_not_current_extractor_compatible:${ownerId}`);
   }
-  return true;
+  return reasons;
 }
 
-function computeExtractorAvailableModuleIds(currentModules, { analysis, ownerById }) {
+function computeExtractorAvailability(currentModules, { analysis, ownerById }) {
   if (!analysis?.owners) {
-    return new Set(currentModules.map((modulePlan) => modulePlan.id));
+    return {
+      availableModuleIds: new Set(currentModules.map((modulePlan) => modulePlan.id)),
+      blockingReasonsByModuleId: new Map(),
+    };
   }
   const allModules = [...currentModules];
-  const availableModuleIds = new Set(
-    allModules
-      .filter((modulePlan) => modulePlanSupportsCurrentExtractor(modulePlan, ownerById))
-      .map((modulePlan) => modulePlan.id)
-  );
+  const availableModuleIds = new Set();
+  const blockingReasonsByModuleId = new Map();
+  for (const modulePlan of allModules) {
+    const blockingReasons = currentExtractorCompatibilityReasons(modulePlan, ownerById);
+    if (blockingReasons.length === 0) {
+      availableModuleIds.add(modulePlan.id);
+      continue;
+    }
+    blockingReasonsByModuleId.set(modulePlan.id, blockingReasons);
+  }
   const modulesByOwnerId = buildModulesByOwnerId(allModules);
   const dependencyIdsByModuleId = buildModuleDependencyIdsByModuleId(allModules, {
     analysis,
@@ -419,12 +444,21 @@ function computeExtractorAvailableModuleIds(currentModules, { analysis, ownerByI
           continue;
         }
         availableModuleIds.delete(modulePlan.id);
+        const dependencyReasons = blockingReasonsByModuleId.get(dependencyModuleId) ?? [];
+        const blockingReasons = [
+          `depends_on_unavailable_module:${dependencyModuleId}`,
+          ...dependencyReasons,
+        ].filter((reason, index, array) => array.indexOf(reason) === index);
+        blockingReasonsByModuleId.set(modulePlan.id, blockingReasons);
         changed = true;
         break;
       }
     }
   }
-  return availableModuleIds;
+  return {
+    availableModuleIds,
+    blockingReasonsByModuleId,
+  };
 }
 
 function buildModuleDependencyIdsByModuleId(modulePlans, { analysis, modulesByOwnerId }) {
@@ -537,12 +571,19 @@ function expandSelectedModuleDependencyClosure(selectedModules, { dependencyIdsB
   return [...selectedModuleIds].map((moduleId) => moduleById.get(moduleId));
 }
 
-function resolveLogicalMember(member, { analysis, modulesByOwnerId, modulesBySymbol, operationId }) {
+function resolveLogicalMember(
+  member,
+  { availableModuleIds, analysis, blockingReasonsByModuleId, modulesByOwnerId, modulesBySymbol, operationId }
+) {
   if (isImportKind(member.selector.binding.kind ?? null)) {
     return {
+      blocked: false,
+      blockingReasons: [],
+      lowerable: true,
       matched: true,
       modulePlan: null,
       ownerId: null,
+      status: "matched",
     };
   }
   const ownerId = resolveCanonicalOwnerIdForLogicalMember(member, {
@@ -554,6 +595,8 @@ function resolveLogicalMember(member, { analysis, modulesByOwnerId, modulesBySym
     const ownerMatches = modulesByOwnerId.get(ownerId) ?? [];
     if (ownerMatches.length === 0) {
       return resolveUniqueSymbolMatch(symbolMatches, {
+        availableModuleIds,
+        blockingReasonsByModuleId,
         member,
         operationId,
         ownerId,
@@ -561,11 +604,7 @@ function resolveLogicalMember(member, { analysis, modulesByOwnerId, modulesBySym
     }
     const ownerSymbolMatches = ownerMatches.filter((modulePlan) => modulePlan.memberNames.includes(member.selector.binding.name));
     if (ownerSymbolMatches.length === 1) {
-      return {
-        matched: true,
-        modulePlan: ownerSymbolMatches[0],
-        ownerId,
-      };
+      return classifyResolvedModule(ownerSymbolMatches[0], { availableModuleIds, blockingReasonsByModuleId, ownerId });
     }
     if (ownerSymbolMatches.length > 1) {
       throw new Error(
@@ -575,6 +614,8 @@ function resolveLogicalMember(member, { analysis, modulesByOwnerId, modulesBySym
       );
     }
     return resolveUniqueSymbolMatch(symbolMatches, {
+      availableModuleIds,
+      blockingReasonsByModuleId,
       member,
       operationId,
       ownerId,
@@ -582,9 +623,13 @@ function resolveLogicalMember(member, { analysis, modulesByOwnerId, modulesBySym
   }
   if (symbolMatches.length === 0) {
     return {
+      blocked: false,
+      blockingReasons: [],
+      lowerable: false,
       matched: false,
       modulePlan: null,
       ownerId: null,
+      status: "unmatched",
     };
   }
   if (symbolMatches.length > 1) {
@@ -594,19 +639,19 @@ function resolveLogicalMember(member, { analysis, modulesByOwnerId, modulesBySym
         .join(", ")}`
     );
   }
-  return {
-    matched: true,
-    modulePlan: symbolMatches[0],
-    ownerId: null,
-  };
+  return classifyResolvedModule(symbolMatches[0], { availableModuleIds, blockingReasonsByModuleId, ownerId: null });
 }
 
-function resolveUniqueSymbolMatch(matches, { member, operationId, ownerId }) {
+function resolveUniqueSymbolMatch(matches, { availableModuleIds, blockingReasonsByModuleId, member, operationId, ownerId }) {
   if (matches.length === 0) {
     return {
+      blocked: false,
+      blockingReasons: [],
+      lowerable: false,
       matched: false,
       modulePlan: null,
       ownerId,
+      status: "unmatched",
     };
   }
   if (matches.length > 1) {
@@ -616,10 +661,19 @@ function resolveUniqueSymbolMatch(matches, { member, operationId, ownerId }) {
         .join(", ")}`
     );
   }
+  return classifyResolvedModule(matches[0], { availableModuleIds, blockingReasonsByModuleId, ownerId });
+}
+
+function classifyResolvedModule(modulePlan, { availableModuleIds, blockingReasonsByModuleId, ownerId }) {
+  const lowerable = availableModuleIds.has(modulePlan.id);
   return {
+    blocked: !lowerable,
+    blockingReasons: [...(blockingReasonsByModuleId.get(modulePlan.id) ?? [])],
+    lowerable,
     matched: true,
-    modulePlan: matches[0],
+    modulePlan,
     ownerId,
+    status: lowerable ? "matched" : "blocked",
   };
 }
 

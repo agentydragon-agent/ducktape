@@ -602,7 +602,10 @@ test("buildLogicalModulePlans does not let one incompatible atomic module poison
   const schemaCore = plan.modules.find((modulePlan) => modulePlan.modulePath === "local_api/contract/schema_language_core");
   assert.ok(schemaCore);
   assert.deepEqual(schemaCore.ownerIds, ["owner_00001"]);
-  assert.equal(plan.counts.unmatchedMembers, 1);
+  assert.equal(plan.counts.blockedMembers, 1);
+  assert.equal(plan.counts.unmatchedMembers, 0);
+  assert.equal(plan.reports[0].requestedBindings[1].status, "blocked");
+  assert.match(plan.reports[0].requestedBindings[1].blockingReasons[0], /^owner_not_current_extractor_compatible:/);
 });
 
 test("buildLogicalModulePlans excludes a compatible-looking atomic module when it depends on an unavailable atomic", () => {
@@ -707,5 +710,75 @@ test("buildLogicalModulePlans excludes a compatible-looking atomic module when i
     targetDir: "modules",
   });
   assert.equal(plan.counts.explicitModules, 0);
+  assert.equal(plan.counts.blockedMembers, 1);
+  assert.equal(plan.counts.unmatchedMembers, 0);
+  assert.equal(plan.reports[0].requestedBindings[0].status, "blocked");
+  assert.match(plan.reports[0].requestedBindings[0].blockingReasons[0], /^depends_on_unavailable_module:/);
+});
+
+test("buildLogicalModulePlans still reports truly missing logical members as unmatched", () => {
+  const analysis = {
+    owners: [
+      {
+        currentExtractorCompatible: true,
+        id: "owner_00001",
+        memberWritesTopLevel: { eager: [], lazy: [] },
+        names: ["existingHelper"],
+        ordinal: 0,
+        readsTopLevel: { eager: [], lazy: [] },
+        type: "FunctionDeclaration",
+        writesTopLevel: { eager: [], lazy: [] },
+      },
+    ],
+  };
+  const currentModules = [
+    {
+      attachedItemIds: [],
+      bytes: 24,
+      id: "atomic_module_0000",
+      index: 0,
+      lines: 1,
+      memberNames: ["existingHelper"],
+      modulePath: "modules/atomic_module_0000",
+      nameHint: "helper",
+      ownerIds: ["owner_00001"],
+      ownerFragments: [],
+      startOrdinal: 0,
+      unitIds: ["selected_atomic_unit_0000"],
+    },
+  ];
+  const operations = [
+    {
+      id: "logical__missing",
+      operation: "define_logical_module",
+      selector: {
+        chunkId: "static/app",
+      },
+      target: {
+        path: "runtime/missing",
+      },
+      members: [
+        {
+          id: "member__missing_helper",
+          name: "missingHelper",
+          selector: {
+            binding: {
+              kind: "FunctionDeclaration",
+              name: "missingHelper",
+            },
+          },
+        },
+      ],
+    },
+  ];
+
+  const plan = buildLogicalModulePlans(currentModules, operations, {
+    analysis,
+    chunkId: "static/app",
+    targetDir: "modules",
+  });
+  assert.equal(plan.counts.blockedMembers, 0);
   assert.equal(plan.counts.unmatchedMembers, 1);
+  assert.equal(plan.reports[0].requestedBindings[0].status, "unmatched");
+  assert.deepEqual(plan.reports[0].requestedBindings[0].blockingReasons, []);
 });

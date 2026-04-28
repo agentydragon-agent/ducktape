@@ -264,6 +264,7 @@ export function materializeLogicalModules({
         applied: result.applied.length,
         atomicModules: atomicModules.length,
         atomicUnits: atomicPlan.atomicUnitCount,
+        blockedMembers: logicalModules.counts.blockedMembers,
         explicitLogicalModules: logicalModules.counts.explicitModules,
         finalModules: logicalModules.counts.totalModules,
         residualLogicalModules: logicalModules.counts.residualModules,
@@ -321,6 +322,7 @@ export function materializeLogicalModules({
     chunks: reports,
     counts: {
       applied: applied.length,
+      blockedMembers: reports.reduce((sum, report) => sum + report.counts.blockedMembers, 0),
       finalModules: reports.reduce((sum, report) => sum + report.counts.finalModules, 0),
       explicitLogicalModules: reports.reduce((sum, report) => sum + report.counts.explicitLogicalModules, 0),
       residualLogicalModules: reports.reduce((sum, report) => sum + report.counts.residualLogicalModules, 0),

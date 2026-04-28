@@ -497,6 +497,7 @@ test("materializeLogicalModules lowers final logical modules directly from combi
   assert.ok(chunk.files.has("modules/state/first_state.js"));
   assert.ok(chunk.files.has("modules/residual/unhandled.js"));
   assert.equal(materialized.manifest.kind, "js.logical_module_manifest");
+  assert.equal(materialized.manifest.counts.blockedMembers, 0);
   assert.equal(materialized.manifest.counts.explicitLogicalModules, 2);
   assert.equal(materialized.manifest.counts.residualLogicalModules, 1);
   assert.deepEqual(
