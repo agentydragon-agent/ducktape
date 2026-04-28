@@ -2,6 +2,7 @@ import { parse } from "@babel/parser";
 import traverseModule from "@babel/traverse";
 import * as t from "@babel/types";
 import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
+import { isScrambledIdentifier } from "../analysis/identifier_frequency.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
 import { logProgress } from "../common/io.mjs";
 import { referencedUndeclaredNames, referencedUndeclaredNamesInVariableDeclarator } from "../common/program_analysis.mjs";
@@ -1292,6 +1293,7 @@ function renamedLocalIdentifierName(name, localRenameMap) {
 
 function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) {
   if (!Array.isArray(renameSpecs) || renameSpecs.length === 0) {
+    applyReadableObjectParameterRenamesInGeneratedFile(ast);
     return;
   }
   traverse(ast, {
@@ -1323,6 +1325,148 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
           identifierPath.node.name = renameSpec.to;
         },
       });
+      applyReadableObjectParameterRenamesInProgram(path);
+    },
+  });
+}
+
+function applyReadableObjectParameterRenamesInGeneratedFile(ast) {
+  traverse(ast, {
+    Program(path) {
+      applyReadableObjectParameterRenamesInProgram(path);
+    },
+  });
+}
+
+function applyReadableObjectParameterRenamesInProgram(programPath) {
+  programPath.traverse({
+    Function(functionPath) {
+      const renameSpecs = buildReadableObjectParameterRenameSpecs(functionPath);
+      for (const renameSpec of renameSpecs) {
+        functionPath.scope.rename(renameSpec.from, renameSpec.to);
+      }
+    },
+  });
+  normalizeReadableObjectPatternShorthandInProgram(programPath);
+}
+
+function buildReadableObjectParameterRenameSpecs(functionPath) {
+  const candidates = [];
+  for (const param of functionPath.node.params ?? []) {
+    collectReadableObjectParameterRenameCandidates(param, candidates);
+  }
+  if (candidates.length === 0) {
+    return [];
+  }
+  const candidateBySourceName = new Map();
+  const targetCounts = new Map();
+  for (const candidate of candidates) {
+    const existing = candidateBySourceName.get(candidate.from);
+    if (existing && existing.to !== candidate.to) {
+      continue;
+    }
+    candidateBySourceName.set(candidate.from, candidate);
+    targetCounts.set(candidate.to, (targetCounts.get(candidate.to) ?? 0) + 1);
+  }
+  return [...candidateBySourceName.values()].filter((candidate) =>
+    isSafeReadableObjectParameterRename(functionPath, candidate, targetCounts)
+  );
+}
+
+function isSafeReadableObjectParameterRename(functionPath, candidate, targetCounts) {
+  if (candidate.from === candidate.to || !isScrambledIdentifier(candidate.from)) {
+    return false;
+  }
+  const binding = functionPath.scope.getBinding(candidate.from);
+  if (!binding || binding.scope !== functionPath.scope || binding.kind !== "param") {
+    return false;
+  }
+  if ((targetCounts.get(candidate.to) ?? 0) > 1) {
+    return false;
+  }
+  const existingBinding = functionPath.scope.getBinding(candidate.to);
+  return !existingBinding || existingBinding === binding;
+}
+
+function collectReadableObjectParameterRenameCandidates(pattern, candidates) {
+  if (!pattern) {
+    return;
+  }
+  if (t.isAssignmentPattern(pattern)) {
+    collectReadableObjectParameterRenameCandidates(pattern.left, candidates);
+    return;
+  }
+  if (t.isRestElement(pattern)) {
+    collectReadableObjectParameterRenameCandidates(pattern.argument, candidates);
+    return;
+  }
+  if (t.isArrayPattern(pattern)) {
+    for (const element of pattern.elements) {
+      collectReadableObjectParameterRenameCandidates(element, candidates);
+    }
+    return;
+  }
+  if (!t.isObjectPattern(pattern)) {
+    return;
+  }
+  for (const property of pattern.properties) {
+    if (t.isRestElement(property)) {
+      collectReadableObjectParameterRenameCandidates(property.argument, candidates);
+      continue;
+    }
+    if (!t.isObjectProperty(property)) {
+      continue;
+    }
+    const desiredName = readableObjectPropertyBindingName(property);
+    collectReadablePropertyValueRenameCandidates(property.value, desiredName, candidates);
+  }
+}
+
+function collectReadablePropertyValueRenameCandidates(value, desiredName, candidates) {
+  if (t.isIdentifier(value)) {
+    if (desiredName) {
+      candidates.push({
+        from: value.name,
+        to: desiredName,
+      });
+    }
+    return;
+  }
+  if (t.isAssignmentPattern(value)) {
+    collectReadablePropertyValueRenameCandidates(value.left, desiredName, candidates);
+    return;
+  }
+  collectReadableObjectParameterRenameCandidates(value, candidates);
+}
+
+function readableObjectPropertyBindingName(property) {
+  if (property.computed) {
+    return null;
+  }
+  if (t.isIdentifier(property.key)) {
+    return property.key.name;
+  }
+  if (t.isStringLiteral(property.key) && t.isValidIdentifier(property.key.value)) {
+    return property.key.value;
+  }
+  return null;
+}
+
+function normalizeReadableObjectPatternShorthandInProgram(programPath) {
+  programPath.traverse({
+    ObjectProperty(propertyPath) {
+      if (!propertyPath.parentPath.isObjectPattern()) {
+        return;
+      }
+      if (
+        propertyPath.node.computed ||
+        !t.isIdentifier(propertyPath.node.key) ||
+        !t.isIdentifier(propertyPath.node.value) ||
+        propertyPath.node.key.name !== propertyPath.node.value.name
+      ) {
+        return;
+      }
+      propertyPath.node.shorthand = true;
     },
   });
 }

@@ -377,6 +377,37 @@ export { readDecodedValue };
   });
 });
 
+test("graph-generated extraction keeps destructured object param aliases when a readable rename would shadow an outer binding", () => {
+  const source = `const resourceIds = "outer";
+function c7t({ resourceIds: n, startDateTime: e }) {
+  return resourceIds + ":" + n + ":" + e;
+}
+console.log(c7t({
+  resourceIds: "inner",
+  startDateTime: "start",
+}));
+export { c7t };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_param_shadow_guard",
+      ownerNames: ["resourceIds", "c7t"],
+      targetFile: "regions/param_shadow_guard.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/param_shadow_guard.js");
+  assert.match(extractedCode, /resourceIds: n,\s*startDateTime/s);
+  assert.match(extractedCode, /return resourceIds \+ ":" \+ n \+ ":" \+ startDateTime;/);
+  assert.doesNotMatch(extractedCode, /\{ resourceIds, startDateTime \}/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-param-shadow-guard-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("graph-generated extraction snapshots self-referential variable declarations when bindings stay immutable", () => {
   const source = `var Status = ((Status2) => {
   Status2.Idle = "idle";

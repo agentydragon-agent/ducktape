@@ -620,6 +620,129 @@ test("materializeLogicalModules propagates final names through emitted imports a
   assert.doesNotMatch(entryCode, /import \{ .* as .* \} from "\.\/modules\/state\/first_state\.js";/);
 });
 
+test("materializeLogicalModules renames destructured object params to readable property names", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-readable-object-params-"
+  );
+  const source = `function c7t({ resourceIds: n, startDateTime: e }) {
+  return n.join(",") + ":" + e;
+}
+function readQuery() {
+  return c7t({
+    resourceIds: ["a", "b"],
+    startDateTime: "2024-01-01T00:00:00Z",
+  });
+}
+console.log(readQuery());
+export { c7t, readQuery };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__resource_query",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "commands/search/resource_query",
+        },
+        members: [
+          {
+            id: "member__build_query",
+            name: "buildResourceQuery",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "c7t",
+              },
+            },
+          },
+          {
+            id: "member__read_query",
+            name: "readResourceQuery",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "readQuery",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "parse",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  const moduleCode = readFileSync(
+    join(outRoot, "static", "app", "modules", "commands", "search", "resource_query.js"),
+    "utf8"
+  );
+  assert.match(moduleCode, /function buildResourceQuery\(\{\s*resourceIds,\s*startDateTime\s*\}\)/s);
+  assert.match(moduleCode, /return resourceIds\.join\(","\) \+ ":" \+ startDateTime;/);
+  assert.doesNotMatch(moduleCode, /\{ resourceIds: n, startDateTime: e \}/);
+  assert.doesNotMatch(moduleCode, /resourceIds: resourceIds/);
+  assert.doesNotMatch(moduleCode, /startDateTime: startDateTime/);
+  assert.doesNotMatch(moduleCode, /return n\.join\(","\) \+ ":" \+ e;/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 test("materializeLogicalModules rejects propagated final-name collisions in consumer modules", async () => {
   const { artifact } = await prepareAtomicFixture("debundle-materialize-logical-modules-propagated-collision-");
   assert.throws(
