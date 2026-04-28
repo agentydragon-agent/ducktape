@@ -8,7 +8,7 @@ import {
   createFile,
   deleteArtifactChunkManifest,
   getArtifactChunkManifest,
-  getArtifactManifest,
+  getArtifactManifestOrDerived,
   getChunk,
   getChunkEntryFile,
   getChunkEntryPath,
@@ -43,10 +43,7 @@ export function extractAtomicModules({
   targetDir = "modules",
 }) {
   requirePipelineArtifact(artifact, "extractAtomicModules");
-  let artifactManifest = getArtifactManifest(artifact);
-  if (!Array.isArray(artifactManifest?.chunks)) {
-    throw new Error("extractAtomicModules requires an artifact manifest in artifact extras");
-  }
+  let artifactManifest = getArtifactManifestOrDerived(artifact);
 
   const selectedChunkIds = normalizeChunkIds(chunkIds);
   const startedAt = process.hrtime.bigint();
@@ -64,7 +61,7 @@ export function extractAtomicModules({
 
   if (pruneOtherChunks) {
     pruneArtifactToChunkIds(artifact, selectedChunkIds);
-    artifactManifest = getArtifactManifest(artifact);
+    artifactManifest = getArtifactManifestOrDerived(artifact);
   }
 
   logProgress(`atomic-modules start chunks=${selectedChunkIds.length}`);
@@ -299,6 +296,7 @@ function cloneAtomicUnit(unit) {
     lines: unit.lines,
     memberNames: [...unit.memberNames],
     ownerIds: [...unit.ownerIds],
+    ownerFragments: cloneOwnerFragments(unit.ownerFragments),
     startOrdinal: unit.startOrdinal,
   };
 }
@@ -315,6 +313,7 @@ function cloneModulePlan(modulePlan) {
     ...(modulePlan.modulePath ? { modulePath: modulePlan.modulePath } : {}),
     nameHint: modulePlan.nameHint,
     ownerIds: [...modulePlan.ownerIds],
+    ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
     startOrdinal: modulePlan.startOrdinal,
     ...(modulePlan.targetFile ? { targetFile: modulePlan.targetFile } : {}),
     unitIds: [...modulePlan.unitIds],
@@ -369,6 +368,16 @@ function readBoundaryAnalysis(path) {
 
 function durationMsSince(startedAt) {
   return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+}
+
+function cloneOwnerFragments(ownerFragments) {
+  return Array.isArray(ownerFragments)
+    ? ownerFragments.map((fragment) => ({
+        ...fragment,
+        declaratorIndices: [...fragment.declaratorIndices],
+        memberNames: [...fragment.memberNames],
+      }))
+    : [];
 }
 
 function formatDuration(durationMs) {

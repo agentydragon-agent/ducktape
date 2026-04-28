@@ -5,7 +5,7 @@ import {
   createChunk,
   createFile,
   getArtifactChunkManifest,
-  getArtifactManifest,
+  getArtifactManifestOrDerived,
   getChunk,
   requirePipelineArtifact,
   setArtifactChunkManifest,
@@ -25,7 +25,7 @@ export function mergeModules({
 }) {
   requirePipelineArtifact(artifact, "mergeModules");
   const mergeOperations = normalizeMergeOperations(operations);
-  const artifactManifest = getArtifactManifest(artifact);
+  const artifactManifest = getArtifactManifestOrDerived(artifact);
   const resolvedReportOutDir = reportOutDir ? resolveWorkspacePath(reportOutDir) : null;
   const resolvedReportSummaryPath =
     resolvedReportOutDir && reportSummaryPath
@@ -667,6 +667,18 @@ function cloneModulePlan(modulePlan) {
     ...(modulePlan.modulePath ? { modulePath: modulePlan.modulePath } : {}),
     nameHint: modulePlan.nameHint,
     ownerIds: [...modulePlan.ownerIds],
+    ...(Array.isArray(modulePlan.ownerFragments)
+      ? {
+          ownerFragments: modulePlan.ownerFragments.map((fragment) => ({
+            declaratorIndices: [...(fragment.declaratorIndices ?? [])],
+            id: fragment.id,
+            kind: fragment.kind,
+            memberNames: [...(fragment.memberNames ?? [])],
+            orderIndex: fragment.orderIndex,
+            ownerId: fragment.ownerId,
+          })),
+        }
+      : {}),
     startOrdinal: modulePlan.startOrdinal,
     ...(modulePlan.targetFile ? { targetFile: modulePlan.targetFile } : {}),
     unitIds: [...modulePlan.unitIds],

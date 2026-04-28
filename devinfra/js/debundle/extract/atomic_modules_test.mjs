@@ -5,13 +5,14 @@ import test from "node:test";
 import { parse } from "@babel/parser";
 import { analyzeRuntimeBoundaryAst, analyzeRuntimeBoundaryCode } from "../analysis/boundary.mjs";
 import { computeJsAsts } from "../common/parse_asts.mjs";
-import { getChunk, getChunkEntryFile } from "../common/artifact.mjs";
+import { getChunk, getChunkEntryFile, setArtifactManifest } from "../common/artifact.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";
 import { normalizeJsChunks } from "../common/normalize.mjs";
 import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "../test_support/fixtures.mjs";
 import { runTransformSpecObject } from "../transforms/runner.mjs";
 import { writeJsTree } from "../transforms/write.mjs";
+import { serializeGeneratedJsFile } from "../split/chunk.mjs";
 import { extractAtomicModules } from "./atomic_modules.mjs";
 import { materializeLogicalModules } from "./materialize_logical_modules.mjs";
 import { mergeModules } from "./merge.mjs";
@@ -514,8 +515,8 @@ test("materializeLogicalModules lowers final logical modules directly from combi
   const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
   assert.match(seedModuleCode, /\bseedValue\b/);
   assert.match(seedModuleCode, /\breadSeedValue\b/);
-  assert.match(seedModuleCode, /\binit_state_seed_state\b/);
-  assert.doesNotMatch(seedModuleCode, /\binit_state_seed_state_stage_0\b/);
+  assert.match(seedModuleCode, /\b__dt_generated_init__state_seed_state\b/);
+  assert.doesNotMatch(seedModuleCode, /\b__dt_generated_init__state_seed_state_stage_0\b/);
   assert.doesNotMatch(seedModuleCode, /\bexport let seed\b/);
   assert.match(entryCode, /\bseedValue\b/);
   assert.match(entryCode, /\breadSeedValue\b/);
@@ -595,6 +596,357 @@ test("materializeLogicalModules allows nested logical module paths with collidin
   assert.ok(chunk.files.has("modules/residual/unhandled.js"));
 });
 
+test("materializeLogicalModules propagates final names through emitted imports and exports", async () => {
+  const { artifact } = await prepareAtomicFixture("debundle-materialize-logical-modules-final-name-propagation-");
+  const materialized = materializeLogicalModules({
+    artifact,
+    chunkIds: ["static/app"],
+    operations: logicalModuleOpsForFixture(),
+    pruneOtherChunks: false,
+  });
+
+  const chunk = getChunk(materialized.artifact, "static/app");
+  const seedModuleCode = readFileSyncFromArtifactFile(chunk.files.get("modules/state/seed_state.js"));
+  const firstModuleCode = readFileSyncFromArtifactFile(chunk.files.get("modules/state/first_state.js"));
+  const entryCode = readFileSyncFromArtifactFile(chunk.files.get("entry.js"));
+
+  assert.match(seedModuleCode, /export function __dt_generated_init__state_seed_state\(\)/);
+  assert.match(seedModuleCode, /export \{ seedValue, readSeedValue \};/);
+  assert.doesNotMatch(seedModuleCode, /export \{ .* as .* \}/);
+  assert.match(firstModuleCode, /import \{ readSeedValue \} from "\.\/seed_state\.js";/);
+  assert.doesNotMatch(firstModuleCode, /import \{ .* as .* \} from "\.\/seed_state\.js";/);
+  assert.match(entryCode, /import \{ firstValue, readFirstValue, __dt_generated_init__state_first_state \} from "\.\/modules\/state\/first_state\.js";/);
+  assert.doesNotMatch(entryCode, /import \{ .* as .* \} from "\.\/modules\/state\/first_state\.js";/);
+});
+
+test("materializeLogicalModules rejects propagated final-name collisions in consumer modules", async () => {
+  const { artifact } = await prepareAtomicFixture("debundle-materialize-logical-modules-propagated-collision-");
+  assert.throws(
+    () =>
+      materializeLogicalModules({
+        artifact,
+        chunkIds: ["static/app"],
+        operations: [
+          {
+            id: "logical__seed_state",
+            operation: "define_logical_module",
+            selector: {
+              chunkId: "static/app",
+            },
+            target: {
+              path: "state/seed_state",
+            },
+            members: [
+              {
+                id: "rename__seed",
+                name: "seedValue",
+                selector: {
+                  binding: {
+                    kind: "VariableDeclarator",
+                    name: "seed",
+                  },
+                },
+              },
+              {
+                id: "rename__readSeed",
+                name: "first",
+                selector: {
+                  binding: {
+                    kind: "FunctionDeclaration",
+                    name: "readSeed",
+                  },
+                },
+              },
+            ],
+          },
+          {
+            id: "logical__first_state",
+            operation: "define_logical_module",
+            selector: {
+              chunkId: "static/app",
+            },
+            target: {
+              path: "state/first_state",
+            },
+            members: [
+              {
+                id: "rename__first",
+                name: "first",
+                selector: {
+                  binding: {
+                    kind: "VariableDeclarator",
+                    name: "first",
+                  },
+                },
+              },
+              {
+                id: "rename__readFirst",
+                name: "readFirstValue",
+                selector: {
+                  binding: {
+                    kind: "FunctionDeclaration",
+                    name: "readFirst",
+                  },
+                },
+              },
+            ],
+          },
+          {
+            id: "logical__unhandled",
+            operation: "define_residual_module",
+            selector: {
+              chunkId: "static/app",
+            },
+            target: {
+              path: "residual/unhandled",
+            },
+          },
+        ],
+        pruneOtherChunks: false,
+      }),
+    /propagated final name collision|conflicts with existing top-level binding|duplicate binding name/i
+  );
+});
+
+test("materializeLogicalModules emits atomic boundary comments for merged logical modules", async () => {
+  const { artifact } = await prepareAtomicFixture("debundle-materialize-logical-modules-boundary-markers-");
+  const materialized = materializeLogicalModules({
+    artifact,
+    chunkIds: ["static/app"],
+    operations: [
+      {
+        id: "logical__state_all",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "state/all_state",
+        },
+        members: [
+          {
+            id: "rename__seed",
+            name: "seedValue",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "seed",
+              },
+            },
+          },
+          {
+            id: "rename__readSeed",
+            name: "readSeedValue",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "readSeed",
+              },
+            },
+          },
+          {
+            id: "rename__first",
+            name: "firstValue",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "first",
+              },
+            },
+          },
+          {
+            id: "rename__readFirst",
+            name: "readFirstValue",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "readFirst",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pruneOtherChunks: false,
+  });
+
+  const chunk = getChunk(materialized.artifact, "static/app");
+  const mergedModuleCode = readFileSyncFromArtifactFile(chunk.files.get("modules/state/all_state.js"));
+  assert.match(mergedModuleCode, /@ducktape-atomic-boundary kind=selected_module_lowering id=atomic_module_/);
+  assert.match(mergedModuleCode, /members=seed\b/);
+  assert.match(mergedModuleCode, /members=readSeed\b/);
+  assert.match(mergedModuleCode, /members=first\b/);
+  assert.match(mergedModuleCode, /members=readFirst\b/);
+});
+
+test("materializeLogicalModules can split pure multi-declarator top-level constants into fragment-backed modules", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-pure-variable-fragments-"
+  );
+  const source = `const alpha = "a", beta = "b";
+function readAlpha() {
+  return alpha;
+}
+function readBeta() {
+  return beta;
+}
+
+console.log(readAlpha(), readBeta());
+
+export { readAlpha, readBeta };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__alpha",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "constants/alpha",
+        },
+        members: [
+          {
+            id: "member__alpha",
+            name: "alphaConstant",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "alpha",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const alphaCode = readFileSync(join(outRoot, "static", "app", "modules", "constants", "alpha.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(alphaCode, /\balphaConstant\b/);
+  assert.doesNotMatch(alphaCode, /\bbeta\b/);
+  assert.match(alphaCode, /fragments=owner_[^,\s]+::declarator_0/);
+
+  assert.match(residualCode, /\bbeta = "b"/);
+  assert.doesNotMatch(residualCode, /\balphaConstant\b/);
+  assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_1/);
+
+  assert.match(entryCode, /modules\/constants\/alpha\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("extractAtomicModules does not require a root artifact manifest", async () => {
+  const { artifact, selectedOwnerIds } = await prepareAtomicFixture("debundle-atomic-modules-without-root-manifest-");
+  setArtifactManifest(artifact, null);
+
+  const extracted = extractAtomicModules({
+    artifact,
+    chunkIds: ["static/app"],
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunk: {
+      "static/app": selectedOwnerIds,
+    },
+  });
+
+  const chunk = getChunk(extracted.artifact, "static/app");
+  assert.ok(chunk);
+  assert.ok(chunk.files.has("entry.js"));
+  assert.ok([...chunk.files.keys()].some((file) => file.startsWith("modules/")));
+});
+
+test("materializeLogicalModules does not require a root artifact manifest", async () => {
+  const { artifact } = await prepareAtomicFixture("debundle-logical-modules-without-root-manifest-");
+  setArtifactManifest(artifact, null);
+
+  const materialized = materializeLogicalModules({
+    artifact,
+    chunkIds: ["static/app"],
+    operations: logicalModuleOpsForFixture(),
+    pruneOtherChunks: false,
+  });
+
+  const chunk = getChunk(materialized.artifact, "static/app");
+  assert.ok(chunk);
+  assert.ok(chunk.files.has("entry.js"));
+  assert.ok(chunk.files.has("modules/state/seed_state.js"));
+  assert.ok(chunk.files.has("modules/state/first_state.js"));
+});
+
 test("materialize_logical_modules composes directly in a pipeline spec", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = await writeAtomicSnapshotFixture(
     "debundle-logical-modules-pipeline-"
@@ -645,6 +997,158 @@ test("materialize_logical_modules composes directly in a pipeline spec", async (
     result.steps.map((step) => step.operation),
     ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
   );
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materialize_logical_modules pipeline emits natural component-facing names", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-component-pipeline-"
+  );
+  const source = `const buttonLabel = "Approve";
+function ToolApprovalRequest() {
+  return \`<button>\${buttonLabel}</button>\`;
+}
+
+console.log("component-barrier");
+
+function renderDialog() {
+  return ToolApprovalRequest();
+}
+
+console.log(renderDialog());
+
+export { ToolApprovalRequest, renderDialog };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__request",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/ai/tool_approval/request",
+        },
+        members: [
+          {
+            id: "member__button_label",
+            name: "toolApprovalButtonLabel",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "buttonLabel",
+              },
+            },
+          },
+          {
+            id: "member__request",
+            name: "ToolApprovalRequest",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "ToolApprovalRequest",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__dialog",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/ai/tool_approval/dialog",
+        },
+        members: [
+          {
+            id: "member__dialog",
+            name: "renderToolApprovalDialog",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "renderDialog",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+  const requestCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "ai", "tool_approval", "request.js"), "utf8");
+  const dialogCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "ai", "tool_approval", "dialog.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+  assert.match(requestCode, /\btoolApprovalButtonLabel\b/);
+  assert.match(requestCode, /\bToolApprovalRequest\b/);
+  assert.match(dialogCode, /import \{ ToolApprovalRequest \} from "\.\/request\.js";/);
+  assert.doesNotMatch(dialogCode, /import \{ .* as .* \} from "\.\/request\.js";/);
+  assert.match(dialogCode, /\brenderToolApprovalDialog\b/);
+  assert.match(entryCode, /import \{ renderToolApprovalDialog, __dt_generated_init__ui_ai_tool_approval_dialog \} from "\.\/modules\/ui\/ai\/tool_approval\/dialog\.js";/);
+  assert.doesNotMatch(entryCode, /import \{ .* as .* \} from "\.\/modules\/ui\/ai\/tool_approval\/dialog\.js";/);
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
@@ -799,6 +1303,11 @@ function ownerIdsForNames(analysis, names) {
     assert.ok(ownerId, `missing owner ${name}`);
     return ownerId;
   });
+}
+
+function readFileSyncFromArtifactFile(fileArtifact) {
+  assert.ok(fileArtifact?.ast, "missing artifact file AST");
+  return serializeGeneratedJsFile(fileArtifact);
 }
 
 function fixtureSource() {

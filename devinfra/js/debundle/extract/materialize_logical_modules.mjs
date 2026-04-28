@@ -8,7 +8,7 @@ import {
   createFile,
   deleteArtifactChunkManifest,
   getArtifactChunkManifest,
-  getArtifactManifest,
+  getArtifactManifestOrDerived,
   getChunk,
   getChunkEntryFile,
   getChunkEntryPath,
@@ -44,10 +44,7 @@ export function materializeLogicalModules({
   targetDir = "modules",
 }) {
   requirePipelineArtifact(artifact, "materializeLogicalModules");
-  let artifactManifest = getArtifactManifest(artifact);
-  if (!Array.isArray(artifactManifest?.chunks)) {
-    throw new Error("materializeLogicalModules requires an artifact manifest in artifact extras");
-  }
+  let artifactManifest = getArtifactManifestOrDerived(artifact);
 
   const selectedChunkIds = normalizeChunkIds(chunkIds);
   const startedAt = process.hrtime.bigint();
@@ -65,7 +62,7 @@ export function materializeLogicalModules({
 
   if (pruneOtherChunks) {
     pruneArtifactToChunkIds(artifact, selectedChunkIds);
-    artifactManifest = getArtifactManifest(artifact);
+    artifactManifest = getArtifactManifestOrDerived(artifact);
   }
 
   logProgress(`logical-modules start chunks=${selectedChunkIds.length}`);
@@ -157,12 +154,22 @@ export function materializeLogicalModules({
             role: relativePath === targetFile ? "entry" : "module",
             ...(relativePath === targetFile ? {} : { generated: buildSelectedModuleLoweringMetadata() }),
             ...(modulePlan
-              ? {
-                  moduleExtraction: {
-                    id: modulePlan.id,
-                    kind: "logical",
-                    nameHint: modulePlan.nameHint,
-                    ownerIds: [...modulePlan.ownerIds],
+                ? {
+                    moduleExtraction: {
+                      atomicBoundaryUnits: modulePlan.atomicBoundaryUnits?.map((unit) => ({
+                        attachedItemIds: [...unit.attachedItemIds],
+                        id: unit.id,
+                        memberNames: [...unit.memberNames],
+                        ownerIds: [...unit.ownerIds],
+                        ownerFragments: cloneOwnerFragments(unit.ownerFragments),
+                        startOrdinal: unit.startOrdinal,
+                        unitIds: [...unit.unitIds],
+                      })) ?? [],
+                      id: modulePlan.id,
+                      kind: "logical",
+                      nameHint: modulePlan.nameHint,
+                      ownerIds: [...modulePlan.ownerIds],
+                      ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
                     unitIds: [...modulePlan.unitIds],
                   },
                 }
@@ -204,11 +211,21 @@ export function materializeLogicalModules({
     });
 
     const finalModules = logicalModules.modules.map((modulePlan) => ({
+      atomicBoundaryUnits: modulePlan.atomicBoundaryUnits?.map((unit) => ({
+        attachedItemIds: [...unit.attachedItemIds],
+        id: unit.id,
+        memberNames: [...unit.memberNames],
+        ownerIds: [...unit.ownerIds],
+        ownerFragments: cloneOwnerFragments(unit.ownerFragments),
+        startOrdinal: unit.startOrdinal,
+        unitIds: [...unit.unitIds],
+      })) ?? [],
       file: modulePlan.targetFile,
       id: modulePlan.id,
       memberNames: [...modulePlan.memberNames],
       path: modulePlan.modulePath,
       ownerIds: [...modulePlan.ownerIds],
+      ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
       startOrdinal: modulePlan.startOrdinal,
       unitIds: [...modulePlan.unitIds],
     }));
@@ -306,6 +323,7 @@ function cloneAtomicUnit(unit) {
     lines: unit.lines,
     memberNames: [...unit.memberNames],
     ownerIds: [...unit.ownerIds],
+    ownerFragments: cloneOwnerFragments(unit.ownerFragments),
     startOrdinal: unit.startOrdinal,
   };
 }
@@ -322,6 +340,7 @@ function cloneModulePlan(modulePlan) {
     modulePath: modulePlan.modulePath,
     nameHint: modulePlan.nameHint,
     ownerIds: [...modulePlan.ownerIds],
+    ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
     ...(Array.isArray(modulePlan.bindingPlacements)
       ? {
           bindingPlacements: modulePlan.bindingPlacements.map((entry) => ({ ...entry })),
@@ -345,6 +364,16 @@ function normalizeChunkIds(chunkIds) {
   return [...new Set(chunkIds.map(normalizeRelativeFile))];
 }
 
+function cloneOwnerFragments(ownerFragments) {
+  return Array.isArray(ownerFragments)
+    ? ownerFragments.map((fragment) => ({
+        ...fragment,
+        declaratorIndices: [...fragment.declaratorIndices],
+        memberNames: [...fragment.memberNames],
+      }))
+    : [];
+}
+
 function normalizeRelativeFile(value) {
   if (typeof value !== "string" || value === "") {
     throw new Error(`Expected a non-empty relative path, got: ${value}`);
@@ -362,7 +391,7 @@ function pruneArtifactToChunkIds(artifact, chunkIds) {
     const chunkId = fileArtifact.metadata?.chunkId ?? null;
     return chunkId !== null && !selectedChunkIds.has(chunkId);
   });
-  const artifactManifest = getArtifactManifest(artifact);
+  const artifactManifest = getArtifactManifestOrDerived(artifact);
   if (artifactManifest?.chunks) {
     setArtifactManifest(artifact, {
       ...artifactManifest,

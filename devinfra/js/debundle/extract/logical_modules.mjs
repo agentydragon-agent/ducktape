@@ -29,7 +29,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
   const atomicModules = [...currentModules].sort(
     (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
   );
-  const moduleByOwnerId = buildModuleByOwnerId(atomicModules);
+  const modulesByOwnerId = buildModulesByOwnerId(atomicModules);
   const modulesBySymbol = buildModulesBySymbol(atomicModules);
   const claimedModuleIds = new Map();
   const explicitModulePlans = [];
@@ -52,7 +52,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
       const importMember = isImportKind(member.selector.binding.kind ?? null);
       const resolvedMember = resolveLogicalMember(member, {
         analysis,
-        moduleByOwnerId,
+        modulesByOwnerId,
         modulesBySymbol,
         operationId: operation.id,
       });
@@ -284,17 +284,20 @@ function buildModulesBySymbol(modulePlans) {
   return modulesBySymbol;
 }
 
-function buildModuleByOwnerId(modulePlans) {
-  const moduleByOwnerId = new Map();
+function buildModulesByOwnerId(modulePlans) {
+  const modulesByOwnerId = new Map();
   for (const modulePlan of modulePlans) {
     for (const ownerId of modulePlan.ownerIds) {
-      moduleByOwnerId.set(ownerId, modulePlan);
+      if (!modulesByOwnerId.has(ownerId)) {
+        modulesByOwnerId.set(ownerId, []);
+      }
+      modulesByOwnerId.get(ownerId).push(modulePlan);
     }
   }
-  return moduleByOwnerId;
+  return modulesByOwnerId;
 }
 
-function resolveLogicalMember(member, { analysis, moduleByOwnerId, modulesBySymbol, operationId }) {
+function resolveLogicalMember(member, { analysis, modulesByOwnerId, modulesBySymbol, operationId }) {
   if (isImportKind(member.selector.binding.kind ?? null)) {
     return {
       matched: true,
@@ -306,9 +309,37 @@ function resolveLogicalMember(member, { analysis, moduleByOwnerId, modulesBySymb
     member.selector.owner?.id ??
     (analysis ? resolveOwnerIdFromAnalysis(analysis, member, { operationId }) : null);
   if (ownerId) {
+    const ownerMatches = modulesByOwnerId.get(ownerId) ?? [];
+    if (ownerMatches.length === 0) {
+      return {
+        matched: false,
+        modulePlan: null,
+        ownerId,
+      };
+    }
+    const symbolMatches = ownerMatches.filter((modulePlan) => modulePlan.memberNames.includes(member.selector.binding.name));
+    if (symbolMatches.length === 1) {
+      return {
+        matched: true,
+        modulePlan: symbolMatches[0],
+        ownerId,
+      };
+    }
+    if (symbolMatches.length > 1) {
+      throw new Error(
+        `define_logical_module ${operationId} member ${member.id} matched multiple owner fragments for ${member.selector.binding.name}: ${symbolMatches
+          .map((modulePlan) => modulePlan.id)
+          .join(", ")}`
+      );
+    }
+    if (ownerMatches.length > 1) {
+      throw new Error(
+        `define_logical_module ${operationId} member ${member.id} matched owner ${ownerId} but no fragment exposed ${member.selector.binding.name}`
+      );
+    }
     return {
-      matched: moduleByOwnerId.has(ownerId),
-      modulePlan: moduleByOwnerId.get(ownerId) ?? null,
+      matched: true,
+      modulePlan: ownerMatches[0],
       ownerId,
     };
   }
@@ -368,10 +399,12 @@ function mergeModuleGroup(selectedModules, operation, index, { requestedBindings
   const targetPath = operation.target.path;
   const attachedItemIds = [];
   const attachedItemIdSet = new Set();
+  const atomicBoundaryUnits = [];
   const memberNames = [];
   const memberNameSet = new Set();
   const ownerIds = [];
   const ownerIdSet = new Set();
+  const ownerFragments = [];
   const unitIds = [];
   const unitIdSet = new Set();
   let bytes = 0;
@@ -388,6 +421,15 @@ function mergeModuleGroup(selectedModules, operation, index, { requestedBindings
       sourceName: binding.sourceName,
     }));
   for (const modulePlan of selectedModules) {
+    atomicBoundaryUnits.push({
+      attachedItemIds: [...modulePlan.attachedItemIds],
+      id: modulePlan.id,
+      memberNames: [...modulePlan.memberNames],
+      ownerIds: [...modulePlan.ownerIds],
+      ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
+      startOrdinal: modulePlan.startOrdinal,
+      unitIds: [...modulePlan.unitIds],
+    });
     lines += modulePlan.lines;
     if (modulePlan.bytes === null) {
       hasNullBytes = true;
@@ -415,6 +457,13 @@ function mergeModuleGroup(selectedModules, operation, index, { requestedBindings
         ownerIds.push(ownerId);
       }
     }
+    for (const ownerFragment of modulePlan.ownerFragments ?? []) {
+      ownerFragments.push({
+        ...ownerFragment,
+        declaratorIndices: [...ownerFragment.declaratorIndices],
+        memberNames: [...ownerFragment.memberNames],
+      });
+    }
     for (const unitId of modulePlan.unitIds) {
       if (!unitIdSet.has(unitId)) {
         unitIdSet.add(unitId);
@@ -424,6 +473,7 @@ function mergeModuleGroup(selectedModules, operation, index, { requestedBindings
   }
   const baseModule = {
     attachedItemIds: attachedItemIds.sort(),
+    atomicBoundaryUnits,
     bytes: hasNullBytes ? null : bytes,
     id: operation.id,
     index,
@@ -432,6 +482,7 @@ function mergeModuleGroup(selectedModules, operation, index, { requestedBindings
     memberNames: applyBindingPlacementsToMemberNames(memberNames, bindingPlacements),
     nameHint: sanitizeIdentifier(targetPath.split("/").at(-1) ?? targetPath),
     ownerIds,
+    ownerFragments,
     bindingPlacements,
     requestedBindings: requestedBindings.map((binding) => ({ ...binding })),
     startOrdinal,
@@ -454,6 +505,23 @@ function mergeModuleGroup(selectedModules, operation, index, { requestedBindings
 function cloneModulePlan(modulePlan) {
   return {
     attachedItemIds: [...modulePlan.attachedItemIds],
+    ...(Array.isArray(modulePlan.atomicBoundaryUnits)
+      ? {
+          atomicBoundaryUnits: modulePlan.atomicBoundaryUnits.map((unit) => ({
+            attachedItemIds: [...unit.attachedItemIds],
+            id: unit.id,
+            memberNames: [...unit.memberNames],
+            ownerIds: [...unit.ownerIds],
+            ...(Array.isArray(unit.ownerFragments)
+              ? {
+                  ownerFragments: cloneOwnerFragments(unit.ownerFragments),
+                }
+              : {}),
+            startOrdinal: unit.startOrdinal,
+            unitIds: [...unit.unitIds],
+          })),
+        }
+      : {}),
     ...(modulePlan.bytes === null ? { bytes: null } : { bytes: modulePlan.bytes }),
     id: modulePlan.id,
     index: modulePlan.index,
@@ -463,6 +531,11 @@ function cloneModulePlan(modulePlan) {
     modulePath: modulePlan.modulePath,
     nameHint: modulePlan.nameHint,
     ownerIds: [...modulePlan.ownerIds],
+    ...(Array.isArray(modulePlan.ownerFragments)
+      ? {
+          ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
+        }
+      : {}),
     ...(Array.isArray(modulePlan.bindingPlacements)
       ? {
           bindingPlacements: modulePlan.bindingPlacements.map((entry) => ({ ...entry })),
@@ -485,6 +558,14 @@ function applyBindingPlacementsToMemberNames(memberNames, bindingPlacements) {
     .map((memberName) => renamed.get(memberName) ?? memberName)
     .filter((memberName, index, array) => array.indexOf(memberName) === index)
     .sort();
+}
+
+function cloneOwnerFragments(ownerFragments) {
+  return ownerFragments.map((fragment) => ({
+    ...fragment,
+    declaratorIndices: [...fragment.declaratorIndices],
+    memberNames: [...fragment.memberNames],
+  }));
 }
 
 function normalizeRelativeFile(value) {

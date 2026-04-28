@@ -1,4 +1,5 @@
 import { parse } from "@babel/parser";
+import traverseModule from "@babel/traverse";
 import * as t from "@babel/types";
 import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
@@ -12,12 +13,16 @@ import {
   buildSelectedModuleOperations,
 } from "./planner.mjs";
 
+const traverse = traverseModule.default ?? traverseModule;
+
 const SELECTED_MODULE_LOWERING_FILE_PRAGMA =
   "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
 const SELECTED_MODULE_LOWERING_GENERATOR_HEADER =
   "// @ducktape-generator devinfra/js/debundle/extract/init_region.mjs";
 const SELECTED_MODULE_LOWERING_NODE_PRAGMA =
   "@ducktape-generated-node kind=lowerer-glue stage=selected_module_lowering";
+const SELECTED_MODULE_ATOMIC_BOUNDARY_PRAGMA =
+  "@ducktape-atomic-boundary kind=selected_module_lowering";
 const SELECTED_MODULE_SNAPSHOT_PREFIX = "__dt_selected_module_snapshot__";
 const SELECTED_MODULE_LOWERING_METADATA = Object.freeze({
   kind: "lowerer_helper",
@@ -125,20 +130,24 @@ export function lowerSelectedModuleRegionsInAst(
       replacementRuns.push(run);
     }
   }
-  replacementRuns.sort(
-    (left, right) =>
-      right.startOrdinal - left.startOrdinal ||
-      right.stageIndex - left.stageIndex ||
-      right.entry.id.localeCompare(left.entry.id)
-  );
-  for (const run of replacementRuns) {
-    runtimeBody.splice(run.startOrdinal, run.endOrdinal - run.startOrdinal + 1, buildInitCallStatement(run));
+  const replacementGroups = groupRuntimeReplacementRuns(replacementRuns);
+  replacementGroups.sort((left, right) => right.startOrdinal - left.startOrdinal || right.endOrdinal - left.endOrdinal);
+  for (const group of replacementGroups) {
+    runtimeBody.splice(
+      group.startOrdinal,
+      group.endOrdinal - group.startOrdinal + 1,
+      ...group.runs.map(buildInitCallStatement)
+    );
   }
 
   if (resolved.length > 0) {
     const importInsertIndex = countLeadingImports(runtimeBody);
     runtimeBody.splice(importInsertIndex, 0, ...resolved.map(buildRuntimeImportDeclaration));
   }
+
+  applyFinalBindingRenamesToGeneratedFile(ast, buildRuntimeBindingRenames(resolved), {
+    context: `${runtimeFile} runtime lowering`,
+  });
 
   const jsFiles = new Map([[runtimeFile, { ast, headerLines }]]);
   const applied = [];
@@ -243,6 +252,7 @@ function resolveExtractOperation(
     selectedOwners.filter((owner) => owner.type === "FunctionDeclaration").map((owner) => owner.id)
   );
   const orderedOwners = selectedOwners.sort((left, right) => left.ordinal - right.ordinal);
+  const ownerFragmentsByOwnerId = buildOwnerFragmentsByOwnerId(operation.selector.ownerFragments ?? [], operation.id);
   const attachedSideEffects = (operation.selector.attachedItemIds ?? []).map((itemId) => {
     const sideEffect = sideEffectById.get(itemId);
     if (!sideEffect) {
@@ -271,11 +281,22 @@ function resolveExtractOperation(
     throw new Error(`Extract operation ${operation.id} has invalid target.init ${initName}`);
   }
 
-  const ownerEntries = orderedOwners.map((owner) => ({
-    kind: "declaration",
-    owner,
-    statement: programBody[owner.ordinal],
-  }));
+  const ownerEntries = orderedOwners.flatMap((owner) => {
+    const fragments = ownerFragmentsByOwnerId.get(owner.id);
+    if (!fragments || fragments.length === 0) {
+      return [{
+        kind: "declaration",
+        owner,
+        statement: programBody[owner.ordinal],
+      }];
+    }
+    return fragments.map((fragment) => ({
+      fragment,
+      kind: "declaration",
+      owner,
+      statement: programBody[owner.ordinal],
+    }));
+  });
   const attachedEntries = attachedSideEffects
     .map((sideEffect) => ({
       kind: "side_effect",
@@ -283,8 +304,9 @@ function resolveExtractOperation(
       statement: programBody[sideEffect.ordinal],
     }))
     .sort((left, right) => left.sideEffect.ordinal - right.sideEffect.ordinal);
-  const exportedNames = collectOwnerExportNames(programBody, orderedOwners);
-  const exportBindings = finalizeExportBindings(exportedNames, operation.bindingPlacements ?? [], operation.id);
+  const exportedNames = collectSelectedEntryExportNames(ownerEntries);
+  const bindingPlacements = finalizeBindingPlacements(operation.bindingPlacements ?? [], operation.id);
+  const exportBindings = finalizeExportBindings(exportedNames, bindingPlacements, operation.id);
   if (exportedNames.includes(initName)) {
     throw new Error(`Extract operation ${operation.id} target.init ${initName} conflicts with an extracted binding`);
   }
@@ -350,10 +372,12 @@ function resolveExtractOperation(
     endOrdinal,
     exportedNames,
     exportBindings,
+    bindingPlacements,
     id: operation.id,
     initName,
     lowering,
     operation: operation.operation,
+    atomicBoundaryUnits: normalizeAtomicBoundaryUnits(operation.atomicBoundaryUnits ?? []),
     attachedEntries,
     ownerEntries,
     orderedOwners,
@@ -675,15 +699,17 @@ function buildStagedShellRuns(
       kind: "declaration",
       ordinal: entry.owner.ordinal,
       ownerEntries: [entry],
+      sortIndex: entry.fragment?.orderIndex ?? 0,
       statementEntries: [entry],
     })),
     ...attachedEntries.map((entry) => ({
       kind: "side_effect",
       ordinal: entry.sideEffect.ordinal,
       ownerEntries: [],
+      sortIndex: Number.MAX_SAFE_INTEGER,
       statementEntries: [entry],
     })),
-  ].sort((left, right) => left.ordinal - right.ordinal);
+  ].sort((left, right) => left.ordinal - right.ordinal || left.sortIndex - right.sortIndex);
   const stageRuns = [];
   for (const stageItem of stageItems) {
     const currentStage = stageRuns.at(-1);
@@ -691,6 +717,7 @@ function buildStagedShellRuns(
       stageRuns.push({
         endOrdinal: stageItem.ordinal,
         ownerEntries: [...stageItem.ownerEntries],
+        sortIndex: stageItem.sortIndex,
         stageEntries: [...stageItem.statementEntries],
         startOrdinal: stageItem.ordinal,
       });
@@ -698,6 +725,7 @@ function buildStagedShellRuns(
     }
     currentStage.endOrdinal = stageItem.ordinal;
     currentStage.ownerEntries.push(...stageItem.ownerEntries);
+    currentStage.sortIndex = Math.min(currentStage.sortIndex, stageItem.sortIndex);
     currentStage.stageEntries.push(...stageItem.statementEntries);
   }
 
@@ -756,7 +784,7 @@ function findLaterSelectedOwnerAccessInList(accesses, ordinal, selectedOwnerIds,
 function validateResolvedOperations(resolved) {
   const targetFiles = new Set();
   const initNames = new Set();
-  const ownerIds = new Set();
+  const ownerCoverageById = new Map();
   const attachedItemIds = new Set();
   for (const entry of resolved) {
     if (targetFiles.has(entry.targetFile)) {
@@ -767,11 +795,24 @@ function validateResolvedOperations(resolved) {
       throw new Error(`Duplicate extraction init function ${entry.initName}`);
     }
     initNames.add(entry.initName);
-    for (const ownerId of entry.ownerIds) {
-      if (ownerIds.has(ownerId)) {
-        throw new Error(`Overlapping extraction regions include owner ${ownerId}`);
+    for (const ownerEntry of entry.ownerEntries) {
+      const coverage = ownerCoverageById.get(ownerEntry.owner.id) ?? {
+        fragmentIds: new Set(),
+        fullOwner: false,
+      };
+      if (!ownerEntry.fragment) {
+        if (coverage.fullOwner || coverage.fragmentIds.size > 0) {
+          throw new Error(`Overlapping extraction regions include owner ${ownerEntry.owner.id}`);
+        }
+        coverage.fullOwner = true;
+        ownerCoverageById.set(ownerEntry.owner.id, coverage);
+        continue;
       }
-      ownerIds.add(ownerId);
+      if (coverage.fullOwner || coverage.fragmentIds.has(ownerEntry.fragment.id)) {
+        throw new Error(`Overlapping extraction regions include owner fragment ${ownerEntry.fragment.id}`);
+      }
+      coverage.fragmentIds.add(ownerEntry.fragment.id);
+      ownerCoverageById.set(ownerEntry.owner.id, coverage);
     }
     for (const attachedItemId of entry.attachedEntries?.map((item) => item.sideEffect.id) ?? []) {
       if (attachedItemIds.has(attachedItemId)) {
@@ -796,8 +837,33 @@ function buildRuntimeReplacementRuns(entry) {
   return entry.stageRuns.map((stageRun, stageIndex) => ({
     endOrdinal: stageRun.endOrdinal,
     entry,
+    sortIndex: stageRun.sortIndex ?? stageIndex,
     stageIndex,
     startOrdinal: stageRun.startOrdinal,
+  }));
+}
+
+function groupRuntimeReplacementRuns(runs) {
+  const groups = new Map();
+  for (const run of runs) {
+    const key = `${run.startOrdinal}:${run.endOrdinal}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        endOrdinal: run.endOrdinal,
+        runs: [],
+        startOrdinal: run.startOrdinal,
+      });
+    }
+    groups.get(key).runs.push(run);
+  }
+  return [...groups.values()].map((group) => ({
+    ...group,
+    runs: group.runs.sort(
+      (left, right) =>
+        left.sortIndex - right.sortIndex ||
+        left.stageIndex - right.stageIndex ||
+        left.entry.id.localeCompare(right.entry.id)
+    ),
   }));
 }
 
@@ -824,7 +890,7 @@ function buildExtractedModuleFile(entry) {
         t.functionDeclaration(
           t.identifier(stage.initName),
           [],
-          t.blockStatement(buildInitStatements(stage.stageEntries, entry.targetFile))
+          t.blockStatement(buildInitStatements(stage.stageEntries, entry.targetFile, entry))
         )
       )
     );
@@ -835,14 +901,21 @@ function buildExtractedModuleFile(entry) {
       entry.exportBindings.map((binding) => t.exportSpecifier(t.identifier(binding.local), exportNameNode(binding.exported)))
     )
   );
+  const ast = t.file(t.program(body));
+  applyFinalBindingRenamesToGeneratedFile(ast, buildEntryBindingRenames(entry), {
+    context: `${entry.targetFile} selected-module lowering`,
+  });
   return {
-    ast: t.file(t.program(body)),
+    ast,
     headerLines: buildSelectedModuleLoweringHeaderLines(entry.ownerIds),
   };
 }
 
-function buildInitStatements(stageEntries, targetFile) {
+function buildInitStatements(stageEntries, targetFile, entry) {
   const statements = [];
+  const localRenameMap = buildBindingRenameMap(buildEntryBindingRenames(entry));
+  const atomicBoundaryIndex = buildAtomicBoundaryIndex(entry.atomicBoundaryUnits ?? []);
+  let previousAtomicBoundaryUnitId = null;
   for (const entry of stageEntries) {
     if (entry.kind !== "declaration") {
       continue;
@@ -851,33 +924,198 @@ function buildInitStatements(stageEntries, targetFile) {
     if (owner.type !== "FunctionDeclaration") {
       continue;
     }
-    statements.push(functionDeclarationAssignmentStatement(statement));
+    const nextStatements = [functionDeclarationAssignmentStatement(statement, localRenameMap)];
+    const boundaryUnit = atomicBoundaryIndex.get(ownerEntryBoundaryKey(entry));
+    annotateAtomicBoundary(nextStatements, boundaryUnit, previousAtomicBoundaryUnitId);
+    previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, boundaryUnit);
+    statements.push(...nextStatements);
   }
   for (const entry of stageEntries) {
     if (entry.kind === "side_effect") {
-      statements.push(t.cloneNode(entry.statement, true));
+      const nextStatements = [t.cloneNode(entry.statement, true)];
+      annotateAtomicBoundary(nextStatements, atomicBoundaryIndex.get(entry.sideEffect.id), previousAtomicBoundaryUnitId);
+      previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, atomicBoundaryIndex.get(entry.sideEffect.id));
+      statements.push(...nextStatements);
       continue;
     }
     const { owner, statement } = entry;
     if (owner.type === "FunctionDeclaration") {
       continue;
     }
-    statements.push(...buildOwnerInitStatements(owner, statement));
+    const nextStatements = buildOwnerInitStatements(owner, statement, localRenameMap, entry.fragment);
+    const boundaryUnit = atomicBoundaryIndex.get(ownerEntryBoundaryKey(entry));
+    annotateAtomicBoundary(nextStatements, boundaryUnit, previousAtomicBoundaryUnitId);
+    previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, boundaryUnit);
+    statements.push(...nextStatements);
   }
   return rewriteStatementsForTarget(statements, targetFile);
 }
 
-function buildOwnerInitStatements(owner, statement) {
+function buildOwnerInitStatements(owner, statement, localRenameMap, fragment = null) {
   if (owner.currentExtractorLowering === "snapshot_variable_declaration") {
     return buildSnapshotVariableDeclarationStatements(owner, statement);
   }
   if (t.isClassDeclaration(statement)) {
-    return [classDeclarationAssignmentStatement(statement)];
+    return [classDeclarationAssignmentStatement(statement, localRenameMap)];
   }
   if (t.isVariableDeclaration(statement)) {
-    return statement.declarations.map((declaration) => variableDeclaratorAssignmentStatement(declaration));
+    const declarations = fragment
+      ? fragment.declaratorIndices.map((index) => statement.declarations[index]).filter(Boolean)
+      : statement.declarations;
+    return declarations.map((declaration) => variableDeclaratorAssignmentStatement(declaration));
   }
   throw new Error(`Unsupported extracted owner statement type ${statement?.type}`);
+}
+
+function buildEntryBindingRenames(entry) {
+  const explicitRenameBySourceName = new Map();
+  for (const placement of entry.bindingPlacements ?? []) {
+    const localName = preferredLocalBindingName(placement.sourceName, placement.name);
+    if (localName === placement.sourceName) {
+      continue;
+    }
+    explicitRenameBySourceName.set(placement.sourceName, {
+      from: placement.sourceName,
+      source: "logical_member",
+      to: localName,
+    });
+  }
+  for (const importRecord of entry.usedExtractedImports ?? []) {
+    for (const specifier of importRecord.specifiers) {
+      const localName = preferredLocalBindingName(specifier.local, specifier.imported);
+      if (localName === specifier.local || explicitRenameBySourceName.has(specifier.local)) {
+        continue;
+      }
+      explicitRenameBySourceName.set(specifier.local, {
+        from: specifier.local,
+        source: "propagated_dependency",
+        to: localName,
+      });
+    }
+  }
+  return [...explicitRenameBySourceName.values()].sort((left, right) => left.from.localeCompare(right.from));
+}
+
+function buildRuntimeBindingRenames(entries) {
+  const renameBySourceName = new Map();
+  for (const entry of entries) {
+    for (const binding of entry.exportBindings ?? []) {
+      const localName = preferredLocalBindingName(binding.local, binding.exported);
+      if (localName === binding.local) {
+        continue;
+      }
+      const existing = renameBySourceName.get(binding.local);
+      if (existing && existing.to !== localName) {
+        throw new Error(
+          `Runtime lowering has conflicting final names for ${binding.local}: ${existing.to} vs ${localName}`
+        );
+      }
+      renameBySourceName.set(binding.local, {
+        from: binding.local,
+        source: "runtime_import",
+        to: localName,
+      });
+    }
+  }
+  return [...renameBySourceName.values()].sort((left, right) => left.from.localeCompare(right.from));
+}
+
+function buildBindingRenameMap(renameSpecs) {
+  return new Map(renameSpecs.map((renameSpec) => [renameSpec.from, renameSpec.to]));
+}
+
+function preferredLocalBindingName(sourceName, requestedName) {
+  return typeof requestedName === "string" && t.isValidIdentifier(requestedName) ? requestedName : sourceName;
+}
+
+function renamedLocalIdentifierName(name, localRenameMap) {
+  return localRenameMap.get(name) ?? name;
+}
+
+function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) {
+  if (!Array.isArray(renameSpecs) || renameSpecs.length === 0) {
+    return;
+  }
+  traverse(ast, {
+    Program(path) {
+      validateRenameSpecsAgainstProgramScope(path, renameSpecs, context);
+      for (const renameSpec of renameSpecs) {
+        path.scope.rename(renameSpec.from, renameSpec.to);
+      }
+    },
+  });
+}
+
+function validateRenameSpecsAgainstProgramScope(programPath, renameSpecs, context) {
+  const renameBySourceName = new Map(renameSpecs.map((renameSpec) => [renameSpec.from, renameSpec]));
+  const duplicateFinalNames = findDuplicateStrings(renameSpecs.map((renameSpec) => renameSpec.to));
+  if (duplicateFinalNames.length > 0) {
+    throw new Error(`${context} assigns duplicate final local names: ${duplicateFinalNames.join(", ")}`);
+  }
+  for (const renameSpec of renameSpecs) {
+    if (renameSpec.from === renameSpec.to) {
+      continue;
+    }
+    const fromBinding = programPath.scope.getOwnBinding(renameSpec.from);
+    if (!fromBinding) {
+      continue;
+    }
+    const toBinding = programPath.scope.getOwnBinding(renameSpec.to);
+    if (!toBinding) {
+      continue;
+    }
+    if (renameBySourceName.has(renameSpec.to)) {
+      throw new Error(
+        `${context} propagated final name collision: ${renameSpec.from} -> ${renameSpec.to} would shadow another renamed binding`
+      );
+    }
+    if (toBinding !== fromBinding) {
+      throw new Error(
+        `${context} final local name ${renameSpec.to} for ${renameSpec.from} conflicts with existing top-level binding`
+      );
+    }
+  }
+}
+
+function buildAtomicBoundaryIndex(atomicBoundaryUnits) {
+  const index = new Map();
+  for (const unit of atomicBoundaryUnits) {
+    for (const fragment of unit.ownerFragments ?? []) {
+      index.set(fragment.id, unit);
+    }
+    for (const ownerId of unit.ownerIds ?? []) {
+      if (!index.has(ownerId)) {
+        index.set(ownerId, unit);
+      }
+    }
+    for (const attachedItemId of unit.attachedItemIds ?? []) {
+      index.set(attachedItemId, unit);
+    }
+  }
+  return index;
+}
+
+function ownerEntryBoundaryKey(entry) {
+  return entry.fragment?.id ?? entry.owner.id;
+}
+
+function annotateAtomicBoundary(statements, boundaryUnit, previousAtomicBoundaryUnitId) {
+  if (!boundaryUnit || statements.length === 0 || boundaryUnit.id === previousAtomicBoundaryUnitId) {
+    return;
+  }
+  const fragmentComment =
+    Array.isArray(boundaryUnit.ownerFragments) && boundaryUnit.ownerFragments.length > 0
+      ? ` fragments=${boundaryUnit.ownerFragments.map((fragment) => fragment.id).join(",")}`
+      : "";
+  t.addComment(
+    statements[0],
+    "leading",
+    ` ${SELECTED_MODULE_ATOMIC_BOUNDARY_PRAGMA} id=${boundaryUnit.id} members=${(boundaryUnit.memberNames ?? []).join(",")} owners=${(boundaryUnit.ownerIds ?? []).join(",")}${fragmentComment} `
+  );
+}
+
+function updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, boundaryUnit) {
+  return boundaryUnit?.id ?? previousAtomicBoundaryUnitId;
 }
 
 function buildSnapshotVariableDeclarationStatements(owner, statement) {
@@ -928,16 +1166,17 @@ function stageInitName(initName, stageIndex) {
   return `${initName}_stage_${stageIndex}`;
 }
 
-function functionDeclarationAssignmentStatement(statement) {
+function functionDeclarationAssignmentStatement(statement, localRenameMap) {
   if (!t.isFunctionDeclaration(statement) || !statement.id) {
     throw new Error(`Expected FunctionDeclaration, got ${statement?.type}`);
   }
+  const localName = renamedLocalIdentifierName(statement.id.name, localRenameMap);
   return t.expressionStatement(
     t.assignmentExpression(
       "=",
-      t.identifier(statement.id.name),
+      t.identifier(localName),
       t.functionExpression(
-        t.identifier(statement.id.name),
+        t.identifier(localName),
         cloneNodes(statement.params),
         t.cloneNode(statement.body, true),
         statement.generator,
@@ -947,16 +1186,17 @@ function functionDeclarationAssignmentStatement(statement) {
   );
 }
 
-function classDeclarationAssignmentStatement(statement) {
+function classDeclarationAssignmentStatement(statement, localRenameMap) {
   if (!t.isClassDeclaration(statement) || !statement.id) {
     throw new Error(`Expected ClassDeclaration, got ${statement?.type}`);
   }
+  const localName = renamedLocalIdentifierName(statement.id.name, localRenameMap);
   return t.expressionStatement(
     t.assignmentExpression(
       "=",
-      t.identifier(statement.id.name),
+      t.identifier(localName),
       t.classExpression(
-        t.identifier(statement.id.name),
+        t.identifier(localName),
         statement.superClass ? t.cloneNode(statement.superClass, true) : null,
         t.cloneNode(statement.body, true),
         cloneNodes(statement.decorators ?? [])
@@ -1424,6 +1664,19 @@ function collectOwnerExportNames(programBody, owners) {
   return names;
 }
 
+function collectSelectedEntryExportNames(ownerEntries) {
+  const names = [];
+  for (const entry of ownerEntries) {
+    const selectedNames = entry.fragment?.memberNames ?? topLevelDeclarationNames(entry.statement);
+    for (const name of selectedNames) {
+      if (!names.includes(name)) {
+        names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
 function validateVariableDeclarators(statement, operationId, ownerId) {
   if (!t.isVariableDeclaration(statement)) {
     throw new Error(`Expected VariableDeclaration for ${ownerId}, got ${statement?.type}`);
@@ -1542,6 +1795,12 @@ function validateExtractOperationShape(operation) {
   ) {
     throw new Error(`Extract operation ${operation.id} selector.attachedItemIds must be an array when present`);
   }
+  if (
+    operation.selector.ownerFragments !== undefined &&
+    !Array.isArray(operation.selector.ownerFragments)
+  ) {
+    throw new Error(`Extract operation ${operation.id} selector.ownerFragments must be an array when present`);
+  }
   if (!operation.target?.file) {
     throw new Error(`Extract operation ${operation.id} is missing target.file`);
   }
@@ -1614,6 +1873,33 @@ function buildExtractionIndex(operations) {
   };
 }
 
+function buildOwnerFragmentsByOwnerId(ownerFragments, operationId) {
+  const byOwnerId = new Map();
+  for (const fragment of ownerFragments) {
+    if (!fragment || typeof fragment.ownerId !== "string" || fragment.ownerId === "") {
+      throw new Error(`Extract operation ${operationId} has invalid owner fragment ownerId`);
+    }
+    if (typeof fragment.id !== "string" || fragment.id === "") {
+      throw new Error(`Extract operation ${operationId} has invalid owner fragment id`);
+    }
+    if (!Array.isArray(fragment.declaratorIndices) || fragment.declaratorIndices.length === 0) {
+      throw new Error(`Extract operation ${operationId} has invalid owner fragment declaratorIndices`);
+    }
+    if (!byOwnerId.has(fragment.ownerId)) {
+      byOwnerId.set(fragment.ownerId, []);
+    }
+    byOwnerId.get(fragment.ownerId).push({
+      ...fragment,
+      declaratorIndices: [...fragment.declaratorIndices],
+      memberNames: [...(fragment.memberNames ?? [])],
+    });
+  }
+  for (const fragments of byOwnerId.values()) {
+    fragments.sort((left, right) => (left.orderIndex ?? 0) - (right.orderIndex ?? 0) || left.id.localeCompare(right.id));
+  }
+  return byOwnerId;
+}
+
 function buildRemainingProgramValidationIndex(analysis) {
   const earlierEagerUsersByOwnerId = new Map();
   const writersByOwnerId = new Map();
@@ -1678,7 +1964,10 @@ function indexResolvedEntriesByOwnerId(resolved) {
   const index = new Map();
   for (const entry of resolved) {
     for (const ownerId of entry.ownerIds) {
-      index.set(ownerId, entry);
+      if (!index.has(ownerId)) {
+        index.set(ownerId, []);
+      }
+      index.get(ownerId).push(entry);
     }
   }
   return index;
@@ -1687,14 +1976,14 @@ function indexResolvedEntriesByOwnerId(resolved) {
 function finalizeResolvedEntryImports(entry, resolvedByOwnerId) {
   const importsByTargetFile = new Map();
   for (const [ownerId, names] of entry.usedExtractedDependencyNames ?? []) {
-    const providerEntry = resolvedByOwnerId.get(ownerId);
-    if (!providerEntry || providerEntry.id === entry.id) {
-      continue;
-    }
-    if (!importsByTargetFile.has(providerEntry.targetFile)) {
-      importsByTargetFile.set(providerEntry.targetFile, new Set());
-    }
     for (const name of names) {
+      const providerEntry = resolveDependencyProviderEntry(resolvedByOwnerId.get(ownerId) ?? [], entry, name);
+      if (!providerEntry) {
+        continue;
+      }
+      if (!importsByTargetFile.has(providerEntry.targetFile)) {
+        importsByTargetFile.set(providerEntry.targetFile, new Set());
+      }
       importsByTargetFile.get(providerEntry.targetFile).add(
         JSON.stringify({
           imported: exportNameForLocal(providerEntry, name),
@@ -1709,6 +1998,43 @@ function finalizeResolvedEntryImports(entry, resolvedByOwnerId) {
       specifiers: [...names].sort().map((encodedSpecifier) => JSON.parse(encodedSpecifier)),
     }))
     .sort((left, right) => left.sourceTargetFile.localeCompare(right.sourceTargetFile));
+}
+
+function resolveDependencyProviderEntry(providerEntries, consumingEntry, localName) {
+  const candidates = providerEntries.filter(
+    (providerEntry) => providerEntry.id !== consumingEntry.id && providerEntry.exportedNames.includes(localName)
+  );
+  if (candidates.length === 0) {
+    return null;
+  }
+  if (candidates.length > 1) {
+    throw new Error(
+      `Ambiguous extracted dependency provider for ${localName}: ${candidates.map((entry) => entry.id).join(", ")}`
+    );
+  }
+  return candidates[0];
+}
+
+function finalizeBindingPlacements(bindingPlacements, operationId) {
+  const placementsBySourceName = new Map();
+  for (const placement of bindingPlacements) {
+    if (!placement || typeof placement.sourceName !== "string" || placement.sourceName === "") {
+      throw new Error(`Extract operation ${operationId} has invalid binding placement sourceName`);
+    }
+    if (typeof placement.name !== "string" || placement.name === "") {
+      throw new Error(`Extract operation ${operationId} has invalid binding placement name for ${placement.sourceName}`);
+    }
+    const existing = placementsBySourceName.get(placement.sourceName);
+    if (existing && existing.name !== placement.name) {
+      throw new Error(
+        `Extract operation ${operationId} assigns conflicting final names to ${placement.sourceName}: ${existing.name} vs ${placement.name}`
+      );
+    }
+    placementsBySourceName.set(placement.sourceName, {
+      ...placement,
+    });
+  }
+  return [...placementsBySourceName.values()].sort((left, right) => left.sourceName.localeCompare(right.sourceName));
 }
 
 function finalizeExportBindings(exportedNames, bindingPlacements, operationId) {
@@ -1731,6 +2057,38 @@ function finalizeExportBindings(exportedNames, bindingPlacements, operationId) {
     );
   }
   return exportBindings;
+}
+
+function normalizeAtomicBoundaryUnits(atomicBoundaryUnits) {
+  return atomicBoundaryUnits
+    .map((unit) => ({
+      attachedItemIds: [...(unit.attachedItemIds ?? [])].sort(),
+      id: unit.id,
+      memberNames: [...(unit.memberNames ?? [])].sort(),
+      ownerIds: [...(unit.ownerIds ?? [])],
+      ownerFragments: [...(unit.ownerFragments ?? [])]
+        .map((fragment) => ({
+          declaratorIndices: [...(fragment.declaratorIndices ?? [])],
+          id: fragment.id,
+          kind: fragment.kind,
+          memberNames: [...(fragment.memberNames ?? [])].sort(),
+          orderIndex: fragment.orderIndex ?? 0,
+          ownerId: fragment.ownerId,
+        }))
+        .sort(
+          (left, right) =>
+            left.ownerId.localeCompare(right.ownerId) ||
+            left.orderIndex - right.orderIndex ||
+            left.id.localeCompare(right.id)
+        ),
+      startOrdinal: unit.startOrdinal ?? Number.POSITIVE_INFINITY,
+      unitIds: [...(unit.unitIds ?? [])],
+    }))
+    .sort(
+      (left, right) =>
+        left.startOrdinal - right.startOrdinal ||
+        left.id.localeCompare(right.id)
+    );
 }
 
 function exportNameForLocal(entry, localName) {

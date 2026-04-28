@@ -1,7 +1,10 @@
+import * as t from "@babel/types";
+import { referencedUndeclaredNames } from "../common/program_analysis.mjs";
 import { packSelectedModuleGroups, planSelectedModuleGroupExtractions } from "./decl_graph.mjs";
 
 const SELECTED_ATOMIC_UNIT_ID_PREFIX = "selected_atomic_unit_";
 const ATOMIC_MODULE_ID_PREFIX = "atomic_module_";
+const GENERATED_INIT_PREFIX = "__dt_generated_init__";
 const ANALYSIS_OWNER_BY_ID_CACHE = new WeakMap();
 const ANALYSIS_ITEM_BY_ID_CACHE = new WeakMap();
 const ANALYSIS_DEFAULT_SELECTED_OWNER_IDS_CACHE = new WeakMap();
@@ -31,9 +34,13 @@ export function planSelectedAtomicModules(
     ownerById,
     selectedOwnerIds,
   });
+  const expandedAtomicUnits = splitPureVariableDeclarationAtomicUnits(rawAtomicUnits, {
+    ownerById,
+    programBody,
+  });
   const buildUnitsMs = durationMsSince(buildUnitsStartedAt);
   const finalizeUnitsStartedAt = process.hrtime.bigint();
-  const atomicUnits = rawAtomicUnits.map((unit, index) =>
+  const atomicUnits = expandedAtomicUnits.map((unit, index) =>
     finalizeAtomicUnit(unit, {
       code,
       id: `${SELECTED_ATOMIC_UNIT_ID_PREFIX}${index.toString().padStart(4, "0")}`,
@@ -78,12 +85,25 @@ export function buildSelectedModuleOperations(plan, options = {}) {
   const targetDir = normalizeRelativeFile(options.targetDir ?? "regions");
   const idPrefix = options.idPrefix ?? "selected_module";
   const filePrefix = options.filePrefix ?? "";
-  const initPrefix = options.initPrefix ?? "init_";
+  const initPrefix = options.initPrefix ?? GENERATED_INIT_PREFIX;
 
   return plan.modulePlans.map((modulePlan, index) => {
     const target = deriveSelectedModuleTarget(modulePlan, index, { filePrefix, initPrefix, targetDir });
     return {
       id: `${idPrefix}__${modulePlan.id}`,
+      ...(Array.isArray(modulePlan.atomicBoundaryUnits)
+        ? {
+            atomicBoundaryUnits: modulePlan.atomicBoundaryUnits.map((unit) => ({
+              attachedItemIds: [...unit.attachedItemIds],
+              id: unit.id,
+              memberNames: [...unit.memberNames],
+              ownerIds: [...unit.ownerIds],
+              ownerFragments: cloneOwnerFragments(unit.ownerFragments),
+              startOrdinal: unit.startOrdinal,
+              unitIds: [...unit.unitIds],
+            })),
+          }
+        : {}),
       ...(Array.isArray(modulePlan.bindingPlacements)
         ? {
             bindingPlacements: modulePlan.bindingPlacements.map((entry) => ({ ...entry })),
@@ -96,6 +116,11 @@ export function buildSelectedModuleOperations(plan, options = {}) {
         attachedItemIds: [...modulePlan.attachedItemIds],
         chunkId,
         ownerIds: [...modulePlan.ownerIds],
+        ...(Array.isArray(modulePlan.ownerFragments)
+          ? {
+              ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
+            }
+          : {}),
         ...(file ? { file } : {}),
       },
       target: {
@@ -109,7 +134,7 @@ export function buildSelectedModuleOperations(plan, options = {}) {
 export function deriveSelectedModuleTarget(
   modulePlan,
   index,
-  { filePrefix = "", initPrefix = "init_", targetDir = "modules" } = {}
+  { filePrefix = "", initPrefix = GENERATED_INIT_PREFIX, targetDir = "modules" } = {}
 ) {
   const normalizedTargetDir = normalizeRelativeFile(targetDir);
   const modulePath =
@@ -293,6 +318,129 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
   return units;
 }
 
+function splitPureVariableDeclarationAtomicUnits(rawAtomicUnits, { ownerById, programBody }) {
+  const expanded = [];
+  for (const unit of rawAtomicUnits) {
+    const splitUnits = splitPureVariableDeclarationAtomicUnit(unit, { ownerById, programBody });
+    expanded.push(...(splitUnits ?? [unit]));
+  }
+  return expanded;
+}
+
+function splitPureVariableDeclarationAtomicUnit(unit, { ownerById, programBody }) {
+  if (unit.attachedItemIds.length > 0 || unit.ownerIds.length !== 1) {
+    return null;
+  }
+  const [ownerId] = unit.ownerIds;
+  const owner = ownerById.get(ownerId);
+  if (!owner || owner.type !== "VariableDeclaration" || ownerHasAnyTopLevelAccess(owner)) {
+    return null;
+  }
+  const statement = programBody?.[owner.ordinal];
+  const declaration = unwrapTopLevelDeclarationNode(statement);
+  if (!t.isVariableDeclaration(declaration) || declaration.declarations.length <= 1) {
+    return null;
+  }
+  const fragments = declaration.declarations.map((declarator, index) =>
+    buildPureVariableDeclaratorFragment(owner, declarator, index)
+  );
+  if (fragments.some((fragment) => fragment === null)) {
+    return null;
+  }
+  return fragments.map((fragment) => ({
+    attachedItemIds: [],
+    ownerFragments: [fragment],
+    ownerIds: [owner.id],
+  }));
+}
+
+function buildPureVariableDeclaratorFragment(owner, declarator, index) {
+  if (!t.isIdentifier(declarator.id)) {
+    return null;
+  }
+  if (!isStaticallyPureFragmentInitializer(declarator.init)) {
+    return null;
+  }
+  if (referencedUndeclaredNames(declarator.init).length > 0) {
+    return null;
+  }
+  return {
+    declaratorIndices: [index],
+    id: `${owner.id}::declarator_${index}`,
+    kind: "variable_declarator",
+    memberNames: [declarator.id.name],
+    orderIndex: index,
+    ownerId: owner.id,
+  };
+}
+
+function isStaticallyPureFragmentInitializer(node) {
+  if (!node) {
+    return true;
+  }
+  if (
+    t.isStringLiteral(node) ||
+    t.isNumericLiteral(node) ||
+    t.isBooleanLiteral(node) ||
+    t.isNullLiteral(node) ||
+    t.isBigIntLiteral(node) ||
+    t.isRegExpLiteral(node)
+  ) {
+    return true;
+  }
+  if (t.isTemplateLiteral(node)) {
+    return node.expressions.length === 0;
+  }
+  if (t.isArrayExpression(node)) {
+    return node.elements.every((element) => {
+      if (!element) {
+        return true;
+      }
+      if (t.isSpreadElement(element)) {
+        return false;
+      }
+      return isStaticallyPureFragmentInitializer(element);
+    });
+  }
+  if (t.isObjectExpression(node)) {
+    return node.properties.every((property) => {
+      if (t.isSpreadElement(property)) {
+        return false;
+      }
+      if (property.computed && !isStaticallyPureFragmentInitializer(property.key)) {
+        return false;
+      }
+      return isStaticallyPureFragmentInitializer(property.value);
+    });
+  }
+  if (t.isUnaryExpression(node)) {
+    return isStaticallyPureFragmentInitializer(node.argument);
+  }
+  if (t.isBinaryExpression(node) || t.isLogicalExpression(node)) {
+    return isStaticallyPureFragmentInitializer(node.left) && isStaticallyPureFragmentInitializer(node.right);
+  }
+  if (t.isConditionalExpression(node)) {
+    return (
+      isStaticallyPureFragmentInitializer(node.test) &&
+      isStaticallyPureFragmentInitializer(node.consequent) &&
+      isStaticallyPureFragmentInitializer(node.alternate)
+    );
+  }
+  if (t.isParenthesizedExpression(node)) {
+    return isStaticallyPureFragmentInitializer(node.expression);
+  }
+  return false;
+}
+
+function ownerHasAnyTopLevelAccess(owner) {
+  let hasAccess = false;
+  forEachTopLevelAccess(owner, () => {
+    hasAccess = true;
+    return false;
+  });
+  return hasAccess;
+}
+
 function touchedSelectedOwnerIds(sideEffect, selectedOwnerIds) {
   const touchedOwnerIds = [];
   const touchedOwnerIdSet = new Set();
@@ -320,15 +468,30 @@ function finalizeAtomicUnit(unit, { code, id, index, itemMetricsById, itemById, 
   let lines = 0;
   let bytes = typeof code === "string" ? 0 : null;
   let startOrdinal = Number.POSITIVE_INFINITY;
-  for (const itemId of itemIds) {
-    const metrics = statementMetricForItem(itemId, { code, itemMetricsById, itemById, programBody });
-    lines += metrics.lines;
-    if (bytes !== null) {
-      bytes += metrics.bytes;
+  if (Array.isArray(unit.ownerFragments) && unit.ownerFragments.length > 0) {
+    for (const fragment of unit.ownerFragments) {
+      const metrics = statementMetricForOwnerFragment(fragment, { code, itemById, programBody });
+      lines += metrics.lines;
+      if (bytes !== null) {
+        bytes += metrics.bytes;
+      }
+      const baseOrdinal = itemById.get(fragment.ownerId)?.ordinal ?? Number.POSITIVE_INFINITY;
+      const fragmentOrdinal = baseOrdinal + fragment.orderIndex / 1000;
+      if (fragmentOrdinal < startOrdinal) {
+        startOrdinal = fragmentOrdinal;
+      }
     }
-    const ordinal = itemById.get(itemId)?.ordinal ?? Number.POSITIVE_INFINITY;
-    if (ordinal < startOrdinal) {
-      startOrdinal = ordinal;
+  } else {
+    for (const itemId of itemIds) {
+      const metrics = statementMetricForItem(itemId, { code, itemMetricsById, itemById, programBody });
+      lines += metrics.lines;
+      if (bytes !== null) {
+        bytes += metrics.bytes;
+      }
+      const ordinal = itemById.get(itemId)?.ordinal ?? Number.POSITIVE_INFINITY;
+      if (ordinal < startOrdinal) {
+        startOrdinal = ordinal;
+      }
     }
   }
   return {
@@ -337,10 +500,40 @@ function finalizeAtomicUnit(unit, { code, id, index, itemMetricsById, itemById, 
     id,
     index,
     lines,
-    memberNames: unit.ownerIds.flatMap((ownerId) => ownerById.get(ownerId)?.names ?? []).sort(),
+    memberNames:
+      Array.isArray(unit.ownerFragments) && unit.ownerFragments.length > 0
+        ? unit.ownerFragments.flatMap((fragment) => fragment.memberNames).sort()
+        : unit.ownerIds.flatMap((ownerId) => ownerById.get(ownerId)?.names ?? []).sort(),
     ownerIds: [...unit.ownerIds],
+    ownerFragments: cloneOwnerFragments(unit.ownerFragments),
     startOrdinal,
   };
+}
+
+function statementMetricForOwnerFragment(fragment, { code, itemById, programBody }) {
+  const item = itemById.get(fragment.ownerId);
+  const statement = unwrapTopLevelDeclarationNode(programBody?.[item?.ordinal]);
+  if (!t.isVariableDeclaration(statement)) {
+    return { bytes: 0, lines: 0 };
+  }
+  const lines = fragment.declaratorIndices.reduce((sum, declaratorIndex) => {
+    const declaration = statement.declarations[declaratorIndex];
+    if (!declaration?.loc) {
+      return sum;
+    }
+    return sum + declaration.loc.end.line - declaration.loc.start.line + 1;
+  }, 0);
+  const bytes =
+    typeof code === "string"
+      ? fragment.declaratorIndices.reduce((sum, declaratorIndex) => {
+          const declaration = statement.declarations[declaratorIndex];
+          if (typeof declaration?.start !== "number" || typeof declaration?.end !== "number") {
+            return sum;
+          }
+          return sum + Buffer.byteLength(code.slice(declaration.start, declaration.end));
+        }, 0)
+      : 0;
+  return { bytes, lines };
 }
 
 function statementMetricForItem(itemId, { code, itemMetricsById, itemById, programBody }) {
@@ -364,6 +557,7 @@ function newModuleFromAtomicUnit(atomicUnit) {
     lines: atomicUnit.lines,
     memberNames: [...atomicUnit.memberNames],
     ownerIds: [...atomicUnit.ownerIds],
+    ownerFragments: cloneOwnerFragments(atomicUnit.ownerFragments),
     startOrdinal: atomicUnit.startOrdinal,
     unitIds: [atomicUnit.id],
   };
@@ -385,6 +579,7 @@ function finalizeModulePlan(modulePlan, { id, index, ownerById }) {
     ownerIds: [...new Set(modulePlan.ownerIds)].sort(
       (leftOwnerId, rightOwnerId) => ownerById.get(leftOwnerId).ordinal - ownerById.get(rightOwnerId).ordinal
     ),
+    ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
     startOrdinal: modulePlan.startOrdinal,
     unitIds: [...modulePlan.unitIds],
   };
@@ -518,8 +713,24 @@ function normalizeRelativeFile(value) {
 function sanitizeIdentifier(value) {
   return value
     .replace(/[^A-Za-z0-9_$]+/g, "_")
-    .replace(/^[^A-Za-z_$]+/, "_")
-    .replace(/_+/g, "_");
+    .replace(/^[^A-Za-z_$]+/, "_");
+}
+
+function unwrapTopLevelDeclarationNode(node) {
+  if (t.isExportNamedDeclaration(node) && node.declaration) {
+    return node.declaration;
+  }
+  return node;
+}
+
+function cloneOwnerFragments(ownerFragments) {
+  return Array.isArray(ownerFragments)
+    ? ownerFragments.map((fragment) => ({
+        ...fragment,
+        declaratorIndices: [...fragment.declaratorIndices],
+        memberNames: [...fragment.memberNames],
+      }))
+    : undefined;
 }
 
 function durationMsSince(startedAt) {
