@@ -121,6 +121,80 @@ model resident, this is a per-deployment-rollout cost, not per-request.
   on these GPUs in this VM passthrough setup, so "10× slower than
   ceiling" for 120b is theoretical, not verified-against-instruments.
 
+## Followup: CPU offload confirmed for `gpt-oss:120b`
+
+After the throughput pass, triggered a single 120b request and sampled
+`ollama ps` + `nvidia-smi` while the model was resident. Result:
+
+```text
+$ ollama ps
+NAME            ID              SIZE     PROCESSOR          CONTEXT    UNTIL
+gpt-oss:120b    a951a23b46a1    69 GB    19%/81% CPU/GPU    131072     9 minutes from now
+
+$ nvidia-smi --query-gpu=index,memory.used,memory.free,utilization.gpu --format=csv
+index, memory.used [MiB], memory.free [MiB], utilization.gpu [%]
+0, 28641 MiB, 3469 MiB, 13 %
+1, 27198 MiB, 4912 MiB, 0 %
+```
+
+So **19% of 69 GB = ~13 GB lives in CPU RAM** and traverses PCIe per
+token. VRAM is essentially saturated: 28.6 + 27.2 = **55.8 GB of 64 GB
+total used**. KV cache for 131 K context at `q8_0` plus model weights
+plus engine overhead exceeds 64 GB, so Ollama silently spills weights
+to host memory.
+
+Hypothesis from the throughput pass — that the ~1.5 tok/s decode is
+caused by partial CPU residency, not some other bottleneck — is now
+confirmed. The fix is either a leaner KV cache budget (smaller context),
+a denser quant (none available smaller than MXFP4), or moving to an
+engine that actually fits this model in VRAM (vLLM with tensor parallel
+
+- FP8 KV).
+
+### How this was measured
+
+Triggered with a one-off `claude-sandbox` Pod that hit the cluster
+Ollama with `keep_alive: 10m`:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ollama-trigger
+  namespace: claude-sandbox
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      env:
+        - { name: HTTP_PROXY, value: "" }
+        - { name: HTTPS_PROXY, value: "" }
+        - { name: http_proxy, value: "" }
+        - { name: https_proxy, value: "" }
+      command:
+        - sh
+        - -c
+        - |
+          curl -sS --noproxy '*' -X POST http://ollama.ollama:11434/api/generate \
+            -H 'Content-Type: application/json' \
+            -d '{"model":"gpt-oss:120b","prompt":"Write 100 words about cats.","stream":false,"keep_alive":"10m"}' \
+            -o /tmp/out.json
+```
+
+Then while the request was in flight (or briefly after, with
+`keep_alive` keeping the model resident):
+
+```bash
+kubectl -n ollama exec ollama-764d8ffbdf-8hbgf -c ollama -- ollama ps
+kubectl -n ollama exec ollama-764d8ffbdf-8hbgf -c ollama -- \
+  nvidia-smi --query-gpu=index,memory.used,memory.free,utilization.gpu --format=csv
+```
+
+(The `--noproxy '*'` and zeroed `HTTP_PROXY` env vars work around the
+mitmproxy auto-injection in `claude-sandbox`. See
+<../../../../k8s/TODO.md#reconsider-mitmproxy-auto-injection-in-claude-sandbox>.)
+
 ## Next pass
 
 Candidates for the next run, in rough order of value:

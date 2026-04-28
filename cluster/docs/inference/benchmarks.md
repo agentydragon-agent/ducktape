@@ -36,8 +36,8 @@ see <../../../x/local_llm/start-vllm-deepseek-r1.sh> and siblings.
 | -------------- | ----- | ---------------- | ------------------------------- | -------------- | -------------------------------------------------------------------- |
 | `c-gpt20`      | 1024  | 3 800            | **174**                         | 1.96           | <runs/2026-04-28_initial/README.md>                                  |
 | `c-gpt20`      | 8192  | 21 300           | **150**                         | 2.31           | <runs/2026-04-28_initial/README.md>                                  |
-| `c-gpt120`     | 1024  | 119              | **1.48** (CPU offload)          | 191.8          | <runs/2026-04-28_initial/README.md>                                  |
-| `c-gpt120`     | 8192  | 1 016            | **1.56** (CPU offload)          | 183.9          | <runs/2026-04-28_initial/README.md>                                  |
+| `c-gpt120`     | 1024  | 119              | **1.48** (2)                    | 191.8          | <runs/2026-04-28_initial/README.md>                                  |
+| `c-gpt120`     | 8192  | 1 016            | **1.56** (2)                    | 183.9          | <runs/2026-04-28_initial/README.md>                                  |
 | `c-gemma31`    | 1024  | n/a (1)          | n/a (1)                         | 7.63           | <runs/2026-04-28_initial/README.md>                                  |
 | `c-gemma31`    | 8192  | n/a (1)          | n/a (1)                         | 8.50           | <runs/2026-04-28_initial/README.md>                                  |
 | `h-qwen3c-awq` | 119 K | 91 000 (cached)  | —                               | —              | <qwen3_coder_vram_analysis.md#real-world-awq-performance-2026-01-24> |
@@ -49,6 +49,10 @@ chunks; Ollama's streaming format for this model puts tokens in a
 different field. End-to-end times are real (~30 tok/s implied) but
 per-phase decomposition isn't recoverable without re-running with chunk-
 shape dumps.
+
+(2) Confirmed CPU-offload-bound: `ollama ps` shows
+`19%/81% CPU/GPU` for the resident model; ~13 GB of weights in CPU RAM.
+See <runs/2026-04-28_initial/README.md#followup-cpu-offload-confirmed-for-gpt-oss120b>.
 
 ### Long-context recall (NIAH)
 
