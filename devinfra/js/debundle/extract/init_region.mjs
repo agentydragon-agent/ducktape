@@ -1341,11 +1341,41 @@ function applyReadableObjectPatternRenamesInGeneratedFile(ast) {
 function applyReadableObjectPatternRenamesInProgram(programPath) {
   const renameGroups = buildReadableObjectPatternRenameGroups(programPath);
   for (const { scopePath, renameSpecs } of renameGroups) {
-    for (const renameSpec of renameSpecs) {
-      scopePath.scope.rename(renameSpec.from, renameSpec.to);
-    }
+    applyReadableRenameSpecsInScope(scopePath, renameSpecs);
   }
   normalizeReadableObjectPatternShorthandInProgram(programPath);
+}
+
+function applyReadableRenameSpecsInScope(scopePath, renameSpecs) {
+  if (!Array.isArray(renameSpecs) || renameSpecs.length === 0) {
+    return;
+  }
+  const bindingBySourceName = new Map();
+  const renameBySourceName = new Map();
+  for (const renameSpec of renameSpecs) {
+    const binding = scopePath.scope.getOwnBinding(renameSpec.from);
+    if (!binding) {
+      continue;
+    }
+    bindingBySourceName.set(renameSpec.from, binding);
+    renameBySourceName.set(renameSpec.from, renameSpec);
+  }
+  if (renameBySourceName.size === 0) {
+    return;
+  }
+  scopePath.traverse({
+    Identifier(identifierPath) {
+      const renameSpec = renameBySourceName.get(identifierPath.node.name);
+      if (!renameSpec || !shouldRenameIdentifierPath(identifierPath)) {
+        return;
+      }
+      const binding = identifierPath.scope.getBinding(identifierPath.node.name);
+      if (!binding || binding !== bindingBySourceName.get(renameSpec.from)) {
+        return;
+      }
+      identifierPath.node.name = renameSpec.to;
+    },
+  });
 }
 
 function buildReadableObjectPatternRenameGroups(programPath) {
