@@ -443,17 +443,163 @@ function resolveExtractOperation(
 }
 
 function isPlainImportEligibleEntry({ attachedEntries, orderedOwners, ownerEntries, stageRuns }) {
-  if (attachedEntries.length > 0 || stageRuns.length !== 1 || ownerEntries.some((entry) => entry.fragment)) {
+  if (attachedEntries.length > 0 || stageRuns.length !== 1) {
     return false;
   }
-  if (stageRuns[0].stageEntries.some((entry) => entry.kind !== "declaration")) {
+  const stageEntries = stageRuns[0].stageEntries;
+  if (stageEntries.some((entry) => entry.kind !== "declaration")) {
     return false;
   }
-  return orderedOwners.every(
-    (owner) =>
-      owner.extractionMode === "plain_import_candidate" &&
-      (owner.type === "FunctionDeclaration" || owner.type === "ClassDeclaration")
+  return stageEntries.every((stageEntry) =>
+    isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries)
   );
+}
+
+function isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries) {
+  const { owner } = stageEntry;
+  if (owner.type === "FunctionDeclaration") {
+    return true;
+  }
+  if (owner.type === "ClassDeclaration") {
+    return isPlainImportSafeClassOwner(owner);
+  }
+  if (owner.type !== "VariableDeclaration") {
+    return false;
+  }
+  return isPlainImportSafeVariableEntry(stageEntry, ownerEntries);
+}
+
+function isPlainImportSafeClassOwner(owner) {
+  const classFeatures = owner.classFeatures ?? {
+    hasSuperClass: false,
+    staticBlockCount: 0,
+    staticFieldCount: 0,
+    computedKeyCount: 0,
+  };
+  return (
+    !classFeatures.hasSuperClass &&
+    classFeatures.staticBlockCount === 0 &&
+    classFeatures.staticFieldCount === 0 &&
+    classFeatures.computedKeyCount === 0 &&
+    (owner.eagerWrites?.size ?? 0) === 0 &&
+    (owner.eagerMemberWrites?.size ?? 0) === 0 &&
+    (owner.eagerReads?.size ?? 0) === 0
+  );
+}
+
+function isPlainImportSafeVariableEntry(stageEntry, ownerEntries) {
+  const { owner, statement, fragment } = stageEntry;
+  if (!t.isVariableDeclaration(statement)) {
+    return false;
+  }
+  const declarations = fragment
+    ? fragment.declaratorIndices.map((index) => statement.declarations[index]).filter(Boolean)
+    : statement.declarations;
+  if (declarations.length === 0) {
+    return false;
+  }
+  if (fragment) {
+    return supportsDirectFragmentVariableLowering(fragment) && declarations.every(isPlainImportSafeVariableDeclarator);
+  }
+  if (ownerEntries.some((entry) => entry.owner.id === owner.id && entry.fragment)) {
+    return false;
+  }
+  return (
+    (owner.eagerReads?.size ?? 0) === 0 &&
+    (owner.eagerWrites?.size ?? 0) === 0 &&
+    (owner.eagerMemberWrites?.size ?? 0) === 0 &&
+    declarations.every(isPlainImportSafeVariableDeclarator)
+  );
+}
+
+function isPlainImportSafeVariableDeclarator(declaration) {
+  return isPlainImportSafeBindingPattern(declaration.id) && isPlainImportSafeExpression(declaration.init);
+}
+
+function isPlainImportSafeBindingPattern(pattern) {
+  if (!pattern) {
+    return false;
+  }
+  if (t.isIdentifier(pattern)) {
+    return true;
+  }
+  if (t.isAssignmentPattern(pattern)) {
+    return isPlainImportSafeBindingPattern(pattern.left) && isPlainImportSafeExpression(pattern.right);
+  }
+  if (t.isRestElement(pattern)) {
+    return isPlainImportSafeBindingPattern(pattern.argument);
+  }
+  if (t.isArrayPattern(pattern)) {
+    return pattern.elements.every((element) => element == null || isPlainImportSafeBindingPattern(element));
+  }
+  if (t.isObjectPattern(pattern)) {
+    return pattern.properties.every((property) => {
+      if (t.isRestElement(property)) {
+        return isPlainImportSafeBindingPattern(property.argument);
+      }
+      if (!t.isObjectProperty(property) || property.computed) {
+        return false;
+      }
+      return isPlainImportSafeBindingPattern(property.value);
+    });
+  }
+  return false;
+}
+
+function isPlainImportSafeExpression(node) {
+  if (!node) {
+    return true;
+  }
+  if (
+    t.isIdentifier(node) ||
+    t.isStringLiteral(node) ||
+    t.isNumericLiteral(node) ||
+    t.isBooleanLiteral(node) ||
+    t.isNullLiteral(node) ||
+    t.isBigIntLiteral(node) ||
+    t.isRegExpLiteral(node) ||
+    t.isFunctionExpression(node) ||
+    t.isArrowFunctionExpression(node) ||
+    t.isClassExpression(node)
+  ) {
+    return true;
+  }
+  if (t.isTemplateLiteral(node)) {
+    return node.expressions.every(isPlainImportSafeExpression);
+  }
+  if (t.isUnaryExpression(node)) {
+    return node.operator !== "delete" && isPlainImportSafeExpression(node.argument);
+  }
+  if (t.isBinaryExpression(node) || t.isLogicalExpression(node)) {
+    return isPlainImportSafeExpression(node.left) && isPlainImportSafeExpression(node.right);
+  }
+  if (t.isConditionalExpression(node)) {
+    return (
+      isPlainImportSafeExpression(node.test) &&
+      isPlainImportSafeExpression(node.consequent) &&
+      isPlainImportSafeExpression(node.alternate)
+    );
+  }
+  if (t.isArrayExpression(node)) {
+    return node.elements.every((element) => {
+      if (element == null) {
+        return true;
+      }
+      if (t.isSpreadElement(element)) {
+        return false;
+      }
+      return isPlainImportSafeExpression(element);
+    });
+  }
+  if (t.isObjectExpression(node)) {
+    return node.properties.every((property) => {
+      if (!t.isObjectProperty(property) || property.computed) {
+        return false;
+      }
+      return isPlainImportSafeExpression(property.value);
+    });
+  }
+  return false;
 }
 
 function validateSelectedOwner(
@@ -1133,7 +1279,7 @@ function buildPlainImportModuleFile(entry) {
     if (stageEntry.kind !== "declaration") {
       throw new Error(`Plain-import lowering received non-declaration stage entry in ${entry.targetFile}`);
     }
-    const nextStatements = buildPlainImportOwnerStatements(stageEntry.statement);
+    const nextStatements = buildPlainImportOwnerStatements(stageEntry.statement, stageEntry.fragment);
     const boundaryUnit = atomicBoundaryIndex.get(ownerEntryBoundaryKey(stageEntry));
     annotateAtomicBoundary(nextStatements, boundaryUnit, previousAtomicBoundaryUnitId);
     previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, boundaryUnit);
@@ -1156,9 +1302,16 @@ function buildPlainImportModuleFile(entry) {
   };
 }
 
-function buildPlainImportOwnerStatements(statement) {
+function buildPlainImportOwnerStatements(statement, fragment = null) {
   if (t.isFunctionDeclaration(statement) || t.isClassDeclaration(statement)) {
     return [t.cloneNode(statement, true)];
+  }
+  if (t.isVariableDeclaration(statement)) {
+    if (!fragment) {
+      return [t.cloneNode(statement, true)];
+    }
+    const declarations = fragment.declaratorIndices.map((index) => statement.declarations[index]).filter(Boolean);
+    return [t.variableDeclaration(statement.kind, declarations.map((declaration) => t.cloneNode(declaration, true)))];
   }
   throw new Error(`Plain-import lowering does not support ${statement?.type}`);
 }

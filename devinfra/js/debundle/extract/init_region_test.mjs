@@ -82,8 +82,10 @@ export { render as publicRender };
   const entryCode = result.files.get("entry.js");
   const extractedCode = result.files.get("regions/entry_region.js");
   assert.match(entryCode, /from "\.\/regions\/entry_region\.js"/);
-  assert.match(entryCode, /init_entry_region\(\)/);
-  assert.match(extractedCode, /export function init_entry_region/);
+  assert.doesNotMatch(entryCode, /init_entry_region\(\)/);
+  assert.match(extractedCode, /\bconst seed = 1;/);
+  assert.match(extractedCode, /\bfunction render\(\)/);
+  assert.doesNotMatch(extractedCode, /export function init_entry_region/);
   assertRunnableEquivalent({
     entryFile: "entry.js",
     files: {},
@@ -711,9 +713,9 @@ export { readChosen };
   });
 
   const extractedCode = result.files.get("regions/snapshot_destructuring_owner.js");
-  assert.match(extractedCode, /const __dt_selected_module_snapshot__owner_00000 = \(\(\) =>/);
-  assert.match(extractedCode, /\{\s*chosen = fallbackLabel\s*\} = \{\}/s);
-  assert.match(extractedCode, /chosen = __dt_selected_module_snapshot__owner_00000\.chosen/);
+  assert.match(extractedCode, /const \{\s*chosen = fallbackLabel\s*\} = \{\},\s*fallbackLabel = "fallback";/s);
+  assert.match(extractedCode, /\bfunction readChosen\(\)/);
+  assert.doesNotMatch(extractedCode, /__dt_selected_module_snapshot__/);
   const originalDir = createTempFixtureRoot("debundle-extract-ordered-init-snapshot-destructuring-owner-original-");
   const transformedDir = createTempFixtureRoot("debundle-extract-ordered-init-snapshot-destructuring-owner-transformed-");
   writeRunnableFixture(originalDir, {
@@ -731,6 +733,39 @@ export { readChosen };
   assert.match(originalRun.stderr, /ReferenceError: Cannot access 'fallbackLabel' before initialization/);
   assert.match(transformedRun.stderr, /ReferenceError: Cannot access 'fallbackLabel' before initialization/);
   assert.equal(originalRun.stdout, transformedRun.stdout);
+});
+
+test("lowers single-stage pure variable/function regions as plain imports without init wrappers", () => {
+  const source = `const OVt = 500;
+function readTimeout() {
+  return OVt;
+}
+const result = readTimeout();
+console.log(result);
+export { result };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_plain_timeout_region",
+      ownerNames: ["OVt", "readTimeout"],
+      targetFile: "regions/plain_timeout_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/plain_timeout_region.js");
+  assert.match(runtimeCode, /import \{ OVt, readTimeout \} from "\.\/regions\/plain_timeout_region\.js"/);
+  assert.doesNotMatch(runtimeCode, /\binit_plain_timeout_region\b/);
+  assert.match(extractedCode, /\bconst OVt = 500;/);
+  assert.match(extractedCode, /\bfunction readTimeout\(\)/);
+  assert.doesNotMatch(extractedCode, /export function init_plain_timeout_region/);
+  assert.doesNotMatch(extractedCode, /\n\s*OVt = 500;/);
+
+  assertRunnableEquivalent({
+    prefix: "debundle-extract-plain-import-timeout-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
 });
 
 test("extractOrderedInitRegionsInCode reuses caller-supplied boundary analysis", () => {

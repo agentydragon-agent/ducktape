@@ -516,11 +516,13 @@ test("materializeLogicalModules lowers final logical modules directly from combi
   const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
   assert.match(seedModuleCode, /\bseedValue\b/);
   assert.match(seedModuleCode, /\breadSeedValue\b/);
-  assert.match(seedModuleCode, /\b__dt_generated_init__state_seed_state\b/);
-  assert.doesNotMatch(seedModuleCode, /\b__dt_generated_init__state_seed_state_stage_0\b/);
+  assert.match(seedModuleCode, /\bconst seedValue = 1;/);
+  assert.match(seedModuleCode, /\bfunction readSeedValue\(\)/);
+  assert.doesNotMatch(seedModuleCode, /\b__dt_generated_init__state_seed_state\b/);
   assert.doesNotMatch(seedModuleCode, /\bexport let seed\b/);
   assert.match(entryCode, /\bseedValue\b/);
   assert.match(entryCode, /\breadSeedValue\b/);
+  assert.doesNotMatch(entryCode, /\b__dt_generated_init__state_seed_state\b/);
 
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
@@ -611,7 +613,9 @@ test("materializeLogicalModules propagates final names through emitted imports a
   const firstModuleCode = readFileSyncFromArtifactFile(chunk.files.get("modules/state/first_state.js"));
   const entryCode = readFileSyncFromArtifactFile(chunk.files.get("entry.js"));
 
-  assert.match(seedModuleCode, /export function __dt_generated_init__state_seed_state\(\)/);
+  assert.match(seedModuleCode, /\bconst seedValue = 1;/);
+  assert.match(seedModuleCode, /\bfunction readSeedValue\(\)/);
+  assert.doesNotMatch(seedModuleCode, /export function __dt_generated_init__state_seed_state\(\)/);
   assert.match(seedModuleCode, /export \{ seedValue, readSeedValue \};/);
   assert.doesNotMatch(seedModuleCode, /export \{ .* as .* \}/);
   assert.match(firstModuleCode, /import \{ readSeedValue \} from "\.\/seed_state\.js";/);
@@ -1416,15 +1420,129 @@ export { readAlpha, readBeta };
   const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
   const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
 
+  assert.match(alphaCode, /\bconst alphaConstant = "a";/);
   assert.match(alphaCode, /\balphaConstant\b/);
   assert.doesNotMatch(alphaCode, /\bbeta\b/);
   assert.match(alphaCode, /fragments=owner_[^,\s]+::declarator_0/);
+  assert.doesNotMatch(alphaCode, /export function __dt_generated_init__/);
+  assert.doesNotMatch(alphaCode, /\n\s*alphaConstant = "a";/);
 
   assert.match(residualCode, /\bbeta = "b"/);
   assert.doesNotMatch(residualCode, /\balphaConstant\b/);
   assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_1/);
 
   assert.match(entryCode, /modules\/constants\/alpha\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materializeLogicalModules lowers pure constant fragments without init wrappers", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-plain-constant-fragment-pipeline-"
+  );
+  const source = `const OVt = 500, fallbackTimeoutMs = 250;
+export { OVt, fallbackTimeoutMs };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__request_timeout",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "runtime/request_timeout",
+        },
+        members: [
+          {
+            id: "member__request_timeout",
+            name: "requestTimeoutMs",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "OVt",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const timeoutCode = readFileSync(join(outRoot, "static", "app", "modules", "runtime", "request_timeout.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(timeoutCode, /\bconst requestTimeoutMs = 500;/);
+  assert.match(timeoutCode, /fragments=owner_[^,\s]+::declarator_0/);
+  assert.doesNotMatch(timeoutCode, /export function __dt_generated_init__/);
+  assert.doesNotMatch(timeoutCode, /\n\s*requestTimeoutMs = 500;/);
+
+  assert.match(residualCode, /\bconst fallbackTimeoutMs = 250;/);
+  assert.match(entryCode, /import \{ requestTimeoutMs \} from "\.\/modules\/runtime\/request_timeout\.js";/);
+  assert.doesNotMatch(entryCode, /__dt_generated_init__runtime_request_timeout/);
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
@@ -1537,7 +1655,7 @@ export { readFocusLabel, readOtherLabel };
   const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
   const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
 
-  assert.match(focusCode, /\(\{\s*focus: focusServiceLabel\s*\} = \{\s*focus: "focus"\s*\}\);/s);
+  assert.match(focusCode, /\bconst\s*\{\s*focus: focusServiceLabel\s*\}\s*=\s*\{\s*focus: "focus"\s*\};/s);
   assert.doesNotMatch(focusCode, /\botherLabel\b/);
   assert.match(focusCode, /fragments=owner_[^,\s]+::declarator_0/);
 
