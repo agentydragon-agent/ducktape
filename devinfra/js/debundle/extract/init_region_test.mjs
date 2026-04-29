@@ -1067,6 +1067,7 @@ export { parseTree };
   const extractedCode = result.files.get("regions/schema_region.js");
   assert.match(runtimeCode, /\binit_schema_region\b/);
   assert.match(extractedCode, /__dt_selected_module_snapshot__/);
+  assert.doesNotMatch(extractedCode, /__dt_selected_module_snapshot__\w+\s*=\s*\(\)\s*=>\s*\{/);
 
   assertRunnableEquivalent({
     files: {

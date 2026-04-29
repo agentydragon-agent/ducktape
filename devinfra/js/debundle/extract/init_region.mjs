@@ -2010,12 +2010,9 @@ function buildSnapshotVariableDeclarationStatements(owner, statement) {
   const snapshotObject = t.objectExpression(
     bindingNames.map((name) => t.objectProperty(t.identifier(name), t.identifier(name), false, true))
   );
-  const snapshotInit = t.callExpression(
-    t.arrowFunctionExpression([], t.blockStatement([declaration, t.returnStatement(snapshotObject)])),
-    []
-  );
   return [
-    t.variableDeclaration("const", [t.variableDeclarator(snapshotId, snapshotInit)]),
+    declaration,
+    t.variableDeclaration("const", [t.variableDeclarator(snapshotId, snapshotObject)]),
     ...bindingNames.map((name) =>
       t.expressionStatement(
         t.assignmentExpression("=", t.identifier(name), t.memberExpression(snapshotId, t.identifier(name)))
