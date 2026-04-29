@@ -214,6 +214,23 @@ export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPa
       }
       if (path.node.callee.type === "Import") {
         recordEffectOccurrence(path, "dynamicImport", { itemByTopNode, programPathByNode });
+        if (t.isStringLiteral(path.node.arguments?.[0])) {
+          recordEffectOccurrence(path, "containsRuntimeSourceRebase", { itemByTopNode, programPathByNode });
+        }
+      }
+    },
+    NewExpression(path) {
+      if (!t.isIdentifier(path.node.callee)) {
+        return;
+      }
+      if (path.scope.getBinding(path.node.callee.name)) {
+        return;
+      }
+      if (
+        (path.node.callee.name === "Worker" || path.node.callee.name === "SharedWorker") &&
+        t.isStringLiteral(path.node.arguments?.[0])
+      ) {
+        recordEffectOccurrence(path, "containsRuntimeSourceRebase", { itemByTopNode, programPathByNode });
       }
     },
     ForInStatement(path) {
@@ -368,6 +385,7 @@ function createOwnerRecord({ id, line, names, node, ordinal, path, type }) {
     effects: {
       containsDirectEval: false,
       containsImportMeta: false,
+      containsRuntimeSourceRebase: false,
       containsTopLevelAwait: false,
       eagerDynamicImportCount: 0,
       lazyDynamicImportCount: 0,
@@ -400,6 +418,7 @@ function createSideEffectRecord({ id, line, node, ordinal, path, type }) {
     effects: {
       containsDirectEval: false,
       containsImportMeta: false,
+      containsRuntimeSourceRebase: false,
       containsTopLevelAwait: false,
       eagerDynamicImportCount: 0,
       lazyDynamicImportCount: 0,
@@ -614,7 +633,11 @@ function recordEffectOccurrence(path, effect, context) {
     sourceItem.effects[key]++;
     return;
   }
-  if (effect === "containsDirectEval" || effect === "containsImportMeta") {
+  if (
+    effect === "containsDirectEval" ||
+    effect === "containsImportMeta" ||
+    effect === "containsRuntimeSourceRebase"
+  ) {
     sourceItem.effects[effect] = true;
     return;
   }

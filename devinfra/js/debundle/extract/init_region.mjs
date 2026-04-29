@@ -41,6 +41,10 @@ function formatDurationMs(durationMs) {
   return `${durationMs.toFixed(3)}ms`;
 }
 
+function addDurationMs(bucket, key, durationMs) {
+  bucket[key] = (bucket[key] ?? 0) + durationMs;
+}
+
 export function buildSelectedModuleLoweringMetadata() {
   return { ...SELECTED_MODULE_LOWERING_METADATA };
 }
@@ -183,8 +187,9 @@ export function lowerSelectedModuleRegionsInAst(
   const jsFiles = new Map([[runtimeFile, { ast, headerLines }]]);
   const applied = [];
   const buildModulesStartedAt = process.hrtime.bigint();
+  const buildModulePhaseDurationsMs = Object.create(null);
   for (const entry of resolved) {
-    const moduleFile = buildExtractedModuleFile(entry);
+    const moduleFile = buildExtractedModuleFile(entry, { phaseDurationsMs: buildModulePhaseDurationsMs });
     moduleFiles.set(entry.targetFile, moduleFile);
     jsFiles.set(entry.targetFile, moduleFile);
     applied.push({
@@ -198,8 +203,12 @@ export function lowerSelectedModuleRegionsInAst(
       targetFile: entry.targetFile,
     });
   }
+  const buildModulesDurationMs = durationMsSince(buildModulesStartedAt);
   logProgress(
-    `selected-modules lower=${runtimeFile} phase=build_extracted_modules modules=${resolved.length} duration=${formatDurationMs(durationMsSince(buildModulesStartedAt))}`
+    `selected-modules lower=${runtimeFile} phase=build_extracted_modules modules=${resolved.length} duration=${formatDurationMs(buildModulesDurationMs)}`
+  );
+  logProgress(
+    `selected-modules lower=${runtimeFile} phase=build_extracted_modules_breakdown imports=${formatDurationMs(buildModulePhaseDurationsMs.imports ?? 0)} body=${formatDurationMs(buildModulePhaseDurationsMs.body ?? 0)} rewrite=${formatDurationMs(buildModulePhaseDurationsMs.rewrite ?? 0)} ast=${formatDurationMs(buildModulePhaseDurationsMs.ast ?? 0)} rename=${formatDurationMs(buildModulePhaseDurationsMs.rename ?? 0)}`
   );
   logProgress(
     `selected-modules lower=${runtimeFile} phase=done duration=${formatDurationMs(durationMsSince(loweringStartedAt))}`
@@ -1261,10 +1270,12 @@ function buildRuntimeReplacementStatements(run) {
   return run.omitInitCall ? [] : [buildInitCallStatement(run)];
 }
 
-function buildExtractedModuleFile(entry) {
+function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
   if (entry.plainImportEligible) {
-    return buildPlainImportModuleFile(entry);
+    return buildPlainImportModuleFile(entry, { phaseDurationsMs });
   }
+  const needsRuntimeSourceRewrite = entryNeedsRuntimeSourceRewrite(entry);
+  const importsStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
   const body = [];
   for (const importRecord of entry.usedExtractedImports ?? []) {
     body.push(importDeclarationFromExtractedImportRecord(importRecord, entry.targetFile));
@@ -1272,6 +1283,12 @@ function buildExtractedModuleFile(entry) {
   for (const importRecord of entry.usedRuntimeImports) {
     body.push(importDeclarationFromRuntimeImportRecord(importRecord, entry.targetFile));
   }
+  if (importsStartedAt) {
+    addDurationMs(phaseDurationsMs, "imports", durationMsSince(importsStartedAt));
+  }
+  const bodyStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
+  const entryBindingRenames = buildEntryBindingRenames(entry);
+  const localRenameMap = buildBindingRenameMap(entryBindingRenames);
   body.push(
     t.variableDeclaration("let", entry.exportBindings.map((binding) => t.variableDeclarator(t.identifier(binding.local))))
   );
@@ -1281,7 +1298,7 @@ function buildExtractedModuleFile(entry) {
         t.functionDeclaration(
           t.identifier(stage.initName),
           [],
-          t.blockStatement(buildInitStatements(stage.stageEntries, entry.targetFile, entry))
+          t.blockStatement(buildInitStatements(stage.stageEntries, localRenameMap, entry.atomicBoundaryUnits ?? []))
         )
       )
     );
@@ -1292,17 +1309,37 @@ function buildExtractedModuleFile(entry) {
       entry.exportBindings.map((binding) => t.exportSpecifier(t.identifier(binding.local), exportNameNode(binding.exported)))
     )
   );
+  if (bodyStartedAt) {
+    addDurationMs(phaseDurationsMs, "body", durationMsSince(bodyStartedAt));
+  }
+  const rewriteStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
+  if (needsRuntimeSourceRewrite) {
+    rewriteStatementsForTarget(body, entry.targetFile);
+  }
+  if (rewriteStartedAt) {
+    addDurationMs(phaseDurationsMs, "rewrite", durationMsSince(rewriteStartedAt));
+  }
+  const astStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
   const ast = t.file(t.program(body));
-  applyFinalBindingRenamesToGeneratedFile(ast, buildEntryBindingRenames(entry), {
+  if (astStartedAt) {
+    addDurationMs(phaseDurationsMs, "ast", durationMsSince(astStartedAt));
+  }
+  const renameStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
+  applyFinalBindingRenamesToGeneratedFile(ast, entryBindingRenames, {
     context: `${entry.targetFile} selected-module lowering`,
   });
+  if (renameStartedAt) {
+    addDurationMs(phaseDurationsMs, "rename", durationMsSince(renameStartedAt));
+  }
   return {
     ast,
     headerLines: buildSelectedModuleLoweringHeaderLines(entry.ownerIds),
   };
 }
 
-function buildPlainImportModuleFile(entry) {
+function buildPlainImportModuleFile(entry, { phaseDurationsMs = null } = {}) {
+  const needsRuntimeSourceRewrite = entryNeedsRuntimeSourceRewrite(entry);
+  const importsStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
   const body = [];
   for (const importRecord of entry.usedExtractedImports ?? []) {
     body.push(importDeclarationFromExtractedImportRecord(importRecord, entry.targetFile));
@@ -1310,6 +1347,11 @@ function buildPlainImportModuleFile(entry) {
   for (const importRecord of entry.usedRuntimeImports) {
     body.push(importDeclarationFromRuntimeImportRecord(importRecord, entry.targetFile));
   }
+  if (importsStartedAt) {
+    addDurationMs(phaseDurationsMs, "imports", durationMsSince(importsStartedAt));
+  }
+  const bodyStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
+  const entryBindingRenames = buildEntryBindingRenames(entry);
   const atomicBoundaryIndex = buildAtomicBoundaryIndex(entry.atomicBoundaryUnits ?? []);
   let previousAtomicBoundaryUnitId = null;
   for (const stageEntry of buildCanonicalPlainImportStageEntries(entry.stageRuns)) {
@@ -1328,11 +1370,28 @@ function buildPlainImportModuleFile(entry) {
       entry.exportBindings.map((binding) => t.exportSpecifier(t.identifier(binding.local), exportNameNode(binding.exported)))
     )
   );
-  const rewrittenBody = rewriteStatementsForTarget(body, entry.targetFile);
-  const ast = t.file(t.program(rewrittenBody));
-  applyFinalBindingRenamesToGeneratedFile(ast, buildEntryBindingRenames(entry), {
+  if (bodyStartedAt) {
+    addDurationMs(phaseDurationsMs, "body", durationMsSince(bodyStartedAt));
+  }
+  const rewriteStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
+  if (needsRuntimeSourceRewrite) {
+    rewriteStatementsForTarget(body, entry.targetFile);
+  }
+  if (rewriteStartedAt) {
+    addDurationMs(phaseDurationsMs, "rewrite", durationMsSince(rewriteStartedAt));
+  }
+  const astStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
+  const ast = t.file(t.program(body));
+  if (astStartedAt) {
+    addDurationMs(phaseDurationsMs, "ast", durationMsSince(astStartedAt));
+  }
+  const renameStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
+  applyFinalBindingRenamesToGeneratedFile(ast, entryBindingRenames, {
     context: `${entry.targetFile} selected-module lowering`,
   });
+  if (renameStartedAt) {
+    addDurationMs(phaseDurationsMs, "rename", durationMsSince(renameStartedAt));
+  }
   return {
     ast,
     headerLines: buildSelectedModuleLoweringHeaderLines(entry.ownerIds),
@@ -1341,11 +1400,11 @@ function buildPlainImportModuleFile(entry) {
 
 function buildPlainImportOwnerStatements(statement, fragment = null) {
   if (t.isFunctionDeclaration(statement) || t.isClassDeclaration(statement)) {
-    return [t.cloneNode(statement, true)];
+    return [statement];
   }
   if (t.isVariableDeclaration(statement)) {
     if (!fragment) {
-      return [t.cloneNode(statement, true)];
+      return [statement];
     }
     const declarations = fragment.declaratorIndices.map((index) => statement.declarations[index]).filter(Boolean);
     return [t.variableDeclaration(statement.kind, declarations.map((declaration) => t.cloneNode(declaration, true)))];
@@ -1353,10 +1412,9 @@ function buildPlainImportOwnerStatements(statement, fragment = null) {
   throw new Error(`Plain-import lowering does not support ${statement?.type}`);
 }
 
-function buildInitStatements(stageEntries, targetFile, entry) {
+function buildInitStatements(stageEntries, localRenameMap, atomicBoundaryUnits = []) {
   const statements = [];
-  const localRenameMap = buildBindingRenameMap(buildEntryBindingRenames(entry));
-  const atomicBoundaryIndex = buildAtomicBoundaryIndex(entry.atomicBoundaryUnits ?? []);
+  const atomicBoundaryIndex = buildAtomicBoundaryIndex(atomicBoundaryUnits);
   let previousAtomicBoundaryUnitId = null;
   for (const entry of stageEntries) {
     if (entry.kind !== "declaration") {
@@ -1374,7 +1432,7 @@ function buildInitStatements(stageEntries, targetFile, entry) {
   }
   for (const entry of stageEntries) {
     if (entry.kind === "side_effect") {
-      const nextStatements = [t.cloneNode(entry.statement, true)];
+      const nextStatements = [entry.statement];
       annotateAtomicBoundary(nextStatements, atomicBoundaryIndex.get(entry.sideEffect.id), previousAtomicBoundaryUnitId);
       previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, atomicBoundaryIndex.get(entry.sideEffect.id));
       statements.push(...nextStatements);
@@ -1390,7 +1448,14 @@ function buildInitStatements(stageEntries, targetFile, entry) {
     previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, boundaryUnit);
     statements.push(...nextStatements);
   }
-  return rewriteStatementsForTarget(statements, targetFile);
+  return statements;
+}
+
+function entryNeedsRuntimeSourceRewrite(entry) {
+  return (
+    entry.ownerEntries.some((ownerEntry) => ownerEntry.owner.effects.containsRuntimeSourceRebase) ||
+    entry.attachedEntries.some((attachedEntry) => attachedEntry.sideEffect.effects.containsRuntimeSourceRebase)
+  );
 }
 
 function buildOwnerInitStatements(owner, statement, localRenameMap, fragment = null) {
@@ -1502,19 +1567,14 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
       if (renameBySourceName.size === 0) {
         return;
       }
-      path.traverse({
-        Identifier(identifierPath) {
-          const renameSpec = renameBySourceName.get(identifierPath.node.name);
-          if (!renameSpec || !shouldRenameIdentifierPath(identifierPath)) {
-            return;
-          }
-          const binding = identifierPath.scope.getBinding(identifierPath.node.name);
-          if (!binding || binding !== bindingBySourceName.get(renameSpec.from)) {
-            return;
-          }
-          identifierPath.node.name = renameSpec.to;
-        },
-      });
+      const renameByBinding = new Map();
+      for (const [sourceName, renameSpec] of renameBySourceName) {
+        const binding = bindingBySourceName.get(sourceName);
+        if (binding) {
+          renameByBinding.set(binding, renameSpec.to);
+        }
+      }
+      applyBindingLocalRenamesInProgram(path, renameByBinding);
       applyReadableObjectPatternRenamesInProgram(path);
     },
   });
@@ -1540,22 +1600,90 @@ function applyReadableObjectPatternRenamesInProgram(programPath) {
       renameByBinding.set(binding, renameSpec.to);
     }
   }
+  applyBindingLocalRenamesInProgram(programPath, renameByBinding);
+}
+
+function applyBindingLocalRenamesInProgram(programPath, renameByBinding) {
   if (renameByBinding.size > 0) {
-    programPath.traverse({
-      Identifier(identifierPath) {
-        if (!shouldRenameIdentifierPath(identifierPath)) {
-          return;
-        }
-        const binding = identifierPath.scope.getBinding(identifierPath.node.name);
-        const renameTarget = binding ? renameByBinding.get(binding) : null;
-        if (!renameTarget) {
-          return;
-        }
-        identifierPath.node.name = renameTarget;
-      },
-    });
+    for (const [binding, renameTarget] of renameByBinding) {
+      renameBindingLocals(binding, renameTarget);
+    }
   }
-  normalizeReadableObjectPatternShorthandInProgram(programPath);
+  normalizeGeneratedBindingRenamesInProgram(programPath, renameByBinding);
+}
+
+function renameBindingLocals(binding, renameTarget) {
+  if (binding.identifier?.name && binding.identifier.name !== renameTarget) {
+    binding.identifier.name = renameTarget;
+  }
+  const visited = new Set();
+  for (const referencePath of binding.referencePaths ?? []) {
+    renameBindingPath(referencePath, binding, renameTarget, visited);
+  }
+  for (const violationPath of binding.constantViolations ?? []) {
+    renameBindingPath(violationPath, binding, renameTarget, visited);
+  }
+}
+
+function renameBindingPath(path, binding, renameTarget, visited) {
+  if (!path) {
+    return;
+  }
+  if (path.isIdentifier()) {
+    if (visited.has(path.node) || !shouldRenameIdentifierPath(path)) {
+      return;
+    }
+    const resolvedBinding = path.scope.getBinding(path.node.name);
+    if (resolvedBinding !== binding) {
+      return;
+    }
+    visited.add(path.node);
+    path.node.name = renameTarget;
+    return;
+  }
+  path.traverse({
+    Identifier(identifierPath) {
+      if (visited.has(identifierPath.node) || !shouldRenameIdentifierPath(identifierPath)) {
+        return;
+      }
+      const resolvedBinding = identifierPath.scope.getBinding(identifierPath.node.name);
+      if (resolvedBinding !== binding) {
+        return;
+      }
+      visited.add(identifierPath.node);
+      identifierPath.node.name = renameTarget;
+    },
+  });
+}
+
+function normalizeGeneratedBindingRenamesInProgram(programPath, renameByBinding) {
+  programPath.traverse({
+    ExportSpecifier(exportSpecifierPath) {
+      if (!t.isIdentifier(exportSpecifierPath.node.local)) {
+        return;
+      }
+      const binding = exportSpecifierPath.scope.getBinding(exportSpecifierPath.node.local.name);
+      const renameTarget = binding ? renameByBinding.get(binding) : null;
+      if (!renameTarget) {
+        return;
+      }
+      exportSpecifierPath.node.local.name = renameTarget;
+    },
+    ObjectProperty(propertyPath) {
+      if (!propertyPath.parentPath.isObjectPattern() && !propertyPath.parentPath.isObjectExpression()) {
+        return;
+      }
+      if (
+        propertyPath.node.computed ||
+        !t.isIdentifier(propertyPath.node.key) ||
+        !t.isIdentifier(propertyPath.node.value)
+      ) {
+        propertyPath.node.shorthand = false;
+        return;
+      }
+      propertyPath.node.shorthand = propertyPath.node.key.name === propertyPath.node.value.name;
+    },
+  });
 }
 
 function buildReadableObjectPatternRenameGroups(programPath) {
@@ -1600,8 +1728,14 @@ function buildReadableObjectPatternRenameGroups(programPath) {
       candidateBySourceName.set(candidate.from, candidate);
       targetCounts.set(candidate.to, (targetCounts.get(candidate.to) ?? 0) + 1);
     }
+    const externallyCapturedTargetNames = collectExternallyCapturedTargetNames(
+      scopePath,
+      new Set([...candidateBySourceName.values()].map((candidate) => candidate.to))
+    );
     const renameSpecs = [...candidateBySourceName.values()]
-      .filter((candidate) => isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts))
+      .filter((candidate) =>
+        isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, externallyCapturedTargetNames)
+      )
       .map((candidate) => ({
         from: candidate.from,
         to: candidate.to,
@@ -1658,7 +1792,7 @@ function collectReadableObjectExpressionScopeCandidates(scopePath, candidatesByS
   }
 }
 
-function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts) {
+function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, externallyCapturedTargetNames) {
   if (candidate.from === candidate.to || !isScrambledIdentifier(candidate.from)) {
     return false;
   }
@@ -1677,31 +1811,41 @@ function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts) {
   if (existingBinding && existingBinding !== binding) {
     return false;
   }
-  if (scopeWouldCaptureExistingReadableTargetReferences(scopePath, binding, candidate.to)) {
+  if (externallyCapturedTargetNames.has(candidate.to)) {
     return false;
   }
   return !bindingWouldBeShadowedAfterReadableRename(binding, candidate.to);
 }
 
-function scopeWouldCaptureExistingReadableTargetReferences(scopePath, binding, targetName) {
-  let capturesExistingReference = false;
+function collectExternallyCapturedTargetNames(scopePath, targetNames) {
+  const externallyCapturedTargetNames = new Set();
+  if (targetNames.size === 0) {
+    return externallyCapturedTargetNames;
+  }
   scopePath.traverse({
     Identifier(identifierPath) {
-      if (capturesExistingReference || identifierPath.node.name !== targetName || !shouldRenameIdentifierPath(identifierPath)) {
+      const targetName = identifierPath.node.name;
+      if (
+        externallyCapturedTargetNames.has(targetName) ||
+        !targetNames.has(targetName) ||
+        !shouldRenameIdentifierPath(identifierPath)
+      ) {
         return;
       }
       const resolvedBinding = identifierPath.scope.getBinding(targetName);
-      if (!resolvedBinding || resolvedBinding === binding) {
+      if (!resolvedBinding || resolvedBinding.scope === scopePath.scope) {
         return;
       }
-      if (pathHasDescendantShadowBinding(identifierPath, binding.scope, targetName)) {
+      if (pathHasDescendantShadowBinding(identifierPath, scopePath.scope, targetName)) {
         return;
       }
-      capturesExistingReference = true;
-      identifierPath.stop();
+      externallyCapturedTargetNames.add(targetName);
+      if (externallyCapturedTargetNames.size === targetNames.size) {
+        identifierPath.stop();
+      }
     },
   });
-  return capturesExistingReference;
+  return externallyCapturedTargetNames;
 }
 
 function bindingWouldBeShadowedAfterReadableRename(binding, targetName) {
@@ -1814,25 +1958,6 @@ function readableObjectPropertyBindingName(property) {
   return null;
 }
 
-function normalizeReadableObjectPatternShorthandInProgram(programPath) {
-  programPath.traverse({
-    ObjectProperty(propertyPath) {
-      if (!propertyPath.parentPath.isObjectPattern() && !propertyPath.parentPath.isObjectExpression()) {
-        return;
-      }
-      if (
-        propertyPath.node.computed ||
-        !t.isIdentifier(propertyPath.node.key) ||
-        !t.isIdentifier(propertyPath.node.value) ||
-        propertyPath.node.key.name !== propertyPath.node.value.name
-      ) {
-        return;
-      }
-      propertyPath.node.shorthand = true;
-    },
-  });
-}
-
 function shouldRenameIdentifierPath(identifierPath) {
   if (identifierPath.isReferencedIdentifier() || identifierPath.isBindingIdentifier()) {
     return true;
@@ -1934,12 +2059,11 @@ function buildSnapshotVariableDeclarationStatements(owner, statement) {
   }
   const bindingNames = topLevelDeclarationNames(statement);
   const snapshotId = t.identifier(selectedModuleSnapshotIdentifierName(owner.id));
-  const declarationStatement = t.cloneNode(declaration, true);
   const snapshotObject = t.objectExpression(
     bindingNames.map((name) => t.objectProperty(t.identifier(name), t.identifier(name), false, true))
   );
   const snapshotInit = t.callExpression(
-    t.arrowFunctionExpression([], t.blockStatement([declarationStatement, t.returnStatement(snapshotObject)])),
+    t.arrowFunctionExpression([], t.blockStatement([declaration, t.returnStatement(snapshotObject)])),
     []
   );
   return [
@@ -1989,8 +2113,8 @@ function functionDeclarationAssignmentStatement(statement, localRenameMap) {
       t.identifier(localName),
       t.functionExpression(
         t.identifier(localName),
-        cloneNodes(statement.params),
-        t.cloneNode(statement.body, true),
+        statement.params,
+        statement.body,
         statement.generator,
         statement.async
       )
@@ -2009,9 +2133,9 @@ function classDeclarationAssignmentStatement(statement, localRenameMap) {
       t.identifier(localName),
       t.classExpression(
         t.identifier(localName),
-        statement.superClass ? t.cloneNode(statement.superClass, true) : null,
-        t.cloneNode(statement.body, true),
-        cloneNodes(statement.decorators ?? [])
+        statement.superClass ?? null,
+        statement.body,
+        statement.decorators ?? []
       )
     )
   );
@@ -2020,8 +2144,8 @@ function classDeclarationAssignmentStatement(statement, localRenameMap) {
 function variableDeclaratorAssignmentStatement(declaration) {
   const assignment = t.assignmentExpression(
     "=",
-    t.cloneNode(declaration.id, true),
-    declaration.init ? t.cloneNode(declaration.init, true) : t.identifier("undefined")
+    declaration.id,
+    declaration.init ?? t.identifier("undefined")
   );
   return t.expressionStatement(
     t.isIdentifier(declaration.id) ? assignment : t.parenthesizedExpression(assignment)
@@ -2511,10 +2635,6 @@ function validateVariableDeclarators(statement, operationId, ownerId) {
   }
 }
 
-
-function cloneNodes(nodes) {
-  return nodes.map((node) => t.cloneNode(node, true));
-}
 
 function topLevelDeclarationNames(node) {
   if (t.isFunctionDeclaration(node) || t.isClassDeclaration(node)) {

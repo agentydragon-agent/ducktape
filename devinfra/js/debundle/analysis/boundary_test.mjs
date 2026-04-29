@@ -145,12 +145,42 @@ function loadRelativeAsset() {
   );
 
   assert.equal(ownerByName.get("loadWorkerUrl").effects.containsImportMeta, false);
+  assert.equal(ownerByName.get("loadWorkerUrl").effects.containsRuntimeSourceRebase, false);
   assert.equal(ownerByName.get("loadWorkerUrl").extractionMode, "plain_import_candidate");
   assert.doesNotMatch(ownerByName.get("loadWorkerUrl").extractionReasons.join(","), /contains_import_meta/);
 
   assert.equal(ownerByName.get("loadRelativeAsset").effects.containsImportMeta, true);
+  assert.equal(ownerByName.get("loadRelativeAsset").effects.containsRuntimeSourceRebase, false);
   assert.equal(ownerByName.get("loadRelativeAsset").extractionMode, "keep_runtime");
   assert.match(ownerByName.get("loadRelativeAsset").extractionReasons.join(","), /contains_import_meta/);
+});
+
+test("dynamic imports and worker constructors are flagged for runtime source rebasing", () => {
+  const analysis = analyzeRuntimeBoundaryCode(
+    `async function loadFeature() {
+  return import("./feature.js");
+}
+function spawnWorker() {
+  return new Worker("./workers/render_worker.js");
+}
+function spawnSharedWorker() {
+  return new SharedWorker("./workers/shared_worker.js");
+}
+`,
+    {
+      chunkId: "static/runtime-source-rebase",
+      runtimePath: "fixture/runtime.js",
+      uiVersion: "fixture",
+    }
+  );
+
+  const ownerByName = new Map(
+    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
+  );
+
+  assert.equal(ownerByName.get("loadFeature").effects.containsRuntimeSourceRebase, true);
+  assert.equal(ownerByName.get("spawnWorker").effects.containsRuntimeSourceRebase, true);
+  assert.equal(ownerByName.get("spawnSharedWorker").effects.containsRuntimeSourceRebase, true);
 });
 
 test("variable initializers treat nested async callback bodies as lazy, not top-level await", () => {

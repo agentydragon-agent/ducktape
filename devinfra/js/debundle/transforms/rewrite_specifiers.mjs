@@ -13,14 +13,19 @@ export function rewriteChunkEntrySpecifiers({ artifact }) {
 
   let rewrittenFiles = 0;
   let rewrittenSpecifiers = 0;
+  let traversedFiles = 0;
+  let traversedDurationMs = 0;
+  const slowestFiles = [];
 
   for (const chunkId of listChunkIds(artifact)) {
     for (const fileArtifact of listChunkFiles(artifact, chunkId)) {
-      if (!fileArtifact.ast) {
+      if (!shouldRewriteChunkEntrySpecifiersForFile(fileArtifact)) {
         continue;
       }
+      traversedFiles++;
       let fileRewrites = 0;
       const rewriteCache = new Map();
+      const startedAt = process.hrtime.bigint();
       transformRuntimeSources(fileArtifact.ast, (source) => {
         let rewritten = rewriteCache.get(source);
         if (rewritten === undefined && !rewriteCache.has(source)) {
@@ -35,10 +40,34 @@ export function rewriteChunkEntrySpecifiers({ artifact }) {
         }
         return rewritten;
       });
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      traversedDurationMs += durationMs;
+      recordSlowFile(slowestFiles, {
+        chunkId,
+        file: fileArtifact.path,
+        durationMs,
+        rewrites: fileRewrites,
+        role: fileArtifact.metadata?.role ?? "unknown",
+        generatedStage: fileArtifact.metadata?.generated?.stage ?? null,
+      });
       if (fileRewrites > 0) {
         rewrittenFiles++;
         rewrittenSpecifiers += fileRewrites;
       }
+    }
+  }
+
+  if (slowestFiles.length > 0) {
+    process.stdout.write(
+      `[rewrite-specifiers] traversed=${traversedFiles} rewritten=${rewrittenFiles} ` +
+        `rewrites=${rewrittenSpecifiers} duration=${traversedDurationMs.toFixed(3)}ms\n`
+    );
+    for (const file of slowestFiles) {
+      process.stdout.write(
+        `[rewrite-specifiers] slow file=${file.chunkId}/${file.file} role=${file.role}` +
+          `${file.generatedStage ? ` stage=${file.generatedStage}` : ""} ` +
+          `rewrites=${file.rewrites} duration=${file.durationMs.toFixed(3)}ms\n`
+      );
     }
   }
 
@@ -47,11 +76,25 @@ export function rewriteChunkEntrySpecifiers({ artifact }) {
     manifest: {
       kind: "js.rewrite_chunk_entry_specifiers_manifest",
       counts: {
+        traversedFiles,
         files: rewrittenFiles,
         rewrites: rewrittenSpecifiers,
       },
     },
   };
+}
+
+export function shouldRewriteChunkEntrySpecifiersForFile(fileArtifact) {
+  if (!fileArtifact?.ast) {
+    return false;
+  }
+  if (
+    fileArtifact.metadata?.role === "module" &&
+    fileArtifact.metadata?.generated?.stage === "selected_module_lowering"
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function rewriteChunkEntrySpecifierSource(artifact, source, { callerChunkId, callerFile } = {}) {
@@ -83,4 +126,13 @@ function rewriteChunkEntrySpecifierSource(artifact, source, { callerChunkId, cal
     rewritten = `./${rewritten}`;
   }
   return rewritten;
+}
+
+function recordSlowFile(slowestFiles, nextFile) {
+  const LIMIT = 8;
+  slowestFiles.push(nextFile);
+  slowestFiles.sort((left, right) => right.durationMs - left.durationMs);
+  if (slowestFiles.length > LIMIT) {
+    slowestFiles.length = LIMIT;
+  }
 }

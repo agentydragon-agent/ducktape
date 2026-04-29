@@ -48,3 +48,13 @@ js_test(
     ],
     entry_point = "runner_test.mjs",
 )
+
+js_test(
+    name = "rewrite_specifiers_test",
+    data = [
+        ":libs",
+        "//devinfra/js/debundle/split:libs",
+        "//devinfra/js/debundle/test_support:sources",
+    ],
+    entry_point = "rewrite_specifiers_test.mjs",
+)

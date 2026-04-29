@@ -522,29 +522,7 @@ function deepenRelativeImportSource(source) {
 }
 
 export function transformRuntimeSources(file, rewriteImportSource) {
-  traverse(file, {
-    ImportDeclaration(path) {
-      rewriteStringLiteralSource(path.node.source, rewriteImportSource);
-    },
-    ExportNamedDeclaration(path) {
-      rewriteStringLiteralSource(path.node.source, rewriteImportSource);
-    },
-    ExportAllDeclaration(path) {
-      rewriteStringLiteralSource(path.node.source, rewriteImportSource);
-    },
-    CallExpression(path) {
-      if (path.node.callee.type !== "Import") {
-        return;
-      }
-      rewriteDynamicImportArgument(path.node.arguments[0], rewriteImportSource);
-    },
-    ImportExpression(path) {
-      rewriteDynamicImportArgument(path.node.source, rewriteImportSource);
-    },
-    NewExpression(path) {
-      rewriteWorkerConstructorArgument(path, rewriteImportSource);
-    },
-  });
+  rewriteRuntimeSourcesInNode(file, rewriteImportSource, RUNTIME_CONSTRUCTOR_SHADOW_NONE);
 }
 
 function transformClonedStatement(node, rewriteImportSource) {
@@ -565,18 +543,90 @@ function rewriteDynamicImportArgument(argument, rewriteImportSource) {
   }
 }
 
-function rewriteWorkerConstructorArgument(path, rewriteImportSource) {
-  if (path.node.callee.type !== "Identifier") {
+function rewriteRuntimeSourcesInNode(node, rewriteImportSource, shadowedRuntimeConstructors) {
+  if (!node) {
     return;
   }
-  if (path.node.callee.name !== "Worker" && path.node.callee.name !== "SharedWorker") {
+  if (t.isImportDeclaration(node) || t.isExportNamedDeclaration(node) || t.isExportAllDeclaration(node)) {
+    rewriteStringLiteralSource(node.source, rewriteImportSource);
+  }
+  if (isDynamicImportWithStringLiteralSource(node)) {
+    rewriteDynamicImportArgument(dynamicImportSourceNode(node), rewriteImportSource);
+  }
+  if (t.isNewExpression(node)) {
+    rewriteWorkerConstructorArgument(node, rewriteImportSource, shadowedRuntimeConstructors);
+  }
+  if (isFunctionLikeNode(node)) {
+    rewriteFunctionLikeRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors);
     return;
   }
-  if (path.scope.hasBinding(path.node.callee.name)) {
+  if (t.isStaticBlock(node) || t.isBlockStatement(node)) {
+    rewriteBlockRuntimeSources(node.body, rewriteImportSource, shadowedRuntimeConstructors);
     return;
   }
+  if (t.isSwitchStatement(node)) {
+    rewriteSwitchRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors);
+    return;
+  }
+  if (t.isCatchClause(node)) {
+    rewriteCatchClauseRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors);
+    return;
+  }
+  if (isLoopNodeWithLexicalScope(node)) {
+    rewriteLoopRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors);
+    return;
+  }
+  if (t.isClassDeclaration(node) || t.isClassExpression(node)) {
+    rewriteClassRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors);
+    return;
+  }
+  visitChildNodes(node, (child) => rewriteRuntimeSourcesInNode(child, rewriteImportSource, shadowedRuntimeConstructors));
+}
 
-  const [scriptArgument] = path.node.arguments;
+function visitChildNodes(node, visitor) {
+  const keys = t.VISITOR_KEYS[node.type];
+  if (!keys) {
+    return;
+  }
+  for (const key of keys) {
+    const value = node[key];
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        if (child) {
+          visitor(child);
+        }
+      }
+      continue;
+    }
+    if (value) {
+      visitor(value);
+    }
+  }
+}
+
+function isDynamicImportWithStringLiteralSource(node) {
+  return t.isStringLiteral(dynamicImportSourceNode(node));
+}
+
+function dynamicImportSourceNode(node) {
+  if (t.isCallExpression(node) && node.callee.type === "Import") {
+    return node.arguments[0];
+  }
+  if (t.isImportExpression(node)) {
+    return node.source;
+  }
+  return null;
+}
+
+function rewriteWorkerConstructorArgument(node, rewriteImportSource, shadowedRuntimeConstructors) {
+  if (node.callee.type !== "Identifier") {
+    return;
+  }
+  const shadowBit = runtimeConstructorShadowBit(node.callee.name);
+  if (shadowBit === RUNTIME_CONSTRUCTOR_SHADOW_NONE || (shadowedRuntimeConstructors & shadowBit) !== 0) {
+    return;
+  }
+  const [scriptArgument] = node.arguments;
   if (!t.isStringLiteral(scriptArgument)) {
     return;
   }
@@ -586,11 +636,200 @@ function rewriteWorkerConstructorArgument(path, rewriteImportSource) {
     return;
   }
 
-  path.node.arguments[0] = t.newExpression(t.identifier("URL"), [
+  node.arguments[0] = t.newExpression(t.identifier("URL"), [
     t.stringLiteral(rewrittenSource),
     t.memberExpression(t.metaProperty(t.identifier("import"), t.identifier("meta")), t.identifier("url")),
   ]);
 }
+
+function isFunctionLikeNode(node) {
+  return (
+    t.isFunctionDeclaration(node) ||
+    t.isFunctionExpression(node) ||
+    t.isArrowFunctionExpression(node) ||
+    t.isObjectMethod(node) ||
+    t.isClassMethod(node) ||
+    t.isClassPrivateMethod(node)
+  );
+}
+
+function rewriteFunctionLikeRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors) {
+  if ("computed" in node && node.computed && node.key) {
+    rewriteRuntimeSourcesInNode(node.key, rewriteImportSource, shadowedRuntimeConstructors);
+  }
+  for (const decorator of node.decorators ?? []) {
+    rewriteRuntimeSourcesInNode(decorator, rewriteImportSource, shadowedRuntimeConstructors);
+  }
+
+  const parameterShadowedRuntimeConstructors =
+    shadowedRuntimeConstructors |
+    runtimeConstructorBindingShadowMask(node.id) |
+    runtimeConstructorBindingShadowMaskForNodes(node.params);
+  for (const param of node.params) {
+    rewriteRuntimeSourcesInNode(param, rewriteImportSource, parameterShadowedRuntimeConstructors);
+  }
+
+  const bodyShadowedRuntimeConstructors =
+    parameterShadowedRuntimeConstructors | collectFunctionVarShadowMask(node.body);
+  rewriteRuntimeSourcesInNode(node.body, rewriteImportSource, bodyShadowedRuntimeConstructors);
+}
+
+function rewriteBlockRuntimeSources(statements, rewriteImportSource, shadowedRuntimeConstructors) {
+  const blockShadowedRuntimeConstructors =
+    shadowedRuntimeConstructors | collectBlockScopedShadowMask(statements);
+  for (const statement of statements) {
+    rewriteRuntimeSourcesInNode(statement, rewriteImportSource, blockShadowedRuntimeConstructors);
+  }
+}
+
+function rewriteSwitchRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors) {
+  rewriteRuntimeSourcesInNode(node.discriminant, rewriteImportSource, shadowedRuntimeConstructors);
+  const switchShadowedRuntimeConstructors =
+    shadowedRuntimeConstructors | collectSwitchScopedShadowMask(node.cases);
+  for (const switchCase of node.cases) {
+    rewriteRuntimeSourcesInNode(switchCase.test, rewriteImportSource, switchShadowedRuntimeConstructors);
+    for (const statement of switchCase.consequent) {
+      rewriteRuntimeSourcesInNode(statement, rewriteImportSource, switchShadowedRuntimeConstructors);
+    }
+  }
+}
+
+function rewriteCatchClauseRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors) {
+  const catchShadowedRuntimeConstructors =
+    shadowedRuntimeConstructors | runtimeConstructorBindingShadowMask(node.param);
+  rewriteRuntimeSourcesInNode(node.body, rewriteImportSource, catchShadowedRuntimeConstructors);
+}
+
+function isLoopNodeWithLexicalScope(node) {
+  return t.isForStatement(node) || t.isForInStatement(node) || t.isForOfStatement(node);
+}
+
+function rewriteLoopRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors) {
+  const loopShadowedRuntimeConstructors =
+    shadowedRuntimeConstructors | collectLoopScopedShadowMask(node);
+  if (t.isForStatement(node)) {
+    rewriteRuntimeSourcesInNode(node.init, rewriteImportSource, loopShadowedRuntimeConstructors);
+    rewriteRuntimeSourcesInNode(node.test, rewriteImportSource, loopShadowedRuntimeConstructors);
+    rewriteRuntimeSourcesInNode(node.update, rewriteImportSource, loopShadowedRuntimeConstructors);
+    rewriteRuntimeSourcesInNode(node.body, rewriteImportSource, loopShadowedRuntimeConstructors);
+    return;
+  }
+  rewriteRuntimeSourcesInNode(node.left, rewriteImportSource, loopShadowedRuntimeConstructors);
+  rewriteRuntimeSourcesInNode(node.right, rewriteImportSource, loopShadowedRuntimeConstructors);
+  rewriteRuntimeSourcesInNode(node.body, rewriteImportSource, loopShadowedRuntimeConstructors);
+}
+
+function rewriteClassRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors) {
+  for (const decorator of node.decorators ?? []) {
+    rewriteRuntimeSourcesInNode(decorator, rewriteImportSource, shadowedRuntimeConstructors);
+  }
+  rewriteRuntimeSourcesInNode(node.superClass, rewriteImportSource, shadowedRuntimeConstructors);
+  const classShadowedRuntimeConstructors =
+    shadowedRuntimeConstructors | runtimeConstructorBindingShadowMask(node.id);
+  rewriteRuntimeSourcesInNode(node.body, rewriteImportSource, classShadowedRuntimeConstructors);
+}
+
+function collectFunctionVarShadowMask(node) {
+  let shadowMask = RUNTIME_CONSTRUCTOR_SHADOW_NONE;
+  collectFunctionVarShadowMaskInNode(node, (nextShadowMask) => {
+    shadowMask |= nextShadowMask;
+  });
+  return shadowMask;
+}
+
+function collectFunctionVarShadowMaskInNode(node, recordShadowMask) {
+  if (!node || isFunctionLikeNode(node) || t.isStaticBlock(node)) {
+    return;
+  }
+  if (t.isVariableDeclaration(node) && node.kind === "var") {
+    recordShadowMask(runtimeConstructorBindingShadowMaskForNodes(node.declarations.map((declaration) => declaration.id)));
+  }
+  visitChildNodes(node, (child) => collectFunctionVarShadowMaskInNode(child, recordShadowMask));
+}
+
+function collectBlockScopedShadowMask(statements) {
+  let shadowMask = RUNTIME_CONSTRUCTOR_SHADOW_NONE;
+  for (const statement of statements) {
+    if (t.isVariableDeclaration(statement) && statement.kind !== "var") {
+      shadowMask |= runtimeConstructorBindingShadowMaskForNodes(statement.declarations.map((declaration) => declaration.id));
+      continue;
+    }
+    if (t.isFunctionDeclaration(statement) || t.isClassDeclaration(statement)) {
+      shadowMask |= runtimeConstructorBindingShadowMask(statement.id);
+    }
+  }
+  return shadowMask;
+}
+
+function collectSwitchScopedShadowMask(cases) {
+  let shadowMask = RUNTIME_CONSTRUCTOR_SHADOW_NONE;
+  for (const switchCase of cases) {
+    shadowMask |= collectBlockScopedShadowMask(switchCase.consequent);
+  }
+  return shadowMask;
+}
+
+function collectLoopScopedShadowMask(node) {
+  if (t.isForStatement(node) && t.isVariableDeclaration(node.init) && node.init.kind !== "var") {
+    return runtimeConstructorBindingShadowMaskForNodes(node.init.declarations.map((declaration) => declaration.id));
+  }
+  if ((t.isForInStatement(node) || t.isForOfStatement(node)) && t.isVariableDeclaration(node.left) && node.left.kind !== "var") {
+    return runtimeConstructorBindingShadowMaskForNodes(node.left.declarations.map((declaration) => declaration.id));
+  }
+  return RUNTIME_CONSTRUCTOR_SHADOW_NONE;
+}
+
+function runtimeConstructorBindingShadowMaskForNodes(nodes) {
+  let shadowMask = RUNTIME_CONSTRUCTOR_SHADOW_NONE;
+  for (const node of nodes) {
+    shadowMask |= runtimeConstructorBindingShadowMask(node);
+  }
+  return shadowMask;
+}
+
+function runtimeConstructorBindingShadowMask(node) {
+  if (!node) {
+    return RUNTIME_CONSTRUCTOR_SHADOW_NONE;
+  }
+  if (t.isIdentifier(node)) {
+    return runtimeConstructorShadowBit(node.name);
+  }
+  if (t.isRestElement(node)) {
+    return runtimeConstructorBindingShadowMask(node.argument);
+  }
+  if (t.isAssignmentPattern(node)) {
+    return runtimeConstructorBindingShadowMask(node.left);
+  }
+  if (t.isArrayPattern(node)) {
+    return runtimeConstructorBindingShadowMaskForNodes(node.elements);
+  }
+  if (t.isObjectPattern(node)) {
+    let shadowMask = RUNTIME_CONSTRUCTOR_SHADOW_NONE;
+    for (const property of node.properties) {
+      if (t.isRestElement(property)) {
+        shadowMask |= runtimeConstructorBindingShadowMask(property.argument);
+        continue;
+      }
+      shadowMask |= runtimeConstructorBindingShadowMask(property.value);
+    }
+    return shadowMask;
+  }
+  return RUNTIME_CONSTRUCTOR_SHADOW_NONE;
+}
+
+function runtimeConstructorShadowBit(name) {
+  if (name === "Worker") {
+    return RUNTIME_CONSTRUCTOR_SHADOW_WORKER;
+  }
+  if (name === "SharedWorker") {
+    return RUNTIME_CONSTRUCTOR_SHADOW_SHARED_WORKER;
+  }
+  return RUNTIME_CONSTRUCTOR_SHADOW_NONE;
+}
+
+const RUNTIME_CONSTRUCTOR_SHADOW_NONE = 0;
+const RUNTIME_CONSTRUCTOR_SHADOW_WORKER = 1 << 0;
+const RUNTIME_CONSTRUCTOR_SHADOW_SHARED_WORKER = 1 << 1;
 
 function importDeclarationFromRecord(importRecord, rewriteImportSource = identity) {
   const source = rewriteImportSource(importRecord.source);
