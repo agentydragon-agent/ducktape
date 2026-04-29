@@ -1893,33 +1893,86 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
     }
     return;
   }
+  let collectReadableRenames = false;
+  let readableCandidatesByScope = null;
   traverse(ast, {
-    Program(path) {
-      validateRenameSpecsAgainstProgramScope(path, renameSpecs, context);
-      const bindingBySourceName = new Map();
-      const renameBySourceName = new Map();
-      for (const renameSpec of renameSpecs) {
-        const binding = path.scope.getOwnBinding(renameSpec.from);
-        if (!binding) {
-          continue;
+    Program: {
+      enter(path) {
+        validateRenameSpecsAgainstProgramScope(path, renameSpecs, context);
+        const bindingBySourceName = new Map();
+        const renameBySourceName = new Map();
+        for (const renameSpec of renameSpecs) {
+          const binding = path.scope.getOwnBinding(renameSpec.from);
+          if (!binding) {
+            continue;
+          }
+          bindingBySourceName.set(renameSpec.from, binding);
+          renameBySourceName.set(renameSpec.from, renameSpec);
         }
-        bindingBySourceName.set(renameSpec.from, binding);
-        renameBySourceName.set(renameSpec.from, renameSpec);
-      }
-      if (renameBySourceName.size === 0) {
+        if (renameBySourceName.size === 0) {
+          path.skip();
+          return;
+        }
+        const renameByBinding = new Map();
+        for (const [sourceName, renameSpec] of renameBySourceName) {
+          const binding = bindingBySourceName.get(sourceName);
+          if (binding) {
+            renameByBinding.set(binding, renameSpec.to);
+          }
+        }
+        applyBindingLocalRenamesInProgram(path, renameByBinding);
+        if (mayHaveReadableRenames) {
+          collectReadableRenames = true;
+          readableCandidatesByScope = new Map();
+        } else {
+          path.skip();
+        }
+      },
+      exit() {
+        if (readableCandidatesByScope) {
+          applyReadableObjectPatternRenamesFromCandidates(readableCandidatesByScope);
+        }
+      },
+    },
+    Function(functionPath) {
+      if (!collectReadableRenames) {
         return;
       }
-      const renameByBinding = new Map();
-      for (const [sourceName, renameSpec] of renameBySourceName) {
-        const binding = bindingBySourceName.get(sourceName);
-        if (binding) {
-          renameByBinding.set(binding, renameSpec.to);
-        }
+      for (const param of functionPath.node.params ?? []) {
+        collectReadableObjectPatternScopeCandidates(functionPath, param, readableCandidatesByScope);
       }
-      applyBindingLocalRenamesInProgram(path, renameByBinding);
-      if (mayHaveReadableRenames) {
-        applyReadableObjectPatternRenamesInProgram(path);
+    },
+    VariableDeclarator(variableDeclaratorPath) {
+      if (!collectReadableRenames) {
+        return;
       }
+      collectReadableObjectPatternScopeCandidates(
+        variableDeclaratorPath,
+        variableDeclaratorPath.node.id,
+        readableCandidatesByScope
+      );
+    },
+    AssignmentExpression(assignmentPath) {
+      if (!collectReadableRenames) {
+        return;
+      }
+      collectReadableObjectPatternScopeCandidates(
+        assignmentPath,
+        assignmentPath.node.left,
+        readableCandidatesByScope
+      );
+    },
+    ClassMethod(classMethodPath) {
+      if (!collectReadableRenames) {
+        return;
+      }
+      collectReadableConstructorParamScopeCandidates(classMethodPath, readableCandidatesByScope);
+    },
+    ObjectExpression(objectExpressionPath) {
+      if (!collectReadableRenames) {
+        return;
+      }
+      collectReadableObjectExpressionScopeCandidates(objectExpressionPath, readableCandidatesByScope);
     },
   });
 }
@@ -2266,6 +2319,25 @@ function buildReadableObjectPatternRenameGroups(programPath) {
     },
   });
 
+  return buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope);
+}
+
+function applyReadableObjectPatternRenamesFromCandidates(candidatesByScope) {
+  const renameGroups = buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope);
+  const renameByBinding = new Map();
+  for (const { scopePath, renameSpecs } of renameGroups) {
+    for (const renameSpec of renameSpecs) {
+      const binding = scopePath.scope.getOwnBinding(renameSpec.from);
+      if (!binding) {
+        continue;
+      }
+      renameByBinding.set(binding, renameSpec.to);
+    }
+  }
+  applyBindingLocalRenamesInProgram(null, renameByBinding);
+}
+
+function buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope) {
   const renameGroups = [];
   for (const { scopePath, candidates } of candidatesByScope.values()) {
     const candidateBySourceName = new Map();
