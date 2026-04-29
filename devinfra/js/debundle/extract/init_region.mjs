@@ -1886,8 +1886,11 @@ function renamedLocalIdentifierName(name, localRenameMap) {
 }
 
 function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) {
+  const mayHaveReadableRenames = generatedFileMayHaveReadableRenameCandidate(ast);
   if (!Array.isArray(renameSpecs) || renameSpecs.length === 0) {
-    applyReadableObjectPatternRenamesInGeneratedFile(ast);
+    if (mayHaveReadableRenames) {
+      applyReadableObjectPatternRenamesInGeneratedFile(ast);
+    }
     return;
   }
   traverse(ast, {
@@ -1914,9 +1917,147 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
         }
       }
       applyBindingLocalRenamesInProgram(path, renameByBinding);
-      applyReadableObjectPatternRenamesInProgram(path);
+      if (mayHaveReadableRenames) {
+        applyReadableObjectPatternRenamesInProgram(path);
+      }
     },
   });
+}
+
+function generatedFileMayHaveReadableRenameCandidate(ast) {
+  const stack = [ast];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node || typeof node.type !== "string") {
+      continue;
+    }
+    if (t.isObjectPattern(node) && objectPatternMayHaveReadableRenameCandidate(node)) {
+      return true;
+    }
+    if (t.isObjectExpression(node) && objectExpressionMayHaveReadableRenameCandidate(node)) {
+      return true;
+    }
+    if (t.isClassMethod(node) && constructorMayHaveReadableParamCandidate(node)) {
+      return true;
+    }
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (let index = child.length - 1; index >= 0; index--) {
+          stack.push(child[index]);
+        }
+      } else if (child) {
+        stack.push(child);
+      }
+    }
+  }
+  return false;
+}
+
+function objectExpressionMayHaveReadableRenameCandidate(node) {
+  for (const property of node.properties ?? []) {
+    if (!t.isObjectProperty(property) || !t.isIdentifier(property.value)) {
+      continue;
+    }
+    const desiredName = readableObjectPropertyBindingName(property);
+    if (desiredName && readableRenameCandidateNames(property.value.name, desiredName)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function objectPatternMayHaveReadableRenameCandidate(pattern) {
+  if (!pattern) {
+    return false;
+  }
+  if (t.isAssignmentPattern(pattern)) {
+    return objectPatternMayHaveReadableRenameCandidate(pattern.left);
+  }
+  if (t.isRestElement(pattern)) {
+    return objectPatternMayHaveReadableRenameCandidate(pattern.argument);
+  }
+  if (t.isArrayPattern(pattern)) {
+    return pattern.elements.some((element) => objectPatternMayHaveReadableRenameCandidate(element));
+  }
+  if (!t.isObjectPattern(pattern)) {
+    return false;
+  }
+  for (const property of pattern.properties ?? []) {
+    if (t.isRestElement(property)) {
+      if (objectPatternMayHaveReadableRenameCandidate(property.argument)) {
+        return true;
+      }
+      continue;
+    }
+    if (!t.isObjectProperty(property)) {
+      continue;
+    }
+    const desiredName = readableObjectPropertyBindingName(property);
+    if (propertyValueMayHaveReadableRenameCandidate(property.value, desiredName)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function propertyValueMayHaveReadableRenameCandidate(value, desiredName) {
+  if (t.isIdentifier(value)) {
+    return Boolean(desiredName && readableRenameCandidateNames(value.name, desiredName));
+  }
+  if (t.isAssignmentPattern(value)) {
+    return propertyValueMayHaveReadableRenameCandidate(value.left, desiredName);
+  }
+  return objectPatternMayHaveReadableRenameCandidate(value);
+}
+
+function constructorMayHaveReadableParamCandidate(node) {
+  if (node.kind !== "constructor") {
+    return false;
+  }
+  const paramNames = new Set(
+    (node.params ?? [])
+      .filter((param) => t.isIdentifier(param) && isScrambledIdentifier(param.name))
+      .map((param) => param.name)
+  );
+  if (paramNames.size === 0) {
+    return false;
+  }
+  return constructorBodyMayHaveReadableParamAssignment(node.body, paramNames);
+}
+
+function constructorBodyMayHaveReadableParamAssignment(body, paramNames) {
+  const stack = [body];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node || typeof node.type !== "string") {
+      continue;
+    }
+    if (node !== body && (t.isFunction(node) || t.isClass(node))) {
+      continue;
+    }
+    if (t.isAssignmentExpression(node) && node.operator === "=" && t.isIdentifier(node.right)) {
+      const desiredName = readableThisPropertyAssignmentName(node.left);
+      if (desiredName && paramNames.has(node.right.name) && readableRenameCandidateNames(node.right.name, desiredName)) {
+        return true;
+      }
+    }
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (let index = child.length - 1; index >= 0; index--) {
+          stack.push(child[index]);
+        }
+      } else if (child) {
+        stack.push(child);
+      }
+    }
+  }
+  return false;
+}
+
+function readableRenameCandidateNames(sourceName, targetName) {
+  return sourceName !== targetName && isScrambledIdentifier(sourceName);
 }
 
 function applyReadableObjectPatternRenamesInGeneratedFile(ast) {
