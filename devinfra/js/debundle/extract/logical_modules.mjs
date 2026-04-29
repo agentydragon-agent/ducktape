@@ -1,18 +1,34 @@
 import { deriveSelectedModuleTarget } from "./planner.mjs";
 
+const ANALYSIS_OWNER_BY_ID_CACHE = new WeakMap();
+const ANALYSIS_OWNER_MATCH_INDEX_CACHE = new WeakMap();
+const LOGICAL_MODULE_OPERATIONS_CACHE = new WeakMap();
+const LOGICAL_MODULE_CHUNK_OPERATIONS_CACHE = new WeakMap();
+const LOGICAL_MODULE_CHUNK_GROUPS_CACHE = new WeakMap();
+const LOGICAL_MEMBER_OWNER_ID_CACHE = new WeakMap();
+const OWNER_LOCAL_DEPENDENCY_IDS_CACHE = new WeakMap();
+const NULL_OWNER_ID = Symbol("logical_module.null_owner_id");
+
 export function getLogicalModuleOperations(operations) {
-  return normalizeLogicalModuleOperations(
+  if (!(operations instanceof Array)) {
+    return normalizeLogicalModuleOperations([]);
+  }
+  const cached = LOGICAL_MODULE_OPERATIONS_CACHE.get(operations);
+  if (cached) {
+    return cached;
+  }
+  const normalized = normalizeLogicalModuleOperations(
     operations.filter(
       (operation) =>
         operation?.operation === "define_logical_module" || operation?.operation === "define_residual_module"
     )
   );
+  LOGICAL_MODULE_OPERATIONS_CACHE.set(operations, normalized);
+  return normalized;
 }
 
 export function buildLogicalModulePlans(currentModules, operations, { analysis = null, chunkId, targetDir }) {
-  const logicalOperations = getLogicalModuleOperations(operations).filter(
-    (operation) => operation.selector.chunkId === normalizeRelativeFile(chunkId)
-  );
+  const logicalOperations = getChunkLogicalModuleOperations(operations, chunkId);
   if (logicalOperations.length === 0) {
     return {
       counts: {
@@ -27,16 +43,11 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     };
   }
 
-  const ownerById = new Map((analysis?.owners ?? []).map((owner) => [owner.id, owner]));
-  const { availableModuleIds, blockingReasonsByModuleId } = computeExtractorAvailability(currentModules, {
-    analysis,
-    ownerById,
-  });
+  const ownerById = getOwnerByIdForAnalysis(analysis);
   const claimableAtomicModules = [...currentModules]
     .sort(
       (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
     );
-  const lowerableAtomicModules = claimableAtomicModules.filter((modulePlan) => availableModuleIds.has(modulePlan.id));
   const moduleById = new Map(claimableAtomicModules.map((modulePlan) => [modulePlan.id, modulePlan]));
   const modulesByOwnerId = buildModulesByOwnerId(claimableAtomicModules);
   const modulesBySymbol = buildModulesBySymbol(claimableAtomicModules);
@@ -44,6 +55,12 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     analysis,
     modulesByOwnerId,
   });
+  const { availableModuleIds, blockingReasonsByModuleId } = computeExtractorAvailability(currentModules, {
+    analysis,
+    dependencyIdsByModuleId,
+    ownerById,
+  });
+  const lowerableAtomicModules = claimableAtomicModules.filter((modulePlan) => availableModuleIds.has(modulePlan.id));
   const directClaimedModuleIds = new Map();
   const finalClaimedModuleIds = new Map();
   const preparedExplicitOperations = [];
@@ -237,11 +254,8 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
 
 export function logicalSelectedOwnerIdsForChunk(operations, { analysis = null, chunkId }) {
   const ownerIds = new Set();
-  for (const operation of getLogicalModuleOperations(operations)) {
+  for (const operation of getChunkLogicalModuleOperations(operations, chunkId)) {
     if (operation.operation !== "define_logical_module") {
-      continue;
-    }
-    if (operation.selector.chunkId !== normalizeRelativeFile(chunkId)) {
       continue;
     }
     for (const member of operation.members) {
@@ -271,7 +285,7 @@ export function closeSelectedOwnerIdsOverDependencyGraph(
   if (!analysis?.owners || selectedOwnerIds.size === 0) {
     return selectedOwnerIds;
   }
-  const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
+  const ownerById = getOwnerByIdForAnalysis(analysis);
   const unknownOwnerIds = [...selectedOwnerIds].filter((ownerId) => !ownerById.has(ownerId));
   if (unknownOwnerIds.length > 0) {
     const sample = unknownOwnerIds.slice(0, 8).join(", ");
@@ -310,6 +324,27 @@ function normalizeLogicalModuleOperations(operations) {
       target: normalizeLogicalTarget(operation.target, operation.id),
     };
   });
+}
+
+function getChunkLogicalModuleOperations(operations, chunkId) {
+  const normalizedChunkId = normalizeRelativeFile(chunkId);
+  if (!(operations instanceof Array)) {
+    return [];
+  }
+  let cachedByChunk = LOGICAL_MODULE_CHUNK_OPERATIONS_CACHE.get(operations);
+  if (!cachedByChunk) {
+    cachedByChunk = new Map();
+    LOGICAL_MODULE_CHUNK_OPERATIONS_CACHE.set(operations, cachedByChunk);
+  }
+  const cached = cachedByChunk.get(normalizedChunkId);
+  if (cached) {
+    return cached;
+  }
+  const logicalOperations = getLogicalModuleOperations(operations).filter(
+    (operation) => operation.selector.chunkId === normalizedChunkId
+  );
+  cachedByChunk.set(normalizedChunkId, logicalOperations);
+  return logicalOperations;
 }
 
 function normalizeLogicalTarget(target, operationId) {
@@ -405,7 +440,7 @@ function currentExtractorCompatibilityReasons(modulePlan, ownerById) {
   return reasons;
 }
 
-function computeExtractorAvailability(currentModules, { analysis, ownerById }) {
+function computeExtractorAvailability(currentModules, { analysis, dependencyIdsByModuleId = null, ownerById }) {
   if (!analysis?.owners) {
     return {
       availableModuleIds: new Set(currentModules.map((modulePlan) => modulePlan.id)),
@@ -423,11 +458,12 @@ function computeExtractorAvailability(currentModules, { analysis, ownerById }) {
     }
     blockingReasonsByModuleId.set(modulePlan.id, blockingReasons);
   }
-  const modulesByOwnerId = buildModulesByOwnerId(allModules);
-  const dependencyIdsByModuleId = buildModuleDependencyIdsByModuleId(allModules, {
-    analysis,
-    modulesByOwnerId,
-  });
+  const effectiveDependencyIdsByModuleId =
+    dependencyIdsByModuleId ??
+    buildModuleDependencyIdsByModuleId(allModules, {
+      analysis,
+      modulesByOwnerId: buildModulesByOwnerId(allModules),
+    });
   // Availability is a fixed point, not a one-shot per-owner predicate. If an
   // otherwise compatible atomic module depends on a blocked atomic module, it
   // is not actually lowerable either and must stay out of the extracted module
@@ -439,7 +475,7 @@ function computeExtractorAvailability(currentModules, { analysis, ownerById }) {
       if (!availableModuleIds.has(modulePlan.id)) {
         continue;
       }
-      for (const dependencyModuleId of dependencyIdsByModuleId.get(modulePlan.id) ?? []) {
+      for (const dependencyModuleId of effectiveDependencyIdsByModuleId.get(modulePlan.id) ?? []) {
         if (availableModuleIds.has(dependencyModuleId)) {
           continue;
         }
@@ -678,6 +714,10 @@ function classifyResolvedModule(modulePlan, { availableModuleIds, blockingReason
 }
 
 function groupLogicalModuleOperations(logicalOperations) {
+  const cached = LOGICAL_MODULE_CHUNK_GROUPS_CACHE.get(logicalOperations);
+  if (cached) {
+    return cached;
+  }
   const residualOperations = logicalOperations.filter((operation) => operation.operation === "define_residual_module");
   const grouped = new Map();
   for (const operation of logicalOperations) {
@@ -704,7 +744,9 @@ function groupLogicalModuleOperations(logicalOperations) {
     group.members.push(...operation.members);
     group.operationIds.push(operation.id);
   }
-  return [...grouped.values(), ...residualOperations.map((operation) => ({ ...operation, operationIds: [operation.id] }))];
+  const normalizedGroups = [...grouped.values(), ...residualOperations.map((operation) => ({ ...operation, operationIds: [operation.id] }))];
+  LOGICAL_MODULE_CHUNK_GROUPS_CACHE.set(logicalOperations, normalizedGroups);
+  return normalizedGroups;
 }
 
 function mergeModuleGroup(selectedModules, operation, index, { requestedBindings = [], targetDir }) {
@@ -913,23 +955,33 @@ function resolveCanonicalOwnerIdForLogicalMember(member, { analysis = null, oper
   // they can drift as we refine fragment splitting. We therefore resolve against
   // the analyzed binding first and only fall back to the selector owner hint when
   // analysis cannot identify the binding.
-  return resolveOwnerIdFromAnalysis(analysis, member, { operationId }) ?? selectorOwnerId;
+  return getResolvedOwnerIdFromAnalysis(analysis, member, { operationId }) ?? selectorOwnerId;
+}
+
+function getResolvedOwnerIdFromAnalysis(analysis, member, { operationId = "<logical-module>" } = {}) {
+  let cachedByMember = LOGICAL_MEMBER_OWNER_ID_CACHE.get(analysis);
+  if (!cachedByMember) {
+    cachedByMember = new WeakMap();
+    LOGICAL_MEMBER_OWNER_ID_CACHE.set(analysis, cachedByMember);
+  }
+  if (cachedByMember.has(member)) {
+    const cached = cachedByMember.get(member);
+    return cached === NULL_OWNER_ID ? null : cached;
+  }
+  const resolved = resolveOwnerIdFromAnalysis(analysis, member, { operationId });
+  cachedByMember.set(member, resolved ?? NULL_OWNER_ID);
+  return resolved;
 }
 
 function resolveOwnerIdFromAnalysis(analysis, member, { operationId = "<logical-module>" } = {}) {
   const resolvedName = member.selector.binding.name;
   const expectedType = manifestDeclarationKind(member.selector.binding.kind ?? null);
-  const matches = analysis.owners.filter((owner) => {
-    if (!owner.names?.includes(resolvedName)) {
-      return false;
-    }
-    if (expectedType && owner.type !== expectedType) {
-      return false;
-    }
-    if (member.selector.owner?.line && owner.line !== member.selector.owner.line) {
-      return false;
-    }
-    return true;
+  const ownerLine = member.selector.owner?.line ?? null;
+  const matchIndex = getOwnerMatchIndexForAnalysis(analysis);
+  const matches = getIndexedOwnerMatches(matchIndex, {
+    expectedType,
+    line: ownerLine,
+    name: resolvedName,
   });
   if (matches.length === 0) {
     return null;
@@ -964,7 +1016,12 @@ function expandLogicalOwnerDependencyClosure(seedOwnerIds, ownerById) {
 }
 
 function localDeclarationDependencyOwnerIds(owner, ownerById) {
-  const dependencyOwnerIds = new Set();
+  const cached = OWNER_LOCAL_DEPENDENCY_IDS_CACHE.get(owner);
+  if (cached) {
+    return cached;
+  }
+  const dependencyOwnerIds = [];
+  const seenDependencyOwnerIds = new Set();
   for (const bucket of [owner.readsTopLevel, owner.writesTopLevel, owner.memberWritesTopLevel]) {
     for (const phase of ["eager", "lazy"]) {
       for (const access of bucket?.[phase] ?? []) {
@@ -974,11 +1031,78 @@ function localDeclarationDependencyOwnerIds(owner, ownerById) {
         if (!ownerById.has(access.ownerId)) {
           continue;
         }
-        dependencyOwnerIds.add(access.ownerId);
+        if (seenDependencyOwnerIds.has(access.ownerId)) {
+          continue;
+        }
+        seenDependencyOwnerIds.add(access.ownerId);
+        dependencyOwnerIds.push(access.ownerId);
       }
     }
   }
+  OWNER_LOCAL_DEPENDENCY_IDS_CACHE.set(owner, dependencyOwnerIds);
   return dependencyOwnerIds;
+}
+
+function getOwnerByIdForAnalysis(analysis) {
+  if (!analysis?.owners) {
+    return new Map();
+  }
+  const cached = ANALYSIS_OWNER_BY_ID_CACHE.get(analysis);
+  if (cached) {
+    return cached;
+  }
+  const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
+  ANALYSIS_OWNER_BY_ID_CACHE.set(analysis, ownerById);
+  return ownerById;
+}
+
+function getOwnerMatchIndexForAnalysis(analysis) {
+  const cached = ANALYSIS_OWNER_MATCH_INDEX_CACHE.get(analysis);
+  if (cached) {
+    return cached;
+  }
+  const byName = new Map();
+  const byNameAndLine = new Map();
+  const byNameAndType = new Map();
+  const byNameTypeAndLine = new Map();
+  for (const owner of analysis.owners ?? []) {
+    for (const name of owner.names ?? []) {
+      appendIndexedOwner(byName, name, owner);
+      appendIndexedOwner(byNameAndType, `${name}\u0000${owner.type}`, owner);
+      if (owner.line !== undefined && owner.line !== null) {
+        appendIndexedOwner(byNameAndLine, `${name}\u0000${owner.line}`, owner);
+        appendIndexedOwner(byNameTypeAndLine, `${name}\u0000${owner.type}\u0000${owner.line}`, owner);
+      }
+    }
+  }
+  const matchIndex = {
+    byName,
+    byNameAndLine,
+    byNameAndType,
+    byNameTypeAndLine,
+  };
+  ANALYSIS_OWNER_MATCH_INDEX_CACHE.set(analysis, matchIndex);
+  return matchIndex;
+}
+
+function appendIndexedOwner(index, key, owner) {
+  if (!index.has(key)) {
+    index.set(key, []);
+  }
+  index.get(key).push(owner);
+}
+
+function getIndexedOwnerMatches(matchIndex, { expectedType, line, name }) {
+  if (expectedType && line !== null) {
+    return matchIndex.byNameTypeAndLine.get(`${name}\u0000${expectedType}\u0000${line}`) ?? [];
+  }
+  if (expectedType) {
+    return matchIndex.byNameAndType.get(`${name}\u0000${expectedType}`) ?? [];
+  }
+  if (line !== null) {
+    return matchIndex.byNameAndLine.get(`${name}\u0000${line}`) ?? [];
+  }
+  return matchIndex.byName.get(name) ?? [];
 }
 
 function manifestDeclarationKind(kind) {
