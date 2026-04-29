@@ -2312,6 +2312,147 @@ export { drainDisposableStack };`;
   );
 });
 
+test("materializeLogicalModules keeps shared bootstrap dependencies in named modules", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-bootstrap-shared-dependencies-"
+  );
+  const source = `const sharedLabel = "shared";
+function buildSharedLabel() {
+  return sharedLabel;
+}
+function renderFeature() {
+  return "feature:" + buildSharedLabel();
+}
+function bootstrapApp() {
+  return renderFeature() + ":" + buildSharedLabel();
+}
+
+console.log(bootstrapApp());
+
+export { bootstrapApp, renderFeature };`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__feature",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/feature",
+        },
+        members: [
+          {
+            id: "member__render_feature",
+            name: "renderFeature",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "renderFeature",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__bootstrap",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "runtime/bootstrap",
+        },
+        members: [
+          {
+            id: "member__bootstrap_app",
+            name: "bootstrapApp",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "bootstrapApp",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  const featureCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "feature.js"), "utf8");
+  const bootstrapCode = readFileSync(join(outRoot, "static", "app", "modules", "runtime", "bootstrap.js"), "utf8");
+  const residualPath = join(outRoot, "static", "app", "modules", "residual", "unhandled.js");
+  const residualCode = existsSync(residualPath) ? readFileSync(residualPath, "utf8") : "";
+
+  assert.match(featureCode, /\bsharedLabel = "shared"/);
+  assert.match(featureCode, /\bfunction buildSharedLabel\(\)/);
+  assert.match(featureCode, /export \{ buildSharedLabel, renderFeature \};/);
+  assert.match(bootstrapCode, /import \{ buildSharedLabel, renderFeature \} from "\.\.\/ui\/feature\.js";/);
+  assert.doesNotMatch(residualCode, /\bsharedLabel\b/);
+  assert.doesNotMatch(residualCode, /\bbuildSharedLabel\b/);
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
+});
+
 test("materializeLogicalModules can split lazy callable declarators and grouped remainders from one top-level declaration", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
     "debundle-logical-modules-lazy-callable-fragments-"

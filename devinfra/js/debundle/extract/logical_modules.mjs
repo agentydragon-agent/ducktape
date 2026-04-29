@@ -148,14 +148,11 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     });
   }
 
-  const privatelyReachableDependencyIdsByOperationId = buildPrivatelyReachableDependencyIdsByOperationId(
-    preparedExplicitOperations,
-    {
-      claimedModuleIds: directClaimedModuleIds,
-      dependencyIdsByModuleId,
-      moduleById,
-    }
-  );
+  const reachableDependencyIdsByOperationId = buildReachableDependencyIdsByOperationId(preparedExplicitOperations, {
+    claimedModuleIds: directClaimedModuleIds,
+    dependencyIdsByModuleId,
+    moduleById,
+  });
 
   for (const { directSelectedModules, operation, requestedBindings } of preparedExplicitOperations) {
     if (directSelectedModules.length === 0) {
@@ -176,7 +173,7 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     const dependencyClosedModules = expandSelectedModuleDependencyClosure(directSelectedModules, {
       dependencyIdsByModuleId,
       moduleById,
-      privatelyReachableDependencyIds: privatelyReachableDependencyIdsByOperationId.get(operation.id) ?? new Set(),
+      reachableDependencyIds: reachableDependencyIdsByOperationId.get(operation.id) ?? new Set(),
     });
     dependencyClosedModules.sort(
       (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
@@ -532,72 +529,68 @@ function buildModuleDependencyIdsByModuleId(modulePlans, { analysis, modulesByOw
   return dependencyIdsByModuleId;
 }
 
-function buildPrivatelyReachableDependencyIdsByOperationId(
+function buildReachableDependencyIdsByOperationId(
   preparedExplicitOperations,
   { claimedModuleIds, dependencyIdsByModuleId, moduleById }
 ) {
-  const reachableOperationIdsByModuleId = new Map();
-  for (const { directSelectedModules, operation } of preparedExplicitOperations) {
+  const reachableDependencyIdsByOperationId = new Map();
+  const assignedDependencyOperationIdByModuleId = new Map();
+  const prioritizedOperations = preparedExplicitOperations
+    .map(({ directSelectedModules, operation }, operationIndex) => ({
+      directSelectedModules,
+      operation,
+      operationIndex,
+      startOrdinal:
+        directSelectedModules.length === 0
+          ? Number.POSITIVE_INFINITY
+          : Math.min(...directSelectedModules.map((modulePlan) => modulePlan.startOrdinal)),
+    }))
+    .sort(
+      (left, right) =>
+        left.startOrdinal - right.startOrdinal ||
+        left.operationIndex - right.operationIndex ||
+        left.operation.id.localeCompare(right.operation.id)
+    );
+
+  for (const { operation } of preparedExplicitOperations) {
+    reachableDependencyIdsByOperationId.set(operation.id, new Set());
+  }
+
+  for (const { directSelectedModules, operation } of prioritizedOperations) {
     if (directSelectedModules.length === 0) {
       continue;
     }
-    const reachableDependencyIds = collectReachableUnclaimedDependencyIds(directSelectedModules, {
-      claimedModuleIds,
-      dependencyIdsByModuleId,
-      moduleById,
-      operationId: operation.id,
-    });
-    for (const moduleId of reachableDependencyIds) {
-      if (!reachableOperationIdsByModuleId.has(moduleId)) {
-        reachableOperationIdsByModuleId.set(moduleId, new Set());
+    const reachableDependencyIds = reachableDependencyIdsByOperationId.get(operation.id);
+    const stack = directSelectedModules.map((modulePlan) => modulePlan.id);
+    const scannedModuleIds = new Set(stack);
+    while (stack.length > 0) {
+      const moduleId = stack.pop();
+      for (const dependencyModuleId of dependencyIdsByModuleId.get(moduleId) ?? []) {
+        if (!moduleById.has(dependencyModuleId)) {
+          continue;
+        }
+        if (claimedModuleIds.has(dependencyModuleId)) {
+          continue;
+        }
+        if (assignedDependencyOperationIdByModuleId.has(dependencyModuleId)) {
+          continue;
+        }
+        assignedDependencyOperationIdByModuleId.set(dependencyModuleId, operation.id);
+        reachableDependencyIds.add(dependencyModuleId);
+        if (!scannedModuleIds.has(dependencyModuleId)) {
+          scannedModuleIds.add(dependencyModuleId);
+          stack.push(dependencyModuleId);
+        }
       }
-      reachableOperationIdsByModuleId.get(moduleId).add(operation.id);
     }
   }
-  const privatelyReachableDependencyIdsByOperationId = new Map();
-  for (const { operation } of preparedExplicitOperations) {
-    privatelyReachableDependencyIdsByOperationId.set(operation.id, new Set());
-  }
-  for (const [moduleId, operationIds] of reachableOperationIdsByModuleId.entries()) {
-    if (operationIds.size !== 1) {
-      continue;
-    }
-    const [operationId] = [...operationIds];
-    privatelyReachableDependencyIdsByOperationId.get(operationId)?.add(moduleId);
-  }
-  return privatelyReachableDependencyIdsByOperationId;
-}
 
-function collectReachableUnclaimedDependencyIds(
-  directSelectedModules,
-  { claimedModuleIds, dependencyIdsByModuleId, moduleById, operationId }
-) {
-  const directSelectedModuleIds = new Set(directSelectedModules.map((modulePlan) => modulePlan.id));
-  const reachableDependencyIds = new Set();
-  const stack = [...directSelectedModuleIds];
-  while (stack.length > 0) {
-    const moduleId = stack.pop();
-    for (const dependencyModuleId of dependencyIdsByModuleId.get(moduleId) ?? []) {
-      if (directSelectedModuleIds.has(dependencyModuleId) || reachableDependencyIds.has(dependencyModuleId)) {
-        continue;
-      }
-      if (!moduleById.has(dependencyModuleId)) {
-        continue;
-      }
-      const claimedByOperationId = claimedModuleIds.get(dependencyModuleId) ?? null;
-      if (claimedByOperationId && claimedByOperationId !== operationId) {
-        continue;
-      }
-      reachableDependencyIds.add(dependencyModuleId);
-      stack.push(dependencyModuleId);
-    }
-  }
-  return reachableDependencyIds;
+  return reachableDependencyIdsByOperationId;
 }
 
 function expandSelectedModuleDependencyClosure(
   selectedModules,
-  { dependencyIdsByModuleId, moduleById, privatelyReachableDependencyIds }
+  { dependencyIdsByModuleId, moduleById, reachableDependencyIds }
 ) {
   const selectedModuleIds = new Set(selectedModules.map((modulePlan) => modulePlan.id));
   const stack = [...selectedModuleIds];
@@ -607,7 +600,7 @@ function expandSelectedModuleDependencyClosure(
       if (selectedModuleIds.has(dependencyModuleId)) {
         continue;
       }
-      if (!privatelyReachableDependencyIds.has(dependencyModuleId)) {
+      if (!reachableDependencyIds.has(dependencyModuleId)) {
         continue;
       }
       if (!moduleById.has(dependencyModuleId)) {
