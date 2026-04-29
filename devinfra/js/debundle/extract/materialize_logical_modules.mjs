@@ -121,8 +121,14 @@ export function materializeLogicalModules({
       }
     );
     const planningMs = durationMsSince(planningStartedAt);
+    const atomicPlanTimings = atomicPlan.timingsMs ?? {};
     logProgress(
-      `logical-modules chunk=${chunkId} planning done atomicUnits=${atomicPlan.atomicUnitCount} selectedOwners=${atomicPlan.selectedOwnerCount} duration=${formatDuration(planningMs)}`
+      `logical-modules chunk=${chunkId} planning done atomicUnits=${atomicPlan.atomicUnitCount} ` +
+        `selectedOwners=${atomicPlan.selectedOwnerCount} duration=${formatDuration(planningMs)} ` +
+        `selectOwners=${formatDuration(atomicPlanTimings.selectOwners ?? 0)} ` +
+        `buildAtomicUnits=${formatDuration(atomicPlanTimings.buildAtomicUnits ?? 0)} ` +
+        `finalizeAtomicUnits=${formatDuration(atomicPlanTimings.finalizeAtomicUnits ?? 0)} ` +
+        `finalizeModules=${formatDuration(atomicPlanTimings.finalizeModules ?? 0)}`
     );
 
     const atomicModules = atomicPlan.modulePlans.map((modulePlan, index) => {
