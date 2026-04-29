@@ -112,7 +112,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     interface    = "scsi0"
     iothread     = true
     discard      = "on"
-    size         = 300
+    size         = 500
   }
 
   # Data disks — all on NVMe (local-zfs) unless noted.
@@ -154,7 +154,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     interface    = "virtio4"
     iothread     = true
     discard      = "on"
-    size         = 40
+    size         = 150
     file_format  = "raw"
   } # Bazel output base — SSD (~/.cache/bazel)
   disk {
