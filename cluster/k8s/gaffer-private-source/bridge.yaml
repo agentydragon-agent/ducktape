@@ -14,7 +14,11 @@ spec:
     name: gaffer-private
   path: ./k8s
   prune: true
-  wait: true
+  # No `wait: true` — pod readiness depends on the GHCR pull secret
+  # (provisioned by the gaffer-private-ghcr-pull Kustomization, which
+  # in turn dependsOn this one to ensure the house-vallejo namespace
+  # exists). Waiting here would circle back. The downstream
+  # Kustomization tolerates apply-then-eventually-ready.
   dependsOn:
     - name: authentik
     - name: gateway
