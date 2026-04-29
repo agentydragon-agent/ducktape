@@ -110,7 +110,6 @@ export function lowerSelectedModuleRegionsInAst(
     .filter((operation) => operation.operation === "lower_selected_module_region")
     .filter((operation) => operationSupportsCurrentExtractor(operation, { ownerById }));
   const topLevelNames = collectTopLevelNames(runtimeAnalysis);
-  const programItemByOrdinal = new Map(runtimeAnalysis.programItems.map((item) => [item.ordinal, item]));
   const extractionIndex = buildExtractionIndex(extractOperations);
   const remainingProgramValidationIndex = buildRemainingProgramValidationIndex(runtimeAnalysis);
   const runtimeImportIndex = buildRuntimeImportIndex(runtimeAnalysis.runtimeImports);
@@ -126,7 +125,6 @@ export function lowerSelectedModuleRegionsInAst(
       remainingProgramValidationIndex,
       runtimeImportIndex,
       programBody,
-      programItemByOrdinal,
       runtimeFile,
       sideEffectById,
       topLevelNames,
@@ -271,7 +269,6 @@ function resolveExtractOperation(
     remainingProgramValidationIndex,
     runtimeImportIndex,
     programBody,
-    programItemByOrdinal,
     runtimeFile,
     sideEffectById,
     topLevelNames,
@@ -413,9 +410,8 @@ function resolveExtractOperation(
     attachedEntries,
     ownerEntries,
     ownerById,
-    programItemByOrdinal,
+    remainingProgramValidationIndex,
     selectedOwnerIds,
-    sideEffects: analysis.sideEffects,
   });
   for (let stageIndex = 0; stageIndex < stageRuns.length; stageIndex++) {
     const stageName = stageInitName(initName, stageIndex);
@@ -1271,7 +1267,7 @@ function validateRemainingProgramItems({
 
 function buildStagedShellRuns(
   operation,
-  { attachedEntries, ownerEntries, ownerById, programItemByOrdinal, selectedOwnerIds, sideEffects }
+  { attachedEntries, ownerEntries, ownerById, remainingProgramValidationIndex, selectedOwnerIds }
 ) {
   const stageItems = [
     ...ownerEntries.map((entry) => ({
@@ -1312,52 +1308,54 @@ function buildStagedShellRuns(
     return stageRuns;
   }
 
-  const sideEffectById = new Map(sideEffects.map((sideEffect) => [sideEffect.id, sideEffect]));
   const firstRetainedOrdinal = stageRuns[0].endOrdinal + 1;
   const lastOrdinal = stageRuns.at(-1).endOrdinal;
-  for (let ordinal = firstRetainedOrdinal; ordinal < lastOrdinal; ordinal++) {
-    const item = programItemByOrdinal.get(ordinal);
-    if (!item || selectedOwnerIds.has(item.id)) {
-      continue;
-    }
-    const record = ownerById.get(item.id) ?? sideEffectById.get(item.id);
-    if (!record) {
-      continue;
-    }
-    const blockedOwnerId = findLaterSelectedOwnerAccess(record, selectedOwnerIds, ownerById);
-    if (blockedOwnerId) {
-      throw new Error(
-        `Extract operation ${operation.id} staged shell item ${item.id} eagerly uses later extracted owner ${blockedOwnerId}`
-      );
-    }
+  const blockedUse = findRetainedEagerUseOfLaterSelectedOwner({
+    firstRetainedOrdinal,
+    lastOrdinal,
+    ownerById,
+    remainingProgramValidationIndex,
+    selectedOwnerIds,
+  });
+  if (blockedUse) {
+    throw new Error(
+      `Extract operation ${operation.id} staged shell item ${blockedUse.recordId} eagerly uses later extracted owner ${blockedUse.targetOwnerId}`
+    );
   }
 
   return stageRuns;
 }
 
-function findLaterSelectedOwnerAccess(record, selectedOwnerIds, ownerById) {
-  return (
-    findLaterSelectedOwnerAccessInList(record.readsTopLevel.eager, record.ordinal, selectedOwnerIds, ownerById) ??
-    findLaterSelectedOwnerAccessInList(
-      record.memberWritesTopLevel.eager,
-      record.ordinal,
-      selectedOwnerIds,
-      ownerById
-    )
-  );
-}
-
-function findLaterSelectedOwnerAccessInList(accesses, ordinal, selectedOwnerIds, ownerById) {
-  for (const access of accesses) {
-    if (access.kind !== "local_declaration" || !access.ownerId || !selectedOwnerIds.has(access.ownerId)) {
+function findRetainedEagerUseOfLaterSelectedOwner({
+  firstRetainedOrdinal,
+  lastOrdinal,
+  ownerById,
+  remainingProgramValidationIndex,
+  selectedOwnerIds,
+}) {
+  let earliestBlockedUse = null;
+  for (const selectedOwnerId of selectedOwnerIds) {
+    const targetOwner = ownerById.get(selectedOwnerId);
+    if (!targetOwner) {
       continue;
     }
-    const targetOwner = ownerById.get(access.ownerId);
-    if (targetOwner && targetOwner.ordinal > ordinal) {
-      return access.ownerId;
+    for (const record of remainingProgramValidationIndex.earlierEagerUsersByOwnerId.get(selectedOwnerId) ?? []) {
+      if (record.ordinal < firstRetainedOrdinal || record.ordinal >= lastOrdinal) {
+        continue;
+      }
+      if (selectedOwnerIds.has(record.recordId) || targetOwner.ordinal <= record.ordinal) {
+        continue;
+      }
+      if (!earliestBlockedUse || record.ordinal < earliestBlockedUse.ordinal) {
+        earliestBlockedUse = {
+          ordinal: record.ordinal,
+          recordId: record.recordId,
+          targetOwnerId: selectedOwnerId,
+        };
+      }
     }
   }
-  return null;
+  return earliestBlockedUse;
 }
 
 function validateResolvedOperations(resolved) {

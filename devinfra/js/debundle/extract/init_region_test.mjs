@@ -1938,6 +1938,34 @@ throw new InvalidNodeIdError("bad id");
   );
 });
 
+test("allows retained staged-shell statements to eagerly use earlier selected owners", () => {
+  const source = `const helperSeed = 1;
+const retained = helperSeed + 1;
+const rendered = 3;
+console.log(helperSeed, retained, rendered);
+export { helperSeed, rendered };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    {
+      ...selectedModuleOperation(source, {
+        init: "init_staged_earlier_use_region",
+        ownerNames: ["helperSeed", "rendered"],
+        targetFile: "regions/staged_earlier_use_region.js",
+      }),
+      lowering: "staged_shell",
+    },
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  assert.match(runtimeCode, /const retained = helperSeed \+ 1;/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-retained-earlier-use-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("rejects staged-shell lowering when a retained shell statement eagerly uses a later owner", () => {
   const source = `const helperSeed = 1;
 console.log(readLater());
