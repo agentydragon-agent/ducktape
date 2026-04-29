@@ -680,6 +680,45 @@ export { readStatus };
   });
 });
 
+test("graph-generated extraction naturalizes return-object aliases while preserving runtime export aliases", () => {
+  const source = `function r8t(n) {
+  const includeTitle = n.includeTitle;
+  const l = n.includeDescription;
+  return {
+    includeTitle: includeTitle,
+    includeDescription: l,
+  };
+}
+console.log(JSON.stringify(r8t({
+  includeTitle: true,
+  includeDescription: false,
+})));
+export { r8t as publicBuildPoint };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_point_region",
+      ownerNames: ["r8t"],
+      targetFile: "regions/point_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/point_region.js");
+  assert.match(runtimeCode, /import \{ r8t \} from "\.\/regions\/point_region\.js"/);
+  assert.match(runtimeCode, /export \{ r8t as publicBuildPoint \};/);
+  assert.match(extractedCode, /\bconst includeTitle = n\.includeTitle;/);
+  assert.match(extractedCode, /\bconst includeDescription = n\.includeDescription;/);
+  assert.match(extractedCode, /\bfunction r8t\(n\)/);
+  assert.match(extractedCode, /return \{\s*includeTitle,\s*includeDescription\s*\};/s);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-readable-export-rename-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("lowers multi-stage pure declaration regions as plain imports without init wrappers", () => {
   const source = `const alpha = 1;
 const gapLabel = "gap";

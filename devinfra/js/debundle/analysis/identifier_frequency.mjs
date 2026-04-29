@@ -287,8 +287,16 @@ function renameTargetIdentifiers(splitManifest) {
 
 function analyzeFile(file, aggregate, { excludedIdentifiers }) {
   const ast = file.ast ?? parse(readFileSync(file.path, "utf8"), file.parserOptions ?? DEFAULT_PARSER_OPTIONS);
+  let programPath = null;
+  const topLevelBindingsByName = new Map();
 
   traverse(ast, {
+    Program(path) {
+      programPath = path;
+      for (const [name, binding] of Object.entries(path.scope.bindings ?? {})) {
+        topLevelBindingsByName.set(name, binding);
+      }
+    },
     Identifier(path) {
       const role = identifierRole(path);
       if (!role) {
@@ -309,8 +317,13 @@ function analyzeFile(file, aggregate, { excludedIdentifiers }) {
         name,
         role,
       };
-      const binding = identifierBinding(path, name);
-      if (isTopLevelBinding(binding)) {
+      const binding = topLevelBindingForIdentifier(path, {
+        name,
+        programPath,
+        role,
+        topLevelBindingsByName,
+      });
+      if (binding) {
         aggregate.topLevelScrambledSymbolOccurrences++;
         recordSymbol(aggregate.bySymbol, occurrence, symbolDescriptor(file, binding));
       }
@@ -380,13 +393,32 @@ function isBindingIdentifierPath(path) {
   return false;
 }
 
-function identifierBinding(path, name) {
-  const programPath = path.findParent((parent) => parent.isProgram());
-  return path.scope.getBinding(name) ?? programPath?.scope.getBinding(name) ?? null;
+function topLevelBindingForIdentifier(path, { name, programPath, role, topLevelBindingsByName }) {
+  if (!programPath) {
+    return null;
+  }
+  const topLevelBinding = topLevelBindingsByName.get(name);
+  if (!topLevelBinding) {
+    return null;
+  }
+  if (role === "binding") {
+    return topLevelBinding.identifier === path.node ? topLevelBinding : null;
+  }
+  if (role !== "reference") {
+    return null;
+  }
+  return isShadowedBeforeProgram(path.scope, name, programPath) ? null : topLevelBinding;
 }
 
-function isTopLevelBinding(binding) {
-  return binding?.scope.path.isProgram() ?? false;
+function isShadowedBeforeProgram(scope, name, programPath) {
+  let currentScope = scope;
+  while (currentScope && currentScope.path !== programPath) {
+    if (currentScope.hasOwnBinding(name)) {
+      return true;
+    }
+    currentScope = currentScope.parent;
+  }
+  return false;
 }
 
 export function isScrambledIdentifier(name, excludedIdentifiers = EXCLUDED_IDENTIFIERS) {

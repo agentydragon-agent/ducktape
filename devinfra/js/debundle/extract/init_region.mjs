@@ -1604,84 +1604,36 @@ function applyReadableObjectPatternRenamesInProgram(programPath) {
 }
 
 function applyBindingLocalRenamesInProgram(programPath, renameByBinding) {
-  if (renameByBinding.size > 0) {
-    for (const [binding, renameTarget] of renameByBinding) {
-      renameBindingLocals(binding, renameTarget);
-    }
-  }
-  normalizeGeneratedBindingRenamesInProgram(programPath, renameByBinding);
-}
-
-function renameBindingLocals(binding, renameTarget) {
-  if (binding.identifier?.name && binding.identifier.name !== renameTarget) {
-    binding.identifier.name = renameTarget;
-  }
-  const visited = new Set();
-  for (const referencePath of binding.referencePaths ?? []) {
-    renameBindingPath(referencePath, binding, renameTarget, visited);
-  }
-  for (const violationPath of binding.constantViolations ?? []) {
-    renameBindingPath(violationPath, binding, renameTarget, visited);
-  }
-}
-
-function renameBindingPath(path, binding, renameTarget, visited) {
-  if (!path) {
+  if (renameByBinding.size === 0) {
     return;
   }
-  if (path.isIdentifier()) {
-    if (visited.has(path.node) || !shouldRenameIdentifierPath(path)) {
-      return;
-    }
-    const resolvedBinding = path.scope.getBinding(path.node.name);
-    if (resolvedBinding !== binding) {
-      return;
-    }
-    visited.add(path.node);
-    path.node.name = renameTarget;
-    return;
-  }
-  path.traverse({
+  programPath.traverse({
     Identifier(identifierPath) {
-      if (visited.has(identifierPath.node) || !shouldRenameIdentifierPath(identifierPath)) {
+      if (!shouldRenameIdentifierPath(identifierPath)) {
         return;
       }
       const resolvedBinding = identifierPath.scope.getBinding(identifierPath.node.name);
-      if (resolvedBinding !== binding) {
+      const renameTarget = resolvedBinding ? renameByBinding.get(resolvedBinding) : null;
+      if (!renameTarget || identifierPath.node.name === renameTarget) {
         return;
       }
-      visited.add(identifierPath.node);
       identifierPath.node.name = renameTarget;
     },
-  });
-}
-
-function normalizeGeneratedBindingRenamesInProgram(programPath, renameByBinding) {
-  programPath.traverse({
-    ExportSpecifier(exportSpecifierPath) {
-      if (!t.isIdentifier(exportSpecifierPath.node.local)) {
-        return;
-      }
-      const binding = exportSpecifierPath.scope.getBinding(exportSpecifierPath.node.local.name);
-      const renameTarget = binding ? renameByBinding.get(binding) : null;
-      if (!renameTarget) {
-        return;
-      }
-      exportSpecifierPath.node.local.name = renameTarget;
-    },
-    ObjectProperty(propertyPath) {
-      if (!propertyPath.parentPath.isObjectPattern() && !propertyPath.parentPath.isObjectExpression()) {
-        return;
-      }
-      if (
-        propertyPath.node.computed ||
-        !t.isIdentifier(propertyPath.node.key) ||
-        !t.isIdentifier(propertyPath.node.value)
-      ) {
-        propertyPath.node.shorthand = false;
-        return;
-      }
-      propertyPath.node.shorthand = propertyPath.node.key.name === propertyPath.node.value.name;
+    ObjectProperty: {
+      exit(propertyPath) {
+        if (!propertyPath.parentPath.isObjectPattern() && !propertyPath.parentPath.isObjectExpression()) {
+          return;
+        }
+        if (
+          propertyPath.node.computed ||
+          !t.isIdentifier(propertyPath.node.key) ||
+          !t.isIdentifier(propertyPath.node.value)
+        ) {
+          propertyPath.node.shorthand = false;
+          return;
+        }
+        propertyPath.node.shorthand = propertyPath.node.key.name === propertyPath.node.value.name;
+      },
     },
   });
 }
@@ -1822,30 +1774,26 @@ function collectExternallyCapturedTargetNames(scopePath, targetNames) {
   if (targetNames.size === 0) {
     return externallyCapturedTargetNames;
   }
-  scopePath.traverse({
-    Identifier(identifierPath) {
-      const targetName = identifierPath.node.name;
-      if (
-        externallyCapturedTargetNames.has(targetName) ||
-        !targetNames.has(targetName) ||
-        !shouldRenameIdentifierPath(identifierPath)
-      ) {
-        return;
-      }
-      const resolvedBinding = identifierPath.scope.getBinding(targetName);
-      if (!resolvedBinding || resolvedBinding.scope === scopePath.scope) {
-        return;
-      }
-      if (pathHasDescendantShadowBinding(identifierPath, scopePath.scope, targetName)) {
-        return;
-      }
+  for (const targetName of targetNames) {
+    const binding = scopePath.scope.getBinding(targetName);
+    if (!binding || binding.scope === scopePath.scope) {
+      continue;
+    }
+    if (binding.referencePaths?.some((referencePath) => pathIsWithinNode(referencePath, scopePath.node))) {
       externallyCapturedTargetNames.add(targetName);
-      if (externallyCapturedTargetNames.size === targetNames.size) {
-        identifierPath.stop();
-      }
-    },
-  });
+    }
+  }
   return externallyCapturedTargetNames;
+}
+
+function pathIsWithinNode(path, ancestorNode) {
+  if (!path) {
+    return false;
+  }
+  if (path.node === ancestorNode) {
+    return true;
+  }
+  return Boolean(path.findParent((parentPath) => parentPath.node === ancestorNode));
 }
 
 function bindingWouldBeShadowedAfterReadableRename(binding, targetName) {

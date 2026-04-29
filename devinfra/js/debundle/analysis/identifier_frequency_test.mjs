@@ -227,6 +227,57 @@ test("extractScrambledIdentifierFrequencies writes binding-resolved report witho
   assert.equal(persisted.symbols[0].id, report.symbols[0].id);
 });
 
+test("extractScrambledIdentifierFrequencies ignores shadowed local bindings with the same name as a top-level symbol", () => {
+  const artifact = createArtifact({
+    kind: "js.pipeline_artifact",
+    chunks: [
+      {
+        chunkId: "static/app",
+        files: new Map([
+          [
+            "runtime.js",
+            createFile({
+              path: "runtime.js",
+              ast: parseModuleCode(`function qGt() { return 1; }
+function outer() {
+  function qGt() {
+    return 2;
+  }
+  return qGt();
+}
+export { qGt, outer };`),
+            }),
+          ],
+        ]),
+        metadata: {
+          manifest: {
+            chunkId: "static/app",
+            parts: [],
+          },
+        },
+      },
+    ],
+    manifest: {
+      chunks: [{ chunkId: "static/app", counts: { parts: 0 }, inputPath: "snapshot/static/app.js" }],
+      renames: [],
+    },
+  });
+  const { analysisRoot: outDir } = createWebFixtureRoots("debundle-scrambled-shadowed-bindings-");
+
+  const { manifest: report } = extractScrambledIdentifierFrequencies({
+    artifact,
+    force: true,
+    limit: 20,
+    outDir,
+  });
+
+  const qGtSymbols = report.symbols.filter((symbol) => symbol.name === "qGt");
+  assert.equal(qGtSymbols.length, 1);
+  assert.equal(qGtSymbols[0].declaration.kind, "FunctionDeclaration");
+  assert.equal(qGtSymbols[0].bindings, 1);
+  assert.equal(qGtSymbols[0].references, 1);
+});
+
 test("extractScrambledIdentifierFrequencies merges explicit and annotated exclusions", () => {
   const fixture = writeScrambledIdentifierFixture("debundle-scrambled-identifiers-artifact-");
 
