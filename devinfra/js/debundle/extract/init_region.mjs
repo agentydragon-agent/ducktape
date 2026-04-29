@@ -5,26 +5,22 @@ import { analyzeRuntimeBoundaryAst, analyzeVariableDeclarationFragmentAccesses }
 import { isScrambledIdentifier } from "../analysis/identifier_frequency.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
 import { logProgress } from "../common/io.mjs";
-import { referencedUndeclaredNames, referencedUndeclaredNamesInVariableDeclarator } from "../common/program_analysis.mjs";
+import {
+  referencedUndeclaredNames,
+  referencedUndeclaredNamesInVariableDeclarator,
+} from "../common/program_analysis.mjs";
 import { serializeGeneratedJsFile } from "../split/chunk.mjs";
-import {
-  expandSelectedModuleGroupPlanningOperations,
-  PLAN_SELECTED_MODULE_GROUPS_OPERATION,
-} from "./decl_graph.mjs";
-import {
-  buildSelectedModuleOperations,
-} from "./planner.mjs";
+import { expandSelectedModuleGroupPlanningOperations, PLAN_SELECTED_MODULE_GROUPS_OPERATION } from "./decl_graph.mjs";
+import { buildSelectedModuleOperations } from "./planner.mjs";
 
 const traverse = traverseModule.default ?? traverseModule;
 
 const SELECTED_MODULE_LOWERING_FILE_PRAGMA =
   "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
-const SELECTED_MODULE_LOWERING_GENERATOR_HEADER =
-  "// @ducktape-generator devinfra/js/debundle/extract/init_region.mjs";
+const SELECTED_MODULE_LOWERING_GENERATOR_HEADER = "// @ducktape-generator devinfra/js/debundle/extract/init_region.mjs";
 const SELECTED_MODULE_LOWERING_NODE_PRAGMA =
   "@ducktape-generated-node kind=lowerer-glue stage=selected_module_lowering";
-const SELECTED_MODULE_ATOMIC_BOUNDARY_PRAGMA =
-  "@ducktape-atomic-boundary kind=selected_module_lowering";
+const SELECTED_MODULE_ATOMIC_BOUNDARY_PRAGMA = "@ducktape-atomic-boundary kind=selected_module_lowering";
 const SELECTED_MODULE_SNAPSHOT_PREFIX = "__dt_selected_module_snapshot__";
 const SELECTED_MODULE_LOWERING_METADATA = Object.freeze({
   kind: "lowerer_helper",
@@ -66,7 +62,6 @@ function selectedModuleSnapshotIdentifierName(ownerId) {
   return `${SELECTED_MODULE_SNAPSHOT_PREFIX}${ownerId.replace(/[^A-Za-z0-9_$]/g, "_")}`;
 }
 
-
 export function lowerSelectedModuleRegionsInCode(code, operations, options = {}) {
   const ast = parse(code, options.parser ?? DEFAULT_PARSER_OPTIONS);
   const file = resolveOperationFile(operations, options.file, "lowerSelectedModuleRegionsInCode");
@@ -92,21 +87,15 @@ export function lowerSelectedModuleRegionsInAst(
   const graphAwareOperations = operations.filter((operation) => EXTRACT_OPERATION_TYPES.has(operation.operation));
   const suppliedAnalysis = analysis ?? null;
   const resolvedChunkId =
-    chunkId === "<chunk>"
-      ? suppliedAnalysis?.chunkId ?? inferredChunkId(graphAwareOperations) ?? chunkId
-      : chunkId;
+    chunkId === "<chunk>" ? (suppliedAnalysis?.chunkId ?? inferredChunkId(graphAwareOperations) ?? chunkId) : chunkId;
   const runtimeAnalysis = suppliedAnalysis ?? analyzeRuntimeBoundaryAst(ast, { chunkId: resolvedChunkId });
   const ownerById = new Map(runtimeAnalysis.owners.map((owner) => [owner.id, owner]));
   const programBody = ast.program.body;
   const sideEffectById = new Map(runtimeAnalysis.sideEffects.map((sideEffect) => [sideEffect.id, sideEffect]));
-  const extractOperations = expandSelectedModuleGroupPlanningOperations(
-    runtimeAnalysis,
-    graphAwareOperations,
-    {
-      chunkId: resolvedChunkId,
-      file: runtimeFile,
-    }
-  )
+  const extractOperations = expandSelectedModuleGroupPlanningOperations(runtimeAnalysis, graphAwareOperations, {
+    chunkId: resolvedChunkId,
+    file: runtimeFile,
+  })
     .filter((operation) => operation.operation === "lower_selected_module_region")
     .filter((operation) => operationSupportsCurrentExtractor(operation, { ownerById }));
   const topLevelNames = collectTopLevelNames(runtimeAnalysis);
@@ -280,9 +269,7 @@ function resolveExtractOperation(
 ) {
   validateExtractOperationShape(operation);
   if (operation.selector.file && normalizeRelativeFile(operation.selector.file) !== runtimeFile) {
-    throw new Error(
-      `Extract operation ${operation.id} targets ${operation.selector.file}, expected ${runtimeFile}`
-    );
+    throw new Error(`Extract operation ${operation.id} targets ${operation.selector.file}, expected ${runtimeFile}`);
   }
   if (operation.selector.chunkId !== chunkId) {
     throw new Error(`Extract operation ${operation.id} targets ${operation.selector.chunkId}, expected ${chunkId}`);
@@ -332,11 +319,13 @@ function resolveExtractOperation(
   const ownerEntries = orderedOwners.flatMap((owner) => {
     const fragments = ownerFragmentsByOwnerId.get(owner.id);
     if (!fragments || fragments.length === 0) {
-      return [{
-        kind: "declaration",
-        owner,
-        statement: programBody[owner.ordinal],
-      }];
+      return [
+        {
+          kind: "declaration",
+          owner,
+          statement: programBody[owner.ordinal],
+        },
+      ];
     }
     return fragments.map((fragment) => ({
       fragment,
@@ -382,9 +371,7 @@ function resolveExtractOperation(
       selectedBindingCoverage,
       selectedOwnerIds,
       selectedFunctionIds,
-      selectedLocalNames: new Set(
-        ownerEntry.fragment?.memberNames ?? topLevelDeclarationNames(ownerEntry.statement)
-      ),
+      selectedLocalNames: new Set(ownerEntry.fragment?.memberNames ?? topLevelDeclarationNames(ownerEntry.statement)),
       statementNode: ownerEntry.statement,
       usedExtractedDependencyNames,
       usedRuntimeImportLocals,
@@ -491,10 +478,12 @@ function buildNaturalizedDeclarationEntries(stageRuns, { remainingProgramValidat
   const safetyContext = { safeProviderBindings: new Set() };
   const stageEntries = buildCanonicalPlainImportStageEntries(stageRuns);
   for (const stageEntry of stageEntries) {
-    if (!isNaturalizableDeclarationEntry(stageEntry, {
-      remainingProgramValidationIndex,
-      safetyContext,
-    })) {
+    if (
+      !isNaturalizableDeclarationEntry(stageEntry, {
+        remainingProgramValidationIndex,
+        safetyContext,
+      })
+    ) {
       continue;
     }
     naturalizedEntries.push(stageEntry);
@@ -508,9 +497,10 @@ function buildCanonicalPlainImportStageEntries(stageRuns) {
   const seenKeys = new Set();
   for (const stageRun of stageRuns) {
     for (const stageEntry of stageRun.stageEntries) {
-      const key = stageEntry.kind === "declaration"
-        ? ownerEntryBoundaryKey(stageEntry)
-        : stageEntry.sideEffect?.id ?? `${stageEntry.kind}:${entries.length}`;
+      const key =
+        stageEntry.kind === "declaration"
+          ? ownerEntryBoundaryKey(stageEntry)
+          : (stageEntry.sideEffect?.id ?? `${stageEntry.kind}:${entries.length}`);
       if (seenKeys.has(key)) {
         continue;
       }
@@ -578,8 +568,10 @@ function isNaturalizableDeclarationEntry(stageEntry, { remainingProgramValidatio
     return t.isFunctionDeclaration(stageEntry.statement);
   }
   if (stageEntry.owner.type === "ClassDeclaration") {
-    return t.isClassDeclaration(stageEntry.statement) &&
-      isPlainImportSafeClassOwner(stageEntry.owner, stageEntry.statement, safetyContext);
+    return (
+      t.isClassDeclaration(stageEntry.statement) &&
+      isPlainImportSafeClassOwner(stageEntry.owner, stageEntry.statement, safetyContext)
+    );
   }
   if (stageEntry.owner.type !== "VariableDeclaration") {
     return false;
@@ -630,12 +622,20 @@ function declarationShapedVariableEntry(stageEntry) {
 function hasEarlierPotentialBindingUse(stageEntry, remainingProgramValidationIndex) {
   for (const name of selectedEntryBindingNames(stageEntry)) {
     for (const record of remainingProgramValidationIndex.potentialUsersByOwnerId.get(stageEntry.owner.id) ?? []) {
-      if (record.name === name && record.ordinal < stageEntry.owner.ordinal && record.recordId !== stageEntry.owner.id) {
+      if (
+        record.name === name &&
+        record.ordinal < stageEntry.owner.ordinal &&
+        record.recordId !== stageEntry.owner.id
+      ) {
         return true;
       }
     }
     for (const record of remainingProgramValidationIndex.writersByOwnerId.get(stageEntry.owner.id) ?? []) {
-      if (record.name === name && record.ordinal < stageEntry.owner.ordinal && record.recordId !== stageEntry.owner.id) {
+      if (
+        record.name === name &&
+        record.ordinal < stageEntry.owner.ordinal &&
+        record.recordId !== stageEntry.owner.id
+      ) {
         return true;
       }
     }
@@ -742,9 +742,7 @@ function isPlainImportSafeClassSuperClass(owner, statement, eagerReads, safetyCo
     return false;
   }
   return eagerReads.some(
-    (access) =>
-      access.name === statement.superClass.name &&
-      isPlainImportSafeClassEagerRead(access, safetyContext)
+    (access) => access.name === statement.superClass.name && isPlainImportSafeClassEagerRead(access, safetyContext)
   );
 }
 
@@ -874,10 +872,7 @@ function isPlainImportSafeExpression(node) {
     t.isBooleanLiteral(node) ||
     t.isNullLiteral(node) ||
     t.isBigIntLiteral(node) ||
-    t.isRegExpLiteral(node) ||
-    t.isFunctionExpression(node) ||
-    t.isArrowFunctionExpression(node) ||
-    t.isClassExpression(node)
+    t.isRegExpLiteral(node)
   ) {
     return true;
   }
@@ -947,9 +942,9 @@ function validateSelectedOwner(
     if (owner.type === "VariableDeclaration" && ownerFragmentSelected) {
       // Fragment-aware extraction can legalize otherwise incompatible declaration packs.
     } else {
-    throw new Error(
-      `Extract operation ${operation.id} cannot extract owner ${owner.id}: ${owner.currentExtractorBlockingReasons.join(",")}`
-    );
+      throw new Error(
+        `Extract operation ${operation.id} cannot extract owner ${owner.id}: ${owner.currentExtractorBlockingReasons.join(",")}`
+      );
     }
   }
   if (
@@ -1442,9 +1437,7 @@ function buildRuntimeReplacementRuns(entry) {
 function groupRuntimeReplacementRuns(runs) {
   const sortedRuns = [...runs].sort(
     (left, right) =>
-      left.startOrdinal - right.startOrdinal ||
-      right.endOrdinal - left.endOrdinal ||
-      compareRuntimeRuns(left, right)
+      left.startOrdinal - right.startOrdinal || right.endOrdinal - left.endOrdinal || compareRuntimeRuns(left, right)
   );
   const groups = [];
   for (const run of sortedRuns) {
@@ -1503,9 +1496,7 @@ function sortRuntimeRunsWithinGroup(runs) {
     }
   }
 
-  const ready = runs
-    .filter((run) => incomingCount.get(run) === 0)
-    .sort(compareRuntimeRuns);
+  const ready = runs.filter((run) => incomingCount.get(run) === 0).sort(compareRuntimeRuns);
   const ordered = [];
   while (ready.length > 0) {
     const nextRun = ready.shift();
@@ -1615,8 +1606,25 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
   const entryBindingRenames = buildEntryBindingRenames(entry);
   const localRenameMap = buildBindingRenameMap(entryBindingRenames);
   const naturalizedBindingNames = naturalizedEntryBindingNameSet(entry);
-  const initializedExportBindings = entry.exportBindings.filter((binding) => !naturalizedBindingNames.has(binding.local));
+  const trivialAliasDeclarations = [];
+  for (const stageRun of entry.stageRuns) {
+    for (const stageEntry of stageRun.stageEntries) {
+      const declaration = trivialAliasDeclaration(stageEntry);
+      if (declaration) {
+        trivialAliasDeclarations.push(declaration);
+      }
+    }
+  }
+  const initializedExportBindings = entry.exportBindings.filter(
+    (binding) =>
+      !naturalizedBindingNames.has(binding.local) &&
+      !trivialAliasDeclarations.some(
+        (declaration) =>
+          t.isIdentifier(declaration.declarations[0]?.id) && declaration.declarations[0].id.name === binding.local
+      )
+  );
   body.push(...buildNaturalizedDeclarationStatements(entry));
+  body.push(...trivialAliasDeclarations);
   if (initializedExportBindings.length > 0) {
     body.push(
       t.variableDeclaration(
@@ -1631,14 +1639,17 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
         t.functionDeclaration(
           t.identifier(stage.initName),
           [],
-          t.blockStatement(buildInitStatements(stage.stageEntries, localRenameMap, entry.atomicBoundaryUnits ?? [], {
-            naturalizedDeclarationKeys: entry.naturalizedDeclarationKeys,
-          }))
+          t.blockStatement(
+            buildInitStatements(stage.stageEntries, localRenameMap, entry.atomicBoundaryUnits ?? [], {
+              naturalizedDeclarationKeys: entry.naturalizedDeclarationKeys,
+            })
+          )
         )
       )
     );
   }
   pushExportBindingsDeclaration(body, moduleExportBindings(entry));
+  upgradeSingleAssignmentLetsToConst(body);
   if (bodyStartedAt) {
     addDurationMs(phaseDurationsMs, "body", durationMsSince(bodyStartedAt));
   }
@@ -1665,6 +1676,166 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
     ast,
     headerLines: buildSelectedModuleLoweringHeaderLines(entry.ownerIds),
   };
+}
+
+export function upgradeSingleAssignmentLetsToConst(body) {
+  const letDeclaration = body.find((statement) => t.isVariableDeclaration(statement) && statement.kind === "let");
+  if (!letDeclaration) {
+    return;
+  }
+  const stageFunctions = body.filter(
+    (statement) => t.isExportNamedDeclaration(statement) && t.isFunctionDeclaration(statement.declaration)
+  );
+  if (stageFunctions.length === 0) {
+    return;
+  }
+
+  const writesByName = collectWriteOccurrences(body);
+  const assignmentsByName = new Map();
+  for (const stageExport of stageFunctions) {
+    for (const statement of stageExport.declaration.body.body) {
+      if (!t.isExpressionStatement(statement) || !t.isAssignmentExpression(statement.expression, { operator: "=" })) {
+        continue;
+      }
+      const { left, right } = statement.expression;
+      if (!t.isIdentifier(left)) {
+        continue;
+      }
+      const records = assignmentsByName.get(left.name) ?? [];
+      records.push({ statement, right });
+      assignmentsByName.set(left.name, records);
+    }
+  }
+
+  const constDeclarators = [];
+  const remainingDeclarators = [];
+  for (const declarator of letDeclaration.declarations) {
+    if (!t.isIdentifier(declarator.id)) {
+      remainingDeclarators.push(declarator);
+      continue;
+    }
+    const name = declarator.id.name;
+    const assignments = assignmentsByName.get(name) ?? [];
+    if (assignments.length !== 1 || (writesByName.get(name) ?? 0) !== 1) {
+      remainingDeclarators.push(declarator);
+      continue;
+    }
+    const [{ statement, right }] = assignments;
+    if (!isConstEligibleInitializer(right)) {
+      remainingDeclarators.push(declarator);
+      continue;
+    }
+    constDeclarators.push(t.variableDeclarator(t.identifier(name), t.cloneNode(right, true)));
+    removeStatementFromStageBody(statement, stageFunctions);
+  }
+
+  if (constDeclarators.length === 0) {
+    return;
+  }
+  const letIndex = body.indexOf(letDeclaration);
+  const replacement = [t.variableDeclaration("const", constDeclarators)];
+  if (remainingDeclarators.length > 0) {
+    replacement.push(t.variableDeclaration("let", remainingDeclarators));
+  }
+  body.splice(letIndex, 1, ...replacement);
+}
+
+function collectWriteOccurrences(body) {
+  const counts = new Map();
+  for (const statement of body) {
+    collectWriteOccurrencesInNode(statement, counts);
+  }
+  return counts;
+}
+
+function collectWriteOccurrencesInNode(node, counts) {
+  if (!node) {
+    return;
+  }
+  if (t.isAssignmentExpression(node)) {
+    collectAssignedIdentifiers(node.left, counts);
+  }
+  if (t.isUpdateExpression(node)) {
+    collectAssignedIdentifiers(node.argument, counts);
+  }
+  if (t.isForInStatement(node) || t.isForOfStatement(node)) {
+    collectAssignedIdentifiers(node.left, counts);
+  }
+  const keys = t.VISITOR_KEYS[node.type] ?? [];
+  for (const key of keys) {
+    const value = node[key];
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        collectWriteOccurrencesInNode(child, counts);
+      }
+    } else {
+      collectWriteOccurrencesInNode(value, counts);
+    }
+  }
+}
+
+function collectAssignedIdentifiers(node, counts) {
+  if (!node) {
+    return;
+  }
+  if (t.isIdentifier(node)) {
+    counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+    return;
+  }
+  if (t.isObjectPattern(node)) {
+    for (const property of node.properties) {
+      if (t.isRestElement(property)) {
+        collectAssignedIdentifiers(property.argument, counts);
+      } else if (t.isObjectProperty(property)) {
+        collectAssignedIdentifiers(property.value, counts);
+      }
+    }
+    return;
+  }
+  if (t.isArrayPattern(node)) {
+    for (const element of node.elements) {
+      collectAssignedIdentifiers(element, counts);
+    }
+    return;
+  }
+  if (t.isAssignmentPattern(node)) {
+    collectAssignedIdentifiers(node.left, counts);
+    return;
+  }
+  if (t.isRestElement(node)) {
+    collectAssignedIdentifiers(node.argument, counts);
+    return;
+  }
+  if (t.isParenthesizedExpression(node)) {
+    collectAssignedIdentifiers(node.expression, counts);
+    return;
+  }
+}
+
+function removeStatementFromStageBody(targetStatement, stageFunctions) {
+  for (const stageExport of stageFunctions) {
+    const block = stageExport.declaration.body.body;
+    const idx = block.indexOf(targetStatement);
+    if (idx >= 0) {
+      block.splice(idx, 1);
+      return;
+    }
+  }
+}
+
+function isConstEligibleInitializer(node) {
+  return (
+    t.isLiteral(node) ||
+    (t.isUnaryExpression(node) && isConstEligibleInitializer(node.argument)) ||
+    (t.isArrayExpression(node) && node.elements.every((el) => el && isConstEligibleInitializer(el))) ||
+    (t.isObjectExpression(node) &&
+      node.properties.every(
+        (prop) =>
+          t.isObjectProperty(prop) &&
+          (!prop.computed || t.isLiteral(prop.key)) &&
+          isConstEligibleInitializer(prop.value)
+      ))
+  );
 }
 
 function buildPlainImportModuleFile(entry, { phaseDurationsMs = null } = {}) {
@@ -1695,6 +1866,7 @@ function buildPlainImportModuleFile(entry, { phaseDurationsMs = null } = {}) {
     body.push(...nextStatements);
   }
   pushExportBindingsDeclaration(body, moduleExportBindings(entry));
+  upgradeSingleAssignmentLetsToConst(body);
   if (bodyStartedAt) {
     addDurationMs(phaseDurationsMs, "body", durationMsSince(bodyStartedAt));
   }
@@ -1732,7 +1904,12 @@ function buildPlainImportOwnerStatements(statement, fragment = null) {
       return [statement];
     }
     const declarations = fragment.declaratorIndices.map((index) => statement.declarations[index]).filter(Boolean);
-    return [t.variableDeclaration(statement.kind, declarations.map((declaration) => t.cloneNode(declaration, true)))];
+    return [
+      t.variableDeclaration(
+        statement.kind,
+        declarations.map((declaration) => t.cloneNode(declaration, true))
+      ),
+    ];
   }
   throw new Error(`Plain-import lowering does not support ${statement?.type}`);
 }
@@ -1831,8 +2008,15 @@ function buildInitStatements(
   for (const entry of stageEntries) {
     if (entry.kind === "side_effect") {
       const nextStatements = [entry.statement];
-      annotateAtomicBoundary(nextStatements, atomicBoundaryIndex.get(entry.sideEffect.id), previousAtomicBoundaryUnitId);
-      previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, atomicBoundaryIndex.get(entry.sideEffect.id));
+      annotateAtomicBoundary(
+        nextStatements,
+        atomicBoundaryIndex.get(entry.sideEffect.id),
+        previousAtomicBoundaryUnitId
+      );
+      previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(
+        previousAtomicBoundaryUnitId,
+        atomicBoundaryIndex.get(entry.sideEffect.id)
+      );
       statements.push(...nextStatements);
       continue;
     }
@@ -1879,7 +2063,11 @@ function buildOwnerInitStatements(owner, statement, localRenameMap, fragment = n
 }
 
 function supportsDirectFragmentVariableLowering(fragment) {
-  return fragment?.kind === "variable_declarator" && Array.isArray(fragment.declaratorIndices) && fragment.declaratorIndices.length === 1;
+  return (
+    fragment?.kind === "variable_declarator" &&
+    Array.isArray(fragment.declaratorIndices) &&
+    fragment.declaratorIndices.length === 1
+  );
 }
 
 function buildEntryBindingRenames(entry) {
@@ -2018,11 +2206,7 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
       if (!collectReadableRenames) {
         return;
       }
-      collectReadableObjectPatternScopeCandidates(
-        assignmentPath,
-        assignmentPath.node.left,
-        readableCandidatesByScope
-      );
+      collectReadableObjectPatternScopeCandidates(assignmentPath, assignmentPath.node.left, readableCandidatesByScope);
     },
     ClassMethod(classMethodPath) {
       if (!collectReadableRenames) {
@@ -2153,7 +2337,11 @@ function constructorBodyMayHaveReadableParamAssignment(body, paramNames) {
     }
     if (t.isAssignmentExpression(node) && node.operator === "=" && t.isIdentifier(node.right)) {
       const desiredName = readableThisPropertyAssignmentName(node.left);
-      if (desiredName && paramNames.has(node.right.name) && readableRenameCandidateNames(node.right.name, desiredName)) {
+      if (
+        desiredName &&
+        paramNames.has(node.right.name) &&
+        readableRenameCandidateNames(node.right.name, desiredName)
+      ) {
         return true;
       }
     }
@@ -2287,13 +2475,7 @@ function renameBindingIdentifier(
   }
 }
 
-function renameBindingIdentifiersInPath(
-  path,
-  binding,
-  sourceName,
-  renameTarget,
-  objectPropertyContainersToRefresh
-) {
+function renameBindingIdentifiersInPath(path, binding, sourceName, renameTarget, objectPropertyContainersToRefresh) {
   if (!path) {
     return;
   }
@@ -2367,11 +2549,7 @@ function buildReadableObjectPatternRenameGroups(programPath) {
       );
     },
     AssignmentExpression(assignmentPath) {
-      collectReadableObjectPatternScopeCandidates(
-        assignmentPath,
-        assignmentPath.node.left,
-        candidatesByScope
-      );
+      collectReadableObjectPatternScopeCandidates(assignmentPath, assignmentPath.node.left, candidatesByScope);
     },
     ClassMethod(classMethodPath) {
       collectReadableConstructorParamScopeCandidates(classMethodPath, candidatesByScope);
@@ -2569,11 +2747,7 @@ function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, e
     return false;
   }
   const binding = candidate.binding ?? scopePath.scope.getOwnBinding(candidate.from);
-  if (
-    !binding ||
-    binding.scope !== scopePath.scope ||
-    !["param", "const", "let", "var"].includes(binding.kind)
-  ) {
+  if (!binding || binding.scope !== scopePath.scope || !["param", "const", "let", "var"].includes(binding.kind)) {
     return false;
   }
   if ((targetCounts.get(candidate.to) ?? 0) > 1) {
@@ -2838,10 +3012,7 @@ function buildSnapshotVariableDeclarationStatements(owner, statement) {
           t.parenthesizedExpression(
             t.arrowFunctionExpression(
               [],
-              t.blockStatement([
-                t.cloneNode(declaration, true),
-                t.returnStatement(snapshotObject),
-              ])
+              t.blockStatement([t.cloneNode(declaration, true), t.returnStatement(snapshotObject)])
             )
           ),
           []
@@ -2861,7 +3032,9 @@ function runtimeInitNamesForEntry(entry) {
     return [];
   }
   return entry.stageRuns
-    .map((stageRun, stageIndex) => stageRunNeedsInitWork(entry, stageRun) ? publicStageInitName(entry, stageIndex) : null)
+    .map((stageRun, stageIndex) =>
+      stageRunNeedsInitWork(entry, stageRun) ? publicStageInitName(entry, stageIndex) : null
+    )
     .filter(Boolean);
 }
 
@@ -2887,7 +3060,48 @@ function stageEntryNeedsInitWork(entry, stageEntry) {
   if (stageEntry.kind !== "declaration") {
     return true;
   }
+  if (isTrivialAliasDeclarationEntry(stageEntry)) {
+    return false;
+  }
   return !entry.naturalizedDeclarationKeys?.has(ownerEntryBoundaryKey(stageEntry));
+}
+
+function isTrivialAliasDeclarationEntry(stageEntry) {
+  const declaration = trivialAliasDeclaration(stageEntry);
+  return declaration != null;
+}
+
+function trivialAliasDeclaration(stageEntry) {
+  if (stageEntry.kind !== "declaration") {
+    return null;
+  }
+  const { owner, statement, fragment } = stageEntry;
+  if (owner.type !== "VariableDeclaration" || fragment) {
+    return null;
+  }
+  if (!t.isVariableDeclaration(statement) || statement.declarations.length !== 1) {
+    return null;
+  }
+  const declarator = statement.declarations[0];
+  if (!t.isIdentifier(declarator.id) || !declarator.init) {
+    return null;
+  }
+  if (!isTrivialAliasInitializer(declarator.init)) {
+    return null;
+  }
+  return t.variableDeclaration("const", [
+    t.variableDeclarator(t.cloneNode(declarator.id), t.cloneNode(declarator.init, true)),
+  ]);
+}
+
+function isTrivialAliasInitializer(node) {
+  if (t.isIdentifier(node)) {
+    return true;
+  }
+  if (t.isMemberExpression(node) && !node.computed) {
+    return isTrivialAliasInitializer(node.object) && t.isIdentifier(node.property);
+  }
+  return false;
 }
 
 function publicStageInitName(entry, stageIndex) {
@@ -2938,14 +3152,8 @@ function classDeclarationAssignmentStatement(statement, localRenameMap) {
 }
 
 function variableDeclaratorAssignmentStatement(declaration) {
-  const assignment = t.assignmentExpression(
-    "=",
-    declaration.id,
-    declaration.init ?? t.identifier("undefined")
-  );
-  return t.expressionStatement(
-    t.isIdentifier(declaration.id) ? assignment : t.parenthesizedExpression(assignment)
-  );
+  const assignment = t.assignmentExpression("=", declaration.id, declaration.init ?? t.identifier("undefined"));
+  return t.expressionStatement(t.isIdentifier(declaration.id) ? assignment : t.parenthesizedExpression(assignment));
 }
 
 function rewriteStatementsForTarget(statements, targetFile) {
@@ -3100,8 +3308,7 @@ function rewriteFunctionLikeRuntimeSources(node, rewriteImportSource, shadowedRu
 }
 
 function rewriteBlockRuntimeSources(statements, rewriteImportSource, shadowedRuntimeConstructors) {
-  const blockShadowedRuntimeConstructors =
-    shadowedRuntimeConstructors | collectBlockScopedShadowMask(statements);
+  const blockShadowedRuntimeConstructors = shadowedRuntimeConstructors | collectBlockScopedShadowMask(statements);
   for (const statement of statements) {
     rewriteRuntimeSourcesInNode(statement, rewriteImportSource, blockShadowedRuntimeConstructors);
   }
@@ -3109,8 +3316,7 @@ function rewriteBlockRuntimeSources(statements, rewriteImportSource, shadowedRun
 
 function rewriteSwitchRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors) {
   rewriteRuntimeSourcesInNode(node.discriminant, rewriteImportSource, shadowedRuntimeConstructors);
-  const switchShadowedRuntimeConstructors =
-    shadowedRuntimeConstructors | collectSwitchScopedShadowMask(node.cases);
+  const switchShadowedRuntimeConstructors = shadowedRuntimeConstructors | collectSwitchScopedShadowMask(node.cases);
   for (const switchCase of node.cases) {
     rewriteRuntimeSourcesInNode(switchCase.test, rewriteImportSource, switchShadowedRuntimeConstructors);
     for (const statement of switchCase.consequent) {
@@ -3130,8 +3336,7 @@ function isLoopNodeWithLexicalScope(node) {
 }
 
 function rewriteLoopRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors) {
-  const loopShadowedRuntimeConstructors =
-    shadowedRuntimeConstructors | collectLoopScopedShadowMask(node);
+  const loopShadowedRuntimeConstructors = shadowedRuntimeConstructors | collectLoopScopedShadowMask(node);
   if (t.isForStatement(node)) {
     rewriteRuntimeSourcesInNode(node.init, rewriteImportSource, loopShadowedRuntimeConstructors);
     rewriteRuntimeSourcesInNode(node.test, rewriteImportSource, loopShadowedRuntimeConstructors);
@@ -3149,8 +3354,7 @@ function rewriteClassRuntimeSources(node, rewriteImportSource, shadowedRuntimeCo
     rewriteRuntimeSourcesInNode(decorator, rewriteImportSource, shadowedRuntimeConstructors);
   }
   rewriteRuntimeSourcesInNode(node.superClass, rewriteImportSource, shadowedRuntimeConstructors);
-  const classShadowedRuntimeConstructors =
-    shadowedRuntimeConstructors | runtimeConstructorBindingShadowMask(node.id);
+  const classShadowedRuntimeConstructors = shadowedRuntimeConstructors | runtimeConstructorBindingShadowMask(node.id);
   rewriteRuntimeSourcesInNode(node.body, rewriteImportSource, classShadowedRuntimeConstructors);
 }
 
@@ -3167,7 +3371,9 @@ function collectFunctionVarShadowMaskInNode(node, recordShadowMask) {
     return;
   }
   if (t.isVariableDeclaration(node) && node.kind === "var") {
-    recordShadowMask(runtimeConstructorBindingShadowMaskForNodes(node.declarations.map((declaration) => declaration.id)));
+    recordShadowMask(
+      runtimeConstructorBindingShadowMaskForNodes(node.declarations.map((declaration) => declaration.id))
+    );
   }
   visitChildNodes(node, (child) => collectFunctionVarShadowMaskInNode(child, recordShadowMask));
 }
@@ -3176,7 +3382,9 @@ function collectBlockScopedShadowMask(statements) {
   let shadowMask = RUNTIME_CONSTRUCTOR_SHADOW_NONE;
   for (const statement of statements) {
     if (t.isVariableDeclaration(statement) && statement.kind !== "var") {
-      shadowMask |= runtimeConstructorBindingShadowMaskForNodes(statement.declarations.map((declaration) => declaration.id));
+      shadowMask |= runtimeConstructorBindingShadowMaskForNodes(
+        statement.declarations.map((declaration) => declaration.id)
+      );
       continue;
     }
     if (t.isFunctionDeclaration(statement) || t.isClassDeclaration(statement)) {
@@ -3198,7 +3406,11 @@ function collectLoopScopedShadowMask(node) {
   if (t.isForStatement(node) && t.isVariableDeclaration(node.init) && node.init.kind !== "var") {
     return runtimeConstructorBindingShadowMaskForNodes(node.init.declarations.map((declaration) => declaration.id));
   }
-  if ((t.isForInStatement(node) || t.isForOfStatement(node)) && t.isVariableDeclaration(node.left) && node.left.kind !== "var") {
+  if (
+    (t.isForInStatement(node) || t.isForOfStatement(node)) &&
+    t.isVariableDeclaration(node.left) &&
+    node.left.kind !== "var"
+  ) {
     return runtimeConstructorBindingShadowMaskForNodes(node.left.declarations.map((declaration) => declaration.id));
   }
   return RUNTIME_CONSTRUCTOR_SHADOW_NONE;
@@ -3348,9 +3560,7 @@ function rebaseRuntimeSourceForTarget(source, targetFile) {
   }
   const fromDir = posixDirname(targetFile);
   const normalizedSource = normalizeRelativeImportSource(source);
-  const rebased = fromDir === "."
-    ? normalizedSource
-    : relativeBetween(fromDir, normalizedSource);
+  const rebased = fromDir === "." ? normalizedSource : relativeBetween(fromDir, normalizedSource);
   return ensureRelativeImportSource(rebased);
 }
 
@@ -3430,7 +3640,6 @@ function validateVariableDeclarators(statement, operationId, ownerId) {
     }
   }
 }
-
 
 function topLevelDeclarationNames(node) {
   if (t.isFunctionDeclaration(node) || t.isClassDeclaration(node)) {
@@ -3542,16 +3751,10 @@ function validateExtractOperationShape(operation) {
   if (!Array.isArray(operation.selector.ownerIds) || operation.selector.ownerIds.length === 0) {
     throw new Error(`Extract operation ${operation.id} is missing selector.ownerIds`);
   }
-  if (
-    operation.selector.attachedItemIds !== undefined &&
-    !Array.isArray(operation.selector.attachedItemIds)
-  ) {
+  if (operation.selector.attachedItemIds !== undefined && !Array.isArray(operation.selector.attachedItemIds)) {
     throw new Error(`Extract operation ${operation.id} selector.attachedItemIds must be an array when present`);
   }
-  if (
-    operation.selector.ownerFragments !== undefined &&
-    !Array.isArray(operation.selector.ownerFragments)
-  ) {
+  if (operation.selector.ownerFragments !== undefined && !Array.isArray(operation.selector.ownerFragments)) {
     throw new Error(`Extract operation ${operation.id} selector.ownerFragments must be an array when present`);
   }
   if (!operation.target?.file) {
@@ -3648,7 +3851,9 @@ function buildOwnerFragmentsByOwnerId(ownerFragments, operationId) {
     });
   }
   for (const fragments of byOwnerId.values()) {
-    fragments.sort((left, right) => (left.orderIndex ?? 0) - (right.orderIndex ?? 0) || left.id.localeCompare(right.id));
+    fragments.sort(
+      (left, right) => (left.orderIndex ?? 0) - (right.orderIndex ?? 0) || left.id.localeCompare(right.id)
+    );
   }
   return byOwnerId;
 }
@@ -3658,26 +3863,20 @@ function buildRemainingProgramValidationIndex(analysis) {
   const potentialUsersByOwnerId = new Map();
   const writersByOwnerId = new Map();
   for (const record of [...analysis.owners, ...analysis.sideEffects]) {
-    indexRemainingProgramAccesses(
-      writersByOwnerId,
-      record,
-      [...record.writesTopLevel.eager, ...record.writesTopLevel.lazy]
-    );
-    indexRemainingProgramAccesses(
-      earlierEagerUsersByOwnerId,
-      record,
-      [...record.readsTopLevel.eager, ...record.memberWritesTopLevel.eager]
-    );
-    indexRemainingProgramAccesses(
-      potentialUsersByOwnerId,
-      record,
-      [
-        ...record.readsTopLevel.eager,
-        ...record.readsTopLevel.lazy,
-        ...record.memberWritesTopLevel.eager,
-        ...record.memberWritesTopLevel.lazy,
-      ]
-    );
+    indexRemainingProgramAccesses(writersByOwnerId, record, [
+      ...record.writesTopLevel.eager,
+      ...record.writesTopLevel.lazy,
+    ]);
+    indexRemainingProgramAccesses(earlierEagerUsersByOwnerId, record, [
+      ...record.readsTopLevel.eager,
+      ...record.memberWritesTopLevel.eager,
+    ]);
+    indexRemainingProgramAccesses(potentialUsersByOwnerId, record, [
+      ...record.readsTopLevel.eager,
+      ...record.readsTopLevel.lazy,
+      ...record.memberWritesTopLevel.eager,
+      ...record.memberWritesTopLevel.lazy,
+    ]);
   }
   return {
     earlierEagerUsersByOwnerId,
@@ -3799,7 +3998,9 @@ function finalizeBindingPlacements(bindingPlacements, operationId) {
       throw new Error(`Extract operation ${operationId} has invalid binding placement sourceName`);
     }
     if (typeof placement.name !== "string" || placement.name === "") {
-      throw new Error(`Extract operation ${operationId} has invalid binding placement name for ${placement.sourceName}`);
+      throw new Error(
+        `Extract operation ${operationId} has invalid binding placement name for ${placement.sourceName}`
+      );
     }
     const existing = placementsBySourceName.get(placement.sourceName);
     if (existing && existing.name !== placement.name) {
@@ -3861,11 +4062,7 @@ function normalizeAtomicBoundaryUnits(atomicBoundaryUnits) {
       startOrdinal: unit.startOrdinal ?? Number.POSITIVE_INFINITY,
       unitIds: [...(unit.unitIds ?? [])],
     }))
-    .sort(
-      (left, right) =>
-        left.startOrdinal - right.startOrdinal ||
-        left.id.localeCompare(right.id)
-    );
+    .sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
 }
 
 function exportNameForLocal(entry, localName) {
@@ -3886,10 +4083,7 @@ function findDuplicateStrings(values) {
 }
 
 const SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
-const EXTRACT_OPERATION_TYPES = new Set([
-  "lower_selected_module_region",
-  PLAN_SELECTED_MODULE_GROUPS_OPERATION,
-]);
+const EXTRACT_OPERATION_TYPES = new Set(["lower_selected_module_region", PLAN_SELECTED_MODULE_GROUPS_OPERATION]);
 const RUNTIME_CONSTRUCTOR_SHADOW_NONE = 0;
 const RUNTIME_CONSTRUCTOR_SHADOW_WORKER = 1;
 const RUNTIME_CONSTRUCTOR_SHADOW_SHARED_WORKER = 2;

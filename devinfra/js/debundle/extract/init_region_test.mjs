@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
+import * as t from "@babel/types";
 import { analyzeRuntimeBoundaryCode } from "../analysis/boundary.mjs";
 import { createTempFixtureRoot, runNodeScript, writeRunnableFixture } from "../test_support/fixtures.mjs";
-import { extractOrderedInitRegionsInCode } from "./init_region.mjs";
+import { extractOrderedInitRegionsInCode, upgradeSingleAssignmentLetsToConst } from "./init_region.mjs";
 
 test("extracts an ordered-init region and preserves executable behavior", () => {
   const source = `import { addOne } from "./helpers.js";
@@ -41,9 +42,12 @@ export { Box as publicBox, loadFeature as publicLoadFeature, result as publicRes
   const extractedCode = result.files.get("regions/fixture_region.js");
   assert.match(
     extractedCode,
-    /^\/\/ @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors\n\/\/ @ducktape-generator devinfra\/js\/debundle\/extract\/init_region\.mjs\n\/\/ Selected-module lowered region; original owners:/,
+    /^\/\/ @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors\n\/\/ @ducktape-generator devinfra\/js\/debundle\/extract\/init_region\.mjs\n\/\/ Selected-module lowered region; original owners:/
   );
-  assert.match(runtimeCode, /import \{ Box, loadFeature, result, init_fixture_region \} from "\.\/regions\/fixture_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ Box, loadFeature, result, init_fixture_region \} from "\.\/regions\/fixture_region\.js"/
+  );
   assert.match(runtimeCode, /@ducktape-generated-node kind=lowerer-glue stage=selected_module_lowering/);
   assert.match(runtimeCode, /init_fixture_region\(\);/);
   assert.match(extractedCode, /import \{ addOne \} from "\.\.\/helpers\.js"/);
@@ -139,10 +143,7 @@ export { spawnWorker };
   ]);
 
   const extractedCode = result.files.get("regions/deep/worker_rebase_region.js");
-  assert.match(
-    extractedCode,
-    /new Worker\(new URL\("\.\.\/\.\.\/workers\/render_worker\.js", import\.meta\.url\)\)/
-  );
+  assert.match(extractedCode, /new Worker\(new URL\("\.\.\/\.\.\/workers\/render_worker\.js", import\.meta\.url\)\)/);
 });
 
 test("rebases shared worker constructor literals inside extracted stage bodies", () => {
@@ -293,14 +294,8 @@ console.log("runtime-only");
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/private_plain_region.js");
   assert.match(runtimeCode, /import "\.\/regions\/private_plain_region\.js";/);
-  assert.doesNotMatch(
-    runtimeCode,
-    /import \{[^}]*privateSeed[^}]*\} from "\.\/regions\/private_plain_region\.js"/
-  );
-  assert.doesNotMatch(
-    runtimeCode,
-    /import \{[^}]*readPrivateSeed[^}]*\} from "\.\/regions\/private_plain_region\.js"/
-  );
+  assert.doesNotMatch(runtimeCode, /import \{[^}]*privateSeed[^}]*\} from "\.\/regions\/private_plain_region\.js"/);
+  assert.doesNotMatch(runtimeCode, /import \{[^}]*readPrivateSeed[^}]*\} from "\.\/regions\/private_plain_region\.js"/);
   assert.doesNotMatch(runtimeCode, /\binit_private_plain_region\b/);
   assert.doesNotMatch(extractedCode, /\bexport\b/);
 
@@ -334,10 +329,7 @@ export { after };
     runtimeCode,
     /import \{ readSetup, init_private_state_region \} from "\.\/regions\/private_state_region\.js"/
   );
-  assert.doesNotMatch(
-    runtimeCode,
-    /import \{[^}]*\bsetup\b[^}]*\} from "\.\/regions\/private_state_region\.js"/
-  );
+  assert.doesNotMatch(runtimeCode, /import \{[^}]*\bsetup\b[^}]*\} from "\.\/regions\/private_state_region\.js"/);
   assert.match(runtimeCode, /init_private_state_region\(\);\nconst after =/);
   assert.match(extractedCode, /export function init_private_state_region/);
   assert.match(extractedCode, /export \{ readSetup \};/);
@@ -364,34 +356,33 @@ export { render as publicRender };
     runtimePath: "fixture/runtime.js",
     uiVersion: "fixture",
   });
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
 
-  const result = extractOrderedInitRegionsInCode(source, [
+  const result = extractOrderedInitRegionsInCode(
+    source,
+    [
+      {
+        graphGenerated: true,
+        id: "graph_destructuring_alignment",
+        operation: "lower_selected_module_region",
+        selector: {
+          chunkId: "static/destructuring-alignment",
+          file: "runtime.js",
+          ownerIds: [ownerByName.get("seed").id, ownerByName.get("render").id],
+        },
+        target: {
+          file: "regions/destructuring_alignment.js",
+          init: "init_destructuring_alignment",
+        },
+      },
+    ],
     {
-      graphGenerated: true,
-      id: "graph_destructuring_alignment",
-      operation: "lower_selected_module_region",
-      selector: {
-        chunkId: "static/destructuring-alignment",
-        file: "runtime.js",
-        ownerIds: [ownerByName.get("seed").id, ownerByName.get("render").id],
-      },
-      target: {
-        file: "regions/destructuring_alignment.js",
-        init: "init_destructuring_alignment",
-      },
-    },
-  ], {
-    chunkId: "static/destructuring-alignment",
-    file: "runtime.js",
-  });
-
-  assert.match(
-    result.files.get("runtime.js"),
-    /from "\.\/regions\/destructuring_alignment\.js"/
+      chunkId: "static/destructuring-alignment",
+      file: "runtime.js",
+    }
   );
+
+  assert.match(result.files.get("runtime.js"), /from "\.\/regions\/destructuring_alignment\.js"/);
   assertRunnableEquivalent({
     files: {},
     prefix: "debundle-extract-ordered-init-destructuring-alignment-",
@@ -418,32 +409,34 @@ export { readDecodedValue };
     runtimePath: "fixture/runtime.js",
     uiVersion: "fixture",
   });
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
 
   assert.equal(ownerByName.get("decodeUpper").currentExtractorCompatible, true);
   assert.equal(ownerByName.get("decodeUpper").currentExtractorLowering, "standard");
 
-  const result = extractOrderedInitRegionsInCode(source, [
+  const result = extractOrderedInitRegionsInCode(
+    source,
+    [
+      {
+        graphGenerated: true,
+        id: "graph_destructuring_standard",
+        operation: "lower_selected_module_region",
+        selector: {
+          chunkId: "static/destructuring-standard",
+          file: "runtime.js",
+          ownerIds: [ownerByName.get("decodeUpper").id, ownerByName.get("readDecodedValue").id],
+        },
+        target: {
+          file: "regions/destructuring_standard.js",
+          init: "init_destructuring_standard",
+        },
+      },
+    ],
     {
-      graphGenerated: true,
-      id: "graph_destructuring_standard",
-      operation: "lower_selected_module_region",
-      selector: {
-        chunkId: "static/destructuring-standard",
-        file: "runtime.js",
-        ownerIds: [ownerByName.get("decodeUpper").id, ownerByName.get("readDecodedValue").id],
-      },
-      target: {
-        file: "regions/destructuring_standard.js",
-        init: "init_destructuring_standard",
-      },
-    },
-  ], {
-    chunkId: "static/destructuring-standard",
-    file: "runtime.js",
-  });
+      chunkId: "static/destructuring-standard",
+      file: "runtime.js",
+    }
+  );
 
   const extractedCode = result.files.get("regions/destructuring_standard.js");
   assert.match(extractedCode, /\(\{\s*decode: decodeUpper\s*\} = globalThis\.sharedCodec\);/s);
@@ -511,10 +504,7 @@ export { _Wt };
   ]);
 
   const extractedCode = result.files.get("regions/function_expression_param_readable_names.js");
-  assert.match(
-    extractedCode,
-    /async function _Wt\(\{\s*nodeSpace,\s*text,\s*tagsAsPromptSection\s*\}\)/s
-  );
+  assert.match(extractedCode, /async function _Wt\(\{\s*nodeSpace,\s*text,\s*tagsAsPromptSection\s*\}\)/s);
   assert.match(extractedCode, /return \{\s*nodeSpace,\s*text,\s*tagsAsPromptSection\s*\};/s);
   assert.doesNotMatch(extractedCode, /\{\s*nodeSpace: n,\s*text: e,\s*tagsAsPromptSection: t\s*\}/s);
   assertRunnableEquivalent({
@@ -843,31 +833,33 @@ export { readStatus };
     runtimePath: "fixture/runtime.js",
     uiVersion: "fixture",
   });
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
   assert.equal(ownerByName.get("Status").currentExtractorCompatible, true);
   assert.equal(ownerByName.get("Status").currentExtractorLowering, "snapshot_variable_declaration");
 
-  const result = extractOrderedInitRegionsInCode(source, [
+  const result = extractOrderedInitRegionsInCode(
+    source,
+    [
+      {
+        graphGenerated: true,
+        id: "graph_snapshot_variable_owner",
+        operation: "lower_selected_module_region",
+        selector: {
+          chunkId: "static/snapshot-variable-owner",
+          file: "runtime.js",
+          ownerIds: [ownerByName.get("Status").id, ownerByName.get("readStatus").id],
+        },
+        target: {
+          file: "regions/snapshot_variable_owner.js",
+          init: "init_snapshot_variable_owner",
+        },
+      },
+    ],
     {
-      graphGenerated: true,
-      id: "graph_snapshot_variable_owner",
-      operation: "lower_selected_module_region",
-      selector: {
-        chunkId: "static/snapshot-variable-owner",
-        file: "runtime.js",
-        ownerIds: [ownerByName.get("Status").id, ownerByName.get("readStatus").id],
-      },
-      target: {
-        file: "regions/snapshot_variable_owner.js",
-        init: "init_snapshot_variable_owner",
-      },
-    },
-  ], {
-    chunkId: "static/snapshot-variable-owner",
-    file: "runtime.js",
-  });
+      chunkId: "static/snapshot-variable-owner",
+      file: "runtime.js",
+    }
+  );
 
   const extractedCode = result.files.get("regions/snapshot_variable_owner.js");
   const runtimeCode = result.files.get("runtime.js");
@@ -1014,38 +1006,42 @@ export { readChosen };
     runtimePath: "fixture/runtime.js",
     uiVersion: "fixture",
   });
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
   assert.equal(ownerByName.get("chosen").currentExtractorCompatible, true);
   assert.equal(ownerByName.get("chosen").currentExtractorLowering, "snapshot_variable_declaration");
 
-  const result = extractOrderedInitRegionsInCode(source, [
+  const result = extractOrderedInitRegionsInCode(
+    source,
+    [
+      {
+        graphGenerated: true,
+        id: "graph_snapshot_destructuring_owner",
+        operation: "lower_selected_module_region",
+        selector: {
+          chunkId: "static/snapshot-destructuring-owner",
+          file: "runtime.js",
+          ownerIds: [ownerByName.get("chosen").id, ownerByName.get("readChosen").id],
+        },
+        target: {
+          file: "regions/snapshot_destructuring_owner.js",
+          init: "init_snapshot_destructuring_owner",
+        },
+      },
+    ],
     {
-      graphGenerated: true,
-      id: "graph_snapshot_destructuring_owner",
-      operation: "lower_selected_module_region",
-      selector: {
-        chunkId: "static/snapshot-destructuring-owner",
-        file: "runtime.js",
-        ownerIds: [ownerByName.get("chosen").id, ownerByName.get("readChosen").id],
-      },
-      target: {
-        file: "regions/snapshot_destructuring_owner.js",
-        init: "init_snapshot_destructuring_owner",
-      },
-    },
-  ], {
-    chunkId: "static/snapshot-destructuring-owner",
-    file: "runtime.js",
-  });
+      chunkId: "static/snapshot-destructuring-owner",
+      file: "runtime.js",
+    }
+  );
 
   const extractedCode = result.files.get("regions/snapshot_destructuring_owner.js");
   assert.match(extractedCode, /const \{\s*chosen = fallbackLabel\s*\} = \{\},\s*fallbackLabel = "fallback";/s);
   assert.match(extractedCode, /\bfunction readChosen\(\)/);
   assert.doesNotMatch(extractedCode, /__dt_selected_module_snapshot__/);
   const originalDir = createTempFixtureRoot("debundle-extract-ordered-init-snapshot-destructuring-owner-original-");
-  const transformedDir = createTempFixtureRoot("debundle-extract-ordered-init-snapshot-destructuring-owner-transformed-");
+  const transformedDir = createTempFixtureRoot(
+    "debundle-extract-ordered-init-snapshot-destructuring-owner-transformed-"
+  );
   writeRunnableFixture(originalDir, {
     files: {
       "runtime.js": source,
@@ -1262,7 +1258,10 @@ export { DeferredRenderCounter, counter, first };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/counter_region.js");
-  assert.match(runtimeCode, /import \{ DeferredRenderCounter, counter, first, init_counter_region \} from "\.\/regions\/counter_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ DeferredRenderCounter, counter, first, init_counter_region \} from "\.\/regions\/counter_region\.js"/
+  );
   assert.match(extractedCode, /import \{ now \} from "\.\.\/clock\.js"/);
   assert.match(extractedCode, /^\s*class DeferredRenderCounter\b/m);
   assert.match(extractedCode, /\blet counter, first\b/);
@@ -1429,7 +1428,10 @@ export { result };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/retained_superclass_region.js");
-  assert.match(runtimeCode, /import \{ renderDerivedBox, init_retained_superclass_region \} from "\.\/regions\/retained_superclass_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ renderDerivedBox, init_retained_superclass_region \} from "\.\/regions\/retained_superclass_region\.js"/
+  );
   assert.match(runtimeCode, /init_retained_superclass_region\(\);/);
   assert.match(extractedCode, /export function init_retained_superclass_region/);
   assert.match(extractedCode, /\bDerivedBox = class DerivedBox extends globalThis\.RuntimeBaseBox\b/);
@@ -1467,7 +1469,10 @@ export { AsyncAvatarAccessor };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/accessor_declaration_region.js");
-  assert.match(runtimeCode, /import \{ AsyncAvatarAccessor, init_accessor_declaration_region \} from "\.\/regions\/accessor_declaration_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ AsyncAvatarAccessor, init_accessor_declaration_region \} from "\.\/regions\/accessor_declaration_region\.js"/
+  );
   assert.match(runtimeCode, /init_accessor_declaration_region\(\);/);
   assert.match(extractedCode, /^\s*class AsyncAvatarAccessor\b/m);
   assert.match(extractedCode, /export function init_accessor_declaration_region/);
@@ -1506,7 +1511,10 @@ export { NodeToolbarButton };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/toolbar_declaration_region.js");
-  assert.match(runtimeCode, /import \{ NodeToolbarButton, init_toolbar_declaration_region \} from "\.\/regions\/toolbar_declaration_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ NodeToolbarButton, init_toolbar_declaration_region \} from "\.\/regions\/toolbar_declaration_region\.js"/
+  );
   assert.match(runtimeCode, /init_toolbar_declaration_region\(\);/);
   assert.match(extractedCode, /^\s*function NodeToolbarButton\(\{\s*action,\s*role,\s*\.\.\.rest\s*\}\)/ms);
   assert.match(extractedCode, /export function init_toolbar_declaration_region/);
@@ -1542,7 +1550,10 @@ export { StaticDeclarationWidget };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/static_declaration_widget_region.js");
-  assert.match(runtimeCode, /import \{ StaticDeclarationWidget, init_static_declaration_widget_region \} from "\.\/regions\/static_declaration_widget_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ StaticDeclarationWidget, init_static_declaration_widget_region \} from "\.\/regions\/static_declaration_widget_region\.js"/
+  );
   assert.match(runtimeCode, /init_static_declaration_widget_region\(\);/);
   assert.match(extractedCode, /\blet StaticDeclarationWidget\b/);
   assert.match(extractedCode, /\bStaticDeclarationWidget = class StaticDeclarationWidget\b/);
@@ -1580,7 +1591,10 @@ export { LaterWidget };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/later_widget_region.js");
-  assert.match(runtimeCode, /import \{ LaterWidget, init_later_widget_region \} from "\.\/regions\/later_widget_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ LaterWidget, init_later_widget_region \} from "\.\/regions\/later_widget_region\.js"/
+  );
   assert.match(runtimeCode, /init_later_widget_region\(\);/);
   assert.match(extractedCode, /^\s*function readLaterWidgetName\(\)/m);
   assert.match(extractedCode, /\blet LaterWidget\b/);
@@ -1638,7 +1652,10 @@ export { AsyncAvatarAccessor };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/accessor_region.js");
-  assert.match(runtimeCode, /import \{ AsyncAvatarAccessor, init_accessor_region \} from "\.\/regions\/accessor_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ AsyncAvatarAccessor, init_accessor_region \} from "\.\/regions\/accessor_region\.js"/
+  );
   assert.match(runtimeCode, /init_accessor_region\(\);/);
   assert.match(extractedCode, /\bclass AsyncAvatarAccessor\b/);
   assert.match(extractedCode, /export function init_accessor_region/);
@@ -1677,7 +1694,10 @@ export { NodeToolbarButton };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/toolbar_region.js");
-  assert.match(runtimeCode, /import \{ NodeToolbarButton, init_toolbar_region \} from "\.\/regions\/toolbar_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ NodeToolbarButton, init_toolbar_region \} from "\.\/regions\/toolbar_region\.js"/
+  );
   assert.match(runtimeCode, /init_toolbar_region\(\);/);
   assert.match(extractedCode, /\bfunction NodeToolbarButton\(\{\s*action,\s*role,\s*\.\.\.rest\s*\}\)/s);
   assert.match(extractedCode, /export function init_toolbar_region/);
@@ -1713,7 +1733,10 @@ export { StaticWidget };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/static_widget_region.js");
-  assert.match(runtimeCode, /import \{ StaticWidget, init_static_widget_region \} from "\.\/regions\/static_widget_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ StaticWidget, init_static_widget_region \} from "\.\/regions\/static_widget_region\.js"/
+  );
   assert.match(runtimeCode, /init_static_widget_region\(\);/);
   assert.match(extractedCode, /\blet StaticWidget\b/);
   assert.match(extractedCode, /export function init_static_widget_region/);
@@ -1751,7 +1774,10 @@ export { LaterButton };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/later_button_region.js");
-  assert.match(runtimeCode, /import \{ LaterButton, init_later_button_region \} from "\.\/regions\/later_button_region\.js"/);
+  assert.match(
+    runtimeCode,
+    /import \{ LaterButton, init_later_button_region \} from "\.\/regions\/later_button_region\.js"/
+  );
   assert.match(runtimeCode, /init_later_button_region\(\);/);
   assert.match(extractedCode, /^\s*function readLaterButtonName\(\)/m);
   assert.match(extractedCode, /\blet LaterButton\b/);
@@ -1911,10 +1937,7 @@ export { left, right };
 
   const leftModuleCode = result.files.get("regions/left_region.js");
   const rightModuleCode = result.files.get("regions/right_region.js");
-  assert.match(
-    leftModuleCode,
-    /import defaultValue, \{ alpha as importedAlpha \} from "\.\.\/schema\.js"/
-  );
+  assert.match(leftModuleCode, /import defaultValue, \{ alpha as importedAlpha \} from "\.\.\/schema\.js"/);
   assert.doesNotMatch(leftModuleCode, /\bbeta\b/);
   assert.doesNotMatch(leftModuleCode, /\bgamma\b/);
   assert.match(rightModuleCode, /import \{ beta, gamma \} from "\.\.\/schema\.js"/);
@@ -2147,3 +2170,79 @@ function assertRunnableEquivalent({ entryFile = "runtime.js", files, prefix, sou
   });
   assert.deepEqual(runNodeScript(join(transformedDir, entryFile)), runNodeScript(join(originalDir, entryFile)));
 }
+test("promotes single-assignment literal let bindings to const", () => {
+  const body = [
+    t.variableDeclaration("let", [
+      t.variableDeclarator(t.identifier("seed")),
+      t.variableDeclarator(t.identifier("dynamic")),
+    ]),
+    t.exportNamedDeclaration(
+      t.functionDeclaration(
+        t.identifier("init_stage_0"),
+        [],
+        t.blockStatement([
+          t.expressionStatement(t.assignmentExpression("=", t.identifier("seed"), t.numericLiteral(1))),
+          t.expressionStatement(
+            t.assignmentExpression("=", t.identifier("dynamic"), t.callExpression(t.identifier("now"), []))
+          ),
+        ])
+      )
+    ),
+  ];
+
+  upgradeSingleAssignmentLetsToConst(body);
+
+  assert.equal(body[0].kind, "const");
+  assert.equal(body[0].declarations.length, 1);
+  assert.equal(body[0].declarations[0].id.name, "seed");
+  assert.equal(body[1].kind, "let");
+  assert.equal(body[1].declarations[0].id.name, "dynamic");
+});
+
+test("keeps let when binding is written more than once", () => {
+  const body = [
+    t.variableDeclaration("let", [t.variableDeclarator(t.identifier("open"))]),
+    t.exportNamedDeclaration(
+      t.functionDeclaration(
+        t.identifier("init_stage_0"),
+        [],
+        t.blockStatement([
+          t.expressionStatement(t.assignmentExpression("=", t.identifier("open"), t.booleanLiteral(false))),
+          t.expressionStatement(t.assignmentExpression("=", t.identifier("open"), t.booleanLiteral(true))),
+        ])
+      )
+    ),
+  ];
+
+  upgradeSingleAssignmentLetsToConst(body);
+
+  assert.equal(body[0].kind, "let");
+  assert.equal(body[0].declarations.length, 1);
+});
+
+test("keeps let when later writes happen through assignment patterns", () => {
+  const body = [
+    t.variableDeclaration("let", [t.variableDeclarator(t.identifier("open"))]),
+    t.exportNamedDeclaration(
+      t.functionDeclaration(
+        t.identifier("init_stage_0"),
+        [],
+        t.blockStatement([
+          t.expressionStatement(t.assignmentExpression("=", t.identifier("open"), t.booleanLiteral(false))),
+          t.expressionStatement(
+            t.assignmentExpression(
+              "=",
+              t.objectPattern([t.objectProperty(t.identifier("open"), t.identifier("open"), false, true)]),
+              t.identifier("state")
+            )
+          ),
+        ])
+      )
+    ),
+  ];
+
+  upgradeSingleAssignmentLetsToConst(body);
+
+  assert.equal(body[0].kind, "let");
+  assert.equal(body[0].declarations.length, 1);
+});
