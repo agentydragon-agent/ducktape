@@ -481,6 +481,136 @@ export { _Wt };
   });
 });
 
+test("graph-generated extraction renames constructor params from this-property assignments", () => {
+  const source = `class AsyncAvatarAccessor {
+  constructor(e, t) {
+    this.asyncNode = e, this.core = t;
+  }
+  label() {
+    return this.asyncNode + ":" + this.core;
+  }
+}
+console.log(new AsyncAvatarAccessor("node", "core").label());
+export { AsyncAvatarAccessor };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_constructor_param_readable_names",
+      ownerNames: ["AsyncAvatarAccessor"],
+      targetFile: "regions/constructor_param_readable_names.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/constructor_param_readable_names.js");
+  assert.match(extractedCode, /constructor\(asyncNode, core\)/);
+  assert.match(extractedCode, /this\.asyncNode = asyncNode[,;]/);
+  assert.match(extractedCode, /this\.core = core;/);
+  assert.doesNotMatch(extractedCode, /constructor\(e, t\)/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-constructor-param-readable-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("graph-generated extraction keeps constructor params when a readable name collides locally", () => {
+  const source = `class AsyncAvatarAccessor {
+  constructor(e) {
+    const asyncNode = "local";
+    this.asyncNode = e;
+    this.label = asyncNode + ":" + e;
+  }
+}
+console.log(new AsyncAvatarAccessor("node").label);
+export { AsyncAvatarAccessor };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_constructor_param_collision_guard",
+      ownerNames: ["AsyncAvatarAccessor"],
+      targetFile: "regions/constructor_param_collision_guard.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/constructor_param_collision_guard.js");
+  assert.match(extractedCode, /constructor\(e\)/);
+  assert.match(extractedCode, /const asyncNode = "local";/);
+  assert.match(extractedCode, /this\.asyncNode = e;/);
+  assert.doesNotMatch(extractedCode, /constructor\(asyncNode\)/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-constructor-param-collision-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("graph-generated extraction keeps constructor params when a nested scope would shadow the readable name", () => {
+  const source = `class AsyncAvatarAccessor {
+  constructor(e) {
+    this.asyncNode = e;
+    this.read = () => {
+      const asyncNode = "nested";
+      return asyncNode + ":" + e;
+    };
+  }
+}
+console.log(new AsyncAvatarAccessor("node").read());
+export { AsyncAvatarAccessor };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_constructor_param_shadow_guard",
+      ownerNames: ["AsyncAvatarAccessor"],
+      targetFile: "regions/constructor_param_shadow_guard.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/constructor_param_shadow_guard.js");
+  assert.match(extractedCode, /constructor\(e\)/);
+  assert.match(extractedCode, /this\.asyncNode = e;/);
+  assert.match(extractedCode, /return asyncNode \+ ":" \+ e;/);
+  assert.doesNotMatch(extractedCode, /constructor\(asyncNode\)/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-constructor-param-shadow-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("graph-generated extraction keeps constructor params when assignments imply duplicate readable names", () => {
+  const source = `class DuplicateValueBox {
+  constructor(e, t) {
+    this.value = e;
+    this.value = t;
+  }
+}
+console.log(new DuplicateValueBox("first", "second").value);
+export { DuplicateValueBox };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_constructor_param_duplicate_guard",
+      ownerNames: ["DuplicateValueBox"],
+      targetFile: "regions/constructor_param_duplicate_guard.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/constructor_param_duplicate_guard.js");
+  assert.match(extractedCode, /constructor\(e, t\)/);
+  assert.match(extractedCode, /this\.value = e;/);
+  assert.match(extractedCode, /this\.value = t;/);
+  assert.doesNotMatch(extractedCode, /constructor\(value, value\)/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-constructor-param-duplicate-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("graph-generated extraction renames simple object destructuring assignments to readable locals", () => {
   const source = `function r7t(n) {
   let e, t;

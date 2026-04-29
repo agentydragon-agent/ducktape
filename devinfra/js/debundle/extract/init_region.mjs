@@ -2119,6 +2119,9 @@ function buildReadableObjectPatternRenameGroups(programPath) {
         candidatesByScope
       );
     },
+    ClassMethod(classMethodPath) {
+      collectReadableConstructorParamScopeCandidates(classMethodPath, candidatesByScope);
+    },
     ObjectExpression(objectExpressionPath) {
       collectReadableObjectExpressionScopeCandidates(objectExpressionPath, candidatesByScope);
     },
@@ -2201,6 +2204,91 @@ function collectReadableObjectExpressionScopeCandidates(scopePath, candidatesByS
     });
     candidatesByScope.set(bindingScopePath, bindingScopeCandidates);
   }
+}
+
+function collectReadableConstructorParamScopeCandidates(classMethodPath, candidatesByScope) {
+  if (classMethodPath.node.kind !== "constructor") {
+    return;
+  }
+  const paramNames = new Set();
+  for (const param of classMethodPath.node.params ?? []) {
+    if (t.isIdentifier(param)) {
+      paramNames.add(param.name);
+    }
+  }
+  if (paramNames.size === 0) {
+    return;
+  }
+
+  const candidateBySourceName = new Map();
+  const ambiguousSourceNames = new Set();
+  classMethodPath.get("body").traverse({
+    Function(functionPath) {
+      functionPath.skip();
+    },
+    Class(classPath) {
+      classPath.skip();
+    },
+    AssignmentExpression(assignmentPath) {
+      const candidate = readableConstructorParamAssignmentCandidate(assignmentPath.node, paramNames);
+      if (!candidate) {
+        return;
+      }
+      const existing = candidateBySourceName.get(candidate.from);
+      if (existing && existing.to !== candidate.to) {
+        ambiguousSourceNames.add(candidate.from);
+        return;
+      }
+      candidateBySourceName.set(candidate.from, candidate);
+    },
+  });
+
+  for (const candidate of candidateBySourceName.values()) {
+    if (ambiguousSourceNames.has(candidate.from)) {
+      continue;
+    }
+    const binding = classMethodPath.scope.getOwnBinding(candidate.from);
+    if (!binding || binding.kind !== "param") {
+      continue;
+    }
+    const bindingScopePath = binding.scope.path;
+    const bindingScopeCandidates = candidatesByScope.get(bindingScopePath) ?? {
+      scopePath: bindingScopePath,
+      candidates: [],
+    };
+    bindingScopeCandidates.candidates.push({
+      ...candidate,
+      binding,
+    });
+    candidatesByScope.set(bindingScopePath, bindingScopeCandidates);
+  }
+}
+
+function readableConstructorParamAssignmentCandidate(node, paramNames) {
+  if (!t.isAssignmentExpression(node) || node.operator !== "=") {
+    return null;
+  }
+  if (!t.isIdentifier(node.right) || !paramNames.has(node.right.name)) {
+    return null;
+  }
+  const targetName = readableThisPropertyAssignmentName(node.left);
+  if (!targetName) {
+    return null;
+  }
+  return {
+    from: node.right.name,
+    to: targetName,
+  };
+}
+
+function readableThisPropertyAssignmentName(node) {
+  if (!t.isMemberExpression(node) || !t.isThisExpression(node.object)) {
+    return null;
+  }
+  if (node.computed) {
+    return t.isStringLiteral(node.property) && t.isValidIdentifier(node.property.value) ? node.property.value : null;
+  }
+  return t.isIdentifier(node.property) ? node.property.name : null;
 }
 
 function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, externallyCapturedTargetNames) {
