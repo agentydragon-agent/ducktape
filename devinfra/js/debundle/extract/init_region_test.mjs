@@ -1059,7 +1059,10 @@ export { DeferredRenderCounter, counter, first };
   const extractedCode = result.files.get("regions/counter_region.js");
   assert.match(runtimeCode, /import \{ DeferredRenderCounter, counter, first, init_counter_region \} from "\.\/regions\/counter_region\.js"/);
   assert.match(extractedCode, /import \{ now \} from "\.\.\/clock\.js"/);
-  assert.match(extractedCode, /DeferredRenderCounter = class DeferredRenderCounter/);
+  assert.match(extractedCode, /^\s*class DeferredRenderCounter\b/m);
+  assert.match(extractedCode, /\blet counter, first\b/);
+  assert.doesNotMatch(extractedCode, /\blet DeferredRenderCounter\b/);
+  assert.doesNotMatch(extractedCode, /DeferredRenderCounter = class DeferredRenderCounter/);
 
   assertRunnableEquivalent({
     files: {
@@ -1233,6 +1236,177 @@ export { result };
   });
 });
 
+test("naturalizes safe class declaration owners inside mixed init regions", () => {
+  const source = `globalThis.accessorDeclarationEvents = [];
+class AsyncAvatarAccessor {
+  constructor(asyncNode, core) {
+    this.asyncNode = asyncNode;
+    this.core = core;
+  }
+  label() {
+    return this.asyncNode + ":" + this.core;
+  }
+}
+globalThis.accessorDeclarationEvents.push(new AsyncAvatarAccessor("node", "core").label());
+console.log(globalThis.accessorDeclarationEvents.join("|"));
+export { AsyncAvatarAccessor };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [1],
+      init: "init_accessor_declaration_region",
+      ownerNames: ["AsyncAvatarAccessor"],
+      targetFile: "regions/accessor_declaration_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/accessor_declaration_region.js");
+  assert.match(runtimeCode, /import \{ AsyncAvatarAccessor, init_accessor_declaration_region \} from "\.\/regions\/accessor_declaration_region\.js"/);
+  assert.match(runtimeCode, /init_accessor_declaration_region\(\);/);
+  assert.match(extractedCode, /^\s*class AsyncAvatarAccessor\b/m);
+  assert.match(extractedCode, /export function init_accessor_declaration_region/);
+  assert.doesNotMatch(extractedCode, /\blet AsyncAvatarAccessor\b/);
+  assert.doesNotMatch(extractedCode, /\bAsyncAvatarAccessor = class AsyncAvatarAccessor\b/);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-naturalized-class-declaration-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("naturalizes safe function declaration owners inside mixed init regions", () => {
+  const source = `globalThis.toolbarDeclarationEvents = [];
+function NodeToolbarButton({ action, role, ...rest }) {
+  return role + ":" + action + ":" + Object.keys(rest).length;
+}
+globalThis.toolbarDeclarationEvents.push(NodeToolbarButton({
+  action: "open",
+  role: "button",
+  tabIndex: 0,
+}));
+console.log(globalThis.toolbarDeclarationEvents.join("|"));
+export { NodeToolbarButton };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [1],
+      init: "init_toolbar_declaration_region",
+      ownerNames: ["NodeToolbarButton"],
+      targetFile: "regions/toolbar_declaration_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/toolbar_declaration_region.js");
+  assert.match(runtimeCode, /import \{ NodeToolbarButton, init_toolbar_declaration_region \} from "\.\/regions\/toolbar_declaration_region\.js"/);
+  assert.match(runtimeCode, /init_toolbar_declaration_region\(\);/);
+  assert.match(extractedCode, /^\s*function NodeToolbarButton\(\{\s*action,\s*role,\s*\.\.\.rest\s*\}\)/ms);
+  assert.match(extractedCode, /export function init_toolbar_declaration_region/);
+  assert.doesNotMatch(extractedCode, /\blet NodeToolbarButton\b/);
+  assert.doesNotMatch(extractedCode, /\bNodeToolbarButton = function NodeToolbarButton\b/);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-naturalized-function-declaration-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("keeps init wrappers for class declarations with definition-time side effects", () => {
+  const source = `globalThis.staticDeclarationEvents = [];
+globalThis.staticDeclarationEvents.push("before");
+class StaticDeclarationWidget {
+  static value = globalThis.staticDeclarationEvents.push("static");
+}
+globalThis.staticDeclarationEvents.push("after:" + StaticDeclarationWidget.value);
+console.log(globalThis.staticDeclarationEvents.join("|"));
+export { StaticDeclarationWidget };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [2],
+      init: "init_static_declaration_widget_region",
+      ownerNames: ["StaticDeclarationWidget"],
+      targetFile: "regions/static_declaration_widget_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/static_declaration_widget_region.js");
+  assert.match(runtimeCode, /import \{ StaticDeclarationWidget, init_static_declaration_widget_region \} from "\.\/regions\/static_declaration_widget_region\.js"/);
+  assert.match(runtimeCode, /init_static_declaration_widget_region\(\);/);
+  assert.match(extractedCode, /\blet StaticDeclarationWidget\b/);
+  assert.match(extractedCode, /\bStaticDeclarationWidget = class StaticDeclarationWidget\b/);
+  assert.doesNotMatch(extractedCode, /^\s*class StaticDeclarationWidget\b/m);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-static-class-declaration-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("keeps class declaration init wrappers when earlier lazy code could observe TDZ", () => {
+  const source = `function readLaterWidgetName() {
+  return LaterWidget.name;
+}
+class LaterWidget {
+  label() {
+    return "later";
+  }
+}
+globalThis.laterWidgetName = readLaterWidgetName();
+console.log(new LaterWidget().label(), globalThis.laterWidgetName);
+export { LaterWidget };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [0],
+      init: "init_later_widget_region",
+      ownerNames: ["readLaterWidgetName", "LaterWidget"],
+      targetFile: "regions/later_widget_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/later_widget_region.js");
+  assert.match(runtimeCode, /import \{ readLaterWidgetName, LaterWidget, init_later_widget_region \} from "\.\/regions\/later_widget_region\.js"/);
+  assert.match(runtimeCode, /init_later_widget_region\(\);/);
+  assert.match(extractedCode, /^\s*function readLaterWidgetName\(\)/m);
+  assert.match(extractedCode, /\blet LaterWidget\b/);
+  assert.match(extractedCode, /\bLaterWidget = class LaterWidget\b/);
+  assert.doesNotMatch(extractedCode, /^\s*class LaterWidget\b/m);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-earlier-lazy-class-declaration-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("rejects class declaration extraction when earlier eager code observes TDZ", () => {
+  const source = `console.log(LaterEagerWidget.name);
+class LaterEagerWidget {}
+`;
+  assert.throws(
+    () =>
+      extractOrderedInitRegionsInCode(source, [
+        selectedModuleOperation(source, {
+          init: "init_later_eager_widget_region",
+          ownerNames: ["LaterEagerWidget"],
+          targetFile: "regions/later_eager_widget_region.js",
+        }),
+      ]),
+    /would move binding LaterEagerWidget after eager use/
+  );
+});
+
 test("naturalizes safe class-expression assignment owners inside mixed init regions", () => {
   const source = `globalThis.accessorEvents = [];
 const AsyncAvatarAccessor = class AsyncAvatarAccessor {
@@ -1374,7 +1548,9 @@ export { LaterButton };
   const extractedCode = result.files.get("regions/later_button_region.js");
   assert.match(runtimeCode, /import \{ readLaterButtonName, LaterButton, init_later_button_region \} from "\.\/regions\/later_button_region\.js"/);
   assert.match(runtimeCode, /init_later_button_region\(\);/);
-  assert.match(extractedCode, /\blet readLaterButtonName, LaterButton\b/);
+  assert.match(extractedCode, /^\s*function readLaterButtonName\(\)/m);
+  assert.match(extractedCode, /\blet LaterButton\b/);
+  assert.doesNotMatch(extractedCode, /\blet readLaterButtonName\b/);
   assert.match(extractedCode, /\bLaterButton = function LaterButton\b/);
   assert.doesNotMatch(extractedCode, /^\s*function LaterButton\(\)/m);
 
@@ -1573,10 +1749,12 @@ export { isOpen, next, toggle };
   ]);
 
   const extractedCode = result.files.get("regions/state_region.js");
-  assert.match(extractedCode, /let open, toggle, isOpen, initial, next;/);
+  assert.match(extractedCode, /^\s*function toggle\(\)/m);
+  assert.match(extractedCode, /^\s*function isOpen\(\)/m);
+  assert.match(extractedCode, /let open, initial, next;/);
   assert.match(extractedCode, /export \{ open, toggle, isOpen, initial, next \};/);
   assert.match(extractedCode, /open = false/);
-  assert.match(extractedCode, /toggle = function toggle/);
+  assert.doesNotMatch(extractedCode, /toggle = function toggle/);
 
   assertRunnableEquivalent({
     files: {},

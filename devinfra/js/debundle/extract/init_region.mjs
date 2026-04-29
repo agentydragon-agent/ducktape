@@ -568,14 +568,24 @@ function isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries, safetyC
 }
 
 function isNaturalizableDeclarationEntry(stageEntry, { remainingProgramValidationIndex, safetyContext }) {
-  if (stageEntry.kind !== "declaration" || stageEntry.fragment || stageEntry.owner.type !== "VariableDeclaration") {
+  if (stageEntry.kind !== "declaration" || stageEntry.fragment) {
+    return false;
+  }
+  if (hasEarlierPotentialBindingUse(stageEntry, remainingProgramValidationIndex)) {
+    return false;
+  }
+  if (stageEntry.owner.type === "FunctionDeclaration") {
+    return t.isFunctionDeclaration(stageEntry.statement);
+  }
+  if (stageEntry.owner.type === "ClassDeclaration") {
+    return t.isClassDeclaration(stageEntry.statement) &&
+      isPlainImportSafeClassOwner(stageEntry.owner, stageEntry.statement, safetyContext);
+  }
+  if (stageEntry.owner.type !== "VariableDeclaration") {
     return false;
   }
   const shape = declarationShapedVariableEntry(stageEntry);
   if (!shape) {
-    return false;
-  }
-  if (hasEarlierPotentialBindingUse(stageEntry, remainingProgramValidationIndex)) {
     return false;
   }
   if (!hasNoOwnerTopLevelWrites(stageEntry.owner)) {
@@ -1704,6 +1714,9 @@ function buildNaturalizedDeclarationStatements(entry) {
 }
 
 function naturalizedDeclarationStatement(stageEntry) {
+  if (t.isFunctionDeclaration(stageEntry.statement) || t.isClassDeclaration(stageEntry.statement)) {
+    return t.cloneNode(stageEntry.statement, true);
+  }
   const shape = declarationShapedVariableEntry(stageEntry);
   if (!shape) {
     throw new Error(`Expected declaration-shaped variable entry for ${stageEntry.owner.id}`);

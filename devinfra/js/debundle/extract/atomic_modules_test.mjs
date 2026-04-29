@@ -3667,8 +3667,10 @@ export { readIndependentValue, useFocusService };
 
   assert.match(withoutGeneratedHeader(focusCode), /Selected-module lowered region; original owners: owner_00002, owner_00003, owner_00004\./);
   assert.match(focusCode, /\bfocusServiceLabel = "focus"/);
-  assert.match(focusCode, /\bFriendlyFocusService = class FriendlyFocusService\b/);
-  assert.match(focusCode, /\buseFriendlyFocusService = function useFriendlyFocusService\b/);
+  assert.match(focusCode, /^\s*class FriendlyFocusService\b/m);
+  assert.match(focusCode, /^\s*function useFriendlyFocusService\(\)/m);
+  assert.doesNotMatch(focusCode, /\bFriendlyFocusService = class FriendlyFocusService\b/);
+  assert.doesNotMatch(focusCode, /\buseFriendlyFocusService = function useFriendlyFocusService\b/);
   assert.match(focusCode, /__dt_generated_init__ui_focus_service_stage_0/);
   assert.match(focusCode, /__dt_generated_init__ui_focus_service_stage_1/);
   assert.match(entryCode, /import \{[^}]*focusServiceLabel[^}]*FriendlyFocusService[^}]*useFriendlyFocusService[^}]*__dt_generated_init__ui_focus_service_stage_0[^}]*__dt_generated_init__ui_focus_service_stage_1[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/);
@@ -3753,8 +3755,10 @@ export { useFocusService };`;
   const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
   assert.match(withoutGeneratedHeader(residualCode), /Selected-module lowered region; original owners: owner_00000, owner_00001, owner_00002\./);
   assert.match(residualCode, /\bfocusLabel = "focus"/);
-  assert.match(residualCode, /\bFocusService = class FocusService\b/);
-  assert.match(residualCode, /\buseFocusService = function useFocusService\b/);
+  assert.match(residualCode, /^\s*class FocusService\b/m);
+  assert.match(residualCode, /^\s*function useFocusService\(\)/m);
+  assert.doesNotMatch(residualCode, /\bFocusService = class FocusService\b/);
+  assert.doesNotMatch(residualCode, /\buseFocusService = function useFocusService\b/);
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
