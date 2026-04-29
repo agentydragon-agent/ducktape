@@ -174,6 +174,7 @@ export function lowerSelectedModuleRegionsInAst(
   const runtimeRenameStartedAt = process.hrtime.bigint();
   applyFinalBindingRenamesToGeneratedFile(ast, buildRuntimeBindingRenames(resolved), {
     context: `${runtimeFile} runtime lowering`,
+    scanReadableAfterExplicitRenames: true,
   });
   logProgress(
     `selected-modules lower=${runtimeFile} phase=rename_runtime_bindings duration=${formatDurationMs(durationMsSince(runtimeRenameStartedAt))}`
@@ -2193,14 +2194,62 @@ function renamedLocalIdentifierName(name, localRenameMap) {
   return localRenameMap.get(name) ?? name;
 }
 
-function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) {
-  const mayHaveReadableRenames = generatedFileMayHaveReadableRenameCandidate(ast);
+function applyFinalBindingRenamesToGeneratedFile(
+  ast,
+  renameSpecs,
+  { context, scanReadableAfterExplicitRenames = false }
+) {
   if (!Array.isArray(renameSpecs) || renameSpecs.length === 0) {
-    if (mayHaveReadableRenames) {
+    if (generatedFileMayHaveReadableRenameCandidate(ast)) {
       applyReadableObjectPatternRenamesInGeneratedFile(ast);
     }
     return;
   }
+
+  if (scanReadableAfterExplicitRenames) {
+    applyExplicitBindingRenamesToGeneratedFile(ast, renameSpecs, { context });
+    if (generatedFileMayHaveReadableRenameCandidate(ast)) {
+      applyReadableObjectPatternRenamesInGeneratedFile(ast);
+    }
+    return;
+  }
+
+  applyFinalBindingRenamesWithReadableCandidateCollection(ast, renameSpecs, { context });
+}
+
+function applyExplicitBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) {
+  traverse(ast, {
+    Program(path) {
+      validateRenameSpecsAgainstProgramScope(path, renameSpecs, context);
+      const bindingBySourceName = new Map();
+      const renameBySourceName = new Map();
+      for (const renameSpec of renameSpecs) {
+        const binding = path.scope.getOwnBinding(renameSpec.from);
+        if (!binding) {
+          continue;
+        }
+        bindingBySourceName.set(renameSpec.from, binding);
+        renameBySourceName.set(renameSpec.from, renameSpec);
+      }
+      if (renameBySourceName.size === 0) {
+        path.skip();
+        return;
+      }
+      const renameByBinding = new Map();
+      for (const [sourceName, renameSpec] of renameBySourceName) {
+        const binding = bindingBySourceName.get(sourceName);
+        if (binding) {
+          renameByBinding.set(binding, renameSpec.to);
+        }
+      }
+      applyBindingLocalRenamesInProgram(path, renameByBinding);
+      path.skip();
+    },
+  });
+}
+
+function applyFinalBindingRenamesWithReadableCandidateCollection(ast, renameSpecs, { context }) {
+  const mayHaveReadableRenames = generatedFileMayHaveReadableRenameCandidate(ast);
   let collectReadableRenames = false;
   let readableCandidatesByScope = null;
   let readableBindingCacheByScope = null;
