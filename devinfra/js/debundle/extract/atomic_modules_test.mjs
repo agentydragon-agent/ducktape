@@ -1363,9 +1363,9 @@ test("materializeLogicalModules emits atomic boundary comments for merged logica
   const chunk = getChunk(materialized.artifact, "static/app");
   const mergedModuleCode = readFileSyncFromArtifactFile(chunk.files.get("modules/state/all_state.js"));
   assert.match(mergedModuleCode, /@ducktape-atomic-boundary kind=selected_module_lowering id=atomic_module_/);
-  // The pure `const seed = 1` member is naturalized (no boundary comment); the
-  // remaining members still wear their atomic-boundary markers.
-  assert.doesNotMatch(mergedModuleCode, /members=seed\b/);
+  // Naturalized declarations still keep their atomic-boundary markers so the
+  // logical module can be traced back to its atomic inputs.
+  assert.match(mergedModuleCode, /members=seed\b/);
   assert.match(mergedModuleCode, /members=readSeed\b/);
   assert.match(mergedModuleCode, /members=first\b/);
   assert.match(mergedModuleCode, /members=readFirst\b/);
@@ -3908,14 +3908,14 @@ export { readIndependentValue, useFocusService };
   assert.match(focusCode, /^\s*function useFriendlyFocusService\(\)/m);
   assert.doesNotMatch(focusCode, /\bFriendlyFocusService = class FriendlyFocusService\b/);
   assert.doesNotMatch(focusCode, /\buseFriendlyFocusService = function useFriendlyFocusService\b/);
-  assert.match(focusCode, /__dt_generated_init__ui_focus_service_stage_0/);
+  assert.doesNotMatch(focusCode, /__dt_generated_init__ui_focus_service_stage_0/);
   assert.match(focusCode, /__dt_generated_init__ui_focus_service_stage_1/);
   assert.match(focusCode, /export \{ useFriendlyFocusService \};/);
   assert.doesNotMatch(focusCode, /export \{[^\n}]*\bfocusServiceLabel\b/);
   assert.doesNotMatch(focusCode, /export \{[^\n}]*\bFriendlyFocusService\b/);
   assert.match(
     entryCode,
-    /import \{[^}]*useFriendlyFocusService[^}]*__dt_generated_init__ui_focus_service_stage_0[^}]*__dt_generated_init__ui_focus_service_stage_1[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/
+    /import \{[^}]*useFriendlyFocusService[^}]*__dt_generated_init__ui_focus_service_stage_1[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/
   );
   assert.doesNotMatch(entryCode, /import \{[^}]*focusServiceLabel[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/);
   assert.doesNotMatch(

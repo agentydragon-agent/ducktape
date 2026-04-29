@@ -106,6 +106,9 @@ export function lowerSelectedModuleRegionsInAst(
   const extractionIndex = buildExtractionIndex(extractOperations);
   const remainingProgramValidationIndex = buildRemainingProgramValidationIndex(runtimeAnalysis);
   const runtimeImportIndex = buildRuntimeImportIndex(runtimeAnalysis.runtimeImports);
+  const programItemsByOrdinal = [...(runtimeAnalysis.programItems ?? [])].sort(
+    (left, right) => left.ordinal - right.ordinal
+  );
 
   const resolveStartedAt = process.hrtime.bigint();
   const resolved = extractOperations.map((operation) =>
@@ -118,6 +121,7 @@ export function lowerSelectedModuleRegionsInAst(
       remainingProgramValidationIndex,
       runtimeImportIndex,
       programBody,
+      programItemsByOrdinal,
       runtimeFile,
       sideEffectById,
       topLevelNames,
@@ -267,6 +271,7 @@ function resolveExtractOperation(
     remainingProgramValidationIndex,
     runtimeImportIndex,
     programBody,
+    programItemsByOrdinal,
     runtimeFile,
     sideEffectById,
     topLevelNames,
@@ -431,6 +436,7 @@ function resolveExtractOperation(
   const naturalizedDeclarationEntries = plainImportEligible
     ? []
     : buildNaturalizedDeclarationEntries(stageRuns, {
+        programItemsByOrdinal,
         remainingProgramValidationIndex,
       });
 
@@ -478,11 +484,32 @@ function isPlainImportEligibleEntry({ attachedEntries, orderedOwners, ownerEntri
   return true;
 }
 
-function buildNaturalizedDeclarationEntries(stageRuns, { remainingProgramValidationIndex }) {
+function buildNaturalizedDeclarationEntries(stageRuns, { programItemsByOrdinal, remainingProgramValidationIndex }) {
   const naturalizedEntries = [];
-  const safetyContext = { safeProviderBindings: new Set() };
   const stageEntries = buildCanonicalPlainImportStageEntries(stageRuns);
+  const stageEntryProgramItemIds = new Set(stageEntries.map(stageEntryProgramItemId).filter(Boolean));
+  const naturalizedProgramItemIds = new Set();
+  const programItems = programItemsByOrdinal ?? [];
+  let programItemIndex = 0;
+  let latestEagerReadBarrierOrdinal = null;
+  const safetyContext = {
+    allowUnresolvedGlobalReads: true,
+    safeProviderBindings: new Set(),
+  };
   for (const stageEntry of stageEntries) {
+    while (
+      programItemIndex < programItems.length &&
+      programItems[programItemIndex].ordinal < stageEntryOrdinal(stageEntry)
+    ) {
+      const item = programItems[programItemIndex++];
+      if (
+        item.kind !== "import" &&
+        !(stageEntryProgramItemIds.has(item.id) && naturalizedProgramItemIds.has(item.id))
+      ) {
+        latestEagerReadBarrierOrdinal = item.ordinal;
+      }
+    }
+    safetyContext.allowUnresolvedGlobalReads = latestEagerReadBarrierOrdinal == null;
     if (
       !isNaturalizableDeclarationEntry(stageEntry, {
         remainingProgramValidationIndex,
@@ -492,9 +519,33 @@ function buildNaturalizedDeclarationEntries(stageRuns, { remainingProgramValidat
       continue;
     }
     naturalizedEntries.push(stageEntry);
+    const itemId = stageEntryProgramItemId(stageEntry);
+    if (itemId) {
+      naturalizedProgramItemIds.add(itemId);
+    }
     recordPlainImportSafeProvider(stageEntry, safetyContext);
   }
   return naturalizedEntries;
+}
+
+function stageEntryProgramItemId(stageEntry) {
+  if (stageEntry.kind === "declaration") {
+    return stageEntry.owner.id;
+  }
+  if (stageEntry.kind === "side_effect") {
+    return stageEntry.sideEffect.id;
+  }
+  return null;
+}
+
+function stageEntryOrdinal(stageEntry) {
+  if (stageEntry.kind === "declaration") {
+    return stageEntry.owner.ordinal;
+  }
+  if (stageEntry.kind === "side_effect") {
+    return stageEntry.sideEffect.ordinal;
+  }
+  return Number.POSITIVE_INFINITY;
 }
 
 function buildCanonicalPlainImportStageEntries(stageRuns) {
@@ -585,11 +636,17 @@ function isNaturalizableDeclarationEntry(stageEntry, { remainingProgramValidatio
   if (!shape) {
     return false;
   }
+  if (shape.kind === "function") {
+    if (!hasNoOwnerTopLevelWrites(stageEntry.owner)) {
+      return false;
+    }
+    return eagerAccessRecords(stageEntry.owner, "readsTopLevel", "eager").length === 0;
+  }
+  if (shape.kind === "constant") {
+    return true;
+  }
   if (!hasNoOwnerTopLevelWrites(stageEntry.owner)) {
     return false;
-  }
-  if (shape.kind === "function") {
-    return eagerAccessRecords(stageEntry.owner, "readsTopLevel", "eager").length === 0;
   }
   return isPlainImportSafeClassExpressionOwner(stageEntry.owner, shape.expression, safetyContext);
 }
@@ -618,6 +675,15 @@ function declarationShapedVariableEntry(stageEntry) {
       declaration,
       expression: declaration.init,
       kind: "class",
+      statement,
+    };
+  }
+  if (isConstEligibleInitializer(declaration.init)) {
+    return {
+      bindingName: declaration.id.name,
+      declaration,
+      expression: declaration.init,
+      kind: "constant",
       statement,
     };
   }
@@ -675,11 +741,12 @@ function isPlainImportSafeClassExpressionSuperClass(expression, eagerReads, safe
   if (!t.isIdentifier(expression.superClass)) {
     return false;
   }
-  return eagerReads.some(
+  const matchingSuperClassRead = eagerReads.some(
     (access) =>
       access.name === expression.superClass.name &&
       isPlainImportSafeClassExpressionEagerRead(access, expression, safetyContext)
   );
+  return matchingSuperClassRead || Boolean(safetyContext?.allowUnresolvedGlobalReads);
 }
 
 function isPlainImportSafeClassExpressionEagerRead(access, expression, safetyContext) {
@@ -746,9 +813,10 @@ function isPlainImportSafeClassSuperClass(owner, statement, eagerReads, safetyCo
   if (!t.isClassDeclaration(statement) || !t.isIdentifier(statement.superClass)) {
     return false;
   }
-  return eagerReads.some(
+  const matchingSuperClassRead = eagerReads.some(
     (access) => access.name === statement.superClass.name && isPlainImportSafeClassEagerRead(access, safetyContext)
   );
+  return matchingSuperClassRead || Boolean(safetyContext?.allowUnresolvedGlobalReads);
 }
 
 function isPlainImportSafeClassEagerRead(access, safetyContext) {
@@ -2030,12 +2098,24 @@ function naturalizedDeclarationStatement(stageEntry) {
       shape.expression.async
     );
   }
+  if (shape.kind === "constant") {
+    return t.variableDeclaration(naturalizedConstantDeclarationKind(stageEntry), [
+      t.cloneNode(shape.declaration, true),
+    ]);
+  }
   return t.classDeclaration(
     t.identifier(shape.bindingName),
     shape.expression.superClass ? t.cloneNode(shape.expression.superClass, true) : null,
     t.cloneNode(shape.expression.body, true),
     shape.expression.decorators?.map((decorator) => t.cloneNode(decorator, true)) ?? []
   );
+}
+
+function naturalizedConstantDeclarationKind(stageEntry) {
+  if (stageEntry.statement.kind === "const") {
+    return "const";
+  }
+  return "let";
 }
 
 function buildInitStatements(

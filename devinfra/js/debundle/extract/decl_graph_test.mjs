@@ -23,12 +23,15 @@ export { render as publicRender };
   const batchPlan = packSelectedModuleGroups(plan).batchPlans.find((candidate) =>
     candidate.memberNames.includes("render")
   );
-  const operations = buildSelectedModuleGroupOperations({ batchPlans: [batchPlan] }, {
-    chunkId: "static/app",
-    idPrefix: "entry_owner",
-    initPrefix: "init_entry_owner_",
-    targetDir: "regions",
-  });
+  const operations = buildSelectedModuleGroupOperations(
+    { batchPlans: [batchPlan] },
+    {
+      chunkId: "static/app",
+      idPrefix: "entry_owner",
+      initPrefix: "init_entry_owner_",
+      targetDir: "regions",
+    }
+  );
 
   assert.equal("file" in operations[0].selector, false);
 
@@ -100,12 +103,14 @@ function readLocalOnly() { return localOnly; }
   const localBatch = findOwnerClosureBatchPlanByName(batchPlan, "readLocalOnly");
   assert.deepEqual(renderBatch.semanticMemberNames, ["composed", "helperSeed", "readHelperSeed", "render"]);
   assert.deepEqual(localBatch.semanticMemberNames, ["localOnly", "readLocalOnly"]);
-  assert.equal(batchPlan.batchPlans.some((candidate) => candidate.semanticMemberNames.includes("readHelperSeed")), true);
+  assert.equal(
+    batchPlan.batchPlans.some((candidate) => candidate.semanticMemberNames.includes("readHelperSeed")),
+    true
+  );
   assert.equal(
     batchPlan.batchPlans.some(
       (candidate) =>
-        candidate.semanticMemberNames.includes("readHelperSeed") &&
-        !candidate.semanticMemberNames.includes("render")
+        candidate.semanticMemberNames.includes("readHelperSeed") && !candidate.semanticMemberNames.includes("render")
     ),
     false
   );
@@ -143,7 +148,7 @@ export { render as publicRender };
 });
 
 test("selected module-group planner supports staged-shell lowering across retained top-level barriers", () => {
-  const source = `const helperSeed = 1;
+  const source = `const helperSeed = Number("1");
 function readHelperSeed() { return helperSeed; }
 console.log("graph-barrier");
 const composed = readHelperSeed() + 2;
@@ -177,8 +182,14 @@ export { render as publicRender };
   assert.equal(extractedFiles.length, 1);
   assert.match(result.code, /init_fixture_staged_owner_selected_module_group_.*_stage_0/);
   assert.match(result.code, /init_fixture_staged_owner_selected_module_group_.*_stage_1/);
-  assert.match(result.files.get(extractedFiles[0]), /export function init_fixture_staged_owner_selected_module_group_.*_stage_0/s);
-  assert.match(result.files.get(extractedFiles[0]), /export function init_fixture_staged_owner_selected_module_group_.*_stage_1/s);
+  assert.match(
+    result.files.get(extractedFiles[0]),
+    /export function init_fixture_staged_owner_selected_module_group_.*_stage_0/s
+  );
+  assert.match(
+    result.files.get(extractedFiles[0]),
+    /export function init_fixture_staged_owner_selected_module_group_.*_stage_1/s
+  );
   assertRunnableEquivalent({
     prefix: "debundle-owner-closure-staged-pass-",
     source,
@@ -187,7 +198,7 @@ export { render as publicRender };
 });
 
 test("selected module-group planning expands staged-shell lowerings inside the extractor", () => {
-  const source = `const helperSeed = 1;
+  const source = `const helperSeed = Number("1");
 function readHelperSeed() { return helperSeed; }
 console.log("graph-barrier");
 const composed = readHelperSeed() + 2;
@@ -196,27 +207,31 @@ console.log(JSON.stringify({ helper: readHelperSeed(), value: render() }));
 export { render as publicRender };
 `;
 
-  const result = lowerSelectedModuleRegionsInCode(source, [
+  const result = lowerSelectedModuleRegionsInCode(
+    source,
+    [
+      {
+        id: "fixture_selected_module_group_plan",
+        operation: "plan_selected_module_groups",
+        selector: {
+          chunkId: "static/app",
+          file: "runtime.js",
+        },
+        target: {
+          dir: "regions",
+          filePrefix: "owner_",
+          initPrefix: "init_fixture_staged_owner_",
+        },
+        options: {
+          lowering: "staged_shell",
+        },
+      },
+    ],
     {
-      id: "fixture_selected_module_group_plan",
-      operation: "plan_selected_module_groups",
-      selector: {
-        chunkId: "static/app",
-        file: "runtime.js",
-      },
-      target: {
-        dir: "regions",
-        filePrefix: "owner_",
-        initPrefix: "init_fixture_staged_owner_",
-      },
-      options: {
-        lowering: "staged_shell",
-      },
-    },
-  ], {
-    chunkId: "static/app",
-    file: "runtime.js",
-  });
+      chunkId: "static/app",
+      file: "runtime.js",
+    }
+  );
 
   const extractedFiles = [...result.files.keys()].filter((file) => file.startsWith("regions/owner_"));
   assert.equal(extractedFiles.length, 1);
@@ -230,8 +245,8 @@ export { render as publicRender };
 });
 
 test("staged-shell lowering can attach replayable writer side effects to the extracted module group", () => {
-  const source = `let enabled = false;
-const state = { value: 1 };
+  const source = `let enabled = Boolean(0);
+const state = { value: Number("1") };
 console.log("writer-barrier");
 globalThis.turnOn = () => {
   enabled = true;
