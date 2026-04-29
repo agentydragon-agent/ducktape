@@ -12,6 +12,8 @@ const traverse = traverseModule.default ?? traverseModule;
 
 const RUNTIME_SENSITIVE_EFFECTS = new Set(["containsDirectEval", "containsImportMeta", "containsTopLevelAwait"]);
 const SELECTED_MODULE_SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
+const FRAGMENT_IMPORT_BY_LOCAL_CACHE = new WeakMap();
+const FRAGMENT_OWNER_BY_BINDING_CACHE = new WeakMap();
 
 
 export function extractRuntimeBoundaryMetadata(options) {
@@ -391,24 +393,21 @@ export function analyzeVariableDeclarationFragmentAccesses(
     };
   }
 
-  const importByLocalName = new Map();
-  for (const importRecord of runtimeImports) {
-    for (const specifier of importRecord.specifiers ?? []) {
-      importByLocalName.set(specifier.local, {
-        ...specifier,
-        id: importRecord.id,
-        source: importRecord.source,
-      });
+  const selectedDeclarators = [];
+  for (const declaratorIndex of declaratorIndices) {
+    const declarator = statement.declarations[declaratorIndex];
+    if (!declarator) {
+      throw new Error(
+        `Fragment analysis missing declarator ${declaratorIndex} for ${fragment.ownerId ?? "owner_fragment"}`
+      );
     }
-  }
-  const ownerByBinding = new Map();
-  for (const owner of owners) {
-    for (const name of owner.names ?? []) {
-      ownerByBinding.set(name, owner);
-    }
+    selectedDeclarators.push(t.cloneNode(declarator, true));
   }
 
-  const fragmentAst = t.file(t.program([t.cloneNode(statement, true)]));
+  const importByLocalName = fragmentImportByLocalName(runtimeImports);
+  const ownerByBinding = fragmentOwnerByBinding(owners);
+  const fragmentStatement = t.variableDeclaration(statement.kind, selectedDeclarators);
+  const fragmentAst = t.file(t.program([fragmentStatement]));
   const itemByTopNode = new Map();
   const programPathByNode = new WeakMap();
   let fragmentRecord = null;
@@ -433,17 +432,7 @@ export function analyzeVariableDeclarationFragmentAccesses(
           type: topPath.node.type,
         });
         itemByTopNode.set(topPath.node, fragmentRecord);
-        selectedDeclaratorNodes = new Set();
-        const declaratorPaths = topPath.get("declarations");
-        for (const declaratorIndex of declaratorIndices) {
-          const declaratorPath = declaratorPaths[declaratorIndex];
-          if (!declaratorPath) {
-            throw new Error(
-              `Fragment analysis missing declarator ${declaratorIndex} for ${fragment.ownerId ?? "owner_fragment"}`
-            );
-          }
-          selectedDeclaratorNodes.add(declaratorPath.node);
-        }
+        selectedDeclaratorNodes = new Set(topPath.node.declarations);
         programPath.scope.crawl();
       },
     },
@@ -532,6 +521,40 @@ export function analyzeVariableDeclarationFragmentAccesses(
     writesTopLevel: finalizeAccessBuckets(fragmentRecord.eagerWrites, fragmentRecord.lazyWrites),
     memberWritesTopLevel: finalizeAccessBuckets(fragmentRecord.eagerMemberWrites, fragmentRecord.lazyMemberWrites),
   };
+}
+
+function fragmentImportByLocalName(runtimeImports) {
+  const cached = FRAGMENT_IMPORT_BY_LOCAL_CACHE.get(runtimeImports);
+  if (cached) {
+    return cached;
+  }
+  const importByLocalName = new Map();
+  for (const importRecord of runtimeImports) {
+    for (const specifier of importRecord.specifiers ?? []) {
+      importByLocalName.set(specifier.local, {
+        ...specifier,
+        id: importRecord.id,
+        source: importRecord.source,
+      });
+    }
+  }
+  FRAGMENT_IMPORT_BY_LOCAL_CACHE.set(runtimeImports, importByLocalName);
+  return importByLocalName;
+}
+
+function fragmentOwnerByBinding(owners) {
+  const cached = FRAGMENT_OWNER_BY_BINDING_CACHE.get(owners);
+  if (cached) {
+    return cached;
+  }
+  const ownerByBinding = new Map();
+  for (const owner of owners) {
+    for (const name of owner.names ?? []) {
+      ownerByBinding.set(name, owner);
+    }
+  }
+  FRAGMENT_OWNER_BY_BINDING_CACHE.set(owners, ownerByBinding);
+  return ownerByBinding;
 }
 
 function createOwnerRecord({ id, line, names, node, ordinal, path, type }) {
