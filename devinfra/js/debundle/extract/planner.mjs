@@ -1,4 +1,5 @@
 import * as t from "@babel/types";
+import { analyzeVariableDeclarationFragmentAccesses } from "../analysis/boundary.mjs";
 import { referencedUndeclaredNames, referencedUndeclaredNamesInVariableDeclarator } from "../common/program_analysis.mjs";
 import { packSelectedModuleGroups, planSelectedModuleGroupExtractions } from "./decl_graph.mjs";
 
@@ -37,6 +38,7 @@ export function planSelectedAtomicModules(
     selectedOwnerIds,
   });
   const expandedAtomicUnits = splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, {
+    analysis,
     ownerById,
     programBody,
     sideEffectById,
@@ -345,16 +347,16 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
   return units;
 }
 
-function splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, { ownerById, programBody, sideEffectById }) {
+function splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, { analysis, ownerById, programBody, sideEffectById }) {
   const expanded = [];
   for (const unit of rawAtomicUnits) {
-    const splitUnits = splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, programBody, sideEffectById });
+    const splitUnits = splitSplittableVariableDeclarationAtomicUnit(unit, { analysis, ownerById, programBody, sideEffectById });
     expanded.push(...(splitUnits ?? [unit]));
   }
   return expanded;
 }
 
-function splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, programBody, sideEffectById }) {
+function splitSplittableVariableDeclarationAtomicUnit(unit, { analysis, ownerById, programBody, sideEffectById }) {
   if (unit.ownerIds.length !== 1) {
     return null;
   }
@@ -368,14 +370,15 @@ function splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, program
   if (!t.isVariableDeclaration(declaration) || declaration.declarations.length <= 1) {
     return null;
   }
-  if (ownerHasLazyIntraOwnerBindingWrite(owner)) {
-    return null;
-  }
   const splitUnits = buildSplittableVariableDeclarationUnits(owner, declaration.declarations);
   if (!splitUnits || splitUnits.length <= 1) {
     return null;
   }
-  const dependencyDisjoint = buildVariableDeclarationFragmentDependencyDisjointSet(owner, declaration.declarations, splitUnits);
+  const dependencyDisjoint = buildVariableDeclarationFragmentDependencyDisjointSet(owner, declaration.declarations, splitUnits, {
+    analysis,
+    programBody,
+    statement,
+  });
   if (!dependencyDisjoint) {
     return null;
   }
@@ -631,7 +634,7 @@ function buildVariableDeclarationAtomicUnitsFromGroupedFragments(
     .map(({ orderIndex, ...unit }) => unit);
 }
 
-function buildVariableDeclarationFragmentDependencyDisjointSet(owner, declarators, fragments) {
+function buildVariableDeclarationFragmentDependencyDisjointSet(owner, declarators, fragments, { analysis = null, programBody = null, statement = null } = {}) {
   const disjoint = createDisjointSet(fragments.length);
   const fragmentIndexByMemberName = new Map();
   const fragmentIndexByDeclaratorIndex = new Map();
@@ -658,6 +661,29 @@ function buildVariableDeclarationFragmentDependencyDisjointSet(owner, declarator
         return null;
       }
       disjoint.union(sourceFragmentIndex, targetFragmentIndex);
+    }
+  }
+  if (!ownerHasLazyIntraOwnerBindingWrite(owner)) {
+    return disjoint;
+  }
+  if (!analysis?.owners || !Array.isArray(programBody) || !statement) {
+    return null;
+  }
+  const fragmentAccessContext = {
+    owners: analysis.owners,
+    runtimeImports: analysis.runtimeImports,
+  };
+  for (const [fragmentIndex, fragment] of fragments.entries()) {
+    const accessRecord = analyzeVariableDeclarationFragmentAccesses(statement, fragment, fragmentAccessContext);
+    for (const access of accessRecord.writesTopLevel.lazy) {
+      if (access.kind !== "local_declaration" || access.ownerId !== owner.id) {
+        continue;
+      }
+      const targetFragmentIndex = fragmentIndexByMemberName.get(access.name);
+      if (targetFragmentIndex === undefined) {
+        return null;
+      }
+      disjoint.union(fragmentIndex, targetFragmentIndex);
     }
   }
   return disjoint;

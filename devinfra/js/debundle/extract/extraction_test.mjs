@@ -227,6 +227,61 @@ export { count, bump };`,
   assert.deepEqual([...plan.atomicUnits[0].memberNames].sort(), ["bump", "count"]);
 });
 
+test("planSelectedAtomicModules can split an independent declarator away from a lazy sibling rebind", () => {
+  const ast = parse(
+    `let count = 0, bump = function bump() {
+  count += 1;
+  return count;
+}, gamma = "g";
+export { count, bump, gamma };`,
+    { sourceType: "module" }
+  );
+  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
+
+  const plan = planSelectedAtomicModules(
+    {
+      analysis,
+      code: null,
+      programBody: ast.program.body,
+    },
+    {}
+  );
+
+  const coupledUnit = plan.atomicUnits.find((unit) => unit.memberNames.includes("count") && unit.memberNames.includes("bump"));
+  const gammaUnit = plan.atomicUnits.find((unit) => unit.memberNames.length === 1 && unit.memberNames[0] === "gamma");
+
+  assert.ok(coupledUnit);
+  assert.ok(gammaUnit);
+  assert.notEqual(coupledUnit.id, gammaUnit.id);
+  assert.ok(coupledUnit.ownerFragments?.some((fragment) => fragment.memberNames.includes("count")));
+  assert.ok(coupledUnit.ownerFragments?.some((fragment) => fragment.memberNames.includes("bump")));
+  assert.ok(gammaUnit.ownerFragments?.some((fragment) => fragment.memberNames.includes("gamma")));
+});
+
+test("planSelectedAtomicModules keeps a truly coupled three-declarator family together", () => {
+  const ast = parse(
+    `let count = 0, bump = function bump() {
+  count += 1;
+  return count;
+}, gamma = count;
+export { count, bump, gamma };`,
+    { sourceType: "module" }
+  );
+  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
+
+  const plan = planSelectedAtomicModules(
+    {
+      analysis,
+      code: null,
+      programBody: ast.program.body,
+    },
+    {}
+  );
+
+  assert.equal(plan.atomicUnits.length, 1);
+  assert.deepEqual([...plan.atomicUnits[0].memberNames].sort(), ["bump", "count", "gamma"]);
+});
+
 test("planSelectedAtomicModules can split declarator fragments around attached side effects that touch only one fragment", () => {
   const ast = parse(
     `const createPlatformClient = () => ({ ok: true }), indexedDbOutgoingTxSendQueue = new Map();

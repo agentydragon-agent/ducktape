@@ -2793,6 +2793,134 @@ export { render };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules can peel an independent declarator away from a lazy sibling rebind", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-lazy-rebind-split-"
+  );
+  const source = `let count = 0, bump = function bump() {
+  count += 1;
+  return count;
+}, gamma = "g";
+
+function readGamma() {
+  return gamma;
+}
+
+function readCount() {
+  return count;
+}
+
+console.log(readGamma(), readCount());
+
+export { readGamma, readCount };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__gamma",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "runtime/gamma_only",
+        },
+        members: [
+          {
+            id: "member__gamma",
+            name: "gamma",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "gamma",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const gammaCode = readFileSync(join(outRoot, "static", "app", "modules", "runtime", "gamma_only.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(gammaCode, /\bgamma = "g";/);
+  assert.doesNotMatch(gammaCode, /\bcount = 0,/);
+  assert.doesNotMatch(gammaCode, /\bbump = function bump/);
+  assert.match(gammaCode, /fragments=owner_[^,\s]+::declarator_2/);
+
+  assert.match(residualCode, /\bcount = 0;/);
+  assert.match(residualCode, /\bbump = function bump\(\)/);
+  assert.doesNotMatch(residualCode, /\bgamma = "g";/);
+  assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_0,owner_[^,\s]+::declarator_1/);
+
+  assert.match(entryCode, /modules\/runtime\/gamma_only\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 test("materializeLogicalModules resolves stale owner hints through analysis before selecting split declaration fragments", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
     "debundle-logical-modules-stale-owner-hints-"
