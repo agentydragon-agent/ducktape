@@ -69,7 +69,9 @@ def resolve_cwd(policy: CwdPolicy, tool_input: Any) -> str | None:
             raise TypeError(f"Unknown CwdPolicy: {policy!r}")
 
 
-def _make_exec_input_model(*, allow_user: bool, allow_env: bool, cwd_policy: CwdPolicy) -> type:
+def _make_exec_input_model(
+    *, allow_user: bool, allow_env: bool, cwd_policy: CwdPolicy
+) -> type[OpenAIStrictModeBaseModel]:
     """Dynamically create the Pydantic input model for the exec tool.
 
     When allow_user=False or allow_env=False, the corresponding field is omitted from
