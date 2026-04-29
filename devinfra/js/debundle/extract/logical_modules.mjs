@@ -922,10 +922,7 @@ function cloneModulePlan(modulePlan) {
 
 function applyBindingPlacementsToMemberNames(memberNames, bindingPlacements) {
   const renamed = new Map(bindingPlacements.map((entry) => [entry.sourceName, entry.name]));
-  return memberNames
-    .map((memberName) => renamed.get(memberName) ?? memberName)
-    .filter((memberName, index, array) => array.indexOf(memberName) === index)
-    .sort();
+  return [...new Set(memberNames.map((memberName) => renamed.get(memberName) ?? memberName))].sort();
 }
 
 function cloneOwnerFragments(ownerFragments) {
