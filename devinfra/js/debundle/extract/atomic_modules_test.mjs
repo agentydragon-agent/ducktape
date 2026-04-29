@@ -63,7 +63,10 @@ test("extractAtomicModules emits one module per atomic unit and preserves behavi
     outDir: outRoot,
   });
 
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("mergeModules merges selected extracted modules and preserves behavior", async () => {
@@ -111,11 +114,16 @@ test("mergeModules merges selected extracted modules and preserves behavior", as
     outDir: outRoot,
   });
 
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("mergeModules resolves moduleSelectors by exact member-name sets", async () => {
-  const { artifact, selectedOwnerIds, snapshotRoot } = await prepareAtomicFixture("debundle-merge-modules-symbol-selectors-");
+  const { artifact, selectedOwnerIds, snapshotRoot } = await prepareAtomicFixture(
+    "debundle-merge-modules-symbol-selectors-"
+  );
   const extracted = extractAtomicModules({
     artifact,
     chunkIds: ["static/app"],
@@ -175,11 +183,16 @@ test("mergeModules resolves moduleSelectors by exact member-name sets", async ()
     outDir: outRoot,
   });
 
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("mergeModules matches exact selector symbols against the full current member-name set", async () => {
-  const { artifact, selectedOwnerIds, snapshotRoot } = await prepareAtomicFixture("debundle-merge-modules-full-set-selectors-");
+  const { artifact, selectedOwnerIds, snapshotRoot } = await prepareAtomicFixture(
+    "debundle-merge-modules-full-set-selectors-"
+  );
   const extracted = extractAtomicModules({
     artifact,
     chunkIds: ["static/app"],
@@ -219,10 +232,7 @@ test("mergeModules matches exact selector symbols against the full current membe
         operation: "merge_module",
         selector: {
           chunkId: "static/app",
-          moduleSelectors: [
-            { symbols: ["readSeed", "seed"] },
-            { symbols: ["first"] },
-          ],
+          moduleSelectors: [{ symbols: ["readSeed", "seed"] }, { symbols: ["first"] }],
           validation: {
             ordered: true,
           },
@@ -248,7 +258,10 @@ test("mergeModules matches exact selector symbols against the full current membe
     outDir: outRoot,
   });
 
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("mergeModules resolves representative symbol subsets against the full current member-name set", async () => {
@@ -294,10 +307,7 @@ test("mergeModules resolves representative symbol subsets against the full curre
         operation: "merge_module",
         selector: {
           chunkId: "static/app",
-          moduleSelectors: [
-            { symbols: ["seed"] },
-            { symbols: ["first"] },
-          ],
+          moduleSelectors: [{ symbols: ["seed"] }, { symbols: ["first"] }],
           validation: {
             ordered: true,
           },
@@ -323,7 +333,10 @@ test("mergeModules resolves representative symbol subsets against the full curre
     outDir: outRoot,
   });
 
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("mergeModules ordered selector validation rejects reversed module selector order", async () => {
@@ -474,7 +487,10 @@ test("merge_remaining_modules folds all unclaimed modules into one residual modu
     outDir: outRoot,
   });
 
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules lowers final logical modules directly from combined ops", async () => {
@@ -524,7 +540,10 @@ test("materializeLogicalModules lowers final logical modules directly from combi
   assert.doesNotMatch(entryCode, /\breadSeedValue\b/);
   assert.doesNotMatch(entryCode, /\b__dt_generated_init__state_seed_state\b/);
 
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules writes reusable boundary-analysis and selected-owner cache artifacts", async () => {
@@ -653,7 +672,10 @@ test("materializeLogicalModules propagates final names through emitted imports a
   assert.match(entryCode, /import "\.\/modules\/state\/seed_state\.js";/);
   assert.doesNotMatch(entryCode, /import \{[^}]*seedValue[^}]*\} from "\.\/modules\/state\/seed_state\.js";/);
   assert.doesNotMatch(entryCode, /import \{[^}]*readSeedValue[^}]*\} from "\.\/modules\/state\/seed_state\.js";/);
-  assert.match(entryCode, /import \{ firstValue, readFirstValue, __dt_generated_init__state_first_state \} from "\.\/modules\/state\/first_state\.js";/);
+  assert.match(
+    entryCode,
+    /import \{ firstValue, readFirstValue, __dt_generated_init__state_first_state \} from "\.\/modules\/state\/first_state\.js";/
+  );
   assert.doesNotMatch(entryCode, /import \{ .* as .* \} from "\.\/modules\/state\/first_state\.js";/);
 });
 
@@ -777,7 +799,10 @@ export { c7t, readQuery };
   assert.doesNotMatch(moduleCode, /resourceIds: resourceIds/);
   assert.doesNotMatch(moduleCode, /startDateTime: startDateTime/);
   assert.doesNotMatch(moduleCode, /return n\.join\(","\) \+ ":" \+ e;/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules renames function-expression params even when returned object shorthand reuses the same bindings", async () => {
@@ -1338,7 +1363,9 @@ test("materializeLogicalModules emits atomic boundary comments for merged logica
   const chunk = getChunk(materialized.artifact, "static/app");
   const mergedModuleCode = readFileSyncFromArtifactFile(chunk.files.get("modules/state/all_state.js"));
   assert.match(mergedModuleCode, /@ducktape-atomic-boundary kind=selected_module_lowering id=atomic_module_/);
-  assert.match(mergedModuleCode, /members=seed\b/);
+  // The pure `const seed = 1` member is naturalized (no boundary comment); the
+  // remaining members still wear their atomic-boundary markers.
+  assert.doesNotMatch(mergedModuleCode, /members=seed\b/);
   assert.match(mergedModuleCode, /members=readSeed\b/);
   assert.match(mergedModuleCode, /members=first\b/);
   assert.match(mergedModuleCode, /members=readFirst\b/);
@@ -1465,7 +1492,10 @@ export { readAlpha, readBeta };
   assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_1/);
 
   assert.match(entryCode, /modules\/constants\/alpha\.js/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules lowers pure constant fragments without init wrappers", async () => {
@@ -1576,7 +1606,10 @@ export { OVt, fallbackTimeoutMs };
   assert.match(residualCode, /\bconst fallbackTimeoutMs = 250;/);
   assert.match(entryCode, /import \{ requestTimeoutMs \} from "\.\/modules\/runtime\/request_timeout\.js";/);
   assert.doesNotMatch(entryCode, /__dt_generated_init__runtime_request_timeout/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules lowers multi-stage pure declaration modules without init wrappers", async () => {
@@ -1699,9 +1732,15 @@ export { OVt, gapLabel, readTimeout };
   assert.doesNotMatch(timeoutCode, /\n\s*requestTimeoutMs = 500;/);
 
   assert.match(residualCode, /\bconst gapLabel = "gap";/);
-  assert.match(entryCode, /import \{ requestTimeoutMs, readRequestTimeoutMs \} from "\.\/modules\/runtime\/request_timeout\.js";/);
+  assert.match(
+    entryCode,
+    /import \{ requestTimeoutMs, readRequestTimeoutMs \} from "\.\/modules\/runtime\/request_timeout\.js";/
+  );
   assert.doesNotMatch(entryCode, /__dt_generated_init__runtime_request_timeout/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules lowers self-contained snapshot variable owners without init wrappers", async () => {
@@ -1829,7 +1868,10 @@ export { readStatus };
   assert.match(entryCode, /import \{ readChangeStatus \} from "\.\/modules\/runtime\/status\.js";/);
   assert.doesNotMatch(entryCode, /import \{[^}]*\bChangeStatus\b[^}]*\} from "\.\/modules\/runtime\/status\.js";/);
   assert.doesNotMatch(entryCode, /__dt_generated_init__runtime_status/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules can split pure destructuring declarators into fragment-backed modules", async () => {
@@ -1950,7 +1992,10 @@ export { readFocusLabel, readOtherLabel };
   assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_1/);
 
   assert.match(entryCode, /modules\/ui\/focus\/label\.js/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules can split declarator fragments even when an attached side effect touches only one fragment", async () => {
@@ -2082,7 +2127,10 @@ export { reportPlatformClient, reportQueueSize };`;
   );
 
   const platformCode = readFileSync(join(outRoot, "static", "app", "modules", "platform", "client.js"), "utf8");
-  const outgoingTxCode = readFileSync(join(outRoot, "static", "app", "modules", "sync", "outgoing_tx", "debug.js"), "utf8");
+  const outgoingTxCode = readFileSync(
+    join(outRoot, "static", "app", "modules", "sync", "outgoing_tx", "debug.js"),
+    "utf8"
+  );
   const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
   const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
 
@@ -2097,13 +2145,14 @@ export { reportPlatformClient, reportQueueSize };`;
 
   assert.match(entryCode, /modules\/platform\/client\.js/);
   assert.match(entryCode, /modules\/sync\/outgoing_tx\/debug\.js/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules closes explicit modules over selected helper dependencies", async () => {
-  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
-    "debundle-logical-modules-helper-closure-"
-  );
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots("debundle-logical-modules-helper-closure-");
   const source = `const symbolFor = (name, existing) => ((existing = Symbol[name]) ? existing : Symbol.for("Symbol." + name)),
   failExpected = (message) => {
     throw TypeError(message);
@@ -2257,7 +2306,10 @@ export { drainDisposableStack };`;
   assert.match(disposalCode, /\bfailExpected\b/);
   assert.doesNotMatch(residualCode, /\bsymbolFor\b/);
   assert.doesNotMatch(residualCode, /\bfailExpected\b/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules can split lazy callable declarators and grouped remainders from one top-level declaration", async () => {
@@ -2421,7 +2473,10 @@ export { render };
 
   assert.match(entryCode, /modules\/constants\/alpha\.js/);
   assert.match(entryCode, /modules\/labels\/build_label\.js/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules can extract an unrelated lazy declarator from an owner with eager intra-owner dependencies", async () => {
@@ -2553,7 +2608,10 @@ export { render };
   assert.match(residualCode, /alpha = beta\.name/);
   assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_0,owner_[^,\s]+::declarator_group_1/);
   assert.match(entryCode, /modules\/runtime\/gamma\.js/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules can split inert class declarators with lazy cross-fragment reads", async () => {
@@ -2672,10 +2730,15 @@ export { render };
 
   assert.match(residualCode, /\bbeta = "b"/);
   assert.doesNotMatch(residualCode, /\bDelta = class Delta/);
-  assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_0/);
+  // The lone `const beta = "b"` declarator left behind in the residual is
+  // naturalized — no fragments boundary marker is emitted around it.
+  assert.doesNotMatch(residualCode, /fragments=owner_[^,\s]+::declarator_0/);
 
   assert.match(entryCode, /modules\/classes\/delta\.js/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules can split passive declarator fragments away from lazy sibling member writes", async () => {
@@ -2797,13 +2860,14 @@ export { render };
   assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_1/);
 
   assert.match(entryCode, /modules\/runtime\/ku_state\.js/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules can peel an independent declarator away from a lazy sibling rebind", async () => {
-  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
-    "debundle-logical-modules-lazy-rebind-split-"
-  );
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots("debundle-logical-modules-lazy-rebind-split-");
   const source = `let count = 0, bump = function bump() {
   count += 1;
   return count;
@@ -2925,13 +2989,14 @@ export { readGamma, readCount };
   assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_0,owner_[^,\s]+::declarator_1/);
 
   assert.match(entryCode, /modules\/runtime\/gamma_only\.js/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules resolves stale owner hints through analysis before selecting split declaration fragments", async () => {
-  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
-    "debundle-logical-modules-stale-owner-hints-"
-  );
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots("debundle-logical-modules-stale-owner-hints-");
   const source = `const palette = "picker", pickerStyles = { root: palette };
 const aliasMap = { js: "javascript" };
 function renderPicker() {
@@ -3053,10 +3118,7 @@ export { renderPicker };
     join(outRoot, "static", "app", "modules", "ui", "code", "language_picker.js"),
     "utf8"
   );
-  const residualCode = readFileSync(
-    join(outRoot, "static", "app", "modules", "residual", "unhandled.js"),
-    "utf8"
-  );
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
 
   assert.match(languagePickerCode, /\bpalette = "picker"/);
   assert.match(languagePickerCode, /\bpickerStyles = \{\s+root: palette\s+\};/);
@@ -3064,7 +3126,10 @@ export { renderPicker };
   assert.doesNotMatch(languagePickerCode, /import \{ .*pickerStyles.* \} from "\.\.\/\.\.\/residual\/unhandled\.js"/);
 
   assert.match(residualCode, /import \{ languageAliasMap, pickerStyles \} from "\.\.\/ui\/code\/language_picker\.js";/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules rejects propagated final-name collisions for split class declarators", async () => {
@@ -3266,7 +3331,10 @@ test("materialize_logical_modules composes directly in a pipeline spec", async (
   assert.equal(existsSync(join(outRoot, "static", "app", "modules")), false);
   assert.equal(existsSync(join(outRoot, "static", "app", "state", "seed_state.js")), true);
   assert.equal(existsSync(join(outRoot, "static", "app", "residual", "unhandled.js")), true);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materialize_logical_modules pipeline emits natural component-facing names", async () => {
@@ -3408,17 +3476,29 @@ export { ToolApprovalRequest, renderDialog };
     result.steps.map((step) => step.operation),
     ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
   );
-  const requestCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "ai", "tool_approval", "request.js"), "utf8");
-  const dialogCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "ai", "tool_approval", "dialog.js"), "utf8");
+  const requestCode = readFileSync(
+    join(outRoot, "static", "app", "modules", "ui", "ai", "tool_approval", "request.js"),
+    "utf8"
+  );
+  const dialogCode = readFileSync(
+    join(outRoot, "static", "app", "modules", "ui", "ai", "tool_approval", "dialog.js"),
+    "utf8"
+  );
   const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
   assert.match(requestCode, /\btoolApprovalButtonLabel\b/);
   assert.match(requestCode, /\bToolApprovalRequest\b/);
   assert.match(dialogCode, /import \{ ToolApprovalRequest \} from "\.\/request\.js";/);
   assert.doesNotMatch(dialogCode, /import \{ .* as .* \} from "\.\/request\.js";/);
   assert.match(dialogCode, /\brenderToolApprovalDialog\b/);
-  assert.match(entryCode, /import \{ renderToolApprovalDialog, __dt_generated_init__ui_ai_tool_approval_dialog \} from "\.\/modules\/ui\/ai\/tool_approval\/dialog\.js";/);
+  assert.match(
+    entryCode,
+    /import \{ renderToolApprovalDialog, __dt_generated_init__ui_ai_tool_approval_dialog \} from "\.\/modules\/ui\/ai\/tool_approval\/dialog\.js";/
+  );
   assert.doesNotMatch(entryCode, /import \{ .* as .* \} from "\.\/modules\/ui\/ai\/tool_approval\/dialog\.js";/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules emits plain-import pure class/function modules without init wrappers", async () => {
@@ -3544,7 +3624,10 @@ export { renderPureBox };
   assert.match(entryCode, /import \{ renderFriendlyPureBox \} from "\.\/modules\/ui\/pure_box\.js";/);
   assert.doesNotMatch(entryCode, /import \{[^}]*\bFriendlyPureBox\b[^}]*\} from "\.\/modules\/ui\/pure_box\.js";/);
   assert.doesNotMatch(entryCode, /__dt_generated_init__ui_pure_box/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules derives logical claimability from the owner graph instead of the preselected owner base", async () => {
@@ -3675,7 +3758,10 @@ export { readIndependentValue, useFocusService };
   const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
   const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
 
-  assert.match(withoutGeneratedHeader(focusCode), /Selected-module lowered region; original owners: owner_00002, owner_00003, owner_00004\./);
+  assert.match(
+    withoutGeneratedHeader(focusCode),
+    /Selected-module lowered region; original owners: owner_00002, owner_00003, owner_00004\./
+  );
   assert.match(focusCode, /\bfocusServiceLabel = "focus"/);
   assert.match(focusCode, /^\s*class FriendlyFocusService\b/m);
   assert.match(focusCode, /^\s*function useFriendlyFocusService\(\)/m);
@@ -3686,12 +3772,21 @@ export { readIndependentValue, useFocusService };
   assert.match(focusCode, /export \{ useFriendlyFocusService \};/);
   assert.doesNotMatch(focusCode, /export \{[^\n}]*\bfocusServiceLabel\b/);
   assert.doesNotMatch(focusCode, /export \{[^\n}]*\bFriendlyFocusService\b/);
-  assert.match(entryCode, /import \{[^}]*useFriendlyFocusService[^}]*__dt_generated_init__ui_focus_service_stage_0[^}]*__dt_generated_init__ui_focus_service_stage_1[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/);
+  assert.match(
+    entryCode,
+    /import \{[^}]*useFriendlyFocusService[^}]*__dt_generated_init__ui_focus_service_stage_0[^}]*__dt_generated_init__ui_focus_service_stage_1[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/
+  );
   assert.doesNotMatch(entryCode, /import \{[^}]*focusServiceLabel[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/);
-  assert.doesNotMatch(entryCode, /import \{[^}]*\bFriendlyFocusService\b[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/);
+  assert.doesNotMatch(
+    entryCode,
+    /import \{[^}]*\bFriendlyFocusService\b[^}]*\} from "\.\/modules\/ui\/focus\/service\.js";/
+  );
   assert.match(residualCode, /\breadIndependentValue\b/);
   assert.doesNotMatch(residualCode, /\bFriendlyFocusService\b/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 test("materializeLogicalModules closes a supplied selected-owner base over owner dependencies before lowering residual", async () => {
@@ -3768,13 +3863,19 @@ export { useFocusService };`;
   });
 
   const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
-  assert.match(withoutGeneratedHeader(residualCode), /Selected-module lowered region; original owners: owner_00000, owner_00001, owner_00002\./);
+  assert.match(
+    withoutGeneratedHeader(residualCode),
+    /Selected-module lowered region; original owners: owner_00000, owner_00001, owner_00002\./
+  );
   assert.match(residualCode, /\bfocusLabel = "focus"/);
   assert.match(residualCode, /^\s*class FocusService\b/m);
   assert.match(residualCode, /^\s*function useFocusService\(\)/m);
   assert.doesNotMatch(residualCode, /\bFocusService = class FocusService\b/);
   assert.doesNotMatch(residualCode, /\buseFocusService = function useFocusService\b/);
-  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
 });
 
 async function prepareAtomicFixture(prefix) {

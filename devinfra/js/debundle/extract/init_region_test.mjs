@@ -2246,3 +2246,74 @@ test("keeps let when later writes happen through assignment patterns", () => {
   assert.equal(body[0].kind, "let");
   assert.equal(body[0].declarations.length, 1);
 });
+
+test("keeps let when declarator already has an initializer", () => {
+  const body = [
+    t.variableDeclaration("let", [
+      t.variableDeclarator(t.identifier("value"), t.callExpression(t.identifier("init"), [])),
+    ]),
+    t.exportNamedDeclaration(
+      t.functionDeclaration(
+        t.identifier("init_stage_0"),
+        [],
+        t.blockStatement([
+          t.expressionStatement(t.assignmentExpression("=", t.identifier("value"), t.numericLiteral(1))),
+        ])
+      )
+    ),
+  ];
+
+  upgradeSingleAssignmentLetsToConst(body);
+
+  assert.equal(body[0].kind, "let");
+  assert.equal(body[0].declarations.length, 1);
+  assert.equal(body[0].declarations[0].id.name, "value");
+});
+
+test("keeps let instead of scanning large generated bodies for const promotion", () => {
+  const body = [
+    t.variableDeclaration("let", [t.variableDeclarator(t.identifier("value"))]),
+    t.exportNamedDeclaration(
+      t.functionDeclaration(
+        t.identifier("init_stage_0"),
+        [],
+        t.blockStatement([
+          t.expressionStatement(t.assignmentExpression("=", t.identifier("value"), t.numericLiteral(1))),
+          ...Array.from({ length: 5_100 }, () => t.expressionStatement(t.numericLiteral(0))),
+        ])
+      )
+    ),
+  ];
+
+  upgradeSingleAssignmentLetsToConst(body);
+
+  assert.equal(body[0].kind, "let");
+  assert.equal(body[0].declarations.length, 1);
+});
+
+test("keeps let when nested functions can write the binding later", () => {
+  const body = [
+    t.variableDeclaration("let", [t.variableDeclarator(t.identifier("open"))]),
+    t.exportNamedDeclaration(
+      t.functionDeclaration(
+        t.identifier("init_stage_0"),
+        [],
+        t.blockStatement([
+          t.expressionStatement(t.assignmentExpression("=", t.identifier("open"), t.booleanLiteral(false))),
+          t.functionDeclaration(
+            t.identifier("toggle"),
+            [],
+            t.blockStatement([
+              t.expressionStatement(t.assignmentExpression("=", t.identifier("open"), t.booleanLiteral(true))),
+            ])
+          ),
+        ])
+      )
+    ),
+  ];
+
+  upgradeSingleAssignmentLetsToConst(body);
+
+  assert.equal(body[0].kind, "let");
+  assert.equal(body[0].declarations.length, 1);
+});

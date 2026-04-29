@@ -22,6 +22,10 @@ const SELECTED_MODULE_LOWERING_NODE_PRAGMA =
   "@ducktape-generated-node kind=lowerer-glue stage=selected_module_lowering";
 const SELECTED_MODULE_ATOMIC_BOUNDARY_PRAGMA = "@ducktape-atomic-boundary kind=selected_module_lowering";
 const SELECTED_MODULE_SNAPSHOT_PREFIX = "__dt_selected_module_snapshot__";
+// Const promotion is cosmetic; bail out on very large generated modules rather
+// than spending seconds proving a small readability improvement.
+const MAX_CONST_PROMOTION_SCAN_NODE_COUNT = 5_000;
+const MAX_CONST_PROMOTION_INITIALIZER_NODE_COUNT = 256;
 const SELECTED_MODULE_LOWERING_METADATA = Object.freeze({
   kind: "lowerer_helper",
   stage: "selected_module_lowering",
@@ -1607,21 +1611,21 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
   const localRenameMap = buildBindingRenameMap(entryBindingRenames);
   const naturalizedBindingNames = naturalizedEntryBindingNameSet(entry);
   const trivialAliasDeclarations = [];
+  const trivialAliasNames = new Set();
   for (const stageRun of entry.stageRuns) {
     for (const stageEntry of stageRun.stageEntries) {
       const declaration = trivialAliasDeclaration(stageEntry);
       if (declaration) {
         trivialAliasDeclarations.push(declaration);
+        const id = declaration.declarations[0]?.id;
+        if (t.isIdentifier(id)) {
+          trivialAliasNames.add(id.name);
+        }
       }
     }
   }
   const initializedExportBindings = entry.exportBindings.filter(
-    (binding) =>
-      !naturalizedBindingNames.has(binding.local) &&
-      !trivialAliasDeclarations.some(
-        (declaration) =>
-          t.isIdentifier(declaration.declarations[0]?.id) && declaration.declarations[0].id.name === binding.local
-      )
+    (binding) => !naturalizedBindingNames.has(binding.local) && !trivialAliasNames.has(binding.local)
   );
   body.push(...buildNaturalizedDeclarationStatements(entry));
   body.push(...trivialAliasDeclarations);
@@ -1683,6 +1687,15 @@ export function upgradeSingleAssignmentLetsToConst(body) {
   if (!letDeclaration) {
     return;
   }
+  const letNames = new Set();
+  for (const declarator of letDeclaration.declarations) {
+    if (t.isIdentifier(declarator.id) && declarator.init == null) {
+      letNames.add(declarator.id.name);
+    }
+  }
+  if (letNames.size === 0) {
+    return;
+  }
   const stageFunctions = body.filter(
     (statement) => t.isExportNamedDeclaration(statement) && t.isFunctionDeclaration(statement.declaration)
   );
@@ -1690,48 +1703,50 @@ export function upgradeSingleAssignmentLetsToConst(body) {
     return;
   }
 
-  const writesByName = collectWriteOccurrences(body);
-  const assignmentsByName = new Map();
-  for (const stageExport of stageFunctions) {
-    for (const statement of stageExport.declaration.body.body) {
-      if (!t.isExpressionStatement(statement) || !t.isAssignmentExpression(statement.expression, { operator: "=" })) {
-        continue;
-      }
-      const { left, right } = statement.expression;
-      if (!t.isIdentifier(left)) {
-        continue;
-      }
-      const records = assignmentsByName.get(left.name) ?? [];
-      records.push({ statement, right });
-      assignmentsByName.set(left.name, records);
+  const assignmentsByName = collectStageAssignmentRecords(stageFunctions, letNames);
+  const eligibleAssignmentsByName = new Map();
+  for (const [name, assignments] of assignmentsByName) {
+    if (assignments.length !== 1) {
+      continue;
     }
+    const [assignment] = assignments;
+    if (isConstEligibleInitializer(assignment.right)) {
+      eligibleAssignmentsByName.set(name, assignment);
+    }
+  }
+  if (eligibleAssignmentsByName.size === 0) {
+    return;
+  }
+
+  const writesByName = collectWriteOccurrences(body, new Set(eligibleAssignmentsByName.keys()), {
+    maxVisitedNodes: MAX_CONST_PROMOTION_SCAN_NODE_COUNT,
+  });
+  if (!writesByName) {
+    return;
   }
 
   const constDeclarators = [];
   const remainingDeclarators = [];
+  const promotedAssignments = [];
   for (const declarator of letDeclaration.declarations) {
     if (!t.isIdentifier(declarator.id)) {
       remainingDeclarators.push(declarator);
       continue;
     }
     const name = declarator.id.name;
-    const assignments = assignmentsByName.get(name) ?? [];
-    if (assignments.length !== 1 || (writesByName.get(name) ?? 0) !== 1) {
+    const assignment = eligibleAssignmentsByName.get(name);
+    if (!assignment || (writesByName.get(name) ?? 0) !== 1) {
       remainingDeclarators.push(declarator);
       continue;
     }
-    const [{ statement, right }] = assignments;
-    if (!isConstEligibleInitializer(right)) {
-      remainingDeclarators.push(declarator);
-      continue;
-    }
-    constDeclarators.push(t.variableDeclarator(t.identifier(name), t.cloneNode(right, true)));
-    removeStatementFromStageBody(statement, stageFunctions);
+    constDeclarators.push(t.variableDeclarator(t.identifier(name), t.cloneNode(assignment.right, true)));
+    promotedAssignments.push(assignment);
   }
 
   if (constDeclarators.length === 0) {
     return;
   }
+  removeStageAssignmentRecords(promotedAssignments);
   const letIndex = body.indexOf(letDeclaration);
   const replacement = [t.variableDeclaration("const", constDeclarators)];
   if (remainingDeclarators.length > 0) {
@@ -1740,100 +1755,143 @@ export function upgradeSingleAssignmentLetsToConst(body) {
   body.splice(letIndex, 1, ...replacement);
 }
 
-function collectWriteOccurrences(body) {
+function collectStageAssignmentRecords(stageFunctions, targetNames) {
+  const assignmentsByName = new Map();
+  for (const stageExport of stageFunctions) {
+    const block = stageExport.declaration.body.body;
+    for (let statementIndex = 0; statementIndex < block.length; statementIndex++) {
+      const statement = block[statementIndex];
+      if (!t.isExpressionStatement(statement) || !t.isAssignmentExpression(statement.expression, { operator: "=" })) {
+        continue;
+      }
+      const { left, right } = statement.expression;
+      if (!t.isIdentifier(left) || !targetNames.has(left.name)) {
+        continue;
+      }
+      const records = assignmentsByName.get(left.name) ?? [];
+      records.push({ block, statementIndex, right });
+      assignmentsByName.set(left.name, records);
+    }
+  }
+  return assignmentsByName;
+}
+
+function collectWriteOccurrences(body, targetNames, { maxVisitedNodes = Number.POSITIVE_INFINITY } = {}) {
   const counts = new Map();
+  const state = { maxVisitedNodes, visitedNodes: 0 };
   for (const statement of body) {
-    collectWriteOccurrencesInNode(statement, counts);
+    if (!collectWriteOccurrencesInNode(statement, counts, targetNames, state)) {
+      return null;
+    }
   }
   return counts;
 }
 
-function collectWriteOccurrencesInNode(node, counts) {
+function collectWriteOccurrencesInNode(node, counts, targetNames, state) {
   if (!node) {
-    return;
+    return true;
+  }
+  state.visitedNodes += 1;
+  if (state.visitedNodes > state.maxVisitedNodes) {
+    return false;
   }
   if (t.isAssignmentExpression(node)) {
-    collectAssignedIdentifiers(node.left, counts);
+    collectAssignedIdentifiers(node.left, counts, targetNames);
   }
   if (t.isUpdateExpression(node)) {
-    collectAssignedIdentifiers(node.argument, counts);
+    collectAssignedIdentifiers(node.argument, counts, targetNames);
   }
   if (t.isForInStatement(node) || t.isForOfStatement(node)) {
-    collectAssignedIdentifiers(node.left, counts);
+    collectAssignedIdentifiers(node.left, counts, targetNames);
   }
   const keys = t.VISITOR_KEYS[node.type] ?? [];
   for (const key of keys) {
     const value = node[key];
     if (Array.isArray(value)) {
       for (const child of value) {
-        collectWriteOccurrencesInNode(child, counts);
+        if (!collectWriteOccurrencesInNode(child, counts, targetNames, state)) {
+          return false;
+        }
       }
     } else {
-      collectWriteOccurrencesInNode(value, counts);
+      if (!collectWriteOccurrencesInNode(value, counts, targetNames, state)) {
+        return false;
+      }
     }
   }
+  return true;
 }
 
-function collectAssignedIdentifiers(node, counts) {
+function collectAssignedIdentifiers(node, counts, targetNames) {
   if (!node) {
     return;
   }
   if (t.isIdentifier(node)) {
-    counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+    if (targetNames.has(node.name)) {
+      counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+    }
     return;
   }
   if (t.isObjectPattern(node)) {
     for (const property of node.properties) {
       if (t.isRestElement(property)) {
-        collectAssignedIdentifiers(property.argument, counts);
+        collectAssignedIdentifiers(property.argument, counts, targetNames);
       } else if (t.isObjectProperty(property)) {
-        collectAssignedIdentifiers(property.value, counts);
+        collectAssignedIdentifiers(property.value, counts, targetNames);
       }
     }
     return;
   }
   if (t.isArrayPattern(node)) {
     for (const element of node.elements) {
-      collectAssignedIdentifiers(element, counts);
+      collectAssignedIdentifiers(element, counts, targetNames);
     }
     return;
   }
   if (t.isAssignmentPattern(node)) {
-    collectAssignedIdentifiers(node.left, counts);
+    collectAssignedIdentifiers(node.left, counts, targetNames);
     return;
   }
   if (t.isRestElement(node)) {
-    collectAssignedIdentifiers(node.argument, counts);
+    collectAssignedIdentifiers(node.argument, counts, targetNames);
     return;
   }
   if (t.isParenthesizedExpression(node)) {
-    collectAssignedIdentifiers(node.expression, counts);
+    collectAssignedIdentifiers(node.expression, counts, targetNames);
     return;
   }
 }
 
-function removeStatementFromStageBody(targetStatement, stageFunctions) {
-  for (const stageExport of stageFunctions) {
-    const block = stageExport.declaration.body.body;
-    const idx = block.indexOf(targetStatement);
-    if (idx >= 0) {
-      block.splice(idx, 1);
-      return;
+function removeStageAssignmentRecords(assignments) {
+  const indexesByBlock = new Map();
+  for (const { block, statementIndex } of assignments) {
+    const indexes = indexesByBlock.get(block) ?? [];
+    indexes.push(statementIndex);
+    indexesByBlock.set(block, indexes);
+  }
+  for (const [block, indexes] of indexesByBlock) {
+    indexes.sort((left, right) => right - left);
+    for (const index of indexes) {
+      block.splice(index, 1);
     }
   }
 }
 
-function isConstEligibleInitializer(node) {
+function isConstEligibleInitializer(node, state = { visitedNodes: 0 }) {
+  state.visitedNodes += 1;
+  if (state.visitedNodes > MAX_CONST_PROMOTION_INITIALIZER_NODE_COUNT) {
+    return false;
+  }
   return (
     t.isLiteral(node) ||
-    (t.isUnaryExpression(node) && isConstEligibleInitializer(node.argument)) ||
-    (t.isArrayExpression(node) && node.elements.every((el) => el && isConstEligibleInitializer(el))) ||
+    (t.isUnaryExpression(node) && isConstEligibleInitializer(node.argument, state)) ||
+    (t.isArrayExpression(node) && node.elements.every((el) => el && isConstEligibleInitializer(el, state))) ||
     (t.isObjectExpression(node) &&
       node.properties.every(
         (prop) =>
           t.isObjectProperty(prop) &&
           (!prop.computed || t.isLiteral(prop.key)) &&
-          isConstEligibleInitializer(prop.value)
+          isConstEligibleInitializer(prop.value, state)
       ))
   );
 }
