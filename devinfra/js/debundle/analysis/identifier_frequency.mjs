@@ -289,6 +289,7 @@ function analyzeFile(file, aggregate, { excludedIdentifiers }) {
   const ast = file.ast ?? parse(readFileSync(file.path, "utf8"), file.parserOptions ?? DEFAULT_PARSER_OPTIONS);
   let programPath = null;
   const topLevelBindingsByName = new Map();
+  const shadowedBeforeProgramCache = new WeakMap();
 
   traverse(ast, {
     Program(path) {
@@ -321,6 +322,7 @@ function analyzeFile(file, aggregate, { excludedIdentifiers }) {
         name,
         programPath,
         role,
+        shadowedBeforeProgramCache,
         topLevelBindingsByName,
       });
       if (binding) {
@@ -393,7 +395,7 @@ function isBindingIdentifierPath(path) {
   return false;
 }
 
-function topLevelBindingForIdentifier(path, { name, programPath, role, topLevelBindingsByName }) {
+function topLevelBindingForIdentifier(path, { name, programPath, role, shadowedBeforeProgramCache, topLevelBindingsByName }) {
   if (!programPath) {
     return null;
   }
@@ -407,18 +409,36 @@ function topLevelBindingForIdentifier(path, { name, programPath, role, topLevelB
   if (role !== "reference") {
     return null;
   }
-  return isShadowedBeforeProgram(path.scope, name, programPath) ? null : topLevelBinding;
+  return isShadowedBeforeProgram(path.scope, name, programPath, shadowedBeforeProgramCache) ? null : topLevelBinding;
 }
 
-function isShadowedBeforeProgram(scope, name, programPath) {
+function isShadowedBeforeProgram(scope, name, programPath, cache = null) {
+  const cachedByName = cache?.get(scope);
+  if (cachedByName?.has(name)) {
+    return cachedByName.get(name);
+  }
   let currentScope = scope;
   while (currentScope && currentScope.path !== programPath) {
     if (currentScope.hasOwnBinding(name)) {
+      cacheShadowedBeforeProgram(cache, scope, name, true);
       return true;
     }
     currentScope = currentScope.parent;
   }
+  cacheShadowedBeforeProgram(cache, scope, name, false);
   return false;
+}
+
+function cacheShadowedBeforeProgram(cache, scope, name, value) {
+  if (!cache) {
+    return;
+  }
+  let cachedByName = cache.get(scope);
+  if (!cachedByName) {
+    cachedByName = new Map();
+    cache.set(scope, cachedByName);
+  }
+  cachedByName.set(name, value);
 }
 
 export function isScrambledIdentifier(name, excludedIdentifiers = EXCLUDED_IDENTIFIERS) {
