@@ -238,7 +238,7 @@ console.log(a + b);
 });
 
 test("extracts non-contiguous declaration regions with staged-shell lowering and preserves behavior", () => {
-  const source = `const helperSeed = 1;
+  const source = `const helperSeed = Number("1");
 function readHelperSeed() {
   return helperSeed;
 }
@@ -1712,6 +1712,123 @@ export { NodeToolbarButton };
   });
 });
 
+test("naturalizes pure literal assignment owners before emitting mixed init wrappers", () => {
+  const source = `globalThis.singletonEvents = [];
+let cloudFunctionsClientSingleton = null;
+function readCloudFunctionsClientSingleton() {
+  if (cloudFunctionsClientSingleton === null) {
+    cloudFunctionsClientSingleton = "created";
+  }
+  return cloudFunctionsClientSingleton;
+}
+globalThis.singletonEvents.push(readCloudFunctionsClientSingleton());
+console.log(globalThis.singletonEvents.join("|"));
+export { readCloudFunctionsClientSingleton };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [1],
+      init: "init_cloud_functions_client_region",
+      ownerNames: ["cloudFunctionsClientSingleton", "readCloudFunctionsClientSingleton"],
+      targetFile: "regions/cloud_functions_client_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/cloud_functions_client_region.js");
+  assert.match(
+    runtimeCode,
+    /import \{ readCloudFunctionsClientSingleton, init_cloud_functions_client_region \} from "\.\/regions\/cloud_functions_client_region\.js"/
+  );
+  assert.match(runtimeCode, /init_cloud_functions_client_region\(\);/);
+  assert.match(extractedCode, /^\s*let cloudFunctionsClientSingleton = null;/m);
+  assert.match(extractedCode, /^\s*function readCloudFunctionsClientSingleton\(\)/m);
+  assert.match(extractedCode, /export function init_cloud_functions_client_region/);
+  assert.doesNotMatch(extractedCode, /^\s*cloudFunctionsClientSingleton = null;/m);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-naturalized-literal-assignment-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("naturalizes class expressions with unresolved global superclasses only before ordering barriers", () => {
+  const source = `let FirebaseClientError = class FirebaseClientError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "FirebaseClientError";
+  }
+};
+console.log(new FirebaseClientError("boom").name);
+export { FirebaseClientError };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_firebase_client_error_region",
+      ownerNames: ["FirebaseClientError"],
+      targetFile: "regions/firebase_client_error_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/firebase_client_error_region.js");
+  assert.match(runtimeCode, /import \{ FirebaseClientError \} from "\.\/regions\/firebase_client_error_region\.js"/);
+  assert.doesNotMatch(runtimeCode, /init_firebase_client_error_region\(\);/);
+  assert.match(extractedCode, /^\s*class FirebaseClientError extends Error\b/m);
+  assert.doesNotMatch(extractedCode, /export function init_firebase_client_error_region/);
+  assert.doesNotMatch(extractedCode, /\bFirebaseClientError = class FirebaseClientError\b/);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-naturalized-global-superclass-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("keeps init wrappers for unresolved global superclass reads after ordering barriers", () => {
+  const source = `globalThis.superclassBarrierEvents = [];
+globalThis.superclassBarrierEvents.push("configured");
+let BarrierError = class BarrierError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "BarrierError";
+  }
+};
+globalThis.superclassBarrierEvents.push(new BarrierError("boom").name);
+console.log(globalThis.superclassBarrierEvents.join("|"));
+export { BarrierError };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [2],
+      init: "init_barrier_error_region",
+      ownerNames: ["BarrierError"],
+      targetFile: "regions/barrier_error_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/barrier_error_region.js");
+  assert.match(
+    runtimeCode,
+    /import \{ BarrierError, init_barrier_error_region \} from "\.\/regions\/barrier_error_region\.js"/
+  );
+  assert.match(runtimeCode, /init_barrier_error_region\(\);/);
+  assert.match(extractedCode, /\blet BarrierError\b/);
+  assert.match(extractedCode, /\bBarrierError = class BarrierError extends Error\b/);
+  assert.doesNotMatch(extractedCode, /^\s*class BarrierError extends Error\b/m);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-keeps-global-superclass-barrier-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("keeps init wrappers for class-expression assignments with definition-time side effects", () => {
   const source = `globalThis.staticWidgetEvents = [];
 globalThis.staticWidgetEvents.push("before");
@@ -1979,10 +2096,11 @@ export { isOpen, next, toggle };
   const extractedCode = result.files.get("regions/state_region.js");
   assert.match(extractedCode, /^\s*function toggle\(\)/m);
   assert.match(extractedCode, /^\s*function isOpen\(\)/m);
-  assert.match(extractedCode, /let open, initial, next;/);
+  assert.match(extractedCode, /^\s*let open = false;/m);
+  assert.match(extractedCode, /let initial, next;/);
   assert.match(extractedCode, /export \{ toggle, isOpen, initial, next \};/);
   assert.doesNotMatch(extractedCode, /export \{[^\n}]*\bopen\b/);
-  assert.match(extractedCode, /open = false/);
+  assert.doesNotMatch(extractedCode, /^\s*open = false;/m);
   assert.doesNotMatch(extractedCode, /toggle = function toggle/);
 
   assertRunnableEquivalent({
