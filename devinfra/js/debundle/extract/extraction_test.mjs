@@ -174,6 +174,29 @@ export { Base, Derived };`,
   assert.equal(ownerWithBaseAndDerived.ownerFragments?.length ?? 0, 0);
 });
 
+test("planSelectedAtomicModules keeps multi-declarator owners together when a lazy fragment mutates a sibling binding", () => {
+  const ast = parse(
+    `const KU = {}, ype = function ype() {
+  KU.value = 1;
+};
+export { KU, ype };`,
+    { sourceType: "module" }
+  );
+  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
+
+  const plan = planSelectedAtomicModules(
+    {
+      analysis,
+      code: null,
+      programBody: ast.program.body,
+    },
+    {}
+  );
+
+  assert.equal(plan.atomicUnits.length, 1);
+  assert.deepEqual(plan.atomicUnits[0].memberNames, ["KU", "ype"]);
+});
+
 test("planSelectedAtomicModules can split declarator fragments around attached side effects that touch only one fragment", () => {
   const ast = parse(
     `const createPlatformClient = () => ({ ok: true }), indexedDbOutgoingTxSendQueue = new Map();

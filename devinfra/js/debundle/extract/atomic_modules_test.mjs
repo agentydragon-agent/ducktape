@@ -527,6 +527,35 @@ test("materializeLogicalModules lowers final logical modules directly from combi
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules writes reusable boundary-analysis and selected-owner cache artifacts", async () => {
+  const { artifact } = await prepareAtomicFixture("debundle-materialize-logical-modules-cache-");
+  const operations = logicalModuleOpsForFixture();
+  const { outRoot } = createWebFixtureRoots("debundle-materialize-logical-modules-cache-write-");
+  const boundaryAnalysisDir = join(outRoot, "analysis", "boundary");
+  const selectedOwnerIdsByChunkPath = join(outRoot, "analysis", "selected-owner-ids.json");
+
+  const materialized = materializeLogicalModules({
+    artifact,
+    boundaryAnalysisDir,
+    chunkIds: ["static/app"],
+    operations,
+    pruneOtherChunks: false,
+    selectedOwnerIdsByChunkPath,
+  });
+
+  assert.equal(materialized.manifest.kind, "js.logical_module_manifest");
+  assert.equal(existsSync(join(boundaryAnalysisDir, "static/app.json")), true);
+  assert.equal(existsSync(selectedOwnerIdsByChunkPath), true);
+
+  const selectedOwnerCache = JSON.parse(readFileSync(selectedOwnerIdsByChunkPath, "utf8"));
+  assert.equal(selectedOwnerCache.kind, "js.selected_owner_ids_cache");
+  assert.ok(Array.isArray(selectedOwnerCache.chunkOwnerIds["static/app"]));
+  assert.ok(selectedOwnerCache.chunkOwnerIds["static/app"].length > 0);
+
+  const cachedAnalysis = JSON.parse(readFileSync(join(boundaryAnalysisDir, "static/app.json"), "utf8"));
+  assert.equal(cachedAnalysis.kind, "js.runtime_boundary_analysis");
+});
+
 test("materializeLogicalModules allows nested logical module paths with colliding leaf basenames", async () => {
   const { artifact } = await prepareAtomicFixture("debundle-materialize-logical-modules-nested-collisions-");
   const operations = [

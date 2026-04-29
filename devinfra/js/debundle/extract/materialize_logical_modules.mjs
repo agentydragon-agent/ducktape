@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import * as t from "@babel/types";
 import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
@@ -44,6 +44,7 @@ export function materializeLogicalModules({
   operations = [],
   reportOutDir = undefined,
   reportSummaryPath = undefined,
+  selectedOwnerIdsByChunkPath = undefined,
   selectedOwnerIdsByChunk = undefined,
   targetDir = "modules",
 }) {
@@ -53,9 +54,15 @@ export function materializeLogicalModules({
   const selectedChunkIds = normalizeChunkIds(chunkIds);
   const startedAt = process.hrtime.bigint();
   const resolvedBoundaryAnalysisDir = boundaryAnalysisDir ? resolveWorkspacePath(boundaryAnalysisDir) : null;
+  const resolvedSelectedOwnerIdsByChunkPath = selectedOwnerIdsByChunkPath
+    ? resolveWorkspacePath(selectedOwnerIdsByChunkPath)
+    : null;
   const normalizedTargetDir = normalizeOptionalRelativeDir(targetDir);
   const reports = [];
   const applied = [];
+  const selectedOwnerIdsCache = normalizeSelectedOwnerIdsCache(
+    selectedOwnerIdsByChunk ?? readSelectedOwnerIdsCache(resolvedSelectedOwnerIdsByChunkPath)
+  );
 
   let resolvedReportOutDir = null;
   let resolvedReportSummaryPath = null;
@@ -86,23 +93,35 @@ export function materializeLogicalModules({
     const runtimeParserOptions = runtimeFile.parserOptions ?? DEFAULT_PARSER_OPTIONS;
     const chunkStartedAt = process.hrtime.bigint();
     const analysisStartedAt = process.hrtime.bigint();
-    const analysis =
-      resolvedBoundaryAnalysisDir
-        ? readBoundaryAnalysis(join(resolvedBoundaryAnalysisDir, `${chunkId}.json`))
-        : analyzeRuntimeBoundaryAst(runtimeFile.ast, {
-            chunkId,
-            manifestPath: `${chunkId}/manifest.json`,
-            runtimePath: `${chunkId}/${targetFile}`,
-            uiVersion: artifactManifest?.uiVersion ?? null,
-          });
+    const boundaryAnalysisPath = resolvedBoundaryAnalysisDir ? join(resolvedBoundaryAnalysisDir, `${chunkId}.json`) : null;
+    const analysis = boundaryAnalysisPath && existsSync(boundaryAnalysisPath)
+      ? readBoundaryAnalysis(boundaryAnalysisPath)
+      : analyzeRuntimeBoundaryAst(runtimeFile.ast, {
+          chunkId,
+          manifestPath: `${chunkId}/manifest.json`,
+          runtimePath: `${chunkId}/${targetFile}`,
+          uiVersion: artifactManifest?.uiVersion ?? null,
+        });
+    if (boundaryAnalysisPath && !existsSync(boundaryAnalysisPath)) {
+      writeJsonFile(boundaryAnalysisPath, analysis);
+    }
     const analysisMs = durationMsSince(analysisStartedAt);
     logProgress(`logical-modules chunk=${chunkId} analysis done duration=${formatDuration(analysisMs)}`);
     const planningStartedAt = process.hrtime.bigint();
-    const baseSelectedOwnerIds = selectedOwnerIdsByChunk?.[chunkId] ?? defaultSelectedOwnerIdsForAnalysis(analysis);
+    const baseSelectionStartedAt = process.hrtime.bigint();
+    const baseSelectedOwnerIds =
+      selectedOwnerIdsCache?.[chunkId] ?? defaultSelectedOwnerIdsForAnalysis(analysis);
+    if (selectedOwnerIdsCache && !selectedOwnerIdsCache[chunkId]) {
+      selectedOwnerIdsCache[chunkId] = [...baseSelectedOwnerIds].sort();
+    }
+    const baseSelectionMs = durationMsSince(baseSelectionStartedAt);
+    const logicalClaimSelectionStartedAt = process.hrtime.bigint();
     const logicalClaimOwnerIds = logicalSelectedOwnerIdsForChunk(operations, { analysis, chunkId });
+    const logicalClaimSelectionMs = durationMsSince(logicalClaimSelectionStartedAt);
     // The auto-selected owner base and the logical-member claim set are both only seeds.
     // Before atomic planning, close the merged seed set over the full owner dependency graph
     // so later lowering never depends on a provider owner that stayed behind in the runtime shell.
+    const closureStartedAt = process.hrtime.bigint();
     const selectedOwnerIds = closeSelectedOwnerIdsOverDependencyGraph(
       mergeSelectedOwnerIds(baseSelectedOwnerIds, logicalClaimOwnerIds),
       {
@@ -110,6 +129,8 @@ export function materializeLogicalModules({
         callerName: `materializeLogicalModules chunk=${chunkId}`,
       }
     );
+    const closureMs = durationMsSince(closureStartedAt);
+    const atomicPlanningStartedAt = process.hrtime.bigint();
     const atomicPlan = planSelectedAtomicModules(
       {
         analysis,
@@ -120,11 +141,16 @@ export function materializeLogicalModules({
         selectedOwnerIds,
       }
     );
+    const atomicPlanningMs = durationMsSince(atomicPlanningStartedAt);
     const planningMs = durationMsSince(planningStartedAt);
     const atomicPlanTimings = atomicPlan.timingsMs ?? {};
     logProgress(
       `logical-modules chunk=${chunkId} planning done atomicUnits=${atomicPlan.atomicUnitCount} ` +
         `selectedOwners=${atomicPlan.selectedOwnerCount} duration=${formatDuration(planningMs)} ` +
+        `baseSelection=${formatDuration(baseSelectionMs)} ` +
+        `logicalClaims=${formatDuration(logicalClaimSelectionMs)} ` +
+        `closure=${formatDuration(closureMs)} ` +
+        `atomicPlanning=${formatDuration(atomicPlanningMs)} ` +
         `selectOwners=${formatDuration(atomicPlanTimings.selectOwners ?? 0)} ` +
         `buildAtomicUnits=${formatDuration(atomicPlanTimings.buildAtomicUnits ?? 0)} ` +
         `finalizeAtomicUnits=${formatDuration(atomicPlanTimings.finalizeAtomicUnits ?? 0)} ` +
@@ -139,9 +165,11 @@ export function materializeLogicalModules({
         targetFile: target.file,
       };
     });
+    const logicalPlanStartedAt = process.hrtime.bigint();
     const logicalModules = buildLogicalModulePlans(atomicModules, operations, { analysis, chunkId, targetDir });
+    const logicalPlanMs = durationMsSince(logicalPlanStartedAt);
     logProgress(
-      `logical-modules chunk=${chunkId} logical-plan done final=${logicalModules.modules.length} explicit=${logicalModules.counts.explicitModules} residual=${logicalModules.counts.residualModules}`
+      `logical-modules chunk=${chunkId} logical-plan done final=${logicalModules.modules.length} explicit=${logicalModules.counts.explicitModules} residual=${logicalModules.counts.residualModules} duration=${formatDuration(logicalPlanMs)}`
     );
 
     const parseStartedAt = process.hrtime.bigint();
@@ -341,6 +369,13 @@ export function materializeLogicalModules({
   if (resolvedReportSummaryPath) {
     writeJsonFile(resolvedReportSummaryPath, manifest);
   }
+  if (resolvedSelectedOwnerIdsByChunkPath && selectedOwnerIdsCache) {
+    writeJsonFile(resolvedSelectedOwnerIdsByChunkPath, {
+      chunkOwnerIds: selectedOwnerIdsCache,
+      kind: "js.selected_owner_ids_cache",
+      schemaVersion: 1,
+    });
+  }
 
   logProgress(
     `logical-modules done chunks=${reports.length} modules=${manifest.counts.finalModules} duration=${formatDurationSince(startedAt)}`
@@ -468,6 +503,37 @@ function readBoundaryAnalysis(path) {
     throw new Error(`Expected runtime boundary analysis at ${path}, got ${analysis?.kind ?? "unknown"}`);
   }
   return analysis;
+}
+
+function readSelectedOwnerIdsCache(path) {
+  if (!path || !existsSync(path)) {
+    return null;
+  }
+  const cache = JSON.parse(readFileSync(path, "utf8"));
+  const chunkOwnerIds = cache?.chunkOwnerIds ?? cache;
+  if (!chunkOwnerIds || typeof chunkOwnerIds !== "object") {
+    throw new Error(`Expected selected owner id cache map at ${path}`);
+  }
+  return chunkOwnerIds;
+}
+
+function normalizeSelectedOwnerIdsCache(cache) {
+  if (!cache || typeof cache !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(cache).map(([chunkId, ownerIds]) => [chunkId, normalizeSelectedOwnerIdsForChunk(ownerIds, chunkId)])
+  );
+}
+
+function normalizeSelectedOwnerIdsForChunk(ownerIds, chunkId) {
+  if (ownerIds instanceof Set) {
+    return [...ownerIds].sort();
+  }
+  if (Array.isArray(ownerIds)) {
+    return [...ownerIds].sort();
+  }
+  throw new Error(`Expected selected owner ids for chunk ${chunkId} to be an array or Set`);
 }
 
 function durationMsSince(startedAt) {
