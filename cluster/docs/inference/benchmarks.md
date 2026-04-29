@@ -88,17 +88,25 @@ Strict scoring via Inspect AI's stock `aime_scorer` (penalizes
 format-violation, which is a real model capability gap). Permissive
 re-grade in parens — handles `\boxed{N}` / `\(N\)` for context.
 
-| Config    | reasoning_effort | inspect pass@1 | (regrade pass@1) | avg out_tok | sum total_s | Source                                 |
-| --------- | ---------------- | -------------- | ---------------- | ----------- | ----------- | -------------------------------------- |
-| `c-gpt20` | low              | 5/10 (0.50)    | (7/10)           | 8 186       | 4 081       | <runs/2026-04-28_aime_gpt20/README.md> |
-| `c-gpt20` | medium           | 3/10 (0.30)    | (8/10)           | 9 303       | 3 055       | <runs/2026-04-28_aime_gpt20/README.md> |
-| `c-gpt20` | high             | 7/10 (0.70)    | (7/10)           | 14 187      | 5 868       | <runs/2026-04-28_aime_gpt20/README.md> |
+| Config    | N   | reasoning_effort | strict pass@1    | (regrade) | avg out_tok | wall   | Source                                     |
+| --------- | --- | ---------------- | ---------------- | --------- | ----------- | ------ | ------------------------------------------ |
+| `c-gpt20` | 30  | low              | 12/30 (0.40)     | (20/30)   | 8 928       | 1h 13m | <runs/2026-04-29_aime_gpt20_n30/README.md> |
+| `c-gpt20` | 30  | **medium**       | **21/30 (0.70)** | (26/30)   | 8 415       | 0h 59m | <runs/2026-04-29_aime_gpt20_n30/README.md> |
+| `c-gpt20` | 30  | high             | 15/30 (0.50)     | (19/30)   | 9 333       | 0h 45m | <runs/2026-04-29_aime_gpt20_n30/README.md> |
+| `c-gpt20` | 10  | low              | 5/10 (0.50)      | (7/10)    | 8 186       | 0h 11m | <runs/2026-04-28_aime_gpt20/README.md>     |
+| `c-gpt20` | 10  | medium           | 3/10 (0.30)      | (8/10)    | 9 303       | 0h 09m | <runs/2026-04-28_aime_gpt20/README.md>     |
+| `c-gpt20` | 10  | high             | 7/10 (0.70)      | (7/10)    | 14 187      | 0h 16m | <runs/2026-04-28_aime_gpt20/README.md>     |
 
-Stderr at N=10 is ~0.15, so the strict numbers are within noise of each
-other. Headline: format compliance is the dominant signal — `medium`
-violates "no `\boxed`" on 5/10 problems while `high` follows it
-perfectly. `reasoning_effort` IS plumbed through (avg output tokens
-8K → 9K → 14K) but the effect on accuracy is dwarfed by N=10 noise.
+**Headline at full N=30:** medium decisively wins (3σ above low, 2σ
+above high) — the inverted-U with `reasoning_effort` is a real signal,
+not noise. High over-thinks: 11 genuine wrong answers vs 4 at medium.
+Stderr ~0.09 at N=30. The N=10 numbers were misleading — small-N
+variance dominated.
+
+**Token usage barely moves with the knob:** mean output tokens range
+8 415 → 9 333 (~10%) across efforts, while per-problem variance
+within an effort spans 1K to 41K. `reasoning_effort` is more like a
+hint than a budget on this model+endpoint.
 
 ## Known caveats
 
