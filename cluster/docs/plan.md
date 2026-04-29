@@ -275,26 +275,41 @@ Runtime secrets use Terraform → Vault → ESO. Bootstrap secrets use SOPS (age
 Stakater Reloader restarts pods on changes. See
 <lessons_learned/2025_11_28_eso_password_generator_desync.md>.
 
-### Google OAuth Client → GitOps
+### Google OAuth Client redirect URIs (blocked upstream)
 
 The Google Cloud OAuth client backing Authentik's "Sign in with Google"
 source (client_id `230253529789-…`, referenced from
 `tf/gitops/sso-providers/source_google.tf`) is hand-managed in the
 GCP Console. Every new forward-auth app needs its callback URI
-(`https://<app>.allegedly.works/source/oauth/callback/google/`) added
-to the client's Authorized redirect URIs by hand — a redirect_uri_mismatch
-is the symptom on first sign-in. See e.g. `house-vallejo` deploy
-(2026-04-28) which hit this exact wall.
+(`https://<app>.allegedly.works/source/oauth/callback/google/`)
+appended to the client's Authorized redirect URIs by hand — a
+`redirect_uri_mismatch` is the symptom on first sign-in. The
+behaviour itself is intentional in Authentik
+(<https://github.com/goauthentik/authentik/issues/19883> closed as
+not-planned); standalone proxy outposts run flows on the proxied
+domain. Domain-Level forward-auth would centralise the callback but
+sacrifices per-app group restrictions
+(<https://docs.goauthentik.io/add-secure-apps/providers/proxy/forward_auth/>),
+which is the entire reason for using forward-auth here.
 
-- [ ] Move the GCP OAuth client into Terraform via the
-      `hashicorp/google` provider (`google_iap_client` or the
-      identity-platform OAuth client resource) so redirect URIs become
-      a declarative list.
-- [ ] Wire GCP service-account creds for tofu-controller (or run this
-      module as bootstrap-time TF if cluster TF should never carry
-      cloud-provider creds).
-- [ ] Document the per-app delta: appending one URI to the TF list
-      replaces the manual GCP UI step.
+**Why this isn't behind GitOps yet:** Web Application OAuth 2.0
+Client IDs in GCP have no public CRUD API
+(<https://issuetracker.google.com/issues/116182848>, filed 2018),
+hence no Terraform resource
+(<https://github.com/hashicorp/terraform-provider-google/issues/6074>).
+`google_iap_client` is IAP-only; `google_iam_oauth_client` is
+Workforce Identity Federation-only — neither covers the type of
+client in use. Migrating to one of those products to unblock GitOps
+is a much larger lift than the manual click.
+
+Hit list when this changes:
+
+- [ ] Watch <https://issuetracker.google.com/issues/116182848> for a
+      public OAuth-client management API. When it lands and the
+      Terraform provider gains a resource, move the client and its
+      redirect URIs to TF.
+- [ ] Until then: record per-app callback URI additions in the app's
+      commit message so future audits can rebuild the list from git.
 
 ### Kyverno GitOps Enforcement
 
