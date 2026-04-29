@@ -44,10 +44,9 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
   }
 
   const ownerById = getOwnerByIdForAnalysis(analysis);
-  const claimableAtomicModules = [...currentModules]
-    .sort(
-      (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
-    );
+  const claimableAtomicModules = [...currentModules].sort(
+    (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
+  );
   const moduleById = new Map(claimableAtomicModules.map((modulePlan) => [modulePlan.id, modulePlan]));
   const modulesByOwnerId = buildModulesByOwnerId(claimableAtomicModules);
   const modulesBySymbol = buildModulesBySymbol(claimableAtomicModules);
@@ -149,14 +148,11 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     });
   }
 
-  const privatelyReachableDependencyIdsByOperationId = buildPrivatelyReachableDependencyIdsByOperationId(
-    preparedExplicitOperations,
-    {
-      claimedModuleIds: directClaimedModuleIds,
-      dependencyIdsByModuleId,
-      moduleById,
-    }
-  );
+  const reachableDependencyIdsByOperationId = buildReachableDependencyIdsByOperationId(preparedExplicitOperations, {
+    claimedModuleIds: directClaimedModuleIds,
+    dependencyIdsByModuleId,
+    moduleById,
+  });
 
   for (const { directSelectedModules, operation, requestedBindings } of preparedExplicitOperations) {
     if (directSelectedModules.length === 0) {
@@ -177,10 +173,11 @@ export function buildLogicalModulePlans(currentModules, operations, { analysis =
     const dependencyClosedModules = expandSelectedModuleDependencyClosure(directSelectedModules, {
       dependencyIdsByModuleId,
       moduleById,
-      privatelyReachableDependencyIds:
-        privatelyReachableDependencyIdsByOperationId.get(operation.id) ?? new Set(),
+      reachableDependencyIds: reachableDependencyIdsByOperationId.get(operation.id) ?? new Set(),
     });
-    dependencyClosedModules.sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
+    dependencyClosedModules.sort(
+      (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
+    );
     for (const modulePlan of dependencyClosedModules) {
       const priorOwner = finalClaimedModuleIds.get(modulePlan.id);
       if (priorOwner && priorOwner !== operation.id) {
@@ -351,7 +348,8 @@ function normalizeLogicalTarget(target, operationId) {
   if (!target || typeof target !== "object") {
     throw new Error(`logical module ${operationId} requires target`);
   }
-  const targetPath = typeof target.path === "string" && target.path !== "" ? normalizeRelativeModulePath(target.path) : null;
+  const targetPath =
+    typeof target.path === "string" && target.path !== "" ? normalizeRelativeModulePath(target.path) : null;
   if (!targetPath) {
     throw new Error(`logical module ${operationId} requires target.path`);
   }
@@ -372,7 +370,11 @@ function normalizeLogicalMember(member, operation, index) {
   if (!member.selector || typeof member.selector !== "object") {
     throw new Error(`define_logical_module ${operation.id} member ${member.id} requires selector`);
   }
-  if (!member.selector.binding || typeof member.selector.binding?.name !== "string" || member.selector.binding.name === "") {
+  if (
+    !member.selector.binding ||
+    typeof member.selector.binding?.name !== "string" ||
+    member.selector.binding.name === ""
+  ) {
     throw new Error(`define_logical_module ${operation.id} member ${member.id} requires selector.binding.name`);
   }
   return {
@@ -391,7 +393,9 @@ function normalizeLogicalMember(member, operation, index) {
 function normalizeLogicalMemberName(member, operation, index) {
   if (member.name !== undefined) {
     if (typeof member.name !== "string" || member.name === "") {
-      throw new Error(`define_logical_module ${operation.id} member[${index}] requires member.name to be a non-empty string`);
+      throw new Error(
+        `define_logical_module ${operation.id} member[${index}] requires member.name to be a non-empty string`
+      );
     }
     return member.name;
   }
@@ -464,31 +468,34 @@ function computeExtractorAvailability(currentModules, { analysis, dependencyIdsB
       analysis,
       modulesByOwnerId: buildModulesByOwnerId(allModules),
     });
-  // Availability is a fixed point, not a one-shot per-owner predicate. If an
-  // otherwise compatible atomic module depends on a blocked atomic module, it
-  // is not actually lowerable either and must stay out of the extracted module
-  // surface until we improve the lowerer.
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const modulePlan of allModules) {
-      if (!availableModuleIds.has(modulePlan.id)) {
+  // Availability is a fixed point, not a one-shot per-owner predicate. Propagate
+  // blockers through the reverse dependency graph instead of repeatedly scanning
+  // every module until convergence.
+  const dependentModuleIdsByDependencyId = new Map();
+  for (const [moduleId, dependencyModuleIds] of effectiveDependencyIdsByModuleId.entries()) {
+    for (const dependencyModuleId of dependencyModuleIds) {
+      if (!dependentModuleIdsByDependencyId.has(dependencyModuleId)) {
+        dependentModuleIdsByDependencyId.set(dependencyModuleId, []);
+      }
+      dependentModuleIdsByDependencyId.get(dependencyModuleId).push(moduleId);
+    }
+  }
+  const unavailableQueue = allModules
+    .filter((modulePlan) => !availableModuleIds.has(modulePlan.id))
+    .map((modulePlan) => modulePlan.id);
+  for (let queueIndex = 0; queueIndex < unavailableQueue.length; queueIndex++) {
+    const unavailableModuleId = unavailableQueue[queueIndex];
+    for (const dependentModuleId of dependentModuleIdsByDependencyId.get(unavailableModuleId) ?? []) {
+      if (!availableModuleIds.has(dependentModuleId)) {
         continue;
       }
-      for (const dependencyModuleId of effectiveDependencyIdsByModuleId.get(modulePlan.id) ?? []) {
-        if (availableModuleIds.has(dependencyModuleId)) {
-          continue;
-        }
-        availableModuleIds.delete(modulePlan.id);
-        const dependencyReasons = blockingReasonsByModuleId.get(dependencyModuleId) ?? [];
-        const blockingReasons = [
-          `depends_on_unavailable_module:${dependencyModuleId}`,
-          ...dependencyReasons,
-        ].filter((reason, index, array) => array.indexOf(reason) === index);
-        blockingReasonsByModuleId.set(modulePlan.id, blockingReasons);
-        changed = true;
-        break;
-      }
+      availableModuleIds.delete(dependentModuleId);
+      const dependencyReasons = blockingReasonsByModuleId.get(unavailableModuleId) ?? [];
+      const blockingReasons = [`depends_on_unavailable_module:${unavailableModuleId}`, ...dependencyReasons].filter(
+        (reason, index, array) => array.indexOf(reason) === index
+      );
+      blockingReasonsByModuleId.set(dependentModuleId, blockingReasons);
+      unavailableQueue.push(dependentModuleId);
     }
   }
   return {
@@ -522,70 +529,69 @@ function buildModuleDependencyIdsByModuleId(modulePlans, { analysis, modulesByOw
   return dependencyIdsByModuleId;
 }
 
-function buildPrivatelyReachableDependencyIdsByOperationId(
+function buildReachableDependencyIdsByOperationId(
   preparedExplicitOperations,
   { claimedModuleIds, dependencyIdsByModuleId, moduleById }
 ) {
-  const reachableOperationIdsByModuleId = new Map();
-  for (const { directSelectedModules, operation } of preparedExplicitOperations) {
+  const reachableDependencyIdsByOperationId = new Map();
+  const assignedDependencyOperationIdByModuleId = new Map();
+  const prioritizedOperations = preparedExplicitOperations
+    .map(({ directSelectedModules, operation }, operationIndex) => ({
+      directSelectedModules,
+      operation,
+      operationIndex,
+      startOrdinal:
+        directSelectedModules.length === 0
+          ? Number.POSITIVE_INFINITY
+          : Math.min(...directSelectedModules.map((modulePlan) => modulePlan.startOrdinal)),
+    }))
+    .sort(
+      (left, right) =>
+        left.startOrdinal - right.startOrdinal ||
+        left.operationIndex - right.operationIndex ||
+        left.operation.id.localeCompare(right.operation.id)
+    );
+
+  for (const { operation } of preparedExplicitOperations) {
+    reachableDependencyIdsByOperationId.set(operation.id, new Set());
+  }
+
+  for (const { directSelectedModules, operation } of prioritizedOperations) {
     if (directSelectedModules.length === 0) {
       continue;
     }
-    const reachableDependencyIds = collectReachableUnclaimedDependencyIds(directSelectedModules, {
-      claimedModuleIds,
-      dependencyIdsByModuleId,
-      moduleById,
-      operationId: operation.id,
-    });
-    for (const moduleId of reachableDependencyIds) {
-      if (!reachableOperationIdsByModuleId.has(moduleId)) {
-        reachableOperationIdsByModuleId.set(moduleId, new Set());
+    const reachableDependencyIds = reachableDependencyIdsByOperationId.get(operation.id);
+    const stack = directSelectedModules.map((modulePlan) => modulePlan.id);
+    const scannedModuleIds = new Set(stack);
+    while (stack.length > 0) {
+      const moduleId = stack.pop();
+      for (const dependencyModuleId of dependencyIdsByModuleId.get(moduleId) ?? []) {
+        if (!moduleById.has(dependencyModuleId)) {
+          continue;
+        }
+        if (claimedModuleIds.has(dependencyModuleId)) {
+          continue;
+        }
+        if (assignedDependencyOperationIdByModuleId.has(dependencyModuleId)) {
+          continue;
+        }
+        assignedDependencyOperationIdByModuleId.set(dependencyModuleId, operation.id);
+        reachableDependencyIds.add(dependencyModuleId);
+        if (!scannedModuleIds.has(dependencyModuleId)) {
+          scannedModuleIds.add(dependencyModuleId);
+          stack.push(dependencyModuleId);
+        }
       }
-      reachableOperationIdsByModuleId.get(moduleId).add(operation.id);
     }
   }
-  const privatelyReachableDependencyIdsByOperationId = new Map();
-  for (const { operation } of preparedExplicitOperations) {
-    privatelyReachableDependencyIdsByOperationId.set(operation.id, new Set());
-  }
-  for (const [moduleId, operationIds] of reachableOperationIdsByModuleId.entries()) {
-    if (operationIds.size !== 1) {
-      continue;
-    }
-    const [operationId] = [...operationIds];
-    privatelyReachableDependencyIdsByOperationId.get(operationId)?.add(moduleId);
-  }
-  return privatelyReachableDependencyIdsByOperationId;
+
+  return reachableDependencyIdsByOperationId;
 }
 
-function collectReachableUnclaimedDependencyIds(
-  directSelectedModules,
-  { claimedModuleIds, dependencyIdsByModuleId, moduleById, operationId }
+function expandSelectedModuleDependencyClosure(
+  selectedModules,
+  { dependencyIdsByModuleId, moduleById, reachableDependencyIds }
 ) {
-  const directSelectedModuleIds = new Set(directSelectedModules.map((modulePlan) => modulePlan.id));
-  const reachableDependencyIds = new Set();
-  const stack = [...directSelectedModuleIds];
-  while (stack.length > 0) {
-    const moduleId = stack.pop();
-    for (const dependencyModuleId of dependencyIdsByModuleId.get(moduleId) ?? []) {
-      if (directSelectedModuleIds.has(dependencyModuleId) || reachableDependencyIds.has(dependencyModuleId)) {
-        continue;
-      }
-      if (!moduleById.has(dependencyModuleId)) {
-        continue;
-      }
-      const claimedByOperationId = claimedModuleIds.get(dependencyModuleId) ?? null;
-      if (claimedByOperationId && claimedByOperationId !== operationId) {
-        continue;
-      }
-      reachableDependencyIds.add(dependencyModuleId);
-      stack.push(dependencyModuleId);
-    }
-  }
-  return reachableDependencyIds;
-}
-
-function expandSelectedModuleDependencyClosure(selectedModules, { dependencyIdsByModuleId, moduleById, privatelyReachableDependencyIds }) {
   const selectedModuleIds = new Set(selectedModules.map((modulePlan) => modulePlan.id));
   const stack = [...selectedModuleIds];
   while (stack.length > 0) {
@@ -594,7 +600,7 @@ function expandSelectedModuleDependencyClosure(selectedModules, { dependencyIdsB
       if (selectedModuleIds.has(dependencyModuleId)) {
         continue;
       }
-      if (!privatelyReachableDependencyIds.has(dependencyModuleId)) {
+      if (!reachableDependencyIds.has(dependencyModuleId)) {
         continue;
       }
       if (!moduleById.has(dependencyModuleId)) {
@@ -638,7 +644,9 @@ function resolveLogicalMember(
         ownerId,
       });
     }
-    const ownerSymbolMatches = ownerMatches.filter((modulePlan) => modulePlan.memberNames.includes(member.selector.binding.name));
+    const ownerSymbolMatches = ownerMatches.filter((modulePlan) =>
+      modulePlan.memberNames.includes(member.selector.binding.name)
+    );
     if (ownerSymbolMatches.length === 1) {
       return classifyResolvedModule(ownerSymbolMatches[0], { availableModuleIds, blockingReasonsByModuleId, ownerId });
     }
@@ -678,7 +686,10 @@ function resolveLogicalMember(
   return classifyResolvedModule(symbolMatches[0], { availableModuleIds, blockingReasonsByModuleId, ownerId: null });
 }
 
-function resolveUniqueSymbolMatch(matches, { availableModuleIds, blockingReasonsByModuleId, member, operationId, ownerId }) {
+function resolveUniqueSymbolMatch(
+  matches,
+  { availableModuleIds, blockingReasonsByModuleId, member, operationId, ownerId }
+) {
   if (matches.length === 0) {
     return {
       blocked: false,
@@ -744,7 +755,10 @@ function groupLogicalModuleOperations(logicalOperations) {
     group.members.push(...operation.members);
     group.operationIds.push(operation.id);
   }
-  const normalizedGroups = [...grouped.values(), ...residualOperations.map((operation) => ({ ...operation, operationIds: [operation.id] }))];
+  const normalizedGroups = [
+    ...grouped.values(),
+    ...residualOperations.map((operation) => ({ ...operation, operationIds: [operation.id] })),
+  ];
   LOGICAL_MODULE_CHUNK_GROUPS_CACHE.set(logicalOperations, normalizedGroups);
   return normalizedGroups;
 }
@@ -908,10 +922,7 @@ function cloneModulePlan(modulePlan) {
 
 function applyBindingPlacementsToMemberNames(memberNames, bindingPlacements) {
   const renamed = new Map(bindingPlacements.map((entry) => [entry.sourceName, entry.name]));
-  return memberNames
-    .map((memberName) => renamed.get(memberName) ?? memberName)
-    .filter((memberName, index, array) => array.indexOf(memberName) === index)
-    .sort();
+  return [...new Set(memberNames.map((memberName) => renamed.get(memberName) ?? memberName))].sort();
 }
 
 function cloneOwnerFragments(ownerFragments) {

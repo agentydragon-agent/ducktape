@@ -174,6 +174,7 @@ export function lowerSelectedModuleRegionsInAst(
   const runtimeRenameStartedAt = process.hrtime.bigint();
   applyFinalBindingRenamesToGeneratedFile(ast, buildRuntimeBindingRenames(resolved), {
     context: `${runtimeFile} runtime lowering`,
+    scanReadableAfterExplicitRenames: true,
   });
   logProgress(
     `selected-modules lower=${runtimeFile} phase=rename_runtime_bindings duration=${formatDurationMs(durationMsSince(runtimeRenameStartedAt))}`
@@ -2193,16 +2194,65 @@ function renamedLocalIdentifierName(name, localRenameMap) {
   return localRenameMap.get(name) ?? name;
 }
 
-function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) {
-  const mayHaveReadableRenames = generatedFileMayHaveReadableRenameCandidate(ast);
+function applyFinalBindingRenamesToGeneratedFile(
+  ast,
+  renameSpecs,
+  { context, scanReadableAfterExplicitRenames = false }
+) {
   if (!Array.isArray(renameSpecs) || renameSpecs.length === 0) {
-    if (mayHaveReadableRenames) {
+    if (generatedFileMayHaveReadableRenameCandidate(ast)) {
       applyReadableObjectPatternRenamesInGeneratedFile(ast);
     }
     return;
   }
+
+  if (scanReadableAfterExplicitRenames) {
+    applyExplicitBindingRenamesToGeneratedFile(ast, renameSpecs, { context });
+    if (generatedFileMayHaveReadableRenameCandidate(ast)) {
+      applyReadableObjectPatternRenamesInGeneratedFile(ast);
+    }
+    return;
+  }
+
+  applyFinalBindingRenamesWithReadableCandidateCollection(ast, renameSpecs, { context });
+}
+
+function applyExplicitBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) {
+  traverse(ast, {
+    Program(path) {
+      validateRenameSpecsAgainstProgramScope(path, renameSpecs, context);
+      const bindingBySourceName = new Map();
+      const renameBySourceName = new Map();
+      for (const renameSpec of renameSpecs) {
+        const binding = path.scope.getOwnBinding(renameSpec.from);
+        if (!binding) {
+          continue;
+        }
+        bindingBySourceName.set(renameSpec.from, binding);
+        renameBySourceName.set(renameSpec.from, renameSpec);
+      }
+      if (renameBySourceName.size === 0) {
+        path.skip();
+        return;
+      }
+      const renameByBinding = new Map();
+      for (const [sourceName, renameSpec] of renameBySourceName) {
+        const binding = bindingBySourceName.get(sourceName);
+        if (binding) {
+          renameByBinding.set(binding, renameSpec.to);
+        }
+      }
+      applyBindingLocalRenamesInProgram(path, renameByBinding);
+      path.skip();
+    },
+  });
+}
+
+function applyFinalBindingRenamesWithReadableCandidateCollection(ast, renameSpecs, { context }) {
+  const mayHaveReadableRenames = generatedFileMayHaveReadableRenameCandidate(ast);
   let collectReadableRenames = false;
   let readableCandidatesByScope = null;
+  let readableBindingCacheByScope = null;
   traverse(ast, {
     Program: {
       enter(path) {
@@ -2232,13 +2282,14 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
         if (mayHaveReadableRenames) {
           collectReadableRenames = true;
           readableCandidatesByScope = new Map();
+          readableBindingCacheByScope = new WeakMap();
         } else {
           path.skip();
         }
       },
       exit() {
         if (readableCandidatesByScope) {
-          applyReadableObjectPatternRenamesFromCandidates(readableCandidatesByScope);
+          applyReadableObjectPatternRenamesFromCandidates(readableCandidatesByScope, readableBindingCacheByScope);
         }
       },
     },
@@ -2247,7 +2298,12 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
         return;
       }
       for (const param of functionPath.node.params ?? []) {
-        collectReadableObjectPatternScopeCandidates(functionPath, param, readableCandidatesByScope);
+        collectReadableObjectPatternScopeCandidates(
+          functionPath,
+          param,
+          readableCandidatesByScope,
+          readableBindingCacheByScope
+        );
       }
     },
     VariableDeclarator(variableDeclaratorPath) {
@@ -2257,14 +2313,20 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
       collectReadableObjectPatternScopeCandidates(
         variableDeclaratorPath,
         variableDeclaratorPath.node.id,
-        readableCandidatesByScope
+        readableCandidatesByScope,
+        readableBindingCacheByScope
       );
     },
     AssignmentExpression(assignmentPath) {
       if (!collectReadableRenames) {
         return;
       }
-      collectReadableObjectPatternScopeCandidates(assignmentPath, assignmentPath.node.left, readableCandidatesByScope);
+      collectReadableObjectPatternScopeCandidates(
+        assignmentPath,
+        assignmentPath.node.left,
+        readableCandidatesByScope,
+        readableBindingCacheByScope
+      );
     },
     ClassMethod(classMethodPath) {
       if (!collectReadableRenames) {
@@ -2276,7 +2338,11 @@ function applyFinalBindingRenamesToGeneratedFile(ast, renameSpecs, { context }) 
       if (!collectReadableRenames) {
         return;
       }
-      collectReadableObjectExpressionScopeCandidates(objectExpressionPath, readableCandidatesByScope);
+      collectReadableObjectExpressionScopeCandidates(
+        objectExpressionPath,
+        readableCandidatesByScope,
+        readableBindingCacheByScope
+      );
     },
   });
 }
@@ -2593,35 +2659,42 @@ function refreshObjectPropertyShorthand(propertyPath) {
 
 function buildReadableObjectPatternRenameGroups(programPath) {
   const candidatesByScope = new Map();
+  const bindingCacheByScope = new WeakMap();
   programPath.traverse({
     Function(functionPath) {
       for (const param of functionPath.node.params ?? []) {
-        collectReadableObjectPatternScopeCandidates(functionPath, param, candidatesByScope);
+        collectReadableObjectPatternScopeCandidates(functionPath, param, candidatesByScope, bindingCacheByScope);
       }
     },
     VariableDeclarator(variableDeclaratorPath) {
       collectReadableObjectPatternScopeCandidates(
         variableDeclaratorPath,
         variableDeclaratorPath.node.id,
-        candidatesByScope
+        candidatesByScope,
+        bindingCacheByScope
       );
     },
     AssignmentExpression(assignmentPath) {
-      collectReadableObjectPatternScopeCandidates(assignmentPath, assignmentPath.node.left, candidatesByScope);
+      collectReadableObjectPatternScopeCandidates(
+        assignmentPath,
+        assignmentPath.node.left,
+        candidatesByScope,
+        bindingCacheByScope
+      );
     },
     ClassMethod(classMethodPath) {
       collectReadableConstructorParamScopeCandidates(classMethodPath, candidatesByScope);
     },
     ObjectExpression(objectExpressionPath) {
-      collectReadableObjectExpressionScopeCandidates(objectExpressionPath, candidatesByScope);
+      collectReadableObjectExpressionScopeCandidates(objectExpressionPath, candidatesByScope, bindingCacheByScope);
     },
   });
 
-  return buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope);
+  return buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope, bindingCacheByScope);
 }
 
-function applyReadableObjectPatternRenamesFromCandidates(candidatesByScope) {
-  const renameGroups = buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope);
+function applyReadableObjectPatternRenamesFromCandidates(candidatesByScope, bindingCacheByScope = null) {
+  const renameGroups = buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope, bindingCacheByScope);
   const renameByBinding = new Map();
   for (const { scopePath, renameSpecs } of renameGroups) {
     for (const renameSpec of renameSpecs) {
@@ -2635,7 +2708,7 @@ function applyReadableObjectPatternRenamesFromCandidates(candidatesByScope) {
   applyBindingLocalRenamesInProgram(null, renameByBinding);
 }
 
-function buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope) {
+function buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope, bindingCacheByScope = null) {
   const renameGroups = [];
   for (const { scopePath, candidates } of candidatesByScope.values()) {
     const candidateBySourceName = new Map();
@@ -2653,7 +2726,8 @@ function buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope)
     }
     const externallyCapturedTargetNames = collectExternallyCapturedTargetNames(
       scopePath,
-      new Set([...candidateBySourceName.values()].map((candidate) => candidate.to))
+      new Set([...candidateBySourceName.values()].map((candidate) => candidate.to)),
+      bindingCacheByScope
     );
     const renameSpecs = [...candidateBySourceName.values()]
       .filter((candidate) =>
@@ -2673,11 +2747,16 @@ function buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope)
   return renameGroups;
 }
 
-function collectReadableObjectPatternScopeCandidates(scopePath, pattern, candidatesByScope) {
+function collectReadableObjectPatternScopeCandidates(
+  scopePath,
+  pattern,
+  candidatesByScope,
+  bindingCacheByScope = null
+) {
   const rawCandidates = [];
   collectReadableObjectPatternRenameCandidates(pattern, rawCandidates);
   for (const candidate of rawCandidates) {
-    const binding = scopePath.scope.getBinding(candidate.from);
+    const binding = resolveBindingForScopeAndName(scopePath.scope, candidate.from, bindingCacheByScope);
     if (!binding) {
       continue;
     }
@@ -2694,11 +2773,11 @@ function collectReadableObjectPatternScopeCandidates(scopePath, pattern, candida
   }
 }
 
-function collectReadableObjectExpressionScopeCandidates(scopePath, candidatesByScope) {
+function collectReadableObjectExpressionScopeCandidates(scopePath, candidatesByScope, bindingCacheByScope = null) {
   const rawCandidates = [];
   collectReadableObjectExpressionRenameCandidates(scopePath.node, rawCandidates);
   for (const candidate of rawCandidates) {
-    const binding = scopePath.scope.getBinding(candidate.from);
+    const binding = resolveBindingForScopeAndName(scopePath.scope, candidate.from, bindingCacheByScope);
     if (!binding) {
       continue;
     }
@@ -2721,7 +2800,7 @@ function collectReadableConstructorParamScopeCandidates(classMethodPath, candida
   }
   const paramNames = new Set();
   for (const param of classMethodPath.node.params ?? []) {
-    if (t.isIdentifier(param)) {
+    if (t.isIdentifier(param) && isScrambledIdentifier(param.name)) {
       paramNames.add(param.name);
     }
   }
@@ -2821,13 +2900,13 @@ function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, e
   return !bindingWouldBeShadowedAfterReadableRename(binding, candidate.to);
 }
 
-function collectExternallyCapturedTargetNames(scopePath, targetNames) {
+function collectExternallyCapturedTargetNames(scopePath, targetNames, bindingCacheByScope = null) {
   const externallyCapturedTargetNames = new Set();
   if (targetNames.size === 0) {
     return externallyCapturedTargetNames;
   }
   for (const targetName of targetNames) {
-    const binding = scopePath.scope.getBinding(targetName);
+    const binding = resolveBindingForScopeAndName(scopePath.scope, targetName, bindingCacheByScope);
     if (!binding || binding.scope === scopePath.scope) {
       continue;
     }
@@ -2838,12 +2917,37 @@ function collectExternallyCapturedTargetNames(scopePath, targetNames) {
   return externallyCapturedTargetNames;
 }
 
+function resolveBindingForScopeAndName(scope, name, bindingCacheByScope = null) {
+  if (!bindingCacheByScope) {
+    return scope.getBinding(name);
+  }
+  let bindingByName = bindingCacheByScope.get(scope);
+  if (!bindingByName) {
+    bindingByName = new Map();
+    bindingCacheByScope.set(scope, bindingByName);
+  }
+  if (bindingByName.has(name)) {
+    return bindingByName.get(name);
+  }
+  const binding = scope.getBinding(name) ?? null;
+  bindingByName.set(name, binding);
+  return binding;
+}
+
 function pathIsWithinNode(path, ancestorNode) {
   if (!path) {
     return false;
   }
   if (path.node === ancestorNode) {
     return true;
+  }
+  if (
+    Number.isInteger(path.node?.start) &&
+    Number.isInteger(path.node?.end) &&
+    Number.isInteger(ancestorNode?.start) &&
+    Number.isInteger(ancestorNode?.end)
+  ) {
+    return path.node.start >= ancestorNode.start && path.node.end <= ancestorNode.end;
   }
   return Boolean(path.findParent((parentPath) => parentPath.node === ancestorNode));
 }
@@ -2912,7 +3016,7 @@ function collectReadableObjectPatternRenameCandidates(pattern, candidates) {
 
 function collectReadablePropertyValueRenameCandidates(value, desiredName, candidates) {
   if (t.isIdentifier(value)) {
-    if (desiredName) {
+    if (desiredName && readableRenameCandidateNames(value.name, desiredName)) {
       candidates.push({
         from: value.name,
         to: desiredName,
@@ -2936,7 +3040,11 @@ function collectReadableObjectExpressionRenameCandidates(node, candidates) {
       continue;
     }
     const desiredName = readableObjectPropertyBindingName(property);
-    if (t.isIdentifier(property.value) && desiredName) {
+    if (
+      t.isIdentifier(property.value) &&
+      desiredName &&
+      readableRenameCandidateNames(property.value.name, desiredName)
+    ) {
       candidates.push({
         from: property.value.name,
         to: desiredName,
