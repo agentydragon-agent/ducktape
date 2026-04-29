@@ -39,11 +39,15 @@ spec:
         - ports:
             - port: "6443"
               protocol: TCP
-    # mitmproxy — all external internet traffic must go through here
+    # mitmproxy — all external internet traffic must go through here.
+    # Label `app.kubernetes.io/name: mitmproxy` matches the deployment selector
+    # in <deployment.yaml>; the previous selector `app: mitmproxy` did not
+    # match any pod, so claude-sandbox couldn't actually reach mitmproxy and
+    # external pip/curl through HTTP_PROXY timed out.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: openclaw-mitmproxy
-            app: mitmproxy
+            k8s:app.kubernetes.io/name: mitmproxy
       toPorts:
         - ports:
             - port: "8080"

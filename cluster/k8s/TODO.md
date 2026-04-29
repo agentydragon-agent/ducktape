@@ -2,37 +2,40 @@
 
 Audit findings deferred for later.
 
-## Reconsider mitmproxy auto-injection in `claude-sandbox`
+## Mitmproxy: forward in-cluster + label-selector fix (DRAFT, uncommitted)
 
-`cluster/k8s/kyverno/policies/inject-mitmproxy.yaml` injects
-`HTTP_PROXY=http://mitmproxy.openclaw-mitmproxy:8080` (and CA bundles) into
-every pod in `claude-sandbox`, `openclaw-sandbox`, `openclaw-gateway`. This
-is sensible for the openclaw agent sandboxes (mitmproxy enforces egress
-allowlists and provides per-agent audit), but it adds friction to
-`claude-sandbox` ad-hoc Jobs that talk to in-cluster Services
-(`ollama.ollama:11434` etc.) — Python `urllib`'s `NO_PROXY` matching is
-hostname-based and doesn't resolve `<svc>.<ns>` against the
-`10.0.0.0/8` CIDR, so requests go to mitmproxy and time out. Curl works
-because it does post-DNS NO_PROXY matching.
+The Kyverno `inject-mitmproxy` policy auto-injects `HTTP_PROXY` into every
+pod in `claude-sandbox`, `openclaw-sandbox`, `openclaw-gateway`. Two issues:
 
-Workarounds in use today:
+1. The `ccnp-sandbox-proxy-egress` CCNP allowed traffic to pods labeled
+   `app: mitmproxy` — but the deployment uses
+   `app.kubernetes.io/name: mitmproxy`, so the rule matched no pods and
+   sandbox pods couldn't reach mitmproxy when they needed to. External
+   pip/curl through `HTTP_PROXY` silently timed out. **Real bug.**
+2. Mitmproxy's egress (`cnp-cloud-api-egress`) only allowed a fixed set
+   of cloud LLM FQDNs. So when a sandbox pod sent a request through
+   mitmproxy targeting an in-cluster destination (e.g. an
+   HTTPS_PROXY-respecting tool that ignored NO_PROXY), mitmproxy
+   couldn't actually forward to `ollama.ollama`.
 
-- bench scripts build a `urllib.request.ProxyHandler({})` opener (see
-  `cluster/docs/inference/runs/2026-04-28_initial/bench.py`).
-- General-purpose Python in `claude-sandbox` would have to do the same.
+Drafted fix (uncommitted, in working tree): keep mitmproxy in-path and
+required for sandbox pods, but extend its egress to allow forwarding to
+in-cluster Services. Bench Jobs that want mitmproxy to forward don't need
+code changes; existing NO_PROXY-aware tools still bypass for in-cluster
+destinations as before.
 
-Options to evaluate:
+Files touched:
 
-1. **Drop `claude-sandbox` from the Kyverno policy match list** — the
-   sandbox is for trusted ad-hoc work, not untrusted agent egress. If
-   we want audit, add it back per-Job opt-in via a label.
-2. **Keep mitmproxy but extend `NO_PROXY` to include in-cluster Service
-   FQDNs** (`ollama.ollama,ollama.ollama.svc,ollama.ollama.svc.cluster.local`,
-   etc.). Brittle as Services proliferate.
-3. **Status quo** — every script disables proxies programmatically.
+- <../k8s/agents/openclaw/mitmproxy/ccnp-sandbox-proxy-egress.yaml> —
+  label-selector fix (the real bug).
+- <../k8s/agents/openclaw/mitmproxy/cnp-cloud-api-egress.yaml> — added
+  `toEntities: cluster` egress rule on common ports (80, 443, 8000,
+  8080, 11434) so mitmproxy can forward to in-cluster Services.
 
-Decision deferred. See <../docs/inference/runs/2026-04-28_initial/README.md>
-for the incident that motivated this entry.
+`NO_PROXY` in `inject-mitmproxy.yaml` is unchanged. Open question:
+whether to also tighten `NO_PROXY` (forcing all sandbox traffic through
+mitmproxy unconditionally) — that's a stricter posture giving full audit
+but losing the bypass escape hatch.
 
 ## OpenClaw secrets
 
