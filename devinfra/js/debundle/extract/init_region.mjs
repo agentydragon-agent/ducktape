@@ -467,9 +467,14 @@ function isPlainImportEligibleEntry({ attachedEntries, orderedOwners, ownerEntri
   if (stageEntries.some((entry) => entry.kind !== "declaration")) {
     return false;
   }
-  return stageEntries.every((stageEntry) =>
-    isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries)
-  );
+  const safetyContext = buildPlainImportSafetyContext(stageEntries);
+  for (const stageEntry of stageEntries) {
+    if (!isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries, safetyContext)) {
+      return false;
+    }
+    recordPlainImportSafeProvider(stageEntry, safetyContext);
+  }
+  return true;
 }
 
 function buildCanonicalPlainImportStageEntries(stageRuns) {
@@ -490,13 +495,45 @@ function buildCanonicalPlainImportStageEntries(stageRuns) {
   return entries;
 }
 
-function isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries) {
+function buildPlainImportSafetyContext(stageEntries) {
+  const safeProviderBindings = new Set();
+  for (const stageEntry of stageEntries) {
+    if (stageEntry.kind !== "declaration" || stageEntry.owner.type !== "FunctionDeclaration") {
+      continue;
+    }
+    for (const name of selectedEntryBindingNames(stageEntry)) {
+      safeProviderBindings.add(providerBindingKey(stageEntry.owner.id, name));
+    }
+  }
+  return {
+    safeProviderBindings,
+  };
+}
+
+function recordPlainImportSafeProvider(stageEntry, safetyContext) {
+  if (!safetyContext || stageEntry.kind !== "declaration") {
+    return;
+  }
+  for (const name of selectedEntryBindingNames(stageEntry)) {
+    safetyContext.safeProviderBindings.add(providerBindingKey(stageEntry.owner.id, name));
+  }
+}
+
+function selectedEntryBindingNames(stageEntry) {
+  return stageEntry.fragment?.memberNames ?? topLevelDeclarationNames(stageEntry.statement);
+}
+
+function providerBindingKey(ownerId, name) {
+  return `${ownerId}:${name}`;
+}
+
+function isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries, safetyContext = null) {
   const { owner } = stageEntry;
   if (owner.type === "FunctionDeclaration") {
     return true;
   }
   if (owner.type === "ClassDeclaration") {
-    return isPlainImportSafeClassOwner(owner);
+    return isPlainImportSafeClassOwner(owner, stageEntry.statement, safetyContext);
   }
   if (owner.type !== "VariableDeclaration") {
     return false;
@@ -504,22 +541,71 @@ function isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries) {
   return isPlainImportSafeVariableEntry(stageEntry, ownerEntries);
 }
 
-function isPlainImportSafeClassOwner(owner) {
+function isPlainImportSafeClassOwner(owner, statement, safetyContext = null) {
   const classFeatures = owner.classFeatures ?? {
     hasSuperClass: false,
     staticBlockCount: 0,
     staticFieldCount: 0,
     computedKeyCount: 0,
   };
+  const eagerReads = eagerAccessRecords(owner, "readsTopLevel", "eager");
   return (
-    !classFeatures.hasSuperClass &&
     classFeatures.staticBlockCount === 0 &&
     classFeatures.staticFieldCount === 0 &&
     classFeatures.computedKeyCount === 0 &&
-    (owner.eagerWrites?.size ?? 0) === 0 &&
-    (owner.eagerMemberWrites?.size ?? 0) === 0 &&
-    (owner.eagerReads?.size ?? 0) === 0
+    eagerAccessRecords(owner, "writesTopLevel", "eager").length === 0 &&
+    eagerAccessRecords(owner, "memberWritesTopLevel", "eager").length === 0 &&
+    isPlainImportSafeClassSuperClass(owner, statement, eagerReads, safetyContext) &&
+    eagerReads.every((access) => isPlainImportSafeClassEagerRead(access, safetyContext))
   );
+}
+
+function isPlainImportSafeClassSuperClass(owner, statement, eagerReads, safetyContext) {
+  if (!owner.classFeatures?.hasSuperClass) {
+    return true;
+  }
+  if (!t.isClassDeclaration(statement) || !t.isIdentifier(statement.superClass)) {
+    return false;
+  }
+  return eagerReads.some(
+    (access) =>
+      access.name === statement.superClass.name &&
+      isPlainImportSafeClassEagerRead(access, safetyContext)
+  );
+}
+
+function isPlainImportSafeClassEagerRead(access, safetyContext) {
+  if (!access.siteKinds?.every((siteKind) => siteKind === "class_superclass")) {
+    return false;
+  }
+  if (access.kind === "runtime_import") {
+    return true;
+  }
+  if (access.kind !== "local_declaration" || !access.ownerId || !access.name || !safetyContext) {
+    return false;
+  }
+  return safetyContext.safeProviderBindings.has(providerBindingKey(access.ownerId, access.name));
+}
+
+function eagerAccessRecords(owner, bucketName, phase) {
+  const finalizedBucket = owner[bucketName]?.[phase];
+  if (Array.isArray(finalizedBucket)) {
+    return finalizedBucket;
+  }
+  const legacyMapName = legacyAccessMapName(bucketName, phase);
+  const legacyMap = owner[legacyMapName];
+  return legacyMap?.values ? [...legacyMap.values()] : [];
+}
+
+function legacyAccessMapName(bucketName, phase) {
+  const prefix = phase === "eager" ? "eager" : "lazy";
+  if (bucketName === "readsTopLevel") {
+    return `${prefix}Reads`;
+  }
+  if (bucketName === "writesTopLevel") {
+    return `${prefix}Writes`;
+  }
+  return `${prefix}MemberWrites`;
 }
 
 function isPlainImportSafeVariableEntry(stageEntry, ownerEntries) {
@@ -1615,39 +1701,157 @@ function applyReadableObjectPatternRenamesInProgram(programPath) {
   applyBindingLocalRenamesInProgram(programPath, renameByBinding);
 }
 
-function applyBindingLocalRenamesInProgram(programPath, renameByBinding) {
+function applyBindingLocalRenamesInProgram(_programPath, renameByBinding) {
   if (renameByBinding.size === 0) {
     return;
   }
-  programPath.traverse({
-    Identifier(identifierPath) {
-      if (!shouldRenameIdentifierPath(identifierPath)) {
-        return;
+  const bindingIdentifierPathByNode = buildBindingIdentifierPathIndex(renameByBinding);
+  const objectPropertyContainersToRefresh = new Set();
+  for (const [binding, renameTarget] of renameByBinding) {
+    const sourceName = binding.identifier?.name;
+    if (!sourceName || sourceName === renameTarget) {
+      continue;
+    }
+    renameBindingIdentifier(
+      binding,
+      sourceName,
+      renameTarget,
+      bindingIdentifierPathByNode,
+      objectPropertyContainersToRefresh
+    );
+    for (const referencePath of binding.referencePaths ?? []) {
+      renameIdentifierPath(referencePath, sourceName, renameTarget, objectPropertyContainersToRefresh);
+    }
+    for (const violationPath of binding.constantViolations ?? []) {
+      renameBindingIdentifiersInPath(
+        violationPath,
+        binding,
+        sourceName,
+        renameTarget,
+        objectPropertyContainersToRefresh
+      );
+    }
+  }
+  for (const containerPath of objectPropertyContainersToRefresh) {
+    for (const siblingPath of containerPath.get("properties")) {
+      if (siblingPath.isObjectProperty()) {
+        refreshObjectPropertyShorthand(siblingPath);
       }
-      const resolvedBinding = identifierPath.scope.getBinding(identifierPath.node.name);
-      const renameTarget = resolvedBinding ? renameByBinding.get(resolvedBinding) : null;
-      if (!renameTarget || identifierPath.node.name === renameTarget) {
-        return;
-      }
-      identifierPath.node.name = renameTarget;
-    },
-    ObjectProperty: {
-      exit(propertyPath) {
-        if (!propertyPath.parentPath.isObjectPattern() && !propertyPath.parentPath.isObjectExpression()) {
+    }
+  }
+}
+
+function buildBindingIdentifierPathIndex(renameByBinding) {
+  const bindingsByPath = new Map();
+  for (const binding of renameByBinding.keys()) {
+    if (!binding.path || binding.path.isIdentifier?.()) {
+      continue;
+    }
+    const bindings = bindingsByPath.get(binding.path) ?? [];
+    bindings.push(binding);
+    bindingsByPath.set(binding.path, bindings);
+  }
+  const identifierPathByNode = new Map();
+  for (const [declarationPath, bindings] of bindingsByPath) {
+    const bindingIdentifierNodes = new Set(bindings.map((binding) => binding.identifier).filter(Boolean));
+    let foundCount = 0;
+    declarationPath.traverse?.({
+      Identifier(identifierPath) {
+        if (!bindingIdentifierNodes.has(identifierPath.node)) {
           return;
         }
-        if (
-          propertyPath.node.computed ||
-          !t.isIdentifier(propertyPath.node.key) ||
-          !t.isIdentifier(propertyPath.node.value)
-        ) {
-          propertyPath.node.shorthand = false;
-          return;
+        identifierPathByNode.set(identifierPath.node, identifierPath);
+        foundCount += 1;
+        if (foundCount >= bindingIdentifierNodes.size) {
+          identifierPath.stop();
         }
-        propertyPath.node.shorthand = propertyPath.node.key.name === propertyPath.node.value.name;
       },
+    });
+  }
+  return identifierPathByNode;
+}
+
+function renameBindingIdentifier(
+  binding,
+  sourceName,
+  renameTarget,
+  bindingIdentifierPathByNode,
+  objectPropertyContainersToRefresh
+) {
+  const bindingIdentifierPath = binding.path?.isIdentifier?.()
+    ? binding.path
+    : bindingIdentifierPathByNode.get(binding.identifier);
+  if (bindingIdentifierPath) {
+    renameIdentifierPath(bindingIdentifierPath, sourceName, renameTarget, objectPropertyContainersToRefresh);
+    return;
+  }
+  if (binding.identifier?.name === sourceName) {
+    binding.identifier.name = renameTarget;
+  }
+}
+
+function renameBindingIdentifiersInPath(
+  path,
+  binding,
+  sourceName,
+  renameTarget,
+  objectPropertyContainersToRefresh
+) {
+  if (!path) {
+    return;
+  }
+  if (path.isIdentifier?.()) {
+    if (path.scope.getBinding(sourceName) === binding) {
+      renameIdentifierPath(path, sourceName, renameTarget, objectPropertyContainersToRefresh);
+    }
+    return;
+  }
+  path.traverse({
+    Identifier(identifierPath) {
+      if (identifierPath.node.name !== sourceName) {
+        return;
+      }
+      if (identifierPath.scope.getBinding(sourceName) !== binding) {
+        return;
+      }
+      renameIdentifierPath(identifierPath, sourceName, renameTarget, objectPropertyContainersToRefresh);
     },
   });
+}
+
+function renameIdentifierPath(identifierPath, sourceName, renameTarget, objectPropertyContainersToRefresh) {
+  if (identifierPath.node.name !== sourceName || !shouldRenameIdentifierPath(identifierPath)) {
+    return;
+  }
+  identifierPath.node.name = renameTarget;
+  collectParentObjectPropertyContainer(identifierPath, objectPropertyContainersToRefresh);
+}
+
+function collectParentObjectPropertyContainer(identifierPath, objectPropertyContainersToRefresh) {
+  const propertyPath = identifierPath.parentPath;
+  if (!propertyPath?.isObjectProperty?.({ value: identifierPath.node })) {
+    return;
+  }
+  const containerPath = propertyPath.parentPath;
+  if (!containerPath.isObjectPattern() && !containerPath.isObjectExpression()) {
+    return;
+  }
+  objectPropertyContainersToRefresh.add(containerPath);
+}
+
+function refreshObjectPropertyShorthand(propertyPath) {
+  if (!propertyPath.parentPath.isObjectPattern() && !propertyPath.parentPath.isObjectExpression()) {
+    return;
+  }
+  if (
+    propertyPath.node.computed ||
+    !t.isIdentifier(propertyPath.node.key) ||
+    !t.isIdentifier(propertyPath.node.value)
+  ) {
+    propertyPath.node.shorthand = false;
+    return;
+  }
+  propertyPath.node.shorthand = propertyPath.node.key.name === propertyPath.node.value.name;
 }
 
 function buildReadableObjectPatternRenameGroups(programPath) {

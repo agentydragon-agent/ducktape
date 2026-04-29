@@ -719,6 +719,42 @@ export { r8t as publicBuildPoint };
   });
 });
 
+test("graph-generated readable renames preserve same-spelled nested bindings", () => {
+  const source = `function r8t(n) {
+  const l = n.label;
+  function nested() {
+    const l = "shadow";
+    return l;
+  }
+  return {
+    label: l,
+    nested,
+  };
+}
+const result = r8t({ label: "outer" });
+console.log(result.label, result.nested());
+export { r8t };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_shadowed_readable_region",
+      ownerNames: ["r8t"],
+      targetFile: "regions/shadowed_readable_region.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/shadowed_readable_region.js");
+  assert.match(extractedCode, /\bconst label = n\.label;/);
+  assert.match(extractedCode, /\bconst l = "shadow";/);
+  assert.match(extractedCode, /return \{\s*label,\s*nested\s*\};/s);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-readable-shadowed-binding-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("lowers multi-stage pure declaration regions as plain imports without init wrappers", () => {
   const source = `const alpha = 1;
 const gapLabel = "gap";
@@ -1072,7 +1108,7 @@ export { result };
   });
 });
 
-test("keeps init wrappers for class declarations with eager definition-time extends behavior", () => {
+test("lowers class declarations with safe selected superclasses as plain imports", () => {
   const source = `class BaseBox {}
 class DerivedBox extends BaseBox {
   static label() {
@@ -1096,10 +1132,105 @@ export { result };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/derived_box_region.js");
-  assert.match(runtimeCode, /import \{ BaseBox, DerivedBox, renderDerivedBox, init_derived_box_region \} from "\.\/regions\/derived_box_region\.js"/);
-  assert.match(runtimeCode, /init_derived_box_region\(\);/);
-  assert.match(extractedCode, /export function init_derived_box_region/);
-  assert.match(extractedCode, /\bDerivedBox = class DerivedBox extends BaseBox\b/);
+  assert.match(runtimeCode, /import \{ BaseBox, DerivedBox, renderDerivedBox \} from "\.\/regions\/derived_box_region\.js"/);
+  assert.doesNotMatch(runtimeCode, /\binit_derived_box_region\b/);
+  assert.match(extractedCode, /\bclass DerivedBox extends BaseBox\b/);
+  assert.doesNotMatch(extractedCode, /export function init_derived_box_region/);
+  assert.doesNotMatch(extractedCode, /\bDerivedBox = class DerivedBox extends BaseBox\b/);
+
+  assertRunnableEquivalent({
+    prefix: "debundle-extract-plain-import-selected-superclass-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("lowers class declarations with imported superclasses as plain imports", () => {
+  const source = `import { BaseBox } from "./base_box.js";
+
+class DerivedBox extends BaseBox {
+  label() {
+    return this.prefix + ":derived";
+  }
+}
+function renderDerivedBox() {
+  return new DerivedBox("safe").label();
+}
+const result = renderDerivedBox();
+console.log(result);
+export { result };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_imported_derived_box_region",
+      ownerNames: ["DerivedBox", "renderDerivedBox"],
+      targetFile: "regions/imported_derived_box_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/imported_derived_box_region.js");
+  assert.match(runtimeCode, /import \{ DerivedBox, renderDerivedBox \} from "\.\/regions\/imported_derived_box_region\.js"/);
+  assert.doesNotMatch(runtimeCode, /\binit_imported_derived_box_region\b/);
+  assert.match(extractedCode, /import \{ BaseBox \} from "\.\.\/base_box\.js"/);
+  assert.match(extractedCode, /\bclass DerivedBox extends BaseBox\b/);
+  assert.doesNotMatch(extractedCode, /export function init_imported_derived_box_region/);
+  assert.doesNotMatch(extractedCode, /\bDerivedBox = class DerivedBox extends BaseBox\b/);
+
+  assertRunnableEquivalent({
+    files: {
+      "base_box.js": `export class BaseBox {
+  constructor(prefix) {
+    this.prefix = prefix;
+  }
+}
+`,
+    },
+    prefix: "debundle-extract-plain-import-imported-superclass-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("keeps init wrappers for class declarations with retained superclass expressions", () => {
+  const source = `console.log("before superclass install");
+globalThis.RuntimeBaseBox = class RuntimeBaseBox {
+  constructor(prefix) {
+    this.prefix = prefix;
+  }
+};
+class DerivedBox extends globalThis.RuntimeBaseBox {
+  label() {
+    return this.prefix + ":derived";
+  }
+}
+function renderDerivedBox() {
+  return new DerivedBox("ordered").label();
+}
+const result = renderDerivedBox();
+console.log(result);
+export { result };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_retained_superclass_region",
+      ownerNames: ["DerivedBox", "renderDerivedBox"],
+      targetFile: "regions/retained_superclass_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/retained_superclass_region.js");
+  assert.match(runtimeCode, /import \{ DerivedBox, renderDerivedBox, init_retained_superclass_region \} from "\.\/regions\/retained_superclass_region\.js"/);
+  assert.match(runtimeCode, /init_retained_superclass_region\(\);/);
+  assert.match(extractedCode, /export function init_retained_superclass_region/);
+  assert.match(extractedCode, /\bDerivedBox = class DerivedBox extends globalThis\.RuntimeBaseBox\b/);
+
+  assertRunnableEquivalent({
+    prefix: "debundle-extract-ordered-init-retained-superclass-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
 });
 
 test("extracts schema-style regions with forward/self references via snapshot lowering", () => {
