@@ -328,6 +328,7 @@ npm.npm_translate_lock(
         "//:third_party/mcporter/package.json",
         "//:util/testing/frontend_visual/package.json",
         "//:x/agent_server/web/package.json",
+        "//:x/auragon_study_casino/frontend/package.json",
         "//:x/rspcache/admin_ui/package.json",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
@@ -1109,6 +1110,13 @@ go_deps.module(
 # ─ Repos exported for Bazel BUILD files ──────────────────────────────────
 # Includes directly-used repos AND transitive deps of manual go_deps.module()
 # entries (gazelle needs them visible for resolution).
+#
+# `bazel mod tidy` will try to drop `cc_mvdan_garble` and `com_github_go_git_go_git_v5`
+# because gazelle reports them as indirect (they're `// indirect` in
+# third_party/go.mod since no Go file under the module imports them — they're
+# referenced only from BUILD files: skills/reverse_engineer/examples and
+# devinfra/buildbuddy_cli respectively). Keep them here; do not re-run
+# `bazel mod tidy` without restoring them.
 use_repo(
     go_deps,
     "build_buf_gen_go_bufbuild_protovalidate_protocolbuffers_go",
@@ -1116,7 +1124,6 @@ use_repo(
     "com_connectrpc_connect",
     "com_github_blacktop_go_dwarf",
     "com_github_blacktop_go_macho",
-    "com_github_bluekeyes_go_gitdiff",
     "com_github_cenkalti_backoff_v4",
     "com_github_cenkalti_backoff_v5",
     "com_github_cheynewallace_tabby",
@@ -1138,7 +1145,6 @@ use_repo(
     "com_github_mark3labs_mcp_go",
     "com_github_mitchellh_mapstructure",
     "com_github_pmezard_go_difflib",
-    "com_github_rogpeppe_go_internal",
     "com_github_spf13_cast",
     "com_github_spf13_cobra",
     "com_github_spf13_pflag",
@@ -1161,12 +1167,9 @@ use_repo(
     "org_golang_google_grpc",
     "org_golang_google_protobuf",
     "org_golang_x_arch",
-    "org_golang_x_mod",
     "org_golang_x_net",
     "org_golang_x_sync",
-    "org_golang_x_sys",
     "org_golang_x_text",
-    "org_golang_x_tools",
 )
 
 # ─ BuildBuddy proto definitions (for bbapi CLI) ──────────────────────────────
