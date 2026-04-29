@@ -371,6 +371,169 @@ export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPa
   };
 }
 
+export function analyzeVariableDeclarationFragmentAccesses(
+  statementNode,
+  fragment,
+  { owners = [], runtimeImports = [] } = {}
+) {
+  const statement = unwrapTopLevelDeclarationNode(statementNode);
+  if (!t.isVariableDeclaration(statement)) {
+    throw new Error(
+      `analyzeVariableDeclarationFragmentAccesses expected VariableDeclaration, got ${statement?.type ?? "unknown"}`
+    );
+  }
+  const declaratorIndices = [...new Set(fragment?.declaratorIndices ?? [])].sort((left, right) => left - right);
+  if (declaratorIndices.length === 0) {
+    return {
+      readsTopLevel: { eager: [], lazy: [] },
+      writesTopLevel: { eager: [], lazy: [] },
+      memberWritesTopLevel: { eager: [], lazy: [] },
+    };
+  }
+
+  const importByLocalName = new Map();
+  for (const importRecord of runtimeImports) {
+    for (const specifier of importRecord.specifiers ?? []) {
+      importByLocalName.set(specifier.local, {
+        ...specifier,
+        id: importRecord.id,
+        source: importRecord.source,
+      });
+    }
+  }
+  const ownerByBinding = new Map();
+  for (const owner of owners) {
+    for (const name of owner.names ?? []) {
+      ownerByBinding.set(name, owner);
+    }
+  }
+
+  const fragmentAst = t.file(t.program([t.cloneNode(statement, true)]));
+  const itemByTopNode = new Map();
+  const programPathByNode = new WeakMap();
+  let fragmentRecord = null;
+  let selectedDeclaratorNodes = null;
+
+  traverse(fragmentAst, {
+    Program: {
+      enter(programPath) {
+        programPathByNode.set(programPath.node, programPath);
+        const [topPath] = programPath.get("body");
+        if (!topPath?.isVariableDeclaration()) {
+          throw new Error("Fragment analysis expected a top-level variable declaration");
+        }
+        programPathByNode.set(topPath.node, topPath);
+        fragmentRecord = createOwnerRecord({
+          id: fragment.ownerId ?? "owner_fragment",
+          line: topPath.node.loc?.start.line ?? null,
+          names: [...(fragment.memberNames ?? [])],
+          node: topPath.node,
+          ordinal: 0,
+          path: topPath,
+          type: topPath.node.type,
+        });
+        itemByTopNode.set(topPath.node, fragmentRecord);
+        selectedDeclaratorNodes = new Set();
+        const declaratorPaths = topPath.get("declarations");
+        for (const declaratorIndex of declaratorIndices) {
+          const declaratorPath = declaratorPaths[declaratorIndex];
+          if (!declaratorPath) {
+            throw new Error(
+              `Fragment analysis missing declarator ${declaratorIndex} for ${fragment.ownerId ?? "owner_fragment"}`
+            );
+          }
+          selectedDeclaratorNodes.add(declaratorPath.node);
+        }
+        programPath.scope.crawl();
+      },
+    },
+    AssignmentExpression(path) {
+      if (!isInsideSelectedVariableDeclarator(path, itemByTopNode, selectedDeclaratorNodes)) {
+        return;
+      }
+      recordAssignmentTargets(path, path.node.left, "binding_write", {
+        importByLocalName,
+        itemByTopNode,
+        ownerByBinding,
+        programPathByNode,
+      });
+    },
+    ForInStatement(path) {
+      if (!isInsideSelectedVariableDeclarator(path, itemByTopNode, selectedDeclaratorNodes)) {
+        return;
+      }
+      if (path.node.left?.type === "VariableDeclaration") {
+        return;
+      }
+      recordAssignmentTargets(path, path.node.left, "binding_write", {
+        importByLocalName,
+        itemByTopNode,
+        ownerByBinding,
+        programPathByNode,
+      });
+    },
+    ForOfStatement(path) {
+      if (!isInsideSelectedVariableDeclarator(path, itemByTopNode, selectedDeclaratorNodes)) {
+        return;
+      }
+      if (path.node.left?.type === "VariableDeclaration") {
+        return;
+      }
+      recordAssignmentTargets(path, path.node.left, "binding_write", {
+        importByLocalName,
+        itemByTopNode,
+        ownerByBinding,
+        programPathByNode,
+      });
+    },
+    ReferencedIdentifier(path) {
+      if (!isInsideSelectedVariableDeclarator(path, itemByTopNode, selectedDeclaratorNodes)) {
+        return;
+      }
+      recordTopLevelRead(path, {
+        importByLocalName,
+        itemByTopNode,
+        ownerByBinding,
+        programPathByNode,
+      });
+    },
+    UnaryExpression(path) {
+      if (path.node.operator !== "delete") {
+        return;
+      }
+      if (!t.isMemberExpression(path.node.argument)) {
+        return;
+      }
+      if (!isInsideSelectedVariableDeclarator(path, itemByTopNode, selectedDeclaratorNodes)) {
+        return;
+      }
+      recordAssignmentTargets(path, path.node.argument, "member_write", {
+        importByLocalName,
+        itemByTopNode,
+        ownerByBinding,
+        programPathByNode,
+      });
+    },
+    UpdateExpression(path) {
+      if (!isInsideSelectedVariableDeclarator(path, itemByTopNode, selectedDeclaratorNodes)) {
+        return;
+      }
+      recordAssignmentTargets(path, path.node.argument, "binding_write", {
+        importByLocalName,
+        itemByTopNode,
+        ownerByBinding,
+        programPathByNode,
+      });
+    },
+  });
+
+  return {
+    readsTopLevel: finalizeAccessBuckets(fragmentRecord.eagerReads, fragmentRecord.lazyReads),
+    writesTopLevel: finalizeAccessBuckets(fragmentRecord.eagerWrites, fragmentRecord.lazyWrites),
+    memberWritesTopLevel: finalizeAccessBuckets(fragmentRecord.eagerMemberWrites, fragmentRecord.lazyMemberWrites),
+  };
+}
+
 function createOwnerRecord({ id, line, names, node, ordinal, path, type }) {
   return {
     id,
@@ -582,6 +745,14 @@ function isInsideTrackedProgramItem(path, itemByTopNode) {
   return Boolean(topPath && itemByTopNode.has(topPath.node));
 }
 
+function isInsideSelectedVariableDeclarator(path, itemByTopNode, selectedDeclaratorNodes) {
+  if (!selectedDeclaratorNodes || !isInsideTrackedProgramItem(path, itemByTopNode)) {
+    return false;
+  }
+  const declaratorPath = path.findParent((parent) => parent.isVariableDeclarator?.());
+  return Boolean(declaratorPath && selectedDeclaratorNodes.has(declaratorPath.node));
+}
+
 function topLevelProgramChild(path) {
   let current = path;
   while (current.parentPath && !current.parentPath.isProgram()) {
@@ -704,7 +875,10 @@ function transparentParentPath(path) {
 
 function resolveTopLevelBinding(path, name, { importByLocalName, ownerByBinding }) {
   const binding = path.scope.getBinding(name);
-  if (!binding || !binding.scope.path.isProgram()) {
+  if (!binding) {
+    return unresolvedTopLevelBinding(name, { importByLocalName, ownerByBinding });
+  }
+  if (!binding.scope.path.isProgram()) {
     return null;
   }
   const owner = ownerByBinding.get(binding.identifier.name);
@@ -718,6 +892,31 @@ function resolveTopLevelBinding(path, name, { importByLocalName, ownerByBinding 
     };
   }
   const importRecord = importByLocalName.get(binding.identifier.name);
+  if (importRecord) {
+    return {
+      kind: "runtime_import",
+      name,
+      importId: importRecord.id,
+      importKind: importRecord.kind,
+      imported: importRecord.imported ?? null,
+      importSource: importRecord.source,
+    };
+  }
+  return null;
+}
+
+function unresolvedTopLevelBinding(name, { importByLocalName, ownerByBinding }) {
+  const owner = ownerByBinding.get(name);
+  if (owner) {
+    return {
+      kind: "local_declaration",
+      name,
+      ownerId: owner.id,
+      targetType: owner.type,
+      targetNames: owner.names,
+    };
+  }
+  const importRecord = importByLocalName.get(name);
   if (importRecord) {
     return {
       kind: "runtime_import",

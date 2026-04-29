@@ -2671,6 +2671,128 @@ export { render };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules can split passive declarator fragments away from lazy sibling member writes", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-lazy-member-write-fragments-"
+  );
+  const source = `const KU = {}, ype = function ype() {
+  KU.value = 1;
+};
+function render() {
+  ype();
+  return KU.value;
+}
+
+console.log(render());
+
+export { render };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__ku_state",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "runtime/ku_state",
+        },
+        members: [
+          {
+            id: "member__ku",
+            name: "KU",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "KU",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const kuCode = readFileSync(join(outRoot, "static", "app", "modules", "runtime", "ku_state.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(kuCode, /\bKU = \{\};/);
+  assert.doesNotMatch(kuCode, /\bype = function ype/);
+  assert.match(kuCode, /fragments=owner_[^,\s]+::declarator_0/);
+
+  assert.match(residualCode, /\bype = function ype\(\)/);
+  assert.doesNotMatch(residualCode, /\bKU = \{\};/);
+  assert.match(residualCode, /import \{ KU \} from "\.\.\/runtime\/ku_state\.js"/);
+  assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_1/);
+
+  assert.match(entryCode, /modules\/runtime\/ku_state\.js/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 test("materializeLogicalModules resolves stale owner hints through analysis before selecting split declaration fragments", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
     "debundle-logical-modules-stale-owner-hints-"

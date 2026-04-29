@@ -855,6 +855,66 @@ export { result };
   });
 });
 
+test("lower_selected_module_region can split sibling fragments despite lazy member writes between them", () => {
+  const source = `const KU = {}, ype = function ype() {
+  KU.value = 1;
+};
+function render() {
+  ype();
+  return KU.value;
+}
+console.log(render());
+export { render };
+`;
+  const [ownerId] = ownerIdsForNames(source, ["KU"]);
+  const kuOperation = selectedModuleOperation(source, {
+    init: "init_fragment_lazy_member_write_ku",
+    ownerNames: ["KU"],
+    targetFile: "regions/fragment_lazy_member_write_ku.js",
+  });
+  kuOperation.selector.ownerFragments = [
+    {
+      declaratorIndices: [0],
+      id: `${ownerId}::declarator_0`,
+      memberNames: ["KU"],
+      orderIndex: 0,
+      ownerId,
+    },
+  ];
+  const ypeOperation = selectedModuleOperation(source, {
+    init: "init_fragment_lazy_member_write_ype",
+    ownerNames: ["ype"],
+    targetFile: "regions/fragment_lazy_member_write_ype.js",
+  });
+  ypeOperation.selector.ownerFragments = [
+    {
+      declaratorIndices: [1],
+      id: `${ownerId}::declarator_1`,
+      memberNames: ["ype"],
+      orderIndex: 1,
+      ownerId,
+    },
+  ];
+
+  const result = extractOrderedInitRegionsInCode(source, [kuOperation, ypeOperation]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const kuCode = result.files.get("regions/fragment_lazy_member_write_ku.js");
+  const ypeCode = result.files.get("regions/fragment_lazy_member_write_ype.js");
+  assert.match(runtimeCode, /regions\/fragment_lazy_member_write_ku\.js/);
+  assert.match(runtimeCode, /regions\/fragment_lazy_member_write_ype\.js/);
+  assert.match(kuCode, /\bKU = \{\};/);
+  assert.doesNotMatch(kuCode, /\bype = function ype\(\)/);
+  assert.match(ypeCode, /\bype = function ype\(\)/);
+  assert.match(ypeCode, /import \{ KU \} from "\.\/fragment_lazy_member_write_ku\.js"/);
+
+  assertRunnableEquivalent({
+    prefix: "debundle-extract-fragment-lazy-member-write-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("extractOrderedInitRegionsInCode reuses caller-supplied boundary analysis", () => {
   const source = `const seed = 1;
 function render() {

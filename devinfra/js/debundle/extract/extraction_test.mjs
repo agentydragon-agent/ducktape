@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parse } from "@babel/parser";
-import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
+import { analyzeRuntimeBoundaryAst, analyzeVariableDeclarationFragmentAccesses } from "../analysis/boundary.mjs";
 import {
   buildLogicalModulePlans,
   closeSelectedOwnerIdsOverDependencyGraph,
@@ -174,7 +174,7 @@ export { Base, Derived };`,
   assert.equal(ownerWithBaseAndDerived.ownerFragments?.length ?? 0, 0);
 });
 
-test("planSelectedAtomicModules keeps multi-declarator owners together when a lazy fragment mutates a sibling binding", () => {
+test("planSelectedAtomicModules can split multi-declarator owners when a lazy fragment only member-writes a sibling binding", () => {
   const ast = parse(
     `const KU = {}, ype = function ype() {
   KU.value = 1;
@@ -193,8 +193,38 @@ export { KU, ype };`,
     {}
   );
 
+  const kuUnit = plan.atomicUnits.find((unit) => unit.memberNames.length === 1 && unit.memberNames[0] === "KU");
+  const ypeUnit = plan.atomicUnits.find((unit) => unit.memberNames.length === 1 && unit.memberNames[0] === "ype");
+
+  assert.ok(kuUnit);
+  assert.ok(ypeUnit);
+  assert.notEqual(kuUnit.id, ypeUnit.id);
+  assert.ok(kuUnit.ownerFragments?.some((fragment) => fragment.memberNames[0] === "KU"));
+  assert.ok(ypeUnit.ownerFragments?.some((fragment) => fragment.memberNames[0] === "ype"));
+});
+
+test("planSelectedAtomicModules keeps multi-declarator owners together when a lazy fragment rebinds a sibling binding", () => {
+  const ast = parse(
+    `let count = 0, bump = function bump() {
+  count += 1;
+  return count;
+};
+export { count, bump };`,
+    { sourceType: "module" }
+  );
+  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
+
+  const plan = planSelectedAtomicModules(
+    {
+      analysis,
+      code: null,
+      programBody: ast.program.body,
+    },
+    {}
+  );
+
   assert.equal(plan.atomicUnits.length, 1);
-  assert.deepEqual(plan.atomicUnits[0].memberNames, ["KU", "ype"]);
+  assert.deepEqual([...plan.atomicUnits[0].memberNames].sort(), ["bump", "count"]);
 });
 
 test("planSelectedAtomicModules can split declarator fragments around attached side effects that touch only one fragment", () => {
@@ -236,6 +266,41 @@ export { createPlatformClient, indexedDbOutgoingTxSendQueue };`,
         fragment.memberNames[0] === "indexedDbOutgoingTxSendQueue"
     )
   );
+});
+
+test("analyzeVariableDeclarationFragmentAccesses scopes lazy sibling member writes to the matching fragment", () => {
+  const ast = parse(
+    `const KU = {}, ype = function ype() {
+  KU.value = 1;
+};
+export { KU, ype };`,
+    { sourceType: "module" }
+  );
+  const analysis = analyzeRuntimeBoundaryAst(ast, { chunkId: "static/app" });
+  const statement = ast.program.body[0];
+  const [owner] = analysis.owners;
+
+  const kuAccesses = analyzeVariableDeclarationFragmentAccesses(statement, {
+    declaratorIndices: [0],
+    memberNames: ["KU"],
+    ownerId: owner.id,
+  }, {
+    owners: analysis.owners,
+    runtimeImports: analysis.runtimeImports,
+  });
+  const ypeAccesses = analyzeVariableDeclarationFragmentAccesses(statement, {
+    declaratorIndices: [1],
+    memberNames: ["ype"],
+    ownerId: owner.id,
+  }, {
+    owners: analysis.owners,
+    runtimeImports: analysis.runtimeImports,
+  });
+
+  assert.deepEqual(kuAccesses.memberWritesTopLevel.lazy, []);
+  assert.equal(ypeAccesses.memberWritesTopLevel.lazy.length, 1);
+  assert.equal(ypeAccesses.memberWritesTopLevel.lazy[0].ownerId, owner.id);
+  assert.equal(ypeAccesses.memberWritesTopLevel.lazy[0].name, "KU");
 });
 
 test("logicalSelectedOwnerIdsForChunk expands direct logical members through the full owner dependency graph", () => {

@@ -368,7 +368,7 @@ function splitSplittableVariableDeclarationAtomicUnit(unit, { ownerById, program
   if (!t.isVariableDeclaration(declaration) || declaration.declarations.length <= 1) {
     return null;
   }
-  if (ownerHasLazyIntraOwnerMutation(owner)) {
+  if (ownerHasLazyIntraOwnerBindingWrite(owner)) {
     return null;
   }
   const splitUnits = buildSplittableVariableDeclarationUnits(owner, declaration.declarations);
@@ -416,8 +416,8 @@ function buildSplittableVariableDeclarationUnits(owner, declarators) {
   );
 }
 
-function ownerHasLazyIntraOwnerMutation(owner) {
-  return [...selectedModuleLazyWriteAccesses(owner), ...selectedModuleLazyMemberWriteAccesses(owner)].some(
+function ownerHasLazyIntraOwnerBindingWrite(owner) {
+  return selectedModuleLazyWriteAccesses(owner).some(
     (access) => access.kind === "local_declaration" && access.ownerId === owner.id
   );
 }

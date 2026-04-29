@@ -1,7 +1,7 @@
 import { parse } from "@babel/parser";
 import traverseModule from "@babel/traverse";
 import * as t from "@babel/types";
-import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
+import { analyzeRuntimeBoundaryAst, analyzeVariableDeclarationFragmentAccesses } from "../analysis/boundary.mjs";
 import { isScrambledIdentifier } from "../analysis/identifier_frequency.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
 import { logProgress } from "../common/io.mjs";
@@ -365,9 +365,17 @@ function resolveExtractOperation(
   const usedExtractedDependencyNames = new Map();
   const selectedBindingCoverage = buildSelectedBindingCoverage(ownerEntries);
   for (const ownerEntry of ownerEntries) {
+    const selectedAccessRecord =
+      ownerEntry.fragment && ownerEntry.owner.type === "VariableDeclaration"
+        ? analyzeVariableDeclarationFragmentAccesses(ownerEntry.statement, ownerEntry.fragment, {
+            owners: analysis.owners,
+            runtimeImports: analysis.runtimeImports,
+          })
+        : ownerEntry.owner;
     validateSelectedOwner(ownerEntry.owner, {
       extractedOwnerToOperation,
       operation,
+      selectedAccessRecord,
       ownerFragmentSelected: Boolean(ownerEntry.fragment),
       ownerById,
       selectedBindingCoverage,
@@ -656,6 +664,7 @@ function validateSelectedOwner(
   {
     extractedOwnerToOperation,
     operation,
+    selectedAccessRecord,
     ownerFragmentSelected,
     ownerById,
     selectedBindingCoverage,
@@ -667,6 +676,7 @@ function validateSelectedOwner(
     usedRuntimeImportLocals,
   }
 ) {
+  const accessRecord = selectedAccessRecord ?? owner;
   if (!SUPPORTED_OWNER_TYPES.has(owner.type)) {
     throw new Error(`Extract operation ${operation.id} does not support ${owner.type} owners yet`);
   }
@@ -690,7 +700,7 @@ function validateSelectedOwner(
     validateVariableDeclarators(statementNode, operation.id, owner.id);
   }
 
-  validateSelectedOwnerAccesses(owner.readsTopLevel.eager, "eager read", {
+  validateSelectedOwnerAccesses(accessRecord.readsTopLevel.eager, "eager read", {
     extractedOwnerToOperation,
     operationId: operation.id,
     ownerId: owner.id,
@@ -703,7 +713,7 @@ function validateSelectedOwner(
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: false,
   });
-  validateSelectedOwnerAccesses(owner.readsTopLevel.lazy, "lazy read", {
+  validateSelectedOwnerAccesses(accessRecord.readsTopLevel.lazy, "lazy read", {
     extractedOwnerToOperation,
     operationId: operation.id,
     ownerId: owner.id,
@@ -716,7 +726,7 @@ function validateSelectedOwner(
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: false,
   });
-  validateSelectedOwnerAccesses(owner.memberWritesTopLevel.eager, "eager member write", {
+  validateSelectedOwnerAccesses(accessRecord.memberWritesTopLevel.eager, "eager member write", {
     extractedOwnerToOperation,
     operationId: operation.id,
     ownerId: owner.id,
@@ -729,7 +739,7 @@ function validateSelectedOwner(
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
   });
-  validateSelectedOwnerAccesses(owner.memberWritesTopLevel.lazy, "lazy member write", {
+  validateSelectedOwnerAccesses(accessRecord.memberWritesTopLevel.lazy, "lazy member write", {
     extractedOwnerToOperation,
     operationId: operation.id,
     ownerId: owner.id,
@@ -742,7 +752,7 @@ function validateSelectedOwner(
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
   });
-  validateSelectedOwnerAccesses(owner.writesTopLevel.eager, "eager write", {
+  validateSelectedOwnerAccesses(accessRecord.writesTopLevel.eager, "eager write", {
     extractedOwnerToOperation,
     operationId: operation.id,
     ownerId: owner.id,
@@ -755,7 +765,7 @@ function validateSelectedOwner(
     usedRuntimeImportLocals,
     allowSelectedLocalWrite: true,
   });
-  validateSelectedOwnerAccesses(owner.writesTopLevel.lazy, "lazy write", {
+  validateSelectedOwnerAccesses(accessRecord.writesTopLevel.lazy, "lazy write", {
     extractedOwnerToOperation,
     operationId: operation.id,
     ownerId: owner.id,
@@ -769,7 +779,7 @@ function validateSelectedOwner(
     allowSelectedLocalWrite: true,
   });
 
-  for (const access of owner.readsTopLevel.eager) {
+  for (const access of accessRecord.readsTopLevel.eager) {
     if (access.kind !== "local_declaration" || !selectedOwnerIds.has(access.ownerId) || access.ownerId === owner.id) {
       continue;
     }
@@ -781,7 +791,7 @@ function validateSelectedOwner(
       `Extract operation ${operation.id} owner ${owner.id} has unsupported forward eager dependency on ${targetOwner.id}`
     );
   }
-  for (const access of [...owner.writesTopLevel.eager, ...owner.memberWritesTopLevel.eager]) {
+  for (const access of [...accessRecord.writesTopLevel.eager, ...accessRecord.memberWritesTopLevel.eager]) {
     if (access.kind !== "local_declaration" || !selectedOwnerIds.has(access.ownerId) || access.ownerId === owner.id) {
       continue;
     }
@@ -913,8 +923,10 @@ function validateSelectedOwnerAccesses(
   }
 ) {
   for (const access of accesses) {
+    const isMemberWrite = accessLabel.includes("member");
+    const isWrite = accessLabel.includes("write");
     if (access.kind === "runtime_import") {
-      if (accessLabel.includes("write") && !accessLabel.includes("member")) {
+      if (isWrite && !isMemberWrite) {
         throw new Error(
           `Extract operation ${operationId} owner ${ownerId} has unsupported ${accessLabel} to runtime import ${access.name}`
         );
@@ -927,14 +939,14 @@ function validateSelectedOwnerAccesses(
     }
     if (selectedOwnerIds.has(access.ownerId)) {
       if (currentOperationSelectsBinding(selectedBindingCoverage, access.ownerId, access.name)) {
-        if (!allowSelectedLocalWrite && accessLabel.includes("write")) {
+        if (!allowSelectedLocalWrite && isWrite) {
           throw new Error(
             `Extract operation ${operationId} owner ${ownerId} has unsupported ${accessLabel} to extracted owner ${access.ownerId}`
           );
         }
         continue;
       }
-      if (accessLabel.includes("write")) {
+      if (isWrite && !isMemberWrite) {
         throw new Error(
           `Extract operation ${operationId} owner ${ownerId} has unsupported ${accessLabel} to separately extracted binding ${access.name}`
         );
@@ -943,7 +955,7 @@ function validateSelectedOwnerAccesses(
       continue;
     }
     if (extractedOwnerToOperation.has(access.ownerId)) {
-      if (accessLabel.includes("write")) {
+      if (isWrite && !isMemberWrite) {
         throw new Error(
           `Extract operation ${operationId} owner ${ownerId} has unsupported ${accessLabel} to separately extracted owner ${access.ownerId}`
         );
