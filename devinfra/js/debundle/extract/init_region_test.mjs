@@ -1233,6 +1233,159 @@ export { result };
   });
 });
 
+test("naturalizes safe class-expression assignment owners inside mixed init regions", () => {
+  const source = `globalThis.accessorEvents = [];
+const AsyncAvatarAccessor = class AsyncAvatarAccessor {
+  constructor(asyncNode, core) {
+    this.asyncNode = asyncNode;
+    this.core = core;
+  }
+  label() {
+    return this.asyncNode + ":" + this.core;
+  }
+};
+globalThis.accessorEvents.push(new AsyncAvatarAccessor("node", "core").label());
+console.log(globalThis.accessorEvents.join("|"));
+export { AsyncAvatarAccessor };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [1],
+      init: "init_accessor_region",
+      ownerNames: ["AsyncAvatarAccessor"],
+      targetFile: "regions/accessor_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/accessor_region.js");
+  assert.match(runtimeCode, /import \{ AsyncAvatarAccessor, init_accessor_region \} from "\.\/regions\/accessor_region\.js"/);
+  assert.match(runtimeCode, /init_accessor_region\(\);/);
+  assert.match(extractedCode, /\bclass AsyncAvatarAccessor\b/);
+  assert.match(extractedCode, /export function init_accessor_region/);
+  assert.doesNotMatch(extractedCode, /\blet AsyncAvatarAccessor\b/);
+  assert.doesNotMatch(extractedCode, /\bAsyncAvatarAccessor = class AsyncAvatarAccessor\b/);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-naturalized-class-expression-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("naturalizes safe function-expression assignment owners inside mixed init regions", () => {
+  const source = `globalThis.toolbarEvents = [];
+const NodeToolbarButton = function NodeToolbarButton({ action, role, ...rest }) {
+  return role + ":" + action + ":" + Object.keys(rest).length;
+};
+globalThis.toolbarEvents.push(NodeToolbarButton({
+  action: "open",
+  role: "button",
+  tabIndex: 0,
+}));
+console.log(globalThis.toolbarEvents.join("|"));
+export { NodeToolbarButton };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [1],
+      init: "init_toolbar_region",
+      ownerNames: ["NodeToolbarButton"],
+      targetFile: "regions/toolbar_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/toolbar_region.js");
+  assert.match(runtimeCode, /import \{ NodeToolbarButton, init_toolbar_region \} from "\.\/regions\/toolbar_region\.js"/);
+  assert.match(runtimeCode, /init_toolbar_region\(\);/);
+  assert.match(extractedCode, /\bfunction NodeToolbarButton\(\{\s*action,\s*role,\s*\.\.\.rest\s*\}\)/s);
+  assert.match(extractedCode, /export function init_toolbar_region/);
+  assert.doesNotMatch(extractedCode, /\blet NodeToolbarButton\b/);
+  assert.doesNotMatch(extractedCode, /\bNodeToolbarButton = function NodeToolbarButton\b/);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-naturalized-function-expression-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("keeps init wrappers for class-expression assignments with definition-time side effects", () => {
+  const source = `globalThis.staticWidgetEvents = [];
+globalThis.staticWidgetEvents.push("before");
+const StaticWidget = class StaticWidget {
+  static value = globalThis.staticWidgetEvents.push("static");
+};
+globalThis.staticWidgetEvents.push("after:" + StaticWidget.value);
+console.log(globalThis.staticWidgetEvents.join("|"));
+export { StaticWidget };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [2],
+      init: "init_static_widget_region",
+      ownerNames: ["StaticWidget"],
+      targetFile: "regions/static_widget_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/static_widget_region.js");
+  assert.match(runtimeCode, /import \{ StaticWidget, init_static_widget_region \} from "\.\/regions\/static_widget_region\.js"/);
+  assert.match(runtimeCode, /init_static_widget_region\(\);/);
+  assert.match(extractedCode, /\blet StaticWidget\b/);
+  assert.match(extractedCode, /export function init_static_widget_region/);
+  assert.match(extractedCode, /\bconst StaticWidget = class StaticWidget\b/);
+  assert.match(extractedCode, /\bStaticWidget = __dt_selected_module_snapshot__owner_00000\.StaticWidget\b/);
+  assert.doesNotMatch(extractedCode, /^\s*class StaticWidget\b/m);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-static-class-expression-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("keeps init wrappers when earlier lazy code could observe declaration TDZ", () => {
+  const source = `function readLaterButtonName() {
+  return LaterButton.name;
+}
+const LaterButton = function LaterButton() {
+  return "later";
+};
+globalThis.laterButtonName = readLaterButtonName();
+console.log(LaterButton(), globalThis.laterButtonName);
+export { LaterButton };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [0],
+      init: "init_later_button_region",
+      ownerNames: ["readLaterButtonName", "LaterButton"],
+      targetFile: "regions/later_button_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/later_button_region.js");
+  assert.match(runtimeCode, /import \{ readLaterButtonName, LaterButton, init_later_button_region \} from "\.\/regions\/later_button_region\.js"/);
+  assert.match(runtimeCode, /init_later_button_region\(\);/);
+  assert.match(extractedCode, /\blet readLaterButtonName, LaterButton\b/);
+  assert.match(extractedCode, /\bLaterButton = function LaterButton\b/);
+  assert.doesNotMatch(extractedCode, /^\s*function LaterButton\(\)/m);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-earlier-lazy-function-expression-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("extracts schema-style regions with forward/self references via snapshot lowering", () => {
   const source = `import { buildLeaf, buildNode } from "./schema.js";
 
@@ -1519,14 +1672,49 @@ function selectedModuleOperation(source, { file = "runtime.js", init, ownerNames
   };
 }
 
+function selectedModuleOperationWithAttachedSideEffects(
+  source,
+  { attachedSideEffectIndexes, file = "runtime.js", init, ownerNames, targetFile }
+) {
+  const analysis = analyzeRuntimeBoundaryCode(source, { chunkId: "static/app" });
+  return {
+    id: `extract_${init}`,
+    operation: "lower_selected_module_region",
+    selector: {
+      attachedItemIds: sideEffectIdsForIndexes(analysis, attachedSideEffectIndexes),
+      chunkId: "static/app",
+      file,
+      ownerIds: ownerIdsForNamesInAnalysis(analysis, ownerNames),
+    },
+    target: {
+      file: targetFile,
+      init,
+    },
+  };
+}
+
 function ownerIdsForNames(source, names) {
   const analysis = analyzeRuntimeBoundaryCode(source, { chunkId: "static/app" });
+  return ownerIdsForNamesInAnalysis(analysis, names);
+}
+
+function ownerIdsForNamesInAnalysis(analysis, names) {
   return names.map((name) => {
     const owner = analysis.owners.find((candidate) => candidate.names.includes(name));
     if (!owner) {
       throw new Error(`Fixture owner not found for ${name}`);
     }
     return owner.id;
+  });
+}
+
+function sideEffectIdsForIndexes(analysis, indexes) {
+  return indexes.map((index) => {
+    const sideEffect = analysis.sideEffects[index];
+    if (!sideEffect) {
+      throw new Error(`Fixture side effect not found for index ${index}`);
+    }
+    return sideEffect.id;
   });
 }
 

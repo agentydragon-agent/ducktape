@@ -430,6 +430,18 @@ function resolveExtractOperation(
     throw new Error(`Extract operation ${operation.id} produced no staged-shell runs`);
   }
 
+  const plainImportEligible = isPlainImportEligibleEntry({
+    attachedEntries,
+    orderedOwners,
+    ownerEntries,
+    stageRuns,
+  });
+  const naturalizedDeclarationEntries = plainImportEligible
+    ? []
+    : buildNaturalizedDeclarationEntries(stageRuns, {
+        remainingProgramValidationIndex,
+      });
+
   return {
     endOrdinal,
     exportedNames,
@@ -444,12 +456,9 @@ function resolveExtractOperation(
     ownerEntries,
     orderedOwners,
     ownerIds: orderedOwners.map((owner) => owner.id),
-    plainImportEligible: isPlainImportEligibleEntry({
-      attachedEntries,
-      orderedOwners,
-      ownerEntries,
-      stageRuns,
-    }),
+    naturalizedDeclarationEntries,
+    naturalizedDeclarationKeys: new Set(naturalizedDeclarationEntries.map(ownerEntryBoundaryKey)),
+    plainImportEligible,
     stageRuns,
     startOrdinal,
     targetFile,
@@ -475,6 +484,23 @@ function isPlainImportEligibleEntry({ attachedEntries, orderedOwners, ownerEntri
     recordPlainImportSafeProvider(stageEntry, safetyContext);
   }
   return true;
+}
+
+function buildNaturalizedDeclarationEntries(stageRuns, { remainingProgramValidationIndex }) {
+  const naturalizedEntries = [];
+  const safetyContext = { safeProviderBindings: new Set() };
+  const stageEntries = buildCanonicalPlainImportStageEntries(stageRuns);
+  for (const stageEntry of stageEntries) {
+    if (!isNaturalizableDeclarationEntry(stageEntry, {
+      remainingProgramValidationIndex,
+      safetyContext,
+    })) {
+      continue;
+    }
+    naturalizedEntries.push(stageEntry);
+    recordPlainImportSafeProvider(stageEntry, safetyContext);
+  }
+  return naturalizedEntries;
 }
 
 function buildCanonicalPlainImportStageEntries(stageRuns) {
@@ -539,6 +565,144 @@ function isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries, safetyC
     return false;
   }
   return isPlainImportSafeVariableEntry(stageEntry, ownerEntries);
+}
+
+function isNaturalizableDeclarationEntry(stageEntry, { remainingProgramValidationIndex, safetyContext }) {
+  if (stageEntry.kind !== "declaration" || stageEntry.fragment || stageEntry.owner.type !== "VariableDeclaration") {
+    return false;
+  }
+  const shape = declarationShapedVariableEntry(stageEntry);
+  if (!shape) {
+    return false;
+  }
+  if (hasEarlierPotentialBindingUse(stageEntry, remainingProgramValidationIndex)) {
+    return false;
+  }
+  if (!hasNoOwnerTopLevelWrites(stageEntry.owner)) {
+    return false;
+  }
+  if (shape.kind === "function") {
+    return eagerAccessRecords(stageEntry.owner, "readsTopLevel", "eager").length === 0;
+  }
+  return isPlainImportSafeClassExpressionOwner(stageEntry.owner, shape.expression, safetyContext);
+}
+
+function declarationShapedVariableEntry(stageEntry) {
+  const { statement } = stageEntry;
+  if (!t.isVariableDeclaration(statement) || statement.declarations.length !== 1) {
+    return null;
+  }
+  const declaration = statement.declarations[0];
+  if (!t.isIdentifier(declaration.id)) {
+    return null;
+  }
+  if (t.isFunctionExpression(declaration.init)) {
+    return {
+      bindingName: declaration.id.name,
+      declaration,
+      expression: declaration.init,
+      kind: "function",
+      statement,
+    };
+  }
+  if (t.isClassExpression(declaration.init)) {
+    return {
+      bindingName: declaration.id.name,
+      declaration,
+      expression: declaration.init,
+      kind: "class",
+      statement,
+    };
+  }
+  return null;
+}
+
+function hasEarlierPotentialBindingUse(stageEntry, remainingProgramValidationIndex) {
+  for (const name of selectedEntryBindingNames(stageEntry)) {
+    for (const record of remainingProgramValidationIndex.potentialUsersByOwnerId.get(stageEntry.owner.id) ?? []) {
+      if (record.name === name && record.ordinal < stageEntry.owner.ordinal && record.recordId !== stageEntry.owner.id) {
+        return true;
+      }
+    }
+    for (const record of remainingProgramValidationIndex.writersByOwnerId.get(stageEntry.owner.id) ?? []) {
+      if (record.name === name && record.ordinal < stageEntry.owner.ordinal && record.recordId !== stageEntry.owner.id) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasNoOwnerTopLevelWrites(owner) {
+  return (
+    eagerAccessRecords(owner, "writesTopLevel", "eager").length === 0 &&
+    eagerAccessRecords(owner, "writesTopLevel", "lazy").length === 0
+  );
+}
+
+function isPlainImportSafeClassExpressionOwner(owner, expression, safetyContext) {
+  const classFeatures = describeClassExpressionFeatures(expression);
+  const eagerReads = eagerAccessRecords(owner, "readsTopLevel", "eager");
+  return (
+    classFeatures.staticBlockCount === 0 &&
+    classFeatures.staticFieldCount === 0 &&
+    classFeatures.computedKeyCount === 0 &&
+    eagerAccessRecords(owner, "memberWritesTopLevel", "eager").length === 0 &&
+    isPlainImportSafeClassExpressionSuperClass(expression, eagerReads, safetyContext) &&
+    eagerReads.every((access) => isPlainImportSafeClassExpressionEagerRead(access, expression, safetyContext))
+  );
+}
+
+function isPlainImportSafeClassExpressionSuperClass(expression, eagerReads, safetyContext) {
+  if (!expression.superClass) {
+    return true;
+  }
+  if (!t.isIdentifier(expression.superClass)) {
+    return false;
+  }
+  return eagerReads.some(
+    (access) =>
+      access.name === expression.superClass.name &&
+      isPlainImportSafeClassExpressionEagerRead(access, expression, safetyContext)
+  );
+}
+
+function isPlainImportSafeClassExpressionEagerRead(access, expression, safetyContext) {
+  if (!expression.superClass || access.name !== expression.superClass.name) {
+    return false;
+  }
+  if (access.kind === "runtime_import") {
+    return true;
+  }
+  if (access.kind !== "local_declaration" || !access.ownerId || !access.name || !safetyContext) {
+    return false;
+  }
+  return safetyContext.safeProviderBindings.has(providerBindingKey(access.ownerId, access.name));
+}
+
+function describeClassExpressionFeatures(expression) {
+  const features = {
+    computedKeyCount: 0,
+    staticBlockCount: 0,
+    staticFieldCount: 0,
+  };
+  if (!t.isClassExpression(expression) || expression.decorators?.length > 0) {
+    features.computedKeyCount = Number.POSITIVE_INFINITY;
+    return features;
+  }
+  for (const member of expression.body.body) {
+    if (t.isStaticBlock(member)) {
+      features.staticBlockCount += 1;
+      continue;
+    }
+    if ((t.isClassProperty(member) || t.isClassPrivateProperty(member)) && member.static) {
+      features.staticFieldCount += 1;
+    }
+    if (member.computed) {
+      features.computedKeyCount += 1;
+    }
+  }
+  return features;
 }
 
 function isPlainImportSafeClassOwner(owner, statement, safetyContext = null) {
@@ -1252,6 +1416,7 @@ function buildRuntimeReplacementRuns(entry) {
   return entry.stageRuns.map((stageRun, stageIndex) => ({
     endOrdinal: stageRun.endOrdinal,
     entry,
+    omitInitCall: !stageRunNeedsInitWork(entry, stageRun),
     sortIndex: stageRun.sortIndex ?? stageIndex,
     stageIndex,
     startOrdinal: stageRun.startOrdinal,
@@ -1387,16 +1552,26 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
   const bodyStartedAt = phaseDurationsMs ? process.hrtime.bigint() : null;
   const entryBindingRenames = buildEntryBindingRenames(entry);
   const localRenameMap = buildBindingRenameMap(entryBindingRenames);
-  body.push(
-    t.variableDeclaration("let", entry.exportBindings.map((binding) => t.variableDeclarator(t.identifier(binding.local))))
-  );
+  const naturalizedBindingNames = naturalizedEntryBindingNameSet(entry);
+  const initializedExportBindings = entry.exportBindings.filter((binding) => !naturalizedBindingNames.has(binding.local));
+  body.push(...buildNaturalizedDeclarationStatements(entry));
+  if (initializedExportBindings.length > 0) {
+    body.push(
+      t.variableDeclaration(
+        "let",
+        initializedExportBindings.map((binding) => t.variableDeclarator(t.identifier(binding.local)))
+      )
+    );
+  }
   for (const stage of moduleStagesForEntry(entry)) {
     body.push(
       t.exportNamedDeclaration(
         t.functionDeclaration(
           t.identifier(stage.initName),
           [],
-          t.blockStatement(buildInitStatements(stage.stageEntries, localRenameMap, entry.atomicBoundaryUnits ?? []))
+          t.blockStatement(buildInitStatements(stage.stageEntries, localRenameMap, entry.atomicBoundaryUnits ?? [], {
+            naturalizedDeclarationKeys: entry.naturalizedDeclarationKeys,
+          }))
         )
       )
     );
@@ -1510,12 +1685,64 @@ function buildPlainImportOwnerStatements(statement, fragment = null) {
   throw new Error(`Plain-import lowering does not support ${statement?.type}`);
 }
 
-function buildInitStatements(stageEntries, localRenameMap, atomicBoundaryUnits = []) {
+function naturalizedEntryBindingNameSet(entry) {
+  return new Set((entry.naturalizedDeclarationEntries ?? []).flatMap(selectedEntryBindingNames));
+}
+
+function buildNaturalizedDeclarationStatements(entry) {
+  const statements = [];
+  const atomicBoundaryIndex = buildAtomicBoundaryIndex(entry.atomicBoundaryUnits ?? []);
+  let previousAtomicBoundaryUnitId = null;
+  for (const stageEntry of entry.naturalizedDeclarationEntries ?? []) {
+    const nextStatements = [naturalizedDeclarationStatement(stageEntry)];
+    const boundaryUnit = atomicBoundaryIndex.get(ownerEntryBoundaryKey(stageEntry));
+    annotateAtomicBoundary(nextStatements, boundaryUnit, previousAtomicBoundaryUnitId);
+    previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, boundaryUnit);
+    statements.push(...nextStatements);
+  }
+  return statements;
+}
+
+function naturalizedDeclarationStatement(stageEntry) {
+  const shape = declarationShapedVariableEntry(stageEntry);
+  if (!shape) {
+    throw new Error(`Expected declaration-shaped variable entry for ${stageEntry.owner.id}`);
+  }
+  const expressionName = shape.expression.id?.name ?? shape.bindingName;
+  if (expressionName !== shape.bindingName) {
+    return t.variableDeclaration(shape.statement.kind, [t.cloneNode(shape.declaration, true)]);
+  }
+  if (shape.kind === "function") {
+    return t.functionDeclaration(
+      t.identifier(shape.bindingName),
+      shape.expression.params.map((param) => t.cloneNode(param, true)),
+      t.cloneNode(shape.expression.body, true),
+      shape.expression.generator,
+      shape.expression.async
+    );
+  }
+  return t.classDeclaration(
+    t.identifier(shape.bindingName),
+    shape.expression.superClass ? t.cloneNode(shape.expression.superClass, true) : null,
+    t.cloneNode(shape.expression.body, true),
+    shape.expression.decorators?.map((decorator) => t.cloneNode(decorator, true)) ?? []
+  );
+}
+
+function buildInitStatements(
+  stageEntries,
+  localRenameMap,
+  atomicBoundaryUnits = [],
+  { naturalizedDeclarationKeys = new Set() } = {}
+) {
   const statements = [];
   const atomicBoundaryIndex = buildAtomicBoundaryIndex(atomicBoundaryUnits);
   let previousAtomicBoundaryUnitId = null;
   for (const entry of stageEntries) {
     if (entry.kind !== "declaration") {
+      continue;
+    }
+    if (naturalizedDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
       continue;
     }
     const { owner, statement } = entry;
@@ -1537,6 +1764,9 @@ function buildInitStatements(stageEntries, localRenameMap, atomicBoundaryUnits =
       continue;
     }
     const { owner, statement } = entry;
+    if (naturalizedDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
+      continue;
+    }
     if (owner.type === "FunctionDeclaration") {
       continue;
     }
@@ -2227,8 +2457,23 @@ function buildSnapshotVariableDeclarationStatements(owner, statement) {
     bindingNames.map((name) => t.objectProperty(t.identifier(name), t.identifier(name), false, true))
   );
   return [
-    declaration,
-    t.variableDeclaration("const", [t.variableDeclarator(snapshotId, snapshotObject)]),
+    t.variableDeclaration("const", [
+      t.variableDeclarator(
+        snapshotId,
+        t.callExpression(
+          t.parenthesizedExpression(
+            t.arrowFunctionExpression(
+              [],
+              t.blockStatement([
+                t.cloneNode(declaration, true),
+                t.returnStatement(snapshotObject),
+              ])
+            )
+          ),
+          []
+        )
+      ),
+    ]),
     ...bindingNames.map((name) =>
       t.expressionStatement(
         t.assignmentExpression("=", t.identifier(name), t.memberExpression(snapshotId, t.identifier(name)))
@@ -2241,7 +2486,9 @@ function runtimeInitNamesForEntry(entry) {
   if (entry.plainImportEligible) {
     return [];
   }
-  return entry.stageRuns.map((stageRun, stageIndex) => publicStageInitName(entry, stageIndex));
+  return entry.stageRuns
+    .map((stageRun, stageIndex) => stageRunNeedsInitWork(entry, stageRun) ? publicStageInitName(entry, stageIndex) : null)
+    .filter(Boolean);
 }
 
 function runtimeInitNameForRun(run) {
@@ -2249,10 +2496,24 @@ function runtimeInitNameForRun(run) {
 }
 
 function moduleStagesForEntry(entry) {
-  return entry.stageRuns.map((stageRun, stageIndex) => ({
-    initName: publicStageInitName(entry, stageIndex),
-    stageEntries: stageRun.stageEntries,
-  }));
+  return entry.stageRuns
+    .map((stageRun, stageIndex) => ({
+      initName: publicStageInitName(entry, stageIndex),
+      stageEntries: stageRun.stageEntries,
+      stageRun,
+    }))
+    .filter((stage) => stageRunNeedsInitWork(entry, stage.stageRun));
+}
+
+function stageRunNeedsInitWork(entry, stageRun) {
+  return stageRun.stageEntries.some((stageEntry) => stageEntryNeedsInitWork(entry, stageEntry));
+}
+
+function stageEntryNeedsInitWork(entry, stageEntry) {
+  if (stageEntry.kind !== "declaration") {
+    return true;
+  }
+  return !entry.naturalizedDeclarationKeys?.has(ownerEntryBoundaryKey(stageEntry));
 }
 
 function publicStageInitName(entry, stageIndex) {
@@ -3020,6 +3281,7 @@ function buildOwnerFragmentsByOwnerId(ownerFragments, operationId) {
 
 function buildRemainingProgramValidationIndex(analysis) {
   const earlierEagerUsersByOwnerId = new Map();
+  const potentialUsersByOwnerId = new Map();
   const writersByOwnerId = new Map();
   for (const record of [...analysis.owners, ...analysis.sideEffects]) {
     indexRemainingProgramAccesses(
@@ -3032,9 +3294,20 @@ function buildRemainingProgramValidationIndex(analysis) {
       record,
       [...record.readsTopLevel.eager, ...record.memberWritesTopLevel.eager]
     );
+    indexRemainingProgramAccesses(
+      potentialUsersByOwnerId,
+      record,
+      [
+        ...record.readsTopLevel.eager,
+        ...record.readsTopLevel.lazy,
+        ...record.memberWritesTopLevel.eager,
+        ...record.memberWritesTopLevel.lazy,
+      ]
+    );
   }
   return {
     earlierEagerUsersByOwnerId,
+    potentialUsersByOwnerId,
     writersByOwnerId,
   };
 }
