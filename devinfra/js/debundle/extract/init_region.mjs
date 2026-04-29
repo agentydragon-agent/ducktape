@@ -443,16 +443,34 @@ function resolveExtractOperation(
 }
 
 function isPlainImportEligibleEntry({ attachedEntries, orderedOwners, ownerEntries, stageRuns }) {
-  if (attachedEntries.length > 0 || stageRuns.length !== 1) {
+  if (attachedEntries.length > 0) {
     return false;
   }
-  const stageEntries = stageRuns[0].stageEntries;
+  const stageEntries = buildCanonicalPlainImportStageEntries(stageRuns);
   if (stageEntries.some((entry) => entry.kind !== "declaration")) {
     return false;
   }
   return stageEntries.every((stageEntry) =>
     isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries)
   );
+}
+
+function buildCanonicalPlainImportStageEntries(stageRuns) {
+  const entries = [];
+  const seenKeys = new Set();
+  for (const stageRun of stageRuns) {
+    for (const stageEntry of stageRun.stageEntries) {
+      const key = stageEntry.kind === "declaration"
+        ? ownerEntryBoundaryKey(stageEntry)
+        : stageEntry.sideEffect?.id ?? `${stageEntry.kind}:${entries.length}`;
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+      entries.push(stageEntry);
+    }
+  }
+  return entries;
 }
 
 function isPlainImportEligibleDeclarationEntry(stageEntry, ownerEntries) {
@@ -504,11 +522,33 @@ function isPlainImportSafeVariableEntry(stageEntry, ownerEntries) {
   if (ownerEntries.some((entry) => entry.owner.id === owner.id && entry.fragment)) {
     return false;
   }
+  if (isPlainImportSafeSnapshotVariableEntry(stageEntry)) {
+    return true;
+  }
   return (
     (owner.eagerReads?.size ?? 0) === 0 &&
     (owner.eagerWrites?.size ?? 0) === 0 &&
     (owner.eagerMemberWrites?.size ?? 0) === 0 &&
     declarations.every(isPlainImportSafeVariableDeclarator)
+  );
+}
+
+function isPlainImportSafeSnapshotVariableEntry(stageEntry) {
+  const { owner, statement, fragment } = stageEntry;
+  if (
+    fragment ||
+    owner.currentExtractorLowering !== "snapshot_variable_declaration" ||
+    !t.isVariableDeclaration(statement) ||
+    statement.kind !== "var"
+  ) {
+    return false;
+  }
+  const declaredNameSet = new Set(statement.declarations.flatMap((declaration) => bindingNames(declaration.id)));
+  if (declaredNameSet.size === 0) {
+    return false;
+  }
+  return statement.declarations.every((declaration) =>
+    referencedUndeclaredNamesInVariableDeclarator(declaration).every((name) => declaredNameSet.has(name))
   );
 }
 
@@ -1093,17 +1133,14 @@ function buildRuntimeImportDeclaration(entry) {
 
 function buildRuntimeReplacementRuns(entry) {
   if (entry.plainImportEligible) {
-    const [stageRun] = entry.stageRuns;
-    return [
-      {
-        endOrdinal: stageRun.endOrdinal,
-        entry,
-        omitInitCall: true,
-        sortIndex: stageRun.sortIndex ?? 0,
-        stageIndex: 0,
-        startOrdinal: stageRun.startOrdinal,
-      },
-    ];
+    return entry.stageRuns.map((stageRun, stageIndex) => ({
+      endOrdinal: stageRun.endOrdinal,
+      entry,
+      omitInitCall: true,
+      sortIndex: stageRun.sortIndex ?? stageIndex,
+      stageIndex,
+      startOrdinal: stageRun.startOrdinal,
+    }));
   }
   return entry.stageRuns.map((stageRun, stageIndex) => ({
     endOrdinal: stageRun.endOrdinal,
@@ -1275,7 +1312,7 @@ function buildPlainImportModuleFile(entry) {
   }
   const atomicBoundaryIndex = buildAtomicBoundaryIndex(entry.atomicBoundaryUnits ?? []);
   let previousAtomicBoundaryUnitId = null;
-  for (const stageEntry of entry.stageRuns[0].stageEntries) {
+  for (const stageEntry of buildCanonicalPlainImportStageEntries(entry.stageRuns)) {
     if (stageEntry.kind !== "declaration") {
       throw new Error(`Plain-import lowering received non-declaration stage entry in ${entry.targetFile}`);
     }

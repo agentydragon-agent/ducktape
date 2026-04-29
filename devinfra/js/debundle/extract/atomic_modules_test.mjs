@@ -1546,6 +1546,256 @@ export { OVt, fallbackTimeoutMs };
   assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("materializeLogicalModules lowers multi-stage pure declaration modules without init wrappers", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-plain-multi-stage-pipeline-"
+  );
+  const source = `const OVt = 500;
+const gapLabel = "gap";
+function readTimeout() {
+  return OVt;
+}
+export { OVt, gapLabel, readTimeout };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__request_timeout",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "runtime/request_timeout",
+        },
+        members: [
+          {
+            id: "member__request_timeout",
+            name: "requestTimeoutMs",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "OVt",
+              },
+            },
+          },
+          {
+            id: "member__read_timeout",
+            name: "readRequestTimeoutMs",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "readTimeout",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const timeoutCode = readFileSync(join(outRoot, "static", "app", "modules", "runtime", "request_timeout.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(timeoutCode, /\bconst requestTimeoutMs = 500;/);
+  assert.match(timeoutCode, /\bfunction readRequestTimeoutMs\(\)/);
+  assert.doesNotMatch(timeoutCode, /export function __dt_generated_init__/);
+  assert.doesNotMatch(timeoutCode, /\n\s*requestTimeoutMs = 500;/);
+
+  assert.match(residualCode, /\bconst gapLabel = "gap";/);
+  assert.match(entryCode, /import \{ requestTimeoutMs, readRequestTimeoutMs \} from "\.\/modules\/runtime\/request_timeout\.js";/);
+  assert.doesNotMatch(entryCode, /__dt_generated_init__runtime_request_timeout/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
+test("materializeLogicalModules lowers self-contained snapshot variable owners without init wrappers", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-self-contained-snapshot-pipeline-"
+  );
+  const source = `var Status = ((Status2) => {
+  Status2.Idle = "idle";
+  Status2.Busy = "busy";
+  return Status2;
+})(Status || {});
+function readStatus() {
+  return Status.Busy;
+}
+export { readStatus };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__status",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "runtime/status",
+        },
+        members: [
+          {
+            id: "member__status",
+            name: "ChangeStatus",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "Status",
+              },
+            },
+          },
+          {
+            id: "member__read_status",
+            name: "readChangeStatus",
+            selector: {
+              binding: {
+                kind: "FunctionDeclaration",
+                name: "readStatus",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const statusCode = readFileSync(join(outRoot, "static", "app", "modules", "runtime", "status.js"), "utf8");
+  const entryCode = readFileSync(join(outRoot, "static", "app", "entry.js"), "utf8");
+
+  assert.match(statusCode, /\bvar ChangeStatus = \(Status2 =>/);
+  assert.match(statusCode, /\bfunction readChangeStatus\(\)/);
+  assert.doesNotMatch(statusCode, /__dt_selected_module_snapshot__/);
+  assert.doesNotMatch(statusCode, /export function __dt_generated_init__/);
+  assert.match(entryCode, /import \{ ChangeStatus, readChangeStatus \} from "\.\/modules\/runtime\/status\.js";/);
+  assert.doesNotMatch(entryCode, /__dt_generated_init__runtime_status/);
+  assert.deepEqual(runNodeScript(join(outRoot, "static", "app", "entry.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
+});
+
 test("materializeLogicalModules can split pure destructuring declarators into fragment-backed modules", async () => {
   const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
     "debundle-logical-modules-destructuring-fragments-"

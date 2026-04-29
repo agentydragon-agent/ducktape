@@ -216,7 +216,7 @@ export { spawnWorker };
   assert.doesNotMatch(extractedCode, /new URL\(/);
 });
 
-test("extracts non-contiguous declaration regions with staged-shell lowering by default", () => {
+test("extracts non-contiguous pure declaration regions as plain imports by default", () => {
   const source = `const a = 1;
 console.log("barrier");
 const b = 2;
@@ -230,8 +230,10 @@ console.log(a + b);
     }),
   ]);
 
-  assert.match(result.files.get("runtime.js"), /init_non_contiguous_stage_0\(\)/);
-  assert.ok(result.files.get("regions/non_contiguous.js"));
+  assert.match(result.files.get("runtime.js"), /import \{ a, b \} from "\.\/regions\/non_contiguous\.js"/);
+  assert.doesNotMatch(result.files.get("runtime.js"), /\binit_non_contiguous\b/);
+  assert.match(result.files.get("regions/non_contiguous.js"), /\bconst a = 1;/);
+  assert.match(result.files.get("regions/non_contiguous.js"), /\bconst b = 2;/);
 });
 
 test("extracts non-contiguous declaration regions with staged-shell lowering and preserves behavior", () => {
@@ -619,7 +621,7 @@ export { s8t };
   });
 });
 
-test("graph-generated extraction snapshots self-referential variable declarations when bindings stay immutable", () => {
+test("graph-generated extraction lowers self-contained snapshot variable declarations directly", () => {
   const source = `var Status = ((Status2) => {
   Status2.Idle = "idle";
   Status2.Busy = "busy";
@@ -663,11 +665,57 @@ export { readStatus };
   });
 
   const extractedCode = result.files.get("regions/snapshot_variable_owner.js");
-  assert.match(extractedCode, /const __dt_selected_module_snapshot__owner_00000 = \(\(\) =>/);
-  assert.match(extractedCode, /Status = __dt_selected_module_snapshot__owner_00000\.Status/);
+  const runtimeCode = result.files.get("runtime.js");
+  assert.match(runtimeCode, /import \{ Status, readStatus \} from "\.\/regions\/snapshot_variable_owner\.js"/);
+  assert.doesNotMatch(runtimeCode, /\binit_snapshot_variable_owner\b/);
+  assert.match(extractedCode, /\bvar Status = \(Status2 =>/);
+  assert.match(extractedCode, /\bfunction readStatus\(\)/);
+  assert.doesNotMatch(extractedCode, /__dt_selected_module_snapshot__/);
+  assert.doesNotMatch(extractedCode, /export function init_snapshot_variable_owner/);
   assertRunnableEquivalent({
     files: {},
     prefix: "debundle-extract-ordered-init-snapshot-variable-owner-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("lowers multi-stage pure declaration regions as plain imports without init wrappers", () => {
+  const source = `const alpha = 1;
+const gapLabel = "gap";
+function readAlpha() {
+  return alpha;
+}
+const beta = 2;
+function readBeta() {
+  return beta;
+}
+console.log(readAlpha(), gapLabel, readBeta());
+export { gapLabel };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_plain_multi_stage_region",
+      ownerNames: ["alpha", "readAlpha", "beta", "readBeta"],
+      targetFile: "regions/plain_multi_stage_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/plain_multi_stage_region.js");
+  assert.match(runtimeCode, /import \{ alpha, readAlpha, beta, readBeta \} from "\.\/regions\/plain_multi_stage_region\.js"/);
+  assert.doesNotMatch(runtimeCode, /\binit_plain_multi_stage_region\b/);
+  assert.match(runtimeCode, /\bconst gapLabel = "gap";/);
+  assert.match(extractedCode, /\bconst alpha = 1;/);
+  assert.match(extractedCode, /\bfunction readAlpha\(\)/);
+  assert.match(extractedCode, /\bconst beta = 2;/);
+  assert.match(extractedCode, /\bfunction readBeta\(\)/);
+  assert.doesNotMatch(extractedCode, /export function init_plain_multi_stage_region/);
+  assert.doesNotMatch(extractedCode, /\n\s*alpha = 1;/);
+  assert.doesNotMatch(extractedCode, /\n\s*beta = 2;/);
+
+  assertRunnableEquivalent({
+    prefix: "debundle-extract-plain-import-multi-stage-",
     source,
     transformedFiles: Object.fromEntries(result.files),
   });
@@ -975,6 +1023,11 @@ export { parseTree };
       targetFile: "regions/schema_region.js",
     }),
   ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/schema_region.js");
+  assert.match(runtimeCode, /\binit_schema_region\b/);
+  assert.match(extractedCode, /__dt_selected_module_snapshot__/);
 
   assertRunnableEquivalent({
     files: {
