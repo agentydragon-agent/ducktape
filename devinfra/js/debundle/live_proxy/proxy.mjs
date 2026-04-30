@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { createServer as createHttpsServer } from "node:https";
 import { Agent as HttpsAgent } from "node:https";
 
@@ -127,46 +127,50 @@ export function loadLiveProxyConfiguration(rawOptions) {
   const assetSummary = JSON.parse(readFileSync(assetSummaryPath, "utf8"));
   const sourceHtmlPath = resolveManifestReferencedPath(appManifest.sourceHtml, manifestContext);
   const sourceHtml = readFileSync(sourceHtmlPath, "utf8");
-  const targetUrl = new URL(resolveAppBaseUrl({ appManifest, assetSummary, manifestContext }) ?? "https://example.test");
+  const targetUrl = new URL(
+    resolveAppBaseUrl({ appManifest, assetSummary, manifestContext }) ?? "https://example.test"
+  );
   const uiVersion = appManifest.uiVersion ?? assetSummary.uiVersion ?? "unknown";
   const internalPrefix = normalizeInternalPrefix(
     options.internalPrefix ?? `${targetUrl.pathname.replace(/\/$/, "")}/_debundle/live/${uiVersion}`
   );
-  const outDir = resolveManifestReferencedPath(appManifest.outDir, manifestContext);
-  const outRoot = dirname(outDir);
+  const appRoot = resolveManifestReferencedPath(appManifest.outDir, manifestContext);
+  const appAssetPrefix = `${internalPrefix}/app`;
   const vendorManifestPath = appManifest.vendorManifestPath
     ? resolveManifestReferencedPath(appManifest.vendorManifestPath, manifestContext)
-    : join(outRoot, "vendors", "manifest.json");
+    : join(appRoot, "vendors", "manifest.json");
   const vendorRuntimeIndex = loadVendorRuntimeIndex({
     manifestPath: vendorManifestPath,
-    outRoot,
+    outRoot: appRoot,
     ...(options.packageRoots ? { packageRoots: options.packageRoots } : {}),
     ...(options.packagesRoot ? { packagesRoot: options.packagesRoot } : {}),
   });
-  const bootstrapPath = join(outRoot, "app", "bootstrap.js");
+  const bootstrapPath = join(appRoot, "bootstrap.js");
   if (!existsSync(bootstrapPath)) {
     throw new Error(`Expected bootstrap.js at ${bootstrapPath}`);
   }
 
   return {
+    appAssetPrefix,
     appManifest,
     appManifestPath: options.appManifestPath,
+    appRoot,
     assetHost: options.assetHost ?? DEFAULT_ASSET_HOST,
     assetPort: options.assetPort ?? DEFAULT_ASSET_PORT,
     assetSummary,
     assetSummaryPath,
-    bootstrapUrl: `${internalPrefix}/app/bootstrap.js`,
+    bootstrapUrl: `${appAssetPrefix}/bootstrap.js`,
     caDir: join(options.stateDir, "mitm-ca"),
     controlPaths: {
       liveIndex: `${internalPrefix}/live-index.html`,
       serviceWorker: `${internalPrefix}/sw.js`,
     },
     injectedHtml: rewriteHtmlForLiveProxy(sourceHtml, {
-      bootstrapUrl: `${internalPrefix}/app/bootstrap.js`,
+      bootstrapUrl: `${appAssetPrefix}/bootstrap.js`,
       uiVersion,
     }),
     internalPrefix,
-    outRoot,
+    outRoot: appRoot,
     profileDir: join(options.stateDir, "browser-profile"),
     proxyHost: options.proxyHost ?? DEFAULT_PROXY_HOST,
     proxyPort: options.proxyPort ?? DEFAULT_PROXY_PORT,
@@ -221,7 +225,10 @@ function deriveManifestWorkspaceRoot(appManifestPath, appManifest) {
 }
 
 function normalizeRelativePath(value) {
-  return value.split(/[\\/]+/).filter((segment) => segment !== "").join("/");
+  return value
+    .split(/[\\/]+/)
+    .filter((segment) => segment !== "")
+    .join("/");
 }
 
 export function rewriteHtmlForLiveProxy(sourceHtml, { bootstrapUrl, uiVersion }) {
@@ -287,12 +294,27 @@ export function mapLocalAssetPath(pathname, config) {
       kind: "vendor-file",
     };
   }
-  const filePath = safeJoin(config.outRoot, suffix);
+  const appRelativePath = stripAppAssetPrefix(suffix);
+  if (appRelativePath === null) {
+    return null;
+  }
+  const filePath = safeJoin(config.appRoot ?? config.outRoot, appRelativePath);
   return {
     contentType: contentTypeForPath(filePath),
     filePath,
     kind: "file",
   };
+}
+
+function stripAppAssetPrefix(relativePath) {
+  const normalized = normalizeRelativePath(relativePath);
+  if (normalized === "app") {
+    return "";
+  }
+  if (!normalized.startsWith("app/")) {
+    return null;
+  }
+  return normalized.slice("app/".length);
 }
 
 export async function startLiveProxy(rawOptions) {
@@ -635,7 +657,7 @@ function logWithTimestamp(level, message) {
 }
 
 function escapeHtmlAttr(value) {
-  return value.replaceAll("&", "&amp;").replaceAll("\"", "&quot;");
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 }
 
 function printStartupSummary(config) {
@@ -647,7 +669,10 @@ function printStartupSummary(config) {
     JSON.stringify(config.targetUrl),
   ].join(" ");
 
-  logWithTimestamp("info", `proxy ready target=${config.targetOrigin} listen=http://${config.proxyHost}:${config.proxyPort}`);
+  logWithTimestamp(
+    "info",
+    `proxy ready target=${config.targetOrigin} listen=http://${config.proxyHost}:${config.proxyPort}`
+  );
   logWithTimestamp("info", `local assets prefix=${config.internalPrefix}`);
   logWithTimestamp("info", `bootstrap override=${config.bootstrapUrl}`);
   logWithTimestamp("info", `mitm ca pem=${join(config.caDir, "certs", "ca.pem")}`);

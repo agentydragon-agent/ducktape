@@ -12,8 +12,14 @@ import {
   rewriteHtmlForLiveProxy,
 } from "./proxy.mjs";
 
-function writeBaseLiveProxyFixture(prefix, { sourceBaseUrl = null, uiVersion = "example", vendorManifestPath = null } = {}) {
-  const { appRoot, packagesRoot, root, sourceRoot, vendorsRoot } = createWebFixtureRoots(prefix);
+function writeBaseLiveProxyFixture(
+  prefix,
+  { appRelativeOutDir = "app", sourceBaseUrl = null, uiVersion = "example", vendorManifestPath = null } = {}
+) {
+  const roots = createWebFixtureRoots(prefix);
+  const { packagesRoot, root, sourceRoot } = roots;
+  const appRoot = join(root, appRelativeOutDir);
+  const vendorsRoot = join(appRoot, "vendors");
   const assetSummaryPath = join(root, "asset-summary.json");
   const sourceHtmlPath = join(sourceRoot, "index.html");
   const appManifestPath = join(appRoot, "manifest.json");
@@ -151,8 +157,30 @@ test("loadLiveProxyConfiguration resolves manifest-relative workspace paths from
 
   assert.equal(config.assetSummaryPath, fixture.assetSummaryPath);
   assert.equal(config.sourceHtmlPath, fixture.sourceHtmlPath);
-  assert.equal(config.outRoot, fixture.root);
+  assert.equal(config.appRoot, fixture.appRoot);
+  assert.equal(config.outRoot, fixture.appRoot);
   assert.equal(config.targetOrigin, "https://app.example.com");
+});
+
+test("loadLiveProxyConfiguration treats outDir as the app root even when it is not named app", () => {
+  const fixture = writeBaseLiveProxyFixture("debundle-live-proxy-versioned-app-root-", {
+    appRelativeOutDir: "out/v-example",
+    uiVersion: "versioned",
+  });
+
+  const config = loadLiveProxyConfiguration({
+    appManifestPath: fixture.appManifestPath,
+    assetHost: "127.0.0.1",
+    assetPort: 9905,
+    proxyHost: "127.0.0.1",
+    proxyPort: 9805,
+    stateDir: join(fixture.root, "state"),
+  });
+
+  assert.equal(config.appRoot, fixture.appRoot);
+  assert.equal(config.outRoot, fixture.appRoot);
+  const fileMapping = mapLocalAssetPath("/_debundle/live/versioned/app/bootstrap.js", config);
+  assert.equal(fileMapping.filePath, join(fixture.appRoot, "bootstrap.js"));
 });
 
 test("isTargetDocumentRequest recognizes top-level HTML navigations", () => {
@@ -218,7 +246,10 @@ test("mapLocalAssetPath serves swapped vendor chunks from package roots and gene
   const fixture = writeBaseLiveProxyFixture("debundle-live-proxy-vendor-", { uiVersion: "vendor" });
   const vendorManifestPath = join(fixture.vendorsRoot, "manifest.json");
 
-  writeTextFile(join(fixture.packagesRoot, "katex", "dist", "katex.mjs"), 'export { helper } from "./helpers/helper.mjs";\nexport const render = () => "katex";\n');
+  writeTextFile(
+    join(fixture.packagesRoot, "katex", "dist", "katex.mjs"),
+    'export { helper } from "./helpers/helper.mjs";\nexport const render = () => "katex";\n'
+  );
   writeTextFile(join(fixture.packagesRoot, "katex", "dist", "helpers", "helper.mjs"), "export const helper = 1;\n");
   writeJsonFile(join(fixture.packagesRoot, "katex", "package.json"), {
     name: "katex",
@@ -275,10 +306,7 @@ test("mapLocalAssetPath serves swapped vendor chunks from package roots and gene
   assert.ok(runtimeHit.filePath.endsWith("/node_modules/katex/dist/katex.mjs"));
   assert.equal(runtimeHit.contentType, "text/javascript; charset=utf-8");
 
-  const siblingHit = mapLocalAssetPath(
-    "/_debundle/live/vendor/app/static/katex-BZy9Y_85/helpers/helper.mjs",
-    config
-  );
+  const siblingHit = mapLocalAssetPath("/_debundle/live/vendor/app/static/katex-BZy9Y_85/helpers/helper.mjs", config);
   assert.equal(siblingHit.kind, "vendor-file");
   assert.ok(siblingHit.filePath.endsWith("/node_modules/katex/dist/helpers/helper.mjs"));
 
@@ -306,16 +334,17 @@ test("loadLiveProxyConfiguration tolerates missing vendor manifest and rejects p
 
   const escapeFixture = writeBaseLiveProxyFixture("debundle-live-proxy-escape-", { uiVersion: "escape" });
   assert.throws(
-    () => mapLocalAssetPath("/_debundle/live/escape/app/../../etc/passwd", {
-      ...loadLiveProxyConfiguration({
-        appManifestPath: escapeFixture.appManifestPath,
-        assetHost: "127.0.0.1",
-        assetPort: 9902,
-        proxyHost: "127.0.0.1",
-        proxyPort: 9802,
-        stateDir: join(escapeFixture.root, "state"),
+    () =>
+      mapLocalAssetPath("/_debundle/live/escape/app/../../etc/passwd", {
+        ...loadLiveProxyConfiguration({
+          appManifestPath: escapeFixture.appManifestPath,
+          assetHost: "127.0.0.1",
+          assetPort: 9902,
+          proxyHost: "127.0.0.1",
+          proxyPort: 9802,
+          stateDir: join(escapeFixture.root, "state"),
+        }),
       }),
-    }),
     /Refusing to serve path outside root/
   );
 });
