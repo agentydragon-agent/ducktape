@@ -16,7 +16,7 @@ export async function buildMockBrowserBundle(outRoot) {
   await rm(root, { force: true, recursive: true });
   await mkdir(join(snapshotRoot, "preload"), { recursive: true });
   await mkdir(staticRoot, { recursive: true });
-  await copyFile(join(SOURCE_ROOT, "preload", "app.css"), join(snapshotRoot, "preload", "app.css"));
+  await copyFile(join(SOURCE_ROOT, "app.css"), join(snapshotRoot, "preload", "app.css"));
 
   await build({
     appType: "custom",
@@ -33,7 +33,7 @@ export async function buildMockBrowserBundle(outRoot) {
       outDir: staticRoot,
       rollupOptions: {
         input: {
-          index: join(SOURCE_ROOT, "src", "index.js"),
+          index: join(SOURCE_ROOT, "index.js"),
         },
         output: {
           chunkFileNames: "[name]-DuckMock.js",
