@@ -9,6 +9,55 @@ addressing, and how we'll know if it helped.
 
 ## 2026-04-29
 
+- **Added an "Aim for the perfect artifact; track everything not yet
+  done." axiom.** Frames the goal explicitly (one source tree, correct
+  everywhere) and codifies bookkeeping discipline: TODO list in
+  `/work/`, the Census string checklist, set of un-matched binary
+  symbols. Most importantly: stubs and guesses MUST be marked in the
+  code (`// GUESS:` / `// STUB:` comments). Failure mode: an unmarked
+  guess silently turns into "RE'd fact" the next time the file is
+  read, which then propagates downstream and hides a wrong inference
+  behind apparently-confirmed code. How we'll know it helped: in
+  re-runs, scan the agent's `/work/` for `GUESS:`/`STUB:` markers and
+  count vs total functions; healthy runs should have markers early and
+  reduce them as confirmation lands.
+
+- **Added an "Expand from understood islands; don't reverse the whole
+  binary in one shot." axiom.** Failure mode: agents skim the strings
+  table and infer wholesale ("I see `register`, `note`, `export`, so
+  the protocol probably looks like X") without having reversed any
+  individual handler. Plausible-from-far recoveries fall apart on
+  contact with bytes. The axiom says: pick one location with ground
+  truth (syscall, magic constant, recognizable string referent,
+  already-fully-RE'd function), confirm it to satisfaction, then
+  follow data/control flow outward. Sweep can _prioritize_ islands
+  but the islands are what you trust. How we'll know it helped: in a
+  re-run, the agent reaches anchored ground (a recognized
+  constant/syscall/string referent) and walks call edges from there,
+  rather than sketching an end-to-end protocol from strings alone.
+
+- **Added a "Heuristic red flags mean you mis-RE'd something.
+  Diagnose, don't reroll." axiom.** Failure mode: the same Sonnet
+  rollout above detected divergence (its cipher output didn't match a
+  known binary-produced ciphertext) and responded by generating ~50
+  alternative cipher hypotheses + ~20 alternative implementations,
+  re-running end-to-end checks each time. Cost: most of the wall
+  budget. The right response is the opposite — divergence localizes
+  the bug; bisect by capturing the binary's intermediate state at the
+  suspect boundary (gdb breakpoints, register/memory dumps, ltrace,
+  single-stepping, side-by-side disasm-vs-source) and fixing the first
+  step that disagrees. The binary is right by construction (we RE'd
+  from it); divergence is information about where to look, not a
+  signal to swap hypotheses. The axiom is phrased generally to also
+  cover internal-inconsistency signals (struct fields that don't line
+  up, constants that don't match across call sites) and recovered-code
+  smells (dead code, unused variables, vestigial branches) — the
+  binary was real production code with no dead code, so smells in the
+  recovery are invention. How we'll know it helped: in a re-run, when
+  the agent hits ciphertext-mismatch, it reaches for `gdb` /
+  register-dumps within a few messages instead of rolling cipher
+  hypotheses for an hour.
+
 - **Added a "No speculation. Read it or test it." axiom** to the top of
   `SKILL.md`. Failure mode it targets: speculative-but-plausible asm
   reads producing recovered code that round-trips its own self-tests
