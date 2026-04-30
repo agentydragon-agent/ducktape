@@ -511,7 +511,7 @@ function resolveExtractOperation(
     orderedOwners,
     ownerIds: orderedOwners.map((owner) => owner.id),
     naturalizedDeclarationEntries,
-    naturalizedDeclarationKeys: new Set(naturalizedDeclarationEntries.map(ownerEntryBoundaryKey)),
+    naturalizedDeclarationKeys: new Set(naturalizedDeclarationEntries.map(ownerEntrySelectionKey)),
     plainImportEligible,
     safeTrivialAliasDeclarationKeys,
     stageRuns,
@@ -605,7 +605,7 @@ function buildSafeTrivialAliasDeclarationKeys(stageRuns, { exportBindings, natur
     if (!referencesOnlyModuleEvaluationSafeBindings) {
       continue;
     }
-    safeAliasKeys.add(ownerEntryBoundaryKey(stageEntry));
+    safeAliasKeys.add(ownerEntrySelectionKey(stageEntry));
     safeSelectedBindingNames.add(aliasName);
   }
   return safeAliasKeys;
@@ -661,7 +661,7 @@ function buildCanonicalPlainImportStageEntries(stageRuns) {
     for (const stageEntry of stageRun.stageEntries) {
       const key =
         stageEntry.kind === "declaration"
-          ? ownerEntryBoundaryKey(stageEntry)
+          ? ownerEntrySelectionKey(stageEntry)
           : (stageEntry.sideEffect?.id ?? `${stageEntry.kind}:${entries.length}`);
       if (seenKeys.has(key)) {
         continue;
@@ -1448,13 +1448,7 @@ function buildStagedShellRuns(
   { attachedEntries, ownerEntries, ownerById, remainingProgramValidationIndex, selectedOwnerIds }
 ) {
   const stageItems = [
-    ...ownerEntries.map((entry) => ({
-      kind: "declaration",
-      ordinal: entry.owner.ordinal,
-      ownerEntries: [entry],
-      sortIndex: entry.fragment?.orderIndex ?? 0,
-      statementEntries: [entry],
-    })),
+    ...ownerEntries.flatMap((entry) => declarationStageItemsForOwnerEntry(entry)),
     ...attachedEntries.map((entry) => ({
       kind: "side_effect",
       ordinal: entry.sideEffect.ordinal,
@@ -1502,6 +1496,84 @@ function buildStagedShellRuns(
   }
 
   return stageRuns;
+}
+
+function declarationStageItemsForOwnerEntry(entry) {
+  return splitOwnerEntryForStagedEvaluation(entry).map((stageEntry) => ({
+    kind: "declaration",
+    ordinal: stageEntry.owner.ordinal,
+    ownerEntries: [stageEntry],
+    sortIndex: ownerEntryDeclaratorSortIndex(stageEntry),
+    statementEntries: [stageEntry],
+  }));
+}
+
+function splitOwnerEntryForStagedEvaluation(entry) {
+  const { fragment, statement } = entry;
+  if (!fragment || !t.isVariableDeclaration(statement) || !hasNonContiguousDeclaratorIndices(fragment)) {
+    return [entry];
+  }
+  return contiguousDeclaratorIndexRuns(fragment.declaratorIndices).map((declaratorIndices) => ({
+    ...entry,
+    fragment: stagedFragmentRun(fragment, statement, declaratorIndices),
+  }));
+}
+
+function hasNonContiguousDeclaratorIndices(fragment) {
+  const indices = sortedDeclaratorIndices(fragment);
+  for (let index = 1; index < indices.length; index++) {
+    if (indices[index] !== indices[index - 1] + 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function contiguousDeclaratorIndexRuns(declaratorIndices) {
+  const sortedIndices = [...declaratorIndices].sort((left, right) => left - right);
+  const runs = [];
+  let currentRun = [];
+  for (const declaratorIndex of sortedIndices) {
+    if (currentRun.length === 0 || declaratorIndex === currentRun.at(-1) + 1) {
+      currentRun.push(declaratorIndex);
+      continue;
+    }
+    runs.push(currentRun);
+    currentRun = [declaratorIndex];
+  }
+  if (currentRun.length > 0) {
+    runs.push(currentRun);
+  }
+  return runs;
+}
+
+function stagedFragmentRun(fragment, statement, declaratorIndices) {
+  const suffix = declaratorIndices.join("_");
+  return {
+    ...fragment,
+    declaratorIndices,
+    id: `${fragment.id}::staged_run_${suffix}`,
+    memberNames: memberNamesForDeclaratorIndices(statement, declaratorIndices, fragment.memberNames),
+    orderIndex: declaratorIndices[0],
+    sourceFragmentId: fragment.sourceFragmentId ?? fragment.id,
+  };
+}
+
+function memberNamesForDeclaratorIndices(statement, declaratorIndices, selectedMemberNames = null) {
+  const selectedMemberNameSet = selectedMemberNames ? new Set(selectedMemberNames) : null;
+  const names = declaratorIndices.flatMap((index) => bindingNames(statement.declarations[index]?.id));
+  return selectedMemberNameSet ? names.filter((name) => selectedMemberNameSet.has(name)) : names;
+}
+
+function ownerEntryDeclaratorSortIndex(entry) {
+  if (entry.fragment?.declaratorIndices?.length > 0) {
+    return Math.min(...entry.fragment.declaratorIndices);
+  }
+  return entry.fragment?.orderIndex ?? 0;
+}
+
+function sortedDeclaratorIndices(fragment) {
+  return [...(fragment.declaratorIndices ?? [])].sort((left, right) => left - right);
 }
 
 function findRetainedEagerUseOfLaterSelectedOwner({
@@ -1792,7 +1864,7 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
       if (stageEntry.kind !== "declaration") {
         continue;
       }
-      if (!entry.safeTrivialAliasDeclarationKeys?.has(ownerEntryBoundaryKey(stageEntry))) {
+      if (!entry.safeTrivialAliasDeclarationKeys?.has(ownerEntrySelectionKey(stageEntry))) {
         continue;
       }
       const declaration = trivialAliasDeclaration(stageEntry);
@@ -2244,10 +2316,10 @@ function buildInitStatements(
     if (entry.kind !== "declaration") {
       continue;
     }
-    if (naturalizedDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
+    if (naturalizedDeclarationKeys.has(ownerEntrySelectionKey(entry))) {
       continue;
     }
-    if (safeTrivialAliasDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
+    if (safeTrivialAliasDeclarationKeys.has(ownerEntrySelectionKey(entry))) {
       continue;
     }
     const { owner, statement } = entry;
@@ -2276,10 +2348,10 @@ function buildInitStatements(
       continue;
     }
     const { owner, statement } = entry;
-    if (naturalizedDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
+    if (naturalizedDeclarationKeys.has(ownerEntrySelectionKey(entry))) {
       continue;
     }
-    if (safeTrivialAliasDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
+    if (safeTrivialAliasDeclarationKeys.has(ownerEntrySelectionKey(entry))) {
       continue;
     }
     if (owner.type === "FunctionDeclaration") {
@@ -3344,6 +3416,10 @@ function buildAtomicBoundaryIndex(atomicBoundaryUnits) {
 }
 
 function ownerEntryBoundaryKey(entry) {
+  return entry.fragment?.sourceFragmentId ?? ownerEntrySelectionKey(entry);
+}
+
+function ownerEntrySelectionKey(entry) {
   return entry.fragment?.id ?? entry.owner.id;
 }
 
@@ -3432,10 +3508,10 @@ function stageEntryNeedsInitWork(entry, stageEntry) {
   if (stageEntry.kind !== "declaration") {
     return true;
   }
-  if (entry.safeTrivialAliasDeclarationKeys?.has(ownerEntryBoundaryKey(stageEntry))) {
+  if (entry.safeTrivialAliasDeclarationKeys?.has(ownerEntrySelectionKey(stageEntry))) {
     return false;
   }
-  return !entry.naturalizedDeclarationKeys?.has(ownerEntryBoundaryKey(stageEntry));
+  return !entry.naturalizedDeclarationKeys?.has(ownerEntrySelectionKey(stageEntry));
 }
 
 function trivialAliasDeclaration(stageEntry) {

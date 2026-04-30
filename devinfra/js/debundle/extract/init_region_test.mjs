@@ -2142,6 +2142,94 @@ export { left, right };
   });
 });
 
+test("preserves source-order evaluation for non-contiguous variable-declarator fragments", () => {
+  const source = `const a = 1,
+  b = 2,
+  c = 3,
+  d = a + b,
+  e = d + c,
+  f = e;
+console.log(f);
+export { f };
+`;
+  const [ownerId] = ownerIdsForNames(source, ["f"]);
+  const operation = selectedModuleOperation(source, {
+    init: "init_non_contiguous_declarator_fragments",
+    ownerNames: ["f"],
+    targetFile: "regions/non_contiguous_declarator_fragments.js",
+  });
+  const fragments = [
+    {
+      declaratorIndices: [0],
+      id: `${ownerId}::declarator_0`,
+      kind: "variable_declarator",
+      memberNames: ["a"],
+      orderIndex: 0,
+      ownerId,
+    },
+    {
+      declaratorIndices: [1],
+      id: `${ownerId}::declarator_1`,
+      kind: "variable_declarator",
+      memberNames: ["b"],
+      orderIndex: 1,
+      ownerId,
+    },
+    {
+      declaratorIndices: [2, 5],
+      id: `${ownerId}::declarator_group_2_5`,
+      kind: "variable_declarator_group",
+      memberNames: ["c", "f"],
+      orderIndex: 2,
+      ownerId,
+    },
+    {
+      declaratorIndices: [3],
+      id: `${ownerId}::declarator_3`,
+      kind: "variable_declarator",
+      memberNames: ["d"],
+      orderIndex: 3,
+      ownerId,
+    },
+    {
+      declaratorIndices: [4],
+      id: `${ownerId}::declarator_4`,
+      kind: "variable_declarator",
+      memberNames: ["e"],
+      orderIndex: 4,
+      ownerId,
+    },
+  ];
+  operation.selector.ownerFragments = fragments;
+  operation.atomicBoundaryUnits = [
+    {
+      attachedItemIds: [],
+      id: "atomic_module_non_contiguous_declarator_fragments",
+      memberNames: ["a", "b", "c", "d", "e", "f"],
+      ownerFragments: fragments,
+      ownerIds: [ownerId],
+    },
+  ];
+
+  const result = extractOrderedInitRegionsInCode(source, [operation]);
+  const extractedCode = result.files.get("regions/non_contiguous_declarator_fragments.js");
+  const dIndex = extractedCode.indexOf("d = a + b");
+  const eIndex = extractedCode.indexOf("e = d + c");
+  const fIndex = extractedCode.indexOf("f = e");
+  assert.notEqual(dIndex, -1);
+  assert.notEqual(eIndex, -1);
+  assert.notEqual(fIndex, -1);
+  assert.ok(dIndex < fIndex);
+  assert.ok(eIndex < fIndex);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-non-contiguous-declarator-fragments-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("imports renamed dependencies across selected variable-declarator fragments", () => {
   const source = `const jh = context => context.target != null,
   $Bt = context => context.stackTarget != null,
