@@ -1,35 +1,0 @@
-docker login ghcr.io: Login Succeeded
-$ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/bin/inspect eval inspect_evals/swe_bench --model openai/gpt-oss:20b --limit 1 --message-limit 50 --sandbox docker --max-connections 2 --log-dir /home/agentydragon/code/ducktape/cluster/docs/inference/runs/2026-04-29_swebench_pilot_gpt20/eval_logs
-Loading dataset princeton-nlp/SWE-bench_Verified from Hugging Face...
-Saving the dataset (0/1 shards):   0%|          | 0/500 [00:00<?, ? examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 7900.66 examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 7831.92 examples/s]
- default Pulling
- default Pulled
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│swe_bench (1 sample): openai/gpt-oss:20b                                      │
-╰──────────────────────────────────────────────────────────────────────────────╯
-max_connections: 2, message_limit: 50, dataset: princeton-nlp/SWE-bench_Verified
-
-total time:                 0:06:06
-openai/gpt-oss:20b          520,929 tokens [I: 517,156, O: 3,773]
-
-swe_bench_scorer
-mean              0.000
-std               0.000
-
-Log: eval_logs/2026-04-30T01-59-24-00-00_swe-bench_3hd3YynKXibmY5diZPkXF3.eval
-
-=== DONE ===
-{
-  "config": {
-    "model": "gpt-oss:20b",
-    "limit": 1,
-    "dataset": "verified",
-    "dataset_hf_id": "princeton-nlp/SWE-bench_Verified",
-    "message_limit": 50,
-    "max_workers": 2,
-    "sandbox": "docker",
-    "base_url": "https://ollama.allegedly.works/v1"
-  },
-  "exit_code": 0
-}
