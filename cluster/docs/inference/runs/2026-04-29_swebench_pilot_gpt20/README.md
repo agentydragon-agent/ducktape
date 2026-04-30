@@ -115,33 +115,166 @@ dataset 'princeton-nlp/SWE-bench_Lite'`. The task pins a SHA that
    compat.** The agent emitted hundreds of well-formed tool calls
    before the failure (the JSON-RPC `id` was 673 at crash time).
 
-### What broke
+### What broke (forensic walkthrough)
 
-**Inspect's JSON-RPC tool stdio framing**, not the model. After ~673
-tool calls into the agent loop, `parse_json_rpc_response` got a
-truncated payload:
+The eval log (`inspect log dump …eval`) lets us reconstruct exactly
+what happened. The crash isn't generic; it traces to one specific
+command the model ran early in the trajectory.
+
+**The agent's command sequence**, each `bash_session(action=type_submit)`:
+
+| msg | command                                                         | result size                  |
+| --- | --------------------------------------------------------------- | ---------------------------- |
+| 2   | `ls -R . \| head -200`                                          | 2 750 chars                  |
+| 4   | `grep -R "def separability_matrix" -n .. \| head`               | 79 chars (heavily truncated) |
+| 6   | `grep -R "separability_matrix" -n astropy \| head`              | 16 523 chars (Inspect cap)   |
+| 8   | `grep -n "separability_matrix" -R astropy/modeling \| head`     | 16 523 chars (Inspect cap)   |
+| 10  | `grep -R "def separability_matrix" -n astropy/modeling \| head` | 16 523 chars (Inspect cap)   |
+| 12  | `ls -R astropy/modeling/separable \| head`                      | 16 523 chars (Inspect cap)   |
+| 14  | `find astropy/modeling -maxdepth 2 … \| grep -i separable`      | (never returned — crashed)   |
+
+**Root cause: command 4 escaped the working directory with `..`.**
+From `/testbed`, `..` is the container's `/` — the container's own
+root, not the host's; the docker namespace does isolate that. But
+docker's default mounts include a real `sysfs` at `/sys` inside the
+container, and **sysfs has kernel-imposed symlink cycles** regardless
+of which namespace you're in: `/sys/class/thermal/cooling_device*/`
+points at `/sys/devices/LNXSYSTM:00/…/cooling_device13`, which has
+`subsystem` and `device` and `physical_node` links that loop back
+through the bus/class hierarchy. These cycles are in every sysfs
+mount on every Linux container with default mount config.
+
+The first result line Inspect showed was
+`grep: ../sys/kernel/mm/hugepages/hugepages-1048576kB/demote: Permission denied`
+— grep walking the container's `/sys`. Subsequent output flooded with
+"Too many levels of symbolic links" errors as `grep -r` followed
+those cycles.
+
+`head` cut the displayed output, but the bash session is interactive
+and the underlying `grep` process kept running and buffering stderr
+into the persistent shell. The subsequent commands (6 through 12) all
+came back at exactly Inspect's max-output cap (16 523 chars), which is
+not a coincidence — the bash session's stdout was saturated with
+ongoing leakage from command 4's runaway `grep`.
+
+By message 14, the agent's 7th tool call accumulated enough buffered
+content in the bash-tool-server's wire response that the JSON-RPC
+envelope exceeded what Inspect's stdio reader could parse correctly.
+The pydantic validator got just the tail:
 
 ```text
-ValidationError: 1 validation error for JSONRPCResponse
-  Invalid JSON: expected value at line 1 column 1 [type=json_invalid,
-   input_value='rmal/cooling_device13/de... loop\\n", "id": 673}\n', …]
+input_value='rmal/cooling_device13/de... loop\\n", "id": 673}\n'
 ```
 
-The fragment starts mid-string (`rmal/cooling_device13/...`) and ends
-with the JSON-RPC envelope tail (`"id": 673}\n`). So Inspect read
-_part of_ response 673 — the prefix was lost or chunked into a
-previous read. Looks like a Content-Length-based framing
-desynchronization in the tool-stdio bridge, not a model output issue.
+The fragment starts mid-string in a `/sys/.../thermal/cooling_device13/…`
+path, contains the `loop\n` ending of "Too many levels of symbolic
+links", and closes with the JSON-RPC envelope (`, "id": 673}\n`). The
+prefix of the JSON message — including the `{"jsonrpc": "2.0",
+"result": "…` opener — never made it to the parser. That's a
+Content-Length-style framing desync, not a model error.
 
-The bash command that triggered it appears to have been listing
-something under `/sys/class/thermal/cooling_device*/` (paths leaked
-into the truncated payload). The agent likely ran a wide `find` or
-recursive `ls` that produced a long output and tickled the framing
-bug.
+**`id: 673` is the JSON-RPC sequence number**, not the tool-call
+number. The id generator starts at 666 (`_util/_json_rpc.py:369`:
+`id_generator = count(666)`), so `id: 673` is just the **8th RPC of
+the entire eval session** — directly mapping to the agent's 7th tool
+call. One large response, not 673 small ones.
+
+### The exact corruption path (Inspect source dive)
+
+`/home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/lib/python3.12/site-packages/inspect_ai/`:
+
+1. Model issues `bash_session(action=type_submit, input="find …")`.
+2. `tool/_tools/_bash_session.py:230` calls
+   `exec_scalar_request(method="bash_session", …)`.
+3. `_util/_json_rpc.py:exec_scalar_request` →`_exec_request` →
+   `transport(method, params, …)`.
+4. Transport is `util/_sandbox/_json_rpc_transport.py:SandboxJSONRPCTransport.__call__`,
+   which calls `self.sandbox.exec([SANDBOX_CLI, "exec"], input=…)`
+   inside the docker container.
+5. The bash-tool MCP server returns the **full terminal-buffer state**
+   as the `result` field of a JSON-RPC envelope. After ~5 tool calls
+   of accumulated `grep` stderr from `/sys` symlink cycles, that
+   buffer is >10 MiB.
+6. `util/_sandbox/exec_remote.py:606` allocates
+   `stdout_buffer = CircularByteBuffer(MAX_EXEC_OUTPUT_SIZE)` to
+   capture stdout. Default `MAX_EXEC_OUTPUT_SIZE = 10 * 1024**2 =
+10 MiB` (`util/_sandbox/limits.py:5`).
+7. `CircularByteBuffer.write`
+   (`util/_subprocess.py:308–316`) **discards from the front of the
+   buffer** when total bytes exceed the limit:
+
+   ```python
+   while self._total_bytes > self._max_bytes and len(self._chunks) > 1:
+       removed = self._chunks.popleft()
+       self._total_bytes -= len(removed)
+   if self._total_bytes > self._max_bytes and self._chunks:
+       excess = self._total_bytes - self._max_bytes
+       self._chunks[0] = self._chunks[0][excess:]
+   ```
+
+   So the buffer's `getvalue()` returns the **last 10 MiB** of the
+   JSON-RPC response — chopping off the `{"jsonrpc":"2.0","result":"`
+   opener.
+
+8. Transport returns this corrupted string to `_exec_request`.
+9. `_util/_json_rpc.py:parse_json_rpc_response` calls
+   `JSONRPCResponse.model_validate_json(response_str)`. Pydantic
+   fails at line 1 column 1 because the buffer now starts mid-string
+   (`rmal/cooling_device13/de…`).
+10. `ValidationError` propagates → sample errored → entire eval aborts.
+
+**This is unambiguously a bug in `inspect_ai`.** A circular byte
+buffer is not safe to apply to structured wire data — silently
+discarding the prefix of a JSON-RPC envelope corrupts it. Two
+sensible upstream fixes:
+
+- Bound `bash_session`'s response **at the application layer** (cap
+  the terminal state inside the JSON `result` field) so the wire
+  envelope stays small, regardless of `MAX_EXEC_OUTPUT_SIZE`.
+- Make `CircularByteBuffer` for sandbox `exec` **raise on overflow**
+  rather than silently corrupting; or at minimum, surface a
+  `truncated_output` error like `util/_sandbox/limits.py:108` already
+  knows how to do for other limits.
+
+### Workaround knob
+
+Inspect exposes `INSPECT_SANDBOX_MAX_EXEC_OUTPUT_SIZE` as an env var
+(parsed in `util/_sandbox/limits.py:87`). Bumping it to e.g. 1 GiB
+would let larger responses through:
+
+```bash
+INSPECT_SANDBOX_MAX_EXEC_OUTPUT_SIZE=$((1024 * 1024 * 1024)) ./run_swebench.py
+```
+
+But this just delays the failure — a long enough agent run with one
+runaway-stderr command will still saturate. **It's a workaround, not
+a fix.** The model already runs `head` to bound stdout; covering
+stderr requires a tooling-side bound, not a knob the model can
+reliably hit.
 
 `Task interrupted (no samples completed before interruption)` —
 Inspect aborts the entire run on the first JSON-RPC parse failure
 rather than retrying or skipping the sample.
+
+### Lessons for an actual SWE-bench run later
+
+1. **The bash tool isn't scoped to `/testbed`.** Docker isolates the
+   container from the host fine — the container has its own root —
+   but inside the container, `/sys` is a real sysfs mount with
+   kernel-imposed symlink cycles, so `grep -R … ..` from `/testbed`
+   walks them and triggers the saturation. Mitigation options:
+   chroot/cwd-pin the bash tool so `..` can't escape `/testbed`, mount
+   `/sys` and `/proc` as `tmpfs` empties in the SWE-bench task's
+   compose template, or in the agent prompt explicitly forbid walking
+   above the working dir.
+2. **Inspect's `CircularByteBuffer` should not be applied to JSON-RPC
+   wire data.** See "The exact corruption path" above —
+   `MAX_EXEC_OUTPUT_SIZE = 10 MiB` and the buffer drops bytes from the
+   front. That's safe for displayed bash output but corrupts JSON-RPC
+   envelopes silently. File upstream against `UKGovernmentBEIS/inspect_ai`.
+3. **`message_limit=50` was never the binding constraint** — the
+   crash hit at 7 assistant messages. The framing bug fires well
+   below any sensible step budget.
 
 ### Pilot success criteria — partial pass
 
