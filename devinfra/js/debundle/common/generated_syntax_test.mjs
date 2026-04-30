@@ -15,7 +15,7 @@ test("generated JS resolution accepts imported generated helpers", () => {
 test("generated JS resolution accepts browser runtime globals", () => {
   assert.doesNotThrow(() =>
     validateGeneratedJsResolution({
-      code: `window.ducktapeReady = document.body !== null && globalThis.location !== undefined;\n`,
+      code: `window.ducktapeReady = document.body !== null && globalThis.location !== undefined && global !== null;\n`,
       path: "static/app/modules/browser_globals.js",
     })
   );

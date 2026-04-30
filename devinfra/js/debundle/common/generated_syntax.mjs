@@ -84,6 +84,7 @@ export const DEFAULT_GENERATED_JS_GLOBALS = Object.freeze(
     "crypto",
     "document",
     "fetch",
+    "global",
     "globalThis",
     "history",
     "indexedDB",
