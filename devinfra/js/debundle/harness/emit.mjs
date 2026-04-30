@@ -10,7 +10,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
-import { createGeneratedJsSyntaxValidator } from "../common/generated_syntax.mjs";
+import {
+  DEFAULT_GENERATED_JS_GLOBALS,
+  createGeneratedJsSyntaxValidator,
+} from "../common/generated_syntax.mjs";
 import { modulePackageJson, writeJsonFile, writeTextFile } from "../common/parser_options.mjs";
 import {
   getArtifactChunkManifest,
@@ -70,7 +73,10 @@ export function emitBrowserHarness(options) {
   });
   const vendorManifestPath = options.vendorManifestPath ? resolveWorkspacePath(options.vendorManifestPath) : undefined;
   const vendorResolutions = describeVendorResolutions(vendorManifestPath);
-  const syntaxValidator = createGeneratedJsSyntaxValidator({ stageName: "emitBrowserHarness" });
+  const syntaxValidator = createGeneratedJsSyntaxValidator({
+    allowlistedGlobals: emittedBrowserHarnessGlobals(options.externalGlobals),
+    stageName: "emitBrowserHarness",
+  });
   materializeArtifactScripts({ artifact, outDir, syntaxValidator });
   const copiedAssets = copySnapshotAssets(snapshotRoot, outDir, { includeJavaScript: false });
 
@@ -297,6 +303,17 @@ function materializeArtifactScripts({ artifact, outDir, syntaxValidator }) {
 function shouldCheckArtifactFileResolution(fileArtifact) {
   const metadata = fileArtifact.metadata ?? {};
   return metadata.role === "module" || Boolean(metadata.generated) || Boolean(metadata.moduleExtraction);
+}
+
+function emittedBrowserHarnessGlobals(externalGlobals = []) {
+  const globals = new Set(DEFAULT_GENERATED_JS_GLOBALS);
+  for (const name of externalGlobals) {
+    if (typeof name !== "string" || name === "") {
+      throw new Error(`emitBrowserHarness externalGlobals entries must be non-empty strings, got: ${name}`);
+    }
+    globals.add(name);
+  }
+  return globals;
 }
 
 function prepareHarnessOutputDir(outDir, { force, preserveTopLevelNames = [] }) {

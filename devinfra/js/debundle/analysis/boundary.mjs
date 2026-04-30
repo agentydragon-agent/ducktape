@@ -772,8 +772,14 @@ function isInsideSelectedVariableDeclarator(path, itemByTopNode, selectedDeclara
   if (!selectedDeclaratorNodes || !isInsideTrackedProgramItem(path, itemByTopNode)) {
     return false;
   }
-  const declaratorPath = path.findParent((parent) => parent.isVariableDeclarator?.());
-  return Boolean(declaratorPath && selectedDeclaratorNodes.has(declaratorPath.node));
+  let current = path;
+  while (current && !current.isProgram?.()) {
+    if (current.isVariableDeclarator?.() && selectedDeclaratorNodes.has(current.node)) {
+      return true;
+    }
+    current = current.parentPath;
+  }
+  return false;
 }
 
 function topLevelProgramChild(path) {

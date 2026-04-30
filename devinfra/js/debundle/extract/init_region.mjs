@@ -4257,7 +4257,12 @@ function finalizeResolvedEntryImports(entry, resolvedByOwnerId) {
     for (const name of names) {
       const providerEntry = resolveDependencyProviderEntry(resolvedByOwnerId.get(ownerId) ?? [], entry, name);
       if (!providerEntry) {
-        continue;
+        const candidateSummary = dependencyProviderCandidateSummary(resolvedByOwnerId.get(ownerId) ?? [], entry);
+        throw new Error(
+          `Extract operation ${entry.id} target ${entry.targetFile} depends on extracted binding ${name} ` +
+            `from owner ${ownerId}, but no extracted module exports that binding` +
+            (candidateSummary ? `; candidates: ${candidateSummary}` : "")
+        );
       }
       addRequiredExportLocalName(providerEntry, name);
       if (!importsByTargetFile.has(providerEntry.targetFile)) {
@@ -4277,6 +4282,17 @@ function finalizeResolvedEntryImports(entry, resolvedByOwnerId) {
       specifiers: [...names].sort().map((encodedSpecifier) => JSON.parse(encodedSpecifier)),
     }))
     .sort((left, right) => left.sourceTargetFile.localeCompare(right.sourceTargetFile));
+}
+
+function dependencyProviderCandidateSummary(providerEntries, consumingEntry) {
+  return providerEntries
+    .filter((providerEntry) => providerEntry.id !== consumingEntry.id)
+    .map((providerEntry) => {
+      const exportedNames = [...(providerEntry.exportedNames ?? [])].sort().join(",");
+      return `${providerEntry.id}->${providerEntry.targetFile}[${exportedNames}]`;
+    })
+    .sort()
+    .join("; ");
 }
 
 function resolveDependencyProviderEntry(providerEntries, consumingEntry, localName) {

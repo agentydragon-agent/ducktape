@@ -1,112 +1,21 @@
 import { parse } from "@babel/parser";
 import traverseModule from "@babel/traverse";
+import globalsByEnvironment from "globals";
 import { topLevelDeclarationNames } from "./program_analysis.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "./parser_options.mjs";
 
 const traverse = traverseModule.default ?? traverseModule;
 
+export const GENERATED_JS_ECMASCRIPT_GLOBALS = Object.freeze(sortedGlobalNames(globalsByEnvironment.builtin));
+export const GENERATED_JS_BROWSER_GLOBALS = Object.freeze(sortedGlobalNames(globalsByEnvironment.browser));
+
 export const DEFAULT_GENERATED_JS_GLOBALS = Object.freeze(
-  new Set([
-    "AbortController",
-    "AbortSignal",
-    "Array",
-    "ArrayBuffer",
-    "AsyncDisposableStack",
-    "Atomics",
-    "BigInt",
-    "BigInt64Array",
-    "BigUint64Array",
-    "Blob",
-    "Boolean",
-    "BroadcastChannel",
-    "CSS",
-    "CustomEvent",
-    "DOMException",
-    "DOMParser",
-    "DataView",
-    "Date",
-    "DisposableStack",
-    "Error",
-    "EvalError",
-    "Event",
-    "EventSource",
-    "EventTarget",
-    "Float32Array",
-    "Float64Array",
-    "FormData",
-    "Function",
-    "Headers",
-    "Infinity",
-    "Int16Array",
-    "Int32Array",
-    "Int8Array",
-    "Intl",
-    "JSON",
-    "Map",
-    "Math",
-    "NaN",
-    "Number",
-    "Object",
-    "Promise",
-    "Proxy",
-    "RangeError",
-    "ReadableStream",
-    "ReferenceError",
-    "Reflect",
-    "RegExp",
-    "Request",
-    "Response",
-    "Set",
-    "SharedArrayBuffer",
-    "String",
-    "SuppressedError",
-    "Symbol",
-    "SyntaxError",
-    "TextDecoder",
-    "TextEncoder",
-    "TypeError",
-    "URIError",
-    "URL",
-    "URLSearchParams",
-    "Uint16Array",
-    "Uint32Array",
-    "Uint8Array",
-    "Uint8ClampedArray",
-    "WeakMap",
-    "WeakRef",
-    "WeakSet",
-    "WebAssembly",
-    "Worker",
-    "arguments",
-    "atob",
-    "btoa",
-    "clearInterval",
-    "clearTimeout",
-    "console",
-    "crypto",
-    "document",
-    "fetch",
-    "globalThis",
-    "history",
-    "indexedDB",
-    "isFinite",
-    "isNaN",
-    "location",
-    "localStorage",
-    "navigator",
-    "parseFloat",
-    "parseInt",
-    "performance",
-    "queueMicrotask",
-    "self",
-    "sessionStorage",
-    "setInterval",
-    "setTimeout",
-    "structuredClone",
-    "undefined",
-    "window",
-  ])
+  new Set([...GENERATED_JS_ECMASCRIPT_GLOBALS, ...GENERATED_JS_BROWSER_GLOBALS])
 );
+
+function sortedGlobalNames(environmentGlobals) {
+  return Object.freeze(Object.keys(environmentGlobals ?? {}).sort());
+}
 
 export function createGeneratedJsSyntaxValidator({
   allowlistedGlobals = DEFAULT_GENERATED_JS_GLOBALS,
@@ -245,7 +154,7 @@ function validateGeneratedJsResolutionAst({
   traverse(ast, {
     ReferencedIdentifier(identifierPath) {
       const name = identifierPath.node.name;
-      if (hasResolvedBinding(identifierPath.scope, name, facts)) {
+      if (hasResolvedBinding(identifierPath, name, facts)) {
         return;
       }
       checkName(name, identifierPath.node);
@@ -253,7 +162,7 @@ function validateGeneratedJsResolutionAst({
 
     AssignmentExpression(expressionPath) {
       for (const identifier of assignmentTargetIdentifiers(expressionPath.node.left)) {
-        if (hasResolvedBinding(expressionPath.scope, identifier.name, facts)) {
+        if (hasResolvedBinding(expressionPath, identifier.name, facts)) {
           continue;
         }
         checkName(identifier.name, identifier, "assignment target");
@@ -269,7 +178,7 @@ function validateGeneratedJsResolutionAst({
         if (local?.type !== "Identifier") {
           continue;
         }
-        if (hasResolvedBinding(exportPath.scope, local.name, facts)) {
+        if (hasResolvedBinding(exportPath, local.name, facts)) {
           continue;
         }
         checkName(local.name, local, "export specifier");
@@ -286,7 +195,7 @@ function validateGeneratedJsResolutionAst({
 
     UpdateExpression(expressionPath) {
       for (const identifier of assignmentTargetIdentifiers(expressionPath.node.argument)) {
-        if (hasResolvedBinding(expressionPath.scope, identifier.name, facts)) {
+        if (hasResolvedBinding(expressionPath, identifier.name, facts)) {
           continue;
         }
         checkName(identifier.name, identifier, "update target");
@@ -322,19 +231,36 @@ function checkLoopAssignmentTarget(statementPath, checkName, facts) {
     return;
   }
   for (const identifier of assignmentTargetIdentifiers(statementPath.node.left)) {
-    if (hasResolvedBinding(statementPath.scope, identifier.name, facts)) {
+    if (hasResolvedBinding(statementPath, identifier.name, facts)) {
       continue;
     }
     checkName(identifier.name, identifier, "loop assignment target");
   }
 }
 
-function hasResolvedBinding(scope, name, facts) {
+function hasResolvedBinding(path, name, facts) {
+  const scope = path?.scope ?? path;
   return (
     Boolean(scope.getBinding(name)) ||
+    hasImplicitArgumentsBinding(path, name) ||
     facts.importBindings.has(name) ||
     facts.topLevelDeclarations.has(name)
   );
+}
+
+function hasImplicitArgumentsBinding(path, name) {
+  if (name !== "arguments" || !path?.parentPath) {
+    return false;
+  }
+  for (let current = path; current; current = current.parentPath) {
+    if (current.isProgram?.()) {
+      return false;
+    }
+    if (current.isFunction?.() && !current.isArrowFunctionExpression?.()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function assignmentTargetIdentifiers(node) {

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateGeneratedJsResolution, validateGeneratedJsSyntax } from "./generated_syntax.mjs";
+import {
+  DEFAULT_GENERATED_JS_GLOBALS,
+  GENERATED_JS_BROWSER_GLOBALS,
+  GENERATED_JS_ECMASCRIPT_GLOBALS,
+  validateGeneratedJsResolution,
+  validateGeneratedJsSyntax,
+} from "./generated_syntax.mjs";
 
 test("generated JS resolution accepts imported generated helpers", () => {
   assert.doesNotThrow(() =>
@@ -15,10 +21,30 @@ test("generated JS resolution accepts imported generated helpers", () => {
 test("generated JS resolution accepts browser runtime globals", () => {
   assert.doesNotThrow(() =>
     validateGeneratedJsResolution({
-      code: `window.ducktapeReady = document.body !== null && globalThis.location !== undefined;\nlocalStorage.setItem("ready", sessionStorage.getItem("ready") ?? "1");\nconst quota = new DOMException("quota", "QuotaExceededError");\nconst stream = new EventSource("/events");\nstream.close();\n`,
+      code: `window.ducktapeReady = document.body !== null && globalThis.location !== undefined;\nlocalStorage.setItem("ready", sessionStorage.getItem("ready") ?? "1");\nconst quota = new DOMException("quota", "QuotaExceededError");\nconst stream = new EventSource("/events");\nconst socket = new WebSocket("wss://example.invalid");\nconst file = new File(["payload"], "payload.txt");\nconst files = new FileList();\nconst reader = new FileReader();\nconst mediaStream = new MediaStream();\nconst recorder = new MediaRecorder(mediaStream);\nconst track = new MediaStreamTrack();\nconst encoded = encodeURIComponent(encodeURI("hello world"));\nconst decoded = decodeURIComponent(decodeURI(encoded));\nconst style = getComputedStyle(document.body);\nstream.close();\nsocket.close();\nreader.readAsText(file);\nfiles.item(0);\nrecorder.stop();\ntrack.stop();\nstyle.getPropertyValue(decoded);\n`,
       path: "static/app/modules/browser_globals.js",
     })
   );
+});
+
+test("generated JS resolution accepts function-scoped arguments", () => {
+  assert.doesNotThrow(() =>
+    validateGeneratedJsResolution({
+      code: `export function install() {\n  window.gtag = function () {\n    window.dataLayer.push(arguments);\n  };\n  return () => arguments.length;\n}\n`,
+      path: "static/app/modules/function_arguments.js",
+    })
+  );
+});
+
+test("generated JS default globals are sourced from ECMAScript and browser environments", () => {
+  for (const name of ["AggregateError", "Iterator", "decodeURI", "encodeURIComponent"]) {
+    assert.ok(GENERATED_JS_ECMASCRIPT_GLOBALS.includes(name), `${name} should be an ECMAScript global`);
+    assert.ok(DEFAULT_GENERATED_JS_GLOBALS.has(name), `${name} should be allowed by default`);
+  }
+  for (const name of ["document", "File", "MediaRecorder", "WebSocket", "getComputedStyle"]) {
+    assert.ok(GENERATED_JS_BROWSER_GLOBALS.includes(name), `${name} should be a browser global`);
+    assert.ok(DEFAULT_GENERATED_JS_GLOBALS.has(name), `${name} should be allowed by default`);
+  }
 });
 
 test("generated JS resolution rejects missing generated imports that syntax accepts", () => {
@@ -110,6 +136,20 @@ test("generated JS resolution rejects Node-style global aliases in generated mod
       }),
     (error) => {
       assert.match(error.message, /\bglobal\b/);
+      return true;
+    }
+  );
+});
+
+test("generated JS resolution rejects top-level arguments in modules", () => {
+  assert.throws(
+    () =>
+      validateGeneratedJsResolution({
+        code: `export const args = arguments;\n`,
+        path: "static/app/modules/top_level_arguments.js",
+      }),
+    (error) => {
+      assert.match(error.message, /\barguments\b/);
       return true;
     }
   );

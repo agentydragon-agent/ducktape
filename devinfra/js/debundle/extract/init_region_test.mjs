@@ -2106,6 +2106,293 @@ export { left, right };
   });
 });
 
+test("imports renamed dependencies across selected variable-declarator fragments", () => {
+  const source = `const jh = context => context.target != null,
+  $Bt = context => context.stackTarget != null,
+  ED = context => context.target,
+  HBt = context => context.stackTarget;
+const zBt = 1,
+  xi = context => ED(context) ?? HBt(context);
+console.log(xi({ target: null, stackTarget: "fallback" }));
+export { xi };
+`;
+  const analysis = analyzeRuntimeBoundaryCode(source, { chunkId: "static/app" });
+  const [providerOwnerId] = ownerIdsForNamesInAnalysis(analysis, ["ED"]);
+  const [consumerOwnerId] = ownerIdsForNamesInAnalysis(analysis, ["xi"]);
+  const providerOperation = selectedModuleOperation(source, {
+    init: "init_command_runtime",
+    ownerNames: ["ED"],
+    targetFile: "regions/command_runtime.js",
+  });
+  const siblingProviderOperation = selectedModuleOperation(source, {
+    init: "init_command_helpers",
+    ownerNames: ["ED"],
+    targetFile: "regions/command_helpers.js",
+  });
+  siblingProviderOperation.selector.ownerFragments = [
+    {
+      declaratorIndices: [0],
+      id: `${providerOwnerId}::declarator_0`,
+      kind: "variable_declarator",
+      memberNames: ["jh"],
+      orderIndex: 0,
+      ownerId: providerOwnerId,
+    },
+    {
+      declaratorIndices: [1],
+      id: `${providerOwnerId}::declarator_1`,
+      kind: "variable_declarator",
+      memberNames: ["$Bt"],
+      orderIndex: 1,
+      ownerId: providerOwnerId,
+    },
+  ];
+  providerOperation.selector.ownerFragments = [
+    {
+      declaratorIndices: [2],
+      id: `${providerOwnerId}::declarator_2`,
+      kind: "variable_declarator",
+      memberNames: ["ED"],
+      orderIndex: 2,
+      ownerId: providerOwnerId,
+    },
+    {
+      declaratorIndices: [3],
+      id: `${providerOwnerId}::declarator_3`,
+      kind: "variable_declarator",
+      memberNames: ["HBt"],
+      orderIndex: 3,
+      ownerId: providerOwnerId,
+    },
+  ];
+  providerOperation.bindingPlacements = [
+    {
+      id: "logical__resolveCommandTargetNode",
+      kind: "VariableDeclaration",
+      name: "resolveCommandTargetNode",
+      ownerId: providerOwnerId,
+      sourceName: "ED",
+    },
+    {
+      id: "logical__resolveCommandStackOutputTarget",
+      kind: "VariableDeclaration",
+      name: "resolveCommandStackOutputTarget",
+      ownerId: providerOwnerId,
+      sourceName: "HBt",
+    },
+  ];
+  const consumerOperation = selectedModuleOperation(source, {
+    init: "init_prompting_runtime",
+    ownerNames: ["xi"],
+    targetFile: "regions/prompting_runtime.js",
+  });
+  consumerOperation.selector.ownerFragments = [
+    {
+      declaratorIndices: [1],
+      id: `${consumerOwnerId}::declarator_1`,
+      kind: "variable_declarator",
+      memberNames: ["xi"],
+      orderIndex: 1,
+      ownerId: consumerOwnerId,
+    },
+  ];
+
+  const result = extractOrderedInitRegionsInCode(source, [consumerOperation, providerOperation, siblingProviderOperation], {
+    analysis,
+    chunkId: "static/app",
+    file: "runtime.js",
+  });
+
+  const providerCode = result.files.get("regions/command_runtime.js");
+  const consumerCode = result.files.get("regions/prompting_runtime.js");
+  assert.match(
+    consumerCode,
+    /import \{ resolveCommandStackOutputTarget, resolveCommandTargetNode \} from "\.\/command_runtime\.js"/
+  );
+  assert.match(consumerCode, /resolveCommandTargetNode\(context\) \?\? resolveCommandStackOutputTarget\(context\)/);
+  assert.match(providerCode, /export \{ resolveCommandTargetNode, resolveCommandStackOutputTarget \};/);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-renamed-fragment-dependency-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("imports lazy dependencies from destructuring-heavy selected fragments", () => {
+  const source = `const ED = (commandContext, targetParamId) => ({ target: commandContext.parameters.get(targetParamId), nodePath: "target" }),
+  HBt = (commandContext, targetParamId) => ({ target: commandContext.stack.get(targetParamId), nodePath: "stack" });
+const zBt = value => value,
+  oR = value => zBt(value),
+  xi = commandContext => {
+    const {
+        parameters,
+        nodeContext
+      } = commandContext,
+      insertStrategy = parameters.get("insertStrategy");
+    const {
+        target,
+        nodePath
+      } = insertStrategy !== "context" ? ED(commandContext, "target") : nodeContext.enabled ? HBt(commandContext, "target") : ED(commandContext, "target");
+    return oR(target ?? nodePath);
+  };
+console.log(xi({ parameters: new Map([["target", "ok"]]), stack: new Map(), nodeContext: { enabled: false } }));
+export { xi };
+`;
+  const analysis = analyzeRuntimeBoundaryCode(source, { chunkId: "static/app" });
+  const [providerOwnerId] = ownerIdsForNamesInAnalysis(analysis, ["ED"]);
+  const [consumerOwnerId] = ownerIdsForNamesInAnalysis(analysis, ["xi"]);
+  const providerOperation = selectedModuleOperation(source, {
+    init: "init_command_runtime",
+    ownerNames: ["ED"],
+    targetFile: "regions/command_runtime.js",
+  });
+  providerOperation.selector.ownerFragments = [
+    {
+      declaratorIndices: [0],
+      id: `${providerOwnerId}::declarator_0`,
+      kind: "variable_declarator",
+      memberNames: ["ED"],
+      orderIndex: 0,
+      ownerId: providerOwnerId,
+    },
+    {
+      declaratorIndices: [1],
+      id: `${providerOwnerId}::declarator_1`,
+      kind: "variable_declarator",
+      memberNames: ["HBt"],
+      orderIndex: 1,
+      ownerId: providerOwnerId,
+    },
+  ];
+  providerOperation.bindingPlacements = [
+    {
+      id: "logical__resolveCommandTargetNode",
+      kind: "VariableDeclaration",
+      name: "resolveCommandTargetNode",
+      ownerId: providerOwnerId,
+      sourceName: "ED",
+    },
+    {
+      id: "logical__resolveCommandStackOutputTarget",
+      kind: "VariableDeclaration",
+      name: "resolveCommandStackOutputTarget",
+      ownerId: providerOwnerId,
+      sourceName: "HBt",
+    },
+  ];
+  const consumerOperation = selectedModuleOperation(source, {
+    init: "init_prompting_runtime",
+    ownerNames: ["xi"],
+    targetFile: "regions/prompting_runtime.js",
+  });
+  consumerOperation.selector.ownerFragments = [
+    {
+      declaratorIndices: [0],
+      id: `${consumerOwnerId}::declarator_0`,
+      kind: "variable_declarator",
+      memberNames: ["zBt"],
+      orderIndex: 0,
+      ownerId: consumerOwnerId,
+    },
+    {
+      declaratorIndices: [1],
+      id: `${consumerOwnerId}::declarator_1`,
+      kind: "variable_declarator",
+      memberNames: ["oR"],
+      orderIndex: 1,
+      ownerId: consumerOwnerId,
+    },
+    {
+      declaratorIndices: [2],
+      id: `${consumerOwnerId}::declarator_2`,
+      kind: "variable_declarator",
+      memberNames: ["xi"],
+      orderIndex: 2,
+      ownerId: consumerOwnerId,
+    },
+  ];
+
+  const result = extractOrderedInitRegionsInCode(source, [consumerOperation, providerOperation], {
+    analysis,
+    chunkId: "static/app",
+    file: "runtime.js",
+  });
+
+  const consumerCode = result.files.get("regions/prompting_runtime.js");
+  assert.match(
+    consumerCode,
+    /import \{ resolveCommandStackOutputTarget, resolveCommandTargetNode \} from "\.\/command_runtime\.js"/
+  );
+  assert.match(consumerCode, /resolveCommandTargetNode\(commandContext, "target"\)/);
+  assert.match(consumerCode, /resolveCommandStackOutputTarget\(commandContext, "target"\)/);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-destructuring-fragment-dependency-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("rejects extracted-owner dependencies when no extracted module exports the binding", () => {
+  const source = `const ED = context => context.target,
+  HBt = context => context.stackTarget;
+const xi = context => ED(context);
+console.log(xi({ target: "ok" }));
+`;
+  const analysis = analyzeRuntimeBoundaryCode(source, { chunkId: "static/app" });
+  const [providerOwnerId] = ownerIdsForNamesInAnalysis(analysis, ["ED"]);
+  const [consumerOwnerId] = ownerIdsForNamesInAnalysis(analysis, ["xi"]);
+  const providerOperation = selectedModuleOperation(source, {
+    init: "init_partial_provider",
+    ownerNames: ["ED"],
+    targetFile: "regions/partial_provider.js",
+  });
+  providerOperation.selector.ownerFragments = [
+    {
+      declaratorIndices: [1],
+      id: `${providerOwnerId}::declarator_1`,
+      kind: "variable_declarator",
+      memberNames: ["HBt"],
+      orderIndex: 1,
+      ownerId: providerOwnerId,
+    },
+  ];
+  const consumerOperation = selectedModuleOperation(source, {
+    init: "init_consumer",
+    ownerNames: ["xi"],
+    targetFile: "regions/consumer.js",
+  });
+  consumerOperation.selector.ownerFragments = [
+    {
+      declaratorIndices: [0],
+      id: `${consumerOwnerId}::declarator_0`,
+      kind: "variable_declarator",
+      memberNames: ["xi"],
+      orderIndex: 0,
+      ownerId: consumerOwnerId,
+    },
+  ];
+
+  assert.throws(
+    () =>
+      extractOrderedInitRegionsInCode(source, [consumerOperation, providerOperation], {
+        analysis,
+        chunkId: "static/app",
+        file: "runtime.js",
+      }),
+    (error) => {
+      assert.match(error.message, /depends on extracted binding ED/);
+      assert.match(error.message, /no extracted module exports that binding/);
+      assert.match(error.message, /partial_provider/);
+      assert.match(error.message, /\bHBt\b/);
+      return true;
+    }
+  );
+});
+
 test("extracts a local state cluster when the dependency closure stays inside the region", () => {
   const source = `let open = false;
 function toggle() {

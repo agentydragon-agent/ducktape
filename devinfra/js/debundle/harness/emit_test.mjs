@@ -325,6 +325,66 @@ test("emitBrowserHarness resolution-checks generated module files", () => {
   );
 });
 
+test("emitBrowserHarness accepts explicitly declared external script globals", () => {
+  const { appRoot, extractedRoot, snapshotRoot } = createWebFixtureRoots("debundle-browser-harness-external-globals-");
+
+  writeHarnessFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": `console.log("source fixture");\n`,
+    },
+    html: `<!doctype html><html><head><script type="module" src="/static/app.js"></script></head><body></body></html>\n`,
+    jsEntries: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "entry.js",
+        files: [
+          createFile({
+            path: "entry.js",
+            ast: parseModuleCode(`import "./modules/google_client.js";\n`),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "entry.js",
+              role: "entry",
+            },
+          }),
+          createFile({
+            path: "modules/google_client.js",
+            ast: parseModuleCode(`export const client = google.accounts.oauth2.initCodeClient({});\n`),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "modules/google_client.js",
+              moduleExtraction: {
+                id: "logical_module_google_client",
+                nameHint: "GoogleClient",
+                ownerIds: ["owner_google_client"],
+              },
+              role: "module",
+            },
+          }),
+        ],
+      },
+    ],
+  });
+
+  assert.doesNotThrow(() =>
+    emitBrowserHarness({
+      artifact,
+      assetSummaryPath: join(extractedRoot, "asset-summary.json"),
+      externalGlobals: ["google"],
+      force: true,
+      outDir: appRoot,
+      scriptSource: "split",
+      snapshotRoot,
+    })
+  );
+});
+
 test("emitBrowserHarness preserves sibling analysis and vendor outputs under the app root", () => {
   const { appRoot, extractedRoot, snapshotRoot } = createWebFixtureRoots("debundle-browser-harness-preserve-siblings-");
 
