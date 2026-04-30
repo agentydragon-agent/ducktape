@@ -58,6 +58,8 @@ runs:
         # If a release with this tag already exists, the content hasn't changed.
         content_sha=$(sha256sum "$artifact" | awk '{print $1}')
         tag="${PKG}-${content_sha:0:12}"
+        echo "content_sha=${content_sha}" >> "$GITHUB_OUTPUT"
+        echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
         if gh release view "$tag" >/dev/null 2>&1; then
           echo "$PKG: unchanged (release $tag exists), skipping"
@@ -66,8 +68,6 @@ runs:
         fi
 
         echo "should_release=true" >> "$GITHUB_OUTPUT"
-        echo "content_sha=${content_sha}" >> "$GITHUB_OUTPUT"
-        echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
     # Build 2: stamped — injects GIT_COMMIT via expand_template.
     # Only _build_info_gen + wheel targets re-run; everything else is cache-hit.
@@ -98,14 +98,26 @@ runs:
           --notes "$PKG release" \
           --latest=false
 
-        # Prune old releases for this package (content-addressed 12-char hex tags)
+        echo "Released: $PKG ($tag)"
+
+    # Prune runs unconditionally so unchanged-content jobs still clean up old
+    # releases. -L 5000 ensures we see all releases for high-churn packages
+    # (e.g. skills has 500+); the default 200 hides everything past the
+    # 30-day cutoff for daily-released packages.
+    - name: Prune stale releases
+      shell: bash
+      env:
+        GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
+        PKG: ${{ inputs.pkg }}
+        RETENTION_DAYS: ${{ inputs.retention_days }}
+        KEEP_TAG: ${{ steps.check.outputs.tag }}
+      run: |
+        set -euo pipefail
         cutoff=$(date -u -d "-${RETENTION_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
-        gh release list --json tagName,createdAt -L 200 \
+        gh release list --json tagName,createdAt -L 5000 \
           --jq ".[] | select(.tagName | test(\"^${PKG}-[0-9a-f]{12}$\")) | select(.createdAt < \"${cutoff}\") | .tagName" \
           | while read -r old_tag; do
-              [[ "$old_tag" == "$tag" ]] && continue
+              [[ "$old_tag" == "$KEEP_TAG" ]] && continue
               echo "  pruning $old_tag"
               gh release delete "$old_tag" --yes --cleanup-tag
             done
-
-        echo "Released: $PKG ($tag)"
