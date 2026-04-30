@@ -46,8 +46,9 @@ Ollama should size the KV cache to the next power-of-two block
 
 ## Files
 
-- `run.log` — Inspect's stdout/stderr (3.6 KB; mostly the splash plus
-  4 retry warnings).
+- `raw_output.txt` — Inspect's stdout/stderr (3.6 KB; mostly the
+  splash plus 4 retry warnings). Renamed from `run.log` because
+  `*.log` is gitignored under `cluster/`.
 - `eval_logs/*.eval` — the in-flight log zip (`status=started`, no
   samples).
 - `ollama_logs_during_run.txt` — `kubectl logs` over the run window;
