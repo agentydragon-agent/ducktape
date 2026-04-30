@@ -4,6 +4,7 @@ import {
   listChunkIds,
   requirePipelineArtifact,
   resolveArtifactImportReference,
+  resolveArtifactRebasedSourceImportReference,
   resolveArtifactSourceImportReference,
 } from "../common/artifact.mjs";
 import { transformRuntimeSources } from "../split/chunk.mjs";
@@ -88,12 +89,6 @@ export function shouldRewriteChunkEntrySpecifiersForFile(fileArtifact) {
   if (!fileArtifact?.ast) {
     return false;
   }
-  if (
-    fileArtifact.metadata?.role === "module" &&
-    fileArtifact.metadata?.generated?.stage === "selected_module_lowering"
-  ) {
-    return false;
-  }
   return true;
 }
 
@@ -102,7 +97,12 @@ function rewriteChunkEntrySpecifierSource(artifact, source, { callerChunkId, cal
   if (typeof source !== "string" || source === "") {
     return source;
   }
-  if (typeof callerChunkId !== "string" || callerChunkId === "" || typeof callerFile !== "string" || callerFile === "") {
+  if (
+    typeof callerChunkId !== "string" ||
+    callerChunkId === "" ||
+    typeof callerFile !== "string" ||
+    callerFile === ""
+  ) {
     return source;
   }
   if (!source.startsWith(".") && !source.startsWith("/")) {
@@ -114,7 +114,9 @@ function rewriteChunkEntrySpecifierSource(artifact, source, { callerChunkId, cal
     return source;
   }
 
-  const resolved = resolveArtifactSourceImportReference(artifact, source, { callerChunkId, callerFile });
+  const resolved =
+    resolveArtifactSourceImportReference(artifact, source, { callerChunkId, callerFile }) ??
+    resolveArtifactRebasedSourceImportReference(artifact, source, { callerChunkId, callerFile });
   if (!resolved) {
     return source;
   }

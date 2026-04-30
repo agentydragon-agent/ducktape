@@ -6,7 +6,7 @@ import { parseModuleCode } from "../test_support/fixtures.mjs";
 import { serializeGeneratedJsFile } from "../split/chunk.mjs";
 import { rewriteChunkEntrySpecifiers, shouldRewriteChunkEntrySpecifiersForFile } from "./rewrite_specifiers.mjs";
 
-test("shouldRewriteChunkEntrySpecifiersForFile skips selected-module lowered modules", () => {
+test("shouldRewriteChunkEntrySpecifiersForFile includes selected-module lowered modules", () => {
   const file = createFile({
     path: "ui/example.js",
     ast: parseModuleCode('import "../dep.js";'),
@@ -19,7 +19,7 @@ test("shouldRewriteChunkEntrySpecifiersForFile skips selected-module lowered mod
     },
   });
 
-  assert.equal(shouldRewriteChunkEntrySpecifiersForFile(file), false);
+  assert.equal(shouldRewriteChunkEntrySpecifiersForFile(file), true);
 });
 
 test("rewriteChunkEntrySpecifiers rewrites real source references but preserves shadowed workers", () => {
@@ -80,6 +80,57 @@ test("rewriteChunkEntrySpecifiers rewrites real source references but preserves 
   assert.equal(rewritten.manifest.counts.files, 1);
   assert.equal(rewritten.manifest.counts.rewrites, 6);
   assert.equal(rewritten.manifest.counts.traversedFiles, 8);
+});
+
+test("rewriteChunkEntrySpecifiers realizes original specifiers in nested selected-module files", () => {
+  const artifact = createArtifact({
+    chunks: [
+      createChunk({
+        chunkId: "static/app",
+        entryFile: "entry.js",
+        metadata: { sourcePath: "static/app.js" },
+        files: [
+          createFile({
+            path: "entry.js",
+            ast: parseModuleCode("export const entry = true;"),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "entry.js",
+              role: "entry",
+              sourcePath: "static/app.js",
+            },
+          }),
+          createFile({
+            path: "feature/panel.js",
+            ast: parseModuleCode(`
+              import { value } from "../vendor.js";
+              await import("../lazy.js");
+            `),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "feature/panel.js",
+              generated: {
+                stage: "selected_module_lowering",
+              },
+              role: "module",
+              sourcePath: "static/app.js",
+            },
+          }),
+        ],
+      }),
+      makeEntryChunk("static/vendor", "static/vendor.js"),
+      makeEntryChunk("static/lazy", "static/lazy.js"),
+    ],
+  });
+
+  const rewritten = rewriteChunkEntrySpecifiers({ artifact });
+  const moduleFile = rewritten.artifact.chunks.get("static/app").files.get("feature/panel.js");
+  const code = serializeGeneratedJsFile({ ast: moduleFile.ast });
+
+  assert.match(code, /from "\.\.\/\.\.\/vendor\/entry\.js";/);
+  assert.match(code, /import\("\.\.\/\.\.\/lazy\/entry\.js"\)/);
+  assert.equal(rewritten.manifest.counts.files, 1);
+  assert.equal(rewritten.manifest.counts.rewrites, 2);
 });
 
 function makeEntryChunk(chunkId, sourcePath) {
