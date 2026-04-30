@@ -35,6 +35,14 @@ Notes (carried from pilot):
 4. INSPECT_SANDBOX_MAX_EXEC_OUTPUT_SIZE bumped to 1 GiB to work around
    inspect_ai's CircularByteBuffer corruption bug (see the pilot's
    upstream_issue.md).
+5. **Open issue (next attempt's TODO):** Inspect AI doesn't pin a
+   `max_tokens` for openai-compat backends. Ollama then sizes the KV
+   cache as `prompt_tokens + max_tokens` rounded to the next 2x block,
+   which on SWE-bench prompts lands at `num_ctx=262144` — over
+   `gpt-oss:20b`'s 131 072-token training limit, so Ollama returns 500
+   on every request. Add `--max-tokens 8192` to the `inspect eval`
+   invocation below before re-launching. See
+   `attempts/run2_react_num_ctx_500s/README.md` for the diagnosis.
 
 Usage:
     ./run_swebench.py [--limit 100] [--dataset lite|verified] [--message-limit 50]
