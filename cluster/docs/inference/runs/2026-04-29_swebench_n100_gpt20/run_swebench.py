@@ -12,32 +12,27 @@
 # devshell PYTHONPATH leaks into the uv-managed venv, and Python imports
 # `pydantic` from the Nix store (incompatible with the venv's `pydantic_core`),
 # producing `ModuleNotFoundError: pydantic_core._pydantic_core`.
-"""Pilot run of `inspect_evals/swe_bench` against gpt-oss:20b on the cluster
-Ollama endpoint via Inspect AI.
+"""N=100 SWE-bench Verified run against gpt-oss:20b on the cluster Ollama
+endpoint via Inspect AI. Same script as the pilot at
+<../2026-04-29_swebench_pilot_gpt20/run_swebench.py> with `DEFAULT_LIMIT = 100`.
 
-Differs from the AIME / HumanEval runs in three ways:
+Notes (carried from pilot):
 
-1. SWE-bench is **agentic** — `swe_bench_agent_with_inspect_tool_support`
+1. SWE-bench is agentic — `swe_bench_agent_with_inspect_tool_support`
    solver, multi-turn `bash_session` / `python` / `text_editor` tools.
-   Per-problem wall time is 10-30 min, not seconds.
-2. **Per-problem Docker images** pulled on demand from
+   Per-problem wall time is 6-15 min in our setup.
+2. Per-problem Docker images pulled on demand from
    `ghcr.io/epoch-research/swe-bench.eval.<arch>.<id>:latest`. ghcr.io
    requires auth; this script does `gh auth token | docker login
    ghcr.io` once at startup.
-3. **`reasoning_effort` does NOT flow through** the SWE-bench task to
-   the underlying generate calls (verified from inspect_evals source).
-   So this script does not sweep efforts; the model uses its default.
-
-Defaults are tuned for **a 1-problem pilot** to verify the agent loop
-works on gpt-oss:20b's tool-call output. If the pilot succeeds, expand
-`--limit` to a larger N for a real run.
+3. `reasoning_effort` does NOT flow through the SWE-bench task to the
+   underlying generate calls.
+4. INSPECT_SANDBOX_MAX_EXEC_OUTPUT_SIZE bumped to 1 GiB to work around
+   inspect_ai's CircularByteBuffer corruption bug (see the pilot's
+   upstream_issue.md).
 
 Usage:
-    ./run_swebench.py [--limit 1] [--dataset lite|verified] [--message-limit 50]
-
-Output:
-    eval_logs/...  Inspect AI per-run log (commit alongside this script)
-    summary.json   Exit code + config record
+    ./run_swebench.py [--limit 100] [--dataset lite|verified] [--message-limit 50]
 """
 
 from __future__ import annotations
@@ -52,7 +47,7 @@ import sys
 from pathlib import Path
 
 DEFAULT_MODEL = "gpt-oss:20b"
-DEFAULT_LIMIT = 1
+DEFAULT_LIMIT = 100
 DEFAULT_DATASET = "verified"  # "lite" or "verified". Verified is the task default;
 # Lite requires also overriding `revision` because the task pins a Verified-specific SHA
 # (`c104f840…`) which doesn't exist in the Lite repo.

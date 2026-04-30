@@ -109,6 +109,37 @@ Only matters if a specific bottleneck points at quant. Examples:
 
 Lowest priority unless P0–P1 surface a quant-shaped question.
 
+### 7. Live eval reporting / dashboard
+
+When watching a long Inspect run today we relied on `--display plain`
+(now wired into the run scripts) plus poking `docker ps` and Ollama
+logs. That works but is rudimentary. Inspect AI ships some better
+options worth evaluating when we want them:
+
+- `inspect view start --log-dir <dir>` — local web UI, ships with
+  the `inspect_ai` Python package. Reads the same `.eval` zip logs,
+  auto-refreshes as new evals run (per upstream docs). Best for
+  browsing across multiple completed runs (HumanEval / AIME /
+  SWE-bench at once). Could be a one-liner `nix run` / shell helper
+  in the inference docs hub.
+- `log_realtime: true` (already on by default) writes per-sample
+  data to the `.eval` zip incrementally; in our N=100 run the
+  central directory wasn't finalized mid-run, so the viewer would
+  only see headers — but per upstream docs the viewer auto-refreshes
+  as evals run, so that may have been a false alarm. Worth re-verifying
+  against a finished run by pointing the viewer at `runs/*/eval_logs/`.
+- `inspect_ai.hooks` event API — programmatic subscriber to Score /
+  Sample events. Could push to Prometheus, JSONL sidecar, log
+  aggregator. Custom code, but cheap.
+
+Everything is open-source and self-hosted; there's no separate AISI
+cloud service to evaluate.
+
+Triggers for picking this up: (a) we run more multi-hour evals where
+mid-run visibility matters; (b) we want a single dashboard across all
+runs in `runs/*/eval_logs/`; (c) live-reporting becomes a blocker for
+some operational workflow.
+
 ## Out of scope here
 
 - **AIME on `gpt-oss:120b` via Ollama** — at 1.5 tok/s it would take
