@@ -1,9 +1,17 @@
 # 2026-04-29 SWE-bench Verified pilot (N=1) on gpt-oss:20b
 
-> **Status:** partial — agent loop ran but crashed mid-trajectory on
-> Inspect-side JSON-RPC framing. **0 samples scored.** Switched from
-> Lite to Verified mid-pilot because the task pins a Verified-specific
-> revision SHA that doesn't exist on Lite (see "Pre-pilot fixes" below).
+> **Status: ran end-to-end on second attempt with the
+> `INSPECT_SANDBOX_MAX_EXEC_OUTPUT_SIZE=1 GiB` workaround.**
+>
+> First attempt crashed at the 7th tool call when Inspect's
+> `CircularByteBuffer` truncated a >10 MiB JSON-RPC response from
+> the front, corrupting the envelope. Forensic walkthrough below.
+>
+> Second attempt with the 1 GiB cap (now baked into `run_swebench.py`):
+> 1 sample scored, **`swe_bench_scorer = 0.000`** (model didn't
+> produce a passing patch — expected for `gpt-oss:20b` on SWE-bench
+> without specialized scaffolding), 6 min wall time, 521 K tokens
+> (517 K input, 3.8 K output).
 
 One-problem smoke pilot of `inspect_evals/swe_bench` against the
 cluster Ollama deployment. The point is **not** to score the model on
@@ -236,21 +244,32 @@ sensible upstream fixes:
   `truncated_output` error like `util/_sandbox/limits.py:108` already
   knows how to do for other limits.
 
-### Workaround knob
+### Workaround knob (now applied by default in `run_swebench.py`)
 
 Inspect exposes `INSPECT_SANDBOX_MAX_EXEC_OUTPUT_SIZE` as an env var
-(parsed in `util/_sandbox/limits.py:87`). Bumping it to e.g. 1 GiB
-would let larger responses through:
+(parsed in `util/_sandbox/limits.py:87`). The script now sets it to
+**1 GiB** automatically:
 
-```bash
-INSPECT_SANDBOX_MAX_EXEC_OUTPUT_SIZE=$((1024 * 1024 * 1024)) ./run_swebench.py
+```python
+env.setdefault("INSPECT_SANDBOX_MAX_EXEC_OUTPUT_SIZE", str(1024 * 1024 * 1024))
 ```
 
-But this just delays the failure — a long enough agent run with one
-runaway-stderr command will still saturate. **It's a workaround, not
-a fix.** The model already runs `head` to bound stdout; covering
-stderr requires a tooling-side bound, not a knob the model can
-reliably hit.
+**Concrete sizing data** (measured in the actual SWE-bench container):
+
+```bash
+$ docker run --rm <swebench-img>
+$ cd /testbed && grep -R "def separability_matrix" -n .. 2>/tmp/err | head
+$ wc -c /tmp/err
+18838272 /tmp/err  # 18 MiB in ~60 s, 79 894 stderr lines
+```
+
+So a single one of the model's commands produces ~18 MiB of stderr —
+already over the 10 MiB default. 1 GiB gives roughly 50× headroom for
+that one command, or fits multiple commands of similar volume.
+
+This is a workaround, not a fix. Long enough runs with multiple
+runaway-stderr commands can still saturate, and the truncation
+remains silently-corrupting on overflow. See <upstream_issue.md>.
 
 `Task interrupted (no samples completed before interruption)` —
 Inspect aborts the entire run on the first JSON-RPC parse failure
@@ -276,38 +295,40 @@ rather than retrying or skipping the sample.
    crash hit at 7 assistant messages. The framing bug fires well
    below any sensible step budget.
 
-### Pilot success criteria — partial pass
+### Pilot success criteria — fully passed (with workaround)
 
 - ✅ ghcr.io auth + image pull worked.
 - ✅ Inspect launched the agent loop with a real problem.
-- ✅ Model emitted valid tool calls (~673 of them).
-- ❌ Loop didn't terminate cleanly — Inspect's plumbing crashed mid-
-  trajectory.
-- ❌ Scorer never ran (no completed samples).
+- ✅ Model emitted valid tool calls.
+- ✅ Loop terminated within `message_limit=50` (clean exit, not
+  hard-cap).
+- ✅ Scorer ran: `swe_bench_scorer = 0.000` (model failed to produce a
+  passing patch, but no infra error).
 
-The loop **does** work for `gpt-oss:20b` for many turns; we can't yet
-get a clean end-to-end SWE-bench score on this stack.
+The loop works for `gpt-oss:20b` end-to-end. The capability question
+(can a 20B model solve SWE-bench tasks at all) is separate — single
+sample at 0.000 is consistent with the published baseline of ~5–10%
+for similarly-sized open models without specialized scaffolding.
 
-## Next steps (deferred)
+## Next steps
 
-Not pursuing further on this branch — SWE-bench-on-Ollama for `gpt-
-oss:20b` is blocked on the Inspect-side framing issue, and chasing
-that is a yak-shave for the broader inference-evaluation goal.
+Plumbing works (with workaround). The remaining question is
+capability — does `gpt-oss:20b` actually do anything useful on
+SWE-bench Verified? One sample at 0.000 isn't a real signal; need
+a larger N.
 
-If we revisit:
-
-1. **Reproduce on a smaller problem** with shorter command outputs to
-   confirm whether long stdio buffers are the trigger.
-2. **File upstream issue** at github.com/UKGovernmentBEIS/inspect_ai
-   if the framing bug reproduces consistently.
-3. **Try with `tool_timeout` lowered** to force the agent to run more
-   smaller commands rather than one big find — workaround, not a fix.
-4. **Try Verified-mini** (`swe_bench_verified_mini` task name) for a
-   smaller, possibly-more-stable subset.
-
-For now, **moving on to BigCodeBench** (TODO P1#3) — non-agentic
-coding eval, doesn't depend on Inspect's tool-stdio plumbing, will
-discriminate `gpt-oss:20b` from alternatives without saturation.
+1. **Bump to N=20 SWE-bench Verified** at 1 GiB cap. ~2 hours wall
+   (6 min/sample × 20). If pass@1 lands at ~0–10% as expected,
+   establishes the baseline; if substantially higher, surprising
+   data point.
+2. **Drop `swe_bench_verified_mini` for a slightly cheaper N=50**
+   if Verified-mini is small enough.
+3. **Pre-fetch the per-problem Docker images** for the chosen subset
+   if running offline; each image is ~0.5–2 GB, so N=50 is ~50 GB.
+4. **File the upstream issue** at
+   <https://github.com/UKGovernmentBEIS/inspect_ai/issues> using
+   <upstream_issue.md>. The 1 GiB workaround is fragile; eventual
+   fix is the right move.
 
 ## Reproducing
 

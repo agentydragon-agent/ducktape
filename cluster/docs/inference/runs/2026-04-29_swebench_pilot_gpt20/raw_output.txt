@@ -1,93 +1,23 @@
 docker login ghcr.io: Login Succeeded
 $ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/bin/inspect eval inspect_evals/swe_bench --model openai/gpt-oss:20b --limit 1 --message-limit 50 --sandbox docker --max-connections 2 --log-dir /home/agentydragon/code/ducktape/cluster/docs/inference/runs/2026-04-29_swebench_pilot_gpt20/eval_logs
 Loading dataset princeton-nlp/SWE-bench_Verified from Hugging Face...
-Generating test split:   0%|          | 0/500 [00:00<?, ? examples/s]Generating test split: 100%|██████████| 500/500 [00:00<00:00, 21149.17 examples/s]
-Saving the dataset (0/1 shards):   0%|          | 0/500 [00:00<?, ? examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 48166.10 examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 47283.21 examples/s]
+Saving the dataset (0/1 shards):   0%|          | 0/500 [00:00<?, ? examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 7900.66 examples/s]Saving the dataset (1/1 shards): 100%|██████████| 500/500 [00:00<00:00, 7831.92 examples/s]
  default Pulling
  default Pulled
 
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │swe_bench (1 sample): openai/gpt-oss:20b                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭───────────────────── Traceback (most recent call last) ──────────────────────╮
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in task_run                                                                  │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in tg_collect                                                                │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in run_task                                                                  │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in run_sample                                                                │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in task_run_sample                                                           │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in task_run_sample                                                           │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in run                                                                       │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in __call__                                                                  │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in solve                                                                     │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in execute                                                                   │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in execute_tools                                                             │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in _execute_tools_impl                                                       │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in call_tool_task                                                            │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in call_tool_task                                                            │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in call_tool                                                                 │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in execute                                                                   │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in exec_scalar_request                                                       │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in _exec_request                                                             │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in parse_json_rpc_response                                                   │
-│                                                                              │
-│ /home/agentydragon/.cache/uv/environments-v2/run-swebench-fba1694160db4bb3/… │
-│ in model_validate_json                                                       │
-│                                                                              │
-│    779 │   │   │   │   code='validate-by-alias-and-name-false',              │
-│    780 │   │   │   )                                                         │
-│    781 │   │                                                                 │
-│ ❱  782 │   │   return cls.__pydantic_validator__.validate_json(              │
-│    783 │   │   │   json_data, strict=strict, extra=extra, context=context, b │
-│    784 │   │   )                                                             │
-│    785                                                                       │
-╰──────────────────────────────────────────────────────────────────────────────╯
-ValidationError: 1 validation error for JSONRPCResponse
-  Invalid JSON: expected value at line 1 column 1 [type=json_invalid,
-input_value='rmal/cooling_device13/de... loop\\n", "id": 673}\n',
-input_type=str]
-    For further information visit
-https://errors.pydantic.dev/2.13/v/json_invalid
+max_connections: 2, message_limit: 50, dataset: princeton-nlp/SWE-bench_Verified
 
-Task interrupted (no samples completed before interruption)
+total time:                 0:06:06
+openai/gpt-oss:20b          520,929 tokens [I: 517,156, O: 3,773]
 
-Log: eval_logs/2026-04-30T00-50-55-00-00_swe-bench_CEf3cBPyPzAfxLtzPWUBZB.eval
+swe_bench_scorer
+mean              0.000
+std               0.000
+
+Log: eval_logs/2026-04-30T01-59-24-00-00_swe-bench_3hd3YynKXibmY5diZPkXF3.eval
 
 === DONE ===
 {

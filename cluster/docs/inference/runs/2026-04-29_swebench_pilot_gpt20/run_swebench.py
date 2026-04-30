@@ -155,6 +155,14 @@ def main() -> int:
     env = os.environ.copy()
     env["OPENAI_BASE_URL"] = BASE_URL
     env["OPENAI_API_KEY"] = token
+    # Workaround for inspect_ai's CircularByteBuffer silently corrupting JSON-RPC
+    # responses larger than MAX_EXEC_OUTPUT_SIZE (default 10 MiB). See
+    # upstream_issue.md alongside this script. A single command in the
+    # astropy__astropy-12907 sandbox produces ~18 MiB of stderr (`grep -R … ..`
+    # walking /sys symlink cycles), which is enough to corrupt the wire on the
+    # first call. Bumping to 1 GiB delays the failure for our case but doesn't
+    # make the truncation safe; a long-enough run can still saturate.
+    env.setdefault("INSPECT_SANDBOX_MAX_EXEC_OUTPUT_SIZE", str(1024 * 1024 * 1024))
 
     summary: dict = {
         "config": {

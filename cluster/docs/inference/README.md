@@ -1,8 +1,29 @@
 # Inference backends
 
-Docs hub for LLM inference on the cluster. Notes that should outlive any one
-deployment go here; runnable scripts live with the workload (`cluster/k8s/ollama/`,
-`x/local_llm/`).
+## Goal
+
+Two RTX 5090s on `wyrm2`. The point of this directory is to figure out
+**how to make them do useful work for me** — and to keep doing so as
+models, configs, and tasks evolve. Three things to decide:
+
+1. **Which models** — quality on jobs that matter (AI-powered coding;
+   reverse engineering, see <../../../skills/reverse_engineer/>; FreeCAD,
+   see <../../../skills/freecad/>; reasoning tasks generally).
+2. **Which inference config** — backend (Ollama, vLLM, …), quant,
+   parallelism, context — for speed and usability.
+3. **Which jobs / proxies** — usually off-the-shelf Inspect AI tasks
+   (AIME, HumanEval+, GPQA, …) since most things we care about have a
+   close-enough proxy already implemented. Custom tasks are a separate
+   track when no off-the-shelf eval matches.
+
+Each eval gives us two signals at once: how good a model is at a task,
+and how the inference config holds up under it.
+
+## Hub layout
+
+Docs hub for LLM inference on the cluster. Notes that should outlive any
+one deployment go here; runnable scripts live with the workload
+(`cluster/k8s/ollama/`, `x/local_llm/`).
 
 ## What's here
 
@@ -24,6 +45,8 @@ deployment go here; runnable scripts live with the workload (`cluster/k8s/ollama
 - <model_download_history.md> — model search log and download status.
 - <reasoning_vs_agentic_coding.md> — model selection research for the
   reasoning vs coding-agent tradeoff.
+- <TODO.md> — prioritized next-steps list, ranked by information gain
+  toward the goal above.
 
 ## Current state (2026-04-28)
 
