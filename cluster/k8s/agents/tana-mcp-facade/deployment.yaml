@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: tana-mcp-facade
   annotations:
-    description: "Public Authentik-backed MCP facade for Tana. Access is enforced by Authentik group membership and the server injects the downstream PAT."
+    description: "Public Authentik-backed MCP facade for Tana, running the shared mcp-oauth-facade image. Access is enforced by Authentik group membership; the server injects a static downstream PAT."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
@@ -23,32 +23,27 @@ spec:
         - name: harbor-pull-robot
       containers:
         - name: server
-          image: ghcr.io/agentydragon/tana-mcp-facade:devel-20260422235340-0897099 # {"$imagepolicy": "flux-system:tana-mcp-facade"}
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260429000000-deadbeef # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8765
               protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: tana-mcp-facade-config
           env:
-            - name: FASTMCP_HOME
-              value: "/var/lib/fastmcp"
-            - name: TANA_MCP_FACADE_AUTH__OIDC_ISSUER
-              value: "https://auth.allegedly.works/application/o/tana-mcp-facade/"
-            - name: TANA_MCP_FACADE_AUTH__PUBLIC_BASE_URL
-              value: "https://tana-mcp-facade.allegedly.works"
-            - name: TANA_MCP_FACADE_DOWNSTREAM_URL
-              value: "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
-            - name: TANA_MCP_FACADE_AUTH__OIDC_CLIENT_ID
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: tana-mcp-facade-oidc
                   key: client_id
-            - name: TANA_MCP_FACADE_AUTH__OIDC_CLIENT_SECRET
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: tana-mcp-facade-oidc
                   key: client_secret
-            - name: TANA_MCP_FACADE_STATIC_BEARER_TOKEN
+            - name: MCP_FACADE_UPSTREAM__BEARER_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: tana-agentydragon-gmail-com-account-pat

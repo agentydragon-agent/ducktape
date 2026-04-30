@@ -1,5 +1,3 @@
-"""Tests for the Tana MCP facade proxy server."""
-
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -10,25 +8,25 @@ from fastmcp.client import Client
 
 from airlock.conftest import as_remote_server
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
-from tana.mcp_facade.config import ServerSettings
-from tana.mcp_facade.proxy import build_proxy_server
+from mcp_infra.oauth_facade.config import FacadeSettings, HttpUpstream
+from mcp_infra.oauth_facade.proxy import build_proxy_server
 
 
-def _settings(downstream_url: str) -> ServerSettings:
-    return ServerSettings(
+def _settings(downstream_url: str) -> FacadeSettings:
+    return FacadeSettings(
         auth=AuthentikAuthConfig(
-            oidc_issuer="https://auth.example.com/application/o/tana-mcp-facade/",
+            oidc_issuer="https://auth.example.com/application/o/test/",
             oidc_client_id="id",
             oidc_client_secret="secret",
-            public_base_url="https://tana-mcp-facade.example.com",
+            public_base_url="https://test.example.com",
         ),
-        downstream_url=downstream_url,
-        static_bearer_token="server-pat",
+        upstream=HttpUpstream(url=downstream_url, bearer_token="server-pat"),
+        facade_name="Test Facade",
     )
 
 
 @asynccontextmanager
-async def _facade_client(settings: ServerSettings):
+async def _facade_client(settings: FacadeSettings):
     facade = build_proxy_server(settings)
     async with Client(facade) as client:
         yield client

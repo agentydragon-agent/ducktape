@@ -70,10 +70,13 @@ spec:
       name: props-backend
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: tana-mcp
+      name: manifold-mcp-server
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: tana-mcp-facade
+      name: mcp-oauth-facade
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: tana-mcp
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: study-casino

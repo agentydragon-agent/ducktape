@@ -19,7 +19,9 @@ Key layout (`tana/`):
 - `io/` — JSON loaders (`load_workspace`).
 - `export/` — CLI entry points and higher-level workflows.
 - `mcp_server/` — container packaging for the internal desktop-backed Tana MCP server.
-- `mcp_facade/` — public Authentik-backed MCP OAuth facade that allowlists
-  `agentydragon` and forwards to internal `tana-mcp` with a server-held bearer token.
+
+The public Authentik-backed MCP OAuth facade is now the shared
+`mcp-oauth-facade` image (`mcp_infra/oauth_facade/`); the per-tana facade was
+removed when the facade was generalized.
 
 Tests and golden fixtures are in `testdata/`.

@@ -27,3 +27,5 @@ spec:
     # TF writes the `kubectl-sandbox-mcp` secret into the `kubectl-sandbox-mcp`
     # namespace, so that namespace must exist first.
     - name: kubectl-sandbox-mcp-namespace
+    # Same for manifold-mcp.
+    - name: manifold-mcp-namespace
