@@ -4,17 +4,16 @@ metadata:
   name: manifold-mcp-ingress
   namespace: manifold-mcp
   annotations:
-    description: "Default-deny ingress for manifold-mcp pods. Only the host (where cilium-envoy serves the cluster Gateway HTTPRoute via hostNetwork) can reach the facade on port 8765. Bridge port 8080 has no allow rule, so other pods cannot reach it across the pod network — only the in-pod facade reaches it via loopback (localhost), which Cilium does not police."
+    description: "Default-deny ingress for manifold-mcp pods. Only the Cilium ingress entity (cilium-envoy serving the cluster Gateway HTTPRoute) can reach the facade on port 8765. Bridge port 8080 has no allow rule, so other pods cannot reach it across the pod network — only the in-pod facade reaches it via loopback (localhost), which Cilium does not police."
 spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: manifold-mcp
   ingress:
-    # cilium-envoy runs hostNetwork=true, so its traffic carries the
-    # reserved:host identity — we cannot match it via fromEndpoints.
+    # cilium-envoy hostNetwork traffic into pods carries reserved:ingress
+    # identity (cilium_host / cilium_internal IPs).
     - fromEntities:
-        - host
-        - remote-node
+        - ingress
       toPorts:
         - ports:
             - port: "8765"
