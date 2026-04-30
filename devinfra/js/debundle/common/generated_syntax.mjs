@@ -21,6 +21,7 @@ export const DEFAULT_GENERATED_JS_GLOBALS = Object.freeze(
     "BroadcastChannel",
     "CSS",
     "CustomEvent",
+    "DOMException",
     "DOMParser",
     "DataView",
     "Date",
