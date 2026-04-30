@@ -14,6 +14,8 @@ argument-hint: "<path/to/binary> [language]"
 
 **When a tool fails, diagnose and build.** A tool returning an error or empty output is not a dead end — it is a precise description of what the binary violates. Read the error, find the exact check that failed, determine what the binary does instead, and write the minimal fix. Add the fix to `examples/` and record it in the Defeating Obfuscation section below. This skill is a living document: every obfuscation technique you defeat belongs here so the next run starts ahead.
 
+**No speculation. Read it or test it.** Every line of recovered source must trace to bytes you actually read or behavior you actually observed. The signal that your recovery is correct has to be _causally entangled_ with the binary itself — bytes produced by the binary, or bytes read from the binary — not just internally consistent. A cipher that round-trips its own output is consistent with infinitely many wrong implementations; only matching ciphertext the binary itself produced confirms it. When a step would require you to guess, stop: either read the bytes that would tell you, or run the binary to produce a ground-truth observation.
+
 ## Classify First
 
 ```bash

@@ -39,6 +39,24 @@ build-time scrambling and the language-specific recovery angles.
 - **Skill-off control** — vanilla agent without any skill mounted, same
   binary, same prompt. Already implied by the eval matrix but worth
   calling out explicitly.
+- **Hinted arm — per-specimen "efficient solve path"** —
+  alongside `skill-on` / `skill-off`, add a `skill-on-hinted` arm where
+  the agent gets specimen-specific procedural hints in addition to the
+  skill. Hints describe an efficient route through this particular
+  binary without revealing rubric answers. Examples for `go_crypto_server`:
+  "the binary is an HTTP server; start it and probe with curl before
+  reading asm", "capture a known plaintext/ciphertext pair from the
+  running binary before guessing the cipher", "the protocol uses a JSON
+  envelope; deduce its shape from a single registration request rather
+  than from struct types in the binary". The arm answers: how much of
+  the gap between skill-on and a perfect run is the agent's triage
+  vs the skill's generality? Drives where to invest —
+  per-specimen-runbook generation vs skill prose. Origin: the 1h
+  Sonnet timeout review at
+  <evals/x/notes/2026_04_29_sonnet_review_haiku.md> showed Sonnet's
+  failure was triage (over-disassembly, no checkpointing,
+  cipher-guessing without ground truth) rather than skill knowledge,
+  and the hinted arm would isolate that.
 
 ## More Go specimens (future, distinct shapes)
 
