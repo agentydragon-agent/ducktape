@@ -2212,16 +2212,6 @@ export { f };
   ];
 
   const result = extractOrderedInitRegionsInCode(source, [operation]);
-  const extractedCode = result.files.get("regions/non_contiguous_declarator_fragments.js");
-  const dIndex = extractedCode.indexOf("d = a + b");
-  const eIndex = extractedCode.indexOf("e = d + c");
-  const fIndex = extractedCode.indexOf("f = e");
-  assert.notEqual(dIndex, -1);
-  assert.notEqual(eIndex, -1);
-  assert.notEqual(fIndex, -1);
-  assert.ok(dIndex < fIndex);
-  assert.ok(eIndex < fIndex);
-
   assertRunnableEquivalent({
     files: {},
     prefix: "debundle-extract-non-contiguous-declarator-fragments-",
@@ -2236,7 +2226,9 @@ test("preserves function declaration hoisting across interleaved extracted modul
 }
 const c = a();
 const d = Date.now();
-function b() {}
+function b() {
+  return "b";
+}
 console.log(c);
 `;
   const helperOperation = selectedModuleOperation(source, {

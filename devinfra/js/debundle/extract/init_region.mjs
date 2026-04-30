@@ -3175,7 +3175,68 @@ function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, e
   if (externallyCapturedTargetNames.has(candidate.to)) {
     return false;
   }
+  if (bindingDefaultInitializerReferencesName(binding, candidate.to)) {
+    return false;
+  }
   return !bindingWouldBeShadowedAfterReadableRename(binding, candidate.to);
+}
+
+function bindingDefaultInitializerReferencesName(binding, targetName) {
+  let currentPath = bindingIdentifierPath(binding);
+  while (currentPath?.parentPath) {
+    const parentPath = currentPath.parentPath;
+    if (parentPath.isAssignmentPattern?.() && pathIsWithinNode(currentPath, parentPath.node.left)) {
+      return pathReferencesName(parentPath.get("right"), targetName);
+    }
+    if (
+      parentPath.isObjectPattern?.() ||
+      parentPath.isArrayPattern?.() ||
+      parentPath.isObjectProperty?.() ||
+      parentPath.isRestElement?.()
+    ) {
+      currentPath = parentPath;
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
+function bindingIdentifierPath(binding) {
+  if (binding.path?.isIdentifier?.()) {
+    return binding.path;
+  }
+  if (!binding.path?.traverse || !binding.identifier) {
+    return binding.path;
+  }
+  let identifierPath = null;
+  binding.path.traverse({
+    Identifier(path) {
+      if (path.node !== binding.identifier) {
+        return;
+      }
+      identifierPath = path;
+      path.stop();
+    },
+  });
+  return identifierPath ?? binding.path;
+}
+
+function pathReferencesName(path, targetName) {
+  if (path.isIdentifier?.({ name: targetName }) && path.isReferencedIdentifier()) {
+    return true;
+  }
+  let found = false;
+  path.traverse({
+    Identifier(identifierPath) {
+      if (identifierPath.node.name !== targetName || !identifierPath.isReferencedIdentifier()) {
+        return;
+      }
+      found = true;
+      identifierPath.stop();
+    },
+  });
+  return found;
 }
 
 function collectExternallyCapturedTargetNames(scopePath, targetNames, bindingCacheByScope = null) {
