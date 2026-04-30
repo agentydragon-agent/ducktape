@@ -52,7 +52,7 @@ export { Box as publicBox, loadFeature as publicLoadFeature, result as publicRes
   assert.match(runtimeCode, /init_fixture_region\(\);/);
   assert.match(extractedCode, /import \{ addOne \} from "\.\.\/helpers\.js"/);
   assert.match(extractedCode, /await import\("\.\.\/feature\.js"\)/);
-  assert.match(extractedCode, /format = function format/);
+  assert.match(extractedCode, /function format\(value\)/);
 
   assertRunnableEquivalent({
     files: {
@@ -2225,6 +2225,36 @@ export { f };
   assertRunnableEquivalent({
     files: {},
     prefix: "debundle-extract-non-contiguous-declarator-fragments-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("preserves function declaration hoisting across interleaved extracted modules", () => {
+  const source = `function a() {
+  return b();
+}
+const c = a();
+const d = Date.now();
+function b() {}
+console.log(c);
+`;
+  const helperOperation = selectedModuleOperation(source, {
+    init: "init_hoisted_helper",
+    ownerNames: ["a", "d", "b"],
+    targetFile: "regions/hoisted_helper.js",
+  });
+  const consumerOperation = selectedModuleOperation(source, {
+    init: "init_hoisted_consumer",
+    ownerNames: ["c"],
+    targetFile: "regions/hoisted_consumer.js",
+  });
+
+  const result = extractOrderedInitRegionsInCode(source, [consumerOperation, helperOperation]);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-interleaved-hoisted-functions-",
     source,
     transformedFiles: Object.fromEntries(result.files),
   });

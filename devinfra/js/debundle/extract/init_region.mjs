@@ -723,11 +723,11 @@ function isNaturalizableDeclarationEntry(stageEntry, { remainingProgramValidatio
   if (stageEntry.kind !== "declaration" || stageEntry.fragment) {
     return false;
   }
-  if (hasEarlierPotentialBindingUse(stageEntry, remainingProgramValidationIndex)) {
-    return false;
-  }
   if (stageEntry.owner.type === "FunctionDeclaration") {
     return t.isFunctionDeclaration(stageEntry.statement);
+  }
+  if (hasEarlierPotentialBindingUse(stageEntry, remainingProgramValidationIndex)) {
+    return false;
   }
   if (stageEntry.owner.type === "ClassDeclaration") {
     return (
