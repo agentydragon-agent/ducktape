@@ -1,8 +1,10 @@
 # Benchmarks and known results
 
-Configurations we've actually run, what we measured, what bit us. Update this
-when you bring up a new config or rerun an existing one. Empty fields mean
-"not measured yet" — fill them in, don't delete the row.
+Configurations we've actually run, what we measured, what bit us. Each
+row exists to inform either a model choice or an inference-config
+choice — see <README.md#goal>. Update when you bring up a new config or
+rerun an existing one; empty fields mean "not measured yet" — fill them
+in, don't delete the row.
 
 ## Configurations
 
@@ -107,6 +109,27 @@ variance dominated.
 8 415 → 9 333 (~10%) across efforts, while per-problem variance
 within an effort spans 1K to 41K. `reasoning_effort` is more like a
 hint than a budget on this model+endpoint.
+
+### Coding quality — HumanEval N=164
+
+Inspect AI's `inspect_evals/humaneval` task. Execution-graded (binary
+pass/fail per problem via Python sandbox). Original 164-problem
+dataset; HumanEval+ not supported by inspect_evals.
+
+| Config    | N   | reasoning_effort | pass@1              | stderr | total out_tok | wall  | Source                                           |
+| --------- | --- | ---------------- | ------------------- | ------ | ------------- | ----- | ------------------------------------------------ |
+| `c-gpt20` | 164 | low              | 157/164 (0.957)     | 0.016  | 134 K         | 16:00 | <runs/2026-04-29_humaneval_gpt20/README.md> (\*) |
+| `c-gpt20` | 164 | medium           | **159/164 (0.970)** | 0.013  | 129 K         | 11:34 | <runs/2026-04-29_humaneval_gpt20/README.md>      |
+| `c-gpt20` | 164 | high             | **159/164 (0.970)** | 0.013  | 123 K         | 11:33 | <runs/2026-04-29_humaneval_gpt20/README.md>      |
+
+(\*) Low-effort wall includes ~4 min one-time Docker sandbox image pull.
+
+**Headline:** `gpt-oss:20b` is at HumanEval saturation. Effort levels
+indistinguishable; AIME's inverted-U cannot replicate here (no
+headroom). **Output tokens decrease** with effort (134 K → 129 K →
+123 K) — same direction as AIME, more pronounced. Need a
+less-saturated coding eval (BigCodeBench, LiveCodeBench, or SWE-bench)
+for actual model discrimination.
 
 ## Known caveats
 

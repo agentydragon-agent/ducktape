@@ -1,0 +1,190 @@
+#!/usr/bin/env -S env -u PYTHONPATH uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "inspect-ai",
+#   "inspect-evals[swe_bench]",
+#   "openai",
+#   "swebench",
+# ]
+# ///
+# The double-env-shebang clears PYTHONPATH before uv runs. Without it, Nix's
+# devshell PYTHONPATH leaks into the uv-managed venv, and Python imports
+# `pydantic` from the Nix store (incompatible with the venv's `pydantic_core`),
+# producing `ModuleNotFoundError: pydantic_core._pydantic_core`.
+"""Pilot run of `inspect_evals/swe_bench` against gpt-oss:20b on the cluster
+Ollama endpoint via Inspect AI.
+
+Differs from the AIME / HumanEval runs in three ways:
+
+1. SWE-bench is **agentic** — `swe_bench_agent_with_inspect_tool_support`
+   solver, multi-turn `bash_session` / `python` / `text_editor` tools.
+   Per-problem wall time is 10-30 min, not seconds.
+2. **Per-problem Docker images** pulled on demand from
+   `ghcr.io/epoch-research/swe-bench.eval.<arch>.<id>:latest`. ghcr.io
+   requires auth; this script does `gh auth token | docker login
+   ghcr.io` once at startup.
+3. **`reasoning_effort` does NOT flow through** the SWE-bench task to
+   the underlying generate calls (verified from inspect_evals source).
+   So this script does not sweep efforts; the model uses its default.
+
+Defaults are tuned for **a 1-problem pilot** to verify the agent loop
+works on gpt-oss:20b's tool-call output. If the pilot succeeds, expand
+`--limit` to a larger N for a real run.
+
+Usage:
+    ./run_swebench.py [--limit 1] [--dataset lite|verified] [--message-limit 50]
+
+Output:
+    eval_logs/...  Inspect AI per-run log (commit alongside this script)
+    summary.json   Exit code + config record
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+DEFAULT_MODEL = "gpt-oss:20b"
+DEFAULT_LIMIT = 1
+DEFAULT_DATASET = "verified"  # "lite" or "verified". Verified is the task default;
+# Lite requires also overriding `revision` because the task pins a Verified-specific SHA
+# (`c104f840…`) which doesn't exist in the Lite repo.
+DEFAULT_MESSAGE_LIMIT = 50
+DEFAULT_SANDBOX = "docker"
+DEFAULT_MAX_WORKERS = 2  # avoid Docker subnet exhaustion at higher concurrency
+BASE_URL = "https://ollama.allegedly.works/v1"
+SECRET_NAMESPACE = "ollama"
+SECRET_NAME = "ollama-bearer-token"
+GHCR_USERNAME = "agentydragon"
+
+DATASET_HF_IDS = {"lite": "princeton-nlp/SWE-bench_Lite", "verified": "princeton-nlp/SWE-bench_Verified"}
+
+
+def get_bearer_token() -> str:
+    """Pull the Ollama bearer token from the cluster Secret via kubectl."""
+    raw = subprocess.check_output(
+        ["kubectl", "-n", SECRET_NAMESPACE, "get", "secret", SECRET_NAME, "-o", "jsonpath={.data.token}"]
+    )
+    return base64.b64decode(raw).decode().strip()
+
+
+def ghcr_login() -> None:
+    """Authenticate to ghcr.io via gh CLI token, so docker can pull SWE-bench images."""
+    token = subprocess.check_output(["gh", "auth", "token"]).decode().strip()
+    proc = subprocess.run(
+        ["docker", "login", "ghcr.io", "--username", GHCR_USERNAME, "--password-stdin"],
+        input=token,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        sys.exit(f"ERROR: docker login ghcr.io failed: {proc.stderr.strip()}")
+    print(f"docker login ghcr.io: {proc.stdout.strip()}", flush=True)
+
+
+def inspect_path() -> str:
+    p = shutil.which("inspect")
+    if not p:
+        sys.exit(
+            "ERROR: `inspect` CLI not found in PATH after dependency resolution. Is `inspect-ai` installed correctly?"
+        )
+    return p
+
+
+def run_eval(
+    *, model: str, limit: int, dataset: str, message_limit: int, max_workers: int, log_dir: Path, env: dict[str, str]
+) -> int:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        inspect_path(),
+        "eval",
+        "inspect_evals/swe_bench",
+        "--model",
+        f"openai/{model}",
+        "--limit",
+        str(limit),
+        "--message-limit",
+        str(message_limit),
+        "--sandbox",
+        DEFAULT_SANDBOX,
+        "--max-connections",
+        str(max_workers),
+        "--log-dir",
+        str(log_dir),
+    ]
+    # Only override dataset when not using the task default (Verified). The task
+    # also pins a Verified-specific revision SHA, so for Lite we have to clear
+    # the revision too — passing `main` falls back to HF's default branch.
+    if dataset != "verified":
+        cmd.extend(["-T", f"dataset={DATASET_HF_IDS[dataset]}", "-T", "revision=main"])
+    print("$ " + " ".join(cmd), flush=True)
+    return subprocess.run(cmd, env=env, check=False).returncode
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--model", default=DEFAULT_MODEL)
+    p.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
+    p.add_argument("--dataset", choices=list(DATASET_HF_IDS), default=DEFAULT_DATASET)
+    p.add_argument("--message-limit", type=int, default=DEFAULT_MESSAGE_LIMIT)
+    p.add_argument("--max-workers", type=int, default=DEFAULT_MAX_WORKERS)
+    p.add_argument("--out", default="eval_logs", help="Log directory (relative to script dir).")
+    p.add_argument(
+        "--skip-ghcr-login", action="store_true", help="Skip docker login ghcr.io (assume already authenticated)."
+    )
+    return p.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    script_dir = Path(__file__).resolve().parent
+    out_dir = script_dir / args.out
+
+    if not args.skip_ghcr_login:
+        ghcr_login()
+
+    token = get_bearer_token()
+    env = os.environ.copy()
+    env["OPENAI_BASE_URL"] = BASE_URL
+    env["OPENAI_API_KEY"] = token
+
+    summary: dict = {
+        "config": {
+            "model": args.model,
+            "limit": args.limit,
+            "dataset": args.dataset,
+            "dataset_hf_id": DATASET_HF_IDS[args.dataset],
+            "message_limit": args.message_limit,
+            "max_workers": args.max_workers,
+            "sandbox": DEFAULT_SANDBOX,
+            "base_url": BASE_URL,
+        }
+    }
+
+    rc = run_eval(
+        model=args.model,
+        limit=args.limit,
+        dataset=args.dataset,
+        message_limit=args.message_limit,
+        max_workers=args.max_workers,
+        log_dir=out_dir,
+        env=env,
+    )
+    summary["exit_code"] = rc
+
+    (script_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    print("\n=== DONE ===")
+    print(json.dumps(summary, indent=2))
+    return 0 if rc == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
