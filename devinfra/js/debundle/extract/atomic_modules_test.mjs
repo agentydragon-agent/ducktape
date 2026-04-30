@@ -3273,6 +3273,252 @@ export { renderPicker };
   );
 });
 
+test("materializeLogicalModules splits local-reference style maps away from unrelated lazy command handlers", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-local-style-fragments-"
+  );
+  const source = `const palette = "blue",
+  pickerStyles = {
+    root: palette,
+    accent: \`accent-\${palette}\`,
+  },
+  runCommand = function runCommand() {
+    return "command";
+  };
+
+function renderPicker() {
+  return pickerStyles.root + ":" + runCommand();
+}
+
+console.log(renderPicker());
+
+export { renderPicker };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__picker_styles",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/picker/styles",
+        },
+        members: [
+          {
+            id: "member__picker_styles",
+            name: "pickerStyles",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "pickerStyles",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.steps.map((step) => step.operation),
+    ["load_js_chunks", "compute_js_asts", "normalize_js_chunks", "materialize_logical_modules", "write_js_tree"]
+  );
+
+  const stylesCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "picker", "styles.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+
+  assert.match(stylesCode, /\bpalette = "blue"/);
+  assert.match(stylesCode, /\bpickerStyles = \{/);
+  assert.match(stylesCode, /accent: `accent-\$\{palette\}`/);
+  assert.doesNotMatch(stylesCode, /\brunCommand = function runCommand/);
+  assert.match(stylesCode, /fragments=owner_[^,\s]+::declarator_0,owner_[^,\s]+::declarator_1/);
+
+  assert.match(residualCode, /\brunCommand = function runCommand/);
+  assert.doesNotMatch(residualCode, /\bpickerStyles = \{/);
+  assert.match(residualCode, /fragments=owner_[^,\s]+::declarator_2/);
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
+});
+
+test("materializeLogicalModules does not treat runtime-global style map reads as splittable pure locals", async () => {
+  const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(
+    "debundle-logical-modules-runtime-global-style-fragments-"
+  );
+  const source = `globalThis.runtimeTheme = "before";
+const pickerStyles = {
+    root: globalThis.runtimeTheme,
+  },
+  runCommand = function runCommand() {
+    return "command";
+  };
+globalThis.runtimeTheme = "after";
+
+function renderPicker() {
+  return pickerStyles.root + ":" + runCommand();
+}
+
+console.log(renderPicker());
+
+export { renderPicker };
+`;
+  writeSnapshotFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": source,
+    },
+    jsFiles: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const result = await runTransformSpecObject({
+    kind: "js.ast_transform_spec",
+    operations: [
+      {
+        id: "logical__picker_styles",
+        operation: "define_logical_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "ui/picker/styles",
+        },
+        members: [
+          {
+            id: "member__picker_styles",
+            name: "pickerStyles",
+            selector: {
+              binding: {
+                kind: "VariableDeclarator",
+                name: "pickerStyles",
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "logical__unhandled",
+        operation: "define_residual_module",
+        selector: {
+          chunkId: "static/app",
+        },
+        target: {
+          path: "residual/unhandled",
+        },
+      },
+    ],
+    pipeline: [
+      {
+        id: "load",
+        operation: "load_js_chunks",
+        args: {
+          inputRoot: snapshotRoot,
+          jsListPath: join(extractedRoot, "js-files.txt"),
+        },
+      },
+      {
+        id: "asts",
+        operation: "compute_js_asts",
+      },
+      {
+        id: "normalize",
+        operation: "normalize_js_chunks",
+        args: {
+          jobs: 1,
+        },
+      },
+      {
+        id: "logical",
+        operation: "materialize_logical_modules",
+        args: {
+          chunkIds: ["static/app"],
+          pruneOtherChunks: false,
+        },
+      },
+      {
+        id: "write",
+        operation: "write_js_tree",
+        args: {
+          force: true,
+          outDir: outRoot,
+        },
+      },
+    ],
+  });
+
+  const stylesCode = readFileSync(join(outRoot, "static", "app", "modules", "ui", "picker", "styles.js"), "utf8");
+  const residualCode = readFileSync(join(outRoot, "static", "app", "modules", "residual", "unhandled.js"), "utf8");
+
+  assert.match(stylesCode, /export function __dt_generated_init__ui_picker_styles/);
+  assert.match(stylesCode, /\bpickerStyles = \{\s+root: globalThis\.runtimeTheme\s+\};/);
+  assert.doesNotMatch(stylesCode, /fragments=owner_[^,\s]+::declarator_0/);
+  assert.match(residualCode, /\brunCommand = function runCommand/);
+  assert.deepEqual(
+    runNodeScript(join(outRoot, "static", "app", "entry.js")),
+    runNodeScript(join(snapshotRoot, "static", "app.js"))
+  );
+});
+
 test("materializeLogicalModules rejects propagated final-name collisions for split class declarators", async () => {
   const { extractedRoot, snapshotRoot } = createWebFixtureRoots(
     "debundle-materialize-logical-modules-class-propagated-collision-"

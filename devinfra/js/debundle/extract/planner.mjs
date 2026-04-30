@@ -349,14 +349,24 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
 
 function splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, { analysis, ownerById, programBody, sideEffectById }) {
   const expanded = [];
+  const localDeclarationNames = localDeclarationNamesForAnalysis(analysis);
   for (const unit of rawAtomicUnits) {
-    const splitUnits = splitSplittableVariableDeclarationAtomicUnit(unit, { analysis, ownerById, programBody, sideEffectById });
+    const splitUnits = splitSplittableVariableDeclarationAtomicUnit(unit, {
+      analysis,
+      localDeclarationNames,
+      ownerById,
+      programBody,
+      sideEffectById,
+    });
     expanded.push(...(splitUnits ?? [unit]));
   }
   return expanded;
 }
 
-function splitSplittableVariableDeclarationAtomicUnit(unit, { analysis, ownerById, programBody, sideEffectById }) {
+function splitSplittableVariableDeclarationAtomicUnit(
+  unit,
+  { analysis, localDeclarationNames, ownerById, programBody, sideEffectById }
+) {
   if (unit.ownerIds.length !== 1) {
     return null;
   }
@@ -370,15 +380,22 @@ function splitSplittableVariableDeclarationAtomicUnit(unit, { analysis, ownerByI
   if (!t.isVariableDeclaration(declaration) || declaration.declarations.length <= 1) {
     return null;
   }
-  const splitUnits = buildSplittableVariableDeclarationUnits(owner, declaration.declarations);
+  const splitUnits = buildSplittableVariableDeclarationUnits(owner, declaration.declarations, {
+    localDeclarationNames,
+  });
   if (!splitUnits || splitUnits.length <= 1) {
     return null;
   }
-  const dependencyDisjoint = buildVariableDeclarationFragmentDependencyDisjointSet(owner, declaration.declarations, splitUnits, {
-    analysis,
-    programBody,
-    statement,
-  });
+  const dependencyDisjoint = buildVariableDeclarationFragmentDependencyDisjointSet(
+    owner,
+    declaration.declarations,
+    splitUnits,
+    {
+      analysis,
+      programBody,
+      statement,
+    }
+  );
   if (!dependencyDisjoint) {
     return null;
   }
@@ -394,11 +411,13 @@ function splitSplittableVariableDeclarationAtomicUnit(unit, { analysis, ownerByI
   return groupedUnits && groupedUnits.length > 1 ? groupedUnits : null;
 }
 
-function buildSplittableVariableDeclarationUnits(owner, declarators) {
+function buildSplittableVariableDeclarationUnits(owner, declarators, { localDeclarationNames } = {}) {
   const splittableFragments = [];
   const remainderDeclaratorIndices = [];
   for (const [index, declarator] of declarators.entries()) {
-    const fragment = buildSplittableVariableDeclaratorFragment(owner, declarator, index);
+    const fragment = buildSplittableVariableDeclaratorFragment(owner, declarator, index, {
+      localDeclarationNames,
+    });
     if (fragment) {
       splittableFragments.push(fragment);
       continue;
@@ -425,13 +444,14 @@ function ownerHasLazyIntraOwnerBindingWrite(owner) {
   );
 }
 
-function buildSplittableVariableDeclaratorFragment(owner, declarator, index) {
+function buildSplittableVariableDeclaratorFragment(owner, declarator, index, { localDeclarationNames } = {}) {
   const memberNames = bindingNamesForVariableDeclarator(declarator).sort();
   if (memberNames.length === 0) {
     return null;
   }
   if (
     !isStaticallyPureFragmentInitializer(declarator.init) &&
+    !isLocallyPureFragmentInitializer(declarator.init, localDeclarationNames) &&
     !isLazyCallableFragmentInitializer(declarator.init) &&
     !isLazyClassFragmentInitializer(declarator.init)
   ) {
@@ -689,6 +709,10 @@ function buildVariableDeclarationFragmentDependencyDisjointSet(owner, declarator
   return disjoint;
 }
 
+function localDeclarationNamesForAnalysis(analysis) {
+  return new Set((analysis?.owners ?? []).flatMap((owner) => owner.names ?? []));
+}
+
 function isStaticallyPureFragmentInitializer(node) {
   if (!node) {
     return true;
@@ -743,6 +767,63 @@ function isStaticallyPureFragmentInitializer(node) {
   }
   if (t.isParenthesizedExpression(node)) {
     return isStaticallyPureFragmentInitializer(node.expression);
+  }
+  return false;
+}
+
+function isLocallyPureFragmentInitializer(node, localDeclarationNames) {
+  if (!node || !(localDeclarationNames instanceof Set)) {
+    return false;
+  }
+  if (isStaticallyPureFragmentInitializer(node)) {
+    return true;
+  }
+  if (t.isIdentifier(node)) {
+    return localDeclarationNames.has(node.name);
+  }
+  if (t.isTemplateLiteral(node)) {
+    return node.expressions.every((expression) => isLocallyPureFragmentInitializer(expression, localDeclarationNames));
+  }
+  if (t.isArrayExpression(node)) {
+    return node.elements.every((element) => {
+      if (!element) {
+        return true;
+      }
+      if (t.isSpreadElement(element)) {
+        return false;
+      }
+      return isLocallyPureFragmentInitializer(element, localDeclarationNames);
+    });
+  }
+  if (t.isObjectExpression(node)) {
+    return node.properties.every((property) => {
+      if (t.isSpreadElement(property)) {
+        return false;
+      }
+      if (property.computed && !isLocallyPureFragmentInitializer(property.key, localDeclarationNames)) {
+        return false;
+      }
+      return isLocallyPureFragmentInitializer(property.value, localDeclarationNames);
+    });
+  }
+  if (t.isUnaryExpression(node)) {
+    return isLocallyPureFragmentInitializer(node.argument, localDeclarationNames);
+  }
+  if (t.isBinaryExpression(node) || t.isLogicalExpression(node)) {
+    return (
+      isLocallyPureFragmentInitializer(node.left, localDeclarationNames) &&
+      isLocallyPureFragmentInitializer(node.right, localDeclarationNames)
+    );
+  }
+  if (t.isConditionalExpression(node)) {
+    return (
+      isLocallyPureFragmentInitializer(node.test, localDeclarationNames) &&
+      isLocallyPureFragmentInitializer(node.consequent, localDeclarationNames) &&
+      isLocallyPureFragmentInitializer(node.alternate, localDeclarationNames)
+    );
+  }
+  if (t.isParenthesizedExpression(node)) {
+    return isLocallyPureFragmentInitializer(node.expression, localDeclarationNames);
   }
   return false;
 }
