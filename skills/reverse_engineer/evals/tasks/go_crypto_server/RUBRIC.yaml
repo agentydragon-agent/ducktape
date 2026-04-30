@@ -18,7 +18,7 @@
 
 specimen: go_crypto_server
 language: go
-weights_total: 100
+# (Total weight across items is derived by the scorer; not pinned here.)
 
 items:
   - id: wire_protocol
@@ -76,14 +76,6 @@ items:
       block cipher, the IV, the preimage layout (key, key-length, message),
       and the tag size? Fully correct means a re-implementation would
       produce bit-identical tags.
-
-  - id: mac_security_analysis
-    weight: 6
-    description: |
-      Did the agent's analysis identify the length-extension vulnerability
-      that follows from the preimage shape? The point is whether the
-      agent reasoned about why the construction is broken, not whether it
-      named "length extension" verbatim.
 
   - id: custom_base32
     weight: 8

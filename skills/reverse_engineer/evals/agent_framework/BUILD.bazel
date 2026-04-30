@@ -3,7 +3,7 @@ load("//devinfra/python:defs.bzl", "py_binary")
 py_binary(
     name = "re_rollout",
     srcs = ["re_rollout.py"],
-    data = ["//skills/reverse_engineer/evals/specimens/go_crypto_server:go_crypto_server_garbled"],
+    data = ["//skills/reverse_engineer/evals/tasks/go_crypto_server:go_crypto_server_garbled"],
     deps = [
         "//openai_utils:pydantic_strict_mode",
         "//skills/eval_infra:af_chat_client",

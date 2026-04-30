@@ -20,7 +20,7 @@ harness. Outputs:
 
 Run with:
   bb run --remote_executor="" \\
-    //skills/reverse_engineer/evals/runs/agent_framework:re_rollout -- \\
+    //skills/reverse_engineer/evals/agent_framework:re_rollout -- \\
     --skill on --output-dir /tmp/re_eval/$(date -u +%Y%m%dT%H%M%SZ)
 """
 
@@ -54,7 +54,7 @@ _DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 _DEFAULT_MAX_STEPS = 1000
 _DEFAULT_WALL_TIMEOUT_SECONDS = 600
 
-_TARGET_BINARY_RLOCATION = "_main/skills/reverse_engineer/evals/specimens/go_crypto_server/go_crypto_server_garbled.bin"
+_TARGET_BINARY_RLOCATION = "_main/skills/reverse_engineer/evals/tasks/go_crypto_server/go_crypto_server_garbled.bin"
 
 # Maps the --skill CLI value to a SkillSpec. The "off" arm uses an empty
 # SKILL.md so the sandbox shape is uniform across arms — there is no
