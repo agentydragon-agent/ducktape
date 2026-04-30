@@ -29,6 +29,7 @@ export const DEFAULT_GENERATED_JS_GLOBALS = Object.freeze(
     "Error",
     "EvalError",
     "Event",
+    "EventSource",
     "EventTarget",
     "Float32Array",
     "Float64Array",

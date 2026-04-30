@@ -15,7 +15,7 @@ test("generated JS resolution accepts imported generated helpers", () => {
 test("generated JS resolution accepts browser runtime globals", () => {
   assert.doesNotThrow(() =>
     validateGeneratedJsResolution({
-      code: `window.ducktapeReady = document.body !== null && globalThis.location !== undefined;\nlocalStorage.setItem("ready", sessionStorage.getItem("ready") ?? "1");\nconst quota = new DOMException("quota", "QuotaExceededError");\n`,
+      code: `window.ducktapeReady = document.body !== null && globalThis.location !== undefined;\nlocalStorage.setItem("ready", sessionStorage.getItem("ready") ?? "1");\nconst quota = new DOMException("quota", "QuotaExceededError");\nconst stream = new EventSource("/events");\nstream.close();\n`,
       path: "static/app/modules/browser_globals.js",
     })
   );
