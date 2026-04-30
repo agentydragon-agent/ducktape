@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
+import { createGeneratedJsSyntaxValidator } from "../common/generated_syntax.mjs";
 import { modulePackageJson, writeJsonFile, writeTextFile } from "../common/parser_options.mjs";
 import {
   getArtifactChunkManifest,
@@ -27,7 +28,6 @@ const MODULE_SCRIPT_RE =
   /<script\b(?=[^>]*\btype\s*=\s*["']module["'])(?=[^>]*\bsrc\s*=\s*["'][^"']+["'])[^>]*>\s*<\/script>/gi;
 const MODULE_PRELOAD_RE =
   /<link\b(?=[^>]*\brel\s*=\s*["'][^"']*\bmodulepreload\b[^"']*["'])(?=[^>]*\bhref\s*=\s*["'][^"']+["'])[^>]*>/gi;
-
 
 export function emitBrowserHarness(options) {
   const artifact = requirePipelineArtifact(options.artifact, "emitBrowserHarness");
@@ -70,7 +70,8 @@ export function emitBrowserHarness(options) {
   });
   const vendorManifestPath = options.vendorManifestPath ? resolveWorkspacePath(options.vendorManifestPath) : undefined;
   const vendorResolutions = describeVendorResolutions(vendorManifestPath);
-  materializeArtifactScripts({ artifact, outDir });
+  const syntaxValidator = createGeneratedJsSyntaxValidator({ stageName: "emitBrowserHarness" });
+  materializeArtifactScripts({ artifact, outDir, syntaxValidator });
   const copiedAssets = copySnapshotAssets(snapshotRoot, outDir, { includeJavaScript: false });
 
   const bootstrapPath = join(outDir, "bootstrap.js");
@@ -111,12 +112,23 @@ export function emitBrowserHarness(options) {
 
   writeFileSync(indexPath, indexHtml);
   writeFileSync(bootstrapPath, bootstrap);
+  syntaxValidator.checkFile({
+    code: bootstrap,
+    path: relativeWorkspacePath(bootstrapPath),
+  });
+  const syntaxValidation = syntaxValidator.manifest();
   writeJsonFile(chunksManifestPath, snapshotManifest);
-  writeJsonFile(join(outDir, "manifest.json"), manifest);
+  writeJsonFile(join(outDir, "manifest.json"), {
+    ...manifest,
+    syntaxValidation,
+  });
   writeJsonFile(join(outDir, "package.json"), modulePackageJson());
   return {
     artifact,
-    manifest,
+    manifest: {
+      ...manifest,
+      syntaxValidation,
+    },
   };
 }
 
@@ -259,13 +271,19 @@ function buildBootstrap({ artifact, entryScripts, outDir, runtimeRoot, scriptSou
   return lines.join("\n");
 }
 
-function materializeArtifactScripts({ artifact, outDir }) {
+function materializeArtifactScripts({ artifact, outDir, syntaxValidator }) {
   for (const chunk of getArtifactManifestChunks(artifact)) {
     const chunkOutDir = join(outDir, ...chunk.chunkId.split("/"));
     for (const file of listChunkFilePaths(artifact, chunk.chunkId)) {
       const fileArtifact = requireChunkFile(artifact, chunk.chunkId, file, "emitBrowserHarness");
       const targetPath = join(chunkOutDir, ...file.split("/"));
-      writeTextFile(targetPath, serializeGeneratedJsFile(fileArtifact));
+      const content = serializeGeneratedJsFile(fileArtifact);
+      writeTextFile(targetPath, content);
+      syntaxValidator?.checkFile({
+        code: content,
+        parserOptions: fileArtifact.parserOptions,
+        path: relativeWorkspacePath(targetPath),
+      });
     }
     const chunkManifest = getArtifactChunkManifest(artifact, chunk.chunkId);
     if (chunkManifest) {

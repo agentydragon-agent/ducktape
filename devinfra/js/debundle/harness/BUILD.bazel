@@ -136,6 +136,7 @@ js_test(
     name = "emit_test",
     data = [
         "emit.mjs",
+        "//:node_modules/@babel/types",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",

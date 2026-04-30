@@ -10,6 +10,7 @@ js_library(
     name = "libs",
     srcs = [
         "artifact.mjs",
+        "generated_syntax.mjs",
         "io.mjs",
         "load_chunks.mjs",
         "normalize.mjs",
@@ -20,6 +21,9 @@ js_library(
         "vendor_runtime.mjs",
     ],
     visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@babel/parser",
+    ],
 )
 
 js_test(

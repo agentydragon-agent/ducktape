@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { createGeneratedJsSyntaxValidator } from "../common/generated_syntax.mjs";
 import { modulePackageJson, writeJsonFile, writeTextFile } from "../common/parser_options.mjs";
 import {
   getArtifactChunkManifest,
@@ -19,11 +20,18 @@ export function writeJsTree({ artifact, force = false, outDir }) {
   prepareOutputDir(resolvedOutDir, { force });
 
   const chunkEntries = listChunks(artifact);
+  const syntaxValidator = createGeneratedJsSyntaxValidator({ stageName: "writeJsTree" });
   const files = [];
   for (const { chunkId, files: chunkFiles } of chunkEntries) {
     for (const file of chunkFiles) {
       const outputPath = join(resolvedOutDir, ...chunkId.split("/"), ...file.path.split("/"));
-      writeTextFile(outputPath, serializeGeneratedJsFile(file));
+      const content = serializeGeneratedJsFile(file);
+      writeTextFile(outputPath, content);
+      syntaxValidator.checkFile({
+        code: content,
+        parserOptions: file.parserOptions,
+        path: relativeWorkspacePath(outputPath),
+      });
       files.push(`${chunkId}/${file.path}`);
     }
   }
@@ -50,6 +58,7 @@ export function writeJsTree({ artifact, force = false, outDir }) {
         files: files.length,
       },
       files,
+      syntaxValidation: syntaxValidator.manifest(),
     },
   };
 }

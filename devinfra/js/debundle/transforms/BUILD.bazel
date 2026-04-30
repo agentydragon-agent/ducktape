@@ -58,3 +58,14 @@ js_test(
     ],
     entry_point = "rewrite_specifiers_test.mjs",
 )
+
+js_test(
+    name = "write_test",
+    data = [
+        ":libs",
+        "//:node_modules/@babel/types",
+        "//devinfra/js/debundle/common:sources",
+        "//devinfra/js/debundle/test_support:sources",
+    ],
+    entry_point = "write_test.mjs",
+)

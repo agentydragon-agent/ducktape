@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import * as t from "@babel/types";
 
 import { writeJsonFile, writeTextFile } from "../common/parser_options.mjs";
 import { createFile, createArtifact } from "../common/artifact.mjs";
@@ -158,6 +159,58 @@ test("emitBrowserHarness works without manifests and with no emitted parts", () 
   assert.deepEqual(runNodeScript(join(appRoot, "bootstrap.js")), runNodeScript(join(snapshotRoot, "static", "app.js")));
 });
 
+test("emitBrowserHarness rejects materialized artifact scripts that do not parse", () => {
+  const { appRoot, extractedRoot, snapshotRoot } = createWebFixtureRoots("debundle-browser-harness-syntax-");
+
+  writeHarnessFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": `console.log("source fixture");\n`,
+    },
+    html: `<!doctype html><html><head><script type="module" src="/static/app.js"></script></head><body></body></html>\n`,
+    jsEntries: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "entry.js",
+        files: [
+          createFile({
+            path: "entry.js",
+            ast: invalidReservedDefaultBindingAst(),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "entry.js",
+              role: "entry",
+            },
+          }),
+        ],
+      },
+    ],
+  });
+
+  assert.throws(
+    () =>
+      emitBrowserHarness({
+        artifact,
+        assetSummaryPath: join(extractedRoot, "asset-summary.json"),
+        force: true,
+        outDir: appRoot,
+        scriptSource: "split",
+        snapshotRoot,
+      }),
+    (error) => {
+      assert.match(error.message, /emitBrowserHarness emitted invalid JavaScript/);
+      assert.match(error.message, /static\/app\/entry\.js/);
+      assert.match(error.message, /default/);
+      return true;
+    }
+  );
+});
+
 test("emitBrowserHarness preserves sibling analysis and vendor outputs under the app root", () => {
   const { appRoot, extractedRoot, snapshotRoot } = createWebFixtureRoots("debundle-browser-harness-preserve-siblings-");
 
@@ -214,15 +267,24 @@ test("emitBrowserHarness preserves sibling analysis and vendor outputs under the
   assert.ok(existsSync(join(appRoot, "static", "app", "entry.js")));
 });
 
+function invalidReservedDefaultBindingAst() {
+  return t.file(
+    t.program([
+      t.variableDeclaration("const", [t.variableDeclarator(t.identifier("source"), t.objectExpression([]))]),
+      t.variableDeclaration("const", [
+        t.variableDeclarator(
+          t.objectPattern([t.objectProperty(t.identifier("default"), t.identifier("default"), false, true)]),
+          t.identifier("source")
+        ),
+      ]),
+    ])
+  );
+}
+
 test("emitBrowserHarness records vendor resolutions and omits swapped chunks from the app tree", async () => {
-  const {
-    appRoot,
-    extractedRoot,
-    packagesRoot,
-    root,
-    snapshotRoot,
-    vendorsRoot,
-  } = createWebFixtureRoots("debundle-browser-harness-vendor-");
+  const { appRoot, extractedRoot, packagesRoot, root, snapshotRoot, vendorsRoot } = createWebFixtureRoots(
+    "debundle-browser-harness-vendor-"
+  );
   const vendorManifestPath = join(vendorsRoot, "manifest.json");
 
   writeHarnessFixture({
@@ -313,10 +375,7 @@ test("emitBrowserHarness records vendor resolutions and omits swapped chunks fro
   assert.equal(existsSync(join(artifactVendorAppRoot, "static", "katex", SPLIT_ENTRY_FILE)), false);
 
   const generatedWrapperPath = join(vendorsRoot, "generated", "static", "cytoscape", "entry.js");
-  writeTextFile(
-    generatedWrapperPath,
-    "export default __vendor_default__;\nexport const c = __vendor_default__;\n"
-  );
+  writeTextFile(generatedWrapperPath, "export default __vendor_default__;\nexport const c = __vendor_default__;\n");
   writeJsonFile(vendorManifestPath, {
     kind: "js.vendor_resolution_manifest",
     uiVersion: FIXTURE_UI_VERSION,
@@ -343,9 +402,6 @@ test("emitBrowserHarness records vendor resolutions and omits swapped chunks fro
   });
   assert.equal(wrapperHarnessManifest.vendorResolutions.length, 1);
   assert.equal(wrapperHarnessManifest.vendorResolutions[0].chunkId, "static/cytoscape");
-  assert.equal(
-    wrapperHarnessManifest.vendorResolutions[0].generatedWrapperPath,
-    generatedWrapperPath
-  );
+  assert.equal(wrapperHarnessManifest.vendorResolutions[0].generatedWrapperPath, generatedWrapperPath);
   assert.equal(existsSync(join(appRoot, "static", "cytoscape", SPLIT_ENTRY_FILE)), false);
 });
