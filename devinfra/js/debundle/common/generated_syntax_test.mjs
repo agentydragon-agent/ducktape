@@ -21,6 +21,15 @@ test("generated JS resolution accepts browser runtime globals", () => {
   );
 });
 
+test("generated JS resolution accepts strict-mode global-write probes with globalThis fallback", () => {
+  assert.doesNotThrow(() =>
+    validateGeneratedJsResolution({
+      code: `const runtime = {};\ntry {\n  regeneratorRuntime = runtime;\n} catch {\n  globalThis.regeneratorRuntime = runtime;\n}\n`,
+      path: "static/app/entry.js",
+    })
+  );
+});
+
 test("generated JS resolution rejects missing generated imports that syntax accepts", () => {
   const code = `export function run() {\n  return Hn(Tt);\n}\n`;
 
@@ -81,6 +90,36 @@ test("generated JS resolution rejects private helpers used cross-module without 
     (error) => {
       assert.match(error.message, /static\/app\/modules\/private_helper_consumer\.js:1:22/);
       assert.match(error.message, /\bprivateHelper\b/);
+      return true;
+    }
+  );
+});
+
+test("generated JS resolution rejects undeclared global writes without a fallback", () => {
+  assert.throws(
+    () =>
+      validateGeneratedJsResolution({
+        code: `const runtime = {};\nregeneratorRuntime = runtime;\n`,
+        path: "static/app/modules/global_write.js",
+      }),
+    (error) => {
+      assert.match(error.message, /\bregeneratorRuntime\b/);
+      assert.match(error.message, /assignment target/);
+      return true;
+    }
+  );
+});
+
+test("generated JS resolution rejects undeclared global read-modify-write patterns", () => {
+  assert.throws(
+    () =>
+      validateGeneratedJsResolution({
+        code: `try {\n  regeneratorRuntime = regeneratorRuntime || {};\n} catch {\n  globalThis.regeneratorRuntime = {};\n}\n`,
+        path: "static/app/modules/global_read_modify_write.js",
+      }),
+    (error) => {
+      assert.match(error.message, /\bregeneratorRuntime\b/);
+      assert.match(error.message, /reference/);
       return true;
     }
   );
