@@ -34,7 +34,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_common_flags(parser, default_model="anthropic/claude-haiku-4-5-20251001")
     parser.add_argument("--message-limit", type=int, default=1000)
-    parser.add_argument("--time-limit", type=int, default=600, help="Per-sample wall-clock budget in seconds.")
+    parser.add_argument(
+        "--time-limit",
+        type=int,
+        default=3600,
+        help="Per-sample wall-clock budget in seconds. Inspect splits this: agent gets the full budget, scorer gets time_limit/2.",
+    )
     args = parser.parse_args()
 
     def _stamp_snapshot_dir(log_dir: object) -> None:

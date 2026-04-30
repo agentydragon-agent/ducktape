@@ -431,6 +431,15 @@ def rubric_judge(*, judge_model: str = _DEFAULT_JUDGE_MODEL, max_messages: int =
 
     async def score(state: TaskState, target: Target) -> Score:
         recovered_dir = _resolve_recovered_dir(state)
+        # Snapshot the agent's `/work/` into `recovered_dir` HERE rather than
+        # in a post-agent solver: Inspect aborts the solver list on
+        # `LimitExceededError`, so a time-limited agent never reaches a
+        # post-agent solver. The scorer runs in its own time_limit/2
+        # context regardless of how the agent ended, and the per-sample
+        # docker sandbox is still alive at this point. For validation
+        # tasks `recovered_dir` is pre-populated and there's no live
+        # sandbox; `_snapshot_into` is a no-op when `sandbox()` is unset.
+        await _snapshot_into(recovered_dir)
 
         captured: dict[str, RubricGrade] = {}
         async with _GraderContainer(
@@ -484,58 +493,61 @@ def rubric_judge(*, judge_model: str = _DEFAULT_JUDGE_MODEL, max_messages: int =
     return score
 
 
-@solver
-def _snapshot_work_dir() -> Solver:
-    """Tar `/work/` out of the agent sandbox to a host dir for the judge.
+def _resolve_snapshot_root() -> Path:
+    """Host directory under which per-sample `/work/` snapshots land.
+
+    Read from `$RE_EVAL_SNAPSHOT_DIR` (set by run.py to the eval log dir
+    so snapshots live next to the .eval log). Falls back to a fresh
+    tempdir for ad-hoc `inspect eval ...` invocations.
+    """
+    root_env = os.environ.get(_SNAPSHOT_DIR_ENV)
+    return Path(root_env) if root_env else Path(tempfile.mkdtemp(prefix="re_eval_snapshot_"))
+
+
+async def _snapshot_into(out_dir: Path) -> None:
+    """Tar the agent's `/work/` out of the active per-sample sandbox.
 
     Same idiom SWE-bench uses: stage a tarball inside the sandbox via
     `sandbox().exec(["tar", ...])`, pull bytes out with
-    `sandbox().read_file(text=False)`, extract on the host. Runs after
-    the agent regardless of how it ended (submit, message limit, time
-    limit). On success, stamps `state.metadata[RECOVERED_DIR_META]` with
-    the host dir so `rubric_judge` can bind-mount it.
+    `sandbox().read_file(text=False)`, extract on the host.
 
-    Snapshot root: `$RE_EVAL_SNAPSHOT_DIR` (set by run.py to the eval log
-    dir). If unset we still snapshot to a fresh tempdir so the scorer
-    has something to grade — only the on-disk location varies.
+    Called from inside the scorer (rubric_judge) rather than as a
+    post-agent solver. Inspect aborts the solver list on
+    `LimitExceededError`, so a time-limited agent never reaches a
+    post-agent solver — but the scorer always runs, in its own
+    `time_limit/2` context, with the per-sample sandbox still alive.
+
+    No-op when there is no active sandbox (validation tasks, where
+    `out_dir` is pre-populated at task construction).
     """
+    try:
+        sb = sandbox()
+    except Exception:
+        # No per-sample sandbox active — validation tasks. The dir is
+        # already populated by the task; nothing to do.
+        return
 
-    async def solve(state: TaskState, generate: Generate) -> TaskState:
-        root_env = os.environ.get(_SNAPSHOT_DIR_ENV)
-        snapshot_root = Path(root_env) if root_env else Path(tempfile.mkdtemp(prefix="re_eval_snapshot_"))
-        out_dir = snapshot_root / f"work_{state.sample_id}"
-        out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        in_box = "/tmp/re_eval_work.tar"
+        result = await sb.exec(["tar", "-C", _WORK_PATH, "-cf", in_box, "."])
+        if result.returncode != 0:
+            logger.warning("work snapshot tar failed: rc=%s stderr=%s", result.returncode, result.stderr)
+            return
+        data = await sb.read_file(in_box, text=False)
+    except Exception:
+        logger.exception("work snapshot failed")
+        return
 
-        try:
-            sb = sandbox()
-            in_box = "/tmp/re_eval_work.tar"
-            result = await sb.exec(["tar", "-C", _WORK_PATH, "-cf", in_box, "."])
-            if result.returncode != 0:
-                logger.warning("work snapshot tar failed: rc=%s stderr=%s", result.returncode, result.stderr)
-                # Still expose the (empty) dir to the judge so it sees an
-                # empty /work/ rather than failing with "no metadata".
-                state.metadata[_RECOVERED_DIR_META] = str(out_dir)
-                return state
-            data = await sb.read_file(in_box, text=False)
-        except Exception:
-            logger.exception("work snapshot failed")
-            state.metadata[_RECOVERED_DIR_META] = str(out_dir)
-            return state
-
-        try:
-            with tarfile.open(fileobj=io.BytesIO(data)) as tf:
-                tf.extractall(out_dir, filter="data")
-        except Exception:
-            logger.exception("work snapshot extract failed; falling back to tarball at %s/work.tar", out_dir)
-            (out_dir / "work.tar").write_bytes(data)
-        state.metadata[_RECOVERED_DIR_META] = str(out_dir)
-        return state
-
-    return solve
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+            tf.extractall(out_dir, filter="data")
+    except Exception:
+        logger.exception("work snapshot extract failed; falling back to tarball at %s/work.tar", out_dir)
+        (out_dir / "work.tar").write_bytes(data)
 
 
 @task
-def reverse_engineer_go_crypto(*, message_limit: int = 1000, time_limit: int = 600) -> Task:
+def reverse_engineer_go_crypto(*, message_limit: int = 1000, time_limit: int = 3600) -> Task:
     """Recover compilable Go source from a garbled go_crypto_server binary."""
     skill_dir = _stage_skill()
     target_binary = _stage_target_binary()
@@ -544,11 +556,20 @@ def reverse_engineer_go_crypto(*, message_limit: int = 1000, time_limit: int = 6
     skill_md = (skill_dir / "SKILL.md").read_text()
     system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(skill_md=skill_md, skill_path=_SKILL_PATH)
 
+    # Pre-stamp the recovered-source dir BEFORE the agent runs, so a
+    # time-limited / message-limited / errored agent still leaves the
+    # judge a (possibly empty) dir to grade — Inspect aborts the solver
+    # list on `LimitExceededError`, which means `_snapshot_work_dir`
+    # may never run, and we don't want that to crash the scorer.
+    sample_id = "go_crypto_server"
+    recovered_dir = _resolve_snapshot_root() / f"work_{sample_id}"
+    recovered_dir.mkdir(parents=True, exist_ok=True)
+
     sample = Sample(
-        id="go_crypto_server",
+        id=sample_id,
         input=_FIRST_USER_MESSAGE,
         files={f"{_INPUT_PATH}/target": str(target_binary), f"{_SKILL_PATH}": str(skill_dir)},
-        metadata={"specimen": "go_crypto_server", "skill": "reverse_engineer"},
+        metadata={"specimen": "go_crypto_server", "skill": "reverse_engineer", _RECOVERED_DIR_META: str(recovered_dir)},
     )
 
     submit_tool = ToolDef(
@@ -567,9 +588,12 @@ def reverse_engineer_go_crypto(*, message_limit: int = 1000, time_limit: int = 6
 
     return Task(
         dataset=MemoryDataset([sample]),
-        # Solver list: agent first, then snapshot. Inspect runs them in
-        # order; the snapshot sees the same sandbox the agent left behind.
-        solver=[as_solver(agent), _snapshot_work_dir()],
+        # Just the agent. The /work/ snapshot is taken inside rubric_judge
+        # rather than as a post-agent solver, because Inspect aborts the
+        # solver list on LimitExceededError — meaning a time-limited
+        # agent would skip a post-agent solver. The scorer runs even
+        # then, in its own time_limit/2 context.
+        solver=as_solver(agent),
         scorer=rubric_judge(),
         sandbox=SandboxEnvironmentSpec(type="docker", config=str(compose_path)),
         message_limit=message_limit,
