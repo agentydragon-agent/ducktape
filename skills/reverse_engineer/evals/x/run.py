@@ -37,8 +37,9 @@ def main() -> None:
     parser.add_argument(
         "--time-limit",
         type=int,
-        default=3600,
-        help="Per-sample wall-clock budget in seconds. Inspect splits this: agent gets the full budget, scorer gets time_limit/2.",
+        default=43200,
+        help="Per-sample wall-clock budget in seconds (default: 12h). "
+        "Inspect splits this: agent gets the full budget, scorer gets time_limit/2.",
     )
     args = parser.parse_args()
 

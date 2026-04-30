@@ -547,7 +547,7 @@ async def _snapshot_into(out_dir: Path) -> None:
 
 
 @task
-def reverse_engineer_go_crypto(*, message_limit: int = 1000, time_limit: int = 3600) -> Task:
+def reverse_engineer_go_crypto(*, message_limit: int = 1000, time_limit: int = 43200) -> Task:
     """Recover compilable Go source from a garbled go_crypto_server binary."""
     skill_dir = _stage_skill()
     target_binary = _stage_target_binary()
