@@ -1789,6 +1789,42 @@ export { readCloudFunctionsClientSingleton };
   });
 });
 
+test("keeps trivial aliases staged when their target is initialized by ordered effects", () => {
+  const source = `let navigationRectTracker_tentative;
+class NavigationRectTracker_tentative {
+  constructor() {
+    this.label = "ready";
+  }
+}
+navigationRectTracker_tentative = new NavigationRectTracker_tentative();
+const vt = navigationRectTracker_tentative;
+console.log(vt.label);
+export { vt };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperationWithAttachedSideEffects(source, {
+      attachedSideEffectIndexes: [0],
+      init: "init_navigation_alias_region",
+      ownerNames: ["navigationRectTracker_tentative", "NavigationRectTracker_tentative", "vt"],
+      targetFile: "regions/navigation_alias_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/navigation_alias_region.js");
+  assert.match(runtimeCode, /init_navigation_alias_region\(\);/);
+  assert.match(extractedCode, /\blet [^;]*\bvt\b/);
+  assert.match(extractedCode, /\bvt = navigationRectTracker_tentative;/);
+  assert.doesNotMatch(extractedCode, /^\s*const vt = navigationRectTracker_tentative;/m);
+
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-staged-trivial-alias-target-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("naturalizes class expressions with unresolved global superclasses only before ordering barriers", () => {
   const source = `let FirebaseClientError = class FirebaseClientError extends Error {
   constructor(message) {
@@ -2197,11 +2233,15 @@ export { xi };
     },
   ];
 
-  const result = extractOrderedInitRegionsInCode(source, [consumerOperation, providerOperation, siblingProviderOperation], {
-    analysis,
-    chunkId: "static/app",
-    file: "runtime.js",
-  });
+  const result = extractOrderedInitRegionsInCode(
+    source,
+    [consumerOperation, providerOperation, siblingProviderOperation],
+    {
+      analysis,
+      chunkId: "static/app",
+      file: "runtime.js",
+    }
+  );
 
   const providerCode = result.files.get("regions/command_runtime.js");
   const consumerCode = result.files.get("regions/prompting_runtime.js");

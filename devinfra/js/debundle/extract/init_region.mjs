@@ -489,6 +489,12 @@ function resolveExtractOperation(
         programItemsByOrdinal,
         remainingProgramValidationIndex,
       });
+  const safeTrivialAliasDeclarationKeys = plainImportEligible
+    ? new Set()
+    : buildSafeTrivialAliasDeclarationKeys(stageRuns, {
+        exportBindings,
+        naturalizedDeclarationEntries,
+      });
 
   return {
     endOrdinal,
@@ -507,6 +513,7 @@ function resolveExtractOperation(
     naturalizedDeclarationEntries,
     naturalizedDeclarationKeys: new Set(naturalizedDeclarationEntries.map(ownerEntryBoundaryKey)),
     plainImportEligible,
+    safeTrivialAliasDeclarationKeys,
     stageRuns,
     startOrdinal,
     targetFile,
@@ -576,6 +583,55 @@ function buildNaturalizedDeclarationEntries(stageRuns, { programItemsByOrdinal, 
     recordPlainImportSafeProvider(stageEntry, safetyContext);
   }
   return naturalizedEntries;
+}
+
+function buildSafeTrivialAliasDeclarationKeys(stageRuns, { exportBindings, naturalizedDeclarationEntries }) {
+  const selectedBindingNames = new Set(exportBindings.map((binding) => binding.local));
+  const safeSelectedBindingNames = naturalizedModuleEvaluationSafeBindingNameSet(naturalizedDeclarationEntries);
+  const safeAliasKeys = new Set();
+  for (const stageEntry of buildCanonicalPlainImportStageEntries(stageRuns)) {
+    const declaration = trivialAliasDeclaration(stageEntry);
+    if (!declaration) {
+      continue;
+    }
+    const aliasName = declaration.declarations[0]?.id?.name;
+    if (!aliasName) {
+      continue;
+    }
+    const referencedNames = referencedNamesForTrivialAliasDeclaration(declaration);
+    const referencesOnlyModuleEvaluationSafeBindings = referencedNames.every(
+      (name) => !selectedBindingNames.has(name) || safeSelectedBindingNames.has(name)
+    );
+    if (!referencesOnlyModuleEvaluationSafeBindings) {
+      continue;
+    }
+    safeAliasKeys.add(ownerEntryBoundaryKey(stageEntry));
+    safeSelectedBindingNames.add(aliasName);
+  }
+  return safeAliasKeys;
+}
+
+function naturalizedModuleEvaluationSafeBindingNameSet(naturalizedDeclarationEntries) {
+  const safeNames = new Set();
+  for (const stageEntry of naturalizedDeclarationEntries ?? []) {
+    if (!isModuleEvaluationSafeNaturalizedEntry(stageEntry)) {
+      continue;
+    }
+    for (const name of selectedEntryBindingNames(stageEntry)) {
+      safeNames.add(name);
+    }
+  }
+  return safeNames;
+}
+
+function isModuleEvaluationSafeNaturalizedEntry(stageEntry) {
+  if (stageEntry.kind !== "declaration" || stageEntry.fragment) {
+    return false;
+  }
+  if (stageEntry.owner.type === "VariableDeclaration") {
+    return stageEntry.statement.kind === "const" || hasNoOwnerTopLevelWrites(stageEntry.owner);
+  }
+  return hasNoOwnerTopLevelWrites(stageEntry.owner);
 }
 
 function stageEntryProgramItemId(stageEntry) {
@@ -1733,6 +1789,12 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
   const trivialAliasNames = new Set();
   for (const stageRun of entry.stageRuns) {
     for (const stageEntry of stageRun.stageEntries) {
+      if (stageEntry.kind !== "declaration") {
+        continue;
+      }
+      if (!entry.safeTrivialAliasDeclarationKeys?.has(ownerEntryBoundaryKey(stageEntry))) {
+        continue;
+      }
       const declaration = trivialAliasDeclaration(stageEntry);
       if (declaration) {
         trivialAliasDeclarations.push(declaration);
@@ -1765,6 +1827,7 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
           t.blockStatement(
             buildInitStatements(stage.stageEntries, localRenameMap, entry.atomicBoundaryUnits ?? [], {
               naturalizedDeclarationKeys: entry.naturalizedDeclarationKeys,
+              safeTrivialAliasDeclarationKeys: entry.safeTrivialAliasDeclarationKeys,
             })
           )
         )
@@ -2172,7 +2235,7 @@ function buildInitStatements(
   stageEntries,
   localRenameMap,
   atomicBoundaryUnits = [],
-  { naturalizedDeclarationKeys = new Set() } = {}
+  { naturalizedDeclarationKeys = new Set(), safeTrivialAliasDeclarationKeys = new Set() } = {}
 ) {
   const statements = [];
   const atomicBoundaryIndex = buildAtomicBoundaryIndex(atomicBoundaryUnits);
@@ -2182,6 +2245,9 @@ function buildInitStatements(
       continue;
     }
     if (naturalizedDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
+      continue;
+    }
+    if (safeTrivialAliasDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
       continue;
     }
     const { owner, statement } = entry;
@@ -2211,6 +2277,9 @@ function buildInitStatements(
     }
     const { owner, statement } = entry;
     if (naturalizedDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
+      continue;
+    }
+    if (safeTrivialAliasDeclarationKeys.has(ownerEntryBoundaryKey(entry))) {
       continue;
     }
     if (owner.type === "FunctionDeclaration") {
@@ -3363,15 +3432,10 @@ function stageEntryNeedsInitWork(entry, stageEntry) {
   if (stageEntry.kind !== "declaration") {
     return true;
   }
-  if (isTrivialAliasDeclarationEntry(stageEntry)) {
+  if (entry.safeTrivialAliasDeclarationKeys?.has(ownerEntryBoundaryKey(stageEntry))) {
     return false;
   }
   return !entry.naturalizedDeclarationKeys?.has(ownerEntryBoundaryKey(stageEntry));
-}
-
-function isTrivialAliasDeclarationEntry(stageEntry) {
-  const declaration = trivialAliasDeclaration(stageEntry);
-  return declaration != null;
 }
 
 function trivialAliasDeclaration(stageEntry) {
@@ -3395,6 +3459,26 @@ function trivialAliasDeclaration(stageEntry) {
   return t.variableDeclaration("const", [
     t.variableDeclarator(t.cloneNode(declarator.id), t.cloneNode(declarator.init, true)),
   ]);
+}
+
+function referencedNamesForTrivialAliasDeclaration(declaration) {
+  const init = declaration.declarations[0]?.init;
+  const names = new Set();
+  collectTrivialAliasInitializerReferencedNames(init, names);
+  return [...names];
+}
+
+function collectTrivialAliasInitializerReferencedNames(node, names) {
+  if (!node) {
+    return;
+  }
+  if (t.isIdentifier(node)) {
+    names.add(node.name);
+    return;
+  }
+  if (t.isMemberExpression(node) && !node.computed) {
+    collectTrivialAliasInitializerReferencedNames(node.object, names);
+  }
 }
 
 function isTrivialAliasInitializer(node) {
