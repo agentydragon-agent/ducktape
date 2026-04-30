@@ -20,8 +20,6 @@ spec:
     spec:
       serviceAccountName: manifold-mcp
       enableServiceLinks: false
-      imagePullSecrets:
-        - name: harbor-pull-robot
       containers:
         - name: manifold-mcp-server
           image: ghcr.io/agentydragon/manifold-mcp-server:devel-20260430035848-fe4a162 # {"$imagepolicy": "flux-system:manifold-mcp-server"}
