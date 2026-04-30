@@ -15,9 +15,21 @@ const manifoldPath = require.resolve("manifold-mcp-server/build/index.js");
 
 const port = process.env.PORT ?? "8080";
 
+// `--stateful` keeps a single stdio child per HTTP session (the default is
+// per-request), so Initialize state survives across the facade's
+// list_tools/call_tool calls in the same FastMCP ProxyClient session.
 const child = spawn(
   "node",
-  [supergatewayPath, "--stdio", `node ${manifoldPath}`, "--outputTransport", "streamableHttp", "--port", port],
+  [
+    supergatewayPath,
+    "--stdio",
+    `node ${manifoldPath}`,
+    "--outputTransport",
+    "streamableHttp",
+    "--stateful",
+    "--port",
+    port,
+  ],
   { stdio: "inherit" }
 );
 
