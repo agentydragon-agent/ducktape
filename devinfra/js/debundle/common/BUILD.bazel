@@ -23,7 +23,18 @@ js_library(
     visibility = ["//visibility:public"],
     deps = [
         "//:node_modules/@babel/parser",
+        "//:node_modules/@babel/traverse",
     ],
+)
+
+js_test(
+    name = "generated_syntax_test",
+    data = [
+        "generated_syntax.mjs",
+        ":sources",
+        "//:node_modules/@babel/traverse",
+    ],
+    entry_point = "generated_syntax_test.mjs",
 )
 
 js_test(

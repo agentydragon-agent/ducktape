@@ -29,6 +29,7 @@ export function writeJsTree({ artifact, force = false, outDir }) {
       writeTextFile(outputPath, content);
       syntaxValidator.checkFile({
         code: content,
+        context: file.metadata,
         parserOptions: file.parserOptions,
         path: relativeWorkspacePath(outputPath),
       });

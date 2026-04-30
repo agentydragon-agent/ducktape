@@ -3,7 +3,7 @@ import test from "node:test";
 import * as t from "@babel/types";
 
 import { createArtifact, createFile } from "../common/artifact.mjs";
-import { createWebFixtureRoots } from "../test_support/fixtures.mjs";
+import { createWebFixtureRoots, parseModuleCode } from "../test_support/fixtures.mjs";
 import { writeJsTree } from "./write.mjs";
 
 test("writeJsTree rejects emitted modules that do not parse", () => {
@@ -39,6 +39,50 @@ test("writeJsTree rejects emitted modules that do not parse", () => {
       assert.match(error.message, /writeJsTree emitted invalid JavaScript/);
       assert.match(error.message, /static\/app\/entry\.js/);
       assert.match(error.message, /default/);
+      return true;
+    }
+  );
+});
+
+test("writeJsTree rejects emitted modules with unresolved generated identifiers", () => {
+  const { outRoot } = createWebFixtureRoots("debundle-write-js-tree-resolution-");
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "modules/card.js",
+        files: [
+          createFile({
+            path: "modules/card.js",
+            ast: parseModuleCode(`export const value = Hn();\n`),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "modules/card.js",
+              moduleExtraction: {
+                id: "logical_module_0003",
+                nameHint: "Card",
+                ownerIds: ["owner_00011"],
+              },
+              role: "module",
+            },
+          }),
+        ],
+      },
+    ],
+  });
+
+  assert.throws(
+    () =>
+      writeJsTree({
+        artifact,
+        force: true,
+        outDir: outRoot,
+      }),
+    (error) => {
+      assert.match(error.message, /writeJsTree emitted unresolved identifier/);
+      assert.match(error.message, /static\/app\/modules\/card\.js/);
+      assert.match(error.message, /\bHn\b/);
+      assert.match(error.message, /logical_module_0003/);
       return true;
     }
   );

@@ -281,6 +281,7 @@ function materializeArtifactScripts({ artifact, outDir, syntaxValidator }) {
       writeTextFile(targetPath, content);
       syntaxValidator?.checkFile({
         code: content,
+        context: fileArtifact.metadata,
         parserOptions: fileArtifact.parserOptions,
         path: relativeWorkspacePath(targetPath),
       });
