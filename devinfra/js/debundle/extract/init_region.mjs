@@ -26,6 +26,56 @@ const SELECTED_MODULE_SNAPSHOT_PREFIX = "__dt_selected_module_snapshot__";
 // than spending seconds proving a small readability improvement.
 const MAX_CONST_PROMOTION_SCAN_NODE_COUNT = 5_000;
 const MAX_CONST_PROMOTION_INITIALIZER_NODE_COUNT = 256;
+const RESERVED_LOCAL_BINDING_NAMES = new Set([
+  "arguments",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "eval",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "implements",
+  "import",
+  "in",
+  "instanceof",
+  "interface",
+  "let",
+  "new",
+  "null",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "return",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+]);
 const SELECTED_MODULE_LOWERING_METADATA = Object.freeze({
   kind: "lowerer_helper",
   stage: "selected_module_lowering",
@@ -2959,8 +3009,15 @@ function readableThisPropertyAssignmentName(node) {
   return t.isIdentifier(node.property) ? node.property.name : null;
 }
 
+function isValidLocalBindingIdentifierName(name) {
+  return t.isValidIdentifier(name) && !RESERVED_LOCAL_BINDING_NAMES.has(name);
+}
+
 function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, externallyCapturedTargetNames) {
   if (candidate.from === candidate.to || !isScrambledIdentifier(candidate.from)) {
+    return false;
+  }
+  if (!isValidLocalBindingIdentifierName(candidate.to)) {
     return false;
   }
   const binding = candidate.binding ?? scopePath.scope.getOwnBinding(candidate.from);

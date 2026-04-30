@@ -515,6 +515,41 @@ export { _Wt };
   });
 });
 
+test("graph-generated extraction keeps aliases for reserved destructuring property names", () => {
+  const source = `async function readPayload() {
+  const { default: e, defaultValue: n } = await Promise.resolve({
+    default: "reserved",
+    defaultValue: "allowed",
+  });
+  return {
+    default: e,
+    defaultValue: n,
+  };
+}
+console.log(JSON.stringify(await readPayload()));
+export { readPayload };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_reserved_destructuring_readable_names",
+      ownerNames: ["readPayload"],
+      targetFile: "regions/reserved_destructuring_readable_names.js",
+    }),
+  ]);
+
+  const extractedCode = result.files.get("regions/reserved_destructuring_readable_names.js");
+  assert.match(extractedCode, /const \{\s*default: e,\s*defaultValue\s*\} = await Promise\.resolve/s);
+  assert.match(extractedCode, /return \{\s*default: e,\s*defaultValue\s*\};/s);
+  assert.doesNotMatch(extractedCode, /\{\s*default\s*\} = await/s);
+  assert.doesNotMatch(extractedCode, /\bconst default\b/);
+  assertRunnableEquivalent({
+    files: {},
+    prefix: "debundle-extract-ordered-init-reserved-destructuring-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("graph-generated extraction keeps function-expression param aliases when a readable rename would shadow an outer binding", () => {
   const source = `const nodeSpace = "outer";
 const _Wt = async function _Wt({ nodeSpace: n, text: e }) {
