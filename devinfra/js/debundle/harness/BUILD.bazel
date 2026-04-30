@@ -90,12 +90,6 @@ js_library(
     ],
 )
 
-js_library(
-    name = "build_mock_golden_lib",
-    srcs = ["build_mock_golden.mjs"],
-    deps = [":mock_pipeline_lib"],
-)
-
 js_binary(
     name = "build_mock_bundle",
     data = [
@@ -121,15 +115,6 @@ js_run_binary(
     args = ["testdata/mock_browser_bundle/generated"],
     chdir = package_name(),
     tool = ":build_mock_bundle",
-)
-
-js_binary(
-    name = "build_mock_golden",
-    data = [
-        ":build_mock_golden_lib",
-        ":mock_testdata",
-    ],
-    entry_point = "build_mock_golden.mjs",
 )
 
 js_test(
@@ -176,29 +161,10 @@ js_test(
     entry_point = "mock_equivalence_test.mjs",
 )
 
-js_test(
-    name = "mock_golden_test",
-    size = "small",
-    data = [
-        ":build_mock_golden_lib",
-        ":mock_pipeline_lib",
-        ":mock_testdata",
-        "//devinfra/js/debundle/test_support:sources",
-    ],
-    entry_point = "mock_golden_test.mjs",
-)
-
 js_binary(
     name = "generate_excalidraw_reference",
     data = [
         "benchmark_excalidraw.mjs",
-        "testdata/excalidraw_reference/HUMANLIKE_GAPS.md",
-        "testdata/excalidraw_reference/excalidraw_app_state.js",
-        "testdata/excalidraw_reference/excalidraw_canvas_interactions.js",
-        "testdata/excalidraw_reference/excalidraw_element_mutations.js",
-        "testdata/excalidraw_reference/excalidraw_history_stack.js",
-        "testdata/excalidraw_reference/excalidraw_scene_restore.js",
-        "testdata/excalidraw_reference/excalidraw_ui_actions.js",
         "testdata/excalidraw_reference/spec.jsonc",
         ":excalidraw_bundle_assets",
         ":generate_excalidraw_reference_lib",
@@ -229,8 +195,6 @@ js_test(
     size = "large",
     data = [
         "excalidraw_reference_golden_test.mjs",
-        "testdata/excalidraw_reference/HUMANLIKE_GAPS.md",
-        "testdata/excalidraw_reference/README.md",
         "testdata/excalidraw_reference/excalidraw_app_state.js",
         "testdata/excalidraw_reference/excalidraw_canvas_interactions.js",
         "testdata/excalidraw_reference/excalidraw_element_mutations.js",
