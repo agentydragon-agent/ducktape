@@ -211,6 +211,120 @@ test("emitBrowserHarness rejects materialized artifact scripts that do not parse
   );
 });
 
+test("emitBrowserHarness syntax-checks executable entries without requiring static resolution", () => {
+  const { appRoot, extractedRoot, snapshotRoot } = createWebFixtureRoots("debundle-browser-harness-entry-resolution-");
+
+  writeHarnessFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": `console.log("source fixture");\n`,
+    },
+    html: `<!doctype html><html><head><script type="module" src="/static/app.js"></script></head><body></body></html>\n`,
+    jsEntries: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "entry.js",
+        files: [
+          createFile({
+            path: "entry.js",
+            ast: parseModuleCode(
+              `const runtime = {};\ntry {\n  regeneratorRuntime = runtime;\n} catch {\n  globalThis.regeneratorRuntime = runtime;\n}\n`
+            ),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "entry.js",
+              role: "entry",
+            },
+          }),
+        ],
+      },
+    ],
+  });
+
+  const { manifest } = emitBrowserHarness({
+    artifact,
+    assetSummaryPath: join(extractedRoot, "asset-summary.json"),
+    force: true,
+    outDir: appRoot,
+    scriptSource: "split",
+    snapshotRoot,
+  });
+
+  assert.deepEqual(manifest.syntaxValidation.resolutionFiles, [join(appRoot, "bootstrap.js")]);
+});
+
+test("emitBrowserHarness resolution-checks generated module files", () => {
+  const { appRoot, extractedRoot, snapshotRoot } = createWebFixtureRoots("debundle-browser-harness-module-resolution-");
+
+  writeHarnessFixture({
+    extractedRoot,
+    files: {
+      "static/app.js": `console.log("source fixture");\n`,
+    },
+    html: `<!doctype html><html><head><script type="module" src="/static/app.js"></script></head><body></body></html>\n`,
+    jsEntries: ["static/app.js"],
+    snapshotRoot,
+  });
+
+  const artifact = createArtifact({
+    chunks: [
+      {
+        chunkId: "static/app",
+        entryFile: "entry.js",
+        files: [
+          createFile({
+            path: "entry.js",
+            ast: parseModuleCode(`import "./modules/card.js";\n`),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "entry.js",
+              role: "entry",
+            },
+          }),
+          createFile({
+            path: "modules/card.js",
+            ast: parseModuleCode(`export const value = Hn();\n`),
+            metadata: {
+              chunkId: "static/app",
+              chunkFile: "modules/card.js",
+              moduleExtraction: {
+                id: "logical_module_0003",
+                nameHint: "Card",
+                ownerIds: ["owner_00011"],
+              },
+              role: "module",
+            },
+          }),
+        ],
+      },
+    ],
+  });
+
+  assert.throws(
+    () =>
+      emitBrowserHarness({
+        artifact,
+        assetSummaryPath: join(extractedRoot, "asset-summary.json"),
+        force: true,
+        outDir: appRoot,
+        scriptSource: "split",
+        snapshotRoot,
+      }),
+    (error) => {
+      assert.match(error.message, /emitBrowserHarness emitted unresolved identifier/);
+      assert.match(error.message, /static\/app\/modules\/card\.js/);
+      assert.match(error.message, /\bHn\b/);
+      assert.match(error.message, /logical_module_0003/);
+      return true;
+    }
+  );
+});
+
 test("emitBrowserHarness preserves sibling analysis and vendor outputs under the app root", () => {
   const { appRoot, extractedRoot, snapshotRoot } = createWebFixtureRoots("debundle-browser-harness-preserve-siblings-");
 

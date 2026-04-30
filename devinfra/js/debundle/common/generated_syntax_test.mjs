@@ -15,17 +15,8 @@ test("generated JS resolution accepts imported generated helpers", () => {
 test("generated JS resolution accepts browser runtime globals", () => {
   assert.doesNotThrow(() =>
     validateGeneratedJsResolution({
-      code: `window.ducktapeReady = document.body !== null && globalThis.location !== undefined && global !== null;\n`,
+      code: `window.ducktapeReady = document.body !== null && globalThis.location !== undefined;\n`,
       path: "static/app/modules/browser_globals.js",
-    })
-  );
-});
-
-test("generated JS resolution accepts strict-mode global-write probes with globalThis fallback", () => {
-  assert.doesNotThrow(() =>
-    validateGeneratedJsResolution({
-      code: `const runtime = {};\ntry {\n  regeneratorRuntime = runtime;\n} catch {\n  globalThis.regeneratorRuntime = runtime;\n}\n`,
-      path: "static/app/entry.js",
     })
   );
 });
@@ -110,6 +101,20 @@ test("generated JS resolution rejects undeclared global writes without a fallbac
   );
 });
 
+test("generated JS resolution rejects Node-style global aliases in generated modules", () => {
+  assert.throws(
+    () =>
+      validateGeneratedJsResolution({
+        code: `export const root = global;\n`,
+        path: "static/app/modules/node_global_alias.js",
+      }),
+    (error) => {
+      assert.match(error.message, /\bglobal\b/);
+      return true;
+    }
+  );
+});
+
 test("generated JS resolution rejects undeclared global read-modify-write patterns", () => {
   assert.throws(
     () =>
@@ -119,7 +124,7 @@ test("generated JS resolution rejects undeclared global read-modify-write patter
       }),
     (error) => {
       assert.match(error.message, /\bregeneratorRuntime\b/);
-      assert.match(error.message, /reference/);
+      assert.match(error.message, /(assignment target|reference)/);
       return true;
     }
   );

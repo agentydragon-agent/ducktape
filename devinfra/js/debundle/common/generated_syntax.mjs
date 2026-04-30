@@ -84,7 +84,6 @@ export const DEFAULT_GENERATED_JS_GLOBALS = Object.freeze(
     "crypto",
     "document",
     "fetch",
-    "global",
     "globalThis",
     "history",
     "indexedDB",
@@ -112,9 +111,16 @@ export function createGeneratedJsSyntaxValidator({
 } = {}) {
   const checkedPaths = new Set();
   const files = [];
+  const resolutionFiles = [];
 
   return {
-    checkFile({ path, code, context = undefined, parserOptions = DEFAULT_PARSER_OPTIONS }) {
+    checkFile({
+      path,
+      code,
+      checkResolution: fileCheckResolution = checkResolution,
+      context = undefined,
+      parserOptions = DEFAULT_PARSER_OPTIONS,
+    }) {
       validateCheckInput(path, code);
       if (checkedPaths.has(path)) {
         return false;
@@ -126,7 +132,7 @@ export function createGeneratedJsSyntaxValidator({
         path,
         stageName,
       });
-      if (checkResolution) {
+      if (fileCheckResolution) {
         validateGeneratedJsResolutionAst({
           allowlistedGlobals,
           ast,
@@ -136,17 +142,22 @@ export function createGeneratedJsSyntaxValidator({
         });
       }
       files.push(path);
+      if (fileCheckResolution) {
+        resolutionFiles.push(path);
+      }
       return true;
     },
 
     manifest() {
       return {
         kind: "js.generated_js_syntax_validation_manifest",
-        checks: checkResolution ? ["syntax", "resolution"] : ["syntax"],
+        checks: resolutionFiles.length > 0 ? ["syntax", "resolution"] : ["syntax"],
         counts: {
           files: files.length,
+          resolutionFiles: resolutionFiles.length,
         },
         files: [...files],
+        resolutionFiles: [...resolutionFiles],
       };
     },
   };
@@ -241,9 +252,6 @@ function validateGeneratedJsResolutionAst({
         if (hasResolvedBinding(expressionPath.scope, identifier.name, facts)) {
           continue;
         }
-        if (isFallbackGlobalAssignmentProbe(expressionPath, identifier)) {
-          continue;
-        }
         checkName(identifier.name, identifier, "assignment target");
       }
     },
@@ -315,77 +323,6 @@ function checkLoopAssignmentTarget(statementPath, checkName, facts) {
     }
     checkName(identifier.name, identifier, "loop assignment target");
   }
-}
-
-function isFallbackGlobalAssignmentProbe(expressionPath, identifier) {
-  if (
-    expressionPath.node.operator !== "=" ||
-    expressionPath.node.left !== identifier ||
-    identifier.type !== "Identifier"
-  ) {
-    return false;
-  }
-
-  const tryPath = expressionPath.findParent((parentPath) => parentPath.isTryStatement());
-  if (!tryPath || !isPathWithin(expressionPath, tryPath.get("block"))) {
-    return false;
-  }
-
-  return catchAssignsGlobalThisName(tryPath.node.handler, identifier.name);
-}
-
-function catchAssignsGlobalThisName(handler, name) {
-  return containsAstNode(handler?.body, (node) => {
-    return node.type === "AssignmentExpression" && node.operator === "=" && isGlobalThisMember(node.left, name);
-  });
-}
-
-function isGlobalThisMember(node, name) {
-  if (
-    !node ||
-    node.type !== "MemberExpression" ||
-    node.object?.type !== "Identifier" ||
-    node.object.name !== "globalThis"
-  ) {
-    return false;
-  }
-  if (node.computed) {
-    return node.property?.type === "StringLiteral" && node.property.value === name;
-  }
-  return node.property?.type === "Identifier" && node.property.name === name;
-}
-
-function containsAstNode(node, predicate) {
-  if (!node || typeof node !== "object") {
-    return false;
-  }
-  if (node.type && predicate(node)) {
-    return true;
-  }
-  for (const [key, value] of Object.entries(node)) {
-    if (key === "loc" || key === "start" || key === "end") {
-      continue;
-    }
-    if (Array.isArray(value)) {
-      if (value.some((entry) => containsAstNode(entry, predicate))) {
-        return true;
-      }
-      continue;
-    }
-    if (value && typeof value === "object" && containsAstNode(value, predicate)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function isPathWithin(path, ancestorPath) {
-  for (let current = path; current; current = current.parentPath) {
-    if (current === ancestorPath || current.node === ancestorPath.node) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function hasResolvedBinding(scope, name, facts) {

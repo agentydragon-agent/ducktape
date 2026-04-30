@@ -281,6 +281,7 @@ function materializeArtifactScripts({ artifact, outDir, syntaxValidator }) {
       writeTextFile(targetPath, content);
       syntaxValidator?.checkFile({
         code: content,
+        checkResolution: shouldCheckArtifactFileResolution(fileArtifact),
         context: fileArtifact.metadata,
         parserOptions: fileArtifact.parserOptions,
         path: relativeWorkspacePath(targetPath),
@@ -291,6 +292,11 @@ function materializeArtifactScripts({ artifact, outDir, syntaxValidator }) {
       writeJsonFile(join(chunkOutDir, "manifest.json"), chunkManifest);
     }
   }
+}
+
+function shouldCheckArtifactFileResolution(fileArtifact) {
+  const metadata = fileArtifact.metadata ?? {};
+  return metadata.role === "module" || Boolean(metadata.generated) || Boolean(metadata.moduleExtraction);
 }
 
 function prepareHarnessOutputDir(outDir, { force, preserveTopLevelNames = [] }) {
