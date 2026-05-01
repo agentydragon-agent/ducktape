@@ -50,130 +50,6 @@ Live investigation log for the Foxconn DW5934e WWAN modem setup on the Dell Rugg
   `FoxFlss -f Check_RF_SSKU` via `systemd-run` (transient unit
   `foxflss-rf-cal.service`). Fires after bearer is fully established.
 
-## Root Cause: Incomplete eSIM Activation (found 2026-04-20)
-
-### Summary
-
-The eSIM profile in the modem was **never fully activated** with Google Fi. The profile
-was downloaded to the eUICC chip but the carrier-side provisioning was never completed.
-Google Fi's app shows only the Pixel 6 phone — the laptop/modem is not registered as
-a device on the account. T-Mobile's network allows the unactivated SIM to register and
-get minimal data service, but applies severe QoS throttling (~30 kbps TCP, ~7.5 KB/s
-effective throughput).
-
-### eSIM Identity
-
-| Field      | Value                                          |
-| ---------- | ---------------------------------------------- |
-| IMSI       | `310240277530456` (MCC/MNC 310/240 = T-Mobile) |
-| ICCID      | `8901240270175304567`                          |
-| EID        | `89033023427100000000053696008750`             |
-| GID1       | `4276`                                         |
-| SIM slot   | slot 2 (eSIM), slot 1 (physical) empty         |
-| Modem IMEI | `356398950074094`                              |
-
-### Evidence Chain
-
-1. **Google Fi app** shows only the Pixel 6 (IMEI [redacted]). The modem's
-   IMEI `356398950074094` is not listed. No data-only SIM/device exists on the account.
-
-2. **SIM IMSI operator `310240`** (T-Mobile direct) differs from the **network
-   registration operator `310260`** (Google Fi). Normal for Google Fi MVNO, but
-   combined with absence from the Fi app, indicates an incomplete activation.
-
-3. **TCP traffic is shaped to ~30 kbps** while ICMP ping flows normally at 40-60ms.
-   TCP RTT is consistently 320-550ms (vs 40-60ms ICMP), with 36% packet reordering.
-   This differential treatment is characteristic of carrier-level QoS throttling on
-   unauthorized/unactivated devices.
-
-4. **Throughput identical across all protocols and configurations tested**:
-   - IPv4 vs IPv6: same ~7.5 KB/s
-   - HTTP vs HTTPS: same
-   - cubic vs BBR congestion control: same
-   - LTE-only vs LTE+5G: same (on LTE)
-   - Single vs parallel connections: same
-   - Different servers (Tele2, Google CDN): same
-
-5. **Phone with worse signal works fine**: Phone at -119 dBm RSRP on LTE in same
-   location has normal throughput. Modem at -110 dBm RSSI gets 7.5 KB/s. Rules out
-   signal/coverage as cause.
-
-### Fix: eSIM Re-provisioning (2026-04-20)
-
-New Google Fi data-only eSIM obtained from `fi.google.com` (web UI, not app —
-the app only offers physical SIM kits). The web flow provides an eSIM QR code.
-
-**Steps completed:**
-
-1. Decoded QR to LPA string:
-   `LPA:1$sm-v4-007-a-gtm.pr.go-esim.com$TY93BCW699ZG4WBL3Z8YDWAF05GDUO4D`
-
-2. Used `lpac` with MBIM backend to access eUICC (key: **`LPAC_APDU_MBIM_UIM_SLOT=2`**
-   was required — without it, lpac tries slot 1 which is empty and fails with
-   "no channel response received").
-
-3. Downloaded new profile — all GSMA RSP steps succeeded:
-   - New ICCID: `8901240270177439031`
-   - Provider: Google Fi, name: Google
-
-4. Disabled old profile (ICCID `8901240270175304567`) — success.
-
-5. Enabled new profile (ICCID `8901240270177439031`) — success.
-
-6. **MBIM session broke after profile switch** — "SelectFailed" on all subsequent
-   lpac operations. This is expected: eUICC profile switch triggers a SIM reset,
-   which invalidates all MBIM UICC channels. The modem needs a power cycle (reboot)
-   to cleanly load the new profile.
-
-**Current state (pre-reboot):** MM still shows old ICCID because the modem hasn't
-reloaded the SIM. The eUICC has the new profile enabled internally.
-
-**After reboot, verify:**
-
-```bash
-# 1. Check new SIM identity
-mmcli -m 0 | grep -E 'iccid|imsi|operator'
-# Expected: iccid=8901240270177439031, operator=Google Fi
-
-# 2. Lock to LTE (5G NR unusable at primary location)
-mmcli -m 0 --set-allowed-modes=4g
-
-# 3. Connect
-nmcli connection up "Google Fi"
-
-# 4. Test throughput — this is the critical test
-ping -I wwan0 -c 5 8.8.8.8
-curl --interface wwan0 -4 -o /dev/null -sm 20 \
-  -w "speed: %{speed_download} B/s\ntime: %{time_total}s\n" \
-  http://speedtest.tele2.net/1MB.zip
-
-# 5. Check TCP RTT vs ICMP (the smoking gun metric)
-# Start download in background, then check TCP state:
-curl --interface wwan0 -4 -o /dev/null -sm 15 http://speedtest.tele2.net/1MB.zip &
-sleep 3 && ss -tnei dst speedtest.tele2.net | grep -E 'rtt|delivery|ooo'
-# If TCP RTT ≈ ICMP RTT (not 10x higher), the throttle is gone.
-
-# 6. If throughput still bad, check Google Fi app — does the modem
-#    now appear as a device on the account?
-```
-
-**If the activation code expired** (profile downloaded but Google Fi backend
-rejected it), get a new QR from `fi.google.com` and repeat. The `lpac` workflow
-is proven to work on this modem — the full cycle takes ~2 minutes.
-
-**eUICC profile inventory (as of 2026-04-21):**
-
-| #   | ICCID                 | Provider  | State       | Class       |
-| --- | --------------------- | --------- | ----------- | ----------- |
-| 1   | `8901240270176681898` | Google Fi | **enabled** | operational |
-
-All old profiles (GSMA test, two previous Google Fi attempts) have been deleted.
-The current profile was downloaded from activation code
-`LPA:1$sm-v4-007-a-gtm.pr.go-esim.com$N68E5CFZDWH07L815MXG7VJ5EO0W5J11`.
-
-**Pending**: Reboot needed for MM to see the enabled profile. After reboot,
-verify throughput and check whether Google Fi app shows the device.
-
 ## Modem Reset Methods (what works, what doesn't)
 
 The modem is a separate computer (Qualcomm SDX72 SoC) with its own firmware.
@@ -365,182 +241,34 @@ the profile IS installed — just enable it.
 - **Running FoxFlss without MM** — fails with `Check mbim-proxy failed`
   (FoxFlss needs mbim-proxy which only runs when MM is active)
 
-## Google Fi Data-Only eSIM Activation Gap (2026-04-21)
-
-eSIM profile downloads succeed (GSMA RSP handshake completes, profile
-written to eUICC, modem registers on Google Fi / T-Mobile). However,
-**Google Fi's backend does not recognize the device** — it does not appear
-in the Google Fi app or fi.google.com device list.
-
-The result: the modem connects and registers, but data is throttled to
-~30 kbps TCP (7.5 KB/s effective) by carrier-side QoS. ICMP ping works
-normally at 50-60ms.
-
-### What we've confirmed
-
-- Multiple profile downloads (3 different ICCIDs) all have the same throttle
-- IPv4 and IPv6 both throttled identically
-- Different congestion controls (cubic, BBR) make no difference
-- The QR code / activation code from fi.google.com web UI works for
-  downloading the profile but doesn't complete carrier-side activation
-- Google Fi app only shows the Pixel 6 phone, never the laptop modem
-
-### Likely cause: missing GSMA installation notification
-
-After an eSIM profile download, the GSMA SGP.22 spec requires the LPA
-(Local Profile Assistant) to send an **installation notification** back
-to the SM-DP+ server. This tells the carrier "profile was installed
-successfully on this eUICC." Without it, the carrier backend never
-registers the device.
-
-The Google Fi Android app sends this automatically. `lpac` does NOT send
-it automatically — it must be done explicitly:
-
-```bash
-# After download, list pending notifications:
-lpac notification list
-# Send each pending notification to the SM-DP+ server:
-lpac notification process <sequence-number>
-```
-
-We never ran these commands. This is almost certainly why:
-
-- Google Fi doesn't show the device in the app
-- The carrier applies QoS throttling (treats unconfirmed profiles as
-  unauthorized)
-
-### ISD-R channel wedging after download
+## eSIM ISD-R wedge after download (DW5934e firmware limitation)
 
 `lpac profile download` wedges the modem's ISD-R (eSIM management)
-MBIM UICC channel. After download completes, ALL tools that need the
-ISD-R fail with SelectFailed:
+MBIM UICC channel. After the download completes, ALL tools that need
+the ISD-R fail with `SelectFailed` (`lpac` any command;
+`mbimcli --ms-set-uicc-open-channel` to the ISD-R AID). Non-ISD-R MBIM
+UICC queries still work (e.g. `mbimcli --ms-query-uicc-application-list`
+shows USIM/ISIM).
 
-- `lpac` (any command) — "no channel response received: SelectFailed"
-- `mbimcli --ms-set-uicc-open-channel` (ISD-R AID) — "SelectFailed"
+Nothing the kernel can do clears this — MHI rebind, PCIe FLR, PCIe
+remove/rescan, MM restart, `mmcli --reset` all confirmed ineffective.
+Only a full reboot (or S3 suspend/resume) clears it. This is a firmware
+bug in the DW5934e (SDX72).
 
-But non-ISD-R MBIM UICC queries still work:
+Implication: provisioning a new eSIM profile is a two-phase op with a
+reboot in between (download → reboot → enable + bring online + send GSMA
+installation notifications). `modem.sh esim activate` handles the
+non-reboot half; the reboot must be manual.
 
-- `mbimcli --ms-query-uicc-application-list` — succeeds, shows USIM/ISIM
+(MHI rebind DOES clear `SelectFailed` after profile disable/delete —
+this specific wedge is download-only.)
 
-Nothing clears this state except a full reboot:
+## Physical SIM (2026-04-30) — current configuration
 
-- MHI driver unbind/rebind — no effect after download
-- PCIe FLR — no effect
-- PCIe remove/rescan — no effect
-- MM restart cycles — no effect
-- `mmcli --reset` — no effect
-
-The ISD-R channel wedging means `lpac notification process` cannot run
-until after a reboot. This is a firmware limitation of the DW5934e (SDX72).
-
-Note: MHI rebind DOES clear SelectFailed in other scenarios (after profile
-disable/delete). It specifically fails to clear it after a download
-operation — the download leaves the ISD-R in a deeper stuck state.
-
-### Complete activation recipe
-
-```bash
-# Phase 1: download (ISD-R channel will wedge after this)
-systemctl stop ModemManager && sleep 2
-# MHI rebind
-echo 0000:71:00.0 > /sys/bus/pci/drivers/mhi-pci-generic/unbind
-sleep 3
-echo 0000:71:00.0 > /sys/bus/pci/drivers/mhi-pci-generic/bind
-sleep 8
-# Download (auto-enables on empty eUICC)
-LPAC_APDU=mbim LPAC_APDU_MBIM_DEVICE=/dev/wwan0mbim0 LPAC_APDU_MBIM_UIM_SLOT=2 \
-  lpac profile download -s <smdp> -m <matching-id>
-
-# Phase 2: reboot to clear ISD-R wedge
-reboot
-
-# Phase 3: after reboot — send notification + bring modem up
-systemctl stop ModemManager && sleep 2
-echo 0000:71:00.0 > /sys/bus/pci/drivers/mhi-pci-generic/unbind
-sleep 3
-echo 0000:71:00.0 > /sys/bus/pci/drivers/mhi-pci-generic/bind
-sleep 8
-# Send installation notification to Google Fi
-LPAC_APDU=mbim LPAC_APDU_MBIM_DEVICE=/dev/wwan0mbim0 LPAC_APDU_MBIM_UIM_SLOT=2 \
-  lpac notification list
-LPAC_APDU=mbim LPAC_APDU_MBIM_DEVICE=/dev/wwan0mbim0 LPAC_APDU_MBIM_UIM_SLOT=2 \
-  lpac notification process <seq-number>
-# Bring modem up
-# (MHI rebind → MM start → FoxFlss → MM restart)
-```
-
-### Fallback: physical SIM
-
-If eSIM provisioning proves unreliable: order free Google Fi "5G Data Only
-SIM Kit" ($0.00), insert micro-SIM in battery compartment slot (slot 1).
-No eSIM provisioning needed.
-
-## Physical SIM Insertion (2026-04-30)
-
-Google Fi data-only physical micro-SIM inserted in slot 1.
-
-**Read-only state at insertion time** (without changing slot mapping):
-
-- Modem state: `failed` / `esim-without-profiles` / `power state: low`
-  (expected — eUICC was wiped, modem still mapped to slot 2)
-- `mmcli -L` shows the modem at index 7 (path `/Modem/7`); SIM 7 = active
-  eSIM (no profiles), SIM 9 = slot 1 physical, ICCID
-  `8901240270139815559`, `active: no`
-- `mmcli -m 7` reports `slot 1: /SIM/9`, `slot 2: none (active)` — slot 2
-  is the active slot per `--ms-query-device-slot-mappings`, not yet
-  switched
-- NM "Google Fi" profile present and unbound (`gsm.sim-id` empty, will
-  bind to whatever SIM is active when bearer comes up); APN h2g2,
-  MTU 1200, IPv6 disabled, IPv4 route-metric 1050 — WiFi (metric 600)
-  remains preferred
-- WiFi `wlp0s20f3` connected to `Howleroi`, IPv4+IPv6 default routes
-  active and undisturbed
-- No SIM-insertion event in journal (last MM activity is the 2026-04-30
-  resume-from-suspend cycle hours earlier — kernel sees the eUICC, not
-  the physical slot, until the slot mapping flips)
-
-**Pending**: switch active slot to 1 via
-`mbimcli --ms-set-device-slot-mappings=0` (requires MM stop + restart).
-Doing so does not affect WiFi.
-
-### Slot-switch FCC handling (2026-04-30) — **superseded by dmidecode fix**
-
-> **Read this only for the failure-mode timeline. The diagnosis below
-> ("MM doesn't auto-fire fcc-unlock.d") was wrong.** What was actually
-> happening is described in the next section: MM was firing the unlock
-> script on every "Cannot power-up" loop iteration; the script was
-> exiting 1 because the systemd-clean PATH had no `dmidecode`, and per
-> the upstream MM contract, MM doesn't retry an unlock script after one
-> failure — so we observed an infinite bounce. The "always invoke
-> FoxFlss manually + restart MM" workaround that we baked into the
-> earlier `cellular_diag.sh` Phase 4 worked by coincidence: it was
-> running FoxFlss with the user's interactive shell PATH (which has
-> dmidecode), so the unlock succeeded. We have since (a) added
-> `dmidecode` and the rest of the doc'd dep set to the foxflss
-> wrapper PATH (`nix/packages/foxflss.nix`), so MM's reactive unlock
-> path now works, and (b) stripped the manual block from `cellular_diag.sh`.
-
-Original (incorrect) diagnosis follows for historical reference:
-
-After flipping `--ms-set-device-slot-mappings=0` and restarting MM, the
-modem comes back with `power state: low`. Symptom in
-`journalctl -u ModemManager`:
-
-```
-state changed (disabled -> enabling)
-Cannot power-up: sotware radio switch is OFF      [sic — typo is in MM]
-state changed (enabling -> disabled)
-failed enabling modem: Invalid transition
-state changed (disabled -> enabling)
-... repeats every 2-4s indefinitely ...
-```
-
-We initially concluded MM wasn't invoking the unlock script. The real
-explanation was that MM **was** invoking it but the script silently
-exited 1 each time (FoxFlss → "Current platform: do not support
-FccLock!" → exit 1 because `dmidecode` wasn't on the systemd-clean
-PATH). MM honors its "don't retry failed unlock scripts" contract,
-hence the bounce.
+Google Fi data-only physical micro-SIM in slot 1, active. eUICC (slot 2)
+empty. Switch is `mbimcli --ms-set-device-slot-mappings=0` (requires MM
+stop + restart; safe with WiFi up). NM "Google Fi" profile is unbound
+(`gsm.sim-id` empty), so it binds to whatever SIM is active.
 
 ### Watchdog + dmidecode fix (2026-04-30, evening)
 
@@ -635,14 +363,7 @@ PMTU discovery never fires and the TLS handshake silently fails.
 Won't matter once throttle is gone (TCP MSS clamping handles
 post-handshake bulk traffic), but worth verifying after activation.
 
-## Resolved Issues
-
-### Unusable Throughput Investigation (2026-04-20)
-
-Extensive investigation ruled out all host-side causes before identifying the eSIM
-activation as root cause. See evidence chain above.
-
-### Observations During Investigation (reference)
+## Modem behavior notes (reference)
 
 - **RSSI-only signal reporting**: `mmcli --signal-get` returns only RSSI, no
   RSRP/RSRQ/SINR. `mbimcli --query-signal-state` confirms `RSRP/SNR info: 'n/a'`.

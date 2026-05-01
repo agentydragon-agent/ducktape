@@ -12,9 +12,24 @@ account; ICMP and registration are unaffected. Same throttle observed on
 both eSIM (2026-04-20) and physical SIM (2026-04-30) — see "Lift the
 Google Fi throttle" TODO below.
 
-See <esim.md> for FCC unlock details and <foxflss_wwan.md> for the
-detailed history (eSIM activation gap, dmidecode fix, watchdog,
-throughput measurements).
+## Where to find what
+
+| Topic                                | File                                          |
+| ------------------------------------ | --------------------------------------------- |
+| Status, TODOs, what to do next       | this file                                     |
+| Hardware specs, NixOS config         | <esim.md> §Hardware, §NixOS Configuration     |
+| SIM inventory + slot setup           | <esim.md> §SIM Inventory, §eSIM Slot Setup    |
+| `lpac` / `mbimcli` reference cheats  | <esim.md> §lpac Commands, §Useful Diagnostics |
+| FCC unlock root cause + history      | <foxflss_wwan.md> §What Works, §Watchdog      |
+| eSIM provisioning & wedge debugging  | <foxflss_wwan.md> §Modem Reset Methods etc.   |
+| Throughput / throttle investigations | <foxflss_wwan.md> §Physical SIM throughput    |
+
+## Tools
+
+`debug/rugged/modem.sh` is the single entry point for diagnostics and
+SIM operations: `status`, `diagnose [--kill-wifi]`, `slot <0|1>`,
+`esim {status|wipe|activate}`, `unlock`, `recover`. Run with no args
+(or `--help`) for the full subcommand list.
 
 **TODO**:
 
@@ -22,7 +37,7 @@ throughput measurements).
   activation at <https://fi.google.com> so the modem's IMEI
   (`356398950074094`) gets bound to the Fi account alongside the
   current ICCID `8901240270139815559`. Verify by re-running
-  `debug/rugged/cellular_diag.sh` and checking that
+  `debug/rugged/modem.sh diagnose` and checking that
   `curl --interface wwan0 http://speedtest.tele2.net/10MB.zip` exceeds
   ~10 KB/s and that the device appears in the Fi app device list.
   See `foxflss_wwan.md` "Physical SIM throughput" section.
