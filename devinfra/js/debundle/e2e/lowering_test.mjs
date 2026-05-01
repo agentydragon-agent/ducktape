@@ -108,7 +108,7 @@ export { b };
     operations: [logicalModule("x", [{ name: "A" }, { name: "b", kind: "FunctionDeclaration" }])],
   });
   assertModuleSource({
-    matches: [/\bvar A = \(B =>/, /\bfunction b\(\)/],
+    matches: [/\bvar A = \({1,2}B\)?\s*=>/, /\bfunction b\(\)/],
     modulePath: "static/app/modules/x.js",
     outRoot: fixture.outRoot,
   });

@@ -22,6 +22,36 @@ export { a };
   assertEntryOutput(fixture, "1\n");
 });
 
+test("keeps outer aliases when nested readable candidates reuse the same target", async (t) => {
+  const fixture = await runLogicalModulesE2eFixture(t, {
+    source: `function z() {
+  return "z";
+}
+var b = ({
+    p: c
+  }) => c,
+  f = ({
+    x: a = b
+  }) => ({
+    y: a,
+    r: () => a({
+      p: "p"
+    })
+  }),
+  g = f({
+    x: b
+  }),
+  h = f({
+    q: 1
+  });
+console.log(g.r() + h.r() + z());
+export { z, b, f };
+`,
+    operations: [logicalModule("z", [{ name: "z", kind: "FunctionDeclaration" }])],
+  });
+  assertEntryOutput(fixture, "ppz\n");
+});
+
 test("renames constructor params from this-property assignments", async (t) => {
   const fixture = await runLogicalModulesE2eFixture(t, {
     source: `class A {

@@ -82,7 +82,14 @@ const o$1 = () => ({ id: e$3, name: t, tags: [...a] });
 const e$2 = (t2, a2) => t2 + a2;
 const o = (t2) => t2.join("|");
 const n = (t2) => Array.from(new Set(t2)).length;
-const e$1 = { stamp: "mock-dashboard@7" };
+const runtimeRoot = "undefined" != typeof global ? global : globalThis;
+const optionalDebugFlag = typeof __DUCKTAPE_OPTIONAL_GLOBAL__ > "u" || __DUCKTAPE_OPTIONAL_GLOBAL__;
+const e$1 = {
+  stamp: "mock-dashboard@7",
+  hasNodeGlobal: typeof global !== "undefined",
+  rootKind: runtimeRoot === globalThis ? "globalThis" : "global",
+  optionalDebugFlag
+};
 const e = (a2) => e$2(a2.id.length, n(a2.tags));
 class A {
   constructor(a2, t2) {
@@ -102,7 +109,12 @@ const d = (a2) => ({
   headline: `${a2.profile.name}:${a2.total}`,
   total: a2.total,
   tags: o(a2.profile.tags),
-  stamp: e$1.stamp
+  stamp: e$1.stamp,
+  runtime: {
+    hasNodeGlobal: e$1.hasNodeGlobal,
+    optionalDebugFlag: e$1.optionalDebugFlag,
+    rootKind: e$1.rootKind
+  }
 });
 const h = (a2) => {
   const t2 = document.querySelector("#app");

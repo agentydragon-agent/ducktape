@@ -82,6 +82,48 @@ const SELECTED_MODULE_LOWERING_METADATA = Object.freeze({
   generator: "devinfra/js/debundle/extract/init_region.mjs",
   ignoreByDefault: true,
 });
+const RESERVED_BINDING_TARGET_NAMES = new Set([
+  "arguments",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "eval",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "import",
+  "in",
+  "instanceof",
+  "new",
+  "null",
+  "return",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+]);
 
 function durationMsSince(startedAt) {
   return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
@@ -2755,7 +2797,11 @@ function constructorBodyMayHaveReadableParamAssignment(body, paramNames) {
 }
 
 function readableRenameCandidateNames(sourceName, targetName) {
-  return sourceName !== targetName && isScrambledIdentifier(sourceName);
+  return sourceName !== targetName && isScrambledIdentifier(sourceName) && isReadableBindingTargetName(targetName);
+}
+
+function isReadableBindingTargetName(name) {
+  return t.isValidIdentifier(name) && !RESERVED_BINDING_TARGET_NAMES.has(name);
 }
 
 function applyReadableObjectPatternRenamesInGeneratedFile(ast) {
@@ -2981,6 +3027,7 @@ function applyReadableObjectPatternRenamesFromCandidates(candidatesByScope, bind
 
 function buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope, bindingCacheByScope = null) {
   const renameGroups = [];
+  const plannedRenameTargetByBinding = buildPlannedReadableRenameTargetByBinding(candidatesByScope);
   for (const { scopePath, candidates } of candidatesByScope.values()) {
     const candidateBySourceName = new Map();
     const targetCounts = new Map();
@@ -3002,7 +3049,13 @@ function buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope,
     );
     const renameSpecs = [...candidateBySourceName.values()]
       .filter((candidate) =>
-        isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, externallyCapturedTargetNames)
+        isSafeReadableObjectPatternRename(
+          scopePath,
+          candidate,
+          targetCounts,
+          externallyCapturedTargetNames,
+          plannedRenameTargetByBinding
+        )
       )
       .map((candidate) => ({
         from: candidate.from,
@@ -3016,6 +3069,28 @@ function buildReadableObjectPatternRenameGroupsFromCandidates(candidatesByScope,
     }
   }
   return renameGroups;
+}
+
+function buildPlannedReadableRenameTargetByBinding(candidatesByScope) {
+  const targetByBinding = new Map();
+  for (const { candidates } of candidatesByScope.values()) {
+    const candidateBySourceName = new Map();
+    for (const candidate of candidates) {
+      if (!candidate.binding || !readableRenameCandidateNames(candidate.from, candidate.to)) {
+        continue;
+      }
+      if (candidateBySourceName.has(candidate.from)) {
+        continue;
+      }
+      candidateBySourceName.set(candidate.from, candidate);
+    }
+    for (const candidate of candidateBySourceName.values()) {
+      if (!targetByBinding.has(candidate.binding)) {
+        targetByBinding.set(candidate.binding, candidate.to);
+      }
+    }
+  }
+  return targetByBinding;
 }
 
 function collectReadableObjectPatternScopeCandidates(
@@ -3154,8 +3229,14 @@ function isValidLocalBindingIdentifierName(name) {
   return t.isValidIdentifier(name) && !RESERVED_LOCAL_BINDING_NAMES.has(name);
 }
 
-function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, externallyCapturedTargetNames) {
-  if (candidate.from === candidate.to || !isScrambledIdentifier(candidate.from)) {
+function isSafeReadableObjectPatternRename(
+  scopePath,
+  candidate,
+  targetCounts,
+  externallyCapturedTargetNames,
+  plannedRenameTargetByBinding
+) {
+  if (!readableRenameCandidateNames(candidate.from, candidate.to)) {
     return false;
   }
   if (!isValidLocalBindingIdentifierName(candidate.to)) {
@@ -3178,7 +3259,7 @@ function isSafeReadableObjectPatternRename(scopePath, candidate, targetCounts, e
   if (bindingDefaultInitializerReferencesName(binding, candidate.to)) {
     return false;
   }
-  return !bindingWouldBeShadowedAfterReadableRename(binding, candidate.to);
+  return !bindingWouldBeShadowedAfterReadableRename(binding, candidate.to, plannedRenameTargetByBinding);
 }
 
 function bindingDefaultInitializerReferencesName(binding, targetName) {
@@ -3291,28 +3372,33 @@ function pathIsWithinNode(path, ancestorNode) {
   return Boolean(path.findParent((parentPath) => parentPath.node === ancestorNode));
 }
 
-function bindingWouldBeShadowedAfterReadableRename(binding, targetName) {
+function bindingWouldBeShadowedAfterReadableRename(binding, targetName, plannedRenameTargetByBinding = new Map()) {
   if (binding.identifier?.name === targetName) {
     return false;
   }
   for (const referencePath of binding.referencePaths ?? []) {
-    if (pathHasDescendantShadowBinding(referencePath, binding.scope, targetName)) {
+    if (pathHasDescendantShadowBinding(referencePath, binding.scope, targetName, plannedRenameTargetByBinding)) {
       return true;
     }
   }
   for (const violationPath of binding.constantViolations ?? []) {
-    if (pathHasDescendantShadowBinding(violationPath, binding.scope, targetName)) {
+    if (pathHasDescendantShadowBinding(violationPath, binding.scope, targetName, plannedRenameTargetByBinding)) {
       return true;
     }
   }
   return false;
 }
 
-function pathHasDescendantShadowBinding(path, ownerScope, targetName) {
+function pathHasDescendantShadowBinding(path, ownerScope, targetName, plannedRenameTargetByBinding) {
   let currentScope = path.scope;
   while (currentScope && currentScope !== ownerScope) {
     if (currentScope.hasOwnBinding(targetName)) {
       return true;
+    }
+    for (const binding of Object.values(currentScope.bindings ?? {})) {
+      if (plannedRenameTargetByBinding.get(binding) === targetName) {
+        return true;
+      }
     }
     currentScope = currentScope.parent;
   }

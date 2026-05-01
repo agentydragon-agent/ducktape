@@ -111,10 +111,7 @@ function setupFixture({ chunkId, prefix, source, extraFiles = {} }) {
 
 function spawnTransform(specPath) {
   const runTransformBin = process.env.DUCKTAPE_RUN_TRANSFORM_BIN;
-  assert.ok(
-    runTransformBin,
-    "DUCKTAPE_RUN_TRANSFORM_BIN must point at //devinfra/js/debundle/transforms:run_transform"
-  );
+  assert.ok(runTransformBin, "DUCKTAPE_RUN_TRANSFORM_BIN must point at a debundler CLI binary");
   return spawnSync(runTransformBin, ["--spec", specPath], { encoding: "utf8" });
 }
 

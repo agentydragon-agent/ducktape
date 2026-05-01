@@ -90,6 +90,30 @@ js_library(
     ],
 )
 
+js_library(
+    name = "build_mock_golden_lib",
+    srcs = ["build_mock_golden.mjs"],
+    deps = [":mock_pipeline_lib"],
+)
+
+js_library(
+    name = "pipeline_impl_golden_lib",
+    srcs = ["pipeline_impl_golden_lib.mjs"],
+    deps = [
+        ":mock_pipeline_lib",
+    ],
+)
+
+js_binary(
+    name = "build_pipeline_impl_golden",
+    data = [
+        ":mock_testdata",
+        ":pipeline_impl_golden_lib",
+        "//devinfra/js/debundle/rust:debundle_rust",
+    ],
+    entry_point = "build_pipeline_impl_golden.mjs",
+)
+
 js_binary(
     name = "build_mock_bundle",
     data = [
@@ -135,14 +159,19 @@ js_test(
     name = "pipeline_e2e_test",
     size = "small",
     data = [
+        "pipeline_impl_e2e_test.mjs",
         ":mock_pipeline_lib",
         ":mock_testdata",
+        ":pipeline_impl_golden_lib",
         "//devinfra/js/debundle/test_support:sources",
+        "//devinfra/js/debundle/transforms:run_transform",
         "//util/testing/frontend_visual:puppeteer_lib",
         "@playwright_browsers//:chromium-headless-shell",
     ],
-    entry_point = "pipeline_e2e_test.mjs",
+    entry_point = "pipeline_impl_e2e_test.mjs",
     env = {
+        "DEBUNDLE_IMPL": "js",
+        "JS_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/transforms:run_transform)",
         "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
     no_copy_to_bin = [
@@ -208,4 +237,151 @@ js_test(
     ],
     entry_point = "excalidraw_reference_golden_test.mjs",
     node_options = ["--max-old-space-size=8192"],
+)
+
+js_test(
+    name = "rust_e2e_test",
+    size = "small",
+    data = [
+        "pipeline_impl_e2e_test.mjs",
+        ":mock_pipeline_lib",
+        ":mock_testdata",
+        ":pipeline_impl_golden_lib",
+        "//devinfra/js/debundle/rust:debundle_rust",
+        "//devinfra/js/debundle/test_support:sources",
+        "//util/testing/frontend_visual:puppeteer_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    entry_point = "pipeline_impl_e2e_test.mjs",
+    env = {
+        "DEBUNDLE_IMPL": "rust",
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
+    no_copy_to_bin = [
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+)
+
+js_test(
+    name = "pipeline_impl_golden_test",
+    size = "small",
+    data = [
+        "pipeline_impl_golden_test.mjs",
+        ":mock_testdata",
+        ":pipeline_impl_golden_lib",
+        "//devinfra/js/debundle/rust:debundle_rust",
+    ],
+    entry_point = "pipeline_impl_golden_test.mjs",
+    env = {
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
+)
+
+js_test(
+    name = "pipeline_stage_parity_test",
+    size = "small",
+    data = [
+        "pipeline_stage_parity_test.mjs",
+        "//devinfra/js/debundle/rust:debundle_rust",
+        "//devinfra/js/debundle/transforms:run_transform",
+    ],
+    entry_point = "pipeline_stage_parity_test.mjs",
+    env = {
+        "JS_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/transforms:run_transform)",
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
+)
+
+js_test(
+    name = "planner_parity_test",
+    size = "small",
+    data = [
+        "planner_parity_test.mjs",
+        ":mock_testdata",
+        ":pipeline_impl_golden_lib",
+        "//devinfra/js/debundle/rust:debundle_rust",
+    ],
+    entry_point = "planner_parity_test.mjs",
+    env = {
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
+)
+
+js_test(
+    name = "analysis_parity_test",
+    size = "small",
+    data = [
+        "analysis_parity_test.mjs",
+        ":mock_testdata",
+        ":pipeline_impl_golden_lib",
+        "//devinfra/js/debundle/rust:debundle_rust",
+    ],
+    entry_point = "analysis_parity_test.mjs",
+    env = {
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
+)
+
+js_test(
+    name = "pipeline_impl_analysis_parity_fixture_test",
+    size = "small",
+    data = [
+        "pipeline_impl_analysis_parity_fixture_test.mjs",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/rust:debundle_rust",
+    ],
+    entry_point = "pipeline_impl_analysis_parity_fixture_test.mjs",
+    env = {
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
+)
+
+js_test(
+    name = "ordered_init_parity_test",
+    size = "small",
+    data = [
+        "ordered_init_parity_test.mjs",
+        ":mock_testdata",
+        ":pipeline_impl_golden_lib",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/extract:libs",
+        "//devinfra/js/debundle/rust:debundle_rust",
+    ],
+    entry_point = "ordered_init_parity_test.mjs",
+    env = {
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
+)
+
+js_test(
+    name = "planner_internal_parity_test",
+    size = "small",
+    data = [
+        "planner_internal_parity_test.mjs",
+        ":mock_testdata",
+        ":pipeline_impl_golden_lib",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/extract:libs",
+        "//devinfra/js/debundle/rust:debundle_rust",
+    ],
+    entry_point = "planner_internal_parity_test.mjs",
+    env = {
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
+)
+
+js_test(
+    name = "planner_internal_tiny_repro_test",
+    size = "small",
+    data = [
+        "planner_internal_tiny_repro_test.mjs",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/extract:libs",
+        "//devinfra/js/debundle/rust:debundle_rust",
+    ],
+    entry_point = "planner_internal_tiny_repro_test.mjs",
+    env = {
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
 )

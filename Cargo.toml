@@ -62,6 +62,11 @@ anyhow = "^1.0"
 # Use native-tls instead (system OpenSSL on Linux, no cmake required).
 rig-core = { version = "^0.33.0", default-features = false, features = ["derive", "reqwest-native-tls"] }
 bollard = "^0.20.2"
+swc_common = "^21.0.1"
+swc_ecma_ast = "^23.0.0"
+swc_ecma_codegen = "^26.0.1"
+swc_ecma_parser = "^39.0.1"
+swc_ecma_visit = "^23.0.0"
 
 [[bin]]
 name = "ducktape_fake"
@@ -69,3 +74,7 @@ path = "main.rs"
 
 # Only generate BUILD files for Linux.
 targets = ["x86_64-unknown-linux-gnu"]
+
+[[bin]]
+name = "debundle_rust"
+path = "devinfra/js/debundle/rust/src/main.rs"

@@ -23,7 +23,7 @@ export { b };
   });
   assertModuleExports({ includes: ["b"], modulePath: "static/app/modules/x.js", outRoot: fixture.outRoot });
   assertModuleSource({
-    matches: [/\ba = x =>/],
+    matches: [/\ba = \(?x\)?\s*=>/],
     modulePath: "static/app/modules/x.js",
     outRoot: fixture.outRoot,
   });

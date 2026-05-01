@@ -299,6 +299,13 @@ function buildOwnerClosurePlan(
     closureComponentIdsBySeedComponentId
   );
   const semanticOwners = ownersForComponentIds(requiredClosureComponentIds, componentById, ownerById);
+  const seedComponentDepOwnerIds = [
+    ...new Set(
+      (seedComponent.directDependencyComponentIds ?? []).flatMap(
+        (componentId) => componentById.get(componentId)?.ownerIds ?? []
+      )
+    ),
+  ].sort();
   const semanticSummary = summarizeOwnerClosureEnvelope({
     owners: analysis.owners,
     ownerById,
@@ -318,6 +325,7 @@ function buildOwnerClosurePlan(
     ownerIds: [...semanticSummary.ownerIds],
     requiredClosureComponentIds: [...requiredClosureComponentIds],
     requiredClosureOwnerIds: semanticOwners.map((owner) => owner.id),
+    seedComponentDepOwnerIds,
     seedComponentId: seedComponent.id,
     seedMemberNames: [...seedComponent.memberNames],
     seedOwnerIds: [...seedComponent.ownerIds],
@@ -592,6 +600,7 @@ function buildStagedShellBatchPlan(
     memberNames: [...summary.memberNames],
     ownerIds: [...expandedOwnerIds],
     seedComponentId: plan.seedComponentId,
+    seedComponentDepOwnerIds: [...(plan.seedComponentDepOwnerIds ?? [])],
     seedMemberNames: [...plan.seedMemberNames],
     seedOwnerIds: [...plan.seedOwnerIds],
     semanticBlockingReasons: [...summary.selectedModuleBlockingReasons],
@@ -1080,6 +1089,10 @@ function selectedModuleAccessView(record) {
   return view;
 }
 
+export function getOrderedInitPlannerStateForTesting(analysis, ownerById = null) {
+  return serializeOrderedInitPlannerState(getOrderedInitPlannerState(analysis, ownerById));
+}
+
 function getOrderedInitPlannerState(analysis, ownerById = null) {
   const cached = SELECTED_MODULE_PLANNER_STATE_CACHE.get(analysis);
   if (cached) {
@@ -1147,6 +1160,28 @@ function getOrderedInitPlannerState(analysis, ownerById = null) {
   };
   SELECTED_MODULE_PLANNER_STATE_CACHE.set(analysis, plannerState);
   return plannerState;
+}
+
+function serializeOrderedInitPlannerState(state) {
+  return {
+    replayableSideEffectIdsByOwnerId: Object.fromEntries(
+      [...state.replayableSideEffectIdsByTouchedOwnerId.entries()]
+        .map(([ownerId, ids]) => [ownerId, [...ids].sort()])
+        .sort(([left], [right]) => left.localeCompare(right))
+    ),
+    replayableSideEffectStateById: Object.fromEntries(
+      [...state.replayableSideEffectStateById.entries()]
+        .map(([id, record]) => [
+          id,
+          {
+            id: record.id,
+            runtimeSensitive: Boolean(record.runtimeSensitive),
+            touchedOwnerIds: [...record.touchedOwnerIds].sort(),
+          },
+        ])
+        .sort(([left], [right]) => left.localeCompare(right))
+    ),
+  };
 }
 
 function collectOutsideRecordEffects({
@@ -1279,7 +1314,14 @@ function lineSpanForRegion(region) {
 }
 
 function estimatedRegionSize(region) {
-  return lineSpanForRegion(region) * 1000 + region.ownerIds.length;
+  return ordinalSpanForRegion(region) * 1000 + region.ownerIds.length;
+}
+
+function ordinalSpanForRegion(region) {
+  if (!Number.isInteger(region.startOrdinal) || !Number.isInteger(region.endOrdinal)) {
+    return region.ownerIds.length;
+  }
+  return Math.max(0, region.endOrdinal - region.startOrdinal + 1);
 }
 
 function sanitizeIdentifier(value) {

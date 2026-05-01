@@ -90,6 +90,15 @@ async function main() {
       [],
       `failed internal asset requests:\n${formatJson(failedRequests)}\nconsole:\n${consoleMessages.join("\n")}`
     );
+  } catch (error) {
+    const diagnostics = await collectFailureDiagnostics(page, {
+      consoleMessages,
+      failedRequests,
+      pageErrors,
+      responses,
+    });
+    error.message = `${error.message}\n\n${diagnostics}`;
+    throw error;
   } finally {
     await browser.close();
     await handles.close();
@@ -169,6 +178,34 @@ function delay(ms) {
 
 function formatJson(value) {
   return JSON.stringify(value, null, 2);
+}
+
+async function collectFailureDiagnostics(page, { consoleMessages, failedRequests, pageErrors, responses }) {
+  let pageState = null;
+  try {
+    pageState = await page.evaluate(() => ({
+      bodyText: document.body?.innerText?.slice(0, 2000) ?? "",
+      documentReadyState: document.readyState,
+      html: document.documentElement?.outerHTML?.slice(0, 4000) ?? "",
+      liveProxyActive: globalThis.__jsDebundleLiveProxy?.active === true,
+      liveProxyMarker: document.documentElement.dataset.jsDebundleLiveProxy ?? null,
+      location: location.href,
+      title: document.title,
+    }));
+  } catch (error) {
+    pageState = {
+      evaluateError: error.stack ?? error.message,
+    };
+  }
+  const recentResponses = responses.slice(-50);
+  return [
+    "browser diagnostics:",
+    `page errors:\n${pageErrors.join("\n") || "<none>"}`,
+    `console:\n${consoleMessages.join("\n") || "<none>"}`,
+    `failed requests:\n${formatJson(failedRequests)}`,
+    `recent responses:\n${formatJson(recentResponses)}`,
+    `page state:\n${formatJson(pageState)}`,
+  ].join("\n");
 }
 
 await main();

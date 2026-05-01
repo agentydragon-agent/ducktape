@@ -24,6 +24,11 @@ const d = (a) => ({
   total: a.total,
   tags: o(a.profile.tags),
   stamp: n.stamp,
+  runtime: {
+    hasNodeGlobal: n.hasNodeGlobal,
+    optionalDebugFlag: n.optionalDebugFlag,
+    rootKind: n.rootKind,
+  },
 });
 const h = (a) => {
   const t2 = document.querySelector("#app");
