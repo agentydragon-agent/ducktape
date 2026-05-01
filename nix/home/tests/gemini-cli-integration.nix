@@ -79,6 +79,26 @@ in
     expected = true;
   };
 
+  test_has_nix_eval_rule = {
+    expr = builtins.elem {
+      toolName = "run_shell_command";
+      commandPrefix = "nix eval";
+      decision = "allow";
+      priority = 300;
+    } personalIntegration.programs.gemini-cli.policies.allowed-commands;
+    expected = true;
+  };
+
+  test_has_nix_build_rule = {
+    expr = builtins.elem {
+      toolName = "run_shell_command";
+      commandPrefix = "nix build";
+      decision = "allow";
+      priority = 300;
+    } personalIntegration.programs.gemini-cli.policies.allowed-commands;
+    expected = true;
+  };
+
   # Verify the first allowed rule still comes from the SSOT order
   test_first_allowed_rule = {
     expr = builtins.head personalIntegration.programs.gemini-cli.policies.allowed-commands;

@@ -56,6 +56,14 @@ let
 
   bazelCommands = prefixCommandProduct bazelExecutables bazelSubcommands;
 
+  nixCommands =
+    prefixCommandProduct
+      [ "nix" ]
+      [
+        "eval"
+        "build"
+      ];
+
   cargoMetadataCommands =
     prefixCommandProduct
       [ "cargo" ]
@@ -70,6 +78,7 @@ in
   noSudo =
     gitReadOnlyCommands
     ++ bazelCommands
+    ++ nixCommands
     ++ [
       # TODO: Add more git read-only commands:
       # { type = "prefix"; cmd = "git branch"; }

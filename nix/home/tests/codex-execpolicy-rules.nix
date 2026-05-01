@@ -48,6 +48,11 @@ let
         "build"
         "test"
       ];
+
+  expectedNixRules = expectedPrefixRules "nix" [
+    "eval"
+    "build"
+  ];
 in
 {
   test_rule_count_matches_ssot = {
@@ -62,6 +67,21 @@ in
 
   test_has_bazel_rules = {
     expr = builtins.all (rule: builtins.elem rule generated.rules) expectedBazelRules;
+    expected = true;
+  };
+
+  test_has_nix_rules = {
+    expr = builtins.all (rule: builtins.elem rule generated.rules) expectedNixRules;
+    expected = true;
+  };
+
+  test_has_nix_eval_starlark_rule_line = {
+    expr = lib.hasInfix "\nprefix_rule(pattern=[\"nix\",\"eval\"], decision=\"allow\")\n" generated.text;
+    expected = true;
+  };
+
+  test_has_nix_build_starlark_rule_line = {
+    expr = lib.hasInfix "\nprefix_rule(pattern=[\"nix\",\"build\"], decision=\"allow\")\n" generated.text;
     expected = true;
   };
 

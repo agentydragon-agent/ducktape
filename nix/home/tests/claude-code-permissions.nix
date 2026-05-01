@@ -58,4 +58,14 @@ in
     expr = builtins.elem "Bash(bazelisk test:*)" bashPerms;
     expected = true;
   };
+
+  test_has_nix_eval_permission = {
+    expr = builtins.elem "Bash(nix eval:*)" bashPerms;
+    expected = true;
+  };
+
+  test_has_nix_build_permission = {
+    expr = builtins.elem "Bash(nix build:*)" bashPerms;
+    expected = true;
+  };
 }

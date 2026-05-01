@@ -216,6 +216,7 @@
 }:
 let
   cfg = config.programs.claude-code;
+  allowed = import ../allowed-commands.nix;
 
   # Gmail MCP Server - pinned to specific commit for security
   gmail-mcp-server = import ../../packages/gmail-mcp.nix { inherit pkgs lib; };
@@ -275,6 +276,15 @@ let
 
   # System inspection command permissions (auto-allow for read-only commands)
   inspectionPerms = import ./inspection-permissions.nix { inherit lib; };
+
+  # Shared always-allowed command permissions.
+  toBashPerm =
+    entry:
+    let
+      suffix = if entry.type == "prefix" then ":*" else "";
+    in
+    "Bash(${entry.cmd}${suffix})";
+  allowedCommandPerms = map toBashPerm allowed.noSudo;
 
   # Auto-discover all .md files in commands/ directory
   commandsDir = ./commands;
@@ -479,13 +489,10 @@ in
           "MultiEdit"
           "Search"
           "Task"
-          "Bash(git status:*)"
-          "Bash(git diff:*)"
-          "Bash(git stash show:*)"
-          "Bash(git stash list:*)"
           "WebFetch"
           "WebSearch"
         ]
+        ++ allowedCommandPerms
         ++ mkWebFetchDomainPerms allowedWebFetchDomains
         ++ mkReadPerms alwaysAllowedReadDirs
         ++ inspectionPerms.permissions;
