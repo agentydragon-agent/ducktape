@@ -158,8 +158,7 @@
       tesseract
     ])
     ++ [
-      # Match perf to the configured kernel.
-      config.boot.kernelPackages.perf
+      pkgs.perf
     ];
 
   system.stateVersion = "25.11";

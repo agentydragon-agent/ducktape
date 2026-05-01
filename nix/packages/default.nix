@@ -221,6 +221,7 @@ in
 
   # Standalone packages (not wheels)
 
+  gnome-shell-claude-quota = pkgs.callPackage ./gnome-shell-claude-quota.nix { };
   tana = pkgs.callPackage ./tana.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };
