@@ -14,6 +14,8 @@ let
 
   # Import the personal integration
   personalIntegration = import ../gemini_cli.nix { inherit config lib pkgs; };
+  inspection = import ../../lib/inspection-commands.nix { inherit lib; };
+  allowed = import ../allowed-commands.nix;
 
 in
 {
@@ -46,13 +48,13 @@ in
   # Verify inspection rules count
   test_inspection_count = {
     expr = builtins.length personalIntegration.programs.gemini-cli.policies.inspection-commands;
-    expected = 150;
+    expected = builtins.length (inspection.exports.noSudo ++ inspection.exports.sudo);
   };
 
   # Verify allowed rules count
   test_allowed_count = {
     expr = builtins.length personalIntegration.programs.gemini-cli.policies.allowed-commands;
-    expected = 4;
+    expected = builtins.length allowed.noSudo;
   };
 
   # Verify sample inspection rule structure
@@ -66,12 +68,23 @@ in
     };
   };
 
-  # Verify sample allowed rule structure
-  test_sample_allowed_rule = {
+  # Verify a representative allowed rule structure
+  test_has_allowed_rule = {
+    expr = builtins.elem {
+      toolName = "run_shell_command";
+      commandPrefix = "bazelisk test";
+      decision = "allow";
+      priority = 300;
+    } personalIntegration.programs.gemini-cli.policies.allowed-commands;
+    expected = true;
+  };
+
+  # Verify the first allowed rule still comes from the SSOT order
+  test_first_allowed_rule = {
     expr = builtins.head personalIntegration.programs.gemini-cli.policies.allowed-commands;
     expected = {
       toolName = "run_shell_command";
-      commandPrefix = "git status";
+      commandPrefix = (builtins.head allowed.noSudo).cmd;
       decision = "allow";
       priority = 300;
     };

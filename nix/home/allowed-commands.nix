@@ -2,6 +2,7 @@
 #
 # Used by:
 #   - nix/home/claude_code/default.nix (Claude Code permissions)
+#   - nix/home/codex/execpolicy-rules.nix (Codex execpolicy)
 #   - nix/home/gemini_cli.nix (Gemini CLI policies)
 #
 # Commands listed here are safe for AI agents to execute without user approval.
@@ -16,79 +17,87 @@
 # Format: { type = "prefix"|"exact"; cmd = "full command string"; }
 #   - type = "prefix": allows trailing arguments (e.g., "git status --short")
 #   - type = "exact": no additional arguments allowed
+let
+  prefixCommandProduct =
+    commands: subcommands:
+    builtins.concatMap (
+      command:
+      map (subcommand: {
+        type = "prefix";
+        cmd = "${command} ${subcommand}";
+      }) subcommands
+    ) commands;
+
+  gitReadOnlyCommands =
+    prefixCommandProduct
+      [ "git" ]
+      [
+        "diff"
+        "log"
+        "show"
+        "stash list"
+        "stash show"
+        "status"
+      ];
+
+  bazelExecutables = [
+    "bazel"
+    "bazelisk"
+  ];
+
+  bazelSubcommands = [
+    "query"
+    "cquery"
+    "aquery"
+    "info"
+    "build"
+    "test"
+  ];
+
+  bazelCommands = prefixCommandProduct bazelExecutables bazelSubcommands;
+
+  cargoMetadataCommands =
+    prefixCommandProduct
+      [ "cargo" ]
+      [
+        "info"
+        "search"
+        "tree"
+      ];
+in
 {
   # All allowed commands (no sudo - these are user-accessible commands)
-  noSudo = [
-    # Git read-only operations (prefix match - allows additional flags)
-    {
-      type = "prefix";
-      cmd = "git diff";
-    }
-    {
-      type = "prefix";
-      cmd = "git log";
-    }
-    {
-      type = "prefix";
-      cmd = "git show";
-    }
-    {
-      type = "prefix";
-      cmd = "git stash list";
-    }
-    {
-      type = "prefix";
-      cmd = "git stash show";
-    }
-    {
-      type = "prefix";
-      cmd = "git status";
-    }
+  noSudo =
+    gitReadOnlyCommands
+    ++ bazelCommands
+    ++ [
+      # TODO: Add more git read-only commands:
+      # { type = "prefix"; cmd = "git branch"; }
+      # { type = "prefix"; cmd = "git remote"; }
+      # { type = "prefix"; cmd = "git tag"; }
+      # { type = "prefix"; cmd = "git blame"; }
+      # { type = "prefix"; cmd = "git reflog"; }
 
-    # TODO: Add more git read-only commands:
-    # { type = "prefix"; cmd = "git branch"; }
-    # { type = "prefix"; cmd = "git remote"; }
-    # { type = "prefix"; cmd = "git tag"; }
-    # { type = "prefix"; cmd = "git blame"; }
-    # { type = "prefix"; cmd = "git reflog"; }
+      # Home manager operations
+      {
+        type = "prefix";
+        cmd = "home-manager build";
+      }
+    ]
+    ++ cargoMetadataCommands;
 
-    {
-      type = "prefix";
-      cmd = "bazel query";
-    }
-    {
-      type = "prefix";
-      cmd = "bazel cquery";
-    }
-    {
-      type = "prefix";
-      cmd = "bazel aquery";
-    }
-    {
-      type = "prefix";
-      cmd = "bazel info";
-    }
+  # TODO: Add build system queries:
+  # { type = "prefix"; cmd = "bazelisk fetch"; }
+  # { type = "prefix"; cmd = "npm list"; }
+  # { type = "prefix"; cmd = "npm outdated"; }
+  # { type = "prefix"; cmd = "npm audit"; }
+  # { type = "prefix"; cmd = "pip list"; }
+  # { type = "prefix"; cmd = "pip show"; }
 
-    # Home manager operations
-    {
-      type = "prefix";
-      cmd = "home-manager build";
-    }
-    # TODO: Add build system queries:
-    # { type = "prefix"; cmd = "npm list"; }
-    # { type = "prefix"; cmd = "npm outdated"; }
-    # { type = "prefix"; cmd = "npm audit"; }
-    # { type = "prefix"; cmd = "pip list"; }
-    # { type = "prefix"; cmd = "pip show"; }
-    # { type = "prefix"; cmd = "cargo tree"; }
-    # { type = "prefix"; cmd = "cargo search"; }
-
-    # TODO: Add test execution commands (safe - only writes to build artifacts):
-    # { type = "exact"; cmd = "npm test"; }
-    # { type = "exact"; cmd = "npm run test"; }
-    # { type = "exact"; cmd = "bazel test //..."; }
-    # { type = "exact"; cmd = "cargo test"; }
-    # { type = "exact"; cmd = "cargo check"; }
-    # { type = "exact"; cmd = "cargo clippy"; }
-  ];
+  # TODO: Add test execution commands (safe - only writes to build artifacts):
+  # { type = "exact"; cmd = "npm test"; }
+  # { type = "exact"; cmd = "npm run test"; }
+  # { type = "exact"; cmd = "cargo test"; }
+  # { type = "exact"; cmd = "cargo check"; }
+  # { type = "exact"; cmd = "cargo clippy"; }
 }

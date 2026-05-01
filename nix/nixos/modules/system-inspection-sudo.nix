@@ -16,26 +16,23 @@ let
   bin = "/run/current-system/sw/bin";
 
   # Transform command entry → sudoers rule
-  # Input: { type = "prefix"|"exact"; cmd; args?; } OR plain string
+  # Input: { type = "prefix"|"exact"; cmd; args = [ ... ]; } OR plain string
   # Output: { command = "/full/path/to/cmd args"; options = ["NOPASSWD"]; }
   toSudoRule =
     entry:
     let
       # Handle both structured format and plain strings (for logViewingCommands)
-      cmdStr =
+      commandParts =
         if builtins.isString entry then
-          entry # Plain string: use as-is
-        else if entry ? args then
-          "${entry.cmd} ${entry.args}" # Structured with args
+          lib.splitString " " entry # Plain string: split legacy sudoers-only log commands
         else
-          entry.cmd; # Structured without args
+          [ entry.cmd ] ++ entry.args;
 
       # Extract base command for path resolution
-      baseCmd = lib.head (lib.splitString " " cmdStr);
+      baseCmd = lib.head commandParts;
       fullCmd = "${bin}/${baseCmd}";
 
-      # Get args if any (everything after first space)
-      argsList = lib.tail (lib.splitString " " cmdStr);
+      argsList = lib.tail commandParts;
       args = lib.concatStringsSep " " argsList;
 
       # Determine match type

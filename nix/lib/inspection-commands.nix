@@ -24,23 +24,38 @@
 #   ansible/roles/system_inspection_nopasswd/defaults/main.yml
 { lib }:
 let
+  # Constructors accept a single-token string as shorthand, but every structured
+  # entry stores args as token lists. Multi-token arguments must be explicit.
+  normalizeArgs =
+    args:
+    if builtins.isList args then
+      args
+    else if
+      builtins.isString args
+      && !(lib.any (whitespace: lib.hasInfix whitespace args) [
+        " "
+        "\t"
+        "\n"
+        "\r"
+      ])
+    then
+      [ args ]
+    else
+      throw "inspection command args must be a token list; single-token strings are accepted as shorthand";
+
   # Helpers — prefix allows trailing args, exact does not.
-  mkPrefix = cmd: {
-    type = "prefix";
-    inherit cmd;
-  };
   mkPrefixArgs = cmd: args: {
     type = "prefix";
-    inherit cmd args;
-  };
-  mkExact = cmd: {
-    type = "exact";
     inherit cmd;
+    args = normalizeArgs args;
   };
+  mkPrefix = cmd: mkPrefixArgs cmd [ ];
   mkExactArgs = cmd: args: {
     type = "exact";
-    inherit cmd args;
+    inherit cmd;
+    args = normalizeArgs args;
   };
+  mkExact = cmd: mkExactArgs cmd [ ];
 
   # Batch helpers — fan out one base command to multiple arg variants.
   mkExactMulti = cmd: argsList: map (mkExactArgs cmd) argsList;
@@ -187,7 +202,10 @@ let
   ]
   ++ mkPrefixMulti "nmcli" [
     "-L"
-    "connection show"
+    [
+      "connection"
+      "show"
+    ]
   ]
   ++ mkExactMulti "fwupdmgr" [
     "get-devices"
@@ -199,12 +217,30 @@ let
 
   # IPMI - read-only subcommands
   ++ mkExactMulti "ipmitool" [
-    "sensor list"
-    "sdr list"
-    "fru print"
-    "mc info"
-    "lan print"
-    "chassis status"
+    [
+      "sensor"
+      "list"
+    ]
+    [
+      "sdr"
+      "list"
+    ]
+    [
+      "fru"
+      "print"
+    ]
+    [
+      "mc"
+      "info"
+    ]
+    [
+      "lan"
+      "print"
+    ]
+    [
+      "chassis"
+      "status"
+    ]
   ]
   ++ [
     (mkExactArgs "fdisk" "-l")
@@ -219,14 +255,41 @@ let
     "id-ns"
   ]
   ++ mkExactMulti "ip" [
-    "addr show"
-    "-s addr show"
-    "route show"
-    "-s route show"
-    "link show"
-    "-s link show"
-    "neighbor show"
-    "netns list"
+    [
+      "addr"
+      "show"
+    ]
+    [
+      "-s"
+      "addr"
+      "show"
+    ]
+    [
+      "route"
+      "show"
+    ]
+    [
+      "-s"
+      "route"
+      "show"
+    ]
+    [
+      "link"
+      "show"
+    ]
+    [
+      "-s"
+      "link"
+      "show"
+    ]
+    [
+      "neighbor"
+      "show"
+    ]
+    [
+      "netns"
+      "list"
+    ]
   ]
 
   # Service information
@@ -269,8 +332,14 @@ let
     "list"
   ]
   ++ mkExactMulti "btrfs" [
-    "filesystem show"
-    "device stats"
+    [
+      "filesystem"
+      "show"
+    ]
+    [
+      "device"
+      "stats"
+    ]
   ]
   ++ [
 
@@ -296,7 +365,12 @@ let
     "-L"
     "-S"
   ]
-  ++ [ (mkExactArgs "nft" "list ruleset") ]
+  ++ [
+    (mkExactArgs "nft" [
+      "list"
+      "ruleset"
+    ])
+  ]
 
   # Container/VM - read-only info
   ++ mkExactMulti "docker" [
@@ -337,12 +411,12 @@ let
   # ============================================================================
 
   # Stringify structured format → simple format
-  # Input: { type = "prefix"|"exact"; cmd; args?; }
+  # Input: { type = "prefix"|"exact"; cmd; args = [ ... ]; }
   # Output: { type; cmd = "full command string"; }
   stringifyCommand =
     entry:
     let
-      cmdStr = if entry ? args then "${entry.cmd} ${entry.args}" else entry.cmd;
+      cmdStr = lib.concatStringsSep " " ([ entry.cmd ] ++ entry.args);
     in
     {
       inherit (entry) type;
@@ -350,7 +424,7 @@ let
     };
 
   # Add sudo prefix + stringify
-  # Input: { type; cmd; args?; }
+  # Input: { type; cmd; args = [ ... ]; }
   # Output: { type; cmd = "sudo full command string"; }
   addSudoAndStringify =
     entry:
@@ -370,7 +444,7 @@ in
   # Multiple exports for different consumer needs:
   exports = {
     # For sudo module: detailed structured format (includes logViewingCommands)
-    # Format: { type = "prefix"|"exact"; cmd; args?; }
+    # Format: { type = "prefix"|"exact"; cmd; args = [ ... ]; }
     sudoDetailed = sudoCommands ++ logViewingCommands;
 
     # For Claude Code/Gemini CLI: simple stringified format (excludes logViewingCommands)

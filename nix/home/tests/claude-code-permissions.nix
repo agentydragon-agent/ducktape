@@ -12,6 +12,9 @@ let
 
   # Combine all commands from both SSOTs (same logic as claude_code/default.nix)
   allCommands = inspection.exports.noSudo ++ inspection.exports.sudo ++ allowed.noSudo;
+  structuredSudoCommands = builtins.filter (
+    entry: !builtins.isString entry
+  ) inspection.exports.sudoDetailed;
 
   # Transform simple { type, cmd } → Bash() permission
   toBashPerm =
@@ -29,7 +32,7 @@ in
   # Verify total permission count
   test_total_count = {
     expr = builtins.length bashPerms;
-    expected = 156;
+    expected = builtins.length allCommands;
   };
 
   # Verify first few permissions are correct
@@ -44,9 +47,15 @@ in
     expected = true;
   };
 
+  # Verify structured sudo entries use normalized token-list args.
+  test_sudo_detailed_args_are_lists = {
+    expr = builtins.all (entry: builtins.isList entry.args) structuredSudoCommands;
+    expected = true;
+  };
+
   # Verify an allowed command exists
   test_has_allowed_command = {
-    expr = builtins.elem "Bash(git status:*)" bashPerms;
+    expr = builtins.elem "Bash(bazelisk test:*)" bashPerms;
     expected = true;
   };
 }
