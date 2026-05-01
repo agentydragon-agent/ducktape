@@ -16,12 +16,25 @@ networking.modemmanager.enable = true;
 programs.nm-applet.enable = true;
 ```
 
-## eSIM Profiles
+## SIM Inventory (2026-04-30)
 
-| ICCID                | Provider    | Status   |
-| -------------------- | ----------- | -------- |
-| 89000123456789012341 | GSMA (test) | disabled |
-| 8901240270175304567  | Google Fi   | enabled  |
+Physical micro-SIM (Google Fi data-only kit) is in slot 1, active. eUICC
+(slot 2) is empty (all profiles deleted after the eSIM throttling
+investigation — see <foxflss_wwan.md>).
+
+| Slot | Type     | ICCID                         | Provider  | Status                              |
+| ---- | -------- | ----------------------------- | --------- | ----------------------------------- |
+| 1    | physical | `8901240270139815559`         | Google Fi | **active**, registered, throttled\* |
+| 2    | eSIM     | (none — all profiles deleted) | —         | empty                               |
+
+\* Modem registers on Google Fi (operator `310260`) but TCP throughput
+is capped at ~7.3 KB/s by carrier QoS because the modem IMEI is not
+yet registered on the Fi account. ICMP and signaling are unaffected.
+See `modem.md` "Lift the Google Fi QoS throttle" TODO.
+
+Active slot is set via `mbimcli --ms-set-device-slot-mappings=0`
+(0-indexed; 0 = physical, 1 = eSIM). Switch requires `systemctl stop
+ModemManager` first; safe with WiFi up.
 
 To activate a profile from a QR code (`LPA:1$<server>$<code>`):
 

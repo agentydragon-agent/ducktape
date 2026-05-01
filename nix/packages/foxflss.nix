@@ -6,8 +6,12 @@
 #     tables, and NR carrier aggregation configs to modem non-volatile storage.
 #   - DW5932e_RF.dat, DW5934e_RF.dat: platform-specific RF calibration data files.
 #
-# FoxFlss shells out to: lspci, grep, pgrep, tar -zxf. The binary is wrapped
-# with these tools on PATH so callers don't need to compose the PATH themselves.
+# FoxFlss shells out to several tools (per debug/rugged/hw/foxflss_wwan.md
+# "FoxFlss Tool Dependencies"): dmidecode (system SKU lookup, REQUIRED for
+# FCC unlock — without it FoxFlss prints "Current platform: do not support
+# FccLock!" and exits 1), lspci, pgrep, tar/gzip (RF cal data extraction),
+# and basic shell utils (grep/sed/awk/coreutils). The binary is wrapped with
+# all of these on PATH so callers don't need to compose the PATH themselves.
 #
 # FoxFlss hardcodes /opt/foxconn/data/ for the .dat files; see foxconn-wwan.nix
 # for the systemd-tmpfiles symlinks that put them there.
@@ -39,15 +43,17 @@ let
     '';
   };
 
-  # Tools FoxFlss actually shells out to (from strings analysis):
-  #   lspci -n | grep -i  — detect PCIe device
-  #   pgrep mbH          — check mbim-proxy
-  #   tar -zxf           — extract RF calibration data archive
+  # See package header for the dependency list and rationale.
   runtimePATH = lib.makeBinPath [
+    pkgs.dmidecode # dmidecode — system SKU lookup (REQUIRED for FCC unlock)
     pkgs.pciutils # lspci
     pkgs.gnugrep # grep
+    pkgs.gnused # sed
+    pkgs.gawk # awk
     pkgs.procps # pgrep
-    pkgs.gnutar # tar (with gzip support)
+    pkgs.gnutar # tar
+    pkgs.gzip # gzip (used by tar -z)
+    pkgs.coreutils # cat, echo, etc.
   ];
 
   # Wrapped FoxFlss with the correct PATH pre-set. The wrapper script

@@ -16,19 +16,39 @@ Live investigation log for the Foxconn DW5934e WWAN modem setup on the Dell Rugg
   See: Dell KB article 000214805
 - Modem IMEI: `356398950074094`
 
-## What Works (as of 2026-04-20)
+## What Works (as of 2026-04-30)
 
-- **FCC unlock** via `fcc-unlock.d`: modem typically boots with `power state: on` so this
-  rarely fires, but the script is wired up correctly.
-- **RF calibration** (`FoxFlss -f Check_RF_SSKU`): PASSES when modem is in clean state.
-  Calibration data persists in modem NVRAM — does not need to be re-run unless firmware
-  is wiped. However, RF cal does NOT meaningfully improve throughput (see below).
-- **MTU fix**: `ipv6.method=disabled` in NM profile drops IPv6 minimum MTU floor (RFC 2460
-  requires 1280 for IPv6), allowing `gsm.mtu=1200` to take effect. Path MTU ceiling on
-  Google Fi is ~1256B. With MTU 1200, TLS appconnect went from 3.7s → 0.14s.
-- **NM dispatcher script** on `wwan0 up`: wired up to run `FoxFlss -f Check_RF_SSKU` via
-  `systemd-run` (transient unit `foxflss-rf-cal.service`). Fires after bearer is fully
-  established.
+- **FCC unlock** via `fcc-unlock.d/105b:e11d`: MM invokes the script
+  reactively when it sees `Cannot power-up: sotware radio switch is OFF`
+  during enable. The script runs `FoxFlss` (FCC unlock) +
+  `FoxFlss -f Check_RF_SSKU` (RF cal). Confirmed firing successfully
+  starting 2026-04-30 once `dmidecode` was added to the foxflss wrapper
+  PATH (see "Watchdog + dmidecode fix" section). Without dmidecode the
+  binary exits 1 with `Current platform: do not support FccLock!` and
+  MM gives up — the silent failure that masked the unlock path for 5+
+  days.
+- **FCC-unlock watchdog** (`foxflss-watchdog.service`, defined in
+  `nix/nixos/hosts/rugged/foxconn-wwan.nix`): listens to MM state via
+  `mmcli -m any -w` and, if the modem is stuck in
+  `{enabling,disabled,failed}` + `power-state=low` for ≥ 12 s, runs
+  FoxFlss + restarts MM (cooldown 120 s). Belt-and-suspenders backstop
+  for the case where MM gives up after a script failure. Marked
+  `CLEANUP(2026-04-30)` — try retiring after a month of zero fires.
+- **RF calibration** (`FoxFlss -f Check_RF_SSKU`): PASSES when modem is
+  in clean state. Calibration data persists in modem NVRAM — does not
+  need to be re-run unless firmware is wiped. RF cal does NOT
+  meaningfully improve throughput (the cap is carrier-side QoS, not
+  RF-link, see "Physical SIM throughput" below).
+- **MTU fix**: `ipv6.method=disabled` in NM profile drops IPv6 minimum
+  MTU floor (RFC 2460 requires 1280 for IPv6), allowing `gsm.mtu=1200`
+  to take effect. Path MTU ceiling on Google Fi is ~1256 B. With MTU
+  1200, TLS appconnect went from 3.7 s → 0.14 s on the (rare)
+  un-throttled connections; while throttled, HTTPS still fails because
+  the TLS ClientHello + cert chain doesn't fit a single 1200 B segment
+  and PMTU-D is suppressed by the carrier.
+- **NM dispatcher script** on `wwan0 up`: wired up to run
+  `FoxFlss -f Check_RF_SSKU` via `systemd-run` (transient unit
+  `foxflss-rf-cal.service`). Fires after bearer is fully established.
 
 ## Root Cause: Incomplete eSIM Activation (found 2026-04-20)
 
@@ -235,12 +255,19 @@ The post-download wedge means eSIM provisioning requires one reboot:
 
 There is no way to avoid this reboot with the current DW5934e firmware.
 
-### Recommendation: use physical SIM
+### Recommendation: use physical SIM (caveat 2026-04-30)
 
 The eSIM provisioning path on this modem is unreliable (firmware wedges,
 requires reboots, Google Fi backend doesn't receive installation
-notification automatically). **Use a physical SIM in slot 1 (micro-SIM,
-battery compartment)** for production use. eSIM is experimental only.
+notification automatically). Use a physical SIM in slot 1 (micro-SIM,
+battery compartment) for production use; eSIM is experimental only.
+
+**Caveat**: switching SIM type does NOT solve the Google Fi QoS throttle
+on this device. Both eSIM (2026-04-20) and physical SIM (2026-04-30)
+hit the same ~7.5 KB/s TCP throughput cap with ICMP unaffected. The
+throttle is gated by IMEI registration on the Fi account, not SIM type.
+See "Physical SIM throughput" section below for the comparative numbers
+and the activation step needed at `fi.google.com`.
 
 ### What does NOT reset the modem's UICC/SIM subsystem
 
@@ -447,6 +474,166 @@ LPAC_APDU=mbim LPAC_APDU_MBIM_DEVICE=/dev/wwan0mbim0 LPAC_APDU_MBIM_UIM_SLOT=2 \
 If eSIM provisioning proves unreliable: order free Google Fi "5G Data Only
 SIM Kit" ($0.00), insert micro-SIM in battery compartment slot (slot 1).
 No eSIM provisioning needed.
+
+## Physical SIM Insertion (2026-04-30)
+
+Google Fi data-only physical micro-SIM inserted in slot 1.
+
+**Read-only state at insertion time** (without changing slot mapping):
+
+- Modem state: `failed` / `esim-without-profiles` / `power state: low`
+  (expected — eUICC was wiped, modem still mapped to slot 2)
+- `mmcli -L` shows the modem at index 7 (path `/Modem/7`); SIM 7 = active
+  eSIM (no profiles), SIM 9 = slot 1 physical, ICCID
+  `8901240270139815559`, `active: no`
+- `mmcli -m 7` reports `slot 1: /SIM/9`, `slot 2: none (active)` — slot 2
+  is the active slot per `--ms-query-device-slot-mappings`, not yet
+  switched
+- NM "Google Fi" profile present and unbound (`gsm.sim-id` empty, will
+  bind to whatever SIM is active when bearer comes up); APN h2g2,
+  MTU 1200, IPv6 disabled, IPv4 route-metric 1050 — WiFi (metric 600)
+  remains preferred
+- WiFi `wlp0s20f3` connected to `Howleroi`, IPv4+IPv6 default routes
+  active and undisturbed
+- No SIM-insertion event in journal (last MM activity is the 2026-04-30
+  resume-from-suspend cycle hours earlier — kernel sees the eUICC, not
+  the physical slot, until the slot mapping flips)
+
+**Pending**: switch active slot to 1 via
+`mbimcli --ms-set-device-slot-mappings=0` (requires MM stop + restart).
+Doing so does not affect WiFi.
+
+### Slot-switch FCC handling (2026-04-30) — **superseded by dmidecode fix**
+
+> **Read this only for the failure-mode timeline. The diagnosis below
+> ("MM doesn't auto-fire fcc-unlock.d") was wrong.** What was actually
+> happening is described in the next section: MM was firing the unlock
+> script on every "Cannot power-up" loop iteration; the script was
+> exiting 1 because the systemd-clean PATH had no `dmidecode`, and per
+> the upstream MM contract, MM doesn't retry an unlock script after one
+> failure — so we observed an infinite bounce. The "always invoke
+> FoxFlss manually + restart MM" workaround that we baked into the
+> earlier `cellular_diag.sh` Phase 4 worked by coincidence: it was
+> running FoxFlss with the user's interactive shell PATH (which has
+> dmidecode), so the unlock succeeded. We have since (a) added
+> `dmidecode` and the rest of the doc'd dep set to the foxflss
+> wrapper PATH (`nix/packages/foxflss.nix`), so MM's reactive unlock
+> path now works, and (b) stripped the manual block from `cellular_diag.sh`.
+
+Original (incorrect) diagnosis follows for historical reference:
+
+After flipping `--ms-set-device-slot-mappings=0` and restarting MM, the
+modem comes back with `power state: low`. Symptom in
+`journalctl -u ModemManager`:
+
+```
+state changed (disabled -> enabling)
+Cannot power-up: sotware radio switch is OFF      [sic — typo is in MM]
+state changed (enabling -> disabled)
+failed enabling modem: Invalid transition
+state changed (disabled -> enabling)
+... repeats every 2-4s indefinitely ...
+```
+
+We initially concluded MM wasn't invoking the unlock script. The real
+explanation was that MM **was** invoking it but the script silently
+exited 1 each time (FoxFlss → "Current platform: do not support
+FccLock!" → exit 1 because `dmidecode` wasn't on the systemd-clean
+PATH). MM honors its "don't retry failed unlock scripts" contract,
+hence the bounce.
+
+### Watchdog + dmidecode fix (2026-04-30, evening)
+
+Two related fixes shipped:
+
+1. **`nix/packages/foxflss.nix`** — added `dmidecode` (and `gnused`,
+   `gawk`, `gzip`, `coreutils` for completeness) to the `runtimePATH`
+   wrapper. Without `dmidecode`, FoxFlss fails the platform check with
+   `Current platform: do not support FccLock!` and exits 1. The script
+   "worked" up to now only because we always invoked it from the user's
+   shell which had dmidecode on PATH; the systemd-managed paths
+   (fcc-unlock.d, the new watchdog) had a clean PATH and silently failed.
+   This is why MM's `fcc-unlock.d/105b:e11d` had never been observed
+   firing successfully in 5 days of journal — MM was invoking it; it was
+   just exiting 1.
+
+2. **`nix/nixos/hosts/rugged/foxconn-wwan.nix` + `foxflss_watchdog.py`** —
+   a small Python systemd watchdog (`foxflss-watchdog.service`) listens
+   to MM state changes via `mmcli -m any -w` and re-checks on a 5 s tick
+   backstop. When the modem sits in `{enabling,disabled,failed}` with
+   `power-state=low` for ≥ 12 s, it runs `FoxFlss` and restarts MM.
+   Cooldown 120 s.
+
+After the dmidecode fix landed, MM's `fcc-unlock.d` started firing
+successfully on its own — observed at 22:57:40-22:57:45 PDT:
+
+```
+... state changed (disabled -> enabling)
+... Cannot power-up: sotware radio switch is OFF      ← FCC lock detected
+... power state updated: on                            ← unlocked, 5s later
+... state changed (enabling -> enabled)
+... 3GPP registration state changed (registering -> home)
+... state changed (enabled -> registered)
+```
+
+So the watchdog's primary value going forward isn't to BE the unlock
+path — it's to kick MM with `systemctl restart` if the modem ever wedges
+again (e.g. if MM's "don't retry the unlock script after first failure"
+contract bites us). MM's own reactive unlock now does the heavy lifting.
+
+### SIM identity confirmed (2026-04-30)
+
+Read from MBIM after slot switch + FCC unlock:
+
+| Field              | Value                                                          |
+| ------------------ | -------------------------------------------------------------- |
+| ICCID              | `8901240270139815559` (also `8901240270139815559F` from MBIM)  |
+| IMSI               | `310240273981555` (MCC/MNC 310/240 = T-Mobile direct)          |
+| GID1               | `4276` (Google Fi marker)                                      |
+| Operator           | T-Mobile (`310240`)                                            |
+| Lock state         | `sim-pin2` enabled, `fixed-dialing` lock — does not block data |
+| Initial bearer APN | `fast.t-mobile.com` (from carrier config)                      |
+
+### Physical SIM throughput — same throttle as eSIM (2026-04-30, 23:12 PDT)
+
+First end-to-end run with the physical SIM in slot 1, WiFi up, cellular
+tests bound to wwan0. Run output:
+`debug/rugged-mobile-net-diag/20260430-231220/`.
+
+| Test                 | Result                                                            |
+| -------------------- | ----------------------------------------------------------------- |
+| Modem state          | `registered`, `home`, `attached`                                  |
+| Carrier              | Google Fi (`310260`), LTE                                         |
+| wwan0 source IP      | `100.81.36.193` (CGNAT, 100.64/10)                                |
+| ICMP ping 8.8.8.8    | avg **68 ms** (healthy)                                           |
+| HTTP 1MB throughput  | **7.3 KB/s** (`http: 200`)                                        |
+| HTTP 10MB throughput | **7.4 KB/s** sustained                                            |
+| HTTPS throughput     | **0 B/s, `http: 000`** — fails fast (~0.2-0.3s, no TLS handshake) |
+| MTU enforced         | 1200 (DF-ping 1172 OK, 1272+ → "Message too long")                |
+
+**Conclusion: the SIM swap did NOT defeat the QoS throttle.** Throughput
+profile is identical to the prior eSIM measurement (7.5 KB/s on
+2026-04-20), with the same characteristic ICMP-fast / TCP-throttled
+asymmetry that signals carrier-side shaping rather than RF or
+host-side problems.
+
+This matches the prior root-cause analysis in this file: Google Fi
+shapes devices not registered on the account by IMEI. Our modem
+IMEI `356398950074094` was never on the Fi account (only the Pixel 6
+appears in the app), and inserting a physical SIM doesn't auto-bind
+the IMEI to the account. **Next step is to complete activation at
+`fi.google.com`** (the data-only physical SIM kit ships requiring
+explicit activation), which should link ICCID
+`8901240270139815559` to the account and bind the modem's IMEI as
+an authorized device.
+
+The HTTPS-fails-fast pattern is a likely _separate_ secondary issue:
+TLS ClientHello + cert chain typically needs >1200 B in the first
+flight; with cellular MTU pinned at 1200 and ICMP "fragmentation
+needed" suppressed by Google Fi's network (per prior probing),
+PMTU discovery never fires and the TLS handshake silently fails.
+Won't matter once throttle is gone (TCP MSS clamping handles
+post-handshake bulk traffic), but worth verifying after activation.
 
 ## Resolved Issues
 

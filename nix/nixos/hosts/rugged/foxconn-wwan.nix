@@ -1,11 +1,14 @@
 # Foxconn DW5932e/DW5934e WWAN modem setup
 #
-# Initialization: two phases, each triggered differently.
+# Initialization: three phases, each triggered differently.
 #
 # 1. FCC unlock — FoxFlss (bare): allows the software radio to turn on.
-#    Wired via ModemManager's fcc-unlock.d; MM calls the script when the modem
-#    reports needing FCC unlock. The DW5934e typically boots with power state: on
-#    so this may not fire on every boot, but is kept for correctness.
+#    Wired via ModemManager's fcc-unlock.d; MM calls the script when it sees
+#    "Cannot power-up: software radio switch is OFF" during enable. Confirmed
+#    firing 2026-04-30 once dmidecode landed in the foxflss runtime PATH —
+#    before that the script was being invoked but failing with
+#    "Current platform: do not support FccLock!" and exiting 1, so MM gave up
+#    (per upstream contract: failed unlock scripts aren't retried).
 #
 # 2. RF calibration — FoxFlss -f Check_RF_SSKU: writes RF tuner settings, DPR
 #    tables, and NR carrier aggregation configs from the platform-specific .dat
@@ -16,6 +19,15 @@
 #    access the MBIM device through mbim-proxy without contention.
 #    The .dat files are packaged in the foxflss derivation and symlinked to the
 #    path FoxFlss hardcodes (/opt/foxconn/data/) via systemd-tmpfiles.
+#
+# 3. FCC unlock watchdog — safety net. Listens to ModemManager state changes
+#    via `mmcli -m any -w`; when the modem stays in {enabling,disabled,failed}
+#    with power-state=low for >=12s, runs FoxFlss + restarts MM (cooldown
+#    120s). Now that phase 1 actually works, this rarely fires; it remains
+#    for the case where MM gives up on the unlock script (per upstream
+#    contract, failed scripts aren't retried — a transient FoxFlss failure
+#    would otherwise wedge the modem until manual intervention).
+#    See debug/rugged/hw/foxflss_wwan.md "Watchdog + dmidecode fix".
 #
 # Hardware: Foxconn DP25-42843-47 (DW5934e, SDX72) — PCI 105b:e11d
 # See: debug/rugged/hw/esim.md
@@ -41,6 +53,22 @@ let
 
   # FCC unlock + RF calibration for ModemManager fcc-unlock.d.
   # Called by MM with: <script> <dbus-path> <port1> [<port2> ...]
+  #
+  # CLEANUP(2026-04-30): Drop the closed-source FoxFlss binary once nixpkgs
+  #   ships libqmi >= 1.38.0 (currently 1.36.0). Upstream MM's
+  #   fcc-unlock.available.d/105b script does the job via
+  #   `qmicli --fox-set-fcc-authentication` over the FOX service (0xE3),
+  #   which is confirmed working on this SDX72 — qmicli --fox-get-firmware-version
+  #   returned FDE2.F0.0.0.1.2.TO.003.062. At that point the foxflss derivation,
+  #   its /opt/foxconn/data symlinks, and the dispatcher script all collapse
+  #   into a one-liner. Remove this when libqmi 1.38+ lands.
+  #   See debug/rugged/hw/modem.md TODO list.
+  # Watchdog: see foxflss_watchdog.py and the file's docstring for rationale.
+  # Listens to MM state changes and runs FoxFlss when the modem is stuck FCC-locked.
+  watchdogScript = pkgs.writers.writePython3 "foxflss-watchdog" {
+    flakeIgnore = [ "E501" ];
+  } (builtins.readFile ./foxflss_watchdog.py);
+
   fccUnlockScript = pkgs.writeShellScript "foxconn-dw593xe-fcc-unlock" ''
     [ $# -lt 2 ] && exit 1
     shift  # discard DBus path
@@ -164,5 +192,35 @@ in
       "L+ /opt/foxconn/data/DW5932e_RF.dat - - - - ${foxflss}/share/foxflss/DW5932e_RF.dat"
       "L+ /opt/foxconn/data/DW5934e_RF.dat - - - - ${foxflss}/share/foxflss/DW5934e_RF.dat"
     ];
+
+    # CLEANUP(2026-04-30): Try retiring this service after ~1 month of
+    #   uneventful operation. It was added before we found the dmidecode
+    #   root cause and turned out never to have been the actual unlock
+    #   path on any failure we observed — MM's wired fcc-unlock.d does
+    #   the work. The watchdog only earns its keep if MM's unlock script
+    #   ever fails (per upstream contract MM won't retry). To verify
+    #   safe to remove: `journalctl -u foxflss-watchdog --since '30 days
+    #   ago' | grep -c stuck` should be 0 across boots, suspends, and
+    #   slot switches. If so, drop this service block, the
+    #   watchdogScript let-binding above, and foxflss_watchdog.py.
+    #   See debug/rugged/hw/modem.md TODO list.
+    systemd.services.foxflss-watchdog = {
+      description = "Foxconn DW5934e FCC-unlock watchdog";
+      wants = [ "ModemManager.service" ];
+      after = [ "ModemManager.service" ];
+      wantedBy = [ "multi-user.target" ];
+      # FoxFlss + mmcli + systemctl on PATH.
+      path = [
+        foxflss
+        pkgs.modemmanager
+        pkgs.systemd
+      ];
+      serviceConfig = {
+        Type = "simple";
+        Restart = "on-failure";
+        RestartSec = 10;
+        ExecStart = watchdogScript;
+      };
+    };
   };
 }
