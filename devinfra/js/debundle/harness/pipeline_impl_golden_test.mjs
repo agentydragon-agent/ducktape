@@ -8,7 +8,7 @@ import test from "node:test";
 import { buildJsGolden, buildRustGolden, computeDiffSummary, listFiles } from "./pipeline_impl_golden_lib.mjs";
 
 const GOLDEN_ROOT = fileURLToPath(new URL("./testdata/mock_browser_bundle/pipeline_impl_golden/", import.meta.url));
-const JS_GOLDEN_ROOT = fileURLToPath(new URL("./testdata/mock_browser_bundle/pipeline_golden/app/", import.meta.url));
+const JS_GOLDEN_ROOT = join(GOLDEN_ROOT, "js");
 
 test("js and rust pipeline outputs match committed goldens and tracked diff", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "debundle-impl-golden-test-"));
