@@ -119,6 +119,69 @@ service does not recover — opens still time out. This suggests the modem's
 MBIM processor is in a state that survives even SoC-level reset, and only
 a full power cycle (PCIe slot power off during system shutdown) clears it.
 
+### SBL-stage firmware wedge (CRITICAL — categorically different from post-download wedge)
+
+A second class of unrecoverable-without-reboot wedge, observed
+2026-04-30. Symptom in dmesg:
+
+```
+mhi mhi0: Resuming from non M3 state (SYS ERROR)
+mhi-pci-generic 0000:71:00.0: failed to resume device: -22
+mhi-pci-generic 0000:71:00.0: device recovery started
+mhi-pci-generic 0000:71:00.0: reset failed
+mhi-pci-generic 0000:71:00.0: Recovery failed: -25
+… and on every subsequent rebind / rescan attempt:
+mhi mhi0: Power on setup success
+mhi mhi0: No firmware image defined or !sbl_size || !seg_len
+mhi-pci-generic 0000:71:00.0: failed to power up MHI controller
+```
+
+The modem chip is alive at the PCIe link layer (re-enumerates fine,
+PCIe `Power on setup success`), but its internal CPU is hung at the
+SBL (Secondary Boot Loader) stage — when the MHI host driver reads
+the firmware metadata region to start boot, the modem returns
+zeros / invalid lengths and SBL never starts. `lspci` reports the
+modem as `Unassigned class [ff00]` (rather than the healthy
+`Wireless controller [0d40]`). This differs from the post-download
+wedge: there the firmware was running and only ISD-R/MBIM was wedged;
+here the firmware itself is dead.
+
+Trigger so far observed once: rapid MM-stop/start cycling (caused by
+the buggy old foxflss wrapper failing FCC unlock → watchdog kept
+restarting MM → modem suspended/resumed too many times → SYS ERROR).
+Should be much rarer now that fcc-unlock.d works first-time.
+
+**Nothing the kernel can do clears this. Confirmed exhaustively
+2026-05-01:**
+
+| Method                                                      | Effect on SBL wedge                                                                                                                                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `systemctl restart MM`                                      | no                                                                                                                                                                                    |
+| MHI driver unbind/rebind                                    | no                                                                                                                                                                                    |
+| PCIe device remove + bus rescan                             | re-enumerates, firmware dead                                                                                                                                                          |
+| PCIe Function Level Reset                                   | no                                                                                                                                                                                    |
+| Parent bridge `reset_subordinate` (bus reset)               | no                                                                                                                                                                                    |
+| Full kernel module reload (mhi\*, mhi-pci-generic)          | no                                                                                                                                                                                    |
+| `setpci` Link Disable on parent bridge (CAP_EXP+10.W bit 4) | link goes down + back up; chip stays powered; firmware still dead                                                                                                                     |
+| **`systemctl suspend` (S3)**                                | **untested**; should work in principle (slot loses power on S3 entry) but `mhi_pci_suspend` returns `EBUSY (-16)` per existing TODO — may itself fail and leave system half-suspended |
+| **`systemctl reboot`**                                      | **yes**                                                                                                                                                                               |
+
+This slot lacks all the platform hooks that would normally let a
+running kernel power-cycle a PCIe device:
+
+- Not in `/sys/bus/pci/slots/` (no hot-plug controller).
+- Parent bridge (`00:1c.0`) only supports `pm` reset; no
+  ASPM/power-resource handle for the slot.
+- ACPI exposes `\_SB_.PC00.RP02.PXSX` for the modem but no
+  `_PR0`/`_PR3` that the kernel's pcieport driver picks up for
+  this address.
+- `runtime_status: unsupported` for the device — kernel runtime PM
+  is disabled.
+
+Implication: this wedge is reboot-only on this hardware (or possibly
+S3, with caveats). `modem.sh recover` runs the kernel-level escalation
+ladder anyway, then prints suspend/reboot guidance.
+
 ### Implication for eSIM provisioning
 
 The post-download wedge means eSIM provisioning requires one reboot:
