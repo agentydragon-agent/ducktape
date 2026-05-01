@@ -17,6 +17,20 @@ let
   inspection = import ../../lib/inspection-commands.nix { inherit lib; };
   allowed = import ../allowed-commands.nix;
 
+  expectedNixEvalRule = {
+    toolName = "run_shell_command";
+    commandPrefix = "nix eval";
+    decision = "allow";
+    priority = 300;
+  };
+
+  expectedNixBuildRule = {
+    toolName = "run_shell_command";
+    commandPrefix = "nix build";
+    decision = "allow";
+    priority = 300;
+  };
+
 in
 {
   # Verify personal integration sets programs.gemini-cli.policies
@@ -80,22 +94,12 @@ in
   };
 
   test_has_nix_eval_rule = {
-    expr = builtins.elem {
-      toolName = "run_shell_command";
-      commandPrefix = "nix eval";
-      decision = "allow";
-      priority = 300;
-    } personalIntegration.programs.gemini-cli.policies.allowed-commands;
+    expr = builtins.elem expectedNixEvalRule personalIntegration.programs.gemini-cli.policies.allowed-commands;
     expected = true;
   };
 
   test_has_nix_build_rule = {
-    expr = builtins.elem {
-      toolName = "run_shell_command";
-      commandPrefix = "nix build";
-      decision = "allow";
-      priority = 300;
-    } personalIntegration.programs.gemini-cli.policies.allowed-commands;
+    expr = builtins.elem expectedNixBuildRule personalIntegration.programs.gemini-cli.policies.allowed-commands;
     expected = true;
   };
 
