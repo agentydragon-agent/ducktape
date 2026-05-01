@@ -19,6 +19,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `openai_utils/`    | OpenAI API utilities                 |
 | `tana/`            | Tana export toolkit                  |
 | `finance/`         | Portfolio tracking (Rust)            |
+| `idea/`            | Lightweight future project ideas     |
 | `trilium/`         | Trilium Notes extensions             |
 | `inventree_utils/` | InventTree plugins                   |
 | `website/`         | Personal website (Hakyll)            |
