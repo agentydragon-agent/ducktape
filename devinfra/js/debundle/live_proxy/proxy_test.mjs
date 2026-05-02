@@ -133,16 +133,20 @@ test("loadLiveProxyConfiguration falls back to SOURCE.json for the target base U
   assert.equal(config.bootstrapUrl, "/_debundle/live/source-fallback/app/bootstrap.js");
 });
 
-test("loadLiveProxyConfiguration resolves manifest-relative workspace paths from an absolute manifest location", () => {
+test("loadLiveProxyConfiguration resolves manifest-dir-relative paths from an absolute manifest location", () => {
   const fixture = writeBaseLiveProxyFixture("debundle-live-proxy-runfiles-manifest-", {
     sourceBaseUrl: "https://app.example.com",
     uiVersion: "runfiles",
   });
   writeJsonFile(fixture.assetSummaryPath, {});
+  // The pipeline emits paths relative to the manifest's own directory.
+  // appManifest sits at <root>/app/manifest.json; outDir is the manifest's
+  // own dir, asset-summary.json is the parent dir, sourceHtml is in the
+  // sibling source/ tree.
   writeJsonFile(fixture.appManifestPath, {
-    assetSummaryPath: "asset-summary.json",
-    outDir: "app",
-    sourceHtml: "source/index.html",
+    assetSummaryPath: "../asset-summary.json",
+    outDir: ".",
+    sourceHtml: "../source/index.html",
     uiVersion: "runfiles",
   });
 
@@ -279,7 +283,11 @@ test("mapLocalAssetPath serves swapped vendor chunks from package roots and gene
         version: "1.2.1",
         subpath: "sets/15/native.json",
         wrapperShape: "named-from-json-default",
-        generatedWrapperPath: "vendors/generated/static/native-B5Vb9Oiz/runtime.js",
+        // Vendor manifest sits at <root>/vendors/manifest.json; the wrapper
+        // file is its sibling under generated/. With manifest-relative
+        // resolution the recorded path is rooted at the vendor manifest's
+        // own directory.
+        generatedWrapperPath: "generated/static/native-B5Vb9Oiz/runtime.js",
       },
     },
   });
@@ -312,7 +320,7 @@ test("mapLocalAssetPath serves swapped vendor chunks from package roots and gene
 
   const wrapperHit = mapLocalAssetPath("/_debundle/live/vendor/app/static/native-B5Vb9Oiz/runtime.js", config);
   assert.equal(wrapperHit.kind, "vendor-file");
-  assert.ok(wrapperHit.filePath.endsWith("/vendors/generated/static/native-B5Vb9Oiz/runtime.js"));
+  assert.equal(wrapperHit.filePath, join(fixture.vendorsRoot, "generated", "static", "native-B5Vb9Oiz", "runtime.js"));
 
   const appHit = mapLocalAssetPath("/_debundle/live/vendor/app/static/index-Example/runtime.js", config);
   assert.equal(appHit.kind, "file");
