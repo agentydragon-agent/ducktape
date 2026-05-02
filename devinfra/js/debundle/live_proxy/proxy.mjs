@@ -5,8 +5,8 @@ import { Agent as HttpsAgent } from "node:https";
 
 import forge from "node-forge";
 import { Proxy } from "http-mitm-proxy";
-import { loadVendorRuntimeIndex, resolveVendorRuntimeRequest } from "../common/vendor_runtime.mjs";
-import { requireValue, resolveWorkspacePath } from "../common/io.mjs";
+import { loadVendorRuntimeIndex, resolveVendorRuntimeRequest } from "./vendor_runtime.mjs";
+import { requireValue, resolveWorkspacePath } from "./io.mjs";
 
 const MODULE_SCRIPT_RE =
   /<script\b(?=[^>]*\btype\s*=\s*["']module["'])(?=[^>]*\bsrc\s*=\s*["'][^"']+["'])[^>]*>\s*<\/script>/gi;

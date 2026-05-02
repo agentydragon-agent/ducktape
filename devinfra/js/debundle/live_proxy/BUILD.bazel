@@ -14,24 +14,23 @@ filegroup(
 
 js_library(
     name = "libs",
-    srcs = ["proxy.mjs"],
+    srcs = [
+        "io.mjs",
+        "package_tree.mjs",
+        "parser_options.mjs",
+        "proxy.mjs",
+        "vendor_runtime.mjs",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//:node_modules/http-mitm-proxy",
         "//:node_modules/node-forge",
-        "//devinfra/js/debundle/common:libs",
     ],
 )
 
 js_binary(
     name = "serve_bin",
-    data = [
-        "proxy.mjs",
-        ":serve_entry_point",
-        "//:node_modules/http-mitm-proxy",
-        "//:node_modules/node-forge",
-        "//devinfra/js/debundle/common:libs",
-    ],
+    data = [":libs"],
     entry_point = ":serve_entry_point",
     visibility = ["//visibility:public"],
 )
@@ -39,11 +38,8 @@ js_binary(
 js_test(
     name = "proxy_test",
     data = [
-        "proxy.mjs",
-        "//:node_modules/http-mitm-proxy",
-        "//:node_modules/node-forge",
-        "//devinfra/js/debundle/common:sources",
-        "//devinfra/js/debundle/test_support:sources",
+        "test_helpers.mjs",
+        ":libs",
     ],
     entry_point = "proxy_test.mjs",
 )

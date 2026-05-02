@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
 
-import { writeJsonFile, writeTextFile } from "../common/parser_options.mjs";
-import { createWebFixtureRoots, readUtf8 } from "../test_support/fixtures.mjs";
+import { writeJsonFile, writeTextFile } from "./parser_options.mjs";
+import { createWebFixtureRoots, readUtf8 } from "./test_helpers.mjs";
 import {
   isTargetDocumentRequest,
   loadLiveProxyConfiguration,

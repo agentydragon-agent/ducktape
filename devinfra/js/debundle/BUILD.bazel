@@ -1,1 +1,178 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
 package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "module_path",
+    srcs = ["module_path.rs"],
+    crate_root = "module_path.rs",
+    edition = "2024",
+)
+
+rust_library(
+    name = "js_ast",
+    srcs = ["js_ast.rs"],
+    crate_root = "js_ast.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_codegen",
+        "@crates//:swc_ecma_parser",
+    ],
+)
+
+rust_library(
+    name = "artifact",
+    srcs = ["artifact.rs"],
+    crate_root = "artifact.rs",
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_library(
+    name = "write_tree",
+    srcs = ["write_tree.rs"],
+    crate_root = "write_tree.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":js_ast",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_library(
+    name = "rewrite_specifiers",
+    srcs = ["rewrite_specifiers.rs"],
+    crate_root = "rewrite_specifiers.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":js_ast",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_library(
+    name = "vendor",
+    srcs = ["vendor.rs"],
+    crate_root = "vendor.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":js_ast",
+        "@crates//:anyhow",
+        "@crates//:serde_json",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_library(
+    name = "emit_harness",
+    srcs = ["emit_harness.rs"],
+    crate_root = "emit_harness.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":rewrite_specifiers",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_library(
+    name = "logical_modules",
+    srcs = ["logical_modules.rs"],
+    crate_root = "logical_modules.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":js_ast",
+        ":write_tree",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_library(
+    name = "program_analysis",
+    srcs = ["program_analysis.rs"],
+    crate_root = "program_analysis.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":js_ast",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_library(
+    name = "normalize",
+    srcs = ["normalize.rs"],
+    crate_root = "normalize.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":program_analysis",
+        "@crates//:anyhow",
+    ],
+)
+
+rust_library(
+    name = "pipeline",
+    srcs = ["pipeline.rs"],
+    crate_root = "pipeline.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":emit_harness",
+        ":logical_modules",
+        ":normalize",
+        ":rewrite_specifiers",
+        ":vendor",
+        ":write_tree",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "pipeline_test",
+    crate = ":pipeline",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_binary(
+    name = "debundle",
+    srcs = ["main.rs"],
+    crate_root = "main.rs",
+    edition = "2024",
+    deps = [
+        ":pipeline",
+        "@crates//:anyhow",
+    ],
+)
