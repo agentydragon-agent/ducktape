@@ -9,6 +9,7 @@
 }:
 let
   execPolicyRules = import ./execpolicy-rules.nix { inherit lib; };
+  codexNpmCache = "${config.xdg.cacheHome}/codex/npm";
 
   codexSettings = {
     # Local model providers for GPT-OSS
@@ -96,6 +97,9 @@ let
       "inherit" = "all";
       "set" = {
         CODEX_AGENT = "1";
+        # Keep npm installs from node-based pre-commit hooks inside a
+        # Codex-owned cache that is writable from the sandbox.
+        NPM_CONFIG_CACHE = codexNpmCache;
       };
     };
     sandbox_mode = "workspace-write";
@@ -107,6 +111,7 @@ let
         "/home/agentydragon/.cache/pre-commit"
         # Allow Codex sandboxed pre-commit runs to write their hook log.
         "/home/agentydragon/.cache/pre-commit/pre-commit.log"
+        codexNpmCache
       ];
       network_access = true;
       exclude_tmpdir_env_var = false;
@@ -153,6 +158,7 @@ let
     fi
 
     mkdir -p "$CODEX_HOME"
+    mkdir -p '${codexNpmCache}'
 
     BASE="$BASE" LIVE="$LIVE" ${pythonMerge}/bin/python ${./merge.py}
   '';
