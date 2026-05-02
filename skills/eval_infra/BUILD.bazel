@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # The "skill off" payload (`empty_skill_tar` + `empty_skill_skill_spec`)
 # lives in the `empty_skill/` subpackage so it goes through the regular
@@ -68,4 +68,13 @@ py_library(
     srcs = ["af_chat_client.py"],
     visibility = ["//skills:__subpackages__"],
     deps = _AGENT_FRAMEWORK_DEPS,
+)
+
+py_binary(
+    name = "resurrect",
+    srcs = ["resurrect.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = [
+        ":af_chat_client",
+    ] + _AGENT_FRAMEWORK_DEPS,
 )
