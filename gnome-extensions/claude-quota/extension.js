@@ -12,9 +12,20 @@ import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 
 const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+const CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+const CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const CLAUDE_OAUTH_SCOPES = [
+  "user:profile",
+  "user:inference",
+  "user:sessions:claude_code",
+  "user:mcp_servers",
+  "user:file_upload",
+];
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const POLL_INTERVAL_SECONDS = 120;
 const STALE_AFTER_SECONDS = 5 * 60;
+const TOKEN_EXPIRY_SKEW_SECONDS = 30;
+const QUOTA_BAR_FALLBACK_WIDTH_PX = 180;
 
 // Pace deviation thresholds, in signed percentage points (used% − expected%).
 // TODO: expose via gschema settings (along with poll interval and the
@@ -31,8 +42,6 @@ const STABLE_FRACTION = 0.05;
 // so the short/long lengths are constants matching the published windows.
 const CLAUDE_SHORT_W = 5 * 3600;
 const CLAUDE_LONG_W = 7 * 86400;
-const CODEX_SHORT_W_FALLBACK = 3600;
-const CODEX_LONG_W_FALLBACK = 86400;
 
 // keyring crate (used by Codex CLI) stores entries under the generic schema
 // with attributes {service, username}. We search by service only.
@@ -41,8 +50,75 @@ const CODEX_KEYRING_SCHEMA = new Secret.Schema("org.freedesktop.Secret.Generic",
   username: Secret.SchemaAttributeType.STRING,
 });
 
-const TINT_CLASSES = ["quota-cool", "quota-ok", "quota-warn", "quota-hot", "quota-unknown", "quota-stale"];
+const TINT_CLASSES = [
+  "quota-cool",
+  "quota-ok",
+  "quota-warn",
+  "quota-hot",
+  "quota-unknown",
+  "quota-stale",
+  "quota-error",
+];
 const TINT_RANK = { unknown: 0, stale: 0, ok: 1, cool: 1, warn: 2, hot: 3 };
+
+function decodeBytes(bytes) {
+  return new TextDecoder().decode(typeof bytes.get_data === "function" ? bytes.get_data() : bytes);
+}
+
+function errorMessage(error) {
+  return error?.message ?? String(error);
+}
+
+function formatUtcTimestamp(ms) {
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) return String(ms);
+  return date
+    .toISOString()
+    .replace(/:\d{2}\.\d{3}Z$/, "Z")
+    .replace("T", " ");
+}
+
+function objectSummary(value) {
+  if (value == null) return String(value);
+  if (typeof value !== "object" || Array.isArray(value)) return typeof value;
+  const keys = Object.keys(value);
+  return keys.length ? `keys: ${keys.join(", ")}` : "empty object";
+}
+
+function messageStatus(message) {
+  if (typeof message.get_status === "function") return message.get_status();
+  return message.status_code ?? 0;
+}
+
+function isHttpErrorStatus(status) {
+  return status !== 0 && (status < 200 || status >= 300);
+}
+
+function httpErrorMessage(status, body, rawBody) {
+  const statusLabel = status === 0 ? "error" : status;
+  const apiError = body?.error;
+  if (apiError?.message) {
+    return `HTTP ${statusLabel} ${apiError.type ?? "error"}: ${apiError.message}`;
+  }
+  if (body?.message) return `HTTP ${statusLabel}: ${body.message}`;
+  const bodyPreview = rawBody ? `: ${rawBody.slice(0, 160)}` : "";
+  return `HTTP ${statusLabel}${bodyPreview}`;
+}
+
+class HttpResponseError extends Error {
+  constructor(status, body, rawBody) {
+    super(httpErrorMessage(status, body, rawBody));
+    this.name = "HttpResponseError";
+    this.status = status;
+    this.body = body;
+    this.rawBody = rawBody;
+  }
+}
+
+function parseScopes(scopeString, fallback) {
+  if (typeof scopeString !== "string") return fallback ?? [];
+  return scopeString.split(/\s+/).filter(Boolean);
+}
 
 function formatDuration(seconds) {
   if (seconds == null || !Number.isFinite(seconds)) return "?";
@@ -55,9 +131,38 @@ function formatDuration(seconds) {
   return `${m}m`;
 }
 
-function secondsUntil(isoTimestamp) {
-  if (!isoTimestamp) return null;
-  return (new Date(isoTimestamp) - Date.now()) / 1000;
+function parseClaudeResetAtMs(timestamp, label) {
+  if (typeof timestamp !== "string") throw new Error(`${label} window missing resets_at`);
+  const ms = new Date(timestamp).getTime();
+  if (!Number.isFinite(ms)) throw new Error(`${label} window invalid resets_at`);
+  return ms;
+}
+
+function codexResetAtMsFromResetAfter(node, label) {
+  const resetAfterSeconds = Number(node?.reset_after_seconds ?? NaN);
+  if (!Number.isFinite(resetAfterSeconds) || resetAfterSeconds < 0) {
+    throw new Error(`${label} window missing reset_after_seconds`);
+  }
+  return Date.now() + resetAfterSeconds * 1000;
+}
+
+function withLiveReset(state) {
+  if (!state?.resetAtMs) return state;
+  return {
+    ...state,
+    resetSeconds: Math.max(0, (state.resetAtMs - Date.now()) / 1000),
+  };
+}
+
+function isStaleFetch(lastFetch) {
+  return lastFetch != null && (Date.now() - lastFetch) / 1000 > STALE_AFTER_SECONDS;
+}
+
+function formatFreshness(lastFetch) {
+  if (lastFetch == null) return "no successful refresh yet";
+  const ageSeconds = Math.max(0, (Date.now() - lastFetch) / 1000);
+  const age = ageSeconds < 60 ? `${Math.round(ageSeconds)}s` : formatDuration(ageSeconds);
+  return `${isStaleFetch(lastFetch) ? "stale, " : ""}updated ${age} ago`;
 }
 
 // Pure pace computation. See DESIGN.md ("Pace math") for derivation.
@@ -120,18 +225,37 @@ function formatForecast(pace, resetSeconds) {
   return "on pace";
 }
 
+function clamp01(value) {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(1, value));
+}
+
+function elapsedFraction(state) {
+  if (state?.resetSeconds == null || state?.windowSeconds == null || state.windowSeconds <= 0) return null;
+  return clamp01((state.windowSeconds - state.resetSeconds) / state.windowSeconds);
+}
+
 const QuotaIndicator = GObject.registerClass(
   class QuotaIndicator extends PanelMenu.Button {
     _init(extension) {
       super._init(0.0, "AI Quota Tracker", false);
 
       this._iconsDir = `${extension.path}/icons`;
-      this._claude = { short: null, long: null, lastFetch: null };
-      this._codex = { short: null, long: null, lastFetch: null };
+      this._claude = { short: null, long: null, lastFetch: null, error: null };
+      this._codex = { short: null, long: null, lastFetch: null, error: null };
       this._httpSession = new Soup.Session();
 
       this._buildPanel();
       this._buildPopup();
+      this._popupTickId = null;
+      this._menuOpenId = this.menu.connect("open-state-changed", (_menu, open) => {
+        if (open) {
+          this._renderPopup();
+          this._startPopupTick();
+        } else {
+          this._stopPopupTick();
+        }
+      });
 
       this._refresh();
       this._timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_INTERVAL_SECONDS, () => {
@@ -182,11 +306,11 @@ const QuotaIndicator = GObject.registerClass(
 
     _buildPopup() {
       this._claudeHeader = new PopupMenu.PopupSeparatorMenuItem("Claude");
-      this._claudeShort = new PopupMenu.PopupMenuItem("burst …", { reactive: false });
-      this._claudeLong = new PopupMenu.PopupMenuItem("weekly …", { reactive: false });
+      this._claudeShort = this._makeQuotaRow("5h");
+      this._claudeLong = this._makeQuotaRow("7d");
       this._codexHeader = new PopupMenu.PopupSeparatorMenuItem("Codex");
-      this._codexShort = new PopupMenu.PopupMenuItem("primary …", { reactive: false });
-      this._codexLong = new PopupMenu.PopupMenuItem("secondary …", { reactive: false });
+      this._codexShort = this._makeQuotaRow("5h");
+      this._codexLong = this._makeQuotaRow("7d");
       const items = [
         this._claudeHeader,
         this._claudeShort,
@@ -196,20 +320,78 @@ const QuotaIndicator = GObject.registerClass(
         this._codexLong,
       ];
       for (const item of items) this.menu.addMenuItem(item);
-      for (const item of [this._claudeShort, this._claudeLong, this._codexShort, this._codexLong]) {
-        item.label.add_style_class_name("quota-popup-row");
+      for (const item of [this._claudeHeader, this._codexHeader]) {
+        item.label.add_style_class_name("quota-popup-header");
       }
     }
 
-    _readClaudeToken() {
+    _makeQuotaRow(label) {
+      const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+      item.add_style_class_name("quota-popup-bar-item");
+
+      const content = new St.BoxLayout({
+        style_class: "quota-popup-bar-content",
+        vertical: true,
+        x_expand: true,
+      });
+      item._summaryLabel = new St.Label({
+        text: `${label}: no data`,
+        style_class: "quota-popup-row",
+        x_expand: true,
+      });
+      item._bars = new St.BoxLayout({
+        style_class: "quota-bars",
+        vertical: true,
+        x_expand: true,
+      });
+
+      const timeBar = this._makeQuotaBar("quota-bar-time");
+      const usageBar = this._makeQuotaBar("quota-unknown");
+      item._timeFill = timeBar.fill;
+      item._usageFill = usageBar.fill;
+
+      item._bars.add_child(timeBar.track);
+      item._bars.add_child(usageBar.track);
+      content.add_child(item._summaryLabel);
+      content.add_child(item._bars);
+      item.add_child(content);
+      return item;
+    }
+
+    _makeQuotaBar(fillClass) {
+      const track = new St.BoxLayout({ style_class: "quota-bar-track", x_expand: true });
+      track.set_width(QUOTA_BAR_FALLBACK_WIDTH_PX);
+
+      const fill = new St.Widget({ style_class: `quota-bar-fill ${fillClass}` });
+      fill._quotaFraction = null;
+      fill._quotaTrack = track;
+      fill.set_width(0);
+      track.connect("notify::width", () => this._applyBarFill(fill));
+      track.add_child(fill);
+      return { track, fill };
+    }
+
+    _readClaudeAuth() {
+      const path = `${GLib.get_home_dir()}/.claude/.credentials.json`;
       try {
-        const path = `${GLib.get_home_dir()}/.claude/.credentials.json`;
         const [ok, bytes] = GLib.file_get_contents(path);
-        if (!ok) return null;
-        const creds = JSON.parse(new TextDecoder().decode(bytes));
-        return creds?.claudeAiOauth?.accessToken ?? null;
-      } catch {
-        return null;
+        if (!ok) return { error: `${path}: not readable` };
+        const creds = JSON.parse(decodeBytes(bytes));
+        const token = creds?.claudeAiOauth?.accessToken ?? null;
+        if (!token) return { error: `${path}: missing claudeAiOauth.accessToken` };
+
+        const refreshToken = creds?.claudeAiOauth?.refreshToken ?? null;
+        const expiresAt = Number(creds?.claudeAiOauth?.expiresAt ?? NaN);
+        if (Number.isFinite(expiresAt) && expiresAt - Date.now() <= TOKEN_EXPIRY_SKEW_SECONDS * 1000) {
+          if (!refreshToken) {
+            return { error: `access token expired ${formatUtcTimestamp(expiresAt)} and no refreshToken is stored` };
+          }
+          return { creds, expired: true, path, refreshToken, token };
+        }
+
+        return { creds, expired: false, path, refreshToken, token };
+      } catch (error) {
+        return { error: `${path}: ${errorMessage(error)}` };
       }
     }
 
@@ -220,7 +402,7 @@ const QuotaIndicator = GObject.registerClass(
         const path = `${GLib.get_home_dir()}/.codex/auth.json`;
         const [ok, bytes] = GLib.file_get_contents(path);
         if (ok) {
-          const auth = JSON.parse(new TextDecoder().decode(bytes));
+          const auth = JSON.parse(decodeBytes(bytes));
           const token = auth?.tokens?.access_token ?? null;
           const accountId = auth?.tokens?.account_id ?? null;
           if (token) return { token, accountId };
@@ -243,23 +425,91 @@ const QuotaIndicator = GObject.registerClass(
       }
     }
 
-    _fetchAsync(url, headers, onSuccess) {
+    _setProviderError(state, error) {
+      state.error = error;
+    }
+
+    _fetchAsync(url, headers, onSuccess, onError) {
       const msg = Soup.Message.new("GET", url);
       for (const [k, v] of Object.entries(headers)) msg.request_headers.append(k, v);
+      this._sendAsync(msg, onSuccess, onError);
+    }
+
+    _postJsonAsync(url, body, onSuccess, onError) {
+      const msg = Soup.Message.new("POST", url);
+      const encoded = new TextEncoder().encode(JSON.stringify(body));
+      msg.set_request_body_from_bytes("application/json", new GLib.Bytes(encoded));
+      this._sendAsync(msg, onSuccess, onError);
+    }
+
+    _sendAsync(msg, onSuccess, onError) {
       this._httpSession.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (session, result) => {
         try {
           const bytes = session.send_and_read_finish(result);
-          const json = JSON.parse(new TextDecoder().decode(bytes.get_data()));
+          const text = decodeBytes(bytes);
+          const status = messageStatus(msg);
+          let json = null;
+          try {
+            json = JSON.parse(text);
+          } catch (error) {
+            if (isHttpErrorStatus(status)) {
+              throw new HttpResponseError(status, null, text);
+            }
+            throw error;
+          }
+          if (isHttpErrorStatus(status) || json?.error) {
+            throw new HttpResponseError(status, json, text);
+          }
           onSuccess(json);
-        } catch {
-          // leave state unchanged, show stale data until next poll
+        } catch (error) {
+          onError(error);
+        } finally {
+          this._renderPanel();
+          this._renderPopup();
         }
-        this._renderPanel();
-        this._renderPopup();
       });
     }
 
-    _fetchClaude(token) {
+    _saveClaudeAuth(path, creds) {
+      const ok = GLib.file_set_contents(path, JSON.stringify(creds, null, 2));
+      if (!ok) throw new Error(`${path}: write failed`);
+      Gio.File.new_for_path(path).set_attribute_uint32("unix::mode", 0o600, Gio.FileQueryInfoFlags.NONE, null);
+    }
+
+    _refreshClaudeToken(auth) {
+      this._postJsonAsync(
+        CLAUDE_TOKEN_URL,
+        {
+          grant_type: "refresh_token",
+          refresh_token: auth.refreshToken,
+          client_id: CLAUDE_OAUTH_CLIENT_ID,
+          scope: CLAUDE_OAUTH_SCOPES.join(" "),
+        },
+        (data) => {
+          const accessToken = data.access_token ?? null;
+          const expiresIn = Number(data.expires_in ?? NaN);
+          if (!accessToken || !Number.isFinite(expiresIn)) {
+            throw new Error(`unexpected token refresh response (${objectSummary(data)})`);
+          }
+
+          auth.creds.claudeAiOauth = {
+            ...(auth.creds.claudeAiOauth ?? {}),
+            accessToken,
+            refreshToken: data.refresh_token ?? auth.refreshToken,
+            expiresAt: Date.now() + expiresIn * 1000,
+            scopes: parseScopes(data.scope, auth.creds.claudeAiOauth?.scopes),
+          };
+          this._saveClaudeAuth(auth.path, auth.creds);
+          auth.refreshToken = auth.creds.claudeAiOauth.refreshToken;
+          this._fetchClaude(accessToken, auth, false);
+        },
+        (error) => {
+          this._setProviderError(this._claude, `token refresh failed: ${errorMessage(error)}`);
+        }
+      );
+    }
+
+    _fetchClaude(token, auth, allowRefresh = true) {
       this._fetchAsync(
         CLAUDE_USAGE_URL,
         {
@@ -267,9 +517,22 @@ const QuotaIndicator = GObject.registerClass(
           "anthropic-beta": "oauth-2025-04-20",
         },
         (data) => {
-          this._claude.short = windowFromClaude(data.five_hour, CLAUDE_SHORT_W);
-          this._claude.long = windowFromClaude(data.seven_day, CLAUDE_LONG_W);
+          if (data.five_hour == null && data.seven_day == null) {
+            throw new Error(`unexpected response (${objectSummary(data)})`);
+          }
+          const short = windowFromClaude(data.five_hour, "5h", CLAUDE_SHORT_W);
+          const long = windowFromClaude(data.seven_day, "7d", CLAUDE_LONG_W);
+          this._claude.short = short;
+          this._claude.long = long;
           this._claude.lastFetch = Date.now();
+          this._claude.error = null;
+        },
+        (error) => {
+          if (allowRefresh && auth?.refreshToken && error?.status === 401) {
+            this._refreshClaudeToken(auth);
+          } else {
+            this._setProviderError(this._claude, errorMessage(error));
+          }
         }
       );
     }
@@ -280,11 +543,24 @@ const QuotaIndicator = GObject.registerClass(
         "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64) gnome-shell-extension",
       };
       if (accountId) headers["ChatGPT-Account-Id"] = accountId;
-      this._fetchAsync(CODEX_USAGE_URL, headers, (data) => {
-        this._codex.short = windowFromCodex(data.rate_limit?.primary_window, CODEX_SHORT_W_FALLBACK);
-        this._codex.long = windowFromCodex(data.rate_limit?.secondary_window, CODEX_LONG_W_FALLBACK);
-        this._codex.lastFetch = Date.now();
-      });
+      this._fetchAsync(
+        CODEX_USAGE_URL,
+        headers,
+        (data) => {
+          if (data.rate_limit?.primary_window == null && data.rate_limit?.secondary_window == null) {
+            throw new Error(`unexpected response (${objectSummary(data)})`);
+          }
+          const short = windowFromCodex(data.rate_limit?.primary_window, "5h");
+          const long = windowFromCodex(data.rate_limit?.secondary_window, "7d");
+          this._codex.short = short;
+          this._codex.long = long;
+          this._codex.lastFetch = Date.now();
+          this._codex.error = null;
+        },
+        (error) => {
+          this._setProviderError(this._codex, errorMessage(error));
+        }
+      );
     }
 
     _setTint(icon, paceLabel, tint) {
@@ -302,19 +578,26 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderProvider(state, icon, paceLabel) {
+      if (state.error) {
+        this._setTint(icon, paceLabel, "error");
+        paceLabel.set_text("!");
+        return;
+      }
       if (state.short == null && state.long == null) {
         this._setTint(icon, paceLabel, "unknown");
         paceLabel.set_text("");
         return;
       }
-      const stale = state.lastFetch != null && (Date.now() - state.lastFetch) / 1000 > STALE_AFTER_SECONDS;
-      const shortPace = state.short ? computePace(state.short) : null;
-      const longPace = state.long ? computePace(state.long) : null;
-      const shortTint = state.short
-        ? tintFor({ pace: shortPace, usedPercent: state.short.usedPercent, isShort: true })
+      const stale = isStaleFetch(state.lastFetch);
+      const shortState = withLiveReset(state.short);
+      const longState = withLiveReset(state.long);
+      const shortPace = shortState ? computePace(shortState) : null;
+      const longPace = longState ? computePace(longState) : null;
+      const shortTint = shortState
+        ? tintFor({ pace: shortPace, usedPercent: shortState.usedPercent, isShort: true })
         : "unknown";
-      const longTint = state.long
-        ? tintFor({ pace: longPace, usedPercent: state.long.usedPercent, isShort: false })
+      const longTint = longState
+        ? tintFor({ pace: longPace, usedPercent: longState.usedPercent, isShort: false })
         : "unknown";
       const tint = stale ? "stale" : bindingTint(shortTint, longTint);
       this._setTint(icon, paceLabel, tint);
@@ -322,31 +605,99 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderPopup() {
-      this._renderPopupRow(this._claudeShort, "burst (5h)", this._claude.short);
-      this._renderPopupRow(this._claudeLong, "weekly (7d)", this._claude.long);
-      this._renderPopupRow(this._codexShort, "primary", this._codex.short);
-      this._renderPopupRow(this._codexLong, "secondary", this._codex.long);
+      this._renderProviderHeader(this._claudeHeader, "Claude", this._claude);
+      this._renderPopupRow(this._claudeShort, "5h", this._claude.short);
+      this._renderPopupRow(this._claudeLong, "7d", this._claude.long);
+      this._renderProviderHeader(this._codexHeader, "Codex", this._codex);
+      this._renderPopupRow(this._codexShort, "5h", this._codex.short);
+      this._renderPopupRow(this._codexLong, "7d", this._codex.long);
+    }
+
+    _renderProviderHeader(item, title, state) {
+      item.label.remove_style_class_name("quota-popup-header-error");
+      item.label.remove_style_class_name("quota-popup-header-stale");
+
+      const parts = [title];
+      if (state.error) {
+        const prefix = state.short == null && state.long == null ? "error" : "last refresh failed";
+        parts.push(`${prefix}: ${state.error}`);
+        item.label.add_style_class_name("quota-popup-header-error");
+      } else if (isStaleFetch(state.lastFetch)) {
+        item.label.add_style_class_name("quota-popup-header-stale");
+      }
+      parts.push(formatFreshness(state.lastFetch));
+      item.label.set_text(parts.join(" · "));
     }
 
     _renderPopupRow(item, label, state) {
       if (state == null) {
-        item.label.set_text(`${label}: no data`);
+        item._summaryLabel.set_text(`${label}: no data`);
+        this._setBarFill(item._timeFill, null);
+        this._setBarFill(item._usageFill, null);
+        this._setBarTint(item._usageFill, "unknown");
         return;
       }
-      const pace = computePace(state);
-      const used = state.usedPercent != null ? `${Math.round(state.usedPercent)}%` : "?";
-      const reset = `↻${formatDuration(state.resetSeconds)}`;
+      const liveState = withLiveReset(state);
+      const pace = computePace(liveState);
+      const used = liveState.usedPercent != null ? `${Math.round(liveState.usedPercent)}%` : "?";
+      const reset = `↻${formatDuration(liveState.resetSeconds)}`;
       const paceStr = formatPace(pace);
-      const forecast = formatForecast(pace, state.resetSeconds);
+      const forecast = formatForecast(pace, liveState.resetSeconds);
       const parts = [used, reset];
       if (paceStr) parts.push(`Δ${paceStr}`);
       if (forecast) parts.push(forecast);
-      item.label.set_text(`${label}: ${parts.join("  ")}`);
+      item._summaryLabel.set_text(`${label}: ${parts.join("  ")}`);
+
+      this._setBarFill(item._timeFill, elapsedFraction(liveState));
+      this._setBarFill(item._usageFill, liveState.usedPercent == null ? null : liveState.usedPercent / 100);
+      this._setBarTint(item._usageFill, tintFor({ pace, usedPercent: liveState.usedPercent, isShort: label === "5h" }));
+    }
+
+    _setBarFill(fill, fraction) {
+      fill._quotaFraction = clamp01(fraction);
+      this._applyBarFill(fill);
+    }
+
+    _applyBarFill(fill) {
+      const width = fill._quotaTrack?.get_width?.() ?? QUOTA_BAR_FALLBACK_WIDTH_PX;
+      const trackWidth = Number.isFinite(width) && width > 0 ? width : QUOTA_BAR_FALLBACK_WIDTH_PX;
+      fill.set_width(Math.round(trackWidth * (fill._quotaFraction ?? 0)));
+    }
+
+    _setBarTint(fill, tint) {
+      for (const cls of TINT_CLASSES) fill.remove_style_class_name(cls);
+      fill.add_style_class_name(`quota-${tint}`);
+    }
+
+    _startPopupTick() {
+      if (this._popupTickId) return;
+      this._popupTickId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+        if (!this.menu.isOpen) {
+          this._popupTickId = null;
+          return GLib.SOURCE_REMOVE;
+        }
+        this._renderPopup();
+        return GLib.SOURCE_CONTINUE;
+      });
+    }
+
+    _stopPopupTick() {
+      if (!this._popupTickId) return;
+      GLib.source_remove(this._popupTickId);
+      this._popupTickId = null;
     }
 
     _refresh() {
-      const claudeToken = this._readClaudeToken();
-      if (claudeToken) this._fetchClaude(claudeToken);
+      const claudeAuth = this._readClaudeAuth();
+      if (claudeAuth.token) {
+        if (claudeAuth.expired) {
+          this._refreshClaudeToken(claudeAuth);
+        } else {
+          this._fetchClaude(claudeAuth.token, claudeAuth);
+        }
+      } else {
+        this._setProviderError(this._claude, claudeAuth.error);
+      }
 
       const codexAuth = this._readCodexAuth();
       if (codexAuth) this._fetchCodex(codexAuth);
@@ -356,6 +707,11 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     destroy() {
+      this._stopPopupTick();
+      if (this._menuOpenId) {
+        this.menu.disconnect(this._menuOpenId);
+        this._menuOpenId = null;
+      }
       if (this._timerId) {
         GLib.source_remove(this._timerId);
         this._timerId = null;
@@ -366,21 +722,29 @@ const QuotaIndicator = GObject.registerClass(
   }
 );
 
-function windowFromClaude(node, windowSeconds) {
+function windowFromClaude(node, label, windowSeconds) {
   if (!node) return null;
+  const resetAtMs = parseClaudeResetAtMs(node.resets_at, label);
   return {
     usedPercent: node.utilization ?? null,
-    resetSeconds: node.resets_at ? Math.max(0, secondsUntil(node.resets_at)) : null,
+    resetAtMs,
+    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
     windowSeconds,
   };
 }
 
-function windowFromCodex(node, fallbackWindowSeconds) {
+function windowFromCodex(node, label) {
   if (!node) return null;
+  const windowSeconds = Number(node.limit_window_seconds ?? NaN);
+  if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) {
+    throw new Error(`${label} window missing limit_window_seconds`);
+  }
+  const resetAtMs = codexResetAtMsFromResetAfter(node, label);
   return {
     usedPercent: node.used_percent ?? null,
-    resetSeconds: node.reset_after_seconds ?? null,
-    windowSeconds: node.limit_window_seconds ?? fallbackWindowSeconds,
+    resetAtMs,
+    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
+    windowSeconds,
   };
 }
 
