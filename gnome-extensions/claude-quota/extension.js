@@ -257,11 +257,36 @@ const QuotaIndicator = GObject.registerClass(
         }
       });
 
+      // Test hook: when set, load fixture state from JSON and skip the
+      // network/credential fetch path entirely. Used by the golden render
+      // tests at //gnome-extensions/claude-quota:test_render.
+      const fixturePath = GLib.getenv("CLAUDE_QUOTA_FIXTURE");
+      if (fixturePath) {
+        this._loadFixture(fixturePath);
+        return;
+      }
+
       this._refresh();
       this._timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_INTERVAL_SECONDS, () => {
         this._refresh();
         return GLib.SOURCE_CONTINUE;
       });
+    }
+
+    _loadFixture(path) {
+      const [ok, bytes] = GLib.file_get_contents(path);
+      if (!ok) throw new Error(`fixture not readable: ${path}`);
+      const data = JSON.parse(decodeBytes(bytes));
+      const provider = (node) => ({
+        short: node?.short ?? null,
+        long: node?.long ?? null,
+        lastFetch: node?.lastFetch ?? null,
+        error: node?.error ?? null,
+      });
+      this._claude = provider(data.claude);
+      this._codex = provider(data.codex);
+      this._renderPanel();
+      this._renderPopup();
     }
 
     _buildPanel() {

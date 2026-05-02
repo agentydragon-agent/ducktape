@@ -1,0 +1,54 @@
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+
+# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
+exports_files([
+    "apt.yaml",
+    "apt.lock.json",
+])
+
+pkg_files(
+    name = "render_script",
+    testonly = True,
+    srcs = ["render.sh"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/usr/local/bin",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "render_script_layer",
+    testonly = True,
+    srcs = [":render_script"],
+)
+
+# Headless gnome-shell + Xvfb + dbus, plus the render.sh entrypoint that
+# launches the shell, enables the claude-quota extension, and screenshots
+# the panel via D-Bus to a PNG.
+#
+# The container has no extension or fixture baked in — the test driver
+# bind-mounts the live extension dir from the source tree and the chosen
+# fixture JSON at run time, so iterating on extension code does not
+# rebuild the image.
+oci_image(
+    name = "gnome_shell_test_image",
+    testonly = True,
+    base = "@debian_trixie_slim_linux_amd64",
+    cmd = [
+        "sleep",
+        "infinity",
+    ],
+    tars = [
+        "@gnome_shell_test//:flat",
+        ":render_script_layer",
+    ],
+)
+
+oci_layout_rloc(
+    name = "gnome_shell_test",
+    testonly = True,
+    image = ":gnome_shell_test_image",
+    visibility = ["//gnome-extensions:__subpackages__"],
+)

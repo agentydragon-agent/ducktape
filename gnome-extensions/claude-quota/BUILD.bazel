@@ -1,0 +1,51 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+filegroup(
+    name = "extension_files",
+    testonly = True,
+    srcs = [
+        "extension.js",
+        "icons/claude-symbolic.svg",
+        "icons/openai-symbolic.svg",
+        "metadata.json",
+        "stylesheet.css",
+    ],
+)
+
+filegroup(
+    name = "fixtures",
+    testonly = True,
+    srcs = glob(["test_fixtures/*.json"]),
+)
+
+filegroup(
+    name = "snapshots",
+    testonly = True,
+    srcs = glob(
+        ["__snapshots__/*.png"],
+        allow_empty = True,
+    ),
+)
+
+py_test(
+    name = "test_render",
+    size = "large",
+    srcs = ["test_render.py"],
+    data = [
+        ":extension_files",
+        ":fixtures",
+        ":snapshots",
+        "//gnome-extensions/test_image:gnome_shell_test",
+    ],
+    requires_docker = True,
+    deps = [
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//pillow",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+    ],
+)
