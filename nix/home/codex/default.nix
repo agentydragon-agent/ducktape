@@ -10,6 +10,8 @@
 let
   execPolicyRules = import ./execpolicy-rules.nix { inherit lib; };
   codexNpmCache = "${config.xdg.cacheHome}/codex/npm";
+  codexBazelCache = "${config.xdg.cacheHome}/bazel";
+  codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
 
   codexSettings = {
     # Local model providers for GPT-OSS
@@ -38,6 +40,7 @@ let
       view_image_tool = true;
       shell_tool = true; # enable `/shell`
       apply_patch_freeform = true; # freeform patch syntax
+      memories = true; # experimental memory read/write pipeline
       # shell_snapshot ?  (keep off unless you want offline TUI snapshots)
     };
     # Multiple profiles let you switch between open‑source and OpenAI models.
@@ -100,6 +103,7 @@ let
         # Keep npm installs from node-based pre-commit hooks inside a
         # Codex-owned cache that is writable from the sandbox.
         NPM_CONFIG_CACHE = codexNpmCache;
+        BAZELISK_HOME = codexBazeliskCache;
       };
     };
     sandbox_mode = "workspace-write";
@@ -112,6 +116,8 @@ let
         # Allow Codex sandboxed pre-commit runs to write their hook log.
         "/home/agentydragon/.cache/pre-commit/pre-commit.log"
         codexNpmCache
+        codexBazelCache
+        codexBazeliskCache
       ];
       network_access = true;
       exclude_tmpdir_env_var = false;
@@ -159,6 +165,8 @@ let
 
     mkdir -p "$CODEX_HOME"
     mkdir -p '${codexNpmCache}'
+    mkdir -p '${codexBazelCache}'
+    mkdir -p '${codexBazeliskCache}'
 
     BASE="$BASE" LIVE="$LIVE" ${pythonMerge}/bin/python ${./merge.py}
   '';

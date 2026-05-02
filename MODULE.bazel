@@ -37,10 +37,11 @@ single_version_override(
 # 2. symlinks instead of shutil.copy(): mypy_runner.py uses symlinks when merging
 #    upstream caches, reducing disk usage from O(n²) to O(n)
 # TODO: Propose these changes upstream and switch back to BCR version if accepted
-git_override(
+archive_override(
     module_name = "rules_mypy",
-    commit = "355ae265ccef0e5928a440f2f1a2a9796298ec62",
-    remote = "https://github.com/agentydragon/rules_mypy.git",
+    sha256 = "938b128e28ddbf610ce09f3603d6797a8f023904908d16fb94748c193cda1122",
+    strip_prefix = "rules_mypy-355ae265ccef0e5928a440f2f1a2a9796298ec62",
+    urls = ["https://github.com/agentydragon/rules_mypy/archive/355ae265ccef0e5928a440f2f1a2a9796298ec62.tar.gz"],
 )
 
 # Terraform/OpenTofu validation (cluster/)
@@ -581,10 +582,11 @@ bazel_dep(name = "rules_haskell", version = "1.0")
 # rules_haskell BCR 1.0 imports get_cpu_value from
 # @bazel_tools//tools/cpp:lib_cc_configure.bzl (removed in Bazel 8).
 # Master (post-PR #2348) vendors get_cpu_value locally.
-git_override(
+archive_override(
     module_name = "rules_haskell",
-    commit = "60d787cad638370663758b37f880e56a8249786f",
-    remote = "https://github.com/tweag/rules_haskell.git",
+    sha256 = "a64e81f48e775bdbb8562f58aa53fd8f896649129a1f46bd7d97f9eced8ada0c",
+    strip_prefix = "rules_haskell-60d787cad638370663758b37f880e56a8249786f",
+    urls = ["https://github.com/tweag/rules_haskell/archive/60d787cad638370663758b37f880e56a8249786f.tar.gz"],
 )
 
 # rules_haskell pins rules_sh 0.4.0 which also imports get_cpu_value from

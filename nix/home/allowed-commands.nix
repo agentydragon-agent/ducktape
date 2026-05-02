@@ -56,6 +56,11 @@ let
 
   bazelCommands = prefixCommandProduct bazelExecutables bazelSubcommands;
 
+  nixDevelopBazelCommands = prefixCommandProduct [
+    "nix develop --command bazel"
+    "nix develop --command bazelisk"
+  ] bazelSubcommands;
+
   nixCommands =
     prefixCommandProduct
       [ "nix" ]
@@ -78,6 +83,7 @@ in
   noSudo =
     gitReadOnlyCommands
     ++ bazelCommands
+    ++ nixDevelopBazelCommands
     ++ nixCommands
     ++ [
       # TODO: Add more git read-only commands:
