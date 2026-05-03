@@ -10,13 +10,23 @@ Train Qwen3-1.7B to play Wordle via multi-step tool calling. Uses TRL's
 
 ### Two-GPU server mode (recommended)
 
+`trl` is not on `PATH` — `wordle_train.py` is a PEP 723 inline-deps script,
+so its `trl` install lives in a hash-named uv cache env. Spawn the server
+through `uv run --with` so we don't have to chase that path:
+
 ```bash
 # Terminal 1: vLLM inference on GPU 0
-CUDA_VISIBLE_DEVICES=0 trl vllm-serve --model Qwen/Qwen3-1.7B
+CUDA_VISIBLE_DEVICES=0 uv run --no-project \
+    --with 'trl[vllm]' \
+    --with 'transformers @ git+https://github.com/huggingface/transformers.git@main' \
+    trl vllm-serve --model Qwen/Qwen3-1.7B
 
 # Terminal 2: GRPO training on GPU 1
 CUDA_VISIBLE_DEVICES=1 uv run wordle_train.py
 ```
+
+Health checks once the server is up: `curl http://localhost:8000/health/`
+returns `{"status":"ok"}`.
 
 ### Single-GPU colocate mode
 

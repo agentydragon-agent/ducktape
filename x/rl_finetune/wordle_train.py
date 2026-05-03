@@ -37,7 +37,9 @@ Or single-GPU colocate mode (slower but simpler):
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+from pathlib import Path
 
 import nltk
 from datasets import Dataset
@@ -142,7 +144,7 @@ class WordleEnv:
             Feedback for each letter: G (green), Y (yellow), X (wrong).
         """
         if self.done:
-            raise ValueError("Game over.")
+            return "Game already over. Stop calling guess."
 
         word = word.strip().lower().strip("[]")
 
@@ -184,37 +186,43 @@ def reward_func(environments, **_kwargs) -> list[float]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--colocate", action="store_true", help="Single-GPU colocate mode")
-    parser.add_argument("--debug", action="store_true", help="Tiny batch for quick pipeline validation")
     parser.add_argument("--no-vllm", action="store_true", help="Use HF generate instead of vLLM")
     parser.add_argument("--model", default=MODEL)
+    parser.add_argument("--think", action="store_true", help="Enable Qwen3 thinking mode")
+    parser.add_argument("--max-completion-length", type=int, default=1024)
+    parser.add_argument("--batch-size", type=int, default=1, help="per_device_train_batch_size")
+    parser.add_argument("--grad-accum", type=int, default=64, help="gradient_accumulation_steps")
+    parser.add_argument("--num-generations", type=int, default=8)
+    parser.add_argument("--lr", type=float, default=5e-6)
+    parser.add_argument("--epochs", type=int, default=1000)
+    parser.add_argument("--max-steps", type=int, default=-1, help="Cap optimizer steps; -1 = use --epochs")
+    parser.add_argument("--n-prompts", type=int, default=N_PROMPTS)
+    parser.add_argument("--no-gradient-checkpointing", action="store_true")
+    parser.add_argument("--metrics-out", type=str, default=None, help="Write train_result.metrics JSON here")
     args = parser.parse_args()
 
-    if args.debug:
-        logger.info("Debug mode: 2 generations, 2 grad accum steps, 4 prompts")
-
-    n_prompts = 4 if args.debug else N_PROMPTS
     dataset = Dataset.from_dict(
-        {"prompt": [[{"role": "user", "content": SYSTEM_PROMPT}]] * n_prompts, "seed": list(range(n_prompts))}
+        {"prompt": [[{"role": "user", "content": SYSTEM_PROMPT}]] * args.n_prompts, "seed": list(range(args.n_prompts))}
     )
 
     config = GRPOConfig(
         output_dir="/tmp/wordle_grpo_output",
         # Generation
-        num_generations=2 if args.debug else 8,
-        max_completion_length=1024,
+        num_generations=args.num_generations,
+        max_completion_length=args.max_completion_length,
         # Training
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=2 if args.debug else 64,
-        num_train_epochs=1 if args.debug else 1000,
-        learning_rate=5e-6,
+        per_device_train_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.grad_accum,
+        num_train_epochs=args.epochs,
+        max_steps=args.max_steps,
+        learning_rate=args.lr,
         bf16=True,
-        gradient_checkpointing=True,
+        gradient_checkpointing=not args.no_gradient_checkpointing,
         # vLLM
         use_vllm=not args.no_vllm,
         vllm_mode="colocate" if args.colocate else "server",
-        # Thinking off for 1.7B — model can't fit 6 guesses + reasoning in token budget.
-        # Enable for larger models.
-        chat_template_kwargs={"enable_thinking": False},
+        chat_template_kwargs={"enable_thinking": args.think},
+        max_tool_calling_iterations=MAX_GUESSES,
         # Logging
         logging_steps=1,
         log_completions=True,
@@ -239,8 +247,12 @@ def main():
         peft_config=peft_config,
     )
 
-    trainer.train()
-    trainer.save_model("/tmp/wordle_grpo_final")
+    train_result = trainer.train()
+    if args.metrics_out:
+        Path(args.metrics_out).write_text(json.dumps(train_result.metrics, indent=2))
+        logger.info("Wrote metrics to %s", args.metrics_out)
+    else:
+        trainer.save_model("/tmp/wordle_grpo_final")
 
 
 if __name__ == "__main__":
