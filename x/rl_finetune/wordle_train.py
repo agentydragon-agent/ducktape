@@ -47,6 +47,7 @@ from nltk import pos_tag
 from nltk.corpus import words
 from peft import LoraConfig
 from trl import GRPOConfig, GRPOTrainer
+from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 # Quiet down noisy libraries
@@ -199,36 +200,52 @@ def main():
     parser.add_argument("--n-prompts", type=int, default=N_PROMPTS)
     parser.add_argument("--no-gradient-checkpointing", action="store_true")
     parser.add_argument("--metrics-out", type=str, default=None, help="Write train_result.metrics JSON here")
+    parser.add_argument(
+        "--num-completions-to-print",
+        type=int,
+        default=4,
+        help="Rollouts shown in the per-step rich table; 0 = all (huge)",
+    )
+    parser.add_argument(
+        "--async-grpo", action="store_true", help="Use experimental AsyncGRPOTrainer (server mode only)"
+    )
     args = parser.parse_args()
+
+    if args.async_grpo and (args.colocate or args.no_vllm):
+        parser.error("--async-grpo is server-mode only; cannot combine with --colocate or --no-vllm")
 
     dataset = Dataset.from_dict(
         {"prompt": [[{"role": "user", "content": SYSTEM_PROMPT}]] * args.n_prompts, "seed": list(range(args.n_prompts))}
     )
 
-    config = GRPOConfig(
-        output_dir="/tmp/wordle_grpo_output",
-        # Generation
-        num_generations=args.num_generations,
-        max_completion_length=args.max_completion_length,
-        # Training
-        per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=args.grad_accum,
-        num_train_epochs=args.epochs,
-        max_steps=args.max_steps,
-        learning_rate=args.lr,
-        bf16=True,
-        gradient_checkpointing=not args.no_gradient_checkpointing,
-        # vLLM
-        use_vllm=not args.no_vllm,
-        vllm_mode="colocate" if args.colocate else "server",
-        chat_template_kwargs={"enable_thinking": args.think},
-        max_tool_calling_iterations=MAX_GUESSES,
-        # Logging
-        logging_steps=1,
-        log_completions=True,
-        save_strategy="no",
-        report_to="tensorboard",
-    )
+    common_kwargs = {
+        "output_dir": "/tmp/wordle_grpo_output",
+        "num_generations": args.num_generations,
+        "max_completion_length": args.max_completion_length,
+        "per_device_train_batch_size": args.batch_size,
+        "gradient_accumulation_steps": args.grad_accum,
+        "num_train_epochs": args.epochs,
+        "max_steps": args.max_steps,
+        "learning_rate": args.lr,
+        "bf16": True,
+        "gradient_checkpointing": not args.no_gradient_checkpointing,
+        "chat_template_kwargs": {"enable_thinking": args.think},
+        "max_tool_calling_iterations": MAX_GUESSES,
+        "logging_steps": 1,
+        "log_completions": True,
+        "num_completions_to_print": args.num_completions_to_print or None,
+        "save_strategy": "no",
+        "report_to": "tensorboard",
+    }
+
+    if args.async_grpo:
+        config = AsyncGRPOConfig(**common_kwargs)
+        trainer_cls = AsyncGRPOTrainer
+    else:
+        config = GRPOConfig(
+            **common_kwargs, use_vllm=not args.no_vllm, vllm_mode="colocate" if args.colocate else "server"
+        )
+        trainer_cls = GRPOTrainer
 
     peft_config = LoraConfig(
         r=16,
@@ -238,7 +255,7 @@ def main():
         task_type="CAUSAL_LM",
     )
 
-    trainer = GRPOTrainer(
+    trainer = trainer_cls(
         model=args.model,
         reward_funcs=reward_func,
         train_dataset=dataset,

@@ -18,3 +18,15 @@
 - [ ] SFT warmup dataset (if needed)
 - [ ] GRPO training loop
 - [ ] Evaluation harness for agentic tasks
+
+## UX
+
+- [ ] Override TRL's per-step rollout rendering. The default
+      `print_prompt_completions_sample` puts everything in a 4-col rich
+      table (Prompt | Completion | reward | Advantage). The Completion is
+      the long part — full multi-turn chat with tool calls — and the
+      other 3 columns eat horizontal space it could use to wrap fewer
+      lines. Cleanest fix: monkey-patch
+      `trl.trainer.grpo_trainer.print_prompt_completions_sample` with a
+      one-rollout-per-Panel renderer (header line with reward/advantage,
+      body as plain turn blocks, no nested table). See chat for sketch.
