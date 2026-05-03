@@ -7,22 +7,23 @@ blocks. A single gnome-shell is started inside that container (also
 once per module) and the extension exports a session-bus interface
 (works.allegedly.ClaudeQuotaTest, gated on CLAUDE_QUOTA_FIXTURE) that
 lets this driver swap fixture state, open/close the popup menu, and
-query the menu's screen geometry. Each parametrized test then just
-calls Reload + screenshots — no per-fixture gnome-shell spawn.
+query the menu's screen geometry.
 
-Two views per fixture:
-  - panel: right-edge crop of the top panel (icons + pace labels).
-  - menu:  popup menu open, cropped to its bounding box (headers,
-           summary text, time/usage bars).
+Each fixture renders to a single golden capturing both the panel
+indicator (with menu open, so the button shows its active state) and
+the open popup menu below it. The crop spans from the menu's left edge
+to the right edge of the screen and from the top of the panel to the
+bottom of the menu — so reviewers see the indicator's icons / pace
+labels and the menu's headers / bars / forecast strings in one image.
 
-Per-render orchestration (Reload, OpenMenu, GetMenuGeometry,
-screenshot) is driven from this file rather than a bash render.sh —
-clearer error attribution per step, structured pytest failures.
+The fixture matrix uses mixed per-provider state to exercise multiple
+renderer branches per render:
 
-The fixture matrix exercises each branch of the renderer in
-extension.js: the four pace-deviation tints (cool/ok/warn/hot), the
-short-window absolute-hot override, mixed per-provider state, the
-error short-circuit, and the no-data initial state.
+  warn_cool  Claude warn (+10), Codex cool (-15)  — pace tints both signs
+  hot_ok     Claude hot  (+20), Codex ok    (0)   — extreme + baseline
+  short_hot  short usedPercent ≥ 85 on both       — short-window override
+  error      Claude error string, Codex ok        — error short-circuit
+  empty      both providers null                  — initial / no-data state
 
 Update flow when the rendering changes intentionally:
 
@@ -31,12 +32,9 @@ Update flow when the rendering changes intentionally:
         --remote_download_outputs=toplevel --nocache_test_results
 
     INV=$(cat ~/.cache/bbr/last_invocation_id)
-    for view in panel menu; do
-      for f in both_ok both_cool both_warn both_hot \\
-               short_hot mixed error no_data; do
-        bbapi artifact "$INV" "${view}_${f}.png" \\
-          > "gnome-extensions/claude-quota/__snapshots__/${view}_${f}.png"
-      done
+    for f in warn_cool hot_ok short_hot error empty; do
+      bbapi artifact "$INV" "$f.png" \\
+        > "gnome-extensions/claude-quota/__snapshots__/$f.png"
     done
 
     # Eyeball, commit, then re-run without UPDATE_GOLDEN=1 to confirm green.
@@ -71,12 +69,9 @@ _GNOME_SHELL_TEST = OciImage("_main/gnome-extensions/test_image/gnome_shell_test
 _EXTENSION_ZIP = "_main/gnome-extensions/claude-quota/claude-quota.zip"
 _EXTENSION_UUID = "claude-quota@allegedly.works"
 
-# Right-edge crop of the panel: where our indicator lives. The full Xvfb
-# display (1920x500 — sized to fit the open popup) includes the GNOME
-# date menu in the centre, which renders the current real time and would
-# make the golden flake on every run.
-_PANEL_CROP_WIDTH = 250
-_PANEL_CROP_HEIGHT = 40
+# Xvfb dims must match boot.sh — the combined panel+menu crop extends to
+# the right edge, so the test driver needs to know it.
+_SCREEN_WIDTH = 1920
 
 # gnome-shell ExtensionState (see js/misc/extensionUtils.js).
 _EXTENSION_STATE_ENABLED = 1
@@ -84,8 +79,7 @@ _EXTENSION_STATE_ENABLED = 1
 _TEST_DBUS_DEST = "works.allegedly.ClaudeQuotaTest"
 _TEST_DBUS_PATH = "/works/allegedly/ClaudeQuotaTest"
 
-_FIXTURES = ["both_ok", "both_cool", "both_warn", "both_hot", "short_hot", "mixed", "error", "no_data"]
-_VIEWS = ["panel", "menu"]
+_FIXTURES = ["warn_cool", "hot_ok", "short_hot", "error", "empty"]
 
 
 @pytest.fixture(scope="module")
@@ -302,53 +296,54 @@ def undeclared_dir() -> Path:
     return out
 
 
-def _crop_panel(full: Image.Image) -> Image.Image:
-    return full.crop((full.width - _PANEL_CROP_WIDTH, 0, full.width, _PANEL_CROP_HEIGHT))
+def _crop_combined(full: Image.Image, menu_geom: tuple[int, int, int, int]) -> Image.Image:
+    """Crop from menu's left edge to screen-right, from y=0 to menu bottom.
+
+    Captures the right portion of the panel (the indicator's icons, pace
+    labels, and the GNOME system area to its right) above the open menu.
+    The menu is anchored to the right side of the panel, so this crop
+    naturally includes everything the user sees when the indicator is
+    activated, with no GNOME date menu in the centre to introduce
+    nondeterminism.
+    """
+    menu_x, menu_y, menu_w, menu_h = menu_geom
+    if menu_w <= 0 or menu_h <= 0:
+        raise AssertionError(f"menu geometry has non-positive dim: {menu_geom}")
+    left = max(0, menu_x)
+    right = min(full.width, max(menu_x + menu_w, _SCREEN_WIDTH))
+    bottom = min(full.height, menu_y + menu_h)
+    return full.crop((left, 0, right, bottom))
 
 
-def _crop_menu(full: Image.Image, geom: tuple[int, int, int, int]) -> Image.Image:
-    x, y, w, h = geom
-    if w <= 0 or h <= 0:
-        raise AssertionError(f"menu geometry has non-positive dim: {geom}")
-    # Clamp to image bounds in case Xvfb is smaller than expected.
-    right = min(x + w, full.width)
-    bottom = min(y + h, full.height)
-    return full.crop((max(0, x), max(0, y), right, bottom))
-
-
-@pytest.mark.parametrize("view", _VIEWS)
 @pytest.mark.parametrize("fixture_name", _FIXTURES)
 def test_render(
     render_session: tuple[docker.models.containers.Container, Path],
     undeclared_dir: Path,
     tmp_path: Path,
     fixture_name: str,
-    view: str,
 ) -> None:
     container, container_out_dir = render_session
-    out_name = f"{view}_{fixture_name}.png"
+    out_name = f"{fixture_name}.png"
     fixture_in_container = f"/fixtures/{fixture_name}.json"
     out_in_container = f"/out/{out_name}"
     update_golden = os.environ.get("UPDATE_GOLDEN") == "1"
 
     try:
-        # Defensively close the menu in case a previous test left it open.
+        # Defensively close in case a previous test left the menu open.
         _close_menu(container)
         _reload_fixture(container, fixture_in_container)
-        geom = _open_menu(container) if view == "menu" else None
+        geom = _open_menu(container)
         _screenshot(container, out_in_container)
-        if view == "menu":
-            _close_menu(container)
+        _close_menu(container)
     except (TimeoutError, RuntimeError) as e:
-        _save_shell_log(container, undeclared_dir / f"{view}_{fixture_name}.shell.log")
-        pytest.fail(f"{view}/{fixture_name}: {e}")
+        _save_shell_log(container, undeclared_dir / f"{fixture_name}.shell.log")
+        pytest.fail(f"{fixture_name}: {e}")
 
     full_path = container_out_dir / out_name
     assert full_path.exists(), f"scrot did not produce {full_path}"
 
-    full = Image.open(full_path)
-    cropped = _crop_panel(full) if view == "panel" else _crop_menu(full, geom)  # type: ignore[arg-type]
-    actual_path = tmp_path / f"{view}_{fixture_name}.cropped.png"
+    cropped = _crop_combined(Image.open(full_path), geom)
+    actual_path = tmp_path / f"{fixture_name}.cropped.png"
     cropped.save(actual_path)
 
     if update_golden:
@@ -361,14 +356,14 @@ def test_render(
     try:
         expected_path = get_required_path(f"_main/gnome-extensions/claude-quota/__snapshots__/{out_name}")
     except RuntimeError:
-        shutil.copy(actual_path, undeclared_dir / f"{view}_{fixture_name}.actual.png")
+        shutil.copy(actual_path, undeclared_dir / f"{fixture_name}.actual.png")
         pytest.fail(
             f"No golden checked in for {out_name}. Re-run with --test_env=UPDATE_GOLDEN=1, "
             f"then cp the produced {out_name} from undeclared outputs into "
             f"gnome-extensions/claude-quota/__snapshots__/."
         )
 
-    assert_png_matches_golden(actual_path, expected_path, name=f"{view}_{fixture_name}", out_dir=undeclared_dir)
+    assert_png_matches_golden(actual_path, expected_path, name=fixture_name, out_dir=undeclared_dir)
 
 
 if __name__ == "__main__":

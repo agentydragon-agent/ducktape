@@ -1,5 +1,5 @@
 {
-  "_comment": "Different state per provider — verifies that the two indicators tint independently and labels don't bleed across providers. Claude warn (+10%, yellow), Codex cool (−15%, blue).",
+  "_comment": "Mixed pace: Claude over-running (warn, deviation +10), Codex under-running (cool, deviation -15). Verifies per-provider tinting in both the panel pace labels and the menu bars; also exercises bindingTint with two different non-hot tints per provider.",
   "claude": {
     "short": { "usedPercent": 40, "resetSeconds": 12600, "windowSeconds": 18000 },
     "long": { "usedPercent": 40, "resetSeconds": 423360, "windowSeconds": 604800 },
