@@ -250,19 +250,34 @@ def train_session(
         peft_config=peft_config,
         callbacks=[step_timer],
     )
-    train_result = trainer.train()
-
-    metrics = dict(train_result.metrics)
-    metrics["step_times"] = step_timer.step_times
-    steady = step_timer.step_times[1:]
-    if steady:
-        metrics["steady_state_step_time_mean"] = sum(steady) / len(steady)
-        metrics["steady_state_step_time_min"] = min(steady)
-        metrics["steady_state_step_time_max"] = max(steady)
-    if metrics_out:
-        Path(metrics_out).write_text(json.dumps(metrics, indent=2))
-        logger.info("Wrote metrics to %s", metrics_out)
-    return metrics
+    try:
+        train_result = trainer.train()
+        metrics = dict(train_result.metrics)
+        metrics["step_times"] = step_timer.step_times
+        steady = step_timer.step_times[1:]
+        if steady:
+            metrics["steady_state_step_time_mean"] = sum(steady) / len(steady)
+            metrics["steady_state_step_time_min"] = min(steady)
+            metrics["steady_state_step_time_max"] = max(steady)
+        if metrics_out:
+            Path(metrics_out).write_text(json.dumps(metrics, indent=2))
+            logger.info("Wrote metrics to %s", metrics_out)
+        return metrics
+    finally:
+        # Hand the next caller a clean process state. Documented APIs:
+        #   - VLLMClient.close_communicator (else vllm-serve rejects the next init)
+        #   - Accelerator.free_memory (releases optimizer/scheduler refs, resets step)
+        #   - Accelerator.end_training (destroys torch.distributed process group)
+        try:
+            if getattr(trainer, "vllm_generation", None) is not None:
+                trainer.vllm_generation.close_communicator()
+        except Exception as e:
+            logger.warning("vllm close_communicator failed: %s", e)
+        try:
+            trainer.accelerator.free_memory()
+            trainer.accelerator.end_training()
+        except Exception as e:
+            logger.warning("accelerator cleanup failed: %s", e)
 
 
 def main():

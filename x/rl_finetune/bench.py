@@ -56,10 +56,12 @@ N_PROMPTS = 320  # 5 steps * 64 prompts/step (effective batch held at 64 across 
 # the in-process driver doesn't support colocate mode here).
 PROBES: list[tuple[str, dict, bool, int, list[str]]] = [
     # --- second run (in-process) ---
+    # bsN_gaM: pure-parallelism test, effective batch = bs*ga held at 64.
+    # bs >= 16 OOMs on a 32 GB card with 1024-token rollouts and grad_ckpt=True.
     ("prefix_caching", {}, False, 8, ["--enable_prefix_caching", "True"]),
-    ("bs16_ga4", {"per_device_train_batch_size": 16, "gradient_accumulation_steps": 4}, False, 8, []),
-    ("bs32_ga2", {"per_device_train_batch_size": 32, "gradient_accumulation_steps": 2}, False, 8, []),
-    ("bs64_ga1", {"per_device_train_batch_size": 64, "gradient_accumulation_steps": 1}, False, 8, []),
+    ("bs2_ga32", {"per_device_train_batch_size": 2, "gradient_accumulation_steps": 32}, False, 8, []),
+    ("bs4_ga16", {"per_device_train_batch_size": 4, "gradient_accumulation_steps": 16}, False, 8, []),
+    ("bs8_ga8", {"per_device_train_batch_size": 8, "gradient_accumulation_steps": 8}, False, 8, []),
     ("async_grpo", {}, True, 8, []),
 ]
 
@@ -265,9 +267,9 @@ def main() -> int:
         "max_compl_512": 8,
         "colocate": 8,
         "prefix_caching": 8,
-        "bs16_ga4": 8,
-        "bs32_ga2": 8,
-        "bs64_ga1": 8,
+        "bs2_ga32": 8,
+        "bs4_ga16": 8,
+        "bs8_ga8": 8,
         "async_grpo": 8,
     }
     headers = ["probe", "runtime_s", "ss_step_s", "ss_compl/s", "raw_compl/s", "min_step", "max_step"]
