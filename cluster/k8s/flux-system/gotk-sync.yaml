@@ -20,6 +20,10 @@ metadata:
   name: flux-system
   namespace: flux-system
 spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   interval: 10m0s
   path: ./cluster/k8s
   prune: true
