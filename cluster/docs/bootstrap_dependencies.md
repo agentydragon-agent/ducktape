@@ -58,19 +58,20 @@ No downstream regeneration needed — these are read-only inputs.
 Encrypted with admin age key (L0). These are the source of truth for
 secrets that Flux and tofu consume.
 
-| File                                      | Contents                           | Depends On                      | Depended On By                                                   |
-| ----------------------------------------- | ---------------------------------- | ------------------------------- | ---------------------------------------------------------------- |
-| `secrets/nebula/ca.crt`                   | Nebula CA public cert (plaintext)  | None                            | L2: tofu node cert signing; L7: NixOS workers, ansible           |
-| `secrets/nebula/ca.sops.key`              | Nebula CA private key (SOPS bin)   | Admin age key                   | L2: tofu node cert signing                                       |
-| `secrets/nebula/*.sops.key`               | Nebula host private keys (binary)  | Admin age key + host age key    | L7: NixOS worker nebula mesh, ansible                            |
-| `secrets/nebula/*.crt`                    | Nebula host public certs (plain)   | None                            | L7: NixOS worker nebula mesh, ansible                            |
-| `secrets/shared/flux-deploy-key.yaml`     | ED25519 SSH private key            | Admin age key                   | L5: Flux git sync; GitHub deploy key                             |
-| `secrets/flux-deploy-key.pub`             | ED25519 SSH public key (plain)     | None                            | GitHub deploy key registration                                   |
-| `secrets/shared/cluster-secrets-age.yaml` | Age keypair (private + public)     | Admin age key                   | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret) |
-| `secrets/shared/cluster-tokens.yaml`      | Hetzner + Proxmox API tokens       | Admin age key + user age keys   | `.envrc` → `TF_VAR_hcloud_token`, `PROXMOX_VE_API_TOKEN`         |
-| `secrets/k8s-ca.crt`                      | K8s cluster CA cert (plaintext)    | None                            | L7: kubelet TLS on NixOS workers                                 |
-| `secrets/k8s-worker.yaml`                 | k8s bootstrap token                | Admin age key                   | L7: kubelet TLS bootstrap on NixOS workers                       |
-| `cluster/k8s/**/*.sops.yaml` (26 files)   | App credentials (API keys, tokens) | Admin age key + cluster age key | L6: individual services                                          |
+| File                                                      | Contents                           | Depends On                           | Depended On By                                                                                       |
+| --------------------------------------------------------- | ---------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `secrets/nebula/ca.crt`                                   | Nebula CA public cert (plaintext)  | None                                 | L2: tofu node cert signing; L7: NixOS workers, ansible                                               |
+| `secrets/nebula/ca.sops.key`                              | Nebula CA private key (SOPS bin)   | Admin age key                        | L2: tofu node cert signing                                                                           |
+| `secrets/nebula/*.sops.key`                               | Nebula host private keys (binary)  | Admin age key + host age key         | L7: NixOS worker nebula mesh, ansible                                                                |
+| `secrets/nebula/*.crt`                                    | Nebula host public certs (plain)   | None                                 | L7: NixOS worker nebula mesh, ansible                                                                |
+| `secrets/shared/flux-deploy-key.yaml`                     | ED25519 SSH private key            | Admin age key                        | L5: Flux git sync (legacy SSH path; superseded by GitHub App)                                        |
+| `secrets/flux-deploy-key.pub`                             | ED25519 SSH public key (plain)     | None                                 | GitHub deploy key registration (legacy SSH path)                                                     |
+| `secrets/ducktape-automation.<date>.private-key.sops.pem` | GitHub App PEM (RSA, SOPS bin)     | Admin age key + cluster-secrets + ci | L5: Flux git auth (mirrored into `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml`) |
+| `secrets/shared/cluster-secrets-age.yaml`                 | Age keypair (private + public)     | Admin age key                        | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret)                                     |
+| `secrets/shared/cluster-tokens.yaml`                      | Hetzner + Proxmox API tokens       | Admin age key + user age keys        | `.envrc` → `TF_VAR_hcloud_token`, `PROXMOX_VE_API_TOKEN`                                             |
+| `secrets/k8s-ca.crt`                                      | K8s cluster CA cert (plaintext)    | None                                 | L7: kubelet TLS on NixOS workers                                                                     |
+| `secrets/k8s-worker.yaml`                                 | k8s bootstrap token                | Admin age key                        | L7: kubelet TLS bootstrap on NixOS workers                                                           |
+| `cluster/k8s/**/*.sops.yaml` (27 files)                   | App credentials (API keys, tokens) | Admin age key + cluster age key      | L6: individual services + L5 Flux git auth (`ducktape-automation-github-app`)                        |
 
 **If nebula CA is lost**: Generate new CA with `nebula-cert ca`, write cert
 to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`.
@@ -153,15 +154,46 @@ Phase 2 (`--start-from=infrastructure`).
 Created by `tofu apply` Phase 3. The `flux_bootstrap_git` resource deploys
 Flux controllers and pushes sync manifests to the git repo.
 
-| Dependency                              | Why                                    |
-| --------------------------------------- | -------------------------------------- |
-| L1: flux deploy key (via L2 tofu)       | Flux authenticates to GitHub           |
-| L1: cluster age key (via L2 k8s secret) | Flux decrypts `*.sops.yaml` in-cluster |
-| L4: nodes Ready, networking functional  | Flux pods must schedule                |
+| Dependency                              | Why                                            |
+| --------------------------------------- | ---------------------------------------------- |
+| L1: flux deploy key (via L2 tofu)       | Bootstrap-only; runtime auth is via GitHub App |
+| L1: cluster age key (via L2 k8s secret) | Flux decrypts `*.sops.yaml` in-cluster         |
+| L4: nodes Ready, networking functional  | Flux pods must schedule                        |
 
 **If Flux is broken but cluster is healthy**: `tofu apply` with
 `-target=flux_bootstrap_git.cluster` reinstalls Flux. Or delete the
 flux-system namespace and re-run Phase 3.
+
+### GitHub App authentication (runtime)
+
+After bootstrap, both `flux-system` and `gaffer-private` GitRepository
+resources authenticate to GitHub via the `ducktape-automation` GitHub App
+(installed user-level on `agentydragon`, with access to both repos). The
+in-cluster Secret `flux-system/ducktape-automation-github-app` holds
+`githubAppID`, `githubAppInstallationID`, and `githubAppPrivateKey` — sourced
+from `secrets/ducktape-automation.<date>.private-key.sops.pem` and committed
+as a SOPS-encrypted Secret manifest at
+`cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml` (encrypted
+to admin + cluster-secrets recipients). Image-update-automation pushes to
+`gaffer-private` ride on the same Secret.
+
+**If the App PEM is rotated**: regenerate the App's private key in GitHub UI,
+overwrite `secrets/ducktape-automation.<date>.private-key.sops.pem` (bump the
+date in the filename — update the path_regex in `.sops.yaml` if needed),
+re-encode the cluster-side Secret by re-running the encrypt workflow used to
+mint it, commit, push. Flux picks up the new key on next reconcile.
+
+**If the App is uninstalled or its installation ID changes**: edit
+`cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml` via
+`sops`, update `githubAppInstallationID`, save (SOPS auto-re-encrypts on
+write), commit. Flux picks up the change on next source reconcile.
+
+The legacy SSH deploy keys (`secrets/shared/flux-deploy-key.yaml` for ducktape
+and the tofu-managed `gaffer-private-deploy-key` Secret) remain provisioned
+during the App-auth verification window and will be torn down as a follow-up
+once App auth is confirmed stable. See `CLEANUP` markers in
+`cluster/k8s/gaffer-private-source/deploy-key-tf.yaml` and
+`tf/gitops/gaffer-private-flux/main.tf`.
 
 ## L6: Cluster Services
 
@@ -225,22 +257,22 @@ If the CA changed, existing kubelet TLS state is invalid:
 External service credentials stored in `cluster/k8s/**/*.sops.yaml`. If lost,
 re-enter from the external service and SOPS-encrypt.
 
-| Category        | File(s)                                                                                                                                                                | External Source                     |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| **AWS**         | `dns-automation/aws-credentials.sops.yaml`                                                                                                                             | AWS IAM console (Route 53 access)   |
-| **GitHub**      | `agents/shared-secrets/github-token.sops.yaml`, `arc/secrets/github-app.sops.yaml`, `github-secrets-sync/secrets/github-secrets-sync-pat.sops.yaml`                    | GitHub settings → PAT / App         |
-| **BuildBuddy**  | `buildbuddy-executor/api-key.sops.yaml`, `agents/shared-secrets/buildbuddy-api-key.sops.yaml`                                                                          | BuildBuddy org settings             |
-| **OpenAI**      | `props/secrets/openai-api-key.sops.yaml`, `agents/openclaw/gateway-secrets/openai-api-key.sops.yaml`                                                                   | OpenAI API keys                     |
-| **Anthropic**   | `agents/openclaw/gateway-secrets/anthropic-api-key.sops.yaml`                                                                                                          | Anthropic console                   |
-| **Google**      | `agents/airlock/google-client-credentials.sops.yaml`, `agents/openclaw/gateway-secrets/gemini-api-key.sops.yaml`                                                       | Google Cloud console                |
-| **Financial**   | `agents/openclaw/sandbox-secrets/coinbase-api-credentials.sops.yaml`, `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml`                          | Coinbase / IBKR portals             |
-| **Messaging**   | `agents/openclaw/gateway-secrets/telegram-bot-token.sops.yaml`, `flux-webhook/ntfy-webhook.sops.yaml`                                                                  | Telegram @BotFather / ntfy.sh       |
-| **Home infra**  | `agents/homeassistant-proxy/ha-token.sops.yaml`, `scanner/samba-credentials.sops.yaml`                                                                                 | HA UI / Samba config                |
-| **OAuth**       | `agents/airlock/oura-client-credentials.sops.yaml`                                                                                                                     | Oura developer portal               |
-| **Agent infra** | `agents/shared-secrets/attic-push-token.sops.yaml`, `agents/claude-sandbox-secrets/claude-web-age-key.sops.yaml`, `agents/openclaw/mitmproxy/mitmproxy-ca-*.sops.yaml` | Generated / internal                |
-| **Proxmox CSI** | `proxmox-csi/secrets/proxmox-csi.sops.yaml`                                                                                                                            | L2: Proxmox CSI token (tofu output) |
-| **Nix cache**   | `nix-cache/app/signing-key.sops.yaml`, `nix-cache/app/jwt-token.sops.yaml`                                                                                             | Generated at bootstrap              |
-| **CNPG**        | `tofu-state/db/credentials.sops.yaml`                                                                                                                                  | Generated (random password)         |
+| Category        | File(s)                                                                                                                                                                                                     | External Source                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| **AWS**         | `dns-automation/aws-credentials.sops.yaml`                                                                                                                                                                  | AWS IAM console (Route 53 access)   |
+| **GitHub**      | `agents/shared-secrets/github-token.sops.yaml`, `arc/secrets/github-app.sops.yaml`, `flux-system/ducktape-automation-github-app.sops.yaml`, `github-secrets-sync/secrets/github-secrets-sync-pat.sops.yaml` | GitHub settings → PAT / App         |
+| **BuildBuddy**  | `buildbuddy-executor/api-key.sops.yaml`, `agents/shared-secrets/buildbuddy-api-key.sops.yaml`                                                                                                               | BuildBuddy org settings             |
+| **OpenAI**      | `props/secrets/openai-api-key.sops.yaml`, `agents/openclaw/gateway-secrets/openai-api-key.sops.yaml`                                                                                                        | OpenAI API keys                     |
+| **Anthropic**   | `agents/openclaw/gateway-secrets/anthropic-api-key.sops.yaml`                                                                                                                                               | Anthropic console                   |
+| **Google**      | `agents/airlock/google-client-credentials.sops.yaml`, `agents/openclaw/gateway-secrets/gemini-api-key.sops.yaml`                                                                                            | Google Cloud console                |
+| **Financial**   | `agents/openclaw/sandbox-secrets/coinbase-api-credentials.sops.yaml`, `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml`                                                               | Coinbase / IBKR portals             |
+| **Messaging**   | `agents/openclaw/gateway-secrets/telegram-bot-token.sops.yaml`, `flux-webhook/ntfy-webhook.sops.yaml`                                                                                                       | Telegram @BotFather / ntfy.sh       |
+| **Home infra**  | `agents/homeassistant-proxy/ha-token.sops.yaml`, `scanner/samba-credentials.sops.yaml`                                                                                                                      | HA UI / Samba config                |
+| **OAuth**       | `agents/airlock/oura-client-credentials.sops.yaml`                                                                                                                                                          | Oura developer portal               |
+| **Agent infra** | `agents/shared-secrets/attic-push-token.sops.yaml`, `agents/claude-sandbox-secrets/claude-web-age-key.sops.yaml`, `agents/openclaw/mitmproxy/mitmproxy-ca-*.sops.yaml`                                      | Generated / internal                |
+| **Proxmox CSI** | `proxmox-csi/secrets/proxmox-csi.sops.yaml`                                                                                                                                                                 | L2: Proxmox CSI token (tofu output) |
+| **Nix cache**   | `nix-cache/app/signing-key.sops.yaml`, `nix-cache/app/jwt-token.sops.yaml`                                                                                                                                  | Generated at bootstrap              |
+| **CNPG**        | `tofu-state/db/credentials.sops.yaml`                                                                                                                                                                       | Generated (random password)         |
 
 ## Recovery Scenarios
 

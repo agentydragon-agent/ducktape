@@ -1,5 +1,14 @@
 # Gaffer-private Flux deploy-key.
 #
+# CLEANUP(2026-05-03): superseded by ducktape-automation GitHub App auth
+# (cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml).
+# `gaffer-private` GitRepository now references that Secret directly. To
+# retire this module: drop prevent_destroy on all three resources below,
+# `tofu destroy` (revokes the deploy key, deletes the in-cluster Secret),
+# then delete this directory + BUILD.bazel target + the
+# cluster/k8s/gaffer-private-source/{deploy-key-tf,github-pat-gaffer-private-flux.sops}.yaml
+# manifests.
+#
 # Self-contained: generates an ED25519 keypair, registers the public half
 # as a write-scoped GitHub deploy key on agentydragon/gaffer-private, and
 # writes the flux SSH GitRepository secret consumed by the
