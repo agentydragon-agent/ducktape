@@ -258,11 +258,15 @@ const QuotaIndicator = GObject.registerClass(
       });
 
       // Test hook: when set, load fixture state from JSON and skip the
-      // network/credential fetch path entirely. Used by the golden render
-      // tests at //gnome-extensions/claude-quota:test_render.
+      // network/credential fetch path entirely. Also exports a small
+      // session-bus interface (works.allegedly.ClaudeQuotaTest) so the
+      // render-test driver can open the popup and query its geometry
+      // for golden screenshots. Used by the golden render tests at
+      // //gnome-extensions/claude-quota:test_render.
       const fixturePath = GLib.getenv("CLAUDE_QUOTA_FIXTURE");
       if (fixturePath) {
         this._loadFixture(fixturePath);
+        this._exportTestInterface();
         return;
       }
 
@@ -287,6 +291,60 @@ const QuotaIndicator = GObject.registerClass(
       this._codex = provider(data.codex);
       this._renderPanel();
       this._renderPopup();
+    }
+
+    _exportTestInterface() {
+      // Session-bus interface used only by the golden render tests
+      // (CLAUDE_QUOTA_FIXTURE gates the entire path). The test driver
+      // launches gnome-shell once per session and then swaps fixtures /
+      // toggles the menu via this surface, so renders get amortized
+      // over a single shell process.
+      //   Reload(path)         — load fixture state from JSON, re-render.
+      //   OpenMenu / CloseMenu — toggle popup, no animation.
+      //   GetMenuGeometry      — screen-space (x,y,w,h) bounding box of
+      //                          the open menu, for precise screenshot crop.
+      this._testIface = Gio.DBusExportedObject.wrapJSObject(
+        '<node><interface name="works.allegedly.ClaudeQuotaTest">' +
+          '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
+          '<method name="OpenMenu"/>' +
+          '<method name="CloseMenu"/>' +
+          '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
+          "</interface></node>",
+        {
+          Reload: (path) => this._loadFixture(path),
+          OpenMenu: () => this.menu.open(false),
+          CloseMenu: () => this.menu.close(false),
+          GetMenuGeometry: () => {
+            const actor = this.menu.actor;
+            const [x, y] = actor.get_transformed_position();
+            const [w, h] = actor.get_transformed_size();
+            // gjs DBusExportedObject maps a `(iiii)` out-arg to an array
+            // of four ints; a single output value is returned directly,
+            // not wrapped in another array.
+            return [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
+          },
+        }
+      );
+      this._testIface.export(Gio.DBus.session, "/works/allegedly/ClaudeQuotaTest");
+      this._testBusOwnerId = Gio.bus_own_name(
+        Gio.BusType.SESSION,
+        "works.allegedly.ClaudeQuotaTest",
+        Gio.BusNameOwnerFlags.NONE,
+        null,
+        null,
+        null
+      );
+    }
+
+    _unexportTestInterface() {
+      if (this._testBusOwnerId) {
+        Gio.bus_unown_name(this._testBusOwnerId);
+        this._testBusOwnerId = 0;
+      }
+      if (this._testIface) {
+        this._testIface.unexport();
+        this._testIface = null;
+      }
     }
 
     _buildPanel() {
@@ -732,6 +790,7 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     destroy() {
+      this._unexportTestInterface();
       this._stopPopupTick();
       if (this._menuOpenId) {
         this.menu.disconnect(this._menuOpenId);

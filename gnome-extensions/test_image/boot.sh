@@ -17,8 +17,10 @@
 #   RENDER_WIDTH, RENDER_HEIGHT — Xvfb dims (default 1920x40).
 set -euo pipefail
 
+# Sized tall enough for the open popup menu to fit below the panel — the
+# menu test driver relies on the menu landing entirely on-screen.
 WIDTH="${RENDER_WIDTH:-1920}"
-HEIGHT="${RENDER_HEIGHT:-40}"
+HEIGHT="${RENDER_HEIGHT:-500}"
 
 glib-compile-schemas /usr/share/glib-2.0/schemas/
 update-mime-database /usr/share/mime
