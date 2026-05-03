@@ -5,10 +5,7 @@ metadata:
   namespace: nix-cache
   annotations:
     description: >-
-      Rotates gaffer-private CI's Attic writer JWT (push + pull on gaffer
-      only). Consumed by gaffer-private's nix-attic-push workflow via SOPS
-      decrypt with the CI age key (synced to gaffer-private repo by
-      tf/gitops/github-secrets-sync).
+      Rotates gaffer-private CI's Attic writer JWT (push + pull on gaffer only). Consumed by gaffer-private's nix-attic-push workflow via SOPS decrypt with the CI age key (synced to gaffer-private repo by tf/gitops/github-secrets-sync).
 spec:
   schedule: "55 * * * *"
   successfulJobsHistoryLimit: 3
@@ -34,7 +31,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: rotate
-              image: ghcr.io/agentydragon/attic-jwt-rotation:latest # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+              image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260503213841-a9a4873 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
               command: ["/usr/bin/bash", "/scripts/rotate.sh"]
               env:
                 - name: ROTATION_NAME

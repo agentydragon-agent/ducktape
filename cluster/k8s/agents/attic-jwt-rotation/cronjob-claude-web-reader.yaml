@@ -5,9 +5,7 @@ metadata:
   namespace: nix-cache
   annotations:
     description: >-
-      Rotates the shared claude-web Attic reader JWT (pull main + gaffer).
-      Consumed by web_env.sh / cli_env.sh; loaded into claude-web sessions
-      and passed to `attic login` from web_setup.sh.
+      Rotates the shared claude-web Attic reader JWT (pull main + gaffer). Consumed by web_env.sh / cli_env.sh; loaded into claude-web sessions and passed to `attic login` from web_setup.sh.
 spec:
   schedule: "35 * * * *"
   successfulJobsHistoryLimit: 3
@@ -33,7 +31,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: rotate
-              image: ghcr.io/agentydragon/attic-jwt-rotation:latest # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+              image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260503213841-a9a4873 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
               command: ["/usr/bin/bash", "/scripts/rotate.sh"]
               env:
                 - name: ROTATION_NAME

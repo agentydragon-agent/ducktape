@@ -5,9 +5,7 @@ metadata:
   namespace: nix-cache
   annotations:
     description: >-
-      Rotates ducktape CI's Attic writer JWT (push + pull on main only).
-      Replaces secrets/ci/attic-token.sops.yaml; nix-attic-push.yml in
-      ducktape decrypts via the CI age key (already SOPS_AGE_KEY in GHA).
+      Rotates ducktape CI's Attic writer JWT (push + pull on main only). Replaces secrets/ci/attic-token.sops.yaml; nix-attic-push.yml in ducktape decrypts via the CI age key (already SOPS_AGE_KEY in GHA).
 spec:
   schedule: "45 * * * *"
   successfulJobsHistoryLimit: 3
@@ -33,7 +31,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: rotate
-              image: ghcr.io/agentydragon/attic-jwt-rotation:latest # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+              image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260503213841-a9a4873 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
               command: ["/usr/bin/bash", "/scripts/rotate.sh"]
               env:
                 - name: ROTATION_NAME
