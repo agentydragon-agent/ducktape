@@ -1,22 +1,29 @@
-"""Golden render tests for the claude-quota GNOME extension panel.
+"""Golden render tests for the claude-quota GNOME extension.
 
 A single test container (//gnome-extensions/test_image:gnome_shell_test_image)
 is started once per module: boot.sh inside it brings up Xvfb, the
 postinst-equivalent caches, and a long-lived dbus session bus, then
-blocks. Each parametrized test launches a fresh gnome-shell inside that
-container with fixture state injected via the CLAUDE_QUOTA_FIXTURE env
-hook in extension.js, polls until the extension is ENABLED, screenshots
-the X root via scrot, and kills the shell. Xvfb and the dbus session
-survive across renders.
+blocks. A single gnome-shell is started inside that container (also
+once per module) and the extension exports a session-bus interface
+(works.allegedly.ClaudeQuotaTest, gated on CLAUDE_QUOTA_FIXTURE) that
+lets this driver swap fixture state, open/close the popup menu, and
+query the menu's screen geometry.
 
-Per-render orchestration (start, poll, screenshot, kill) is driven from
-this file rather than a bash render.sh — clearer error attribution per
-step, structured pytest failures.
+Each fixture renders to a single golden capturing both the panel
+indicator (with menu open, so the button shows its active state) and
+the open popup menu below it. The crop spans from the menu's left edge
+to the right edge of the screen and from the top of the panel to the
+bottom of the menu — so reviewers see the indicator's icons / pace
+labels and the menu's headers / bars / forecast strings in one image.
 
-The fixture matrix exercises each branch of the renderer in
-extension.js: the four pace-deviation tints (cool/ok/warn/hot), the
-short-window absolute-hot override, mixed per-provider state, the
-error short-circuit, and the no-data initial state.
+The fixture matrix uses mixed per-provider state to exercise multiple
+renderer branches per render:
+
+  warn_cool  Claude warn (+10), Codex cool (-15)  — pace tints both signs
+  hot_ok     Claude hot  (+20), Codex ok    (0)   — extreme + baseline
+  short_hot  short usedPercent ≥ 85 on both       — short-window override
+  error      Claude error string, Codex ok        — error short-circuit
+  empty      both providers null                  — initial / no-data state
 
 Update flow when the rendering changes intentionally:
 
@@ -25,8 +32,7 @@ Update flow when the rendering changes intentionally:
         --remote_download_outputs=toplevel --nocache_test_results
 
     INV=$(cat ~/.cache/bbr/last_invocation_id)
-    for f in panel_both_ok panel_both_cool panel_both_warn panel_both_hot \\
-             panel_short_hot panel_mixed panel_error panel_no_data; do
+    for f in warn_cool hot_ok short_hot error empty; do
       bbapi artifact "$INV" "$f.png" \\
         > "gnome-extensions/claude-quota/__snapshots__/$f.png"
     done
@@ -38,6 +44,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
 import shutil
 import time
@@ -62,27 +69,17 @@ _GNOME_SHELL_TEST = OciImage("_main/gnome-extensions/test_image/gnome_shell_test
 _EXTENSION_ZIP = "_main/gnome-extensions/claude-quota/claude-quota.zip"
 _EXTENSION_UUID = "claude-quota@allegedly.works"
 
-# Width (px) of the right-edge slice of the panel that we keep as the
-# golden. The full Xvfb display is 1920x40 and includes the GNOME date
-# menu in the centre, which renders the current real time and would make
-# the golden comparison flake on every run. The claude-quota indicator
-# lives at the right side of the panel, so we screenshot the whole panel
-# but only diff the right-edge crop.
-_PANEL_CROP_WIDTH = 250
+# Xvfb dims must match boot.sh — the combined panel+menu crop extends to
+# the right edge, so the test driver needs to know it.
+_SCREEN_WIDTH = 1920
 
 # gnome-shell ExtensionState (see js/misc/extensionUtils.js).
 _EXTENSION_STATE_ENABLED = 1
 
-_FIXTURES = [
-    "panel_both_ok",
-    "panel_both_cool",
-    "panel_both_warn",
-    "panel_both_hot",
-    "panel_short_hot",
-    "panel_mixed",
-    "panel_error",
-    "panel_no_data",
-]
+_TEST_DBUS_DEST = "works.allegedly.ClaudeQuotaTest"
+_TEST_DBUS_PATH = "/works/allegedly/ClaudeQuotaTest"
+
+_FIXTURES = ["warn_cool", "hot_ok", "short_hot", "error", "empty"]
 
 
 @pytest.fixture(scope="module")
@@ -103,13 +100,14 @@ def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def render_session(
     gnome_shell_test_image: str, extension_dir: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> Iterator[tuple[docker.models.containers.Container, Path]]:
-    """Long-lived container shared across every parametrized test in the module.
+    """Long-lived container + gnome-shell shared across the whole matrix.
 
-    The image's CMD is `sleep infinity`; we exec boot.sh once to start
-    Xvfb + dbus and create the postinst-equivalent caches, poll for the
-    /tmp/boot.ready sentinel, then yield the container handle and the
-    host-side output directory. Each per-test test_panel call launches a
-    fresh gnome-shell inside the same container.
+    boot.sh starts Xvfb + a long-lived dbus session bus inside the
+    container; we then launch gnome-shell once with one of the fixtures
+    set as initial state (so the extension's test DBus interface is
+    exported), wait for it to reach ENABLED, and yield the container
+    handle + host-side output directory. Each parametrized test calls
+    Reload + screenshots, leaving the shell process alone.
     """
     fixtures_dir = get_required_path(f"_main/gnome-extensions/claude-quota/test_fixtures/{_FIXTURES[0]}.json").parent
     out_dir = tmp_path_factory.mktemp("claude-quota-renders")
@@ -122,8 +120,7 @@ def render_session(
 
     with container:
         raw = container.get_wrapped_container()
-        # Detached: boot.sh blocks on `wait $XVFB_PID`, which keeps Xvfb
-        # alive for the rest of the test session.
+        # Detached: boot.sh blocks on `wait $XVFB_PID`.
         raw.exec_run(["/usr/local/bin/boot.sh"], detach=True)
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
@@ -136,6 +133,15 @@ def render_session(
                 f"container boot.sh never produced /tmp/boot.ready within 30s\n"
                 f"xvfb.log:\n{xvfb_log.decode(errors='replace')}"
             )
+
+        try:
+            _start_gnome_shell(raw, f"/fixtures/{_FIXTURES[0]}.json")
+            _wait_for_shell_bus(raw)
+            _wait_for_extension_enabled(raw, _EXTENSION_UUID)
+            _wait_for_test_dbus(raw)
+        except (TimeoutError, RuntimeError) as e:
+            _save_shell_log(raw, undeclared_outputs_dir() / "session-startup.shell.log")
+            pytest.fail(f"render_session startup failed: {e}")
         yield raw, out_dir
 
 
@@ -211,18 +217,71 @@ def _wait_for_extension_enabled(
     )
 
 
+def _wait_for_test_dbus(container: docker.models.containers.Container, *, timeout_s: float = 10) -> None:
+    """Poll until the extension has finished exporting its test DBus name."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        r = _exec_in_session(
+            container,
+            f"gdbus introspect --session --dest {_TEST_DBUS_DEST} --object-path {_TEST_DBUS_PATH} >/dev/null 2>&1",
+        )
+        if r.exit_code == 0:
+            return
+        time.sleep(0.2)
+    raise TimeoutError(f"extension test DBus interface ({_TEST_DBUS_DEST}) never became reachable within {timeout_s}s")
+
+
+def _test_dbus_call(
+    container: docker.models.containers.Container, method: str, *args: str
+) -> docker.models.containers.ExecResult:
+    arg_str = " ".join(args)
+    return _exec_in_session(
+        container,
+        f"gdbus call --session --dest {_TEST_DBUS_DEST} "
+        f"--object-path {_TEST_DBUS_PATH} "
+        f"--method {_TEST_DBUS_DEST}.{method} {arg_str}",
+    )
+
+
+_GEOMETRY_RE = re.compile(rb"\((-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\)")
+
+
+def _reload_fixture(container: docker.models.containers.Container, fixture_path_in_container: str) -> None:
+    r = _test_dbus_call(container, "Reload", shlex.quote(fixture_path_in_container))
+    if r.exit_code != 0:
+        stderr = (r.output[1] or b"").decode(errors="replace")
+        raise RuntimeError(f"Reload({fixture_path_in_container}) exit={r.exit_code}: {stderr}")
+    # Let the rebuilt panel/popup actors paint before the next screenshot.
+    time.sleep(0.3)
+
+
+def _open_menu(container: docker.models.containers.Container) -> tuple[int, int, int, int]:
+    r = _test_dbus_call(container, "OpenMenu")
+    if r.exit_code != 0:
+        raise RuntimeError(f"OpenMenu exit={r.exit_code}: {(r.output[1] or b'').decode(errors='replace')}")
+    # Allow one frame for the menu to lay out before querying its size.
+    time.sleep(0.2)
+    g = _test_dbus_call(container, "GetMenuGeometry")
+    if g.exit_code != 0:
+        raise RuntimeError(f"GetMenuGeometry exit={g.exit_code}: {(g.output[1] or b'').decode(errors='replace')}")
+    blob = (g.output[0] or b"") + (g.output[1] or b"")
+    m = _GEOMETRY_RE.search(blob)
+    if not m:
+        raise RuntimeError(f"GetMenuGeometry returned unparseable output: {blob!r}")
+    return int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+
+
+def _close_menu(container: docker.models.containers.Container) -> None:
+    r = _test_dbus_call(container, "CloseMenu")
+    if r.exit_code != 0:
+        raise RuntimeError(f"CloseMenu exit={r.exit_code}: {(r.output[1] or b'').decode(errors='replace')}")
+
+
 def _screenshot(container: docker.models.containers.Container, out_path_in_container: str) -> None:
     r = _exec_in_session(container, f"scrot --display :99 --overwrite {shlex.quote(out_path_in_container)}")
     if r.exit_code != 0:
         stderr = (r.output[1] or b"").decode(errors="replace")
         raise RuntimeError(f"scrot exit={r.exit_code}: {stderr}")
-
-
-def _kill_gnome_shell(container: docker.models.containers.Container) -> None:
-    # SIGTERM first; if anything is wedged, follow up with SIGKILL after a moment.
-    container.exec_run(["pkill", "-TERM", "-f", "gnome-shell"])
-    time.sleep(0.5)
-    container.exec_run(["pkill", "-KILL", "-f", "gnome-shell"])
 
 
 def _save_shell_log(container: docker.models.containers.Container, log_path: Path) -> None:
@@ -237,8 +296,27 @@ def undeclared_dir() -> Path:
     return out
 
 
+def _crop_combined(full: Image.Image, menu_geom: tuple[int, int, int, int]) -> Image.Image:
+    """Crop from menu's left edge to screen-right, from y=0 to menu bottom.
+
+    Captures the right portion of the panel (the indicator's icons, pace
+    labels, and the GNOME system area to its right) above the open menu.
+    The menu is anchored to the right side of the panel, so this crop
+    naturally includes everything the user sees when the indicator is
+    activated, with no GNOME date menu in the centre to introduce
+    nondeterminism.
+    """
+    menu_x, menu_y, menu_w, menu_h = menu_geom
+    if menu_w <= 0 or menu_h <= 0:
+        raise AssertionError(f"menu geometry has non-positive dim: {menu_geom}")
+    left = max(0, menu_x)
+    right = min(full.width, max(menu_x + menu_w, _SCREEN_WIDTH))
+    bottom = min(full.height, menu_y + menu_h)
+    return full.crop((left, 0, right, bottom))
+
+
 @pytest.mark.parametrize("fixture_name", _FIXTURES)
-def test_panel(
+def test_render(
     render_session: tuple[docker.models.containers.Container, Path],
     undeclared_dir: Path,
     tmp_path: Path,
@@ -249,33 +327,24 @@ def test_panel(
     fixture_in_container = f"/fixtures/{fixture_name}.json"
     out_in_container = f"/out/{out_name}"
     update_golden = os.environ.get("UPDATE_GOLDEN") == "1"
-    shell_log_dest = undeclared_dir / f"{fixture_name}.shell.log"
 
-    _start_gnome_shell(container, fixture_in_container)
     try:
-        _wait_for_shell_bus(container)
-        _wait_for_extension_enabled(container, _EXTENSION_UUID)
-        # Let the panel layout settle (icons, font load, first paint).
-        time.sleep(1)
+        # Defensively close in case a previous test left the menu open.
+        _close_menu(container)
+        _reload_fixture(container, fixture_in_container)
+        geom = _open_menu(container)
         _screenshot(container, out_in_container)
+        _close_menu(container)
     except (TimeoutError, RuntimeError) as e:
-        _save_shell_log(container, shell_log_dest)
-        pytest.fail(f"{fixture_name}: {e}\nsee undeclared outputs for {shell_log_dest.name}.")
-    finally:
-        # Always pull shell.log so reviewers / golden-update flow can see
-        # what gnome-shell loaded. Always tear down — the next fixture
-        # gets a fresh gnome-shell on the same Xvfb + dbus session.
-        _save_shell_log(container, shell_log_dest)
-        _kill_gnome_shell(container)
+        _save_shell_log(container, undeclared_dir / f"{fixture_name}.shell.log")
+        pytest.fail(f"{fixture_name}: {e}")
 
     full_path = container_out_dir / out_name
     assert full_path.exists(), f"scrot did not produce {full_path}"
 
-    # Crop to the right-edge slice where our extension lives, so the
-    # GNOME date menu in the centre doesn't poison the golden.
-    full = Image.open(full_path)
+    cropped = _crop_combined(Image.open(full_path), geom)
     actual_path = tmp_path / f"{fixture_name}.cropped.png"
-    full.crop((full.width - _PANEL_CROP_WIDTH, 0, full.width, full.height)).save(actual_path)
+    cropped.save(actual_path)
 
     if update_golden:
         # Skip comparison; just publish the rendered PNG so the user can
@@ -289,7 +358,7 @@ def test_panel(
     except RuntimeError:
         shutil.copy(actual_path, undeclared_dir / f"{fixture_name}.actual.png")
         pytest.fail(
-            f"No golden checked in for {fixture_name}. Re-run with --test_env=UPDATE_GOLDEN=1, "
+            f"No golden checked in for {out_name}. Re-run with --test_env=UPDATE_GOLDEN=1, "
             f"then cp the produced {out_name} from undeclared outputs into "
             f"gnome-extensions/claude-quota/__snapshots__/."
         )
