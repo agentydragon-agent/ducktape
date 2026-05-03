@@ -40,9 +40,12 @@ PROBES: list[tuple[str, str, list[str], int, list[str]]] = [
     # ("max_compl_512",  "server",   ["--max-completion-length", "512"], 8,  []),
     # ("colocate",       "colocate", [],                                 8,  []),
     # --- second run ---
+    # bsN_gaM: pure-parallelism test, effective batch held at 64 (= bs * grad_accum)
+    # so vLLM gen-batch stays unchanged; only trainer micro-batch parallelism varies.
     ("prefix_caching", "server", [], 8, ["--enable_prefix_caching", "True"]),
-    ("batch_size_2", "server", ["--batch-size", "2"], 8, []),
-    ("batch_size_4", "server", ["--batch-size", "4"], 8, []),
+    ("bs16_ga4", "server", ["--batch-size", "16", "--grad-accum", "4"], 8, []),
+    ("bs32_ga2", "server", ["--batch-size", "32", "--grad-accum", "2"], 8, []),
+    ("bs64_ga1", "server", ["--batch-size", "64", "--grad-accum", "1"], 8, []),
     ("async_grpo", "server", ["--async-grpo"], 8, []),
 ]
 
