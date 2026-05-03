@@ -1,0 +1,73 @@
+"""Pixel-tolerant PNG golden comparison with debug-artifact dumping.
+
+Designed for visual regression tests that screenshot real GUIs (gnome-shell,
+FreeCAD, etc.) where sub-pixel font rasterization noise can drift across runs
+even when nothing meaningful changed.
+
+`assert_png_matches_golden` writes `<name>.{actual,expected,diff}.png` to a
+caller-supplied output dir on failure (typically the bazel undeclared
+outputs dir, so the artifacts ride out to BuildBuddy).
+"""
+
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+from PIL import Image, ImageChops
+
+
+def png_diff_fraction(actual_path: Path, expected_path: Path, intensity_threshold: int) -> tuple[float, Image.Image]:
+    """Diff two PNGs and return (fraction_differing, overlay_image_with_red_diff_mask).
+
+    Pixels whose per-channel max difference is below ``intensity_threshold``
+    (0-255) are considered equal. The returned overlay is the actual image
+    with mismatched pixels painted bright red — useful for eyeball debugging.
+    """
+    actual = Image.open(actual_path).convert("RGBA")
+    expected = Image.open(expected_path).convert("RGBA")
+    if actual.size != expected.size:
+        raise AssertionError(f"PNG size mismatch: actual={actual.size} expected={expected.size}")
+
+    diff = ImageChops.difference(actual, expected).convert("L")
+    mask = diff.point(lambda v: 255 if v >= intensity_threshold else 0)
+    overlay = actual.copy()
+    red = Image.new("RGBA", actual.size, (255, 0, 0, 255))
+    overlay.paste(red, mask=mask)
+
+    differing = sum(1 for v in list(mask.getdata()) if v == 255)
+    fraction = differing / (actual.size[0] * actual.size[1])
+    return fraction, overlay
+
+
+def assert_png_matches_golden(
+    actual_path: Path,
+    expected_path: Path,
+    *,
+    name: str,
+    out_dir: Path,
+    tolerance: float = 0.02,
+    intensity_threshold: int = 16,
+) -> None:
+    """Assert that ``actual_path`` matches ``expected_path`` within tolerance.
+
+    On failure, copies ``<name>.{actual,expected,diff}.png`` into ``out_dir``
+    (typically bazel undeclared outputs) and raises ``AssertionError`` with a
+    pointer to the artifacts.
+
+    ``tolerance`` is the fraction of pixels that may differ (default 2%).
+    ``intensity_threshold`` is the per-channel diff under which pixels are
+    considered equal (default 16/255 — absorbs sub-pixel font noise).
+    """
+    fraction, overlay = png_diff_fraction(actual_path, expected_path, intensity_threshold)
+    diff_path = out_dir / f"{name}.diff.png"
+    overlay.save(diff_path)
+    if fraction <= tolerance:
+        return
+    shutil.copy(actual_path, out_dir / f"{name}.actual.png")
+    shutil.copy(expected_path, out_dir / f"{name}.expected.png")
+    raise AssertionError(
+        f"{name} render diverged: {fraction:.2%} of pixels differ "
+        f"(tolerance {tolerance:.0%}). "
+        f"Inspect {name}.{{actual,expected,diff}}.png in {out_dir}."
+    )
