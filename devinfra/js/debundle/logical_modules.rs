@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -14,9 +14,13 @@ use artifact::{
     ArtifactCounts, ArtifactManifest, ChunkFileRecord, ChunkLogicalModulesSummary, ChunkMetadata,
     FileMetadata, JsChunk, JsFile, JsPipelineArtifact, RootLogicalModulesSummary,
     SelectedModuleLowering, get_chunk_entry_path, manifest_relative_path, normalize_relative_path,
-    path_to_posix, posix_join, posix_relative,
+    path_to_posix, posix_join, posix_relative, resolve_artifact_source_import_reference,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
+use schedule_validator::{
+    BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
+    Schedule, analyze_chunk_facts,
+};
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -110,45 +114,34 @@ struct LogicalRequest {
 struct MemberRequest {
     binding: String,
     export_name: String,
-    /// When `Some`, the member's source is an import specifier in the
-    /// source chunk (not a top-level decl). The materializer rewrites
+    /// When `true`, the member's source is an import specifier in the
+    /// source chunk (not a top-level decl). The materializer looks up
+    /// the import statement by `binding` in the chunk body and rewrites
     /// it to a re-import in the destination module.
-    import: Option<ImportSpecifierInfo>,
-}
-
-#[derive(Debug, Clone)]
-struct ImportSpecifierInfo {
-    source: String,
-    imported: String,
+    is_import_specifier: bool,
 }
 
 #[derive(Debug, Clone)]
 struct TopLevelDecl {
     ordinal: usize,
     names: Vec<String>,
-    item: ModuleItem,
 }
 
 #[derive(Debug, Clone)]
 struct ModulePlan {
     id: String,
     target_file: String,
+    /// Logical module path the spec asked for (e.g. `"ai/mcp/foo"`).
+    /// Distinct from `target_file`, which is the chunk-relative
+    /// emitted file path (e.g. `"modules/foo.js"`).
+    target_path: String,
     explicit: bool,
-    requested: LogicalRequest,
+    /// Local-name → public-export-name for every owned binding this
+    /// plan claims (i.e. members whose `selector.binding.kind` is
+    /// _not_ `ImportSpecifier`). ImportSpecifier-bound members live
+    /// in `Schedule.bindings` as `BindingKind::Imported` and their
+    /// emit is driven from there.
     bindings: BTreeMap<String, String>,
-    /// `binding.kind: ImportSpecifier` members. Each entry produces an
-    /// `import { <imported> as <export_name> } from "<source>";` plus
-    /// `export { <export_name> };` in the destination module body. The
-    /// local in the source chunk's import is a different name; it
-    /// stays untouched so the source-chunk consumers continue to work.
-    import_members: Vec<ImportSpecifierMember>,
-}
-
-#[derive(Debug, Clone)]
-struct ImportSpecifierMember {
-    export_name: String,
-    source: String,
-    imported: String,
 }
 
 pub fn materialize_logical_modules(
@@ -225,25 +218,37 @@ pub fn materialize_logical_modules(
             .iter()
             .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
             .collect::<BTreeMap<_, _>>();
-        let uses_by_ordinal = declarations
-            .iter()
-            .map(|decl| (decl.ordinal, collect_referenced_idents(&decl.item)))
-            .collect::<BTreeMap<_, _>>();
 
         let mut binding_assignment = BTreeMap::<String, usize>::new();
         let mut module_plans = Vec::new();
+        let mut bindings_catalogue = BTreeMap::<BindingName, BindingKind>::new();
         for (index, request) in explicit_requests.iter_mut().enumerate() {
             let mut bindings = BTreeMap::new();
-            let mut import_members = Vec::new();
+            let dest_target_file = target_file_for_request(&target_dir, &request.target_path)?;
+            let module_id = ModuleId::Logical(LogicalModuleIndex(index));
             for member in &request.members {
-                if let Some(import) = &member.import {
-                    // ImportSpecifier-bound: emit a re-import in the
-                    // destination module, not a top-level decl move.
-                    import_members.push(ImportSpecifierMember {
-                        export_name: member.export_name.clone(),
-                        source: import.source.clone(),
-                        imported: import.imported.clone(),
-                    });
+                if member.is_import_specifier {
+                    // ImportSpecifier-bound: re-export of a source-chunk
+                    // import. Accumulate into BindingKind::Imported so
+                    // multiple modules can re-export the same binding
+                    // under different public names.
+                    let (imported_name, imported_from) = resolve_imported_binding(
+                        artifact,
+                        &runtime_ast.module.body,
+                        &chunk_id,
+                        &target_file,
+                        &member.binding,
+                    )?;
+                    let entry = bindings_catalogue
+                        .entry(member.binding.clone())
+                        .or_insert_with(|| BindingKind::Imported {
+                            imported_name: imported_name.clone(),
+                            imported_from: imported_from.clone(),
+                            re_exported_by: BTreeMap::new(),
+                        });
+                    if let BindingKind::Imported { re_exported_by, .. } = entry {
+                        re_exported_by.insert(module_id, member.export_name.clone());
+                    }
                 } else {
                     bindings.insert(member.binding.clone(), member.export_name.clone());
                 }
@@ -251,34 +256,34 @@ pub fn materialize_logical_modules(
             for binding in bindings.keys() {
                 if declaration_by_name.contains_key(binding) {
                     binding_assignment.insert(binding.clone(), index);
+                    bindings_catalogue
+                        .insert(binding.clone(), BindingKind::Owned { owner: module_id });
                 }
             }
             module_plans.push(ModulePlan {
                 id: request.id.clone(),
-                target_file: target_file_for_request(&target_dir, &request.target_path)?,
+                target_file: dest_target_file,
+                target_path: request.target_path.clone(),
                 explicit: true,
-                requested: request.clone(),
                 bindings,
-                import_members,
             });
         }
 
-        close_module_bindings_over_dependencies(
-            &mut module_plans,
-            &mut binding_assignment,
-            &declarations,
-            &declaration_by_name,
-            &uses_by_ordinal,
-        );
-
         if let Some(residual) = residual_request {
             let residual_index = module_plans.len();
+            let residual_module_id = ModuleId::Logical(LogicalModuleIndex(residual_index));
             let mut residual_bindings = BTreeMap::new();
             for decl in &declarations {
                 for name in &decl.names {
                     if !binding_assignment.contains_key(name) {
                         binding_assignment.insert(name.clone(), residual_index);
                         residual_bindings.insert(name.clone(), name.clone());
+                        bindings_catalogue.insert(
+                            name.clone(),
+                            BindingKind::Owned {
+                                owner: residual_module_id,
+                            },
+                        );
                     }
                 }
             }
@@ -286,15 +291,47 @@ pub fn materialize_logical_modules(
                 module_plans.push(ModulePlan {
                     id: residual.id.clone(),
                     target_file: target_file_for_request(&target_dir, &residual.target_path)?,
+                    target_path: residual.target_path.clone(),
                     explicit: false,
-                    requested: residual,
                     bindings: residual_bindings,
-                    import_members: Vec::new(),
                 });
             }
         }
 
+        // Run the schedule validator (see <DESIGN.md>). Computed here
+        // (before `lower_chunk` mutates the artifact) to keep the
+        // immutable borrow on `runtime_ast` simple. The report is
+        // emitted as `<chunk_id>.schedule.json`; cycles abort the
+        // pipeline.
+        let schedule = {
+            let facts = analyze_chunk_facts(&runtime_ast.module);
+            let logical_modules: Vec<ScheduleLogicalModule> = module_plans
+                .iter()
+                .map(|plan| ScheduleLogicalModule {
+                    id: plan.id.clone(),
+                    target_file: plan.target_file.clone(),
+                    rename_map: plan.bindings.clone(),
+                })
+                .collect();
+            Schedule::build(chunk_id.clone(), facts, bindings_catalogue, logical_modules)
+        };
+        let schedule_report = schedule.validate();
+
+        // Hard gate: a cyclic spec is unrealizable; refuse to emit
+        // instead of producing a runtime-broken bundle. Cycles are
+        // reported with the responsible (statement, binding) pairs
+        // so the spec author can locate and break each cycle.
+        if !schedule_report.cycles.is_empty() {
+            let serialized = serde_json::to_string_pretty(&schedule_report.cycles)
+                .unwrap_or_else(|_| "<failed to serialize cycles>".to_string());
+            bail!(
+                "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the at-init module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or making the offending reads lazy. Cycle evidence:\n{serialized}",
+                schedule_report.cycles.len(),
+            );
+        }
+
         let lowered = lower_chunk(LowerChunkInputs {
+            artifact,
             runtime_ast,
             header_lines: &header_lines,
             entry_file: &target_file,
@@ -303,6 +340,7 @@ pub fn materialize_logical_modules(
             declarations: &declarations,
             module_plans: &module_plans,
             binding_assignment: &binding_assignment,
+            schedule: &schedule,
         })?;
 
         let mut files = BTreeMap::new();
@@ -355,7 +393,7 @@ pub fn materialize_logical_modules(
                 file: plan.target_file.clone(),
                 id: plan.id.clone(),
                 member_names: plan.bindings.values().cloned().collect(),
-                path: plan.requested.target_path.clone(),
+                path: plan.target_path.clone(),
                 owner_ids: plan.bindings.keys().cloned().collect(),
             })
             .collect::<Vec<_>>();
@@ -388,6 +426,16 @@ pub fn materialize_logical_modules(
                 fs::create_dir_all(parent)?;
             }
             fs::write(&report_path, serde_json::to_string_pretty(&report)? + "\n")?;
+        }
+        if let Some(report_out_dir) = &report_out_dir {
+            let schedule_path = report_out_dir.join(format!("{chunk_id}.schedule.json"));
+            if let Some(parent) = schedule_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(
+                &schedule_path,
+                serde_json::to_string_pretty(&schedule_report)? + "\n",
+            )?;
         }
         applied.extend(selected_lowerings);
         reports.push(report);
@@ -442,6 +490,7 @@ struct LoweredChunk {
 }
 
 struct LowerChunkInputs<'a> {
+    artifact: &'a JsPipelineArtifact,
     runtime_ast: &'a ParsedJsModule,
     header_lines: &'a [String],
     entry_file: &'a str,
@@ -450,10 +499,12 @@ struct LowerChunkInputs<'a> {
     declarations: &'a [TopLevelDecl],
     module_plans: &'a [ModulePlan],
     binding_assignment: &'a BTreeMap<String, usize>,
+    schedule: &'a Schedule,
 }
 
 fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     let LowerChunkInputs {
+        artifact,
         runtime_ast,
         header_lines,
         entry_file,
@@ -462,6 +513,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         declarations,
         module_plans,
         binding_assignment,
+        schedule,
     } = inputs;
     let mut selected_ordinals = BTreeSet::new();
     for decl in declarations {
@@ -474,19 +526,30 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         }
     }
 
-    let requires_init_by_module =
-        init_required_modules(declarations, binding_assignment, module_plans.len());
     let mut selected_by_module = BTreeMap::<usize, Vec<ModuleItem>>::new();
     let mut selected_exports_by_module = BTreeMap::<usize, BTreeMap<String, String>>::new();
     for (module_index, plan) in module_plans.iter().enumerate() {
         if plan.bindings.is_empty() {
             continue;
         }
-        selected_exports_by_module.insert(module_index, plan.bindings.clone());
+        // Drop bindings that don't exist anywhere (no entry in
+        // `binding_assignment`). Without this, a stale spec entry
+        // for a binding that is not a top-level decl in the chunk
+        // would emit `export { <renamed> }` with no backing decl
+        // and Node bails at module load with `SyntaxError: Export
+        // '<renamed>' is not defined in module`.
+        let exports: BTreeMap<String, String> = plan
+            .bindings
+            .iter()
+            .filter(|(name, _)| binding_assignment.contains_key(*name))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if !exports.is_empty() {
+            selected_exports_by_module.insert(module_index, exports);
+        }
     }
 
     let mut entry_body = Vec::new();
-    let mut called_init_modules = BTreeSet::<usize>::new();
     let import_insert_index = runtime_ast
         .module
         .body
@@ -498,18 +561,9 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             entry_body.push(item.clone());
             continue;
         }
-        let selected_module_index = assigned_module_for_item(item, binding_assignment);
         let mut remaining =
             remaining_item_after_selection(item, binding_assignment, &mut selected_by_module)?;
         entry_body.append(&mut remaining);
-        if let Some(module_index) = selected_module_index
-            && requires_init_by_module.contains(&module_index)
-            && called_init_modules.insert(module_index)
-        {
-            entry_body.push(init_call_statement(&init_name_for_plan(
-                &module_plans[module_index],
-            )));
-        }
     }
     let mut entry_imports = Vec::<ModuleItem>::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
@@ -518,13 +572,22 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         if plan.bindings.is_empty() {
             continue;
         }
-        let mut emit_renames = BTreeMap::<String, String>::new();
-        let mut resolved =
-            disambiguate_import_locals(&plan.bindings, &mut occupied, &mut emit_renames);
-        if requires_init_by_module.contains(&module_index) {
-            let init_name = init_name_for_plan(plan);
-            resolved.insert(init_name.clone(), init_name);
+        // Drop bindings that don't exist anywhere (no entry in
+        // `binding_assignment`). Bindings owned by another plan stay
+        // in the import — they're a separate "two plans claim the
+        // same binding" disambiguation case handled by
+        // `disambiguate_import_locals`.
+        let live_bindings: BTreeMap<String, String> = plan
+            .bindings
+            .iter()
+            .filter(|(name, _)| binding_assignment.contains_key(*name))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if live_bindings.is_empty() {
+            continue;
         }
+        let mut emit_renames = BTreeMap::<String, String>::new();
+        let resolved = disambiguate_import_locals(&live_bindings, &mut occupied, &mut emit_renames);
         // A rename only propagates to consumer-body references when the
         // moved decl actually belongs to this plan. Plans that listed a
         // binding without owning the decl emit a dangling import; the
@@ -590,38 +653,65 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     for (index, plan) in module_plans.iter().enumerate() {
         let mut body = selected_by_module.remove(&index).unwrap_or_default();
         let local_renames = naturalize_module_body(&mut body, plan);
-        let mut module_imports = cross_module_imports_for_body(
-            index,
+        let mut module_imports =
+            cross_module_imports_for_body(index, &plan.target_file, &body, schedule, module_plans);
+        // Re-import any source-chunk import-specifier-bound locals that
+        // moved code in `body` references but no top-level decl
+        // satisfies (e.g. `const { decode } = gge;` where `gge` was an
+        // ImportSpecifier in the source chunk's runtime body). Without
+        // this, the moved code references a free variable and Node
+        // throws `ReferenceError: gge is not defined` at runtime.
+        let mut runtime_reimports = source_chunk_imports_for_moved_body(
+            artifact,
+            &runtime_ast.module.body,
+            chunk_id,
+            entry_file,
             &plan.target_file,
             &body,
-            module_plans,
-            binding_assignment,
-        );
+            schedule,
+        )?;
+        module_imports.append(&mut runtime_reimports);
         module_imports.append(&mut body);
         body = module_imports;
         rewrite_runtime_sources_for_target(&mut body, &plan.target_file);
-        // ImportSpecifier-bound members: emit a re-import in the
-        // destination module for each, plus mirror the export. The
-        // re-imports go at the top of the body, after the cross-module
-        // imports already inserted.
+        // ImportSpecifier-bound members (`BindingKind::Imported` in
+        // `schedule.bindings`): for each `Imported` binding whose
+        // `re_exported_by` map names this module, emit a re-import
+        // (using the local name as the alias) plus mirror the
+        // public-name export. Per-destination relative paths are
+        // computed here so multiple modules at different output
+        // depths each get a correctly-relativised path.
+        let module_id = ModuleId::Logical(LogicalModuleIndex(index));
         let mut import_member_exports = BTreeMap::<String, String>::new();
-        if !plan.import_members.is_empty() {
-            let import_count = body
-                .iter()
-                .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
-                .count();
-            for (offset, member) in plan.import_members.iter().enumerate() {
-                let decl = import_specifier_member_decl(
-                    entry_file,
-                    &plan.target_file,
-                    &member.source,
-                    &member.imported,
-                    &member.export_name,
-                );
-                body.insert(import_count + offset, decl);
-                import_member_exports
-                    .insert(member.export_name.clone(), member.export_name.clone());
-            }
+        let import_count = body
+            .iter()
+            .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
+            .count();
+        // `imported_from` on `BindingKind::Imported` is output-tree-
+        // rooted absolute; `plan.target_file` is chunk-rooted. Lift
+        // the destination to the same coordinate system before
+        // computing the relative path.
+        let dest_abs = posix_join(&[chunk_id, &plan.target_file]);
+        let mut offset = 0;
+        for (local, kind) in &schedule.bindings {
+            let BindingKind::Imported {
+                imported_name,
+                imported_from,
+                re_exported_by,
+            } = kind
+            else {
+                continue;
+            };
+            let Some(public_name) = re_exported_by.get(&module_id) else {
+                continue;
+            };
+            let src = relative_source(&dest_abs, imported_from);
+            body.insert(
+                import_count + offset,
+                imported_binding_import_decl(local, imported_name, &src),
+            );
+            offset += 1;
+            import_member_exports.insert(local.clone(), public_name.clone());
         }
         let exports_have_top_level_decls = selected_exports_by_module.contains_key(&index);
         if exports_have_top_level_decls {
@@ -632,11 +722,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone())),
             );
-            if requires_init_by_module.contains(&index) {
-                body = initialized_module_body(plan, body, &exports)?;
-            } else {
-                body.push(export_named_for_bindings(&exports));
-            }
+            body.push(export_named_for_bindings(&exports));
         } else if !import_member_exports.is_empty() {
             body.push(export_named_for_bindings(&import_member_exports));
         }
@@ -735,28 +821,12 @@ fn logical_requests_for_chunk(
                     .and_then(Value::as_str)
                     .unwrap_or(binding)
                     .to_string();
-                // ImportSpecifier-bound members carry an `import` block
-                // pointing at the source chunk's import statement; the
-                // materializer turns the rename into a re-import in the
-                // destination module.
-                let import = if binding_node.get("kind").and_then(Value::as_str)
-                    == Some("ImportSpecifier")
-                {
-                    selector.get("import").and_then(|info| {
-                        let source = info.get("source").and_then(Value::as_str)?;
-                        let imported = info.get("imported").and_then(Value::as_str)?;
-                        Some(ImportSpecifierInfo {
-                            source: source.to_string(),
-                            imported: imported.to_string(),
-                        })
-                    })
-                } else {
-                    None
-                };
+                let is_import_specifier =
+                    binding_node.get("kind").and_then(Value::as_str) == Some("ImportSpecifier");
                 Some(MemberRequest {
                     binding: binding.to_string(),
                     export_name,
-                    import,
+                    is_import_specifier,
                 })
             })
             .collect();
@@ -786,11 +856,7 @@ fn collect_top_level_declarations(module: &Module) -> Vec<TopLevelDecl> {
         if names.is_empty() {
             continue;
         }
-        out.push(TopLevelDecl {
-            ordinal,
-            names,
-            item: item.clone(),
-        });
+        out.push(TopLevelDecl { ordinal, names });
     }
     out
 }
@@ -863,71 +929,6 @@ impl Visit for RefCollector {
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
 }
 
-fn close_module_bindings_over_dependencies(
-    module_plans: &mut [ModulePlan],
-    binding_assignment: &mut BTreeMap<String, usize>,
-    declarations: &[TopLevelDecl],
-    declaration_by_name: &BTreeMap<String, usize>,
-    uses_by_ordinal: &BTreeMap<usize, BTreeSet<String>>,
-) {
-    let declaration_by_ordinal = declarations
-        .iter()
-        .map(|decl| (decl.ordinal, decl))
-        .collect::<BTreeMap<_, _>>();
-    for (module_index, plan) in module_plans.iter_mut().enumerate() {
-        expand_plan_to_transitive_dependencies(
-            plan,
-            module_index,
-            binding_assignment,
-            declaration_by_name,
-            &declaration_by_ordinal,
-            uses_by_ordinal,
-        );
-    }
-}
-
-fn expand_plan_to_transitive_dependencies(
-    plan: &mut ModulePlan,
-    module_index: usize,
-    binding_assignment: &mut BTreeMap<String, usize>,
-    declaration_by_name: &BTreeMap<String, usize>,
-    declaration_by_ordinal: &BTreeMap<usize, &TopLevelDecl>,
-    uses_by_ordinal: &BTreeMap<usize, BTreeSet<String>>,
-) {
-    let mut queue = plan
-        .bindings
-        .keys()
-        .filter_map(|name| declaration_by_name.get(name).copied())
-        .collect::<VecDeque<_>>();
-    while let Some(ordinal) = queue.pop_front() {
-        let Some(uses) = uses_by_ordinal.get(&ordinal) else {
-            continue;
-        };
-        for used in uses {
-            let Some(dep_ordinal) = declaration_by_name.get(used).copied() else {
-                continue;
-            };
-            if binding_assignment.contains_key(used) {
-                continue;
-            }
-            binding_assignment.insert(used.clone(), module_index);
-            plan.bindings.insert(used.clone(), used.clone());
-            if let Some(dep_decl) = declaration_by_ordinal.get(&dep_ordinal) {
-                // Sibling declarators may already be claimed by another plan's
-                // explicit spec or earlier closure. Don't steal them — split_var_decl
-                // already routes per-declarator destinations correctly.
-                for dep_name in &dep_decl.names {
-                    if !binding_assignment.contains_key(dep_name) {
-                        binding_assignment.insert(dep_name.clone(), module_index);
-                        plan.bindings.insert(dep_name.clone(), dep_name.clone());
-                    }
-                }
-            }
-            queue.push_back(dep_ordinal);
-        }
-    }
-}
-
 fn reject_duplicate_export_names(
     operation: &str,
     id: &str,
@@ -949,125 +950,28 @@ fn reject_duplicate_export_names(
     Ok(())
 }
 
-fn init_required_modules(
-    declarations: &[TopLevelDecl],
-    binding_assignment: &BTreeMap<String, usize>,
-    module_count: usize,
-) -> BTreeSet<usize> {
-    let mut required = BTreeSet::new();
-    for decl in declarations {
-        let Some(module_index) = assigned_module_for_names(&decl.names, binding_assignment) else {
-            continue;
-        };
-        if module_index >= module_count {
-            continue;
-        }
-        if item_requires_init_wrapper_for_module(&decl.item, module_index, binding_assignment) {
-            required.insert(module_index);
-        }
-    }
-    required
-}
-
-fn item_requires_init_wrapper_for_module(
-    item: &ModuleItem,
-    module_index: usize,
-    binding_assignment: &BTreeMap<String, usize>,
-) -> bool {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => {
-            var_requires_init_wrapper_for_module(var, module_index, binding_assignment)
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => match &export_decl.decl {
-            Decl::Var(var) => {
-                var_requires_init_wrapper_for_module(var, module_index, binding_assignment)
-            }
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
-fn var_requires_init_wrapper_for_module(
-    var: &VarDecl,
-    module_index: usize,
-    binding_assignment: &BTreeMap<String, usize>,
-) -> bool {
-    if var.kind == VarDeclKind::Var {
-        return false;
-    }
-    var.decls.iter().any(|declarator| {
-        let names = binding_names(&declarator.name);
-        if !names
-            .iter()
-            .any(|name| binding_assignment.get(name) == Some(&module_index))
-        {
-            return false;
-        }
-        declarator
-            .init
-            .as_deref()
-            .is_some_and(|init| !is_plain_import_safe_initializer(init))
-    })
-}
-
-fn is_plain_import_safe_initializer(expr: &Expr) -> bool {
-    match expr {
-        Expr::Lit(_) | Expr::Ident(_) | Expr::Fn(_) | Expr::Arrow(_) | Expr::Class(_) => true,
-        Expr::Unary(unary) => is_plain_import_safe_initializer(&unary.arg),
-        Expr::Bin(binary) => {
-            is_plain_import_safe_initializer(&binary.left)
-                && is_plain_import_safe_initializer(&binary.right)
-        }
-        Expr::Tpl(template) => template
-            .exprs
-            .iter()
-            .all(|expr| is_plain_import_safe_initializer(expr)),
-        Expr::Array(array) => array
-            .elems
-            .iter()
-            .flatten()
-            .all(|element| is_plain_import_safe_initializer(&element.expr)),
-        Expr::Object(object) => object.props.iter().all(|prop| match prop {
-            PropOrSpread::Spread(spread) => is_plain_import_safe_initializer(&spread.expr),
-            PropOrSpread::Prop(prop) => match &**prop {
-                Prop::KeyValue(key_value) => is_plain_import_safe_initializer(&key_value.value),
-                Prop::Shorthand(_) => true,
-                Prop::Method(_) | Prop::Getter(_) | Prop::Setter(_) => true,
-                Prop::Assign(assign) => is_plain_import_safe_initializer(&assign.value),
-            },
-        }),
-        _ => false,
-    }
-}
-
-fn assigned_module_for_item(
-    item: &ModuleItem,
-    binding_assignment: &BTreeMap<String, usize>,
-) -> Option<usize> {
-    assigned_module_for_names(&top_level_declaration_names(item), binding_assignment)
-}
-
 fn cross_module_imports_for_body(
     module_index: usize,
     from_file: &str,
     body: &[ModuleItem],
-    module_plans: &[ModulePlan],
-    binding_assignment: &BTreeMap<String, usize>,
+    schedule: &Schedule,
+    _module_plans: &[ModulePlan],
 ) -> Vec<ModuleItem> {
     let mut imports_by_provider = BTreeMap::<usize, BTreeMap<String, String>>::new();
     for item in body {
         for name in collect_referenced_idents(item) {
-            let Some(provider_index) = binding_assignment.get(&name).copied() else {
+            let Some(ModuleId::Logical(LogicalModuleIndex(provider_index))) =
+                schedule.owner_of(&name)
+            else {
                 continue;
             };
             if provider_index == module_index {
                 continue;
             }
-            let Some(provider_plan) = module_plans.get(provider_index) else {
+            let Some(provider) = schedule.logical_module(LogicalModuleIndex(provider_index)) else {
                 continue;
             };
-            let Some(exported_name) = provider_plan.bindings.get(&name) else {
+            let Some(exported_name) = provider.rename_map.get(&name) else {
                 continue;
             };
             imports_by_provider
@@ -1079,8 +983,8 @@ fn cross_module_imports_for_body(
     imports_by_provider
         .into_iter()
         .filter_map(|(provider_index, bindings)| {
-            module_plans
-                .get(provider_index)
+            schedule
+                .logical_module(LogicalModuleIndex(provider_index))
                 .map(|provider| import_decl_for_plan(from_file, &provider.target_file, &bindings))
         })
         .collect()
@@ -1548,138 +1452,6 @@ fn is_identifier_like(name: &str) -> bool {
     chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
 }
 
-fn initialized_module_body(
-    plan: &ModulePlan,
-    body: Vec<ModuleItem>,
-    exports: &BTreeMap<String, String>,
-) -> Result<Vec<ModuleItem>> {
-    let mut out = Vec::new();
-    let mut init_statements = Vec::new();
-    for item in body {
-        match item {
-            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => {
-                push_initialized_var_decl(*var, &mut out, &mut init_statements)?;
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => match export_decl.decl {
-                Decl::Var(var) => {
-                    push_initialized_var_decl(*var, &mut out, &mut init_statements)?;
-                }
-                decl => out.push(ModuleItem::Stmt(Stmt::Decl(decl))),
-            },
-            other => out.push(other),
-        }
-    }
-    out.push(export_init_function(
-        &init_name_for_plan(plan),
-        init_statements,
-    ));
-    out.push(export_named_for_bindings(exports));
-    Ok(out)
-}
-
-fn push_initialized_var_decl(
-    var: VarDecl,
-    out: &mut Vec<ModuleItem>,
-    init_statements: &mut Vec<Stmt>,
-) -> Result<()> {
-    let mut declarations = Vec::new();
-    for declarator in var.decls {
-        if let Some(init) = declarator.init.clone() {
-            init_statements.push(assignment_statement_for_declarator(&declarator, init)?);
-        }
-        declarations.push(VarDeclarator {
-            init: None,
-            ..declarator
-        });
-    }
-    out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
-        span: var.span,
-        ctxt: var.ctxt,
-        kind: VarDeclKind::Let,
-        declare: var.declare,
-        decls: declarations,
-    })))));
-    Ok(())
-}
-
-fn assignment_statement_for_declarator(
-    declarator: &VarDeclarator,
-    init: Box<Expr>,
-) -> Result<Stmt> {
-    let left: AssignTarget = declarator.name.clone().try_into().map_err(|_| {
-        anyhow::anyhow!("init-wrapper lowering only supports assignable binding patterns")
-    })?;
-    Ok(Stmt::Expr(ExprStmt {
-        span: DUMMY_SP,
-        expr: Box::new(Expr::Assign(AssignExpr {
-            span: DUMMY_SP,
-            op: AssignOp::Assign,
-            left,
-            right: init,
-        })),
-    }))
-}
-
-fn export_init_function(name: &str, statements: Vec<Stmt>) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-        span: DUMMY_SP,
-        decl: Decl::Fn(FnDecl {
-            ident: Ident::new_no_ctxt(name.into(), DUMMY_SP),
-            declare: false,
-            function: Box::new(Function {
-                params: Vec::new(),
-                decorators: Vec::new(),
-                span: DUMMY_SP,
-                ctxt: SyntaxContext::empty(),
-                body: Some(BlockStmt {
-                    span: DUMMY_SP,
-                    ctxt: SyntaxContext::empty(),
-                    stmts: statements,
-                }),
-                is_generator: false,
-                is_async: false,
-                type_params: None,
-                return_type: None,
-            }),
-        }),
-    }))
-}
-
-fn init_call_statement(name: &str) -> ModuleItem {
-    ModuleItem::Stmt(Stmt::Expr(ExprStmt {
-        span: DUMMY_SP,
-        expr: Box::new(Expr::Call(CallExpr {
-            span: DUMMY_SP,
-            ctxt: SyntaxContext::empty(),
-            callee: Callee::Expr(Box::new(Expr::Ident(Ident::new_no_ctxt(
-                name.into(),
-                DUMMY_SP,
-            )))),
-            args: Vec::new(),
-            type_args: None,
-        })),
-    }))
-}
-
-fn init_name_for_plan(plan: &ModulePlan) -> String {
-    sanitize_identifier(&format!(
-        "__dt_generated_init__{}",
-        plan.requested.target_path
-    ))
-}
-
-fn sanitize_identifier(value: &str) -> String {
-    let mut out = String::new();
-    for (index, ch) in value.chars().enumerate() {
-        let valid = ch == '_' || ch == '$' || ch.is_ascii_alphanumeric();
-        if index == 0 && ch.is_ascii_digit() {
-            out.push('_');
-        }
-        out.push(if valid { ch } else { '_' });
-    }
-    if out.is_empty() { "_".to_string() } else { out }
-}
-
 fn target_file_for_request(target_dir: &str, target_path: &str) -> Result<String> {
     let normalized = normalize_relative_path(target_path)?;
     let with_ext = if normalized.ends_with(".js") {
@@ -1913,25 +1685,214 @@ fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
     }
 }
 
-/// Build an `import { <imported> as <local> } from "<rewritten_source>";`
-/// for an `ImportSpecifier` member moved into a destination module.
-/// The spec's `import.source` is relative to the source chunk's entry
-/// file; the destination's relative path differs, so re-resolve.
-fn import_specifier_member_decl(
-    source_chunk_entry_file: &str,
-    destination_target_file: &str,
-    import_source: &str,
-    imported: &str,
-    local: &str,
-) -> ModuleItem {
-    let source_dir = std::path::Path::new(source_chunk_entry_file)
-        .parent()
-        .and_then(std::path::Path::to_str)
-        .unwrap_or("")
-        .replace('\\', "/");
-    let absolute_target = posix_join(&[&source_dir, import_source]);
-    let absolute_normalized = normalize_relative_path(&absolute_target).unwrap_or(absolute_target);
-    let rewritten = relative_source(destination_target_file, &absolute_normalized);
+/// Look up an `ImportSpecifier`-bound member's source-chunk import
+/// statement and resolve it to `(imported_name, imported_from)` where
+/// `imported_from` is the output-tree-rooted absolute path of the
+/// import source (suitable for storing on `BindingKind::Imported`).
+/// Per-destination relative paths are computed at emit time via
+/// `relative_source(dest_target_file, imported_from)`.
+fn resolve_imported_binding(
+    artifact: &JsPipelineArtifact,
+    runtime_body: &[ModuleItem],
+    source_chunk_id: &str,
+    source_runtime_file: &str,
+    source_local: &str,
+) -> Result<(String, String)> {
+    let (imported, src_path) =
+        lookup_import_specifier(runtime_body, source_local).with_context(|| {
+            format!("no import specifier found for `{source_local}` in source chunk")
+        })?;
+    let imported_from = if let Some((_, _, path)) = resolve_artifact_source_import_reference(
+        artifact,
+        &src_path,
+        source_chunk_id,
+        source_runtime_file,
+    )? {
+        path
+    } else {
+        // Source path doesn't reference a known chunk (e.g. a
+        // synthetic e2e snapshot file with no entry in the artifact).
+        // Resolve relative to the source chunk's directory in the
+        // output tree (chunk_id includes the directory prefix; the
+        // runtime file is chunk-relative).
+        let chunk_runtime_abs = posix_join(&[
+            &posix_dirname(source_chunk_id),
+            &posix_dirname(source_runtime_file),
+        ]);
+        posix_join(&[&chunk_runtime_abs, &src_path])
+    };
+    Ok((imported, imported_from))
+}
+
+/// Build re-imports for source-chunk ImportSpecifier-bound locals that
+/// `body` (the moved code for this destination module) references but
+/// no enclosing import or local decl provides. Each emitted import
+/// uses a destination-relative path resolved through the artifact's
+/// source-chunk index, so it stays correct after the rewriter (which
+/// skips materialized files).
+fn source_chunk_imports_for_moved_body(
+    artifact: &JsPipelineArtifact,
+    runtime_body: &[ModuleItem],
+    source_chunk_id: &str,
+    source_runtime_file: &str,
+    dest_target_file: &str,
+    body: &[ModuleItem],
+    schedule: &Schedule,
+) -> Result<Vec<ModuleItem>> {
+    let mut runtime_imports = BTreeMap::<String, RuntimeImportInfo>::new();
+    for item in runtime_body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        let src = str_value(&import.src);
+        for specifier in &import.specifiers {
+            match specifier {
+                ImportSpecifier::Named(named) => {
+                    let local = named.local.sym.to_string();
+                    let imported = match &named.imported {
+                        Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
+                        Some(ModuleExportName::Str(s)) => str_value(s),
+                        None => named.local.sym.to_string(),
+                    };
+                    runtime_imports.insert(
+                        local,
+                        RuntimeImportInfo {
+                            kind: RuntimeImportKind::Named { imported },
+                            src: src.clone(),
+                        },
+                    );
+                }
+                ImportSpecifier::Default(default) => {
+                    runtime_imports.insert(
+                        default.local.sym.to_string(),
+                        RuntimeImportInfo {
+                            kind: RuntimeImportKind::Default,
+                            src: src.clone(),
+                        },
+                    );
+                }
+                ImportSpecifier::Namespace(namespace) => {
+                    runtime_imports.insert(
+                        namespace.local.sym.to_string(),
+                        RuntimeImportInfo {
+                            kind: RuntimeImportKind::Namespace,
+                            src: src.clone(),
+                        },
+                    );
+                }
+            }
+        }
+    }
+    let mut already_imported = BTreeSet::<String>::new();
+    for item in body {
+        if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
+            for specifier in &import.specifiers {
+                let local = match specifier {
+                    ImportSpecifier::Named(named) => named.local.sym.to_string(),
+                    ImportSpecifier::Default(default) => default.local.sym.to_string(),
+                    ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
+                };
+                already_imported.insert(local);
+            }
+        }
+    }
+    let mut needed = BTreeMap::<String, &RuntimeImportInfo>::new();
+    for item in body {
+        for name in collect_referenced_idents(item) {
+            if already_imported.contains(&name) {
+                continue;
+            }
+            if schedule.bindings.contains_key(&name) {
+                // Provided by another plan via cross_module_imports.
+                continue;
+            }
+            if let Some(info) = runtime_imports.get(&name) {
+                needed.insert(name, info);
+            }
+        }
+    }
+    let mut result = Vec::new();
+    for (local, info) in needed {
+        let dest_dir = posix_join(&[source_chunk_id, &posix_dirname(dest_target_file)]);
+        let rewritten_source = if let Some((target_chunk_id, target_entry_file, _path)) =
+            resolve_artifact_source_import_reference(
+                artifact,
+                &info.src,
+                source_chunk_id,
+                source_runtime_file,
+            )? {
+            let target_path = posix_join(&[&target_chunk_id, &target_entry_file]);
+            let mut rel = posix_relative(&dest_dir, &target_path);
+            if !rel.starts_with('.') {
+                rel = format!("./{rel}");
+            }
+            rel
+        } else {
+            let depth = std::path::Path::new(dest_target_file)
+                .parent()
+                .map(|parent| parent.iter().count())
+                .unwrap_or(0);
+            format!("{}{}", "../".repeat(depth), info.src)
+        };
+        result.push(build_runtime_reimport(&local, info, &rewritten_source));
+    }
+    Ok(result)
+}
+
+#[derive(Debug)]
+struct RuntimeImportInfo {
+    kind: RuntimeImportKind,
+    src: String,
+}
+
+#[derive(Debug)]
+enum RuntimeImportKind {
+    Named { imported: String },
+    Default,
+    Namespace,
+}
+
+fn build_runtime_reimport(local: &str, info: &RuntimeImportInfo, src: &str) -> ModuleItem {
+    let specifier = match &info.kind {
+        RuntimeImportKind::Named { imported } => ImportSpecifier::Named(ImportNamedSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            imported: if imported == local {
+                None
+            } else {
+                Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                    imported.clone().into(),
+                    DUMMY_SP,
+                )))
+            },
+            is_type_only: false,
+        }),
+        RuntimeImportKind::Default => ImportSpecifier::Default(ImportDefaultSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+        }),
+        RuntimeImportKind::Namespace => ImportSpecifier::Namespace(ImportStarAsSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+        }),
+    };
+    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+        span: DUMMY_SP,
+        specifiers: vec![specifier],
+        src: Box::new(Str {
+            span: DUMMY_SP,
+            value: src.into(),
+            raw: None,
+        }),
+        type_only: false,
+        with: None,
+        phase: ImportPhase::Evaluation,
+    }))
+}
+
+/// Emit `import { <imported> as <local> } from "<src>"` (or just
+/// `import { <local> } from "<src>"` when local == imported).
+fn imported_binding_import_decl(local: &str, imported: &str, src: &str) -> ModuleItem {
     ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
         span: DUMMY_SP,
         specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
@@ -1949,13 +1910,46 @@ fn import_specifier_member_decl(
         })],
         src: Box::new(Str {
             span: DUMMY_SP,
-            value: rewritten.into(),
+            value: src.into(),
             raw: None,
         }),
         type_only: false,
         with: None,
         phase: ImportPhase::Evaluation,
     }))
+}
+
+/// Find the `(imported_name, src_path)` for the chunk's import specifier
+/// whose local matches `source_local`.
+fn lookup_import_specifier(body: &[ModuleItem], source_local: &str) -> Option<(String, String)> {
+    for item in body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        for specifier in &import.specifiers {
+            let ImportSpecifier::Named(named) = specifier else {
+                continue;
+            };
+            if named.local.sym.as_ref() != source_local {
+                continue;
+            }
+            let imported = match &named.imported {
+                Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
+                Some(ModuleExportName::Str(s)) => str_value(s),
+                None => named.local.sym.to_string(),
+            };
+            return Some((imported, str_value(&import.src)));
+        }
+    }
+    None
+}
+
+fn posix_dirname(path: &str) -> String {
+    std::path::Path::new(path)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .replace('\\', "/")
 }
 
 fn import_decl_for_plan(
