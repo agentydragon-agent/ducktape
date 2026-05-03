@@ -25,7 +25,6 @@ const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const POLL_INTERVAL_SECONDS = 120;
 const STALE_AFTER_SECONDS = 5 * 60;
 const TOKEN_EXPIRY_SKEW_SECONDS = 30;
-const QUOTA_BAR_FALLBACK_WIDTH_PX = 180;
 
 // Pace deviation thresholds, in signed percentage points (used% − expected%).
 // TODO: expose via gschema settings (along with poll interval and the
@@ -443,13 +442,16 @@ const QuotaIndicator = GObject.registerClass(
 
     _makeQuotaBar(fillClass) {
       const track = new St.BoxLayout({ style_class: "quota-bar-track", x_expand: true });
-      track.set_width(QUOTA_BAR_FALLBACK_WIDTH_PX);
 
       const fill = new St.Widget({ style_class: `quota-bar-fill ${fillClass}` });
       fill._quotaFraction = null;
       fill._quotaTrack = track;
       fill.set_width(0);
-      track.connect("notify::width", () => this._applyBarFill(fill));
+      // notify::allocation (not notify::width) — width is the *requested*
+      // width and may not change between request and first allocation, so
+      // notify::width can miss the very first layout pass and leave the fill
+      // sized off a stale request width until something else triggers a relayout.
+      track.connect("notify::allocation", () => this._applyBarFill(fill));
       track.add_child(fill);
       return { track, fill };
     }
@@ -742,9 +744,16 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _applyBarFill(fill) {
-      const width = fill._quotaTrack?.get_width?.() ?? QUOTA_BAR_FALLBACK_WIDTH_PX;
-      const trackWidth = Number.isFinite(width) && width > 0 ? width : QUOTA_BAR_FALLBACK_WIDTH_PX;
-      fill.set_width(Math.round(trackWidth * (fill._quotaFraction ?? 0)));
+      const fraction = fill._quotaFraction;
+      if (fraction == null) {
+        fill.set_width(0);
+        return;
+      }
+      const box = fill._quotaTrack.get_allocation_box();
+      const trackWidth = box.x2 - box.x1;
+      // Track not yet allocated — defer; notify::allocation will fire again.
+      if (!(trackWidth > 0)) return;
+      fill.set_width(Math.round(trackWidth * fraction));
     }
 
     _setBarTint(fill, tint) {
