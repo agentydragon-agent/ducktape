@@ -19,7 +19,7 @@ spec:
         kubernetes.io/hostname: wyrm2
       containers:
         - name: rtl-tcp
-          image: ghcr.io/agentydragon/rtl-tcp:devel-20260503220401-fbc1c79 # {"$imagepolicy": "flux-system:rtl-tcp"}
+          image: ghcr.io/agentydragon/rtl-tcp:devel-20260503221611-13cde45 # {"$imagepolicy": "flux-system:rtl-tcp"}
           ports:
             - containerPort: 1234
               name: iq-stream
