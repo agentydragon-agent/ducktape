@@ -70,11 +70,10 @@ export { aH };
     // Public re-export name `aH` must survive even though the local is
     // now `aH$1`: the re-export becomes `export { aH$1 as aH }` rather
     // than `export { aH$1 }` (which would silently change the public
-    // name downstream consumers see).
-    assert!(
-        entry.contains("aH$1 as aH"),
-        "expected re-export to preserve public name aH; entry was:\n{entry}",
-    );
+    // name downstream consumers see). A substring check would also accept
+    // the broken `aH$1 as aH$1` shape (it contains `aH$1 as aH`), so
+    // this asserts on the parsed specifier instead.
+    assert_export_named_specifier(&entry, "aH$1", Some("aH"));
 
     // SWC parses the result without a duplicate-decl error: every named
     // import specifier in the file binds a distinct local.
@@ -117,14 +116,253 @@ export { aH };
     assert_entry_output(&fixture, "7\n");
 }
 
+#[test]
+fn does_not_collapse_two_distinct_locals_onto_the_same_readable_name() {
+    // Two readable-rename rules in one logical module pick the same
+    // target name from different inputs. The destructured-pattern rule
+    // sees `{ readable: o }` and queues `o -> readable`; the
+    // return-object-alias rule sees `return { readable: u }` and queues
+    // `u -> readable`. Both rewrites land in the module-wide rename map.
+    // The naive renamer then rewrites every `o` and every `u` to
+    // `readable`. Any function that happens to bind both `o` and `u`
+    // (param + local) ends up with two `readable` decls in the same
+    // scope and Node refuses to load it with `Identifier 'readable'
+    // has already been declared`.
+    let opts = FixtureOpts::new(
+        r#"function destructure({ readable: o }) {
+  return o;
+}
+function alias() {
+  const u = "y";
+  return { readable: u };
+}
+function consumer({ readable: o }) {
+  const u = String(o) + "x";
+  return u;
+}
+console.log(destructure({ readable: 0 }), alias().readable, consumer({ readable: "v" }));
+export { destructure, alias, consumer };
+"#,
+        vec![logical_module(
+            "mod_x",
+            &[
+                Member::new("destructure"),
+                Member::new("alias"),
+                Member::new("consumer"),
+            ],
+        )],
+    );
+    let fixture = run_logical_modules_e2e_fixture(opts);
+    let module_path = fixture.out_root.join("static/app/modules/mod_x.js");
+    let module_src = fs::read_to_string(&module_path).expect("read modules/mod_x.js");
+
+    // Module body must parse — colliding `readable` decls in the same
+    // scope would surface as a duplicate-decl SyntaxError.
+    parse_module(&module_src);
+    // Each function-body scope binds `readable` at most once. This
+    // mirrors the lexical-binding constraint Node enforces at module
+    // load time.
+    assert_unique_lexical_decls_per_scope(&module_src, "readable");
+
+    // Module behaviour preserved: `consumer` still produces "vx".
+    assert_entry_output(&fixture, "0 y vx\n");
+}
+
 /// Parse `source` and assert that every named import specifier binds a
 /// distinct local symbol. Mirrors the duplicate-declaration check Node
 /// would perform at module-load time.
 fn assert_unique_import_locals(source: &str) {
     use std::collections::BTreeSet;
+    use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
+
+    let module = parse_module(source);
+    let mut seen = BTreeSet::new();
+    for item in &module.body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        for specifier in &import.specifiers {
+            let local = match specifier {
+                ImportSpecifier::Named(named) => named.local.sym.to_string(),
+                ImportSpecifier::Default(default) => default.local.sym.to_string(),
+                ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
+            };
+            assert!(
+                seen.insert(local.clone()),
+                "duplicate import local `{local}` in:\n{source}",
+            );
+        }
+    }
+}
+
+/// Parse `source` and assert exactly one `export { ... }` specifier has
+/// `orig.sym == expected_orig`, with its `exported` either absent (when
+/// `expected_exported_as` is `None`) or `Ident { sym: expected_exported_as }`.
+/// Walks the parsed specifier tree so a corrupted `export { aH$1 as aH$1 }`
+/// fails — a substring check on `aH$1 as aH` would accept both shapes.
+fn assert_export_named_specifier(
+    source: &str,
+    expected_orig: &str,
+    expected_exported_as: Option<&str>,
+) {
+    use swc_ecma_ast::{ExportSpecifier, ModuleDecl, ModuleExportName, ModuleItem};
+
+    let module = parse_module(source);
+    let matched: Vec<_> = module
+        .body
+        .iter()
+        .filter_map(|item| match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => Some(named),
+            _ => None,
+        })
+        .flat_map(|named| named.specifiers.iter())
+        .filter_map(|spec| match spec {
+            ExportSpecifier::Named(named) => Some(named),
+            _ => None,
+        })
+        .filter(|spec| {
+            let ModuleExportName::Ident(ident) = &spec.orig else {
+                return false;
+            };
+            ident.sym.as_ref() == expected_orig
+        })
+        .collect();
+    assert_eq!(
+        matched.len(),
+        1,
+        "expected exactly one `export {{ {expected_orig} ... }}` specifier; got {} in:\n{source}",
+        matched.len(),
+    );
+    let actual = match &matched[0].exported {
+        Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
+        Some(ModuleExportName::Str(_)) => panic!("unexpected string export in:\n{source}"),
+        None => None,
+    };
+    assert_eq!(
+        actual.as_deref(),
+        expected_exported_as,
+        "export {{ {expected_orig} ... }} `as` clause mismatch in:\n{source}",
+    );
+}
+
+/// Assert that no function-body scope in `source` declares `target_name`
+/// more than once (counting destructured params and `let/const/var`
+/// decls). Mirrors Node's lexical-binding duplicate check.
+fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
+    use swc_ecma_ast::{
+        BindingIdent, BlockStmtOrExpr, Decl, Expr, FnDecl, Function, ModuleItem, ObjectPatProp,
+        Pat, Stmt, VarDeclarator,
+    };
+
+    fn pat_binds(pat: &Pat, target: &str) -> bool {
+        match pat {
+            Pat::Ident(BindingIdent { id, .. }) => id.sym.as_ref() == target,
+            Pat::Object(object) => object.props.iter().any(|prop| match prop {
+                ObjectPatProp::KeyValue(kv) => pat_binds(&kv.value, target),
+                ObjectPatProp::Assign(assign) => assign.key.id.sym.as_ref() == target,
+                ObjectPatProp::Rest(rest) => pat_binds(&rest.arg, target),
+            }),
+            Pat::Array(array) => array
+                .elems
+                .iter()
+                .flatten()
+                .any(|elem| pat_binds(elem, target)),
+            Pat::Assign(assign) => pat_binds(&assign.left, target),
+            Pat::Rest(rest) => pat_binds(&rest.arg, target),
+            _ => false,
+        }
+    }
+
+    fn check_function(function: &Function, target: &str, source: &str) {
+        let Some(body) = &function.body else {
+            return;
+        };
+        let mut count = 0;
+        for param in &function.params {
+            if pat_binds(&param.pat, target) {
+                count += 1;
+            }
+        }
+        for stmt in &body.stmts {
+            if let Stmt::Decl(Decl::Var(var)) = stmt {
+                for declarator in &var.decls {
+                    if pat_binds(&declarator.name, target) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            count <= 1,
+            "scope binds `{target}` {count} times in:\n{source}",
+        );
+        for stmt in &body.stmts {
+            descend_stmt(stmt, target, source);
+        }
+    }
+
+    fn descend_stmt(stmt: &Stmt, target: &str, source: &str) {
+        match stmt {
+            Stmt::Decl(Decl::Fn(FnDecl { function, .. })) => {
+                check_function(function, target, source)
+            }
+            Stmt::Decl(Decl::Var(var)) => {
+                for VarDeclarator { init, .. } in &var.decls {
+                    if let Some(init) = init {
+                        descend_expr(init, target, source);
+                    }
+                }
+            }
+            Stmt::Block(block) => {
+                for stmt in &block.stmts {
+                    descend_stmt(stmt, target, source);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn descend_expr(expr: &Expr, target: &str, source: &str) {
+        match expr {
+            Expr::Fn(fn_expr) => check_function(&fn_expr.function, target, source),
+            Expr::Arrow(arrow) => {
+                let mut count = 0;
+                for param in &arrow.params {
+                    if pat_binds(param, target) {
+                        count += 1;
+                    }
+                }
+                if let BlockStmtOrExpr::BlockStmt(block) = &*arrow.body {
+                    for stmt in &block.stmts {
+                        if let Stmt::Decl(Decl::Var(var)) = stmt {
+                            for declarator in &var.decls {
+                                if pat_binds(&declarator.name, target) {
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                assert!(
+                    count <= 1,
+                    "arrow scope binds `{target}` {count} times in:\n{source}",
+                );
+            }
+            _ => {}
+        }
+    }
+
+    let module = parse_module(source);
+    for item in &module.body {
+        if let ModuleItem::Stmt(stmt) = item {
+            descend_stmt(stmt, target_name, source);
+        }
+    }
+}
+
+fn parse_module(source: &str) -> swc_ecma_ast::Module {
     use swc_common::FileName;
     use swc_common::sync::Lrc;
-    use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
     use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 
     let cm: Lrc<swc_common::SourceMap> = Default::default();
@@ -143,24 +381,7 @@ fn assert_unique_import_locals(source: &str) {
         StringInput::from(&*fm),
         None,
     );
-    let module = Parser::new_from(lexer)
+    Parser::new_from(lexer)
         .parse_module()
-        .unwrap_or_else(|err| panic!("entry must parse, got {err:?}; source:\n{source}"));
-    let mut seen = BTreeSet::new();
-    for item in &module.body {
-        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-            continue;
-        };
-        for specifier in &import.specifiers {
-            let local = match specifier {
-                ImportSpecifier::Named(named) => named.local.sym.to_string(),
-                ImportSpecifier::Default(default) => default.local.sym.to_string(),
-                ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
-            };
-            assert!(
-                seen.insert(local.clone()),
-                "duplicate import local `{local}` in:\n{source}",
-            );
-        }
-    }
+        .unwrap_or_else(|err| panic!("entry must parse, got {err:?}; source:\n{source}"))
 }
