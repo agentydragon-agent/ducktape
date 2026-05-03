@@ -1,0 +1,15 @@
+{
+  "_comment": "Different state per provider — verifies that the two indicators tint independently and labels don't bleed across providers. Claude warn (+10%, yellow), Codex cool (−15%, blue).",
+  "claude": {
+    "short": { "usedPercent": 40, "resetSeconds": 12600, "windowSeconds": 18000 },
+    "long": { "usedPercent": 40, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": null,
+    "error": null
+  },
+  "codex": {
+    "short": { "usedPercent": 15, "resetSeconds": 12600, "windowSeconds": 18000 },
+    "long": { "usedPercent": 15, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": null,
+    "error": null
+  }
+}

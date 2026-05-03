@@ -1,0 +1,15 @@
+{
+  "_comment": "Short window absolute-hot override. short usedPercent=90 >= SHORT_WIN_HOT_PERCENT (85) forces shortTint=hot regardless of pace; long deviation=0 → ok. bindingTint(hot, ok)=hot. Panel pace label = formatPace(longPace) = '+0%' — verifies the label stays from the long window even when binding tint comes from the short window.",
+  "claude": {
+    "short": { "usedPercent": 90, "resetSeconds": 12600, "windowSeconds": 18000 },
+    "long": { "usedPercent": 30, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": null,
+    "error": null
+  },
+  "codex": {
+    "short": { "usedPercent": 90, "resetSeconds": 12600, "windowSeconds": 18000 },
+    "long": { "usedPercent": 30, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": null,
+    "error": null
+  }
+}
