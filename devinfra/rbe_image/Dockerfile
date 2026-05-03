@@ -77,6 +77,11 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 COPY flake.nix flake.lock /tmp/flake/
 COPY npins /tmp/flake/npins
 COPY nix/packages /tmp/flake/nix/packages
+# nix/packages/gaffer.nix reads ../gaffer-pins.json at eval time, so it
+# has to be in the build context too. Added when the gaffer namespace
+# landed in 96c039b69 — the Dockerfile wasn't updated then and the image
+# build has been broken since.
+COPY nix/gaffer-pins.json /tmp/flake/nix/gaffer-pins.json
 SHELL ["/bin/bash", "-c"]
 RUN mkdir -p ~/.config/nix \
     # nix.conf MUST be written BEFORE the installer runs — the installer
