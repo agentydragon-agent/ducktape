@@ -1962,6 +1962,7 @@ fn update_root_manifest(
                 .collect(),
             logical_modules: None,
             selected_module_lowerings: None,
+            scrambled_identifier_frequencies: None,
             extra: Default::default(),
         });
     }
