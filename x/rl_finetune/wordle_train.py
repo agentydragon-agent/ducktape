@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import time
 from pathlib import Path
 
 import nltk
@@ -46,8 +47,24 @@ from datasets import Dataset
 from nltk import pos_tag
 from nltk.corpus import words
 from peft import LoraConfig
+from transformers import TrainerCallback
 from trl import GRPOConfig, GRPOTrainer
 from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
+
+
+class StepTimer(TrainerCallback):
+    """Records per-step wall-clock; lets the bench skip warmup step in averages."""
+
+    def __init__(self):
+        self.step_times: list[float] = []
+        self._t = 0.0
+
+    def on_step_begin(self, args, state, control, **_kwargs):
+        self._t = time.perf_counter()
+
+    def on_step_end(self, args, state, control, **_kwargs):
+        self.step_times.append(time.perf_counter() - self._t)
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 # Quiet down noisy libraries
@@ -184,6 +201,70 @@ def reward_func(environments, **_kwargs) -> list[float]:
     return [env.reward for env in environments]
 
 
+DEFAULT_LORA = LoraConfig(
+    r=16,
+    lora_alpha=32,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    lora_dropout=0.05,
+    task_type="CAUSAL_LM",
+)
+
+
+def build_dataset(n_prompts: int) -> Dataset:
+    return Dataset.from_dict(
+        {"prompt": [[{"role": "user", "content": SYSTEM_PROMPT}]] * n_prompts, "seed": list(range(n_prompts))}
+    )
+
+
+def train_session(
+    common_kwargs: dict,
+    *,
+    model,
+    peft_config: LoraConfig | None = DEFAULT_LORA,
+    n_prompts: int = N_PROMPTS,
+    async_grpo: bool = False,
+    no_vllm: bool = False,
+    colocate: bool = False,
+    metrics_out: str | None = None,
+) -> dict:
+    """One training run. `model` may be a HF id (string) or a pre-loaded (and optionally
+    pre-PEFT-wrapped) model; `peft_config=None` skips PEFT wrapping (use when model is
+    already wrapped, e.g. when sharing a base across bench probes)."""
+    if async_grpo and (colocate or no_vllm):
+        raise ValueError("async_grpo is server-mode only")
+
+    if async_grpo:
+        config = AsyncGRPOConfig(**common_kwargs)
+        trainer_cls = AsyncGRPOTrainer
+    else:
+        config = GRPOConfig(**common_kwargs, use_vllm=not no_vllm, vllm_mode="colocate" if colocate else "server")
+        trainer_cls = GRPOTrainer
+
+    step_timer = StepTimer()
+    trainer = trainer_cls(
+        model=model,
+        reward_funcs=reward_func,
+        train_dataset=build_dataset(n_prompts),
+        args=config,
+        environment_factory=WordleEnv,
+        peft_config=peft_config,
+        callbacks=[step_timer],
+    )
+    train_result = trainer.train()
+
+    metrics = dict(train_result.metrics)
+    metrics["step_times"] = step_timer.step_times
+    steady = step_timer.step_times[1:]
+    if steady:
+        metrics["steady_state_step_time_mean"] = sum(steady) / len(steady)
+        metrics["steady_state_step_time_min"] = min(steady)
+        metrics["steady_state_step_time_max"] = max(steady)
+    if metrics_out:
+        Path(metrics_out).write_text(json.dumps(metrics, indent=2))
+        logger.info("Wrote metrics to %s", metrics_out)
+    return metrics
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--colocate", action="store_true", help="Single-GPU colocate mode")
@@ -211,13 +292,6 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.async_grpo and (args.colocate or args.no_vllm):
-        parser.error("--async-grpo is server-mode only; cannot combine with --colocate or --no-vllm")
-
-    dataset = Dataset.from_dict(
-        {"prompt": [[{"role": "user", "content": SYSTEM_PROMPT}]] * args.n_prompts, "seed": list(range(args.n_prompts))}
-    )
-
     common_kwargs = {
         "output_dir": "/tmp/wordle_grpo_output",
         "num_generations": args.num_generations,
@@ -237,39 +311,15 @@ def main():
         "save_strategy": "no",
         "report_to": "tensorboard",
     }
-
-    if args.async_grpo:
-        config = AsyncGRPOConfig(**common_kwargs)
-        trainer_cls = AsyncGRPOTrainer
-    else:
-        config = GRPOConfig(
-            **common_kwargs, use_vllm=not args.no_vllm, vllm_mode="colocate" if args.colocate else "server"
-        )
-        trainer_cls = GRPOTrainer
-
-    peft_config = LoraConfig(
-        r=16,
-        lora_alpha=32,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-        lora_dropout=0.05,
-        task_type="CAUSAL_LM",
-    )
-
-    trainer = trainer_cls(
+    train_session(
+        common_kwargs,
         model=args.model,
-        reward_funcs=reward_func,
-        train_dataset=dataset,
-        args=config,
-        environment_factory=WordleEnv,
-        peft_config=peft_config,
+        n_prompts=args.n_prompts,
+        async_grpo=args.async_grpo,
+        no_vllm=args.no_vllm,
+        colocate=args.colocate,
+        metrics_out=args.metrics_out,
     )
-
-    train_result = trainer.train()
-    if args.metrics_out:
-        Path(args.metrics_out).write_text(json.dumps(train_result.metrics, indent=2))
-        logger.info("Wrote metrics to %s", args.metrics_out)
-    else:
-        trainer.save_model("/tmp/wordle_grpo_final")
 
 
 if __name__ == "__main__":
