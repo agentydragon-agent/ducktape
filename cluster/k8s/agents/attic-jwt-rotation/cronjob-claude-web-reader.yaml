@@ -43,7 +43,7 @@ spec:
                 - name: TOKEN_VALIDITY
                   value: "1 year"
                 - name: ATTICADM_PULL
-                  value: "main:* gaffer:*"
+                  value: "main gaffer"
                 - name: GIT_AUTHOR_NAME
                   value: attic-jwt-rotation
                 - name: COMMIT_MESSAGE_PREFIX

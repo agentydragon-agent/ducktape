@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/sh
 # Idempotently ensure required Attic caches exist.
 #
 # Mints an ephemeral admin JWT (5-minute validity) signed with the same
@@ -23,10 +23,12 @@
 # `kustomize.toolkit.fluxcd.io/force: enabled` annotation on the Job tells
 # Flux to delete-and-recreate it on next reconcile.
 
-set -euo pipefail
+set -eu
 
 SERVER="${ATTIC_SERVER_URL:-http://attic.nix-cache.svc.cluster.local:8080}"
-CACHES=(gaffer)
+# Space-separated list of caches to ensure exist (POSIX sh — busybox in
+# the upstream attic image has no bash, hence no arrays).
+CACHES="gaffer"
 
 echo "[bootstrap] minting 5-minute admin JWT..."
 ADMIN_JWT=$(atticadm make-token \
@@ -37,7 +39,7 @@ ADMIN_JWT=$(atticadm make-token \
 echo "[bootstrap] logging in to $SERVER..."
 attic login bootstrap "$SERVER" "$ADMIN_JWT"
 
-for CACHE in "${CACHES[@]}"; do
+for CACHE in $CACHES; do
   if attic cache info "$CACHE" >/dev/null 2>&1; then
     echo "[bootstrap] cache $CACHE: already exists"
   else

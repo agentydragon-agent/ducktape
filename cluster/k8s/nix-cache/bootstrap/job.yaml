@@ -20,7 +20,7 @@ spec:
         - name: bootstrap
           image: ghcr.io/zhaofengli/attic:latest
           command:
-            - bash
+            - sh
             - /scripts/bootstrap.sh
           env:
             - name: ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64

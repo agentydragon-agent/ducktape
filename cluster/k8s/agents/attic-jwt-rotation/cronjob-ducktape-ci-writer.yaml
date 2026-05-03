@@ -43,9 +43,9 @@ spec:
                 - name: TOKEN_VALIDITY
                   value: "1 year"
                 - name: ATTICADM_PULL
-                  value: "main:*"
+                  value: "main"
                 - name: ATTICADM_PUSH
-                  value: "main:*"
+                  value: "main"
                 - name: GIT_AUTHOR_NAME
                   value: attic-jwt-rotation
                 - name: COMMIT_MESSAGE_PREFIX
