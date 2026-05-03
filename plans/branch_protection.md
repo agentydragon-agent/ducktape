@@ -12,7 +12,7 @@ CI checks. Concretely, gate on:
 Plus the cheap extras: block branch deletion, force-push, non-linear merge
 commits.
 
-## Current state (as of this commit)
+## Current state
 
 - `tf/gitops/github-branch-protection/` — module landed. Two
   `github_repository_ruleset` resources, both targeting `refs/heads/main`,
@@ -21,71 +21,75 @@ commits.
 - ducktape main: `enforcement = "active"`. No-op today because main is not the
   default branch (`devel` still is) and nothing pushes to main. Will start
   gating direct pushes once the default branch flips to main.
-- gaffer-private main: `enforcement = "disabled"`. Active enforcement is
-  blocked on Flux's `gaffer-images` ImageUpdateAutomation, which pushes to
-  main via SSH using `gaffer-private-deploy-key` — deploy keys are not a
-  user/App identity, so neither the `RepositoryRole=admin` nor the
-  `Integration=ducktape-automation` bypass actor matches them. See "Pending:
-  Flux App migration" below.
+- gaffer-private main: `enforcement = "disabled"`. **Blocker resolved** in
+  commit 745532e6b: Flux's `gaffer-images` ImageUpdateAutomation now pushes
+  via the `ducktape-automation` GitHub App, which matches the `Integration`
+  bypass actor. Flipping enforcement to `"active"` is now safe — see
+  "Outstanding work" below.
 - Bypass actors on both rulesets:
   - `RepositoryRole=admin` (id 5) — covers in-cluster automations pushing as
     the owner via PAT (`claude-token-rotation`, `attic-jwt-rotation` CronJobs).
   - `Integration=ducktape-automation` (App ID 3590331) — covers any GHA
     workflow that mints an installation token via
-    `actions/create-github-app-token`. Currently no workflow uses the App;
-    the three direct-push workflows on ducktape (`sync-pins.yml`,
-    `nix-flake-update.yml`, `container-images.yml`'s `pin-digests` job) carry
-    TODO markers about migrating when ducktape's default flips.
+    `actions/create-github-app-token`, **and as of commit 745532e6b also
+    covers Flux's source-controller and image-automation-controller pushes**
+    on both the `flux-system` and `gaffer-private` GitRepositories. The three
+    direct-push workflows on ducktape (`sync-pins.yml`, `nix-flake-update.yml`,
+    `container-images.yml`'s `pin-digests` job) still carry TODO markers
+    about migrating when ducktape's default flips.
 
 The `ducktape-automation` GitHub App is registered on the
 `agentydragon` personal account; public identifiers and permissions are
 documented at <secrets/ducktape_automation.README.md>. The private key is
 SOPS-encrypted at <secrets/ducktape-automation.2026-05-03.private-key.sops.pem>.
 
-## Pending: Flux App migration (separate PR)
+## Flux App migration — done in commit 745532e6b
 
-To activate the gaffer-private ruleset and prepare ducktape for the eventual
-default-branch flip, Flux's git push auth needs to move from SSH deploy keys
-to ducktape-automation App auth. Flux source-controller and
-image-automation-controller (≥ v2.5) accept Secrets containing
-`githubAppID`, `githubAppInstallationID`, `githubAppPrivateKey` (and
-optionally `githubAppBaseURL` for GHE).
+Flux source-controller (v1.7.4) and image-automation-controller (v1.0.4) now
+use the `ducktape-automation` GitHub App for git auth on both the
+`flux-system` (ducktape) and `gaffer-private` GitRepositories. Both
+GitRepositories switched from `ssh://git@github.com/…` to
+`https://github.com/…` URLs as part of the change.
 
-### Migration runbook
+**Variance from the original runbook**:
 
-1. **Verify App installation.** `ducktape-automation` must be installed on
-   both `agentydragon/ducktape` and `agentydragon/gaffer-private`. Check at
-   <https://github.com/settings/installations>; install if missing. Note
-   each installation ID — visible in the URL of the install's page
-   (`https://github.com/settings/installations/<id>`).
-2. **Author SOPS-encrypted Secrets** (one per repo) at
-   `cluster/k8s/github-app-automation/secrets/{ducktape,gaffer}-flux-auth.sops.yaml`,
-   each containing `githubAppID`, `githubAppInstallationID`,
-   `githubAppPrivateKey`. Encrypted to `admin + cluster-secrets` recipients
-   so Flux can decrypt. The private key is the plaintext PEM extracted from
-   `secrets/ducktape-automation.2026-05-03.private-key.sops.pem`.
-3. **Wire the Secrets into Flux** via a new `cluster/k8s/github-app-automation/`
-   Kustomization (mirrors the shape of `cluster/k8s/github-secrets-sync/secrets/`).
-4. **Swap `secretRef`** on:
-   - `cluster/k8s/flux-system/gotk-sync.yaml` (the `flux-system` GitRepository) —
-     URL also flips from `ssh://...` to `https://github.com/...`.
-   - `cluster/k8s/gaffer-private-source/source.yaml` (the `gaffer-private`
-     GitRepository) — same URL transition.
-5. **Verify Flux pushes succeed.** Force a reconcile of `gaffer-images`
-   ImageUpdateAutomation; confirm a commit lands on gaffer's `main` attributed
-   to the App. Force a reconcile of ducktape's `all-images` similarly.
-6. **Activate the gaffer ruleset.** Flip
+- Original plan: one Secret per repo at
+  `cluster/k8s/github-app-automation/secrets/{ducktape,gaffer}-flux-auth.sops.yaml`.
+- What landed: a **single shared Secret**
+  `flux-system/ducktape-automation-github-app` at
+  `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml`. Both
+  GitRepositories reference it. The App is installed user-level with access
+  to both repos, so one `githubAppInstallationID` (`129264096`) covers both.
+  Simpler kustomize wiring; one secret to rotate.
+- Original plan referenced "≥ v2.5". Flux's umbrella version is meta — the
+  per-controller minimums for GitHub App auth are source-controller ≥ v1.4
+  and image-automation-controller ≥ v0.39 (we're on v1.7.4 / v1.0.4).
+
+## Outstanding work
+
+1. **Cutover verification.** After commit 745532e6b lands on `origin/devel`,
+   `flux reconcile source git flux-system && flux reconcile source git gaffer-private`,
+   then `flux reconcile image update gaffer-images`. Confirm both
+   GitRepositories reach `Ready=True` with a fresh artifact revision and that
+   a setter-driven commit on `gaffer-private/main` is attributed to the App.
+   Watch source-controller logs for `transport: authentication required`
+   events on either GitRepository.
+2. **Activate the gaffer ruleset.** Flip
    `github_repository_ruleset.gaffer_main.enforcement` from `"disabled"` to
-   `"active"` in `tf/gitops/github-branch-protection/main.tf`.
-7. **Retire the deploy keys** in a follow-up tombstone commit:
-   `tf/gitops/gaffer-private-flux/` and the equivalent ducktape flux-system
-   deploy-key setup. Both currently have `prevent_destroy` lifecycle blocks
-   that need removal first.
-
-The migration is intentionally split from this PR because step 5 is a
-"watch the logs" cutover — clean failure modes are important and rolling
-back a multi-file change is more annoying than rolling back the
-ruleset-only change.
+   `"active"` in `tf/gitops/github-branch-protection/main.tf`. Apply.
+3. **Retire the legacy SSH deploy keys.** CLEANUP markers in place:
+   - `cluster/k8s/gaffer-private-source/deploy-key-tf.yaml` header +
+     `cluster/k8s/gaffer-private-source/kustomization.yaml` inline — drop
+     `deploy-key-tf.yaml` and `github-pat-gaffer-private-flux.sops.yaml`
+     from the kustomize resources list.
+   - `tf/gitops/gaffer-private-flux/main.tf` header — strip
+     `prevent_destroy` lifecycle blocks, `tofu destroy` the module (revokes
+     the GitHub deploy key, deletes the in-cluster Secret), then delete the
+     module directory + BUILD.bazel target.
+   - Ducktape-side `flux-system` SSH Secret + corresponding GitHub deploy
+     key on `agentydragon/ducktape`: revoke the deploy key in repo settings;
+     the in-cluster Secret is provisioned by the `flux_bootstrap_git` tofu
+     resource and needs the bootstrap config updated to stop creating it.
 
 ## Workflow migration (also pending, ducktape-side, lower urgency)
 
