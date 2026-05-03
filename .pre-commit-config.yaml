@@ -266,6 +266,7 @@ repos:
             cluster/k8s/.*/ccm-values\.yaml|
             # APT manifests for Bazel rules_distroless, not K8s manifests
             cluster/k8s/agents/claude-jwt-rotation/trixie_jwt_rotation\.yaml|
+            cluster/k8s/agents/attic-jwt-rotation/trixie_attic_rotation\.yaml|
             # Authelia app config files, not K8s manifests
             cluster/k8s/authelia/app/configuration\.yml|
             cluster/k8s/authelia/app/users\.yml

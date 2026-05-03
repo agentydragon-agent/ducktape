@@ -288,6 +288,13 @@ apt.install(
     manifest = "//cluster/k8s/agents/claude-jwt-rotation:trixie_jwt_rotation.yaml",
 )
 
+# attic-jwt-rotation CronJob (kubectl exec into attic pod for atticadm + commit).
+apt.install(
+    name = "trixie_attic_rotation",
+    lock = "//cluster/k8s/agents/attic-jwt-rotation:trixie_attic_rotation.lock.json",
+    manifest = "//cluster/k8s/agents/attic-jwt-rotation:trixie_attic_rotation.yaml",
+)
+
 # gnome-shell + Xvfb + dbus on debian:trixie-slim for the claude-quota
 # extension golden-render tests.
 apt.install(
@@ -295,7 +302,7 @@ apt.install(
     lock = "//gnome-extensions/test_image:apt.lock.json",
     manifest = "//gnome-extensions/test_image:apt.yaml",
 )
-use_repo(apt, "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_e2e", "trixie_jwt_rotation")
+use_repo(apt, "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_e2e", "trixie_jwt_rotation")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

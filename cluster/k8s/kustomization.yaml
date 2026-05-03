@@ -42,6 +42,7 @@ resources:
   - agents/claude-rbac/flux-kustomization.yaml
   - agents/claude-sandbox-secrets/flux-kustomization.yaml
   - agents/claude-jwt-rotation/flux-kustomization.yaml
+  - agents/attic-jwt-rotation/flux-kustomization.yaml
   - agents/claude-sandbox-firecracker/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - agents/airlock-oidc-proxy-tf/flux-kustomization.yaml
@@ -164,6 +165,7 @@ resources:
   - nix-cache/namespace/flux-kustomization.yaml
   - nix-cache/db/flux-kustomization.yaml
   - nix-cache/app/flux-kustomization.yaml
+  - nix-cache/bootstrap/flux-kustomization.yaml
 
   # --- atuin ---
   - atuin/namespace/flux-kustomization.yaml

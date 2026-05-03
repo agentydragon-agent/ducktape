@@ -44,13 +44,6 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    # Disabled: private input causes nixos-rebuild failures (SSH agent
-    # forwarding, git-lfs not on root PATH). See nix/docs/private_flake_inputs.md
-    # gaffer-private = {
-    #   url = "git+ssh://git@github.com/agentydragon/gaffer-private?lfs=1";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    # };
   };
 
   outputs =
@@ -115,9 +108,8 @@
           pkgsUnstable
           claude-plugins-official
           siderolabs-docs
+          gafferPkgs
           ;
-        # gaffer-private disabled — see nix/docs/private_flake_inputs.md
-        # inherit (inputs) gaffer-private;
         solarizedLight = nix-colors.colorSchemes.solarized-light;
         solarizedDark = nix-colors.colorSchemes.solarized-dark;
         terminalFont = {
@@ -152,8 +144,7 @@
 
           modules = [
             inputs.sops-nix.homeManagerModules.sops
-            # gaffer-private disabled — see nix/docs/private_flake_inputs.md
-            # inputs.gaffer-private.homeManagerModules.google-drive
+            ./nix/home/modules/google-drive.nix
             ./nix/home/hosts/${hostname}.nix
             {
               _module.args = hmCommonArgs // {
@@ -214,8 +205,7 @@
                   home-manager.extraSpecialArgs = hmExtraSpecialArgs;
                   home-manager.sharedModules = [
                     inputs.sops-nix.homeManagerModules.sops
-                    # gaffer-private disabled — see nix/docs/private_flake_inputs.md
-                    # inputs.gaffer-private.homeManagerModules.google-drive
+                    ./nix/home/modules/google-drive.nix
                   ];
                   home-manager.users.${username} = inlineHomeManager.module;
                 }
@@ -245,6 +235,10 @@
         };
       inherit (pkgs) lib;
       ducktapePkgs = import ./nix/packages { inherit lib pkgs artifacts; };
+      # gaffer-private's drivectl/drivefs, fetched purely as store paths from
+      # cache.allegedly.works/gaffer (no source eval). Empty until gaffer CI's
+      # first push populates ./nix/gaffer-pins.json.
+      gafferPkgs = import ./nix/packages/gaffer.nix { };
       # Dev tools shared between the devShell (local `nix develop` / direnv)
       # and Claude Code web (`nix profile install .#devtools`).
       # release.yml pushes this to attic so web installs are cache hits.
@@ -306,51 +300,54 @@
         LD_LIBRARY_PATH = systemLibs.libraryPath;
       };
 
-      packages.${system} = ducktapePkgs // {
-        # Minimal CI package: just bb + sops (no claude-hooks wheel needed).
-        citools = pkgs.symlinkJoin {
-          name = "ducktape-citools";
-          paths = [
-            ducktapePkgs.bb
-            pkgs.sops
-          ];
+      packages.${system} =
+        ducktapePkgs
+        // gafferPkgs
+        // {
+          # Minimal CI package: just bb + sops (no claude-hooks wheel needed).
+          citools = pkgs.symlinkJoin {
+            name = "ducktape-citools";
+            paths = [
+              ducktapePkgs.bb
+              pkgs.sops
+            ];
+          };
+          # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
+          # Default: Python claude-hook. Use #devtools-rust for the Rust binary.
+          devtools = pkgs.symlinkJoin {
+            name = "ducktape-devtools";
+            paths = devToolPackages ++ localOnlyPackages;
+          };
+          # Rust claude-hook variant (selected via `web_setup.sh --impl=rust`).
+          devtools-rust = pkgs.symlinkJoin {
+            name = "ducktape-devtools-rust";
+            paths = devToolPackagesRust ++ localOnlyPackages;
+          };
+          # Lean devtools for RBE worker image (no rustfmt, ansible).
+          rbetools = pkgs.symlinkJoin {
+            name = "ducktape-rbetools";
+            paths = devToolPackages;
+          };
+          # NixOS container tarball for docker import.
+          # Build: nix build .#bazel-test-docker
+          # Load:  docker import result ducktape-nixos-bazel
+          # Run:   docker run --rm -it ducktape-nixos-bazel /init
+          # Exec:  docker exec -it <container> bash -l
+          bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
+          # Nix-based RBE worker image (plain Docker, no NixOS/systemd).
+          # Build: nix build .#nix-rbe-image
+          # Load:  docker load < result
+          nix-rbe-image = import ./x/nix_rbe_image { inherit pkgs; };
+          # NixOS-based RBE worker (systemd, envfs, nix-ld).
+          # Build: nix build .#nix-rbe-nixos
+          # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos
+          nix-rbe-nixos = self.nixosConfigurations.nix-rbe-worker.config.system.build.tarball;
+          # Pre-built UEFI qcow2 VM images for Proxmox deployment.
+          # Build: nix build .#wyrm2-image
+          # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
+          wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
+          bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
         };
-        # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
-        # Default: Python claude-hook. Use #devtools-rust for the Rust binary.
-        devtools = pkgs.symlinkJoin {
-          name = "ducktape-devtools";
-          paths = devToolPackages ++ localOnlyPackages;
-        };
-        # Rust claude-hook variant (selected via `web_setup.sh --impl=rust`).
-        devtools-rust = pkgs.symlinkJoin {
-          name = "ducktape-devtools-rust";
-          paths = devToolPackagesRust ++ localOnlyPackages;
-        };
-        # Lean devtools for RBE worker image (no rustfmt, ansible).
-        rbetools = pkgs.symlinkJoin {
-          name = "ducktape-rbetools";
-          paths = devToolPackages;
-        };
-        # NixOS container tarball for docker import.
-        # Build: nix build .#bazel-test-docker
-        # Load:  docker import result ducktape-nixos-bazel
-        # Run:   docker run --rm -it ducktape-nixos-bazel /init
-        # Exec:  docker exec -it <container> bash -l
-        bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
-        # Nix-based RBE worker image (plain Docker, no NixOS/systemd).
-        # Build: nix build .#nix-rbe-image
-        # Load:  docker load < result
-        nix-rbe-image = import ./x/nix_rbe_image { inherit pkgs; };
-        # NixOS-based RBE worker (systemd, envfs, nix-ld).
-        # Build: nix build .#nix-rbe-nixos
-        # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos
-        nix-rbe-nixos = self.nixosConfigurations.nix-rbe-worker.config.system.build.tarball;
-        # Pre-built UEFI qcow2 VM images for Proxmox deployment.
-        # Build: nix build .#wyrm2-image
-        # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
-        wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
-        bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
-      };
 
       homeConfigurations = {
         # NixOS VM

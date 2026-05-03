@@ -58,8 +58,22 @@ creation_rules:
   # Decryptable by admin, in-cluster Flux, and CI. CI here covers both
   # ducktape and gaffer-private GHA — they share the same age key today
   # (synced by tf/gitops/github-secrets-sync). TODO: consider splitting
-  # &ci into separate &ducktape-ci and &gaffer-ci recipients.
+  # &ci into separate &ducktape-ci and &gaffer-ci recipients. Concretely,
+  # the existing CI rule above (`secrets/ci/.*\.sops\.yaml$`) currently
+  # encrypts BOTH `secrets/ci/attic-main-writer.sops.yaml` (ducktape CI's
+  # cache:rw) and `secrets/ci/attic-gaffer-writer.sops.yaml` (gaffer CI's
+  # cache:rw) to the shared `&ci` recipient — so a compromise of either
+  # repo's age key grants access to both writer tokens. Splitting would
+  # mean the gaffer-ci token is only decryptable by gaffer's age key,
+  # and vice versa.
   - path_regex: secrets/ducktape-automation\..*\.private-key\.sops\.pem$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *ci
+  - path_regex: secrets/ducktape-automation\..*\.client-secret\.sops\.txt$
     store_type: binary
     key_groups:
       - age:

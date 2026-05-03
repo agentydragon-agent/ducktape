@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: attic-rotate-gaffer-ci-writer
+  namespace: nix-cache
+  annotations:
+    description: >-
+      Rotates gaffer-private CI's Attic writer JWT (push + pull on gaffer
+      only). Consumed by gaffer-private's nix-attic-push workflow via SOPS
+      decrypt with the CI age key (synced to gaffer-private repo by
+      tf/gitops/github-secrets-sync).
+spec:
+  schedule: "55 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: attic-jwt-rotator
+          restartPolicy: OnFailure
+          volumes:
+            - name: github-pat
+              secret:
+                secretName: github-secrets-sync-pat
+            - name: rotate-script
+              configMap:
+                name: attic-jwt-rotation-script
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: rotate
+              image: ghcr.io/agentydragon/attic-jwt-rotation:latest # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+              command: ["/usr/bin/bash", "/scripts/rotate.sh"]
+              env:
+                - name: ROTATION_NAME
+                  value: gaffer CI attic writer
+                - name: SOPS_FILE
+                  value: secrets/ci/attic-gaffer-writer.sops.yaml
+                - name: TOKEN_SUB
+                  value: gaffer-ci
+                - name: TOKEN_VALIDITY
+                  value: "1 year"
+                - name: ATTICADM_PULL
+                  value: "gaffer:*"
+                - name: ATTICADM_PUSH
+                  value: "gaffer:*"
+                - name: GIT_AUTHOR_NAME
+                  value: attic-jwt-rotation
+                - name: COMMIT_MESSAGE_PREFIX
+                  value: "chore: rotate gaffer CI attic writer JWT"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: github-pat
+                  mountPath: /var/run/secrets/github-pat
+                  readOnly: true
+                - name: rotate-script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi

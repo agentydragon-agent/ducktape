@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: attic-bootstrap-caches
+  namespace: nix-cache
+  annotations:
+    description: Idempotently ensure required Attic caches (gaffer, …) exist.
+    # Force Flux to recreate the Job when its hash (script content) changes.
+    # Same pattern as cluster/k8s/atuin/user-provisioner/job.yaml.
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: attic-bootstrap-caches
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: ghcr.io/zhaofengli/attic:latest
+          command:
+            - bash
+            - /scripts/bootstrap.sh
+          env:
+            - name: ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64
+              valueFrom:
+                secretKeyRef:
+                  name: attic-jwt-token
+                  key: jwt-token
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: attic-bootstrap-script
+            defaultMode: 0o755

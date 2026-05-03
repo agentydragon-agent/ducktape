@@ -1,0 +1,71 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: attic-rotate-wyrm2-reader
+  namespace: nix-cache
+  annotations:
+    description: >-
+      Rotates wyrm2's Attic reader JWT (pull main + gaffer). Hourly cron,
+      but typically a no-op: the rotator reads the unencrypted
+      `expires_unencrypted` field from the existing SOPS file and skips
+      rotation when remaining validity > 24h. With 1-year token validity,
+      a real mint runs ~once per year.
+spec:
+  schedule: "25 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: attic-jwt-rotator
+          restartPolicy: OnFailure
+          volumes:
+            - name: github-pat
+              secret:
+                secretName: github-secrets-sync-pat
+            - name: rotate-script
+              configMap:
+                name: attic-jwt-rotation-script
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: rotate
+              image: ghcr.io/agentydragon/attic-jwt-rotation:latest # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+              command: ["/usr/bin/bash", "/scripts/rotate.sh"]
+              env:
+                - name: ROTATION_NAME
+                  value: wyrm2 attic reader
+                - name: SOPS_FILE
+                  value: secrets/hosts/wyrm2-attic.yaml
+                - name: TOKEN_SUB
+                  value: wyrm2
+                - name: TOKEN_VALIDITY
+                  value: "1 year"
+                - name: ATTICADM_PULL
+                  value: "main:* gaffer:*"
+                - name: GIT_AUTHOR_NAME
+                  value: attic-jwt-rotation
+                - name: COMMIT_MESSAGE_PREFIX
+                  value: "chore: rotate wyrm2 attic reader JWT"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: github-pat
+                  mountPath: /var/run/secrets/github-pat
+                  readOnly: true
+                - name: rotate-script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi

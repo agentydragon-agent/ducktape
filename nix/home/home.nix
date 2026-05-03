@@ -12,8 +12,6 @@
   solarizedDark,
   terminalFont,
   ducktape-artifacts,
-  # gaffer-private disabled — see nix/docs/private_flake_inputs.md
-  # gaffer-private,
   ...
 }:
 let
@@ -74,8 +72,6 @@ in
   _module.args.ducktapePackages = ducktapePackages;
 
   imports = [
-
-    # google-drive module disabled — see nix/docs/private_flake_inputs.md
     ./codex
     ./crush
     ./modules/solarized.nix
@@ -129,9 +125,6 @@ in
     videos = "$HOME";
   };
 
-  # gaffer-private disabled — see nix/docs/private_flake_inputs.md
-  # services.google-drive.enable = lib.mkDefault false;
-
   nix.package = lib.mkDefault pkgs.nix;
 
   nix.gc = {
@@ -148,18 +141,14 @@ in
     download-buffer-size = 268435456; # 256MB (increased from default 64MB)
     connect-timeout = 5; # Fail fast on unreachable substituters
 
-    # Add nix-community cache for home-manager, nixGL, etc.
-    # Add self-hosted attic binary cache for CI-built closures.
-    # CLEANUP(2026-04-02): Re-enable cache.allegedly.works when cluster is back up
+    # cache.allegedly.works substituter wiring lives at the NixOS level via
+    # ducktape.attic-substituter (nix/nixos/modules/attic-substituter.nix).
+    # HM-only hosts (atlas) need a parallel HM-level wiring — followup.
     substituters = [
-      # "https://cache.allegedly.works/main"
       "https://cache.nixos.org/"
-      # "https://nix-community.cachix.org"
     ];
     trusted-public-keys = [
-      "cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA="
       "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-      # "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
     ];
   };
 
