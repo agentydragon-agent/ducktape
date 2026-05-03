@@ -15,6 +15,10 @@
 #                                Arg is QR-image path or LPA:1$smdp$matching-id string.
 #   unlock                       Manually run FoxFlss FCC unlock + restart MM. Use
 #                                when foxflss-watchdog isn't enough (rare).
+#   try-5g                       Switch modem to allowed=4g|5g preferred=5g, then
+#                                validate connectivity (state=connected + ping +
+#                                1MB HTTP). Auto-reverts to allowed=4g on any
+#                                failure or interrupt (Ctrl-C). Safe to run.
 #   recover                      Attempt non-reboot modem firmware recovery sequence
 #                                (MHI rebind → PCI remove/rescan → module reload).
 #                                Prints suspend-resume suggestion if all fail.
@@ -358,6 +362,107 @@ cmd_esim() {
   esac
 }
 
+# ─────────────────────────── try-5g (auto-revert) ─────────────────────────
+# Switch the modem to allow 5G NR (preferred 5G) and verify connectivity.
+# Uses an EXIT trap so any failure path (mode-set rejected, no `connected`,
+# ping fails, HTTP fails, Ctrl-C) reverts to allowed=4g. Globals (not local
+# vars) are required because the trap fires after the function frame is gone.
+TRY5G_VALIDATED=0
+TRY5G_MODEM_ID=""
+
+# Tear the GSM bearer down, change modes, wait for re-registration, bring it
+# back up. Surfaces nmcli failures rather than swallowing them. Used by both
+# the try and revert paths so they're symmetric.
+try5g_switch_modes() {
+  # $1 = label for logs, rest = mmcli mode flags
+  local label=$1
+  shift
+  hdr "down GSM connection (clean tear-down before mode change)"
+  nmcli connection down "$GSM_CONN" 2>&1 \
+    || step "nmcli down returned $? (already down?)"
+  sleep 2
+  hdr "switching to $label"
+  mmcli -m "$TRY5G_MODEM_ID" "$@" 2>&1 || {
+    step "mmcli mode set failed (rc=$?)"
+    return 1
+  }
+  hdr "wait up to 90s for registered/connected"
+  wait_for_state 90 registered connected || {
+    step "modem did not re-register within 90s"
+    return 1
+  }
+  hdr "bring up '$GSM_CONN' (will surface real errors)"
+  nmcli connection up "$GSM_CONN" 2>&1 || {
+    step "nmcli connection up failed (rc=$?)"
+    return 1
+  }
+  hdr "wait up to 15s for wwan0 IPv4"
+  local i
+  for i in $(seq 1 15); do
+    ip -4 -o addr show wwan0 2>/dev/null | grep -q 'inet ' && break
+    sleep 1
+  done
+  ip -4 -o addr show wwan0 2>&1 | grep -q 'inet ' || {
+    step "no wwan0 IPv4 after 15s"
+    return 1
+  }
+  ip -4 -o addr show wwan0 2>&1 | head -1
+}
+
+try5g_revert_to_lte() {
+  [ "$TRY5G_VALIDATED" = 1 ] && return 0
+  [ -z "$TRY5G_MODEM_ID" ] && return 0
+  say "REVERT — falling back to allowed=4g"
+  try5g_switch_modes "allowed=4g" --set-allowed-modes=4g \
+    || step "revert had errors — modem may need manual recovery"
+  hdr "post-revert state"
+  mmcli -m "$TRY5G_MODEM_ID" 2>&1 \
+    | grep -E 'state:|access tech|signal quality' | head -5
+}
+
+cmd_try_5g() {
+  TRY5G_MODEM_ID=$(modem_id)
+  [ -n "$TRY5G_MODEM_ID" ] || die "no modem detected"
+
+  hdr "pre-state"
+  step "current state: $(modem_state "$TRY5G_MODEM_ID")"
+  mmcli -m "$TRY5G_MODEM_ID" 2>&1 \
+    | grep -E 'access tech|signal quality|current:' | head -5
+
+  trap 'try5g_revert_to_lte' EXIT
+
+  # mmcli 1.24 requires --set-allowed-modes + --set-preferred-mode in one call.
+  try5g_switch_modes "allowed=4g|5g, preferred=5g" \
+    --set-allowed-modes='4g|5g' --set-preferred-mode=5g || {
+    step "switch to 5G failed — trap will revert"
+    return 1
+  }
+
+  hdr "post-switch modem"
+  mmcli -m "$TRY5G_MODEM_ID" 2>&1 \
+    | grep -E 'state:|access tech|signal quality|operator name' | head -8
+
+  hdr "ICMP probe (3 packets via wwan0)"
+  ping -I wwan0 -c 3 -W 5 8.8.8.8 || {
+    step "ping failed — trap will revert"
+    return 1
+  }
+
+  hdr "HTTP probe (1MB tele2, 20s budget)"
+  curl --interface wwan0 -4 -sm 20 -o /dev/null \
+    -w "  speed=%{speed_download}B/s time=%{time_total}s code=%{http_code}\n" \
+    http://speedtest.tele2.net/1MB.zip || {
+    step "download failed — trap will revert"
+    return 1
+  }
+
+  TRY5G_VALIDATED=1
+  say "5G mode is working — keeping it"
+  mmcli -m "$TRY5G_MODEM_ID" 2>&1 \
+    | grep -E 'access tech|signal quality' | head -2
+  step "manual revert: mmcli -m $TRY5G_MODEM_ID --set-allowed-modes=4g"
+}
+
 # ─────────────────────────── recovery ──────────────────────────────────────
 # Attempt to recover a wedged modem firmware (e.g. after a SYS ERROR, or
 # the post-eSIM-download wedge) without rebooting. Tries escalating resets.
@@ -695,6 +800,10 @@ case "$sub" in
   unlock)
     require_root
     cmd_unlock
+    ;;
+  try-5g)
+    require_root
+    cmd_try_5g
     ;;
   recover)
     require_root
