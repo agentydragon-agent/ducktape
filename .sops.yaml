@@ -54,6 +54,19 @@ creation_rules:
           - *admin
           - *ci
 
+  # ducktape-automation GitHub App private key (RSA PEM, SOPS binary).
+  # Decryptable by admin, in-cluster Flux, and CI. CI here covers both
+  # ducktape and gaffer-private GHA — they share the same age key today
+  # (synced by tf/gitops/github-secrets-sync). TODO: consider splitting
+  # &ci into separate &ducktape-ci and &gaffer-ci recipients.
+  - path_regex: secrets/ducktape-automation\..*\.private-key\.sops\.pem$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *ci
+
   # --- Nebula private keys (SOPS binary, admin + host) ---
   - path_regex: secrets/nebula/ca\.sops\.key$
     store_type: binary
@@ -88,6 +101,37 @@ creation_rules:
       - age:
           - *admin
           - *iguana-host
+
+  # --- Per-host attic reader tokens (admin + host + user) ---
+  # Combined NixOS+HM file: NixOS daemon decrypts via host key for
+  # /etc/nix/attic-netrc; home-manager decrypts via user key for
+  # ~/.config/attic/config.toml. Auto-rotated by attic-token-rotation
+  # CronJobs in the cluster (see plans/token-minting-i-think-scalable-moth.md).
+  # Must precede the broader `secrets/hosts/<host>-.*\.yaml$` rules below.
+  - path_regex: secrets/hosts/wyrm2-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+          - *wyrm2-agentydragon
+  - path_regex: secrets/hosts/rugged-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *rugged-host
+          - *rugged-agentydragon
+  - path_regex: secrets/hosts/atlas-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *atlas-host
+          - *atlas-agentydragon
+  - path_regex: secrets/hosts/iguana-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *iguana-host
+          - *iguana-agentydragon
 
   # --- Per-host secrets (admin + host) ---
   - path_regex: secrets/hosts/wyrm2-.*\.yaml$
@@ -217,6 +261,14 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # Shared claude-web Attic reader token (auto-rotated by attic-token-rotation
+  # CronJob). Used by all claude-web sessions to substitute from
+  # cache.allegedly.works/{main,gaffer}.
+  - path_regex: secrets/claude-web-attic\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
   # Alloy OTLP bearer JWT (auto-rotated by the alloy-otlp-jwt-rotation CronJob)
   - path_regex: secrets/alloy-otlp-bearer-token\.yaml$
     key_groups:
