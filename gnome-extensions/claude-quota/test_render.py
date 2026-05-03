@@ -1,12 +1,17 @@
 """Golden render tests for the claude-quota GNOME extension panel.
 
-Boots the gnome-shell test container (built by
-//gnome-extensions/test_image:gnome_shell_test_image), unzips the
-extension's distribution zip (//gnome-extensions/claude-quota:claude-quota_zip)
-into a tempdir for bind-mounting, runs the in-image render.sh which
-launches gnome-shell under Xvfb and screenshots the panel via scrot,
-crops to the right-edge slice where the indicator lives, then compares
-the PNG to a checked-in golden via util.testing.png_diff.
+A single test container (//gnome-extensions/test_image:gnome_shell_test_image)
+is started once per module: boot.sh inside it brings up Xvfb, the
+postinst-equivalent caches, and a long-lived dbus session bus, then
+blocks. Each parametrized test launches a fresh gnome-shell inside that
+container with fixture state injected via the CLAUDE_QUOTA_FIXTURE env
+hook in extension.js, polls until the extension is ENABLED, screenshots
+the X root via scrot, and kills the shell. Xvfb and the dbus session
+survive across renders.
+
+Per-render orchestration (start, poll, screenshot, kill) is driven from
+this file rather than a bash render.sh — clearer error attribution per
+step, structured pytest failures.
 
 The fixture matrix exercises each branch of the renderer in
 extension.js: the four pace-deviation tints (cool/ok/warn/hot), the
@@ -33,8 +38,11 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 import shutil
+import time
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import docker.models.containers
@@ -62,6 +70,9 @@ _EXTENSION_UUID = "claude-quota@allegedly.works"
 # but only diff the right-edge crop.
 _PANEL_CROP_WIDTH = 250
 
+# gnome-shell ExtensionState (see js/misc/extensionUtils.js).
+_EXTENSION_STATE_ENABLED = 1
+
 _FIXTURES = [
     "panel_both_ok",
     "panel_both_cool",
@@ -88,37 +99,135 @@ def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return dest
 
 
-def _render_container(image_tag: str, extension_dir: Path, fixture_path: Path, out_dir: Path) -> DockerContainer:
-    container = DockerContainer(image_tag)
+@pytest.fixture(scope="module")
+def render_session(
+    gnome_shell_test_image: str, extension_dir: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[tuple[docker.models.containers.Container, Path]]:
+    """Long-lived container shared across every parametrized test in the module.
+
+    The image's CMD is `sleep infinity`; we exec boot.sh once to start
+    Xvfb + dbus and create the postinst-equivalent caches, poll for the
+    /tmp/boot.ready sentinel, then yield the container handle and the
+    host-side output directory. Each per-test test_panel call launches a
+    fresh gnome-shell inside the same container.
+    """
+    fixtures_dir = get_required_path(f"_main/gnome-extensions/claude-quota/test_fixtures/{_FIXTURES[0]}.json").parent
+    out_dir = tmp_path_factory.mktemp("claude-quota-renders")
+    out_dir.chmod(0o777)  # gnome-shell writes the screenshot as a different uid
+
+    container = DockerContainer(gnome_shell_test_image)
     container.with_volume_mapping(str(extension_dir), f"/usr/share/gnome-shell/extensions/{_EXTENSION_UUID}", "ro")
-    container.with_volume_mapping(str(fixture_path.parent), "/fixtures", "ro")
+    container.with_volume_mapping(str(fixtures_dir), "/fixtures", "ro")
     container.with_volume_mapping(str(out_dir), "/out", "rw")
-    return container
+
+    with container:
+        raw = container.get_wrapped_container()
+        # Detached: boot.sh blocks on `wait $XVFB_PID`, which keeps Xvfb
+        # alive for the rest of the test session.
+        raw.exec_run(["/usr/local/bin/boot.sh"], detach=True)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if raw.exec_run(["test", "-f", "/tmp/boot.ready"]).exit_code == 0:
+                break
+            time.sleep(0.2)
+        else:
+            xvfb_log = raw.exec_run(["cat", "/tmp/xvfb.log"], demux=True).output[0] or b""
+            pytest.fail(
+                f"container boot.sh never produced /tmp/boot.ready within 30s\n"
+                f"xvfb.log:\n{xvfb_log.decode(errors='replace')}"
+            )
+        yield raw, out_dir
 
 
-def _exec_render(container: DockerContainer, fixture_name: str, out_name: str, log_dir: Path) -> None:
-    """Invoke /usr/local/bin/render.sh inside the container; raise on failure."""
-    raw: docker.models.containers.Container = container.get_wrapped_container()
-    cmd = ["/usr/local/bin/render.sh", f"/fixtures/{fixture_name}", f"/out/{out_name}"]
-    result = raw.exec_run(cmd, demux=True)
-    stdout, stderr = result.output
+def _exec_in_session(
+    container: docker.models.containers.Container, shell_cmd: str, *, detach: bool = False
+) -> docker.models.containers.ExecResult:
+    """Run a shell command inside the container with the dbus session bus loaded.
 
-    # Always pull shell.log so reviewers / golden-update flow can see what
-    # the GNOME shell actually loaded. Filename is keyed by the output
-    # name so parametrized fixtures don't trample each other's logs.
-    log_stem = Path(out_name).stem
-    shell_log = raw.exec_run(["cat", "/tmp/shell.log"], demux=True)
-    (log_dir / f"{log_stem}.shell.log").write_bytes((shell_log.output[0] or b"") + (shell_log.output[1] or b""))
+    Sources /tmp/dbus.env (written by boot.sh) so child processes inherit
+    DBUS_SESSION_BUS_ADDRESS and connect to the long-lived bus. Sets
+    DISPLAY=:99 for the in-container Xvfb. accountsservice expects a
+    system bus too — point it at the session bus so connections succeed
+    even though no system services exist.
+    """
+    full_cmd = (
+        "set -euo pipefail; "
+        "source /tmp/dbus.env; "
+        'export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"; '
+        "export DISPLAY=:99; "
+        f"{shell_cmd}"
+    )
+    return container.exec_run(["bash", "-c", full_cmd], demux=True, detach=detach)
 
-    if result.exit_code != 0:
-        (log_dir / f"{log_stem}.render.stdout").write_bytes(stdout or b"")
-        (log_dir / f"{log_stem}.render.stderr").write_bytes(stderr or b"")
-        pytest.fail(
-            f"render.sh exit={result.exit_code} for {fixture_name}\n"
-            f"stdout: {(stdout or b'').decode(errors='replace')}\n"
-            f"stderr: {(stderr or b'').decode(errors='replace')}\n"
-            f"see undeclared outputs for {log_stem}.shell.log."
+
+def _start_gnome_shell(container: docker.models.containers.Container, fixture_path_in_container: str) -> None:
+    """Launch gnome-shell in the background; subsequent polls confirm readiness."""
+    cmd = (
+        f"export CLAUDE_QUOTA_FIXTURE={shlex.quote(fixture_path_in_container)}; "
+        "gsettings set org.gnome.shell disable-user-extensions false; "
+        f"gsettings set org.gnome.shell enabled-extensions '[\"{_EXTENSION_UUID}\"]'; "
+        "nohup gnome-shell --x11 >/tmp/shell.log 2>&1 &"
+    )
+    _exec_in_session(container, cmd, detach=True)
+
+
+def _wait_for_shell_bus(container: docker.models.containers.Container, *, timeout_s: float = 60) -> None:
+    """Poll until org.gnome.Shell owns its bus name."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        r = _exec_in_session(
+            container,
+            "gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell >/dev/null 2>&1",
         )
+        if r.exit_code == 0:
+            return
+        time.sleep(0.5)
+    raise TimeoutError(f"gnome-shell never owned the org.gnome.Shell bus name within {timeout_s}s")
+
+
+def _wait_for_extension_enabled(
+    container: docker.models.containers.Container, uuid: str, *, timeout_s: float = 10
+) -> None:
+    """Poll GetExtensionInfo until state == ENABLED (1).
+
+    Catches both the "extension never loaded" timeout and the "extension
+    loaded but bounced to ERROR/DISABLED" case (state != 1).
+    """
+    deadline = time.monotonic() + timeout_s
+    last_response: bytes = b""
+    while time.monotonic() < deadline:
+        r = _exec_in_session(
+            container,
+            f"gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell "
+            f"--method org.gnome.Shell.Extensions.GetExtensionInfo {shlex.quote(uuid)}",
+        )
+        last_response = (r.output[0] or b"") + (r.output[1] or b"")
+        if r.exit_code == 0 and f"'state': <{_EXTENSION_STATE_ENABLED}.0>".encode() in last_response:
+            return
+        time.sleep(0.25)
+    raise TimeoutError(
+        f"extension {uuid} never reached state={_EXTENSION_STATE_ENABLED} (ENABLED) within {timeout_s}s. "
+        f"Last GetExtensionInfo response: {last_response.decode(errors='replace')!r}"
+    )
+
+
+def _screenshot(container: docker.models.containers.Container, out_path_in_container: str) -> None:
+    r = _exec_in_session(container, f"scrot --display :99 --overwrite {shlex.quote(out_path_in_container)}")
+    if r.exit_code != 0:
+        stderr = (r.output[1] or b"").decode(errors="replace")
+        raise RuntimeError(f"scrot exit={r.exit_code}: {stderr}")
+
+
+def _kill_gnome_shell(container: docker.models.containers.Container) -> None:
+    # SIGTERM first; if anything is wedged, follow up with SIGKILL after a moment.
+    container.exec_run(["pkill", "-TERM", "-f", "gnome-shell"])
+    time.sleep(0.5)
+    container.exec_run(["pkill", "-KILL", "-f", "gnome-shell"])
+
+
+def _save_shell_log(container: docker.models.containers.Container, log_path: Path) -> None:
+    r = container.exec_run(["cat", "/tmp/shell.log"], demux=True)
+    log_path.write_bytes((r.output[0] or b"") + (r.output[1] or b""))
 
 
 @pytest.fixture
@@ -130,21 +239,37 @@ def undeclared_dir() -> Path:
 
 @pytest.mark.parametrize("fixture_name", _FIXTURES)
 def test_panel(
-    gnome_shell_test_image: str, extension_dir: Path, undeclared_dir: Path, tmp_path: Path, fixture_name: str
+    render_session: tuple[docker.models.containers.Container, Path],
+    undeclared_dir: Path,
+    tmp_path: Path,
+    fixture_name: str,
 ) -> None:
-    fixture_path = get_required_path(f"_main/gnome-extensions/claude-quota/test_fixtures/{fixture_name}.json")
+    container, container_out_dir = render_session
     out_name = f"{fixture_name}.png"
+    fixture_in_container = f"/fixtures/{fixture_name}.json"
+    out_in_container = f"/out/{out_name}"
     update_golden = os.environ.get("UPDATE_GOLDEN") == "1"
+    shell_log_dest = undeclared_dir / f"{fixture_name}.shell.log"
 
-    out_dir = tmp_path / "out"
-    out_dir.mkdir()
-    out_dir.chmod(0o777)  # gnome-shell writes the screenshot as a different uid
+    _start_gnome_shell(container, fixture_in_container)
+    try:
+        _wait_for_shell_bus(container)
+        _wait_for_extension_enabled(container, _EXTENSION_UUID)
+        # Let the panel layout settle (icons, font load, first paint).
+        time.sleep(1)
+        _screenshot(container, out_in_container)
+    except (TimeoutError, RuntimeError) as e:
+        _save_shell_log(container, shell_log_dest)
+        pytest.fail(f"{fixture_name}: {e}\nsee undeclared outputs for {shell_log_dest.name}.")
+    finally:
+        # Always pull shell.log so reviewers / golden-update flow can see
+        # what gnome-shell loaded. Always tear down — the next fixture
+        # gets a fresh gnome-shell on the same Xvfb + dbus session.
+        _save_shell_log(container, shell_log_dest)
+        _kill_gnome_shell(container)
 
-    with _render_container(gnome_shell_test_image, extension_dir, fixture_path, out_dir) as container:
-        _exec_render(container, fixture_path.name, out_name, undeclared_dir)
-
-    full_path = out_dir / out_name
-    assert full_path.exists(), f"render.sh did not produce {full_path}"
+    full_path = container_out_dir / out_name
+    assert full_path.exists(), f"scrot did not produce {full_path}"
 
     # Crop to the right-edge slice where our extension lives, so the
     # GNOME date menu in the centre doesn't poison the golden.

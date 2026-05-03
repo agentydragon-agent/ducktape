@@ -17,6 +17,20 @@ from pathlib import Path
 from PIL import Image, ImageChops
 
 
+def _per_pixel_max_channel_diff(actual: Image.Image, expected: Image.Image) -> Image.Image:
+    """Return an L-mode image of the per-pixel max RGB channel difference.
+
+    `ImageChops.difference` returns the absolute per-channel diff; collapsing
+    via `convert("L")` would apply ITU-R luminance weights and under-count
+    pure-red or pure-blue diffs (a 50-unit red change drops to 50*0.299=15
+    luminance, slipping under typical thresholds). Take channel-wise max
+    instead, which is the per-pixel L-infinity norm.
+    """
+    diff = ImageChops.difference(actual.convert("RGB"), expected.convert("RGB"))
+    r, g, b = diff.split()
+    return ImageChops.lighter(ImageChops.lighter(r, g), b)
+
+
 def png_diff_fraction(actual_path: Path, expected_path: Path, intensity_threshold: int) -> tuple[float, Image.Image]:
     """Diff two PNGs and return (fraction_differing, overlay_image_with_red_diff_mask).
 
@@ -29,13 +43,15 @@ def png_diff_fraction(actual_path: Path, expected_path: Path, intensity_threshol
     if actual.size != expected.size:
         raise AssertionError(f"PNG size mismatch: actual={actual.size} expected={expected.size}")
 
-    diff = ImageChops.difference(actual, expected).convert("L")
-    mask = diff.point(lambda v: 255 if v >= intensity_threshold else 0)
+    max_channel_diff = _per_pixel_max_channel_diff(actual, expected)
+    mask = max_channel_diff.point(lambda v: 255 if v >= intensity_threshold else 0)
     overlay = actual.copy()
     red = Image.new("RGBA", actual.size, (255, 0, 0, 255))
     overlay.paste(red, mask=mask)
 
-    differing = sum(1 for v in list(mask.getdata()) if v == 255)
+    # mask histogram is a 256-bucket count; bucket 255 is the count of
+    # mismatched pixels. Avoids materializing the full pixel buffer.
+    differing = mask.histogram()[255]
     fraction = differing / (actual.size[0] * actual.size[1])
     return fraction, overlay
 
@@ -53,17 +69,17 @@ def assert_png_matches_golden(
 
     On failure, copies ``<name>.{actual,expected,diff}.png`` into ``out_dir``
     (typically bazel undeclared outputs) and raises ``AssertionError`` with a
-    pointer to the artifacts.
+    pointer to the artifacts. On success, writes nothing — successful runs
+    don't pollute undeclared outputs / BuildBuddy artifacts.
 
     ``tolerance`` is the fraction of pixels that may differ (default 2%).
-    ``intensity_threshold`` is the per-channel diff under which pixels are
-    considered equal (default 16/255 — absorbs sub-pixel font noise).
+    ``intensity_threshold`` is the per-channel max-diff under which pixels
+    are considered equal (default 16/255 — absorbs sub-pixel font noise).
     """
     fraction, overlay = png_diff_fraction(actual_path, expected_path, intensity_threshold)
-    diff_path = out_dir / f"{name}.diff.png"
-    overlay.save(diff_path)
     if fraction <= tolerance:
         return
+    overlay.save(out_dir / f"{name}.diff.png")
     shutil.copy(actual_path, out_dir / f"{name}.actual.png")
     shutil.copy(expected_path, out_dir / f"{name}.expected.png")
     raise AssertionError(

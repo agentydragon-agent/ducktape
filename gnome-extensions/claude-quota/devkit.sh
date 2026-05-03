@@ -16,18 +16,19 @@
 #       (same hook used by //gnome-extensions/claude-quota:test_render).
 set -euo pipefail
 
-# --- runfiles bootstrap (rules_bash convention) ---------------------------
-# shellcheck disable=SC1090
+# --- begin runfiles.bash initialization v3 ---
+# Standard Bazel runfiles bootstrap snippet. `f` must be defined before the
+# source chain — set -u rejects unset references in `${RUNFILES_DIR:-/dev/null}/$f`.
+f=bazel_tools/tools/bash/runfiles/runfiles.bash
 source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null \
   || source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null \
   || source "$0.runfiles/$f" 2>/dev/null \
   || source "$(dirname "$0").runfiles/$f" 2>/dev/null \
   || {
-    echo >&2 "ERROR: cannot find runfiles helper"
+    echo >&2 "ERROR: cannot find $f"
     exit 1
   }
-# shellcheck disable=SC2154
-source "$(rlocation "bazel_tools/tools/bash/runfiles/runfiles.bash")"
+# --- end runfiles.bash initialization v3 ---
 
 if ! command -v gnome-shell >/dev/null 2>&1; then
   echo "ERROR: gnome-shell not on PATH. Install it on the host first" >&2
@@ -51,13 +52,12 @@ rm -rf "$target_dir"
 mkdir -p "$target_dir"
 unzip -q -o "$zip_path" -d "$target_dir"
 
-# --- enable in dconf so devkit shell loads it on first paint ---------------
+# --- enable via gnome-extensions CLI --------------------------------------
+# `gnome-extensions enable` appends to the existing enabled-extensions list.
+# Manually rewriting the gsettings key would clobber other extensions the
+# user already has on.
 gsettings set org.gnome.shell disable-user-extensions false
-current="$(gsettings get org.gnome.shell enabled-extensions || echo '@as []')"
-case "$current" in
-  *"$uuid"*) : ;; # already enabled
-  *) gsettings set org.gnome.shell enabled-extensions "['${uuid}']" ;;
-esac
+gnome-extensions enable "$uuid"
 
 # --- launch the devkit shell ----------------------------------------------
 # --devkit replaces the GNOME 45-removed --nested. Wayland is required;
