@@ -11,14 +11,17 @@
 //!    ordinal.
 //! 2. Map each statement to its destination module (logical module
 //!    or residual entry) using the spec's binding assignment.
-//! 3. Build a directed module dep graph: edge `M_S → M_b` for every
-//!    `(S, b)` where statement `S` lives in module `M_S` and
-//!    `b ∈ reads_at_init(S)` is owned by module `M_b ≠ M_S`.
-//! 4. Validate: the dep graph must be acyclic. Cycles are the
+//! 3. Build the imports graph `I`: edge `M_S → M_b` for every
+//!    `(S, b)` where statement `S` lives in module `M_S` and `b`
+//!    is owned by `M_b ≠ M_S`, irrespective of whether the read is
+//!    at-init or lazy. Each edge of `I` corresponds to one
+//!    emitted `import` directive — `I` is exactly the graph the
+//!    ESM linker walks for evaluation order.
+//! 4. Validate: `I ∪ S` must be acyclic. Cycles are the
 //!    unrealizable case — no ESM evaluation order can satisfy the
-//!    spec's assignment without papering over the cycle at runtime.
-//!    `materialize_logical_modules` aborts when this validator
-//!    reports cycles.
+//!    spec's assignment without TDZ on at-init reads or wrong
+//!    side-effect ordering. `materialize_logical_modules` aborts
+//!    when this validator reports cycles.
 //!
 //! The output is a JSON report listing the cycles + their evidence
 //! (which `(statement, binding)` pairs form each cycle), plus
@@ -26,8 +29,10 @@
 //! module reads. The report is written next to the existing
 //! manifests as `<chunk_id>.schedule.json`.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use petgraph::algo::{tarjan_scc, toposort};
+use petgraph::graphmap::DiGraphMap;
 use serde::Serialize;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -104,8 +109,8 @@ pub struct LogicalModule {
 }
 
 /// Single per-chunk schedule. Carries everything downstream code
-/// needs to validate cycles and (eventually, after the emit-side
-/// migration) emit modules in source order.
+/// needs to validate cycles and emit modules in an order that
+/// respects `I ∪ S`.
 #[derive(Debug, Clone)]
 pub struct Schedule {
     pub chunk_id: String,
@@ -113,6 +118,15 @@ pub struct Schedule {
     pub bindings: BTreeMap<BindingName, BindingKind>,
     pub logical_modules: Vec<LogicalModule>,
     pub dep_graph: ModuleDepGraph,
+    /// Topological linearization of `I ∪ S`, dependency-first
+    /// (the module at index 0 must evaluate before any other; the
+    /// last module — typically the residual entry — evaluates
+    /// last). Empty when `dep_graph` has cycles (validation will
+    /// reject the spec). Used by the emitter to author each
+    /// module's `import` directive list in an order that steers
+    /// ECMA-262's linker DFS toward an `I ∪ S`-respecting
+    /// evaluation order; see DESIGN.md "Lemma 2".
+    pub linker_order: Vec<ModuleId>,
 }
 
 impl Schedule {
@@ -128,13 +142,23 @@ impl Schedule {
     ) -> Self {
         let ownership = owned_view(&bindings);
         let dep_graph = build_module_dep_graph(&facts, &ownership);
+        let linker_order = compute_linker_order(&dep_graph.edges, &logical_modules);
         Self {
             chunk_id,
             facts,
             bindings,
             logical_modules,
             dep_graph,
+            linker_order,
         }
+    }
+
+    /// Position of `id` in `linker_order`, if present. Used by the
+    /// emitter to sort each module's `import` directives so that
+    /// ECMA-262's depth-first link traversal evaluates dependencies
+    /// before dependents.
+    pub fn linker_position(&self, id: ModuleId) -> Option<usize> {
+        self.linker_order.iter().position(|&m| m == id)
     }
 
     /// Render `id` to a human-readable label (used in cycle reports).
@@ -227,8 +251,7 @@ fn analyze_item(ordinal: StatementOrdinal, item: &ModuleItem) -> StatementFacts 
     item.visit_with(&mut at_init);
     let mut lazy = LazyReadCollector::default();
     item.visit_with(&mut lazy);
-    let has_side_effect = matches!(kind, StatementKind::VarDecl | StatementKind::SideEffect)
-        || (kind == StatementKind::ClassDecl && class_has_static_init(item));
+    let has_side_effect = item_has_side_effect(item, kind);
     StatementFacts {
         ordinal,
         declared,
@@ -236,6 +259,202 @@ fn analyze_item(ordinal: StatementOrdinal, item: &ModuleItem) -> StatementFacts 
         reads_lazy: lazy.names,
         has_side_effect,
         kind,
+    }
+}
+
+/// Three-state expression-level purity (DESIGN.md "Module dep
+/// graphs"). `Pure` is statically provably free of observable
+/// side effects; `Impure` is provably side-effecting (assignment,
+/// update, await, yield); `Unknown` covers the long tail (calls,
+/// `new`, member access — could be a getter — etc.) and is
+/// treated as `Impure` by `has_side_effect` for soundness.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum Purity {
+    Pure,
+    Impure,
+    Unknown,
+}
+
+impl Purity {
+    /// Combine two purity assessments — the worst (most
+    /// side-effecting) wins. `Impure` dominates `Unknown`
+    /// dominates `Pure`.
+    fn worst(self, other: Self) -> Self {
+        match (self, other) {
+            (Purity::Impure, _) | (_, Purity::Impure) => Purity::Impure,
+            (Purity::Unknown, _) | (_, Purity::Unknown) => Purity::Unknown,
+            _ => Purity::Pure,
+        }
+    }
+}
+
+fn classify_expr_purity(expr: &Expr) -> Purity {
+    match expr {
+        Expr::Lit(_) => Purity::Pure,
+        Expr::Ident(_) => Purity::Pure,
+        Expr::This(_) | Expr::MetaProp(_) => Purity::Pure,
+        Expr::Tpl(tpl) => tpl
+            .exprs
+            .iter()
+            .map(|e| classify_expr_purity(e))
+            .fold(Purity::Pure, Purity::worst),
+        Expr::Fn(_) | Expr::Arrow(_) => Purity::Pure,
+        Expr::Class(class_expr) => {
+            if class_has_static_observable(&class_expr.class) {
+                Purity::Impure
+            } else {
+                Purity::Pure
+            }
+        }
+        Expr::Paren(p) => classify_expr_purity(&p.expr),
+        Expr::Unary(u) => match u.op {
+            UnaryOp::Delete => Purity::Impure,
+            // typeof / void / +/-/!/~ on a pure operand are pure
+            // (they may coerce, but coercion of an Ident or Lit
+            // doesn't run user code).
+            _ => classify_expr_purity(&u.arg),
+        },
+        Expr::Bin(b) => classify_expr_purity(&b.left).worst(classify_expr_purity(&b.right)),
+        Expr::Cond(c) => classify_expr_purity(&c.test)
+            .worst(classify_expr_purity(&c.cons))
+            .worst(classify_expr_purity(&c.alt)),
+        Expr::Seq(s) => s
+            .exprs
+            .iter()
+            .map(|e| classify_expr_purity(e))
+            .fold(Purity::Pure, Purity::worst),
+        Expr::Array(arr) => {
+            let mut acc = Purity::Pure;
+            for elem in arr.elems.iter().flatten() {
+                if elem.spread.is_some() {
+                    // Spread invokes the iterator protocol; could
+                    // be impure even on a literal.
+                    acc = acc.worst(Purity::Unknown);
+                }
+                acc = acc.worst(classify_expr_purity(&elem.expr));
+            }
+            acc
+        }
+        Expr::Object(obj) => {
+            let mut acc = Purity::Pure;
+            for prop in &obj.props {
+                acc = acc.worst(classify_prop_purity(prop));
+            }
+            acc
+        }
+        // Member access is `Unknown` — `obj.prop` on an arbitrary
+        // object can fire a getter; we can't tell statically.
+        Expr::Member(_) | Expr::SuperProp(_) | Expr::OptChain(_) => Purity::Unknown,
+        // Calls / `new` / tagged templates / dynamic import / yield-style:
+        // unknown side effects.
+        Expr::Call(_) | Expr::New(_) | Expr::TaggedTpl(_) => Purity::Unknown,
+        Expr::Assign(_) | Expr::Update(_) => Purity::Impure,
+        Expr::Await(_) | Expr::Yield(_) => Purity::Impure,
+        // Anything we didn't enumerate falls into the Unknown
+        // bucket — soundness-first.
+        _ => Purity::Unknown,
+    }
+}
+
+fn classify_prop_purity(prop: &PropOrSpread) -> Purity {
+    match prop {
+        PropOrSpread::Spread(spread) => {
+            // Spreading an arbitrary expression invokes its
+            // iterator (array spread) or property iteration
+            // (object spread). Either can fire a getter or a
+            // user-defined `[Symbol.iterator]`.
+            classify_expr_purity(&spread.expr).worst(Purity::Unknown)
+        }
+        PropOrSpread::Prop(prop) => match prop.as_ref() {
+            Prop::Shorthand(_) => Purity::Pure,
+            Prop::KeyValue(kv) => {
+                classify_propname_purity(&kv.key).worst(classify_expr_purity(&kv.value))
+            }
+            Prop::Assign(_) => Purity::Impure,
+            // `{ get x() {}, set x(v) {}, m() {} }` — defining a
+            // method or accessor is pure; invoking it is not, and
+            // we don't invoke it during init.
+            Prop::Getter(_) | Prop::Setter(_) | Prop::Method(_) => Purity::Pure,
+        },
+    }
+}
+
+fn classify_propname_purity(name: &PropName) -> Purity {
+    match name {
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {
+            Purity::Pure
+        }
+        PropName::Computed(c) => classify_expr_purity(&c.expr),
+    }
+}
+
+/// Whether a class declaration runs observable code at class-decl
+/// time. Static blocks always run; static fields run their
+/// initializer. `extends <expr>` is at-init: the expression itself
+/// runs, but `extends` references are tracked as `R`-edges
+/// elsewhere — here we only report whether the class itself
+/// _additionally_ has observable side-effecting init code.
+fn class_has_static_observable(class: &Class) -> bool {
+    class.body.iter().any(|member| match member {
+        ClassMember::StaticBlock(_) => true,
+        ClassMember::ClassProp(prop) if prop.is_static => prop
+            .value
+            .as_deref()
+            .map(|v| classify_expr_purity(v) != Purity::Pure)
+            .unwrap_or(false),
+        ClassMember::PrivateProp(prop) if prop.is_static => prop
+            .value
+            .as_deref()
+            .map(|v| classify_expr_purity(v) != Purity::Pure)
+            .unwrap_or(false),
+        _ => false,
+    })
+}
+
+fn item_has_side_effect(item: &ModuleItem, kind: StatementKind) -> bool {
+    match kind {
+        StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => false,
+        StatementKind::VarDecl => var_decl_of_item(item)
+            .iter()
+            .flat_map(|var| var.decls.iter())
+            .any(|d| match d.init.as_deref() {
+                Some(init) => classify_expr_purity(init) != Purity::Pure,
+                None => false,
+            }),
+        StatementKind::ClassDecl => class_of_item(item)
+            .map(class_has_static_observable)
+            .unwrap_or(false),
+        StatementKind::SideEffect => match item {
+            ModuleItem::Stmt(Stmt::Expr(expr)) => classify_expr_purity(&expr.expr) != Purity::Pure,
+            // Bare blocks, control flow, loops, etc. — soundness-first.
+            _ => true,
+        },
+    }
+}
+
+fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
+            Decl::Var(var) => Some(var),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn class_of_item(item: &ModuleItem) -> Option<&Class> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Class(cls))) => Some(&cls.class),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
+            Decl::Class(cls) => Some(&cls.class),
+            _ => None,
+        },
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(decl)) => match &decl.decl {
+            DefaultDecl::Class(cls) => Some(&cls.class),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -254,23 +473,6 @@ fn classify_item(item: &ModuleItem) -> StatementKind {
         ModuleItem::Stmt(Stmt::Decl(Decl::Class(_))) => StatementKind::ClassDecl,
         _ => StatementKind::SideEffect,
     }
-}
-
-fn class_has_static_init(item: &ModuleItem) -> bool {
-    let class = match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Class(cls))) => &cls.class,
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
-            Decl::Class(cls) => &cls.class,
-            _ => return false,
-        },
-        _ => return false,
-    };
-    class.body.iter().any(|member| match member {
-        ClassMember::ClassProp(prop) => prop.is_static,
-        ClassMember::PrivateProp(prop) => prop.is_static,
-        ClassMember::StaticBlock(_) => true,
-        _ => false,
-    })
 }
 
 fn collect_declared_names(item: &ModuleItem) -> BTreeSet<String> {
@@ -352,6 +554,16 @@ impl Visit for AtInitReadCollector {
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
 
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+
+    // Export specifiers don't fire reads at module-init: ESM treats
+    // them as a static export entry, linked lazily when consumers
+    // import. Counting them as at-init reads adds spurious `R`
+    // edges (and, post-Phase-5 where R ⊆ I, spurious `I` edges).
+    // `export var X = ...` / `export class X {}` etc. are still
+    // visited via `ExportDecl`; only the bare-specifier forms are
+    // suppressed here.
+    fn visit_named_export(&mut self, _node: &NamedExport) {}
+    fn visit_export_all(&mut self, _node: &ExportAll) {}
 
     // Function bodies are lazy — references inside don't read at-init.
     fn visit_function(&mut self, _node: &Function) {}
@@ -566,6 +778,19 @@ pub struct ModuleDepGraph {
     pub evidence: BTreeMap<(ModuleId, ModuleId), Vec<(StatementOrdinal, BindingName)>>,
 }
 
+/// Build the imports graph `I` (per DESIGN.md "Module dep
+/// graphs"): an edge `(M, M')` for every cross-module reference,
+/// at-init or lazy. Each edge of `I` corresponds to exactly one
+/// emitted `import { b } from "<M'>"` directive in `M`'s body
+/// — so the graph constructed here is exactly the graph the ESM
+/// linker walks for evaluation order.
+///
+/// A binding referenced both eagerly and lazily inside the same
+/// statement (e.g. `class A extends B { method() { return B; } }`)
+/// shows up in both `reads_at_init` and `reads_lazy`. Iterating
+/// both still produces the right edge set for `I`: the edge is
+/// recorded once in `edges` (it's a `BTreeSet`) and twice in
+/// `evidence`. Cycle detection only consults `edges`.
 pub fn build_module_dep_graph(
     facts: &[StatementFacts],
     binding_assignment: &BTreeMap<BindingName, ModuleId>,
@@ -580,22 +805,81 @@ pub fn build_module_dep_graph(
             .next()
             .unwrap_or(ModuleId::ResidualEntry)
     };
+    let record = |from: ModuleId,
+                  binding: &BindingName,
+                  ordinal: StatementOrdinal,
+                  edges: &mut BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+                  evidence: &mut BTreeMap<
+        (ModuleId, ModuleId),
+        Vec<(StatementOrdinal, BindingName)>,
+    >| {
+        let Some(&to) = binding_assignment.get(binding) else {
+            return; // not a chunk-owned binding (global, ImportSpecifier, never-declared)
+        };
+        if to == from {
+            return;
+        }
+        edges.entry(from).or_default().insert(to);
+        evidence
+            .entry((from, to))
+            .or_default()
+            .push((ordinal, binding.clone()));
+    };
     for stmt in facts {
         let from = stmt_owner(stmt);
         for binding in &stmt.reads_at_init {
-            let Some(&to) = binding_assignment.get(binding) else {
-                continue; // not a chunk-owned binding (could be a global, an import, or a never-declared name)
-            };
-            if to == from {
-                continue;
-            }
-            edges.entry(from).or_default().insert(to);
-            evidence
-                .entry((from, to))
-                .or_default()
-                .push((stmt.ordinal, binding.clone()));
+            record(from, binding, stmt.ordinal, &mut edges, &mut evidence);
+        }
+        for binding in &stmt.reads_lazy {
+            record(from, binding, stmt.ordinal, &mut edges, &mut evidence);
         }
     }
+
+    // Side-effect ordering edges (`S` per DESIGN.md "Module dep
+    // graphs"). For every pair of side-effecting statements
+    // (S₁, S₂) with `S₁.ordinal < S₂.ordinal` and
+    // `home(S₁) ≠ home(S₂)`, add edge `(home(S₂), home(S₁))` —
+    // home(S₂) depends on home(S₁), so home(S₁) must evaluate
+    // first.
+    //
+    // Walk in source order; track which modules have already
+    // contributed a side-effect statement. For each new
+    // side-effecting statement, the home of the new statement
+    // must come *after* every previously-seen side-effecting
+    // module — add an edge to each such predecessor.
+    //
+    // `has_side_effect` is computed by `classify_expr_purity` so
+    // pure literal initializers (`const X = 42`,
+    // `const X = { a: 1 }`, function/class declarations without
+    // observable static init) don't contribute to S. Without
+    // that precision the cross-module S graph would be dense
+    // enough to reject realistic specs for trivially pure const
+    // sequences.
+    let mut seen_modules: BTreeSet<ModuleId> = BTreeSet::new();
+    for stmt in facts.iter().filter(|s| s.has_side_effect) {
+        let from = stmt_owner(stmt);
+        let predecessors: Vec<ModuleId> = seen_modules
+            .iter()
+            .copied()
+            .filter(|&m| m != from)
+            .collect();
+        for to in predecessors {
+            let inserted = edges.entry(from).or_default().insert(to);
+            if inserted {
+                // First-time edge — record one evidence entry per
+                // (from, to) pair so the cycle report doesn't fan
+                // out into thousands of side-effect rows. The
+                // ordinal is the *later* statement; the earlier
+                // one is implicit in `home(to)`.
+                evidence
+                    .entry((from, to))
+                    .or_default()
+                    .push((stmt.ordinal, "<side-effect>".to_string()));
+            }
+        }
+        seen_modules.insert(from);
+    }
+
     ModuleDepGraph { edges, evidence }
 }
 
@@ -650,8 +934,11 @@ pub enum RecommendationReadKind {
     AtInit,
     /// The candidate module reads this binding only inside lazy
     /// positions (function/method bodies, instance class-field
-    /// initializers, getter/setter bodies). Lazy reads don't
-    /// constrain init order, so any owner is cycle-safe.
+    /// initializers, getter/setter bodies). Contributes to the
+    /// imports graph `I` (the emit must carry the corresponding
+    /// `import` directive), but not to the at-init read sub-graph
+    /// `R`. Lazy-only candidates need the same SCC check as
+    /// at-init ones — see [`is_assignment_cycle_safe`].
     LazyOnly,
 }
 
@@ -662,7 +949,7 @@ pub fn validate_schedule(
     graph: &ModuleDepGraph,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> ScheduleReport {
-    let sccs = tarjan_sccs(&graph.edges);
+    let sccs = sccs_of(&graph.edges);
     let mut cycles = Vec::new();
     for scc in sccs {
         let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
@@ -705,9 +992,13 @@ pub fn validate_schedule(
 /// the chunk but not owned by any logical module, list the modules
 /// that read it, mark each candidate's `cycle_safe` flag.
 ///
-/// Lazy-only readers are always cycle-safe (lazy reads don't
-/// constrain init order). At-init readers' cycle safety is checked
-/// by tentatively assigning the binding and re-running SCC analysis.
+/// Cycle-safety is checked by tentatively assigning the binding to
+/// the candidate, rebuilding `I ∪ S` (via `build_module_dep_graph`),
+/// and looking for non-trivial SCCs. Lazy-only candidates also need
+/// this check, because lazy reads still emit `import` directives —
+/// they still contribute to `I` — and the strict gating rule (see
+/// DESIGN.md "The realizability theorem") rejects all `I ∪ S`
+/// cycles, not just `R ∪ S` ones.
 /// Project a `bindings` catalogue down to the `Owned` entries' owner
 /// map — what the dep-graph builder, recommender and cycle-safety
 /// check operate on. `Imported` bindings don't create at-init module
@@ -771,10 +1062,15 @@ fn build_recommendations(schedule: &Schedule) -> Vec<AssignmentRecommendation> {
             });
         }
         for m in any_modules.difference(&at_init_modules) {
+            // Lazy reads still emit `import` directives — they
+            // contribute to `I` even when they're absent from `R`.
+            // So lazy-only candidates need the same SCC check as
+            // at-init ones; they are not free of cycle risk.
+            let cycle_safe = is_assignment_cycle_safe(schedule, name, *m);
             candidates.push(RecommendationCandidate {
                 module: schedule.module_name(*m),
                 read_kind: RecommendationReadKind::LazyOnly,
-                cycle_safe: true,
+                cycle_safe,
             });
         }
         if !candidates.is_empty() {
@@ -797,7 +1093,7 @@ fn is_assignment_cycle_safe(
     let mut augmented = owned_view(&schedule.bindings);
     augmented.insert(binding.clone(), candidate);
     let graph = build_module_dep_graph(&schedule.facts, &augmented);
-    let sccs = tarjan_sccs(&graph.edges);
+    let sccs = sccs_of(&graph.edges);
     !sccs.iter().any(|scc| {
         scc.len() > 1
             || (scc.len() == 1
@@ -808,107 +1104,55 @@ fn is_assignment_cycle_safe(
     })
 }
 
-/// Tarjan's strongly-connected-components algorithm. Returns SCCs in
-/// reverse topological order.
-fn tarjan_sccs(edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>) -> Vec<Vec<ModuleId>> {
-    let mut nodes: BTreeSet<ModuleId> = edges.keys().copied().collect();
-    for targets in edges.values() {
-        nodes.extend(targets.iter().copied());
-    }
-    let mut index_counter = 0usize;
-    let mut indices = HashMap::<ModuleId, usize>::new();
-    let mut lowlinks = HashMap::<ModuleId, usize>::new();
-    let mut on_stack = HashSet::<ModuleId>::new();
-    let mut stack = Vec::<ModuleId>::new();
-    let mut sccs = Vec::<Vec<ModuleId>>::new();
-    for &node in &nodes {
-        if !indices.contains_key(&node) {
-            strong_connect(
-                node,
-                edges,
-                &mut index_counter,
-                &mut indices,
-                &mut lowlinks,
-                &mut on_stack,
-                &mut stack,
-                &mut sccs,
-            );
+/// Strongly-connected components of the dep graph, via petgraph's
+/// `tarjan_scc`. Each SCC is a `Vec<ModuleId>` in reverse
+/// topological order (SCCs appear after their dependencies).
+fn sccs_of(edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>) -> Vec<Vec<ModuleId>> {
+    let mut graph = DiGraphMap::<ModuleId, ()>::new();
+    // Ensure isolated nodes (only on the receive side of an edge or
+    // standalone in the assignment) appear in the graph.
+    for (&from, targets) in edges {
+        graph.add_node(from);
+        for &to in targets {
+            graph.add_node(to);
+            graph.add_edge(from, to, ());
         }
     }
-    sccs
+    tarjan_scc(&graph)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn strong_connect(
-    v: ModuleId,
+/// Topological linearization of the dep graph, dependency-first.
+/// Empty if the graph has cycles (`tarjan_scc` plus the validator
+/// gate handle that case).
+///
+/// The dep-graph edge convention is `(M, M')` meaning `M` depends
+/// on `M'`. `petgraph::algo::toposort` returns `u`-before-`v` for
+/// every edge `(u, v)`, which under our convention puts dependents
+/// before dependencies. The returned order is reversed so the
+/// dependency comes first — matching the order ECMA-262's link
+/// traversal needs to evaluate (deepest leaf first).
+fn compute_linker_order(
     edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    index_counter: &mut usize,
-    indices: &mut HashMap<ModuleId, usize>,
-    lowlinks: &mut HashMap<ModuleId, usize>,
-    on_stack: &mut HashSet<ModuleId>,
-    stack: &mut Vec<ModuleId>,
-    sccs: &mut Vec<Vec<ModuleId>>,
-) {
-    // Iterative Tarjan: emulate the recursive call stack so deep
-    // graphs don't blow the Rust stack.
-    enum Frame {
-        Visit(ModuleId),
-        Resume(ModuleId, std::vec::IntoIter<ModuleId>),
+    logical_modules: &[LogicalModule],
+) -> Vec<ModuleId> {
+    let mut graph = DiGraphMap::<ModuleId, ()>::new();
+    // Add every module the schedule knows about so the order
+    // covers them even if they have no dep-graph edges (singleton
+    // leaves still need a deterministic position for emit ordering).
+    graph.add_node(ModuleId::ResidualEntry);
+    for idx in 0..logical_modules.len() {
+        graph.add_node(ModuleId::Logical(LogicalModuleIndex(idx)));
     }
-    let mut frames = VecDeque::<Frame>::new();
-    frames.push_back(Frame::Visit(v));
-    while let Some(frame) = frames.pop_back() {
-        match frame {
-            Frame::Visit(v) => {
-                indices.insert(v, *index_counter);
-                lowlinks.insert(v, *index_counter);
-                *index_counter += 1;
-                stack.push(v);
-                on_stack.insert(v);
-                let neighbours: Vec<ModuleId> = edges
-                    .get(&v)
-                    .map(|set| set.iter().copied().collect())
-                    .unwrap_or_default();
-                frames.push_back(Frame::Resume(v, neighbours.into_iter()));
-            }
-            Frame::Resume(v, mut iter) => {
-                if let Some(w) = iter.next() {
-                    frames.push_back(Frame::Resume(v, iter));
-                    if !indices.contains_key(&w) {
-                        frames.push_back(Frame::Visit(w));
-                    } else if on_stack.contains(&w) {
-                        let lw = lowlinks[&w];
-                        let lv = lowlinks[&v];
-                        lowlinks.insert(v, lv.min(lw));
-                    }
-                } else {
-                    // Combine lowlinks of children: when a child has
-                    // resolved we adjust `v`'s lowlink to whichever
-                    // is smaller.
-                    let neighbours: Vec<ModuleId> = edges
-                        .get(&v)
-                        .map(|set| set.iter().copied().collect())
-                        .unwrap_or_default();
-                    for w in neighbours {
-                        if let (Some(&lv), Some(&lw)) = (lowlinks.get(&v), lowlinks.get(&w)) {
-                            lowlinks.insert(v, lv.min(lw));
-                        }
-                    }
-                    if lowlinks[&v] == indices[&v] {
-                        let mut component = Vec::new();
-                        loop {
-                            let w = stack.pop().expect("non-empty SCC stack");
-                            on_stack.remove(&w);
-                            component.push(w);
-                            if w == v {
-                                break;
-                            }
-                        }
-                        sccs.push(component);
-                    }
-                }
-            }
+    for (&from, targets) in edges {
+        graph.add_node(from);
+        for &to in targets {
+            graph.add_node(to);
+            graph.add_edge(from, to, ());
         }
+    }
+    match toposort(&graph, None) {
+        Ok(order) => order.into_iter().rev().collect(),
+        Err(_) => Vec::new(),
     }
 }
 
@@ -1139,6 +1383,188 @@ mod tests {
             report.recommendations.is_empty(),
             "fully-explicit spec should produce no recommendations, got {:?}",
             report.recommendations
+        );
+    }
+
+    // --- Purity classifier ---------------------------------------------------
+
+    fn classify(src: &str) -> Purity {
+        // Wrap the expression in a const so we can parse a module.
+        let module = parse(&format!("const _ = {src};"));
+        let var = match &module.body[0] {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+            other => panic!("expected `const _ = ...;`, got {other:?}"),
+        };
+        let init = var.decls[0].init.as_deref().expect("init expected");
+        classify_expr_purity(init)
+    }
+
+    #[test]
+    fn classify_literal_kinds_are_pure() {
+        assert_eq!(classify("42"), Purity::Pure);
+        assert_eq!(classify("\"hi\""), Purity::Pure);
+        assert_eq!(classify("true"), Purity::Pure);
+        assert_eq!(classify("null"), Purity::Pure);
+        assert_eq!(classify("/foo/g"), Purity::Pure);
+        assert_eq!(classify("`literal`"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_ident_read_is_pure() {
+        assert_eq!(classify("FOO"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_pure_unary_and_binary() {
+        assert_eq!(classify("-1"), Purity::Pure);
+        assert_eq!(classify("!FOO"), Purity::Pure);
+        assert_eq!(classify("typeof FOO"), Purity::Pure);
+        assert_eq!(classify("A + 1"), Purity::Pure);
+        assert_eq!(classify("A && B"), Purity::Pure);
+        assert_eq!(classify("A ? B : C"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_delete_is_impure() {
+        assert_eq!(classify("delete o.x"), Purity::Impure);
+    }
+
+    #[test]
+    fn classify_assignment_and_update_are_impure() {
+        assert_eq!(classify("(x = 1)"), Purity::Impure);
+        assert_eq!(classify("x++"), Purity::Impure);
+    }
+
+    #[test]
+    fn classify_call_new_tagged_template_are_unknown() {
+        assert_eq!(classify("foo()"), Purity::Unknown);
+        assert_eq!(classify("new Foo()"), Purity::Unknown);
+        assert_eq!(classify("tag`hi ${x}`"), Purity::Unknown);
+    }
+
+    #[test]
+    fn classify_member_access_is_unknown() {
+        assert_eq!(classify("o.x"), Purity::Unknown);
+        assert_eq!(classify("o[k]"), Purity::Unknown);
+        assert_eq!(classify("o?.x"), Purity::Unknown);
+    }
+
+    #[test]
+    fn classify_object_literal_pure_when_props_pure() {
+        assert_eq!(classify("({ a: 1, b: 'x' })"), Purity::Pure);
+        assert_eq!(classify("({ [k]: 1 })"), Purity::Pure);
+        // Computed key with member access — getter could fire.
+        assert_eq!(classify("({ [k.x]: 1 })"), Purity::Unknown);
+        // Spread of an arbitrary expr — iterator could fire.
+        assert_eq!(classify("({ ...other })"), Purity::Unknown);
+        // Method definitions are pure (defining, not calling).
+        assert_eq!(classify("({ m() { return io(); } })"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_array_literal_pure_when_elements_pure() {
+        assert_eq!(classify("[1, 2, 'x']"), Purity::Pure);
+        assert_eq!(classify("[A, B]"), Purity::Pure);
+        assert_eq!(classify("[1, foo()]"), Purity::Unknown);
+        // Spread is `Unknown` even on an array literal.
+        assert_eq!(classify("[...other]"), Purity::Unknown);
+    }
+
+    #[test]
+    fn classify_function_and_arrow_are_pure() {
+        assert_eq!(classify("function () { return io(); }"), Purity::Pure);
+        assert_eq!(classify("() => io()"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_class_expr_pure_without_static_init() {
+        assert_eq!(classify("class { m() { return io(); } }"), Purity::Pure);
+        assert_eq!(classify("class { static x = 1 }"), Purity::Pure);
+        assert_eq!(classify("class { static x = io() }"), Purity::Impure);
+        assert_eq!(classify("class { static {} }"), Purity::Impure);
+    }
+
+    #[test]
+    fn classify_template_with_pure_exprs_is_pure() {
+        assert_eq!(classify("`a${A}b${1+2}c`"), Purity::Pure);
+        assert_eq!(classify("`a${foo()}`"), Purity::Unknown);
+    }
+
+    #[test]
+    fn classify_sequence_takes_worst() {
+        assert_eq!(classify("(A, B, C)"), Purity::Pure);
+        assert_eq!(classify("(A, foo(), C)"), Purity::Unknown);
+        assert_eq!(classify("(A, x = 1, C)"), Purity::Impure);
+    }
+
+    // --- has_side_effect refinement ------------------------------------------
+
+    fn has_side_effect_for(src: &str) -> Vec<bool> {
+        let module = parse(src);
+        analyze_chunk_facts(&module)
+            .into_iter()
+            .map(|f| f.has_side_effect)
+            .collect()
+    }
+
+    #[test]
+    fn pure_const_decl_is_not_side_effecting() {
+        assert_eq!(has_side_effect_for("const X = 42;"), vec![false]);
+        assert_eq!(has_side_effect_for("const X = { a: 1 };"), vec![false]);
+        assert_eq!(has_side_effect_for("const X = [1, 2, 3];"), vec![false]);
+        assert_eq!(has_side_effect_for("const X = OTHER;"), vec![false]);
+        assert_eq!(has_side_effect_for("const X = A + B;"), vec![false]);
+    }
+
+    #[test]
+    fn impure_const_decl_is_side_effecting() {
+        assert_eq!(has_side_effect_for("const X = compute();"), vec![true]);
+        assert_eq!(has_side_effect_for("const X = new Foo();"), vec![true]);
+        assert_eq!(has_side_effect_for("const X = (y = 1, y);"), vec![true]);
+    }
+
+    #[test]
+    fn function_decl_is_not_side_effecting() {
+        assert_eq!(
+            has_side_effect_for("function f() { return io(); }"),
+            vec![false]
+        );
+    }
+
+    #[test]
+    fn class_decl_pure_without_static_init() {
+        assert_eq!(
+            has_side_effect_for("class C { m() { return io(); } }"),
+            vec![false]
+        );
+        assert_eq!(
+            has_side_effect_for("class C { static x = 1; }"),
+            vec![false]
+        );
+        assert_eq!(
+            has_side_effect_for("class C { static x = io(); }"),
+            vec![true]
+        );
+        assert_eq!(has_side_effect_for("class C { static {} }"), vec![true]);
+    }
+
+    #[test]
+    fn bare_expression_classified_by_purity() {
+        // Plain ident-read expression statement: pure.
+        assert_eq!(has_side_effect_for("X;"), vec![false]);
+        // Function call expression statement: side-effecting.
+        assert_eq!(has_side_effect_for("io();"), vec![true]);
+    }
+
+    #[test]
+    fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
+        assert_eq!(
+            has_side_effect_for("const A = 1, B = compute();"),
+            vec![true]
+        );
+        assert_eq!(
+            has_side_effect_for("const A = 1, B = 2, C = 3;"),
+            vec![false]
         );
     }
 }
