@@ -27,6 +27,10 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         # dbus-daemon: needed by tests that spawn a private D-Bus session
         # (e.g. experimental/dbus_fast_example)
         dbus-daemon \
+        # git-lfs: bb remote re-fetches the repo on the runner via plain
+        # git fetch (no LFS smudge), so consumer scripts call `git lfs pull`
+        # before bazel runs to materialize LFS-tracked test data.
+        git-lfs \
         # Native dev headers for pip wheel builds (pygobject, pycairo, dbus-python)
         libgirepository-2.0-dev \
         libcairo2-dev \
