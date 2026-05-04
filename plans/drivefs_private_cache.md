@@ -70,11 +70,64 @@ Triggered on push to default branch.
 
 ### Required secrets on gaffer-private's GHA
 
-- `SOPS_AGE_KEY` — already provisioned by
-  `tf/gitops/github-secrets-sync/main.tf` (decrypts the writer token).
-- `DUCKTAPE_REPIN_PAT` — fine-grained PAT on `agentydragon/ducktape` with
-  `Contents: write`. Add to the `github-secrets-sync` TF module
-  alongside the existing `SOPS_AGE_KEY` mirror, or set manually once.
+Both follow the same pattern: SOPS-encrypted k8s Secret in
+`cluster/k8s/github-secrets-sync/secrets/` → Flux applies →
+`tf/gitops/github-secrets-sync/main.tf` reads via
+`data.kubernetes_secret` → pushes to gaffer-private's GHA via
+`github_actions_secret`. The PAT thus lives in SOPS at rest and TF
+handles cross-repo provisioning.
+
+- **`SOPS_AGE_KEY`** — already provisioned. Decrypts
+  `secrets/ci/attic-gaffer-writer.sops.yaml` from a sparse-cloned
+  ducktape (and any other CI-scoped SOPS files).
+- **`DUCKTAPE_REPIN_PAT`** — fine-grained PAT on `agentydragon/ducktape`
+  with `Contents: write`. Net new. Provisioning:
+  1. **Mint** the PAT on the `agentydragon` GitHub account: fine-grained,
+     repo `agentydragon/ducktape` only, `Contents: write` (no other
+     scopes), 1-year expiry.
+  2. **SOPS-encrypt** it as a new manifest at
+     `cluster/k8s/github-secrets-sync/secrets/ducktape-repin-pat.sops.yaml`:
+
+     ```yaml
+     apiVersion: v1
+     kind: Secret
+     metadata:
+       name: ducktape-repin-pat
+       namespace: flux-system
+     type: Opaque
+     stringData:
+       token: <PAT plaintext>
+     ```
+
+     Then `sops -e -i cluster/k8s/github-secrets-sync/secrets/ducktape-repin-pat.sops.yaml`
+     in the repo (the `cluster/k8s/.*\.sops\.yaml$` rule encrypts to
+     `admin + cluster-secrets`).
+
+  3. **Add to kustomization** —
+     `cluster/k8s/github-secrets-sync/secrets/kustomization.yaml`
+     resources list: `- ducktape-repin-pat.sops.yaml`.
+  4. **Wire into TF** — extend `tf/gitops/github-secrets-sync/main.tf`:
+
+     ```hcl
+     data "kubernetes_secret" "ducktape_repin_pat" {
+       metadata {
+         name      = "ducktape-repin-pat"
+         namespace = "flux-system"
+       }
+     }
+
+     resource "github_actions_secret" "ducktape_repin_pat_gaffer_private" {
+       repository      = "gaffer-private"
+       secret_name     = "DUCKTAPE_REPIN_PAT"
+       plaintext_value = data.kubernetes_secret.ducktape_repin_pat.data["token"]
+     }
+     ```
+
+  Once the SOPS manifest + kustomization update + TF stanza are committed
+  and pushed, Flux deploys the Secret and tofu-controller reconciles the
+  module within ~15min, landing `DUCKTAPE_REPIN_PAT` as a GHA secret on
+  gaffer-private. PAT rotation = re-mint + re-encrypt the SOPS file +
+  push; TF picks it up on next reconcile.
 
 ## Phase 2 — ducktape consumer flip
 
@@ -141,9 +194,11 @@ sudo curl -fI \
 
 ## Critical files
 
-| File                                                  | Role                                                                    |
-| ----------------------------------------------------- | ----------------------------------------------------------------------- |
-| `gaffer-private/.github/workflows/nix-attic-push.yml` | **NEW** — Phase 1 CI                                                    |
-| `tf/gitops/github-secrets-sync/main.tf`               | add `DUCKTAPE_REPIN_PAT` GHA secret to gaffer-private (or set manually) |
-| `ducktape/nix/gaffer-pins.json`                       | populated by gaffer CI direct-push                                      |
-| `ducktape/nix/home/hosts/wyrm2.nix:59`                | flip `services.google-drive.enable = true` after first CI run           |
+| File                                                                   | Role                                                               |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `gaffer-private/.github/workflows/nix-attic-push.yml`                  | **NEW** — Phase 1 CI                                               |
+| `cluster/k8s/github-secrets-sync/secrets/ducktape-repin-pat.sops.yaml` | **NEW** — SOPS-encrypted k8s Secret holding the repin PAT          |
+| `cluster/k8s/github-secrets-sync/secrets/kustomization.yaml`           | add the new SOPS file to the resources list                        |
+| `tf/gitops/github-secrets-sync/main.tf`                                | new `data.kubernetes_secret` + `github_actions_secret` for the PAT |
+| `ducktape/nix/gaffer-pins.json`                                        | populated by gaffer CI direct-push                                 |
+| `ducktape/nix/home/hosts/wyrm2.nix:59`                                 | flip `services.google-drive.enable = true` after first CI run      |
