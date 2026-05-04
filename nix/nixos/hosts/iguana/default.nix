@@ -39,8 +39,15 @@ in
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
 
-  # TODO: Generate attic token for iguana and create secrets/hosts/iguana-attic.yaml
-  # sops.secrets.attic_token.sopsFile = ../../../../secrets/hosts/iguana-attic.yaml;
+  # TODO: enable Attic substituter for cache.allegedly.works/{main,gaffer}.
+  # Reader JWT is already auto-rotated into secrets/hosts/iguana-attic.yaml
+  # by the attic-jwt-rotation CronJob (rotators.json entry exists). Wiring
+  # mirrors wyrm2 (nix/nixos/hosts/wyrm2/default.nix:48–55) — import
+  # ../../modules/attic-substituter.nix and:
+  #   ducktape.attic-substituter = {
+  #     enable = true;
+  #     sopsFile = ../../../../secrets/hosts/iguana-attic.yaml;
+  #   };
 
   ducktape.k8sWorker = {
     enable = true;

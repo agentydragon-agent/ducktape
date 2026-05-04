@@ -64,9 +64,6 @@ spec:
               mountPath: /cache
             - name: tmp
               mountPath: /tmp
-            - name: signing-key
-              mountPath: /var/lib/secrets
-              readOnly: true
           livenessProbe:
             httpGet:
               path: /
@@ -90,6 +87,3 @@ spec:
             claimName: attic-cache
         - name: tmp
           emptyDir: {}
-        - name: signing-key
-          secret:
-            secretName: nix-cache-signing-key

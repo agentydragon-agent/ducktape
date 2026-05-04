@@ -124,6 +124,21 @@ ls -la
 # See <devinfra/claude/docs/web-setup-debug.md> ("Pin drift on persistent rootfs").
 nix profile remove devtools 2>/dev/null || true
 nix profile remove devtools-rust 2>/dev/null || true
+# TODO: `attic login` against cache.allegedly.works/{main,gaffer} before this
+# install so devtools (and any gaffer-built closures pulled transitively) hit
+# the private cache instead of building from source. The reader JWT is in
+# secrets/claude-web-attic.yaml, auto-rotated by the in-cluster
+# attic-jwt-rotation CronJob; web_env.sh decrypts SOPS files at hook-daemon
+# startup but isn't running yet at this point in init_script. Sketch:
+#   if [ -f /tmp/_secret_attic_token ]; then
+#     attic login allegedly https://cache.allegedly.works \
+#       "$(cat /tmp/_secret_attic_token)"
+#   fi
+# Plumbing needed: have web_env.sh write the decrypted token to a known
+# path (mode 0600, owned by user) before init_script runs, OR fold the
+# sops decrypt into web_setup.sh directly using SOPS_AGE_KEY. Today the
+# install path falls back to building from source if main isn't reachable
+# anonymously — slow but works.
 nix profile install --max-jobs auto "${FLAKE}#${DEVTOOLS_OUTPUT}"
 log "Dev tools installed (impl=$HOOK_IMPL)."
 
