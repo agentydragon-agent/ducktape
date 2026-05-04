@@ -5,10 +5,7 @@ metadata:
   namespace: nix-cache
   annotations:
     description: >-
-      Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape
-      and gaffer CI writer tokens) defined in rotators.json. Hourly cron;
-      per-token freshness check skips entries with >24h remaining, so a
-      real mint runs ~once per token per year. See rotate.sh.
+      Rotates all Attic JWTs (per-host readers, claude-web reader, ducktape and gaffer CI writer tokens) defined in rotators.json. Hourly cron; per-token freshness check skips entries with >24h remaining, so a real mint runs ~once per token per year. See rotate.sh.
 spec:
   schedule: "30 * * * *"
   successfulJobsHistoryLimit: 3
@@ -37,7 +34,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: rotate
-              image: ghcr.io/agentydragon/attic-jwt-rotation:latest # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+              image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260504011152-2b39247 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
               command: ["/usr/bin/bash", "/scripts/rotate.sh"]
               securityContext:
                 allowPrivilegeEscalation: false
