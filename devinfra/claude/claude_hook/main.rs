@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -185,8 +186,6 @@ fn write_buildbuddy_bazelrc(session_dir: &Path, api_key: &str) -> Option<PathBuf
     );
     // Atomic write + 0600: file contains the API key (a secret).
     // Mirrors env_file.rs which uses the same pattern for the session env file.
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
     let write_result = (|| {
         let mut tmp = tempfile::NamedTempFile::new_in(session_dir).ok()?;
         tmp.write_all(content.as_bytes()).ok()?;
@@ -305,7 +304,6 @@ fn render_context_banner(state: &AppState, session_id: &str, daemon_log: &Path) 
 
     let bb_key = startup.env_overlay.contains_key("BUILDBUDDY_API_KEY");
     if bb_key {
-        lines.push(String::new());
         lines.push("## BuildBuddy".into());
         lines.push("Bazel builds and tests by default execute remotely via BuildBuddy.".into());
         lines.push(
@@ -313,15 +311,11 @@ fn render_context_banner(state: &AppState, session_id: &str, daemon_log: &Path) 
         );
         if !session_id.is_empty() && session_id != "unknown" {
             lines.push(format!(
-                "Your `bbr` invocations are tagged `session:{session_id}`. To list your builds:"
-            ));
-            lines.push(format!(
-                "`bbapi invocation list --tag session:{session_id}`"
+                "Your `bbr` invocations are tagged `session:{session_id}`. To list your builds: `bbapi invocation list --tag session:{session_id}`"
             ));
         }
     }
 
-    lines.push(String::new());
     lines.push(format!("Session start log: `{}`", daemon_log.display()));
 
     lines.join("\n")
@@ -456,7 +450,6 @@ fn resolve_binary_from_env(
         }
         let candidate = dir_path.join(binary);
         if candidate.is_file() {
-            use std::os::unix::fs::PermissionsExt;
             if let Ok(m) = std::fs::metadata(&candidate) {
                 if m.permissions().mode() & 0o111 != 0 {
                     return Some(candidate);
