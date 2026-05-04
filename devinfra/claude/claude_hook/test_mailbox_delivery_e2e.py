@@ -71,8 +71,7 @@ _SESSION_START = {
     "model": "claude-sonnet-4-6",
 }
 
-_PRE_TOOL_USE = {
-    "hook_event_name": "PreToolUse",
+_REPL_BASE: dict[str, object] = {
     "session_id": _SESSION_ID,
     "cwd": "/project",
     "transcript_path": "/tmp/transcript.json",
@@ -82,8 +81,17 @@ _PRE_TOOL_USE = {
     "tool_input": {},
 }
 
+_PRE_TOOL_USE: dict[str, object] = {**_REPL_BASE, "hook_event_name": "PreToolUse"}
+_POST_TOOL_USE: dict[str, object] = {**_REPL_BASE, "hook_event_name": "PostToolUse", "tool_response": ""}
 
-def test_mailbox_delivery(impl: str, container: container_e2e.E2EContainer) -> None:
+
+@pytest.fixture(params=["PreToolUse", "PostToolUse"])
+def repl_hook(request: pytest.FixtureRequest) -> dict[str, object]:
+    """Drain happens identically on every REPL hook; parameterize to prove it."""
+    return {"PreToolUse": _PRE_TOOL_USE, "PostToolUse": _POST_TOOL_USE}[request.param]
+
+
+def test_mailbox_delivery(impl: str, container: container_e2e.E2EContainer, repl_hook: dict[str, object]) -> None:
     """Background task output is delivered once via REPL hook systemMessage, then drained."""
     _IMPLS[impl](container)
     container.send_hook(_SESSION_START)
@@ -93,19 +101,19 @@ def test_mailbox_delivery(impl: str, container: container_e2e.E2EContainer) -> N
     # we see the sentinel, output_X is guaranteed in the daemon's buffer.
     container.poll_file("/tmp/task_ready")
 
-    out1 = container.send_hook(_PRE_TOOL_USE)
+    out1 = container.send_hook(repl_hook)
     msg1 = out1.get("systemMessage", "")
     assert "output_X" in msg1, f"[{impl}] expected output_X, got: {msg1!r}"
 
     # Drain is destructive: second hook must not re-deliver output_X.
-    out2 = container.send_hook(_PRE_TOOL_USE)
+    out2 = container.send_hook(repl_hook)
     msg2 = out2.get("systemMessage") or ""
     assert "output_X" not in msg2, f"[{impl}] output_X re-delivered: {msg2!r}"
 
     container.exec(["touch", "/tmp/signal"])
     container.poll_file("/tmp/task_done")
 
-    out3 = container.send_hook(_PRE_TOOL_USE)
+    out3 = container.send_hook(repl_hook)
     msg3 = out3.get("systemMessage", "")
     assert "output_Y" in msg3, f"[{impl}] expected output_Y, got: {msg3!r}"
     assert "output_X" not in msg3, f"[{impl}] output_X re-appeared in phase-2 message: {msg3!r}"

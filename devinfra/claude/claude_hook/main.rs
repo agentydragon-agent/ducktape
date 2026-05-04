@@ -410,6 +410,10 @@ async fn handle_hook(
                 Some(HookOutput::default())
             }
         }
+        // PreToolUse / PostToolUse: no per-hook logic; output is built entirely
+        // from the mailbox drain below. Listed explicitly so the dispatch table
+        // reads as "these are handled" rather than falling into the noop arm.
+        (AnyHookInput::PreToolUse(_) | AnyHookInput::PostToolUse(_), _) => None,
         _ => None,
     };
 
