@@ -43,10 +43,19 @@ in
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ../../modules/gpu-monitor.nix
+    ../../modules/attic-substituter.nix
   ];
 
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
+
+  # Pull substituter for cache.allegedly.works/{main,gaffer}. Reader JWT is
+  # auto-rotated by attic-rotate-wyrm2-reader CronJob; the SOPS file is
+  # decryptable by the wyrm2 host key + agentydragon user key.
+  ducktape.attic-substituter = {
+    enable = true;
+    sopsFile = ../../../../secrets/hosts/wyrm2-attic.yaml;
+  };
 
   ducktape.k8sWorker = {
     enable = true;
