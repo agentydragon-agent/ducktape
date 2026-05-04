@@ -74,6 +74,30 @@ class StepTimer(TrainerCallback):
         self.step_times.append(time.perf_counter() - self._t)
 
 
+class WordleGRPOTrainer(GRPOTrainer):
+    """Relabel WordleEnv metric reward funcs out of `train/rewards/metric_*`
+    into `train/env/*` in tensorboard.
+
+    TRL has no first-class metric channel; reward_funcs is the only per-rollout
+    hook, so we use it (with reward_weights = [1, 0, ...] to keep the metric_*
+    funcs out of the advantage). But they aren't actually rewards — calling them
+    that in the log namespace is misleading. Relabel here so the dashboard
+    reads honestly.
+    """
+
+    _PREFIX = "rewards/metric_"
+
+    def log(self, logs: dict, start_time: float | None = None) -> None:
+        relabeled = {}
+        for k, v in logs.items():
+            if k.startswith(self._PREFIX):
+                # rewards/metric_invalid_length/mean -> env/invalid_length/mean
+                relabeled["env/" + k[len(self._PREFIX) :]] = v
+            else:
+                relabeled[k] = v
+        super().log(relabeled, start_time)
+
+
 DEFAULT_LORA = LoraConfig(
     r=16,
     lora_alpha=32,
@@ -111,15 +135,15 @@ def train_session(
         trainer_cls = AsyncGRPOTrainer
     else:
         config = GRPOConfig(**common_kwargs, use_vllm=not no_vllm, vllm_mode="colocate" if colocate else "server")
-        trainer_cls = GRPOTrainer
+        trainer_cls = WordleGRPOTrainer
 
     step_timer = StepTimer()
-    # Diagnostic side-metrics: TRL logs each reward_func's mean/std as
-    # train/rewards/<fn_name>/{mean,std}. With reward_weights = [1, 0, 0, ...]
-    # the metric_* funcs don't contribute to the GRPO advantage — they're free
-    # tensorboard channels (invalid-length, invalid-word, post-game-over,
-    # unique-guesses, win-rate). AsyncGRPOConfig doesn't have reward_weights
-    # in this trl version, so for async_grpo we keep the single reward_func.
+    # Diagnostic side-metrics: TRL has no first-class metric channel, so we
+    # piggyback on reward_funcs (the only per-rollout hook). reward_weights
+    # zeroes them out of the GRPO advantage, and WordleGRPOTrainer.log moves
+    # them from `train/rewards/metric_*` into `train/env/*` in tensorboard.
+    # AsyncGRPOConfig doesn't carry reward_weights in this trl version, so
+    # for async_grpo we keep the single reward_func.
     if async_grpo:
         reward_funcs: list = [reward_func]
     else:
