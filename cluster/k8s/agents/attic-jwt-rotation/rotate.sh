@@ -107,7 +107,11 @@ atticadm_args=(make-token --sub "$TOKEN_SUB" --validity "$TOKEN_VALIDITY")
 for pattern in $ATTICADM_PULL; do atticadm_args+=(--pull "$pattern"); done
 for pattern in $ATTICADM_PUSH; do atticadm_args+=(--push "$pattern"); done
 
-JWT=$(kubectl -n "$ATTIC_NAMESPACE" exec "$ATTIC_DEPLOYMENT" -- atticadm "${atticadm_args[@]}" | tr -d '[:space:]')
+# atticadm needs an explicit config file (without it, it tries to read a
+# default config and fails with EACCES). The running attic pod has its
+# own server.toml mounted at /config; reuse that.
+JWT=$(kubectl -n "$ATTIC_NAMESPACE" exec "$ATTIC_DEPLOYMENT" -- \
+  atticadm -f /config/server.toml "${atticadm_args[@]}" | tr -d '[:space:]')
 
 if [ -z "$JWT" ]; then
   echo "ERROR: ${ROTATION_NAME}: atticadm make-token returned empty output" >&2

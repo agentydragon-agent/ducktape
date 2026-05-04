@@ -43,8 +43,11 @@ SERVER="${ATTIC_SERVER_URL:-http://attic.nix-cache.svc.cluster.local:8080}"
 CACHES="${CACHES:-gaffer}"
 
 echo "[bootstrap] minting 5-minute admin JWT via kubectl exec ${ATTIC_DEPLOYMENT}..."
+# atticadm tries to read a default config from a path it doesn't have
+# permission to (EACCES) when -f isn't passed; the running attic pod has
+# its own server.toml at /config, so reuse that.
 ADMIN_JWT=$(kubectl -n "$ATTIC_NAMESPACE" exec "$ATTIC_DEPLOYMENT" -- \
-  atticadm make-token \
+  atticadm -f /config/server.toml make-token \
   --sub bootstrap-admin \
   --validity '5 minutes' \
   --pull '*' --push '*' --create-cache '*' | tr -d '[:space:]')
