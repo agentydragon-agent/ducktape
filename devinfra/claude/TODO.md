@@ -1,5 +1,33 @@
 # claude_hooks TODO
 
+## Consider reviving PostToolUse lint integration
+
+Removed in <https://github.com/agentydragon/ducktape/pull/...> after
+deciding the per-edit lint-and-revert flow was effectively spam — issues
+get caught (and fixed by the same auto-apply hooks) when the agent runs
+`pre-commit run` or commits via the `git` shim, which already invokes the
+project's full pre-commit config. Running the same hooks on every Edit/Write
+adds latency, can revert intentional changes the agent will fix later, and
+duplicates work pre-commit-on-commit already does.
+
+Reconsider if any of these change:
+
+- Agent-driven edits frequently land bugs that the on-commit hooks catch
+  too late (i.e. after a session worth of follow-on edits builds on broken
+  state). If we observe this regressing meaningfully without per-edit lint,
+  bring it back.
+- Auto-apply hooks (`ruff-format` etc.) get expensive enough that running
+  them once per edit is materially cheaper than once per commit on a wide
+  changeset. (Unlikely — formatters scale well.)
+- We add a non-formatting check (e.g. type errors, broken imports) that
+  is cheap per-file and would meaningfully shorten the agent's iteration
+  loop if surfaced immediately rather than at commit time.
+
+What was removed: `post_tool_use.py`, `precommit_runner.py`, the
+`PreCommitConfig` profile field, `templates/post_tool_use.mako`, and the
+matching tests. Restoring would also restore the `pre-commit` runtime dep
+on the wheel + Nix package.
+
 ## Nix Installation Timeout
 
 **Problem**: Installing nix on Claude Code web times out because downloading nixpkgs takes >2 minutes (session start hook timeout).

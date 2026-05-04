@@ -52,22 +52,6 @@ class BackgroundCommand(BaseModel):
     )
 
 
-class PreCommitConfig(BaseModel, frozen=True):
-    """Pre-commit hook behavior configuration."""
-
-    auto_apply_hooks: frozenset[str] = Field(
-        default_factory=frozenset,
-        description="Hook IDs whose file modifications are kept (not reverted). "
-        "All other hooks' modifications are reverted and reported as diffs.",
-    )
-    show_report_diffs: bool = Field(
-        default=False, description="Show unified diffs from report-only hooks in the PostToolUse output."
-    )
-    show_hook_output: bool = Field(
-        default=False, description="Show stdout/stderr from failing hooks in the PostToolUse output."
-    )
-
-
 class GitShimConfig(BaseModel):
     """Per-behavior toggles for the git PATH shim.
 
@@ -109,7 +93,6 @@ class ProfileConfig(BaseModel):
     )
 
     otel: OtelConfig | None = Field(default=None, description="OpenTelemetry tracing configuration.")
-    pre_commit: PreCommitConfig | None = Field(default=None, description="Pre-commit hook behavior configuration.")
     git_shim: GitShimConfig = Field(default_factory=GitShimConfig, description="Git shim behavior toggles.")
     startup_env_script: str | None = Field(
         default=None,

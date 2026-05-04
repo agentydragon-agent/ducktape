@@ -87,57 +87,6 @@ py_library(
 )
 
 py_library(
-    name = "tool_input_parsing",
-    srcs = ["tool_input_parsing.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//devinfra/claude/claude_api:tool_input_models",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "pre_tool_use_lib",
-    srcs = ["pre_tool_use.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":session",
-        ":tool_input_parsing",
-        "//devinfra/claude/claude_api:tool_input_models",
-        "//devinfra/claude/claude_api/hooks:output",
-        "//devinfra/claude/claude_api/hooks:pre_tool_use",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "precommit_runner",
-    srcs = ["precommit_runner.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//pre_commit",
-    ],
-)
-
-py_library(
-    name = "post_tool_use_lib",
-    srcs = ["post_tool_use.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":config",
-        ":precommit_runner",
-        ":session",
-        ":tool_input_parsing",
-        "//devinfra/claude/claude_api:tool_input_models",
-        "//devinfra/claude/claude_api/hooks:output",
-        "//devinfra/claude/claude_api/hooks:post_tool_use",
-        "//devinfra/claude/hook_daemon/templates",
-        "@pypi//pydantic",
-        "@pypi//pygit2",
-    ],
-)
-
-py_library(
     name = "worktree",
     srcs = ["worktree.py"],
     visibility = ["//visibility:public"],
@@ -154,16 +103,12 @@ py_library(
     deps = [
         ":config",
         ":models",
-        ":post_tool_use_lib",
-        ":pre_tool_use_lib",
         ":session",
         ":tracing",
         ":worktree",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude/claude_api/hooks:output",
-        "//devinfra/claude/claude_api/hooks:post_tool_use",
-        "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/hook_daemon/session_start:session_start_lib",
         "@pypi//anyio",
@@ -282,7 +227,6 @@ py_test(
         ":models",
         ":server",
         "//devinfra/claude:conftest",
-        "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "//devinfra/claude/claude_api/hooks:stop",
         "//devinfra/claude/hook_daemon/testing:testing_helpers",
@@ -301,9 +245,7 @@ py_library(
         "//devinfra/claude:session_paths",
         "//devinfra/claude/hook_daemon/testing:testing_helpers",
         "//util/testing:undeclared_outputs",
-        "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -335,87 +277,6 @@ py_test(
         "//devinfra/claude:session_paths",
         "//devinfra/claude/hook_daemon/testing:testing_helpers",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_pre_tool_use",
-    srcs = ["test_pre_tool_use.py"],
-    deps = [
-        ":pre_tool_use_lib",
-        ":session",
-        "//devinfra/claude:conftest",
-        "//devinfra/claude:session_paths",
-        "//devinfra/claude/claude_api/hooks:pre_tool_use",
-        "//devinfra/claude/hook_daemon/testing:testing_helpers",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_post_tool_use",
-    srcs = ["test_post_tool_use.py"],
-    data = ["__snapshots__/test_post_tool_use.ambr"],
-    uses_syrupy = True,
-    deps = [
-        ":config",
-        ":hook_daemon_conftest",
-        ":post_tool_use_lib",
-        ":precommit_runner",
-        ":session",
-        "//devinfra/claude:conftest",
-        "//devinfra/claude:session_paths",
-        "//devinfra/claude/claude_api/hooks:output",
-        "//devinfra/claude/claude_api/hooks:post_tool_use",
-        "//devinfra/claude/hook_daemon/testing:testing_helpers",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//syrupy",
-    ],
-)
-
-py_test(
-    name = "test_precommit_e2e",
-    srcs = ["test_precommit_e2e.py"],
-    data = ["__snapshots__/test_precommit_e2e.ambr"],
-    uses_syrupy = True,
-    deps = [
-        ":config",
-        ":hook_daemon_conftest",
-        ":post_tool_use_lib",
-        ":precommit_runner",
-        "//devinfra/claude:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//syrupy",
-    ],
-)
-
-py_test(
-    name = "test_post_tool_use_ruff_e2e",
-    srcs = ["test_post_tool_use_ruff_e2e.py"],
-    data = [
-        "testdata/ruff_repo/profile.yaml",
-        "testdata/ruff_repo/ruff.toml",
-        "@multitool//tools/ruff",
-    ],
-    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    deps = [
-        ":config",
-        ":hook_daemon_conftest",
-        ":post_tool_use_lib",
-        ":precommit_runner",
-        ":session",
-        "//devinfra/claude:conftest",
-        "//devinfra/claude:session_paths",
-        "//devinfra/claude/claude_api/hooks:post_tool_use",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 

@@ -66,19 +66,6 @@ manually — if a credential is missing, the daemon is broken.
   so an occasional cold hit is acceptable. A session where _every_ `bbr`
   call is cold is broken.
 
-### Pre-commit lint & format on Edit/Write
-
-When the agent edits a file via the Edit or Write tool, the daemon runs the
-project's `pre-commit` configuration against the touched files as a
-`PostToolUse` hook:
-
-- Pure format/whitespace hooks (e.g. `ruff-format`) are **auto-applied**
-  and the fixed file is kept. See the profile YAMLs under <profiles/> for
-  the full auto-apply list.
-- Any other hook that fails blocks the edit: changes made by that hook are
-  reverted and the failure is reported back to Claude as a `PostToolUse`
-  block, so Claude can fix and retry.
-
 ### OpenTelemetry tracing
 
 - Every hook invocation (SessionStart, PreToolUse, PostToolUse, background

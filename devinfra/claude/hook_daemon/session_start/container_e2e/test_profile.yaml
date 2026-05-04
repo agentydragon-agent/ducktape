@@ -17,7 +17,6 @@
 #                                 `--bes_upload_mode=best_effort` flag
 #                                 that used to allow ignoring them was
 #                                 removed — see bazelbuild/bazel#25756).
-#   - pre_commit                  (PostToolUse not exercised)
 #   - network-heavy bg commands   (apt-get, pre-commit install, fork remote)
 #   - context_template            (keep output minimal for test assertions)
 #

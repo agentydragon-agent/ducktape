@@ -2,17 +2,6 @@ otel:
   endpoint: https://alloy-otlp.allegedly.works/v1/traces
   # bearer_token: sourced from .envrc (cli_env.sh → DUCKTAPE_OTEL_BEARER_TOKEN).
 
-pre_commit:
-  auto_apply_hooks:
-    - ruff-format
-    - buildifier
-    - shfmt
-    - prettier
-    - nixfmt
-    - gofumpt
-    - trailing-whitespace
-    - end-of-file-fixer
-
 git_shim:
   block_amend: true
   # block_stash is disabled because pre-commit (invoked as a git commit hook) uses

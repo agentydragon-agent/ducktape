@@ -3,35 +3,14 @@
 import shutil
 import tempfile
 import uuid
-from collections.abc import Generator, Sequence
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
-import pygit2
 import pytest
-import yaml
 
 from devinfra.claude.hook_daemon.testing.testing_helpers import PROFILE_FILENAME, setup_daemon_project
 from devinfra.claude.session_paths import SessionPaths
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-
-
-def init_git_repo(repo_path: Path) -> None:
-    """Initialize a git repo at repo_path with all files committed."""
-    repo = pygit2.init_repository(str(repo_path))
-    repo.config["user.name"] = "Test"
-    repo.config["user.email"] = "test@test.com"
-    repo.index.add_all()
-    repo.index.write()
-    tree = repo.index.write_tree()
-    sig = pygit2.Signature("Test", "test@test.com")
-    repo.create_commit("HEAD", sig, sig, "init", tree, [])
-
-
-def write_precommit_config(repo_path: Path, hooks: Sequence[dict[str, Any]]) -> None:
-    """Write a .pre-commit-config.yaml with local system hooks."""
-    config = {"repos": [{"repo": "local", "hooks": list(hooks)}]}
-    (repo_path / ".pre-commit-config.yaml").write_text(yaml.dump(config))
 
 
 @pytest.fixture

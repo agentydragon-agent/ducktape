@@ -1,5 +1,0 @@
-pre_commit:
-  auto_apply_hooks:
-    - ruff-format
-
-idle_watchdog: true

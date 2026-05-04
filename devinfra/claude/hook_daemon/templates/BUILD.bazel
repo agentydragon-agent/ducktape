@@ -3,10 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "templates",
     srcs = ["__init__.py"],
-    data = [
-        "post_tool_use.mako",
-        "session_context.mako",
-    ],
+    data = ["session_context.mako"],
     visibility = ["//devinfra/claude:__subpackages__"],
     deps = [
         "@pypi//mako",
