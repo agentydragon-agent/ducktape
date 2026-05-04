@@ -49,18 +49,18 @@ in
       ];
       trusted-public-keys = [
         "cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA="
-        # TODO(2026-05-03): Replace placeholder once `attic cache create
-        # gaffer` is run by the bootstrap Job in
-        # cluster/k8s/nix-cache/bootstrap/. Capture via:
-        #   curl -s https://cache.allegedly.works/gaffer/nix-cache-info \
-        #     | sed -n 's/^Public-Key: //p'
-        # TODO: nice-to-have — extend the bootstrap Job (or add a
-        # post-create hook) to fetch the pubkey and push it back to this
-        # file via the github-secrets-sync-pat PAT, so the trusted-public-key
-        # is auto-managed alongside the cache itself. Manual paste is fine
-        # until then, since gaffer cache pubkeys only change on full
-        # cluster rebuild.
-        # "cache.allegedly.works-gaffer-1:<pubkey>"
+        # gaffer cache: created by the bootstrap Job in
+        # cluster/k8s/nix-cache/bootstrap/, signing keypair lives in attic's
+        # Postgres DB. Pubkey captured via:
+        #   curl -sSf -H "Authorization: Bearer $JWT" \
+        #     https://cache.allegedly.works/_api/v1/cache-config/gaffer \
+        #     | jq -r .public_key
+        # ($JWT is an atticadm-minted admin token with `--pull '*'`.)
+        # TODO: nice-to-have — auto-fetch the pubkey post-creation and push
+        # it back into this file via the github-secrets-sync-pat PAT (same
+        # mechanism the rotator uses for SOPS files). Pubkey only changes
+        # on full cluster rebuild, so the manual step is rare.
+        "gaffer:Z8sM2kptUUDGk4ARVD/YkcpzWdMgmZX7nVLV5joK7r8="
       ];
       netrc-file = config.sops.templates."attic-netrc".path;
       connect-timeout = 5;
