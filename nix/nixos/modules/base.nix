@@ -27,6 +27,10 @@
       experimental-features = [
         "nix-command"
         "flakes"
+        # fetch-closure: needed by nix/packages/gaffer.nix to substitute
+        # private drivefs/drivectl closures from cache.allegedly.works/gaffer
+        # without resorting to `builtins.storePath` (which requires --impure).
+        "fetch-closure"
       ];
       trusted-users = [
         username
