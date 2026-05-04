@@ -40,7 +40,11 @@ ATTIC_NAMESPACE="${ATTIC_NAMESPACE:-nix-cache}"
 ATTIC_DEPLOYMENT="${ATTIC_DEPLOYMENT:-deploy/attic}"
 SERVER="${ATTIC_SERVER_URL:-http://attic.nix-cache.svc.cluster.local:8080}"
 # Space-separated list of caches to ensure exist.
-CACHES="${CACHES:-gaffer}"
+# - main: ducktape's general-purpose cache (CI pushes ducktape flake outputs).
+# - gaffer: gaffer-private's CI pushes drivefs/drivectl closures.
+# Both private (is_public: false in the POST body); reader/writer JWTs are
+# minted by the attic-jwt-rotation CronJob.
+CACHES="${CACHES:-main gaffer}"
 
 echo "[bootstrap] minting 5-minute admin JWT via kubectl exec ${ATTIC_DEPLOYMENT}..."
 # atticadm tries to read a default config from a path it doesn't have

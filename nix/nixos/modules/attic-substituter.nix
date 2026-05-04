@@ -48,18 +48,18 @@ in
         "https://cache.allegedly.works/gaffer?priority=40"
       ];
       trusted-public-keys = [
-        "cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA="
-        # gaffer cache: created by the bootstrap Job in
-        # cluster/k8s/nix-cache/bootstrap/, signing keypair lives in attic's
-        # Postgres DB. Pubkey captured via:
+        # main + gaffer caches: created by the bootstrap Job in
+        # cluster/k8s/nix-cache/bootstrap/, signing keypairs live in attic's
+        # Postgres DB. Pubkeys captured via:
         #   curl -sSf -H "Authorization: Bearer $JWT" \
-        #     https://cache.allegedly.works/_api/v1/cache-config/gaffer \
+        #     https://cache.allegedly.works/_api/v1/cache-config/<cache> \
         #     | jq -r .public_key
         # ($JWT is an atticadm-minted admin token with `--pull '*'`.)
-        # TODO: nice-to-have — auto-fetch the pubkey post-creation and push
-        # it back into this file via the github-secrets-sync-pat PAT (same
-        # mechanism the rotator uses for SOPS files). Pubkey only changes
-        # on full cluster rebuild, so the manual step is rare.
+        # TODO: nice-to-have — auto-fetch pubkeys post-creation and push
+        # them back into this file via the github-secrets-sync-pat PAT
+        # (same mechanism the rotator uses for SOPS files). Pubkeys only
+        # change on full cluster rebuild, so the manual step is rare.
+        "main:cy5xhwCNq/T7R55I9TaLv0z6SM6EipXvdFhqrbxC7nc="
         "gaffer:Z8sM2kptUUDGk4ARVD/YkcpzWdMgmZX7nVLV5joK7r8="
       ];
       netrc-file = config.sops.templates."attic-netrc".path;
