@@ -23,5 +23,6 @@ archs:
 packages:
   - "bash"
   - "ca-certificates"
+  - "curl"
   - "git"
   - "jq"
