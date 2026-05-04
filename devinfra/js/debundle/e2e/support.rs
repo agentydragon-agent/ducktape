@@ -424,7 +424,6 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Value {
         "logicalModules": logical_modules,
         "residualModules": residual_modules,
         "materializeLogicalModules": {
-            "chunkIds": [chunk_id],
             "pruneOtherChunks": false,
             "targetDir": "modules",
         },
