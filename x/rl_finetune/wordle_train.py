@@ -291,14 +291,22 @@ def main():
     parser.add_argument("--model", default=MODEL)
     parser.add_argument("--think", action="store_true", help="Enable Qwen3 thinking mode")
     parser.add_argument("--max-completion-length", type=int, default=1024)
-    parser.add_argument("--batch-size", type=int, default=1, help="per_device_train_batch_size")
-    parser.add_argument("--grad-accum", type=int, default=64, help="gradient_accumulation_steps")
-    parser.add_argument("--num-generations", type=int, default=8)
+    # Defaults below are the production-best from throughput_results.md (~9.6x
+    # baseline at effective batch=64). Override per-flag for sweeps.
+    parser.add_argument("--batch-size", type=int, default=4, help="per_device_train_batch_size")
+    parser.add_argument("--grad-accum", type=int, default=16, help="gradient_accumulation_steps")
+    parser.add_argument("--num-generations", type=int, default=16)
     parser.add_argument("--lr", type=float, default=5e-6)
     parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--max-steps", type=int, default=-1, help="Cap optimizer steps; -1 = use --epochs")
     parser.add_argument("--n-prompts", type=int, default=N_PROMPTS)
-    parser.add_argument("--no-gradient-checkpointing", action="store_true")
+    parser.add_argument(
+        "--gradient-checkpointing",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Recompute activations during bwd to save memory; ~25%% slower. "
+        "Off by default since the parallelism config above leaves headroom.",
+    )
     parser.add_argument("--metrics-out", type=str, default=None, help="Write train_result.metrics JSON here")
     parser.add_argument(
         "--num-completions-to-print",
@@ -321,7 +329,7 @@ def main():
         "max_steps": args.max_steps,
         "learning_rate": args.lr,
         "bf16": True,
-        "gradient_checkpointing": not args.no_gradient_checkpointing,
+        "gradient_checkpointing": args.gradient_checkpointing,
         "chat_template_kwargs": {"enable_thinking": args.think},
         "max_tool_calling_iterations": MAX_GUESSES,
         "logging_steps": 1,
