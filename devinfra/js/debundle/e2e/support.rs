@@ -423,14 +423,12 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Value {
         "inputs": { "inputRoot": setup.snapshot_root, "jsListPath": setup.js_list_path },
         "logicalModules": logical_modules,
         "residualModules": residual_modules,
-        "pipeline": [
-            {
-                "id": "logical",
-                "operation": "materialize_logical_modules",
-                "args": { "chunkIds": [chunk_id], "pruneOtherChunks": false, "targetDir": "modules" },
-            },
-            { "id": "write", "operation": "write_js_tree", "args": { "force": true, "outDir": setup.out_root } },
-        ],
+        "materializeLogicalModules": {
+            "chunkIds": [chunk_id],
+            "pruneOtherChunks": false,
+            "targetDir": "modules",
+        },
+        "writeJsTree": { "force": true, "outDir": setup.out_root },
     })
 }
 

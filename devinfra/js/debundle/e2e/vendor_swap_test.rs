@@ -233,24 +233,12 @@ fn build_named_from_module_default_spec(args: BuildSpecArgs<'_>) -> Value {
             },
         },
         "inputs": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
-        "pipeline": [
-            { "id": "annotate_vendor", "operation": "apply_vendor_annotations" },
-            { "id": "rename_vendor", "operation": "rename_vendor_exports" },
-            {
-                "id": "swap_vendor",
-                "operation": "swap_vendor_chunks",
-                "args": {
-                    "outputManifestPath": args.manifest_path,
-                    "outputWrapperDir": args.wrapper_root,
-                    "write": true,
-                },
-            },
-            {
-                "id": "write",
-                "operation": "write_js_tree",
-                "args": { "force": true, "outDir": args.out_root },
-            },
-        ],
+        "swapVendorChunks": {
+            "outputManifestPath": args.manifest_path,
+            "outputWrapperDir": args.wrapper_root,
+            "write": true,
+        },
+        "writeJsTree": { "force": true, "outDir": args.out_root },
     })
 }
 
@@ -457,23 +445,11 @@ fn build_named_from_default_spec(args: BuildSpecArgs<'_>) -> Value {
             },
         },
         "inputs": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
-        "pipeline": [
-            { "id": "annotate_vendor", "operation": "apply_vendor_annotations" },
-            { "id": "rename_vendor", "operation": "rename_vendor_exports" },
-            {
-                "id": "swap_vendor",
-                "operation": "swap_vendor_chunks",
-                "args": {
-                    "outputManifestPath": args.manifest_path,
-                    "outputWrapperDir": args.wrapper_root,
-                    "write": true,
-                },
-            },
-            {
-                "id": "write",
-                "operation": "write_js_tree",
-                "args": { "force": true, "outDir": args.out_root },
-            },
-        ],
+        "swapVendorChunks": {
+            "outputManifestPath": args.manifest_path,
+            "outputWrapperDir": args.wrapper_root,
+            "write": true,
+        },
+        "writeJsTree": { "force": true, "outDir": args.out_root },
     })
 }

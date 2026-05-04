@@ -1,14 +1,22 @@
 //! Typed deserialisation surface for `js.ast_transform_spec` JSONC files.
 //!
-//! The spec carries three declarative top-level maps consumed by pipeline
-//! stages:
+//! Three declarative top-level maps describe what the spec wants applied:
 //!
 //! - `vendor` keyed by chunk path (`"static/lib.js"` → [`VendorMark`]).
-//! - `logical_modules` keyed by chunk id, then target path
+//! - `logicalModules` keyed by chunk id, then target path
 //!   (`"static/app"` → `"foo/bar/baz.js"` → [`LogicalModule`]).
-//! - `residual_modules` keyed by chunk id (`"static/app"` →
+//! - `residualModules` keyed by chunk id (`"static/app"` →
 //!   [`ResidualModule`]). At most one residual per chunk — encoded by the
 //!   map shape.
+//!
+//! Each pipeline stage that needs configuration gets its own optional
+//! top-level field ([`TransformSpec::materialize_logical_modules`],
+//! [`TransformSpec::write_js_tree`], [`TransformSpec::emit_browser_harness`],
+//! [`TransformSpec::swap_vendor_chunks`]). Stages run in a fixed canonical
+//! order, gated by the presence of their config (or — for the vendor
+//! stages and `rewriteChunkEntrySpecifiers` — by an explicit boolean
+//! toggle and the contents of the declarative maps). There is no
+//! user-supplied pipeline list.
 //!
 //! All consumers see typed structs; nothing here returns
 //! `serde_json::Value` for a known field.
@@ -19,26 +27,39 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TransformSpec {
     pub kind: String,
     pub inputs: LoadJsChunksArgs,
-    pub pipeline: Vec<TransformStage>,
+
+    // --- declarative data sections ---
     #[serde(default)]
     pub vendor: BTreeMap<String, VendorMark>,
     #[serde(default)]
     pub logical_modules: BTreeMap<String, BTreeMap<String, LogicalModule>>,
     #[serde(default)]
     pub residual_modules: BTreeMap<String, ResidualModule>,
-}
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TransformStage {
-    pub id: String,
-    pub operation: String,
+    // --- per-stage configuration (presence gates the stage) ---
+    /// When `true`, run `rewrite_chunk_entry_specifiers` after the
+    /// always-on startup steps. The stage takes no arguments.
     #[serde(default)]
-    pub args: Option<serde_json::Value>,
+    pub rewrite_chunk_entry_specifiers: bool,
+    /// Optional output configuration for `swap_vendor_chunks`. The stage
+    /// itself runs whenever `vendor` contains any `level: swap` entries;
+    /// this field only adds output paths and a `write` toggle.
+    #[serde(default)]
+    pub swap_vendor_chunks: Option<SwapVendorChunksConfig>,
+    /// When set, run `materialize_logical_modules`. `chunkIds` is
+    /// required.
+    #[serde(default)]
+    pub materialize_logical_modules: Option<MaterializeLogicalModulesConfig>,
+    /// When set, persist the artifact tree to `outDir`.
+    #[serde(default)]
+    pub write_js_tree: Option<WriteJsTreeConfig>,
+    /// When set, emit a browser-runtime harness alongside the artifact.
+    #[serde(default)]
+    pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -46,6 +67,61 @@ pub struct TransformStage {
 pub struct LoadJsChunksArgs {
     pub input_root: PathBuf,
     pub js_list_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SwapVendorChunksConfig {
+    #[serde(default)]
+    pub output_manifest_path: Option<PathBuf>,
+    #[serde(default)]
+    pub output_wrapper_dir: Option<PathBuf>,
+    /// Defaults to `true` — actually write the manifest / wrapper files
+    /// to disk. Set `false` for dry-run.
+    #[serde(default = "default_true")]
+    pub write: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MaterializeLogicalModulesConfig {
+    pub chunk_ids: Vec<String>,
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Defaults to `true` — drop chunks not in `chunkIds` before
+    /// materialising. Set `false` to keep them.
+    #[serde(default = "default_true")]
+    pub prune_other_chunks: bool,
+    #[serde(default)]
+    pub force: bool,
+    #[serde(default)]
+    pub report_out_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub report_summary_path: Option<PathBuf>,
+    #[serde(default)]
+    pub target_dir: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WriteJsTreeConfig {
+    pub out_dir: PathBuf,
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EmitBrowserHarnessConfig {
+    pub asset_summary_path: PathBuf,
+    pub out_dir: PathBuf,
+    pub snapshot_root: PathBuf,
+    #[serde(default)]
+    pub force: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 // --- Vendor ---------------------------------------------------------------
