@@ -241,15 +241,19 @@ def train_session(
         trainer_cls = GRPOTrainer
 
     step_timer = StepTimer()
-    trainer = trainer_cls(
-        model=model,
-        reward_funcs=reward_func,
-        train_dataset=build_dataset(n_prompts),
-        args=config,
-        environment_factory=WordleEnv,
-        peft_config=peft_config,
-        callbacks=[step_timer],
-    )
+    trainer_kwargs: dict = {
+        "model": model,
+        "reward_funcs": reward_func,
+        "train_dataset": build_dataset(n_prompts),
+        "args": config,
+        "environment_factory": WordleEnv,
+        "callbacks": [step_timer],
+    }
+    # AsyncGRPOTrainer doesn't (yet) accept peft_config and hard-codes the model
+    # load to fp32 full-fine-tune — so the comparison vs LoRA probes isn't apples-to-apples.
+    if not async_grpo:
+        trainer_kwargs["peft_config"] = peft_config
+    trainer = trainer_cls(**trainer_kwargs)
     try:
         train_result = trainer.train()
         metrics = dict(train_result.metrics)

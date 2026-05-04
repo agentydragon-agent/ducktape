@@ -46,7 +46,12 @@ PROBES: list[tuple[str, str, list[str], int, list[str]]] = [
     ("bs2_ga32", "server", ["--batch-size", "2", "--grad-accum", "32"], 8, []),
     ("bs4_ga16", "server", ["--batch-size", "4", "--grad-accum", "16"], 8, []),
     ("bs8_ga8", "server", ["--batch-size", "8", "--grad-accum", "8"], 8, []),
-    ("async_grpo", "server", ["--async-grpo"], 8, []),
+    # Retry bs16_ga4 in subprocess mode — earlier in-process OOM was confounded
+    # by the shared-model state held in the same process.
+    ("bs16_ga4", "server", ["--batch-size", "16", "--grad-accum", "4"], 8, []),
+    # async_grpo dropped: trl.experimental.AsyncGRPOTrainer hard-codes fp32 model
+    # load and has no PEFT support (true on trl main as of 2026-05-03), so the
+    # comparison vs LoRA-bf16 baseline isn't apples-to-apples. See TODO.md.
 ]
 
 # All probes that have ever run, for the report. Keep here so the table includes
@@ -61,7 +66,7 @@ KNOWN_PROBES: dict[str, tuple[str, int]] = {
     "bs2_ga32": ("server", 8),
     "bs4_ga16": ("server", 8),
     "bs8_ga8": ("server", 8),
-    "async_grpo": ("server", 8),
+    "bs16_ga4": ("server", 8),
 }
 
 

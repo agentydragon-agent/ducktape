@@ -1,0 +1,94 @@
+# Wordle GRPO throughput bench (Qwen3-1.7B, 2× RTX 5090)
+
+Two-stage sweep run via `./bench.py`. Hardware: 2× RTX 5090 (32 GB each).
+Layout: vLLM-serve on GPU 0, GRPO trainer on GPU 1 (server mode), unless
+`colocate` says otherwise. All probes use LoRA (r=16) on
+q/k/v/o/gate/up/down_proj.
+
+Numbers below are completions/sec (prompts/sec × num_generations) at
+**effective batch = 64**. `ss_step_s` and `ss_compl/s` come from per-step
+timings averaged over `step_times[1:]` (skipping the slow warmup step);
+`raw_compl/s` is HF Trainer's `train_samples_per_second` × num_generations,
+biased low by warmup amortization.
+
+## Run 1 (subprocess, max_steps=10) — knob isolation
+
+Baseline = current production config. Each row changes one knob from baseline.
+
+| probe         | what changed                                                             | runtime_s | raw_compl/s | vs baseline                  |
+| ------------- | ------------------------------------------------------------------------ | --------- | ----------- | ---------------------------- |
+| baseline      | (defaults: bs=1, grad_accum=64, num_gen=8, grad_ckpt=on, max_compl=1024) | 774       | **6.62**    | 1.00×                        |
+| num_gen_16    | num_generations 8 → 16                                                   | 778       | **13.15**   | **1.99× (essentially free)** |
+| no_grad_ckpt  | gradient_checkpointing on → off                                          | 576       | 8.88        | **1.34×**                    |
+| max_compl_512 | max_completion_length 1024 → 512                                         | 720       | 7.11        | 1.07×                        |
+| colocate      | server → colocate (single GPU, vLLM at 0.3 mem util)                     | 757       | 6.77        | 1.02×                        |
+
+Findings:
+
+- `num_generations` is nearly free in prompts/sec, so doubling it doubles
+  completions/sec. vLLM batches 16 generations per prompt almost as
+  efficiently as 8.
+- Disabling gradient checkpointing buys ~34% per probe — we have ~12 GB
+  headroom on GPU 1 even at bs=1, so this is a no-brainer.
+- Halving `max_completion_length` only helps 7%: the iteration cap
+  (`max_tool_calling_iterations=MAX_GUESSES`) already keeps mean rollout
+  length around 170-200 tokens, so the 1024 ceiling rarely binds.
+- Colocate ≈ server. The alternation overhead I worried about isn't
+  significant for a 1.7B model on a 5090; KV cache budget difference (9.6
+  GB colocate at default 0.3 mem util vs 28.8 GB server at 0.9) doesn't
+  bite at this batch size either.
+
+## Run 2 (subprocess, max_steps=5, with per-step timings) — parallelism + others
+
+Effective batch held at 64 (= `batch_size × grad_accum`) so vLLM
+gen-batch is constant; only the trainer's fwd/bwd micro-batch grows.
+
+| probe          | what changed                                        | ss_step_s                                             | ss_compl/s | vs baseline raw   |
+| -------------- | --------------------------------------------------- | ----------------------------------------------------- | ---------- | ----------------- |
+| prefix_caching | vLLM `--enable_prefix_caching=True`                 | 96.2                                                  | 5.32       | **0.80× (hurts)** |
+| bs2_ga32       | bs=2, grad_accum=32                                 | 45.9                                                  | 11.15      | 1.69×             |
+| bs4_ga16       | bs=4, grad_accum=16                                 | 35.4                                                  | 14.45      | 2.19×             |
+| **bs8_ga8**    | bs=8, grad_accum=8                                  | **24.2**                                              | **21.15**  | **3.20×**         |
+| bs16_ga4       | bs=16, grad_accum=4                                 | (queued — first run was confounded by in-process OOM) |            |                   |
+| async_grpo     | trl.experimental.async_grpo (fp32 full FT, no PEFT) | (queued — TBD)                                        |            |                   |
+
+Findings:
+
+- **Trainer micro-batch is the dominant lever.** bs=1→2→4→8 scales
+  near-linearly (1.7×, 2.2×, 3.2×). We didn't hit a clear inflection
+  point at bs=8.
+- **Prefix caching actively hurts.** The system prompt is short
+  (~100 tokens), the LoRA-tuned policy invalidates the cache often, and
+  vLLM's prefix-cache bookkeeping outweighs the prefill savings. Don't
+  enable it for this workload.
+
+## Production-best (combined)
+
+These knobs likely stack roughly multiplicatively, but we haven't
+verified that. The recommended config:
+
+```
+--num-generations 16            # ~2× from rollout batching (Run 1)
+--no-gradient-checkpointing     # ~1.34× from compute savings (Run 1)
+--batch-size 8 --grad-accum 8   # ~3.2× from trainer parallelism (Run 2)
+# (don't enable prefix_caching)
+```
+
+Naive multiplicative ceiling: ~8.6× over baseline (≈ 57 ss_compl/s,
+~10 s/step). Real gain probably less due to interactions; worth a
+final "all-knobs-on" probe to confirm.
+
+## Notes / caveats
+
+- Baseline was measured with `max_steps=10` and no per-step callback,
+  so its `ss_step_s` is unavailable. The 6.62 baseline figure is
+  HF's `train_samples_per_second × 8` which is biased low by warmup
+  amortization. For a precise speedup measurement, re-run baseline
+  with `max_steps=5` and the timing callback.
+- `bs >= 16` may OOM on a 32 GB card with 1024-token rollouts; first
+  attempt failed in-process but a clean subprocess retry is queued.
+- `async_grpo` (trl.experimental) hard-codes fp32 model load and has
+  no PEFT support — so even when it runs, the comparison is not
+  apples-to-apples with the LoRA-bf16 baseline. We're running it
+  to see if the rollout/train overlap pattern is worth the loss of
+  PEFT support.

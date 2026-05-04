@@ -19,6 +19,17 @@
 - [ ] GRPO training loop
 - [ ] Evaluation harness for agentic tasks
 
+## Throughput
+
+- [ ] Re-run async_grpo throughput probe once `trl.experimental.async_grpo`
+      supports PEFT/LoRA and bf16 model load. Currently (trl 1.3.0 / main as
+      of 2026-05-03) `AsyncGRPOTrainer.__init__` has no `peft_config` arg
+      and hard-codes `dtype=torch.float32`, so it'd be an apples-to-oranges
+      comparison vs the LoRA-bf16 baseline. The structural insight (overlap
+      rollout with training to remove the alternation idle) is real and
+      worth measuring once the trainer can match the rest of the bench's
+      config.
+
 ## UX
 
 - [ ] Override TRL's per-step rollout rendering. The default
