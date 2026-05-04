@@ -33,7 +33,7 @@ spec:
                 path: /var/run/NetworkManager
           containers:
             - name: sync
-              image: ghcr.io/agentydragon/cpap-sync:devel-20260503230351-065b9bd # {"$imagepolicy": "flux-system:cpap-sync"}
+              image: ghcr.io/agentydragon/cpap-sync:devel-20260504015934-3fe4275 # {"$imagepolicy": "flux-system:cpap-sync"}
               securityContext:
                 capabilities:
                   add: ["NET_ADMIN"]
