@@ -43,14 +43,21 @@ Findings:
 Effective batch held at 64 (= `batch_size × grad_accum`) so vLLM
 gen-batch is constant; only the trainer's fwd/bwd micro-batch grows.
 
-| probe          | what changed                                        | ss_step_s                                             | ss_compl/s | vs baseline raw   |
-| -------------- | --------------------------------------------------- | ----------------------------------------------------- | ---------- | ----------------- |
-| prefix_caching | vLLM `--enable_prefix_caching=True`                 | 96.2                                                  | 5.32       | **0.80× (hurts)** |
-| bs2_ga32       | bs=2, grad_accum=32                                 | 45.9                                                  | 11.15      | 1.69×             |
-| bs4_ga16       | bs=4, grad_accum=16                                 | 35.4                                                  | 14.45      | 2.19×             |
-| **bs8_ga8**    | bs=8, grad_accum=8                                  | **24.2**                                              | **21.15**  | **3.20×**         |
-| bs16_ga4       | bs=16, grad_accum=4                                 | (queued — first run was confounded by in-process OOM) |            |                   |
-| async_grpo     | trl.experimental.async_grpo (fp32 full FT, no PEFT) | (queued — TBD)                                        |            |                   |
+| probe          | what changed                        | ss_step_s | ss_compl/s | vs baseline raw   |
+| -------------- | ----------------------------------- | --------- | ---------- | ----------------- |
+| prefix_caching | vLLM `--enable_prefix_caching=True` | 96.2      | 5.32       | **0.80× (hurts)** |
+| bs2_ga32       | bs=2, grad_accum=32                 | 45.9      | 11.15      | 1.69×             |
+| bs4_ga16       | bs=4, grad_accum=16                 | 35.4      | 14.45      | 2.19×             |
+| **bs8_ga8**    | bs=8, grad_accum=8                  | **24.2**  | **21.15**  | **3.20×**         |
+| bs16_ga4       | bs=16, grad_accum=4                 | OOM       | OOM        | OOM               |
+
+`bs16_ga4` OOM'd in both in-process and subprocess attempts (~29 GB in
+use, ~5.8 GB more requested → over the 32 GB card). The wall is real,
+not an artifact of the in-process driver. Mitigations not tried:
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, lower
+`max_completion_length`, 8-bit optimizer, smaller LoRA rank.
+
+`async_grpo` dropped from this run — see TODO.md.
 
 Findings:
 
@@ -85,10 +92,12 @@ final "all-knobs-on" probe to confirm.
   HF's `train_samples_per_second × 8` which is biased low by warmup
   amortization. For a precise speedup measurement, re-run baseline
   with `max_steps=5` and the timing callback.
-- `bs >= 16` may OOM on a 32 GB card with 1024-token rollouts; first
-  attempt failed in-process but a clean subprocess retry is queued.
-- `async_grpo` (trl.experimental) hard-codes fp32 model load and has
-  no PEFT support — so even when it runs, the comparison is not
-  apples-to-apples with the LoRA-bf16 baseline. We're running it
-  to see if the rollout/train overlap pattern is worth the loss of
-  PEFT support.
+- `bs >= 16` OOMs on a 32 GB card with 1024-token rollouts (confirmed
+  in subprocess; ~29 GB in use before alloc failure). bs=8 is the
+  ceiling for this hardware/config. Could be pushed further with
+  `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, an 8-bit
+  optimizer, or smaller `max_completion_length` if needed.
+- `async_grpo` not measured: `trl.experimental.AsyncGRPOTrainer` (trl
+  1.3.0 / main 2026-05-03) hard-codes fp32 model load and accepts no
+  `peft_config`, so it'd be apples-to-oranges vs the LoRA-bf16 baseline.
+  See TODO.md for revisit-when-ready.
