@@ -383,16 +383,13 @@ the Bazel tree.
 ## Spec-level `inputs`
 
 `load_js_chunks`, `compute_js_asts`, and `normalize_js_chunks` are always-on
-startup steps run before the pipeline loop — they are not pipeline operations.
-The spec configures them via a top-level `inputs: { inputRoot, jsListPath }`
-object. Listing any of these three operations as a pipeline stage is a hard
-error.
+startup steps run before the rest of the pipeline. The spec configures them
+via a top-level `inputs: { inputRoot, jsListPath }` object.
 
 ## Spec-level declarative sections
 
-The spec carries three declarative top-level maps. There is no `operations[]`
-array; pipeline stages read these maps directly via typed serde structs in
-<spec.rs>.
+The spec carries three declarative top-level maps. Pipeline stages read these
+maps directly via typed serde structs in <spec.rs>.
 
 - `vendor` — keyed by chunk path (`"static/lib.js"` → `VendorMark`). The
   `level` discriminator selects between `suppress` / `boundary-rename` /
@@ -404,6 +401,10 @@ array; pipeline stages read these maps directly via typed serde structs in
   `(chunkId, targetPath)` uniqueness a parser property.
 - `residualModules` — keyed by chunk id (`"static/app"` → `ResidualModule`).
   The map shape encodes the "at most one residual per chunk" invariant.
+
+Stages run in a fixed canonical order, gated by the data sections and the
+optional per-stage config fields on [`spec::TransformSpec`]. There is no
+user-supplied pipeline list.
 
 ## Materialize logical-modules `targetDir`
 
