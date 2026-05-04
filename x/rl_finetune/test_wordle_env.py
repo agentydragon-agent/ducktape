@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-# Import from the script — need to handle the uv script header gracefully.
-# These are module-level functions/classes, importable once nltk data is available.
-from wordle_train import MAX_GUESSES, WORD_LENGTH, WORD_LIST, WordleEnv, _completion_score, _score_guess
+from wordle_env import MAX_GUESSES, WORD_LENGTH, WORD_LIST, WordleEnv, _completion_score, _score_guess
 
 
 class TestScoreGuess:
@@ -111,12 +107,16 @@ class TestWordleEnv:
         assert "Game over" in result
         assert env.reward >= 0.0  # partial credit
 
-    def test_game_over_raises(self):
+    def test_post_done_returns_polite_string(self):
+        # After the game ends we don't raise — TRL's _tool_call_loop swallows tool
+        # exceptions into {"error": str(e)} which is just noise to the model. Returning
+        # a plain string keeps the rollout's transcript clean. The iteration cap
+        # (max_tool_calling_iterations=MAX_GUESSES) is what actually bounds the rollout.
         env = self.make_env(seed=0)
         secret = env._secret
         env.guess(secret)  # win
-        with pytest.raises(ValueError, match="Game over"):
-            env.guess("about")
+        result = env.guess("about")
+        assert "already over" in result.lower()
 
     def test_invalid_length_doesnt_count(self):
         env = self.make_env(seed=0)
