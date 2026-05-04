@@ -48,7 +48,7 @@ from peft import LoraConfig
 from transformers import TrainerCallback
 from trl import GRPOConfig, GRPOTrainer
 from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
-from wordle_env import MAX_GUESSES, SYSTEM_PROMPT, WordleEnv, reward_func
+from wordle_env import MAX_GUESSES, METRIC_FUNCS, SYSTEM_PROMPT, WordleEnv, reward_func
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 # Quiet down noisy libraries
@@ -114,9 +114,20 @@ def train_session(
         trainer_cls = GRPOTrainer
 
     step_timer = StepTimer()
+    # Diagnostic side-metrics: TRL logs each reward_func's mean/std as
+    # train/rewards/<fn_name>/{mean,std}. With reward_weights = [1, 0, 0, ...]
+    # the metric_* funcs don't contribute to the GRPO advantage — they're free
+    # tensorboard channels (invalid-length, invalid-word, post-game-over,
+    # unique-guesses, win-rate). AsyncGRPOConfig doesn't have reward_weights
+    # in this trl version, so for async_grpo we keep the single reward_func.
+    if async_grpo:
+        reward_funcs: list = [reward_func]
+    else:
+        reward_funcs = [reward_func, *METRIC_FUNCS]
+        config.reward_weights = [1.0] + [0.0] * len(METRIC_FUNCS)
     trainer_kwargs: dict = {
         "model": model,
-        "reward_funcs": reward_func,
+        "reward_funcs": reward_funcs,
         "train_dataset": build_dataset(n_prompts),
         "args": config,
         "environment_factory": WordleEnv,

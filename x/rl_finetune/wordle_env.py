@@ -80,6 +80,13 @@ class WordleEnv:
         self.done = False
         self._guess_count = 0
         self._best_score = 0.0
+        # Diagnostic counters consumed by the metric_* reward funcs below; reset
+        # in reset() so each rollout starts at zero.
+        self.n_invalid_length = 0
+        self.n_invalid_word = 0
+        self.n_already_over = 0
+        self._unique_guesses: set[str] = set()
+        self.won = False
 
     def reset(self, seed: int = 0, **_kwargs) -> str | None:
         # seed ensures all G completions within a GRPO group play the same word.
@@ -88,6 +95,11 @@ class WordleEnv:
         self.done = False
         self._guess_count = 0
         self._best_score = 0.0
+        self.n_invalid_length = 0
+        self.n_invalid_word = 0
+        self.n_already_over = 0
+        self._unique_guesses = set()
+        self.won = False
         logger.info("game %d: secret=%s", self._game_id, self._secret)
         return f"Guess the 5-letter word. You have {MAX_GUESSES} attempts."
 
@@ -101,17 +113,21 @@ class WordleEnv:
             Feedback for each letter: G (green), Y (yellow), X (wrong).
         """
         if self.done:
+            self.n_already_over += 1
             return "Game already over. Stop calling guess."
 
         word = word.strip().lower().strip("[]")
 
         if len(word) != WORD_LENGTH or not word.isalpha():
+            self.n_invalid_length += 1
             return f"Invalid: must be exactly {WORD_LENGTH} letters."
 
         if word not in _VALID_WORDS:
+            self.n_invalid_word += 1
             return f"'{word}' is not a recognized English word."
 
         self._guess_count += 1
+        self._unique_guesses.add(word)
         remaining = MAX_GUESSES - self._guess_count
 
         feedback = _score_guess(self._secret, word)
@@ -123,6 +139,7 @@ class WordleEnv:
         if won:
             self.reward = 1.0
             self.done = True
+            self.won = True
             result = f"{word.upper()}: {feedback_str}. Correct!"
         elif remaining == 0:
             self.reward = self._best_score
@@ -139,3 +156,37 @@ class WordleEnv:
 def reward_func(environments, **_kwargs) -> list[float]:
     """TRL reward function adapter: pulls the env's terminal reward per rollout."""
     return [env.reward for env in environments]
+
+
+# Metric "reward" functions: TRL logs each reward func's mean/std as a tensorboard
+# scalar `train/rewards/<fn_name>/...`. Setting reward_weights=[1, 0, 0, ...] in the
+# trainer config keeps these out of the advantage computation; they're free
+# diagnostic channels.
+
+
+def metric_invalid_length(environments, **_kwargs) -> list[float]:
+    """Mean count per rollout of wrong-length / non-alpha guesses ('Invalid: ...')."""
+    return [float(env.n_invalid_length) for env in environments]
+
+
+def metric_invalid_word(environments, **_kwargs) -> list[float]:
+    """Mean count per rollout of unknown 5-letter tokens ('X is not recognized')."""
+    return [float(env.n_invalid_word) for env in environments]
+
+
+def metric_post_game_over(environments, **_kwargs) -> list[float]:
+    """Mean count per rollout of guesses sent after the game ended."""
+    return [float(env.n_already_over) for env in environments]
+
+
+def metric_unique_guesses(environments, **_kwargs) -> list[float]:
+    """Per-rollout count of distinct valid words guessed (max MAX_GUESSES)."""
+    return [float(len(env._unique_guesses)) for env in environments]
+
+
+def metric_win(environments, **_kwargs) -> list[float]:
+    """1.0 if the rollout solved the puzzle, else 0.0. Mean = win rate."""
+    return [float(env.won) for env in environments]
+
+
+METRIC_FUNCS = [metric_invalid_length, metric_invalid_word, metric_post_game_over, metric_unique_guesses, metric_win]
