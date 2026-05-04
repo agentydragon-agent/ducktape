@@ -25,7 +25,7 @@ spec:
           # CLEANUP: switch back to ghcr.io/containers/kubernetes-mcp-server:<version>
           # when upstream releases a version with the /.well-known/oauth-authorization-server
           # 404 fallback (currently pinned at our fork build via third_party/kubernetes-mcp-server-pin.txt).
-          image: ghcr.io/agentydragon/kubernetes-mcp-server:devel-20260504180624-347a9ce # {"$imagepolicy": "flux-system:kubernetes-mcp-server"}
+          image: ghcr.io/agentydragon/kubernetes-mcp-server:devel-20260504183730-91bb848 # {"$imagepolicy": "flux-system:kubernetes-mcp-server"}
           imagePullPolicy: IfNotPresent
           args:
             # Config is public-only — public OAuth2 client (PKCE) and no token
