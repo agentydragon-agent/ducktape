@@ -287,12 +287,26 @@ pub fn materialize_logical_modules(
         if let Some(residual) = residual_request {
             let residual_index = module_plans.len();
             let residual_module_id = ModuleId::Logical(LogicalModuleIndex(residual_index));
+            // Bindings staying in residual can still carry a public name. The
+            // gaffer-side `.yaml.deferred` workflow routes its rename ops
+            // through the residual op so that bindings deferred from peeled
+            // modules don't revert to scrambled names while waiting to be
+            // re-peeled. Source-name members map back to themselves.
+            let residual_renames: BTreeMap<&str, &str> = residual
+                .members
+                .iter()
+                .map(|m| (m.binding.as_str(), m.export_name.as_str()))
+                .collect();
             let mut residual_bindings = BTreeMap::new();
             for decl in &declarations {
                 for name in &decl.names {
                     if !binding_assignment.contains_key(name) {
                         binding_assignment.insert(name.clone(), residual_index);
-                        residual_bindings.insert(name.clone(), name.clone());
+                        let export_name = residual_renames
+                            .get(name.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| name.clone());
+                        residual_bindings.insert(name.clone(), export_name);
                         bindings_catalogue.insert(
                             name.clone(),
                             BindingKind::Owned {
@@ -905,6 +919,13 @@ enum BindingSourceKind {
     /// source chunk, not a top-level decl. Materializer rewrites
     /// the import statement to a re-import in the destination.
     ImportSpecifier,
+    /// Top-level `var` / `let` / `const` declaration in the source
+    /// chunk. Carried for documentation; no special materializer path.
+    VariableDeclarator,
+    /// Top-level `function` declaration in the source chunk.
+    FunctionDeclaration,
+    /// Top-level `class` declaration in the source chunk.
+    ClassDeclaration,
 }
 
 fn logical_requests_for_chunk(
@@ -958,7 +979,9 @@ fn logical_requests_for_chunk(
                 }
             })
             .collect();
-        reject_duplicate_export_names(op_kind.unwrap_or("logical_module"), &id, &members)?;
+        let op_kind_label = op_kind.unwrap_or("logical_module");
+        reject_duplicate_export_names(op_kind_label, &id, &members)?;
+        reject_duplicate_member_bindings(op_kind_label, &id, &members)?;
         requests.push(LogicalRequest {
             id,
             target_path,
@@ -1125,6 +1148,27 @@ fn reject_duplicate_export_names(
     if !duplicates.is_empty() {
         bail!(
             "{operation} {id} has duplicate exported logical names: {}",
+            duplicates.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn reject_duplicate_member_bindings(
+    operation: &str,
+    id: &str,
+    members: &[MemberRequest],
+) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
+    for member in members {
+        if !seen.insert(member.binding.clone()) {
+            duplicates.insert(member.binding.clone());
+        }
+    }
+    if !duplicates.is_empty() {
+        bail!(
+            "{operation} {id} has duplicate source bindings: {}",
             duplicates.into_iter().collect::<Vec<_>>().join(", ")
         );
     }
