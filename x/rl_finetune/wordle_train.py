@@ -165,10 +165,12 @@ def main():
     parser.add_argument("--model", default=MODEL)
     parser.add_argument("--think", action="store_true", help="Enable Qwen3 thinking mode")
     parser.add_argument("--max-completion-length", type=int, default=1024)
-    # Defaults below are the production-best from throughput_results.md (~9.6x
-    # baseline at effective batch=64). Override per-flag for sweeps.
-    parser.add_argument("--batch-size", type=int, default=4, help="per_device_train_batch_size")
-    parser.add_argument("--grad-accum", type=int, default=16, help="gradient_accumulation_steps")
+    # Defaults below sit at effective batch=64 with ~7x baseline throughput.
+    # bs=4 measured ~9.6x in the 5-step bench but OOMs on long runs once a
+    # batch with longer-than-typical rollouts pushes activations + intermediate
+    # tensors above the 32 GB ceiling. bs=2 has the headroom to absorb that.
+    parser.add_argument("--batch-size", type=int, default=2, help="per_device_train_batch_size")
+    parser.add_argument("--grad-accum", type=int, default=32, help="gradient_accumulation_steps")
     parser.add_argument("--num-generations", type=int, default=16)
     parser.add_argument("--lr", type=float, default=5e-6)
     parser.add_argument("--epochs", type=int, default=1000)

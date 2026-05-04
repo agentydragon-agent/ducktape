@@ -88,11 +88,20 @@ generations. Min steady-state step time dropped to **9.8 s**.
 ## Production-best (verified)
 
 ```
---batch-size 4 --grad-accum 16   # bs=8 OOMs by 50 MB; bs=4 fits
+--batch-size 2 --grad-accum 32   # bs=4 fits in 5-step bench but OOMs in long runs
 --num-generations 16             # ~free 2× from rollout batching
 --no-gradient-checkpointing      # +34% from skipping recompute
+--liger-kernel                   # fused chunked GRPO loss; avoids 19 GB logits
 # (don't enable prefix_caching — actively hurts on this workload)
 ```
+
+The 5-step bench's `all_on` run with `bs=4, ga=16` measured 9.62×
+baseline, but actual training-length runs OOM around step 5 even
+with `--liger-kernel` and `expandable_segments:True`. With `bs=4` we
+sit at 31.3/31.4 GB and one batch of longer-than-mean rollouts tips
+us over. `bs=2, ga=32` gives ~7× baseline (extrapolated from the
+`bs2_ga32` probe at 11.15 compl/s × 2× num_gen × 1.34× grad_ckpt-off)
+with comfortable memory headroom.
 
 ## Notes / caveats
 
