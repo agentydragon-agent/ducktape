@@ -239,7 +239,6 @@ fn write_session_bazelrc(
         lines.push("startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit".into());
     }
 
-    lines.push(String::new());
     lines.push("test --test_tag_filters=-live_openai_api".into());
 
     // BuildBuddy remote cache: write per-session buildbuddy.bazelrc with the
@@ -247,13 +246,11 @@ fn write_session_bazelrc(
     // implementation (buildbuddy.py) writes this file; we mirror that here.
     if let Some(api_key) = env_overlay.get("BUILDBUDDY_API_KEY") {
         if let Some(bb_bazelrc) = write_buildbuddy_bazelrc(session_dir, api_key) {
-            lines.push(String::new());
             lines.push(format!("try-import {}", bb_bazelrc.display()));
         }
     }
 
     lines.push(format!("try-import {}", bbr_bazelrc.display()));
-    lines.push(String::new());
     lines.push("common --config=ai_agent".into());
 
     let bazelrc = session_dir.join("bazelrc");
