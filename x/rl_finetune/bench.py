@@ -29,6 +29,13 @@ VLLM_PORT = 8000
 MAX_STEPS = 5
 N_PROMPTS = 320  # 5 steps * 64 prompts/step (effective batch held at 64 across probes).
 
+# Each probe pins num_generations=8 and gradient_checkpointing=on
+# explicitly: those were the wordle_train.py defaults when the data was
+# collected, but the script defaults have since moved to the all_on
+# config. Explicit flags here lock probes to the historical comparison
+# so re-runs give the same numbers.
+_ISO_DEFAULTS = ["--num-generations", "8", "--gradient-checkpointing"]
+
 # (name, mode, extra wordle_train.py flags, num_generations, extra vllm-serve flags).
 # Probes from earlier runs keep their *.metrics.json on disk; the report at the bottom
 # scans every known probe and shows what's there. Comment a probe out to skip it.
@@ -42,10 +49,10 @@ PROBES: list[tuple[str, str, list[str], int, list[str]]] = [
     # --- second run ---
     # bsN_gaM: pure-parallelism test, effective batch = bs*ga held at 64.
     # bs >= 16 OOMs on 32 GB at 1024-token rollouts.
-    ("prefix_caching", "server", [], 8, ["--enable_prefix_caching", "True"]),
-    ("bs2_ga32", "server", ["--batch-size", "2", "--grad-accum", "32"], 8, []),
-    ("bs4_ga16", "server", ["--batch-size", "4", "--grad-accum", "16"], 8, []),
-    ("bs8_ga8", "server", ["--batch-size", "8", "--grad-accum", "8"], 8, []),
+    ("prefix_caching", "server", _ISO_DEFAULTS, 8, ["--enable_prefix_caching", "True"]),
+    ("bs2_ga32", "server", [*_ISO_DEFAULTS, "--batch-size", "2", "--grad-accum", "32"], 8, []),
+    ("bs4_ga16", "server", [*_ISO_DEFAULTS, "--batch-size", "4", "--grad-accum", "16"], 8, []),
+    ("bs8_ga8", "server", [*_ISO_DEFAULTS, "--batch-size", "8", "--grad-accum", "8"], 8, []),
     # bs16_ga4 OOMs at ~29 GB on a 32 GB card with 1024-token rollouts. Real
     # memory wall, not in-process fallout. See throughput_results.md.
     # ("bs16_ga4", "server", ["--batch-size", "16", "--grad-accum", "4"], 8, []),
