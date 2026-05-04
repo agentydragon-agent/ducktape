@@ -1,37 +1,21 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = [
-#     "torch",
-#     "trl[vllm]",
-#     "transformers @ git+https://github.com/huggingface/transformers.git@main",
-#     "datasets",
-#     "accelerate",
-#     "tensorboard",
-#     "nltk",
-#     "peft",
-# ]
+# dependencies = []
 # ///
 """Throughput benchmark for GRPO Wordle training.
 
-In-process driver: loads the base model + LoRA adapter once on GPU 1, snapshots
-the initial adapter state, and runs each probe by building a fresh GRPOTrainer
-that points at the shared model. Between probes, restores the adapter snapshot
-so each probe starts from the same weights. vllm-serve runs in a subprocess on
-GPU 0 (lifecycle managed here; restarted only when vLLM args change).
+Each probe is a subprocess of `wordle_train.py --metrics-out=<json>`. We read
+the JSON back. Server-mode probes share one `trl vllm-serve` (restarted only
+when --enable_prefix_caching or other vLLM flags differ between probes).
 """
 
 from __future__ import annotations
 
-import os
-
-# Pin trainer to GPU 1 BEFORE any cuda-touching import (torch reads CUDA_VISIBLE_DEVICES
-# at first cuda init). vllm-serve subprocesses get CVD=0 via Popen env override below.
-os.environ.setdefault("CUDA_VISIBLE_DEVICES", "1")
-
 import argparse
-import copy
 import json
+import os
+import shlex
 import subprocess
 import sys
 import time
@@ -39,50 +23,45 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import torch
-import wordle_train as wt
-from peft import get_peft_model
-from transformers import AutoModelForCausalLM
-
 REPO = Path(__file__).parent
 LOGDIR = Path("/tmp/wordle_bench")
 VLLM_PORT = 8000
 MAX_STEPS = 5
 N_PROMPTS = 320  # 5 steps * 64 prompts/step (effective batch held at 64 across probes).
 
-# Each probe: (name, common_kwargs overrides, async_grpo, num_gen for completions/s, vllm-serve flags).
-# First-run probes from the prior subprocess-bench remain on disk in /tmp/wordle_bench/*.metrics.json
-# and still appear in the report. Uncomment to re-measure (would need the old subprocess driver, since
-# the in-process driver doesn't support colocate mode here).
-PROBES: list[tuple[str, dict, bool, int, list[str]]] = [
-    # --- second run (in-process) ---
+# (name, mode, extra wordle_train.py flags, num_generations, extra vllm-serve flags).
+# Probes from earlier runs keep their *.metrics.json on disk; the report at the bottom
+# scans every known probe and shows what's there. Comment a probe out to skip it.
+PROBES: list[tuple[str, str, list[str], int, list[str]]] = [
+    # --- first run (measured with MAX_STEPS=10; no per-step timings) ---
+    # ("baseline",       "server",   [],                                 8,  []),
+    # ("num_gen_16",     "server",   ["--num-generations", "16"],        16, []),
+    # ("no_grad_ckpt",   "server",   ["--no-gradient-checkpointing"],    8,  []),
+    # ("max_compl_512",  "server",   ["--max-completion-length", "512"], 8,  []),
+    # ("colocate",       "colocate", [],                                 8,  []),
+    # --- second run ---
     # bsN_gaM: pure-parallelism test, effective batch = bs*ga held at 64.
-    # bs >= 16 OOMs on a 32 GB card with 1024-token rollouts and grad_ckpt=True.
-    ("prefix_caching", {}, False, 8, ["--enable_prefix_caching", "True"]),
-    ("bs2_ga32", {"per_device_train_batch_size": 2, "gradient_accumulation_steps": 32}, False, 8, []),
-    ("bs4_ga16", {"per_device_train_batch_size": 4, "gradient_accumulation_steps": 16}, False, 8, []),
-    ("bs8_ga8", {"per_device_train_batch_size": 8, "gradient_accumulation_steps": 8}, False, 8, []),
-    ("async_grpo", {}, True, 8, []),
+    # bs >= 16 OOMs on 32 GB at 1024-token rollouts.
+    ("prefix_caching", "server", [], 8, ["--enable_prefix_caching", "True"]),
+    ("bs2_ga32", "server", ["--batch-size", "2", "--grad-accum", "32"], 8, []),
+    ("bs4_ga16", "server", ["--batch-size", "4", "--grad-accum", "16"], 8, []),
+    ("bs8_ga8", "server", ["--batch-size", "8", "--grad-accum", "8"], 8, []),
+    ("async_grpo", "server", ["--async-grpo"], 8, []),
 ]
 
-DEFAULTS: dict = {
-    "output_dir": "/tmp/wordle_grpo_output",
-    "num_generations": 8,
-    "max_completion_length": 1024,
-    "per_device_train_batch_size": 1,
-    "gradient_accumulation_steps": 64,
-    "num_train_epochs": 1000,
-    "max_steps": MAX_STEPS,
-    "learning_rate": 5e-6,
-    "bf16": True,
-    "gradient_checkpointing": True,
-    "chat_template_kwargs": {"enable_thinking": False},
-    "max_tool_calling_iterations": wt.MAX_GUESSES,
-    "logging_steps": 1,
-    "log_completions": True,
-    "num_completions_to_print": 4,
-    "save_strategy": "no",
-    "report_to": "tensorboard",
+# All probes that have ever run, for the report. Keep here so the table includes
+# first-run rows too. New probes need to be added here.
+KNOWN_PROBES: dict[str, tuple[str, int]] = {
+    "baseline": ("server", 8),
+    "num_gen_16": ("server", 16),
+    "no_grad_ckpt": ("server", 8),
+    "max_compl_512": ("server", 8),
+    "colocate": ("colocate", 8),
+    "prefix_caching": ("server", 8),
+    "bs2_ga32": ("server", 8),
+    "bs4_ga16": ("server", 8),
+    "bs8_ga8": ("server", 8),
+    "async_grpo": ("server", 8),
 }
 
 
@@ -116,7 +95,7 @@ def start_vllm(extra_args: list[str] | None = None) -> subprocess.Popen:
         "trl",
         "vllm-serve",
         "--model",
-        wt.MODEL,
+        "Qwen/Qwen3-1.7B",
         *extra,
     ]
     proc = subprocess.Popen(
@@ -150,75 +129,39 @@ def stop_vllm(proc: subprocess.Popen | None) -> None:
     time.sleep(2)
 
 
-def load_shared_model():
-    """Load base + LoRA-wrap once. Returns (model, snapshot of trainable params)."""
-    print(f"[bench] loading {wt.MODEL} on cuda:0 (CVD=1 → physical GPU 1)", flush=True)
-    base = AutoModelForCausalLM.from_pretrained(wt.MODEL, dtype=torch.bfloat16)
-    base = base.to("cuda")
-    model = get_peft_model(base, wt.DEFAULT_LORA)
-    snapshot = {n: p.detach().clone() for n, p in model.named_parameters() if p.requires_grad}
-    print(f"[bench] LoRA-wrapped; {len(snapshot)} trainable tensors snapshotted", flush=True)
-    return model, snapshot
-
-
-def restore_snapshot(model, snapshot: dict) -> None:
-    with torch.no_grad():
-        for n, p in model.named_parameters():
-            if n in snapshot:
-                p.data.copy_(snapshot[n])
-
-
-def run_probe(model, snapshot, name: str, overrides: dict, async_grpo: bool) -> dict | None:
+def run_probe(name: str, mode: str, extra: list[str]) -> dict | None:
+    cuda = "0" if mode == "colocate" else "1"
     metrics_path = LOGDIR / f"{name}.metrics.json"
     metrics_path.unlink(missing_ok=True)
     log_path = LOGDIR / f"{name}.log"
-    print(f"[bench] probe: {name} :: overrides={overrides} async_grpo={async_grpo}", flush=True)
+    cmd = ["uv", "run", "wordle_train.py"]
+    if mode == "colocate":
+        cmd.append("--colocate")
+    cmd += ["--max-steps", str(MAX_STEPS), "--n-prompts", str(N_PROMPTS), "--metrics-out", str(metrics_path)]
+    cmd += extra
+    print(f"[bench] probe: {name} ({mode}) :: {' '.join(shlex.quote(s) for s in cmd)}", flush=True)
     started = time.time()
-    restore_snapshot(model, snapshot)
-    common_kwargs = {**DEFAULTS, **overrides}
-    try:
-        # Tee training output to per-probe log via stdout/stderr redirect at the OS level.
-        with log_path.open("w") as log, _RedirectFds(log):
-            metrics = wt.train_session(
-                common_kwargs,
-                model=model,
-                peft_config=None,  # already PEFT-wrapped
-                n_prompts=N_PROMPTS,
-                async_grpo=async_grpo,
-                metrics_out=str(metrics_path),
-            )
-    except Exception as e:
-        print(f"  FAILED: {e}; see {log_path}", flush=True)
+    with log_path.open("w") as log:
+        rc = subprocess.run(
+            cmd,
+            check=False,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            env={**os.environ, "CUDA_VISIBLE_DEVICES": cuda},
+            cwd=str(REPO),
+        ).returncode
+    print(f"  rc={rc} elapsed={time.time() - started:.0f}s", flush=True)
+    if rc != 0 or not metrics_path.exists():
+        print(f"  FAILED, see {log_path}", flush=True)
         return None
-    print(f"  done in {time.time() - started:.0f}s", flush=True)
-    return metrics
-
-
-class _RedirectFds:
-    """Redirect stdout/stderr at the file-descriptor level so child C/CUDA prints
-    (vLLM, NCCL, tqdm via stderr) also land in the per-probe log."""
-
-    def __init__(self, dest_file):
-        self.dest_file = dest_file
-
-    def __enter__(self):
-        self._saved_out = os.dup(1)
-        self._saved_err = os.dup(2)
-        os.dup2(self.dest_file.fileno(), 1)
-        os.dup2(self.dest_file.fileno(), 2)
-        return self
-
-    def __exit__(self, *exc):
-        os.dup2(self._saved_out, 1)
-        os.dup2(self._saved_err, 2)
-        os.close(self._saved_out)
-        os.close(self._saved_err)
+    return json.loads(metrics_path.read_text())
 
 
 def fmt(x: object) -> str:
     if isinstance(x, float):
         return f"{x:.3f}"
-    return "FAIL" if x is None else str(x)
+    return "MISSING" if x is None else str(x)
 
 
 def print_table(rows: list[list[str]]) -> None:
@@ -241,43 +184,33 @@ def main() -> int:
     LOGDIR.mkdir(parents=True, exist_ok=True)
     selected = set(args.probes.split(",")) if args.probes else None
     to_run = [p for p in PROBES if (selected is None or p[0] in selected)]
-
+    vllm_proc: subprocess.Popen | None = None
+    current_vllm_args: list[str] | None = None
     if not args.report_only:
-        model, snapshot = load_shared_model()
-        vllm_proc: subprocess.Popen | None = None
-        current_vllm_args: list[str] | None = None
         try:
-            for name, overrides, async_grpo, _, vllm_args in to_run:
-                if vllm_proc is None or vllm_args != current_vllm_args:
-                    if vllm_proc is not None:
-                        stop_vllm(vllm_proc)
-                        time.sleep(5)
-                    vllm_proc = start_vllm(vllm_args)
-                    current_vllm_args = copy.copy(vllm_args)
-                run_probe(model, snapshot, name, overrides, async_grpo)
+            for name, mode, extra, _, vllm_args in to_run:
+                if mode == "server":
+                    if vllm_proc is None or vllm_args != current_vllm_args:
+                        if vllm_proc is not None:
+                            stop_vllm(vllm_proc)
+                            time.sleep(5)
+                        vllm_proc = start_vllm(vllm_args)
+                        current_vllm_args = vllm_args
+                elif vllm_proc is not None:
+                    stop_vllm(vllm_proc)
+                    vllm_proc = None
+                    current_vllm_args = None
+                    time.sleep(5)
+                run_probe(name, mode, extra)
         finally:
             stop_vllm(vllm_proc)
 
-    # Report: include both first-run (subprocess) and second-run (in-process) results
-    # by reading every *.metrics.json on disk. Per-probe num_gen mapping below covers all.
-    known_num_gen = {
-        "baseline": 8,
-        "num_gen_16": 16,
-        "no_grad_ckpt": 8,
-        "max_compl_512": 8,
-        "colocate": 8,
-        "prefix_caching": 8,
-        "bs2_ga32": 8,
-        "bs4_ga16": 8,
-        "bs8_ga8": 8,
-        "async_grpo": 8,
-    }
-    headers = ["probe", "runtime_s", "ss_step_s", "ss_compl/s", "raw_compl/s", "min_step", "max_step"]
+    headers = ["probe", "mode", "runtime_s", "ss_step_s", "ss_compl/s", "raw_compl/s", "min_step", "max_step"]
     rows = [headers]
-    for name, num_gen in known_num_gen.items():
+    for name, (mode, num_gen) in KNOWN_PROBES.items():
         path = LOGDIR / f"{name}.metrics.json"
         if not path.exists():
-            rows.append([name, "MISSING", "MISSING", "MISSING", "MISSING", "MISSING", "MISSING"])
+            rows.append([name, mode, "MISSING", "MISSING", "MISSING", "MISSING", "MISSING", "MISSING"])
             continue
         m = json.loads(path.read_text())
         runtime = m.get("train_runtime")
@@ -287,7 +220,7 @@ def main() -> int:
         ss_compl = (64 * num_gen) / ss_step if isinstance(ss_step, (int, float)) and ss_step > 0 else None
         raw_compl = m.get("train_samples_per_second")
         raw_compl = raw_compl * num_gen if isinstance(raw_compl, (int, float)) else None
-        rows.append([name, fmt(runtime), fmt(ss_step), fmt(ss_compl), fmt(raw_compl), fmt(ss_min), fmt(ss_max)])
+        rows.append([name, mode, fmt(runtime), fmt(ss_step), fmt(ss_compl), fmt(raw_compl), fmt(ss_min), fmt(ss_max)])
 
     print()
     print_table(rows)
