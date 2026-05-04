@@ -55,8 +55,10 @@
     { package = ducktapePackages.gnome-shell-claude-quota; }
   ];
 
-  # gaffer-private disabled — see nix/docs/private_flake_inputs.md
-  # services.google-drive.enable = true;
+  # drivefs is provided by gaffer-private CI via cache.allegedly.works/gaffer
+  # (per nix/gaffer-pins.json + nix/packages/gaffer.nix). Substituted, never
+  # built from source on the consumer side.
+  services.google-drive.enable = true;
 
   xdg.autostart = {
     enable = true;
