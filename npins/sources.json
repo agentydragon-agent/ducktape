@@ -37,8 +37,8 @@
       "sha256": "png2d18sMdoXMc9+MvzgGVjkk8XvpZJZ2fiJATJ3jtg="
     },
     "claude-hook-rs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-e553211230c9/claude_hook",
-      "sha256": "5VMhEjDJRpdqW8OjyO7iEhJuLpVXX6xsgpOuifgGIJU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-ff83c7c39c81/claude_hook",
+      "sha256": "/4PHw5yBiY7wvQzT2rbkS6YSC2aXzXkKTmCTMjMH1OA="
     }
   }
 }
