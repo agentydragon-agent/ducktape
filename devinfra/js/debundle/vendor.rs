@@ -35,7 +35,6 @@ pub struct VendorAnnotationCounts {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VendorAnnotationSummary {
-    pub id: String,
     pub chunk_path: String,
     pub chunk_id: String,
     pub identity: String,
@@ -69,7 +68,7 @@ pub struct RenameVendorExportsCounts {
 
 #[derive(Debug, Clone)]
 pub struct RenameVendorExportsDetail {
-    pub op_id: String,
+    pub chunk_path: String,
     pub chunk_id: String,
     pub mapping_size: usize,
     pub rewrites: usize,
@@ -124,13 +123,12 @@ pub fn apply_vendor_annotations(
 ) -> Result<VendorAnnotationsManifest> {
     let mut summaries = Vec::with_capacity(vendor.len());
     for (chunk_path, mark) in vendor {
-        validate_evidence(mark)?;
-        let chunk_id = chunk_id_from_chunk_path(chunk_path, &mark.id, "mark_vendor")?;
+        if mark.evidence.is_empty() {
+            bail!("vendor entry {chunk_path} requires a non-empty evidence array");
+        }
+        let chunk_id = chunk_id_from_chunk_path(chunk_path, "mark_vendor")?;
         if get_chunk_entry_path(artifact, &chunk_id).is_none() {
-            bail!(
-                "mark_vendor operation {} targets missing chunk: chunkPath={chunk_path} (chunkId={chunk_id})",
-                mark.id,
-            );
+            bail!("vendor entry {chunk_path} targets missing chunk (chunkId={chunk_id})");
         }
         let (package, version, subpath) = match &mark.level {
             VendorLevel::Swap(swap) => (
@@ -141,7 +139,6 @@ pub fn apply_vendor_annotations(
             _ => (None, None, None),
         };
         summaries.push(VendorAnnotationSummary {
-            id: mark.id.clone(),
             chunk_path: chunk_path.clone(),
             chunk_id,
             identity: mark.identity.clone(),
@@ -164,16 +161,6 @@ pub fn apply_vendor_annotations(
     })
 }
 
-fn validate_evidence(mark: &VendorMark) -> Result<()> {
-    if mark.evidence.is_empty() {
-        bail!(
-            "mark_vendor operation {} requires a non-empty evidence array",
-            mark.id,
-        );
-    }
-    Ok(())
-}
-
 pub fn rename_vendor_exports(
     artifact: &mut JsPipelineArtifact,
     vendor: &BTreeMap<String, VendorMark>,
@@ -192,12 +179,12 @@ pub fn rename_vendor_exports(
     let mut chunks_with_mapping = 0usize;
     let mut details = Vec::new();
 
-    for (chunk_path, mark) in &ops {
-        let op_id = mark.id.as_str();
-        let chunk_id = chunk_id_from_chunk_path(chunk_path, op_id, "renameVendorExports")?;
+    for (chunk_path, _mark) in &ops {
+        let chunk_path_owned = (*chunk_path).clone();
+        let chunk_id = chunk_id_from_chunk_path(chunk_path, "renameVendorExports")?;
         let vendor_entry_relative_file = get_chunk_entry_path(artifact, &chunk_id).with_context(|| {
             format!(
-                "renameVendorExports operation {op_id} targets missing chunk: chunkPath={chunk_path} (chunkId={chunk_id})"
+                "renameVendorExports vendor entry {chunk_path_owned} targets missing chunk (chunkId={chunk_id})"
             )
         })?;
         let mapping = {
@@ -207,15 +194,13 @@ pub fn rename_vendor_exports(
                 .and_then(|chunk| chunk.files.get(&vendor_entry_relative_file))
                 .and_then(|file| file.ast.as_ref())
                 .with_context(|| {
-                    format!(
-                        "renameVendorExports operation {op_id} vendor chunk {chunk_id} is missing entry AST"
-                    )
+                    format!("renameVendorExports vendor chunk {chunk_id} is missing entry AST")
                 })?;
             collect_boundary_mapping(&vendor_ast.module)
         };
         if mapping.is_empty() {
             details.push(RenameVendorExportsDetail {
-                op_id: op_id.to_string(),
+                chunk_path: chunk_path_owned,
                 chunk_id,
                 mapping_size: 0,
                 rewrites: 0,
@@ -273,7 +258,7 @@ pub fn rename_vendor_exports(
 
         total_rewrites += chunk_rewrites;
         details.push(RenameVendorExportsDetail {
-            op_id: op_id.to_string(),
+            chunk_path: chunk_path_owned,
             chunk_id,
             mapping_size: mapping.len(),
             rewrites: chunk_rewrites,
@@ -310,12 +295,11 @@ pub fn swap_vendor_chunks(
     let import_alignment_index = build_import_alignment_index(artifact)?;
     let mut resolutions = BTreeMap::<String, VendorResolution>::new();
 
-    for (chunk_path, mark, swap) in &ops {
-        let op_id = mark.id.as_str();
-        let chunk_id = chunk_id_from_chunk_path(chunk_path, op_id, "swapVendorChunks")?;
+    for (chunk_path, _mark, swap) in &ops {
+        let chunk_id = chunk_id_from_chunk_path(chunk_path, "swapVendorChunks")?;
         let entry_relative_file = get_chunk_entry_path(artifact, &chunk_id).with_context(|| {
             format!(
-                "swapVendorChunks operation {op_id} targets missing chunk: chunkPath={chunk_path} (chunkId={chunk_id})"
+                "swapVendorChunks vendor entry {chunk_path} targets missing chunk (chunkId={chunk_id})"
             )
         })?;
         let entry_ast = artifact
@@ -324,7 +308,7 @@ pub fn swap_vendor_chunks(
             .and_then(|chunk| chunk.files.get(&entry_relative_file))
             .and_then(|file| file.ast.as_ref())
             .with_context(|| {
-                format!("swapVendorChunks operation {op_id} vendor chunk {chunk_id} is missing entry AST")
+                format!("swapVendorChunks vendor chunk {chunk_id} is missing entry AST")
             })?;
         let package = swap.package.as_str();
         let version = swap.version.as_str();
@@ -338,7 +322,7 @@ pub fn swap_vendor_chunks(
             .context("package metadata missing version")?;
         if installed_version != version {
             bail!(
-                "swapVendorChunks operation {op_id} version mismatch for {package}: op={version}, installed={installed_version}"
+                "swapVendorChunks vendor entry {chunk_path} version mismatch for {package}: spec={version}, installed={installed_version}"
             );
         }
         let upstream_path = resolve_package_subpath(
@@ -356,7 +340,8 @@ pub fn swap_vendor_chunks(
             Some(WrapperShape::NamedFromDefault) => {
                 let upstream_ast =
                     parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
-                let object_keys = collect_default_export_object_keys(&upstream_ast.module, op_id)?;
+                let object_keys =
+                    collect_default_export_object_keys(&upstream_ast.module, chunk_path)?;
                 let non_default_exports = vendor_exports
                     .iter()
                     .filter(|name| name.as_str() != "default")
@@ -365,7 +350,7 @@ pub fn swap_vendor_chunks(
                 let missing = set_diff(&non_default_exports, &object_keys);
                 if !missing.is_empty() {
                     bail!(
-                        "swapVendorChunks operation {op_id} named-from-default wrapper shape mismatch for {package}@{version}: vendor named exports missing from upstream default object keys=[{}]",
+                        "swapVendorChunks vendor entry {chunk_path} named-from-default wrapper shape mismatch for {package}@{version}: vendor named exports missing from upstream default object keys=[{}]",
                         missing.into_iter().collect::<Vec<_>>().join(",")
                     );
                 }
@@ -381,7 +366,7 @@ pub fn swap_vendor_chunks(
             }
             Some(WrapperShape::NamedFromJsonDefault) => {
                 let upstream_json = serde_json::from_str::<Value>(&upstream_code).with_context(|| {
-                    format!("swapVendorChunks operation {op_id} named-from-json-default: upstream JSON parse failed")
+                    format!("swapVendorChunks vendor entry {chunk_path} named-from-json-default: upstream JSON parse failed")
                 })?;
                 let object = upstream_json
                     .as_object()
@@ -395,7 +380,7 @@ pub fn swap_vendor_chunks(
                 let missing = set_diff(&non_default_exports, &object_keys);
                 if !missing.is_empty() {
                     bail!(
-                        "swapVendorChunks operation {op_id} named-from-json-default wrapper shape mismatch for {package}@{version}: vendor named exports missing from upstream JSON keys=[{}]",
+                        "swapVendorChunks vendor entry {chunk_path} named-from-json-default wrapper shape mismatch for {package}@{version}: vendor named exports missing from upstream JSON keys=[{}]",
                         missing.into_iter().collect::<Vec<_>>().join(",")
                     );
                 }
@@ -415,7 +400,7 @@ pub fn swap_vendor_chunks(
                 let wrapper = generate_named_from_module_default_wrapper(
                     &upstream_ast,
                     &vendor_exports,
-                    op_id,
+                    chunk_path,
                 )?;
                 generated_wrapper_path = write_wrapper_if_requested(
                     options.write,
@@ -432,7 +417,7 @@ pub fn swap_vendor_chunks(
                 let missing = set_diff(&vendor_exports, &upstream_exports);
                 if !missing.is_empty() {
                     bail!(
-                        "swapVendorChunks operation {op_id} export shape mismatch for {package}@{version}: vendor exports not found upstream=[{}]",
+                        "swapVendorChunks vendor entry {chunk_path} export shape mismatch for {package}@{version}: vendor exports not found upstream=[{}]",
                         missing.into_iter().collect::<Vec<_>>().join(",")
                     );
                 }
@@ -445,7 +430,7 @@ pub fn swap_vendor_chunks(
                     continue;
                 }
                 bail!(
-                    "swapVendorChunks operation {op_id} import alignment failed: caller={}/{} imports unknown specifier \"{}\" from vendor {chunk_id} (known: [{}])",
+                    "swapVendorChunks vendor entry {chunk_path} import alignment failed: caller={}/{} imports unknown specifier \"{}\" from vendor {chunk_id} (known: [{}])",
                     record.caller_chunk_id,
                     record.caller_file,
                     imported_name,
@@ -482,7 +467,7 @@ pub fn swap_vendor_chunks(
     if let Some(root_manifest) = &mut artifact.root_manifest {
         let removed = resolutions
             .keys()
-            .map(|chunk_path| chunk_id_from_chunk_path(chunk_path, "manifest", "swapVendorChunks"))
+            .map(|chunk_path| chunk_id_from_chunk_path(chunk_path, "swapVendorChunks"))
             .collect::<Result<BTreeSet<_>>>()?;
         root_manifest.counts.chunks = chunk_count;
         root_manifest
@@ -518,12 +503,12 @@ pub fn swap_vendor_chunks(
     })
 }
 
-fn chunk_id_from_chunk_path(chunk_path: &str, op_id: &str, stage: &str) -> Result<String> {
+fn chunk_id_from_chunk_path(chunk_path: &str, stage: &str) -> Result<String> {
     if chunk_path.is_empty() {
-        bail!("{stage} operation {op_id} has invalid chunkPath: {chunk_path}");
+        bail!("{stage}: empty chunk path");
     }
     let Some(chunk_id) = chunk_path.strip_suffix(".js") else {
-        bail!("{stage} operation {op_id} chunkPath must end in .js: {chunk_path}");
+        bail!("{stage}: chunk path must end in .js: {chunk_path}");
     };
     Ok(chunk_id.to_string())
 }
@@ -898,14 +883,17 @@ fn binding_names(pattern: &Pat) -> Vec<String> {
     }
 }
 
-fn collect_default_export_object_keys(module: &Module, op_id: &str) -> Result<BTreeSet<String>> {
+fn collect_default_export_object_keys(
+    module: &Module,
+    chunk_path: &str,
+) -> Result<BTreeSet<String>> {
     for item in &module.body {
         let ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) = item else {
             continue;
         };
         let Expr::Object(object) = &*default_expr.expr else {
             bail!(
-                "swapVendorChunks operation {op_id} named-from-default: upstream default export is not an object literal"
+                "swapVendorChunks vendor entry {chunk_path} named-from-default: upstream default export is not an object literal"
             );
         };
         let mut keys = BTreeSet::new();
@@ -923,7 +911,7 @@ fn collect_default_export_object_keys(module: &Module, op_id: &str) -> Result<BT
         return Ok(keys);
     }
     bail!(
-        "swapVendorChunks operation {op_id} named-from-default: upstream has no export default declaration"
+        "swapVendorChunks vendor entry {chunk_path} named-from-default: upstream has no export default declaration"
     );
 }
 
@@ -996,7 +984,7 @@ fn generate_named_from_json_default_wrapper(
 fn generate_named_from_module_default_wrapper(
     upstream_ast: &ParsedJsModule,
     vendor_exports: &BTreeSet<String>,
-    op_id: &str,
+    chunk_path: &str,
 ) -> Result<String> {
     let default_local_name = "__vendor_default__";
     let mut found_default = false;
@@ -1090,12 +1078,12 @@ fn generate_named_from_module_default_wrapper(
                     }
                     let ModuleExportName::Ident(local) = &named_specifier.orig else {
                         bail!(
-                            "swapVendorChunks operation {op_id} named-from-module-default: \"export {{ ... as default }}\" must alias a local identifier"
+                            "swapVendorChunks vendor entry {chunk_path} named-from-module-default: \"export {{ ... as default }}\" must alias a local identifier"
                         );
                     };
                     if deferred_default_alias.is_some() {
                         bail!(
-                            "swapVendorChunks operation {op_id} named-from-module-default: upstream declares more than one default export"
+                            "swapVendorChunks vendor entry {chunk_path} named-from-module-default: upstream declares more than one default export"
                         );
                     }
                     found_default = true;
@@ -1120,7 +1108,7 @@ fn generate_named_from_module_default_wrapper(
     }
     if !found_default {
         bail!(
-            "swapVendorChunks operation {op_id} named-from-module-default: upstream has no default export"
+            "swapVendorChunks vendor entry {chunk_path} named-from-module-default: upstream has no default export"
         );
     }
     body.push(export_default_ident(default_local_name));

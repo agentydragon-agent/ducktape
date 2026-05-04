@@ -22,7 +22,6 @@ export { a };
         vec![(
             "mod_x".to_string(),
             json!({
-                "id": "logical__mod_x",
                 "members": [
                     { "name": "Foo", "selector": { "binding": { "name": "a" } } },
                     { "name": "Bar", "selector": { "binding": { "name": "b" } } },

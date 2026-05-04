@@ -27,14 +27,12 @@ export { a, b, c };
             (
                 "mod_x".to_string(),
                 json!({
-                    "id": "logical__mod_x",
                     "members": [{ "name": "readableA", "selector": { "binding": { "name": "a" } } }],
                 }),
             ),
             (
                 "mod_y".to_string(),
                 json!({
-                    "id": "logical__mod_y",
                     "members": [{ "name": "readableC", "selector": { "binding": { "name": "c" } } }],
                 }),
             ),

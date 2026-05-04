@@ -936,10 +936,7 @@ fn logical_requests_for_chunk(
     let mut requests = Vec::new();
     if let Some(by_target_path) = chunk_logical_modules {
         for (target_path, module) in by_target_path {
-            let id = module
-                .id
-                .clone()
-                .unwrap_or_else(|| default_logical_id(chunk_id, target_path));
+            let id = format!("{chunk_id}::{target_path}");
             let members = build_members(&module.members);
             reject_duplicate_export_names("logical_module", &id, &members)?;
             reject_duplicate_member_bindings("logical_module", &id, &members)?;
@@ -952,10 +949,7 @@ fn logical_requests_for_chunk(
         }
     }
     if let Some(residual) = chunk_residual {
-        let id = residual
-            .id
-            .clone()
-            .unwrap_or_else(|| default_residual_id(chunk_id));
+        let id = format!("{chunk_id}::residual");
         let target_path = residual
             .target
             .clone()
@@ -980,7 +974,7 @@ fn logical_requests_for_chunk(
     // renames applied in-place by the lowerer.
     if requests.is_empty() && !chunk_renames_present {
         requests.push(LogicalRequest {
-            id: "logical_module_0".to_string(),
+            id: format!("{chunk_id}::residual"),
             target_path: posix_join(&[target_dir, "unhandled"]),
             residual: true,
             members: Vec::new(),
@@ -1048,17 +1042,6 @@ fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {
             }
         })
         .collect()
-}
-
-/// Stable, human-readable id used in cycle reports / per-chunk requested
-/// summaries when the spec author leaves `id` blank. Chunk + path uniquely
-/// identifies the logical module under the new spec shape.
-fn default_logical_id(chunk_id: &str, target_path: &str) -> String {
-    format!("{chunk_id}::{target_path}")
-}
-
-fn default_residual_id(chunk_id: &str) -> String {
-    format!("{chunk_id}::residual")
 }
 
 fn collect_top_level_declarations(module: &Module) -> Vec<TopLevelDecl> {

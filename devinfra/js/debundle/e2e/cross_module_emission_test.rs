@@ -117,14 +117,12 @@ export { aH };
             (
                 "mod_a".to_string(),
                 json!({
-                    "id": "logical__mod_a",
                     "members": [{ "name": "readableA", "selector": { "binding": { "name": "aH" } } }],
                 }),
             ),
             (
                 "mod_b".to_string(),
                 json!({
-                    "id": "logical__mod_b",
                     "members": [{ "name": "plainAh", "selector": { "binding": { "name": "aH" } } }],
                 }),
             ),
@@ -165,7 +163,6 @@ export { aH };
         vec![(
             "mod_a".to_string(),
             json!({
-                "id": "logical__mod_a",
                 "members": [{ "name": "readableA", "selector": { "binding": { "name": "aH" } } }],
             }),
         )],
@@ -240,7 +237,6 @@ export { a };
         vec![(
             "mod_x".to_string(),
             json!({
-                "id": "logical__mod_x",
                 "members": [{
                     "name": "Readable",
                     "selector": {
@@ -286,7 +282,6 @@ export { a };
             (
                 "mod_jsx_runtime".to_string(),
                 json!({
-                    "id": "logical__mod_jsx_runtime",
                     "members": [{
                         "name": "jsxRuntime",
                         "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
@@ -296,7 +291,6 @@ export { a };
             (
                 "mod_dunder_jsx".to_string(),
                 json!({
-                    "id": "logical__mod_dunder_jsx",
                     "members": [{
                         "name": "__jsx",
                         "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
@@ -341,7 +335,6 @@ export { bridge };
         vec![(
             "mod_x".to_string(),
             json!({
-                "id": "logical__mod_x",
                 "members": [{ "name": "bridge", "selector": { "binding": { "name": "bridge" } } }],
             }),
         )],
@@ -391,7 +384,6 @@ export { bridge };
             (
                 "mod_a".to_string(),
                 json!({
-                    "id": "logical__mod_a",
                     "members": [{
                         "name": "Re",
                         "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
@@ -401,7 +393,6 @@ export { bridge };
             (
                 "mod_b".to_string(),
                 json!({
-                    "id": "logical__mod_b",
                     "members": [{ "name": "bridge", "selector": { "binding": { "name": "bridge" } } }],
                 }),
             ),
@@ -453,7 +444,6 @@ export { composed };
             (
                 "mod_x".to_string(),
                 json!({
-                    "id": "logical__mod_x",
                     "members": [{
                         "name": "Composed",
                         "selector": { "binding": { "name": "composed" } },
@@ -463,7 +453,6 @@ export { composed };
             (
                 "mod_dep".to_string(),
                 json!({
-                    "id": "logical__mod_dep",
                     "members": [{
                         "name": "Dep",
                         "selector": { "binding": { "name": "dep", "kind": "ImportSpecifier" } },

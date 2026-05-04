@@ -295,10 +295,8 @@ fn run_step(
 }
 
 fn load_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
-    let raw = fs::read_to_string(spec_path)
-        .with_context(|| format!("reading {}", spec_path.display()))?;
-    let stripped = strip_jsonc_comments(&raw);
-    serde_json::from_str(&stripped)
+    let raw = fs::read(spec_path).with_context(|| format!("reading {}", spec_path.display()))?;
+    serde_json::from_reader(json_comments::StripComments::new(raw.as_slice()))
         .with_context(|| format!("Failed to parse {} as JSONC", spec_path.display()))
 }
 
@@ -325,58 +323,6 @@ fn format_duration(duration_ms: f64) -> String {
     } else {
         format!("{duration_ms:.3}ms")
     }
-}
-
-fn strip_jsonc_comments(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    let mut in_string = false;
-    let mut escaping = false;
-    while let Some(ch) = chars.next() {
-        if in_string {
-            out.push(ch);
-            if escaping {
-                escaping = false;
-                continue;
-            }
-            match ch {
-                '\\' => escaping = true,
-                '"' => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match ch {
-            '"' => {
-                in_string = true;
-                out.push(ch);
-            }
-            '/' if matches!(chars.peek(), Some('/')) => {
-                chars.next();
-                for next in chars.by_ref() {
-                    if next == '\n' {
-                        out.push('\n');
-                        break;
-                    }
-                }
-            }
-            '/' if matches!(chars.peek(), Some('*')) => {
-                chars.next();
-                let mut prev = '\0';
-                for next in chars.by_ref() {
-                    if next == '\n' {
-                        out.push('\n');
-                    }
-                    if prev == '*' && next == '/' {
-                        break;
-                    }
-                    prev = next;
-                }
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
 }
 
 #[cfg(test)]

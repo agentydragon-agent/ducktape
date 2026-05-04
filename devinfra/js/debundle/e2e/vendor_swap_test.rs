@@ -216,7 +216,6 @@ fn build_named_from_module_default_spec(args: BuildSpecArgs<'_>) -> Value {
         "kind": "js.ast_transform_spec",
         "vendor": {
             args.chunk_path: {
-                "id": "mark_vendor_lib",
                 "level": "swap",
                 "identity": format!("{}/{}", args.package_name, args.subpath),
                 "upstreamFamily": "Lib",
@@ -428,7 +427,6 @@ fn build_named_from_default_spec(args: BuildSpecArgs<'_>) -> Value {
         "kind": "js.ast_transform_spec",
         "vendor": {
             args.chunk_path: {
-                "id": "mark_vendor_lib",
                 "level": "swap",
                 "identity": format!("{}/{}", args.package_name, args.subpath),
                 "upstreamFamily": "Lib",

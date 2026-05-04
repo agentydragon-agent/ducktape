@@ -221,6 +221,7 @@ rust_library(
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:json_comments",
         "@crates//:serde",
         "@crates//:serde_json",
         "@rules_rust//tools/runfiles",

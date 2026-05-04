@@ -59,7 +59,6 @@
 //!
 //! ```jsonc
 //! {
-//!   "id": "m_define_component",
 //!   "name": "defineComponent",
 //!   "selector": { "binding": { "name": "B" } },
 //!   "purity": "pure"   // ← new optional field
@@ -377,7 +376,6 @@ export { A, B, C, dispatcher };
             (
                 "mod_a".to_string(),
                 json!({
-                    "id": "logical__mod_a",
                     "members": [
                         { "name": "A", "selector": { "binding": { "name": "A" } } },
                         { "name": "C", "selector": { "binding": { "name": "C" } } },
@@ -396,7 +394,6 @@ export { A, B, C, dispatcher };
             (
                 "mod_b".to_string(),
                 json!({
-                    "id": "logical__mod_b",
                     "members": [
                         { "name": "B", "selector": { "binding": { "name": "B" } } },
                     ],
@@ -428,7 +425,6 @@ export { A, B, D, wrap };
                 (
                     "mod_a".to_string(),
                     json!({
-                        "id": "logical__mod_a",
                         "members": [
                             { "name": "A", "selector": { "binding": { "name": "A" } } },
                             { "name": "D", "selector": { "binding": { "name": "D" } } },
@@ -445,7 +441,6 @@ export { A, B, D, wrap };
                 (
                     "mod_b".to_string(),
                     json!({
-                        "id": "logical__mod_b",
                         "members": [
                             { "name": "B", "selector": { "binding": { "name": "B" } } },
                         ],
@@ -489,7 +484,6 @@ export { A, B, C, pureWrap, impureWrap };
             (
                 "mod_a".to_string(),
                 json!({
-                    "id": "logical__mod_a",
                     "members": [
                         { "name": "A", "selector": { "binding": { "name": "A" } } },
                         { "name": "C", "selector": { "binding": { "name": "C" } } },
@@ -510,7 +504,6 @@ export { A, B, C, pureWrap, impureWrap };
             (
                 "mod_b".to_string(),
                 json!({
-                    "id": "logical__mod_b",
                     "members": [
                         { "name": "B", "selector": { "binding": { "name": "B" } } },
                     ],
@@ -546,7 +539,6 @@ export { A, B, C, pureWrap, impureWrap };
                 (
                     "mod_a".to_string(),
                     json!({
-                        "id": "logical__mod_a",
                         "members": [
                             { "name": "A", "selector": { "binding": { "name": "A" } } },
                             { "name": "C", "selector": { "binding": { "name": "C" } } },
@@ -566,7 +558,6 @@ export { A, B, C, pureWrap, impureWrap };
                 (
                     "mod_b".to_string(),
                     json!({
-                        "id": "logical__mod_b",
                         "members": [
                             { "name": "B", "selector": { "binding": { "name": "B" } } },
                         ],
