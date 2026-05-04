@@ -4,17 +4,6 @@ otel:
   endpoint: https://alloy-otlp.allegedly.works/v1/traces
   # bearer_token: decrypted via startup_env_script (web_env.sh) at daemon startup.
 
-pre_commit:
-  auto_apply_hooks:
-    - ruff-format
-    - buildifier
-    - shfmt
-    - prettier
-    - nixfmt
-    - gofumpt
-    - trailing-whitespace
-    - end-of-file-fixer
-
 idle_watchdog: false
 setup_tmpfs: true
 setup_docker: true

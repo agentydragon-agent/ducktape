@@ -160,7 +160,6 @@ in
         psutil
         pydantic
         pydantic-settings
-        pygit2
         pyyaml
         requests
         rich
@@ -172,7 +171,6 @@ in
       ++ [
         ducktape-util
         ducktape-git-hooks
-        pkgs.pre-commit
         pyrage
       ];
   };

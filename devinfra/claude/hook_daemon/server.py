@@ -31,8 +31,6 @@ from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.claude_api.hooks.file_changed import FileChangedInput
 from devinfra.claude.claude_api.hooks.instructions_loaded import InstructionsLoadedInput
 from devinfra.claude.claude_api.hooks.output import HookOutput
-from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
-from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.session_end import SessionEndInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.claude_api.hooks.setup import SetupInput
@@ -47,8 +45,6 @@ from devinfra.claude.hook_daemon.models import (
     ShimExecve,
     StartupResult,
 )
-from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
-from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
 from devinfra.claude.hook_daemon.session import BgStream, Session
 from devinfra.claude.hook_daemon.session_start.handler import CallerContext, handle as handle_session_start
 from devinfra.claude.hook_daemon.worktree import handle_worktree_create
@@ -292,14 +288,10 @@ def create_app(daemon_dir: Path, profile: ProfileConfig, startup: StartupResult)
                         ctx=ctx,
                         startup=app.state.startup,
                     )
-                case PreToolUseInput():
-                    output = evaluate_pre(req.hook, session)
-                case PostToolUseInput():
-                    output = evaluate_post(req.hook, session)
                 case WorktreeCreateInput():
                     output = handle_worktree_create(req.hook)
                 case _:
-                    pass  # All other hooks: noop
+                    pass  # All other hooks (PreToolUse, PostToolUse, ...): noop + mailbox drain on REPL hooks
 
             output = _apply_mailbox(output, session, req.hook)
 

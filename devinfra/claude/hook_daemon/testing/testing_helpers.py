@@ -4,15 +4,13 @@ from pathlib import Path
 
 import yaml
 
-from devinfra.claude.hook_daemon.config import GitShimConfig, PreCommitConfig, ProfileConfig
+from devinfra.claude.hook_daemon.config import GitShimConfig, ProfileConfig
 from devinfra.claude.session_paths import SessionPaths
 
 PROFILE_FILENAME = "profile.yaml"
 
 TEST_PROFILE = ProfileConfig(
-    idle_watchdog=True,
-    git_shim=GitShimConfig(block_amend=True, block_stash=True, block_add_all=True),
-    pre_commit=PreCommitConfig(),
+    idle_watchdog=True, git_shim=GitShimConfig(block_amend=True, block_stash=True, block_add_all=True)
 )
 
 

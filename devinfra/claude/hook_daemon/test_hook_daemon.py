@@ -9,7 +9,6 @@ import pytest_bazel
 from httpx import ASGITransport, AsyncClient
 from pydantic import TypeAdapter
 
-from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.stop import StopInput
 from devinfra.claude.hook_daemon.config import ProfileConfig
@@ -62,35 +61,17 @@ async def _post_hook(client: AsyncClient, req: HookRequest) -> HookResponse:
 
 
 class TestHandleHook:
-    async def test_pre_tool_use_allowed_command(self, client: AsyncClient, env: dict[str, str]) -> None:
-        """PreToolUse for an allowed bash command returns approve decision."""
+    async def test_pre_tool_use_returns_empty(self, client: AsyncClient, env: dict[str, str]) -> None:
+        """PreToolUse returns no output (handler is mailbox drain only)."""
         hook_input = PreToolUseInput(
             **_COMMON,
             hook_event_name="PreToolUse",
             tool_use_id="toolu_test",
             tool_name="Bash",
-            tool_input={"command": "bazel build //..."},
+            tool_input={"command": "ls"},
         )
         result = await _post_hook(client, HookRequest(hook=hook_input, env=env))
-        assert result.output is not None
-
-    async def test_post_tool_use_non_file_tool_returns_empty(self, client: AsyncClient, env: dict[str, str]) -> None:
-        """PostToolUse for non-file-modifying tool returns no output."""
-        hook_input = PostToolUseInput(
-            **_COMMON,
-            hook_event_name="PostToolUse",
-            tool_use_id="toolu_test",
-            tool_name="Bash",
-            tool_input={"command": "echo hi"},
-            tool_response="",
-        )
-        req = HookRequest(hook=hook_input, env=env)
-        resp = await client.post("/hook", content=req.model_dump_json(), headers=_JSON_HEADERS)
-        assert resp.status_code == 200
-        # Response should be empty or have only default fields (no blocking decision)
-        body = resp.json()
-        output = body.get("output")
-        assert output is None or output.get("decision") is None
+        assert result.output is None
 
     async def test_unhandled_hook_type_returns_empty(self, client: AsyncClient, env: dict[str, str]) -> None:
         """Unhandled hook types (e.g. Stop) return no output — just logged."""
