@@ -32,35 +32,73 @@ Triggered on push to default branch.
    read it.
 2. **Install Nix** (Determinate Systems installer, same as ducktape's
    `.github/workflows/nix-attic-push.yml`) and the `attic-client`.
-3. **Sparse-clone ducktape** for the writer token at
-   `secrets/ci/attic-gaffer-writer.sops.yaml`. The token isn't checked
-   into gaffer-private — single source of truth in ducktape, decryptable
-   via the CI age key (already a GHA secret on gaffer-private, synced
-   from cluster by `tf/gitops/github-secrets-sync/main.tf`).
+3. **Sparse-clone ducktape** for two SOPS-encrypted files:
+   - `secrets/ci/attic-gaffer-writer.sops.yaml` — the gaffer cache writer
+     JWT.
+   - `secrets/ducktape-automation.<date>.private-key.sops.pem` — the
+     `ducktape-automation` GitHub App PEM (already used by ducktape's own
+     direct-push workflows; reusing it here avoids minting a separate
+     PAT). The App is already installed on `agentydragon/gaffer-private`,
+     so the workflow can use the App as bypass actor for ducktape's
+     branch-protection ruleset.
+
+   Both decrypt with the CI age key, already a GHA secret on
+   gaffer-private (`SOPS_AGE_KEY`, synced by
+   `tf/gitops/github-secrets-sync/main.tf`).
+
 4. **Decrypt writer token**:
    `sops -d secrets/ci/attic-gaffer-writer.sops.yaml | yq .attic_token`
    → exported as `ATTIC_GAFFER_TOKEN`.
-5. **Build drivefs**: `nix build .#google-drive --no-link --print-out-paths`
+5. **Mint App installation token** for ducktape using ducktape's
+   existing reusable composite action
+   `.github/actions/mint-automation-token`. Easiest invocation:
+   inline the four-line `actions/create-github-app-token@v1` step in
+   gaffer-private's workflow rather than vendoring the composite —
+   the composite assumes the ducktape repo is the working tree, but
+   gaffer CI's working tree is gaffer-private.
+
+   ```yaml
+   - name: Decrypt App PEM (from sparse-cloned ducktape)
+     env:
+       SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+     run: |
+       PEM=$(sops -d ducktape/secrets/ducktape-automation.2026-05-03.private-key.sops.pem)
+       while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<<"$PEM"
+       printf 'private_key<<__EOF__\n%s\n__EOF__\n' "$PEM" >>"$GITHUB_OUTPUT"
+     id: pem
+   - uses: actions/create-github-app-token@v1
+     id: app-token
+     with:
+       app-id: "3590331"
+       private-key: ${{ steps.pem.outputs.private_key }}
+       owner: agentydragon
+       repositories: ducktape
+   ```
+
+   `${{ steps.app-token.outputs.token }}` is a ~1h installation token
+   scoped to ducktape with the App's permissions (Contents: write).
+
+6. **Build drivefs**: `nix build .#google-drive --no-link --print-out-paths`
    captures the store path (e.g., `/nix/store/<hash>-google-drive-122.0.1.0`).
-6. **Push to attic**:
+7. **Push to attic**:
    ```bash
    attic login gaffer https://cache.allegedly.works "$ATTIC_GAFFER_TOKEN"
    attic push gaffer "$DRIVEFS_STORE_PATH"
    ```
    `attic push` walks the closure and uploads everything not already in
    the cache (deduped — most invocations after the first are near-no-ops).
-7. **Update ducktape pin** (`nix/gaffer-pins.json`):
+8. **Update ducktape pin** (`nix/gaffer-pins.json`) using the App token:
    ```bash
-   git clone --depth 1 \
-     "https://x-access-token:${DUCKTAPE_REPIN_PAT}@github.com/agentydragon/ducktape" ducktape
-   cd ducktape
+   cd ducktape  # already sparse-cloned in step 3
+   git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/agentydragon/ducktape"
+   git config user.name "ducktape-automation[bot]"
+   git config user.email "<USER_ID>+ducktape-automation[bot]@users.noreply.github.com"
    jq --arg sp "$DRIVEFS_STORE_PATH" \
       --arg rev "$GITHUB_SHA" \
       '.pins.drivefs = {store_path: $sp, version: "122.0.1.0", rev: $rev}' \
       nix/gaffer-pins.json > tmp.json && mv tmp.json nix/gaffer-pins.json
    git diff --quiet -- nix/gaffer-pins.json && exit 0  # idempotent
-   git -c user.name=gaffer-bot -c user.email=noreply@allegedly.works \
-       commit -am "chore: bump gaffer-private drivefs to ${GITHUB_SHA:0:12}"
+   git commit -am "chore: bump gaffer-private drivefs to ${GITHUB_SHA:0:12}"
    git pull --rebase origin devel
    git push origin HEAD:devel
    ```
@@ -70,64 +108,15 @@ Triggered on push to default branch.
 
 ### Required secrets on gaffer-private's GHA
 
-Both follow the same pattern: SOPS-encrypted k8s Secret in
-`cluster/k8s/github-secrets-sync/secrets/` → Flux applies →
-`tf/gitops/github-secrets-sync/main.tf` reads via
-`data.kubernetes_secret` → pushes to gaffer-private's GHA via
-`github_actions_secret`. The PAT thus lives in SOPS at rest and TF
-handles cross-repo provisioning.
+- **`SOPS_AGE_KEY`** — already provisioned. Decrypts both the gaffer
+  writer JWT and the ducktape-automation App PEM out of a sparse-cloned
+  ducktape.
 
-- **`SOPS_AGE_KEY`** — already provisioned. Decrypts
-  `secrets/ci/attic-gaffer-writer.sops.yaml` from a sparse-cloned
-  ducktape (and any other CI-scoped SOPS files).
-- **`DUCKTAPE_REPIN_PAT`** — fine-grained PAT on `agentydragon/ducktape`
-  with `Contents: write`. Net new. Provisioning:
-  1. **Mint** the PAT on the `agentydragon` GitHub account: fine-grained,
-     repo `agentydragon/ducktape` only, `Contents: write` (no other
-     scopes), 1-year expiry.
-  2. **SOPS-encrypt** it as a new manifest at
-     `cluster/k8s/github-secrets-sync/secrets/ducktape-repin-pat.sops.yaml`:
-
-     ```yaml
-     apiVersion: v1
-     kind: Secret
-     metadata:
-       name: ducktape-repin-pat
-       namespace: flux-system
-     type: Opaque
-     stringData:
-       token: <PAT plaintext>
-     ```
-
-     Then `sops -e -i cluster/k8s/github-secrets-sync/secrets/ducktape-repin-pat.sops.yaml`
-     in the repo (the `cluster/k8s/.*\.sops\.yaml$` rule encrypts to
-     `admin + cluster-secrets`).
-
-  3. **Add to kustomization** —
-     `cluster/k8s/github-secrets-sync/secrets/kustomization.yaml`
-     resources list: `- ducktape-repin-pat.sops.yaml`.
-  4. **Wire into TF** — extend `tf/gitops/github-secrets-sync/main.tf`:
-
-     ```hcl
-     data "kubernetes_secret" "ducktape_repin_pat" {
-       metadata {
-         name      = "ducktape-repin-pat"
-         namespace = "flux-system"
-       }
-     }
-
-     resource "github_actions_secret" "ducktape_repin_pat_gaffer_private" {
-       repository      = "gaffer-private"
-       secret_name     = "DUCKTAPE_REPIN_PAT"
-       plaintext_value = data.kubernetes_secret.ducktape_repin_pat.data["token"]
-     }
-     ```
-
-  Once the SOPS manifest + kustomization update + TF stanza are committed
-  and pushed, Flux deploys the Secret and tofu-controller reconciles the
-  module within ~15min, landing `DUCKTAPE_REPIN_PAT` as a GHA secret on
-  gaffer-private. PAT rotation = re-mint + re-encrypt the SOPS file +
-  push; TF picks it up on next reconcile.
+No new PAT, no new TF stanza, no new SOPS file, no kustomization edit —
+the ducktape-automation App PEM is already SOPS-encrypted in ducktape and
+already installed on gaffer-private. The App's installation token is
+short-lived (~1h) and is a bypass actor on ducktape's main-protection
+ruleset, so direct push works.
 
 ## Phase 2 — ducktape consumer flip
 
@@ -194,11 +183,8 @@ sudo curl -fI \
 
 ## Critical files
 
-| File                                                                   | Role                                                               |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `gaffer-private/.github/workflows/nix-attic-push.yml`                  | **NEW** — Phase 1 CI                                               |
-| `cluster/k8s/github-secrets-sync/secrets/ducktape-repin-pat.sops.yaml` | **NEW** — SOPS-encrypted k8s Secret holding the repin PAT          |
-| `cluster/k8s/github-secrets-sync/secrets/kustomization.yaml`           | add the new SOPS file to the resources list                        |
-| `tf/gitops/github-secrets-sync/main.tf`                                | new `data.kubernetes_secret` + `github_actions_secret` for the PAT |
-| `ducktape/nix/gaffer-pins.json`                                        | populated by gaffer CI direct-push                                 |
-| `ducktape/nix/home/hosts/wyrm2.nix:59`                                 | flip `services.google-drive.enable = true` after first CI run      |
+| File                                                  | Role                                                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `gaffer-private/.github/workflows/nix-attic-push.yml` | **NEW** — Phase 1 CI; uses the existing ducktape-automation App PEM via sparse-cloned ducktape, no new credentials. |
+| `ducktape/nix/gaffer-pins.json`                       | populated by gaffer CI direct-push                                                                                  |
+| `ducktape/nix/home/hosts/wyrm2.nix:59`                | flip `services.google-drive.enable = true` after first CI run                                                       |
