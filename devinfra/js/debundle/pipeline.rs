@@ -192,12 +192,11 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             .values()
             .any(|m| matches!(m.level, VendorLevel::Swap(_)))
         {
-            let cfg = spec.swap_vendor_chunks.clone().unwrap_or_default();
             let SwapVendorChunksConfig {
                 output_manifest_path,
                 output_wrapper_dir,
                 write,
-            } = cfg;
+            } = spec.swap_vendor_chunks.clone();
             run_step(&mut steps, "swap_vendor_chunks", || {
                 swap_vendor_chunks(
                     &mut state.artifact,
@@ -215,23 +214,30 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         }
     }
 
-    if let Some(cfg) = &spec.materialize_logical_modules {
+    let materialise_chunk_ids: Vec<String> = spec
+        .logical_modules
+        .keys()
+        .chain(spec.residual_modules.keys())
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if !materialise_chunk_ids.is_empty() {
         let MaterializeLogicalModulesConfig {
-            chunk_ids,
             file,
             prune_other_chunks,
             force,
             report_out_dir,
             report_summary_path,
             target_dir,
-        } = cfg.clone();
+        } = spec.materialize_logical_modules.clone();
         run_step(&mut steps, "materialize_logical_modules", || {
             materialize_logical_modules(
                 &mut state.artifact,
                 &spec.logical_modules,
                 &spec.residual_modules,
                 MaterializeLogicalModulesOptions {
-                    chunk_ids,
+                    chunk_ids: materialise_chunk_ids,
                     file,
                     prune_other_chunks,
                     force,

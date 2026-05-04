@@ -9,14 +9,12 @@
 //!   [`ResidualModule`]). At most one residual per chunk — encoded by the
 //!   map shape.
 //!
-//! Each pipeline stage that needs configuration gets its own optional
-//! top-level field ([`TransformSpec::materialize_logical_modules`],
-//! [`TransformSpec::write_js_tree`], [`TransformSpec::emit_browser_harness`],
-//! [`TransformSpec::swap_vendor_chunks`]). Stages run in a fixed canonical
-//! order, gated by the presence of their config (or — for the vendor
-//! stages and `rewriteChunkEntrySpecifiers` — by an explicit boolean
-//! toggle and the contents of the declarative maps). There is no
-//! user-supplied pipeline list.
+//! Pipeline stages run in a fixed canonical order; each stage is gated
+//! either by the contents of those maps or by an explicit boolean toggle
+//! (`rewriteChunkEntrySpecifiers`) or by the presence of a per-stage
+//! config field ([`TransformSpec::write_js_tree`],
+//! [`TransformSpec::emit_browser_harness`]). There is no user-supplied
+//! pipeline list.
 //!
 //! All consumers see typed structs; nothing here returns
 //! `serde_json::Value` for a known field.
@@ -40,20 +38,24 @@ pub struct TransformSpec {
     #[serde(default)]
     pub residual_modules: BTreeMap<String, ResidualModule>,
 
-    // --- per-stage configuration (presence gates the stage) ---
+    // --- per-stage configuration ---
     /// When `true`, run `rewrite_chunk_entry_specifiers` after the
     /// always-on startup steps. The stage takes no arguments.
     #[serde(default)]
     pub rewrite_chunk_entry_specifiers: bool,
-    /// Optional output configuration for `swap_vendor_chunks`. The stage
-    /// itself runs whenever `vendor` contains any `level: swap` entries;
-    /// this field only adds output paths and a `write` toggle.
+    /// Output configuration for `swap_vendor_chunks`. The stage runs
+    /// whenever `vendor` contains any `level: swap` entries; this field
+    /// only adds output paths and a `write` toggle. All inner fields
+    /// have defaults, so omitting `swapVendorChunks` is identical to
+    /// supplying an empty object.
     #[serde(default)]
-    pub swap_vendor_chunks: Option<SwapVendorChunksConfig>,
-    /// When set, run `materialize_logical_modules`. `chunkIds` is
-    /// required.
+    pub swap_vendor_chunks: SwapVendorChunksConfig,
+    /// Configuration for `materialize_logical_modules`. The stage runs
+    /// whenever `logicalModules ∪ residualModules` is non-empty; the
+    /// chunk ids it processes are exactly the union of those maps'
+    /// keys. This field only carries auxiliary options.
     #[serde(default)]
-    pub materialize_logical_modules: Option<MaterializeLogicalModulesConfig>,
+    pub materialize_logical_modules: MaterializeLogicalModulesConfig,
     /// When set, persist the artifact tree to `outDir`.
     #[serde(default)]
     pub write_js_tree: Option<WriteJsTreeConfig>,
@@ -85,11 +87,13 @@ pub struct SwapVendorChunksConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MaterializeLogicalModulesConfig {
-    pub chunk_ids: Vec<String>,
+    /// Optional override for the entry-file path to read per chunk.
+    /// Absent means "use the chunk's recorded entry file".
     #[serde(default)]
     pub file: Option<String>,
-    /// Defaults to `true` — drop chunks not in `chunkIds` before
-    /// materialising. Set `false` to keep them.
+    /// Defaults to `true` — drop chunks outside the materialised set
+    /// (the union of `logicalModules` and `residualModules` keys)
+    /// before materialising. Set `false` to keep them.
     #[serde(default = "default_true")]
     pub prune_other_chunks: bool,
     #[serde(default)]
@@ -100,6 +104,19 @@ pub struct MaterializeLogicalModulesConfig {
     pub report_summary_path: Option<PathBuf>,
     #[serde(default)]
     pub target_dir: String,
+}
+
+impl Default for MaterializeLogicalModulesConfig {
+    fn default() -> Self {
+        Self {
+            file: None,
+            prune_other_chunks: true,
+            force: false,
+            report_out_dir: None,
+            report_summary_path: None,
+            target_dir: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
