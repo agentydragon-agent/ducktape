@@ -69,21 +69,30 @@ Findings:
   vLLM's prefix-cache bookkeeping outweighs the prefill savings. Don't
   enable it for this workload.
 
-## Production-best (combined)
+## Run 3 (all-on, max_steps=5) — verified stack
 
-These knobs likely stack roughly multiplicatively, but we haven't
-verified that. The recommended config:
+Stacking the wins: `bs=8, grad_accum=8, num_gen=16, grad_ckpt=off`
+**OOM'd at 31.31 / 31.36 GB** — 50 MB short. Fixed by dropping the
+trainer micro-batch one tick to `bs=4, grad_accum=16` (effective
+batch still 64).
+
+| probe      | config                                 | ss_step_s | ss_compl/s | vs baseline raw |
+| ---------- | -------------------------------------- | --------- | ---------- | --------------- |
+| **all_on** | bs=4, ga=16, num_gen=16, grad_ckpt=off | **16.1**  | **63.65**  | **9.62×**       |
+
+The win is mildly superlinear vs the naive multiplicative ceiling
+(~8.6×): num_gen=16 saturates vLLM batching better than 8 does, and
+the trainer's per-step fixed overhead amortizes over more
+generations. Min steady-state step time dropped to **9.8 s**.
+
+## Production-best (verified)
 
 ```
---num-generations 16            # ~2× from rollout batching (Run 1)
---no-gradient-checkpointing     # ~1.34× from compute savings (Run 1)
---batch-size 8 --grad-accum 8   # ~3.2× from trainer parallelism (Run 2)
-# (don't enable prefix_caching)
+--batch-size 4 --grad-accum 16   # bs=8 OOMs by 50 MB; bs=4 fits
+--num-generations 16             # ~free 2× from rollout batching
+--no-gradient-checkpointing      # +34% from skipping recompute
+# (don't enable prefix_caching — actively hurts on this workload)
 ```
-
-Naive multiplicative ceiling: ~8.6× over baseline (≈ 57 ss_compl/s,
-~10 s/step). Real gain probably less due to interactions; worth a
-final "all-knobs-on" probe to confirm.
 
 ## Notes / caveats
 

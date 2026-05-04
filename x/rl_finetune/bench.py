@@ -49,6 +49,15 @@ PROBES: list[tuple[str, str, list[str], int, list[str]]] = [
     # bs16_ga4 OOMs at ~29 GB on a 32 GB card with 1024-token rollouts. Real
     # memory wall, not in-process fallout. See throughput_results.md.
     # ("bs16_ga4", "server", ["--batch-size", "16", "--grad-accum", "4"], 8, []),
+    # All-on (bs=8 OOM'd at 31.3 GB / 32 GB with num_gen=16 + grad_ckpt off,
+    # 50 MB short). Drop to bs=4 to fit; effective batch still = 64.
+    (
+        "all_on",
+        "server",
+        ["--batch-size", "4", "--grad-accum", "16", "--num-generations", "16", "--no-gradient-checkpointing"],
+        16,
+        [],
+    ),
     # async_grpo dropped: trl.experimental.AsyncGRPOTrainer hard-codes fp32 model
     # load and has no PEFT support (true on trl main as of 2026-05-03), so the
     # comparison vs LoRA-bf16 baseline isn't apples-to-apples. See TODO.md.
@@ -67,6 +76,7 @@ KNOWN_PROBES: dict[str, tuple[str, int]] = {
     "bs4_ga16": ("server", 8),
     "bs8_ga8": ("server", 8),
     "bs16_ga4": ("server", 8),
+    "all_on": ("server", 16),
 }
 
 
