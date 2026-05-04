@@ -151,7 +151,6 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VendorMark {
-    pub id: String,
     pub identity: String,
     pub evidence: Vec<Evidence>,
     #[serde(default)]
@@ -251,11 +250,6 @@ pub struct Fingerprint {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LogicalModule {
-    /// Optional human-readable id used in cycle reports and the per-chunk
-    /// requested-modules summary. Defaults to a stable derived value when
-    /// absent.
-    #[serde(default)]
-    pub id: Option<String>,
     #[serde(default)]
     pub members: Vec<Member>,
 }
@@ -263,8 +257,6 @@ pub struct LogicalModule {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResidualModule {
-    #[serde(default)]
-    pub id: Option<String>,
     /// Logical-module path the residual catch-all writes to. Defaults to
     /// `"residual/unhandled"` when absent.
     #[serde(default)]

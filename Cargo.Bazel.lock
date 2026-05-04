@@ -1,5 +1,5 @@
 {
-  "checksum": "232663b809fc8f0fd91f3917c2f0f71306fe8ec31948ad2a2f932e8d0df34b0c",
+  "checksum": "115bb40e76a1cc3db8288658dee099d1d37ae0a50f4a5e9a4197b41d7a628539",
   "crates": {
     "ahash 0.7.8": {
       "name": "ahash",
@@ -5268,6 +5268,10 @@
             {
               "id": "hyper-util 0.1.20",
               "target": "hyper_util"
+            },
+            {
+              "id": "json_comments 0.2.2",
+              "target": "json_comments"
             },
             {
               "id": "jsonwebtoken 9.3.1",
@@ -10947,6 +10951,44 @@
         "MIT"
       ],
       "license_file": "LICENSE-APACHE"
+    },
+    "json_comments 0.2.2": {
+      "name": "json_comments",
+      "version": "0.2.2",
+      "package_url": "https://github.com/tmccombs/json-comments-rs",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/json_comments/0.2.2/download",
+          "sha256": "9dbbfed4e59ba9750e15ba154fdfd9329cee16ff3df539c2666b70f58cc32105"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "json_comments",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "json_comments",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "edition": "2018",
+        "version": "0.2.2"
+      },
+      "license": "Apache-2.0",
+      "license_ids": [
+        "Apache-2.0"
+      ],
+      "license_file": "LICENSE"
     },
     "jsonwebtoken 9.3.1": {
       "name": "jsonwebtoken",
@@ -32576,6 +32618,7 @@
     "http-body-util 0.1.3",
     "hyper 1.9.0",
     "hyper-util 0.1.20",
+    "json_comments 0.2.2",
     "jsonwebtoken 9.3.1",
     "libc 0.2.186",
     "log 0.4.29",

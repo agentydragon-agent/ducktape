@@ -55,11 +55,10 @@ impl Member {
 }
 
 /// One entry of the spec's `logicalModules[chunkId]` map: the target path
-/// (the map key) plus its body (id + members).
+/// (the map key) plus its body (members).
 pub type LogicalModuleEntry = (String, Value);
 
 pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
-    let id = format!("logical__{}", path.replace('/', "_"));
     let member_values: Vec<Value> = members
         .iter()
         .map(|m| {
@@ -70,10 +69,7 @@ pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
             })
         })
         .collect();
-    (
-        path.to_string(),
-        json!({ "id": id, "members": member_values }),
-    )
+    (path.to_string(), json!({ "members": member_values }))
 }
 
 pub struct FixtureOpts<'a> {
@@ -118,7 +114,6 @@ pub fn residual_module(target: &str, members: &[Member]) -> Value {
         })
         .collect();
     json!({
-        "id": "logical__residual_unhandled",
         "target": target,
         "members": member_values,
     })
@@ -411,10 +406,7 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Value {
     let residual_modules = match (&opts.residual, opts.include_residual) {
         (Some(residual), _) => json!({ chunk_id: residual }),
         (None, true) => json!({
-            chunk_id: {
-                "id": "logical__residual_unhandled",
-                "target": "residual/unhandled",
-            }
+            chunk_id: { "target": "residual/unhandled" }
         }),
         (None, false) => json!({}),
     };

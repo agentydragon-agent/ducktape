@@ -28,7 +28,6 @@ export { A, B, C, D };
             (
                 "mod_x".to_string(),
                 json!({
-                    "id": "logical__mod_x",
                     "members": [
                         { "name": "A", "selector": { "binding": { "name": "A" } } },
                         { "name": "D", "selector": { "binding": { "name": "D" } } },
@@ -38,7 +37,6 @@ export { A, B, C, D };
             (
                 "mod_y".to_string(),
                 json!({
-                    "id": "logical__mod_y",
                     "members": [
                         { "name": "B", "selector": { "binding": { "name": "B" } } },
                         { "name": "C", "selector": { "binding": { "name": "C" } } },
@@ -128,7 +126,6 @@ export { x1, y, x2 };
             (
                 "mod_a".to_string(),
                 json!({
-                    "id": "logical__mod_a",
                     "members": [
                         { "name": "x1", "selector": { "binding": { "name": "x1" } } },
                         { "name": "x2", "selector": { "binding": { "name": "x2" } } },
@@ -138,7 +135,6 @@ export { x1, y, x2 };
             (
                 "mod_b".to_string(),
                 json!({
-                    "id": "logical__mod_b",
                     "members": [
                         { "name": "y", "selector": { "binding": { "name": "y" } } },
                     ],
