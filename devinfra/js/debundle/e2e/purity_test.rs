@@ -234,11 +234,6 @@ export { Status, Color, Tag };
 }
 
 #[test]
-#[ignore = "blocked on lazy-back-edge I-cycle relaxation \
-            (orthogonal to purity inference; the spec's mod_a / mod_b split puts \
-             mutually-recursive `even` and `odd` in different modules, generating an \
-             I cycle from the lazy body refs even though R is acyclic — DESIGN.md's \
-             current realizability gate rejects all I cycles)"]
 fn inferred_pure_recursive_function_classified_pure() {
     // Mutually recursive pure functions: `even(n)` calls
     // `odd(n - 1)`; `odd(n)` calls `even(n - 1)`. Recursive

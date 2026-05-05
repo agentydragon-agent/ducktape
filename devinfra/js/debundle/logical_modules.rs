@@ -346,7 +346,7 @@ pub fn materialize_logical_modules(
         // Run the schedule validator (see <DESIGN.md>). Computed here
         // (before `lower_chunk` mutates the artifact) to keep the
         // immutable borrow on `runtime_ast` simple. The report is
-        // emitted as `<chunk_id>.schedule.json`; cycles abort the
+        // emitted as `<chunk_id>/schedule.json`; cycles abort the
         // pipeline.
         let schedule = {
             // Spec-declared pure bindings: every member with
@@ -366,33 +366,41 @@ pub fn materialize_logical_modules(
                 .map(|plan| ScheduleLogicalModule {
                     id: plan.id.clone(),
                     target_file: plan.target_file.clone(),
+                    residual: !plan.explicit,
                     rename_map: plan.bindings.clone(),
                 })
                 .collect();
             Schedule::build(chunk_id.clone(), facts, bindings_catalogue, logical_modules)
         };
         let schedule_report = schedule.validate();
+        if let Some(report_out_dir) = &report_out_dir {
+            write_chunk_report_json(report_out_dir, &chunk_id, "schedule.json", &schedule_report)?;
+            write_chunk_report_json(
+                report_out_dir,
+                &chunk_id,
+                "owner_graph.json",
+                &schedule.owner_graph_report(),
+            )?;
+        }
 
         // Hard gate: a cyclic spec is unrealizable; refuse to emit
         // instead of producing a runtime-broken bundle. The full
-        // cycle evidence is written as `<chunk_id>.cycles.json` for
-        // downstream tooling; stderr gets a compact summary so the
-        // bail message stays under the typical CI log-tail
+        // cycle evidence and owner graph are written as side-output
+        // JSON for downstream tooling; stderr gets a compact summary
+        // so the bail message stays under the typical CI log-tail
         // threshold (Bazel truncates at ~1 MiB by default).
         if !schedule_report.cycles.is_empty() {
             if let Some(report_out_dir) = &report_out_dir {
-                let cycles_path = report_out_dir.join(format!("{chunk_id}.cycles.json"));
-                if let Some(parent) = cycles_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::write(
-                    &cycles_path,
-                    serde_json::to_string_pretty(&schedule_report.cycles)? + "\n",
+                write_chunk_report_json(
+                    report_out_dir,
+                    &chunk_id,
+                    "cycles.json",
+                    &schedule_report.cycles,
                 )?;
             }
             let summary = render_cycle_summary(&schedule_report.cycles);
             bail!(
-                "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or making the offending reads lazy. Full cycle evidence written to <reports>/{chunk_id}.cycles.json. Summary:\n{summary}",
+                "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or moving the constraining owner endpoints. Full cycle evidence written to <reports>/{chunk_id}/cycles.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
                 schedule_report.cycles.len(),
             );
         }
@@ -494,21 +502,7 @@ pub fn materialize_logical_modules(
             )]),
         };
         if let Some(report_out_dir) = &report_out_dir {
-            let report_path = report_out_dir.join(format!("{chunk_id}.json"));
-            if let Some(parent) = report_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&report_path, serde_json::to_string_pretty(&report)? + "\n")?;
-        }
-        if let Some(report_out_dir) = &report_out_dir {
-            let schedule_path = report_out_dir.join(format!("{chunk_id}.schedule.json"));
-            if let Some(parent) = schedule_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(
-                &schedule_path,
-                serde_json::to_string_pretty(&schedule_report)? + "\n",
-            )?;
+            write_chunk_report_json(report_out_dir, &chunk_id, "logical_modules.json", &report)?;
         }
         applied.extend(selected_lowerings);
         reports.push(report);
@@ -2557,6 +2551,22 @@ fn update_root_manifest(
         module_count: reports.iter().map(|r| r.counts.final_modules).sum(),
     });
     root_manifest.selected_module_lowerings = Some(applied.to_vec());
+}
+
+fn write_chunk_report_json<T: Serialize>(
+    report_out_dir: &Path,
+    chunk_id: &str,
+    filename: &str,
+    value: &T,
+) -> Result<()> {
+    let path = report_out_dir
+        .join(chunk_id.split('/').collect::<PathBuf>())
+        .join(filename);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, serde_json::to_string_pretty(value)? + "\n")?;
+    Ok(())
 }
 
 fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {

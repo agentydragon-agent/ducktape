@@ -3,19 +3,23 @@
 > Summary of the design: the debundler takes a bundler-emitted
 > ESM chunk and a path-first logical-module spec, and emits a
 > multi-module ESM bundle observationally equivalent to the
-> input. The validator builds the imports graph `I` plus a
-> side-effect ordering graph `S` over the spec, runs SCC
-> detection, and accepts the spec iff every `I ∪ S` SCC's
-> cross-module edges are all `LazyRead` — i.e. no at-init read
-> and no side-effect ordering edge crosses an SCC boundary. The
-> emit is source-order: each logical module's body is its
-> assigned statements in original chunk order, with explicit
-> `import` / `export` declarations. There is no init-wrapper
-> machinery, no closure pass, no implicit binding pulls — every
-> owned binding is named explicitly in the spec, and `Imported`
-> bindings flow through `Schedule.bindings` / `BindingKind::Imported`,
-> with multi-module re-exports accumulating into one entry's
-> `re_exported_by` map.
+> input. The primitive analysis product is an owner graph: nodes
+> are top-level owners/statements, and edges are "this owner uses
+> that binding" plus source-order side-effect constraints. A spec
+> is an assignment from owners/bindings to output destinations.
+> The validator quotients the owner graph by that assignment to
+> derive the imports graph `I` plus side-effect ordering graph
+> `S`, runs SCC detection, and accepts the spec iff every
+> `I ∪ S` SCC's cross-module edges are all `LazyRead` — i.e. no
+> at-init read and no side-effect ordering edge appears inside a
+> multi-module SCC. The emit is source-order: each logical
+> module's body is its assigned statements in original chunk
+> order, with explicit `import` / `export` declarations. There is no
+> init-wrapper machinery, no closure pass, no implicit binding
+> pulls — every owned binding is named explicitly in the spec,
+> and `Imported` bindings flow through `Schedule.bindings` /
+> `BindingKind::Imported`, with multi-module re-exports
+> accumulating into one entry's `re_exported_by` map.
 
 ## Mission
 
@@ -28,10 +32,13 @@ ESM bundle that consumers can import, mock, or swap without
 scaffolding.
 
 A bundler erases module boundaries; the debundler reconstructs them.
-This design treats reconstruction as a **scheduling problem**: the
-flat chunk gives us a total order over statements; we must produce
-a partial order (the module dep graph) such that any linearization
-of that partial order is observationally equivalent to the input.
+This design treats reconstruction as a **graph quotient and
+scheduling problem**. The flat chunk gives us a total order over
+top-level owners/statements and a granular use graph between them.
+The spec assigns owners to output destinations. Collapsing all
+owners with the same destination yields a module dep graph; the
+validator checks that this quotient graph admits an ESM evaluation
+order observationally equivalent to the input.
 
 ## ESM execution model (the constraints)
 
@@ -204,11 +211,57 @@ The spec induces, for each statement:
   side-effecting statements), `home(S)` is the residual entry
   module.
 
-## Module dep graphs
+## Owner graph
 
-The materializer reasons about three distinct directed graphs over
-the same vertex set. Each captures a different scheduling constraint;
-the realizability theorem (next section) is stated over their union.
+The lowest-level scheduling object is the **owner graph**. It is
+independent of any particular logical-module spec.
+
+An _owner_ is a top-level unit that will move as a unit during
+emission: a function declaration, class declaration, single
+var-declarator after comma-list splitting, import declaration
+specifier, or residual side-effect statement. The implementation
+preserves this as a first-class data structure and side output.
+
+The micro owner graph is a directed, labeled graph `G = (V, E)`:
+
+- **Vertices:** owners in source order. A declaration owner carries
+  `declared`, source location, kind, and any readable rename/spec
+  metadata. A residual side-effect owner may have no declared
+  binding.
+- **Read edges:** `O -> O_b` for every binding `b` read by owner
+  `O`, where `O_b` is the owner that declares `b`. The edge carries
+  `binding`, `read_kind` (`at_init` or `lazy`), and the source
+  statement ordinal.
+- **External read edges:** `O -> imported_from` for imported
+  bindings. These are not ownership claims; they describe
+  re-import/re-export requirements.
+- **Side-effect order edges:** potential `O₂ -> O₁` constraints
+  when both owners have side-effecting top-level evaluation and
+  `O₁` appears before `O₂` in the source chunk. After assignment
+  they become `S` edges only when their endpoints land in different
+  destinations.
+
+The owner graph is the right abstraction for tooling:
+
+- "Can this thing be peeled?" is a proposed reassignment of one or
+  more owner vertices.
+- "What else must move with it?" is a closure/SCC/cut question over
+  owner-level read and side-effect edges.
+- "Why did this fail?" should point at owner-level edges first, then
+  at the derived module edge they induced.
+
+The emitted module graph is a **quotient** of this graph: choose a
+destination function `dest(owner)` from spec assignments (defaulting
+to residual entry), merge owners with the same destination, drop
+intra-destination edges, and aggregate all cross-destination edge
+reasons.
+
+## Module dep graphs as quotients
+
+The materializer validates three directed graphs derived from the
+owner graph quotient. Each captures a different scheduling
+constraint; the realizability theorem (next section) is stated over
+their union.
 
 The vertex set in every case is
 
@@ -309,19 +362,14 @@ I  ∪  S            the full constraint graph
 > cross-module edges are rejected: `R` would TDZ during cycle
 > evaluation; `S` has no consistent topological emit order.
 >
-> **Implementation.** Each `(from, to)` edge in the dep-graph
-> carries one or more `EdgeReason`s tagged with their `EdgeKind`
-> — `AtInitRead`, `LazyRead`, or `SideEffect` — alongside the
-> triggering statement ordinal and binding name. The graph is a
-> `petgraph::DiGraphMap<ModuleId, EdgeMetadata>`. Cycle detection
-> runs `tarjan_scc` over `graph.graph`; the realizability filter
-> checks `EdgeMetadata::constrains_realizability` (i.e.
-> `has_at_init_read || has_side_effect_ordering`) on every edge
-> between SCC members. `S` walks pairs of side-effecting
-> statements — `has_side_effect` uses a precise expression-level
-> purity classifier (`classify_expr_purity`) so pure literal
-> initializers like `const X = 42` don't contribute spurious S
-> edges.
+> **Implementation.** The implementation computes per-statement
+> facts, builds the owner graph, then quotients that graph by the
+> spec's destination assignment to derive the module dep graph. Each
+> cross-module edge keeps owner-level provenance: the triggering
+> statement, optional binding, and whether the reason is an at-init
+> read, lazy read, or side-effect-order constraint. Diagnostics can
+> explain both the module-level cycle and the lower-level owner edges
+> that induced it.
 
 Here "spec assignment" means whatever the validator sees: every
 declared binding either has an explicit `owner` from the spec or
@@ -515,11 +563,12 @@ principle (a chunk where two side-effecting top-level statements
 in different modules have no read dependency between them); for
 those, the materializer would need to actually realize the choice
 this lemma proves possible. **Known impl gap**: the emitter does
-not steer for a specific `L` today; the gate still rejects all
-the unrealizable cases, but if a spec ever requires `L`-steering
-for `S` to satisfy a constraint that's invisible to ESM's default
-DFS, the emit would silently violate it. Tracked as a follow-up
-if a real spec exposes it.
+not steer for a specific `L` today. The realizability gate still
+rejects SCCs containing constraining edges, but if an otherwise
+valid acyclic spec ever requires `L`-steering for `S` to satisfy a
+constraint that's invisible to ESM's default DFS, the emit would
+silently violate it. Tracked as a follow-up if a real spec exposes
+it.
 
 **Lemma 3 (At-init read correctness).**
 Under any evaluation order `L` respecting `I`, every at-init read
@@ -714,14 +763,20 @@ parse chunk
 analyze per-statement facts
   (declared, reads_at_init, reads_lazy, has_side_effect)
   ↓
-apply spec assignment (unowned bindings → ResidualEntry)
+build owner graph
+  (owners, read edges, potential side-effect-order edges)
   ↓
-build I, R, S
+apply spec assignment
+  (dest(owner), unowned bindings → ResidualEntry)
+  ↓
+quotient owner graph by dest(owner)
+  ↓
+derive I, R, S
   ↓
 validate: realizability gate over I ∪ S
   ↓        ↓ no                       (sidecar)
-  ↓        ↓                  recommendations for unowned bindings
-  ↓                                        (see Spec explicitness)
+  ↓        ↓                  owner-level diagnostics, cycle cuts,
+  ↓        ↓                  peelability/reassignment suggestions
 emit (source-order)
   ↓ no
 reject with cycle evidence
@@ -729,9 +784,12 @@ reject with cycle evidence
 
 A spec that passes validation is _guaranteed_ to emit correctly
 under the source-order strategy described in the proof. There is
-no class of correct-input that the validator rejects, and no
-class of incorrect-input that the validator misses (modulo
-cleanly-defined precision of `reads_at_init` and `has_side_effect`).
+no class of accepted-input that the validator may emit incorrectly
+(modulo cleanly-defined precision of `reads_at_init` and
+`has_side_effect`). The validator may reject specs that are in fact
+realizable when analysis is conservative; that is the intended
+failure mode. Those rejections should come with owner-level evidence
+showing which graph edges made the split unverifiable.
 
 ## Spec explicitness — closure as recommender
 
@@ -798,9 +856,9 @@ pub enum RecommendationReadKind {
     AtInit,
     /// The candidate module reads this binding only inside
     /// function/method bodies — lazy. Contributes to `I` only.
-    /// Lazy reads can still close `I` cycles even though they
-    /// never TDZ at link time, which the strict gating rule
-    /// rejects (see [the realizability theorem]).
+    /// Lazy reads can still close `I` cycles, but lazy-only SCCs
+    /// are realizable; the candidate is unsafe only if the SCC
+    /// also contains an at-init read or side-effect-order edge.
     LazyOnly,
 }
 ```
@@ -827,6 +885,216 @@ an updated spec produces a fresh report.
 The spec is now fully explicit. The validator is a one-shot
 predicate: "given this spec, is the bundle realizable?" — no
 implicit transformation in the middle.
+
+## Peelability diagnostics
+
+The same owner graph drives the next-spec workflow. A pipeline that
+only reports whether the current spec passed forces spec authors
+into speculative edit/build/test loops. The owner-graph side output
+therefore includes peelability projections that answer, for
+candidate owner sets. V1 computes residual-owner candidates with
+two statuses:
+
+- **`peelable_now`** — assigning this owner set to a new logical
+  destination leaves the quotient graph realizable and all imports
+  resolvable.
+- **`blocked_cycle`** — the quotient graph would contain an
+  unrealizable SCC. The report includes the owner-level cut before
+  grouping it into module-level cycle evidence.
+
+Multi-owner closures are represented as candidates too: an
+`owner_pair` with `status: "peelable_now"` means the listed owners
+are valid only when moved together. Future importability checks may
+add statuses such as `blocked_private_residual`; until then,
+unresolvable private-residual reads should stay visible as normal
+owner edges in the graph evidence.
+
+This is deliberately a projection of the owner graph, not a separate
+heuristic system. Tooling may rank candidates by size reduction,
+name quality, or path, but the validity status comes from the same
+quotient + realizability check as normal materialization.
+
+The report exposes the graph data needed to make that decision
+without re-running emitted JS:
+
+- the owner vertices and their stable report ids, statement
+  ordinals, declared bindings, current destinations, and proposed
+  destinations;
+- the owner edges, with binding/read-kind/side-effect-order
+  provenance and statement ordinals;
+- candidate assignments with status and quotient-cycle cut evidence.
+
+Downstream peel skills should read it before editing YAML: promote
+`peelability.residualPeelableSymbols[]` and `peelable_now`
+candidates first, and avoid speculative builds for candidates
+already marked blocked. When a singleton candidate is blocked, the
+report may also include a small closure candidate such as an owner
+pair that is `peelable_now` when moved as one destination.
+
+### Residual peel candidates
+
+The first implemented candidate family answers the immediate
+operational question: "which symbols can currently peel out of the
+residual catch-all?"
+
+Let `R` be any destination marked residual (`ResidualEntry` or a
+generated residual logical module), and let `o ∈ V` be an owner
+currently assigned to `R` with declared symbols `decl(o)`. To test
+whether `o` is peelable now:
+
+1. Create a fresh hypothetical destination `P_o`.
+2. Reassign every binding in `decl(o)` to `P_o`; leave all other
+   owner destinations unchanged.
+3. Quotient the same owner graph by this candidate assignment.
+4. Inspect only the SCC containing `P_o`.
+5. The candidate is `peelable_now` iff that SCC is absent,
+   singleton/non-cyclic, or contains only lazy-read cross edges.
+   If that SCC contains an at-init read or side-effect-order edge,
+   the candidate is `blocked_cycle`, and the report lists the
+   constraining module edges plus their owner-edge ids.
+
+This local-SCC test intentionally ignores unrelated pre-existing
+bad SCCs. When the current build is green, it is equivalent to
+checking the whole candidate quotient. When the build is red, it
+still identifies residual symbols whose peel is locally safe and
+therefore useful for reducing the residual or breaking a larger
+cycle without adding a new one.
+
+V1 also computes bounded two-owner closures. It does not scan every
+pair in the residual. Instead, for each blocked singleton candidate,
+it reads that candidate's `blockingSccs[].constrainingOwnerEdgeIds`
+and seeds pairs from residual owners that are direct endpoints of
+those constraining edges. Each seeded pair is tested by the same
+fresh-destination quotient operation above. Only pairs whose
+candidate SCC is realizable are reported as `kind: "owner_pair"` /
+`status: "peelable_now"`. This captures the common "A and B can
+move, but only together" case while keeping the report tied to
+actual cycle evidence instead of speculative all-pairs search.
+
+The report writes this as:
+
+- `peelability.residualDestinations[]`
+- `peelability.residualPeelableSymbols[]` for singleton owner peels
+- `peelability.residualPeelableClosures[]` for currently peelable
+  multi-owner closures, currently bounded to pairs
+- `peelability.candidates[]`, each with `status`,
+  `kind`, `ownerIds`, `declared`, `from`, `proposedDestination`,
+  and `blockingSccs[]`
+
+### Detailed graph side output
+
+The pipeline also writes a detailed graph side output, separate from
+the compact validation error. This is the data source for analysis
+scripts, notebooks, and repo-specific peel skills. It is emitted on
+both success and validation rejection, because the most useful peel
+data often exists precisely when the current assignment is not yet
+realizable.
+
+The detailed output is machine-readable and versioned. For each
+chunk, v1 includes:
+
+- run metadata: schema version and chunk id;
+- owner vertices: report id, statement ordinal, declared bindings,
+  owner kind, side-effect classification, and current destination;
+- owner edges: `source`, `target`, edge kind, optional binding,
+  statement ordinal, and whether the edge constrains realizability;
+- quotient projections for the current assignment: module nodes,
+  aggregated edge kinds, edge provenance back to owner edges, SCC
+  membership, and SCC realizability status;
+- residual peelability projections:
+  `residualPeelableSymbols`, `residualPeelableClosures`, and
+  per-candidate blocking SCC evidence.
+
+Future schema versions can add source spans, input/spec hashes,
+direct importability classifications, and closure suggestions
+without changing the underlying graph operation.
+
+Keep this side output high fidelity. It is allowed to be larger than
+stderr and larger than a human-facing report. The compact console
+error should summarize the failed SCC and point at the side-output
+paths; downstream tooling should read the files.
+
+### Valid peels and atomic modules
+
+Let `dest: V -> D` assign every owner vertex to an output
+destination. The quotient graph `Q = G / dest` merges all owners
+with the same destination, drops intra-destination edges, and keeps
+the labels/provenance on every cross-destination edge.
+
+A cross-destination read edge is **importable** iff the provider can
+be named by an emitted ESM import from the consumer destination:
+the provider is already in an external chunk, is exported by a
+logical module, is an imported binding being re-exported, is an
+entry export the residual module may legally surface, or moves with
+the consumer. Reads of private residual-entry bindings are not
+importable unless the assignment also exports or colocates the
+provider.
+
+Call an edge **constraining** when it is an at-init read or a
+side-effect-order edge. Lazy read edges are non-constraining: they
+still contribute imports, but a cycle made entirely of lazy read
+edges is realizable.
+
+A destination assignment is **valid** iff:
+
+1. Every cross-destination read edge in `Q` is importable.
+2. Every SCC in `Q` contains only non-constraining cross edges.
+   Equivalently, any SCC may contain lazy-read import cycles, but no
+   at-init read and no side-effect-order edge may remain inside a
+   multi-destination SCC.
+
+A peel is just a proposed destination assignment for a candidate
+owner set. The peel is valid exactly when the resulting assignment
+is valid by the definition above. Invalid peels have two primary
+explanations: a non-importable read crosses the cut, or a
+constraining edge remains in a quotient SCC.
+
+The same definition gives a graph-theoretic target for "smallest
+atomic modules that are still valid." Start from the finest
+partition of owners allowed by syntax. Then repeatedly:
+
+1. Union the endpoints of every read edge that cannot be made
+   importable under the current export policy.
+2. Quotient by the current partition and find SCCs.
+3. For every constraining cross edge that lies inside a quotient
+   SCC, union that edge's endpoints.
+
+When this reaches a fixed point, the partition is the finest valid
+partition under the current edge labels and importability policy:
+any valid assignment must coarsen it. The key graph fact is that
+quotienting preserves reachability between distinct blocks; if a
+constraining edge's endpoints remain in different blocks and the
+target can still reach the source, that edge remains inside an
+unrealizable SCC. Collapsing the constraining edge is therefore
+necessary, and repeating this operation is sufficient.
+
+### Graph operations for peel tooling
+
+Useful operations should be phrased against the owner graph first
+and only then projected to modules:
+
+- **Quotient:** `G / dest` produces the module graph the validator
+  already understands.
+- **Dependency closure:** starting from candidate owners, follow
+  owner-level read edges that cannot be satisfied by imports. This
+  yields the smallest "must move together" set for private residual
+  dependencies.
+- **SCC:** run on either the owner graph or the candidate quotient.
+  Owner-level SCCs identify mutually-recursive or mutually-dependent
+  clusters; quotient SCCs identify ESM realizability hazards.
+- **Cut:** for an unrealizable quotient SCC, compute a small set of
+  owner-level `at_init` or side-effect-order edges whose removal or
+  colocation would make the split valid. The existing module-level
+  feedback-arc cut should be reported with owner-edge provenance.
+- **Ranking:** once validity is known, rank safe candidates by
+  emitted-size reduction, number of owners, name quality, and whether
+  the target path matches an existing human module namespace. Ranking
+  is heuristic; validity is not.
+
+These operations are pure graph transforms over immutable analysis
+data. That property matters operationally: two tools reading the same
+owner graph and candidate assignments should produce the same
+peelability status without building emitted JS.
 
 ## Selector vocabulary and matching
 
@@ -1226,60 +1494,75 @@ of `A`) automatically.
 
 ## Cycle resolution
 
-When the validator rejects a cycle, the spec author's only path
-is:
+When the validator rejects a cycle, the spec author must remove the
+constraining cross edge from the quotient SCC. In spec-only work,
+that usually means:
 
-**Colocate the cyclically-coupled bindings.** Move every binding
-along the cycle into a single module. Once `owner(b)` is the same
-for every `b` in the cycle, the cycle's edges (which require
-`home(S) ≠ owner(b)`) disappear from `I ∪ S`.
+**Colocate the constraining owner endpoints.** Move the owner that
+performs the at-init read or side-effecting work together with the
+owner it depends on. Once both endpoints share a destination, that
+edge disappears from `I ∪ S`.
 
-Note: making the back-edge read lazy in the source is **not** a
-resolution under the strict gating rule. Lazy reads still produce
-`I` edges (the emit must carry the corresponding `import`
-directive), so a lazy back-edge still closes an `I` cycle. The
-materializer rejects it. The strict rule is deliberate — see
-[the realizability theorem](#the-realizability-theorem) — and
-the resolution is always colocation.
+Rewriting source so the constraining read becomes lazy can also make
+the SCC realizable, but the debundler normally does not rewrite
+program structure. Lazy read edges still emit import directives and
+still participate in `I`; they are accepted only when every
+cross-module edge in the SCC is lazy.
 
 The validator should suggest the colocation explicitly: "Cycle
-through `M_a`, `M_b`, `M_c`. Resolution: colocate {b₁, b₂, b₃}
-in one module."
+through `M_a`, `M_b`, `M_c`. Constraining edge:
+`owner_x --at_init--> owner_y`. Resolution: colocate `owner_x`
+and `owner_y`, then re-run quotient validation."
 
 ## Architecture
 
 The pipeline is a sequence of stages over a shared `JsPipelineArtifact`:
 
-| Stage                            | Module                                         | Role                                                                                                                  |
-| -------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `compute_chunk_metadata`         | <program_analysis.rs>                          | Parse chunks; record top-level decls, imports, side effects, observable module effects. Pure, no spec.                |
-| `apply_vendor_annotations`       | <vendor.rs>                                    | Mark vendor packages from the spec's top-level `vendor` map (keyed by chunk path).                                    |
-| `rename_vendor_exports`          | <vendor.rs>                                    | Rewrite vendor symbol exports for `vendor` entries with `level: boundary-rename` or `level: swap`.                    |
-| `swap_vendor_chunks`             | <vendor.rs>                                    | Substitute vendor chunks with package resolves for `vendor` entries with `level: swap`.                               |
-| `materialize_logical_modules`    | <logical_modules.rs> + <schedule_validator.rs> | **Main split.** Computes per-statement facts, applies spec, builds `I ∪ S`, validates, emits modules in source order. |
-| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>                        | Rewrite cross-chunk import paths to be relative to chunk entries.                                                     |
-| `write_js_tree`                  | <write_tree.rs>                                | Persist the artifact to disk.                                                                                         |
-| `emit_browser_harness`           | <emit_harness.rs>                              | Generate HTML + bootstrap for browser runtime.                                                                        |
+| Stage                            | Module                                         | Role                                                                                                                                       |
+| -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `compute_chunk_metadata`         | <program_analysis.rs>                          | Parse chunks; record top-level decls, imports, side effects, observable module effects. Pure, no spec.                                     |
+| `apply_vendor_annotations`       | <vendor.rs>                                    | Mark vendor packages from the spec's top-level `vendor` map (keyed by chunk path).                                                         |
+| `rename_vendor_exports`          | <vendor.rs>                                    | Rewrite vendor symbol exports for `vendor` entries with `level: boundary-rename` or `level: swap`.                                         |
+| `swap_vendor_chunks`             | <vendor.rs>                                    | Substitute vendor chunks with package resolves for `vendor` entries with `level: swap`.                                                    |
+| `materialize_logical_modules`    | <logical_modules.rs> + <schedule_validator.rs> | **Main split.** Computes facts, applies spec assignment, quotients the owner graph into `I ∪ S`, validates, emits modules in source order. |
+| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>                        | Rewrite cross-chunk import paths to be relative to chunk entries.                                                                          |
+| `write_js_tree`                  | <write_tree.rs>                                | Persist the artifact to disk.                                                                                                              |
+| `emit_browser_harness`           | <emit_harness.rs>                              | Generate HTML + bootstrap for browser runtime.                                                                                             |
 
 Within `materialize_logical_modules`, the substages are:
 
 1. **Spec parsing** → `LogicalRequest` / `ModulePlan` per chunk.
 2. **Statement-facts analysis** (<schedule_validator.rs>:
    `analyze_chunk_facts`) → `Vec<StatementFacts>`.
-3. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
+3. **Owner graph construction** → owner vertices plus read and
+   side-effect-order evidence. This is a first-class intermediate
+   and report side output.
+4. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
    the spec's explicit member list. Bindings with no spec entry
    default to `ResidualEntry`; nothing pulls implicitly. (See
    [Spec explicitness](#spec-explicitness--closure-as-recommender).)
-4. **Module dep graph + validation** (<schedule_validator.rs>:
-   `build_module_dep_graph`, `validate_schedule`). The validator
-   also emits `recommendations` for every unowned binding so the
-   spec author can update the spec.
-5. **Cycle resolution gate** — if the validator finds an
+5. **Quotient + validation** (<schedule_validator.rs>:
+   `quotient_owner_graph`, `validate_schedule`). The quotient graph
+   collapses owners by destination, aggregates edge reasons, and
+   validates the resulting `I ∪ S`. The validator also emits
+   `recommendations` for every unowned binding so the spec author
+   can update the spec.
+6. **Diagnostics projections** — cycle evidence, assignment
+   recommendations, and peelability reports are projections of the
+   same owner graph + quotient, not separate heuristic analyses.
+7. **Cycle resolution gate** — if the validator finds an
    unrealizable cycle, the pipeline aborts with the cycle
    evidence.
-6. **Source-order emission** — each module's body in source order;
+8. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
    No init wrappers.
+
+Treat those stages as a functional data flow. Analysis produces
+immutable facts; assignment is explicit input; quotienting derives a
+validated schedule; emission consumes that schedule. Avoid designs
+where emission discovers new graph edges or silently mutates the
+assignment, because that reintroduces hidden closure behavior and
+makes diagnostics disagree with emitted output.
 
 ## Empty logical modules
 
@@ -1378,11 +1661,11 @@ the cycle `mod_a ↔ mod_b` contains a class extends-clause read.
 Class declarations are TDZ-prone, so this fails at module load
 with `ReferenceError: Cannot access A before initialization`.
 
-Resolution: colocate `A` and `B`. Pushing the cross-`mod_a`
-import inside a function body makes the back-edge lazy but does
-**not** break the cycle in `I` — the lazy read still emits an
-`import` directive, so `I` still has both edges, the linker
-still forms the SCC, and the strict gating rule still rejects.
+Resolution: colocate `A` and `B`, or otherwise remove every
+constraining cross edge from the SCC. Pushing only the reverse
+`mod_a` import inside a function body is not enough: the lazy read
+still emits an import directive, `I` still has both edges, and the
+SCC still contains the at-init `extends A` edge.
 
 ### Cycle through lazy back-edges (mixed at-init / lazy)
 
@@ -1429,47 +1712,32 @@ Computed keys aren't special: they read identifiers at-init like
 any other expression, and the dep graph captures that read
 without any special-case logic.
 
-## Schedule: the unified per-chunk data structure
+## Schedule: owner graph plus quotient
 
-The runtime data structure the validator and emitter both
-consume is a single per-chunk `Schedule`: it carries the
-chunk's statement facts, the binding catalogue, the spec's
-logical modules, and the dep graph derived from them.
+The target runtime data structure the validator and emitter both
+consume is a single per-chunk `Schedule`: it carries the chunk's
+statement facts, the binding catalogue, the explicit logical
+modules, the owner graph, and the module dep graph derived by
+quotienting that owner graph under the spec assignment.
+
+The implementation builds this structure directly: statement facts
+feed the owner graph, and the module dep graph is a quotient of that
+owner graph under the current spec assignment.
 
 The schedule is keyed per-chunk; the chunk is contextual within
 the schedule, so binding keys collapse to just `name`. Keys for
 the dep graph extend `ModuleId` with an `ExternalChunk(ChunkId)`
 variant so cross-chunk reads are first-class.
 
-```rust
-pub enum ModuleId {
-    /// A logical module within the current chunk's split.
-    Logical(usize),
-    /// The synthetic residual-entry module of the current chunk.
-    ResidualEntry,
-    /// Another chunk we depend on. Edges to `ExternalChunk` mean
-    /// "we read a binding owned by that chunk at init time."
-    ExternalChunk(ChunkId),
-}
+Conceptually, the schedule carries:
 
-pub struct Schedule {
-    /// Identity of the chunk this schedule was computed from.
-    pub chunk: ChunkId,
-    /// Per-statement analysis (one entry per top-level statement
-    /// in the source chunk, in source order).
-    pub facts: Vec<StatementFacts>,
-    /// All bindings introduced in the chunk's top-level scope,
-    /// keyed by their local name (unique within a chunk).
-    pub bindings: BTreeMap<String, BindingKind>,
-    /// Logical modules from the spec (paths, ids, rename maps).
-    pub logical_modules: Vec<LogicalModule>,
-    /// Module dep graph `I ∪ S` (linker imports + side-effect
-    /// ordering). Nodes are `ModuleId`s; edges are emitted-import
-    /// references or side-effect-order constraints. Acyclicity
-    /// of this graph is the realizability gate.
-    pub dep_graph: ModuleDepGraph,
-}
-```
+- chunk identity;
+- per-statement facts in source order;
+- the binding catalogue;
+- logical modules from the spec;
+- the owner graph;
+- the module dep graph `I ∪ S`, derived by quotienting the owner
+  graph by the spec's owner-to-destination assignment.
 
 Everything downstream needs is here:
 
@@ -1477,16 +1745,20 @@ Everything downstream needs is here:
   up any declared name in `bindings` — its `Owned.owner` is
   `home`. For statements with empty `declared`, `home` is
   `ResidualEntry`.
-- "What statements live in module M" = `facts.filter(home == M)`.
+- "What owners/statements live in module M" =
+  `owner_graph.nodes.filter(dest(owner) == M)`.
 - "What does M export" = bindings whose `Owned.owner == M`
   (under their original or rename-pass-rewritten name) plus
   bindings whose `Imported.re_exported_by` has key `M` (under
   the public name that map's value gives).
 - "What imports does M need" =
-  - For each `b ∈ reads_at_init(stmt)` with `home(stmt) == M`:
+  - For each owner-level read edge from an owner with `dest == M`:
     - If `b` is `Owned { owner: other }`: `import b from <other>`.
     - If `b` is `Imported { imported_from, imported_name, .. }`:
       `import { imported_name as b } from <imported_from>`.
+- "What can be peeled without backtracking" = candidate assignments
+  whose owner-graph quotient validates and whose cross-destination
+  reads are importable.
 - "Identity of cross-chunk deps" = `bindings.values()` filtered
   to `Imported { imported_from, .. }` give us the set of
   external chunks our schedule talks to; that's the

@@ -1,33 +1,34 @@
 //! Static schedule validation for `materialize_logical_modules`.
 //!
 //! Background: see <DESIGN.md>. This module is the validator core
-//! of the principled debundler design. It treats debundling as a
-//! scheduling problem:
+//! of the principled debundler design. It treats debundling as an
+//! owner-graph quotient and scheduling problem:
 //!
 //! 1. For each top-level statement in the source chunk, compute the
 //!    bindings it declares, the bindings it reads at-init, the
 //!    bindings it reads lazily (inside function/method bodies, etc.),
 //!    whether it has an observable side effect, and its source
 //!    ordinal.
-//! 2. Map each statement to its destination module (logical module
-//!    or residual entry) using the spec's binding assignment.
-//! 3. Build the imports graph `I`: edge `M_S → M_b` for every
-//!    `(S, b)` where statement `S` lives in module `M_S` and `b`
-//!    is owned by `M_b ≠ M_S`, irrespective of whether the read is
-//!    at-init or lazy. Each edge of `I` corresponds to one
-//!    emitted `import` directive — `I` is exactly the graph the
-//!    ESM linker walks for evaluation order.
-//! 4. Validate: `I ∪ S` must be acyclic. Cycles are the
-//!    unrealizable case — no ESM evaluation order can satisfy the
-//!    spec's assignment without TDZ on at-init reads or wrong
-//!    side-effect ordering. `materialize_logical_modules` aborts
-//!    when this validator reports cycles.
+//! 2. Build a fine-grained owner graph over those statements.
+//!    Owner edges record "this owner reads that binding" and
+//!    side-effect source-order constraints before module grouping.
+//! 3. Map each owner to its destination module (logical module or
+//!    residual entry) using the spec's binding assignment.
+//! 4. Quotient the owner graph by destination to derive the
+//!    module-level imports graph `I` plus side-effect graph `S`.
+//!    Each quotient `I` edge corresponds to an emitted `import`
+//!    directive — `I` is exactly the graph the ESM linker walks
+//!    for evaluation order.
+//! 5. Validate: every `I ∪ S` SCC must be realizable. Lazy-only
+//!    SCCs are allowed; SCCs with an at-init read or side-effect
+//!    ordering edge are unrealizable. `materialize_logical_modules`
+//!    aborts when this validator reports such cycles.
 //!
 //! The output is a JSON report listing the cycles + their evidence
 //! (which `(statement, binding)` pairs form each cycle), plus
 //! recommendations for any unowned bindings that some logical
 //! module reads. The report is written next to the existing
-//! manifests as `<chunk_id>.schedule.json`.
+//! manifests as `<chunk_id>/schedule.json`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -104,6 +105,10 @@ pub struct LogicalModule {
     pub id: String,
     /// Chunk-relative path the module emits to (e.g. `"runtime/foo.js"`).
     pub target_file: String,
+    /// True for the generated residual catch-all module. Peelability
+    /// diagnostics use this to identify the remaining unpeeled owner
+    /// set.
+    pub residual: bool,
     /// Local-name → exported-name map for the bindings this module
     /// owns. Empty when the module re-exports only imported
     /// bindings.
@@ -119,6 +124,7 @@ pub struct Schedule {
     pub facts: Vec<StatementFacts>,
     pub bindings: BTreeMap<BindingName, BindingKind>,
     pub logical_modules: Vec<LogicalModule>,
+    pub owner_graph: OwnerGraph,
     pub dep_graph: ModuleDepGraph,
     /// Topological linearization of `I ∪ S`, dependency-first
     /// (the module at index 0 must evaluate before any other; the
@@ -143,13 +149,15 @@ impl Schedule {
         logical_modules: Vec<LogicalModule>,
     ) -> Self {
         let ownership = owned_view(&bindings);
-        let dep_graph = build_module_dep_graph(&facts, &ownership);
+        let owner_graph = build_owner_graph(&facts, &ownership);
+        let dep_graph = quotient_owner_graph(&owner_graph);
         let linker_order = compute_linker_order(&dep_graph, &logical_modules);
         Self {
             chunk_id,
             facts,
             bindings,
             logical_modules,
+            owner_graph,
             dep_graph,
             linker_order,
         }
@@ -204,6 +212,13 @@ impl Schedule {
             .collect();
         report
     }
+
+    /// High-fidelity node-link view of the fine owner graph plus
+    /// its current module quotient. Written as
+    /// `<chunk_id>/owner_graph.json` for downstream peel tooling.
+    pub fn owner_graph_report(&self) -> OwnerGraphReport {
+        build_owner_graph_report(self)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -245,7 +260,7 @@ pub enum StatementKind {
 ///
 /// Multi-declarator `var/let/const` statements are split into
 /// per-declarator entries before analysis, so each row declares
-/// a single name and `stmt_owner` (in `build_module_dep_graph`)
+/// a single name and owner-graph destination attribution
 /// returns an unambiguous owner. Without the split, a chunk like
 /// `const A = 1, B = readsX;` with `{A → mod_a, B → mod_b}`
 /// would attribute `B`'s read of `X` to `mod_a` (the first
@@ -257,7 +272,7 @@ pub enum StatementKind {
 /// body, if any. Returns the source-order ordinal of the offending
 /// statement (in the post-comma-list-split view that
 /// `analyze_chunk_facts` uses, so reports align with statement
-/// indices in `<chunk_id>.schedule.json`).
+/// indices in `<chunk_id>/schedule.json`).
 ///
 /// "Top-level" excludes function/method/arrow/getter/setter
 /// bodies and class instance-field initializers — those are lazy
@@ -1600,51 +1615,138 @@ impl Visit for LazyReadCollector {
     }
 }
 
-/// Why a particular `(from, to)` edge exists in the module dep
-/// graph. The realizability gate distinguishes them: `AtInitRead`
-/// edges constrain ESM evaluation order under TDZ semantics,
-/// `LazyRead` edges only constrain it via the linker's depth-first
-/// walk (lazy reads themselves don't fire until after evaluation
-/// completes), and `SideEffect` edges encode source-order
-/// ordering of side-effecting top-level statements between two
-/// modules. An `I ∪ S` SCC is realizable iff every cross-module
-/// edge between its members is a `LazyRead` — `AtInitRead` and
-/// `SideEffect` cross-module edges both make the SCC
-/// unrealizable (`AtInitRead` causes TDZ during cycle
-/// evaluation; `SideEffect` has no consistent topological emit
-/// order satisfying the constraint).
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum EdgeKind {
-    /// At-init read: a top-level statement in `from` reads a
-    /// binding owned by `to` synchronously, before any function
-    /// body in `from` runs. `R ⊆ I`. Cross-module at-init reads
-    /// inside an `I ∪ S` SCC make the spec unrealizable (TDZ).
-    AtInitRead,
-    /// Lazy read: a function/method/getter body inside `from`
-    /// references a binding owned by `to`. The reference still
-    /// emits an `import` directive in `from`'s body (so the edge
-    /// is in `I`), but the read itself doesn't fire at-init —
-    /// only after `to` has finished evaluating. Lazy-only cycles
-    /// in `I` are realizable.
-    LazyRead,
-    /// Side-effect ordering: `from` has a side-effecting
-    /// top-level statement that appears *after* a side-effecting
-    /// statement in `to` in original source order. For ESM emit
-    /// to preserve the original side-effect order, `to` must
-    /// evaluate before `from`. `S` cycles are unrealizable
-    /// (no consistent evaluation order satisfies the constraint).
-    SideEffect,
+/// One reason an edge `(from, to)` exists, with the source
+/// statement ordinal that produced it. This is the single source of
+/// truth for edge semantics:
+///
+/// - `AtInitRead` constrains ESM evaluation order under TDZ
+///   semantics (`R ⊆ I`).
+/// - `LazyRead` contributes to the imports graph `I`, but does not
+///   constrain realizability inside an SCC because the read fires
+///   after module evaluation.
+/// - `SideEffectOrder` contributes to `S` and constrains
+///   realizability because source-order side effects require a
+///   topological order.
+#[derive(Debug, Clone)]
+pub enum EdgeReason {
+    AtInitRead {
+        statement_ordinal: StatementOrdinal,
+        binding: BindingName,
+    },
+    LazyRead {
+        statement_ordinal: StatementOrdinal,
+        binding: BindingName,
+    },
+    SideEffectOrder {
+        statement_ordinal: StatementOrdinal,
+    },
 }
 
-/// One reason an edge `(from, to)` exists, with the source
-/// statement ordinal that produced it.
+impl EdgeReason {
+    fn side_effect_order(statement_ordinal: StatementOrdinal) -> Self {
+        Self::SideEffectOrder { statement_ordinal }
+    }
+
+    fn graph_kind_label(&self) -> &'static str {
+        match self {
+            Self::AtInitRead { .. } => "at_init_read",
+            Self::LazyRead { .. } => "lazy_read",
+            Self::SideEffectOrder { .. } => "side_effect_order",
+        }
+    }
+
+    fn cycle_kind_label(&self) -> &'static str {
+        match self {
+            Self::AtInitRead { .. } => "at-init",
+            Self::LazyRead { .. } => "lazy",
+            Self::SideEffectOrder { .. } => "side-effect",
+        }
+    }
+
+    fn statement_ordinal(&self) -> StatementOrdinal {
+        match self {
+            Self::AtInitRead {
+                statement_ordinal, ..
+            }
+            | Self::LazyRead {
+                statement_ordinal, ..
+            }
+            | Self::SideEffectOrder { statement_ordinal } => *statement_ordinal,
+        }
+    }
+
+    fn binding(&self) -> Option<&BindingName> {
+        match self {
+            Self::AtInitRead { binding, .. } | Self::LazyRead { binding, .. } => Some(binding),
+            Self::SideEffectOrder { .. } => None,
+        }
+    }
+
+    fn is_at_init_read(&self) -> bool {
+        matches!(self, Self::AtInitRead { .. })
+    }
+
+    fn is_lazy_read(&self) -> bool {
+        matches!(self, Self::LazyRead { .. })
+    }
+
+    fn is_side_effect_order(&self) -> bool {
+        matches!(self, Self::SideEffectOrder { .. })
+    }
+
+    fn constrains_realizability(&self) -> bool {
+        !self.is_lazy_read()
+    }
+}
+
+/// Stable-in-run identity of an owner graph vertex. V1 owner
+/// vertices are post-comma-list `StatementFacts` rows, so the id
+/// is the row's source-order ordinal.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct OwnerId(pub usize);
+
+/// Fine-grained graph before logical modules are formed. Nodes are
+/// top-level owners/statements; edges are owner-level reads and
+/// source-order side-effect constraints. The module dependency graph
+/// is the quotient of this graph by `OwnerNode.destination`.
+#[derive(Debug, Clone, Default)]
+pub struct OwnerGraph {
+    pub nodes: BTreeMap<OwnerId, OwnerNode>,
+    pub graph: DiGraphMap<OwnerId, EdgeMetadata>,
+}
+
 #[derive(Debug, Clone)]
-pub struct EdgeReason {
-    pub kind: EdgeKind,
+pub struct OwnerNode {
+    pub id: OwnerId,
     pub statement_ordinal: StatementOrdinal,
-    /// Binding being read, or the literal `<side-effect>` for
-    /// `EdgeKind::SideEffect` rows.
-    pub binding: BindingName,
+    pub declared: BTreeSet<BindingName>,
+    pub kind: StatementKind,
+    pub has_side_effect: bool,
+    pub destination: ModuleId,
+}
+
+impl OwnerGraph {
+    fn record_reason(&mut self, from: OwnerId, to: OwnerId, reason: EdgeReason) {
+        if from == to {
+            return;
+        }
+        if !self.graph.contains_edge(from, to) {
+            self.graph.add_edge(from, to, EdgeMetadata::default());
+        }
+        let weight = self
+            .graph
+            .edge_weight_mut(from, to)
+            .expect("owner edge was just added");
+        weight.reasons.push(reason);
+    }
+
+    pub fn iter_edges(&self) -> impl Iterator<Item = (OwnerId, OwnerId, &EdgeMetadata)> + '_ {
+        self.graph.all_edges()
+    }
+
+    pub fn node(&self, id: OwnerId) -> Option<&OwnerNode> {
+        self.nodes.get(&id)
+    }
 }
 
 /// Per-edge metadata. One physical `(from, to)` ESM `import`
@@ -1662,7 +1764,7 @@ impl EdgeMetadata {
     /// realizability gate uses this to decide whether an
     /// `I ∪ S` SCC contains an `R` cross-module edge.
     pub fn has_at_init_read(&self) -> bool {
-        self.reasons.iter().any(|r| r.kind == EdgeKind::AtInitRead)
+        self.reasons.iter().any(EdgeReason::is_at_init_read)
     }
 
     /// `true` if at least one reason is a side-effect ordering
@@ -1671,7 +1773,7 @@ impl EdgeMetadata {
     /// successor", and a cycle has no topological emit order
     /// satisfying every such edge.
     pub fn has_side_effect_ordering(&self) -> bool {
-        self.reasons.iter().any(|r| r.kind == EdgeKind::SideEffect)
+        self.reasons.iter().any(EdgeReason::is_side_effect_order)
     }
 
     /// `true` if this edge constrains the realizable evaluation
@@ -1699,14 +1801,7 @@ pub struct ModuleDepGraph {
 }
 
 impl ModuleDepGraph {
-    fn record_reason(
-        &mut self,
-        from: ModuleId,
-        to: ModuleId,
-        kind: EdgeKind,
-        statement_ordinal: StatementOrdinal,
-        binding: BindingName,
-    ) {
+    fn record_reason(&mut self, from: ModuleId, to: ModuleId, reason: EdgeReason) {
         if from == to {
             return;
         }
@@ -1718,11 +1813,7 @@ impl ModuleDepGraph {
             .graph
             .edge_weight_mut(from, to)
             .expect("edge was just added");
-        weight.reasons.push(EdgeReason {
-            kind,
-            statement_ordinal,
-            binding,
-        });
+        weight.reasons.push(reason);
     }
 
     /// Iterate edges as `(from, to, &EdgeMetadata)`.
@@ -1754,25 +1845,14 @@ impl ModuleDepGraph {
     }
 }
 
-/// Build the imports graph `I ∪ S` (per DESIGN.md "Module dep
-/// graphs"): an edge `(M, M')` for every cross-module reference,
-/// at-init or lazy, plus side-effect ordering edges between any
-/// two modules with side-effecting top-level statements. Each
-/// `I` edge corresponds to exactly one emitted `import { b } from
-/// "<M'>"` directive in `M`'s body — so the graph's `I` slice is
-/// exactly the graph the ESM linker walks for evaluation order.
-///
-/// A binding referenced both eagerly and lazily inside the same
-/// statement (e.g. `class A extends B { method() { return B; } }`)
-/// produces two `EdgeReason`s on the same `(from, to)` edge: one
-/// `AtInitRead` (the extends-clause) and one `LazyRead` (the
-/// method body). The realizability gate cares about the kind, so
-/// keep both.
-pub fn build_module_dep_graph(
+/// Build the fine owner graph. Module-level dependencies are not
+/// created here; they are derived later by quotienting owners by
+/// destination.
+pub fn build_owner_graph(
     facts: &[StatementFacts],
     binding_assignment: &BTreeMap<BindingName, ModuleId>,
-) -> ModuleDepGraph {
-    let mut graph = ModuleDepGraph::default();
+) -> OwnerGraph {
+    let mut graph = OwnerGraph::default();
     let stmt_owner = |stmt: &StatementFacts| -> ModuleId {
         stmt.declared
             .iter()
@@ -1780,44 +1860,70 @@ pub fn build_module_dep_graph(
             .next()
             .unwrap_or(ModuleId::ResidualEntry)
     };
-    let record_read = |graph: &mut ModuleDepGraph,
-                       from: ModuleId,
-                       binding: &BindingName,
-                       ordinal: StatementOrdinal,
-                       kind: EdgeKind| {
-        let Some(&to) = binding_assignment.get(binding) else {
-            return; // not a chunk-owned binding (global, ImportSpecifier, never-declared)
+
+    for stmt in facts {
+        let id = OwnerId(stmt.ordinal.0);
+        graph.nodes.insert(
+            id,
+            OwnerNode {
+                id,
+                statement_ordinal: stmt.ordinal,
+                declared: stmt.declared.clone(),
+                kind: stmt.kind,
+                has_side_effect: stmt.has_side_effect,
+                destination: stmt_owner(stmt),
+            },
+        );
+        graph.graph.add_node(id);
+    }
+
+    let mut binding_owner = BTreeMap::<BindingName, OwnerId>::new();
+    for stmt in facts {
+        for binding in &stmt.declared {
+            binding_owner.insert(binding.clone(), OwnerId(stmt.ordinal.0));
+        }
+    }
+
+    let record_read = |graph: &mut OwnerGraph, from: OwnerId, reason: EdgeReason| {
+        let Some(binding) = reason.binding() else {
+            return;
         };
-        graph.record_reason(from, to, kind, ordinal, binding.clone());
+        let Some(&to) = binding_owner.get(binding) else {
+            return; // not declared in this chunk (global, ImportSpecifier, never-declared)
+        };
+        graph.record_reason(from, to, reason);
     };
     for stmt in facts {
-        let from = stmt_owner(stmt);
+        let from = OwnerId(stmt.ordinal.0);
         for binding in &stmt.reads_at_init {
             record_read(
                 &mut graph,
                 from,
-                binding,
-                stmt.ordinal,
-                EdgeKind::AtInitRead,
+                EdgeReason::AtInitRead {
+                    statement_ordinal: stmt.ordinal,
+                    binding: binding.clone(),
+                },
             );
         }
         for binding in &stmt.reads_lazy {
-            record_read(&mut graph, from, binding, stmt.ordinal, EdgeKind::LazyRead);
+            record_read(
+                &mut graph,
+                from,
+                EdgeReason::LazyRead {
+                    statement_ordinal: stmt.ordinal,
+                    binding: binding.clone(),
+                },
+            );
         }
     }
 
     // Side-effect ordering edges (`S` per DESIGN.md "Module dep
-    // graphs"). For every pair of side-effecting statements
-    // (S₁, S₂) with `S₁.ordinal < S₂.ordinal` and
-    // `home(S₁) ≠ home(S₂)`, add edge `(home(S₂), home(S₁))` —
-    // home(S₂) depends on home(S₁), so home(S₁) must evaluate
-    // first.
-    //
-    // Walk in source order; track which modules have already
-    // contributed a side-effect statement. For each new
-    // side-effecting statement, the home of the new statement
-    // must come *after* every previously-seen side-effecting
-    // module — add an edge to each such predecessor.
+    // graphs"). At owner level, record the full source-order
+    // relationship between side-effecting owners: every later
+    // side-effecting owner depends on every earlier side-effecting
+    // owner. The quotient step collapses these to module-level
+    // `S` edges and preserves the historical "one S reason per
+    // module pair" behavior for compact cycle reports.
     //
     // `has_side_effect` is computed by `classify_expr_purity` so
     // pure literal initializers (`const X = 42`,
@@ -1827,36 +1933,53 @@ pub fn build_module_dep_graph(
     // enough to reject realistic specs for trivially pure const
     // sequences.
     //
-    // Each `(from, to)` S-edge is recorded once even if the same
-    // pair has multiple side-effecting statements crossing it —
-    // the cycle report doesn't need to fan out into thousands of
-    // S rows when the cycle structure is determined by the first
-    // crossing.
-    let mut seen_modules: BTreeSet<ModuleId> = BTreeSet::new();
+    let mut seen_side_effect_owners: Vec<OwnerId> = Vec::new();
     for stmt in facts.iter().filter(|s| s.has_side_effect) {
-        let from = stmt_owner(stmt);
-        let predecessors: Vec<ModuleId> = seen_modules
-            .iter()
-            .copied()
-            .filter(|&m| m != from)
-            .collect();
-        for to in predecessors {
-            let already_has_side_effect = graph
-                .edge(from, to)
-                .is_some_and(|md| md.reasons.iter().any(|r| r.kind == EdgeKind::SideEffect));
-            if !already_has_side_effect {
-                graph.record_reason(
-                    from,
-                    to,
-                    EdgeKind::SideEffect,
-                    stmt.ordinal,
-                    "<side-effect>".to_string(),
-                );
-            }
+        let from = OwnerId(stmt.ordinal.0);
+        for &to in &seen_side_effect_owners {
+            graph.record_reason(from, to, EdgeReason::side_effect_order(stmt.ordinal));
         }
-        seen_modules.insert(from);
+        seen_side_effect_owners.push(from);
     }
 
+    graph
+}
+
+/// Quotient the owner graph by each owner node's destination module.
+/// This is the only path that constructs the module dependency graph
+/// used by validation and emit.
+pub fn quotient_owner_graph(owner_graph: &OwnerGraph) -> ModuleDepGraph {
+    let owner_edges = collect_owner_edge_entries(owner_graph);
+    quotient_owner_graph_with_destinations(owner_graph, &owner_edges, |_, node| node.destination)
+}
+
+fn quotient_owner_graph_with_destinations<F>(
+    owner_graph: &OwnerGraph,
+    owner_edges: &[OwnerEdgeEntry],
+    mut destination_for: F,
+) -> ModuleDepGraph
+where
+    F: FnMut(OwnerId, &OwnerNode) -> ModuleId,
+{
+    let mut graph = ModuleDepGraph::default();
+    let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
+    for edge in owner_edges {
+        let Some(from_node) = owner_graph.node(edge.from) else {
+            continue;
+        };
+        let Some(to_node) = owner_graph.node(edge.to) else {
+            continue;
+        };
+        let from = destination_for(edge.from, from_node);
+        let to = destination_for(edge.to, to_node);
+        if from == to {
+            continue;
+        }
+        if edge.reason.is_side_effect_order() && !seen_side_effect_module_pairs.insert((from, to)) {
+            continue;
+        }
+        graph.record_reason(from, to, edge.reason.clone());
+    }
     graph
 }
 
@@ -1913,7 +2036,8 @@ pub struct CycleEdge {
     pub to: String,
     #[serde(rename = "statementOrdinal")]
     pub statement_ordinal: StatementOrdinal,
-    pub binding: BindingName,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding: Option<BindingName>,
     /// Edge kind — `at-init`, `lazy`, or `side-effect`. Lets
     /// downstream consumers (cycle-evidence visualizers, spec
     /// authors triaging which edges to break) tell at a glance
@@ -1956,9 +2080,736 @@ pub enum RecommendationReadKind {
     LazyOnly,
 }
 
+/// Node-link JSON side output for downstream graph analysis.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerGraphReport {
+    pub kind: &'static str,
+    pub schema_version: u32,
+    pub chunk_id: String,
+    pub nodes: Vec<OwnerGraphNodeReport>,
+    pub edges: Vec<OwnerGraphEdgeReport>,
+    pub quotient: OwnerGraphQuotientReport,
+    pub peelability: OwnerGraphPeelabilityReport,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerGraphNodeReport {
+    pub id: String,
+    pub statement_ordinal: StatementOrdinal,
+    pub declared: Vec<BindingName>,
+    pub kind: StatementKind,
+    pub has_side_effect: bool,
+    pub destination: ModuleReportRef,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerGraphEdgeReport {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    pub kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding: Option<BindingName>,
+    pub statement_ordinal: StatementOrdinal,
+    pub constrains_realizability: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerGraphQuotientReport {
+    pub nodes: Vec<ModuleReportRef>,
+    pub edges: Vec<QuotientEdgeReport>,
+    pub sccs: Vec<QuotientSccReport>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotientEdgeReport {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    pub kinds: Vec<&'static str>,
+    pub owner_edge_ids: Vec<String>,
+    pub constraining_owner_edge_ids: Vec<String>,
+    pub reason_count: usize,
+    pub constrains_realizability: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotientSccReport {
+    pub id: String,
+    pub modules: Vec<String>,
+    pub labels: Vec<String>,
+    pub is_cycle: bool,
+    pub realizable: bool,
+    pub module_edge_ids: Vec<String>,
+    pub constraining_module_edge_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerGraphPeelabilityReport {
+    pub residual_destinations: Vec<ModuleReportRef>,
+    pub residual_peelable_symbols: Vec<BindingName>,
+    pub residual_peelable_closures: Vec<OwnerGraphPeelClosureReport>,
+    pub candidates: Vec<OwnerGraphPeelCandidateReport>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerGraphPeelCandidateReport {
+    pub id: String,
+    pub kind: PeelCandidateKind,
+    pub status: PeelCandidateStatus,
+    pub owner_ids: Vec<String>,
+    pub declared: Vec<BindingName>,
+    pub from: ModuleReportRef,
+    pub proposed_destination: ProposedPeelDestinationReport,
+    pub blocking_sccs: Vec<PeelBlockingSccReport>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerGraphPeelClosureReport {
+    pub candidate_id: String,
+    pub owner_ids: Vec<String>,
+    pub declared: Vec<BindingName>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeelCandidateKind {
+    SingleOwner,
+    OwnerPair,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeelCandidateStatus {
+    PeelableNow,
+    BlockedCycle,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposedPeelDestinationReport {
+    pub id: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeelBlockingSccReport {
+    pub modules: Vec<String>,
+    pub labels: Vec<String>,
+    pub module_edge_ids: Vec<String>,
+    pub constraining_module_edge_ids: Vec<String>,
+    pub constraining_owner_edge_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModuleReportRef {
+    pub id: String,
+    pub label: String,
+    pub residual: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_file: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct OwnerEdgeEntry {
+    id: String,
+    from: OwnerId,
+    to: OwnerId,
+    reason: EdgeReason,
+}
+
+#[derive(Debug, Clone, Default)]
+struct QuotientEdgeAccumulator {
+    kinds: BTreeSet<&'static str>,
+    owner_edge_ids: Vec<String>,
+    constraining_owner_edge_ids: Vec<String>,
+    reason_count: usize,
+    constrains_realizability: bool,
+}
+
+fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
+    let owner_edges = collect_owner_edge_entries(&schedule.owner_graph);
+    let quotient_edges = build_quotient_edge_reports(schedule, &owner_edges);
+    let quotient_nodes = build_quotient_node_reports(schedule);
+    let quotient_sccs = build_quotient_scc_reports(schedule, &quotient_edges);
+    let peelability = build_peelability_report(schedule);
+    OwnerGraphReport {
+        kind: "js.debundle.owner_graph",
+        schema_version: 1,
+        chunk_id: schedule.chunk_id.clone(),
+        nodes: schedule
+            .owner_graph
+            .nodes
+            .values()
+            .map(|node| OwnerGraphNodeReport {
+                id: owner_key(node.id),
+                statement_ordinal: node.statement_ordinal,
+                declared: node.declared.iter().cloned().collect(),
+                kind: node.kind,
+                has_side_effect: node.has_side_effect,
+                destination: module_report_ref(schedule, node.destination),
+            })
+            .collect(),
+        edges: owner_edges
+            .iter()
+            .map(|edge| OwnerGraphEdgeReport {
+                id: edge.id.clone(),
+                source: owner_key(edge.from),
+                target: owner_key(edge.to),
+                kind: edge.reason.graph_kind_label(),
+                binding: edge.reason.binding().cloned(),
+                statement_ordinal: edge.reason.statement_ordinal(),
+                constrains_realizability: edge.reason.constrains_realizability(),
+            })
+            .collect(),
+        quotient: OwnerGraphQuotientReport {
+            nodes: quotient_nodes,
+            edges: quotient_edges,
+            sccs: quotient_sccs,
+        },
+        peelability,
+    }
+}
+
+fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerEdgeEntry> {
+    let mut entries = Vec::new();
+    for (from, to, weight) in owner_graph.iter_edges() {
+        for reason in &weight.reasons {
+            entries.push((from, to, reason.clone()));
+        }
+    }
+    entries.sort_by(|a, b| {
+        (
+            a.0.0,
+            a.1.0,
+            a.2.graph_kind_label(),
+            a.2.statement_ordinal(),
+            a.2.binding().map(String::as_str),
+        )
+            .cmp(&(
+                b.0.0,
+                b.1.0,
+                b.2.graph_kind_label(),
+                b.2.statement_ordinal(),
+                b.2.binding().map(String::as_str),
+            ))
+    });
+    entries
+        .into_iter()
+        .enumerate()
+        .map(|(idx, (from, to, reason))| OwnerEdgeEntry {
+            id: format!("owner_edge:{idx}"),
+            from,
+            to,
+            reason,
+        })
+        .collect()
+}
+
+fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
+    let mut modules = BTreeSet::<ModuleId>::new();
+    modules.insert(ModuleId::ResidualEntry);
+    for idx in 0..schedule.logical_modules.len() {
+        modules.insert(ModuleId::Logical(LogicalModuleIndex(idx)));
+    }
+    for node in schedule.owner_graph.nodes.values() {
+        modules.insert(node.destination);
+    }
+    for (from, to, _) in schedule.dep_graph.iter_edges() {
+        modules.insert(from);
+        modules.insert(to);
+    }
+    modules
+        .into_iter()
+        .map(|id| module_report_ref(schedule, id))
+        .collect()
+}
+
+fn build_quotient_edge_reports(
+    schedule: &Schedule,
+    owner_edges: &[OwnerEdgeEntry],
+) -> Vec<QuotientEdgeReport> {
+    build_quotient_edge_reports_with_destinations(&schedule.owner_graph, owner_edges, |_, node| {
+        node.destination
+    })
+}
+
+fn build_quotient_edge_reports_with_destinations<F>(
+    owner_graph: &OwnerGraph,
+    owner_edges: &[OwnerEdgeEntry],
+    mut destination_for: F,
+) -> Vec<QuotientEdgeReport>
+where
+    F: FnMut(OwnerId, &OwnerNode) -> ModuleId,
+{
+    let mut accum = BTreeMap::<(ModuleId, ModuleId), QuotientEdgeAccumulator>::new();
+    let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
+    for edge in owner_edges {
+        let Some(from_node) = owner_graph.node(edge.from) else {
+            continue;
+        };
+        let Some(to_node) = owner_graph.node(edge.to) else {
+            continue;
+        };
+        let from = destination_for(edge.from, from_node);
+        let to = destination_for(edge.to, to_node);
+        if from == to {
+            continue;
+        }
+        if edge.reason.is_side_effect_order() && !seen_side_effect_module_pairs.insert((from, to)) {
+            continue;
+        }
+        let entry = accum.entry((from, to)).or_default();
+        entry.kinds.insert(edge.reason.graph_kind_label());
+        entry.owner_edge_ids.push(edge.id.clone());
+        if edge.reason.constrains_realizability() {
+            entry.constraining_owner_edge_ids.push(edge.id.clone());
+        }
+        entry.reason_count += 1;
+        entry.constrains_realizability |= edge.reason.constrains_realizability();
+    }
+    accum
+        .into_iter()
+        .enumerate()
+        .map(|(idx, ((from, to), entry))| QuotientEdgeReport {
+            id: format!("module_edge:{idx}"),
+            source: module_key(from),
+            target: module_key(to),
+            kinds: entry.kinds.into_iter().collect(),
+            owner_edge_ids: entry.owner_edge_ids,
+            constraining_owner_edge_ids: entry.constraining_owner_edge_ids,
+            reason_count: entry.reason_count,
+            constrains_realizability: entry.constrains_realizability,
+        })
+        .collect()
+}
+
+fn build_quotient_scc_reports(
+    schedule: &Schedule,
+    quotient_edges: &[QuotientEdgeReport],
+) -> Vec<QuotientSccReport> {
+    let mut sccs = Vec::new();
+    for scc in tarjan_scc(&schedule.dep_graph.graph) {
+        let is_cycle = scc.len() > 1
+            || (scc.len() == 1 && schedule.dep_graph.graph.contains_edge(scc[0], scc[0]));
+        if !is_cycle {
+            continue;
+        }
+        let in_scc: BTreeSet<String> = scc.iter().copied().map(module_key).collect();
+        let mut module_edge_ids = Vec::new();
+        let mut constraining_module_edge_ids = Vec::new();
+        for edge in quotient_edges {
+            if in_scc.contains(&edge.source) && in_scc.contains(&edge.target) {
+                module_edge_ids.push(edge.id.clone());
+                if edge.constrains_realizability {
+                    constraining_module_edge_ids.push(edge.id.clone());
+                }
+            }
+        }
+        let mut modules: Vec<String> = in_scc.into_iter().collect();
+        modules.sort();
+        let mut labels: Vec<String> = modules
+            .iter()
+            .map(|key| {
+                module_id_from_key(key)
+                    .map(|id| schedule.module_name(id))
+                    .unwrap_or_else(|| key.clone())
+            })
+            .collect();
+        labels.sort();
+        module_edge_ids.sort();
+        constraining_module_edge_ids.sort();
+        sccs.push(QuotientSccReport {
+            id: format!("scc:{}", sccs.len()),
+            modules,
+            labels,
+            is_cycle,
+            realizable: constraining_module_edge_ids.is_empty(),
+            module_edge_ids,
+            constraining_module_edge_ids,
+        });
+    }
+    sccs
+}
+
+fn build_peelability_report(schedule: &Schedule) -> OwnerGraphPeelabilityReport {
+    let residual_destinations: BTreeSet<ModuleId> = schedule
+        .owner_graph
+        .nodes
+        .values()
+        .filter_map(|node| {
+            is_residual_destination(schedule, node.destination).then_some(node.destination)
+        })
+        .collect();
+
+    let owner_edges = collect_owner_edge_entries(&schedule.owner_graph);
+    let owner_edge_by_id: BTreeMap<String, OwnerEdgeEntry> = owner_edges
+        .iter()
+        .map(|edge| (edge.id.clone(), edge.clone()))
+        .collect();
+    let mut declared_by_owner = BTreeMap::<OwnerId, Vec<BindingName>>::new();
+    for node in schedule.owner_graph.nodes.values() {
+        if !is_residual_destination(schedule, node.destination) {
+            continue;
+        }
+        let declared = residual_declared_for_owner(schedule, node);
+        if declared.is_empty() {
+            continue;
+        }
+        declared_by_owner.insert(node.id, declared);
+    }
+
+    let mut singleton_candidates = Vec::<(OwnerId, OwnerGraphPeelCandidateReport)>::new();
+    for (&owner_id, declared) in &declared_by_owner {
+        singleton_candidates.push((
+            owner_id,
+            evaluate_residual_peel_candidate(
+                schedule,
+                &owner_edges,
+                &[owner_id],
+                declared.clone(),
+                PeelCandidateKind::SingleOwner,
+            ),
+        ));
+    }
+
+    let pair_owner_sets = residual_pair_candidates_from_singleton_blockers(
+        schedule,
+        &singleton_candidates,
+        &owner_edge_by_id,
+        &declared_by_owner,
+    );
+
+    let mut pair_candidates = Vec::new();
+    for (left, right) in pair_owner_sets {
+        let mut declared = declared_by_owner.get(&left).cloned().unwrap_or_default();
+        declared.extend(declared_by_owner.get(&right).into_iter().flatten().cloned());
+        declared.sort();
+        declared.dedup();
+
+        let candidate = evaluate_residual_peel_candidate(
+            schedule,
+            &owner_edges,
+            &[left, right],
+            declared,
+            PeelCandidateKind::OwnerPair,
+        );
+        if candidate.status == PeelCandidateStatus::PeelableNow {
+            pair_candidates.push(candidate);
+        }
+    }
+
+    let mut candidates: Vec<OwnerGraphPeelCandidateReport> = singleton_candidates
+        .into_iter()
+        .map(|(_, candidate)| candidate)
+        .collect();
+    candidates.extend(pair_candidates);
+
+    let residual_peelable_symbols: BTreeSet<BindingName> = candidates
+        .iter()
+        .filter(|candidate| {
+            candidate.kind == PeelCandidateKind::SingleOwner
+                && candidate.status == PeelCandidateStatus::PeelableNow
+        })
+        .flat_map(|candidate| candidate.declared.iter().cloned())
+        .collect();
+
+    let residual_peelable_closures = candidates
+        .iter()
+        .filter(|candidate| {
+            candidate.kind == PeelCandidateKind::OwnerPair
+                && candidate.status == PeelCandidateStatus::PeelableNow
+        })
+        .map(|candidate| OwnerGraphPeelClosureReport {
+            candidate_id: candidate.id.clone(),
+            owner_ids: candidate.owner_ids.clone(),
+            declared: candidate.declared.clone(),
+        })
+        .collect();
+
+    OwnerGraphPeelabilityReport {
+        residual_destinations: residual_destinations
+            .into_iter()
+            .map(|id| module_report_ref(schedule, id))
+            .collect(),
+        residual_peelable_symbols: residual_peelable_symbols.into_iter().collect(),
+        residual_peelable_closures,
+        candidates,
+    }
+}
+
+fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<BindingName> {
+    node.declared
+        .iter()
+        .filter(|name| {
+            !matches!(
+                schedule.bindings.get(*name),
+                Some(BindingKind::Imported { .. })
+            )
+        })
+        .cloned()
+        .collect()
+}
+
+fn residual_pair_candidates_from_singleton_blockers(
+    schedule: &Schedule,
+    singleton_candidates: &[(OwnerId, OwnerGraphPeelCandidateReport)],
+    owner_edge_by_id: &BTreeMap<String, OwnerEdgeEntry>,
+    declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
+) -> BTreeSet<(OwnerId, OwnerId)> {
+    let mut pair_owner_sets = BTreeSet::new();
+    for (owner_id, candidate) in singleton_candidates {
+        if candidate.status != PeelCandidateStatus::BlockedCycle {
+            continue;
+        }
+        for scc in &candidate.blocking_sccs {
+            for edge_id in &scc.constraining_owner_edge_ids {
+                let Some(edge) = owner_edge_by_id.get(edge_id) else {
+                    continue;
+                };
+                let other = if edge.from == *owner_id {
+                    edge.to
+                } else if edge.to == *owner_id {
+                    edge.from
+                } else {
+                    continue;
+                };
+                if declared_by_owner.contains_key(&other)
+                    && owners_share_residual_destination(schedule, *owner_id, other)
+                {
+                    pair_owner_sets.insert(sorted_owner_pair(*owner_id, other));
+                }
+            }
+        }
+    }
+    pair_owner_sets
+}
+
+fn owners_share_residual_destination(schedule: &Schedule, left: OwnerId, right: OwnerId) -> bool {
+    let Some(left_node) = schedule.owner_graph.node(left) else {
+        return false;
+    };
+    let Some(right_node) = schedule.owner_graph.node(right) else {
+        return false;
+    };
+    left_node.destination == right_node.destination
+        && is_residual_destination(schedule, left_node.destination)
+}
+
+fn sorted_owner_pair(left: OwnerId, right: OwnerId) -> (OwnerId, OwnerId) {
+    if left <= right {
+        (left, right)
+    } else {
+        (right, left)
+    }
+}
+
+fn evaluate_residual_peel_candidate(
+    schedule: &Schedule,
+    owner_edges: &[OwnerEdgeEntry],
+    owner_ids: &[OwnerId],
+    declared: Vec<BindingName>,
+    kind: PeelCandidateKind,
+) -> OwnerGraphPeelCandidateReport {
+    let candidate_module = ModuleId::Logical(LogicalModuleIndex(schedule.logical_modules.len()));
+    let moved_owners: BTreeSet<OwnerId> = owner_ids.iter().copied().collect();
+    let owner_id_keys: Vec<String> = owner_ids.iter().copied().map(owner_key).collect();
+    let first_owner = owner_ids
+        .first()
+        .and_then(|id| schedule.owner_graph.node(*id))
+        .expect("peel candidate should reference existing owner");
+    let candidate_id = format!("peel_candidate:{}", owner_id_keys.join("+"));
+    let candidate_label = format!("peel {}", declared.join(", "));
+
+    let destination_for = |id: OwnerId, owner_node: &OwnerNode| {
+        if moved_owners.contains(&id) {
+            candidate_module
+        } else {
+            owner_node.destination
+        }
+    };
+    let dep_graph =
+        quotient_owner_graph_with_destinations(&schedule.owner_graph, owner_edges, destination_for);
+    let quotient_edges = build_quotient_edge_reports_with_destinations(
+        &schedule.owner_graph,
+        owner_edges,
+        |id, owner_node| {
+            if moved_owners.contains(&id) {
+                candidate_module
+            } else {
+                owner_node.destination
+            }
+        },
+    );
+    let blocking_sccs = candidate_blocking_sccs(
+        schedule,
+        &dep_graph,
+        &quotient_edges,
+        candidate_module,
+        &candidate_label,
+    );
+    let status = if blocking_sccs.is_empty() {
+        PeelCandidateStatus::PeelableNow
+    } else {
+        PeelCandidateStatus::BlockedCycle
+    };
+
+    OwnerGraphPeelCandidateReport {
+        id: candidate_id.clone(),
+        kind,
+        status,
+        owner_ids: owner_id_keys,
+        declared,
+        from: module_report_ref(schedule, first_owner.destination),
+        proposed_destination: ProposedPeelDestinationReport {
+            id: candidate_id,
+            label: candidate_label,
+        },
+        blocking_sccs,
+    }
+}
+
+fn candidate_blocking_sccs(
+    schedule: &Schedule,
+    dep_graph: &ModuleDepGraph,
+    quotient_edges: &[QuotientEdgeReport],
+    candidate_module: ModuleId,
+    candidate_label: &str,
+) -> Vec<PeelBlockingSccReport> {
+    let mut blocking = Vec::new();
+    for scc in tarjan_scc(&dep_graph.graph) {
+        if !scc.contains(&candidate_module) {
+            continue;
+        }
+        let is_cycle =
+            scc.len() > 1 || (scc.len() == 1 && dep_graph.graph.contains_edge(scc[0], scc[0]));
+        if !is_cycle {
+            continue;
+        }
+
+        let in_scc: BTreeSet<String> = scc.iter().copied().map(module_key).collect();
+        let mut module_edge_ids = Vec::new();
+        let mut constraining_module_edge_ids = Vec::new();
+        let mut constraining_owner_edge_ids = BTreeSet::new();
+        for edge in quotient_edges {
+            if in_scc.contains(&edge.source) && in_scc.contains(&edge.target) {
+                module_edge_ids.push(edge.id.clone());
+                if edge.constrains_realizability {
+                    constraining_module_edge_ids.push(edge.id.clone());
+                    constraining_owner_edge_ids
+                        .extend(edge.constraining_owner_edge_ids.iter().cloned());
+                }
+            }
+        }
+        if constraining_module_edge_ids.is_empty() {
+            continue;
+        }
+
+        let mut modules: Vec<String> = in_scc.into_iter().collect();
+        modules.sort();
+        let mut labels: Vec<String> = scc
+            .iter()
+            .copied()
+            .map(|id| module_label_for_candidate(schedule, id, candidate_module, candidate_label))
+            .collect();
+        labels.sort();
+        module_edge_ids.sort();
+        constraining_module_edge_ids.sort();
+        blocking.push(PeelBlockingSccReport {
+            modules,
+            labels,
+            module_edge_ids,
+            constraining_module_edge_ids,
+            constraining_owner_edge_ids: constraining_owner_edge_ids.into_iter().collect(),
+        });
+    }
+    blocking
+}
+
+fn module_label_for_candidate(
+    schedule: &Schedule,
+    id: ModuleId,
+    candidate_module: ModuleId,
+    candidate_label: &str,
+) -> String {
+    if id == candidate_module {
+        candidate_label.to_string()
+    } else {
+        schedule.module_name(id)
+    }
+}
+
+fn is_residual_destination(schedule: &Schedule, id: ModuleId) -> bool {
+    match id {
+        ModuleId::ResidualEntry => true,
+        ModuleId::Logical(LogicalModuleIndex(idx)) => schedule
+            .logical_modules
+            .get(idx)
+            .is_some_and(|module| module.residual),
+    }
+}
+
+fn owner_key(id: OwnerId) -> String {
+    format!("owner:{}", id.0)
+}
+
+fn module_key(id: ModuleId) -> String {
+    match id {
+        ModuleId::ResidualEntry => "residual".to_string(),
+        ModuleId::Logical(LogicalModuleIndex(idx)) => format!("logical:{idx}"),
+    }
+}
+
+fn module_id_from_key(key: &str) -> Option<ModuleId> {
+    if key == "residual" {
+        return Some(ModuleId::ResidualEntry);
+    }
+    key.strip_prefix("logical:")
+        .and_then(|idx| idx.parse::<usize>().ok())
+        .map(|idx| ModuleId::Logical(LogicalModuleIndex(idx)))
+}
+
+fn module_report_ref(schedule: &Schedule, id: ModuleId) -> ModuleReportRef {
+    match id {
+        ModuleId::ResidualEntry => ModuleReportRef {
+            id: module_key(id),
+            label: schedule.module_name(id),
+            residual: true,
+            index: None,
+            target_file: None,
+        },
+        ModuleId::Logical(LogicalModuleIndex(idx)) => ModuleReportRef {
+            id: module_key(id),
+            label: schedule.module_name(id),
+            residual: schedule
+                .logical_modules
+                .get(idx)
+                .is_some_and(|module| module.residual),
+            index: Some(idx),
+            target_file: schedule
+                .logical_modules
+                .get(idx)
+                .map(|module| module.target_file.clone()),
+        },
+    }
+}
+
 /// Render a compact human-readable summary of cycle reports for the
 /// bail message. The full per-cycle evidence + cut goes to a side-
-/// output file (`<chunk_id>.cycles.json`); the summary stays under
+/// output file (`<chunk_id>/cycles.json`); the summary stays under
 /// the typical CI log-tail threshold so the bail-message version
 /// fits in stderr without truncation.
 ///
@@ -2060,13 +2911,9 @@ pub fn validate_schedule(
                 evidence.push(CycleEdge {
                     from: module_name(from),
                     to: module_name(to),
-                    statement_ordinal: reason.statement_ordinal,
-                    binding: reason.binding.clone(),
-                    kind: match reason.kind {
-                        EdgeKind::AtInitRead => "at-init",
-                        EdgeKind::LazyRead => "lazy",
-                        EdgeKind::SideEffect => "side-effect",
-                    },
+                    statement_ordinal: reason.statement_ordinal(),
+                    binding: reason.binding().cloned(),
+                    kind: reason.cycle_kind_label(),
                 });
             }
         }
@@ -2202,19 +3049,15 @@ fn compute_realizability_cut(
             .remove_edge(u, v)
             .expect("edge picked from working graph just above");
         for reason in &weight.reasons {
-            if matches!(reason.kind, EdgeKind::LazyRead) {
+            if reason.is_lazy_read() {
                 continue;
             }
             cut.push(CycleEdge {
                 from: module_name(u),
                 to: module_name(v),
-                statement_ordinal: reason.statement_ordinal,
-                binding: reason.binding.clone(),
-                kind: match reason.kind {
-                    EdgeKind::AtInitRead => "at-init",
-                    EdgeKind::SideEffect => "side-effect",
-                    EdgeKind::LazyRead => unreachable!(),
-                },
+                statement_ordinal: reason.statement_ordinal(),
+                binding: reason.binding().cloned(),
+                kind: reason.cycle_kind_label(),
             });
         }
     }
@@ -2243,12 +3086,11 @@ fn compute_realizability_cut(
 /// that read it, mark each candidate's `cycle_safe` flag.
 ///
 /// Cycle-safety is checked by tentatively assigning the binding to
-/// the candidate, rebuilding `I ∪ S` (via `build_module_dep_graph`),
-/// and looking for non-trivial SCCs. Lazy-only candidates also need
-/// this check, because lazy reads still emit `import` directives —
-/// they still contribute to `I` — and the strict gating rule (see
-/// DESIGN.md "The realizability theorem") rejects all `I ∪ S`
-/// cycles, not just `R ∪ S` ones.
+/// the candidate, building the owner graph, quotienting it to
+/// `I ∪ S`, and looking for SCCs with at-init or side-effect-order
+/// cross edges. Lazy-only candidates also need this check, because
+/// lazy reads still emit `import` directives and can join an SCC
+/// that already contains a constraining edge.
 /// Project a `bindings` catalogue down to the `Owned` entries' owner
 /// map — what the dep-graph builder, recommender and cycle-safety
 /// check operate on. `Imported` bindings don't create at-init module
@@ -2345,7 +3187,8 @@ fn is_assignment_cycle_safe(
 ) -> bool {
     let mut augmented = owned_view(&schedule.bindings);
     augmented.insert(binding.clone(), candidate);
-    let graph = build_module_dep_graph(&schedule.facts, &augmented);
+    let owner_graph = build_owner_graph(&schedule.facts, &augmented);
+    let graph = quotient_owner_graph(&owner_graph);
     let sccs = tarjan_scc(&graph.graph);
     !sccs.iter().any(|scc| {
         let is_cycle =
@@ -2488,7 +3331,8 @@ mod tests {
         let mut binding_assignment = BTreeMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
-        let graph = build_module_dep_graph(&facts, &binding_assignment);
+        let owner_graph = build_owner_graph(&facts, &binding_assignment);
+        let graph = quotient_owner_graph(&owner_graph);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
         assert_eq!(report.cycles[0].modules.len(), 2);
@@ -2502,7 +3346,8 @@ mod tests {
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
         binding_assignment.insert("C".to_string(), logical(2));
-        let graph = build_module_dep_graph(&facts, &binding_assignment);
+        let owner_graph = build_owner_graph(&facts, &binding_assignment);
+        let graph = quotient_owner_graph(&owner_graph);
         let report = validate_schedule(&graph, &render);
         assert!(
             report.cycles.is_empty(),
@@ -2528,7 +3373,8 @@ mod tests {
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("readB".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
-        let graph = build_module_dep_graph(&facts, &binding_assignment);
+        let owner_graph = build_owner_graph(&facts, &binding_assignment);
+        let graph = quotient_owner_graph(&owner_graph);
         let report = validate_schedule(&graph, &render);
         assert_eq!(
             report.cycles.len(),
@@ -2556,7 +3402,7 @@ mod tests {
         let entry = &cycle.cut[0];
         assert_eq!(entry.from, "mod_1");
         assert_eq!(entry.to, "mod_0");
-        assert_eq!(entry.binding, "A");
+        assert_eq!(entry.binding.as_deref(), Some("A"));
         assert_eq!(entry.kind, "at-init");
     }
 
@@ -2576,7 +3422,8 @@ mod tests {
         binding_assignment.insert("a1".to_string(), logical(0));
         binding_assignment.insert("a2".to_string(), logical(0));
         binding_assignment.insert("b1".to_string(), logical(1));
-        let graph = build_module_dep_graph(&facts, &binding_assignment);
+        let owner_graph = build_owner_graph(&facts, &binding_assignment);
+        let graph = quotient_owner_graph(&owner_graph);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
         let cycle = &report.cycles[0];
@@ -2608,7 +3455,8 @@ mod tests {
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("helperB".to_string(), logical(1));
         binding_assignment.insert("B".to_string(), logical(1));
-        let graph = build_module_dep_graph(&facts, &binding_assignment);
+        let owner_graph = build_owner_graph(&facts, &binding_assignment);
+        let graph = quotient_owner_graph(&owner_graph);
         let report = validate_schedule(&graph, &render);
         assert!(
             report.cycles.is_empty(),
@@ -2632,10 +3480,190 @@ mod tests {
             .map(|i| LogicalModule {
                 id: format!("mod_{i}"),
                 target_file: format!("mod_{i}.js"),
+                residual: false,
                 rename_map: BTreeMap::new(),
             })
             .collect();
         Schedule::build("test_chunk".to_string(), facts, bindings, logical_modules)
+    }
+
+    fn schedule_with_residual_module(
+        source: &str,
+        residual_bindings: &[&str],
+        logical_bindings: &[&str],
+    ) -> Schedule {
+        let module = parse(source);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let residual = logical(0);
+        let logical = logical(1);
+        let mut bindings = BTreeMap::new();
+        for name in residual_bindings {
+            bindings.insert(name.to_string(), BindingKind::Owned { owner: residual });
+        }
+        for name in logical_bindings {
+            bindings.insert(name.to_string(), BindingKind::Owned { owner: logical });
+        }
+        let logical_modules = vec![
+            LogicalModule {
+                id: "residual".to_string(),
+                target_file: "residual/unhandled.js".to_string(),
+                residual: true,
+                rename_map: BTreeMap::new(),
+            },
+            LogicalModule {
+                id: "mod_1".to_string(),
+                target_file: "mod_1.js".to_string(),
+                residual: false,
+                rename_map: BTreeMap::new(),
+            },
+        ];
+        Schedule::build("test_chunk".to_string(), facts, bindings, logical_modules)
+    }
+
+    #[test]
+    fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
+        let schedule = schedule_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
+
+        let owner_edge = schedule
+            .owner_graph
+            .graph
+            .edge_weight(OwnerId(0), OwnerId(1))
+            .expect("A's owner should point at X's owner before quotienting");
+        assert!(
+            owner_edge.reasons.iter().any(|reason| matches!(
+                reason,
+                EdgeReason::AtInitRead {
+                    binding,
+                    statement_ordinal: StatementOrdinal(0),
+                } if binding == "X"
+            )),
+            "owner graph should retain the unassigned declared provider edge: {owner_edge:?}",
+        );
+        assert!(
+            schedule
+                .dep_graph
+                .graph
+                .contains_edge(logical(0), ModuleId::ResidualEntry),
+            "the quotient should expose the logical-module -> residual read",
+        );
+
+        let report = schedule.owner_graph_report();
+        let residual_owner = report
+            .nodes
+            .iter()
+            .find(|node| node.id == "owner:1")
+            .expect("X owner should be reported");
+        assert_eq!(residual_owner.destination.id, "residual");
+    }
+
+    #[test]
+    fn peelability_reports_symbols_currently_peelable_from_residual() {
+        let schedule = schedule_with_residual_module(
+            "const Leaf = 1; const ResidualUse = Leaf + 1; const Existing = ResidualUse + 1;",
+            &["Leaf", "ResidualUse"],
+            &["Existing"],
+        );
+
+        let report = schedule.owner_graph_report();
+        assert_eq!(report.peelability.residual_destinations.len(), 1);
+        assert_eq!(
+            report.peelability.residual_destinations[0].label,
+            "residual"
+        );
+        assert!(
+            report
+                .peelability
+                .residual_peelable_symbols
+                .contains(&"Leaf".to_string()),
+            "Leaf should be directly peelable from residual: {:#?}",
+            report.peelability,
+        );
+        let leaf = report
+            .peelability
+            .candidates
+            .iter()
+            .find(|candidate| candidate.declared == vec!["Leaf".to_string()])
+            .expect("Leaf candidate should be reported");
+        assert_eq!(leaf.kind, PeelCandidateKind::SingleOwner);
+        assert_eq!(leaf.status, PeelCandidateStatus::PeelableNow);
+        assert!(leaf.blocking_sccs.is_empty());
+    }
+
+    #[test]
+    fn peelability_blocks_residual_symbol_that_would_create_constraining_scc() {
+        let schedule =
+            schedule_with_residual_module("const A = B + 1; const B = A + 1;", &["A", "B"], &[]);
+
+        let report = schedule.owner_graph_report();
+        assert!(
+            report.peelability.residual_peelable_symbols.is_empty(),
+            "mutually at-init residual bindings should not be peelable one at a time: {:#?}",
+            report.peelability,
+        );
+        let a = report
+            .peelability
+            .candidates
+            .iter()
+            .find(|candidate| candidate.declared == vec!["A".to_string()])
+            .expect("A candidate should be reported");
+        assert_eq!(a.kind, PeelCandidateKind::SingleOwner);
+        assert_eq!(a.status, PeelCandidateStatus::BlockedCycle);
+        assert_eq!(a.blocking_sccs.len(), 1);
+        assert!(
+            !a.blocking_sccs[0].constraining_owner_edge_ids.is_empty(),
+            "blocked candidate should point at owner-edge evidence: {a:#?}",
+        );
+
+        let pair = report
+            .peelability
+            .candidates
+            .iter()
+            .find(|candidate| {
+                candidate.kind == PeelCandidateKind::OwnerPair
+                    && candidate.declared == vec!["A".to_string(), "B".to_string()]
+            })
+            .expect("A+B should be reported as a pair-only peel candidate");
+        assert_eq!(pair.status, PeelCandidateStatus::PeelableNow);
+        assert_eq!(pair.owner_ids.len(), 2);
+        assert!(pair.blocking_sccs.is_empty());
+        assert!(
+            report
+                .peelability
+                .residual_peelable_closures
+                .iter()
+                .any(|closure| closure.declared == vec!["A".to_string(), "B".to_string()]),
+            "pair closure summary should include A+B: {:#?}",
+            report.peelability,
+        );
+    }
+
+    #[test]
+    fn peelability_does_not_overclaim_pair_when_three_owner_cycle_remains() {
+        let schedule = schedule_with_residual_module(
+            "const A = B + 1; const B = C + 1; const C = A + 1;",
+            &["A", "B", "C"],
+            &[],
+        );
+
+        let report = schedule.owner_graph_report();
+        assert!(
+            report.peelability.residual_peelable_symbols.is_empty(),
+            "three-owner at-init cycle should not expose singleton peels: {:#?}",
+            report.peelability,
+        );
+        assert!(
+            report.peelability.residual_peelable_closures.is_empty(),
+            "two-owner closures should not be reported when any pair remains cyclic: {:#?}",
+            report.peelability,
+        );
+        assert!(
+            report.peelability.candidates.iter().all(|candidate| {
+                candidate.kind != PeelCandidateKind::OwnerPair
+                    || candidate.status != PeelCandidateStatus::PeelableNow
+            }),
+            "no pair should be reported as peelable for a three-owner cycle: {:#?}",
+            report.peelability,
+        );
     }
 
     #[test]
@@ -3568,7 +4596,7 @@ mod tests {
         );
     }
 
-    // --- Comma-list owner attribution in build_module_dep_graph -------------
+    // --- Comma-list owner attribution in owner graph quotient ---------------
 
     #[test]
     fn split_comma_list_attributes_reads_per_declarator() {

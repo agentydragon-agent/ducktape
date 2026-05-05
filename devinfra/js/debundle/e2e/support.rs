@@ -130,8 +130,16 @@ pub struct Fixture {
     pub chunk_id: String,
     pub entry_path: PathBuf,
     pub out_root: PathBuf,
+    pub report_root: PathBuf,
     #[allow(dead_code)]
     pub snapshot_root: PathBuf,
+    // Held to keep the tempdir alive for the duration of assertions.
+    _root: TempDir,
+}
+
+pub struct RejectedFixture {
+    pub stderr: String,
+    pub report_root: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
 }
@@ -168,6 +176,7 @@ pub fn run_logical_modules_e2e_fixture(opts: FixtureOpts<'_>) -> Fixture {
         chunk_id: opts.chunk_id.to_string(),
         entry_path,
         out_root: setup.out_root,
+        report_root: setup.report_root,
         snapshot_root: setup.snapshot_root,
         _root: setup.root,
     }
@@ -186,7 +195,8 @@ pub fn expect_logical_modules_e2e_rejection(
     opts: FixtureOpts<'_>,
     error_substring_alternatives: &[&str],
 ) {
-    let stderr = run_and_assert_rejected(&opts);
+    let rejected = run_logical_modules_e2e_rejection_fixture(opts);
+    let stderr = rejected.stderr;
     let stderr_lower = stderr.to_lowercase();
     assert!(
         error_substring_alternatives
@@ -206,7 +216,8 @@ pub fn expect_logical_modules_e2e_rejection_containing_all(
     opts: FixtureOpts<'_>,
     required_substrings: &[&str],
 ) {
-    let stderr = run_and_assert_rejected(&opts);
+    let rejected = run_logical_modules_e2e_rejection_fixture(opts);
+    let stderr = rejected.stderr;
     let stderr_lower = stderr.to_lowercase();
     let missing: Vec<&str> = required_substrings
         .iter()
@@ -219,10 +230,10 @@ pub fn expect_logical_modules_e2e_rejection_containing_all(
     );
 }
 
-fn run_and_assert_rejected(opts: &FixtureOpts<'_>) -> String {
-    let setup = setup_fixture(opts);
+pub fn run_logical_modules_e2e_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+    let setup = setup_fixture(&opts);
     let spec_path = setup.out_root.join("transform_spec.jsonc");
-    let spec = build_spec(opts, &setup);
+    let spec = build_spec(&opts, &setup);
     write_json_file(&spec_path, &spec);
 
     let result = spawn_transform(&spec_path);
@@ -232,7 +243,11 @@ fn run_and_assert_rejected(opts: &FixtureOpts<'_>) -> String {
         result.stdout,
         result.stderr,
     );
-    result.stderr
+    RejectedFixture {
+        stderr: result.stderr,
+        report_root: setup.report_root,
+        _root: setup.root,
+    }
 }
 
 pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
@@ -359,6 +374,7 @@ pub fn assert_node_output(path: &Path, expected_stdout: &str, expected_stderr: &
 struct FixtureSetup {
     root: TempDir,
     out_root: PathBuf,
+    report_root: PathBuf,
     snapshot_root: PathBuf,
     js_list_path: PathBuf,
 }
@@ -367,9 +383,11 @@ fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
     let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
     let extracted_root = root.path().join("extracted");
     let out_root = root.path().join("out");
+    let report_root = root.path().join("reports");
     let snapshot_root = root.path().join("snapshot");
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&out_root).unwrap();
+    fs::create_dir_all(&report_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
 
     // Mark the snapshot tree as ESM so node loads emitted .js files as modules.
@@ -393,6 +411,7 @@ fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
     FixtureSetup {
         root,
         out_root,
+        report_root,
         snapshot_root,
         js_list_path,
     }
@@ -429,6 +448,7 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Value {
         "chunkRenames": chunk_renames,
         "materializeLogicalModules": {
             "pruneOtherChunks": false,
+            "reportOutDir": setup.report_root,
             "targetDir": "modules",
         },
         "writeJsTree": { "force": true, "outDir": setup.out_root },

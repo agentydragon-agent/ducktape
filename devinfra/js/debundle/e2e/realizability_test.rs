@@ -1,12 +1,23 @@
 //! Realizability gate (`I ∪ S` per <DESIGN.md>): the
 //! materializer accepts a spec and emits a behaviour-preserving
-//! bundle iff the imports graph plus side-effect ordering is
-//! acyclic. Each test feeds a fixture spec and asserts either
-//! acceptance + entry-stdout match, or rejection with cycle
-//! evidence naming the implicated modules.
+//! bundle iff every imports plus side-effect-ordering SCC is
+//! realizable. Lazy-only import cycles are allowed; cycles with
+//! at-init or side-effect-order edges are rejected. Each test feeds
+//! a fixture spec and asserts either acceptance + entry-stdout
+//! match, or rejection with cycle evidence naming the implicated
+//! modules.
 
 use debundle_e2e_support::*;
-use serde_json::json;
+use serde_json::{Value, json};
+use std::{fs, path::Path};
+
+fn read_json(path: &Path) -> Value {
+    serde_json::from_str(
+        &fs::read_to_string(path)
+            .unwrap_or_else(|err| panic!("read JSON report {}: {err}", path.display())),
+    )
+    .unwrap_or_else(|err| panic!("parse JSON report {}: {err}", path.display()))
+}
 
 // --- R cycles (both back-edges at-init) ----------------------------------
 
@@ -109,6 +120,206 @@ export { A, B, readA, readB };
     assert_entry_output(&fixture, "a-value b-value\n");
 }
 
+#[test]
+fn owner_graph_report_is_written_for_successful_specs() {
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"const A = "a-value";
+const B = "b-value";
+function readA() { return A; }
+function readB() { return B; }
+console.log(readA(), readB());
+export { A, B, readA, readB };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
+            logical_module("mod_b", &[Member::new("B"), Member::new("readA")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "a-value b-value\n");
+
+    let graph = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    assert_eq!(graph["kind"], "js.debundle.owner_graph");
+    assert_eq!(graph["schemaVersion"], 1);
+    assert!(
+        graph["nodes"]
+            .as_array()
+            .is_some_and(|nodes| nodes.len() >= 4),
+        "owner graph should expose source-owner nodes: {graph:#}",
+    );
+    assert!(
+        graph["edges"].as_array().is_some_and(|edges| {
+            edges.iter().any(|edge| {
+                edge["kind"].as_str() == Some("lazy_read")
+                    && edge["binding"].as_str() == Some("B")
+                    && edge["constrainsRealizability"].as_bool() == Some(false)
+            })
+        }),
+        "owner graph should expose lazy owner read edges: {graph:#}",
+    );
+    assert!(
+        graph["quotient"]["edges"].as_array().is_some_and(|edges| {
+            edges.iter().any(|edge| {
+                edge["kinds"].as_array().is_some_and(|kinds| {
+                    kinds.iter().any(|kind| kind.as_str() == Some("lazy_read"))
+                }) && edge["ownerEdgeIds"]
+                    .as_array()
+                    .is_some_and(|ids| !ids.is_empty())
+            })
+        }),
+        "quotient edges should retain owner-edge provenance: {graph:#}",
+    );
+    assert!(
+        graph["quotient"]["sccs"].as_array().is_some_and(|sccs| {
+            sccs.iter().any(|scc| {
+                scc["isCycle"].as_bool() == Some(true) && scc["realizable"].as_bool() == Some(true)
+            })
+        }),
+        "lazy-only quotient SCC should be reported as realizable: {graph:#}",
+    );
+    assert!(
+        graph["peelability"]["residualPeelableSymbols"]
+            .as_array()
+            .is_some(),
+        "owner graph should expose the residual peelability projection: {graph:#}",
+    );
+}
+
+#[test]
+fn owner_graph_report_identifies_pair_only_residual_peel_in_emitted_js_fixture() {
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"var A = B || "fallback";
+var B = A + "-b";
+const Existing = B + "-existing";
+console.log(A, B, Existing);
+export { A, B, Existing };
+"#,
+        vec![logical_module("mod_existing", &[Member::new("Existing")])],
+    ));
+    assert_entry_output(&fixture, "fallback fallback-b fallback-b-existing\n");
+
+    let graph = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let peelability = &graph["peelability"];
+    assert!(
+        peelability["residualPeelableSymbols"]
+            .as_array()
+            .is_some_and(|symbols| symbols
+                .iter()
+                .all(|symbol| { !matches!(symbol.as_str(), Some("A" | "B")) })),
+        "A and B should not be listed as singleton peels: {graph:#}",
+    );
+    assert!(
+        peelability["candidates"]
+            .as_array()
+            .is_some_and(|candidates| {
+                candidates.iter().any(|candidate| {
+                    candidate["kind"].as_str() == Some("single_owner")
+                        && candidate["status"].as_str() == Some("blocked_cycle")
+                        && candidate["declared"].as_array().is_some_and(|declared| {
+                            declared
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                == vec!["A"]
+                        })
+                        && candidate["blockingSccs"].as_array().is_some_and(|sccs| {
+                            sccs.iter().any(|scc| {
+                                scc["constrainingOwnerEdgeIds"]
+                                    .as_array()
+                                    .is_some_and(|ids| !ids.is_empty())
+                            })
+                        })
+                })
+            }),
+        "A should explain why the singleton peel is blocked: {graph:#}",
+    );
+    assert!(
+        peelability["candidates"]
+            .as_array()
+            .is_some_and(|candidates| {
+                candidates.iter().any(|candidate| {
+                    candidate["kind"].as_str() == Some("owner_pair")
+                        && candidate["status"].as_str() == Some("peelable_now")
+                        && candidate["ownerIds"]
+                            .as_array()
+                            .is_some_and(|ids| ids.len() == 2)
+                        && candidate["declared"].as_array().is_some_and(|declared| {
+                            declared
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                == vec!["A", "B"]
+                        })
+                        && candidate["blockingSccs"]
+                            .as_array()
+                            .is_some_and(|sccs| sccs.is_empty())
+                })
+            }),
+        "A+B should be reported as a peelable pair closure: {graph:#}",
+    );
+    assert!(
+        peelability["residualPeelableClosures"]
+            .as_array()
+            .is_some_and(|closures| {
+                closures.iter().any(|closure| {
+                    closure["declared"].as_array().is_some_and(|declared| {
+                        declared
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            == vec!["A", "B"]
+                    })
+                })
+            }),
+        "pair-only peelability should be summarized in residualPeelableClosures: {graph:#}",
+    );
+}
+
+#[test]
+fn owner_graph_report_is_written_before_rejection() {
+    let rejected = run_logical_modules_e2e_rejection_fixture(FixtureOpts::new(
+        r#"const A = "a-value";
+function readB() { return B; }
+const B = A + "-postfix";
+console.log(readB());
+export { A, B, readB };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
+            logical_module("mod_b", &[Member::new("B")]),
+        ],
+    ));
+    assert!(
+        rejected.stderr.contains("owner graph written"),
+        "stderr should point at the owner graph report:\n{}",
+        rejected.stderr,
+    );
+
+    let graph = read_json(&rejected.report_root.join("static/app/owner_graph.json"));
+    assert!(
+        rejected
+            .report_root
+            .join("static/app/schedule.json")
+            .exists(),
+        "schedule report should be written alongside owner graph",
+    );
+    assert!(
+        rejected.report_root.join("static/app/cycles.json").exists(),
+        "cycle report should be written before rejection",
+    );
+    assert!(
+        graph["quotient"]["sccs"].as_array().is_some_and(|sccs| {
+            sccs.iter().any(|scc| {
+                scc["isCycle"].as_bool() == Some(true)
+                    && scc["realizable"].as_bool() == Some(false)
+                    && scc["constrainingModuleEdgeIds"]
+                        .as_array()
+                        .is_some_and(|ids| !ids.is_empty())
+            })
+        }),
+        "unrealizable quotient SCC should be reported with constraining edge ids: {graph:#}",
+    );
+}
+
 // --- Acyclic specs and cross-module init order ----------------------------
 
 #[test]
@@ -198,6 +409,31 @@ export { a1, a2, b1 };
         // `side-effect` substring confirms the rejection comes
         // from S edges, not from a misclassified R/I edge.
         &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
+}
+
+#[test]
+fn side_effect_owner_edges_do_not_use_binding_sentinels() {
+    let rejected = run_logical_modules_e2e_rejection_fixture(FixtureOpts::new(
+        r#"const a1 = (globalThis.tag = "a1", 1);
+const b1 = (globalThis.tag = "b1", 2);
+const a2 = (globalThis.tag = "a2", 3);
+console.log(a1, a2, b1, globalThis.tag);
+export { a1, a2, b1 };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
+            logical_module("mod_b", &[Member::new("b1")]),
+        ],
+    ));
+    let graph = read_json(&rejected.report_root.join("static/app/owner_graph.json"));
+    assert!(
+        graph["edges"].as_array().is_some_and(|edges| {
+            edges.iter().any(|edge| {
+                edge["kind"].as_str() == Some("side_effect_order") && edge.get("binding").is_none()
+            })
+        }),
+        "side-effect owner edges should omit binding rather than using a sentinel: {graph:#}",
     );
 }
 
