@@ -105,11 +105,13 @@ class EZShareClient:
 
     def _get_bytes(self, path: str, timeout: int = 30) -> bytes:
         with urllib.request.urlopen(f"{self._base}{path}", timeout=timeout) as r:
-            return r.read()
+            data: bytes = r.read()
+        return data
 
     def _get_url_bytes(self, url: str, timeout: int = 30) -> bytes:
         with urllib.request.urlopen(url, timeout=timeout) as r:
-            return r.read()
+            data: bytes = r.read()
+        return data
 
     def _parse_xml(self, data: bytes) -> ET.Element:
         # Strip encoding declaration — gb2312 is unsupported by ET's string parser.
