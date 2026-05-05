@@ -33,10 +33,11 @@ Lives at <https://casino.allegedly.works>.
 | `frontend/src/SyncBanner.jsx`          | Header banner + toast for offline/rejected/syncing states  |
 | `frontend/src/main.jsx`                | Entry — renders into `#root`, registers service worker     |
 | `frontend/index.html`                  | App shell (manifest link, theme color, apple-\* meta)      |
-| `frontend/manifest.webmanifest`        | PWA manifest                                               |
-| `frontend/sw.js`                       | Service worker (cache app shell, network-only `/sync`)     |
-| `frontend/icon.svg`                    | App icon                                                   |
-| `frontend/esbuild.config.mjs`          | Production bundler config                                  |
+| `frontend/public/manifest.webmanifest` | PWA manifest                                               |
+| `frontend/public/sw.js`                | Kill-switch service worker (unregisters + clears caches)   |
+| `frontend/public/icon.svg`             | App icon                                                   |
+| `frontend/public/fonts/`               | Hermetic latin-subset fonts (Outfit, Playfair Display)     |
+| `frontend/vite.config.js`              | Production bundler config (Vite + @vitejs/plugin-react)    |
 | `BUILD.bazel` / `frontend/BUILD.bazel` | Bazel wiring                                               |
 
 ## Auth
@@ -95,11 +96,14 @@ bbr test //x/auragon_study_casino/...  //x/auragon_study_casino/tests/...
 bbr build //x/auragon_study_casino:image
 ```
 
-Local dev (requires node_modules linked via Bazel):
+Local dev:
 
 ```bash
-# Iterate on the frontend, auto-rebuild:
-cd x/auragon_study_casino/frontend && node esbuild.config.mjs dist --watch
+# Iterate on the frontend with Vite's HMR dev server:
+cd x/auragon_study_casino/frontend && pnpm exec vite
+
+# Or build the production bundle once (matches what Bazel produces):
+cd x/auragon_study_casino/frontend && pnpm exec vite build
 
 # Run the backend against the local dist:
 bb run --remote_executor="" //x/auragon_study_casino:server
