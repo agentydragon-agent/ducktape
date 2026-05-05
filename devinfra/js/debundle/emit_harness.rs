@@ -1,12 +1,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::{cell::RefCell, rc::Rc};
 
 use anyhow::{Context, Result, bail};
+use lol_html::{RewriteStrSettings, element, end, end_tag, html_content::ContentType, rewrite_str};
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use artifact::{
-    JsPipelineArtifact, chunk_id_for_js_path, manifest_relative_path, materialize_artifact_scripts,
-    path_to_posix, split_posix_path,
+    ArtifactChunkRecord, JsPipelineArtifact, chunk_id_for_js_path, manifest_relative_path,
+    materialize_artifact_scripts, module_path_from_path, normalize_module_path,
+    path_from_module_path,
 };
 use rewrite_specifiers::runtime_js_href;
 use scrambled_id_frequencies::{compute_scrambled_identifier_frequencies, write_queue};
@@ -32,7 +36,12 @@ struct EntryPoints {
 #[derive(Debug, Clone)]
 struct HtmlEntry {
     path: String,
-    tag: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct HtmlEntries {
+    module_scripts: Vec<HtmlEntry>,
+    module_preloads: Vec<HtmlEntry>,
 }
 
 pub fn emit_browser_harness(
@@ -47,11 +56,15 @@ pub fn emit_browser_harness(
         .entry_points
         .and_then(|entry_points| entry_points.html)
         .unwrap_or_else(|| "index.html".to_string());
-    let source_html_path = options.snapshot_root.join(split_posix_path(&html_path));
+    let source_html_path = options
+        .snapshot_root
+        .join(path_from_module_path(&html_path));
     let source_html = fs::read_to_string(&source_html_path)
         .with_context(|| format!("reading {}", source_html_path.display()))?;
-    let script_entries = html_script_entries(&source_html)?;
-    let preload_entries = html_module_preload_entries(&source_html)?
+    let html_entries = collect_html_entries(&source_html)?;
+    let script_entries = html_entries.module_scripts;
+    let preload_entries = html_entries
+        .module_preloads
         .into_iter()
         .filter(|entry| entry.path.ends_with(".js"))
         .collect::<Vec<_>>();
@@ -86,16 +99,15 @@ pub fn emit_browser_harness(
 
     fs::write(options.out_dir.join("index.html"), index_html)?;
     fs::write(options.out_dir.join("bootstrap.js"), bootstrap)?;
+    let root_manifest = artifact
+        .root_manifest
+        .as_ref()
+        .context("emitBrowserHarness requires artifact manifest")?;
     fs::write(
         options.out_dir.join("chunks.manifest.json"),
-        serde_json::to_string_pretty(&serde_json::json!({
-            "chunks": artifact
-                .root_manifest
-                .as_ref()
-                .context("emitBrowserHarness requires artifact manifest")?
-                .chunks
-                .clone(),
-        }))? + "\n",
+        serde_json::to_string_pretty(&ChunksManifest {
+            chunks: &root_manifest.chunks,
+        })? + "\n",
     )?;
     // Make the harness tree self-contained: copy the upstream source HTML
     // and asset-summary into the output dir so the live proxy (and any
@@ -118,7 +130,6 @@ pub fn emit_browser_harness(
     let queue = compute_scrambled_identifier_frequencies(artifact)?;
     let queue_path = write_queue(&options.out_dir, &queue)?;
     let manifest = HarnessManifest {
-        schema_version: 1,
         source_html: rel(&source_html_in_tree),
         asset_summary_path: rel(&asset_summary_in_tree),
         chunks_manifest_path: rel(&options.out_dir.join("chunks.manifest.json")),
@@ -143,15 +154,26 @@ pub fn emit_browser_harness(
     )?;
     fs::write(
         options.out_dir.join("package.json"),
-        "{\n  \"type\": \"module\"\n}\n",
+        serde_json::to_string_pretty(&PackageManifest {
+            package_type: "module",
+        })? + "\n",
     )?;
     Ok(())
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
+struct ChunksManifest<'a> {
+    chunks: &'a [ArtifactChunkRecord],
+}
+
+#[derive(Serialize)]
+struct PackageManifest {
+    #[serde(rename = "type")]
+    package_type: &'static str,
+}
+
+#[derive(Serialize)]
 struct HarnessManifest {
-    schema_version: u8,
     source_html: String,
     asset_summary_path: String,
     chunks_manifest_path: String,
@@ -167,7 +189,6 @@ struct HarnessManifest {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 struct HarnessGeneratedManifest {
     bootstrap: String,
     chunks_manifest: String,
@@ -199,51 +220,122 @@ fn rewrite_index_html(
     out_dir: &Path,
     runtime_root: &Path,
 ) -> Result<String> {
-    let mut html = source_html.to_string();
-    let script_entries = html_script_entries(source_html)?;
-    let mut script_inserted = false;
-    for entry in script_entries {
-        let replacement = if script_inserted {
-            String::new()
-        } else {
-            script_inserted = true;
-            format!(
-                "{}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>",
-                harness_monitor_script()
-            )
-        };
-        html = html.replacen(&entry.tag, &replacement, 1);
-    }
-    for entry in html_module_preload_entries(&html)? {
-        if !entry.path.ends_with(".js") {
-            continue;
-        }
-        let href = runtime_js_href(artifact, &entry.path, out_dir, runtime_root)?;
-        let rewritten = set_attr(&entry.tag, "href", &href)?;
-        html = html.replacen(&entry.tag, &rewritten, 1);
-    }
-    html = rewrite_root_absolute_urls(&html);
-    if !script_inserted {
-        let insertion = format!(
-            "    {}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>\n  </body>",
-            harness_monitor_script()
-        );
-        html = replace_case_insensitive_once(&html, "</body>", &insertion).unwrap_or_else(|| {
-            let mut next = html.clone();
-            next.push('\n');
-            next.push_str(&insertion);
-            next
-        });
-    }
     let comment = "Generated local harness: loads generated runtime JavaScript from the transformed output tree.";
-    if !html.contains(comment) {
-        html = replace_case_insensitive_once(
-            &html,
-            "<head>",
-            &format!("<head>\n    <!-- {comment} -->"),
-        )
-        .unwrap_or(html);
-    }
+    let state = Rc::new(RefCell::new(HtmlRewriteState::default()));
+    let first_script_replacement = format!(
+        "{}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>",
+        harness_monitor_script()
+    );
+    let body_script_insertion = format!(
+        "    {}\n    <script type=\"module\" src=\"./bootstrap.js\"></script>\n  ",
+        harness_monitor_script()
+    );
+    let bodyless_script_insertion = format!("{body_script_insertion}</body>");
+    let should_insert_comment = !source_html.contains(comment);
+    let comment_html = format!("\n    <!-- {comment} -->");
+
+    let html = rewrite_str(
+        source_html,
+        RewriteStrSettings {
+            element_content_handlers: vec![
+                element!("script[type][src]", {
+                    let state = Rc::clone(&state);
+                    let first_script_replacement = first_script_replacement.clone();
+                    move |element| {
+                        if !attribute_eq_ignore_ascii_case(element, "type", "module") {
+                            return Ok(());
+                        }
+                        let src = element
+                            .get_attribute("src")
+                            .context("script tag missing src")?;
+                        let _ = normalize_url_path(&src)?;
+                        let mut state = state.borrow_mut();
+                        if state.script_inserted {
+                            element.remove();
+                        } else {
+                            state.script_inserted = true;
+                            element.replace(&first_script_replacement, ContentType::Html);
+                        }
+                        Ok(())
+                    }
+                }),
+                element!("link[rel][href]", move |element| {
+                    if !attribute_contains_token_ignore_ascii_case(element, "rel", "modulepreload")
+                    {
+                        return Ok(());
+                    }
+                    let href = element
+                        .get_attribute("href")
+                        .context("preload tag missing href")?;
+                    let path = normalize_url_path(&href)?;
+                    if path.ends_with(".js") {
+                        let href = runtime_js_href(artifact, &path, out_dir, runtime_root)?;
+                        element.set_attribute("href", &href)?;
+                    }
+                    Ok(())
+                }),
+                element!("head", {
+                    let state = Rc::clone(&state);
+                    move |element| {
+                        if should_insert_comment {
+                            let mut state = state.borrow_mut();
+                            if !state.head_comment_inserted {
+                                state.head_comment_inserted = true;
+                                element.prepend(&comment_html, ContentType::Html);
+                            }
+                        }
+                        Ok(())
+                    }
+                }),
+                element!("body", {
+                    let state = Rc::clone(&state);
+                    let body_script_insertion = body_script_insertion.clone();
+                    move |element| {
+                        state.borrow_mut().body_seen = true;
+                        let state = Rc::clone(&state);
+                        let body_script_insertion = body_script_insertion.clone();
+                        element.on_end_tag(end_tag!(move |end_tag| {
+                            let mut state = state.borrow_mut();
+                            if !state.script_inserted {
+                                state.script_inserted = true;
+                                end_tag.before(&body_script_insertion, ContentType::Html);
+                            }
+                            Ok(())
+                        }))
+                    }
+                }),
+                element!("*", |element| {
+                    let rewrites = element
+                        .attributes()
+                        .iter()
+                        .filter_map(|attribute| {
+                            root_absolute_harness_url(&attribute.value())
+                                .map(|value| (attribute.name_preserve_case(), value))
+                        })
+                        .collect::<Vec<_>>();
+                    for (name, value) in rewrites {
+                        element.set_attribute(&name, &value)?;
+                    }
+                    Ok(())
+                }),
+            ],
+            document_content_handlers: vec![end!({
+                let state = Rc::clone(&state);
+                move |document_end| {
+                    let mut state = state.borrow_mut();
+                    if !state.script_inserted && !state.body_seen {
+                        state.script_inserted = true;
+                        document_end
+                            .append(&format!("\n{bodyless_script_insertion}"), ContentType::Html);
+                    }
+                    Ok(())
+                }
+            })],
+            ..RewriteStrSettings::new()
+        },
+    )
+    .context("rewriting index HTML")?;
+
     if html.ends_with('\n') {
         Ok(html)
     } else {
@@ -251,166 +343,106 @@ fn rewrite_index_html(
     }
 }
 
-fn html_script_entries(html: &str) -> Result<Vec<HtmlEntry>> {
-    html_tags(html, "script")
-        .into_iter()
-        .filter(|tag| {
-            attr_value(tag, "type").is_some_and(|value| value.eq_ignore_ascii_case("module"))
-                && attr_value(tag, "src").is_some()
-        })
-        .map(|tag| {
-            let src = attr_value(&tag, "src").context("script tag missing src")?;
-            Ok(HtmlEntry {
-                path: normalize_url_path(&src)?,
-                tag,
-            })
-        })
-        .collect()
+#[derive(Debug, Default)]
+struct HtmlRewriteState {
+    script_inserted: bool,
+    body_seen: bool,
+    head_comment_inserted: bool,
 }
 
-fn html_module_preload_entries(html: &str) -> Result<Vec<HtmlEntry>> {
-    html_tags(html, "link")
-        .into_iter()
-        .filter(|tag| {
-            attr_value(tag, "rel")
-                .map(|value| {
-                    value
-                        .split_ascii_whitespace()
-                        .any(|part| part.eq_ignore_ascii_case("modulepreload"))
-                })
-                .unwrap_or(false)
-                && attr_value(tag, "href").is_some()
+fn collect_html_entries(html: &str) -> Result<HtmlEntries> {
+    let entries = Rc::new(RefCell::new(HtmlEntries::default()));
+    rewrite_str(
+        html,
+        RewriteStrSettings {
+            element_content_handlers: vec![
+                element!("script[type][src]", {
+                    let entries = Rc::clone(&entries);
+                    move |element| {
+                        if attribute_eq_ignore_ascii_case(element, "type", "module") {
+                            let src = element
+                                .get_attribute("src")
+                                .context("script tag missing src")?;
+                            entries.borrow_mut().module_scripts.push(HtmlEntry {
+                                path: normalize_url_path(&src)?,
+                            });
+                        }
+                        Ok(())
+                    }
+                }),
+                element!("link[rel][href]", {
+                    let entries = Rc::clone(&entries);
+                    move |element| {
+                        if attribute_contains_token_ignore_ascii_case(
+                            element,
+                            "rel",
+                            "modulepreload",
+                        ) {
+                            let href = element
+                                .get_attribute("href")
+                                .context("preload tag missing href")?;
+                            entries.borrow_mut().module_preloads.push(HtmlEntry {
+                                path: normalize_url_path(&href)?,
+                            });
+                        }
+                        Ok(())
+                    }
+                }),
+            ],
+            ..RewriteStrSettings::new()
+        },
+    )
+    .context("collecting HTML entry tags")?;
+    Ok(entries.borrow().clone())
+}
+
+fn attribute_eq_ignore_ascii_case(
+    element: &lol_html::html_content::Element<'_, '_>,
+    name: &str,
+    expected: &str,
+) -> bool {
+    element
+        .get_attribute(name)
+        .is_some_and(|value| value.eq_ignore_ascii_case(expected))
+}
+
+fn attribute_contains_token_ignore_ascii_case(
+    element: &lol_html::html_content::Element<'_, '_>,
+    name: &str,
+    expected: &str,
+) -> bool {
+    element
+        .get_attribute(name)
+        .map(|value| {
+            value
+                .split_ascii_whitespace()
+                .any(|part| part.eq_ignore_ascii_case(expected))
         })
-        .map(|tag| {
-            let href = attr_value(&tag, "href").context("preload tag missing href")?;
-            Ok(HtmlEntry {
-                path: normalize_url_path(&href)?,
-                tag,
-            })
-        })
-        .collect()
+        .unwrap_or(false)
 }
 
-fn html_tags(html: &str, tag_name: &str) -> Vec<String> {
-    let mut tags = Vec::new();
-    let needle = format!("<{tag_name}");
-    let mut search_start = 0usize;
-    while let Some(relative_start) = lower_find(&html[search_start..], &needle) {
-        let start = search_start + relative_start;
-        let Some(relative_end) = html[start..].find('>') else {
-            break;
-        };
-        let end = start + relative_end + 1;
-        let mut tag = html[start..end].to_string();
-        if tag_name == "script"
-            && let Some(close_relative) = lower_find(&html[end..], "</script>")
-        {
-            let close_end = end + close_relative + "</script>".len();
-            tag = html[start..close_end].to_string();
-            search_start = close_end;
-        } else {
-            search_start = end;
-        }
-        tags.push(tag);
-    }
-    tags
-}
-
-fn attr_value(tag: &str, name: &str) -> Option<String> {
-    let lower = tag.to_ascii_lowercase();
-    let needle = name.to_ascii_lowercase();
-    let mut index = 0usize;
-    while let Some(relative) = lower[index..].find(&needle) {
-        let start = index + relative;
-        let before_ok = start == 0 || !lower.as_bytes()[start - 1].is_ascii_alphanumeric();
-        let after = start + needle.len();
-        if !before_ok {
-            index = after;
-            continue;
-        }
-        let mut cursor = after;
-        while cursor < tag.len() && tag.as_bytes()[cursor].is_ascii_whitespace() {
-            cursor += 1;
-        }
-        if cursor >= tag.len() || tag.as_bytes()[cursor] != b'=' {
-            index = after;
-            continue;
-        }
-        cursor += 1;
-        while cursor < tag.len() && tag.as_bytes()[cursor].is_ascii_whitespace() {
-            cursor += 1;
-        }
-        if cursor >= tag.len() {
-            return None;
-        }
-        let quote = tag.as_bytes()[cursor];
-        if quote == b'"' || quote == b'\'' {
-            cursor += 1;
-            let end = tag[cursor..].find(quote as char)? + cursor;
-            return Some(tag[cursor..end].to_string());
-        }
-        let end = tag[cursor..]
-            .find(|ch: char| ch.is_ascii_whitespace() || ch == '>')
-            .map(|offset| cursor + offset)
-            .unwrap_or(tag.len());
-        return Some(tag[cursor..end].to_string());
-    }
-    None
-}
-
-fn set_attr(tag: &str, name: &str, value: &str) -> Result<String> {
-    let escaped = escape_html_attr(value);
-    let lower = tag.to_ascii_lowercase();
-    let needle = name.to_ascii_lowercase();
-    let start = lower
-        .find(&needle)
-        .with_context(|| format!("Tag is missing {name}: {tag}"))?;
-    let mut cursor = start + needle.len();
-    while cursor < tag.len() && tag.as_bytes()[cursor].is_ascii_whitespace() {
-        cursor += 1;
-    }
-    if cursor >= tag.len() || tag.as_bytes()[cursor] != b'=' {
-        bail!("Tag is missing {name}: {tag}");
-    }
-    cursor += 1;
-    while cursor < tag.len() && tag.as_bytes()[cursor].is_ascii_whitespace() {
-        cursor += 1;
-    }
-    let quote = tag.as_bytes()[cursor];
-    let (value_start, value_end, rendered) = if quote == b'\'' || quote == b'"' {
-        let value_start = cursor + 1;
-        let value_end = tag[value_start..]
-            .find(quote as char)
-            .map(|offset| value_start + offset)
-            .context("unterminated quoted attribute")?;
-        (value_start - 1, value_end + 1, format!("\"{escaped}\""))
+fn root_absolute_harness_url(value: &str) -> Option<String> {
+    if value.starts_with('/') && !value.starts_with("//") {
+        Some(format!(".{value}"))
     } else {
-        let value_start = cursor;
-        let value_end = tag[value_start..]
-            .find(|ch: char| ch.is_ascii_whitespace() || ch == '>')
-            .map(|offset| value_start + offset)
-            .unwrap_or(tag.len());
-        (value_start, value_end, format!("\"{escaped}\""))
-    };
-    let mut out = String::new();
-    out.push_str(&tag[..value_start]);
-    out.push_str(&rendered);
-    out.push_str(&tag[value_end..]);
-    Ok(out)
+        None
+    }
 }
 
 fn normalize_url_path(url: &str) -> Result<String> {
-    if url.is_empty() || url.starts_with("//") || url.contains("://") {
+    if url.is_empty() {
         bail!("Expected a snapshot-relative URL, got {url}");
     }
-    let without_hash = url.split('#').next().unwrap_or(url);
-    let without_query = without_hash.split('?').next().unwrap_or(without_hash);
-    let stripped = without_query
-        .strip_prefix('/')
-        .unwrap_or(without_query)
-        .strip_prefix("./")
-        .unwrap_or(without_query.strip_prefix('/').unwrap_or(without_query));
-    ::artifact::normalize_relative_path(stripped)
+    let base = Url::parse("https://debundle.invalid/")
+        .expect("static debundle harness URL base must parse");
+    let parsed = base
+        .join(url)
+        .with_context(|| format!("parsing snapshot-relative URL {url:?}"))?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("debundle.invalid") {
+        bail!("Expected a snapshot-relative URL, got {url}");
+    }
+    let stripped = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
+    normalize_module_path(stripped)
 }
 
 fn prepare_harness_output_dir(out_dir: &Path, force: bool) -> Result<()> {
@@ -466,7 +498,7 @@ fn copy_snapshot_assets_recursive(
     for entry in fs::read_dir(&absolute_dir)? {
         let entry = entry?;
         let relative_entry = relative_dir.join(entry.file_name());
-        let relative_posix = path_to_posix(&relative_entry);
+        let relative_posix = module_path_from_path(&relative_entry);
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
             copy_snapshot_assets_recursive(snapshot_root, out_dir, &relative_entry, copied)?;
@@ -487,39 +519,6 @@ fn copy_snapshot_assets_recursive(
     }
     copied.sort();
     Ok(())
-}
-
-fn rewrite_root_absolute_urls(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut cursor = 0usize;
-    while let Some(relative) = lower_find(&html[cursor..], "=\"/") {
-        let start = cursor + relative;
-        out.push_str(&html[cursor..start + 2]);
-        out.push('.');
-        cursor = start + 2;
-    }
-    out.push_str(&html[cursor..]);
-    out
-}
-
-fn replace_case_insensitive_once(text: &str, needle: &str, replacement: &str) -> Option<String> {
-    let start = lower_find(text, needle)?;
-    let mut out = String::new();
-    out.push_str(&text[..start]);
-    out.push_str(replacement);
-    out.push_str(&text[start + needle.len()..]);
-    Some(out)
-}
-
-fn lower_find(text: &str, needle: &str) -> Option<usize> {
-    text.to_ascii_lowercase().find(&needle.to_ascii_lowercase())
-}
-
-fn escape_html_attr(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
 }
 
 fn harness_monitor_script() -> &'static str {

@@ -87,7 +87,7 @@ fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
         "wrapper should not re-emit the original upstream `export {{ ... as default }}` once the wrapper has its own default export:\n{wrapper_source}",
     );
 
-    // Cross-check the resolution manifest: `generatedWrapperPath` is recorded
+    // Cross-check the resolution manifest: `generated_wrapper_path` is recorded
     // relative to the manifest's own directory, so resolving it against
     // `dirname(manifest_path)` must produce the wrapper file's actual
     // on-disk path.
@@ -97,9 +97,9 @@ fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
     let recorded = manifest
         .get("resolutions")
         .and_then(|r| r.get(&fixture.chunk_path))
-        .and_then(|r| r.get("generatedWrapperPath"))
+        .and_then(|r| r.get("generated_wrapper_path"))
         .and_then(Value::as_str)
-        .expect("manifest records generatedWrapperPath");
+        .expect("manifest records generated_wrapper_path");
     let manifest_dir = fixture
         .manifest_path
         .parent()
@@ -108,7 +108,7 @@ fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
     assert_eq!(
         fs::canonicalize(&resolved).expect("resolved manifest path canonicalizes"),
         fs::canonicalize(&fixture.wrapper_path).expect("wrapper path canonicalizes"),
-        "manifest's generatedWrapperPath ({recorded}) must resolve to the wrapper file ({:?})",
+        "manifest's generated_wrapper_path ({recorded}) must resolve to the wrapper file ({:?})",
         fixture.wrapper_path,
     );
 }
@@ -213,31 +213,23 @@ struct BuildSpecArgs<'a> {
 
 fn build_named_from_module_default_spec(args: BuildSpecArgs<'_>) -> Value {
     json!({
-        "kind": "js.ast_transform_spec",
         "vendor": {
             args.chunk_path: {
                 "level": "swap",
                 "identity": format!("{}/{}", args.package_name, args.subpath),
-                "upstreamFamily": "Lib",
                 "package": args.package_name,
                 "version": args.package_version,
                 "subpath": args.subpath,
-                "wrapperShape": "named-from-module-default",
-                "confidence": "confirmed",
-                "evidence": [{
-                    "path": args.chunk_path,
-                    "line": 1,
-                    "text": "export { x as default }",
-                }],
+                "wrapper_shape": "named_from_module_default",
             },
         },
-        "inputs": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
-        "swapVendorChunks": {
-            "outputManifestPath": args.manifest_path,
-            "outputWrapperDir": args.wrapper_root,
+        "inputs": { "input_root": args.snapshot_root, "js_list_path": args.js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": args.manifest_path,
+            "output_wrapper_dir": args.wrapper_root,
             "write": true,
         },
-        "writeJsTree": { "force": true, "outDir": args.out_root },
+        "write_js_tree": { "force": true, "out_dir": args.out_root },
     })
 }
 
@@ -424,30 +416,22 @@ fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> Vend
 
 fn build_named_from_default_spec(args: BuildSpecArgs<'_>) -> Value {
     json!({
-        "kind": "js.ast_transform_spec",
         "vendor": {
             args.chunk_path: {
                 "level": "swap",
                 "identity": format!("{}/{}", args.package_name, args.subpath),
-                "upstreamFamily": "Lib",
                 "package": args.package_name,
                 "version": args.package_version,
                 "subpath": args.subpath,
-                "wrapperShape": "named-from-default",
-                "confidence": "confirmed",
-                "evidence": [{
-                    "path": args.chunk_path,
-                    "line": 1,
-                    "text": "export default { ... }",
-                }],
+                "wrapper_shape": "named_from_default",
             },
         },
-        "inputs": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
-        "swapVendorChunks": {
-            "outputManifestPath": args.manifest_path,
-            "outputWrapperDir": args.wrapper_root,
+        "inputs": { "input_root": args.snapshot_root, "js_list_path": args.js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": args.manifest_path,
+            "output_wrapper_dir": args.wrapper_root,
             "write": true,
         },
-        "writeJsTree": { "force": true, "outDir": args.out_root },
+        "write_js_tree": { "force": true, "out_dir": args.out_root },
     })
 }

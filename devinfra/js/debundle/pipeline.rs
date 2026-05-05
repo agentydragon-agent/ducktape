@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use runfiles::{Runfiles, rlocation};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use artifact::{JsPipelineArtifact, compute_js_asts, load_js_chunks};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
@@ -89,16 +89,43 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TransformRunSummary {
-    pub duration_ms: f64,
+    #[serde(serialize_with = "serialize_duration_ms")]
+    pub duration: Duration,
     pub spec_path: String,
     pub steps: Vec<TransformStepSummary>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TransformStepSummary {
-    pub operation: String,
-    pub duration_ms: Option<f64>,
-    pub manifest_kind: Option<String>,
+    pub stage: PipelineStage,
+    #[serde(serialize_with = "serialize_duration_ms")]
+    pub duration: Duration,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineStage {
+    RewriteChunkEntrySpecifiers,
+    ApplyVendorAnnotations,
+    RenameVendorExports,
+    SwapVendorChunks,
+    MaterializeLogicalModules,
+    WriteJsTree,
+    EmitBrowserHarness,
+}
+
+impl PipelineStage {
+    fn label(self) -> &'static str {
+        match self {
+            Self::RewriteChunkEntrySpecifiers => "rewrite_chunk_entry_specifiers",
+            Self::ApplyVendorAnnotations => "apply_vendor_annotations",
+            Self::RenameVendorExports => "rename_vendor_exports",
+            Self::SwapVendorChunks => "swap_vendor_chunks",
+            Self::MaterializeLogicalModules => "materialize_logical_modules",
+            Self::WriteJsTree => "write_js_tree",
+            Self::EmitBrowserHarness => "emit_browser_harness",
+        }
+    }
 }
 
 #[derive(Default)]
@@ -133,17 +160,13 @@ pub fn render_transform_summary(summary: &TransformRunSummary) -> String {
         "Ran {} transform steps from {} in {}\n",
         summary.steps.len(),
         summary.spec_path,
-        format_duration(summary.duration_ms)
+        humantime::format_duration(summary.duration)
     );
     for step in &summary.steps {
         out.push_str(&format!(
-            "- {} ({}){}\n",
-            step.operation,
-            format_duration(step.duration_ms.unwrap_or(0.0)),
-            step.manifest_kind
-                .as_ref()
-                .map(|kind| format!(" [{kind}]"))
-                .unwrap_or_default()
+            "- {} ({})\n",
+            step.stage.label(),
+            humantime::format_duration(step.duration),
         ));
     }
     out
@@ -162,29 +185,27 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     state.artifact = artifact;
     let mut steps = Vec::new();
 
-    if spec.rewrite_chunk_entry_specifiers {
-        run_step(&mut steps, "rewrite_chunk_entry_specifiers", || {
-            rewrite_chunk_entry_specifiers(&mut state.artifact).map(|m| Some(m.kind.to_string()))
-        })?;
-    }
+    run_step(
+        &mut steps,
+        PipelineStage::RewriteChunkEntrySpecifiers,
+        || rewrite_chunk_entry_specifiers(&mut state.artifact).map(|_| ()),
+    )?;
 
     // Vendor stages: each is internally filtered by `level`, so it's
     // safe to always invoke them when `vendor` carries any entries.
     // `apply` runs unconditionally; `rename` and `swap` short-circuit
     // to no-ops when no entry has the right level.
     if !spec.vendor.is_empty() {
-        run_step(&mut steps, "apply_vendor_annotations", || {
-            apply_vendor_annotations(&state.artifact, &spec.vendor)
-                .map(|m| Some(m.kind.to_string()))
+        run_step(&mut steps, PipelineStage::ApplyVendorAnnotations, || {
+            apply_vendor_annotations(&state.artifact, &spec.vendor).map(|_| ())
         })?;
         if spec
             .vendor
             .values()
             .any(|m| matches!(m.level, VendorLevel::BoundaryRename | VendorLevel::Swap(_)))
         {
-            run_step(&mut steps, "rename_vendor_exports", || {
-                rename_vendor_exports(&mut state.artifact, &spec.vendor)
-                    .map(|m| Some(m.kind.to_string()))
+            run_step(&mut steps, PipelineStage::RenameVendorExports, || {
+                rename_vendor_exports(&mut state.artifact, &spec.vendor).map(|_| ())
             })?;
         }
         if spec
@@ -197,7 +218,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 output_wrapper_dir,
                 write,
             } = spec.swap_vendor_chunks.clone();
-            run_step(&mut steps, "swap_vendor_chunks", || {
+            run_step(&mut steps, PipelineStage::SwapVendorChunks, || {
                 swap_vendor_chunks(
                     &mut state.artifact,
                     &spec.vendor,
@@ -209,7 +230,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                         write,
                     },
                 )
-                .map(|m| Some(m.kind.to_string()))
+                .map(|_| ())
             })?;
         }
     }
@@ -232,7 +253,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             report_summary_path,
             target_dir,
         } = spec.materialize_logical_modules.clone();
-        run_step(&mut steps, "materialize_logical_modules", || {
+        run_step(&mut steps, PipelineStage::MaterializeLogicalModules, || {
             materialize_logical_modules(
                 &mut state.artifact,
                 &spec.logical_modules,
@@ -248,15 +269,15 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                     target_dir,
                 },
             )
-            .map(|m| Some(m.kind.to_string()))
+            .map(|_| ())
         })?;
     }
 
     if let Some(cfg) = &spec.write_js_tree {
         let out_dir = cfg.out_dir.clone();
         let force = cfg.force;
-        run_step(&mut steps, "write_js_tree", || {
-            write_js_tree(&state.artifact, &out_dir, force).map(|m| Some(m.kind.to_string()))
+        run_step(&mut steps, PipelineStage::WriteJsTree, || {
+            write_js_tree(&state.artifact, &out_dir, force).map(|_| ())
         })?;
     }
 
@@ -267,14 +288,14 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             out_dir: cfg.out_dir.clone(),
             snapshot_root: cfg.snapshot_root.clone(),
         };
-        run_step(&mut steps, "emit_browser_harness", || {
+        run_step(&mut steps, PipelineStage::EmitBrowserHarness, || {
             emit_browser_harness(&state.artifact, &opts)?;
-            Ok(None)
+            Ok(())
         })?;
     }
 
     Ok(TransformRunSummary {
-        duration_ms: elapsed_ms(started),
+        duration: started.elapsed(),
         spec_path: cli.spec_path.display().to_string(),
         steps,
     })
@@ -282,15 +303,14 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
 
 fn run_step(
     steps: &mut Vec<TransformStepSummary>,
-    name: &'static str,
-    body: impl FnOnce() -> Result<Option<String>>,
+    stage: PipelineStage,
+    body: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
     let started = Instant::now();
-    let manifest_kind = body()?;
+    body()?;
     steps.push(TransformStepSummary {
-        operation: name.to_string(),
-        duration_ms: Some(elapsed_ms(started)),
-        manifest_kind,
+        stage,
+        duration: started.elapsed(),
     });
     Ok(())
 }
@@ -302,28 +322,20 @@ fn load_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
 }
 
 fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
-    if spec.kind != "js.ast_transform_spec" {
-        bail!("Unsupported transform spec kind: {}", spec.kind);
-    }
     if spec.inputs.input_root.as_os_str().is_empty() {
-        bail!("Transform spec inputs.inputRoot must not be empty");
+        bail!("Transform spec inputs.input_root must not be empty");
     }
     if spec.inputs.js_list_path.as_os_str().is_empty() {
-        bail!("Transform spec inputs.jsListPath must not be empty");
+        bail!("Transform spec inputs.js_list_path must not be empty");
     }
     Ok(())
 }
 
-fn elapsed_ms(started: Instant) -> f64 {
-    started.elapsed().as_secs_f64() * 1000.0
-}
-
-fn format_duration(duration_ms: f64) -> String {
-    if duration_ms >= 1000.0 {
-        format!("{:.3}s", duration_ms / 1000.0)
-    } else {
-        format!("{duration_ms:.3}ms")
-    }
+fn serialize_duration_ms<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_f64(duration.as_secs_f64() * 1000.0)
 }
 
 #[cfg(test)]
@@ -410,17 +422,15 @@ mod tests {
         fs::write(
             &spec_path,
             serde_json::to_string_pretty(&serde_json::json!({
-                "kind": "js.ast_transform_spec",
                 "inputs": {
-                    "inputRoot": snapshot,
-                    "jsListPath": extracted.join("js-files.txt"),
+                    "input_root": snapshot,
+                    "js_list_path": extracted.join("js-files.txt"),
                 },
-                "rewriteChunkEntrySpecifiers": true,
-                "emitBrowserHarness": {
-                    "assetSummaryPath": extracted.join("asset-summary.json"),
+                "emit_browser_harness": {
+                    "asset_summary_path": extracted.join("asset-summary.json"),
                     "force": true,
-                    "outDir": out,
-                    "snapshotRoot": snapshot,
+                    "out_dir": out,
+                    "snapshot_root": snapshot,
                 },
             }))?,
         )?;
@@ -444,12 +454,16 @@ mod tests {
         // runfiles where the original input trees aren't co-located.
         let manifest: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(out.join("manifest.json"))?)?;
+        assert!(
+            manifest.get("schema_version").is_none(),
+            "harness manifest should not carry a compatibility schema_version"
+        );
         for field in [
-            "sourceHtml",
-            "assetSummaryPath",
-            "chunksManifestPath",
-            "runtimeRoot",
-            "outDir",
+            "source_html",
+            "asset_summary_path",
+            "chunks_manifest_path",
+            "runtime_root",
+            "out_dir",
         ] {
             let value = manifest
                 .get(field)
@@ -465,6 +479,19 @@ mod tests {
                 "manifest.{field} = {value:?} resolves to {resolved:?} which does not exist"
             );
         }
+        let chunks_manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(out.join("chunks.manifest.json"))?)?;
+        assert!(
+            chunks_manifest.get("schema_version").is_none(),
+            "chunks manifest should not carry a compatibility schema_version"
+        );
+        assert_eq!(
+            chunks_manifest
+                .get("chunks")
+                .and_then(serde_json::Value::as_array)
+                .map(Vec::len),
+            Some(2)
+        );
         Ok(())
     }
 }

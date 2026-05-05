@@ -1647,19 +1647,11 @@ impl EdgeReason {
         Self::SideEffectOrder { statement_ordinal }
     }
 
-    fn graph_kind_label(&self) -> &'static str {
+    fn kind(&self) -> EdgeKind {
         match self {
-            Self::AtInitRead { .. } => "at_init_read",
-            Self::LazyRead { .. } => "lazy_read",
-            Self::SideEffectOrder { .. } => "side_effect_order",
-        }
-    }
-
-    fn cycle_kind_label(&self) -> &'static str {
-        match self {
-            Self::AtInitRead { .. } => "at-init",
-            Self::LazyRead { .. } => "lazy",
-            Self::SideEffectOrder { .. } => "side-effect",
+            Self::AtInitRead { .. } => EdgeKind::AtInitRead,
+            Self::LazyRead { .. } => EdgeKind::LazyRead,
+            Self::SideEffectOrder { .. } => EdgeKind::SideEffectOrder,
         }
     }
 
@@ -1697,6 +1689,14 @@ impl EdgeReason {
     fn constrains_realizability(&self) -> bool {
         !self.is_lazy_read()
     }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeKind {
+    AtInitRead,
+    LazyRead,
+    SideEffectOrder,
 }
 
 /// Stable-in-run identity of an owner graph vertex. V1 owner
@@ -1986,7 +1986,6 @@ where
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
 pub struct ScheduleReport {
-    pub kind: &'static str,
     pub cycles: Vec<CycleReport>,
     /// One entry per binding the spec hasn't claimed but that is
     /// referenced by at least one logical module. Spec authors
@@ -2035,13 +2034,13 @@ pub struct CycleEdge {
     pub statement_ordinal: StatementOrdinal,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding: Option<BindingName>,
-    /// Edge kind — `at-init`, `lazy`, or `side-effect`. Lets
+    /// Edge kind. Lets
     /// downstream consumers (cycle-evidence visualizers, spec
     /// authors triaging which edges to break) tell at a glance
     /// which reasons are actually realizability-constraining
-    /// (`at-init` and `side-effect`) vs. inert-but-graph-present
-    /// (`lazy`).
-    pub kind: &'static str,
+    /// (`at_init_read` and `side_effect_order`) vs.
+    /// inert-but-graph-present (`lazy_read`).
+    pub kind: EdgeKind,
 }
 
 /// Spec author actionable: "binding X has no owner; here are the
@@ -2078,8 +2077,6 @@ pub enum RecommendationReadKind {
 /// Node-link JSON side output for downstream graph analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OwnerGraphReport {
-    pub kind: String,
-    pub schema_version: u32,
     pub chunk_id: String,
     pub nodes: Vec<OwnerGraphNodeReport>,
     pub edges: Vec<OwnerGraphEdgeReport>,
@@ -2102,7 +2099,7 @@ pub struct OwnerGraphEdgeReport {
     pub id: String,
     pub source: String,
     pub target: String,
-    pub kind: String,
+    pub kind: EdgeKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding: Option<BindingName>,
     pub statement_ordinal: StatementOrdinal,
@@ -2121,7 +2118,7 @@ pub struct QuotientEdgeReport {
     pub id: String,
     pub source: String,
     pub target: String,
-    pub kinds: Vec<String>,
+    pub kinds: Vec<EdgeKind>,
     pub owner_edge_ids: Vec<String>,
     pub constraining_owner_edge_ids: Vec<String>,
     pub reason_count: usize,
@@ -2229,7 +2226,7 @@ pub struct PeelBlockingResidualDependencyReport {
     pub destination: ModuleReportRef,
     pub owner_edge_ids: Vec<String>,
     pub read_bindings: Vec<BindingName>,
-    pub edge_kinds: Vec<String>,
+    pub edge_kinds: Vec<EdgeKind>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2253,7 +2250,7 @@ struct OwnerEdgeEntry {
 
 #[derive(Debug, Clone, Default)]
 struct QuotientEdgeAccumulator {
-    kinds: BTreeSet<&'static str>,
+    kinds: BTreeSet<EdgeKind>,
     owner_edge_ids: Vec<String>,
     constraining_owner_edge_ids: Vec<String>,
     reason_count: usize,
@@ -2321,8 +2318,6 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
     let quotient_sccs = build_quotient_scc_reports(schedule, &quotient_edges);
     let peelability = build_peelability_report(schedule, &owner_edges, &quotient_edges);
     OwnerGraphReport {
-        kind: "js.debundle.owner_graph".to_string(),
-        schema_version: 1,
         chunk_id: schedule.chunk_id.clone(),
         nodes: schedule
             .owner_graph
@@ -2343,7 +2338,7 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
                 id: edge.id.clone(),
                 source: owner_key(edge.from),
                 target: owner_key(edge.to),
-                kind: edge.reason.graph_kind_label().to_string(),
+                kind: edge.reason.kind(),
                 binding: edge.reason.binding().cloned(),
                 statement_ordinal: edge.reason.statement_ordinal(),
                 constrains_realizability: edge.reason.constrains_realizability(),
@@ -2369,14 +2364,14 @@ fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerEdgeEntry> {
         (
             a.0.0,
             a.1.0,
-            a.2.graph_kind_label(),
+            a.2.kind(),
             a.2.statement_ordinal(),
             a.2.binding().map(String::as_str),
         )
             .cmp(&(
                 b.0.0,
                 b.1.0,
-                b.2.graph_kind_label(),
+                b.2.kind(),
                 b.2.statement_ordinal(),
                 b.2.binding().map(String::as_str),
             ))
@@ -2447,7 +2442,7 @@ where
             continue;
         }
         let entry = accum.entry((from, to)).or_default();
-        entry.kinds.insert(edge.reason.graph_kind_label());
+        entry.kinds.insert(edge.reason.kind());
         entry.owner_edge_ids.push(edge.id.clone());
         if edge.reason.constrains_realizability() {
             entry.constraining_owner_edge_ids.push(edge.id.clone());
@@ -2462,7 +2457,7 @@ where
             id: format!("module_edge:{idx}"),
             source: module_key(from),
             target: module_key(to),
-            kinds: entry.kinds.into_iter().map(str::to_string).collect(),
+            kinds: entry.kinds.into_iter().collect(),
             owner_edge_ids: entry.owner_edge_ids,
             constraining_owner_edge_ids: entry.constraining_owner_edge_ids,
             reason_count: entry.reason_count,
@@ -3078,7 +3073,7 @@ fn evaluate_residual_peel_candidate(
 struct ResidualDependencyAccumulator {
     owner_edge_ids: BTreeSet<String>,
     bindings: BTreeSet<BindingName>,
-    kinds: BTreeSet<&'static str>,
+    kinds: BTreeSet<EdgeKind>,
 }
 
 fn candidate_residual_dependencies(
@@ -3107,7 +3102,7 @@ fn candidate_residual_dependencies(
             if let Some(binding) = edge.reason.binding() {
                 entry.bindings.insert(binding.clone());
             }
-            entry.kinds.insert(edge.reason.graph_kind_label());
+            entry.kinds.insert(edge.reason.kind());
         }
     }
     accum
@@ -3117,7 +3112,7 @@ fn candidate_residual_dependencies(
                 destination: module_report_ref(schedule, destination),
                 owner_edge_ids: entry.owner_edge_ids.into_iter().collect(),
                 read_bindings: entry.bindings.into_iter().collect(),
-                edge_kinds: entry.kinds.into_iter().map(str::to_string).collect(),
+                edge_kinds: entry.kinds.into_iter().collect(),
             },
         )
         .collect()
@@ -3184,7 +3179,7 @@ fn candidate_incident_edges(
             continue;
         }
         let entry = accum.entry((direction, module)).or_default();
-        entry.kinds.insert(edge.reason.graph_kind_label());
+        entry.kinds.insert(edge.reason.kind());
         entry.owner_edge_ids.push(edge.id.clone());
         if edge.reason.constrains_realizability() {
             entry.constraining_owner_edge_ids.push(edge.id.clone());
@@ -3505,7 +3500,7 @@ pub fn validate_schedule(
                     to: module_name(to),
                     statement_ordinal: reason.statement_ordinal(),
                     binding: reason.binding().cloned(),
-                    kind: reason.cycle_kind_label(),
+                    kind: reason.kind(),
                 });
             }
         }
@@ -3517,7 +3512,6 @@ pub fn validate_schedule(
         });
     }
     ScheduleReport {
-        kind: "js.schedule_validator_report",
         cycles,
         recommendations: Vec::new(),
         linker_order: Vec::new(),
@@ -3649,7 +3643,7 @@ fn compute_realizability_cut(
                 to: module_name(v),
                 statement_ordinal: reason.statement_ordinal(),
                 binding: reason.binding().cloned(),
-                kind: reason.cycle_kind_label(),
+                kind: reason.kind(),
             });
         }
     }
@@ -3976,12 +3970,12 @@ mod tests {
         );
         let cycle = &report.cycles[0];
         assert!(
-            cycle.evidence.iter().any(|e| e.kind == "lazy"),
+            cycle.evidence.iter().any(|e| e.kind == EdgeKind::LazyRead),
             "evidence should include the lazy edge, got {:?}",
             cycle.evidence,
         );
         assert!(
-            !cycle.cut.iter().any(|e| e.kind == "lazy"),
+            !cycle.cut.iter().any(|e| e.kind == EdgeKind::LazyRead),
             "cut must not include lazy reasons, got {:?}",
             cycle.cut,
         );
@@ -3995,7 +3989,7 @@ mod tests {
         assert_eq!(entry.from, "mod_1");
         assert_eq!(entry.to, "mod_0");
         assert_eq!(entry.binding.as_deref(), Some("A"));
-        assert_eq!(entry.kind, "at-init");
+        assert_eq!(entry.kind, EdgeKind::AtInitRead);
     }
 
     /// Pure-S cycle: cut consists of side-effect reasons; no
@@ -4025,7 +4019,10 @@ mod tests {
             cycle.cut,
         );
         assert!(
-            cycle.cut.iter().all(|e| e.kind == "side-effect"),
+            cycle
+                .cut
+                .iter()
+                .all(|e| e.kind == EdgeKind::SideEffectOrder),
             "S-only cycle cut should be all side-effect reasons, got {:?}",
             cycle.cut,
         );

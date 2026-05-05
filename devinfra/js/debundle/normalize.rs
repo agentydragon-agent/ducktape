@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, CANONICAL_CHUNK_ENTRY_FILE,
-    ChunkMetadata, FileMetadata, JsChunk, JsFile, JsPipelineArtifact,
+    ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile, JsPipelineArtifact,
 };
 use program_analysis::{analyze_program_shallow, build_chunk_manifest_from_analysis};
 
@@ -52,7 +52,7 @@ pub fn normalize_js_chunks(
             metadata: FileMetadata {
                 chunk_id: Some(chunk_id.clone()),
                 chunk_file: Some(CANONICAL_CHUNK_ENTRY_FILE.to_string()),
-                role: Some("entry".to_string()),
+                role: Some(FileRole::Entry),
                 source_path: Some(source_path.clone()),
                 ..Default::default()
             },
@@ -82,7 +82,6 @@ pub fn normalize_js_chunks(
 
 fn build_artifact_manifest(chunk_manifests: &[::artifact::ChunkManifest]) -> ArtifactManifest {
     ArtifactManifest {
-        schema_version: 1,
         counts: ArtifactCounts {
             chunks: chunk_manifests.len(),
             kept_top_level_declaration_owners: chunk_manifests
@@ -102,7 +101,6 @@ fn build_artifact_manifest(chunk_manifests: &[::artifact::ChunkManifest]) -> Art
                 .map(|manifest| manifest.counts.unresolved_exports)
                 .sum(),
             selected_module_lowerings: None,
-            extra: Default::default(),
         },
         chunks: chunk_manifests
             .iter()
@@ -114,6 +112,5 @@ fn build_artifact_manifest(chunk_manifests: &[::artifact::ChunkManifest]) -> Art
         logical_modules: None,
         selected_module_lowerings: None,
         scrambled_identifier_frequencies: None,
-        extra: Default::default(),
     }
 }

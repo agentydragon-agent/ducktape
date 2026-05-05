@@ -5,16 +5,16 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use serde_json::json;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use artifact::{
     ArtifactCounts, ArtifactManifest, ChunkFileRecord, ChunkLogicalModulesSummary, ChunkMetadata,
-    FileMetadata, JsChunk, JsFile, JsPipelineArtifact, RootLogicalModulesSummary,
-    SelectedModuleLowering, get_chunk_entry_path, manifest_relative_path, normalize_relative_path,
-    path_to_posix, posix_join, posix_relative, resolve_artifact_source_import_reference,
+    FileMetadata, FileRole, JsChunk, JsFile, JsPipelineArtifact, ModuleExtractionState,
+    RootLogicalModulesSummary, SelectedModuleLowering, get_chunk_entry_path, join_module_path,
+    manifest_relative_path, module_path_from_path, normalize_module_path, relative_module_path,
+    resolve_artifact_source_import_reference,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use schedule_validator::{
@@ -27,26 +27,15 @@ const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
 const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
 
-/// Per-stage manifest returned by `materialize_logical_modules`.
-///
-/// Pipeline currently consumes only `kind` for stage logging; the
-/// remaining fields are written to disk when a spec sets
-/// `report_summary_path`. Keep them serializable so that callers using
-/// that argument get a typed payload.
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LogicalModuleManifest {
-    pub chunk_count: usize,
     pub chunks: Vec<LogicalChunkReport>,
     pub counts: LogicalModuleCounts,
     pub duration_ms: f64,
-    pub kind: &'static str,
     pub report_out_dir: Option<String>,
-    pub schema_version: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LogicalModuleCounts {
     pub applied: usize,
     pub final_modules: usize,
@@ -55,7 +44,6 @@ pub struct LogicalModuleCounts {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LogicalChunkReport {
     pub chunk_id: String,
     pub counts: LogicalChunkCounts,
@@ -65,7 +53,6 @@ pub struct LogicalChunkReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LogicalChunkCounts {
     pub applied: usize,
     pub explicit_logical_modules: usize,
@@ -75,7 +62,6 @@ pub struct LogicalChunkCounts {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct FinalModuleContent {
     pub file: String,
     pub id: String,
@@ -85,7 +71,6 @@ pub struct FinalModuleContent {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RequestedLogicalModule {
     pub id: String,
     pub target_path: String,
@@ -160,14 +145,14 @@ pub fn materialize_logical_modules(
     options: MaterializeLogicalModulesOptions,
 ) -> Result<LogicalModuleManifest> {
     if options.chunk_ids.is_empty() {
-        bail!("materializeLogicalModules requires at least one chunkId");
+        bail!("materialize_logical_modules requires at least one chunk_id");
     }
     let started = Instant::now();
     let target_dir = normalize_optional_relative_dir(&options.target_dir)?;
     let mut selected_chunk_ids = Vec::new();
     let mut seen = BTreeSet::new();
     for chunk_id in &options.chunk_ids {
-        let normalized = normalize_relative_path(chunk_id)?;
+        let normalized = normalize_module_path(chunk_id)?;
         if seen.insert(normalized.clone()) {
             selected_chunk_ids.push(normalized);
         }
@@ -190,12 +175,12 @@ pub fn materialize_logical_modules(
         let target_file = options
             .file
             .as_ref()
-            .map(|file| normalize_relative_path(file))
+            .map(|file| normalize_module_path(file))
             .transpose()?
             .or_else(|| get_chunk_entry_path(artifact, &chunk_id))
             .with_context(|| {
                 format!(
-                    "materializeLogicalModules could not determine entry file for chunk: {chunk_id}"
+                    "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
                 )
             })?;
         let runtime_file = artifact
@@ -203,10 +188,10 @@ pub fn materialize_logical_modules(
             .get(&chunk_id)
             .and_then(|chunk| chunk.files.get(&target_file))
             .with_context(|| {
-                format!("materializeLogicalModules missing entry file for chunk: {chunk_id}")
+                format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
             })?;
         let runtime_ast = runtime_file.ast.as_ref().with_context(|| {
-            format!("materializeLogicalModules missing entry AST for chunk: {chunk_id}")
+            format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
         })?;
         let header_lines = runtime_file.header_lines.clone();
         let source_path = runtime_file
@@ -428,12 +413,10 @@ pub fn materialize_logical_modules(
         for file in lowered.files {
             files.insert(file.path.clone(), file);
         }
-        let module_extraction_state = json!({
-            "kind": "js.module_extraction_state",
-            "mode": "logical",
-            "runtimeFile": target_file,
-            "targetDir": target_dir,
-        });
+        let module_extraction_state = ModuleExtractionState {
+            runtime_file: target_file.clone(),
+            target_dir: target_dir.clone(),
+        };
         artifact.chunks.insert(
             chunk_id.clone(),
             JsChunk {
@@ -457,7 +440,7 @@ pub fn materialize_logical_modules(
                 .iter()
                 .map(|(file, role)| ChunkFileRecord {
                     file: file.clone(),
-                    role: if role == "entry" { "entry" } else { "module" },
+                    role: *role,
                 })
                 .collect();
             manifest.logical_modules = Some(ChunkLogicalModulesSummary {
@@ -510,7 +493,6 @@ pub fn materialize_logical_modules(
 
     update_root_manifest(artifact, &reports, &applied);
     let manifest = LogicalModuleManifest {
-        chunk_count: reports.len(),
         counts: LogicalModuleCounts {
             applied: applied.len(),
             final_modules: reports
@@ -528,14 +510,12 @@ pub fn materialize_logical_modules(
         },
         chunks: reports,
         duration_ms: started.elapsed().as_secs_f64() * 1000.0,
-        kind: "js.logical_module_manifest",
         report_out_dir: report_out_dir.as_ref().map(|path| {
-            options
-                .report_summary_path
-                .as_ref()
-                .map_or_else(|| path_to_posix(path), |s| manifest_relative_path(s, path))
+            options.report_summary_path.as_ref().map_or_else(
+                || module_path_from_path(path),
+                |s| manifest_relative_path(s, path),
+            )
         }),
-        schema_version: 1,
     };
 
     if let Some(summary_path) = options.report_summary_path {
@@ -552,7 +532,7 @@ pub fn materialize_logical_modules(
 
 struct LoweredChunk {
     files: Vec<JsFile>,
-    file_records: Vec<(String, String)>,
+    file_records: Vec<(String, FileRole)>,
     applied: Vec<SelectedModuleLowering>,
 }
 
@@ -791,12 +771,12 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         metadata: FileMetadata {
             chunk_id: Some(chunk_id.to_string()),
             chunk_file: Some(entry_file.to_string()),
-            role: Some("entry".to_string()),
+            role: Some(FileRole::Entry),
             source_path: Some(source_path.to_string()),
             ..Default::default()
         },
     }];
-    let mut file_records = vec![(entry_file.to_string(), "entry".to_string())];
+    let mut file_records = vec![(entry_file.to_string(), FileRole::Entry)];
     let mut applied = Vec::new();
 
     for (index, plan) in module_plans.iter().enumerate() {
@@ -850,7 +830,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         // rooted absolute; `plan.target_file` is chunk-rooted. Lift
         // the destination to the same coordinate system before
         // computing the relative path.
-        let dest_abs = posix_join(&[chunk_id, &plan.target_file]);
+        let dest_abs = join_module_path(&[chunk_id, &plan.target_file]);
         let mut offset = 0;
         for (local, kind) in &schedule.bindings {
             let BindingKind::Imported {
@@ -909,18 +889,17 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             metadata: FileMetadata {
                 chunk_id: Some(chunk_id.to_string()),
                 chunk_file: Some(plan.target_file.clone()),
-                role: Some("module".to_string()),
+                role: Some(FileRole::Module),
                 source_path: Some(source_path.to_string()),
                 generated_stage: Some("selected_module_lowering".to_string()),
             },
         });
-        file_records.push((plan.target_file.clone(), "module".to_string()));
+        file_records.push((plan.target_file.clone(), FileRole::Module));
         applied.push(SelectedModuleLowering {
             chunk_id: chunk_id.to_string(),
             exported_names: plan.bindings.values().cloned().collect(),
             file: entry_file.to_string(),
             id: plan.id.clone(),
-            operation: "lower_selected_module_region",
             owner_ids: plan.bindings.keys().cloned().collect(),
             target_file: plan.target_file.clone(),
         });
@@ -982,7 +961,7 @@ fn logical_requests_for_chunk(
     if requests.is_empty() && !chunk_renames_present {
         requests.push(LogicalRequest {
             id: format!("{chunk_id}::residual"),
-            target_path: posix_join(&[target_dir, "unhandled"]),
+            target_path: join_module_path(&[target_dir, "unhandled"]),
             residual: true,
             members: Vec::new(),
         });
@@ -1791,7 +1770,7 @@ struct RuntimeSourceRewriter {
 
 impl RuntimeSourceRewriter {
     fn rewrite(&self, source: &str) -> String {
-        let original = normalize_relative_path(source).unwrap_or_else(|_| source.to_string());
+        let original = normalize_module_path(source).unwrap_or_else(|_| source.to_string());
         let target_dir = Path::new(&self.target_file)
             .parent()
             .and_then(Path::to_str)
@@ -1800,7 +1779,7 @@ impl RuntimeSourceRewriter {
         // Original import sources in lowered module bodies are chunk-root-relative;
         // the lowered file lives at <target_dir>/<basename> within the chunk, so the
         // rewritten specifier walks up out of target_dir to chunk root.
-        let mut rel = posix_relative(&target_dir, &original);
+        let mut rel = relative_module_path(&target_dir, &original);
         if !rel.starts_with('.') {
             rel = format!("./{rel}");
         }
@@ -1886,20 +1865,20 @@ fn is_identifier_like(name: &str) -> bool {
 }
 
 fn target_file_for_request(target_dir: &str, target_path: &str) -> Result<String> {
-    let normalized = normalize_relative_path(target_path)?;
+    let normalized = normalize_module_path(target_path)?;
     let with_ext = if normalized.ends_with(".js") {
         normalized
     } else {
         format!("{normalized}.js")
     };
-    Ok(posix_join(&[target_dir, &with_ext]))
+    Ok(join_module_path(&[target_dir, &with_ext]))
 }
 
 fn normalize_optional_relative_dir(value: &str) -> Result<String> {
     if value.is_empty() {
         return Ok(String::new());
     }
-    normalize_relative_path(value)
+    normalize_module_path(value)
 }
 
 fn remaining_item_after_selection(
@@ -2148,11 +2127,11 @@ fn resolve_imported_binding(
         // Resolve relative to the source chunk's directory in the
         // output tree (chunk_id includes the directory prefix; the
         // runtime file is chunk-relative).
-        let chunk_runtime_abs = posix_join(&[
-            &posix_dirname(source_chunk_id),
-            &posix_dirname(source_runtime_file),
+        let chunk_runtime_abs = join_module_path(&[
+            &module_path_dirname(source_chunk_id),
+            &module_path_dirname(source_runtime_file),
         ]);
-        posix_join(&[&chunk_runtime_abs, &src_path])
+        join_module_path(&[&chunk_runtime_abs, &src_path])
     };
     Ok((imported, imported_from))
 }
@@ -2250,7 +2229,7 @@ fn source_chunk_imports_for_moved_body(
     }
     let mut result = Vec::new();
     for (local, info) in needed {
-        let dest_dir = posix_join(&[source_chunk_id, &posix_dirname(dest_target_file)]);
+        let dest_dir = join_module_path(&[source_chunk_id, &module_path_dirname(dest_target_file)]);
         let rewritten_source = if let Some((target_chunk_id, target_entry_file, _path)) =
             resolve_artifact_source_import_reference(
                 artifact,
@@ -2258,8 +2237,8 @@ fn source_chunk_imports_for_moved_body(
                 source_chunk_id,
                 source_runtime_file,
             )? {
-            let target_path = posix_join(&[&target_chunk_id, &target_entry_file]);
-            let mut rel = posix_relative(&dest_dir, &target_path);
+            let target_path = join_module_path(&[&target_chunk_id, &target_entry_file]);
+            let mut rel = relative_module_path(&dest_dir, &target_path);
             if !rel.starts_with('.') {
                 rel = format!("./{rel}");
             }
@@ -2381,7 +2360,7 @@ fn lookup_import_specifier(body: &[ModuleItem], source_local: &str) -> Option<(S
     None
 }
 
-fn posix_dirname(path: &str) -> String {
+fn module_path_dirname(path: &str) -> String {
     std::path::Path::new(path)
         .parent()
         .and_then(|p| p.to_str())
@@ -2432,7 +2411,7 @@ fn relative_source(from_file: &str, target_file: &str) -> String {
         .and_then(|parent| parent.to_str())
         .unwrap_or("")
         .replace('\\', "/");
-    let mut rel = posix_relative(&from_dir, target_file);
+    let mut rel = relative_module_path(&from_dir, target_file);
     if !rel.starts_with('.') {
         rel = format!("./{rel}");
     }
@@ -2516,7 +2495,6 @@ fn update_root_manifest(
 ) {
     if artifact.root_manifest.is_none() {
         artifact.root_manifest = Some(ArtifactManifest {
-            schema_version: 1,
             counts: ArtifactCounts {
                 chunks: artifact.list_chunk_ids().len(),
                 kept_top_level_declaration_owners: 0,
@@ -2524,7 +2502,6 @@ fn update_root_manifest(
                 export_aliases: 0,
                 unresolved_exports: 0,
                 selected_module_lowerings: None,
-                extra: Default::default(),
             },
             chunks: artifact
                 .list_chunk_ids()
@@ -2539,7 +2516,6 @@ fn update_root_manifest(
             logical_modules: None,
             selected_module_lowerings: None,
             scrambled_identifier_frequencies: None,
-            extra: Default::default(),
         });
     }
     let Some(root_manifest) = &mut artifact.root_manifest else {
@@ -2547,7 +2523,6 @@ fn update_root_manifest(
     };
     root_manifest.counts.selected_module_lowerings = Some(applied.len());
     root_manifest.logical_modules = Some(RootLogicalModulesSummary {
-        chunk_count: reports.len(),
         module_count: reports.iter().map(|r| r.counts.final_modules).sum(),
     });
     root_manifest.selected_module_lowerings = Some(applied.to_vec());

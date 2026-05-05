@@ -3,16 +3,15 @@
 //! Three declarative top-level maps describe what the spec wants applied:
 //!
 //! - `vendor` keyed by chunk path (`"static/lib.js"` → [`VendorMark`]).
-//! - `logicalModules` keyed by chunk id, then target path
+//! - `logical_modules` keyed by chunk id, then target path
 //!   (`"static/app"` → `"foo/bar/baz.js"` → [`LogicalModule`]).
-//! - `residualModules` keyed by chunk id (`"static/app"` →
+//! - `residual_modules` keyed by chunk id (`"static/app"` →
 //!   [`ResidualModule`]). At most one residual per chunk — encoded by the
 //!   map shape.
 //!
-//! Pipeline stages run in a fixed canonical order; each stage is gated
-//! either by the contents of those maps or by an explicit boolean toggle
-//! (`rewriteChunkEntrySpecifiers`) or by the presence of a per-stage
-//! config field ([`TransformSpec::write_js_tree`],
+//! Pipeline stages run in a fixed canonical order; each stage is either
+//! always-on or gated by the contents of those maps / by the presence of a
+//! per-stage config field ([`TransformSpec::write_js_tree`],
 //! [`TransformSpec::emit_browser_harness`]). There is no user-supplied
 //! pipeline list.
 //!
@@ -25,9 +24,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct TransformSpec {
-    pub kind: String,
     pub inputs: LoadJsChunksArgs,
 
     // --- declarative data sections ---
@@ -56,24 +54,20 @@ pub struct TransformSpec {
     pub chunk_renames: BTreeMap<String, ChunkRenames>,
 
     // --- per-stage configuration ---
-    /// When `true`, run `rewrite_chunk_entry_specifiers` after the
-    /// always-on startup steps. The stage takes no arguments.
-    #[serde(default)]
-    pub rewrite_chunk_entry_specifiers: bool,
     /// Output configuration for `swap_vendor_chunks`. The stage runs
     /// whenever `vendor` contains any `level: swap` entries; this field
     /// only adds output paths and a `write` toggle. All inner fields
-    /// have defaults, so omitting `swapVendorChunks` is identical to
+    /// have defaults, so omitting `swap_vendor_chunks` is identical to
     /// supplying an empty object.
     #[serde(default)]
     pub swap_vendor_chunks: SwapVendorChunksConfig,
     /// Configuration for `materialize_logical_modules`. The stage runs
-    /// whenever `logicalModules ∪ residualModules` is non-empty; the
+    /// whenever `logical_modules ∪ residual_modules` is non-empty; the
     /// chunk ids it processes are exactly the union of those maps'
     /// keys. This field only carries auxiliary options.
     #[serde(default)]
     pub materialize_logical_modules: MaterializeLogicalModulesConfig,
-    /// When set, persist the artifact tree to `outDir`.
+    /// When set, persist the artifact tree to `out_dir`.
     #[serde(default)]
     pub write_js_tree: Option<WriteJsTreeConfig>,
     /// When set, emit a browser-runtime harness alongside the artifact.
@@ -82,14 +76,14 @@ pub struct TransformSpec {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct LoadJsChunksArgs {
     pub input_root: PathBuf,
     pub js_list_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct SwapVendorChunksConfig {
     #[serde(default)]
     pub output_manifest_path: Option<PathBuf>,
@@ -102,14 +96,14 @@ pub struct SwapVendorChunksConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct MaterializeLogicalModulesConfig {
     /// Optional override for the entry-file path to read per chunk.
     /// Absent means "use the chunk's recorded entry file".
     #[serde(default)]
     pub file: Option<String>,
     /// Defaults to `true` — drop chunks outside the materialised set
-    /// (the union of `logicalModules` and `residualModules` keys)
+    /// (the union of `logical_modules` and `residual_modules` keys)
     /// before materialising. Set `false` to keep them.
     #[serde(default = "default_true")]
     pub prune_other_chunks: bool,
@@ -137,7 +131,7 @@ impl Default for MaterializeLogicalModulesConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct WriteJsTreeConfig {
     pub out_dir: PathBuf,
     #[serde(default)]
@@ -145,7 +139,7 @@ pub struct WriteJsTreeConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct EmitBrowserHarnessConfig {
     pub asset_summary_path: PathBuf,
     pub out_dir: PathBuf,
@@ -157,7 +151,7 @@ pub struct EmitBrowserHarnessConfig {
 /// Container for per-chunk in-place renames; see
 /// [`TransformSpec::chunk_renames`].
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct ChunkRenames {
     #[serde(default)]
     pub id: Option<String>,
@@ -177,46 +171,23 @@ fn default_true() -> bool {
 /// `package`/`version`/`subpath` triple, encoded as the
 /// [`VendorLevel::Swap`] variant carrying those fields.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct VendorMark {
     pub identity: String,
-    pub evidence: Vec<Evidence>,
     #[serde(default)]
     pub role: VendorRole,
-    #[serde(default)]
-    pub upstream_family: Option<String>,
-    #[serde(default)]
-    pub confidence: Option<String>,
-    #[serde(default)]
-    pub notes: Option<String>,
-    #[serde(default)]
-    pub export_shape: Option<serde_json::Map<String, serde_json::Value>>,
-    #[serde(default)]
-    pub fingerprint: Option<Fingerprint>,
     #[serde(flatten)]
     pub level: VendorLevel,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "level", rename_all = "kebab-case")]
+#[serde(tag = "level", rename_all = "snake_case")]
 pub enum VendorLevel {
     Suppress,
     BoundaryRename,
     Swap(SwapMark),
 }
 
-impl VendorLevel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            VendorLevel::Suppress => "suppress",
-            VendorLevel::BoundaryRename => "boundary-rename",
-            VendorLevel::Swap(_) => "swap",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SwapMark {
     pub package: String,
     pub version: String,
@@ -226,64 +197,32 @@ pub struct SwapMark {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum VendorRole {
     #[default]
     Module,
     Worker,
 }
 
-impl VendorRole {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            VendorRole::Module => "module",
-            VendorRole::Worker => "worker",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum WrapperShape {
     NamedFromDefault,
     NamedFromJsonDefault,
     NamedFromModuleDefault,
 }
 
-impl WrapperShape {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            WrapperShape::NamedFromDefault => "named-from-default",
-            WrapperShape::NamedFromJsonDefault => "named-from-json-default",
-            WrapperShape::NamedFromModuleDefault => "named-from-module-default",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Evidence {
-    pub path: String,
-    pub line: u64,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Fingerprint {
-    pub algorithm: String,
-    pub hash: String,
-}
-
 // --- Logical / Residual modules ------------------------------------------
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct LogicalModule {
     #[serde(default)]
     pub members: Vec<Member>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct ResidualModule {
     /// Logical-module path the residual catch-all writes to. Defaults to
     /// `"residual/unhandled"` when absent.
@@ -294,7 +233,7 @@ pub struct ResidualModule {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct Member {
     /// Public export name. Defaults to the bound `selector.binding.name`.
     #[serde(default)]
@@ -319,6 +258,7 @@ pub struct BindingSelector {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum BindingSourceKind {
     /// The bound name comes from an `import` specifier in the source
     /// chunk, not a top-level decl. The materializer rewrites the import

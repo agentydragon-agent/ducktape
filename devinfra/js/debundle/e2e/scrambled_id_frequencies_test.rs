@@ -29,8 +29,6 @@ export { aH, bC, dE };
     ));
 
     let queue = read_queue(&fixture.out_root);
-    assert_eq!(queue["schema_version"], 1);
-    assert_eq!(queue["kind"], "js.scrambled_identifier_frequencies");
     assert!(
         queue["generated_at_iso"]
             .as_str()
@@ -118,9 +116,9 @@ export { xY };
         vec![],
     ));
     let manifest = read_manifest(&fixture.out_root);
-    let path = manifest["scrambledIdentifierFrequencies"]
+    let path = manifest["scrambled_identifier_frequencies"]
         .as_str()
-        .expect("manifest must record scrambledIdentifierFrequencies path");
+        .expect("manifest must record scrambled_identifier_frequencies path");
     assert!(
         !path.starts_with('/') && !path.starts_with(".."),
         "queue path must be manifest-relative, got {path}",

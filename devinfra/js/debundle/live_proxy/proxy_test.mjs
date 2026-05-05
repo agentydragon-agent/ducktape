@@ -46,11 +46,11 @@ function writeBaseLiveProxyFixture(
   writeTextFile(join(appRoot, "bootstrap.js"), 'import "./static/index-Example/runtime.js";\n');
   writeTextFile(join(appRoot, "static", "index-Example", "runtime.js"), "console.log('runtime');\n");
   writeJsonFile(appManifestPath, {
-    assetSummaryPath,
-    outDir: appRoot,
-    sourceHtml: sourceHtmlPath,
-    uiVersion,
-    ...(vendorManifestPath ? { vendorManifestPath } : {}),
+    asset_summary_path: assetSummaryPath,
+    out_dir: appRoot,
+    source_html: sourceHtmlPath,
+    ui_version: uiVersion,
+    ...(vendorManifestPath ? { vendor_manifest_path: vendorManifestPath } : {}),
   });
   if (sourceBaseUrl) {
     writeJsonFile(join(appRoot, "SOURCE.json"), {
@@ -140,14 +140,14 @@ test("loadLiveProxyConfiguration resolves manifest-dir-relative paths from an ab
   });
   writeJsonFile(fixture.assetSummaryPath, {});
   // The pipeline emits paths relative to the manifest's own directory.
-  // appManifest sits at <root>/app/manifest.json; outDir is the manifest's
-  // own dir, asset-summary.json is the parent dir, sourceHtml is in the
+  // appManifest sits at <root>/app/manifest.json; out_dir is the manifest's
+  // own dir, asset-summary.json is the parent dir, source_html is in the
   // sibling source/ tree.
   writeJsonFile(fixture.appManifestPath, {
-    assetSummaryPath: "../asset-summary.json",
-    outDir: ".",
-    sourceHtml: "../source/index.html",
-    uiVersion: "runfiles",
+    asset_summary_path: "../asset-summary.json",
+    out_dir: ".",
+    source_html: "../source/index.html",
+    ui_version: "runfiles",
   });
 
   const config = loadLiveProxyConfiguration({
@@ -166,7 +166,7 @@ test("loadLiveProxyConfiguration resolves manifest-dir-relative paths from an ab
   assert.equal(config.targetOrigin, "https://app.example.com");
 });
 
-test("loadLiveProxyConfiguration treats outDir as the app root even when it is not named app", () => {
+test("loadLiveProxyConfiguration treats out_dir as the app root even when it is not named app", () => {
   const fixture = writeBaseLiveProxyFixture("debundle-live-proxy-versioned-app-root-", {
     appRelativeOutDir: "out/v-example",
     uiVersion: "versioned",
@@ -295,39 +295,38 @@ test("mapLocalAssetPath serves swapped vendor chunks from package roots and gene
     "const data = { native: true };\nexport default data;\nexport const native = data.native;\n"
   );
   writeJsonFile(vendorManifestPath, {
-    kind: "js.vendor_resolution_manifest",
-    uiVersion: "vendor",
+    ui_version: "vendor",
     resolutions: {
       "static/katex-BZy9Y_85.js": {
-        chunkId: "static/katex-BZy9Y_85",
-        chunkPath: "static/katex-BZy9Y_85.js",
-        entryFile: "runtime.js",
+        chunk_id: "static/katex-BZy9Y_85",
+        chunk_path: "static/katex-BZy9Y_85.js",
+        entry_file: "runtime.js",
         package: "katex",
         version: "0.16.19",
         subpath: "dist/katex.mjs",
       },
       "static/native-B5Vb9Oiz.js": {
-        chunkId: "static/native-B5Vb9Oiz",
-        chunkPath: "static/native-B5Vb9Oiz.js",
-        entryFile: "runtime.js",
+        chunk_id: "static/native-B5Vb9Oiz",
+        chunk_path: "static/native-B5Vb9Oiz.js",
+        entry_file: "runtime.js",
         package: "@emoji-mart/data",
         version: "1.2.1",
         subpath: "sets/15/native.json",
-        wrapperShape: "named-from-json-default",
+        wrapper_shape: "named_from_json_default",
         // Vendor manifest sits at <root>/vendors/manifest.json; the wrapper
         // file is its sibling under generated/. With manifest-relative
         // resolution the recorded path is rooted at the vendor manifest's
         // own directory.
-        generatedWrapperPath: "generated/static/native-B5Vb9Oiz/runtime.js",
+        generated_wrapper_path: "generated/static/native-B5Vb9Oiz/runtime.js",
       },
     },
   });
   writeJsonFile(fixture.appManifestPath, {
-    assetSummaryPath: fixture.assetSummaryPath,
-    outDir: fixture.appRoot,
-    sourceHtml: fixture.sourceHtmlPath,
-    uiVersion: "vendor",
-    vendorManifestPath,
+    asset_summary_path: fixture.assetSummaryPath,
+    out_dir: fixture.appRoot,
+    source_html: fixture.sourceHtmlPath,
+    ui_version: "vendor",
+    vendor_manifest_path: vendorManifestPath,
   });
 
   const config = loadLiveProxyConfiguration({

@@ -1,12 +1,12 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{
-    ChunkCounts, ChunkFileRecord, ChunkManifest, ExportAliasRecord, ImportRecord,
-    ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ParserOptionsRecord,
+    ChunkCounts, ChunkFileRecord, ChunkManifest, ExportAliasRecord, FileRole, ImportRecord,
+    ImportSpecifierKind, ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ParserOptionsRecord,
     TopLevelDeclarationKind,
 };
 use js_ast::{ParsedJsModule, line_for_span, str_value};
@@ -212,7 +212,6 @@ pub fn build_chunk_manifest_from_analysis(
         .collect::<Vec<_>>();
 
     ChunkManifest {
-        schema_version: 1,
         chunk_id: chunk_id.to_string(),
         source_path: source_path.to_string(),
         parser: ParserOptionsRecord::default(),
@@ -229,7 +228,7 @@ pub fn build_chunk_manifest_from_analysis(
         },
         files: vec![ChunkFileRecord {
             file: entry_file.to_string(),
-            role: "entry",
+            role: FileRole::Entry,
         }],
         imports: analysis.imports.clone(),
         export_aliases: analysis.export_aliases.clone(),
@@ -237,7 +236,6 @@ pub fn build_chunk_manifest_from_analysis(
         kept_top_level_declarations,
         logical_modules: None,
         selected_module_lowerings: None,
-        extra: BTreeMap::new(),
     }
 }
 
@@ -252,19 +250,19 @@ fn describe_import(parsed: &ParsedJsModule, decl: &ImportDecl, index: usize) -> 
             .iter()
             .map(|specifier| match specifier {
                 ImportSpecifier::Default(default) => ImportSpecifierRecord {
-                    kind: "default",
+                    kind: ImportSpecifierKind::Default,
                     imported: None,
                     local: default.local.sym.to_string(),
                     source: None,
                 },
                 ImportSpecifier::Namespace(namespace) => ImportSpecifierRecord {
-                    kind: "namespace",
+                    kind: ImportSpecifierKind::Namespace,
                     imported: None,
                     local: namespace.local.sym.to_string(),
                     source: None,
                 },
                 ImportSpecifier::Named(named) => ImportSpecifierRecord {
-                    kind: "named",
+                    kind: ImportSpecifierKind::Named,
                     imported: Some(
                         named
                             .imported

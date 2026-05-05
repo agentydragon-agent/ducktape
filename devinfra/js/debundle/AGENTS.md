@@ -349,19 +349,27 @@ Value>` blobs that mirror an external JSON shape are smells — replace
 them with typed structs and enums.
 
 - Use Rust enums (frequently a thin wrapper over an SWC AST variant) over
-  stringly-typed kind fields.
-- Prefer default snake_case serde field names for debundler-owned side
-  outputs. Use explicit serde renames only for external contracts that already
-  require them, and don't derive `Serialize` for internal manifests the
-  pipeline orchestrator only reads `kind` from.
+  stringly-typed discriminator fields. Debundler-owned serialized enums use
+  `#[serde(rename_all = "snake_case")]` unless an external contract already
+  requires a different spelling.
+- Keep known artifact state typed. File roles are `FileRole`; module
+  extraction metadata is `ModuleExtractionState`; do not reintroduce role
+  strings or ad hoc metadata maps for known shapes.
 - Replace `Vec<Value>` / `Map<String, Value>` payloads with typed structs
   whenever the shape is known. `serde_json::Value` is appropriate only
   when the value is genuinely polymorphic (spec args, `#[serde(flatten)]`
   extension slots) or comes straight from an external JSON input.
+- Debundler-owned JSON does not get compatibility envelopes by default. Do
+  not add top-level `kind`, `schema_version`, `operations`, or stage-list
+  fields to executable specs or other owned JSON unless a real external
+  consumer needs them.
+- Executable specs contain inputs and author decisions only. Keep analysis
+  provenance and notes (`evidence`, `notes`, `confidence`, `export_shape`)
+  out of `VendorMark`; put that context in docs or diagnostic side outputs.
 
-The public spec format consumed by `--spec` and the on-disk artifact
-manifests are external contracts — be deliberate about changing them.
-Internal intermediate types have no such constraint.
+The public spec format consumed by `--spec` is a reviewed contract, but it is
+still debundler-owned. Prefer clean typed shape over compatibility fields kept
+only for older in-repo fixtures.
 
 ## Path Resolution Contract
 
@@ -380,36 +388,47 @@ just `$(rlocationpath <label>)` (no shell wrappers, no `$$RUNFILES_DIR`
 substitutions) while keeping the binary usable as a standalone tool outside
 the Bazel tree.
 
+For module-specifier path math, use existing path crates and local helpers
+(`relative-path`, `runfiles`, artifact path helpers, etc.) rather than
+hand-rolled POSIX segment splitting or string replacement. If a helper is
+missing, add one in the path module and keep call sites typed.
+
 ## Spec-level `inputs`
 
-`load_js_chunks`, `compute_js_asts`, and `normalize_js_chunks` are always-on
-startup steps run before the rest of the pipeline. The spec configures them
-via a top-level `inputs: { inputRoot, jsListPath }` object.
+`load_js_chunks`, `compute_js_asts`, `normalize_js_chunks`, and
+`rewrite_chunk_entry_specifiers` are always-on preparation steps. The spec
+configures the load step via `inputs: { input_root, js_list_path }`;
+specifier rewriting runs automatically after normalization and before
+data-gated transforms.
 
 ## Spec-level declarative sections
 
-The spec carries three declarative top-level maps. Pipeline stages read these
-maps directly via typed serde structs in <spec.rs>.
+The executable spec carries declarative top-level data maps, not an operation
+or pipeline list. Transform code reads these maps directly via typed serde
+structs in <spec.rs>.
 
 - `vendor` — keyed by chunk path (`"static/lib.js"` → `VendorMark`). The
-  `level` discriminator selects between `suppress` / `boundary-rename` /
+  `level` discriminator selects between `suppress` / `boundary_rename` /
   `swap`; only `swap` requires `package`/`version`/`subpath` (parse-time
-  guarantee via the `VendorLevel::Swap` enum variant). Map-key uniqueness
-  makes "two entries target the same chunk path" unrepresentable.
-- `logicalModules` — keyed by chunk id, then target path (`"static/app"` →
+  guarantee via the `VendorLevel::Swap` enum variant). It is executable
+  configuration only, not a place for notes, evidence, confidence scores, or
+  export-shape analysis.
+- `logical_modules` — keyed by chunk id, then target path (`"static/app"` →
   `"foo/bar/baz.js"` → `LogicalModule`). Two-level nesting makes
-  `(chunkId, targetPath)` uniqueness a parser property.
-- `residualModules` — keyed by chunk id (`"static/app"` → `ResidualModule`).
+  `(chunk_id, target_path)` uniqueness a parser property.
+- `residual_modules` — keyed by chunk id (`"static/app"` → `ResidualModule`).
   The map shape encodes the "at most one residual per chunk" invariant.
+- `chunk_renames` — keyed by chunk id, then binding name. These are in-place
+  readability renames for bindings that remain in the chunk entry.
 
-Stages run in a fixed canonical order, gated by the data sections and the
-optional per-stage config fields on [`spec::TransformSpec`]. There is no
-user-supplied pipeline list.
+Transforms run in a fixed canonical order. Vendor and module materialization
+are gated by their data maps; tree and harness emission are gated by their
+output config fields. `rewrite_chunk_entry_specifiers` is always-on.
 
-## Materialize logical-modules `targetDir`
+## Materialize logical-modules `target_dir`
 
-`materialize_logical_modules` accepts an optional `targetDir`. Absent or
+`materialize_logical_modules` accepts an optional `target_dir`. Absent or
 empty means "no subdirectory" — lowered files land directly under their
-chunk root (`<out_dir>/<chunkId>/<target.path>.js`). A non-empty value adds
-that prefix (`<out_dir>/<chunkId>/<targetDir>/<target.path>.js`). Tests that
-want the legacy `modules/` layout pass `"targetDir": "modules"` explicitly.
+chunk root (`<out_dir>/<chunk_id>/<target.path>.js`). A non-empty value adds
+that prefix (`<out_dir>/<chunk_id>/<target_dir>/<target.path>.js`). Tests that
+want the legacy `modules/` layout pass `"target_dir": "modules"` explicitly.

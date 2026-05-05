@@ -51,8 +51,8 @@ spec runs. Concretely:
 
 - `apply_vendor_annotations` + `swap_vendor_chunks` over a couple of
   Excalidraw's actual vendor chunks (React, Roughjs, Pointers, etc.)
-  so vendor-swap edge cases (named-from-default,
-  named-from-module-default, default-only, JSON-default) get covered
+  so vendor-swap edge cases (`named_from_default`,
+  `named_from_module_default`, default-only, JSON-default) get covered
   on a real bundle, not only synthetic fixtures.
 - `materialize_logical_modules` over a handful of pre-identified
   Excalidraw source modules — pick ones whose shape is recognisable
@@ -60,11 +60,12 @@ spec runs. Concretely:
   geometry helper, a state slice). Goal: prove the materialiser
   recovers approximately the right symbols/files from a real
   scrambled bundle.
-- A small set of `logicalModules` rename entries on identifiers
+- A small set of `logical_modules` rename entries on identifiers
   visible in the compiled output. Goal: exercise the rename pipeline
   at realistic aggressiveness.
-- `rewrite_chunk_entry_specifiers` + `emit_browser_harness` so the
-  output is a runnable app the live proxy can serve.
+- `emit_browser_harness`, relying on the always-on
+  `rewrite_chunk_entry_specifiers` transform, so the output is a
+  runnable app the live proxy can serve.
 
 The exact module list / rename list is part of the implementation —
 pick stable shapes that are unlikely to drift wildly when Excalidraw
@@ -108,7 +109,7 @@ public-CI signal and the public-bug-report leverage.
 
 ## Propagate readable rename across consumers
 
-When a `logicalModules` entry renames a scrambled binding `<scrambled>`
+When a `logical_modules` entry renames a scrambled binding `<scrambled>`
 to readable `<readable>`, the consumer-side import is currently
 emitted as `import { <readable> as <scrambled> } from "..."` and every
 reference in the consumer body still spells the original scrambled
@@ -139,7 +140,7 @@ Implemented in <scrambled_id_frequencies.rs> as a side output of every
 manifest-emitting pipeline run (`emit_browser_harness`, `write_js_tree`).
 The JSON lands at `<out_dir>/scrambled-identifier-frequencies.json` and
 the path is recorded on the stage's manifest under
-`scrambledIdentifierFrequencies`.
+`scrambled_identifier_frequencies`.
 
 The scrambled-name heuristic in `is_scrambled_name` is intentionally
 conservative on the side of "scrambled"; documented edge cases live in
@@ -158,17 +159,35 @@ tunability concerns recorded as in-code TODOs:
 ## Logical materialization breadth
 
 The current `materialize_logical_modules` covers top-level
-function/class/variable declaration movement and simple dependency closure.
+function/class/variable declaration movement and explicit owner assignment.
 Still to do:
 
-- Full boundary analysis data model and selected owner cache files.
 - Full lowering matrix: binding placement reports, attached side-effects,
   staged-shell edge cases beyond the focused fixture.
 - Owner-fragment modeling parity for nested declarations and re-exports.
+- Keep new analysis tooling on the existing owner-graph and peelability side
+  outputs; do not add parallel selected-owner cache formats.
+
+## Graph pass performance and module boundaries
+
+The current owner-graph framing is in place, but `schedule_validator.rs` is
+still too broad as a module and some passes should be tightened before the
+next large Tana peel loop:
+
+- Split `schedule_validator.rs` by pipeline stage: statement-fact extraction,
+  owner graph construction, quotient/realizability validation, and peelability
+  reporting. Preserve the current single-pass data flow while making each stage
+  easier to profile and reason about independently.
+- Profile the Tana debundle action around `materialize_logical_modules` and
+  `rename_vendor_exports`; avoid whole-graph clone/rescan patterns where a
+  graph pass or indexed lookup can answer the same question.
+- Consider changing per-chunk `file_records` from an ordered vector of
+  `(file, role)` pairs into a typed map if the output consumers do not depend
+  on order. Keep the manifest easy to diff and easy to read.
 
 ## Vendor swap edge cases
 
-- `named-from-default`: documented acceptance contract is "upstream
+- `named_from_default`: documented acceptance contract is "upstream
   default export is an object literal whose keys are `Prop::KeyValue`
   with `Ident` or `Str` names". `e2e/vendor_swap_test.rs` pins the
   accepted shape and explicitly rejects two adjacent shapes:
@@ -183,10 +202,10 @@ Still to do:
   - **Class / function default declarations** (`export default class
 {}`) don't surface as `ExportDefaultExpr` and bail with "no
     export default declaration". Open whether to accept (less common
-    for "named-from-default" wrapper shape) or document as
+    for `named_from_default` wrapper shape) or document as
     intentionally out-of-scope.
 
-- `named-from-module-default`: handle anonymous default function/class
+- `named_from_module_default`: handle anonymous default function/class
   declarations (currently rejected).
 
 ## Analysis semantics breadth

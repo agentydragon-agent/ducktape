@@ -1,27 +1,23 @@
-use std::path::Path;
-use std::time::Instant;
-
 use anyhow::{Context, Result};
-use serde::Serialize;
+use std::path::Path;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    JsFile, JsPipelineArtifact, get_chunk_entry_path, posix_join, posix_relative,
-    resolve_artifact_import_reference, resolve_artifact_source_import_reference,
+    FileRole, JsFile, JsPipelineArtifact, get_chunk_entry_path, join_module_path,
+    relative_module_path, resolve_artifact_import_reference,
+    resolve_artifact_source_import_reference,
 };
 use js_ast::{set_str_value, str_value};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct RewriteChunkEntrySpecifiersManifest {
-    pub kind: &'static str,
     pub counts: RewriteCounts,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct RewriteCounts {
-    #[serde(rename = "traversedFiles")]
     pub traversed_files: usize,
     pub files: usize,
     pub rewrites: usize,
@@ -52,7 +48,6 @@ pub fn rewrite_chunk_entry_specifiers(
                 continue;
             }
             traversed_files += 1;
-            let started = Instant::now();
             let mut ast = {
                 let chunk = artifact
                     .chunks
@@ -86,7 +81,6 @@ pub fn rewrite_chunk_entry_specifiers(
                     .with_context(|| format!("missing artifact file {chunk_id}/{file_path}"))?;
                 file.ast = Some(ast);
             }
-            let _duration_ms = started.elapsed().as_secs_f64() * 1000.0;
             if file_rewrites > 0 {
                 rewritten_files += 1;
                 rewritten_specifiers += file_rewrites;
@@ -95,7 +89,6 @@ pub fn rewrite_chunk_entry_specifiers(
     }
 
     Ok(RewriteChunkEntrySpecifiersManifest {
-        kind: "js.rewrite_chunk_entry_specifiers_manifest",
         counts: RewriteCounts {
             traversed_files,
             files: rewritten_files,
@@ -125,7 +118,7 @@ fn should_rewrite_file(file: &JsFile) -> bool {
     if file.ast.is_none() {
         return false;
     }
-    if file.metadata.role.as_deref() == Some("module")
+    if file.metadata.role == Some(FileRole::Module)
         && file.metadata.generated_stage.as_deref() == Some("selected_module_lowering")
     {
         return false;
@@ -164,12 +157,12 @@ impl RuntimeSourceRewriter<'_> {
         else {
             return Ok(source.to_string());
         };
-        let caller_dir = posix_join(&[
+        let caller_dir = join_module_path(&[
             self.caller_chunk_id.as_str(),
-            posix_dirname(&self.caller_file).as_str(),
+            module_path_dirname(&self.caller_file).as_str(),
         ]);
-        let target_path = posix_join(&[target_chunk_id.as_str(), target_file.as_str()]);
-        let mut rewritten = posix_relative(&caller_dir, &target_path);
+        let target_path = join_module_path(&[target_chunk_id.as_str(), target_file.as_str()]);
+        let mut rewritten = relative_module_path(&caller_dir, &target_path);
         if !rewritten.starts_with('.') {
             rewritten = format!("./{rewritten}");
         }
@@ -274,7 +267,7 @@ fn import_meta_url_expr() -> Expr {
     })
 }
 
-fn posix_dirname(path: &str) -> String {
+fn module_path_dirname(path: &str) -> String {
     std::path::Path::new(path)
         .parent()
         .and_then(|parent| parent.to_str())

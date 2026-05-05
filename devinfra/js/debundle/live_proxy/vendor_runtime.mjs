@@ -8,8 +8,8 @@ export function loadVendorResolutionManifest(manifestPath) {
     return {};
   }
   const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
-  if (raw.kind !== "js.vendor_resolution_manifest") {
-    throw new Error(`Unexpected vendor manifest kind: ${raw.kind} at ${manifestPath}`);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`Vendor manifest must be a JSON object at ${manifestPath}`);
   }
   return raw.resolutions ?? {};
 }
@@ -19,13 +19,13 @@ export function loadVendorRuntimeIndex({ manifestPath, packageRoots, packagesRoo
   const byChunkId = new Map();
   const manifestDir = dirname(manifestPath);
   for (const [resolutionChunkPath, entry] of Object.entries(resolutions)) {
-    const chunkPath = entry.chunkPath ?? resolutionChunkPath;
+    const chunkPath = entry.chunk_path ?? resolutionChunkPath;
     if (!entry.package || !entry.subpath || !entry.version) {
       throw new Error(`Vendor resolution for ${chunkPath} is missing package/version/subpath in ${manifestPath}`);
     }
     const chunkId = chunkIdForChunkPath(chunkPath);
     const entryFile = resolveVendorManifestEntryFile(entry, { chunkPath, manifestPath });
-    const wrapperAbsPath = entry.generatedWrapperPath ? resolve(manifestDir, entry.generatedWrapperPath) : null;
+    const wrapperAbsPath = entry.generated_wrapper_path ? resolve(manifestDir, entry.generated_wrapper_path) : null;
     const filePath =
       wrapperAbsPath ?? resolvePackageSubpath(entry.package, entry.subpath, { packageRoots, packagesRoot });
     const mountRoot = resolveMountRoot(filePath, entryFile);
@@ -43,7 +43,7 @@ export function loadVendorRuntimeIndex({ manifestPath, packageRoots, packagesRoo
       ...(wrapperAbsPath
         ? {
             generatedWrapperPath: wrapperAbsPath,
-            wrapperShape: entry.wrapperShape ?? "generated-wrapper",
+            wrapperShape: entry.wrapper_shape ?? "generated_wrapper",
           }
         : {}),
     });
@@ -128,10 +128,10 @@ function normalizeEntryFile(entryFile) {
 }
 
 function resolveVendorManifestEntryFile(entry, { chunkPath, manifestPath } = {}) {
-  if (typeof entry?.entryFile !== "string" || entry.entryFile === "") {
-    throw new Error(`Vendor resolution for ${chunkPath} is missing entryFile in ${manifestPath}`);
+  if (typeof entry?.entry_file !== "string" || entry.entry_file === "") {
+    throw new Error(`Vendor resolution for ${chunkPath} is missing entry_file in ${manifestPath}`);
   }
-  return normalizeEntryFile(entry.entryFile);
+  return normalizeEntryFile(entry.entry_file);
 }
 
 function normalizeMountedRelativePath(relativePath) {

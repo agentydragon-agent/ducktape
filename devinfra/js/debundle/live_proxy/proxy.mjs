@@ -123,21 +123,21 @@ export function loadLiveProxyConfiguration(rawOptions) {
     appManifest,
     appManifestPath: options.appManifestPath,
   };
-  const assetSummaryPath = resolveManifestReferencedPath(appManifest.assetSummaryPath, manifestContext);
+  const assetSummaryPath = resolveManifestReferencedPath(appManifest.asset_summary_path, manifestContext);
   const assetSummary = JSON.parse(readFileSync(assetSummaryPath, "utf8"));
-  const sourceHtmlPath = resolveManifestReferencedPath(appManifest.sourceHtml, manifestContext);
+  const sourceHtmlPath = resolveManifestReferencedPath(appManifest.source_html, manifestContext);
   const sourceHtml = readFileSync(sourceHtmlPath, "utf8");
   const targetUrl = new URL(
     resolveAppBaseUrl({ appManifest, assetSummary, manifestContext }) ?? "https://example.test"
   );
-  const uiVersion = appManifest.uiVersion ?? assetSummary.uiVersion ?? "unknown";
+  const uiVersion = appManifest.ui_version ?? assetSummary.uiVersion ?? "unknown";
   const internalPrefix = normalizeInternalPrefix(
     options.internalPrefix ?? `${targetUrl.pathname.replace(/\/$/, "")}/_debundle/live/${uiVersion}`
   );
-  const appRoot = resolveManifestReferencedPath(appManifest.outDir, manifestContext);
+  const appRoot = resolveManifestReferencedPath(appManifest.out_dir, manifestContext);
   const appAssetPrefix = `${internalPrefix}/app`;
-  const vendorManifestPath = appManifest.vendorManifestPath
-    ? resolveManifestReferencedPath(appManifest.vendorManifestPath, manifestContext)
+  const vendorManifestPath = appManifest.vendor_manifest_path
+    ? resolveManifestReferencedPath(appManifest.vendor_manifest_path, manifestContext)
     : join(appRoot, "vendors", "manifest.json");
   const vendorRuntimeIndex = loadVendorRuntimeIndex({
     manifestPath: vendorManifestPath,
@@ -192,7 +192,7 @@ function resolveAppBaseUrl({ appManifest, assetSummary, manifestContext }) {
   if (appManifest.baseUrl) {
     return appManifest.baseUrl;
   }
-  const sourceMetadataPath = join(resolveManifestReferencedPath(appManifest.outDir, manifestContext), "SOURCE.json");
+  const sourceMetadataPath = join(resolveManifestReferencedPath(appManifest.out_dir, manifestContext), "SOURCE.json");
   if (!existsSync(sourceMetadataPath)) {
     return null;
   }

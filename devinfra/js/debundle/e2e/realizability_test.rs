@@ -9,7 +9,7 @@
 
 use debundle_e2e_support::*;
 use schedule_validator::{
-    OwnerGraphReport, PeelCandidateKind, PeelCandidateStatus, ResidualOwnerPeelStatus,
+    EdgeKind, OwnerGraphReport, PeelCandidateKind, PeelCandidateStatus, ResidualOwnerPeelStatus,
 };
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -143,15 +143,13 @@ export { A, B, readA, readB };
 
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    assert_eq!(graph.kind, "js.debundle.owner_graph");
-    assert_eq!(graph.schema_version, 1);
     assert!(
         graph.nodes.len() >= 4,
         "owner graph should expose source-owner nodes: {graph:#?}",
     );
     assert!(
         graph.edges.iter().any(|edge| {
-            edge.kind == "lazy_read"
+            edge.kind == EdgeKind::LazyRead
                 && edge.binding.as_deref() == Some("B")
                 && !edge.constrains_realizability
         }),
@@ -159,7 +157,7 @@ export { A, B, readA, readB };
     );
     assert!(
         graph.quotient.edges.iter().any(|edge| {
-            edge.kinds.iter().any(|kind| kind == "lazy_read") && !edge.owner_edge_ids.is_empty()
+            edge.kinds.contains(&EdgeKind::LazyRead) && !edge.owner_edge_ids.is_empty()
         }),
         "quotient edges should retain owner-edge provenance: {graph:#?}",
     );
@@ -436,7 +434,7 @@ export { a1, a2, b1 };
         graph
             .edges
             .iter()
-            .any(|edge| edge.kind == "side_effect_order" && edge.binding.is_none()),
+            .any(|edge| edge.kind == EdgeKind::SideEffectOrder && edge.binding.is_none()),
         "side-effect owner edges should omit binding rather than using a sentinel: {graph:#?}",
     );
 }

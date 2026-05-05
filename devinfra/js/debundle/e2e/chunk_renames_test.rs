@@ -5,7 +5,7 @@
 //! ## Background — the bug this op was added to fix
 //!
 //! Previously, the gaffer-side `.yaml.deferred` workflow stuffed its
-//! rename ops into `residualModules[chunkId].members` so the
+//! rename ops into `residual_modules[chunk_id].members` so the
 //! residual-member-rename path applied them. That works mechanically
 //! but the residual-member-rename path needs a `Logical(R)` module,
 //! which the validator treats as a distinct node from
@@ -41,8 +41,8 @@ fn chunk_renames_renames_residual_bindings_in_entry() {
         // S2 (decl with S):    let x = (..., "x-value")  -- stays in entry
         // S3 (orphan-R+S):     console.log(x)            -- reads x at-init
         //
-        // No `residualModules` entry; `x` stays in `ResidualEntry`-land.
-        // `chunkRenames` renames `x` -> `payload`. The lowerer rewrites
+        // No `residual_modules` entry; `x` stays in `ResidualEntry`-land.
+        // `chunk_renames` renames `x` -> `payload`. The lowerer rewrites
         // the in-entry references; the export statement carries the
         // new name.
         source: r#"console.log("before");

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use relative_path::RelativePath;
 use serde::Serialize;
 
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module};
@@ -35,24 +36,36 @@ pub struct JsFile {
 #[allow(dead_code)]
 pub struct ChunkMetadata {
     pub source_path: Option<String>,
-    pub module_extraction_state: Option<serde_json::Value>,
+    pub module_extraction_state: Option<ModuleExtractionState>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleExtractionState {
+    pub runtime_file: String,
+    pub target_dir: String,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct FileMetadata {
     pub chunk_id: Option<String>,
     pub chunk_file: Option<String>,
-    pub role: Option<String>,
+    pub role: Option<FileRole>,
     pub source_path: Option<String>,
     pub generated_stage: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileRole {
+    Entry,
+    Module,
+    Runtime,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct LoadedJsChunksManifest {
-    pub kind: &'static str,
     pub counts: LoadedCounts,
     pub chunks: Vec<LoadedChunkRecord>,
-    #[serde(rename = "jsFiles")]
     pub js_files: Vec<String>,
 }
 
@@ -64,17 +77,13 @@ pub struct LoadedCounts {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LoadedChunkRecord {
-    #[serde(rename = "chunkId")]
     pub chunk_id: String,
-    #[serde(rename = "entryFile")]
     pub entry_file: String,
-    #[serde(rename = "sourcePath")]
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ComputeJsAstsManifest {
-    pub kind: &'static str,
     pub counts: ComputeJsAstsCounts,
 }
 
@@ -85,9 +94,7 @@ pub struct ComputeJsAstsCounts {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ArtifactManifest {
-    pub schema_version: u32,
     pub counts: ArtifactCounts,
     pub chunks: Vec<ArtifactChunkRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -101,12 +108,9 @@ pub struct ArtifactManifest {
     /// output directory.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scrambled_identifier_frequencies: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ArtifactCounts {
     pub chunks: usize,
     pub kept_top_level_declaration_owners: usize,
@@ -115,19 +119,14 @@ pub struct ArtifactCounts {
     pub unresolved_exports: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_module_lowerings: Option<usize>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RootLogicalModulesSummary {
-    pub chunk_count: usize,
     pub module_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ChunkLogicalModulesSummary {
     pub count: usize,
     pub module_ids: Vec<String>,
@@ -135,28 +134,23 @@ pub struct ChunkLogicalModulesSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SelectedModuleLowering {
     pub chunk_id: String,
     pub exported_names: Vec<String>,
     pub file: String,
     pub id: String,
-    pub operation: &'static str,
     pub owner_ids: Vec<String>,
     pub target_file: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ArtifactChunkRecord {
     pub chunk_id: String,
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ChunkManifest {
-    pub schema_version: u32,
     pub chunk_id: String,
     pub source_path: String,
     pub parser: ParserOptionsRecord,
@@ -171,12 +165,9 @@ pub struct ChunkManifest {
     pub logical_modules: Option<ChunkLogicalModulesSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_module_lowerings: Option<Vec<SelectedModuleLowering>>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ParserOptionsRecord {
     pub allow_undeclared_exports: bool,
     pub plugins: Vec<&'static str>,
@@ -194,7 +185,6 @@ impl Default for ParserOptionsRecord {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ChunkCounts {
     pub dynamic_imports: usize,
     pub export_aliases: usize,
@@ -209,7 +199,7 @@ pub struct ChunkCounts {
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkFileRecord {
     pub file: String,
-    pub role: &'static str,
+    pub role: FileRole,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -222,12 +212,20 @@ pub struct ImportRecord {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ImportSpecifierRecord {
-    pub kind: &'static str,
+    pub kind: ImportSpecifierKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub imported: Option<String>,
     pub local: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSpecifierKind {
+    Named,
+    Default,
+    Namespace,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -238,7 +236,6 @@ pub struct ExportAliasRecord {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct KeptTopLevelDeclarationRecord {
     pub id: String,
     pub line: Option<usize>,
@@ -341,7 +338,7 @@ pub fn load_js_chunks(
                 metadata: FileMetadata {
                     chunk_id: Some(chunk_id.clone()),
                     chunk_file: Some(entry_file.clone()),
-                    role: Some("entry".to_string()),
+                    role: Some(FileRole::Entry),
                     source_path: Some(source_path.clone()),
                     ..Default::default()
                 },
@@ -361,7 +358,6 @@ pub fn load_js_chunks(
         );
     }
     let manifest = LoadedJsChunksManifest {
-        kind: "js.loaded_js_chunks",
         counts: LoadedCounts {
             chunks: js_files.len(),
             files: js_files.len(),
@@ -417,7 +413,6 @@ pub fn compute_js_asts(
         parsed += 1;
     }
     Ok(ComputeJsAstsManifest {
-        kind: "js.compute_js_asts_manifest",
         counts: ComputeJsAstsCounts {
             parsed,
             files: keys.len(),
@@ -431,7 +426,7 @@ pub fn materialize_artifact_scripts(artifact: &JsPipelineArtifact, out_dir: &Pat
             .chunks
             .get(&chunk_id)
             .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
-        let chunk_out_dir = out_dir.join(split_posix_path(&chunk_id));
+        let chunk_out_dir = out_dir.join(path_from_module_path(&chunk_id));
         fs::create_dir_all(&chunk_out_dir)?;
         for file in list_chunk_file_paths(chunk) {
             let file_artifact = chunk
@@ -442,7 +437,7 @@ pub fn materialize_artifact_scripts(artifact: &JsPipelineArtifact, out_dir: &Pat
                 .ast
                 .as_ref()
                 .with_context(|| format!("artifact file has no AST: {chunk_id}/{file}"))?;
-            let target_path = chunk_out_dir.join(split_posix_path(&file));
+            let target_path = chunk_out_dir.join(path_from_module_path(&file));
             if let Some(parent) = target_path.parent() {
                 fs::create_dir_all(parent)?;
             }
@@ -477,8 +472,11 @@ pub fn get_chunk_entry_path(artifact: &JsPipelineArtifact, chunk_id: &str) -> Op
         })
         .or_else(|| {
             chunk.files.values().find_map(|file| {
-                matches!(file.metadata.role.as_deref(), Some("entry" | "runtime"))
-                    .then(|| file.path.clone())
+                matches!(
+                    file.metadata.role,
+                    Some(FileRole::Entry | FileRole::Runtime)
+                )
+                .then(|| file.path.clone())
             })
         })
         .or_else(|| chunk.files.keys().next().cloned())
@@ -493,15 +491,16 @@ pub fn resolve_artifact_import_reference(
     if source.is_empty() || !source.starts_with('.') {
         return None;
     }
-    let caller_dir = posix_join(&[caller_chunk_id, posix_dirname(caller_file).as_str()]);
+    let caller_dir =
+        join_module_path(&[caller_chunk_id, module_path_dirname(caller_file).as_str()]);
     let resolved_path =
-        normalize_relative_path(&posix_join(&[caller_dir.as_str(), source])).ok()?;
+        normalize_module_path(&join_module_path(&[caller_dir.as_str(), source])).ok()?;
     for chunk_id in artifact.list_chunk_ids() {
         let Some(chunk) = artifact.chunks.get(&chunk_id) else {
             continue;
         };
         for file_path in chunk.files.keys() {
-            if posix_join(&[chunk_id.as_str(), file_path.as_str()]) == resolved_path {
+            if join_module_path(&[chunk_id.as_str(), file_path.as_str()]) == resolved_path {
                 return Some((chunk_id, file_path.clone()));
             }
         }
@@ -535,47 +534,28 @@ pub fn resolve_artifact_source_import_reference(
     let Some(target_entry_file) = get_chunk_entry_path(artifact, &target_chunk_id) else {
         return Ok(None);
     };
-    let path = posix_join(&[target_chunk_id.as_str(), target_entry_file.as_str()]);
+    let path = join_module_path(&[target_chunk_id.as_str(), target_entry_file.as_str()]);
     Ok(Some((target_chunk_id, target_entry_file, path)))
 }
 
 pub fn relative_module_specifier(from_dir: &Path, target_path: &Path) -> String {
-    let from = path_to_posix(from_dir);
-    let to = path_to_posix(target_path);
-    let mut specifier = posix_relative(&from, &to);
+    let from = module_path_from_path(from_dir);
+    let to = module_path_from_path(target_path);
+    let mut specifier = relative_module_path(&from, &to);
     if !specifier.starts_with('.') {
         specifier = format!("./{specifier}");
     }
     specifier
 }
 
-pub fn posix_relative(from_dir: &str, to_path: &str) -> String {
-    let from_parts = from_dir
-        .split('/')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>();
-    let to_parts = to_path
-        .split('/')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>();
-    let mut common = 0usize;
-    while common < from_parts.len()
-        && common < to_parts.len()
-        && from_parts[common] == to_parts[common]
-    {
-        common += 1;
-    }
-    let mut parts = Vec::new();
-    for _ in common..from_parts.len() {
-        parts.push("..".to_string());
-    }
-    for part in &to_parts[common..] {
-        parts.push((*part).to_string());
-    }
-    if parts.is_empty() {
+pub fn relative_module_path(from_dir: &str, to_path: &str) -> String {
+    let relative = RelativePath::new(from_dir)
+        .relative(RelativePath::new(to_path))
+        .to_string();
+    if relative.is_empty() {
         ".".to_string()
     } else {
-        parts.join("/")
+        relative
     }
 }
 
@@ -588,7 +568,7 @@ pub fn chunk_id_for_js_path(js_path: &str) -> Result<String> {
 }
 
 pub fn normalize_asset_path(path: &str) -> Result<String> {
-    let normalized = normalize_relative_path(&path.replace('\\', "/"))?;
+    let normalized = normalize_module_path(&path.replace('\\', "/"))?;
     if !normalized.ends_with(".js") {
         bail!("Expected a .js path in JS list: {path}");
     }
@@ -612,34 +592,22 @@ pub fn parse_js_list(text: &str) -> Result<Vec<String>> {
     Ok(out)
 }
 
-pub fn normalize_relative_path(value: &str) -> Result<String> {
-    if value.is_empty() {
+pub fn normalize_module_path(value: &str) -> Result<String> {
+    if value.is_empty() || value.starts_with('/') {
         bail!("Expected a non-empty relative path");
     }
-    let mut parts = Vec::new();
-    for part in value.split('/') {
-        if part.is_empty() || part == "." {
-            continue;
-        }
-        if part == ".." {
-            if parts.pop().is_none() {
-                bail!("Invalid relative path: {value}");
-            }
-            continue;
-        }
-        parts.push(part);
-    }
-    if parts.is_empty() || value.starts_with('/') {
+    let normalized = RelativePath::new(value).normalize();
+    if normalized.as_str().is_empty() || normalized.components().any(|part| part.as_str() == "..") {
         bail!("Invalid relative path: {value}");
     }
-    Ok(parts.join("/"))
+    Ok(normalized.to_string())
 }
 
-pub fn split_posix_path(path: &str) -> PathBuf {
-    path.split('/').collect()
+pub fn path_from_module_path(path: &str) -> PathBuf {
+    RelativePath::new(path).to_path("")
 }
 
-pub fn path_to_posix(path: &Path) -> String {
+pub fn module_path_from_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
@@ -652,32 +620,24 @@ pub fn path_to_posix(path: &Path) -> String {
 /// through unchanged.
 pub fn manifest_relative_path(manifest_path: &Path, target: &Path) -> String {
     let Some(manifest_dir) = manifest_path.parent() else {
-        return path_to_posix(target);
+        return module_path_from_path(target);
     };
     if let Ok(rel) = target.strip_prefix(manifest_dir) {
         if rel.as_os_str().is_empty() {
             return ".".to_string();
         }
-        return path_to_posix(rel);
+        return module_path_from_path(rel);
     }
-    path_to_posix(target)
+    module_path_from_path(target)
 }
 
-pub fn posix_join(parts: &[&str]) -> String {
-    let mut out = Vec::new();
-    for raw in parts {
-        for part in raw.split('/') {
-            if part.is_empty() || part == "." {
-                continue;
-            }
-            if part == ".." {
-                out.pop();
-                continue;
-            }
-            out.push(part);
-        }
-    }
-    out.join("/")
+pub fn join_module_path(parts: &[&str]) -> String {
+    parts
+        .iter()
+        .fold(relative_path::RelativePathBuf::new(), |base, part| {
+            base.join_normalized(RelativePath::new(part))
+        })
+        .to_string()
 }
 
 pub fn list_chunk_file_paths(chunk: &JsChunk) -> Vec<String> {
@@ -694,12 +654,12 @@ pub fn list_chunk_file_paths(chunk: &JsChunk) -> Vec<String> {
     paths
 }
 
-fn posix_dirname(path: &str) -> String {
-    Path::new(path)
+fn module_path_dirname(path: &str) -> String {
+    RelativePath::new(path)
         .parent()
-        .and_then(|parent| parent.to_str())
+        .map(RelativePath::as_str)
         .unwrap_or("")
-        .replace('\\', "/")
+        .to_string()
 }
 
 fn source_path_for_artifact_file(
@@ -722,10 +682,10 @@ fn source_path_for_artifact_file(
 
 fn resolve_chunk_source_path_reference(source: &str, caller_source_path: &str) -> Option<String> {
     let imported_path = if source.starts_with('/') {
-        normalize_relative_path(source.trim_start_matches('/')).ok()?
+        normalize_module_path(source.trim_start_matches('/')).ok()?
     } else {
-        normalize_relative_path(&posix_join(&[
-            posix_dirname(caller_source_path).as_str(),
+        normalize_module_path(&join_module_path(&[
+            module_path_dirname(caller_source_path).as_str(),
             source,
         ]))
         .ok()?

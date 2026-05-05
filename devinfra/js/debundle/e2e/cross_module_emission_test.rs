@@ -240,7 +240,7 @@ export { a };
                 "members": [{
                     "name": "Readable",
                     "selector": {
-                        "binding": { "name": "a", "kind": "ImportSpecifier" },
+                        "binding": { "name": "a", "kind": "import_specifier" },
                     },
                 }],
             }),
@@ -284,7 +284,7 @@ export { a };
                 json!({
                     "members": [{
                         "name": "jsxRuntime",
-                        "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
+                        "selector": { "binding": { "name": "a", "kind": "import_specifier" } },
                     }],
                 }),
             ),
@@ -293,7 +293,7 @@ export { a };
                 json!({
                     "members": [{
                         "name": "__jsx",
-                        "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
+                        "selector": { "binding": { "name": "a", "kind": "import_specifier" } },
                     }],
                 }),
             ),
@@ -386,7 +386,7 @@ export { bridge };
                 json!({
                     "members": [{
                         "name": "Re",
-                        "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
+                        "selector": { "binding": { "name": "a", "kind": "import_specifier" } },
                     }],
                 }),
             ),
@@ -455,7 +455,7 @@ export { composed };
                 json!({
                     "members": [{
                         "name": "Dep",
-                        "selector": { "binding": { "name": "dep", "kind": "ImportSpecifier" } },
+                        "selector": { "binding": { "name": "dep", "kind": "import_specifier" } },
                     }],
                 }),
             ),

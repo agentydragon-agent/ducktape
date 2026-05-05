@@ -54,7 +54,7 @@ impl Member {
     }
 }
 
-/// One entry of the spec's `logicalModules[chunkId]` map: the target path
+/// One entry of the spec's `logical_modules[chunk_id]` map: the target path
 /// (the map key) plus its body (members).
 pub type LogicalModuleEntry = (String, Value);
 
@@ -80,7 +80,7 @@ pub struct FixtureOpts<'a> {
     /// to build typical bodies.
     pub residual: Option<Value>,
     /// Optional `chunk_renames` entry for this chunk. When set, the
-    /// spec's top-level `chunkRenames` map carries the rename
+    /// spec's top-level `chunk_renames` map carries the rename
     /// members; the materializer applies them in-place to bindings
     /// staying in entry's body without creating a `Logical(R)` for
     /// them.
@@ -107,7 +107,7 @@ impl<'a> FixtureOpts<'a> {
     }
 }
 
-/// Build a `residualModules[chunkId]` body. `members` may contain rename
+/// Build a `residual_modules[chunk_id]` body. `members` may contain rename
 /// directives that apply to bindings staying in the residual catch-all.
 pub fn residual_module(target: &str, members: &[Member]) -> Value {
     let member_values: Vec<Value> = members
@@ -441,17 +441,16 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Value {
         None => json!({}),
     };
     json!({
-        "kind": "js.ast_transform_spec",
-        "inputs": { "inputRoot": setup.snapshot_root, "jsListPath": setup.js_list_path },
-        "logicalModules": logical_modules,
-        "residualModules": residual_modules,
-        "chunkRenames": chunk_renames,
-        "materializeLogicalModules": {
-            "pruneOtherChunks": false,
-            "reportOutDir": setup.report_root,
-            "targetDir": "modules",
+        "inputs": { "input_root": setup.snapshot_root, "js_list_path": setup.js_list_path },
+        "logical_modules": logical_modules,
+        "residual_modules": residual_modules,
+        "chunk_renames": chunk_renames,
+        "materialize_logical_modules": {
+            "prune_other_chunks": false,
+            "report_out_dir": setup.report_root,
+            "target_dir": "modules",
         },
-        "writeJsTree": { "force": true, "outDir": setup.out_root },
+        "write_js_tree": { "force": true, "out_dir": setup.out_root },
     })
 }
 

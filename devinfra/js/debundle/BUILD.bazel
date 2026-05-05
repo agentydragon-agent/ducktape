@@ -3,13 +3,6 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 package(default_visibility = ["//visibility:public"])
 
 rust_library(
-    name = "module_path",
-    srcs = ["module_path.rs"],
-    crate_root = "module_path.rs",
-    edition = "2024",
-)
-
-rust_library(
     name = "js_ast",
     srcs = ["js_ast.rs"],
     crate_root = "js_ast.rs",
@@ -31,6 +24,7 @@ rust_library(
     deps = [
         ":js_ast",
         "@crates//:anyhow",
+        "@crates//:relative-path",
         "@crates//:serde",
         "@crates//:serde_json",
     ],
@@ -112,8 +106,10 @@ rust_library(
         ":rewrite_specifiers",
         ":scrambled_id_frequencies",
         "@crates//:anyhow",
+        "@crates//:lol_html",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:url",
     ],
 )
 
@@ -227,6 +223,7 @@ rust_library(
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:humantime",
         "@crates//:json_comments",
         "@crates//:serde",
         "@crates//:serde_json",

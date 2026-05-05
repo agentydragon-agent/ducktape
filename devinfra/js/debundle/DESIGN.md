@@ -993,17 +993,17 @@ The report writes this as:
 
 ### Detailed graph side output
 
-The pipeline also writes a detailed graph side output, separate from
+The transform also writes a detailed graph side output, separate from
 the compact validation error. This is the data source for analysis
 scripts, notebooks, and repo-specific peel skills. It is emitted on
 both success and validation rejection, because the most useful peel
 data often exists precisely when the current assignment is not yet
 realizable.
 
-The detailed output is machine-readable and versioned. For each
-chunk, v1 includes:
+The detailed output is machine-readable, typed, and debundler-owned.
+For each chunk it includes:
 
-- run metadata: schema version and chunk id;
+- run metadata: chunk id and source paths;
 - owner vertices: report id, statement ordinal, declared bindings,
   owner kind, side-effect classification, and current destination;
 - owner edges: `source`, `target`, edge kind, optional binding,
@@ -1015,9 +1015,10 @@ chunk, v1 includes:
   `minimal_peel_sets`, `residual_owner_horizon`, and
   per-candidate blocker evidence in `evaluated_owner_sets`.
 
-Future schema versions can add source spans, input/spec hashes,
-direct importability classifications, and closure suggestions
-without changing the underlying graph operation.
+New fields can add source spans, input/spec hashes, direct importability
+classifications, and closure suggestions without changing the underlying
+graph transform. Do not add top-level `kind` or `schema_version` fields
+just to mimic an external compatibility scheme.
 
 Keep this side output high fidelity. It is allowed to be larger than
 stderr and larger than a human-facing report. The compact console
@@ -1526,18 +1527,23 @@ and `owner_y`, then re-run quotient validation."
 
 ## Architecture
 
-The pipeline is a sequence of stages over a shared `JsPipelineArtifact`:
+The transform is a fixed data flow over a shared `JsPipelineArtifact`.
+The executable spec carries inputs, declarative data maps, and optional
+output configs; it is not an operation list and has no top-level
+`kind`/`schema_version` compatibility envelope.
 
-| Stage                            | Module                                         | Role                                                                                                                                       |
-| -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `compute_chunk_metadata`         | <program_analysis.rs>                          | Parse chunks; record top-level decls, imports, side effects, observable module effects. Pure, no spec.                                     |
-| `apply_vendor_annotations`       | <vendor.rs>                                    | Mark vendor packages from the spec's top-level `vendor` map (keyed by chunk path).                                                         |
-| `rename_vendor_exports`          | <vendor.rs>                                    | Rewrite vendor symbol exports for `vendor` entries with `level: boundary-rename` or `level: swap`.                                         |
-| `swap_vendor_chunks`             | <vendor.rs>                                    | Substitute vendor chunks with package resolves for `vendor` entries with `level: swap`.                                                    |
-| `materialize_logical_modules`    | <logical_modules.rs> + <schedule_validator.rs> | **Main split.** Computes facts, applies spec assignment, quotients the owner graph into `I ∪ S`, validates, emits modules in source order. |
-| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>                        | Rewrite cross-chunk import paths to be relative to chunk entries.                                                                          |
-| `write_js_tree`                  | <write_tree.rs>                                | Persist the artifact to disk.                                                                                                              |
-| `emit_browser_harness`           | <emit_harness.rs>                              | Generate HTML + bootstrap for browser runtime.                                                                                             |
+| Step                             | Module                                         | Runs when                                                                                                                            |
+| -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `load_js_chunks`                 | <artifact.rs>                                  | Always; configured by `inputs`.                                                                                                      |
+| `compute_js_asts`                | <artifact.rs>                                  | Always.                                                                                                                              |
+| `normalize_js_chunks`            | <normalize.rs>                                 | Always.                                                                                                                              |
+| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>                        | Always, after normalization and before data-gated transforms.                                                                        |
+| `apply_vendor_annotations`       | <vendor.rs>                                    | When the `vendor` map is non-empty.                                                                                                  |
+| `rename_vendor_exports`          | <vendor.rs>                                    | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                 |
+| `swap_vendor_chunks`             | <vendor.rs>                                    | When a `vendor` entry has `level: swap`.                                                                                             |
+| `materialize_logical_modules`    | <logical_modules.rs> + <schedule_validator.rs> | When `logical_modules` or `residual_modules` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits. |
+| `write_js_tree`                  | <write_tree.rs>                                | When `write_js_tree` output config is present.                                                                                       |
+| `emit_browser_harness`           | <emit_harness.rs>                              | When `emit_browser_harness` output config is present.                                                                                |
 
 Within `materialize_logical_modules`, the substages are:
 
@@ -1576,11 +1582,10 @@ makes diagnostics disagree with emitted output.
 
 ## Empty logical modules
 
-A spec entry that ends up with zero owned bindings (after
-closure) and no re-exports comes out as an effectively-empty
-file. Either:
+A spec entry that resolves to zero owned bindings and no re-exports
+comes out as an effectively-empty file. Either:
 
-- The spec author wrote a `logicalModules[chunkId][targetPath]`
+- The spec author wrote a `logical_modules[chunk_id][target_path]`
   entry whose explicit members all turned out to be names that
   don't exist in the chunk (typo, stale spec). The validator surfaces a
   `MissingMember` warning per name; emit proceeds with whatever
@@ -1872,6 +1877,12 @@ pub enum ModuleId {
 }
 ```
 
+Artifact metadata follows the same rule. `FileRole` is a typed enum
+(`entry`, `module`, `runtime` in JSON via snake_case serde), and
+module extraction state is a typed `ModuleExtractionState` record. Do
+not encode known roles or extraction state as raw strings, generic maps,
+or compatibility-only JSON fields.
+
 #### Killing the `owner_NNNNN` opaque id
 
 The `OwnerRecord.id` system in <program_analysis.rs> mints a
@@ -2076,16 +2087,16 @@ Primary:
 - <DESIGN.md> — this document.
 - <schedule_validator.rs> — `StatementFacts` analyzer,
   `ModuleDepGraph` builder, `validate_schedule`.
-- <logical_modules.rs> — main pipeline stage.
-- <pipeline.rs> — pipeline composition.
+- <logical_modules.rs> — main splitting transform.
+- <pipeline.rs> — fixed transform composition.
 - <program_analysis.rs> — chunk metadata + side-effect
   classification (used as input to the analyzer).
 
 Secondary:
 
 - <vendor.rs>, <rewrite_specifiers.rs>, <emit_harness.rs>,
-  <write_tree.rs>, <scrambled_id_frequencies.rs> — orthogonal
-  pipeline stages.
+  <write_tree.rs>, <scrambled_id_frequencies.rs> — supporting
+  transforms and side-output producers.
 
 Tracking:
 

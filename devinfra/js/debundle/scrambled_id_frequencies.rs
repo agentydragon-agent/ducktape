@@ -68,14 +68,8 @@ use js_ast::ParsedJsModule;
 /// The schema version of the emitted JSON. Bump whenever the on-disk
 /// shape changes; existing readers MUST validate this field before
 /// trying to decode entries.
-pub const SCHEMA_VERSION: u32 = 1;
-
 /// Suggested filename for the side-output JSON.
 pub const OUTPUT_FILENAME: &str = "scrambled-identifier-frequencies.json";
-
-/// `kind` discriminator for downstream tools that mux multiple manifest
-/// shapes.
-pub const KIND: &str = "js.scrambled_identifier_frequencies";
 
 /// Decide whether `name` is a developer-readable identifier or the kind
 /// of scrambled letter-pair a production minifier produces (Vite,
@@ -161,8 +155,6 @@ pub struct FrequencyEntry {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct FrequencyQueue {
-    pub schema_version: u32,
-    pub kind: &'static str,
     pub generated_at_iso: String,
     pub total_scrambled_symbols: usize,
     pub total_references: usize,
@@ -308,8 +300,6 @@ pub fn compute_with_clock(
     let total_references = entries.iter().map(|entry| entry.ref_count).sum();
 
     Ok(FrequencyQueue {
-        schema_version: SCHEMA_VERSION,
-        kind: KIND,
         generated_at_iso: format_iso(now),
         total_scrambled_symbols: entries.len(),
         total_references,
