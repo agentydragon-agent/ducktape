@@ -4,8 +4,9 @@
 //! tree by reading files and re-running them under `node`.
 
 use runfiles::{Runfiles, rlocation};
-use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -54,22 +55,99 @@ impl Member {
     }
 }
 
+#[derive(Serialize)]
+struct FixtureMember {
+    name: &'static str,
+    selector: FixtureMemberSelector,
+}
+
+#[derive(Serialize)]
+struct FixtureMemberSelector {
+    binding: FixtureBindingSelector,
+}
+
+#[derive(Serialize)]
+struct FixtureBindingSelector {
+    name: &'static str,
+}
+
+#[derive(Serialize)]
+struct LogicalModuleBody {
+    members: Vec<FixtureMember>,
+}
+
+#[derive(Serialize)]
+struct ResidualModuleBody<'a> {
+    target: &'a str,
+    members: Vec<FixtureMember>,
+}
+
+#[derive(Serialize)]
+struct DefaultResidualModule {
+    target: &'static str,
+}
+
+#[derive(Serialize)]
+struct PackageManifest {
+    #[serde(rename = "type")]
+    module_type: &'static str,
+}
+
+#[derive(Serialize)]
+struct TransformSpecFixture<'a> {
+    inputs: TransformInputsFixture<'a>,
+    logical_modules: BTreeMap<String, BTreeMap<String, Value>>,
+    residual_modules: BTreeMap<String, Value>,
+    chunk_renames: BTreeMap<String, Value>,
+    materialize_logical_modules: MaterializeLogicalModulesFixture<'a>,
+    write_js_tree: WriteJsTreeFixture<'a>,
+}
+
+#[derive(Serialize)]
+struct TransformInputsFixture<'a> {
+    input_root: &'a Path,
+    js_list_path: &'a Path,
+}
+
+#[derive(Serialize)]
+struct MaterializeLogicalModulesFixture<'a> {
+    prune_other_chunks: bool,
+    report_out_dir: &'a Path,
+    target_dir: &'static str,
+}
+
+#[derive(Serialize)]
+struct WriteJsTreeFixture<'a> {
+    force: bool,
+    out_dir: &'a Path,
+}
+
+fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
+    members
+        .iter()
+        .map(|m| FixtureMember {
+            name: m.name,
+            selector: FixtureMemberSelector {
+                binding: FixtureBindingSelector {
+                    name: m.binding.unwrap_or(m.name),
+                },
+            },
+        })
+        .collect()
+}
+
 /// One entry of the spec's `logical_modules[chunk_id]` map: the target path
 /// (the map key) plus its body (members).
 pub type LogicalModuleEntry = (String, Value);
 
 pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
-    let member_values: Vec<Value> = members
-        .iter()
-        .map(|m| {
-            let binding = m.binding.unwrap_or(m.name);
-            json!({
-                "name": m.name,
-                "selector": { "binding": { "name": binding } },
-            })
+    (
+        path.to_string(),
+        serde_json::to_value(LogicalModuleBody {
+            members: fixture_members(members),
         })
-        .collect();
-    (path.to_string(), json!({ "members": member_values }))
+        .expect("logical module fixture must serialize"),
+    )
 }
 
 pub struct FixtureOpts<'a> {
@@ -110,20 +188,11 @@ impl<'a> FixtureOpts<'a> {
 /// Build a `residual_modules[chunk_id]` body. `members` may contain rename
 /// directives that apply to bindings staying in the residual catch-all.
 pub fn residual_module(target: &str, members: &[Member]) -> Value {
-    let member_values: Vec<Value> = members
-        .iter()
-        .map(|m| {
-            let binding = m.binding.unwrap_or(m.name);
-            json!({
-                "name": m.name,
-                "selector": { "binding": { "name": binding } },
-            })
-        })
-        .collect();
-    json!({
-        "target": target,
-        "members": member_values,
+    serde_json::to_value(ResidualModuleBody {
+        target,
+        members: fixture_members(members),
     })
+    .expect("residual module fixture must serialize")
 }
 
 pub struct Fixture {
@@ -259,7 +328,7 @@ pub fn list_module_exports(out_root: &Path, module_path: &str) -> Vec<String> {
     let probe_path = out_root.join(format!("__probe_module_exports_{counter}.mjs"));
     let probe = format!(
         "const mod = await import({});\nprocess.stdout.write(JSON.stringify(Object.keys(mod)));\n",
-        json!(format!("./{module_path}")),
+        serde_json::to_string(&format!("./{module_path}")).unwrap(),
     );
     fs::write(&probe_path, probe).unwrap();
     let result = run_node_script(&probe_path);
@@ -395,7 +464,10 @@ fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
         &snapshot_root.join("package.json"),
         &format!(
             "{}\n",
-            serde_json::to_string_pretty(&json!({"type": "module"})).unwrap()
+            serde_json::to_string_pretty(&PackageManifest {
+                module_type: "module"
+            })
+            .unwrap()
         ),
     );
 
@@ -417,41 +489,58 @@ fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
     }
 }
 
-fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Value {
+fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformSpecFixture<'a> {
     let chunk_id = opts.chunk_id;
-    let logical_modules_for_chunk: serde_json::Map<String, Value> = opts
+    let logical_modules_for_chunk: BTreeMap<String, Value> = opts
         .logical_modules
         .iter()
         .map(|(path, body)| (path.clone(), body.clone()))
         .collect();
-    let logical_modules = if logical_modules_for_chunk.is_empty() {
-        json!({})
-    } else {
-        json!({ chunk_id: Value::Object(logical_modules_for_chunk) })
+    let mut logical_modules = BTreeMap::new();
+    if !logical_modules_for_chunk.is_empty() {
+        logical_modules.insert(chunk_id.to_string(), logical_modules_for_chunk);
+    }
+
+    let mut residual_modules = BTreeMap::new();
+    match (&opts.residual, opts.include_residual) {
+        (Some(residual), _) => {
+            residual_modules.insert(chunk_id.to_string(), residual.clone());
+        }
+        (None, true) => {
+            residual_modules.insert(
+                chunk_id.to_string(),
+                serde_json::to_value(DefaultResidualModule {
+                    target: "residual/unhandled",
+                })
+                .expect("default residual module fixture must serialize"),
+            );
+        }
+        (None, false) => {}
     };
-    let residual_modules = match (&opts.residual, opts.include_residual) {
-        (Some(residual), _) => json!({ chunk_id: residual }),
-        (None, true) => json!({
-            chunk_id: { "target": "residual/unhandled" }
-        }),
-        (None, false) => json!({}),
-    };
-    let chunk_renames = match &opts.chunk_renames {
-        Some(renames) => json!({ chunk_id: renames }),
-        None => json!({}),
-    };
-    json!({
-        "inputs": { "input_root": setup.snapshot_root, "js_list_path": setup.js_list_path },
-        "logical_modules": logical_modules,
-        "residual_modules": residual_modules,
-        "chunk_renames": chunk_renames,
-        "materialize_logical_modules": {
-            "prune_other_chunks": false,
-            "report_out_dir": setup.report_root,
-            "target_dir": "modules",
+
+    let mut chunk_renames = BTreeMap::new();
+    if let Some(renames) = &opts.chunk_renames {
+        chunk_renames.insert(chunk_id.to_string(), renames.clone());
+    }
+
+    TransformSpecFixture {
+        inputs: TransformInputsFixture {
+            input_root: &setup.snapshot_root,
+            js_list_path: &setup.js_list_path,
         },
-        "write_js_tree": { "force": true, "out_dir": setup.out_root },
-    })
+        logical_modules,
+        residual_modules,
+        chunk_renames,
+        materialize_logical_modules: MaterializeLogicalModulesFixture {
+            prune_other_chunks: false,
+            report_out_dir: &setup.report_root,
+            target_dir: "modules",
+        },
+        write_js_tree: WriteJsTreeFixture {
+            force: true,
+            out_dir: &setup.out_root,
+        },
+    }
 }
 
 /// Slugified test path for the current `#[test]` thread, used as the
@@ -494,7 +583,7 @@ pub fn write_text_file(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
 
-pub fn write_json_file(path: &Path, value: &Value) {
+pub fn write_json_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
     fs::write(
         path,
         format!("{}\n", serde_json::to_string_pretty(value).unwrap()),

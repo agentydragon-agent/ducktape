@@ -30,6 +30,12 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "artifact_test",
+    crate = ":artifact",
+    edition = "2024",
+)
+
 rust_library(
     name = "write_tree",
     srcs = ["write_tree.rs"],

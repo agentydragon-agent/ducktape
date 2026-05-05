@@ -13,8 +13,8 @@ use artifact::{
     ArtifactCounts, ArtifactManifest, ChunkFileRecord, ChunkLogicalModulesSummary, ChunkMetadata,
     FileMetadata, FileRole, JsChunk, JsFile, JsPipelineArtifact, ModuleExtractionState,
     RootLogicalModulesSummary, SelectedModuleLowering, get_chunk_entry_path, join_module_path,
-    manifest_relative_path, module_path_from_path, normalize_module_path, relative_module_path,
-    resolve_artifact_source_import_reference,
+    manifest_relative_path, module_path_dirname, module_path_from_path, normalize_module_path,
+    relative_module_path, resolve_artifact_source_import_reference,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use schedule_validator::{
@@ -2358,14 +2358,6 @@ fn lookup_import_specifier(body: &[ModuleItem], source_local: &str) -> Option<(S
         }
     }
     None
-}
-
-fn module_path_dirname(path: &str) -> String {
-    std::path::Path::new(path)
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("")
-        .replace('\\', "/")
 }
 
 fn import_decl_for_plan(

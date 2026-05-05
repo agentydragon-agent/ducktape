@@ -654,8 +654,10 @@ pub fn list_chunk_file_paths(chunk: &JsChunk) -> Vec<String> {
     paths
 }
 
-fn module_path_dirname(path: &str) -> String {
-    RelativePath::new(path)
+pub fn module_path_dirname(path: &str) -> String {
+    let path = path.replace('\\', "/");
+    let normalized = RelativePath::new(&path).normalize();
+    normalized
         .parent()
         .map(RelativePath::as_str)
         .unwrap_or("")
@@ -691,4 +693,24 @@ fn resolve_chunk_source_path_reference(source: &str, caller_source_path: &str) -
         .ok()?
     };
     imported_path.ends_with(".js").then_some(imported_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn module_path_dirname_normalizes_backslashes() {
+        assert_eq!(module_path_dirname("static\\app\\entry.js"), "static/app");
+    }
+
+    #[test]
+    fn module_path_dirname_normalizes_relative_segments() {
+        assert_eq!(module_path_dirname("static/./app/entry.js"), "static/app");
+    }
+
+    #[test]
+    fn module_path_dirname_handles_file_at_root() {
+        assert_eq!(module_path_dirname("entry.js"), "");
+    }
 }

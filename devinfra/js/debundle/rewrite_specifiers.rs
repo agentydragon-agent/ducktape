@@ -6,7 +6,7 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
     FileRole, JsFile, JsPipelineArtifact, get_chunk_entry_path, join_module_path,
-    relative_module_path, resolve_artifact_import_reference,
+    module_path_dirname, relative_module_path, resolve_artifact_import_reference,
     resolve_artifact_source_import_reference,
 };
 use js_ast::{set_str_value, str_value};
@@ -265,14 +265,6 @@ fn import_meta_url_expr() -> Expr {
         })),
         prop: MemberProp::Ident(IdentName::new("url".into(), DUMMY_SP)),
     })
-}
-
-fn module_path_dirname(path: &str) -> String {
-    std::path::Path::new(path)
-        .parent()
-        .and_then(|parent| parent.to_str())
-        .unwrap_or("")
-        .replace('\\', "/")
 }
 
 #[cfg(test)]

@@ -343,6 +343,37 @@ mod tests {
     use super::*;
     use artifact::parse_js_list;
 
+    #[derive(Serialize)]
+    struct AssetSummaryFixture<'a> {
+        #[serde(rename = "entryPoints")]
+        entry_points: AssetSummaryEntryPoints<'a>,
+    }
+
+    #[derive(Serialize)]
+    struct AssetSummaryEntryPoints<'a> {
+        html: &'a str,
+    }
+
+    #[derive(Serialize)]
+    struct PipelineSpecFixture<'a> {
+        inputs: PipelineSpecInputs<'a>,
+        emit_browser_harness: EmitBrowserHarnessFixture<'a>,
+    }
+
+    #[derive(Serialize)]
+    struct PipelineSpecInputs<'a> {
+        input_root: &'a Path,
+        js_list_path: &'a Path,
+    }
+
+    #[derive(Serialize)]
+    struct EmitBrowserHarnessFixture<'a> {
+        asset_summary_path: &'a Path,
+        force: bool,
+        out_dir: &'a Path,
+        snapshot_root: &'a Path,
+    }
+
     #[test]
     fn parse_js_list_rejects_duplicates() {
         let err = parse_js_list("a.js\na.js\n").expect_err("expected duplicate rejection");
@@ -410,29 +441,29 @@ mod tests {
             extracted.join("js-files.txt"),
             "static/index-DuckMock.js\nstatic/chunk-DuckMock.js\n",
         )?;
+        let js_list_path = extracted.join("js-files.txt");
+        let asset_summary_path = extracted.join("asset-summary.json");
         fs::write(
-            extracted.join("asset-summary.json"),
-            serde_json::to_string(&serde_json::json!({
-                "entryPoints": {
-                    "html": "index.html",
-                },
-            }))?,
+            &asset_summary_path,
+            serde_json::to_string(&AssetSummaryFixture {
+                entry_points: AssetSummaryEntryPoints { html: "index.html" },
+            })?,
         )?;
         let spec_path = root.join("transform-spec.jsonc");
         fs::write(
             &spec_path,
-            serde_json::to_string_pretty(&serde_json::json!({
-                "inputs": {
-                    "input_root": snapshot,
-                    "js_list_path": extracted.join("js-files.txt"),
+            serde_json::to_string_pretty(&PipelineSpecFixture {
+                inputs: PipelineSpecInputs {
+                    input_root: &snapshot,
+                    js_list_path: &js_list_path,
                 },
-                "emit_browser_harness": {
-                    "asset_summary_path": extracted.join("asset-summary.json"),
-                    "force": true,
-                    "out_dir": out,
-                    "snapshot_root": snapshot,
+                emit_browser_harness: EmitBrowserHarnessFixture {
+                    asset_summary_path: &asset_summary_path,
+                    force: true,
+                    out_dir: &out,
+                    snapshot_root: &snapshot,
                 },
-            }))?,
+            })?,
         )?;
 
         let summary = run_transform_cli(&TransformCli {
