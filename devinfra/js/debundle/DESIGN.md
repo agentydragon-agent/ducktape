@@ -891,9 +891,8 @@ implicit transformation in the middle.
 The same owner graph drives the next-spec workflow. A pipeline that
 only reports whether the current spec passed forces spec authors
 into speculative edit/build/test loops. The owner-graph side output
-therefore includes peelability projections that answer, for
-candidate owner sets. V1 computes residual-owner candidates with
-two statuses:
+therefore includes peelability projections for residual owner sets.
+V1 computes candidate owner sets with three statuses:
 
 - **`peelable_now`** — assigning this owner set to a new logical
   destination leaves the quotient graph realizable and all imports
@@ -901,13 +900,18 @@ two statuses:
 - **`blocked_cycle`** — the quotient graph would contain an
   unrealizable SCC. The report includes the owner-level cut before
   grouping it into module-level cycle evidence.
+- **`blocked_residual_dependency`** — a moved owner would still
+  read a binding that remains private to the residual entry. The
+  report includes the owner edges and read bindings that cross that
+  unimportable cut.
 
-Multi-owner closures are represented as candidates too: an
-`owner_pair` with `status: "peelable_now"` means the listed owners
-are valid only when moved together. Future importability checks may
-add statuses such as `blocked_private_residual`; until then,
-unresolvable private-residual reads should stay visible as normal
-owner edges in the graph evidence.
+Direct peels and "only with companions" peels are one unified
+hypergraph. Each peelable owner set is a hyperedge over owner
+vertices. A direct peel is a peelable set with one owner. A
+companion peel is a residual owner whose minimal peelable set has
+more than one owner. The side output exposes both the set list and
+a per-residual-owner incidence view, so downstream tools do not
+have to infer companion relationships from unrelated candidate rows.
 
 This is deliberately a projection of the owner graph, not a separate
 heuristic system. Tooling may rank candidates by size reduction,
@@ -925,11 +929,13 @@ without re-running emitted JS:
 - candidate assignments with status and quotient-cycle cut evidence.
 
 Downstream peel skills should read it before editing YAML: promote
-`peelability.residualPeelableSymbols[]` and `peelable_now`
-candidates first, and avoid speculative builds for candidates
-already marked blocked. When a singleton candidate is blocked, the
-report may also include a small closure candidate such as an owner
-pair that is `peelable_now` when moved as one destination.
+`peelability.minimal_peel_sets[]` first. For an individual symbol,
+read `peelability.residual_owner_horizon[]`: `status: "direct"`
+means its singleton set is peelable, `status: "with_companions"`
+means one of its `companion_options[]` must move with it, and
+`status: "blocked"` means no currently computed peel set covers
+that owner. Detailed rejected candidates remain available in
+`peelability.evaluated_owner_sets[]`.
 
 ### Residual peel candidates
 
@@ -962,24 +968,28 @@ cycle without adding a new one.
 
 V1 also computes bounded two-owner closures. It does not scan every
 pair in the residual. Instead, for each blocked singleton candidate,
-it reads that candidate's `blockingSccs[].constrainingOwnerEdgeIds`
+it reads that candidate's `cycle_blockers[].constraining_owner_edge_ids`
 and seeds pairs from residual owners that are direct endpoints of
 those constraining edges. Each seeded pair is tested by the same
 fresh-destination quotient operation above. Only pairs whose
-candidate SCC is realizable are reported as `kind: "owner_pair"` /
-`status: "peelable_now"`. This captures the common "A and B can
-move, but only together" case while keeping the report tied to
-actual cycle evidence instead of speculative all-pairs search.
+candidate SCC is realizable are reported as
+`owner_set_kind: "owner_pair"` / `status: "peelable_now"`. This
+captures the common "A and B can move, but only together" case
+while keeping the report tied to actual cycle evidence instead of
+speculative all-pairs search.
 
 The report writes this as:
 
-- `peelability.residualDestinations[]`
-- `peelability.residualPeelableSymbols[]` for singleton owner peels
-- `peelability.residualPeelableClosures[]` for currently peelable
-  multi-owner closures, currently bounded to pairs
-- `peelability.candidates[]`, each with `status`,
-  `kind`, `ownerIds`, `declared`, `from`, `proposedDestination`,
-  and `blockingSccs[]`
+- `peelability.residual_destinations[]`
+- `peelability.minimal_peel_sets[]`, the currently computed
+  minimal peelable owner-set hyperedges
+- `peelability.residual_owner_horizon[]`, one row per residual
+  owner with `status`, `peel_set_ids`, and any
+  `companion_options[]`
+- `peelability.evaluated_owner_sets[]`, each with `status`,
+  `owner_set_kind`, `owner_ids`, `bindings`,
+  `source_destination`, `hypothetical_destination`,
+  `residual_dependency_blockers[]`, and `cycle_blockers[]`
 
 ### Detailed graph side output
 
@@ -1002,8 +1012,8 @@ chunk, v1 includes:
   aggregated edge kinds, edge provenance back to owner edges, SCC
   membership, and SCC realizability status;
 - residual peelability projections:
-  `residualPeelableSymbols`, `residualPeelableClosures`, and
-  per-candidate blocking SCC evidence.
+  `minimal_peel_sets`, `residual_owner_horizon`, and
+  per-candidate blocker evidence in `evaluated_owner_sets`.
 
 Future schema versions can add source spans, input/spec hashes,
 direct importability classifications, and closure suggestions

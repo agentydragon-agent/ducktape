@@ -34,6 +34,8 @@ rust_library(
         edition = "2024",
         deps = [
             ":support",
+            "//devinfra/js/debundle:schedule_validator",
+            "@crates//:serde",
             "@crates//:serde_json",
             "@crates//:swc_common",
             "@crates//:swc_ecma_ast",

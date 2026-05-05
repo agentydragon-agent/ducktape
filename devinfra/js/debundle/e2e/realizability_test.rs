@@ -8,10 +8,14 @@
 //! modules.
 
 use debundle_e2e_support::*;
-use serde_json::{Value, json};
+use schedule_validator::{
+    OwnerGraphReport, PeelCandidateKind, PeelCandidateStatus, ResidualOwnerPeelStatus,
+};
+use serde::de::DeserializeOwned;
+use serde_json::json;
 use std::{fs, path::Path};
 
-fn read_json(path: &Path) -> Value {
+fn read_json<T: DeserializeOwned>(path: &Path) -> T {
     serde_json::from_str(
         &fs::read_to_string(path)
             .unwrap_or_else(|err| panic!("read JSON report {}: {err}", path.display())),
@@ -137,50 +141,43 @@ export { A, B, readA, readB };
     ));
     assert_entry_output(&fixture, "a-value b-value\n");
 
-    let graph = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    assert_eq!(graph["kind"], "js.debundle.owner_graph");
-    assert_eq!(graph["schemaVersion"], 1);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    assert_eq!(graph.kind, "js.debundle.owner_graph");
+    assert_eq!(graph.schema_version, 1);
     assert!(
-        graph["nodes"]
-            .as_array()
-            .is_some_and(|nodes| nodes.len() >= 4),
-        "owner graph should expose source-owner nodes: {graph:#}",
+        graph.nodes.len() >= 4,
+        "owner graph should expose source-owner nodes: {graph:#?}",
     );
     assert!(
-        graph["edges"].as_array().is_some_and(|edges| {
-            edges.iter().any(|edge| {
-                edge["kind"].as_str() == Some("lazy_read")
-                    && edge["binding"].as_str() == Some("B")
-                    && edge["constrainsRealizability"].as_bool() == Some(false)
-            })
+        graph.edges.iter().any(|edge| {
+            edge.kind == "lazy_read"
+                && edge.binding.as_deref() == Some("B")
+                && !edge.constrains_realizability
         }),
-        "owner graph should expose lazy owner read edges: {graph:#}",
+        "owner graph should expose lazy owner read edges: {graph:#?}",
     );
     assert!(
-        graph["quotient"]["edges"].as_array().is_some_and(|edges| {
-            edges.iter().any(|edge| {
-                edge["kinds"].as_array().is_some_and(|kinds| {
-                    kinds.iter().any(|kind| kind.as_str() == Some("lazy_read"))
-                }) && edge["ownerEdgeIds"]
-                    .as_array()
-                    .is_some_and(|ids| !ids.is_empty())
-            })
+        graph.quotient.edges.iter().any(|edge| {
+            edge.kinds.iter().any(|kind| kind == "lazy_read") && !edge.owner_edge_ids.is_empty()
         }),
-        "quotient edges should retain owner-edge provenance: {graph:#}",
+        "quotient edges should retain owner-edge provenance: {graph:#?}",
     );
     assert!(
-        graph["quotient"]["sccs"].as_array().is_some_and(|sccs| {
-            sccs.iter().any(|scc| {
-                scc["isCycle"].as_bool() == Some(true) && scc["realizable"].as_bool() == Some(true)
-            })
-        }),
-        "lazy-only quotient SCC should be reported as realizable: {graph:#}",
+        graph
+            .quotient
+            .sccs
+            .iter()
+            .any(|scc| scc.is_cycle && scc.realizable),
+        "lazy-only quotient SCC should be reported as realizable: {graph:#?}",
     );
     assert!(
-        graph["peelability"]["residualPeelableSymbols"]
-            .as_array()
-            .is_some(),
-        "owner graph should expose the residual peelability projection: {graph:#}",
+        graph.peelability.residual_owner_horizon.is_empty(),
+        "fixture has no declared residual binding to peel: {graph:#?}",
+    );
+    assert!(
+        graph.peelability.minimal_peel_sets.is_empty(),
+        "fixture has no residual peel set: {graph:#?}",
     );
 }
 
@@ -197,80 +194,46 @@ export { A, B, Existing };
     ));
     assert_entry_output(&fixture, "fallback fallback-b fallback-b-existing\n");
 
-    let graph = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let peelability = &graph["peelability"];
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let peelability = &graph.peelability;
+    for binding in ["A", "B"] {
+        assert!(
+            peelability.residual_owner_horizon.iter().any(|owner| {
+                owner.bindings == vec![binding.to_string()]
+                    && owner.status == ResidualOwnerPeelStatus::WithCompanions
+            }),
+            "{binding} should be classified as peelable only with companions: {graph:#?}",
+        );
+    }
     assert!(
-        peelability["residualPeelableSymbols"]
-            .as_array()
-            .is_some_and(|symbols| symbols
-                .iter()
-                .all(|symbol| { !matches!(symbol.as_str(), Some("A" | "B")) })),
-        "A and B should not be listed as singleton peels: {graph:#}",
+        peelability.evaluated_owner_sets.iter().any(|candidate| {
+            candidate.owner_set_kind == PeelCandidateKind::SingleOwner
+                && candidate.status == PeelCandidateStatus::BlockedCycle
+                && candidate.bindings == vec!["A".to_string()]
+                && candidate
+                    .cycle_blockers
+                    .iter()
+                    .any(|scc| !scc.constraining_owner_edge_ids.is_empty())
+        }),
+        "A should explain why the singleton peel is blocked: {graph:#?}",
     );
     assert!(
-        peelability["candidates"]
-            .as_array()
-            .is_some_and(|candidates| {
-                candidates.iter().any(|candidate| {
-                    candidate["kind"].as_str() == Some("single_owner")
-                        && candidate["status"].as_str() == Some("blocked_cycle")
-                        && candidate["declared"].as_array().is_some_and(|declared| {
-                            declared
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .collect::<Vec<_>>()
-                                == vec!["A"]
-                        })
-                        && candidate["blockingSccs"].as_array().is_some_and(|sccs| {
-                            sccs.iter().any(|scc| {
-                                scc["constrainingOwnerEdgeIds"]
-                                    .as_array()
-                                    .is_some_and(|ids| !ids.is_empty())
-                            })
-                        })
-                })
-            }),
-        "A should explain why the singleton peel is blocked: {graph:#}",
+        peelability.evaluated_owner_sets.iter().any(|candidate| {
+            candidate.owner_set_kind == PeelCandidateKind::OwnerPair
+                && candidate.status == PeelCandidateStatus::PeelableNow
+                && candidate.owner_ids.len() == 2
+                && candidate.bindings == vec!["A".to_string(), "B".to_string()]
+                && candidate.cycle_blockers.is_empty()
+        }),
+        "A+B should be reported as a peelable pair closure: {graph:#?}",
     );
     assert!(
-        peelability["candidates"]
-            .as_array()
-            .is_some_and(|candidates| {
-                candidates.iter().any(|candidate| {
-                    candidate["kind"].as_str() == Some("owner_pair")
-                        && candidate["status"].as_str() == Some("peelable_now")
-                        && candidate["ownerIds"]
-                            .as_array()
-                            .is_some_and(|ids| ids.len() == 2)
-                        && candidate["declared"].as_array().is_some_and(|declared| {
-                            declared
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .collect::<Vec<_>>()
-                                == vec!["A", "B"]
-                        })
-                        && candidate["blockingSccs"]
-                            .as_array()
-                            .is_some_and(|sccs| sccs.is_empty())
-                })
-            }),
-        "A+B should be reported as a peelable pair closure: {graph:#}",
-    );
-    assert!(
-        peelability["residualPeelableClosures"]
-            .as_array()
-            .is_some_and(|closures| {
-                closures.iter().any(|closure| {
-                    closure["declared"].as_array().is_some_and(|declared| {
-                        declared
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .collect::<Vec<_>>()
-                            == vec!["A", "B"]
-                    })
-                })
-            }),
-        "pair-only peelability should be summarized in residualPeelableClosures: {graph:#}",
+        peelability
+            .minimal_peel_sets
+            .iter()
+            .any(|closure| { closure.bindings == vec!["A".to_string(), "B".to_string()] }),
+        "pair-only peelability should be summarized in minimal_peel_sets: {graph:#?}",
     );
 }
 
@@ -289,46 +252,34 @@ export { Leaf, Dep, Existing };
     let fixture = run_logical_modules_e2e_fixture(opts);
     assert_entry_output(&fixture, "existing\n");
 
-    let graph = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let peelability = &graph["peelability"];
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let peelability = &graph.peelability;
     assert!(
-        peelability["residualPeelableSymbols"]
-            .as_array()
-            .is_some_and(|symbols| symbols.iter().all(|symbol| symbol.as_str() != Some("Leaf"))),
-        "Leaf should not be listed as peelable while it reads Dep from residual entry: {graph:#}",
+        peelability.residual_owner_horizon.iter().any(|owner| {
+            owner.bindings == vec!["Leaf".to_string()]
+                && owner.status == ResidualOwnerPeelStatus::WithCompanions
+                && owner
+                    .companion_options
+                    .iter()
+                    .any(|option| option.companion_bindings == vec!["Dep".to_string()])
+        }),
+        "Leaf should require Dep as a companion peel: {graph:#?}",
     );
     assert!(
-        peelability["candidates"]
-            .as_array()
-            .is_some_and(|candidates| {
-                candidates.iter().any(|candidate| {
-                    candidate["kind"].as_str() == Some("single_owner")
-                        && candidate["status"].as_str() == Some("blocked_residual_dependency")
-                        && candidate["declared"].as_array().is_some_and(|declared| {
-                            declared
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .collect::<Vec<_>>()
-                                == vec!["Leaf"]
-                        })
-                        && candidate["blockingResidualDependencies"]
-                            .as_array()
-                            .is_some_and(|dependencies| {
-                                dependencies.iter().any(|dependency| {
-                                    dependency["bindings"].as_array().is_some_and(|bindings| {
-                                        bindings
-                                            .iter()
-                                            .filter_map(Value::as_str)
-                                            .collect::<Vec<_>>()
-                                            == vec!["Dep"]
-                                    }) && dependency["ownerEdgeIds"]
-                                        .as_array()
-                                        .is_some_and(|ids| !ids.is_empty())
-                                })
-                            })
-                })
-            }),
-        "Leaf candidate should explain the residual-entry dependency blocker: {graph:#}",
+        peelability.evaluated_owner_sets.iter().any(|candidate| {
+            candidate.owner_set_kind == PeelCandidateKind::SingleOwner
+                && candidate.status == PeelCandidateStatus::BlockedResidualDependency
+                && candidate.bindings == vec!["Leaf".to_string()]
+                && candidate
+                    .residual_dependency_blockers
+                    .iter()
+                    .any(|dependency| {
+                        dependency.read_bindings == vec!["Dep".to_string()]
+                            && !dependency.owner_edge_ids.is_empty()
+                    })
+        }),
+        "Leaf candidate should explain the residual-entry dependency blocker: {graph:#?}",
     );
 }
 
@@ -352,7 +303,8 @@ export { A, B, readB };
         rejected.stderr,
     );
 
-    let graph = read_json(&rejected.report_root.join("static/app/owner_graph.json"));
+    let graph: OwnerGraphReport =
+        read_json(&rejected.report_root.join("static/app/owner_graph.json"));
     assert!(
         rejected
             .report_root
@@ -365,16 +317,10 @@ export { A, B, readB };
         "cycle report should be written before rejection",
     );
     assert!(
-        graph["quotient"]["sccs"].as_array().is_some_and(|sccs| {
-            sccs.iter().any(|scc| {
-                scc["isCycle"].as_bool() == Some(true)
-                    && scc["realizable"].as_bool() == Some(false)
-                    && scc["constrainingModuleEdgeIds"]
-                        .as_array()
-                        .is_some_and(|ids| !ids.is_empty())
-            })
+        graph.quotient.sccs.iter().any(|scc| {
+            scc.is_cycle && !scc.realizable && !scc.constraining_module_edge_ids.is_empty()
         }),
-        "unrealizable quotient SCC should be reported with constraining edge ids: {graph:#}",
+        "unrealizable quotient SCC should be reported with constraining edge ids: {graph:#?}",
     );
 }
 
@@ -484,14 +430,14 @@ export { a1, a2, b1 };
             logical_module("mod_b", &[Member::new("b1")]),
         ],
     ));
-    let graph = read_json(&rejected.report_root.join("static/app/owner_graph.json"));
+    let graph: OwnerGraphReport =
+        read_json(&rejected.report_root.join("static/app/owner_graph.json"));
     assert!(
-        graph["edges"].as_array().is_some_and(|edges| {
-            edges.iter().any(|edge| {
-                edge["kind"].as_str() == Some("side_effect_order") && edge.get("binding").is_none()
-            })
-        }),
-        "side-effect owner edges should omit binding rather than using a sentinel: {graph:#}",
+        graph
+            .edges
+            .iter()
+            .any(|edge| edge.kind == "side_effect_order" && edge.binding.is_none()),
+        "side-effect owner edges should omit binding rather than using a sentinel: {graph:#?}",
     );
 }
 

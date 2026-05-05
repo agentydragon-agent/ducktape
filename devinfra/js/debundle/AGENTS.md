@@ -350,10 +350,10 @@ them with typed structs and enums.
 
 - Use Rust enums (frequently a thin wrapper over an SWC AST variant) over
   stringly-typed kind fields.
-- Drop `#[serde(rename_all = "camelCase")]` on types that aren't actually
-  serialized to disk or sent over the wire — internal manifests that the
-  pipeline orchestrator only reads `kind` from don't need to derive
-  `Serialize` at all.
+- Prefer default snake_case serde field names for debundler-owned side
+  outputs. Use explicit serde renames only for external contracts that already
+  require them, and don't derive `Serialize` for internal manifests the
+  pipeline orchestrator only reads `kind` from.
 - Replace `Vec<Value>` / `Map<String, Value>` payloads with typed structs
   whenever the shape is known. `serde_json::Value` is appropriate only
   when the value is genuinely polymorphic (spec args, `#[serde(flatten)]`
