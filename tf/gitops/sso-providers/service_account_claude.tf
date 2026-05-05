@@ -27,19 +27,6 @@ resource "authentik_user" "claude_service_account" {
 # bypassing the broken REST endpoint. See
 # debug/authentik_rbac_permission_role/README.md for the full diagnosis.
 
-# CLEANUP(2026-05-05): Drop these `removed` blocks once the migration apply has
-# run against `sso-providers-tf` in production. They drop the role and group
-# from TF state without issuing API DELETEs, leaving the live objects for the
-# blueprint to take over and avoiding a permissions outage during the handoff.
-removed {
-  from = authentik_rbac_role.claude_diagnostics
-  lifecycle { destroy = false }
-}
-removed {
-  from = authentik_group.claude_diagnostics
-  lifecycle { destroy = false }
-}
-
 resource "authentik_token" "claude_api" {
   identifier   = "claude-diagnostics-api-token"
   user         = authentik_user.claude_service_account.id

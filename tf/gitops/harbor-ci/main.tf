@@ -42,30 +42,6 @@ provider "github" {
   token = data.kubernetes_secret.github_secrets_sync_pat.data["token"]
 }
 
-# Orphan old per-service projects — they still exist in Harbor (with images) but
-# are no longer managed by Terraform. Remove these blocks once all images have
-# been pushed to ducktape/ and the old projects are manually deleted.
-removed {
-  from = harbor_project.props
-  lifecycle { destroy = false }
-}
-removed {
-  from = harbor_project.inventree
-  lifecycle { destroy = false }
-}
-removed {
-  from = harbor_project.openclaw
-  lifecycle { destroy = false }
-}
-removed {
-  from = harbor_project.activitywatch
-  lifecycle { destroy = false }
-}
-removed {
-  from = harbor_project.oauth_broker
-  lifecycle { destroy = false }
-}
-
 # Single project for all CI-built images
 resource "harbor_project" "ducktape" {
   name   = "ducktape"
@@ -138,26 +114,6 @@ resource "harbor_robot_account" "pull" {
 resource "random_password" "harbor_webhook_token" {
   length  = 40
   special = false
-}
-
-# CLEANUP(2026-04-14): github_webhook_token and flux_receiver webhook migrated
-# to tf/gitops/flux-webhook-token to decouple flux-webhook from
-# the harbor dependency chain (issue #1291). Remove these removed blocks once
-# the flux-webhook-token TF module has been applied and the old GitHub webhook
-# (registered with the harbor-ci token) has been manually deleted from GitHub.
-removed {
-  from = random_password.github_webhook_token
-  lifecycle { destroy = false }
-}
-
-removed {
-  from = kubernetes_secret.github_webhook_token
-  lifecycle { destroy = false }
-}
-
-removed {
-  from = github_repository_webhook.flux_receiver
-  lifecycle { destroy = false }
 }
 
 # --- K8s Secrets (direct, replacing Vault + ESO) ---
