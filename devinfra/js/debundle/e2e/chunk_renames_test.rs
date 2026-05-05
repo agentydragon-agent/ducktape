@@ -133,3 +133,81 @@ export const y = "dep-y";
         ],
     );
 }
+
+#[test]
+fn extracted_module_imports_chunk_renamed_residual_helper_for_execution() {
+    let opts = FixtureOpts {
+        source: r#"function helper() {
+  return "ok";
+}
+function run() {
+  return helper();
+}
+console.log("entry");
+export { helper, run };
+"#,
+        logical_modules: vec![logical_module("mod_run", &[Member::new("run")])],
+        residual: None,
+        chunk_renames: Some(json!({
+            "id": "chunk_renames__static_app",
+            "members": [
+                {
+                    "name": "readableHelper",
+                    "selector": { "binding": { "name": "helper" } },
+                },
+            ],
+        })),
+        chunk_id: "static/app",
+        include_residual: false,
+        extra_files: &[],
+    };
+    let fixture = run_logical_modules_e2e_fixture(opts);
+
+    assert_entry_output(&fixture, "entry\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_run.js",
+        &[r#"import { helper } from "../entry.js";"#],
+        &[],
+    );
+    assert_generated_module_after_entry_script(
+        &fixture.out_root,
+        r#"const { run } = await import("./static/app/modules/mod_run.js");
+console.log(run());
+"#,
+        "ok\n",
+    );
+}
+
+#[test]
+fn rejects_private_chunk_renamed_residual_helper_used_by_extracted_module() {
+    let opts = FixtureOpts {
+        source: r#"function helper() {
+  return "ok";
+}
+function run() {
+  return helper();
+}
+export { run };
+"#,
+        logical_modules: vec![logical_module("mod_run", &[Member::new("run")])],
+        residual: None,
+        chunk_renames: Some(json!({
+            "id": "chunk_renames__static_app",
+            "members": [
+                {
+                    "name": "readableHelper",
+                    "selector": { "binding": { "name": "helper" } },
+                },
+            ],
+        })),
+        chunk_id: "static/app",
+        include_residual: false,
+        extra_files: &[],
+    };
+
+    expect_logical_modules_e2e_rejection_containing_all(
+        opts,
+        &["mod_run", "helper", "not exported by entry"],
+    );
+}

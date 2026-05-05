@@ -755,6 +755,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             .unwrap_or(usize::MAX)
     });
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
+    let entry_binding_renames = body_renames.clone();
     if !body_renames.is_empty() {
         // Re-exports `export { local }` (without `from`) collapse `local`
         // and the public exported name into a single ident. Renaming the
@@ -778,6 +779,8 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         entry_body.push(export);
     }
     trim_dead_named_specifiers(&mut entry_body, &schedule.bindings);
+    let entry_exports_by_original_local =
+        collect_entry_exports_by_original_local(&entry_body, &entry_binding_renames);
 
     let mut files = vec![JsFile {
         path: entry_file.to_string(),
@@ -807,6 +810,15 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         let local_renames = naturalize_module_body(&mut body, plan);
         let mut module_imports =
             cross_module_imports_for_body(index, &plan.target_file, &body, schedule, module_plans);
+        let mut residual_entry_imports = residual_entry_imports_for_moved_body(
+            &plan.id,
+            entry_file,
+            &plan.target_file,
+            declarations,
+            binding_assignment,
+            &entry_exports_by_original_local,
+            &body,
+        )?;
         // Re-import any source-chunk import-specifier-bound locals that
         // moved code in `body` references but no top-level decl
         // satisfies (e.g. `const { decode } = gge;` where `gge` was an
@@ -822,6 +834,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             &body,
             schedule,
         )?;
+        module_imports.append(&mut residual_entry_imports);
         module_imports.append(&mut runtime_reimports);
         module_imports.append(&mut body);
         body = module_imports;
@@ -1273,6 +1286,133 @@ fn cross_module_imports_for_body(
                 .map(|provider| import_decl_for_plan(from_file, &provider.target_file, &bindings))
         })
         .collect()
+}
+
+fn residual_entry_imports_for_moved_body(
+    module_id: &str,
+    entry_file: &str,
+    from_file: &str,
+    declarations: &[TopLevelDecl],
+    binding_assignment: &BTreeMap<String, usize>,
+    entry_exports_by_original_local: &BTreeMap<String, String>,
+    body: &[ModuleItem],
+) -> Result<Vec<ModuleItem>> {
+    let declaration_by_name = declarations
+        .iter()
+        .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
+        .collect::<BTreeMap<_, _>>();
+    let mut provided_locals = BTreeSet::<String>::new();
+    for item in body {
+        provided_locals.extend(top_level_declaration_names(item));
+        if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
+            for specifier in &import.specifiers {
+                match specifier {
+                    ImportSpecifier::Named(named) => {
+                        provided_locals.insert(named.local.sym.to_string());
+                    }
+                    ImportSpecifier::Default(default) => {
+                        provided_locals.insert(default.local.sym.to_string());
+                    }
+                    ImportSpecifier::Namespace(namespace) => {
+                        provided_locals.insert(namespace.local.sym.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut imports = BTreeMap::<String, String>::new();
+    let mut missing_exports = BTreeSet::<String>::new();
+    for item in body {
+        for name in collect_referenced_idents(item) {
+            if provided_locals.contains(&name) || binding_assignment.contains_key(&name) {
+                continue;
+            }
+            if !declaration_by_name.contains_key(&name) {
+                continue;
+            }
+            let Some(exported_name) = entry_exports_by_original_local.get(&name) else {
+                missing_exports.insert(name);
+                continue;
+            };
+            imports.insert(name, exported_name.clone());
+        }
+    }
+
+    if !missing_exports.is_empty() {
+        bail!(
+            "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry; refusing to emit free references. Keep those bindings with the moved module, expose them from entry, or use an explicit residual module.",
+            missing_exports.into_iter().collect::<Vec<_>>().join(", "),
+        );
+    }
+    if imports.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(vec![import_decl_for_plan(from_file, entry_file, &imports)])
+}
+
+fn collect_entry_exports_by_original_local(
+    entry_body: &[ModuleItem],
+    entry_renames: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let final_to_original = entry_renames
+        .iter()
+        .map(|(original, final_name)| (final_name.clone(), original.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut exports = BTreeMap::<String, String>::new();
+    for item in entry_body {
+        match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none() => {
+                for specifier in &named.specifiers {
+                    let ExportSpecifier::Named(specifier) = specifier else {
+                        continue;
+                    };
+                    let Some(final_local) = module_export_ident_name(&specifier.orig) else {
+                        continue;
+                    };
+                    let Some(exported_name) =
+                        named_export_public_ident_name(&specifier.exported, &final_local)
+                    else {
+                        continue;
+                    };
+                    let original = final_to_original
+                        .get(&final_local)
+                        .cloned()
+                        .unwrap_or(final_local);
+                    exports.entry(original).or_insert(exported_name);
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+                for final_local in declaration_names(&export_decl.decl) {
+                    let original = final_to_original
+                        .get(&final_local)
+                        .cloned()
+                        .unwrap_or_else(|| final_local.clone());
+                    exports.entry(original).or_insert(final_local);
+                }
+            }
+            _ => {}
+        }
+    }
+    exports
+}
+
+fn module_export_ident_name(name: &ModuleExportName) -> Option<String> {
+    match name {
+        ModuleExportName::Ident(ident) => Some(ident.sym.to_string()),
+        ModuleExportName::Str(_) => None,
+    }
+}
+
+fn named_export_public_ident_name(
+    exported: &Option<ModuleExportName>,
+    fallback: &str,
+) -> Option<String> {
+    match exported {
+        Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
+        Some(ModuleExportName::Str(_)) => None,
+        None => Some(fallback.to_string()),
+    }
 }
 
 fn final_module_exports(
