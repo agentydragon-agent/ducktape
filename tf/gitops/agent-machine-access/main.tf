@@ -45,10 +45,6 @@ data "authentik_flow" "invalidation" {
   slug = "default-provider-invalidation-flow"
 }
 
-data "authentik_group" "admins" {
-  name = "authentik Admins"
-}
-
 # Signing key + OIDC scope property mappings for the grocy-mcp user-login
 # OAuth2 provider below. Mirrors
 # <../authentik-mcp-poc/main.tf>'s data-source block.
@@ -112,6 +108,14 @@ resource "kubernetes_secret" "agent_bearer_token" {
 
 # --- Grocy SF household (proxy provider + MCP OAuth2) ---
 
+resource "authentik_group" "grocy_sf_household" {
+  name = "SF household"
+  users = [
+    data.authentik_user.agentydragon.pk,
+    data.authentik_user.auragon.pk,
+  ]
+}
+
 resource "authentik_provider_proxy" "grocy_sf" {
   name                  = "grocy-sf"
   external_host         = "https://grocy-sf.allegedly.works"
@@ -135,10 +139,15 @@ resource "authentik_application" "grocy_sf" {
   open_in_new_tab   = true
 }
 
-resource "authentik_policy_binding" "grocy_sf_admins" {
+resource "authentik_policy_binding" "grocy_sf_household" {
   target = authentik_application.grocy_sf.uuid
-  group  = data.authentik_group.admins.id
+  group  = authentik_group.grocy_sf_household.id
   order  = 0
+}
+
+moved {
+  from = authentik_policy_binding.grocy_sf_admins
+  to   = authentik_policy_binding.grocy_sf_household
 }
 
 resource "authentik_provider_oauth2" "grocy_mcp_sf" {
@@ -175,10 +184,15 @@ resource "authentik_application" "grocy_mcp_sf" {
   meta_launch_url   = "https://grocy-mcp-sf.allegedly.works"
 }
 
-resource "authentik_policy_binding" "grocy_mcp_sf_admins" {
+resource "authentik_policy_binding" "grocy_mcp_sf_household" {
   target = authentik_application.grocy_mcp_sf.uuid
-  group  = data.authentik_group.admins.id
+  group  = authentik_group.grocy_sf_household.id
   order  = 0
+}
+
+moved {
+  from = authentik_policy_binding.grocy_mcp_sf_admins
+  to   = authentik_policy_binding.grocy_mcp_sf_household
 }
 
 resource "kubernetes_secret" "grocy_mcp_oidc_sf" {
