@@ -65,6 +65,7 @@ class StepTimer(TrainerCallback):
 
     def __init__(self):
         self.step_times: list[float] = []
+        self.logs: list[dict] = []
         self._t = 0.0
 
     def on_step_begin(self, args, state, control, **_kwargs):
@@ -72,6 +73,10 @@ class StepTimer(TrainerCallback):
 
     def on_step_end(self, args, state, control, **_kwargs):
         self.step_times.append(time.perf_counter() - self._t)
+
+    def on_log(self, args, state, control, logs: dict | None = None, **_kwargs):
+        if logs:
+            self.logs.append(dict(logs))
 
 
 class WordleGRPOTrainer(GRPOTrainer):
@@ -166,6 +171,27 @@ def train_session(
         train_result = trainer.train()
         metrics = dict(train_result.metrics)
         metrics["step_times"] = step_timer.step_times
+        if step_log := next((log for log in reversed(step_timer.logs) if "completions/clipped_ratio" in log), None):
+            metrics["last_step_log"] = step_log
+            for key in [
+                "num_tokens",
+                "completions/mean_length",
+                "completions/min_length",
+                "completions/max_length",
+                "completions/clipped_ratio",
+                "completions/mean_terminated_length",
+                "completions/min_terminated_length",
+                "completions/max_terminated_length",
+                "tools/call_frequency",
+                "tools/failure_frequency",
+                "rewards/reward_func/mean",
+                "rewards/metric_invalid_length/mean",
+                "rewards/metric_invalid_word/mean",
+                "rewards/metric_unique_guesses/mean",
+                "rewards/metric_win/mean",
+            ]:
+                if key in step_log:
+                    metrics[key] = step_log[key]
         steady = step_timer.step_times[1:]
         if steady:
             metrics["steady_state_step_time_mean"] = sum(steady) / len(steady)
@@ -200,6 +226,15 @@ def main():
     parser.add_argument("--model", default=MODEL)
     parser.add_argument("--think", action="store_true", help="Enable Qwen3 thinking mode")
     parser.add_argument("--max-completion-length", type=int, default=1024)
+    parser.add_argument(
+        "--vllm-max-model-length",
+        type=int,
+        default=None,
+        help="vLLM context length for colocate mode and trainer-side validation. In server mode, also pass "
+        "the matching --max-model-len to `trl vllm-serve`.",
+    )
+    parser.add_argument("--vllm-server-port", type=int, default=8000)
+    parser.add_argument("--vllm-server-timeout", type=float, default=240.0)
     # Defaults below sit at effective batch=64 with ~7x baseline throughput.
     # bs=4 measured ~9.6x in the 5-step bench but OOMs on long runs once a
     # batch with longer-than-typical rollouts pushes activations + intermediate
@@ -208,6 +243,10 @@ def main():
     parser.add_argument("--grad-accum", type=int, default=32, help="gradient_accumulation_steps")
     parser.add_argument("--num-generations", type=int, default=16)
     parser.add_argument("--lr", type=float, default=5e-6)
+    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--top-k", type=int, default=0)
+    parser.add_argument("--min-p", type=float, default=0.0)
     parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--max-steps", type=int, default=-1, help="Cap optimizer steps; -1 = use --epochs")
     parser.add_argument("--n-prompts", type=int, default=N_PROMPTS)
@@ -242,11 +281,18 @@ def main():
         "output_dir": "/tmp/wordle_grpo_output",
         "num_generations": args.num_generations,
         "max_completion_length": args.max_completion_length,
+        "vllm_max_model_length": args.vllm_max_model_length,
+        "vllm_server_port": args.vllm_server_port,
+        "vllm_server_timeout": args.vllm_server_timeout,
         "per_device_train_batch_size": args.batch_size,
         "gradient_accumulation_steps": args.grad_accum,
         "num_train_epochs": args.epochs,
         "max_steps": args.max_steps,
         "learning_rate": args.lr,
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+        "top_k": args.top_k,
+        "min_p": args.min_p,
         "bf16": True,
         "gradient_checkpointing": args.gradient_checkpointing,
         "use_liger_kernel": args.liger_kernel,
