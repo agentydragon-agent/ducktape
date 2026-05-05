@@ -18,7 +18,9 @@ Lives at <https://casino.allegedly.works>.
 | `doc_shape.py`                         | Casino Y.Doc schema (mirror of frontend/src/sync.js)       |
 | `validators.py`                        | Post-merge constraint checks (credits ≥ 0, prize shape…)   |
 | `models.py`                            | SQLAlchemy `doc` row holding the binary Y update blob      |
+| `events.py`                            | Pydantic schemas for client-reported game audit events     |
 | `store.py`                             | DocStore: validate-then-persist client updates             |
+| `migrations/`                          | Alembic migrations for the per-user SQLite database        |
 | `test_doc_shape.py`                    | pycrdt API + Casino schema sanity                          |
 | `test_validators.py`                   | Per-rule rejection coverage                                |
 | `test_store.py`                        | DocStore round-trip + persistence + validation gate        |
@@ -74,6 +76,12 @@ prizes    : Y.Map[id, Y.Map { name, cost }]
 prize_log : Y.Array[Y.Map { id, name, cost, at_ms }]
 active    : Y.Map — legacy, kept for one-time migration only
 ```
+
+Client-reported casino outcomes are stored outside the Y.Doc in the
+per-user SQLite `game_events` table through `POST /game-events`. The
+log is append-only, server-stamped, and queryable via `GET /game-events`,
+but it is not proof of fairness until game resolution moves server-side.
+See <../../plans/study_casino_server_resolution.md> for the migration plan.
 
 CRDTs guarantee convergence but not business rules — the server's
 validators (credits ≥ 0, tokens ≥ 0, prize shape, session shape) are

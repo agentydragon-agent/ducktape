@@ -13,6 +13,7 @@ const SUBJECTS = [
   "Pharmacology",
   "Biostatistics & Epi",
   "OMM",
+  "Anki",
 ];
 
 // European roulette wheel pocket order (clockwise from 0)
@@ -81,6 +82,10 @@ function handValue(cards) {
 
 function isBlackjack(cards) {
   return cards.length === 2 && handValue(cards) === 21;
+}
+
+function auditCards(cards) {
+  return cards.map((c) => ({ rank: c.rank, suit: c.suit }));
 }
 
 function weightedPick(items) {
@@ -167,6 +172,7 @@ export default function StudyCasino() {
     convertToTokens,
     addTokens,
     addCredits,
+    recordGameEvent,
     exportData,
     importData,
     resetData,
@@ -537,7 +543,15 @@ export default function StudyCasino() {
             cancel={cancelSession}
           />
         )}
-        {view === "casino" && <CasinoView credits={credits} addCredits={addCredits} addTokens={addTokens} />}
+        {view === "casino" && (
+          <CasinoView
+            credits={credits}
+            tokens={tokens}
+            addCredits={addCredits}
+            addTokens={addTokens}
+            recordGameEvent={recordGameEvent}
+          />
+        )}
         {view === "prizes" && (
           <PrizesView
             credits={credits}
@@ -766,9 +780,9 @@ function StudyView({
 // ============================================================
 // CASINO VIEW
 // ============================================================
-function CasinoView({ credits, addCredits, addTokens }) {
+function CasinoView({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
   const [game, setGame] = useState("roulette");
-  const gameProps = { credits, addCredits, addTokens };
+  const gameProps = { credits, tokens, addCredits, addTokens, recordGameEvent };
 
   return (
     <div>
@@ -811,7 +825,7 @@ function CasinoView({ credits, addCredits, addTokens }) {
 // ============================================================
 // ROULETTE
 // ============================================================
-function Roulette({ credits, addCredits, addTokens }) {
+function Roulette({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
   const [betAmount, setBetAmount] = useState(10);
   const [betType, setBetType] = useState("red"); // red, black, odd, even, low, high, dozen1, dozen2, dozen3, number
   const [betNumber, setBetNumber] = useState(7);
@@ -853,13 +867,18 @@ function Roulette({ credits, addCredits, addTokens }) {
 
   const spin = () => {
     if (!canSpin) return;
+    const wager = betAmount;
+    const creditsBefore = credits;
+    const tokensBefore = tokens;
+    const betTypeSnapshot = betType;
+    const betNumberSnapshot = betNumber;
     const pickedIdx = Math.floor(Math.random() * WHEEL.length);
     const picked = WHEEL[pickedIdx];
 
     // Take the bet up front against the doc; the local Y.Doc updates
     // synchronously so the UI re-renders immediately, and sync.js pushes
     // it to the server in the background.
-    addCredits(-betAmount);
+    addCredits(-wager);
     setSpinning(true);
     setResult(null);
 
@@ -872,13 +891,30 @@ function Roulette({ credits, addCredits, addTokens }) {
 
     setTimeout(() => {
       const w = checkWin(picked);
-      const grossPayout = w.won ? betAmount * w.mult : 0;
+      const grossPayout = w.won ? wager * w.mult : 0;
       // Whole payout becomes tokens; the bet was already debited from credits.
       // The casino is a pure credits→tokens funnel — see validators.py.
       if (grossPayout > 0) {
         addTokens(grossPayout);
         setWinBurst({ key: Date.now(), amount: grossPayout });
       }
+      recordGameEvent({
+        game: "roulette",
+        wagerCredits: wager,
+        payoutTokens: grossPayout,
+        creditsBefore,
+        creditsAfter: Math.max(0, creditsBefore - wager),
+        tokensBefore,
+        tokensAfter: tokensBefore + grossPayout,
+        outcome: {
+          bet_type: betTypeSnapshot,
+          bet_number: betTypeSnapshot === "number" ? betNumberSnapshot : null,
+          result_number: picked,
+          result_color: numColor(picked),
+          won: w.won,
+          multiplier: w.mult,
+        },
+      });
       setResult({ number: picked, won: w.won, payout: grossPayout });
       setHistory((h) => [{ number: picked, won: w.won }, ...h].slice(0, 10));
       setSpinning(false);
@@ -1222,7 +1258,7 @@ function Roulette({ credits, addCredits, addTokens }) {
 // ============================================================
 // SLOTS
 // ============================================================
-function Slots({ credits, addCredits, addTokens }) {
+function Slots({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
   const [bet, setBet] = useState(5);
   const [targets, setTargets] = useState([SLOT_SYMBOLS[2], SLOT_SYMBOLS[3], SLOT_SYMBOLS[4]]);
   const [spinning, setSpinning] = useState(false);
@@ -1233,7 +1269,10 @@ function Slots({ credits, addCredits, addTokens }) {
 
   const spin = () => {
     if (!canSpin) return;
-    addCredits(-bet);
+    const wager = bet;
+    const creditsBefore = credits;
+    const tokensBefore = tokens;
+    addCredits(-wager);
     setSpinning(true);
     setLastResult(null);
 
@@ -1245,10 +1284,10 @@ function Slots({ credits, addCredits, addTokens }) {
       let label = "";
       const [a, b, c] = picks;
       if (a.id === b.id && b.id === c.id) {
-        grossPayout = bet * a.payout;
+        grossPayout = wager * a.payout;
         label = `Triple ${a.glyph} · ${a.payout}×`;
       } else if (a.id === b.id || b.id === c.id || a.id === c.id) {
-        grossPayout = Math.floor(bet * 1.5);
+        grossPayout = Math.floor(wager * 1.5);
         label = "Pair · 1.5×";
       } else {
         label = "No match";
@@ -1257,6 +1296,26 @@ function Slots({ credits, addCredits, addTokens }) {
         addTokens(grossPayout);
         setWinBurst({ key: Date.now(), amount: grossPayout });
       }
+      recordGameEvent({
+        game: "slots",
+        wagerCredits: wager,
+        payoutTokens: grossPayout,
+        creditsBefore,
+        creditsAfter: Math.max(0, creditsBefore - wager),
+        tokensBefore,
+        tokensAfter: tokensBefore + grossPayout,
+        outcome: {
+          symbols: picks.map((p) => p.id),
+          glyphs: picks.map((p) => p.glyph),
+          label,
+          payout_kind:
+            a.id === b.id && b.id === c.id
+              ? "triple"
+              : a.id === b.id || b.id === c.id || a.id === c.id
+                ? "pair"
+                : "none",
+        },
+      });
       setLastResult({ picks, payout: grossPayout, label });
       setSpinning(false);
     }, 4000);
@@ -1475,7 +1534,7 @@ function SlotReel({ target, index, spinning }) {
 // ============================================================
 // BLACKJACK
 // ============================================================
-function Blackjack({ credits, addCredits, addTokens }) {
+function Blackjack({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
   const [shoe, setShoe] = useState(() => makeShoe(BLACKJACK_DECKS));
   const [playerHand, setPlayerHand] = useState([]);
   const [dealerHand, setDealerHand] = useState([]);
@@ -1485,6 +1544,7 @@ function Blackjack({ credits, addCredits, addTokens }) {
   const [result, setResult] = useState(null); // { outcome, payout, text }
   const [holeHidden, setHoleHidden] = useState(true);
   const [winBurst, setWinBurst] = useState(null);
+  const handAuditRef = useRef(null);
 
   const playerValue = useMemo(() => handValue(playerHand), [playerHand]);
   const dealerValue = useMemo(() => handValue(dealerHand), [dealerHand]);
@@ -1550,6 +1610,30 @@ function Blackjack({ credits, addCredits, addTokens }) {
       addTokens(payout);
       setWinBurst({ key: Date.now(), amount: payout });
     }
+    const audit = handAuditRef.current;
+    if (audit) {
+      recordGameEvent({
+        game: "blackjack",
+        wagerCredits: currentWager,
+        payoutTokens: payout,
+        creditsBefore: audit.creditsBefore,
+        creditsAfter: Math.max(0, audit.creditsBefore - currentWager),
+        tokensBefore: audit.tokensBefore,
+        tokensAfter: audit.tokensBefore + payout,
+        outcome: {
+          outcome,
+          text,
+          initial_wager: audit.initialWager,
+          doubled: currentWager > audit.initialWager,
+          player_cards: auditCards(finalPlayer),
+          dealer_cards: auditCards(finalDealer),
+          player_value: pv,
+          dealer_value: dv,
+          player_blackjack: pBJ,
+          dealer_blackjack: dBJ,
+        },
+      });
+    }
     setResult({ outcome, payout, text });
     setPhase("done");
     setHoleHidden(false);
@@ -1579,8 +1663,15 @@ function Blackjack({ credits, addCredits, addTokens }) {
     let workingShoe = shoe;
     if (workingShoe.length < 52) workingShoe = makeShoe(BLACKJACK_DECKS);
 
-    addCredits(-betInput);
-    setWager(betInput);
+    const initialWager = betInput;
+    handAuditRef.current = {
+      creditsBefore: credits,
+      tokensBefore: tokens,
+      initialWager,
+    };
+
+    addCredits(-initialWager);
+    setWager(initialWager);
     setResult(null);
     setHoleHidden(true);
 
@@ -1599,7 +1690,7 @@ function Blackjack({ credits, addCredits, addTokens }) {
     if (isBlackjack(ph) || isBlackjack(dh)) {
       setTimeout(() => {
         setHoleHidden(false);
-        setTimeout(() => settle(ph, dh, betInput), 500);
+        setTimeout(() => settle(ph, dh, initialWager), 500);
       }, 600);
       return;
     }
@@ -1653,6 +1744,7 @@ function Blackjack({ credits, addCredits, addTokens }) {
     setResult(null);
     setWager(0);
     setHoleHidden(true);
+    handAuditRef.current = null;
     setPhase("betting");
   };
 

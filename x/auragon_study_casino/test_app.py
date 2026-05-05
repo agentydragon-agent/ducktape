@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -110,6 +111,67 @@ def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
     r = client.get("/me")
     assert r.status_code == 200
     assert r.json() == {"username": "default"}
+
+
+def _game_event_body(client_event_id: str = "evt-1") -> dict:
+    return {
+        "client_event_id": client_event_id,
+        "occurred_at_ms": 1_700_000_000_000,
+        "game": "slots",
+        "event_type": "settle",
+        "wager_credits": 5,
+        "payout_tokens": 7,
+        "credits_before": 12,
+        "credits_after": 7,
+        "tokens_before": 20,
+        "tokens_after": 27,
+        "outcome": {"symbols": ["club", "club", "spade"], "payout_kind": "pair"},
+    }
+
+
+def test_game_event_log_round_trip_and_idempotency(client: TestClient) -> None:
+    r = client.post("/game-events", json=_game_event_body())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == 1
+    assert body["source"] == "client_reported"
+    assert body["game"] == "slots"
+    assert body["wager_credits"] == 5
+    assert body["payout_tokens"] == 7
+    assert body["server_credits"] == 0
+    assert body["server_tokens"] == 0
+    assert body["outcome"] == {"symbols": ["club", "club", "spade"], "payout_kind": "pair"}
+
+    duplicate = client.post("/game-events", json=_game_event_body())
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["id"] == body["id"]
+
+    listed = client.get("/game-events?limit=10")
+    assert listed.status_code == 200
+    assert [e["client_event_id"] for e in listed.json()] == ["evt-1"]
+
+
+def test_game_event_validation_rejects_bad_game(client: TestClient) -> None:
+    event = _game_event_body()
+    event["game"] = "coinflip"
+    r = client.post("/game-events", json=event)
+    assert r.status_code == 422
+
+
+def test_pre_alembic_user_db_is_baselined_and_upgraded(tmp_path: Path) -> None:
+    db_path = tmp_path / "casino-default.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE doc (id INTEGER PRIMARY KEY, update_blob BLOB NOT NULL)")
+        conn.execute("INSERT INTO doc (id, update_blob) VALUES (1, ?)", (Casino.empty().get_update(),))
+
+    app = create_app(Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist"))
+    with TestClient(app) as c:
+        r = c.post("/game-events", json=_game_event_body("evt-baseline"))
+        assert r.status_code == 200, r.text
+
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0002",)
+        assert conn.execute("SELECT count(*) FROM game_events").fetchone() == (1,)
 
 
 def test_users_have_isolated_state(tmp_path: Path) -> None:

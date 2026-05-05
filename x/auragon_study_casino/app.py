@@ -24,8 +24,10 @@ blobs encoded as base64 in a JSON envelope:
             should undo its last local transaction (Y.UndoManager) and
             surface the rule + message in a SyncIcon toast.
 
-There is no `GET /state` and no `POST /events` — all state lives in
-the Y.Doc, and the only way to mutate it is via `/sync`.
+User-facing state still lives in the Y.Doc and mutates only through
+`/sync`. Casino outcomes also get a server-stamped, append-only
+client-reported audit record through `/game-events`; that log is kept
+outside the Y.Doc so it stays queryable and does not bloat sync payloads.
 
 Multi-user: each authenticated user gets a separate SQLite database
 (`casino-<username>.db`). When OIDC is not configured the app falls
@@ -42,13 +44,14 @@ from pathlib import Path
 from typing import Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from x.auragon_study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
 from x.auragon_study_casino.config import Settings
+from x.auragon_study_casino.events import GameEventCreate, GameEventRead
 from x.auragon_study_casino.store import Accepted, DocStore, Rejected
 
 logger = logging.getLogger(__name__)
@@ -145,6 +148,26 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/me")
     def me(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, str]:
         return {"username": username}
+
+    @app.post("/game-events")
+    def record_game_event(body: GameEventCreate, username: Annotated[str, Depends(current_user_dep)]) -> GameEventRead:
+        store = get_store(username)
+        event = store.record_game_event(body)
+        logger.info(
+            "game event recorded: user=%s game=%s wager=%d payout=%d",
+            username,
+            event.game,
+            event.wager_credits,
+            event.payout_tokens,
+        )
+        return event
+
+    @app.get("/game-events")
+    def list_game_events(
+        username: Annotated[str, Depends(current_user_dep)], limit: Annotated[int, Query(ge=1, le=500)] = 100
+    ) -> list[GameEventRead]:
+        store = get_store(username)
+        return store.list_game_events(limit=limit)
 
     @app.websocket("/ws")
     async def websocket_sync(ws: WebSocket) -> None:

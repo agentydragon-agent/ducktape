@@ -252,6 +252,40 @@ export function useCasino() {
     });
   };
 
+  const recordGameEvent = (event) => {
+    const eventId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const intValue = (value) => Math.max(0, Math.floor(Number(value) || 0));
+    const body = {
+      client_event_id: eventId,
+      occurred_at_ms: Date.now(),
+      game: event.game,
+      event_type: "settle",
+      wager_credits: intValue(event.wagerCredits),
+      payout_tokens: intValue(event.payoutTokens),
+      credits_before: intValue(event.creditsBefore),
+      credits_after: intValue(event.creditsAfter),
+      tokens_before: intValue(event.tokensBefore),
+      tokens_after: intValue(event.tokensAfter),
+      outcome: event.outcome ?? {},
+    };
+    fetch("/game-events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      keepalive: true,
+      body: JSON.stringify(body),
+    })
+      .then((resp) => {
+        if (!resp.ok) console.debug("[CasinoAudit] event log rejected:", resp.status);
+      })
+      .catch((e) => {
+        console.debug("[CasinoAudit] event log failed:", e.message ?? String(e));
+      });
+  };
+
   const exportData = () => {
     const data = {
       version: 3,
@@ -353,6 +387,7 @@ export function useCasino() {
     convertToTokens,
     addTokens,
     addCredits,
+    recordGameEvent,
     exportData,
     importData,
     resetData,

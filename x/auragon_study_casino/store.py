@@ -12,27 +12,45 @@ update blob in SQLite. Every `POST /sync` request goes through
 4. On failure, the canonical doc is unchanged and the caller gets a
    `Rejected` describing which rule was violated.
 
-There is no event log: pycrdt's binary update format already encodes
-every op (Yjs-style CRDT operations are themselves the history). The
-SyncStatus rejection contract on the client mirrors the structure
-returned here, so the UI can roll back the offending transaction via
-`Y.UndoManager`.
+The Y.Doc is not used as an unbounded casino audit log. Client-reported
+game outcomes go into the separate `game_events` table, while the
+SyncStatus rejection contract on the client mirrors the structure returned
+here so the UI can roll back the offending transaction via `Y.UndoManager`.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
 from typing import Any
 
-from sqlalchemy import create_engine, event, select
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
+from sqlalchemy import create_engine, event, inspect, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from x.auragon_study_casino.doc_shape import Casino
-from x.auragon_study_casino.models import Base, DocRow
+from x.auragon_study_casino.events import GameEventCreate, GameEventRead, game_event_from_row
+from x.auragon_study_casino.models import DocRow, GameEventRow
 from x.auragon_study_casino.validators import ValidationError, validate
+
+_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+
+
+def _run_alembic_migrations(engine: Engine) -> None:
+    """Run pending migrations, baselining pre-Alembic DBs at the doc table."""
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
+    with engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        tables = set(inspect(conn).get_table_names())
+        if "doc" in tables and "alembic_version" not in tables:
+            alembic_command.stamp(cfg, "0001")
+        alembic_command.upgrade(cfg, "head")
 
 
 @dataclass(frozen=True)
@@ -66,7 +84,7 @@ class DocStore:
         with self._engine.connect() as conn:
             conn.exec_driver_sql("PRAGMA journal_mode=WAL")
             conn.commit()
-        Base.metadata.create_all(self._engine)
+        _run_alembic_migrations(self._engine)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
 
         # Lock around the canonical doc + persistence step. pycrdt is not
@@ -154,6 +172,57 @@ class DocStore:
             self._canonical = trial
 
             return Accepted(server_update=trial.get_update(client_state_vector), server_state_vector=trial.get_state())
+
+    def record_game_event(self, event: GameEventCreate) -> GameEventRead:
+        """Persist one client-reported casino event.
+
+        The event is intentionally outside the Y.Doc: it is append-only,
+        server-stamped, queryable, and does not inflate every client's CRDT
+        payload. Until game resolution moves server-side, the row should be
+        interpreted as an audit trail of what the browser reported, not as
+        cryptographic proof of the draw.
+        """
+        with self._lock:
+            server_credits = int(self._canonical.balance.get("credits", 0))
+            server_tokens = int(self._canonical.balance.get("tokens", 0))
+
+        row = GameEventRow(
+            client_event_id=event.client_event_id,
+            server_at_ms=int(time.time() * 1000),
+            occurred_at_ms=event.occurred_at_ms,
+            game=event.game,
+            event_type=event.event_type,
+            source="client_reported",
+            wager_credits=event.wager_credits,
+            payout_tokens=event.payout_tokens,
+            credits_before=event.credits_before,
+            credits_after=event.credits_after,
+            tokens_before=event.tokens_before,
+            tokens_after=event.tokens_after,
+            server_credits=server_credits,
+            server_tokens=server_tokens,
+            outcome_json=event.outcome_json(),
+        )
+        with self._Session() as s:
+            existing = s.scalar(select(GameEventRow).where(GameEventRow.client_event_id == event.client_event_id))
+            if existing is not None:
+                return game_event_from_row(existing)
+            try:
+                s.add(row)
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                existing = s.scalar(select(GameEventRow).where(GameEventRow.client_event_id == event.client_event_id))
+                if existing is not None:
+                    return game_event_from_row(existing)
+                raise
+            s.refresh(row)
+            return game_event_from_row(row)
+
+    def list_game_events(self, limit: int = 100) -> list[GameEventRead]:
+        with self._Session() as s:
+            rows = list(s.scalars(select(GameEventRow).order_by(GameEventRow.id.desc()).limit(limit)).all())
+            return [game_event_from_row(row) for row in rows]
 
 
 # Enable WAL on every pooled connection.
