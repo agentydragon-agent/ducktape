@@ -1114,16 +1114,70 @@ fn collect_referenced_idents(item: &ModuleItem) -> BTreeSet<String> {
 #[derive(Default)]
 struct RefCollector {
     names: BTreeSet<String>,
+    shadowed_scopes: Vec<BTreeSet<String>>,
 }
 
 impl Visit for RefCollector {
     fn visit_ident(&mut self, node: &Ident) {
-        self.names.insert(node.sym.to_string());
+        let name = node.sym.as_ref();
+        if !self.is_shadowed(name) {
+            self.names.insert(name.to_string());
+        }
     }
 
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
 
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+
+    fn visit_function(&mut self, node: &Function) {
+        let shadowed = node
+            .params
+            .iter()
+            .flat_map(|param| binding_names(&param.pat))
+            .collect::<BTreeSet<_>>();
+        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        let shadowed = node
+            .params
+            .iter()
+            .flat_map(binding_names)
+            .collect::<BTreeSet<_>>();
+        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
+    }
+
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        node.obj.visit_with(self);
+        if let MemberProp::Computed(computed) = &node.prop {
+            computed.expr.visit_with(self);
+        }
+    }
+
+    fn visit_prop_name(&mut self, node: &PropName) {
+        if let PropName::Computed(computed) = node {
+            computed.expr.visit_with(self);
+        }
+    }
+
+    fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
+
+    fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
+}
+
+impl RefCollector {
+    fn is_shadowed(&self, name: &str) -> bool {
+        self.shadowed_scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.contains(name))
+    }
+
+    fn with_shadowed_scope<F: FnOnce(&mut Self)>(&mut self, names: BTreeSet<String>, f: F) {
+        self.shadowed_scopes.push(names);
+        f(self);
+        self.shadowed_scopes.pop();
+    }
 }
 
 /// Drop `ImportSpecifier::Named` specifiers from a residual entry

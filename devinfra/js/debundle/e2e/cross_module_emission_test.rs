@@ -31,6 +31,68 @@ export { b };
 }
 
 #[test]
+fn object_pattern_and_static_property_keys_do_not_import_residual_binding() {
+    let mut opts = FixtureOpts::new(
+        r#"const id = "residual";
+function Text({ id: h }) {
+  return { type: "span", props: { id: h } };
+}
+export { Text };
+"#,
+        vec![logical_module("shared/ui/text", &[Member::new("Text")])],
+    );
+    opts.include_residual = false;
+    let fixture = run_logical_modules_e2e_fixture(opts);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/shared/ui/text.js",
+        &["function Text", "props:"],
+        &["import { id }"],
+    );
+    assert_generated_module_after_entry_script(
+        &fixture.out_root,
+        r#"const { Text } = await import("./static/app/modules/shared/ui/text.js");
+console.log(Text({ id: "probe" }).props.id);
+"#,
+        "probe\n",
+    );
+}
+
+#[test]
+fn jsx_names_do_not_import_residual_binding() {
+    // Tana's Text component has this shape after minification:
+    // `function Text({ id: h }) { return <span id={h} />; }`.
+    // The JSX `span`/`id` tokens are syntax names, not references to
+    // residual top-level bindings.
+    let mut opts = FixtureOpts::new(
+        r#"const id = "residual";
+const span = "residual element";
+function Text({ id: h }) {
+  return <span id={h} />;
+}
+export { Text };
+"#,
+        vec![logical_module("shared/ui/text", &[Member::new("Text")])],
+    );
+    opts.include_residual = false;
+    let fixture = run_logical_modules_e2e_fixture(opts);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/shared/ui/text.js",
+        &["function Text", "id="],
+        &["import { id }", "import { span }"],
+    );
+    parse_module(
+        &fs::read_to_string(
+            fixture
+                .out_root
+                .join("static/app/modules/shared/ui/text.js"),
+        )
+        .expect("read shared/ui/text module"),
+    );
+}
+
+#[test]
 fn explicit_modules_share_a_residual_helper_via_imports() {
     // Helper `r` is unclaimed; both `inner` (owns `s`) and
     // `outer` (owns `t`) import it from residual.
