@@ -107,6 +107,25 @@ class TestWordleEnv:
         assert "Game over" in result
         assert env.reward >= 0.0  # partial credit
 
+    def test_partial_reward_after_nonterminal_guess(self):
+        env = self.make_env(seed=0)
+        secret = env._secret
+        wrong = next(w for w in WORD_LIST if w != secret and _completion_score(_score_guess(secret, w)) > 0.0)
+        result = env.guess(wrong)
+        assert "guesses left" in result
+        assert env.done is False
+        assert env.reward == _completion_score(_score_guess(secret, wrong))
+
+    def test_invalid_guess_preserves_best_reward(self):
+        env = self.make_env(seed=0)
+        secret = env._secret
+        wrong = next(w for w in WORD_LIST if w != secret and _completion_score(_score_guess(secret, w)) > 0.0)
+        env.guess(wrong)
+        reward_after_valid_guess = env.reward
+        result = env.guess("zzzzz")
+        assert "not a recognized" in result
+        assert env.reward == reward_after_valid_guess
+
     def test_post_done_returns_polite_string(self):
         # After the game ends we don't raise — TRL's _tool_call_loop swallows tool
         # exceptions into {"error": str(e)} which is just noise to the model. Returning

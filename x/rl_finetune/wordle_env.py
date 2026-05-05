@@ -133,6 +133,7 @@ class WordleEnv:
         feedback = _score_guess(self._secret, word)
         score = _completion_score(feedback)
         self._best_score = max(self._best_score, score)
+        self.reward = self._best_score
         feedback_str = " ".join(feedback)
         won = word == self._secret
 
@@ -142,11 +143,9 @@ class WordleEnv:
             self.won = True
             result = f"{word.upper()}: {feedback_str}. Correct!"
         elif remaining == 0:
-            self.reward = self._best_score
             self.done = True
             result = f"{word.upper()}: {feedback_str}. Game over, the word was {self._secret}."
         else:
-            self.reward = 0.0
             result = f"{word.upper()}: {feedback_str}. {remaining} guesses left."
 
         logger.info("game %d [%d/%d] r=%.2f: %s", self._game_id, self._guess_count, MAX_GUESSES, self.reward, result)
@@ -154,7 +153,7 @@ class WordleEnv:
 
 
 def reward_func(environments, **_kwargs) -> list[float]:
-    """TRL reward function adapter: pulls the env's terminal reward per rollout."""
+    """TRL reward function adapter: pulls each env's best-so-far reward."""
     return [env.reward for env in environments]
 
 
