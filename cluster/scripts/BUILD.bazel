@@ -9,3 +9,9 @@ py_binary(
     name = "check_authentik_login",
     srcs = ["check_authentik_login.py"],
 )
+
+py_binary(
+    name = "render_mobile_nebula_config",
+    srcs = ["render_mobile_nebula_config.py"],
+    deps = ["@pypi//pyyaml"],
+)

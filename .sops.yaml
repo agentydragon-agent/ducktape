@@ -115,6 +115,13 @@ creation_rules:
       - age:
           - *admin
           - *iguana-host
+  # Mobile Nebula import keys are admin-only in git; the generated plaintext
+  # import file installs the key into the phone's app keystore.
+  - path_regex: secrets/nebula/pixel6\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
 
   # --- Per-host attic reader tokens (admin + host + user) ---
   # Combined NixOS+HM file: NixOS daemon decrypts via host key for

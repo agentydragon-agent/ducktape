@@ -41,6 +41,20 @@ but losing the bypass escape hatch.
 
 - [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
 
+## Mobile Nebula phone access
+
+- [ ] Decide what the Pixel should do now that `pixel6.nebula.allegedly.works`
+      is on the Nebula mesh.
+- [ ] Test cluster-hosted ActivityWatch from the phone over Nebula, either by
+      browser/API against `activitywatch.nebula.allegedly.works` or direct
+      `10.42.0.40` if Android/Mobile Nebula DNS behavior is awkward.
+- [ ] Allow SSH from the phone to mesh machines such as `wyrm2`; verify the
+      phone has an SSH client/key path, host SSH/firewall policy allows the
+      phone's Nebula identity or `10.42.0.50`, and access stays key-only.
+- [ ] Consider running an SSH daemon on the phone for emergency access back to
+      the device, probably via Termux/OpenSSH, with explicit keys and a clear
+      power/background-execution story.
+
 ## Missing CiliumNetworkPolicy
 
 71% of namespaces lack network policies. Tracked in `cluster/docs/plan.md`.
