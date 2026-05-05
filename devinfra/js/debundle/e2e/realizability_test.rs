@@ -148,8 +148,15 @@ export { A, B, readA, readB };
         "owner graph should expose source-owner nodes: {graph:#?}",
     );
     assert!(
+        graph
+            .nodes
+            .iter()
+            .any(|node| node.source_location.is_some()),
+        "owner graph should expose source locations for source-owner nodes: {graph:#?}",
+    );
+    assert!(
         graph.edges.iter().any(|edge| {
-            edge.kind == EdgeKind::LazyRead
+            edge.edge_kind == EdgeKind::LazyRead
                 && edge.binding.as_deref() == Some("B")
                 && !edge.constrains_realizability
         }),
@@ -157,7 +164,7 @@ export { A, B, readA, readB };
     );
     assert!(
         graph.quotient.edges.iter().any(|edge| {
-            edge.kinds.contains(&EdgeKind::LazyRead) && !edge.owner_edge_ids.is_empty()
+            edge.edge_kinds.contains(&EdgeKind::LazyRead) && !edge.owner_edge_ids.is_empty()
         }),
         "quotient edges should retain owner-edge provenance: {graph:#?}",
     );
@@ -434,7 +441,7 @@ export { a1, a2, b1 };
         graph
             .edges
             .iter()
-            .any(|edge| edge.kind == EdgeKind::SideEffectOrder && edge.binding.is_none()),
+            .any(|edge| edge.edge_kind == EdgeKind::SideEffectOrder && edge.binding.is_none()),
         "side-effect owner edges should omit binding rather than using a sentinel: {graph:#?}",
     );
 }

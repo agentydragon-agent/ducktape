@@ -16,10 +16,11 @@ use artifact::{
     manifest_relative_path, module_path_dirname, module_path_from_path, normalize_module_path,
     relative_module_path, resolve_artifact_source_import_reference,
 };
-use js_ast::{ParsedJsModule, set_str_value, str_value};
+use js_ast::{ParsedJsModule, line_range_for_span, set_str_value, str_value};
 use schedule_validator::{
     BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
-    Schedule, analyze_chunk_facts, find_top_level_await, render_cycle_summary,
+    Schedule, analyze_chunk_facts_with_source_locations, find_top_level_await,
+    render_cycle_summary,
 };
 use spec::{BindingSourceKind, ChunkRenames, LogicalModule, MemberPurity, ResidualModule};
 
@@ -63,6 +64,7 @@ pub struct LogicalChunkCounts {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FinalModuleContent {
+    pub binding_names: Vec<String>,
     pub file: String,
     pub id: String,
     pub member_names: Vec<String>,
@@ -345,7 +347,12 @@ pub fn materialize_logical_modules(
                 .filter(|m| m.purity == MemberPurity::Pure)
                 .map(|m| m.binding.clone())
                 .collect();
-            let facts = analyze_chunk_facts(&runtime_ast.module, &declared_pure);
+            let facts = analyze_chunk_facts_with_source_locations(
+                &runtime_ast.module,
+                &declared_pure,
+                Some(&source_path),
+                |span| line_range_for_span(runtime_ast, span),
+            );
             let logical_modules: Vec<ScheduleLogicalModule> = module_plans
                 .iter()
                 .map(|plan| ScheduleLogicalModule {
@@ -454,11 +461,13 @@ pub fn materialize_logical_modules(
         let final_modules = module_plans
             .iter()
             .map(|plan| FinalModuleContent {
+                binding_names: plan.bindings.keys().cloned().collect(),
                 file: plan.target_file.clone(),
                 id: plan.id.clone(),
                 member_names: plan.bindings.values().cloned().collect(),
                 path: plan.target_path.clone(),
-                owner_ids: plan.bindings.keys().cloned().collect(),
+                owner_ids: schedule
+                    .owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str)),
             })
             .collect::<Vec<_>>();
         let report = LogicalChunkReport {
@@ -865,13 +874,19 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         } else if !import_member_exports.is_empty() {
             body.push(export_named_for_bindings(&import_member_exports));
         }
-        let owner_ids = plan.bindings.keys().cloned().collect::<Vec<_>>();
+        let binding_names = plan.bindings.keys().cloned().collect::<Vec<_>>();
+        let owner_ids =
+            schedule.owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str));
         let header = vec![
             LOWERING_FILE_PRAGMA.to_string(),
             LOWERING_GENERATOR_HEADER.to_string(),
             format!(
-                "// Selected-module lowered region; original owners: {}.",
+                "// Selected-module lowered region; original owner ids: {}.",
                 owner_ids.join(", ")
+            ),
+            format!(
+                "// Selected-module lowered region; source bindings: {}.",
+                binding_names.join(", ")
             ),
         ];
         files.push(JsFile {
@@ -896,11 +911,12 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         });
         file_records.push((plan.target_file.clone(), FileRole::Module));
         applied.push(SelectedModuleLowering {
+            binding_names,
             chunk_id: chunk_id.to_string(),
             exported_names: plan.bindings.values().cloned().collect(),
             file: entry_file.to_string(),
             id: plan.id.clone(),
-            owner_ids: plan.bindings.keys().cloned().collect(),
+            owner_ids,
             target_file: plan.target_file.clone(),
         });
     }

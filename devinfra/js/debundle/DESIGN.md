@@ -374,7 +374,7 @@ I  ∪  S            the full constraint graph
 Here "spec assignment" means whatever the validator sees: every
 declared binding either has an explicit `owner` from the spec or
 defaults to `ModuleId::ResidualEntry` (see [Spec explicitness
-— closure as recommender](#spec-explicitness--closure-as-recommender)).
+and diagnostics](#spec-explicitness-and-diagnostics)).
 There is no implicit transformation between the spec and the
 assignment the theorem reasons about.
 
@@ -776,7 +776,7 @@ derive I, R, S
 validate: realizability gate over I ∪ S
   ↓        ↓ no                       (sidecar)
   ↓        ↓                  owner-level diagnostics, cycle cuts,
-  ↓        ↓                  peelability/reassignment suggestions
+  ↓        ↓                  peelability projections
 emit (source-order)
   ↓ no
 reject with cycle evidence
@@ -791,7 +791,7 @@ realizable when analysis is conservative; that is the intended
 failure mode. Those rejections should come with owner-level evidence
 showing which graph edges made the split unverifiable.
 
-## Spec explicitness — closure as recommender
+## Spec explicitness and diagnostics
 
 A tempting design for spec ergonomics is an _automatic closure
 pass_: when the spec assigns binding `A` to module `M` and `A`'s
@@ -824,63 +824,35 @@ The trade-off doesn't pay off in practice:
 has its `owner` named in the spec or defaults to
 `ModuleId::ResidualEntry`. There is no implicit pulling.
 
-The closure's logic doesn't disappear; it relocates. Instead of
-running on the runtime path, it runs as part of validation as a
-**recommender**:
+The owner graph is the explicit replacement for hidden closure. It
+records the fine-grained "this owner uses that owner" relation before
+any module-level quotienting. Diagnostics are projections of that
+graph: validation cycles explain why the current explicit assignment
+is not realizable, and peelability explains which residual owners can
+move to a new destination without introducing a new invalid quotient
+SCC or an unimportable residual dependency. The tool may rank,
+summarize, or annotate those projections, but it does not silently
+assign bindings on behalf of the spec author.
 
-```rust
-pub struct AssignmentRecommendation {
-    /// The binding the spec author hasn't claimed yet.
-    pub binding: BindingName,
-    /// Modules that read this binding (at-init or lazily).
-    pub candidate_owners: Vec<RecommendationCandidate>,
-}
-
-pub struct RecommendationCandidate {
-    pub module: ModuleId,
-    pub read_kind: RecommendationReadKind,
-    /// True iff assigning `binding → module` would not introduce
-    /// a cycle in `I ∪ S`. Cycle-safe candidates are preferred.
-    /// Note: lazy-only reads still create `I` edges (the emit
-    /// has to carry the corresponding `import` directive), so
-    /// `LazyOnly` is *not* automatically cycle-safe — every
-    /// candidate is checked the same way.
-    pub cycle_safe: bool,
-}
-
-pub enum RecommendationReadKind {
-    /// The candidate module reads this binding at-init (e.g. in
-    /// a `const X = b + 1` initializer, an `extends b` clause, a
-    /// computed property key, etc.). Contributes to both `R`
-    /// (TDZ-relevant) and `I` (linker graph).
-    AtInit,
-    /// The candidate module reads this binding only inside
-    /// function/method bodies — lazy. Contributes to `I` only.
-    /// Lazy reads can still close `I` cycles, but lazy-only SCCs
-    /// are realizable; the candidate is unsafe only if the SCC
-    /// also contains an at-init read or side-effect-order edge.
-    LazyOnly,
-}
-```
-
-`ScheduleReport` carries a `recommendations: Vec<...>` list
-alongside the existing `cycles: Vec<...>` list. The validator
-emits both; the report is one-shot — re-running the validator on
-an updated spec produces a fresh report.
+`ScheduleReport` remains the compact validation report. The detailed
+next-action data lives in `<reports>/<chunk_id>/owner_graph.json`,
+which is emitted on both success and rejection. Re-running the
+pipeline on an updated spec produces fresh graph and peelability
+reports.
 
 ### Workflow
 
 1. Spec author writes / edits a spec — possibly partial.
 2. Pipeline runs the validator. The report flags:
    - **Cycles** in the explicit-only assignment, if any.
-   - **Recommendations** for every binding with no owner (i.e.
-     defaulted to `ResidualEntry` or transitively required).
-3. Spec author resolves: for each recommendation, copy the
-   chosen owner into the spec, or restructure to break a cycle.
-   The recommender flags cycle-safe candidates so the author
-   can pick one without re-running.
-4. Re-run validator. Iterate until the report's `cycles` and
-   (optionally) `recommendations` are both empty.
+   - **Peelability projections** for residual owners and minimal
+     companion sets in `owner_graph.json`.
+3. Spec author resolves: first fix any validation cycles; then peel
+   owner sets from `peelability.minimal_peel_sets[]`, copying their
+   bindings into new explicit spec modules and assigning good public
+   names.
+4. Re-run validator. Iterate until validation is green and the
+   residual contains only intentionally generated or low-value noise.
 
 The spec is now fully explicit. The validator is a one-shot
 predicate: "given this spec, is the bundle realizable?" — no
@@ -1556,16 +1528,14 @@ Within `materialize_logical_modules`, the substages are:
 4. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
    the spec's explicit member list. Bindings with no spec entry
    default to `ResidualEntry`; nothing pulls implicitly. (See
-   [Spec explicitness](#spec-explicitness--closure-as-recommender).)
+   [Spec explicitness](#spec-explicitness-and-diagnostics).)
 5. **Quotient + validation** (<schedule_validator.rs>:
    `quotient_owner_graph`, `validate_schedule`). The quotient graph
    collapses owners by destination, aggregates edge reasons, and
-   validates the resulting `I ∪ S`. The validator also emits
-   `recommendations` for every unowned binding so the spec author
-   can update the spec.
-6. **Diagnostics projections** — cycle evidence, assignment
-   recommendations, and peelability reports are projections of the
-   same owner graph + quotient, not separate heuristic analyses.
+   validates the resulting `I ∪ S`.
+6. **Diagnostics projections** — cycle evidence and peelability
+   reports are projections of the same owner graph + quotient, not
+   separate heuristic analyses.
 7. **Cycle resolution gate** — if the validator finds an
    unrealizable cycle, the pipeline aborts with the cycle
    evidence.
@@ -2041,23 +2011,15 @@ exploration before crossing the relevant phase.
 2. **Side-effect classification precision.** Without alias analysis
    we have to assume `const X = f()` is side-effecting if `f` is
    any function call. This over-imposes side-effect edges, which
-   may flag more recommendations than strictly necessary. Pure-
-   call inference is future work.
-3. **Recommender determinism on ties.** When binding `B` is read
-   only by module `M`, the recommendation is unambiguous: `B → M`.
-   When `B` is read by multiple modules `{M₁, M₂}`, all
-   cycle-safe, the recommender has to either pick one (loses
-   determinism between author and tool) or surface the choice for
-   human resolution. Leaning toward surfacing — the recommender's
-   value is in being explicit about ambiguity, not hiding it.
-
-4. **Vendor chunk modeling.** Vendor chunks are pre-existing module
+   may block more candidate peel sets than strictly necessary.
+   Pure-call inference is future work.
+3. **Vendor chunk modeling.** Vendor chunks are pre-existing module
    boundaries that we don't control. They appear in the dep graph
    as nodes with no at-init reads from our chunk (the vendor
    doesn't import from us). The validator should sanity-check
    this; a vendor that imports back into the user-chunk is a
    pathological case worth detecting.
-5. **Validator UX.** The cycle report should be actionable. A
+4. **Validator UX.** The cycle report should be actionable. A
    shape like "Cycle modules [M_a, M_b]; evidence: stmt#42 in
    M_a reads `X` (owned by M_b); stmt#107 in M_b reads `Y`
    (owned by M_a). Resolution: colocate X and Y in one module"

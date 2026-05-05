@@ -121,12 +121,16 @@ rust_library(
 
 rust_library(
     name = "schedule_validator",
-    srcs = ["schedule_validator.rs"],
+    srcs = [
+        "schedule_validator.rs",
+        "schedule_validator/report_schema.rs",
+    ],
     crate_root = "schedule_validator.rs",
     edition = "2024",
     deps = [
         "@crates//:petgraph",
         "@crates//:serde",
+        "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],

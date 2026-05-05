@@ -25,10 +25,14 @@
 //!    aborts when this validator reports such cycles.
 //!
 //! The output is a JSON report listing the cycles + their evidence
-//! (which `(statement, binding)` pairs form each cycle), plus
-//! recommendations for any unowned bindings that some logical
-//! module reads. The report is written next to the existing
-//! manifests as `<chunk_id>/schedule.json`.
+//! (which `(statement, binding)` pairs form each cycle). The report
+//! is written next to the existing manifests as
+//! `<chunk_id>/schedule.json`.
+
+#[path = "schedule_validator/report_schema.rs"]
+pub mod report_schema;
+
+pub use report_schema::*;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
@@ -37,6 +41,7 @@ use petgraph::graph::DiGraph;
 use petgraph::graphmap::DiGraphMap;
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
+use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -198,13 +203,30 @@ impl Schedule {
         self.logical_modules.get(idx.0)
     }
 
-    /// Run SCC analysis over the dep graph + compute assignment
-    /// recommendations for unowned bindings. Spec authors consume the
-    /// resulting report to (a) fix any cycles and (b) make implicit
-    /// assignments explicit.
+    pub fn owner_report_ids_for_bindings<'a>(
+        &self,
+        names: impl IntoIterator<Item = &'a str>,
+    ) -> Vec<String> {
+        let requested: BTreeSet<&str> = names.into_iter().collect();
+        self.owner_graph
+            .nodes
+            .values()
+            .filter(|node| {
+                node.declared
+                    .iter()
+                    .any(|binding| requested.contains(binding.as_str()))
+            })
+            .map(|node| node.id)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(owner_key)
+            .collect()
+    }
+
+    /// Run SCC analysis over the dep graph. Spec authors consume the
+    /// resulting report to fix any cycles.
     pub fn validate(&self) -> ScheduleReport {
         let mut report = validate_schedule(&self.dep_graph, &|id| self.module_name(id));
-        report.recommendations = build_recommendations(self);
         report.linker_order = self
             .linker_order
             .iter()
@@ -224,6 +246,7 @@ impl Schedule {
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
     pub ordinal: StatementOrdinal,
+    pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<BindingName>,
     pub reads_at_init: BTreeSet<BindingName>,
     /// Reads happening only inside lazy syntactic positions (function
@@ -366,19 +389,39 @@ pub fn analyze_chunk_facts(
     module: &Module,
     declared_pure: &BTreeSet<String>,
 ) -> Vec<StatementFacts> {
+    analyze_chunk_facts_with_source_locations(module, declared_pure, None, |_| None)
+}
+
+pub fn analyze_chunk_facts_with_source_locations<F>(
+    module: &Module,
+    declared_pure: &BTreeSet<String>,
+    source_path: Option<&str>,
+    mut line_range_for_span: F,
+) -> Vec<StatementFacts>
+where
+    F: FnMut(Span) -> Option<(usize, usize)>,
+{
     let body = split_comma_list_var_decls(&module.body);
     let shadowed = compute_shadowed_globals(&body);
     let graph = ChunkCodeGraph::build(&body, &shadowed, declared_pure);
     body.iter()
         .enumerate()
         .map(|(ordinal, item)| {
-            analyze_item(
+            let mut fact = analyze_item(
                 StatementOrdinal(ordinal),
                 item,
                 &shadowed,
                 declared_pure,
                 &graph,
-            )
+            );
+            fact.source_location = source_path.and_then(|source_path| {
+                line_range_for_span(item.span()).map(|(start_line, end_line)| SourceLocation {
+                    source_path: source_path.to_string(),
+                    start_line,
+                    end_line,
+                })
+            });
+            fact
         })
         .collect()
 }
@@ -805,6 +848,7 @@ fn analyze_item(
     let has_side_effect = item_has_side_effect(item, kind, shadowed, declared_pure, graph);
     StatementFacts {
         ordinal,
+        source_location: None,
         declared,
         reads_at_init: at_init.names,
         reads_lazy: lazy.names,
@@ -1719,6 +1763,7 @@ pub struct OwnerGraph {
 pub struct OwnerNode {
     pub id: OwnerId,
     pub statement_ordinal: StatementOrdinal,
+    pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<BindingName>,
     pub kind: StatementKind,
     pub has_side_effect: bool,
@@ -1868,6 +1913,7 @@ pub fn build_owner_graph(
             OwnerNode {
                 id,
                 statement_ordinal: stmt.ordinal,
+                source_location: stmt.source_location.clone(),
                 declared: stmt.declared.clone(),
                 kind: stmt.kind,
                 has_side_effect: stmt.has_side_effect,
@@ -1987,10 +2033,6 @@ where
 #[derive(Debug, Clone, Serialize)]
 pub struct ScheduleReport {
     pub cycles: Vec<CycleReport>,
-    /// One entry per binding the spec hasn't claimed but that is
-    /// referenced by at least one logical module. Spec authors
-    /// resolve each entry by copying a chosen owner into the spec.
-    pub recommendations: Vec<AssignmentRecommendation>,
     /// Topological linearization of `I ∪ S` rooted at the entry,
     /// dependency-first. Empty when the dep graph has cycles
     /// (validation rejects). Captured here so debug tooling can
@@ -2041,203 +2083,6 @@ pub struct CycleEdge {
     /// (`at_init_read` and `side_effect_order`) vs.
     /// inert-but-graph-present (`lazy_read`).
     pub kind: EdgeKind,
-}
-
-/// Spec author actionable: "binding X has no owner; here are the
-/// modules that read it, and which assignments are cycle-safe."
-#[derive(Debug, Clone, Serialize)]
-pub struct AssignmentRecommendation {
-    pub binding: BindingName,
-    pub candidates: Vec<RecommendationCandidate>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RecommendationCandidate {
-    pub module: String,
-    pub read_kind: RecommendationReadKind,
-    pub cycle_safe: bool,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RecommendationReadKind {
-    /// The candidate module reads this binding at-init (initializer
-    /// expression, extends-clause, computed key, etc.).
-    AtInit,
-    /// The candidate module reads this binding only inside lazy
-    /// positions (function/method bodies, instance class-field
-    /// initializers, getter/setter bodies). Contributes to the
-    /// imports graph `I` (the emit must carry the corresponding
-    /// `import` directive), but not to the at-init read sub-graph
-    /// `R`. Lazy-only candidates need the same SCC check as
-    /// at-init ones — see [`is_assignment_cycle_safe`].
-    LazyOnly,
-}
-
-/// Node-link JSON side output for downstream graph analysis.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphReport {
-    pub chunk_id: String,
-    pub nodes: Vec<OwnerGraphNodeReport>,
-    pub edges: Vec<OwnerGraphEdgeReport>,
-    pub quotient: OwnerGraphQuotientReport,
-    pub peelability: OwnerGraphPeelabilityReport,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphNodeReport {
-    pub id: String,
-    pub statement_ordinal: StatementOrdinal,
-    pub declared: Vec<BindingName>,
-    pub kind: StatementKind,
-    pub has_side_effect: bool,
-    pub destination: ModuleReportRef,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphEdgeReport {
-    pub id: String,
-    pub source: String,
-    pub target: String,
-    pub kind: EdgeKind,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub binding: Option<BindingName>,
-    pub statement_ordinal: StatementOrdinal,
-    pub constrains_realizability: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphQuotientReport {
-    pub nodes: Vec<ModuleReportRef>,
-    pub edges: Vec<QuotientEdgeReport>,
-    pub sccs: Vec<QuotientSccReport>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuotientEdgeReport {
-    pub id: String,
-    pub source: String,
-    pub target: String,
-    pub kinds: Vec<EdgeKind>,
-    pub owner_edge_ids: Vec<String>,
-    pub constraining_owner_edge_ids: Vec<String>,
-    pub reason_count: usize,
-    pub constrains_realizability: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuotientSccReport {
-    pub id: String,
-    pub modules: Vec<String>,
-    pub labels: Vec<String>,
-    pub is_cycle: bool,
-    pub realizable: bool,
-    pub module_edge_ids: Vec<String>,
-    pub constraining_module_edge_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphPeelabilityReport {
-    pub residual_destinations: Vec<ModuleReportRef>,
-    pub minimal_peel_sets: Vec<OwnerGraphPeelSetReport>,
-    pub residual_owner_horizon: Vec<ResidualOwnerPeelHorizonReport>,
-    pub evaluated_owner_sets: Vec<OwnerGraphPeelCandidateReport>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResidualOwnerPeelHorizonReport {
-    pub owner_id: String,
-    pub bindings: Vec<BindingName>,
-    pub status: ResidualOwnerPeelStatus,
-    pub peel_set_ids: Vec<String>,
-    pub companion_options: Vec<ResidualOwnerCompanionOptionReport>,
-    pub singleton_evaluation_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ResidualOwnerPeelStatus {
-    Direct,
-    WithCompanions,
-    Blocked,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResidualOwnerCompanionOptionReport {
-    pub peel_set_id: String,
-    pub companion_owner_ids: Vec<String>,
-    pub companion_bindings: Vec<BindingName>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphPeelCandidateReport {
-    pub id: String,
-    pub owner_set_kind: PeelCandidateKind,
-    pub status: PeelCandidateStatus,
-    pub owner_ids: Vec<String>,
-    pub bindings: Vec<BindingName>,
-    pub source_destination: ModuleReportRef,
-    pub hypothetical_destination: HypotheticalPeelDestinationReport,
-    pub residual_dependency_blockers: Vec<PeelBlockingResidualDependencyReport>,
-    pub cycle_blockers: Vec<PeelBlockingSccReport>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphPeelSetReport {
-    pub candidate_id: String,
-    pub owner_set_kind: PeelCandidateKind,
-    pub owner_ids: Vec<String>,
-    pub bindings: Vec<BindingName>,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeelCandidateKind {
-    SingleOwner,
-    OwnerPair,
-    OwnerClosure,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeelCandidateStatus {
-    PeelableNow,
-    BlockedCycle,
-    BlockedResidualDependency,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HypotheticalPeelDestinationReport {
-    pub id: String,
-    pub label: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PeelBlockingSccReport {
-    pub modules: Vec<String>,
-    pub labels: Vec<String>,
-    pub module_edge_ids: Vec<String>,
-    pub constraining_module_edge_ids: Vec<String>,
-    pub constraining_owner_edge_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PeelBlockingResidualDependencyReport {
-    pub destination: ModuleReportRef,
-    pub owner_edge_ids: Vec<String>,
-    pub read_bindings: Vec<BindingName>,
-    pub edge_kinds: Vec<EdgeKind>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModuleReportRef {
-    pub id: String,
-    pub label: String,
-    pub residual: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub index: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_file: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -2326,8 +2171,9 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
             .map(|node| OwnerGraphNodeReport {
                 id: owner_key(node.id),
                 statement_ordinal: node.statement_ordinal,
+                source_location: node.source_location.clone(),
                 declared: node.declared.iter().cloned().collect(),
-                kind: node.kind,
+                statement_kind: node.kind,
                 has_side_effect: node.has_side_effect,
                 destination: module_report_ref(schedule, node.destination),
             })
@@ -2338,9 +2184,10 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
                 id: edge.id.clone(),
                 source: owner_key(edge.from),
                 target: owner_key(edge.to),
-                kind: edge.reason.kind(),
+                edge_kind: edge.reason.kind(),
                 binding: edge.reason.binding().cloned(),
                 statement_ordinal: edge.reason.statement_ordinal(),
+                source_location: source_location(schedule, edge.reason.statement_ordinal()),
                 constrains_realizability: edge.reason.constrains_realizability(),
             })
             .collect(),
@@ -2386,6 +2233,16 @@ fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerEdgeEntry> {
             reason,
         })
         .collect()
+}
+
+fn source_location(
+    schedule: &Schedule,
+    statement_ordinal: StatementOrdinal,
+) -> Option<SourceLocation> {
+    schedule
+        .facts
+        .get(statement_ordinal.0)
+        .and_then(|fact| fact.source_location.clone())
 }
 
 fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
@@ -2457,7 +2314,7 @@ where
             id: format!("module_edge:{idx}"),
             source: module_key(from),
             target: module_key(to),
-            kinds: entry.kinds.into_iter().collect(),
+            edge_kinds: entry.kinds.into_iter().collect(),
             owner_edge_ids: entry.owner_edge_ids,
             constraining_owner_edge_ids: entry.constraining_owner_edge_ids,
             reason_count: entry.reason_count,
@@ -3513,7 +3370,6 @@ pub fn validate_schedule(
     }
     ScheduleReport {
         cycles,
-        recommendations: Vec::new(),
         linker_order: Vec::new(),
     }
 }
@@ -3667,21 +3523,6 @@ fn compute_realizability_cut(
     cut
 }
 
-/// Build the recommender side-output: for each binding declared in
-/// the chunk but not owned by any logical module, list the modules
-/// that read it, mark each candidate's `cycle_safe` flag.
-///
-/// Cycle-safety is checked by tentatively assigning the binding to
-/// the candidate, building the owner graph, quotienting it to
-/// `I ∪ S`, and looking for SCCs with at-init or side-effect-order
-/// cross edges. Lazy-only candidates also need this check, because
-/// lazy reads still emit `import` directives and can join an SCC
-/// that already contains a constraining edge.
-/// Project a `bindings` catalogue down to the `Owned` entries' owner
-/// map — what the dep-graph builder, recommender and cycle-safety
-/// check operate on. `Imported` bindings don't create at-init module
-/// dep edges; their resolution is via the source chunk, not via
-/// other logical modules.
 fn owned_view(bindings: &BTreeMap<BindingName, BindingKind>) -> BTreeMap<BindingName, ModuleId> {
     bindings
         .iter()
@@ -3690,103 +3531,6 @@ fn owned_view(bindings: &BTreeMap<BindingName, BindingKind>) -> BTreeMap<Binding
             BindingKind::Imported { .. } => None,
         })
         .collect()
-}
-
-fn build_recommendations(schedule: &Schedule) -> Vec<AssignmentRecommendation> {
-    let owned = owned_view(&schedule.bindings);
-    let declared: BTreeSet<BindingName> = schedule
-        .facts
-        .iter()
-        .flat_map(|f| f.declared.iter().cloned())
-        .collect();
-
-    let stmt_home = |stmt: &StatementFacts| -> ModuleId {
-        stmt.declared
-            .iter()
-            .filter_map(|name| owned.get(name).copied())
-            .next()
-            .unwrap_or(ModuleId::ResidualEntry)
-    };
-
-    let mut recs = Vec::new();
-    for name in &declared {
-        if owned.contains_key(name) {
-            continue;
-        }
-        let mut at_init_modules = BTreeSet::<ModuleId>::new();
-        let mut any_modules = BTreeSet::<ModuleId>::new();
-        for stmt in &schedule.facts {
-            let home = stmt_home(stmt);
-            if stmt.reads_at_init.contains(name) {
-                at_init_modules.insert(home);
-            }
-            if stmt.reads_at_init.contains(name) || stmt.reads_lazy.contains(name) {
-                any_modules.insert(home);
-            }
-        }
-        // A reader from ResidualEntry doesn't introduce a meaningful
-        // candidate — assigning the binding to ResidualEntry leaves
-        // it where it already is.
-        at_init_modules.remove(&ModuleId::ResidualEntry);
-        any_modules.remove(&ModuleId::ResidualEntry);
-
-        let mut candidates = Vec::new();
-        for &m in &at_init_modules {
-            let cycle_safe = is_assignment_cycle_safe(schedule, name, m);
-            candidates.push(RecommendationCandidate {
-                module: schedule.module_name(m),
-                read_kind: RecommendationReadKind::AtInit,
-                cycle_safe,
-            });
-        }
-        for m in any_modules.difference(&at_init_modules) {
-            // Lazy reads still emit `import` directives — they
-            // contribute to `I` even when they're absent from `R`.
-            // So lazy-only candidates need the same SCC check as
-            // at-init ones; they are not free of cycle risk.
-            let cycle_safe = is_assignment_cycle_safe(schedule, name, *m);
-            candidates.push(RecommendationCandidate {
-                module: schedule.module_name(*m),
-                read_kind: RecommendationReadKind::LazyOnly,
-                cycle_safe,
-            });
-        }
-        if !candidates.is_empty() {
-            recs.push(AssignmentRecommendation {
-                binding: name.clone(),
-                candidates,
-            });
-        }
-    }
-    recs
-}
-
-/// Tentatively assign `binding → candidate`, rebuild the dep graph,
-/// and check that no realizability-violating cycle appears. Mirrors
-/// `validate_schedule`'s gate: an SCC is unsafe iff it contains a
-/// cross-module edge that constrains evaluation order — an at-init
-/// read (`R`) or a side-effect ordering edge (`S`).
-fn is_assignment_cycle_safe(
-    schedule: &Schedule,
-    binding: &BindingName,
-    candidate: ModuleId,
-) -> bool {
-    let mut augmented = owned_view(&schedule.bindings);
-    augmented.insert(binding.clone(), candidate);
-    let owner_graph = build_owner_graph(&schedule.facts, &augmented);
-    let graph = quotient_owner_graph(&owner_graph);
-    let sccs = tarjan_scc(&graph.graph);
-    !sccs.iter().any(|scc| {
-        let is_cycle =
-            scc.len() > 1 || (scc.len() == 1 && graph.graph.contains_edge(scc[0], scc[0]));
-        if !is_cycle {
-            return false;
-        }
-        scc.iter().any(|&from| {
-            scc.iter()
-                .any(|&to| from != to && graph.has_realizability_constraining_edge(from, to))
-        })
-    })
 }
 
 /// Topological linearization of the dep graph, dependency-first.
@@ -4324,97 +4068,6 @@ mod tests {
                 }),
             "no pair should be reported as peelable for a three-owner cycle: {:#?}",
             report.peelability,
-        );
-    }
-
-    #[test]
-    fn lazy_only_read_yields_lazy_only_candidate() {
-        // mod_0 owns helper; helper's body lazily reads X. X is unowned.
-        let schedule = schedule_for(
-            "function helper() { return X; } const X = 42;",
-            &[("helper", logical(0))],
-        );
-        let report = schedule.validate();
-        let rec = report
-            .recommendations
-            .iter()
-            .find(|r| r.binding == "X")
-            .expect("expected a recommendation for X");
-        assert_eq!(rec.candidates.len(), 1);
-        assert_eq!(rec.candidates[0].module, "mod_0");
-        assert_eq!(
-            rec.candidates[0].read_kind,
-            RecommendationReadKind::LazyOnly
-        );
-        assert!(
-            rec.candidates[0].cycle_safe,
-            "lazy-only candidates are always cycle-safe"
-        );
-    }
-
-    #[test]
-    fn at_init_read_acyclic_is_cycle_safe() {
-        // mod_0 owns A; A reads X at-init. mod_1 owns B; B reads A. X
-        // is unowned. Assigning X → mod_0 is cycle-safe.
-        let schedule = schedule_for(
-            "const A = X + 1; const B = A + 1; const X = 42;",
-            &[("A", logical(0)), ("B", logical(1))],
-        );
-        let report = schedule.validate();
-        let rec = report
-            .recommendations
-            .iter()
-            .find(|r| r.binding == "X")
-            .expect("expected a recommendation for X");
-        let mod_0 = rec
-            .candidates
-            .iter()
-            .find(|c| c.module == "mod_0")
-            .expect("mod_0 should be an at-init candidate (it reads X)");
-        assert_eq!(mod_0.read_kind, RecommendationReadKind::AtInit);
-        assert!(mod_0.cycle_safe, "X → mod_0 should be cycle-safe");
-    }
-
-    #[test]
-    fn at_init_read_creating_cycle_is_not_cycle_safe() {
-        // mod_0 owns A; A reads X at-init. mod_1 owns B; B reads A.
-        // X has its own statement reading B at-init. Assigning X →
-        // mod_0 creates the cycle mod_0 ↔ mod_1 (X's body would now
-        // run from mod_0 and read mod_1's B).
-        let schedule = schedule_for(
-            "const A = X + 1; const B = A + 1; const X = B + 1;",
-            &[("A", logical(0)), ("B", logical(1))],
-        );
-        let report = schedule.validate();
-        let rec = report
-            .recommendations
-            .iter()
-            .find(|r| r.binding == "X")
-            .expect("expected a recommendation for X");
-        let mod_0 = rec
-            .candidates
-            .iter()
-            .find(|c| c.module == "mod_0")
-            .expect("mod_0 reads X so should appear");
-        assert_eq!(mod_0.read_kind, RecommendationReadKind::AtInit);
-        assert!(
-            !mod_0.cycle_safe,
-            "X → mod_0 closes a cycle and must be flagged"
-        );
-    }
-
-    #[test]
-    fn owned_bindings_get_no_recommendation() {
-        // Every binding has an explicit owner.
-        let schedule = schedule_for(
-            "const A = 1; const B = A + 1;",
-            &[("A", logical(0)), ("B", logical(1))],
-        );
-        let report = schedule.validate();
-        assert!(
-            report.recommendations.is_empty(),
-            "fully-explicit spec should produce no recommendations, got {:?}",
-            report.recommendations
         );
     }
 

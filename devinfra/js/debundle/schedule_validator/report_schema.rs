@@ -1,0 +1,180 @@
+use serde::{Deserialize, Serialize};
+
+use super::{BindingName, EdgeKind, StatementKind, StatementOrdinal};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceLocation {
+    pub source_path: String,
+    pub start_line: usize,
+    pub end_line: usize,
+}
+
+/// Node-link JSON side output for downstream graph analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnerGraphReport {
+    pub chunk_id: String,
+    pub nodes: Vec<OwnerGraphNodeReport>,
+    pub edges: Vec<OwnerGraphEdgeReport>,
+    pub quotient: OwnerGraphQuotientReport,
+    pub peelability: OwnerGraphPeelabilityReport,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnerGraphNodeReport {
+    pub id: String,
+    pub statement_ordinal: StatementOrdinal,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+    pub declared: Vec<BindingName>,
+    pub statement_kind: StatementKind,
+    pub has_side_effect: bool,
+    pub destination: ModuleReportRef,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnerGraphEdgeReport {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    pub edge_kind: EdgeKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding: Option<BindingName>,
+    pub statement_ordinal: StatementOrdinal,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+    pub constrains_realizability: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnerGraphQuotientReport {
+    pub nodes: Vec<ModuleReportRef>,
+    pub edges: Vec<QuotientEdgeReport>,
+    pub sccs: Vec<QuotientSccReport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuotientEdgeReport {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    pub edge_kinds: Vec<EdgeKind>,
+    pub owner_edge_ids: Vec<String>,
+    pub constraining_owner_edge_ids: Vec<String>,
+    pub reason_count: usize,
+    pub constrains_realizability: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuotientSccReport {
+    pub id: String,
+    pub modules: Vec<String>,
+    pub labels: Vec<String>,
+    pub is_cycle: bool,
+    pub realizable: bool,
+    pub module_edge_ids: Vec<String>,
+    pub constraining_module_edge_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnerGraphPeelabilityReport {
+    pub residual_destinations: Vec<ModuleReportRef>,
+    pub minimal_peel_sets: Vec<OwnerGraphPeelSetReport>,
+    pub residual_owner_horizon: Vec<ResidualOwnerPeelHorizonReport>,
+    pub evaluated_owner_sets: Vec<OwnerGraphPeelCandidateReport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResidualOwnerPeelHorizonReport {
+    pub owner_id: String,
+    pub bindings: Vec<BindingName>,
+    pub status: ResidualOwnerPeelStatus,
+    pub peel_set_ids: Vec<String>,
+    pub companion_options: Vec<ResidualOwnerCompanionOptionReport>,
+    pub singleton_evaluation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResidualOwnerPeelStatus {
+    Direct,
+    WithCompanions,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResidualOwnerCompanionOptionReport {
+    pub peel_set_id: String,
+    pub companion_owner_ids: Vec<String>,
+    pub companion_bindings: Vec<BindingName>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnerGraphPeelCandidateReport {
+    pub id: String,
+    pub owner_set_kind: PeelCandidateKind,
+    pub status: PeelCandidateStatus,
+    pub owner_ids: Vec<String>,
+    pub bindings: Vec<BindingName>,
+    pub source_destination: ModuleReportRef,
+    pub hypothetical_destination: HypotheticalPeelDestinationReport,
+    pub residual_dependency_blockers: Vec<PeelBlockingResidualDependencyReport>,
+    pub cycle_blockers: Vec<PeelBlockingSccReport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnerGraphPeelSetReport {
+    pub candidate_id: String,
+    pub owner_set_kind: PeelCandidateKind,
+    pub owner_ids: Vec<String>,
+    pub bindings: Vec<BindingName>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeelCandidateKind {
+    SingleOwner,
+    OwnerPair,
+    OwnerClosure,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeelCandidateStatus {
+    PeelableNow,
+    BlockedCycle,
+    BlockedResidualDependency,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HypotheticalPeelDestinationReport {
+    pub id: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeelBlockingSccReport {
+    pub modules: Vec<String>,
+    pub labels: Vec<String>,
+    pub module_edge_ids: Vec<String>,
+    pub constraining_module_edge_ids: Vec<String>,
+    pub constraining_owner_edge_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeelBlockingResidualDependencyReport {
+    pub destination: ModuleReportRef,
+    pub owner_edge_ids: Vec<String>,
+    pub read_bindings: Vec<BindingName>,
+    pub edge_kinds: Vec<EdgeKind>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleReportRef {
+    pub id: String,
+    pub label: String,
+    pub residual: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_file: Option<String>,
+}

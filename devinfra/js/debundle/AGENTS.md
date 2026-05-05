@@ -32,8 +32,8 @@ Three things that should follow from that:
   rename targets / chunk seams; the spec author reviews and commits
   decisions explicitly.
 - **Heuristics surface signals, the spec makes decisions.** Heuristic
-  outputs are recommendations only. They never make extraction or
-  rename decisions on their own — the spec language extends to
+  outputs are diagnostics and candidate sets only. They never make
+  extraction or rename decisions on their own — the spec language extends to
   consume them (e.g. "this React component scope, except symbols
   X and Y") so reviewers can see and adjust what gets applied.
 - **The debundler is itself a living target.** When a new bundle

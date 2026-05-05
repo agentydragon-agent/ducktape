@@ -135,6 +135,7 @@ pub struct ChunkLogicalModulesSummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SelectedModuleLowering {
+    pub binding_names: Vec<String>,
     pub chunk_id: String,
     pub exported_names: Vec<String>,
     pub file: String,

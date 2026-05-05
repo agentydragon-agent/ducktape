@@ -68,6 +68,18 @@ pub fn line_for_span(parsed: &ParsedJsModule, span: swc_common::Span) -> Option<
     Some(parsed.cm.lookup_char_pos(span.lo()).line)
 }
 
+pub fn line_range_for_span(
+    parsed: &ParsedJsModule,
+    span: swc_common::Span,
+) -> Option<(usize, usize)> {
+    if span.is_dummy() {
+        return None;
+    }
+    let start = parsed.cm.lookup_char_pos(span.lo()).line;
+    let end = parsed.cm.lookup_char_pos(span.hi()).line;
+    Some((start, end))
+}
+
 pub fn str_value(value: &Str) -> String {
     value.value.to_string_lossy().to_string()
 }
