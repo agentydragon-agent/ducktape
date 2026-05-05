@@ -19,6 +19,7 @@ spec:
   dependsOn:
     - name: tofu-controller
     - name: gaffer-private
+    - name: reflector
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform

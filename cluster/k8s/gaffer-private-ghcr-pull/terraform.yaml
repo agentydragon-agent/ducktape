@@ -4,7 +4,7 @@ metadata:
   name: gaffer-private-ghcr-pull
   namespace: flux-system
   annotations:
-    description: "Synthesizes dockerconfigjson Secrets (gaffer-ghcr-pull-flux in flux-system, gaffer-ghcr-pull in house-vallejo) from the PAT in `github-pat-ghcr-read`. Sourced from flux-system; runs after the gaffer-private bridge Kustomization creates the house-vallejo namespace."
+    description: "Synthesizes the `gaffer-ghcr-pull` dockerconfigjson Secret in flux-system from the PAT in `github-pat-ghcr-read`. Reflector mirrors it into each gaffer-private consumer namespace. Sourced from flux-system; runs after the gaffer-private bridge Kustomization creates the consumer namespaces."
 spec:
   interval: 15m
   refreshBeforeApply: true

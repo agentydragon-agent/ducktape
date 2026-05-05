@@ -1,16 +1,10 @@
 # GHCR pull-secret automation for gaffer-private private images.
 #
-# Reads a SOPS-deployed read:packages PAT and synthesizes the
-# `kubernetes.io/dockerconfigjson` Secret in two namespaces:
-#
-#   - `gaffer-ghcr-pull-flux` in flux-system (Flux ImageRepository
-#     scanning of ghcr.io/agentydragon/<gaffer images>).
-#   - `gaffer-ghcr-pull` in house-vallejo (kubelet pulls the image).
-#
-# The two-namespace shape avoids depending on the Reflector controller
-# and keeps the dependency graph simple: this TF module dependsOn the
-# `gaffer-private` Kustomization (which creates the house-vallejo
-# namespace).
+# Reads a SOPS-deployed read:packages PAT and synthesizes a single
+# `kubernetes.io/dockerconfigjson` Secret named `gaffer-ghcr-pull` in
+# `flux-system`. Reflector mirrors it into each consumer namespace
+# (auto-reflection annotations below). Adding a new gaffer-private app
+# only needs the namespace name added to the auto-namespaces list.
 
 data "kubernetes_secret" "ghcr_pat" {
   metadata {
@@ -27,28 +21,28 @@ locals {
       }
     }
   })
+
+  # Namespaces that need to pull gaffer-private images. Reflector
+  # auto-mirrors the source secret into each of these as
+  # `gaffer-ghcr-pull`. Add a new namespace here when wiring up a new
+  # gaffer-private app.
+  consumer_namespaces = [
+    "house-vallejo",
+    "thrive-scraper",
+  ]
 }
 
-resource "kubernetes_secret" "flux_pull" {
-  metadata {
-    name      = "gaffer-ghcr-pull-flux"
-    namespace = "flux-system"
-    annotations = {
-      description = "Read-only GHCR pull credential for Flux ImageRepository scanning of gaffer-private's private images."
-    }
-  }
-  type = "kubernetes.io/dockerconfigjson"
-  data = {
-    ".dockerconfigjson" = local.dockerconfigjson
-  }
-}
-
-resource "kubernetes_secret" "house_vallejo_pull" {
+resource "kubernetes_secret" "ghcr_pull" {
   metadata {
     name      = "gaffer-ghcr-pull"
-    namespace = "house-vallejo"
+    namespace = "flux-system"
     annotations = {
-      description = "Read-only GHCR pull credential consumed by the house-vallejo Deployment's imagePullSecrets."
+      description = "Read-only GHCR pull credential for gaffer-private's private images. Used directly by Flux ImageRepository scanning; reflected by Reflector into each consumer namespace as `gaffer-ghcr-pull` for kubelet image pulls."
+
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = join(",", local.consumer_namespaces)
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = join(",", local.consumer_namespaces)
     }
   }
   type = "kubernetes.io/dockerconfigjson"
