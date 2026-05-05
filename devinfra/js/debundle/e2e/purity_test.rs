@@ -57,7 +57,7 @@
 //!
 //! # Spec annotation shape
 //!
-//! ```jsonc
+//! ```yaml
 //! {
 //!   "name": "defineComponent",
 //!   "selector": { "binding": { "name": "B" } },

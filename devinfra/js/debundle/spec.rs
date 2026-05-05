@@ -1,4 +1,4 @@
-//! Typed deserialisation surface for `js.ast_transform_spec` JSONC files.
+//! Typed deserialisation surface for `js.ast_transform_spec` YAML files.
 //!
 //! Three declarative top-level maps describe what the spec wants applied:
 //!

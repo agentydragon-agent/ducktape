@@ -15,6 +15,7 @@ rust_library(
     deps = [
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_parser",
@@ -38,6 +39,7 @@ rust_library(
             "//devinfra/js/debundle:schedule_validator",
             "@crates//:serde",
             "@crates//:serde_json",
+            "@crates//:serde_yaml",
             "@crates//:swc_common",
             "@crates//:swc_ecma_ast",
             "@crates//:swc_ecma_parser",

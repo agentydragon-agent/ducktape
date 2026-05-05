@@ -1,6 +1,6 @@
 //! Black-box harness for the `debundle` binary.
 //!
-//! Drives the CLI through a JSONC spec and asserts on the emitted file
+//! Drives the CLI through a YAML spec and asserts on the emitted file
 //! tree by reading files and re-running them under `node`.
 
 use runfiles::{Runfiles, rlocation};
@@ -215,9 +215,9 @@ pub struct RejectedFixture {
 
 pub fn run_logical_modules_e2e_fixture(opts: FixtureOpts<'_>) -> Fixture {
     let setup = setup_fixture(&opts);
-    let spec_path = setup.out_root.join("transform_spec.jsonc");
+    let spec_path = setup.out_root.join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
-    write_json_file(&spec_path, &spec);
+    write_yaml_file(&spec_path, &spec);
 
     let result = spawn_transform(&spec_path);
     assert!(
@@ -301,9 +301,9 @@ pub fn expect_logical_modules_e2e_rejection_containing_all(
 
 pub fn run_logical_modules_e2e_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     let setup = setup_fixture(&opts);
-    let spec_path = setup.out_root.join("transform_spec.jsonc");
+    let spec_path = setup.out_root.join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
-    write_json_file(&spec_path, &spec);
+    write_yaml_file(&spec_path, &spec);
 
     let result = spawn_transform(&spec_path);
     assert!(
@@ -583,12 +583,8 @@ pub fn write_text_file(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
 
-pub fn write_json_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
-    fs::write(
-        path,
-        format!("{}\n", serde_json::to_string_pretty(value).unwrap()),
-    )
-    .unwrap();
+pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
+    fs::write(path, format!("{}\n", serde_yaml::to_string(value).unwrap())).unwrap();
 }
 
 pub fn debundler_path() -> PathBuf {

@@ -2,7 +2,7 @@
 //! re-exports a synthetic upstream package, runs the swap pipeline, and
 //! asserts the generated wrapper.
 
-use debundle_e2e_support::{CommandResult, run_debundler, write_json_file, write_text_file};
+use debundle_e2e_support::{CommandResult, run_debundler, write_text_file, write_yaml_file};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -169,7 +169,7 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
     );
     write_text_file(&package_root.join(SUBPATH), upstream_source);
 
-    let spec_path = root.path().join("transform_spec.jsonc");
+    let spec_path = root.path().join("transform_spec.yaml");
     let spec = build_named_from_module_default_spec(BuildSpecArgs {
         chunk_path: CHUNK_PATH,
         js_list_path: &js_list_path,
@@ -181,7 +181,7 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
         package_version: PACKAGE_VERSION,
         subpath: SUBPATH,
     });
-    write_json_file(&spec_path, &spec);
+    write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
 
@@ -387,7 +387,7 @@ fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> Vend
     );
     write_text_file(&package_root.join(SUBPATH), args.upstream_source);
 
-    let spec_path = root.path().join("transform_spec.jsonc");
+    let spec_path = root.path().join("transform_spec.yaml");
     let spec = build_named_from_default_spec(BuildSpecArgs {
         chunk_path: CHUNK_PATH,
         js_list_path: &js_list_path,
@@ -399,7 +399,7 @@ fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> Vend
         package_version: PACKAGE_VERSION,
         subpath: SUBPATH,
     });
-    write_json_file(&spec_path, &spec);
+    write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
 

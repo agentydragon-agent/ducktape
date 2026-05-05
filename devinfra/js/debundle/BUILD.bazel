@@ -234,9 +234,9 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:humantime",
-        "@crates//:json_comments",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
         "@rules_rust//tools/runfiles",
     ],
 )

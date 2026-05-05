@@ -37,10 +37,10 @@ pub struct TransformCli {
     about = "Run the debundle transform pipeline described by --spec.",
     long_about = "Runs the transform pipeline described by the spec. Pipeline stages \
                   dispatch directly to registered functions; this target does not invoke \
-                  Bazel from inside the pipeline. Specs are parsed as JSON with comments."
+                  Bazel from inside the pipeline. Specs are parsed as YAML."
 )]
 pub struct TransformArgs {
-    /// Path to the transform spec (JSON with comments).
+    /// Path to the transform spec YAML.
     #[arg(long)]
     pub spec: PathBuf,
     /// Map a package name to its source directory: `<pkg>=<dir>`. May be repeated.
@@ -317,8 +317,8 @@ fn run_step(
 
 fn load_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
     let raw = fs::read(spec_path).with_context(|| format!("reading {}", spec_path.display()))?;
-    serde_json::from_reader(json_comments::StripComments::new(raw.as_slice()))
-        .with_context(|| format!("Failed to parse {} as JSONC", spec_path.display()))
+    serde_yaml::from_slice(&raw)
+        .with_context(|| format!("Failed to parse {} as YAML", spec_path.display()))
 }
 
 fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
@@ -391,7 +391,7 @@ mod tests {
         let args = TransformArgs::try_parse_from([
             "debundle",
             "--spec",
-            "spec.jsonc",
+            "spec.yaml",
             "--package-root",
             "pkg=/tmp/pkg",
             "--packages-root",
@@ -399,7 +399,7 @@ mod tests {
         ])
         .expect("parse cli");
         let cli = args.resolve();
-        assert_eq!(cli.spec_path, PathBuf::from("spec.jsonc"));
+        assert_eq!(cli.spec_path, PathBuf::from("spec.yaml"));
         assert_eq!(
             cli.package_roots.get("pkg"),
             Some(&PathBuf::from("/tmp/pkg"))
@@ -449,10 +449,10 @@ mod tests {
                 entry_points: AssetSummaryEntryPoints { html: "index.html" },
             })?,
         )?;
-        let spec_path = root.join("transform-spec.jsonc");
+        let spec_path = root.join("transform-spec.yaml");
         fs::write(
             &spec_path,
-            serde_json::to_string_pretty(&PipelineSpecFixture {
+            serde_yaml::to_string(&PipelineSpecFixture {
                 inputs: PipelineSpecInputs {
                     input_root: &snapshot,
                     js_list_path: &js_list_path,

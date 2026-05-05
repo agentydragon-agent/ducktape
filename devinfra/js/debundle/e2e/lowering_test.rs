@@ -1,6 +1,6 @@
 //! End-to-end behavior-preservation tests for the debundler.
 //!
-//! Drives the `debundle` CLI through a JSONC spec and asserts on the
+//! Drives the `debundle` CLI through a YAML spec and asserts on the
 //! emitted file tree.
 
 use debundle_e2e_support::*;

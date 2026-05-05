@@ -13,7 +13,7 @@ load("@bazel_skylib//lib:shell.bzl", "shell")
 
 def _debundle_pipeline_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
-    spec = ctx.actions.declare_file(ctx.label.name + ".spec.jsonc")
+    spec = ctx.actions.declare_file(ctx.label.name + ".spec.yaml")
     bin_dir = ctx.bin_dir.path
 
     # Generate the spec. The js_binary chdirs into BAZEL_BINDIR before
@@ -82,7 +82,7 @@ def _debundle_pipeline_impl(ctx):
 
     # Default output is just the tree artifact so consumers (and shell-arg
     # `$(rlocationpath ...)` expansion) get a single file label. The spec
-    # JSON is exposed via the `spec` output group for ad-hoc inspection.
+    # YAML is exposed via the `spec` output group for ad-hoc inspection.
     return [
         DefaultInfo(files = depset([out_dir])),
         OutputGroupInfo(spec = depset([spec])),

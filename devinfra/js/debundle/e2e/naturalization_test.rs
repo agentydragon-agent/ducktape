@@ -1,6 +1,6 @@
 //! Naturalization heuristics: lowered modules should rename scrambled
 //! destructured/aliased identifiers to the readable property names that
-//! surround them. Black-box: runs `debundle` with a JSONC spec and
+//! surround them. Black-box: runs `debundle` with a YAML spec and
 //! substring-matches the emitted module file.
 
 use debundle_e2e_support::*;
