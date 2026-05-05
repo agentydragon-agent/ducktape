@@ -2565,7 +2565,15 @@ fn write_chunk_report_json<T: Serialize>(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, serde_json::to_string_pretty(value)? + "\n")?;
+    let body = if filename == "owner_graph.json" {
+        // This side output is large enough on real app chunks that pretty
+        // printing meaningfully affects local and remote test artifact size.
+        // Keep small human-first reports pretty; keep the graph jq-first.
+        serde_json::to_string(value)?
+    } else {
+        serde_json::to_string_pretty(value)?
+    };
+    fs::write(path, body + "\n")?;
     Ok(())
 }
 
