@@ -256,13 +256,21 @@ fn new_url_expr(source: String) -> Expr {
             },
             ExprOrSpread {
                 spread: None,
-                expr: Box::new(Expr::MetaProp(MetaPropExpr {
-                    span: DUMMY_SP,
-                    kind: MetaPropKind::ImportMeta,
-                })),
+                expr: Box::new(import_meta_url_expr()),
             },
         ]),
         type_args: None,
+    })
+}
+
+fn import_meta_url_expr() -> Expr {
+    Expr::Member(MemberExpr {
+        span: DUMMY_SP,
+        obj: Box::new(Expr::MetaProp(MetaPropExpr {
+            span: DUMMY_SP,
+            kind: MetaPropKind::ImportMeta,
+        })),
+        prop: MemberProp::Ident(IdentName::new("url".into(), DUMMY_SP)),
     })
 }
 
@@ -272,4 +280,32 @@ fn posix_dirname(path: &str) -> String {
         .and_then(|parent| parent.to_str())
         .unwrap_or("")
         .replace('\\', "/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_url_rewrite_uses_import_meta_url_as_base() {
+        let Expr::New(new_expr) = new_url_expr("../worker.js".to_string()) else {
+            panic!("expected new URL expression");
+        };
+        let args = new_expr.args.expect("new URL args");
+        assert_eq!(args.len(), 2);
+        let Expr::Member(member) = &*args[1].expr else {
+            panic!("expected import.meta.url member expression");
+        };
+        assert!(matches!(
+            &*member.obj,
+            Expr::MetaProp(MetaPropExpr {
+                kind: MetaPropKind::ImportMeta,
+                ..
+            })
+        ));
+        let MemberProp::Ident(prop) = &member.prop else {
+            panic!("expected ident member property");
+        };
+        assert_eq!(prop.sym.as_ref(), "url");
+    }
 }

@@ -1563,6 +1563,20 @@ impl VisitMut for IdentifierRenamer {
         }
     }
 
+    fn visit_mut_import_named_specifier(&mut self, spec: &mut ImportNamedSpecifier) {
+        let original_local = spec.local.sym.to_string();
+        let Some(to) = self.renames.get(&original_local) else {
+            return;
+        };
+        if spec.imported.is_none() {
+            spec.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                original_local.into(),
+                DUMMY_SP,
+            )));
+        }
+        spec.local.sym = to.clone().into();
+    }
+
     fn visit_mut_prop_name(&mut self, prop_name: &mut PropName) {
         if let PropName::Computed(computed) = prop_name {
             computed.visit_mut_children_with(self);

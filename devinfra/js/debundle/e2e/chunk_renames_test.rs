@@ -85,3 +85,51 @@ export { x };
         &["let x =", "console.log(x)"],
     );
 }
+
+#[test]
+fn chunk_renames_preserve_named_import_exported_names() {
+    let opts = FixtureOpts {
+        source: r#"import { x as importedThing, y } from "../vendor/entry.js";
+let x = "local";
+console.log(x, importedThing, y);
+export { x };
+"#,
+        logical_modules: vec![],
+        residual: None,
+        chunk_renames: Some(json!({
+            "id": "chunk_renames__static_app",
+            "members": [
+                {
+                    "name": "payload",
+                    "selector": { "binding": { "name": "x" } },
+                },
+            ],
+        })),
+        chunk_id: "static/app",
+        include_residual: false,
+        extra_files: &[(
+            "static/vendor/entry.js",
+            r#"export const x = "dep-x";
+export const y = "dep-y";
+"#,
+        )],
+    };
+    let fixture = run_logical_modules_e2e_fixture(opts);
+
+    assert_entry_output(&fixture, "local dep-x dep-y\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &[
+            r#"import { x as importedThing, y } from "../vendor/entry.js";"#,
+            "let payload =",
+            "console.log(payload, importedThing, y)",
+            "export { payload as x }",
+        ],
+        &[
+            r#"import { payload as importedThing"#,
+            "let x =",
+            "console.log(x, importedThing, y)",
+        ],
+    );
+}

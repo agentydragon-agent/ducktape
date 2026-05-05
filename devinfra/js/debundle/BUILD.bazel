@@ -67,6 +67,12 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "rewrite_specifiers_test",
+    crate = ":rewrite_specifiers",
+    edition = "2024",
+)
+
 rust_library(
     name = "spec",
     srcs = ["spec.rs"],
