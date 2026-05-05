@@ -8,7 +8,7 @@ use clap::Parser;
 use runfiles::{Runfiles, rlocation};
 use serde::{Deserialize, Serialize};
 
-use artifact::{JsPipelineArtifact, compute_js_asts, load_js_chunks};
+use artifact::{compute_js_asts, load_js_chunks};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
 use normalize::normalize_js_chunks;
@@ -115,22 +115,12 @@ pub enum PipelineStage {
 }
 
 impl PipelineStage {
-    fn label(self) -> &'static str {
-        match self {
-            Self::RewriteChunkEntrySpecifiers => "rewrite_chunk_entry_specifiers",
-            Self::ApplyVendorAnnotations => "apply_vendor_annotations",
-            Self::RenameVendorExports => "rename_vendor_exports",
-            Self::SwapVendorChunks => "swap_vendor_chunks",
-            Self::MaterializeLogicalModules => "materialize_logical_modules",
-            Self::WriteJsTree => "write_js_tree",
-            Self::EmitBrowserHarness => "emit_browser_harness",
+    fn report_name(self) -> String {
+        match serde_json::to_value(self).expect("PipelineStage serializes as a string") {
+            serde_json::Value::String(name) => name,
+            _ => unreachable!("PipelineStage unit enum should serialize as a string"),
         }
     }
-}
-
-#[derive(Default)]
-struct TransformState {
-    artifact: JsPipelineArtifact,
 }
 
 /// Resolve a path through Bazel runfiles when present, otherwise pass through.
@@ -165,7 +155,7 @@ pub fn render_transform_summary(summary: &TransformRunSummary) -> String {
     for step in &summary.steps {
         out.push_str(&format!(
             "- {} ({})\n",
-            step.stage.label(),
+            step.stage.report_name(),
             humantime::format_duration(step.duration),
         ));
     }
@@ -176,19 +166,16 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     let spec = load_transform_spec(&cli.spec_path)?;
     validate_transform_spec(&spec)?;
     let started = Instant::now();
-    let mut state = TransformState::default();
-    let (artifact, _load_manifest) =
+    let (mut artifact, _load_manifest) =
         load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
-    state.artifact = artifact;
-    compute_js_asts(&mut state.artifact, true)?;
-    let (artifact, _normalize_manifest) = normalize_js_chunks(std::mem::take(&mut state.artifact))?;
-    state.artifact = artifact;
+    compute_js_asts(&mut artifact, true)?;
+    let (mut artifact, _normalize_manifest) = normalize_js_chunks(artifact)?;
     let mut steps = Vec::new();
 
     run_step(
         &mut steps,
         PipelineStage::RewriteChunkEntrySpecifiers,
-        || rewrite_chunk_entry_specifiers(&mut state.artifact).map(|_| ()),
+        || rewrite_chunk_entry_specifiers(&mut artifact).map(|_| ()),
     )?;
 
     // Vendor stages: each is internally filtered by `level`, so it's
@@ -197,7 +184,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     // to no-ops when no entry has the right level.
     if !spec.vendor.is_empty() {
         run_step(&mut steps, PipelineStage::ApplyVendorAnnotations, || {
-            apply_vendor_annotations(&state.artifact, &spec.vendor).map(|_| ())
+            apply_vendor_annotations(&artifact, &spec.vendor).map(|_| ())
         })?;
         if spec
             .vendor
@@ -205,7 +192,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             .any(|m| matches!(m.level, VendorLevel::BoundaryRename | VendorLevel::Swap(_)))
         {
             run_step(&mut steps, PipelineStage::RenameVendorExports, || {
-                rename_vendor_exports(&mut state.artifact, &spec.vendor).map(|_| ())
+                rename_vendor_exports(&mut artifact, &spec.vendor).map(|_| ())
             })?;
         }
         if spec
@@ -220,7 +207,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             } = spec.swap_vendor_chunks.clone();
             run_step(&mut steps, PipelineStage::SwapVendorChunks, || {
                 swap_vendor_chunks(
-                    &mut state.artifact,
+                    &mut artifact,
                     &spec.vendor,
                     SwapVendorOptions {
                         package_roots: &cli.package_roots,
@@ -255,7 +242,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         } = spec.materialize_logical_modules.clone();
         run_step(&mut steps, PipelineStage::MaterializeLogicalModules, || {
             materialize_logical_modules(
-                &mut state.artifact,
+                &mut artifact,
                 &spec.logical_modules,
                 &spec.residual_modules,
                 &spec.chunk_renames,
@@ -277,7 +264,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         let out_dir = cfg.out_dir.clone();
         let force = cfg.force;
         run_step(&mut steps, PipelineStage::WriteJsTree, || {
-            write_js_tree(&state.artifact, &out_dir, force).map(|_| ())
+            write_js_tree(&artifact, &out_dir, force).map(|_| ())
         })?;
     }
 
@@ -289,7 +276,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             snapshot_root: cfg.snapshot_root.clone(),
         };
         run_step(&mut steps, PipelineStage::EmitBrowserHarness, || {
-            emit_browser_harness(&state.artifact, &opts)?;
+            emit_browser_harness(&artifact, &opts)?;
             Ok(())
         })?;
     }
@@ -473,6 +460,9 @@ mod tests {
         })?;
 
         assert_eq!(summary.steps.len(), 2);
+        let rendered_summary = render_transform_summary(&summary);
+        assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
+        assert!(rendered_summary.contains("- emit_browser_harness"));
         assert!(out.join("bootstrap.js").exists());
         assert!(out.join("manifest.json").exists());
         let entry = fs::read_to_string(out.join("static/index-DuckMock/entry.js"))?;

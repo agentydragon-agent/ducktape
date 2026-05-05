@@ -1499,10 +1499,18 @@ and `owner_y`, then re-run quotient validation."
 
 ## Architecture
 
-The transform is a fixed data flow over a shared `JsPipelineArtifact`.
-The executable spec carries inputs, declarative data maps, and optional
+The transform is a fixed data flow over one `JsPipelineArtifact`
+value. Each stage either observes that artifact, replaces it with a
+normalized artifact, or mutates it in place; there is no separate
+pipeline state object with a second identity.
+
+The executable spec is YAML decoded directly into typed serde
+structures. It carries inputs, declarative data maps, and optional
 output configs; it is not an operation list and has no top-level
-`kind`/`schema_version` compatibility envelope.
+`kind`/`schema_version` compatibility envelope. Report fields and
+stage names use the same default snake_case serde names as the Rust
+types, so emitted diagnostics do not maintain a second hand-written
+string vocabulary.
 
 | Step                             | Module                                         | Runs when                                                                                                                            |
 | -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
