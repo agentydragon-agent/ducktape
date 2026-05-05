@@ -37,9 +37,6 @@ spec:
               securityContext:
                 capabilities:
                   add: ["NET_ADMIN"]
-              env:
-                - name: OUTPUT_DIR
-                  value: /data/cpap
               volumeMounts:
                 - name: data
                   mountPath: /data/cpap

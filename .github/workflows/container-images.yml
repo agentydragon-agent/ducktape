@@ -3,10 +3,11 @@
 # Images:
 #   rbe-worker    — BuildBuddy RBE worker (devinfra/rbe_image/Dockerfile)
 #   freecad-test  — FreeCAD test runner (skills/freecad/Dockerfile.test)
-#   cpap-sync     — CPAP ez Share sync job (x/cpap_sync/Dockerfile); Flux ImagePolicy,
-#                   no digest pin needed
 #   rtl-tcp       — RTL-SDR Blog V4 rtl_tcp server (x/rtl_tcp/Dockerfile); Flux ImagePolicy,
 #                   no digest pin needed. Uses rtl-sdr-blog fork for V4 R828D support.
+#
+# (cpap-sync is built via Bazel — see //x/cpap_sync:image and the
+# push-images.yml matrix.)
 #
 # Independent of CI — bazel-ci uses the pinned image from image_pins.json.
 # When a Dockerfile changes, this workflow builds, pins, and the next CI run
@@ -20,8 +21,6 @@ on:
       - "devinfra/rbe_image/**"
       - "skills/freecad/Dockerfile.test"
       - "third_party/kubernetes-mcp-server-pin.txt"
-      - "x/cpap_sync/Dockerfile"
-      - "x/cpap_sync/sync.sh"
       - "x/rtl_tcp/Dockerfile"
       - ".github/workflows/container-images.yml"
   workflow_dispatch:
@@ -112,24 +111,6 @@ jobs:
           file: /tmp/k8s-mcp-server/Dockerfile
           cache_from: type=registry,ref=${{ env.K8S_MCP_IMAGE }}:buildcache
           cache_to: type=registry,ref=${{ env.K8S_MCP_IMAGE }}:buildcache,mode=max
-
-  cpap-sync-image:
-    name: CPAP Sync
-    # Only push from devel — Flux ImagePolicy filters on devel-* tags.
-    if: github.ref_name == 'devel'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.ref_name }}
-
-      - uses: ./.github/actions/ghcr-build-push
-        with:
-          image: ghcr.io/${{ github.repository_owner }}/cpap-sync
-          context: x/cpap_sync
-          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/cpap-sync:buildcache
-          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/cpap-sync:buildcache,mode=max
 
   rtl-tcp-image:
     name: RTL-TCP

@@ -280,6 +280,13 @@ apt.install(
     manifest = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.yaml",
 )
 
+# CPAP sync: nmcli (talks to host NetworkManager over dbus) on debian:bookworm-slim.
+apt.install(
+    name = "bookworm_cpap_sync",
+    lock = "//x/cpap_sync:bookworm_cpap_sync.lock.json",
+    manifest = "//x/cpap_sync:bookworm_cpap_sync.yaml",
+)
+
 # JWT rotation image: curl + jq + git + bash on debian:trixie-slim for the
 # claude-jwt-rotation CronJob (Authentik client_credentials exchange + commit).
 apt.install(
@@ -302,7 +309,7 @@ apt.install(
     lock = "//gnome-extensions/test_image:apt.lock.json",
     manifest = "//gnome-extensions/test_image:apt.yaml",
 )
-use_repo(apt, "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_e2e", "trixie_jwt_rotation")
+use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_e2e", "trixie_jwt_rotation")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -544,45 +551,25 @@ use_repo(rust, "rust_toolchains")
 register_toolchains("@rust_toolchains//:all")
 
 # ─ Rust crates (crate_universe) ─────────────────────────────────────────────
-# `dev_dependency = True` ⇒ this extension only runs when ducktape is the root
-# module. When a downstream repo (e.g. gaffer-private) consumes ducktape via
-# `bazel_dep` + `archive_override`, ducktape's `crate.from_cargo` calls are
-# skipped, and the downstream's own (isolated) `crate.from_cargo` provides
-# whatever Rust crates it needs.
+# Keep this extension visible to downstream modules. Ducktape BUILD files use
+# apparent labels such as `@crates//:anyhow`, and those labels are resolved in
+# Ducktape's own repository mapping when another workspace consumes Ducktape via
+# `bazel_dep` + `archive_override`. A downstream workspace's root `@crates`
+# repository cannot satisfy those labels.
 #
-# Why we need this: rules_rust's `crate_universe` digest stored in
-# `Cargo.Bazel.lock`'s top-level `checksum` is computed from the lockfile +
-# the Bazel-generated `--config` and `--splicing-manifest` (see
-# `rules_rust/crate_universe/src/lockfile.rs::Digest::compute`). The
-# auto-generated config and splicing manifest reference workspace-relative
-# paths, so the digest a developer commits from
-# `<root_module_workspace>/Cargo.Bazel.lock` does not match what the BB runner
-# computes when ducktape is loaded as a dependency at
-# `<output_base>/external/ducktape+/Cargo.Bazel.lock`. The mismatch fires
-# every build, e.g. on gaffer-private's bazel-ci:
-#
-#   Error: Digests do not match: Current Digest("115bb40e…") !=
-#     Expected Digest("f45f8af2…")
-#
-# Where `Current` is exactly ducktape's stored `checksum` and `Expected` is
-# the recomputed one in gaffer's path context.
-#
-# Marking the extension `dev_dependency = True` keeps the digest check active
-# for ducktape's own builds (root-module case) and skips it for downstream
-# consumers — which is the only place it was ever wrong, since downstream
-# consumers have their own crate universes anyway. Upstream tracking:
-# bazelbuild/rules_rust (path-dependence in `cargo-bazel query`).
+# Do not attach Ducktape's `Cargo.Bazel.lock` here. rules_rust's rendered-lock
+# checksum is not portable across root-module and dependency-module path
+# contexts, which makes downstream consumers fail analysis even though
+# `Cargo.lock` is pinned. Let crate_universe render from the Cargo lock instead.
 crate = use_extension(
     "@rules_rust//crate_universe:extensions.bzl",
     "crate",
-    dev_dependency = True,
 )
 
 # If your workspace has Cargo.toml at the root:
 crate.from_cargo(
     name = "crates",  # this becomes the repo name
     cargo_lockfile = "//:Cargo.lock",
-    lockfile = "//:Cargo.Bazel.lock",
     manifests = ["//:Cargo.toml"],
 )
 
@@ -592,7 +579,13 @@ use_repo(crate, "crates")
 # ─ ActivityWatch crate universe ──────────────────────────────────────────────
 # Separate from the main "crates" universe to avoid Cargo.lock conflicts.
 # aw-server-rust source is pulled via http_archive below (see @aw_server_rust).
-crate.from_cargo(
+aw_crate = use_extension(
+    "@rules_rust//crate_universe:extensions.bzl",
+    "crate",
+    dev_dependency = True,
+    isolate = True,
+)
+aw_crate.from_cargo(
     name = "aw_server_crates",
     cargo_lockfile = "@aw_server_rust//:Cargo.lock",
     lockfile = "//third_party/activitywatch:Cargo.Bazel.lock",
@@ -612,7 +605,7 @@ crate.from_cargo(
 # build.rs reads AW_WEBUI_DIR and emits cargo:rustc-env=AW_WEBUI_DIR=<path>
 # so that rust-embed's interpolate-folder-path proc macro can embed all
 # files from that directory into the binary at compile time.
-crate.annotation(
+aw_crate.annotation(
     build_script_data = ["@aw_webui//:dist"],
     build_script_env = {
         "AW_WEBUI_DIR": "$(execpath @aw_webui//:dist)",
@@ -621,7 +614,7 @@ crate.annotation(
     crate = "aw-server",
     repositories = ["aw_server_crates"],
 )
-use_repo(crate, "aw_server_crates")
+use_repo(aw_crate, "aw_server_crates")
 
 # ─ Haskell ───────────────────────────────────────────────────────────────────
 bazel_dep(name = "rules_haskell", version = "1.0")
