@@ -2169,6 +2169,7 @@ pub struct OwnerGraphPeelCandidateReport {
     pub declared: Vec<BindingName>,
     pub from: ModuleReportRef,
     pub proposed_destination: ProposedPeelDestinationReport,
+    pub blocking_residual_dependencies: Vec<PeelBlockingResidualDependencyReport>,
     pub blocking_sccs: Vec<PeelBlockingSccReport>,
 }
 
@@ -2185,6 +2186,7 @@ pub struct OwnerGraphPeelClosureReport {
 pub enum PeelCandidateKind {
     SingleOwner,
     OwnerPair,
+    OwnerClosure,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -2192,6 +2194,7 @@ pub enum PeelCandidateKind {
 pub enum PeelCandidateStatus {
     PeelableNow,
     BlockedCycle,
+    BlockedResidualDependency,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2209,6 +2212,15 @@ pub struct PeelBlockingSccReport {
     pub module_edge_ids: Vec<String>,
     pub constraining_module_edge_ids: Vec<String>,
     pub constraining_owner_edge_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeelBlockingResidualDependencyReport {
+    pub destination: ModuleReportRef,
+    pub owner_edge_ids: Vec<String>,
+    pub bindings: Vec<BindingName>,
+    pub kinds: Vec<&'static str>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2567,11 +2579,19 @@ fn build_peelability_report(
         }
     }
 
+    let dependency_closure_candidates = residual_dependency_closure_candidates(
+        schedule,
+        &context,
+        &singleton_candidates,
+        &declared_by_owner,
+    );
+
     let mut candidates: Vec<OwnerGraphPeelCandidateReport> = singleton_candidates
         .into_iter()
         .map(|(_, candidate)| candidate)
         .collect();
     candidates.extend(pair_candidates);
+    candidates.extend(dependency_closure_candidates);
 
     let residual_peelable_symbols: BTreeSet<BindingName> = candidates
         .iter()
@@ -2585,8 +2605,10 @@ fn build_peelability_report(
     let residual_peelable_closures = candidates
         .iter()
         .filter(|candidate| {
-            candidate.kind == PeelCandidateKind::OwnerPair
-                && candidate.status == PeelCandidateStatus::PeelableNow
+            matches!(
+                candidate.kind,
+                PeelCandidateKind::OwnerPair | PeelCandidateKind::OwnerClosure
+            ) && candidate.status == PeelCandidateStatus::PeelableNow
         })
         .map(|candidate| OwnerGraphPeelClosureReport {
             candidate_id: candidate.id.clone(),
@@ -2794,6 +2816,88 @@ fn residual_pair_candidates_from_singleton_blockers(
     pair_owner_sets
 }
 
+fn residual_dependency_closure_candidates(
+    schedule: &Schedule,
+    context: &PeelabilityContext<'_>,
+    singleton_candidates: &[(OwnerId, OwnerGraphPeelCandidateReport)],
+    declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
+) -> Vec<OwnerGraphPeelCandidateReport> {
+    let mut seen_owner_sets = BTreeSet::<BTreeSet<OwnerId>>::new();
+    let mut candidates = Vec::new();
+    for (owner_id, candidate) in singleton_candidates {
+        if candidate.status != PeelCandidateStatus::BlockedResidualDependency {
+            continue;
+        }
+        let closure = residual_dependency_closure(schedule, context, &BTreeSet::from([*owner_id]));
+        if closure.len() <= 1 || !seen_owner_sets.insert(closure.clone()) {
+            continue;
+        }
+
+        let mut declared = Vec::new();
+        let mut representable = true;
+        for owner in &closure {
+            let Some(owner_declared) = declared_by_owner.get(owner) else {
+                representable = false;
+                break;
+            };
+            if owner_declared.is_empty() {
+                representable = false;
+                break;
+            }
+            declared.extend(owner_declared.iter().cloned());
+        }
+        if !representable {
+            continue;
+        }
+        declared.sort();
+        declared.dedup();
+
+        let owners: Vec<OwnerId> = closure.into_iter().collect();
+        let candidate = evaluate_residual_peel_candidate(
+            schedule,
+            context,
+            &owners,
+            declared,
+            if owners.len() == 2 {
+                PeelCandidateKind::OwnerPair
+            } else {
+                PeelCandidateKind::OwnerClosure
+            },
+        );
+        if candidate.status == PeelCandidateStatus::PeelableNow {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+}
+
+fn residual_dependency_closure(
+    schedule: &Schedule,
+    context: &PeelabilityContext<'_>,
+    seeds: &BTreeSet<OwnerId>,
+) -> BTreeSet<OwnerId> {
+    let mut closure = seeds.clone();
+    let mut queue: VecDeque<OwnerId> = seeds.iter().copied().collect();
+    while let Some(owner_id) = queue.pop_front() {
+        let Some(edge_indices) = context.owner_out_edges.get(&owner_id) else {
+            continue;
+        };
+        for &edge_idx in edge_indices {
+            let edge = &context.owner_edges[edge_idx];
+            let Some(to_node) = schedule.owner_graph.node(edge.to) else {
+                continue;
+            };
+            if to_node.destination != ModuleId::ResidualEntry {
+                continue;
+            }
+            if closure.insert(edge.to) {
+                queue.push_back(edge.to);
+            }
+        }
+    }
+    closure
+}
+
 fn owners_share_residual_destination(schedule: &Schedule, left: OwnerId, right: OwnerId) -> bool {
     let Some(left_node) = schedule.owner_graph.node(left) else {
         return false;
@@ -2830,6 +2934,8 @@ fn evaluate_residual_peel_candidate(
     let candidate_id = format!("peel_candidate:{}", owner_id_keys.join("+"));
     let candidate_label = format!("peel {}", declared.join(", "));
     let (candidate_edges, adjustment) = candidate_incident_edges(schedule, context, &moved_owners);
+    let blocking_residual_dependencies =
+        candidate_residual_dependencies(schedule, context, &moved_owners);
     let blocking_sccs = candidate_blocking_sccs_fast(
         schedule,
         context,
@@ -2838,10 +2944,12 @@ fn evaluate_residual_peel_candidate(
         candidate_module,
         &candidate_label,
     );
-    let status = if blocking_sccs.is_empty() {
-        PeelCandidateStatus::PeelableNow
-    } else {
+    let status = if !blocking_residual_dependencies.is_empty() {
+        PeelCandidateStatus::BlockedResidualDependency
+    } else if !blocking_sccs.is_empty() {
         PeelCandidateStatus::BlockedCycle
+    } else {
+        PeelCandidateStatus::PeelableNow
     };
 
     OwnerGraphPeelCandidateReport {
@@ -2855,8 +2963,58 @@ fn evaluate_residual_peel_candidate(
             id: candidate_id,
             label: candidate_label,
         },
+        blocking_residual_dependencies,
         blocking_sccs,
     }
+}
+
+#[derive(Debug, Clone, Default)]
+struct ResidualDependencyAccumulator {
+    owner_edge_ids: BTreeSet<String>,
+    bindings: BTreeSet<BindingName>,
+    kinds: BTreeSet<&'static str>,
+}
+
+fn candidate_residual_dependencies(
+    schedule: &Schedule,
+    context: &PeelabilityContext<'_>,
+    moved_owners: &BTreeSet<OwnerId>,
+) -> Vec<PeelBlockingResidualDependencyReport> {
+    let mut accum = BTreeMap::<ModuleId, ResidualDependencyAccumulator>::new();
+    for owner_id in moved_owners {
+        let Some(edge_indices) = context.owner_out_edges.get(owner_id) else {
+            continue;
+        };
+        for &edge_idx in edge_indices {
+            let edge = &context.owner_edges[edge_idx];
+            if moved_owners.contains(&edge.to) {
+                continue;
+            }
+            let Some(to_node) = schedule.owner_graph.node(edge.to) else {
+                continue;
+            };
+            if to_node.destination != ModuleId::ResidualEntry {
+                continue;
+            }
+            let entry = accum.entry(to_node.destination).or_default();
+            entry.owner_edge_ids.insert(edge.id.clone());
+            if let Some(binding) = edge.reason.binding() {
+                entry.bindings.insert(binding.clone());
+            }
+            entry.kinds.insert(edge.reason.graph_kind_label());
+        }
+    }
+    accum
+        .into_iter()
+        .map(
+            |(destination, entry)| PeelBlockingResidualDependencyReport {
+                destination: module_report_ref(schedule, destination),
+                owner_edge_ids: entry.owner_edge_ids.into_iter().collect(),
+                bindings: entry.bindings.into_iter().collect(),
+                kinds: entry.kinds.into_iter().collect(),
+            },
+        )
+        .collect()
 }
 
 fn candidate_incident_edges(
@@ -3915,6 +4073,52 @@ mod tests {
         assert_eq!(leaf.kind, PeelCandidateKind::SingleOwner);
         assert_eq!(leaf.status, PeelCandidateStatus::PeelableNow);
         assert!(leaf.blocking_sccs.is_empty());
+    }
+
+    #[test]
+    fn peelability_blocks_symbol_that_would_import_from_residual_entry() {
+        let schedule = schedule_for("function Leaf() { return Dep; } const Dep = 1;", &[]);
+
+        let report = schedule.owner_graph_report();
+        assert!(
+            !report
+                .peelability
+                .residual_peelable_symbols
+                .contains(&"Leaf".to_string()),
+            "Leaf should not be peelable while it still reads Dep from residual entry: {:#?}",
+            report.peelability,
+        );
+        let leaf = report
+            .peelability
+            .candidates
+            .iter()
+            .find(|candidate| candidate.declared == vec!["Leaf".to_string()])
+            .expect("Leaf candidate should be reported");
+        assert_eq!(leaf.kind, PeelCandidateKind::SingleOwner);
+        assert_eq!(leaf.status, PeelCandidateStatus::BlockedResidualDependency);
+        assert!(
+            leaf.blocking_sccs.is_empty(),
+            "this is an emit-resolvability blocker, not a cycle blocker: {leaf:#?}",
+        );
+        assert!(
+            leaf.blocking_residual_dependencies
+                .iter()
+                .any(|dependency| dependency.bindings == vec!["Dep".to_string()]
+                    && !dependency.owner_edge_ids.is_empty()),
+            "blocked candidate should point at residual-entry read evidence: {leaf:#?}",
+        );
+        assert!(
+            report
+                .peelability
+                .residual_peelable_closures
+                .iter()
+                .any(|closure| {
+                    closure.declared == vec!["Dep".to_string(), "Leaf".to_string()]
+                        && closure.owner_ids.len() == 2
+                }),
+            "Leaf should be peelable together with its residual-entry dependency: {:#?}",
+            report.peelability,
+        );
     }
 
     #[test]

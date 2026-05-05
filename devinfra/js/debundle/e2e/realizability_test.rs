@@ -275,6 +275,64 @@ export { A, B, Existing };
 }
 
 #[test]
+fn owner_graph_report_blocks_residual_entry_dependency_peel_candidate() {
+    let mut opts = FixtureOpts::new(
+        r#"function Leaf() { return Dep; }
+const Dep = "dep";
+const Existing = "existing";
+console.log(Existing);
+export { Leaf, Dep, Existing };
+"#,
+        vec![logical_module("existing", &[Member::new("Existing")])],
+    );
+    opts.include_residual = false;
+    let fixture = run_logical_modules_e2e_fixture(opts);
+    assert_entry_output(&fixture, "existing\n");
+
+    let graph = read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let peelability = &graph["peelability"];
+    assert!(
+        peelability["residualPeelableSymbols"]
+            .as_array()
+            .is_some_and(|symbols| symbols.iter().all(|symbol| symbol.as_str() != Some("Leaf"))),
+        "Leaf should not be listed as peelable while it reads Dep from residual entry: {graph:#}",
+    );
+    assert!(
+        peelability["candidates"]
+            .as_array()
+            .is_some_and(|candidates| {
+                candidates.iter().any(|candidate| {
+                    candidate["kind"].as_str() == Some("single_owner")
+                        && candidate["status"].as_str() == Some("blocked_residual_dependency")
+                        && candidate["declared"].as_array().is_some_and(|declared| {
+                            declared
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                == vec!["Leaf"]
+                        })
+                        && candidate["blockingResidualDependencies"]
+                            .as_array()
+                            .is_some_and(|dependencies| {
+                                dependencies.iter().any(|dependency| {
+                                    dependency["bindings"].as_array().is_some_and(|bindings| {
+                                        bindings
+                                            .iter()
+                                            .filter_map(Value::as_str)
+                                            .collect::<Vec<_>>()
+                                            == vec!["Dep"]
+                                    }) && dependency["ownerEdgeIds"]
+                                        .as_array()
+                                        .is_some_and(|ids| !ids.is_empty())
+                                })
+                            })
+                })
+            }),
+        "Leaf candidate should explain the residual-entry dependency blocker: {graph:#}",
+    );
+}
+
+#[test]
 fn owner_graph_report_is_written_before_rejection() {
     let rejected = run_logical_modules_e2e_rejection_fixture(FixtureOpts::new(
         r#"const A = "a-value";
