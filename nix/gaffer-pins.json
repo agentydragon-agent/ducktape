@@ -3,7 +3,7 @@
     "drivefs": {
       "store_path": "/nix/store/crbqywqwjhlal4r88xn7sk2h0daxrzzy-google-drive-file-stream-122.0.1.0",
       "version": "122.0.1.0",
-      "rev": "dc5a93e2c4ca87bb3bb71797e1a54c7392d96f07"
+      "rev": "8fdf242665dd4105592e08b4630e3a8d3b73cb16"
     }
   }
 }
