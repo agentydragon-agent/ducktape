@@ -830,7 +830,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             preserve_export_specifier_names(item, &body_renames);
         }
         let mut renamer = IdentifierRenamer {
-            renames: body_renames,
+            renames: &body_renames,
         };
         for item in entry_body.iter_mut() {
             item.visit_mut_with(&mut renamer);
@@ -906,7 +906,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         // throws `ReferenceError: gge is not defined` at runtime.
         let mut runtime_reimports = source_chunk_imports_for_moved_body(
             &mut source_import_cache,
-            &runtime_import_facts,
+            runtime_import_facts,
             chunk_id,
             entry_file,
             &plan.target_file,
@@ -935,14 +935,12 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         // the destination to the same coordinate system before
         // computing the relative path.
         let dest_abs = join_module_path(&[chunk_id, &plan.target_file]);
-        let mut offset = 0;
-        for reexport in &imported_reexports_by_module[index] {
+        for (offset, reexport) in imported_reexports_by_module[index].iter().enumerate() {
             let src = relative_source(&dest_abs, &reexport.imported_from);
             body.insert(
                 import_count + offset,
                 imported_binding_import_decl(&reexport.local, &reexport.imported_name, &src),
             );
-            offset += 1;
             import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
         }
         let exports_have_top_level_decls = selected_exports_by_module.contains_key(&index);
@@ -1654,15 +1652,15 @@ fn naturalize_module_body(body: &mut [ModuleItem], plan: &ModulePlan) -> BTreeMa
         collect_naturalization_renames_from_item(item, &mut heuristic);
     }
     let renames = drop_target_collisions(renames, heuristic);
-    if !renames.is_empty() {
+    if renames.is_empty() {
         for item in body.iter_mut() {
-            item.visit_mut_with(&mut IdentifierRenamer {
-                renames: renames.clone(),
-            });
+            item.visit_mut_with(&mut ShorthandNaturalizer);
         }
-    }
-    for item in body.iter_mut() {
-        item.visit_mut_with(&mut ShorthandNaturalizer);
+    } else {
+        let mut naturalizer = RenameAndShorthandNaturalizer { renames: &renames };
+        for item in body.iter_mut() {
+            item.visit_mut_with(&mut naturalizer);
+        }
     }
     renames
 }
@@ -1900,26 +1898,25 @@ fn this_property_name(target: &AssignTarget) -> Option<String> {
     }
 }
 
-#[derive(Clone)]
-struct IdentifierRenamer {
-    renames: BTreeMap<String, String>,
+struct IdentifierRenamer<'a> {
+    renames: &'a BTreeMap<String, String>,
 }
 
-impl VisitMut for IdentifierRenamer {
+impl VisitMut for IdentifierRenamer<'_> {
     fn visit_mut_ident(&mut self, ident: &mut Ident) {
-        if let Some(to) = self.renames.get(&ident.sym.to_string()) {
+        if let Some(to) = self.renames.get(ident.sym.as_ref()) {
             ident.sym = to.clone().into();
         }
     }
 
     fn visit_mut_import_named_specifier(&mut self, spec: &mut ImportNamedSpecifier) {
-        let original_local = spec.local.sym.to_string();
-        let Some(to) = self.renames.get(&original_local) else {
+        let original_local = spec.local.sym.clone();
+        let Some(to) = self.renames.get(original_local.as_ref()) else {
             return;
         };
         if spec.imported.is_none() {
             spec.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                original_local.into(),
+                original_local,
                 DUMMY_SP,
             )));
         }
@@ -1956,66 +1953,130 @@ impl VisitMut for IdentifierRenamer {
     }
 }
 
+struct RenameAndShorthandNaturalizer<'a> {
+    renames: &'a BTreeMap<String, String>,
+}
+
+impl VisitMut for RenameAndShorthandNaturalizer<'_> {
+    fn visit_mut_ident(&mut self, ident: &mut Ident) {
+        if let Some(to) = self.renames.get(ident.sym.as_ref()) {
+            ident.sym = to.clone().into();
+        }
+    }
+
+    fn visit_mut_import_named_specifier(&mut self, spec: &mut ImportNamedSpecifier) {
+        let original_local = spec.local.sym.clone();
+        let Some(to) = self.renames.get(original_local.as_ref()) else {
+            return;
+        };
+        if spec.imported.is_none() {
+            spec.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                original_local,
+                DUMMY_SP,
+            )));
+        }
+        spec.local.sym = to.clone().into();
+    }
+
+    fn visit_mut_prop_name(&mut self, prop_name: &mut PropName) {
+        if let PropName::Computed(computed) = prop_name {
+            computed.visit_mut_children_with(self);
+        }
+    }
+
+    fn visit_mut_member_prop(&mut self, member_prop: &mut MemberProp) {
+        if let MemberProp::Computed(computed) = member_prop {
+            computed.visit_mut_children_with(self);
+        }
+    }
+
+    fn visit_mut_named_export(&mut self, named: &mut NamedExport) {
+        if named.src.is_none() {
+            named.specifiers.visit_mut_with(self);
+        }
+    }
+
+    fn visit_mut_export_named_specifier(&mut self, spec: &mut ExportNamedSpecifier) {
+        spec.orig.visit_mut_with(self);
+    }
+
+    fn visit_mut_object_pat(&mut self, object: &mut ObjectPat) {
+        object.visit_mut_children_with(self);
+        naturalize_object_pattern_shorthand(object);
+    }
+
+    fn visit_mut_object_lit(&mut self, object: &mut ObjectLit) {
+        object.visit_mut_children_with(self);
+        naturalize_object_literal_shorthand(object);
+    }
+}
+
 struct ShorthandNaturalizer;
 
 impl VisitMut for ShorthandNaturalizer {
     fn visit_mut_object_pat(&mut self, object: &mut ObjectPat) {
-        for prop in &mut object.props {
-            if let ObjectPatProp::KeyValue(key_value) = prop
-                && let PropName::Ident(key) = &key_value.key
-                && let Pat::Ident(value) = &*key_value.value
-                && key.sym == value.id.sym
-            {
-                *prop = ObjectPatProp::Assign(AssignPatProp {
-                    span: DUMMY_SP,
-                    key: value.clone(),
-                    value: None,
-                });
-            }
-        }
         object.visit_mut_children_with(self);
+        naturalize_object_pattern_shorthand(object);
     }
 
     fn visit_mut_object_lit(&mut self, object: &mut ObjectLit) {
-        for prop in &mut object.props {
-            if let PropOrSpread::Prop(prop_box) = prop
-                && let Prop::KeyValue(key_value) = &**prop_box
-                && let PropName::Ident(key) = &key_value.key
-                && let Expr::Ident(value) = &*key_value.value
-                && key.sym == value.sym
-            {
-                *prop = PropOrSpread::Prop(Box::new(Prop::Shorthand(value.clone())));
-            }
-        }
         object.visit_mut_children_with(self);
+        naturalize_object_literal_shorthand(object);
+    }
+}
+
+fn naturalize_object_pattern_shorthand(object: &mut ObjectPat) {
+    for prop in &mut object.props {
+        if let ObjectPatProp::KeyValue(key_value) = prop
+            && let PropName::Ident(key) = &key_value.key
+            && let Pat::Ident(value) = &*key_value.value
+            && key.sym == value.id.sym
+        {
+            *prop = ObjectPatProp::Assign(AssignPatProp {
+                span: DUMMY_SP,
+                key: value.clone(),
+                value: None,
+            });
+        }
+    }
+}
+
+fn naturalize_object_literal_shorthand(object: &mut ObjectLit) {
+    for prop in &mut object.props {
+        if let PropOrSpread::Prop(prop_box) = prop
+            && let Prop::KeyValue(key_value) = &**prop_box
+            && let PropName::Ident(key) = &key_value.key
+            && let Expr::Ident(value) = &*key_value.value
+            && key.sym == value.sym
+        {
+            *prop = PropOrSpread::Prop(Box::new(Prop::Shorthand(value.clone())));
+        }
     }
 }
 
 fn rewrite_runtime_sources_for_target(body: &mut [ModuleItem], target_file: &str) {
-    let mut rewriter = RuntimeSourceRewriter {
-        target_file: target_file.to_string(),
-    };
+    let target_dir = Path::new(target_file)
+        .parent()
+        .and_then(Path::to_str)
+        .unwrap_or("")
+        .replace('\\', "/");
+    let mut rewriter = RuntimeSourceRewriter { target_dir };
     for item in body {
         item.visit_mut_with(&mut rewriter);
     }
 }
 
 struct RuntimeSourceRewriter {
-    target_file: String,
+    target_dir: String,
 }
 
 impl RuntimeSourceRewriter {
     fn rewrite(&self, source: &str) -> String {
         let original = normalize_module_path(source).unwrap_or_else(|_| source.to_string());
-        let target_dir = Path::new(&self.target_file)
-            .parent()
-            .and_then(Path::to_str)
-            .unwrap_or("")
-            .replace('\\', "/");
         // Original import sources in lowered module bodies are chunk-root-relative;
         // the lowered file lives at <target_dir>/<basename> within the chunk, so the
         // rewritten specifier walks up out of target_dir to chunk root.
-        let mut rel = relative_module_path(&target_dir, &original);
+        let mut rel = relative_module_path(&self.target_dir, &original);
         if !rel.starts_with('.') {
             rel = format!("./{rel}");
         }
