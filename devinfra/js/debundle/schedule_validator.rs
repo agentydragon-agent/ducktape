@@ -132,6 +132,7 @@ pub struct Schedule {
     pub chunk_renames: BTreeMap<BindingName, BindingName>,
     pub owner_graph: OwnerGraph,
     pub dep_graph: ModuleDepGraph,
+    owner_report_ids_by_binding: BTreeMap<BindingName, Vec<String>>,
     /// Topological linearization of `I ∪ S`, dependency-first
     /// (the module at index 0 must evaluate before any other; the
     /// last module — typically the residual entry — evaluates
@@ -157,6 +158,7 @@ impl Schedule {
     ) -> Self {
         let ownership = owned_view(&bindings);
         let owner_graph = build_owner_graph(&facts, &ownership);
+        let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
         let dep_graph = quotient_owner_graph(&owner_graph);
         let linker_order = compute_linker_order(&dep_graph, &logical_modules);
         Self {
@@ -167,6 +169,7 @@ impl Schedule {
             chunk_renames,
             owner_graph,
             dep_graph,
+            owner_report_ids_by_binding,
             linker_order,
         }
     }
@@ -210,19 +213,31 @@ impl Schedule {
         &self,
         names: impl IntoIterator<Item = &'a str>,
     ) -> Vec<String> {
-        let requested: BTreeSet<&str> = names.into_iter().collect();
-        self.owner_graph
-            .nodes
-            .values()
-            .filter(|node| {
-                node.declared
-                    .iter()
-                    .any(|binding| requested.contains(binding.as_str()))
-            })
-            .map(|node| node.id)
+        names
+            .into_iter()
+            .filter_map(|name| self.owner_report_ids_by_binding.get(name))
+            .flat_map(|ids| ids.iter().cloned())
             .collect::<BTreeSet<_>>()
             .into_iter()
-            .map(owner_key)
+            .collect()
+    }
+
+    fn build_owner_report_ids_by_binding(
+        owner_graph: &OwnerGraph,
+    ) -> BTreeMap<BindingName, Vec<String>> {
+        let mut by_binding = BTreeMap::<BindingName, BTreeSet<String>>::new();
+        for node in owner_graph.nodes.values() {
+            let report_id = owner_key(node.id);
+            for binding in &node.declared {
+                by_binding
+                    .entry(binding.clone())
+                    .or_default()
+                    .insert(report_id.clone());
+            }
+        }
+        by_binding
+            .into_iter()
+            .map(|(binding, ids)| (binding, ids.into_iter().collect()))
             .collect()
     }
 
@@ -2521,49 +2536,38 @@ fn build_residual_owner_horizon(
     declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
     candidates: &[OwnerGraphPeelCandidateReport],
 ) -> (Vec<ResidualOwnerPeelHorizonReport>, BTreeSet<String>) {
-    let peelable_candidates: Vec<&OwnerGraphPeelCandidateReport> = candidates
-        .iter()
-        .filter(|candidate| candidate.status == PeelCandidateStatus::PeelableNow)
-        .collect();
-    let singleton_evaluation_by_owner: BTreeMap<String, String> = candidates
-        .iter()
-        .filter(|candidate| candidate.owner_set_kind == PeelCandidateKind::SingleOwner)
-        .filter_map(|candidate| {
-            candidate
-                .owner_ids
-                .first()
-                .map(|owner_id| (owner_id.clone(), candidate.id.clone()))
-        })
-        .collect();
+    let candidate_owner_sets = build_candidate_owner_sets(candidates);
+    let mut peelable_candidate_indices_by_owner = BTreeMap::<OwnerId, Vec<usize>>::new();
+    let mut singleton_evaluation_by_owner = BTreeMap::<OwnerId, String>::new();
+    for (idx, candidate) in candidates.iter().enumerate() {
+        if candidate.owner_set_kind == PeelCandidateKind::SingleOwner
+            && let Some(owner_id) = candidate_owner_sets[idx].iter().next()
+        {
+            singleton_evaluation_by_owner.insert(*owner_id, candidate.id.clone());
+        }
+        if candidate.status != PeelCandidateStatus::PeelableNow {
+            continue;
+        }
+        for owner_id in &candidate_owner_sets[idx] {
+            peelable_candidate_indices_by_owner
+                .entry(*owner_id)
+                .or_default()
+                .push(idx);
+        }
+    }
 
     let mut rows = Vec::new();
     let mut minimal_peel_set_ids = BTreeSet::new();
     for (owner_id, bindings) in declared_by_owner {
         let owner_key = owner_key(*owner_id);
         let owner_bindings: BTreeSet<&str> = bindings.iter().map(String::as_str).collect();
-        let containing: Vec<&OwnerGraphPeelCandidateReport> = peelable_candidates
-            .iter()
-            .copied()
-            .filter(|candidate| candidate.owner_ids.iter().any(|id| id == &owner_key))
-            .collect();
-        let mut minimal_options = Vec::new();
-        for candidate in &containing {
-            let candidate_owners: BTreeSet<&str> =
-                candidate.owner_ids.iter().map(String::as_str).collect();
-            let has_smaller_containing_set = containing.iter().any(|other| {
-                if other.id == candidate.id {
-                    return false;
-                }
-                let other_owners: BTreeSet<&str> =
-                    other.owner_ids.iter().map(String::as_str).collect();
-                other_owners.len() < candidate_owners.len()
-                    && other_owners.is_subset(&candidate_owners)
-            });
-            if !has_smaller_containing_set {
-                minimal_options.push(*candidate);
-            }
-        }
-        minimal_options.sort_by(|a, b| {
+        let mut containing_indices = peelable_candidate_indices_by_owner
+            .get(owner_id)
+            .cloned()
+            .unwrap_or_default();
+        containing_indices.sort_by(|a, b| {
+            let a = &candidates[*a];
+            let b = &candidates[*b];
             (
                 a.owner_ids.len(),
                 a.members.len(),
@@ -2577,10 +2581,22 @@ fn build_residual_owner_horizon(
                     b.id.as_str(),
                 ))
         });
+        let mut minimal_options = Vec::<usize>::new();
+        for candidate_idx in containing_indices {
+            let candidate_owners = &candidate_owner_sets[candidate_idx];
+            let has_smaller_containing_set = minimal_options.iter().any(|other_idx| {
+                let other_owners = &candidate_owner_sets[*other_idx];
+                other_owners.len() < candidate_owners.len()
+                    && other_owners.is_subset(candidate_owners)
+            });
+            if !has_smaller_containing_set {
+                minimal_options.push(candidate_idx);
+            }
+        }
 
         let status = if minimal_options
             .iter()
-            .any(|candidate| candidate.owner_ids.len() == 1)
+            .any(|candidate_idx| candidates[*candidate_idx].owner_ids.len() == 1)
         {
             ResidualOwnerPeelStatus::Direct
         } else if minimal_options.is_empty() {
@@ -2591,7 +2607,8 @@ fn build_residual_owner_horizon(
 
         let mut peel_set_ids = Vec::new();
         let mut companion_options = Vec::new();
-        for candidate in minimal_options {
+        for candidate_idx in minimal_options {
+            let candidate = &candidates[candidate_idx];
             minimal_peel_set_ids.insert(candidate.id.clone());
             peel_set_ids.push(candidate.id.clone());
             if candidate.owner_ids.len() == 1 {
@@ -2629,10 +2646,25 @@ fn build_residual_owner_horizon(
             status,
             peel_set_ids,
             companion_options,
-            singleton_evaluation_id: singleton_evaluation_by_owner.get(&owner_key).cloned(),
+            singleton_evaluation_id: singleton_evaluation_by_owner.get(owner_id).cloned(),
         });
     }
     (rows, minimal_peel_set_ids)
+}
+
+fn build_candidate_owner_sets(
+    candidates: &[OwnerGraphPeelCandidateReport],
+) -> Vec<BTreeSet<OwnerId>> {
+    candidates
+        .iter()
+        .map(|candidate| {
+            candidate
+                .owner_ids
+                .iter()
+                .filter_map(|id| owner_id_from_key(id))
+                .collect()
+        })
+        .collect()
 }
 
 fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<BindingName> {
@@ -3258,6 +3290,12 @@ fn is_residual_destination(schedule: &Schedule, id: ModuleId) -> bool {
 
 fn owner_key(id: OwnerId) -> String {
     format!("owner:{}", id.0)
+}
+
+fn owner_id_from_key(key: &str) -> Option<OwnerId> {
+    key.strip_prefix("owner:")
+        .and_then(|idx| idx.parse::<usize>().ok())
+        .map(OwnerId)
 }
 
 fn module_key(id: ModuleId) -> String {
