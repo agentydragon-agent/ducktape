@@ -142,6 +142,7 @@ pub struct Schedule {
     /// ECMA-262's linker DFS toward an `I ∪ S`-respecting
     /// evaluation order; see DESIGN.md "Lemma 2".
     pub linker_order: Vec<ModuleId>,
+    linker_position_by_module: BTreeMap<ModuleId, usize>,
 }
 
 impl Schedule {
@@ -161,6 +162,12 @@ impl Schedule {
         let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
         let dep_graph = quotient_owner_graph(&owner_graph);
         let linker_order = compute_linker_order(&dep_graph, &logical_modules);
+        let linker_position_by_module = linker_order
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(idx, id)| (id, idx))
+            .collect();
         Self {
             chunk_id,
             facts,
@@ -171,6 +178,7 @@ impl Schedule {
             dep_graph,
             owner_report_ids_by_binding,
             linker_order,
+            linker_position_by_module,
         }
     }
 
@@ -179,7 +187,7 @@ impl Schedule {
     /// ECMA-262's depth-first link traversal evaluates dependencies
     /// before dependents.
     pub fn linker_position(&self, id: ModuleId) -> Option<usize> {
-        self.linker_order.iter().position(|&m| m == id)
+        self.linker_position_by_module.get(&id).copied()
     }
 
     /// Render `id` to a human-readable label (used in cycle reports).
