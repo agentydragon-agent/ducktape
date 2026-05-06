@@ -31,6 +31,41 @@ export { b };
 }
 
 #[test]
+#[ignore = "TODO(debundle): reject specs that peel a binding while leaving an assigner in entry"]
+fn rejects_extracted_binding_assigned_by_residual_owner() {
+    // This is the minimal shape behind the Tana boot-progress
+    // `Assignment to constant variable` failure: the spec peels a
+    // mutable binding, while a still-residual function assigns to
+    // that binding at runtime. Emitting `import { a } ...` into the
+    // residual entry and leaving `a = 1` there makes Node reject the
+    // assignment because imported ESM bindings are read-only in the
+    // importing module.
+    //
+    // TODO(debundle): the realizability/schedule validation phase
+    // should reject this spec before emission. A binding with a
+    // cross-destination assignment cannot be safely peeled unless
+    // every top-level owner that may assign it is peeled into the
+    // same destination, or the emitter grows a sound live-mutation
+    // bridge for that binding.
+    let mut opts = FixtureOpts::new(
+        r#"let a = 0;
+function b() {
+  a = 1;
+}
+b();
+console.log(a);
+export { a };
+"#,
+        vec![logical_module("state", &[Member::new("a")])],
+    );
+    opts.include_residual = false;
+    expect_logical_modules_e2e_rejection(
+        opts,
+        &["assignment", "assigner", "mutable", "cross-destination"],
+    );
+}
+
+#[test]
 fn object_pattern_and_static_property_keys_do_not_import_residual_binding() {
     let mut opts = FixtureOpts::new(
         r#"const id = "residual";
