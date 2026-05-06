@@ -1,47 +1,30 @@
 """Bazel-driven debundle pipeline rule.
 
-Generates the transform spec with `--out-root` pointing at a tree-artifact
-output directory, then runs the ducktape debundler against that spec. All
-pipeline outputs (manifests, analysis, emitted JS) land under the rule's
-declared output directory in `bazel-bin/`. Each corpus may layer a
-`write_source_files` regen target on top to commit a subset of outputs into
-the source tree.
+Runs the ducktape debundler with `--out-root` pointing at a tree-artifact
+output directory. All pipeline outputs (manifests, analysis, emitted JS) land
+under the rule's declared output directory in `bazel-bin/`. Each corpus may
+layer a `write_source_files` regen target on top to commit a subset of outputs
+into the source tree.
 """
-
-load("@bazel_skylib//lib:paths.bzl", "paths")
-load("@bazel_skylib//lib:shell.bzl", "shell")
 
 def _debundle_pipeline_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
-    spec = ctx.actions.declare_file(ctx.label.name + ".spec.yaml")
-    bin_dir = ctx.bin_dir.path
 
-    # Generate the spec. The js_binary chdirs into BAZEL_BINDIR before
-    # invoking node, so the script sees its CLI paths as bin-dir-relative.
-    # `short_path` of a declared output is exactly that bin-dir-relative
-    # form for both the spec file and the tree-artifact output dir.
-    ctx.actions.run(
-        executable = ctx.executable.spec_generator,
-        inputs = depset(
-            transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_generator_inputs],
-        ),
-        outputs = [spec],
-        arguments = ctx.attr.spec_generator_args + [
-            "--out",
-            spec.short_path,
-            "--out-root",
-            out_dir.short_path,
-        ],
-        env = {"BAZEL_BINDIR": bin_dir},
-        progress_message = "Generating debundle spec for %{label}",
-        mnemonic = "DebundleSpecGen",
-    )
+    if ctx.file.spec and ctx.attr.spec_tree_args:
+        fail("pass either spec or spec_tree_args, not both")
+    if not ctx.file.spec and not ctx.attr.spec_tree_args:
+        fail("one of spec or spec_tree_args is required")
 
-    # The spec records inputs (snapshot/, js-files.txt, asset-summary.json)
-    # and the output dir as bin-dir-relative paths. Run the debundler under
-    # `cd $BAZEL_BINDIR` so those paths resolve against the
-    # aspect_rules_js-materialized `bazel-out/<config>/bin/...` tree.
-    debundler_args = ["--spec", spec.short_path]
+    debundler_args = []
+    if ctx.file.spec:
+        debundler_args.extend(["--spec", ctx.file.spec.path])
+    else:
+        debundler_args.extend(ctx.attr.spec_tree_args)
+        debundler_args.extend(["--out-root", out_dir.path])
+
+    if ctx.attr.force:
+        debundler_args.append("--force")
+
     for pkg_label, pkg_name in ctx.attr.package_roots.items():
         pkg_files = pkg_label[DefaultInfo].files.to_list()
         if not pkg_files:
@@ -49,28 +32,23 @@ def _debundle_pipeline_impl(ctx):
 
         # The `:dir` filegroup is a single tree artifact whose `.path`
         # already points directly at the package directory containing
-        # `package.json`. Make it bin-dir-relative for the post-cd cwd.
-        pkg_dir = paths.relativize(pkg_files[0].path, bin_dir)
+        # `package.json`.
+        pkg_dir = pkg_files[0].path
         debundler_args.append("--package-root")
         debundler_args.append("{}={}".format(pkg_name, pkg_dir))
 
     inputs = depset(
-        direct = [spec],
-        transitive = [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
+        direct = [ctx.file.spec] if ctx.file.spec else [],
+        transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
+                     [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
                      [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()],
     )
 
-    # `${OLDPWD}` keeps a reference to the execroot so we can address the
-    # debundler binary (sitting under bazel-out for tools) after `cd`.
-    ctx.actions.run_shell(
+    ctx.actions.run(
+        executable = ctx.executable.debundler,
         inputs = inputs,
-        tools = [ctx.executable.debundler],
         outputs = [out_dir],
-        command = "cd \"${{BAZEL_BINDIR}}\" && exec \"${{OLDPWD}}/{debundler}\" {args}".format(
-            debundler = ctx.executable.debundler.path,
-            args = " ".join([shell.quote(a) for a in debundler_args]),
-        ),
-        env = {"BAZEL_BINDIR": bin_dir},
+        arguments = debundler_args,
         # The debundler asserts that each vendor package's resolved subpath
         # canonicalizes to a location within the package root. Inside
         # Bazel's linux-sandbox, package-dir entries are real directories
@@ -83,35 +61,30 @@ def _debundle_pipeline_impl(ctx):
         mnemonic = "DebundlePipeline",
     )
 
-    # Default output is just the tree artifact so consumers (and shell-arg
-    # `$(rlocationpath ...)` expansion) get a single file label. The spec
-    # YAML is exposed via the `spec` output group for ad-hoc inspection.
-    return [
-        DefaultInfo(files = depset([out_dir])),
-        OutputGroupInfo(spec = depset([spec])),
-    ]
+    return [DefaultInfo(files = depset([out_dir]))]
 
 debundle_pipeline = rule(
     implementation = _debundle_pipeline_impl,
     attrs = {
-        "spec_generator": attr.label(
-            executable = True,
-            cfg = "exec",
-            mandatory = True,
-            doc = "Executable that emits the transform spec; must accept `--out <path>` and `--out-root <dir>`.",
+        "spec": attr.label(
+            allow_single_file = True,
+            doc = "Optional executable transform spec YAML. Mutually exclusive with spec_tree_args.",
         ),
-        "spec_generator_args": attr.string_list(
-            doc = "Additional arguments passed to the spec generator before --out/--out-root.",
+        "spec_tree_args": attr.string_list(
+            doc = "Tree-shaped authoring arguments passed to debundle before --out-root.",
         ),
-        "spec_generator_inputs": attr.label_list(
+        "spec_tree_inputs": attr.label_list(
             allow_files = True,
-            doc = "Source-tree inputs the spec generator reads.",
+            doc = "Source-tree inputs the tree-shaped spec compiler reads.",
         ),
         "debundler": attr.label(
             executable = True,
             cfg = "exec",
             mandatory = True,
-            doc = "Debundler binary; must accept `--spec <path>` and `--package-root <name>=<dir>`.",
+            doc = "Debundler binary; must accept executable-spec or tree-shaped spec args.",
+        ),
+        "force": attr.bool(
+            doc = "Pass --force to debundle so output-tree stages may replace existing directories.",
         ),
         "input_data": attr.label_list(
             allow_files = True,

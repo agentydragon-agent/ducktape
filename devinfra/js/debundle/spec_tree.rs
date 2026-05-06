@@ -11,7 +11,7 @@ use spec::{
     VendorLevel, VendorMark, VendorRole, WrapperShape,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileSpecTreeOptions {
     pub config_path: PathBuf,
     pub modules_root: PathBuf,
@@ -139,15 +139,6 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
             force: options.force,
         }),
     })
-}
-
-pub fn write_compiled_spec(spec: &TransformSpec, out_path: &Path) -> Result<()> {
-    if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    }
-    let file =
-        fs::File::create(out_path).with_context(|| format!("writing {}", out_path.display()))?;
-    serde_yaml::to_writer(file, spec).context("serializing transform spec")
 }
 
 fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
@@ -441,51 +432,6 @@ browser_harness:
         }
     }
 
-    fn legacy_fixture(root: &Path) -> CompileSpecTreeOptions {
-        let config = root.join("spec_config.yaml");
-        let modules = root.join("modules");
-        let vendor_marks = root.join("sources/vendor/vendor_marks.yaml");
-        write_file(
-            &config,
-            r#"default_out_root: out/default
-main_chunk_id: static/main
-source_roots:
-  asset_summary_path: extracted/asset-summary.json
-  js_list_path: extracted/js-files.txt
-  snapshot_root: snapshots/test
-logical_modules:
-  chunk_ids:
-    - static/main
-    - static/extra
-  force: true
-  target_dir:
-browser_harness:
-  force: true
-"#,
-        );
-        write_file(
-            &vendor_marks,
-            r#"vendor_marks:
-  - level: swap
-    chunk_path: static/vendor.js
-    identity: example
-    role: worker
-    package: pkg
-    version: 1.2.3
-    subpath: dist/index.js
-    wrapper_shape: named_from_module_default
-"#,
-        );
-        CompileSpecTreeOptions {
-            config_path: config,
-            modules_root: modules,
-            vendor_marks_path: vendor_marks,
-            ancillary_modules_path: None,
-            out_root: PathBuf::from("out/override"),
-            force: true,
-        }
-    }
-
     #[test]
     fn compiles_tree_sources_into_executable_transform_spec() {
         let temp = tempfile::tempdir().unwrap();
@@ -610,9 +556,21 @@ members: []
     }
 
     #[test]
-    fn rejects_retired_authoring_config_fields() {
+    fn rejects_unknown_authoring_config_fields() {
         let temp = tempfile::tempdir().unwrap();
-        let options = legacy_fixture(temp.path());
+        let mut options = fixture(temp.path());
+        write_file(
+            &options.config_path,
+            r#"main_chunk_id: static/main
+inputs:
+  root: snapshots/test
+  js_list_path: extracted/js-files.txt
+browser_harness:
+  asset_summary_path: extracted/asset-summary.json
+extra_authoring_field: old
+"#,
+        );
+        options.ancillary_modules_path = None;
 
         let error = compile_spec_tree(&options).unwrap_err();
         assert!(format!("{error:#}").contains("unknown field"), "{error:#}");

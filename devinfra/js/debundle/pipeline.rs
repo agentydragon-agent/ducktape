@@ -15,6 +15,7 @@ use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modu
 use prepare_chunks::{ParsedJsFilesManifest, PrepareJsChunksOptions, prepare_js_chunks};
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
+use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use vendor::{
     SwapVendorOptions, apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
 };
@@ -22,10 +23,16 @@ use write_tree::write_js_tree;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformCli {
-    pub spec_path: PathBuf,
+    pub spec_source: TransformSpecSource,
     pub package_roots: HashMap<String, PathBuf>,
     pub packages_root: Option<PathBuf>,
     pub force: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransformSpecSource {
+    Executable { path: PathBuf },
+    Tree(CompileSpecTreeOptions),
 }
 
 /// Command-line arguments for the debundle transform pipeline.
@@ -36,15 +43,30 @@ pub struct TransformCli {
 #[command(
     name = "debundle",
     version,
-    about = "Run the debundle transform pipeline described by --spec.",
-    long_about = "Runs the transform pipeline described by the spec. Pipeline stages \
+    about = "Run the debundle transform pipeline from an executable or tree-shaped spec.",
+    long_about = "Runs the transform pipeline described by an executable spec or tree-shaped authoring spec. Pipeline stages \
                   dispatch directly to registered functions; this target does not invoke \
                   Bazel from inside the pipeline. Specs are parsed as YAML."
 )]
 pub struct TransformArgs {
-    /// Path to the transform spec YAML.
+    /// Path to an executable transform spec YAML.
     #[arg(long)]
-    pub spec: PathBuf,
+    pub spec: Option<PathBuf>,
+    /// Path to a tree-shaped authoring config YAML.
+    #[arg(long = "tree-config")]
+    pub tree_config: Option<PathBuf>,
+    /// Root directory containing tree-shaped logical module YAML files.
+    #[arg(long = "tree-modules")]
+    pub tree_modules: Option<PathBuf>,
+    /// Path to tree-shaped vendor marks YAML.
+    #[arg(long = "tree-vendor-marks")]
+    pub tree_vendor_marks: Option<PathBuf>,
+    /// Optional path to ancillary logical-module source YAML.
+    #[arg(long = "tree-ancillary-modules")]
+    pub tree_ancillary_modules: Option<PathBuf>,
+    /// Output root used when compiling tree-shaped authoring sources.
+    #[arg(long = "out-root")]
+    pub out_root: Option<PathBuf>,
     /// Map a package name to its source directory: `<pkg>=<dir>`. May be repeated.
     #[arg(long = "package-root", value_parser = parse_package_root_kv)]
     pub package_roots: Vec<(String, PathBuf)>,
@@ -59,10 +81,11 @@ pub struct TransformArgs {
 impl TransformArgs {
     /// Resolve all path arguments against Bazel runfiles (when present) and
     /// collapse `--package-root` pairs into a `HashMap`.
-    pub fn resolve(self) -> TransformCli {
+    pub fn resolve(self) -> Result<TransformCli> {
         let runfiles = Runfiles::create().ok();
-        TransformCli {
-            spec_path: resolve_runfiles_path(self.spec, runfiles.as_ref()),
+        let spec_source = resolve_spec_source(&self, runfiles.as_ref())?;
+        Ok(TransformCli {
+            spec_source,
             package_roots: self
                 .package_roots
                 .into_iter()
@@ -72,8 +95,48 @@ impl TransformArgs {
                 .packages_root
                 .map(|dir| resolve_runfiles_path(dir, runfiles.as_ref())),
             force: self.force,
+        })
+    }
+}
+
+fn resolve_spec_source(
+    args: &TransformArgs,
+    runfiles: Option<&Runfiles>,
+) -> Result<TransformSpecSource> {
+    match (&args.spec, &args.tree_config) {
+        (Some(_), Some(_)) => {
+            bail!("pass either --spec or --tree-config, not both");
+        }
+        (Some(path), None) => Ok(TransformSpecSource::Executable {
+            path: resolve_runfiles_path(path.clone(), runfiles),
+        }),
+        (None, Some(config_path)) => {
+            let modules_root = required_tree_arg("--tree-modules", &args.tree_modules)?;
+            let vendor_marks_path =
+                required_tree_arg("--tree-vendor-marks", &args.tree_vendor_marks)?;
+            let out_root = required_tree_arg("--out-root", &args.out_root)?;
+            Ok(TransformSpecSource::Tree(CompileSpecTreeOptions {
+                config_path: resolve_runfiles_path(config_path.clone(), runfiles),
+                modules_root: resolve_runfiles_path(modules_root, runfiles),
+                vendor_marks_path: resolve_runfiles_path(vendor_marks_path, runfiles),
+                ancillary_modules_path: args
+                    .tree_ancillary_modules
+                    .clone()
+                    .map(|path| resolve_runfiles_path(path, runfiles)),
+                out_root: resolve_runfiles_path(out_root, runfiles),
+                force: args.force,
+            }))
+        }
+        (None, None) => {
+            bail!("pass either --spec or --tree-config");
         }
     }
+}
+
+fn required_tree_arg(name: &str, value: &Option<PathBuf>) -> Result<PathBuf> {
+    value
+        .clone()
+        .with_context(|| format!("{name} is required with --tree-config"))
 }
 
 fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
@@ -184,7 +247,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     let spec = run_step_with_result(
         &mut preparation_steps,
         PipelineStage::LoadTransformSpec,
-        || load_transform_spec(&cli.spec_path),
+        || load_transform_spec_source(&cli.spec_source),
     )?;
     run_step(
         &mut preparation_steps,
@@ -327,10 +390,24 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
 
     Ok(TransformRunSummary {
         duration: started.elapsed(),
-        spec_path: cli.spec_path.display().to_string(),
+        spec_path: spec_source_description(&cli.spec_source),
         preparation_steps,
         steps,
     })
+}
+
+fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
+    match source {
+        TransformSpecSource::Executable { path } => load_executable_transform_spec(path),
+        TransformSpecSource::Tree(options) => compile_spec_tree(options),
+    }
+}
+
+fn spec_source_description(source: &TransformSpecSource) -> String {
+    match source {
+        TransformSpecSource::Executable { path } => path.display().to_string(),
+        TransformSpecSource::Tree(options) => options.config_path.display().to_string(),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -706,7 +783,7 @@ fn run_step_with_result<T>(
     Ok(value)
 }
 
-fn load_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
+fn load_executable_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
     let raw = fs::read(spec_path).with_context(|| format!("reading {}", spec_path.display()))?;
     serde_yaml::from_slice(&raw)
         .with_context(|| format!("Failed to parse {} as YAML", spec_path.display()))
@@ -784,14 +861,49 @@ mod tests {
             "--force",
         ])
         .expect("parse cli");
-        let cli = args.resolve();
-        assert_eq!(cli.spec_path, PathBuf::from("spec.yaml"));
+        let cli = args.resolve().expect("resolve cli");
+        assert_eq!(
+            cli.spec_source,
+            TransformSpecSource::Executable {
+                path: PathBuf::from("spec.yaml")
+            }
+        );
         assert_eq!(
             cli.package_roots.get("pkg"),
             Some(&PathBuf::from("/tmp/pkg"))
         );
         assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
         assert!(cli.force);
+    }
+
+    #[test]
+    fn parse_tree_transform_cli_args() {
+        let args = TransformArgs::try_parse_from([
+            "debundle",
+            "--tree-config",
+            "spec_config.yaml",
+            "--tree-modules",
+            "modules",
+            "--tree-vendor-marks",
+            "vendor_marks.yaml",
+            "--tree-ancillary-modules",
+            "ancillary.yaml",
+            "--out-root",
+            "out",
+        ])
+        .expect("parse cli");
+        let cli = args.resolve().expect("resolve cli");
+        assert_eq!(
+            cli.spec_source,
+            TransformSpecSource::Tree(CompileSpecTreeOptions {
+                config_path: PathBuf::from("spec_config.yaml"),
+                modules_root: PathBuf::from("modules"),
+                vendor_marks_path: PathBuf::from("vendor_marks.yaml"),
+                ancillary_modules_path: Some(PathBuf::from("ancillary.yaml")),
+                out_root: PathBuf::from("out"),
+                force: false,
+            })
+        );
     }
 
     #[test]
@@ -940,7 +1052,7 @@ mod tests {
         )?;
 
         let summary = run_transform_cli(&TransformCli {
-            spec_path,
+            spec_source: TransformSpecSource::Executable { path: spec_path },
             package_roots: HashMap::new(),
             packages_root: None,
             force: false,
@@ -1155,7 +1267,7 @@ mod tests {
         fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
 
         let summary = run_transform_cli(&TransformCli {
-            spec_path,
+            spec_source: TransformSpecSource::Executable { path: spec_path },
             package_roots: HashMap::new(),
             packages_root: None,
             force: true,

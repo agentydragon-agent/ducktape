@@ -229,18 +229,6 @@ rust_test(
     deps = ["@crates//:tempfile"],
 )
 
-rust_binary(
-    name = "compile_spec_tree",
-    srcs = ["spec_tree_cli.rs"],
-    crate_root = "spec_tree_cli.rs",
-    edition = "2024",
-    deps = [
-        ":spec_tree",
-        "@crates//:anyhow",
-        "@crates//:clap",
-    ],
-)
-
 rust_library(
     name = "logical_modules",
     srcs = ["logical_modules.rs"],
@@ -328,6 +316,7 @@ rust_library(
         ":rewrite_specifiers",
         ":scrambled_id_frequencies",
         ":spec",
+        ":spec_tree",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",

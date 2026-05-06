@@ -14,7 +14,7 @@ fn main() -> ExitCode {
 }
 
 fn real_main() -> anyhow::Result<ExitCode> {
-    let cli = TransformArgs::parse().resolve();
+    let cli = TransformArgs::parse().resolve()?;
     let summary = run_transform_cli(&cli)?;
     print!("{}", render_transform_summary(&summary));
     Ok(ExitCode::SUCCESS)

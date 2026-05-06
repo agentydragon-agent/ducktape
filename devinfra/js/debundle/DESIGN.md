@@ -1535,13 +1535,13 @@ string vocabulary.
 
 Some downstream repos keep a higher-level authoring tree where YAML
 files are laid out like the eventual emitted JavaScript modules. That
-shape is useful enough to become a debundler-owned authoring layer,
-but it should lower into the same typed executable spec before this
-pipeline runs. The owner-graph reports are the bridge: they expose
+shape is a debundler-owned authoring layer: `debundle` compiles it
+into the same typed executable spec in memory, then runs the fixed
+pipeline below. The owner-graph reports are the bridge: they expose
 source owner ids, readable member names, destinations, blockers, and
-peel-set hyperedges so an authoring layer can mostly project and
-filter debundler facts instead of re-analyzing JavaScript or private
-repo YAML conventions.
+peel-set hyperedges so authoring tools can mostly project and filter
+debundler facts instead of re-analyzing JavaScript or private repo
+YAML conventions.
 
 | Step                             | Module                                         | Runs when                                                                                                                            |
 | -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
