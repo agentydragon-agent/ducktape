@@ -24,6 +24,7 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
             experimental-features = nix-command flakes fetch-closure
+            netrc-file = /home/runner/.config/nix/netrc
 
       - name: Install Attic client
         run: nix profile install nixpkgs#attic-client
@@ -34,6 +35,18 @@ jobs:
 
       - name: Configure Attic cache
         run: attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+
+      - name: Write Nix netrc for cache.allegedly.works
+        # builtins.fetchClosure (used by nix/packages/gaffer.nix to substitute
+        # private drivefs/drivectl closures from cache.allegedly.works/gaffer)
+        # uses Nix's own HTTP layer — not attic — so it needs the JWT in a
+        # netrc file that nix.conf points at via netrc-file. The path matches
+        # the value passed to install-nix-action above.
+        run: |
+          mkdir -p /home/runner/.config/nix
+          umask 077
+          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
+            > /home/runner/.config/nix/netrc
 
       - name: Build and push all flake outputs
         run: devinfra/ci/nix_attic_build_and_push.sh
