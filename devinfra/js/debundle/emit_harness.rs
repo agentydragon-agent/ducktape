@@ -121,7 +121,7 @@ pub fn emit_browser_harness(
     let source_html_in_tree = options.out_dir.join("source.html");
     fs::write(&source_html_in_tree, &source_html)?;
     let asset_summary_in_tree = options.out_dir.join("asset-summary.json");
-    fs::copy(&options.asset_summary_path, &asset_summary_in_tree)?;
+    copy_output_file(&options.asset_summary_path, &asset_summary_in_tree)?;
     let manifest_path = options.out_dir.join("manifest.json");
     let rel = |target: &Path| manifest_relative_path(&manifest_path, target);
     // The scrambled-identifier frequency queue is a side output of every
@@ -516,10 +516,35 @@ fn copy_snapshot_assets_recursive(
         if let Some(parent) = out_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::copy(entry.path(), out_path)?;
+        copy_output_file(&entry.path(), &out_path)?;
         copied.push(relative_posix);
     }
     copied.sort();
+    Ok(())
+}
+
+fn copy_output_file(source: &Path, target: &Path) -> Result<()> {
+    fs::copy(source, target)?;
+    make_owner_writable(target)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn make_owner_writable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = fs::metadata(path)?;
+    let mut permissions = metadata.permissions();
+    permissions.set_mode(permissions.mode() | 0o200);
+    fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn make_owner_writable(path: &Path) -> Result<()> {
+    let mut permissions = fs::metadata(path)?.permissions();
+    permissions.set_readonly(false);
+    fs::set_permissions(path, permissions)?;
     Ok(())
 }
 
@@ -580,4 +605,32 @@ fn harness_monitor_script() -> &'static str {
         });
       })();
     </script>"#
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn copied_snapshot_assets_remain_rewritable() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let snapshot = temp.path().join("snapshot");
+        let out = temp.path().join("out");
+        fs::create_dir_all(&snapshot)?;
+        let source_html = snapshot.join("index.html");
+        fs::write(&source_html, "<html></html>")?;
+
+        #[cfg(unix)]
+        fs::set_permissions(&source_html, fs::Permissions::from_mode(0o555))?;
+
+        let copied = copy_snapshot_assets(&snapshot, &out)?;
+
+        assert_eq!(copied, vec!["index.html"]);
+        fs::write(out.join("index.html"), "<html>rewritten</html>")?;
+        Ok(())
+    }
 }

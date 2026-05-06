@@ -3,10 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use rayon::prelude::*;
 use relative_path::RelativePath;
 use serde::Serialize;
 
-use js_ast::{ParsedJsModule, emit_js_module, parse_js_module};
+use js_ast::{
+    ParsedJsModule, emit_js_module, parse_js_module_ast, parsed_js_module_with_source_map,
+};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
@@ -527,7 +530,7 @@ pub fn compute_js_asts(
     drop_content: bool,
 ) -> Result<ComputeJsAstsManifest> {
     let keys = artifact.list_js_file_keys();
-    let mut parsed = 0usize;
+    let mut jobs = Vec::new();
     for (chunk_id, file_path) in &keys {
         let chunk = artifact
             .chunks
@@ -540,24 +543,79 @@ pub fn compute_js_asts(
         if file.ast.is_some() {
             continue;
         }
-        let content = file
-            .content
-            .as_deref()
-            .with_context(|| format!("computeJsAsts requires content for file: {}", file.path))?;
-        file.ast = Some(parse_js_module(
-            &format!("{chunk_id}/{file_path}"),
+        let content = if drop_content {
+            file.content.take().with_context(|| {
+                format!("computeJsAsts requires content for file: {}", file.path)
+            })?
+        } else {
+            file.content.clone().with_context(|| {
+                format!("computeJsAsts requires content for file: {}", file.path)
+            })?
+        };
+        jobs.push(ParseJob {
+            chunk_id: chunk_id.clone(),
+            file_path: file_path.clone(),
+            source_name: format!("{chunk_id}/{file_path}"),
             content,
-        )?);
-        if drop_content {
-            file.content = None;
-        }
-        parsed += 1;
+        });
+    }
+    let parsed_files = parse_js_jobs(jobs)?;
+    let parsed = parsed_files.len();
+    for parsed_file in parsed_files {
+        let chunk = artifact
+            .chunks
+            .get_mut(&parsed_file.chunk_id)
+            .with_context(|| format!("missing artifact chunk {}", parsed_file.chunk_id))?;
+        let file = chunk
+            .files
+            .get_mut(&parsed_file.file_path)
+            .with_context(|| {
+                format!(
+                    "missing artifact file {}/{}",
+                    parsed_file.chunk_id, parsed_file.file_path
+                )
+            })?;
+        file.ast = Some(parsed_js_module_with_source_map(
+            &parsed_file.source_name,
+            &parsed_file.content,
+            parsed_file.module,
+        ));
     }
     Ok(ComputeJsAstsManifest {
         counts: ComputeJsAstsCounts {
             parsed,
             files: keys.len(),
         },
+    })
+}
+
+struct ParseJob {
+    chunk_id: String,
+    file_path: String,
+    source_name: String,
+    content: String,
+}
+
+struct ParsedFile {
+    chunk_id: String,
+    content: String,
+    file_path: String,
+    module: swc_ecma_ast::Module,
+    source_name: String,
+}
+
+fn parse_js_jobs(jobs: Vec<ParseJob>) -> Result<Vec<ParsedFile>> {
+    jobs.into_par_iter().map(parse_js_job).collect()
+}
+
+fn parse_js_job(job: ParseJob) -> Result<ParsedFile> {
+    let module = parse_js_module_ast(&job.source_name, &job.content)?;
+    Ok(ParsedFile {
+        chunk_id: job.chunk_id,
+        content: job.content,
+        file_path: job.file_path,
+        module,
+        source_name: job.source_name,
     })
 }
 

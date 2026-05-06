@@ -14,14 +14,43 @@ pub struct ParsedJsModule {
 
 pub fn parse_js_module(source_name: &str, source: &str) -> Result<ParsedJsModule> {
     let cm: Lrc<SourceMap> = Default::default();
-    let fm = cm.new_source_file(
+    let fm = source_file(&cm, source_name, source);
+    let module = parse_module_from_source_file(source_name, &fm)?;
+    Ok(ParsedJsModule { cm, module })
+}
+
+pub fn parse_js_module_ast(source_name: &str, source: &str) -> Result<Module> {
+    let cm: Lrc<SourceMap> = Default::default();
+    let fm = source_file(&cm, source_name, source);
+    parse_module_from_source_file(source_name, &fm)
+}
+
+pub fn parsed_js_module_with_source_map(
+    source_name: &str,
+    source: &str,
+    module: Module,
+) -> ParsedJsModule {
+    let cm: Lrc<SourceMap> = Default::default();
+    let _fm = source_file(&cm, source_name, source);
+    ParsedJsModule { cm, module }
+}
+
+fn source_file(
+    cm: &Lrc<SourceMap>,
+    source_name: &str,
+    source: &str,
+) -> Lrc<swc_common::SourceFile> {
+    cm.new_source_file(
         FileName::Custom(source_name.to_string()).into(),
         source.to_string(),
-    );
+    )
+}
+
+fn parse_module_from_source_file(source_name: &str, fm: &swc_common::SourceFile) -> Result<Module> {
     let lexer = Lexer::new(
         default_syntax(),
         Default::default(),
-        StringInput::from(&*fm),
+        StringInput::from(fm),
         None,
     );
     let mut parser = Parser::new_from(lexer);
@@ -35,7 +64,7 @@ pub fn parse_js_module(source_name: &str, source: &str) -> Result<ParsedJsModule
             recovered.len()
         );
     }
-    Ok(ParsedJsModule { cm, module })
+    Ok(module)
 }
 
 pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Result<String> {
