@@ -25,6 +25,7 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes fetch-closure
             netrc-file = /home/runner/.config/nix/netrc
+            extra-trusted-public-keys = main:cy5xhwCNq/T7R55I9TaLv0z6SM6EipXvdFhqrbxC7nc= gaffer:Z8sM2kptUUDGk4ARVD/YkcpzWdMgmZX7nVLV5joK7r8=
 
       - name: Install Attic client
         run: nix profile install nixpkgs#attic-client
