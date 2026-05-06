@@ -1,15 +1,15 @@
 use anyhow::{Context, Result};
+use rayon::prelude::*;
 use std::path::Path;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    FileRole, JsFile, JsPipelineArtifact, get_chunk_entry_path, join_module_path,
-    module_path_dirname, relative_module_path, resolve_artifact_import_reference,
-    resolve_artifact_source_import_reference,
+    ArtifactReferenceIndex, FileRole, JsFile, JsPipelineArtifact, get_chunk_entry_path,
+    join_module_path, module_path_dirname, relative_module_path,
 };
-use js_ast::{set_str_value, str_value};
+use js_ast::{ParsedJsModule, set_str_value, str_value};
 
 #[derive(Debug, Clone)]
 pub struct RewriteChunkEntrySpecifiersManifest {
@@ -26,9 +26,8 @@ pub struct RewriteCounts {
 pub fn rewrite_chunk_entry_specifiers(
     artifact: &mut JsPipelineArtifact,
 ) -> Result<RewriteChunkEntrySpecifiersManifest> {
-    let mut rewritten_files = 0usize;
-    let mut rewritten_specifiers = 0usize;
-    let mut traversed_files = 0usize;
+    let references = ArtifactReferenceIndex::build(artifact)?;
+    let mut jobs = Vec::new();
     let chunk_ids = artifact.list_chunk_ids();
 
     for chunk_id in chunk_ids {
@@ -47,8 +46,7 @@ pub fn rewrite_chunk_entry_specifiers(
             ) {
                 continue;
             }
-            traversed_files += 1;
-            let mut ast = {
+            let ast = {
                 let chunk = artifact
                     .chunks
                     .get_mut(&chunk_id)
@@ -61,30 +59,36 @@ pub fn rewrite_chunk_entry_specifiers(
                     .take()
                     .with_context(|| format!("artifact file has no AST: {chunk_id}/{file_path}"))?
             };
-            let mut rewriter = RuntimeSourceRewriter {
-                artifact,
-                caller_chunk_id: chunk_id.clone(),
-                caller_file: file_path.clone(),
-                rewrites: 0,
-            };
-            ast.module.visit_mut_with(&mut rewriter);
-            let file_rewrites = rewriter.rewrites;
-            drop(rewriter);
-            {
-                let chunk = artifact
-                    .chunks
-                    .get_mut(&chunk_id)
-                    .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
-                let file = chunk
-                    .files
-                    .get_mut(&file_path)
-                    .with_context(|| format!("missing artifact file {chunk_id}/{file_path}"))?;
-                file.ast = Some(ast);
-            }
-            if file_rewrites > 0 {
-                rewritten_files += 1;
-                rewritten_specifiers += file_rewrites;
-            }
+            jobs.push(RewriteFileJob {
+                chunk_id: chunk_id.clone(),
+                file_path,
+                ast,
+            });
+        }
+    }
+    let traversed_files = jobs.len();
+    let results = jobs
+        .into_par_iter()
+        .map(|job| rewrite_file(job, &references))
+        .collect::<Vec<_>>();
+
+    let mut rewritten_files = 0usize;
+    let mut rewritten_specifiers = 0usize;
+    for result in results {
+        let chunk = artifact
+            .chunks
+            .get_mut(&result.chunk_id)
+            .with_context(|| format!("missing artifact chunk {}", result.chunk_id))?;
+        let file = chunk.files.get_mut(&result.file_path).with_context(|| {
+            format!(
+                "missing artifact file {}/{}",
+                result.chunk_id, result.file_path
+            )
+        })?;
+        file.ast = Some(result.ast);
+        if result.rewrites > 0 {
+            rewritten_files += 1;
+            rewritten_specifiers += result.rewrites;
         }
     }
 
@@ -95,6 +99,36 @@ pub fn rewrite_chunk_entry_specifiers(
             rewrites: rewritten_specifiers,
         },
     })
+}
+
+struct RewriteFileJob {
+    chunk_id: String,
+    file_path: String,
+    ast: ParsedJsModule,
+}
+
+struct RewriteFileResult {
+    chunk_id: String,
+    file_path: String,
+    ast: ParsedJsModule,
+    rewrites: usize,
+}
+
+fn rewrite_file(mut job: RewriteFileJob, references: &ArtifactReferenceIndex) -> RewriteFileResult {
+    let mut rewriter = RuntimeSourceRewriter {
+        references,
+        caller_chunk_id: job.chunk_id.clone(),
+        caller_file: job.file_path.clone(),
+        rewrites: 0,
+    };
+    job.ast.module.visit_mut_with(&mut rewriter);
+    let rewrites = rewriter.rewrites;
+    RewriteFileResult {
+        chunk_id: job.chunk_id,
+        file_path: job.file_path,
+        ast: job.ast,
+        rewrites,
+    }
 }
 
 pub fn runtime_js_href(
@@ -127,7 +161,7 @@ fn should_rewrite_file(file: &JsFile) -> bool {
 }
 
 struct RuntimeSourceRewriter<'a> {
-    artifact: &'a JsPipelineArtifact,
+    references: &'a ArtifactReferenceIndex,
     caller_chunk_id: String,
     caller_file: String,
     rewrites: usize,
@@ -138,23 +172,16 @@ impl RuntimeSourceRewriter<'_> {
         if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
             return Ok(source.to_string());
         }
-        if resolve_artifact_import_reference(
-            self.artifact,
-            source,
-            &self.caller_chunk_id,
-            &self.caller_file,
-        )
-        .is_some()
+        if self
+            .references
+            .resolve_import_reference(source, &self.caller_chunk_id, &self.caller_file)
+            .is_some()
         {
             return Ok(source.to_string());
         }
-        let Some((_target_chunk_id, _target_file, target_path)) =
-            resolve_artifact_source_import_reference(
-                self.artifact,
-                source,
-                &self.caller_chunk_id,
-                &self.caller_file,
-            )?
+        let Some((_target_chunk_id, _target_file, target_path)) = self
+            .references
+            .resolve_source_import_reference(source, &self.caller_chunk_id, &self.caller_file)
         else {
             return Ok(source.to_string());
         };

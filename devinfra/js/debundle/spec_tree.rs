@@ -23,8 +23,8 @@ pub struct CompileSpecTreeOptions {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AuthoringConfig {
-    #[serde(default)]
-    ui_version: Option<String>,
+    #[serde(default, rename = "ui_version")]
+    _ui_version: Option<String>,
     default_out_root: PathBuf,
     main_chunk_id: String,
     source_roots: SourceRoots,
@@ -98,7 +98,10 @@ struct AncillaryModulesFile {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ModuleFile {
-    path: String,
+    #[serde(default)]
+    chunk_id: Option<String>,
+    #[serde(default)]
+    path: Option<String>,
     #[serde(default)]
     members: Vec<Member>,
 }
@@ -114,7 +117,6 @@ struct ModuleSource {
 
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
     let config: AuthoringConfig = read_yaml(&options.config_path)?;
-    let _ui_version = &config.ui_version;
     let out_root = options
         .out_root
         .clone()
@@ -212,27 +214,22 @@ fn load_main_chunk_modules(
     collect_module_files(modules_root, &mut files)?;
     for path in files {
         let is_deferred = is_deferred_yaml(&path);
-        let suffix = if is_deferred {
-            ".yaml.deferred"
-        } else {
-            ".yaml"
-        };
-        let expected_path = module_path_from_file(&path, modules_root, suffix);
+        let module_path = module_path_from_file(
+            &path,
+            modules_root,
+            if is_deferred {
+                ".yaml.deferred"
+            } else {
+                ".yaml"
+            },
+        );
         let data: ModuleFile = read_yaml(&path)?;
-        if data.path != expected_path {
-            bail!(
-                "module file {} declares path {:?} but expected {:?}",
-                path.display(),
-                data.path,
-                expected_path
-            );
-        }
         if is_deferred {
             deferred_members.extend(data.members);
         } else {
             active.push(ModuleSource {
-                chunk_id: main_chunk_id.to_string(),
-                path: data.path,
+                chunk_id: data.chunk_id.unwrap_or_else(|| main_chunk_id.to_string()),
+                path: data.path.unwrap_or(module_path),
                 members: data.members,
             });
         }
@@ -427,8 +424,8 @@ browser_harness:
 "#,
         );
         write_file(
-            &modules.join("active.yaml"),
-            r#"path: active
+            &modules.join("ui/active.yaml"),
+            r#"path: ui/active
 members:
   - name: No
     selector:
@@ -439,8 +436,7 @@ members:
         );
         write_file(
             &modules.join("deferred.yaml.deferred"),
-            r#"path: deferred
-members:
+            r#"members:
   - name: DeferredThing
     selector:
       binding:
@@ -483,11 +479,11 @@ members:
         let temp = tempfile::tempdir().unwrap();
         let spec = compile_spec_tree(&fixture(temp.path())).unwrap();
 
-        assert!(spec.logical_modules["static/main"].contains_key("active"));
+        assert!(spec.logical_modules["static/main"].contains_key("ui/active"));
         assert!(spec.logical_modules["static/extra"].contains_key("chunks/extra"));
         assert!(!spec.logical_modules.contains_key("static/skipped"));
         assert_eq!(
-            spec.logical_modules["static/main"]["active"].members[0]
+            spec.logical_modules["static/main"]["ui/active"].members[0]
                 .name
                 .as_deref(),
             Some("No")
@@ -524,7 +520,7 @@ members:
                 .is_none()
         );
         assert!(
-            value["logical_modules"]["static/main"]["active"]["members"][0]
+            value["logical_modules"]["static/main"]["ui/active"]["members"][0]
                 .get("purity")
                 .is_none()
         );
@@ -536,8 +532,7 @@ members:
         let options = fixture(temp.path());
         write_file(
             &options.modules_root.join("active.yaml"),
-            r#"path: active
-members:
+            r#"members:
   - name: Bad
     selector:
       binding:
@@ -551,17 +546,17 @@ members:
     }
 
     #[test]
-    fn rejects_mismatched_module_path() {
+    fn rejects_explicit_module_target_file() {
         let temp = tempfile::tempdir().unwrap();
         let options = fixture(temp.path());
         write_file(
             &options.modules_root.join("active.yaml"),
-            r#"path: wrong
+            r#"target_file: modules/active.js
 members: []
 "#,
         );
 
         let error = compile_spec_tree(&options).unwrap_err();
-        assert!(error.to_string().contains("declares path"), "{error:#}");
+        assert!(format!("{error:#}").contains("unknown field"), "{error:#}");
     }
 }

@@ -452,6 +452,135 @@ impl ArtifactSourceImportResolver<'_> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ArtifactReferenceIndex {
+    output_path_index: BTreeMap<String, (String, String)>,
+    source_chunk_index: BTreeMap<String, String>,
+    chunk_source_paths: BTreeMap<String, String>,
+    file_source_paths: BTreeMap<(String, String), String>,
+    entry_files: BTreeMap<String, String>,
+    file_output_paths: BTreeMap<(String, String), String>,
+}
+
+impl ArtifactReferenceIndex {
+    pub fn build(artifact: &JsPipelineArtifact) -> Result<Self> {
+        let mut output_path_index = BTreeMap::new();
+        let mut source_chunk_index = BTreeMap::new();
+        let mut chunk_source_paths = BTreeMap::new();
+        let mut file_source_paths = BTreeMap::new();
+        let mut entry_files = BTreeMap::new();
+        let mut file_output_paths = BTreeMap::new();
+
+        for chunk_id in artifact.list_chunk_ids() {
+            let Some(chunk) = artifact.chunks.get(&chunk_id) else {
+                continue;
+            };
+            entry_files.insert(chunk_id.clone(), chunk.entry_file.clone());
+            if let Some(source_path) = artifact.chunk_source_path(&chunk_id) {
+                if let Some(existing) =
+                    source_chunk_index.insert(source_path.clone(), chunk_id.clone())
+                {
+                    bail!("Duplicate chunk sourcePath {source_path}: {existing} and {chunk_id}");
+                }
+                chunk_source_paths.insert(chunk_id.clone(), source_path);
+            }
+            for file_path in list_chunk_file_paths(chunk) {
+                let Some(file) = chunk.files.get(&file_path) else {
+                    continue;
+                };
+                let key = (chunk_id.clone(), file_path.clone());
+                if let Some(source_path) = file
+                    .metadata
+                    .source_path
+                    .clone()
+                    .or_else(|| chunk_source_paths.get(&chunk_id).cloned())
+                {
+                    file_source_paths.insert(key.clone(), source_path);
+                }
+                if let Some(output_path) =
+                    artifact_file_output_path_from_parts(&chunk_id, &file_path, file)
+                {
+                    if let Some(existing) =
+                        output_path_index.insert(output_path.clone(), key.clone())
+                    {
+                        bail!(
+                            "Duplicate artifact output path {output_path}: {}/{} and {}/{}",
+                            existing.0,
+                            existing.1,
+                            key.0,
+                            key.1
+                        );
+                    }
+                    file_output_paths.insert(key, output_path);
+                }
+            }
+        }
+
+        Ok(Self {
+            output_path_index,
+            source_chunk_index,
+            chunk_source_paths,
+            file_source_paths,
+            entry_files,
+            file_output_paths,
+        })
+    }
+
+    pub fn resolve_import_reference(
+        &self,
+        source: &str,
+        caller_chunk_id: &str,
+        caller_file: &str,
+    ) -> Option<(String, String)> {
+        if source.is_empty() || !source.starts_with('.') {
+            return None;
+        }
+        let caller_dir =
+            join_module_path(&[caller_chunk_id, module_path_dirname(caller_file).as_str()]);
+        let resolved_path =
+            normalize_module_path(&join_module_path(&[caller_dir.as_str(), source])).ok()?;
+        self.output_path_index.get(&resolved_path).cloned()
+    }
+
+    pub fn resolve_source_import_reference(
+        &self,
+        source: &str,
+        caller_chunk_id: &str,
+        caller_file: &str,
+    ) -> Option<(String, String, String)> {
+        if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
+            return None;
+        }
+        let caller_source_path = self
+            .file_source_paths
+            .get(&(caller_chunk_id.to_string(), caller_file.to_string()))
+            .or_else(|| self.chunk_source_paths.get(caller_chunk_id))?;
+        let imported_source_path = resolve_chunk_source_path_reference(source, caller_source_path)?;
+        let target_chunk_id = self.source_chunk_index.get(&imported_source_path)?.clone();
+        let target_entry_file = self.entry_files.get(&target_chunk_id)?.clone();
+        let path = self
+            .file_output_paths
+            .get(&(target_chunk_id.clone(), target_entry_file.clone()))
+            .cloned()
+            .unwrap_or_else(|| join_module_path(&[&target_chunk_id, &target_entry_file]));
+        Some((target_chunk_id, target_entry_file, path))
+    }
+
+    pub fn resolve_import_to_chunk_id(
+        &self,
+        source: &str,
+        caller_chunk_id: &str,
+        caller_file: &str,
+    ) -> Option<String> {
+        self.resolve_import_reference(source, caller_chunk_id, caller_file)
+            .map(|(chunk_id, _file)| chunk_id)
+            .or_else(|| {
+                self.resolve_source_import_reference(source, caller_chunk_id, caller_file)
+                    .map(|(chunk_id, _file, _path)| chunk_id)
+            })
+    }
+}
+
 pub fn load_js_chunks(
     input_root: &Path,
     js_list_path: &Path,
@@ -761,45 +890,6 @@ fn artifact_file_output_path_from_parts(
         .output_path
         .clone()
         .or_else(|| Some(join_module_path(&[chunk_id, file])))
-}
-
-pub fn resolve_artifact_import_reference(
-    artifact: &JsPipelineArtifact,
-    source: &str,
-    caller_chunk_id: &str,
-    caller_file: &str,
-) -> Option<(String, String)> {
-    if source.is_empty() || !source.starts_with('.') {
-        return None;
-    }
-    let caller_dir =
-        join_module_path(&[caller_chunk_id, module_path_dirname(caller_file).as_str()]);
-    let resolved_path =
-        normalize_module_path(&join_module_path(&[caller_dir.as_str(), source])).ok()?;
-    for chunk_id in artifact.list_chunk_ids() {
-        let Some(chunk) = artifact.chunks.get(&chunk_id) else {
-            continue;
-        };
-        for file_path in chunk.files.keys() {
-            if artifact_file_output_path(artifact, &chunk_id, file_path).as_deref()
-                == Some(resolved_path.as_str())
-            {
-                return Some((chunk_id, file_path.clone()));
-            }
-        }
-    }
-    None
-}
-
-pub fn resolve_artifact_source_import_reference(
-    artifact: &JsPipelineArtifact,
-    source: &str,
-    caller_chunk_id: &str,
-    caller_file: &str,
-) -> Result<Option<(String, String, String)>> {
-    artifact
-        .source_import_resolver()?
-        .resolve(source, caller_chunk_id, caller_file)
 }
 
 pub fn relative_module_specifier(from_dir: &Path, target_path: &Path) -> String {

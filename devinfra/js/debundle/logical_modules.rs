@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use rayon::prelude::*;
 use serde::Serialize;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
@@ -203,396 +204,38 @@ pub fn materialize_logical_modules(
         prune_artifact_to_chunk_ids(artifact, &selected_chunk_ids);
     }
 
+    let artifact_ref: &JsPipelineArtifact = artifact;
+    let chunk_results = selected_chunk_ids
+        .par_iter()
+        .map(|chunk_id| {
+            materialize_logical_chunk(MaterializeLogicalChunkInputs {
+                artifact: artifact_ref,
+                logical_modules,
+                residual_modules,
+                chunk_renames,
+                file: options.file.as_deref(),
+                target_dir: &target_dir,
+                report_out_dir: report_out_dir.as_deref(),
+                chunk_id,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
     let mut reports = Vec::new();
     let mut applied = Vec::<SelectedModuleLowering>::new();
-    for chunk_id in selected_chunk_ids {
-        let chunk_started = Instant::now();
-        let mut timings = PhaseTimings::default();
-        let target_file = time_phase!(timings, "resolve_entry", {
-            options
-                .file
-                .as_ref()
-                .map(|file| normalize_module_path(file))
-                .transpose()?
-                .or_else(|| get_chunk_entry_path(artifact, &chunk_id))
-                .with_context(|| {
-                    format!(
-                        "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
-                    )
-                })
-        })?;
-        let runtime_file = artifact
-            .chunks
-            .get(&chunk_id)
-            .and_then(|chunk| chunk.files.get(&target_file))
-            .with_context(|| {
-                format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
-            })?;
-        let runtime_ast = runtime_file.ast.as_ref().with_context(|| {
-            format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
-        })?;
-        let header_lines = runtime_file.header_lines.clone();
-        let source_path = runtime_file
-            .metadata
-            .source_path
-            .clone()
-            .or_else(|| artifact.chunk_source_path(&chunk_id))
-            .unwrap_or_else(|| format!("{chunk_id}.js"));
-        let runtime_import_facts = time_phase!(timings, "collect_runtime_import_facts", {
-            collect_runtime_import_facts(&runtime_ast.module.body)
-        });
-        let requests = time_phase!(timings, "build_requests", {
-            logical_requests_for_chunk(
-                logical_modules.get(&chunk_id),
-                residual_modules.get(&chunk_id),
-                chunk_renames.contains_key(&chunk_id),
-                &chunk_id,
-                &target_dir,
-            )
-        })?;
-        let mut explicit_requests = requests
-            .iter()
-            .filter(|request| !request.residual)
-            .cloned()
-            .collect::<Vec<_>>();
-        let residual_request = requests.iter().find(|request| request.residual).cloned();
-
-        let declarations = time_phase!(timings, "collect_top_level_declarations", {
-            collect_top_level_declarations(&runtime_ast.module)
-        });
-        let declaration_by_name = time_phase!(timings, "index_declarations_by_name", {
-            declarations
-                .iter()
-                .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
-                .collect::<BTreeMap<_, _>>()
-        });
-
-        let build_module_plans_started = Instant::now();
-        let mut binding_assignment = BTreeMap::<String, usize>::new();
-        let mut module_plans = Vec::new();
-        let mut bindings_catalogue = BTreeMap::<BindingName, BindingKind>::new();
-        let mut imported_binding_resolver = ArtifactSourceImportResolutionCache::new(artifact);
-        let mut imported_from_by_src = BTreeMap::<String, String>::new();
-        for (index, request) in explicit_requests.iter_mut().enumerate() {
-            let mut bindings = BTreeMap::new();
-            let dest_target_file = target_file_for_request(&target_dir, &request.target_path)?;
-            let module_id = ModuleId::Logical(LogicalModuleIndex(index));
-            for member in &request.members {
-                if member.is_import_specifier {
-                    // ImportSpecifier-bound: re-export of a source-chunk
-                    // import. Accumulate into BindingKind::Imported so
-                    // multiple modules can re-export the same binding
-                    // under different public names.
-                    let (imported_name, imported_from) = resolve_imported_binding(
-                        &mut imported_binding_resolver,
-                        &runtime_import_facts,
-                        &chunk_id,
-                        &target_file,
-                        &member.binding,
-                        &mut imported_from_by_src,
-                    )?;
-                    let entry = bindings_catalogue
-                        .entry(member.binding.clone())
-                        .or_insert_with(|| BindingKind::Imported {
-                            imported_name: imported_name.clone(),
-                            imported_from: imported_from.clone(),
-                            re_exported_by: BTreeMap::new(),
-                        });
-                    if let BindingKind::Imported { re_exported_by, .. } = entry {
-                        re_exported_by.insert(module_id, member.export_name.clone());
-                    }
-                } else {
-                    bindings.insert(member.binding.clone(), member.export_name.clone());
-                }
-            }
-            for binding in bindings.keys() {
-                if declaration_by_name.contains_key(binding) {
-                    binding_assignment.insert(binding.clone(), index);
-                    bindings_catalogue
-                        .insert(binding.clone(), BindingKind::Owned { owner: module_id });
-                }
-            }
-            module_plans.push(ModulePlan {
-                id: request.id.clone(),
-                target_file: dest_target_file,
-                target_path: request.target_path.clone(),
-                explicit: true,
-                bindings,
-            });
-        }
-        drop(imported_binding_resolver);
-
-        if let Some(residual) = residual_request {
-            let residual_index = module_plans.len();
-            let residual_module_id = ModuleId::Logical(LogicalModuleIndex(residual_index));
-            // Bindings staying in residual can still carry a public name. The
-            // gaffer-side `.yaml.deferred` workflow routes its rename ops
-            // through the residual op so that bindings deferred from peeled
-            // modules don't revert to scrambled names while waiting to be
-            // re-peeled. Source-name members map back to themselves.
-            let residual_renames: BTreeMap<&str, &str> = residual
-                .members
-                .iter()
-                .map(|m| (m.binding.as_str(), m.export_name.as_str()))
-                .collect();
-            let mut residual_bindings = BTreeMap::new();
-            for decl in &declarations {
-                for name in &decl.names {
-                    if !binding_assignment.contains_key(name) {
-                        binding_assignment.insert(name.clone(), residual_index);
-                        let export_name = residual_renames
-                            .get(name.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| name.clone());
-                        residual_bindings.insert(name.clone(), export_name);
-                        bindings_catalogue.insert(
-                            name.clone(),
-                            BindingKind::Owned {
-                                owner: residual_module_id,
-                            },
-                        );
-                    }
-                }
-            }
-            if !residual_bindings.is_empty() {
-                module_plans.push(ModulePlan {
-                    id: residual.id.clone(),
-                    target_file: target_file_for_request(&target_dir, &residual.target_path)?,
-                    target_path: residual.target_path.clone(),
-                    explicit: false,
-                    bindings: residual_bindings,
-                });
-            }
-        }
-        timings.add("build_module_plans", build_module_plans_started.elapsed());
-
-        let chunk_renames_map = time_phase!(timings, "collect_chunk_renames", {
-            chunk_renames
-                .get(&chunk_id)
-                .map(collect_chunk_renames)
-                .transpose()
-        })?
-        .unwrap_or_default();
-
-        // Run the schedule validator (see <DESIGN.md>). Computed here
-        // (before `lower_chunk` mutates the artifact) to keep the
-        // immutable borrow on `runtime_ast` simple. The report is
-        // emitted as `<chunk_id>/schedule.json`; cycles abort the
-        // pipeline.
-        let schedule = {
-            // Spec-declared pure bindings: every member with
-            // `purity: "pure"`. The classifier short-circuits
-            // `<binding>(...)` call sites to `Pure` regardless of
-            // body content. Author-trust contract; see DESIGN.md
-            // A9 + AGENTS.md "Declared purity".
-            let declared_pure: BTreeSet<String> = time_phase!(timings, "collect_declared_pure", {
-                explicit_requests
-                    .iter()
-                    .flat_map(|req| req.members.iter())
-                    .filter(|m| m.purity == MemberPurity::Pure)
-                    .map(|m| m.binding.clone())
-                    .collect()
-            });
-            let analysis = time_phase!(timings, "analyze_chunk_facts", {
-                analyze_chunk_with_source_locations(
-                    &runtime_ast.module,
-                    &declared_pure,
-                    Some(&source_path),
-                    |span| line_range_for_span(runtime_ast, span),
-                )
-            });
-            // Refuse chunks with top-level `await`. DESIGN.md
-            // assumption A2 — the proof's reverse-DFS argument
-            // doesn't apply to AsyncCycleRoot semantics, so the
-            // realizability theorem doesn't extend. Rejecting here
-            // turns the assumption into an enforced precondition.
-            if let Some(ord) = analysis.top_level_await {
-                anyhow::bail!(
-                    "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
-                     at statement #{ordinal} (TLA); the debundler's realizability theorem \
-                     does not cover async modules (DESIGN.md A2). Wrap the awaited code \
-                     in an async function or rewrite as a synchronous initialization.",
-                    ordinal = ord.0,
-                );
-            }
-            let logical_modules: Vec<ScheduleLogicalModule> =
-                time_phase!(timings, "project_schedule_modules", {
-                    module_plans
-                        .iter()
-                        .map(|plan| ScheduleLogicalModule {
-                            id: plan.id.clone(),
-                            target_file: plan.target_file.clone(),
-                            residual: !plan.explicit,
-                            rename_map: plan.bindings.clone(),
-                        })
-                        .collect()
-                });
-            time_phase!(timings, "build_schedule", {
-                Schedule::build(
-                    chunk_id.clone(),
-                    analysis.facts,
-                    bindings_catalogue,
-                    logical_modules,
-                    chunk_renames_map.clone(),
-                )
-            })
-        };
-        let schedule_report = time_phase!(timings, "validate_schedule", { schedule.validate() });
+    for chunk_result in chunk_results {
         if let Some(report_out_dir) = &report_out_dir {
-            time_phase!(timings, "write_schedule_report", {
-                write_chunk_report_json(
-                    report_out_dir,
-                    &chunk_id,
-                    "schedule.json",
-                    &schedule_report,
-                )
-            })?;
-            let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
-                schedule.owner_graph_report()
-            });
-            time_phase!(timings, "write_owner_graph_report", {
-                write_chunk_report_json(
-                    report_out_dir,
-                    &chunk_id,
-                    "owner_graph.json",
-                    &owner_graph_report,
-                )
-            })?;
+            write_chunk_report_json(
+                report_out_dir,
+                &chunk_result.chunk_id,
+                "logical_modules.json",
+                &chunk_result.report,
+            )?;
         }
-
-        // Hard gate: a cyclic spec is unrealizable; refuse to emit
-        // instead of producing a runtime-broken bundle. The full
-        // cycle evidence and owner graph are written as side-output
-        // JSON for downstream tooling; stderr gets a compact summary
-        // so the bail message stays under the typical CI log-tail
-        // threshold (Bazel truncates at ~1 MiB by default).
-        if !schedule_report.cycles.is_empty() {
-            if let Some(report_out_dir) = &report_out_dir {
-                time_phase!(timings, "write_cycles_report", {
-                    write_chunk_report_json(
-                        report_out_dir,
-                        &chunk_id,
-                        "cycles.json",
-                        &schedule_report.cycles,
-                    )
-                })?;
-            }
-            let summary = render_cycle_summary(&schedule_report.cycles);
-            bail!(
-                "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or moving the constraining owner endpoints. Full cycle evidence written to <reports>/{chunk_id}/cycles.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-                schedule_report.cycles.len(),
-            );
-        }
-
-        let lowered = time_phase!(timings, "lower_chunk_total", {
-            lower_chunk(LowerChunkInputs {
-                artifact,
-                runtime_ast,
-                header_lines: &header_lines,
-                entry_file: &target_file,
-                chunk_id: &chunk_id,
-                source_path: &source_path,
-                declarations: &declarations,
-                declaration_by_name: &declaration_by_name,
-                module_plans: &module_plans,
-                binding_assignment: &binding_assignment,
-                schedule: &schedule,
-                chunk_renames: &chunk_renames_map,
-                runtime_import_facts: &runtime_import_facts,
-            })
-        })?;
-        let LoweredChunk {
-            files: lowered_files,
-            file_records: lowered_file_records,
-            applied: lowered_applied,
-            timings: lower_timings,
-        } = lowered;
-        timings.extend_prefixed("lower", lower_timings);
-        time_phase!(timings, "replace_artifact_chunk", {
-            let mut files = BTreeMap::new();
-            for file in lowered_files {
-                files.insert(file.path.clone(), file);
-            }
-            let module_extraction_state = ModuleExtractionState {
-                runtime_file: target_file.clone(),
-                target_dir: target_dir.clone(),
-            };
-            artifact.chunks.insert(
-                chunk_id.clone(),
-                JsChunk {
-                    entry_file: target_file.clone(),
-                    files,
-                    metadata: ChunkMetadata {
-                        source_path: Some(source_path.clone()),
-                        module_extraction_state: Some(module_extraction_state),
-                    },
-                },
-            );
-            if !artifact.chunk_order.contains(&chunk_id) {
-                artifact.chunk_order.push(chunk_id.clone());
-            }
-        });
-
-        let selected_lowerings = lowered_applied.clone();
-        time_phase!(timings, "update_chunk_manifest", {
-            if let Some(manifest) = artifact.chunk_manifests.get_mut(&chunk_id) {
-                manifest.entry_file = target_file.clone();
-                manifest.files = lowered_file_records
-                    .iter()
-                    .map(|(file, role)| ChunkFileRecord {
-                        file: file.clone(),
-                        role: *role,
-                    })
-                    .collect();
-                manifest.logical_modules = Some(ChunkLogicalModulesSummary {
-                    count: module_plans.len(),
-                    module_ids: module_plans.iter().map(|plan| plan.id.clone()).collect(),
-                    target_dir: target_dir.clone(),
-                });
-                manifest.selected_module_lowerings = Some(selected_lowerings.clone());
-            }
-        });
-
-        let final_modules = time_phase!(timings, "build_final_module_report", {
-            module_plans
-                .iter()
-                .map(|plan| FinalModuleContent {
-                    binding_names: plan.bindings.keys().cloned().collect(),
-                    file: plan.target_file.clone(),
-                    id: plan.id.clone(),
-                    member_names: plan.bindings.values().cloned().collect(),
-                    path: plan.target_path.clone(),
-                    owner_ids: schedule
-                        .owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str)),
-                    residual: !plan.explicit,
-                })
-                .collect::<Vec<_>>()
-        });
-        let timings = timings.into_durations(chunk_started.elapsed());
-        let report = LogicalChunkReport {
-            chunk_id: chunk_id.clone(),
-            counts: LogicalChunkCounts {
-                applied: selected_lowerings.len(),
-                explicit_logical_modules: module_plans.iter().filter(|plan| plan.explicit).count(),
-                final_modules: module_plans.len(),
-                residual_logical_modules: module_plans.iter().filter(|plan| !plan.explicit).count(),
-                selected_owners: binding_assignment.len(),
-            },
-            final_module_contents: final_modules,
-            requested_logical_modules: requests
-                .iter()
-                .map(|request| RequestedLogicalModule {
-                    id: request.id.clone(),
-                    target_path: request.target_path.clone(),
-                    residual: request.residual,
-                })
-                .collect(),
-            timings,
-        };
-        if let Some(report_out_dir) = &report_out_dir {
-            write_chunk_report_json(report_out_dir, &chunk_id, "logical_modules.json", &report)?;
-        }
-        applied.extend(selected_lowerings);
+        let chunk_applied = chunk_result.applied.clone();
+        let report = chunk_result.report.clone();
+        merge_materialized_logical_chunk(artifact, &target_dir, chunk_result)?;
+        applied.extend(chunk_applied);
         reports.push(report);
     }
 
@@ -633,6 +276,410 @@ pub fn materialize_logical_modules(
         )?;
     }
     Ok(manifest)
+}
+
+struct MaterializeLogicalChunkInputs<'a> {
+    artifact: &'a JsPipelineArtifact,
+    logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
+    residual_modules: &'a BTreeMap<String, ResidualModule>,
+    chunk_renames: &'a BTreeMap<String, ChunkRenames>,
+    file: Option<&'a str>,
+    target_dir: &'a str,
+    report_out_dir: Option<&'a Path>,
+    chunk_id: &'a str,
+}
+
+struct MaterializedLogicalChunk {
+    chunk_id: String,
+    target_file: String,
+    source_path: String,
+    files: Vec<JsFile>,
+    file_records: Vec<(String, FileRole)>,
+    applied: Vec<SelectedModuleLowering>,
+    report: LogicalChunkReport,
+}
+
+fn materialize_logical_chunk(
+    inputs: MaterializeLogicalChunkInputs<'_>,
+) -> Result<MaterializedLogicalChunk> {
+    let MaterializeLogicalChunkInputs {
+        artifact,
+        logical_modules,
+        residual_modules,
+        chunk_renames,
+        file,
+        target_dir,
+        report_out_dir,
+        chunk_id,
+    } = inputs;
+    let chunk_started = Instant::now();
+    let mut timings = PhaseTimings::default();
+    let target_file = time_phase!(timings, "resolve_entry", {
+        file.map(normalize_module_path)
+            .transpose()?
+            .or_else(|| get_chunk_entry_path(artifact, chunk_id))
+            .with_context(|| {
+                format!(
+                    "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
+                )
+            })
+    })?;
+    let runtime_file = artifact
+        .chunks
+        .get(chunk_id)
+        .and_then(|chunk| chunk.files.get(&target_file))
+        .with_context(|| {
+            format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
+        })?;
+    let runtime_ast = runtime_file.ast.as_ref().with_context(|| {
+        format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
+    })?;
+    let header_lines = runtime_file.header_lines.clone();
+    let source_path = runtime_file
+        .metadata
+        .source_path
+        .clone()
+        .or_else(|| artifact.chunk_source_path(chunk_id))
+        .unwrap_or_else(|| format!("{chunk_id}.js"));
+    let runtime_import_facts = time_phase!(timings, "collect_runtime_import_facts", {
+        collect_runtime_import_facts(&runtime_ast.module.body)
+    });
+    let requests = time_phase!(timings, "build_requests", {
+        logical_requests_for_chunk(
+            logical_modules.get(chunk_id),
+            residual_modules.get(chunk_id),
+            chunk_renames.contains_key(chunk_id),
+            chunk_id,
+            target_dir,
+        )
+    })?;
+    let mut explicit_requests = requests
+        .iter()
+        .filter(|request| !request.residual)
+        .cloned()
+        .collect::<Vec<_>>();
+    let residual_request = requests.iter().find(|request| request.residual).cloned();
+
+    let declarations = time_phase!(timings, "collect_top_level_declarations", {
+        collect_top_level_declarations(&runtime_ast.module)
+    });
+    let declaration_by_name = time_phase!(timings, "index_declarations_by_name", {
+        declarations
+            .iter()
+            .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
+            .collect::<BTreeMap<_, _>>()
+    });
+
+    let build_module_plans_started = Instant::now();
+    let mut binding_assignment = BTreeMap::<String, usize>::new();
+    let mut module_plans = Vec::new();
+    let mut bindings_catalogue = BTreeMap::<BindingName, BindingKind>::new();
+    let mut imported_binding_resolver = ArtifactSourceImportResolutionCache::new(artifact);
+    let mut imported_from_by_src = BTreeMap::<String, String>::new();
+    for (index, request) in explicit_requests.iter_mut().enumerate() {
+        let mut bindings = BTreeMap::new();
+        let dest_target_file = target_file_for_request(target_dir, &request.target_path)?;
+        let module_id = ModuleId::Logical(LogicalModuleIndex(index));
+        for member in &request.members {
+            if member.is_import_specifier {
+                let (imported_name, imported_from) = resolve_imported_binding(
+                    &mut imported_binding_resolver,
+                    &runtime_import_facts,
+                    chunk_id,
+                    &target_file,
+                    &member.binding,
+                    &mut imported_from_by_src,
+                )?;
+                let entry = bindings_catalogue
+                    .entry(member.binding.clone())
+                    .or_insert_with(|| BindingKind::Imported {
+                        imported_name: imported_name.clone(),
+                        imported_from: imported_from.clone(),
+                        re_exported_by: BTreeMap::new(),
+                    });
+                if let BindingKind::Imported { re_exported_by, .. } = entry {
+                    re_exported_by.insert(module_id, member.export_name.clone());
+                }
+            } else {
+                bindings.insert(member.binding.clone(), member.export_name.clone());
+            }
+        }
+        for binding in bindings.keys() {
+            if declaration_by_name.contains_key(binding) {
+                binding_assignment.insert(binding.clone(), index);
+                bindings_catalogue.insert(binding.clone(), BindingKind::Owned { owner: module_id });
+            }
+        }
+        module_plans.push(ModulePlan {
+            id: request.id.clone(),
+            target_file: dest_target_file,
+            target_path: request.target_path.clone(),
+            explicit: true,
+            bindings,
+        });
+    }
+    drop(imported_binding_resolver);
+
+    if let Some(residual) = residual_request {
+        let residual_index = module_plans.len();
+        let residual_module_id = ModuleId::Logical(LogicalModuleIndex(residual_index));
+        let residual_renames: BTreeMap<&str, &str> = residual
+            .members
+            .iter()
+            .map(|m| (m.binding.as_str(), m.export_name.as_str()))
+            .collect();
+        let mut residual_bindings = BTreeMap::new();
+        for decl in &declarations {
+            for name in &decl.names {
+                if !binding_assignment.contains_key(name) {
+                    binding_assignment.insert(name.clone(), residual_index);
+                    let export_name = residual_renames
+                        .get(name.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| name.clone());
+                    residual_bindings.insert(name.clone(), export_name);
+                    bindings_catalogue.insert(
+                        name.clone(),
+                        BindingKind::Owned {
+                            owner: residual_module_id,
+                        },
+                    );
+                }
+            }
+        }
+        if !residual_bindings.is_empty() {
+            module_plans.push(ModulePlan {
+                id: residual.id.clone(),
+                target_file: target_file_for_request(target_dir, &residual.target_path)?,
+                target_path: residual.target_path.clone(),
+                explicit: false,
+                bindings: residual_bindings,
+            });
+        }
+    }
+    timings.add("build_module_plans", build_module_plans_started.elapsed());
+
+    let chunk_renames_map = time_phase!(timings, "collect_chunk_renames", {
+        chunk_renames
+            .get(chunk_id)
+            .map(collect_chunk_renames)
+            .transpose()
+    })?
+    .unwrap_or_default();
+
+    let schedule = {
+        let declared_pure: BTreeSet<String> = time_phase!(timings, "collect_declared_pure", {
+            explicit_requests
+                .iter()
+                .flat_map(|req| req.members.iter())
+                .filter(|m| m.purity == MemberPurity::Pure)
+                .map(|m| m.binding.clone())
+                .collect()
+        });
+        let analysis = time_phase!(timings, "analyze_chunk_facts", {
+            analyze_chunk_with_source_locations(
+                &runtime_ast.module,
+                &declared_pure,
+                Some(&source_path),
+                |span| line_range_for_span(runtime_ast, span),
+            )
+        });
+        if let Some(ord) = analysis.top_level_await {
+            anyhow::bail!(
+                "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
+                 at statement #{ordinal} (TLA); the debundler's realizability theorem \
+                 does not cover async modules (DESIGN.md A2). Wrap the awaited code \
+                 in an async function or rewrite as a synchronous initialization.",
+                ordinal = ord.0,
+            );
+        }
+        let logical_modules: Vec<ScheduleLogicalModule> =
+            time_phase!(timings, "project_schedule_modules", {
+                module_plans
+                    .iter()
+                    .map(|plan| ScheduleLogicalModule {
+                        id: plan.id.clone(),
+                        target_file: plan.target_file.clone(),
+                        residual: !plan.explicit,
+                        rename_map: plan.bindings.clone(),
+                    })
+                    .collect()
+            });
+        time_phase!(timings, "build_schedule", {
+            Schedule::build(
+                chunk_id.to_string(),
+                analysis.facts,
+                bindings_catalogue,
+                logical_modules,
+                chunk_renames_map.clone(),
+            )
+        })
+    };
+    let schedule_report = time_phase!(timings, "validate_schedule", { schedule.validate() });
+    if let Some(report_out_dir) = report_out_dir {
+        time_phase!(timings, "write_schedule_report", {
+            write_chunk_report_json(report_out_dir, chunk_id, "schedule.json", &schedule_report)
+        })?;
+        let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
+            schedule.owner_graph_report()
+        });
+        time_phase!(timings, "write_owner_graph_report", {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                "owner_graph.json",
+                &owner_graph_report,
+            )
+        })?;
+    }
+
+    if !schedule_report.cycles.is_empty() {
+        if let Some(report_out_dir) = report_out_dir {
+            time_phase!(timings, "write_cycles_report", {
+                write_chunk_report_json(
+                    report_out_dir,
+                    chunk_id,
+                    "cycles.json",
+                    &schedule_report.cycles,
+                )
+            })?;
+        }
+        let summary = render_cycle_summary(&schedule_report.cycles);
+        bail!(
+            "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or moving the constraining owner endpoints. Full cycle evidence written to <reports>/{chunk_id}/cycles.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            schedule_report.cycles.len(),
+        );
+    }
+
+    let lowered = time_phase!(timings, "lower_chunk_total", {
+        lower_chunk(LowerChunkInputs {
+            artifact,
+            runtime_ast,
+            header_lines: &header_lines,
+            entry_file: &target_file,
+            chunk_id,
+            source_path: &source_path,
+            declarations: &declarations,
+            declaration_by_name: &declaration_by_name,
+            module_plans: &module_plans,
+            binding_assignment: &binding_assignment,
+            schedule: &schedule,
+            chunk_renames: &chunk_renames_map,
+            runtime_import_facts: &runtime_import_facts,
+        })
+    })?;
+    let LoweredChunk {
+        files,
+        file_records,
+        applied,
+        timings: lower_timings,
+    } = lowered;
+    timings.extend_prefixed("lower", lower_timings);
+
+    let final_modules = time_phase!(timings, "build_final_module_report", {
+        module_plans
+            .iter()
+            .map(|plan| FinalModuleContent {
+                binding_names: plan.bindings.keys().cloned().collect(),
+                file: plan.target_file.clone(),
+                id: plan.id.clone(),
+                member_names: plan.bindings.values().cloned().collect(),
+                path: plan.target_path.clone(),
+                owner_ids: schedule
+                    .owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str)),
+                residual: !plan.explicit,
+            })
+            .collect::<Vec<_>>()
+    });
+    let timings = timings.into_durations(chunk_started.elapsed());
+    let report = LogicalChunkReport {
+        chunk_id: chunk_id.to_string(),
+        counts: LogicalChunkCounts {
+            applied: applied.len(),
+            explicit_logical_modules: module_plans.iter().filter(|plan| plan.explicit).count(),
+            final_modules: module_plans.len(),
+            residual_logical_modules: module_plans.iter().filter(|plan| !plan.explicit).count(),
+            selected_owners: binding_assignment.len(),
+        },
+        final_module_contents: final_modules,
+        requested_logical_modules: requests
+            .iter()
+            .map(|request| RequestedLogicalModule {
+                id: request.id.clone(),
+                target_path: request.target_path.clone(),
+                residual: request.residual,
+            })
+            .collect(),
+        timings,
+    };
+    Ok(MaterializedLogicalChunk {
+        chunk_id: chunk_id.to_string(),
+        target_file,
+        source_path,
+        files,
+        file_records,
+        applied,
+        report,
+    })
+}
+
+fn merge_materialized_logical_chunk(
+    artifact: &mut JsPipelineArtifact,
+    target_dir: &str,
+    chunk: MaterializedLogicalChunk,
+) -> Result<()> {
+    let MaterializedLogicalChunk {
+        chunk_id,
+        target_file,
+        source_path,
+        files,
+        file_records,
+        applied,
+        report,
+    } = chunk;
+    let files = files
+        .into_iter()
+        .map(|file| (file.path.clone(), file))
+        .collect::<BTreeMap<_, _>>();
+    let module_extraction_state = ModuleExtractionState {
+        runtime_file: target_file.clone(),
+        target_dir: target_dir.to_string(),
+    };
+    artifact.chunks.insert(
+        chunk_id.clone(),
+        JsChunk {
+            entry_file: target_file.clone(),
+            files,
+            metadata: ChunkMetadata {
+                source_path: Some(source_path),
+                module_extraction_state: Some(module_extraction_state),
+            },
+        },
+    );
+    if !artifact.chunk_order.contains(&chunk_id) {
+        artifact.chunk_order.push(chunk_id.clone());
+    }
+    if let Some(manifest) = artifact.chunk_manifests.get_mut(&chunk_id) {
+        manifest.entry_file = target_file;
+        manifest.files = file_records
+            .iter()
+            .map(|(file, role)| ChunkFileRecord {
+                file: file.clone(),
+                role: *role,
+            })
+            .collect();
+        manifest.logical_modules = Some(ChunkLogicalModulesSummary {
+            count: report.counts.final_modules,
+            module_ids: report
+                .final_module_contents
+                .iter()
+                .map(|module| module.id.clone())
+                .collect(),
+            target_dir: target_dir.to_string(),
+        });
+        manifest.selected_module_lowerings = Some(applied);
+    }
+    Ok(())
 }
 
 struct LoweredChunk {

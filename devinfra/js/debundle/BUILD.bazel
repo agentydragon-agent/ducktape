@@ -61,6 +61,7 @@ rust_library(
         ":artifact",
         ":js_ast",
         "@crates//:anyhow",
+        "@crates//:rayon",
         "@crates//:serde",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
@@ -72,6 +73,7 @@ rust_test(
     name = "rewrite_specifiers_test",
     crate = ":rewrite_specifiers",
     edition = "2024",
+    deps = ["@crates//:rayon"],
 )
 
 rust_library(
@@ -95,6 +97,7 @@ rust_library(
         ":js_ast",
         ":spec",
         "@crates//:anyhow",
+        "@crates//:rayon",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_common",
@@ -107,6 +110,7 @@ rust_test(
     name = "vendor_test",
     crate = ":vendor",
     edition = "2024",
+    deps = ["@crates//:rayon"],
 )
 
 rust_library(
@@ -240,6 +244,7 @@ rust_library(
         ":spec",
         ":write_tree",
         "@crates//:anyhow",
+        "@crates//:rayon",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_common",

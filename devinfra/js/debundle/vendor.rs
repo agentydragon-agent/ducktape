@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use rayon::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
 use swc_common::{DUMMY_SP, SyntaxContext};
@@ -10,9 +11,8 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    JsPipelineArtifact, get_chunk_entry_path, list_chunk_file_paths, manifest_relative_path,
-    path_from_module_path, resolve_artifact_import_reference,
-    resolve_artifact_source_import_reference,
+    ArtifactReferenceIndex, JsPipelineArtifact, get_chunk_entry_path, list_chunk_file_paths,
+    manifest_relative_path, path_from_module_path,
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 use spec::{SwapMark, VendorLevel, VendorMark, VendorRole, WrapperShape};
@@ -210,7 +210,9 @@ pub fn rename_vendor_exports(
 
     let mut caller_counts_by_target = BTreeMap::<(String, String), BTreeMap<String, usize>>::new();
     if !mappings.is_empty() {
+        let references = ArtifactReferenceIndex::build(artifact)?;
         let file_keys = artifact.list_js_file_keys();
+        let mut jobs = Vec::new();
         for (caller_chunk_id, file_path) in file_keys {
             let has_ast = artifact
                 .chunks
@@ -221,35 +223,35 @@ pub fn rename_vendor_exports(
             if !has_ast {
                 continue;
             }
-            let mut ast = artifact
+            let ast = artifact
                 .chunks
                 .get_mut(&caller_chunk_id)
                 .and_then(|chunk| chunk.files.get_mut(&file_path))
                 .and_then(|file| file.ast.take())
                 .with_context(|| format!("missing AST for {caller_chunk_id}/{file_path}"))?;
-            let rewrites_by_target = {
-                let mut rewriter = VendorImportRenamer {
-                    artifact,
-                    caller_chunk_id: caller_chunk_id.clone(),
-                    caller_file: file_path.clone(),
-                    mappings: &mappings,
-                    rewrites_by_target: BTreeMap::new(),
-                };
-                ast.module.visit_mut_with(&mut rewriter);
-                rewriter.rewrites_by_target
-            };
+            jobs.push(VendorRenameFileJob {
+                caller_chunk_id,
+                file_path,
+                ast,
+            });
+        }
+        let results = jobs
+            .into_par_iter()
+            .map(|job| rename_vendor_imports_in_file(job, &references, &mappings))
+            .collect::<Vec<_>>();
+        for result in results {
             artifact
                 .chunks
-                .get_mut(&caller_chunk_id)
-                .and_then(|chunk| chunk.files.get_mut(&file_path))
+                .get_mut(&result.caller_chunk_id)
+                .and_then(|chunk| chunk.files.get_mut(&result.file_path))
                 .context("missing file while restoring AST")?
-                .ast = Some(ast);
-            for (target, rewrites) in rewrites_by_target {
+                .ast = Some(result.ast);
+            for (target, rewrites) in result.rewrites_by_target {
                 total_rewrites += rewrites;
-                caller_counts_by_target
-                    .entry(target)
-                    .or_default()
-                    .insert(format!("{caller_chunk_id}/{file_path}"), rewrites);
+                caller_counts_by_target.entry(target).or_default().insert(
+                    format!("{}/{}", result.caller_chunk_id, result.file_path),
+                    rewrites,
+                );
             }
         }
     }
@@ -291,6 +293,225 @@ struct RenameVendorExportOp {
     mapping: BTreeMap<String, String>,
 }
 
+struct VendorRenameFileJob {
+    caller_chunk_id: String,
+    file_path: String,
+    ast: ParsedJsModule,
+}
+
+struct VendorRenameFileResult {
+    caller_chunk_id: String,
+    file_path: String,
+    ast: ParsedJsModule,
+    rewrites_by_target: BTreeMap<(String, String), usize>,
+}
+
+fn rename_vendor_imports_in_file(
+    mut job: VendorRenameFileJob,
+    references: &ArtifactReferenceIndex,
+    mappings: &VendorExportMappings,
+) -> VendorRenameFileResult {
+    let mut rewriter = VendorImportRenamer {
+        references,
+        caller_chunk_id: job.caller_chunk_id.clone(),
+        caller_file: job.file_path.clone(),
+        mappings,
+        rewrites_by_target: BTreeMap::new(),
+    };
+    job.ast.module.visit_mut_with(&mut rewriter);
+    VendorRenameFileResult {
+        caller_chunk_id: job.caller_chunk_id,
+        file_path: job.file_path,
+        ast: job.ast,
+        rewrites_by_target: rewriter.rewrites_by_target,
+    }
+}
+
+struct SwapVendorJob {
+    chunk_path: String,
+    chunk_id: String,
+    entry_file: String,
+    package: String,
+    version: String,
+    subpath: String,
+    wrapper_shape: Option<WrapperShape>,
+    vendor_exports: BTreeSet<String>,
+}
+
+fn resolve_vendor_swap(
+    job: SwapVendorJob,
+    import_alignment_index: &BTreeMap<String, Vec<ImportAlignmentRecord>>,
+    options: &SwapVendorOptions<'_>,
+) -> Result<VendorResolution> {
+    let installed =
+        read_installed_package_metadata(&job.package, options.package_roots, options.packages_root)
+            .with_context(|| format!("reading metadata for package {}", job.package))?;
+    let installed_version = installed
+        .get("version")
+        .and_then(Value::as_str)
+        .context("package metadata missing version")?;
+    if installed_version != job.version {
+        bail!(
+            "swap_vendor_chunks vendor entry {} version mismatch for {}: spec={}, installed={installed_version}",
+            job.chunk_path,
+            job.package,
+            job.version,
+        );
+    }
+    let upstream_path = resolve_package_subpath(
+        &job.package,
+        &job.subpath,
+        options.package_roots,
+        options.packages_root,
+    )?;
+    let upstream_code = fs::read_to_string(&upstream_path)
+        .with_context(|| format!("reading {}", upstream_path.display()))?;
+    let mut generated_wrapper_path = None::<PathBuf>;
+
+    match job.wrapper_shape {
+        Some(WrapperShape::NamedFromDefault) => {
+            let upstream_ast =
+                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+            let object_keys =
+                collect_default_export_object_keys(&upstream_ast.module, &job.chunk_path)?;
+            let non_default_exports = job
+                .vendor_exports
+                .iter()
+                .filter(|name| name.as_str() != "default")
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            let missing = set_diff(&non_default_exports, &object_keys);
+            if !missing.is_empty() {
+                bail!(
+                    "swap_vendor_chunks vendor entry {} named-from-default wrapper shape mismatch for {}@{}: vendor named exports missing from upstream default object keys=[{}]",
+                    job.chunk_path,
+                    job.package,
+                    job.version,
+                    missing.into_iter().collect::<Vec<_>>().join(",")
+                );
+            }
+            let wrapper = generate_named_from_default_wrapper(&upstream_ast, &non_default_exports)?;
+            generated_wrapper_path = write_wrapper_if_requested(
+                options.write,
+                options.output_wrapper_dir.as_deref(),
+                &job.chunk_id,
+                &job.entry_file,
+                &wrapper,
+            )?;
+        }
+        Some(WrapperShape::NamedFromJsonDefault) => {
+            let upstream_json = serde_json::from_str::<Value>(&upstream_code).with_context(|| {
+                format!(
+                    "swap_vendor_chunks vendor entry {} named-from-json-default: upstream JSON parse failed",
+                    job.chunk_path
+                )
+            })?;
+            let object = upstream_json
+                .as_object()
+                .context("named-from-json-default upstream JSON must be an object")?;
+            let object_keys = object.keys().cloned().collect::<BTreeSet<_>>();
+            let non_default_exports = job
+                .vendor_exports
+                .iter()
+                .filter(|name| name.as_str() != "default")
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            let missing = set_diff(&non_default_exports, &object_keys);
+            if !missing.is_empty() {
+                bail!(
+                    "swap_vendor_chunks vendor entry {} named-from-json-default wrapper shape mismatch for {}@{}: vendor named exports missing from upstream JSON keys=[{}]",
+                    job.chunk_path,
+                    job.package,
+                    job.version,
+                    missing.into_iter().collect::<Vec<_>>().join(",")
+                );
+            }
+            let wrapper =
+                generate_named_from_json_default_wrapper(&upstream_json, &non_default_exports);
+            generated_wrapper_path = write_wrapper_if_requested(
+                options.write,
+                options.output_wrapper_dir.as_deref(),
+                &job.chunk_id,
+                &job.entry_file,
+                &wrapper,
+            )?;
+        }
+        Some(WrapperShape::NamedFromModuleDefault) => {
+            let upstream_ast =
+                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+            let wrapper = generate_named_from_module_default_wrapper(
+                &upstream_ast,
+                &job.vendor_exports,
+                &job.chunk_path,
+            )?;
+            generated_wrapper_path = write_wrapper_if_requested(
+                options.write,
+                options.output_wrapper_dir.as_deref(),
+                &job.chunk_id,
+                &job.entry_file,
+                &wrapper,
+            )?;
+        }
+        None => {
+            let upstream_ast =
+                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+            let upstream_exports = collect_exported_names(&upstream_ast.module, true);
+            let missing = set_diff(&job.vendor_exports, &upstream_exports);
+            if !missing.is_empty() {
+                bail!(
+                    "swap_vendor_chunks vendor entry {} export shape mismatch for {}@{}: vendor exports not found upstream=[{}]",
+                    job.chunk_path,
+                    job.package,
+                    job.version,
+                    missing.into_iter().collect::<Vec<_>>().join(",")
+                );
+            }
+        }
+    }
+
+    for record in import_alignment_index
+        .get(&job.chunk_id)
+        .into_iter()
+        .flatten()
+    {
+        for imported_name in &record.named_imports {
+            if job.vendor_exports.contains(imported_name) {
+                continue;
+            }
+            bail!(
+                "swap_vendor_chunks vendor entry {} import alignment failed: caller={}/{} imports unknown specifier \"{}\" from vendor {} (known: [{}])",
+                job.chunk_path,
+                record.caller_chunk_id,
+                record.caller_file,
+                imported_name,
+                job.chunk_id,
+                job.vendor_exports
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+        }
+    }
+
+    let generated_wrapper_path = generated_wrapper_path.as_ref().and_then(|path| {
+        options
+            .output_manifest_path
+            .as_deref()
+            .map(|manifest_path| manifest_relative_path(manifest_path, path))
+    });
+    Ok(VendorResolution {
+        chunk_id: job.chunk_id,
+        chunk_path: job.chunk_path,
+        entry_file: job.entry_file,
+        package: job.package,
+        version: job.version,
+        subpath: job.subpath,
+        wrapper_shape: job.wrapper_shape,
+        generated_wrapper_path,
+    })
+}
+
 pub fn swap_vendor_chunks(
     artifact: &mut JsPipelineArtifact,
     vendor: &BTreeMap<String, VendorMark>,
@@ -304,9 +525,9 @@ pub fn swap_vendor_chunks(
         })
         .collect();
     let import_alignment_index = build_import_alignment_index(artifact)?;
-    let mut resolutions = BTreeMap::<String, VendorResolution>::new();
-
-    for (chunk_path, _mark, swap) in &ops {
+    let jobs = ops
+        .iter()
+        .map(|(chunk_path, _mark, swap)| {
         let chunk_id = chunk_id_from_chunk_path(chunk_path, "swap_vendor_chunks")?;
         let entry_relative_file = get_chunk_entry_path(artifact, &chunk_id).with_context(|| {
             format!(
@@ -321,157 +542,30 @@ pub fn swap_vendor_chunks(
             .with_context(|| {
                 format!("swap_vendor_chunks vendor chunk {chunk_id} is missing entry AST")
             })?;
-        let package = swap.package.as_str();
-        let version = swap.version.as_str();
-        let subpath = swap.subpath.as_str();
-        let installed =
-            read_installed_package_metadata(package, options.package_roots, options.packages_root)
-                .with_context(|| format!("reading metadata for package {package}"))?;
-        let installed_version = installed
-            .get("version")
-            .and_then(Value::as_str)
-            .context("package metadata missing version")?;
-        if installed_version != version {
-            bail!(
-                "swap_vendor_chunks vendor entry {chunk_path} version mismatch for {package}: spec={version}, installed={installed_version}"
-            );
-        }
-        let upstream_path = resolve_package_subpath(
-            package,
-            subpath,
-            options.package_roots,
-            options.packages_root,
-        )?;
-        let upstream_code = fs::read_to_string(&upstream_path)
-            .with_context(|| format!("reading {}", upstream_path.display()))?;
-        let vendor_exports = collect_exported_names(&entry_ast.module, false);
-        let mut generated_wrapper_path = None::<PathBuf>;
-
-        match swap.wrapper_shape {
-            Some(WrapperShape::NamedFromDefault) => {
-                let upstream_ast =
-                    parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
-                let object_keys =
-                    collect_default_export_object_keys(&upstream_ast.module, chunk_path)?;
-                let non_default_exports = vendor_exports
-                    .iter()
-                    .filter(|name| name.as_str() != "default")
-                    .cloned()
-                    .collect::<BTreeSet<_>>();
-                let missing = set_diff(&non_default_exports, &object_keys);
-                if !missing.is_empty() {
-                    bail!(
-                        "swap_vendor_chunks vendor entry {chunk_path} named-from-default wrapper shape mismatch for {package}@{version}: vendor named exports missing from upstream default object keys=[{}]",
-                        missing.into_iter().collect::<Vec<_>>().join(",")
-                    );
-                }
-                let wrapper =
-                    generate_named_from_default_wrapper(&upstream_ast, &non_default_exports)?;
-                generated_wrapper_path = write_wrapper_if_requested(
-                    options.write,
-                    options.output_wrapper_dir.as_deref(),
-                    &chunk_id,
-                    &entry_relative_file,
-                    &wrapper,
-                )?;
-            }
-            Some(WrapperShape::NamedFromJsonDefault) => {
-                let upstream_json = serde_json::from_str::<Value>(&upstream_code).with_context(|| {
-                    format!("swap_vendor_chunks vendor entry {chunk_path} named-from-json-default: upstream JSON parse failed")
-                })?;
-                let object = upstream_json
-                    .as_object()
-                    .context("named-from-json-default upstream JSON must be an object")?;
-                let object_keys = object.keys().cloned().collect::<BTreeSet<_>>();
-                let non_default_exports = vendor_exports
-                    .iter()
-                    .filter(|name| name.as_str() != "default")
-                    .cloned()
-                    .collect::<BTreeSet<_>>();
-                let missing = set_diff(&non_default_exports, &object_keys);
-                if !missing.is_empty() {
-                    bail!(
-                        "swap_vendor_chunks vendor entry {chunk_path} named-from-json-default wrapper shape mismatch for {package}@{version}: vendor named exports missing from upstream JSON keys=[{}]",
-                        missing.into_iter().collect::<Vec<_>>().join(",")
-                    );
-                }
-                let wrapper =
-                    generate_named_from_json_default_wrapper(&upstream_json, &non_default_exports);
-                generated_wrapper_path = write_wrapper_if_requested(
-                    options.write,
-                    options.output_wrapper_dir.as_deref(),
-                    &chunk_id,
-                    &entry_relative_file,
-                    &wrapper,
-                )?;
-            }
-            Some(WrapperShape::NamedFromModuleDefault) => {
-                let upstream_ast =
-                    parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
-                let wrapper = generate_named_from_module_default_wrapper(
-                    &upstream_ast,
-                    &vendor_exports,
-                    chunk_path,
-                )?;
-                generated_wrapper_path = write_wrapper_if_requested(
-                    options.write,
-                    options.output_wrapper_dir.as_deref(),
-                    &chunk_id,
-                    &entry_relative_file,
-                    &wrapper,
-                )?;
-            }
-            None => {
-                let upstream_ast =
-                    parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
-                let upstream_exports = collect_exported_names(&upstream_ast.module, true);
-                let missing = set_diff(&vendor_exports, &upstream_exports);
-                if !missing.is_empty() {
-                    bail!(
-                        "swap_vendor_chunks vendor entry {chunk_path} export shape mismatch for {package}@{version}: vendor exports not found upstream=[{}]",
-                        missing.into_iter().collect::<Vec<_>>().join(",")
-                    );
-                }
-            }
-        }
-
-        for record in import_alignment_index.get(&chunk_id).into_iter().flatten() {
-            for imported_name in &record.named_imports {
-                if vendor_exports.contains(imported_name) {
-                    continue;
-                }
-                bail!(
-                    "swap_vendor_chunks vendor entry {chunk_path} import alignment failed: caller={}/{} imports unknown specifier \"{}\" from vendor {chunk_id} (known: [{}])",
-                    record.caller_chunk_id,
-                    record.caller_file,
-                    imported_name,
-                    vendor_exports.iter().cloned().collect::<Vec<_>>().join(",")
-                );
-            }
-        }
-
-        artifact.chunks.remove(&chunk_id);
+            Ok(SwapVendorJob {
+                chunk_path: (*chunk_path).clone(),
+                chunk_id,
+                entry_file: entry_relative_file,
+                package: swap.package.clone(),
+                version: swap.version.clone(),
+                subpath: swap.subpath.clone(),
+                wrapper_shape: swap.wrapper_shape,
+                vendor_exports: collect_exported_names(&entry_ast.module, false),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let resolved = jobs
+        .into_par_iter()
+        .map(|job| resolve_vendor_swap(job, &import_alignment_index, &options))
+        .collect::<Result<Vec<_>>>()?;
+    let mut resolutions = BTreeMap::<String, VendorResolution>::new();
+    for resolution in resolved {
+        artifact.chunks.remove(&resolution.chunk_id);
         artifact
             .chunk_order
-            .retain(|candidate| candidate != &chunk_id);
-        artifact.chunk_manifests.remove(&chunk_id);
-        let generated_wrapper_path_str = generated_wrapper_path.as_ref().and_then(|path| {
-            options
-                .output_manifest_path
-                .as_deref()
-                .map(|manifest_path| manifest_relative_path(manifest_path, path))
-        });
-        let resolution = VendorResolution {
-            chunk_id: chunk_id.clone(),
-            chunk_path: chunk_path.to_string(),
-            entry_file: entry_relative_file,
-            package: package.to_string(),
-            version: version.to_string(),
-            subpath: subpath.to_string(),
-            wrapper_shape: swap.wrapper_shape,
-            generated_wrapper_path: generated_wrapper_path_str,
-        };
-        resolutions.insert(chunk_path.to_string(), resolution);
+            .retain(|candidate| candidate != &resolution.chunk_id);
+        artifact.chunk_manifests.remove(&resolution.chunk_id);
+        resolutions.insert(resolution.chunk_path.clone(), resolution);
     }
 
     let chunk_count = artifact.list_chunk_ids().len();
@@ -552,7 +646,7 @@ fn collect_boundary_mapping(module: &Module) -> BTreeMap<String, String> {
 }
 
 struct VendorImportRenamer<'a> {
-    artifact: &'a JsPipelineArtifact,
+    references: &'a ArtifactReferenceIndex,
     caller_chunk_id: String,
     caller_file: String,
     mappings: &'a VendorExportMappings,
@@ -562,23 +656,18 @@ struct VendorImportRenamer<'a> {
 impl VisitMut for VendorImportRenamer<'_> {
     fn visit_mut_import_decl(&mut self, node: &mut ImportDecl) {
         let source = str_value(&node.src);
-        let resolved = resolve_artifact_import_reference(
-            self.artifact,
-            &source,
-            &self.caller_chunk_id,
-            &self.caller_file,
-        )
-        .or_else(|| {
-            resolve_artifact_source_import_reference(
-                self.artifact,
-                &source,
-                &self.caller_chunk_id,
-                &self.caller_file,
-            )
-            .ok()
-            .flatten()
-            .map(|(chunk_id, file, _)| (chunk_id, file))
-        });
+        let resolved = self
+            .references
+            .resolve_import_reference(&source, &self.caller_chunk_id, &self.caller_file)
+            .or_else(|| {
+                self.references
+                    .resolve_source_import_reference(
+                        &source,
+                        &self.caller_chunk_id,
+                        &self.caller_file,
+                    )
+                    .map(|(chunk_id, file, _)| (chunk_id, file))
+            });
         let Some((target_chunk_id, target_file)) = resolved else {
             return;
         };
@@ -628,6 +717,7 @@ struct ImportAlignmentRecord {
 fn build_import_alignment_index(
     artifact: &JsPipelineArtifact,
 ) -> Result<BTreeMap<String, Vec<ImportAlignmentRecord>>> {
+    let references = ArtifactReferenceIndex::build(artifact)?;
     let mut index = BTreeMap::<String, Vec<ImportAlignmentRecord>>::new();
     for caller_chunk_id in artifact.list_chunk_ids() {
         let Some(chunk) = artifact.chunks.get(&caller_chunk_id) else {
@@ -647,7 +737,7 @@ fn build_import_alignment_index(
                 };
                 let source = str_value(&import.src);
                 let target_chunk_id =
-                    resolve_import_to_chunk_id(artifact, &source, &caller_chunk_id, &caller_file)?;
+                    references.resolve_import_to_chunk_id(&source, &caller_chunk_id, &caller_file);
                 let Some(target_chunk_id) = target_chunk_id else {
                     continue;
                 };
@@ -680,23 +770,6 @@ fn build_import_alignment_index(
         }
     }
     Ok(index)
-}
-
-fn resolve_import_to_chunk_id(
-    artifact: &JsPipelineArtifact,
-    source: &str,
-    caller_chunk_id: &str,
-    caller_file: &str,
-) -> Result<Option<String>> {
-    if let Some((chunk_id, _file)) =
-        resolve_artifact_import_reference(artifact, source, caller_chunk_id, caller_file)
-    {
-        return Ok(Some(chunk_id));
-    }
-    Ok(
-        resolve_artifact_source_import_reference(artifact, source, caller_chunk_id, caller_file)?
-            .map(|(chunk_id, _file, _path)| chunk_id),
-    )
 }
 
 fn read_installed_package_metadata(
