@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransformSpec {
     pub inputs: LoadJsChunksArgs,
@@ -68,38 +68,44 @@ pub struct TransformSpec {
     #[serde(default)]
     pub materialize_logical_modules: MaterializeLogicalModulesConfig,
     /// When set, persist the artifact tree to `out_dir`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub write_js_tree: Option<WriteJsTreeConfig>,
     /// When set, emit a browser-runtime harness alongside the artifact.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LoadJsChunksArgs {
     pub input_root: PathBuf,
     pub js_list_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct SwapVendorChunksConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub output_manifest_path: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub output_wrapper_dir: Option<PathBuf>,
     /// Defaults to `true` — actually write the manifest / wrapper files
     /// to disk. Set `false` for dry-run.
+    #[serde(skip_serializing_if = "is_true")]
     #[serde(default = "default_true")]
     pub write: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaterializeLogicalModulesConfig {
     /// Optional override for the entry-file path to read per chunk.
     /// Absent means "use the chunk's recorded entry file".
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub file: Option<String>,
     /// Defaults to `true` — drop chunks outside the materialised set
@@ -109,10 +115,13 @@ pub struct MaterializeLogicalModulesConfig {
     pub prune_other_chunks: bool,
     #[serde(default)]
     pub force: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub report_out_dir: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub report_summary_path: Option<PathBuf>,
+    #[serde(skip_serializing_if = "String::is_empty")]
     #[serde(default)]
     pub target_dir: String,
 }
@@ -130,7 +139,7 @@ impl Default for MaterializeLogicalModulesConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WriteJsTreeConfig {
     pub out_dir: PathBuf,
@@ -138,7 +147,7 @@ pub struct WriteJsTreeConfig {
     pub force: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmitBrowserHarnessConfig {
     pub asset_summary_path: PathBuf,
@@ -150,9 +159,10 @@ pub struct EmitBrowserHarnessConfig {
 
 /// Container for per-chunk in-place renames; see
 /// [`TransformSpec::chunk_renames`].
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChunkRenames {
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub id: Option<String>,
     #[serde(default)]
@@ -161,6 +171,18 @@ pub struct ChunkRenames {
 
 fn default_true() -> bool {
     true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+fn is_default_member_purity(purity: &MemberPurity) -> bool {
+    matches!(purity, MemberPurity::Default)
+}
+
+fn is_default_vendor_role(role: &VendorRole) -> bool {
+    matches!(role, VendorRole::Module)
 }
 
 // --- Vendor ---------------------------------------------------------------
@@ -173,6 +195,7 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VendorMark {
     pub identity: String,
+    #[serde(skip_serializing_if = "is_default_vendor_role")]
     #[serde(default)]
     pub role: VendorRole,
     #[serde(flatten)]
@@ -192,6 +215,7 @@ pub struct SwapMark {
     pub package: String,
     pub version: String,
     pub subpath: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub wrapper_shape: Option<WrapperShape>,
 }
@@ -214,50 +238,54 @@ pub enum WrapperShape {
 
 // --- Logical / Residual modules ------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogicalModule {
     #[serde(default)]
     pub members: Vec<Member>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResidualModule {
     /// Logical-module path the residual catch-all writes to. Defaults to
     /// `"residual/unhandled"` when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub target: Option<String>,
     #[serde(default)]
     pub members: Vec<Member>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Member {
     /// Public export name. Defaults to the bound `selector.binding.name`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub name: Option<String>,
     pub selector: MemberSelector,
+    #[serde(skip_serializing_if = "is_default_member_purity")]
     #[serde(default)]
     pub purity: MemberPurity,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemberSelector {
     pub binding: BindingSelector,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BindingSelector {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub kind: Option<BindingSourceKind>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum BindingSourceKind {
     /// The bound name comes from an `import` specifier in the source
@@ -273,7 +301,7 @@ pub enum BindingSourceKind {
     ClassDeclaration,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum MemberPurity {
     #[default]

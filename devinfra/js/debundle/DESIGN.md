@@ -1194,13 +1194,13 @@ the predicate set is the conjunction.
 
 #### Static facts (drift-resilient)
 
-| primitive                  | applies to | semantics                                                                                                                    |
-| -------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `kind`                     | any        | exact match on `FunctionDeclaration` / `ClassDeclaration` / `VariableDeclarator` / `ImportSpecifier`                         |
-| `paramCount: N`            | functions  | exact match on parameter list length                                                                                         |
-| `memberNames: [a, b, ...]` | classes    | every name in the list appears as a class member (instance or static; method, prop, accessor)                                |
-| `minMembers: N`            | classes    | class has ≥ N members                                                                                                        |
-| `superClass: <selector>`   | classes    | the class extends a binding that itself matches `<selector>` (recursive — see [Relational selectors](#relational-selectors)) |
+| primitive                  | applies to | semantics                                                                                                                              |
+| -------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`                     | any        | exact match on the canonical serde spelling: `function_declaration` / `class_declaration` / `variable_declarator` / `import_specifier` |
+| `paramCount: N`            | functions  | exact match on parameter list length                                                                                                   |
+| `memberNames: [a, b, ...]` | classes    | every name in the list appears as a class member (instance or static; method, prop, accessor)                                          |
+| `minMembers: N`            | classes    | class has ≥ N members                                                                                                                  |
+| `superClass: <selector>`   | classes    | the class extends a binding that itself matches `<selector>` (recursive — see [Relational selectors](#relational-selectors))           |
 
 These are stable across re-minifications: minifiers preserve
 declaration kinds, param counts, class member name strings, and
@@ -1345,7 +1345,7 @@ spec author to fix the spec without re-running the tool.
 ```text
 SelectorResolution::Unsatisfiable
   entry "ui/widget/MyClass"
-    selector: { kind: ClassDeclaration, memberNames: ["render", "create"] }
+    selector: { kind: class_declaration, memberNames: ["render", "create"] }
   reason: after forcing, candidate set is empty.
     Y5 (the only binding with this shape) was claimed by entry
     "ui/dom/Component" via its more specific `astPattern`.
@@ -1356,8 +1356,8 @@ SelectorResolution::Unsatisfiable
 ```text
 SelectorResolution::Ambiguous
   entries: [
-    "ui/widget/MyClass"  selector { kind: ClassDeclaration, memberNames: ["render", "mount"] },
-    "ui/dom/Component"   selector { kind: ClassDeclaration, memberNames: ["render", "mount"] },
+    "ui/widget/MyClass"  selector { kind: class_declaration, memberNames: ["render", "mount"] },
+    "ui/dom/Component"   selector { kind: class_declaration, memberNames: ["render", "mount"] },
   ]
   candidates: [Y5 (line 12345), X4 (line 23456), Q3 (line 34567)]
   reason: no cardinality-1 forcing remains; both entries match
@@ -1387,7 +1387,7 @@ base, another contains a unique string literal:
   {
     "id": "spec_component",
     "selector": {
-      "kind": "ClassDeclaration",
+      "kind": "class_declaration",
       "containsString": "instanceof Element"
     },
     "rename": "Component"
@@ -1395,7 +1395,7 @@ base, another contains a unique string literal:
   {
     "id": "spec_widget",
     "selector": {
-      "kind": "ClassDeclaration",
+      "kind": "class_declaration",
       "memberNames": ["render", "mount"],
       "superClass": { "renamedName": "Component" }
     }
@@ -1403,7 +1403,7 @@ base, another contains a unique string literal:
   {
     "id": "spec_other",
     "selector": {
-      "kind": "ClassDeclaration",
+      "kind": "class_declaration",
       "memberNames": ["render", "mount"]
     }
   }

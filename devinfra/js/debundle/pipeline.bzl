@@ -22,8 +22,11 @@ def _debundle_pipeline_impl(ctx):
     # form for both the spec file and the tree-artifact output dir.
     ctx.actions.run(
         executable = ctx.executable.spec_generator,
+        inputs = depset(
+            transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_generator_inputs],
+        ),
         outputs = [spec],
-        arguments = [
+        arguments = ctx.attr.spec_generator_args + [
             "--out",
             spec.short_path,
             "--out-root",
@@ -95,7 +98,14 @@ debundle_pipeline = rule(
             executable = True,
             cfg = "exec",
             mandatory = True,
-            doc = "js_binary that emits the transform spec; must accept `--out <path>` and `--out-root <dir>`.",
+            doc = "Executable that emits the transform spec; must accept `--out <path>` and `--out-root <dir>`.",
+        ),
+        "spec_generator_args": attr.string_list(
+            doc = "Additional arguments passed to the spec generator before --out/--out-root.",
+        ),
+        "spec_generator_inputs": attr.label_list(
+            allow_files = True,
+            doc = "Source-tree inputs the spec generator reads.",
         ),
         "debundler": attr.label(
             executable = True,

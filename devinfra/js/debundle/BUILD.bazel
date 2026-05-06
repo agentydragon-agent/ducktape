@@ -148,6 +148,73 @@ rust_test(
 )
 
 rust_library(
+    name = "peel_horizon",
+    srcs = ["peel_horizon.rs"],
+    crate_root = "peel_horizon.rs",
+    edition = "2024",
+    deps = [
+        ":schedule_validator",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "peel_horizon_test",
+    crate = ":peel_horizon",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_binary(
+    name = "peel_horizon_cli",
+    srcs = ["peel_horizon_cli.rs"],
+    crate_root = "peel_horizon_cli.rs",
+    edition = "2024",
+    deps = [
+        ":peel_horizon",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_library(
+    name = "spec_tree",
+    srcs = ["spec_tree.rs"],
+    crate_root = "spec_tree.rs",
+    edition = "2024",
+    deps = [
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "spec_tree_test",
+    crate = ":spec_tree",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_binary(
+    name = "compile_spec_tree",
+    srcs = ["spec_tree_cli.rs"],
+    crate_root = "spec_tree_cli.rs",
+    edition = "2024",
+    deps = [
+        ":spec_tree",
+        "@crates//:anyhow",
+        "@crates//:clap",
+    ],
+)
+
+rust_library(
     name = "logical_modules",
     srcs = ["logical_modules.rs"],
     crate_root = "logical_modules.rs",
