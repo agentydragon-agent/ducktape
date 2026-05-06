@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
@@ -87,12 +88,21 @@ pub struct LoadedChunkRecord {
 #[derive(Debug, Clone, Serialize)]
 pub struct ComputeJsAstsManifest {
     pub counts: ComputeJsAstsCounts,
+    pub parsed_files: Vec<ParsedJsFileRecord>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ComputeJsAstsCounts {
     pub parsed: usize,
     pub files: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ParsedJsFileRecord {
+    pub chunk_id: String,
+    pub file: String,
+    pub source_bytes: usize,
+    pub parse_duration_ms: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -575,15 +585,18 @@ fn compute_js_asts_matching(
                 format!("computeJsAsts requires content for file: {}", file.path)
             })?
         };
+        let source_bytes = content.len();
         jobs.push(ParseJob {
             chunk_id: chunk_id.clone(),
             file_path: file_path.clone(),
             source_name: format!("{chunk_id}/{file_path}"),
+            source_bytes,
             content,
         });
     }
     let parsed_files = parse_js_jobs(jobs)?;
     let parsed = parsed_files.len();
+    let mut parsed_records = Vec::with_capacity(parsed);
     for parsed_file in parsed_files {
         let chunk = artifact
             .chunks
@@ -598,6 +611,12 @@ fn compute_js_asts_matching(
                     parsed_file.chunk_id, parsed_file.file_path
                 )
             })?;
+        parsed_records.push(ParsedJsFileRecord {
+            chunk_id: parsed_file.chunk_id,
+            file: parsed_file.file_path,
+            source_bytes: parsed_file.source_bytes,
+            parse_duration_ms: parsed_file.parse_duration_ms,
+        });
         file.ast = Some(parsed_file.parsed);
     }
     Ok(ComputeJsAstsManifest {
@@ -605,6 +624,7 @@ fn compute_js_asts_matching(
             parsed,
             files: keys.len(),
         },
+        parsed_files: parsed_records,
     })
 }
 
@@ -612,12 +632,15 @@ struct ParseJob {
     chunk_id: String,
     file_path: String,
     source_name: String,
+    source_bytes: usize,
     content: String,
 }
 
 struct ParsedFile {
     chunk_id: String,
     file_path: String,
+    source_bytes: usize,
+    parse_duration_ms: f64,
     parsed: ParsedJsModule,
 }
 
@@ -626,12 +649,19 @@ fn parse_js_jobs(jobs: Vec<ParseJob>) -> Result<Vec<ParsedFile>> {
 }
 
 fn parse_js_job(job: ParseJob) -> Result<ParsedFile> {
+    let started = Instant::now();
     let parsed = parse_js_module(&job.source_name, &job.content)?;
     Ok(ParsedFile {
         chunk_id: job.chunk_id,
         file_path: job.file_path,
+        source_bytes: job.source_bytes,
+        parse_duration_ms: round_ms(started.elapsed().as_secs_f64() * 1000.0),
         parsed,
     })
+}
+
+fn round_ms(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
 }
 
 pub fn materialize_artifact_scripts(
