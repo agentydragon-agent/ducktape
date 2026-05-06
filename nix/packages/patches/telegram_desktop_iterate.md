@@ -1,132 +1,194 @@
 # Iterating on the telegram-desktop patch
 
-Workflow for editing <telegram-desktop-poll-timer-debug.patch> (or any other
-local tdesktop patch) without paying for a full nix-side rebuild every time.
+Workflow for editing <telegram-desktop-poll-timer-debug.patch> (or any
+other local tdesktop patch) without round-tripping through the full nix
+home-manager build every time.
 
-The override at <../telegram-desktop.nix> is what we ship via home-manager.
-This doc is for the inner loop — patch tweaks, log line shape, testing the
-binary against a live account — where round-tripping through `nix build`
-of `telegram-desktop-unwrapped` is too slow.
+The override at <../telegram-desktop.nix> is what we ship via
+home-manager. This doc is for the inner loop — patch tweaks, log line
+shape, testing the binary against a live account.
+
+## Why Docker, not nix-shell
+
+A previous version of this doc described a `nix-shell` recipe with
+`mkShell { inherit (telegram-desktop.unwrapped) buildInputs ...; }` plus
+manual `cmake -G Ninja $cmakeFlags ..`. **It builds, but the resulting
+binary crashes at startup** (`emoji_config.cpp:447 _sprites.size()`
+assertion — Qt fails to decode WebP from compiled-in resources, almost
+certainly because nix's `qt6.qtimageformats` plugin path is missing
+when run directly from the build dir).
+
+Trying to reverse-engineer all the `cmakeFlags`, `preConfigure` hooks,
+and runtime `QT_PLUGIN_PATH` plumbing nixpkgs sets up is a yak-shave.
+Tdesktop ships their own CI build environment as a Docker image. Use
+that — it's the maintainer-tested path and it just works.
 
 ## One-time setup
 
-1. Shallow-clone tdesktop into the standard `/code` layout, at the same
-   tag the local nixpkgs has pinned (currently `v6.6.2`):
+### 1. Clone tdesktop
 
-   ```bash
-   GIT_SSH_COMMAND='ssh -F /dev/null -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519' \
-   git clone --depth 1 --branch v6.6.2 \
-     --recurse-submodules --shallow-submodules --jobs 8 \
-     https://github.com/telegramdesktop/tdesktop.git \
-     /code/github.com/telegramdesktop/tdesktop
-   ```
-
-   The `GIT_SSH_COMMAND` override exists because home-manager symlinks
-   `~/.ssh/config` into the nix store with 0777 perms; openssh refuses
-   to read it, and a global `url.<ssh>.insteadOf=<https>` rewrite forces
-   SSH. The override gives ssh an empty config (`-F /dev/null`) so it
-   skips the symlink entirely.
-
-2. Apply the patch in-tree:
-
-   ```bash
-   cd /code/github.com/telegramdesktop/tdesktop
-   patch -p1 -N < /home/agentydragon/code/ducktape/nix/packages/patches/telegram-desktop-poll-timer-debug.patch
-   ```
-
-   `-N` makes re-application a no-op (silently skipped) so this step is
-   idempotent across iterations. To revert before re-patching after
-   editing the source:
-
-   ```bash
-   patch -p1 -R < /home/agentydragon/code/ducktape/nix/packages/patches/telegram-desktop-poll-timer-debug.patch
-   ```
-
-## Build environment
-
-`mkShell` with the inputs of `pkgs.telegram-desktop.unwrapped`. This pulls
-qtbase, qtsvg, qtwayland, ffmpeg, openalSoft, hunspell, kcoreaddons,
-range-v3, tl-expected, microsoft-gsl, libheif, libavif, libjxl, lz4,
-minizip-ng, rnnoise, ada, boost, protobuf, **tg_owt**, **tde2e** —
-substituted from cache.nixos.org for stable nixpkgs. `mkShell` itself
-never builds tdesktop.
+Shallow-clone into the standard `/code` layout, at the same tag the
+local nixpkgs has pinned (currently `v6.6.2`):
 
 ```bash
-nix-shell --pure --extra-experimental-features 'nix-command flakes' -E '
-  let
-    flake = builtins.getFlake "git+file:///home/agentydragon/code/ducktape";
-    pkgs = flake.nixosConfigurations.wyrm2.pkgs;
-    drv = pkgs.telegram-desktop.unwrapped;
-  in pkgs.mkShell {
-    inherit (drv) nativeBuildInputs buildInputs cmakeFlags;
-  }'
+GIT_SSH_COMMAND='ssh -F /dev/null -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519' \
+git clone --depth 1 --branch v6.6.2 \
+  --recurse-submodules --shallow-submodules --jobs 8 \
+  https://github.com/telegramdesktop/tdesktop.git \
+  /code/github.com/telegramdesktop/tdesktop
 ```
 
-Drop `--pure` if you want your usual `$PATH`/aliases.
+The `GIT_SSH_COMMAND` override exists because home-manager symlinks
+`~/.ssh/config` into the nix store with 0777 perms; openssh refuses to
+read it, and a global `url.<ssh>.insteadOf=<https>` rewrite forces SSH.
+The override gives ssh an empty config (`-F /dev/null`) so it skips the
+symlink entirely.
 
-Preview what nix would substitute vs. build:
-
-```bash
-nix --extra-experimental-features 'nix-command flakes' build --no-link --dry-run --impure --expr '
-  let f = builtins.getFlake "git+file:///home/agentydragon/code/ducktape";
-      pkgs = f.nixosConfigurations.wyrm2.pkgs;
-      drv = pkgs.telegram-desktop.unwrapped;
-  in (pkgs.mkShell { inherit (drv) nativeBuildInputs buildInputs; }).inputDerivation'
-```
-
-If `tg_owt` / `tde2e` show as `will be built`, expect 15–45 min of
-one-time C++ before the shell drops. Otherwise it's a download.
-
-## Configure + build (inside the shell)
+### 2. Apply the patch in-tree
 
 ```bash
 cd /code/github.com/telegramdesktop/tdesktop
-mkdir -p build && cd build
-cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo $cmakeFlags ..
-ninja Telegram
+patch -p1 -N < /home/agentydragon/code/ducktape/nix/packages/patches/telegram-desktop-poll-timer-debug.patch
 ```
 
-`$cmakeFlags` carries `TDESKTOP_API_ID` / `TDESKTOP_API_HASH` from
-nixpkgs (snap-store credentials; fine for personal builds). Cold
-`ninja Telegram` is roughly 30–90 minutes on wyrm2; incremental
-re-runs after a single-file patch edit are seconds.
+`-N` makes re-application a no-op (silently skipped) so this step is
+idempotent. To revert before re-patching after editing the source:
+
+```bash
+patch -p1 -R < /home/agentydragon/code/ducktape/nix/packages/patches/telegram-desktop-poll-timer-debug.patch
+```
+
+### 3. Build the `tdesktop:centos_env` Docker image
+
+This is the build environment maintainers test against: Rocky Linux 8
+running gcc-toolset-14, with Qt, ffmpeg, tg_owt, tdlib, etc. compiled
+from source statically. The Dockerfile is generated by a Jinja template
+via `gen_dockerfile`, then `docker build`. Wrapping script:
+
+```bash
+cd /code/github.com/telegramdesktop/tdesktop
+nix-shell -p poetry --run ./Telegram/build/prepare/linux.sh
+```
+
+(`poetry` is what the `gen_dockerfile` step uses; one-off `nix-shell -p`
+is fine — we don't need a permanent install.)
+
+**First run**: 1–3 hours. Compiles every native dep statically into the
+image. Coffee-break territory.
+
+**Subsequent runs** (after a tdesktop bump or template change): Docker
+layer cache makes most layers cache-hit. If nothing relevant changed,
+the script returns in seconds.
+
+## Build
+
+```bash
+cd /code/github.com/telegramdesktop/tdesktop
+docker run --rm -it -u $(id -u) \
+  -v "$PWD:/usr/src/tdesktop" \
+  tdesktop:centos_env \
+  /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+  -D TDESKTOP_API_ID=611335 \
+  -D TDESKTOP_API_HASH=d524b414d21f4d37f08684c1df41ac9c
+```
+
+The `611335`/`d524b414...` are tdesktop's snap-store credentials
+(matches what nixpkgs uses) — fine for personal builds. Register your
+own at <https://my.telegram.org> if you'd rather.
+
+For a debug build with assertions live, prepend `-e CONFIG=Debug`:
+
+```bash
+docker run --rm -it -u $(id -u) \
+  -v "$PWD:/usr/src/tdesktop" \
+  -e CONFIG=Debug \
+  tdesktop:centos_env \
+  /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+  -D TDESKTOP_API_ID=611335 \
+  -D TDESKTOP_API_HASH=d524b414d21f4d37f08684c1df41ac9c
+```
+
+The build dir lands in `out/Release/` (or `out/Debug/`) on the host —
+bind-mounted, so it persists across container runs. The binary itself
+ends up at `out/Release/Telegram/Telegram` (or
+`out/Debug/Telegram/Telegram`).
+
+**First build**: roughly 30–90 min on wyrm2. Most of the heavy deps
+are pre-built into the image, so this is ~tdesktop's own sources +
+generated codegen + linking.
 
 ## Run
 
-Inside the same shell so the build inputs stay on `LD_LIBRARY_PATH`
-and `QT_PLUGIN_PATH`:
+The container's gcc-toolset-14 build links libstdc++/libgcc statically
+(see `LDFLAGS` in `Telegram/build/docker/centos_env/Dockerfile`), so
+the resulting binary runs on the host directly without LD_LIBRARY_PATH
+gymnastics. Use a throwaway workdir to keep iteration runs isolated
+from your real `~/.local/share/TelegramDesktop`:
 
 ```bash
-./Telegram/Telegram -workdir /tmp/td-test
+./out/Release/Telegram/Telegram -workdir /tmp/td-test
 ```
 
-`-workdir` keeps the run isolated from `~/.local/share/TelegramDesktop`
-so we don't pollute the real client state during iteration. Log in via
-QR scan from the phone, let it sync, then:
+Log in via QR scan from the phone, let it sync, then:
 
 ```bash
 grep "Poll Debug" /tmp/td-test/log.txt
 ```
 
-That's the marker emitted by the patch when clamping kicks in. The line
-includes `pollId`, `closeDate`, `deltaSec`, `deltaDays`, and the first
-120 chars of the question — enough to identify which chat the bad poll
-lives in.
+That's the marker emitted by the patch when clamping kicks in. The
+line includes `pollId`, `closeDate`, `deltaSec`, `deltaDays`, and the
+first 120 chars of the poll's question text — enough to identify
+which chat the bad poll lives in.
 
-To run from outside the dev shell later (e.g., quick re-test after
-restart) without re-entering nix-shell:
+## Inner loop (incremental rebuilds)
+
+Both layers are incremental:
+
+- **Image** — Docker layer cache. Re-running `linux.sh` with no
+  template change is near-instant.
+- **tdesktop** — `out/Release/` (or `out/Debug/`) persists across
+  container runs because of the bind mount. `cmake/run_cmake.py` keeps
+  the existing build dir unless you pass `force` in arguments. ninja's
+  state, object files, and `CMakeCache.txt` are all preserved.
+
+So after the first full build, the iteration loop is:
 
 ```bash
-patchelf --set-rpath "$LD_LIBRARY_PATH" build/Telegram/Telegram
+# 1. Edit source (e.g., Telegram/SourceFiles/data/data_session.cpp).
+# 2. Re-run the same docker run command:
+docker run --rm -it -u $(id -u) -v "$PWD:/usr/src/tdesktop" \
+  tdesktop:centos_env \
+  /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+  -D TDESKTOP_API_ID=611335 \
+  -D TDESKTOP_API_HASH=d524b414d21f4d37f08684c1df41ac9c
+# 3. Re-run the binary:
+./out/Release/Telegram/Telegram -workdir /tmp/td-test
 ```
 
-…done from inside the shell. After that the binary carries its own
-rpath and can be invoked from any shell.
+Step 2 is seconds-to-minutes for a one-file change — ninja recompiles
+the touched object plus links the executable. Container startup itself
+is a few seconds.
+
+To force a full reconfigure (e.g., after a `git pull` that touched
+`CMakeLists.txt`):
+
+```bash
+docker run ... build.sh ... force
+# or just nuke out/Release and let the next build recreate it
+rm -rf out/Release
+```
 
 ## When to promote back into the nix override
 
 Once a patch shape is settled here, the only change needed in
 <../telegram-desktop.nix> / <telegram-desktop-poll-timer-debug.patch>
 is the patch file content itself — the override is already wired to
-include it. Run `home-manager switch --flake .#wyrm2` to deploy the
-new patched build system-wide.
+include it. Run `home-manager switch --flake .#<host>` (after first
+swapping `pkgs.telegram-desktop` →
+`ducktapePackages.telegram-desktop` in the host's home-manager file)
+to deploy the new patched build system-wide.
+
+The nix-built version takes hours to compile (no Docker layer cache
+reuse, full Qt/ffmpeg/tg_owt/tdlib build chain via nix), so prefer to
+prove the patch via Docker first and only promote once it's known
+good.

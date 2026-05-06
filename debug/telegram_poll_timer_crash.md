@@ -178,9 +178,11 @@ upstream poll-timer fix lands.
 
 For tweaking the patch itself (log line shape, clamp threshold, debug
 instrumentation) without paying for the full nix rebuild on every
-edit, use the manual clone + cmake/ninja recipe at
-<../nix/packages/patches/telegram_desktop_iterate.md>. Inner-loop
-rebuilds drop from hours to seconds.
+edit, use the Docker-based recipe at
+<../nix/packages/patches/telegram_desktop_iterate.md>. Build through
+tdesktop's official `tdesktop:centos_env` image (Rocky 8 + statically
+compiled deps) against a local clone — incremental ninja rebuilds
+after the first full build drop edit→binary to seconds.
 
 ### D. Extract MTProto session from tdata → drive Telethon / API directly
 
