@@ -70,6 +70,7 @@ pub struct FinalModuleContent {
     pub member_names: Vec<String>,
     pub path: String,
     pub owner_ids: Vec<String>,
+    pub residual: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -422,7 +423,6 @@ pub fn materialize_logical_modules(
             schedule: &schedule,
             chunk_renames: &chunk_renames_map,
         })?;
-
         let mut files = BTreeMap::new();
         for file in lowered.files {
             files.insert(file.path.clone(), file);
@@ -475,6 +475,7 @@ pub fn materialize_logical_modules(
                 path: plan.target_path.clone(),
                 owner_ids: schedule
                     .owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str)),
+                residual: !plan.explicit,
             })
             .collect::<Vec<_>>();
         let report = LogicalChunkReport {
@@ -924,7 +925,9 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             file: entry_file.to_string(),
             id: plan.id.clone(),
             owner_ids,
+            residual: !plan.explicit,
             target_file: plan.target_file.clone(),
+            target_path: plan.target_path.clone(),
         });
     }
 
@@ -2585,6 +2588,7 @@ fn update_root_manifest(
             logical_modules: None,
             selected_module_lowerings: None,
             scrambled_identifier_frequencies: None,
+            output_metrics: None,
         });
     }
     let Some(root_manifest) = &mut artifact.root_manifest else {

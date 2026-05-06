@@ -112,5 +112,6 @@ fn build_artifact_manifest(chunk_manifests: &[::artifact::ChunkManifest]) -> Art
         logical_modules: None,
         selected_module_lowerings: None,
         scrambled_identifier_frequencies: None,
+        output_metrics: None,
     }
 }

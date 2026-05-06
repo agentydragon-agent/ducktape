@@ -236,6 +236,7 @@ pub fn build_chunk_manifest_from_analysis(
         kept_top_level_declarations,
         logical_modules: None,
         selected_module_lowerings: None,
+        output_metrics: None,
     }
 }
 

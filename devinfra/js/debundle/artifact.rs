@@ -108,6 +108,8 @@ pub struct ArtifactManifest {
     /// output directory.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scrambled_identifier_frequencies: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_metrics: Option<OutputMetrics>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -141,7 +143,9 @@ pub struct SelectedModuleLowering {
     pub file: String,
     pub id: String,
     pub owner_ids: Vec<String>,
+    pub residual: bool,
     pub target_file: String,
+    pub target_path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,6 +170,55 @@ pub struct ChunkManifest {
     pub logical_modules: Option<ChunkLogicalModulesSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_module_lowerings: Option<Vec<SelectedModuleLowering>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_metrics: Option<OutputMetrics>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OutputMetrics {
+    pub total: OutputSize,
+    pub top_level_entry: OutputSize,
+    pub named_modules: OutputSize,
+    pub residual_modules: OutputSize,
+    pub other_files: OutputSize,
+    pub named_module_fraction: OutputFraction,
+    pub residual_module_fraction: OutputFraction,
+    pub top_level_entry_fraction: OutputFraction,
+    pub largest_files_by_bytes: Vec<OutputFileMetric>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct OutputSize {
+    pub files: usize,
+    pub bytes: usize,
+    pub lines: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OutputFraction {
+    pub bytes: f64,
+    pub lines: f64,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputRole {
+    TopLevelEntry,
+    NamedModule,
+    ResidualModule,
+    Other,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OutputFileMetric {
+    pub file: String,
+    pub role: OutputRole,
+    pub bytes: usize,
+    pub lines: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

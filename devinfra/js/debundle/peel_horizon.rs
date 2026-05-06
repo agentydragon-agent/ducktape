@@ -65,6 +65,9 @@ pub struct SymbolHome {
     pub deferred: bool,
 }
 
+type DeferredModules = Vec<DeferredModule>;
+type SymbolHomesByBinding = BTreeMap<String, Vec<SymbolHome>>;
+
 #[derive(Debug, Clone)]
 struct PeelCandidate {
     owner_set_kind: PeelCandidateKind,
@@ -239,7 +242,7 @@ fn graph_index(graph: &OwnerGraphReport) -> GraphIndex {
 fn load_modules_and_symbols(
     root: &Path,
     owner_by_binding: &BTreeMap<String, String>,
-) -> Result<(Vec<DeferredModule>, BTreeMap<String, Vec<SymbolHome>>)> {
+) -> Result<(DeferredModules, SymbolHomesByBinding)> {
     let mut deferred_modules = Vec::new();
     let mut symbols: BTreeMap<String, Vec<SymbolHome>> = BTreeMap::new();
     let mut files = Vec::new();
@@ -632,7 +635,7 @@ mod tests {
         OwnerGraphReport {
             chunk_id: "static/app".to_string(),
             nodes: bindings
-                .into_iter()
+                .iter()
                 .enumerate()
                 .map(|(ordinal, binding)| OwnerGraphNodeReport {
                     id: format!("owner:{ordinal}"),

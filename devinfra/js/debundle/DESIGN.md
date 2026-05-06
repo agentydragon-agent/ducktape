@@ -840,6 +840,15 @@ which is emitted on both success and rejection. Re-running the
 pipeline on an updated spec produces fresh graph and peelability
 reports.
 
+When `write_js_tree` materializes executable output, the root
+`manifest.json` and each chunk `manifest.json` also include
+`output_metrics`. These metrics are computed from the exact rendered
+JS written to disk: total bytes/lines/files, top-level entry
+bytes/lines/files, named logical-module bytes/lines/files, residual
+module bytes/lines/files, and the largest JS sinks. Peeling tools
+should use these manifest fields for progress reporting instead of
+rescanning output trees.
+
 ### Workflow
 
 1. Spec author writes / edits a spec — possibly partial.
@@ -1539,7 +1548,7 @@ repo YAML conventions.
 | `rename_vendor_exports`          | <vendor.rs>                                    | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                 |
 | `swap_vendor_chunks`             | <vendor.rs>                                    | When a `vendor` entry has `level: swap`.                                                                                             |
 | `materialize_logical_modules`    | <logical_modules.rs> + <schedule_validator.rs> | When `logical_modules` or `residual_modules` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits. |
-| `write_js_tree`                  | <write_tree.rs>                                | When `write_js_tree` output config is present.                                                                                       |
+| `write_js_tree`                  | <write_tree.rs>                                | When `write_js_tree` output config is present; writes JS tree manifests with exact `output_metrics`.                                 |
 | `emit_browser_harness`           | <emit_harness.rs>                              | When `emit_browser_harness` output config is present.                                                                                |
 
 Within `materialize_logical_modules`, the substages are:

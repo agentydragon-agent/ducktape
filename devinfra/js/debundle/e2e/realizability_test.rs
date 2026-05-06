@@ -38,6 +38,42 @@ fn binding_report(binding: &str, export_name: &str) -> BindingReport {
     }
 }
 
+fn file_size(path: &Path) -> (usize, usize) {
+    let content =
+        fs::read_to_string(path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+    (content.len(), content.lines().count())
+}
+
+fn assert_size_metric(report: &serde_json::Value, path: &[&str], expected: (usize, usize, usize)) {
+    let metric = path.iter().fold(report, |value, key| &value[*key]);
+    assert_eq!(metric["files"], expected.0, "{path:?} files");
+    assert_eq!(metric["bytes"], expected.1, "{path:?} bytes");
+    assert_eq!(metric["lines"], expected.2, "{path:?} lines");
+}
+
+fn assert_fraction_metric(
+    report: &serde_json::Value,
+    path: &[&str],
+    expected_bytes: usize,
+    expected_lines: usize,
+    total_bytes: usize,
+    total_lines: usize,
+) {
+    let metric = path.iter().fold(report, |value, key| &value[*key]);
+    let expected_byte_fraction = expected_bytes as f64 / total_bytes as f64;
+    let expected_line_fraction = expected_lines as f64 / total_lines as f64;
+    assert!(
+        (metric["bytes"].as_f64().expect("bytes fraction") - expected_byte_fraction).abs()
+            < f64::EPSILON,
+        "{path:?} byte fraction mismatch: {metric:#?}",
+    );
+    assert!(
+        (metric["lines"].as_f64().expect("lines fraction") - expected_line_fraction).abs()
+            < f64::EPSILON,
+        "{path:?} line fraction mismatch: {metric:#?}",
+    );
+}
+
 // --- R cycles (both back-edges at-init) ----------------------------------
 
 #[test]
@@ -199,6 +235,125 @@ export { A, B, readA, readB };
         graph.peelability.minimal_peel_sets.is_empty(),
         "fixture has no residual peel set: {graph:#?}",
     );
+}
+
+#[test]
+fn write_tree_manifests_include_output_metrics() {
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"const A = "a-value";
+const B = "b-value";
+console.log(A, B);
+export { A, B };
+"#,
+        vec![logical_module("mod_a", &[Member::new("A")])],
+    ));
+    assert_entry_output(&fixture, "a-value b-value\n");
+
+    let manifest: serde_json::Value = read_json(&fixture.out_root.join("static/app/manifest.json"));
+    let entry_path = fixture.out_root.join("static/app/entry.js");
+    let named_path = fixture.out_root.join("static/app/modules/mod_a.js");
+    let residual_path = fixture
+        .out_root
+        .join("static/app/modules/residual/unhandled.js");
+    let entry = file_size(&entry_path);
+    let named = file_size(&named_path);
+    let residual = file_size(&residual_path);
+    let total = (
+        entry.0 + named.0 + residual.0,
+        entry.1 + named.1 + residual.1,
+    );
+
+    assert_size_metric(
+        &manifest,
+        &["output_metrics", "top_level_entry"],
+        (1, entry.0, entry.1),
+    );
+    assert_size_metric(
+        &manifest,
+        &["output_metrics", "named_modules"],
+        (1, named.0, named.1),
+    );
+    assert_size_metric(
+        &manifest,
+        &["output_metrics", "residual_modules"],
+        (1, residual.0, residual.1),
+    );
+    assert_size_metric(&manifest, &["output_metrics", "other_files"], (0, 0, 0));
+    assert_size_metric(
+        &manifest,
+        &["output_metrics", "total"],
+        (3, total.0, total.1),
+    );
+    assert_fraction_metric(
+        &manifest,
+        &["output_metrics", "named_module_fraction"],
+        named.0,
+        named.1,
+        total.0,
+        total.1,
+    );
+    assert_fraction_metric(
+        &manifest,
+        &["output_metrics", "residual_module_fraction"],
+        residual.0,
+        residual.1,
+        total.0,
+        total.1,
+    );
+    assert_fraction_metric(
+        &manifest,
+        &["output_metrics", "top_level_entry_fraction"],
+        entry.0,
+        entry.1,
+        total.0,
+        total.1,
+    );
+
+    let files = manifest["output_metrics"]["largest_files_by_bytes"]
+        .as_array()
+        .expect("largest_files_by_bytes should be an array");
+    assert_eq!(files.len(), 3);
+    let by_file = files
+        .iter()
+        .map(|file| {
+            (
+                file["file"].as_str().expect("file metric path"),
+                file.clone(),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(by_file["entry.js"]["role"], "top_level_entry");
+    assert_eq!(by_file["entry.js"]["bytes"], entry.0);
+    assert_eq!(by_file["modules/mod_a.js"]["role"], "named_module");
+    assert_eq!(by_file["modules/mod_a.js"]["module_path"], "mod_a");
+    assert_eq!(by_file["modules/mod_a.js"]["bytes"], named.0);
+    assert_eq!(
+        by_file["modules/residual/unhandled.js"]["role"],
+        "residual_module",
+    );
+    assert_eq!(
+        by_file["modules/residual/unhandled.js"]["module_path"],
+        "residual/unhandled",
+    );
+    assert_eq!(
+        by_file["modules/residual/unhandled.js"]["bytes"],
+        residual.0,
+    );
+
+    let root_manifest: serde_json::Value = read_json(&fixture.out_root.join("manifest.json"));
+    assert_size_metric(
+        &root_manifest,
+        &["output_metrics", "total"],
+        (3, total.0, total.1),
+    );
+    let root_files = root_manifest["output_metrics"]["largest_files_by_bytes"]
+        .as_array()
+        .expect("root largest_files_by_bytes should be an array");
+    assert!(root_files.iter().any(|file| {
+        file["file"] == "static/app/modules/mod_a.js"
+            && file["role"] == "named_module"
+            && file["module_path"] == "mod_a"
+    }));
 }
 
 #[test]
