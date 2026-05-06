@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
@@ -26,6 +27,40 @@ use spec::{BindingSourceKind, ChunkRenames, LogicalModule, MemberPurity, Residua
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
 const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
+
+macro_rules! time_phase {
+    ($timings:expr, $name:expr, $body:block) => {{
+        let phase_started = Instant::now();
+        let value = $body;
+        $timings.add($name, phase_started.elapsed());
+        value
+    }};
+}
+
+#[derive(Debug, Default, Clone)]
+struct PhaseTimings {
+    durations: BTreeMap<String, Duration>,
+}
+
+impl PhaseTimings {
+    fn add(&mut self, name: impl Into<String>, duration: Duration) {
+        *self.durations.entry(name.into()).or_default() += duration;
+    }
+
+    fn extend_prefixed(&mut self, prefix: &str, other: PhaseTimings) {
+        for (name, duration) in other.durations {
+            self.add(format!("{prefix}.{name}"), duration);
+        }
+    }
+
+    fn into_ms(mut self, total: Duration) -> BTreeMap<String, f64> {
+        self.durations.insert("total".to_string(), total);
+        self.durations
+            .into_iter()
+            .map(|(name, duration)| (name, duration.as_secs_f64() * 1000.0))
+            .collect()
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LogicalModuleManifest {
@@ -175,17 +210,20 @@ pub fn materialize_logical_modules(
     let mut applied = Vec::<SelectedModuleLowering>::new();
     for chunk_id in selected_chunk_ids {
         let chunk_started = Instant::now();
-        let target_file = options
-            .file
-            .as_ref()
-            .map(|file| normalize_module_path(file))
-            .transpose()?
-            .or_else(|| get_chunk_entry_path(artifact, &chunk_id))
-            .with_context(|| {
-                format!(
-                    "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
-                )
-            })?;
+        let mut timings = PhaseTimings::default();
+        let target_file = time_phase!(timings, "resolve_entry", {
+            options
+                .file
+                .as_ref()
+                .map(|file| normalize_module_path(file))
+                .transpose()?
+                .or_else(|| get_chunk_entry_path(artifact, &chunk_id))
+                .with_context(|| {
+                    format!(
+                        "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
+                    )
+                })
+        })?;
         let runtime_file = artifact
             .chunks
             .get(&chunk_id)
@@ -203,14 +241,18 @@ pub fn materialize_logical_modules(
             .clone()
             .or_else(|| artifact.chunk_source_path(&chunk_id))
             .unwrap_or_else(|| format!("{chunk_id}.js"));
-        let runtime_import_facts = collect_runtime_import_facts(&runtime_ast.module.body);
-        let requests = logical_requests_for_chunk(
-            logical_modules.get(&chunk_id),
-            residual_modules.get(&chunk_id),
-            chunk_renames.contains_key(&chunk_id),
-            &chunk_id,
-            &target_dir,
-        )?;
+        let runtime_import_facts = time_phase!(timings, "collect_runtime_import_facts", {
+            collect_runtime_import_facts(&runtime_ast.module.body)
+        });
+        let requests = time_phase!(timings, "build_requests", {
+            logical_requests_for_chunk(
+                logical_modules.get(&chunk_id),
+                residual_modules.get(&chunk_id),
+                chunk_renames.contains_key(&chunk_id),
+                &chunk_id,
+                &target_dir,
+            )
+        })?;
         let mut explicit_requests = requests
             .iter()
             .filter(|request| !request.residual)
@@ -218,16 +260,22 @@ pub fn materialize_logical_modules(
             .collect::<Vec<_>>();
         let residual_request = requests.iter().find(|request| request.residual).cloned();
 
-        let declarations = collect_top_level_declarations(&runtime_ast.module);
-        let declaration_by_name = declarations
-            .iter()
-            .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
-            .collect::<BTreeMap<_, _>>();
+        let declarations = time_phase!(timings, "collect_top_level_declarations", {
+            collect_top_level_declarations(&runtime_ast.module)
+        });
+        let declaration_by_name = time_phase!(timings, "index_declarations_by_name", {
+            declarations
+                .iter()
+                .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
+                .collect::<BTreeMap<_, _>>()
+        });
 
+        let build_module_plans_started = Instant::now();
         let mut binding_assignment = BTreeMap::<String, usize>::new();
         let mut module_plans = Vec::new();
         let mut bindings_catalogue = BTreeMap::<BindingName, BindingKind>::new();
         let mut imported_binding_resolver = ArtifactSourceImportResolutionCache::new(artifact);
+        let mut imported_from_by_src = BTreeMap::<String, String>::new();
         for (index, request) in explicit_requests.iter_mut().enumerate() {
             let mut bindings = BTreeMap::new();
             let dest_target_file = target_file_for_request(&target_dir, &request.target_path)?;
@@ -244,6 +292,7 @@ pub fn materialize_logical_modules(
                         &chunk_id,
                         &target_file,
                         &member.binding,
+                        &mut imported_from_by_src,
                     )?;
                     let entry = bindings_catalogue
                         .entry(member.binding.clone())
@@ -318,12 +367,15 @@ pub fn materialize_logical_modules(
                 });
             }
         }
+        timings.add("build_module_plans", build_module_plans_started.elapsed());
 
-        let chunk_renames_map = chunk_renames
-            .get(&chunk_id)
-            .map(collect_chunk_renames)
-            .transpose()?
-            .unwrap_or_default();
+        let chunk_renames_map = time_phase!(timings, "collect_chunk_renames", {
+            chunk_renames
+                .get(&chunk_id)
+                .map(collect_chunk_renames)
+                .transpose()
+        })?
+        .unwrap_or_default();
 
         // Run the schedule validator (see <DESIGN.md>). Computed here
         // (before `lower_chunk` mutates the artifact) to keep the
@@ -336,18 +388,22 @@ pub fn materialize_logical_modules(
             // `<binding>(...)` call sites to `Pure` regardless of
             // body content. Author-trust contract; see DESIGN.md
             // A9 + AGENTS.md "Declared purity".
-            let declared_pure: BTreeSet<String> = explicit_requests
-                .iter()
-                .flat_map(|req| req.members.iter())
-                .filter(|m| m.purity == MemberPurity::Pure)
-                .map(|m| m.binding.clone())
-                .collect();
-            let analysis = analyze_chunk_with_source_locations(
-                &runtime_ast.module,
-                &declared_pure,
-                Some(&source_path),
-                |span| line_range_for_span(runtime_ast, span),
-            );
+            let declared_pure: BTreeSet<String> = time_phase!(timings, "collect_declared_pure", {
+                explicit_requests
+                    .iter()
+                    .flat_map(|req| req.members.iter())
+                    .filter(|m| m.purity == MemberPurity::Pure)
+                    .map(|m| m.binding.clone())
+                    .collect()
+            });
+            let analysis = time_phase!(timings, "analyze_chunk_facts", {
+                analyze_chunk_with_source_locations(
+                    &runtime_ast.module,
+                    &declared_pure,
+                    Some(&source_path),
+                    |span| line_range_for_span(runtime_ast, span),
+                )
+            });
             // Refuse chunks with top-level `await`. DESIGN.md
             // assumption A2 — the proof's reverse-DFS argument
             // doesn't apply to AsyncCycleRoot semantics, so the
@@ -362,32 +418,49 @@ pub fn materialize_logical_modules(
                     ordinal = ord.0,
                 );
             }
-            let logical_modules: Vec<ScheduleLogicalModule> = module_plans
-                .iter()
-                .map(|plan| ScheduleLogicalModule {
-                    id: plan.id.clone(),
-                    target_file: plan.target_file.clone(),
-                    residual: !plan.explicit,
-                    rename_map: plan.bindings.clone(),
-                })
-                .collect();
-            Schedule::build(
-                chunk_id.clone(),
-                analysis.facts,
-                bindings_catalogue,
-                logical_modules,
-                chunk_renames_map.clone(),
-            )
+            let logical_modules: Vec<ScheduleLogicalModule> =
+                time_phase!(timings, "project_schedule_modules", {
+                    module_plans
+                        .iter()
+                        .map(|plan| ScheduleLogicalModule {
+                            id: plan.id.clone(),
+                            target_file: plan.target_file.clone(),
+                            residual: !plan.explicit,
+                            rename_map: plan.bindings.clone(),
+                        })
+                        .collect()
+                });
+            time_phase!(timings, "build_schedule", {
+                Schedule::build(
+                    chunk_id.clone(),
+                    analysis.facts,
+                    bindings_catalogue,
+                    logical_modules,
+                    chunk_renames_map.clone(),
+                )
+            })
         };
-        let schedule_report = schedule.validate();
+        let schedule_report = time_phase!(timings, "validate_schedule", { schedule.validate() });
         if let Some(report_out_dir) = &report_out_dir {
-            write_chunk_report_json(report_out_dir, &chunk_id, "schedule.json", &schedule_report)?;
-            write_chunk_report_json(
-                report_out_dir,
-                &chunk_id,
-                "owner_graph.json",
-                &schedule.owner_graph_report(),
-            )?;
+            time_phase!(timings, "write_schedule_report", {
+                write_chunk_report_json(
+                    report_out_dir,
+                    &chunk_id,
+                    "schedule.json",
+                    &schedule_report,
+                )
+            })?;
+            let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
+                schedule.owner_graph_report()
+            });
+            time_phase!(timings, "write_owner_graph_report", {
+                write_chunk_report_json(
+                    report_out_dir,
+                    &chunk_id,
+                    "owner_graph.json",
+                    &owner_graph_report,
+                )
+            })?;
         }
 
         // Hard gate: a cyclic spec is unrealizable; refuse to emit
@@ -398,12 +471,14 @@ pub fn materialize_logical_modules(
         // threshold (Bazel truncates at ~1 MiB by default).
         if !schedule_report.cycles.is_empty() {
             if let Some(report_out_dir) = &report_out_dir {
-                write_chunk_report_json(
-                    report_out_dir,
-                    &chunk_id,
-                    "cycles.json",
-                    &schedule_report.cycles,
-                )?;
+                time_phase!(timings, "write_cycles_report", {
+                    write_chunk_report_json(
+                        report_out_dir,
+                        &chunk_id,
+                        "cycles.json",
+                        &schedule_report.cycles,
+                    )
+                })?;
             }
             let summary = render_cycle_summary(&schedule_report.cycles);
             bail!(
@@ -412,76 +487,91 @@ pub fn materialize_logical_modules(
             );
         }
 
-        let lowered = lower_chunk(LowerChunkInputs {
-            artifact,
-            runtime_ast,
-            header_lines: &header_lines,
-            entry_file: &target_file,
-            chunk_id: &chunk_id,
-            source_path: &source_path,
-            declarations: &declarations,
-            declaration_by_name: &declaration_by_name,
-            module_plans: &module_plans,
-            binding_assignment: &binding_assignment,
-            schedule: &schedule,
-            chunk_renames: &chunk_renames_map,
-            runtime_import_facts: &runtime_import_facts,
-        })?;
-        let mut files = BTreeMap::new();
-        for file in lowered.files {
-            files.insert(file.path.clone(), file);
-        }
-        let module_extraction_state = ModuleExtractionState {
-            runtime_file: target_file.clone(),
-            target_dir: target_dir.clone(),
-        };
-        artifact.chunks.insert(
-            chunk_id.clone(),
-            JsChunk {
-                entry_file: target_file.clone(),
-                files,
-                metadata: ChunkMetadata {
-                    source_path: Some(source_path.clone()),
-                    module_extraction_state: Some(module_extraction_state),
-                },
-            },
-        );
-        if !artifact.chunk_order.contains(&chunk_id) {
-            artifact.chunk_order.push(chunk_id.clone());
-        }
-
-        let selected_lowerings = lowered.applied.clone();
-        if let Some(manifest) = artifact.chunk_manifests.get_mut(&chunk_id) {
-            manifest.entry_file = target_file.clone();
-            manifest.files = lowered
-                .file_records
-                .iter()
-                .map(|(file, role)| ChunkFileRecord {
-                    file: file.clone(),
-                    role: *role,
-                })
-                .collect();
-            manifest.logical_modules = Some(ChunkLogicalModulesSummary {
-                count: module_plans.len(),
-                module_ids: module_plans.iter().map(|plan| plan.id.clone()).collect(),
-                target_dir: target_dir.clone(),
-            });
-            manifest.selected_module_lowerings = Some(selected_lowerings.clone());
-        }
-
-        let final_modules = module_plans
-            .iter()
-            .map(|plan| FinalModuleContent {
-                binding_names: plan.bindings.keys().cloned().collect(),
-                file: plan.target_file.clone(),
-                id: plan.id.clone(),
-                member_names: plan.bindings.values().cloned().collect(),
-                path: plan.target_path.clone(),
-                owner_ids: schedule
-                    .owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str)),
-                residual: !plan.explicit,
+        let lowered = time_phase!(timings, "lower_chunk_total", {
+            lower_chunk(LowerChunkInputs {
+                artifact,
+                runtime_ast,
+                header_lines: &header_lines,
+                entry_file: &target_file,
+                chunk_id: &chunk_id,
+                source_path: &source_path,
+                declarations: &declarations,
+                declaration_by_name: &declaration_by_name,
+                module_plans: &module_plans,
+                binding_assignment: &binding_assignment,
+                schedule: &schedule,
+                chunk_renames: &chunk_renames_map,
+                runtime_import_facts: &runtime_import_facts,
             })
-            .collect::<Vec<_>>();
+        })?;
+        let LoweredChunk {
+            files: lowered_files,
+            file_records: lowered_file_records,
+            applied: lowered_applied,
+            timings: lower_timings,
+        } = lowered;
+        timings.extend_prefixed("lower", lower_timings);
+        time_phase!(timings, "replace_artifact_chunk", {
+            let mut files = BTreeMap::new();
+            for file in lowered_files {
+                files.insert(file.path.clone(), file);
+            }
+            let module_extraction_state = ModuleExtractionState {
+                runtime_file: target_file.clone(),
+                target_dir: target_dir.clone(),
+            };
+            artifact.chunks.insert(
+                chunk_id.clone(),
+                JsChunk {
+                    entry_file: target_file.clone(),
+                    files,
+                    metadata: ChunkMetadata {
+                        source_path: Some(source_path.clone()),
+                        module_extraction_state: Some(module_extraction_state),
+                    },
+                },
+            );
+            if !artifact.chunk_order.contains(&chunk_id) {
+                artifact.chunk_order.push(chunk_id.clone());
+            }
+        });
+
+        let selected_lowerings = lowered_applied.clone();
+        time_phase!(timings, "update_chunk_manifest", {
+            if let Some(manifest) = artifact.chunk_manifests.get_mut(&chunk_id) {
+                manifest.entry_file = target_file.clone();
+                manifest.files = lowered_file_records
+                    .iter()
+                    .map(|(file, role)| ChunkFileRecord {
+                        file: file.clone(),
+                        role: *role,
+                    })
+                    .collect();
+                manifest.logical_modules = Some(ChunkLogicalModulesSummary {
+                    count: module_plans.len(),
+                    module_ids: module_plans.iter().map(|plan| plan.id.clone()).collect(),
+                    target_dir: target_dir.clone(),
+                });
+                manifest.selected_module_lowerings = Some(selected_lowerings.clone());
+            }
+        });
+
+        let final_modules = time_phase!(timings, "build_final_module_report", {
+            module_plans
+                .iter()
+                .map(|plan| FinalModuleContent {
+                    binding_names: plan.bindings.keys().cloned().collect(),
+                    file: plan.target_file.clone(),
+                    id: plan.id.clone(),
+                    member_names: plan.bindings.values().cloned().collect(),
+                    path: plan.target_path.clone(),
+                    owner_ids: schedule
+                        .owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str)),
+                    residual: !plan.explicit,
+                })
+                .collect::<Vec<_>>()
+        });
+        let timings_ms = timings.into_ms(chunk_started.elapsed());
         let report = LogicalChunkReport {
             chunk_id: chunk_id.clone(),
             counts: LogicalChunkCounts {
@@ -500,10 +590,7 @@ pub fn materialize_logical_modules(
                     residual: request.residual,
                 })
                 .collect(),
-            timings_ms: BTreeMap::from([(
-                "total".to_string(),
-                chunk_started.elapsed().as_secs_f64() * 1000.0,
-            )]),
+            timings_ms,
         };
         if let Some(report_out_dir) = &report_out_dir {
             write_chunk_report_json(report_out_dir, &chunk_id, "logical_modules.json", &report)?;
@@ -555,6 +642,7 @@ struct LoweredChunk {
     files: Vec<JsFile>,
     file_records: Vec<(String, FileRole)>,
     applied: Vec<SelectedModuleLowering>,
+    timings: PhaseTimings,
 }
 
 struct LowerChunkInputs<'a> {
@@ -669,40 +757,46 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         runtime_import_facts,
         chunk_renames,
     } = inputs;
-    let mut selected_ordinals = BTreeSet::new();
-    for decl in declarations {
-        if decl
-            .names
-            .iter()
-            .any(|name| binding_assignment.contains_key(name))
-        {
-            selected_ordinals.insert(decl.ordinal);
+    let mut timings = PhaseTimings::default();
+    let selected_ordinals = time_phase!(timings, "compute_selected_ordinals", {
+        let mut selected_ordinals = BTreeSet::new();
+        for decl in declarations {
+            if decl
+                .names
+                .iter()
+                .any(|name| binding_assignment.contains_key(name))
+            {
+                selected_ordinals.insert(decl.ordinal);
+            }
         }
-    }
+        selected_ordinals
+    });
 
     let mut selected_by_module = vec![Vec::<ModuleItem>::new(); module_plans.len()];
     let mut selected_exports_by_module =
         vec![Option::<BTreeMap<String, String>>::None; module_plans.len()];
-    for (module_index, plan) in module_plans.iter().enumerate() {
-        if plan.bindings.is_empty() {
-            continue;
+    time_phase!(timings, "plan_selected_exports", {
+        for (module_index, plan) in module_plans.iter().enumerate() {
+            if plan.bindings.is_empty() {
+                continue;
+            }
+            // Drop bindings that don't exist anywhere (no entry in
+            // `binding_assignment`). Without this, a stale spec entry
+            // for a binding that is not a top-level decl in the chunk
+            // would emit `export { <renamed> }` with no backing decl
+            // and Node bails at module load with `SyntaxError: Export
+            // '<renamed>' is not defined in module`.
+            let exports: BTreeMap<String, String> = plan
+                .bindings
+                .iter()
+                .filter(|(name, _)| binding_assignment.contains_key(*name))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            if !exports.is_empty() {
+                selected_exports_by_module[module_index] = Some(exports);
+            }
         }
-        // Drop bindings that don't exist anywhere (no entry in
-        // `binding_assignment`). Without this, a stale spec entry
-        // for a binding that is not a top-level decl in the chunk
-        // would emit `export { <renamed> }` with no backing decl
-        // and Node bails at module load with `SyntaxError: Export
-        // '<renamed>' is not defined in module`.
-        let exports: BTreeMap<String, String> = plan
-            .bindings
-            .iter()
-            .filter(|(name, _)| binding_assignment.contains_key(*name))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        if !exports.is_empty() {
-            selected_exports_by_module[module_index] = Some(exports);
-        }
-    }
+    });
 
     let mut entry_body = Vec::new();
     let import_insert_index = runtime_ast
@@ -711,15 +805,18 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         .iter()
         .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
         .count();
-    for (ordinal, item) in runtime_ast.module.body.iter().enumerate() {
-        if !selected_ordinals.contains(&ordinal) {
-            entry_body.push(item.clone());
-            continue;
+    time_phase!(timings, "split_entry_body", {
+        for (ordinal, item) in runtime_ast.module.body.iter().enumerate() {
+            if !selected_ordinals.contains(&ordinal) {
+                entry_body.push(item.clone());
+                continue;
+            }
+            let mut remaining =
+                remaining_item_after_selection(item, binding_assignment, &mut selected_by_module)?;
+            entry_body.append(&mut remaining);
         }
-        let mut remaining =
-            remaining_item_after_selection(item, binding_assignment, &mut selected_by_module)?;
-        entry_body.append(&mut remaining);
-    }
+        Ok::<_, anyhow::Error>(())
+    })?;
     // Two passes: build entry imports in plan order (so the
     // first plan to claim a binding wins disambiguation), then
     // sort the resulting imports by `linker_order` so ECMA-262's
@@ -728,6 +825,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     // the import-collision contract while satisfying Lemma 2's
     // emit-side constraint. See DESIGN.md "Module dep graphs"
     // and "Lemma 2".
+    let build_entry_imports_started = Instant::now();
     let mut entry_imports: Vec<(usize, ModuleItem)> = Vec::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
     let mut body_renames = BTreeMap::<String, String>::new();
@@ -830,8 +928,10 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             .unwrap_or(usize::MAX)
     });
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
+    timings.add("build_entry_imports", build_entry_imports_started.elapsed());
     let entry_binding_renames = body_renames.clone();
     if !body_renames.is_empty() {
+        let rename_entry_body_started = Instant::now();
         // Re-exports `export { local }` (without `from`) collapse `local`
         // and the public exported name into a single ident. Renaming the
         // orig would also rename the public name, breaking downstream
@@ -846,20 +946,30 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         for item in entry_body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
+        timings.add("rename_entry_body", rename_entry_body_started.elapsed());
     }
     if !entry_imports.is_empty() {
+        let splice_entry_imports_started = Instant::now();
         let tail = entry_body.split_off(import_insert_index);
         entry_body.extend(entry_imports);
         entry_body.extend(tail);
+        timings.add(
+            "splice_entry_imports",
+            splice_entry_imports_started.elapsed(),
+        );
     }
-    for export in entry_exports_for_moved_bindings(declarations, binding_assignment) {
-        entry_body.push(export);
-    }
-    trim_dead_named_specifiers(&mut entry_body, &schedule.bindings);
-    let entry_exports_by_original_local =
-        collect_entry_exports_by_original_local(&entry_body, &entry_binding_renames);
-    let imported_reexports_by_module =
-        collect_imported_reexports_by_module(schedule, module_plans.len());
+    time_phase!(timings, "entry_exports_and_trim", {
+        for export in entry_exports_for_moved_bindings(declarations, binding_assignment) {
+            entry_body.push(export);
+        }
+        trim_dead_named_specifiers(&mut entry_body, &schedule.bindings);
+    });
+    let entry_exports_by_original_local = time_phase!(timings, "collect_entry_exports", {
+        collect_entry_exports_by_original_local(&entry_body, &entry_binding_renames)
+    });
+    let imported_reexports_by_module = time_phase!(timings, "collect_imported_reexports", {
+        collect_imported_reexports_by_module(schedule, module_plans.len())
+    });
     let mut source_import_cache = ArtifactSourceImportResolutionCache::new(artifact);
 
     let mut files = vec![JsFile {
@@ -887,52 +997,66 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
 
     for (index, plan) in module_plans.iter().enumerate() {
         let mut body = std::mem::take(&mut selected_by_module[index]);
-        let local_renames = naturalize_module_body(&mut body, plan);
-        let body_facts = collect_module_body_facts(&body);
+        let local_renames = time_phase!(timings, "module.naturalize_body", {
+            naturalize_module_body(&mut body, plan)
+        });
+        let body_facts = time_phase!(timings, "module.collect_body_facts", {
+            collect_module_body_facts(&body)
+        });
         let ModuleReferenceNeeds {
             cross_module_imports_by_provider,
             residual_entry_imports,
             missing_residual_exports,
             runtime_reimports,
-        } = plan_module_reference_needs(
-            index,
-            &body_facts,
-            schedule,
-            declaration_by_name,
-            binding_assignment,
-            &entry_exports_by_original_local,
-            runtime_import_facts,
-        );
-        let mut module_imports = cross_module_imports_for_plan(
-            &plan.target_file,
-            cross_module_imports_by_provider,
-            schedule,
-        );
-        let mut residual_entry_imports = residual_entry_imports_for_moved_body(
-            &plan.id,
-            entry_file,
-            &plan.target_file,
-            residual_entry_imports,
-            missing_residual_exports,
-        )?;
+        } = time_phase!(timings, "module.plan_references", {
+            plan_module_reference_needs(
+                index,
+                &body_facts,
+                schedule,
+                declaration_by_name,
+                binding_assignment,
+                &entry_exports_by_original_local,
+                runtime_import_facts,
+            )
+        });
+        let mut module_imports = time_phase!(timings, "module.build_cross_imports", {
+            cross_module_imports_for_plan(
+                &plan.target_file,
+                cross_module_imports_by_provider,
+                schedule,
+            )
+        });
+        let mut residual_entry_imports = time_phase!(timings, "module.build_residual_imports", {
+            residual_entry_imports_for_moved_body(
+                &plan.id,
+                entry_file,
+                &plan.target_file,
+                residual_entry_imports,
+                missing_residual_exports,
+            )
+        })?;
         // Re-import any source-chunk import-specifier-bound locals that
         // moved code in `body` references but no top-level decl
         // satisfies (e.g. `const { decode } = gge;` where `gge` was an
         // ImportSpecifier in the source chunk's runtime body). Without
         // this, the moved code references a free variable and Node
         // throws `ReferenceError: gge is not defined` at runtime.
-        let mut runtime_reimports = source_chunk_imports_for_moved_body(
-            &mut source_import_cache,
-            chunk_id,
-            entry_file,
-            &plan.target_file,
-            runtime_reimports,
-        )?;
+        let mut runtime_reimports = time_phase!(timings, "module.build_runtime_reimports", {
+            source_chunk_imports_for_moved_body(
+                &mut source_import_cache,
+                chunk_id,
+                entry_file,
+                &plan.target_file,
+                runtime_reimports,
+            )
+        })?;
         module_imports.append(&mut residual_entry_imports);
         module_imports.append(&mut runtime_reimports);
         module_imports.append(&mut body);
         body = module_imports;
-        rewrite_runtime_sources_for_target(&mut body, &plan.target_file);
+        time_phase!(timings, "module.rewrite_runtime_sources", {
+            rewrite_runtime_sources_for_target(&mut body, &plan.target_file);
+        });
         // ImportSpecifier-bound members (`BindingKind::Imported` in
         // `schedule.bindings`): for each `Imported` binding whose
         // `re_exported_by` map names this module, emit a re-import
@@ -940,81 +1064,100 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         // public-name export. Per-destination relative paths are
         // computed here so multiple modules at different output
         // depths each get a correctly-relativised path.
-        let mut import_member_exports = BTreeMap::<String, String>::new();
-        let import_count = body
-            .iter()
-            .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
-            .count();
-        // `imported_from` on `BindingKind::Imported` is output-tree-
-        // rooted absolute; `plan.target_file` is chunk-rooted. Lift
-        // the destination to the same coordinate system before
-        // computing the relative path.
-        let dest_abs = join_module_path(&[chunk_id, &plan.target_file]);
-        for (offset, reexport) in imported_reexports_by_module[index].iter().enumerate() {
-            let src = relative_source(&dest_abs, &reexport.imported_from);
-            body.insert(
-                import_count + offset,
-                imported_binding_import_decl(&reexport.local, &reexport.imported_name, &src),
-            );
-            import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
-        }
-        if let Some(exports) = &selected_exports_by_module[index] {
-            let mut exports = final_module_exports(exports, &local_renames);
-            exports.extend(
-                import_member_exports
+        let import_member_exports = time_phase!(timings, "module.imported_reexports", {
+            let mut import_member_exports = BTreeMap::<String, String>::new();
+            let reexports = &imported_reexports_by_module[index];
+            if !reexports.is_empty() {
+                let import_count = body
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.clone())),
-            );
-            body.push(export_named_for_bindings(&exports));
-        } else if !import_member_exports.is_empty() {
-            body.push(export_named_for_bindings(&import_member_exports));
-        }
-        let binding_names = plan.bindings.keys().cloned().collect::<Vec<_>>();
-        let owner_ids =
-            schedule.owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str));
-        let header = vec![
-            LOWERING_FILE_PRAGMA.to_string(),
-            LOWERING_GENERATOR_HEADER.to_string(),
-            format!(
-                "// Selected-module lowered region; original owner ids: {}.",
-                owner_ids.join(", ")
-            ),
-            format!(
-                "// Selected-module lowered region; source bindings: {}.",
-                binding_names.join(", ")
-            ),
-        ];
-        files.push(JsFile {
-            path: plan.target_file.clone(),
-            content: None,
-            ast: Some(ParsedJsModule {
-                cm: runtime_ast.cm.clone(),
-                module: Module {
-                    span: DUMMY_SP,
-                    body,
-                    shebang: None,
-                },
-            }),
-            header_lines: header,
-            metadata: FileMetadata {
-                chunk_id: Some(chunk_id.to_string()),
-                chunk_file: Some(plan.target_file.clone()),
-                role: Some(FileRole::Module),
-                source_path: Some(source_path.to_string()),
-                generated_stage: Some("selected_module_lowering".to_string()),
-            },
+                    .take_while(|item| {
+                        matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_)))
+                    })
+                    .count();
+                // `imported_from` on `BindingKind::Imported` is output-tree-
+                // rooted absolute; `plan.target_file` is chunk-rooted. Lift
+                // the destination to the same coordinate system before
+                // computing the relative path.
+                let dest_abs = join_module_path(&[chunk_id, &plan.target_file]);
+                let mut reexport_imports = Vec::with_capacity(reexports.len());
+                for reexport in reexports {
+                    let src = relative_source(&dest_abs, &reexport.imported_from);
+                    reexport_imports.push(imported_binding_import_decl(
+                        &reexport.local,
+                        &reexport.imported_name,
+                        &src,
+                    ));
+                    import_member_exports
+                        .insert(reexport.local.clone(), reexport.public_name.clone());
+                }
+                let tail = body.split_off(import_count);
+                body.extend(reexport_imports);
+                body.extend(tail);
+            }
+            import_member_exports
         });
-        file_records.push((plan.target_file.clone(), FileRole::Module));
-        applied.push(SelectedModuleLowering {
-            binding_names,
-            chunk_id: chunk_id.to_string(),
-            exported_names: plan.bindings.values().cloned().collect(),
-            file: entry_file.to_string(),
-            id: plan.id.clone(),
-            owner_ids,
-            residual: !plan.explicit,
-            target_file: plan.target_file.clone(),
-            target_path: plan.target_path.clone(),
+        time_phase!(timings, "module.final_exports", {
+            if let Some(exports) = &selected_exports_by_module[index] {
+                let mut exports = final_module_exports(exports, &local_renames);
+                exports.extend(
+                    import_member_exports
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone())),
+                );
+                body.push(export_named_for_bindings(&exports));
+            } else if !import_member_exports.is_empty() {
+                body.push(export_named_for_bindings(&import_member_exports));
+            }
+        });
+        time_phase!(timings, "module.build_output_records", {
+            let binding_names = plan.bindings.keys().cloned().collect::<Vec<_>>();
+            let owner_ids =
+                schedule.owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str));
+            let header = vec![
+                LOWERING_FILE_PRAGMA.to_string(),
+                LOWERING_GENERATOR_HEADER.to_string(),
+                format!(
+                    "// Selected-module lowered region; original owner ids: {}.",
+                    owner_ids.join(", ")
+                ),
+                format!(
+                    "// Selected-module lowered region; source bindings: {}.",
+                    binding_names.join(", ")
+                ),
+            ];
+            files.push(JsFile {
+                path: plan.target_file.clone(),
+                content: None,
+                ast: Some(ParsedJsModule {
+                    cm: runtime_ast.cm.clone(),
+                    module: Module {
+                        span: DUMMY_SP,
+                        body,
+                        shebang: None,
+                    },
+                }),
+                header_lines: header,
+                metadata: FileMetadata {
+                    chunk_id: Some(chunk_id.to_string()),
+                    chunk_file: Some(plan.target_file.clone()),
+                    role: Some(FileRole::Module),
+                    source_path: Some(source_path.to_string()),
+                    output_path: None,
+                    generated_stage: Some("selected_module_lowering".to_string()),
+                },
+            });
+            file_records.push((plan.target_file.clone(), FileRole::Module));
+            applied.push(SelectedModuleLowering {
+                binding_names,
+                chunk_id: chunk_id.to_string(),
+                exported_names: plan.bindings.values().cloned().collect(),
+                file: entry_file.to_string(),
+                id: plan.id.clone(),
+                owner_ids,
+                residual: !plan.explicit,
+                target_file: plan.target_file.clone(),
+                target_path: plan.target_path.clone(),
+            });
         });
     }
 
@@ -1022,6 +1165,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         files,
         file_records,
         applied,
+        timings,
     })
 }
 
@@ -2423,6 +2567,7 @@ fn resolve_imported_binding(
     source_chunk_id: &str,
     source_runtime_file: &str,
     source_local: &str,
+    imported_from_by_src: &mut BTreeMap<String, String>,
 ) -> Result<(String, String)> {
     let Some(info) = runtime_import_facts.imports.get(source_local) else {
         bail!("no import specifier found for `{source_local}` in source chunk");
@@ -2430,21 +2575,27 @@ fn resolve_imported_binding(
     let RuntimeImportKind::Named { imported } = &info.kind else {
         bail!("no named import specifier found for `{source_local}` in source chunk");
     };
-    let imported_from = if let Some((_, _, path)) =
-        source_import_cache.resolve(&info.src, source_chunk_id, source_runtime_file)?
-    {
-        path
+    let imported_from = if let Some(imported_from) = imported_from_by_src.get(&info.src) {
+        imported_from.clone()
     } else {
-        // Source path doesn't reference a known chunk (e.g. a
-        // synthetic e2e snapshot file with no entry in the artifact).
-        // Resolve relative to the source chunk's directory in the
-        // output tree (chunk_id includes the directory prefix; the
-        // runtime file is chunk-relative).
-        let chunk_runtime_abs = join_module_path(&[
-            &module_path_dirname(source_chunk_id),
-            &module_path_dirname(source_runtime_file),
-        ]);
-        join_module_path(&[&chunk_runtime_abs, &info.src])
+        let imported_from = if let Some((_, _, path)) =
+            source_import_cache.resolve(&info.src, source_chunk_id, source_runtime_file)?
+        {
+            path
+        } else {
+            // Source path doesn't reference a known chunk (e.g. a
+            // synthetic e2e snapshot file with no entry in the artifact).
+            // Resolve relative to the source chunk's directory in the
+            // output tree (chunk_id includes the directory prefix; the
+            // runtime file is chunk-relative).
+            let chunk_runtime_abs = join_module_path(&[
+                &module_path_dirname(source_chunk_id),
+                &module_path_dirname(source_runtime_file),
+            ]);
+            join_module_path(&[&chunk_runtime_abs, &info.src])
+        };
+        imported_from_by_src.insert(info.src.clone(), imported_from.clone());
+        imported_from
     };
     Ok((imported.clone(), imported_from))
 }
@@ -2737,15 +2888,17 @@ fn write_chunk_report_json<T: Serialize>(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let body = if filename == "owner_graph.json" {
+    if filename == "owner_graph.json" {
         // This side output is large enough on real app chunks that pretty
         // printing meaningfully affects local and remote test artifact size.
         // Keep small human-first reports pretty; keep the graph jq-first.
-        serde_json::to_string(value)?
+        let mut output = BufWriter::new(fs::File::create(path)?);
+        serde_json::to_writer(&mut output, value)?;
+        writeln!(output)?;
     } else {
-        serde_json::to_string_pretty(value)?
-    };
-    fs::write(path, body + "\n")?;
+        let body = serde_json::to_string_pretty(value)?;
+        fs::write(path, body + "\n")?;
+    }
     Ok(())
 }
 

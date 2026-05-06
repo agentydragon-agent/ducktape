@@ -7,9 +7,7 @@ use rayon::prelude::*;
 use relative_path::RelativePath;
 use serde::Serialize;
 
-use js_ast::{
-    ParsedJsModule, emit_js_module, parse_js_module_ast, parsed_js_module_with_source_map,
-};
+use js_ast::{ParsedJsModule, emit_js_module, parse_js_module};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
@@ -54,6 +52,7 @@ pub struct FileMetadata {
     pub chunk_file: Option<String>,
     pub role: Option<FileRole>,
     pub source_path: Option<String>,
+    pub output_path: Option<String>,
     pub generated_stage: Option<String>,
 }
 
@@ -447,7 +446,10 @@ impl ArtifactSourceImportResolver<'_> {
         let Some(target_entry_file) = get_chunk_entry_path(self.artifact, &target_chunk_id) else {
             return Ok(None);
         };
-        let path = join_module_path(&[target_chunk_id.as_str(), target_entry_file.as_str()]);
+        let path = artifact_file_output_path(self.artifact, &target_chunk_id, &target_entry_file)
+            .unwrap_or_else(|| {
+                join_module_path(&[target_chunk_id.as_str(), target_entry_file.as_str()])
+            });
         Ok(Some((target_chunk_id, target_entry_file, path)))
     }
 }
@@ -529,9 +531,30 @@ pub fn compute_js_asts(
     artifact: &mut JsPipelineArtifact,
     drop_content: bool,
 ) -> Result<ComputeJsAstsManifest> {
+    compute_js_asts_matching(artifact, drop_content, |_, _| true)
+}
+
+pub fn compute_js_asts_for_chunks(
+    artifact: &mut JsPipelineArtifact,
+    chunk_ids: &std::collections::BTreeSet<String>,
+    drop_content: bool,
+) -> Result<ComputeJsAstsManifest> {
+    compute_js_asts_matching(artifact, drop_content, |chunk_id, _| {
+        chunk_ids.contains(chunk_id)
+    })
+}
+
+fn compute_js_asts_matching(
+    artifact: &mut JsPipelineArtifact,
+    drop_content: bool,
+    should_parse: impl Fn(&str, &str) -> bool,
+) -> Result<ComputeJsAstsManifest> {
     let keys = artifact.list_js_file_keys();
     let mut jobs = Vec::new();
     for (chunk_id, file_path) in &keys {
+        if !should_parse(chunk_id, file_path) {
+            continue;
+        }
         let chunk = artifact
             .chunks
             .get_mut(chunk_id)
@@ -575,11 +598,7 @@ pub fn compute_js_asts(
                     parsed_file.chunk_id, parsed_file.file_path
                 )
             })?;
-        file.ast = Some(parsed_js_module_with_source_map(
-            &parsed_file.source_name,
-            &parsed_file.content,
-            parsed_file.module,
-        ));
+        file.ast = Some(parsed_file.parsed);
     }
     Ok(ComputeJsAstsManifest {
         counts: ComputeJsAstsCounts {
@@ -598,10 +617,8 @@ struct ParseJob {
 
 struct ParsedFile {
     chunk_id: String,
-    content: String,
     file_path: String,
-    module: swc_ecma_ast::Module,
-    source_name: String,
+    parsed: ParsedJsModule,
 }
 
 fn parse_js_jobs(jobs: Vec<ParseJob>) -> Result<Vec<ParsedFile>> {
@@ -609,13 +626,11 @@ fn parse_js_jobs(jobs: Vec<ParseJob>) -> Result<Vec<ParsedFile>> {
 }
 
 fn parse_js_job(job: ParseJob) -> Result<ParsedFile> {
-    let module = parse_js_module_ast(&job.source_name, &job.content)?;
+    let parsed = parse_js_module(&job.source_name, &job.content)?;
     Ok(ParsedFile {
         chunk_id: job.chunk_id,
-        content: job.content,
         file_path: job.file_path,
-        module,
-        source_name: job.source_name,
+        parsed,
     })
 }
 
@@ -654,6 +669,7 @@ fn materialize_chunk_scripts(
             materialize_chunk_file(
                 chunk,
                 &chunk_id,
+                out_dir,
                 &chunk_out_dir,
                 selected_module_by_chunk_file,
                 file,
@@ -678,6 +694,7 @@ fn materialize_chunk_scripts(
 fn materialize_chunk_file(
     chunk: &JsChunk,
     chunk_id: &str,
+    out_dir: &Path,
     chunk_out_dir: &Path,
     selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
     file: String,
@@ -686,17 +703,26 @@ fn materialize_chunk_file(
         .files
         .get(&file)
         .with_context(|| format!("missing artifact file {chunk_id}/{file}"))?;
-    let ast = file_artifact
-        .ast
-        .as_ref()
-        .with_context(|| format!("artifact file has no AST: {chunk_id}/{file}"))?;
-    let target_path = chunk_out_dir.join(path_from_module_path(&file));
+    let rendered = if let Some(ast) = file_artifact.ast.as_ref() {
+        emit_js_module(ast, &file_artifact.header_lines)?
+    } else {
+        file_artifact.content.clone().with_context(|| {
+            format!("artifact file has neither AST nor content: {chunk_id}/{file}")
+        })?
+    };
+    let output_path = artifact_file_output_path_from_parts(chunk_id, &file, file_artifact)
+        .unwrap_or_else(|| join_module_path(&[chunk_id, &file]));
+    let target_path = if file_artifact.metadata.output_path.is_some() {
+        out_dir.join(path_from_module_path(&output_path))
+    } else {
+        chunk_out_dir.join(path_from_module_path(&file))
+    };
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let rendered = emit_js_module(ast, &file_artifact.header_lines)?;
     let metric = output_file_metric(
         chunk_id,
+        &output_path,
         &file,
         &rendered,
         selected_module_by_chunk_file,
@@ -736,13 +762,14 @@ fn selected_module_by_chunk_file(
 
 fn output_file_metric(
     chunk_id: &str,
-    file_path: &str,
+    output_path: &str,
+    artifact_file_path: &str,
     rendered: &str,
     selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
     role: Option<FileRole>,
 ) -> Result<OutputFileMetric> {
     let lowering = selected_module_by_chunk_file
-        .get(&(chunk_id.to_string(), file_path.to_string()))
+        .get(&(chunk_id.to_string(), artifact_file_path.to_string()))
         .copied();
     let role = if let Some(lowering) = lowering {
         if lowering.residual {
@@ -758,7 +785,7 @@ fn output_file_metric(
         }
     };
     Ok(OutputFileMetric {
-        file: join_module_path(&[chunk_id, file_path]),
+        file: output_path.to_string(),
         role,
         bytes: rendered.len(),
         lines: rendered.lines().count(),
@@ -823,6 +850,28 @@ pub fn get_chunk_entry_path(artifact: &JsPipelineArtifact, chunk_id: &str) -> Op
         .or_else(|| chunk.files.keys().next().cloned())
 }
 
+pub fn artifact_file_output_path(
+    artifact: &JsPipelineArtifact,
+    chunk_id: &str,
+    file: &str,
+) -> Option<String> {
+    let chunk = artifact.chunks.get(chunk_id)?;
+    let file_artifact = chunk.files.get(file)?;
+    artifact_file_output_path_from_parts(chunk_id, file, file_artifact)
+}
+
+fn artifact_file_output_path_from_parts(
+    chunk_id: &str,
+    file: &str,
+    file_artifact: &JsFile,
+) -> Option<String> {
+    file_artifact
+        .metadata
+        .output_path
+        .clone()
+        .or_else(|| Some(join_module_path(&[chunk_id, file])))
+}
+
 pub fn resolve_artifact_import_reference(
     artifact: &JsPipelineArtifact,
     source: &str,
@@ -841,7 +890,9 @@ pub fn resolve_artifact_import_reference(
             continue;
         };
         for file_path in chunk.files.keys() {
-            if join_module_path(&[chunk_id.as_str(), file_path.as_str()]) == resolved_path {
+            if artifact_file_output_path(artifact, &chunk_id, file_path).as_deref()
+                == Some(resolved_path.as_str())
+            {
                 return Some((chunk_id, file_path.clone()));
             }
         }

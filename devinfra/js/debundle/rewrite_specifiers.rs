@@ -148,12 +148,13 @@ impl RuntimeSourceRewriter<'_> {
         {
             return Ok(source.to_string());
         }
-        let Some((target_chunk_id, target_file, _path)) = resolve_artifact_source_import_reference(
-            self.artifact,
-            source,
-            &self.caller_chunk_id,
-            &self.caller_file,
-        )?
+        let Some((_target_chunk_id, _target_file, target_path)) =
+            resolve_artifact_source_import_reference(
+                self.artifact,
+                source,
+                &self.caller_chunk_id,
+                &self.caller_file,
+            )?
         else {
             return Ok(source.to_string());
         };
@@ -161,7 +162,6 @@ impl RuntimeSourceRewriter<'_> {
             self.caller_chunk_id.as_str(),
             module_path_dirname(&self.caller_file).as_str(),
         ]);
-        let target_path = join_module_path(&[target_chunk_id.as_str(), target_file.as_str()]);
         let mut rewritten = relative_module_path(&caller_dir, &target_path);
         if !rewritten.starts_with('.') {
             rewritten = format!("./{rewritten}");

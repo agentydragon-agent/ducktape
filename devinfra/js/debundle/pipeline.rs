@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -8,7 +8,8 @@ use clap::Parser;
 use runfiles::{Runfiles, rlocation};
 use serde::{Deserialize, Serialize};
 
-use artifact::{compute_js_asts, load_js_chunks};
+use artifact::{compute_js_asts, compute_js_asts_for_chunks, load_js_chunks};
+use artifact::{module_path_dirname, relative_module_path};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
 use normalize::normalize_js_chunks;
@@ -192,9 +193,23 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         run_step_with_result(&mut preparation_steps, PipelineStage::LoadJsChunks, || {
             load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)
         })?;
+    let materialise_chunk_ids: Vec<String> = spec
+        .logical_modules
+        .keys()
+        .chain(spec.residual_modules.keys())
+        .chain(spec.chunk_renames.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let ast_chunk_ids = ast_required_chunk_ids(&spec, &artifact, &materialise_chunk_ids);
     let _ast_manifest =
         run_step_with_result(&mut preparation_steps, PipelineStage::ComputeJsAsts, || {
-            compute_js_asts(&mut artifact, true)
+            if let Some(chunk_ids) = &ast_chunk_ids {
+                compute_js_asts_for_chunks(&mut artifact, chunk_ids, false)
+            } else {
+                compute_js_asts(&mut artifact, true)
+            }
         })?;
     let (mut artifact, _normalize_manifest) = run_step_with_result(
         &mut preparation_steps,
@@ -253,15 +268,6 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         }
     }
 
-    let materialise_chunk_ids: Vec<String> = spec
-        .logical_modules
-        .keys()
-        .chain(spec.residual_modules.keys())
-        .chain(spec.chunk_renames.keys())
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
     if !materialise_chunk_ids.is_empty() {
         let MaterializeLogicalModulesConfig {
             file,
@@ -320,6 +326,111 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     })
 }
 
+fn ast_required_chunk_ids(
+    spec: &TransformSpec,
+    artifact: &artifact::JsPipelineArtifact,
+    materialise_chunk_ids: &[String],
+) -> Option<BTreeSet<String>> {
+    let vendor_needs_graph_ast = spec
+        .vendor
+        .values()
+        .any(|m| matches!(m.level, VendorLevel::BoundaryRename | VendorLevel::Swap(_)));
+    if !vendor_needs_graph_ast && materialise_chunk_ids.is_empty() {
+        return None;
+    }
+
+    let all_chunk_ids = artifact
+        .list_chunk_ids()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let mut chunk_ids = materialise_chunk_ids
+        .iter()
+        .filter(|chunk_id| all_chunk_ids.contains(*chunk_id))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    let vendor_source_paths = spec
+        .vendor
+        .iter()
+        .filter(|(_, mark)| {
+            matches!(
+                mark.level,
+                VendorLevel::BoundaryRename | VendorLevel::Swap(_)
+            )
+        })
+        .filter_map(|(chunk_path, _)| {
+            let chunk_id = chunk_path.strip_suffix(".js")?;
+            all_chunk_ids
+                .contains(chunk_id)
+                .then(|| (chunk_id.to_string(), chunk_path.clone()))
+        })
+        .collect::<Vec<_>>();
+    for (vendor_chunk_id, _) in &vendor_source_paths {
+        chunk_ids.insert(vendor_chunk_id.clone());
+    }
+    if !vendor_source_paths.is_empty() {
+        chunk_ids.extend(vendor_caller_chunk_ids(artifact, &vendor_source_paths));
+    }
+    Some(chunk_ids)
+}
+
+fn vendor_caller_chunk_ids(
+    artifact: &artifact::JsPipelineArtifact,
+    vendor_source_paths: &[(String, String)],
+) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for caller_chunk_id in artifact.list_chunk_ids() {
+        let Some(chunk) = artifact.chunks.get(&caller_chunk_id) else {
+            continue;
+        };
+        let caller_source_path = chunk
+            .metadata
+            .source_path
+            .as_deref()
+            .unwrap_or(caller_chunk_id.as_str());
+        let caller_source_dir = module_path_dirname(caller_source_path);
+        for file in chunk.files.values() {
+            let Some(content) = file.content.as_deref() else {
+                continue;
+            };
+            if vendor_source_paths
+                .iter()
+                .any(|(vendor_chunk_id, vendor_source_path)| {
+                    vendor_chunk_id != &caller_chunk_id
+                        && content_references_source_path(
+                            content,
+                            &caller_source_dir,
+                            vendor_source_path,
+                        )
+                })
+            {
+                out.insert(caller_chunk_id.clone());
+                break;
+            }
+        }
+    }
+    out
+}
+
+fn content_references_source_path(
+    content: &str,
+    caller_source_dir: &str,
+    target_source_path: &str,
+) -> bool {
+    let mut relative = relative_module_path(caller_source_dir, target_source_path);
+    if !relative.starts_with('.') {
+        relative = format!("./{relative}");
+    }
+    source_literal_exists(content, &relative)
+        || source_literal_exists(content, &format!("/{target_source_path}"))
+}
+
+fn source_literal_exists(content: &str, source: &str) -> bool {
+    ["\"", "'", "`"]
+        .iter()
+        .any(|quote| content.contains(&format!("{quote}{source}{quote}")))
+}
+
 fn run_step(
     steps: &mut Vec<TransformStepSummary>,
     stage: PipelineStage,
@@ -375,6 +486,7 @@ where
 mod tests {
     use super::*;
     use artifact::parse_js_list;
+    use std::collections::BTreeMap;
 
     #[derive(Serialize)]
     struct AssetSummaryFixture<'a> {
@@ -438,6 +550,68 @@ mod tests {
             Some(&PathBuf::from("/tmp/pkg"))
         );
         assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
+    }
+
+    #[test]
+    fn ast_selection_ignores_absent_vendor_targets() {
+        let mut spec = empty_transform_spec();
+        spec.vendor.insert(
+            "static/missing-vendor.js".to_string(),
+            swap_vendor_mark("missing vendor"),
+        );
+        let artifact = artifact_with_chunks([
+            (
+                "static/app",
+                "static/app.js",
+                "import('./missing-vendor.js');\n",
+            ),
+            (
+                "static/caller",
+                "static/caller.js",
+                "import('./missing-vendor.js');\n",
+            ),
+        ]);
+
+        let required =
+            ast_required_chunk_ids(&spec, &artifact, &["static/app".to_string()]).unwrap();
+
+        assert_eq!(required, BTreeSet::from(["static/app".to_string()]));
+    }
+
+    #[test]
+    fn ast_selection_includes_present_vendor_targets_and_callers() {
+        let mut spec = empty_transform_spec();
+        spec.vendor.insert(
+            "static/vendor-target.js".to_string(),
+            swap_vendor_mark("present vendor"),
+        );
+        let artifact = artifact_with_chunks([
+            (
+                "static/app",
+                "static/app.js",
+                "import('./other-vendor.js');\n",
+            ),
+            (
+                "static/caller",
+                "static/caller.js",
+                "import('./vendor-target.js');\n",
+            ),
+            (
+                "static/vendor-target",
+                "static/vendor-target.js",
+                "export const vendorValue = 1;\n",
+            ),
+        ]);
+
+        let required = ast_required_chunk_ids(&spec, &artifact, &[]).unwrap();
+
+        assert_eq!(
+            required,
+            BTreeSet::from([
+                "static/caller".to_string(),
+                "static/vendor-target".to_string()
+            ])
+        );
     }
 
     #[test]
@@ -602,5 +776,71 @@ mod tests {
             Some(2)
         );
         Ok(())
+    }
+
+    fn empty_transform_spec() -> TransformSpec {
+        TransformSpec {
+            inputs: spec::LoadJsChunksArgs {
+                input_root: PathBuf::from("."),
+                js_list_path: PathBuf::from("js-files.txt"),
+            },
+            vendor: BTreeMap::new(),
+            logical_modules: BTreeMap::new(),
+            residual_modules: BTreeMap::new(),
+            chunk_renames: BTreeMap::new(),
+            swap_vendor_chunks: SwapVendorChunksConfig::default(),
+            materialize_logical_modules: MaterializeLogicalModulesConfig::default(),
+            write_js_tree: None,
+            emit_browser_harness: None,
+        }
+    }
+
+    fn swap_vendor_mark(identity: &str) -> spec::VendorMark {
+        spec::VendorMark {
+            identity: identity.to_string(),
+            role: spec::VendorRole::Module,
+            level: VendorLevel::Swap(spec::SwapMark {
+                package: "pkg".to_string(),
+                version: "1.0.0".to_string(),
+                subpath: "index.js".to_string(),
+                wrapper_shape: None,
+            }),
+        }
+    }
+
+    fn artifact_with_chunks<const N: usize>(
+        chunks: [(&str, &str, &str); N],
+    ) -> artifact::JsPipelineArtifact {
+        let mut artifact = artifact::JsPipelineArtifact::default();
+        for (chunk_id, source_path, content) in chunks {
+            artifact.chunk_order.push(chunk_id.to_string());
+            artifact.chunks.insert(
+                chunk_id.to_string(),
+                artifact::JsChunk {
+                    entry_file: "entry.js".to_string(),
+                    files: BTreeMap::from([(
+                        "entry.js".to_string(),
+                        artifact::JsFile {
+                            path: "entry.js".to_string(),
+                            content: Some(content.to_string()),
+                            ast: None,
+                            header_lines: Vec::new(),
+                            metadata: artifact::FileMetadata {
+                                chunk_id: Some(chunk_id.to_string()),
+                                chunk_file: Some("entry.js".to_string()),
+                                role: Some(artifact::FileRole::Entry),
+                                source_path: Some(source_path.to_string()),
+                                ..Default::default()
+                            },
+                        },
+                    )]),
+                    metadata: artifact::ChunkMetadata {
+                        source_path: Some(source_path.to_string()),
+                        ..Default::default()
+                    },
+                },
+            );
+        }
+        artifact
     }
 }

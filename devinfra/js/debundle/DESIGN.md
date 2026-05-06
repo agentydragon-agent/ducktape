@@ -916,8 +916,9 @@ read `peelability.residual_owner_horizon[]`: `status: "direct"`
 means its singleton set is peelable, `status: "with_companions"`
 means one of its `companion_options[]` must move with it, and
 `status: "blocked"` means no currently computed peel set covers
-that owner. Detailed rejected candidates remain available in
-`peelability.evaluated_owner_sets[]`.
+that owner. Detailed rejected candidate traces are intentionally not
+serialized; the report keeps the actionable peel hypergraph compact
+enough for large chunks.
 
 ### Residual peel candidates
 
@@ -949,10 +950,10 @@ therefore useful for reducing the residual or breaking a larger
 cycle without adding a new one.
 
 V1 also computes bounded two-owner closures. It does not scan every
-pair in the residual. Instead, for each blocked singleton candidate,
-it reads that candidate's `cycle_blockers[].constraining_owner_edge_ids`
-and seeds pairs from residual owners that are direct endpoints of
-those constraining edges. Each seeded pair is tested by the same
+pair in the residual. Instead, for each cycle-blocked singleton
+candidate, it keeps internal constraining owner-edge evidence and
+seeds pairs from residual owners that are direct endpoints of those
+constraining edges. Each seeded pair is tested by the same
 fresh-destination quotient operation above. Only pairs whose
 candidate SCC is realizable are reported as
 `owner_set_kind: "owner_pair"` / `status: "peelable_now"`. This
@@ -968,10 +969,6 @@ The report writes this as:
 - `peelability.residual_owner_horizon[]`, one row per residual
   owner with `status`, `peel_set_ids`, and any
   `companion_options[]`
-- `peelability.evaluated_owner_sets[]`, each with `status`,
-  `owner_set_kind`, `owner_ids`, `members`,
-  `current_destination`, `hypothetical_destination`,
-  `residual_dependency_blockers[]`, and `cycle_blockers[]`
 
 ### Detailed graph side output
 
@@ -993,11 +990,10 @@ For each chunk it includes:
 - owner edges: `source`, `target`, edge kind, optional binding,
   statement ordinal, and whether the edge constrains realizability;
 - quotient projections for the current assignment: module nodes,
-  aggregated edge kinds, edge provenance back to owner edges, SCC
-  membership, and SCC realizability status;
+  aggregated edge kinds, SCC membership, and SCC realizability
+  status;
 - residual peelability projections:
-  `minimal_peel_sets`, `residual_owner_horizon`, and
-  per-candidate blocker evidence in `evaluated_owner_sets`.
+  `minimal_peel_sets` and `residual_owner_horizon`.
   These projections carry the same `{binding, export_name}` member
   records used by spec authoring, so downstream tools do not need to
   reparse repo-specific module YAML just to recover readable names.

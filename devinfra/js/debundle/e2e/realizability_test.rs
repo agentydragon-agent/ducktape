@@ -9,8 +9,7 @@
 
 use debundle_e2e_support::*;
 use schedule_validator::{
-    BindingReport, EdgeKind, OwnerGraphReport, PeelCandidateKind, PeelCandidateStatus,
-    ResidualOwnerPeelStatus,
+    BindingReport, EdgeKind, OwnerGraphReport, PeelCandidateKind, ResidualOwnerPeelStatus,
 };
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -214,10 +213,12 @@ export { A, B, readA, readB };
         "owner graph should expose lazy owner read edges: {graph:#?}",
     );
     assert!(
-        graph.quotient.edges.iter().any(|edge| {
-            edge.edge_kinds.contains(&EdgeKind::LazyRead) && !edge.owner_edge_ids.is_empty()
-        }),
-        "quotient edges should retain owner-edge provenance: {graph:#?}",
+        graph
+            .quotient
+            .edges
+            .iter()
+            .any(|edge| { edge.edge_kinds.contains(&EdgeKind::LazyRead) }),
+        "quotient edges should retain aggregated edge kinds: {graph:#?}",
     );
     assert!(
         graph
@@ -384,31 +385,10 @@ export { A, B, Existing };
         );
     }
     assert!(
-        peelability.evaluated_owner_sets.iter().any(|candidate| {
-            candidate.owner_set_kind == PeelCandidateKind::SingleOwner
-                && candidate.status == PeelCandidateStatus::BlockedCycle
-                && binding_names(&candidate.members) == vec!["A".to_string()]
-                && candidate.current_destination.residual
-                && candidate
-                    .cycle_blockers
-                    .iter()
-                    .any(|scc| !scc.constraining_owner_edge_ids.is_empty())
-        }),
-        "A should explain why the singleton peel is blocked: {graph:#?}",
-    );
-    assert!(
-        peelability.evaluated_owner_sets.iter().any(|candidate| {
-            candidate.owner_set_kind == PeelCandidateKind::OwnerPair
-                && candidate.status == PeelCandidateStatus::PeelableNow
-                && candidate.owner_ids.len() == 2
-                && binding_names(&candidate.members) == vec!["A".to_string(), "B".to_string()]
-                && candidate.cycle_blockers.is_empty()
-        }),
-        "A+B should be reported as a peelable pair closure: {graph:#?}",
-    );
-    assert!(
         peelability.minimal_peel_sets.iter().any(|closure| {
             binding_names(&closure.members) == vec!["A".to_string(), "B".to_string()]
+                && closure.owner_set_kind == PeelCandidateKind::OwnerPair
+                && closure.owner_ids.len() == 2
         }),
         "pair-only peelability should be summarized in minimal_peel_sets: {graph:#?}",
     );
@@ -452,19 +432,15 @@ export { Leaf, Dep, Existing };
         "Leaf should require Dep as a companion peel: {graph:#?}",
     );
     assert!(
-        peelability.evaluated_owner_sets.iter().any(|candidate| {
-            candidate.owner_set_kind == PeelCandidateKind::SingleOwner
-                && candidate.status == PeelCandidateStatus::BlockedResidualDependency
-                && candidate.members == vec![binding_report("Leaf", "ReadableLeaf")]
-                && candidate
-                    .residual_dependency_blockers
-                    .iter()
-                    .any(|dependency| {
-                        dependency.read_members == vec![binding_report("Dep", "ReadableDep")]
-                            && !dependency.owner_edge_ids.is_empty()
-                    })
+        peelability.minimal_peel_sets.iter().any(|closure| {
+            closure.owner_set_kind == PeelCandidateKind::OwnerPair
+                && closure.members
+                    == vec![
+                        binding_report("Dep", "ReadableDep"),
+                        binding_report("Leaf", "ReadableLeaf"),
+                    ]
         }),
-        "Leaf candidate should explain the residual-entry dependency blocker: {graph:#?}",
+        "Leaf+Dep should be summarized in minimal_peel_sets: {graph:#?}",
     );
 }
 

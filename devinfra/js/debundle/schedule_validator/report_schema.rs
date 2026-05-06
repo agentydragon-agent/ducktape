@@ -46,8 +46,6 @@ pub struct OwnerGraphEdgeReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding: Option<BindingName>,
     pub statement_ordinal: StatementOrdinal,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_location: Option<SourceLocation>,
     pub constrains_realizability: bool,
 }
 
@@ -64,9 +62,6 @@ pub struct QuotientEdgeReport {
     pub source: String,
     pub target: String,
     pub edge_kinds: Vec<EdgeKind>,
-    pub owner_edge_ids: Vec<String>,
-    pub constraining_owner_edge_ids: Vec<String>,
-    pub reason_count: usize,
     pub constrains_realizability: bool,
 }
 
@@ -86,7 +81,6 @@ pub struct OwnerGraphPeelabilityReport {
     pub residual_destinations: Vec<ModuleReportRef>,
     pub minimal_peel_sets: Vec<OwnerGraphPeelSetReport>,
     pub residual_owner_horizon: Vec<ResidualOwnerPeelHorizonReport>,
-    pub evaluated_owner_sets: Vec<OwnerGraphPeelCandidateReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,7 +96,6 @@ pub struct ResidualOwnerPeelHorizonReport {
     pub status: ResidualOwnerPeelStatus,
     pub peel_set_ids: Vec<String>,
     pub companion_options: Vec<ResidualOwnerCompanionOptionReport>,
-    pub singleton_evaluation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -118,19 +111,6 @@ pub struct ResidualOwnerCompanionOptionReport {
     pub peel_set_id: String,
     pub companion_owner_ids: Vec<String>,
     pub companion_members: Vec<BindingReport>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphPeelCandidateReport {
-    pub id: String,
-    pub owner_set_kind: PeelCandidateKind,
-    pub status: PeelCandidateStatus,
-    pub owner_ids: Vec<String>,
-    pub members: Vec<BindingReport>,
-    pub current_destination: ModuleReportRef,
-    pub hypothetical_destination: HypotheticalPeelDestinationReport,
-    pub residual_dependency_blockers: Vec<PeelBlockingResidualDependencyReport>,
-    pub cycle_blockers: Vec<PeelBlockingSccReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,29 +135,6 @@ pub enum PeelCandidateStatus {
     PeelableNow,
     BlockedCycle,
     BlockedResidualDependency,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HypotheticalPeelDestinationReport {
-    pub id: String,
-    pub label: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PeelBlockingSccReport {
-    pub modules: Vec<String>,
-    pub labels: Vec<String>,
-    pub module_edge_ids: Vec<String>,
-    pub constraining_module_edge_ids: Vec<String>,
-    pub constraining_owner_edge_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PeelBlockingResidualDependencyReport {
-    pub destination: ModuleReportRef,
-    pub owner_edge_ids: Vec<String>,
-    pub read_members: Vec<BindingReport>,
-    pub edge_kinds: Vec<EdgeKind>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

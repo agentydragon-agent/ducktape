@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 
 use artifact::{
-    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, CANONICAL_CHUNK_ENTRY_FILE,
-    ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile, JsPipelineArtifact,
+    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, CANONICAL_CHUNK_ENTRY_FILE, ChunkCounts,
+    ChunkFileRecord, ChunkManifest, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
+    JsPipelineArtifact, ParserOptionsRecord,
 };
+use js_ast::ParsedJsModule;
 use program_analysis::{analyze_program_shallow, build_chunk_manifest_from_analysis};
 
 const NORMALIZE_HEADER_LINES: &[&str] = &[
@@ -31,41 +33,21 @@ pub fn normalize_js_chunks(
         let mut entry_artifact_file = chunk.files.remove(&entry_file).with_context(|| {
             format!("normalizeJsChunks requires entry file for chunk: {chunk_id}/{entry_file}")
         })?;
-        let parsed = entry_artifact_file.ast.take().with_context(|| {
-            format!("normalizeJsChunks requires AST for chunk: {chunk_id}/{entry_file}")
-        })?;
-        let analysis = analyze_program_shallow(&parsed);
-        let manifest = build_chunk_manifest_from_analysis(
+        let (manifest, normalized_file, normalized_entry_file) = normalize_entry_file(
             &chunk_id,
-            CANONICAL_CHUNK_ENTRY_FILE,
+            &entry_file,
             &source_path,
-            &analysis,
-        );
-        let normalized_file = JsFile {
-            path: CANONICAL_CHUNK_ENTRY_FILE.to_string(),
-            content: None,
-            ast: Some(parsed),
-            header_lines: NORMALIZE_HEADER_LINES
-                .iter()
-                .map(|line| (*line).to_string())
-                .collect(),
-            metadata: FileMetadata {
-                chunk_id: Some(chunk_id.clone()),
-                chunk_file: Some(CANONICAL_CHUNK_ENTRY_FILE.to_string()),
-                role: Some(FileRole::Entry),
-                source_path: Some(source_path.clone()),
-                ..Default::default()
-            },
-        };
+            &mut entry_artifact_file,
+        )?;
         let mut files = std::collections::BTreeMap::new();
-        files.insert(CANONICAL_CHUNK_ENTRY_FILE.to_string(), normalized_file);
+        files.insert(normalized_entry_file.clone(), normalized_file);
         next.chunk_order.push(chunk_id.clone());
         next.chunk_manifests
             .insert(chunk_id.clone(), manifest.clone());
         next.chunks.insert(
             chunk_id.clone(),
             JsChunk {
-                entry_file: CANONICAL_CHUNK_ENTRY_FILE.to_string(),
+                entry_file: normalized_entry_file,
                 files,
                 metadata: ChunkMetadata {
                     source_path: Some(source_path),
@@ -78,6 +60,120 @@ pub fn normalize_js_chunks(
     let manifest = build_artifact_manifest(&chunk_manifests);
     next.root_manifest = Some(manifest.clone());
     Ok((next, manifest))
+}
+
+fn normalize_entry_file(
+    chunk_id: &str,
+    entry_file: &str,
+    source_path: &str,
+    entry_artifact_file: &mut JsFile,
+) -> Result<(ChunkManifest, JsFile, String)> {
+    if let Some(parsed) = entry_artifact_file.ast.take() {
+        return Ok(normalize_parsed_entry(chunk_id, source_path, parsed));
+    }
+    let content = entry_artifact_file.content.take().with_context(|| {
+        format!("normalizeJsChunks requires AST or content for chunk: {chunk_id}/{entry_file}")
+    })?;
+    Ok(normalize_unparsed_entry(
+        chunk_id,
+        entry_file,
+        source_path,
+        content,
+    ))
+}
+
+fn normalize_parsed_entry(
+    chunk_id: &str,
+    source_path: &str,
+    parsed: ParsedJsModule,
+) -> (ChunkManifest, JsFile, String) {
+    let analysis = analyze_program_shallow(&parsed);
+    let manifest = build_chunk_manifest_from_analysis(
+        chunk_id,
+        CANONICAL_CHUNK_ENTRY_FILE,
+        source_path,
+        &analysis,
+    );
+    (
+        manifest,
+        JsFile {
+            path: CANONICAL_CHUNK_ENTRY_FILE.to_string(),
+            content: None,
+            ast: Some(parsed),
+            header_lines: NORMALIZE_HEADER_LINES
+                .iter()
+                .map(|line| (*line).to_string())
+                .collect(),
+            metadata: FileMetadata {
+                chunk_id: Some(chunk_id.to_string()),
+                chunk_file: Some(CANONICAL_CHUNK_ENTRY_FILE.to_string()),
+                role: Some(FileRole::Entry),
+                source_path: Some(source_path.to_string()),
+                ..Default::default()
+            },
+        },
+        CANONICAL_CHUNK_ENTRY_FILE.to_string(),
+    )
+}
+
+fn normalize_unparsed_entry(
+    chunk_id: &str,
+    entry_file: &str,
+    source_path: &str,
+    content: String,
+) -> (ChunkManifest, JsFile, String) {
+    (
+        build_unparsed_chunk_manifest(chunk_id, entry_file, source_path),
+        JsFile {
+            path: entry_file.to_string(),
+            content: Some(content),
+            ast: None,
+            header_lines: Vec::new(),
+            metadata: FileMetadata {
+                chunk_id: Some(chunk_id.to_string()),
+                chunk_file: Some(entry_file.to_string()),
+                role: Some(FileRole::Entry),
+                source_path: Some(source_path.to_string()),
+                output_path: Some(source_path.to_string()),
+                ..Default::default()
+            },
+        },
+        entry_file.to_string(),
+    )
+}
+
+fn build_unparsed_chunk_manifest(
+    chunk_id: &str,
+    entry_file: &str,
+    source_path: &str,
+) -> ChunkManifest {
+    ChunkManifest {
+        chunk_id: chunk_id.to_string(),
+        source_path: source_path.to_string(),
+        parser: ParserOptionsRecord::default(),
+        entry_file: entry_file.to_string(),
+        counts: ChunkCounts {
+            dynamic_imports: 0,
+            export_aliases: 0,
+            import_declarations: 0,
+            kept_top_level_declaration_owners: 0,
+            top_level_bindings: 0,
+            top_level_declaration_owners: 0,
+            top_level_side_effects: 0,
+            unresolved_exports: 0,
+        },
+        files: vec![ChunkFileRecord {
+            file: entry_file.to_string(),
+            role: FileRole::Entry,
+        }],
+        imports: Vec::new(),
+        export_aliases: Vec::new(),
+        unresolved_exports: Vec::new(),
+        kept_top_level_declarations: Vec::new(),
+        logical_modules: None,
+        selected_module_lowerings: None,
+        output_metrics: None,
+    }
 }
 
 fn build_artifact_manifest(chunk_manifests: &[::artifact::ChunkManifest]) -> ArtifactManifest {

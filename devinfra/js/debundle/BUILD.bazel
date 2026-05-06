@@ -270,6 +270,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":js_ast",
         ":program_analysis",
         "@crates//:anyhow",
     ],
