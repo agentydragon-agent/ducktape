@@ -749,6 +749,9 @@ in
     gmrc = "glab mr create --fill --remove-source-branch --yes";
     gs = "git status --short --branch --show-stash";
     vimdiff = "nvim -d";
+    # Claude Code routed through Z.ai's Anthropic-compatible endpoint (GLM Coding Plan).
+    # Requires ZAI_API_KEY (set by ducktape.sopsEnv on wyrm2 + rugged).
+    z-claude = "ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic ANTHROPIC_AUTH_TOKEN=$ZAI_API_KEY claude";
     alert = ''notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"'';
 
     # Custom eza aliases (beyond what programs.eza provides)

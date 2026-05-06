@@ -23,6 +23,13 @@
     sopsFile = ../../../secrets/home/rugged/attic.yaml;
   };
 
+  ducktape.sopsEnv = {
+    ZAI_API_KEY = {
+      sopsFile = ../../../secrets/home/rugged/zai.yaml;
+      key = "zai_api_key";
+    };
+  };
+
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
   sops.secrets = builtins.listToAttrs (
     map

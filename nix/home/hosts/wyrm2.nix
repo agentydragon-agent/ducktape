@@ -31,6 +31,10 @@
       sopsFile = ../../../secrets/home/wyrm2/openai.yaml;
       key = "openai_api_key";
     };
+    ZAI_API_KEY = {
+      sopsFile = ../../../secrets/home/wyrm2/zai.yaml;
+      key = "zai_api_key";
+    };
   };
 
   home.packages = [
