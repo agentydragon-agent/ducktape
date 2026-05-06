@@ -467,6 +467,9 @@ mod tests {
         assert!(out.join("manifest.json").exists());
         let entry = fs::read_to_string(out.join("static/index-DuckMock/entry.js"))?;
         assert!(entry.contains("../chunk-DuckMock/entry.js"));
+        let chunk_entry = fs::read_to_string(out.join("static/chunk-DuckMock/entry.js"))?;
+        let total_bytes = entry.len() + chunk_entry.len();
+        let total_lines = entry.lines().count() + chunk_entry.lines().count();
 
         // The harness tree must be self-contained: every path the manifest
         // records resolves to a file inside `out_dir`, with no leakage to
@@ -475,6 +478,42 @@ mod tests {
         // runfiles where the original input trees aren't co-located.
         let manifest: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(out.join("manifest.json"))?)?;
+        assert_eq!(
+            manifest
+                .pointer("/output_metrics/total/files")
+                .and_then(serde_json::Value::as_u64),
+            Some(2),
+        );
+        assert_eq!(
+            manifest
+                .pointer("/output_metrics/total/bytes")
+                .and_then(serde_json::Value::as_u64),
+            Some(total_bytes as u64),
+        );
+        assert_eq!(
+            manifest
+                .pointer("/output_metrics/total/lines")
+                .and_then(serde_json::Value::as_u64),
+            Some(total_lines as u64),
+        );
+        assert_eq!(
+            manifest
+                .pointer("/output_metrics/top_level_entry/files")
+                .and_then(serde_json::Value::as_u64),
+            Some(2),
+        );
+        assert_eq!(
+            manifest
+                .pointer("/output_metrics/named_modules/files")
+                .and_then(serde_json::Value::as_u64),
+            Some(0),
+        );
+        assert_eq!(
+            manifest
+                .pointer("/output_metrics/largest_files_by_bytes/0/role")
+                .and_then(serde_json::Value::as_str),
+            Some("top_level_entry"),
+        );
         assert!(
             manifest.get("schema_version").is_none(),
             "harness manifest should not carry a compatibility schema_version"

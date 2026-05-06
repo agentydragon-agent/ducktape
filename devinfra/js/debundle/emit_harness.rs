@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use artifact::{
-    ArtifactChunkRecord, JsPipelineArtifact, chunk_id_for_js_path, manifest_relative_path,
-    materialize_artifact_scripts, module_path_from_path, normalize_module_path,
-    path_from_module_path,
+    ArtifactChunkRecord, JsPipelineArtifact, OutputMetrics, chunk_id_for_js_path,
+    manifest_relative_path, materialize_artifact_scripts, module_path_from_path,
+    normalize_module_path, path_from_module_path,
 };
 use rewrite_specifiers::runtime_js_href;
 use scrambled_id_frequencies::{compute_scrambled_identifier_frequencies, write_queue};
@@ -91,7 +91,7 @@ pub fn emit_browser_harness(
     }
 
     prepare_harness_output_dir(&options.out_dir, options.force)?;
-    materialize_artifact_scripts(artifact, &options.out_dir)?;
+    let output_metrics = materialize_artifact_scripts(artifact, &options.out_dir)?;
     let copied_assets = copy_snapshot_assets(&options.snapshot_root, &options.out_dir)?;
     let bootstrap = build_bootstrap(artifact, &entry_scripts, &options.out_dir, &options.out_dir)?;
     let index_html =
@@ -142,6 +142,7 @@ pub fn emit_browser_harness(
             .map(|entry| entry.path.clone())
             .collect(),
         scrambled_identifier_frequencies: rel(&queue_path),
+        output_metrics,
         generated: HarnessGeneratedManifest {
             bootstrap: rel(&options.out_dir.join("bootstrap.js")),
             chunks_manifest: rel(&options.out_dir.join("chunks.manifest.json")),
@@ -185,6 +186,7 @@ struct HarnessManifest {
     /// Path to the scrambled-identifier frequency queue JSON (always
     /// emitted as a side output). Manifest-relative.
     scrambled_identifier_frequencies: String,
+    output_metrics: OutputMetrics,
     generated: HarnessGeneratedManifest,
 }
 

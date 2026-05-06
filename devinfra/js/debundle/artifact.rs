@@ -221,6 +221,49 @@ pub struct OutputFileMetric {
     pub module_path: Option<String>,
 }
 
+impl OutputMetrics {
+    fn from_file_metrics(metrics: impl IntoIterator<Item = OutputFileMetric>) -> Self {
+        let metrics = metrics.into_iter().collect::<Vec<_>>();
+        let total = OutputSize::sum(metrics.iter());
+        let top_level_entry = size_for_role(&metrics, OutputRole::TopLevelEntry);
+        let named_modules = size_for_role(&metrics, OutputRole::NamedModule);
+        let residual_modules = size_for_role(&metrics, OutputRole::ResidualModule);
+        let other_files = size_for_role(&metrics, OutputRole::Other);
+        OutputMetrics {
+            named_module_fraction: output_fraction(&named_modules, &total),
+            residual_module_fraction: output_fraction(&residual_modules, &total),
+            top_level_entry_fraction: output_fraction(&top_level_entry, &total),
+            total,
+            top_level_entry,
+            named_modules,
+            residual_modules,
+            other_files,
+            largest_files_by_bytes: largest_files_by_bytes(metrics),
+        }
+    }
+}
+
+impl OutputSize {
+    fn from_file(file: &OutputFileMetric) -> Self {
+        Self {
+            files: 1,
+            bytes: file.bytes,
+            lines: file.lines,
+        }
+    }
+
+    fn sum<'a>(files: impl IntoIterator<Item = &'a OutputFileMetric>) -> Self {
+        files
+            .into_iter()
+            .map(Self::from_file)
+            .fold(Self::default(), |left, right| Self {
+                files: left.files + right.files,
+                bytes: left.bytes + right.bytes,
+                lines: left.lines + right.lines,
+            })
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ParserOptionsRecord {
     pub allow_undeclared_exports: bool,
@@ -474,40 +517,182 @@ pub fn compute_js_asts(
     })
 }
 
-pub fn materialize_artifact_scripts(artifact: &JsPipelineArtifact, out_dir: &Path) -> Result<()> {
-    for chunk_id in artifact.list_chunk_ids() {
-        let chunk = artifact
-            .chunks
-            .get(&chunk_id)
-            .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
-        let chunk_out_dir = out_dir.join(path_from_module_path(&chunk_id));
-        fs::create_dir_all(&chunk_out_dir)?;
-        for file in list_chunk_file_paths(chunk) {
-            let file_artifact = chunk
-                .files
-                .get(&file)
-                .with_context(|| format!("missing artifact file {chunk_id}/{file}"))?;
-            let ast = file_artifact
-                .ast
-                .as_ref()
-                .with_context(|| format!("artifact file has no AST: {chunk_id}/{file}"))?;
-            let target_path = chunk_out_dir.join(path_from_module_path(&file));
-            if let Some(parent) = target_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(
-                &target_path,
-                emit_js_module(ast, &file_artifact.header_lines)?,
-            )?;
-        }
-        if let Some(manifest) = artifact.chunk_manifests.get(&chunk_id) {
-            fs::write(
-                chunk_out_dir.join("manifest.json"),
-                serde_json::to_string_pretty(manifest)? + "\n",
-            )?;
-        }
+pub fn materialize_artifact_scripts(
+    artifact: &JsPipelineArtifact,
+    out_dir: &Path,
+) -> Result<OutputMetrics> {
+    let selected_module_by_chunk_file = selected_module_by_chunk_file(artifact);
+    let metrics = artifact
+        .list_chunk_ids()
+        .into_iter()
+        .map(|chunk_id| {
+            materialize_chunk_scripts(artifact, out_dir, &selected_module_by_chunk_file, chunk_id)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(OutputMetrics::from_file_metrics(
+        metrics.into_iter().flatten(),
+    ))
+}
+
+fn materialize_chunk_scripts(
+    artifact: &JsPipelineArtifact,
+    out_dir: &Path,
+    selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
+    chunk_id: String,
+) -> Result<Vec<OutputFileMetric>> {
+    let chunk = artifact
+        .chunks
+        .get(&chunk_id)
+        .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
+    let chunk_out_dir = out_dir.join(path_from_module_path(&chunk_id));
+    fs::create_dir_all(&chunk_out_dir)?;
+    let metrics = list_chunk_file_paths(chunk)
+        .into_iter()
+        .map(|file| {
+            materialize_chunk_file(
+                chunk,
+                &chunk_id,
+                &chunk_out_dir,
+                selected_module_by_chunk_file,
+                file,
+            )
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if let Some(manifest) = artifact.chunk_manifests.get(&chunk_id) {
+        let mut manifest = manifest.clone();
+        manifest.output_metrics = Some(OutputMetrics::from_file_metrics(
+            metrics
+                .iter()
+                .map(|metric| chunk_relative_metric(&chunk_id, metric)),
+        ));
+        fs::write(
+            chunk_out_dir.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest)? + "\n",
+        )?;
     }
-    Ok(())
+    Ok(metrics)
+}
+
+fn materialize_chunk_file(
+    chunk: &JsChunk,
+    chunk_id: &str,
+    chunk_out_dir: &Path,
+    selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
+    file: String,
+) -> Result<OutputFileMetric> {
+    let file_artifact = chunk
+        .files
+        .get(&file)
+        .with_context(|| format!("missing artifact file {chunk_id}/{file}"))?;
+    let ast = file_artifact
+        .ast
+        .as_ref()
+        .with_context(|| format!("artifact file has no AST: {chunk_id}/{file}"))?;
+    let target_path = chunk_out_dir.join(path_from_module_path(&file));
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let rendered = emit_js_module(ast, &file_artifact.header_lines)?;
+    let metric = output_file_metric(
+        chunk_id,
+        &file,
+        &rendered,
+        selected_module_by_chunk_file,
+        file_artifact.metadata.role,
+    )?;
+    fs::write(&target_path, rendered)?;
+    Ok(metric)
+}
+
+fn chunk_relative_metric(chunk_id: &str, metric: &OutputFileMetric) -> OutputFileMetric {
+    let prefix = format!("{chunk_id}/");
+    OutputFileMetric {
+        file: metric
+            .file
+            .strip_prefix(&prefix)
+            .unwrap_or(&metric.file)
+            .to_string(),
+        ..metric.clone()
+    }
+}
+
+fn selected_module_by_chunk_file(
+    artifact: &JsPipelineArtifact,
+) -> BTreeMap<(String, String), &SelectedModuleLowering> {
+    artifact
+        .chunk_manifests
+        .values()
+        .flat_map(|manifest| manifest.selected_module_lowerings.iter().flatten())
+        .map(|lowering| {
+            (
+                (lowering.chunk_id.clone(), lowering.target_file.clone()),
+                lowering,
+            )
+        })
+        .collect()
+}
+
+fn output_file_metric(
+    chunk_id: &str,
+    file_path: &str,
+    rendered: &str,
+    selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
+    role: Option<FileRole>,
+) -> Result<OutputFileMetric> {
+    let lowering = selected_module_by_chunk_file
+        .get(&(chunk_id.to_string(), file_path.to_string()))
+        .copied();
+    let role = if let Some(lowering) = lowering {
+        if lowering.residual {
+            OutputRole::ResidualModule
+        } else {
+            OutputRole::NamedModule
+        }
+    } else {
+        match role {
+            Some(FileRole::Entry) => OutputRole::TopLevelEntry,
+            Some(FileRole::Module) => OutputRole::NamedModule,
+            Some(FileRole::Runtime) | None => OutputRole::Other,
+        }
+    };
+    Ok(OutputFileMetric {
+        file: join_module_path(&[chunk_id, file_path]),
+        role,
+        bytes: rendered.len(),
+        lines: rendered.lines().count(),
+        module_id: lowering.map(|lowering| lowering.id.clone()),
+        module_path: lowering.map(|lowering| lowering.target_path.clone()),
+    })
+}
+
+fn output_fraction(part: &OutputSize, total: &OutputSize) -> OutputFraction {
+    OutputFraction {
+        bytes: fraction(part.bytes, total.bytes),
+        lines: fraction(part.lines, total.lines),
+    }
+}
+
+fn size_for_role(files: &[OutputFileMetric], role: OutputRole) -> OutputSize {
+    OutputSize::sum(files.iter().filter(|file| file.role == role))
+}
+
+fn largest_files_by_bytes(files: Vec<OutputFileMetric>) -> Vec<OutputFileMetric> {
+    let mut sorted = files;
+    sorted.sort_by(|left, right| {
+        right
+            .bytes
+            .cmp(&left.bytes)
+            .then_with(|| left.file.cmp(&right.file))
+    });
+    sorted.into_iter().take(20).collect()
+}
+
+fn fraction(part: usize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        part as f64 / total as f64
+    }
 }
 
 pub fn get_chunk_entry_path(artifact: &JsPipelineArtifact, chunk_id: &str) -> Option<String> {
