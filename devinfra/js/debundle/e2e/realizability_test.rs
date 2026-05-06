@@ -445,6 +445,51 @@ export { Leaf, Dep, Existing };
 }
 
 #[test]
+fn owner_graph_report_does_not_offer_singleton_peel_for_residual_written_binding() {
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"let a = 0;
+function b() {
+  a = 1;
+}
+const existing = "existing";
+console.log(existing);
+export { a, b, existing };
+"#,
+        vec![logical_module("existing", &[Member::new("existing")])],
+    ));
+    assert_entry_output(&fixture, "existing\n");
+
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let peelability = &graph.peelability;
+    assert!(
+        peelability.residual_owner_horizon.iter().any(|owner| {
+            binding_names(&owner.members) == vec!["a".to_string()]
+                && owner.status == ResidualOwnerPeelStatus::WithCompanions
+                && owner
+                    .companion_options
+                    .iter()
+                    .any(|option| binding_names(&option.companion_members) == vec!["b".to_string()])
+        }),
+        "a must require its residual assigner b as a companion peel: {graph:#?}",
+    );
+    assert!(
+        !peelability.minimal_peel_sets.iter().any(|candidate| {
+            candidate.owner_set_kind == PeelCandidateKind::SingleOwner
+                && binding_names(&candidate.members) == vec!["a".to_string()]
+        }),
+        "peelability must not propose extracting only written binding a: {graph:#?}",
+    );
+    assert!(
+        peelability.minimal_peel_sets.iter().any(|candidate| {
+            candidate.owner_set_kind == PeelCandidateKind::OwnerPair
+                && binding_names(&candidate.members) == vec!["a".to_string(), "b".to_string()]
+        }),
+        "a+b should be the minimal safe peel set: {graph:#?}",
+    );
+}
+
+#[test]
 fn owner_graph_report_is_written_before_rejection() {
     let rejected = run_logical_modules_e2e_rejection_fixture(FixtureOpts::new(
         r#"const A = "a-value";

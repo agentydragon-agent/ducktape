@@ -3410,8 +3410,12 @@ fn evaluate_residual_peel_candidate(
     let candidate_id = format!("peel_candidate:{}", owner_id_keys.join("+"));
     let has_residual_dependency =
         candidate_has_residual_dependency(schedule, context, &moved_owners);
+    let cross_destination_write_edge_indices =
+        candidate_cross_destination_write_edge_indices(context, &moved_owners);
     let constraining_owner_edge_indices = if has_residual_dependency {
         BTreeSet::new()
+    } else if !cross_destination_write_edge_indices.is_empty() {
+        cross_destination_write_edge_indices
     } else {
         let (candidate_edges, adjustment) =
             candidate_incident_edges(schedule, context, &moved_owners);
@@ -3433,6 +3437,29 @@ fn evaluate_residual_peel_candidate(
         members: declared,
         constraining_owner_edge_indices,
     }
+}
+
+fn candidate_cross_destination_write_edge_indices(
+    context: &PeelabilityContext<'_>,
+    moved_owners: &BTreeSet<OwnerId>,
+) -> BTreeSet<usize> {
+    let mut edge_indices = BTreeSet::new();
+    for owner_id in moved_owners {
+        if let Some(indices) = context.owner_out_edges.get(owner_id) {
+            edge_indices.extend(indices.iter().copied());
+        }
+        if let Some(indices) = context.owner_in_edges.get(owner_id) {
+            edge_indices.extend(indices.iter().copied());
+        }
+    }
+    edge_indices
+        .into_iter()
+        .filter(|edge_idx| {
+            let edge = &context.owner_edges[*edge_idx];
+            edge.reason.is_binding_write()
+                && moved_owners.contains(&edge.from) != moved_owners.contains(&edge.to)
+        })
+        .collect()
 }
 
 fn candidate_has_residual_dependency(
