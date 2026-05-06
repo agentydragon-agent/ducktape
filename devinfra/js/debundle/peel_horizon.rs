@@ -71,6 +71,15 @@ struct PeelCandidate {
     members: Vec<BindingReport>,
     owner_ids: Vec<String>,
     bindings: BTreeSet<String>,
+    binding_order: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct GraphIndex {
+    candidates: Vec<PeelCandidate>,
+    candidate_indices_by_binding: BTreeMap<String, Vec<usize>>,
+    owner_by_binding: BTreeMap<String, String>,
+    member_by_binding: BTreeMap<String, BindingReport>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,20 +112,13 @@ pub fn analyze_peel_horizon_from_graph(
     graph: &OwnerGraphReport,
     options: &PeelHorizonOptions,
 ) -> Result<PeelHorizonReport> {
-    let (candidates, owner_by_binding, member_by_binding) = graph_index(graph);
-    let (modules, symbols) = load_modules_and_symbols(&options.modules_root, &owner_by_binding)?;
+    let graph_index = graph_index(graph);
+    let (modules, symbols) =
+        load_modules_and_symbols(&options.modules_root, &graph_index.owner_by_binding)?;
     let mut rows: Vec<ModuleCoverage> = modules
         .iter()
         .filter(|module| !module.bindings.is_empty())
-        .map(|module| {
-            coverage(
-                module,
-                &candidates,
-                options.max_companions,
-                &symbols,
-                &member_by_binding,
-            )
-        })
+        .map(|module| coverage(module, &graph_index, options.max_companions, &symbols))
         .collect();
 
     let mut full: Vec<ModuleCoverage> = rows
@@ -186,29 +188,36 @@ pub fn render_peel_horizon_report(
     out
 }
 
-fn graph_index(
-    graph: &OwnerGraphReport,
-) -> (
-    Vec<PeelCandidate>,
-    BTreeMap<String, String>,
-    BTreeMap<String, BindingReport>,
-) {
-    let candidates = graph
+fn graph_index(graph: &OwnerGraphReport) -> GraphIndex {
+    let mut candidates = Vec::new();
+    let mut candidate_indices_by_binding: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for candidate in graph
         .peelability
         .minimal_peel_sets
         .iter()
         .filter(|candidate| !candidate.members.is_empty())
-        .map(|candidate| PeelCandidate {
+    {
+        let bindings: BTreeSet<String> = candidate
+            .members
+            .iter()
+            .map(|member| member.binding.clone())
+            .collect();
+        let binding_order: Vec<String> = bindings.iter().cloned().collect();
+        let candidate_index = candidates.len();
+        for binding in &binding_order {
+            candidate_indices_by_binding
+                .entry(binding.clone())
+                .or_default()
+                .push(candidate_index);
+        }
+        candidates.push(PeelCandidate {
             owner_set_kind: candidate.owner_set_kind,
-            members: candidate.members.clone(),
+            members: sorted_members(candidate.members.clone()),
             owner_ids: candidate.owner_ids.clone(),
-            bindings: candidate
-                .members
-                .iter()
-                .map(|member| member.binding.clone())
-                .collect(),
-        })
-        .collect();
+            bindings,
+            binding_order,
+        });
+    }
 
     let mut owner_by_binding = BTreeMap::new();
     let mut member_by_binding = BTreeMap::new();
@@ -219,7 +228,12 @@ fn graph_index(
         }
     }
 
-    (candidates, owner_by_binding, member_by_binding)
+    GraphIndex {
+        candidates,
+        candidate_indices_by_binding,
+        owner_by_binding,
+        member_by_binding,
+    }
 }
 
 fn load_modules_and_symbols(
@@ -312,21 +326,21 @@ fn parse_module_file(
 
 fn coverage(
     module: &DeferredModule,
-    candidates: &[PeelCandidate],
+    graph_index: &GraphIndex,
     max_companions: usize,
     symbols: &BTreeMap<String, Vec<SymbolHome>>,
-    member_by_binding: &BTreeMap<String, BindingReport>,
 ) -> ModuleCoverage {
     let mut covered = BTreeSet::new();
     let mut closure_candidates = 0;
-    for candidate in candidates
-        .iter()
-        .filter(|candidate| candidate.bindings.is_subset(&module.bindings))
-    {
+    for candidate_index in candidate_indices_for_bindings(graph_index, &module.bindings) {
+        let candidate = &graph_index.candidates[candidate_index];
+        if !candidate.bindings.is_subset(&module.bindings) {
+            continue;
+        }
         if candidate.owner_set_kind != PeelCandidateKind::SingleOwner {
             closure_candidates += 1;
         }
-        covered.extend(candidate.bindings.iter().cloned());
+        covered.extend(candidate.binding_order.iter().cloned());
     }
     let direct_missing: BTreeSet<String> = module.bindings.difference(&covered).cloned().collect();
 
@@ -334,31 +348,16 @@ fn coverage(
     let mut companion_covered = covered.clone();
     let mut companions = BTreeSet::new();
     let mut companion_candidates = Vec::new();
-    let mut ordered_candidates: Vec<&PeelCandidate> = candidates.iter().collect();
+    let mut ordered_candidates = candidate_indices_for_bindings(graph_index, &direct_missing);
     ordered_candidates.sort_by(|left, right| {
-        let left_extra: BTreeSet<String> = left
-            .bindings
-            .difference(&module.bindings)
-            .cloned()
-            .collect();
-        let right_extra: BTreeSet<String> = right
-            .bindings
-            .difference(&module.bindings)
-            .cloned()
-            .collect();
-        (
-            left_extra.len(),
-            left.bindings.len(),
-            left.bindings.iter().cloned().collect::<Vec<_>>(),
-        )
-            .cmp(&(
-                right_extra.len(),
-                right.bindings.len(),
-                right.bindings.iter().cloned().collect::<Vec<_>>(),
-            ))
+        let left = &graph_index.candidates[*left];
+        let right = &graph_index.candidates[*right];
+        companion_candidate_rank(left, &module.bindings)
+            .cmp(&companion_candidate_rank(right, &module.bindings))
     });
 
-    for candidate in ordered_candidates {
+    for candidate_index in ordered_candidates {
+        let candidate = &graph_index.candidates[candidate_index];
         if candidate.bindings.is_subset(&module.bindings) {
             continue;
         }
@@ -375,10 +374,10 @@ fn coverage(
         }
         companion_candidates.push(CompanionCandidate {
             owner_set_kind: candidate.owner_set_kind,
-            members: sorted_members(candidate.members.clone()),
+            members: candidate.members.clone(),
             add_members: extra
                 .iter()
-                .map(|binding| report_member(binding, member_by_binding))
+                .map(|binding| report_member(binding, &graph_index.member_by_binding))
                 .collect(),
             owner_ids: candidate.owner_ids.clone(),
         });
@@ -405,16 +404,40 @@ fn coverage(
         companions: companions.iter().cloned().collect(),
         companion_labels: companions
             .iter()
-            .map(|binding| format_companion(binding, symbols, member_by_binding))
+            .map(|binding| format_companion(binding, symbols, &graph_index.member_by_binding))
             .collect(),
         companion_details: companions
             .iter()
-            .map(|binding| companion_detail(binding, symbols, member_by_binding))
+            .map(|binding| companion_detail(binding, symbols, &graph_index.member_by_binding))
             .collect(),
         companion_candidates,
         owners: module.owners.len(),
         closure_candidates,
     }
+}
+
+fn candidate_indices_for_bindings(
+    graph_index: &GraphIndex,
+    bindings: &BTreeSet<String>,
+) -> Vec<usize> {
+    let mut candidate_indices = BTreeSet::new();
+    for binding in bindings {
+        if let Some(indices) = graph_index.candidate_indices_by_binding.get(binding) {
+            candidate_indices.extend(indices.iter().copied());
+        }
+    }
+    candidate_indices.into_iter().collect()
+}
+
+fn companion_candidate_rank<'a>(
+    candidate: &'a PeelCandidate,
+    module_bindings: &BTreeSet<String>,
+) -> (usize, usize, &'a [String]) {
+    (
+        candidate.bindings.difference(module_bindings).count(),
+        candidate.bindings.len(),
+        &candidate.binding_order,
+    )
 }
 
 fn report_member(
@@ -602,10 +625,13 @@ mod tests {
         out
     }
 
-    fn graph_fixture(graph_path: &Path) {
-        let report = OwnerGraphReport {
+    fn owner_graph_report(
+        bindings: &[&str],
+        minimal_peel_sets: Vec<OwnerGraphPeelSetReport>,
+    ) -> OwnerGraphReport {
+        OwnerGraphReport {
             chunk_id: "static/app".to_string(),
-            nodes: ["a", "b", "c", "d"]
+            nodes: bindings
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, binding)| OwnerGraphNodeReport {
@@ -635,36 +661,49 @@ mod tests {
             },
             peelability: OwnerGraphPeelabilityReport {
                 residual_destinations: Vec::new(),
-                minimal_peel_sets: vec![
-                    OwnerGraphPeelSetReport {
-                        candidate_id: "candidate:a".to_string(),
-                        owner_set_kind: PeelCandidateKind::SingleOwner,
-                        owner_ids: vec!["owner:0".to_string()],
-                        members: vec![BindingReport {
-                            binding: "a".to_string(),
-                            export_name: "a".to_string(),
-                        }],
-                    },
-                    OwnerGraphPeelSetReport {
-                        candidate_id: "candidate:bc".to_string(),
-                        owner_set_kind: PeelCandidateKind::OwnerPair,
-                        owner_ids: vec!["owner:1".to_string(), "owner:2".to_string()],
-                        members: vec![
-                            BindingReport {
-                                binding: "b".to_string(),
-                                export_name: "b".to_string(),
-                            },
-                            BindingReport {
-                                binding: "c".to_string(),
-                                export_name: "c".to_string(),
-                            },
-                        ],
-                    },
-                ],
+                minimal_peel_sets,
                 residual_owner_horizon: Vec::new(),
                 evaluated_owner_sets: Vec::new(),
             },
-        };
+        }
+    }
+
+    fn peel_set(
+        candidate_id: &str,
+        owner_set_kind: PeelCandidateKind,
+        owner_ids: &[usize],
+        members: &[&str],
+    ) -> OwnerGraphPeelSetReport {
+        OwnerGraphPeelSetReport {
+            candidate_id: candidate_id.to_string(),
+            owner_set_kind,
+            owner_ids: owner_ids
+                .iter()
+                .map(|ordinal| format!("owner:{ordinal}"))
+                .collect(),
+            members: members
+                .iter()
+                .map(|binding| BindingReport {
+                    binding: binding.to_string(),
+                    export_name: binding.to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    fn graph_fixture(graph_path: &Path) {
+        let report = owner_graph_report(
+            &["a", "b", "c", "d"],
+            vec![
+                peel_set("candidate:a", PeelCandidateKind::SingleOwner, &[0], &["a"]),
+                peel_set(
+                    "candidate:bc",
+                    PeelCandidateKind::OwnerPair,
+                    &[1, 2],
+                    &["b", "c"],
+                ),
+            ],
+        );
         fs::write(graph_path, serde_json::to_string(&report).unwrap()).unwrap();
     }
 
@@ -738,6 +777,70 @@ mod tests {
         assert!(
             error.to_string().contains("legacy.yaml.deferred"),
             "{error:#}"
+        );
+    }
+
+    #[test]
+    fn keeps_companion_candidate_order_deterministic() {
+        let temp = tempfile::tempdir().unwrap();
+        let modules = temp.path().join("modules");
+        let graph_path = temp.path().join("owner_graph.json");
+        let graph = owner_graph_report(
+            &["a", "b", "c", "d", "e"],
+            vec![
+                peel_set("candidate:a", PeelCandidateKind::SingleOwner, &[0], &["a"]),
+                peel_set("candidate:e", PeelCandidateKind::SingleOwner, &[4], &["e"]),
+                peel_set(
+                    "candidate:bd",
+                    PeelCandidateKind::OwnerPair,
+                    &[1, 3],
+                    &["b", "d"],
+                ),
+                peel_set(
+                    "candidate:bc",
+                    PeelCandidateKind::OwnerPair,
+                    &[1, 2],
+                    &["b", "c"],
+                ),
+            ],
+        );
+        fs::write(&graph_path, serde_json::to_string(&graph).unwrap()).unwrap();
+        write_file(
+            &modules.join("needs_companion.yaml.deferred"),
+            &module_yaml(
+                "needs_companion",
+                &[("a", "variable_declarator"), ("b", "variable_declarator")],
+            ),
+        );
+        write_file(
+            &modules.join("support.yaml"),
+            &module_yaml(
+                "support",
+                &[
+                    ("c", "variable_declarator"),
+                    ("d", "variable_declarator"),
+                    ("e", "variable_declarator"),
+                ],
+            ),
+        );
+
+        let report = analyze_peel_horizon(&options(&modules, &graph_path)).unwrap();
+
+        assert_eq!(
+            report
+                .with_companions
+                .iter()
+                .map(|row| (row.path.as_str(), row.companions.clone()))
+                .collect::<Vec<_>>(),
+            vec![("needs_companion", vec!["c".to_string()])]
+        );
+        assert_eq!(
+            report.with_companions[0]
+                .companion_candidates
+                .iter()
+                .map(|candidate| candidate.add_members[0].binding.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c"]
         );
     }
 }
