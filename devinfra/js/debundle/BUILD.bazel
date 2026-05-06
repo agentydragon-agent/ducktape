@@ -102,6 +102,12 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "vendor_test",
+    crate = ":vendor",
+    edition = "2024",
+)
+
 rust_library(
     name = "emit_harness",
     srcs = ["emit_harness.rs"],

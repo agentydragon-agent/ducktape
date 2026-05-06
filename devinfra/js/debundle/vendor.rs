@@ -163,22 +163,19 @@ pub fn rename_vendor_exports(
     artifact: &mut JsPipelineArtifact,
     vendor: &BTreeMap<String, VendorMark>,
 ) -> Result<RenameVendorExportsManifest> {
-    let ops: Vec<(&String, &VendorMark)> = vendor
-        .iter()
-        .filter(|(_, mark)| {
-            matches!(
-                mark.level,
-                VendorLevel::BoundaryRename | VendorLevel::Swap(_)
-            )
-        })
-        .collect();
-    let considered = ops.len();
+    let mut ops = Vec::<RenameVendorExportOp>::new();
+    let mut mappings = VendorExportMappings::new();
     let mut total_rewrites = 0usize;
     let mut chunks_with_mapping = 0usize;
     let mut details = Vec::new();
 
-    for (chunk_path, _mark) in &ops {
-        let chunk_path_owned = (*chunk_path).clone();
+    for (chunk_path, _mark) in vendor.iter().filter(|(_, mark)| {
+        matches!(
+            mark.level,
+            VendorLevel::BoundaryRename | VendorLevel::Swap(_)
+        )
+    }) {
+        let chunk_path_owned = chunk_path.clone();
         let chunk_id = chunk_id_from_chunk_path(chunk_path, "rename_vendor_exports")?;
         let vendor_entry_relative_file = get_chunk_entry_path(artifact, &chunk_id).with_context(|| {
             format!(
@@ -196,28 +193,28 @@ pub fn rename_vendor_exports(
                 })?;
             collect_boundary_mapping(&vendor_ast.module)
         };
-        if mapping.is_empty() {
-            details.push(RenameVendorExportsDetail {
-                chunk_path: chunk_path_owned,
-                chunk_id,
-                mapping_size: 0,
-                rewrites: 0,
-                callers: Vec::new(),
-            });
-            continue;
+        if !mapping.is_empty() {
+            chunks_with_mapping += 1;
+            mappings
+                .entry(chunk_id.clone())
+                .or_default()
+                .insert(vendor_entry_relative_file.clone(), mapping.clone());
         }
-        chunks_with_mapping += 1;
+        ops.push(RenameVendorExportOp {
+            chunk_path: chunk_path_owned,
+            chunk_id,
+            entry_file: vendor_entry_relative_file,
+            mapping,
+        });
+    }
 
-        let mut caller_counts = BTreeMap::<String, usize>::new();
-        let mut chunk_rewrites = 0usize;
+    let mut caller_counts_by_target = BTreeMap::<(String, String), BTreeMap<String, usize>>::new();
+    if !mappings.is_empty() {
         let file_keys = artifact.list_js_file_keys();
-        for (other_chunk_id, file_path) in file_keys {
-            if other_chunk_id == chunk_id {
-                continue;
-            }
+        for (caller_chunk_id, file_path) in file_keys {
             let has_ast = artifact
                 .chunks
-                .get(&other_chunk_id)
+                .get(&caller_chunk_id)
                 .and_then(|chunk| chunk.files.get(&file_path))
                 .and_then(|file| file.ast.as_ref())
                 .is_some();
@@ -226,39 +223,47 @@ pub fn rename_vendor_exports(
             }
             let mut ast = artifact
                 .chunks
-                .get_mut(&other_chunk_id)
+                .get_mut(&caller_chunk_id)
                 .and_then(|chunk| chunk.files.get_mut(&file_path))
                 .and_then(|file| file.ast.take())
-                .with_context(|| format!("missing AST for {other_chunk_id}/{file_path}"))?;
-            let mut rewriter = VendorImportRenamer {
-                artifact,
-                caller_chunk_id: other_chunk_id.clone(),
-                caller_file: file_path.clone(),
-                target_chunk_id: chunk_id.clone(),
-                target_entry_file: vendor_entry_relative_file.clone(),
-                mapping: &mapping,
-                rewrites: 0,
+                .with_context(|| format!("missing AST for {caller_chunk_id}/{file_path}"))?;
+            let rewrites_by_target = {
+                let mut rewriter = VendorImportRenamer {
+                    artifact,
+                    caller_chunk_id: caller_chunk_id.clone(),
+                    caller_file: file_path.clone(),
+                    mappings: &mappings,
+                    rewrites_by_target: BTreeMap::new(),
+                };
+                ast.module.visit_mut_with(&mut rewriter);
+                rewriter.rewrites_by_target
             };
-            ast.module.visit_mut_with(&mut rewriter);
-            let rewrites = rewriter.rewrites;
-            drop(rewriter);
             artifact
                 .chunks
-                .get_mut(&other_chunk_id)
+                .get_mut(&caller_chunk_id)
                 .and_then(|chunk| chunk.files.get_mut(&file_path))
                 .context("missing file while restoring AST")?
                 .ast = Some(ast);
-            if rewrites > 0 {
-                chunk_rewrites += rewrites;
-                caller_counts.insert(format!("{other_chunk_id}/{file_path}"), rewrites);
+            for (target, rewrites) in rewrites_by_target {
+                total_rewrites += rewrites;
+                caller_counts_by_target
+                    .entry(target)
+                    .or_default()
+                    .insert(format!("{caller_chunk_id}/{file_path}"), rewrites);
             }
         }
+    }
 
-        total_rewrites += chunk_rewrites;
+    let considered = ops.len();
+    for op in ops {
+        let caller_counts = caller_counts_by_target
+            .remove(&(op.chunk_id.clone(), op.entry_file.clone()))
+            .unwrap_or_default();
+        let chunk_rewrites = caller_counts.values().sum();
         details.push(RenameVendorExportsDetail {
-            chunk_path: chunk_path_owned,
-            chunk_id,
-            mapping_size: mapping.len(),
+            chunk_path: op.chunk_path,
+            chunk_id: op.chunk_id,
+            mapping_size: op.mapping.len(),
             rewrites: chunk_rewrites,
             callers: caller_counts
                 .into_iter()
@@ -275,6 +280,15 @@ pub fn rename_vendor_exports(
         },
         details,
     })
+}
+
+type VendorExportMappings = BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>;
+
+struct RenameVendorExportOp {
+    chunk_path: String,
+    chunk_id: String,
+    entry_file: String,
+    mapping: BTreeMap<String, String>,
 }
 
 pub fn swap_vendor_chunks(
@@ -541,10 +555,8 @@ struct VendorImportRenamer<'a> {
     artifact: &'a JsPipelineArtifact,
     caller_chunk_id: String,
     caller_file: String,
-    target_chunk_id: String,
-    target_entry_file: String,
-    mapping: &'a BTreeMap<String, String>,
-    rewrites: usize,
+    mappings: &'a VendorExportMappings,
+    rewrites_by_target: BTreeMap<(String, String), usize>,
 }
 
 impl VisitMut for VendorImportRenamer<'_> {
@@ -567,10 +579,18 @@ impl VisitMut for VendorImportRenamer<'_> {
             .flatten()
             .map(|(chunk_id, file, _)| (chunk_id, file))
         });
-        if !matches!(resolved, Some((ref chunk_id, ref file)) if chunk_id == &self.target_chunk_id && file == &self.target_entry_file)
-        {
+        let Some((target_chunk_id, target_file)) = resolved else {
+            return;
+        };
+        if target_chunk_id == self.caller_chunk_id {
             return;
         }
+        let Some(files) = self.mappings.get(&target_chunk_id) else {
+            return;
+        };
+        let Some(mapping) = files.get(&target_file) else {
+            return;
+        };
         for specifier in &mut node.specifiers {
             let ImportSpecifier::Named(named) = specifier else {
                 continue;
@@ -580,7 +600,7 @@ impl VisitMut for VendorImportRenamer<'_> {
                 .as_ref()
                 .map(module_export_name)
                 .unwrap_or_else(|| named.local.sym.to_string());
-            let Some(mapped) = self.mapping.get(&imported_name) else {
+            let Some(mapped) = mapping.get(&imported_name) else {
                 continue;
             };
             if mapped == &imported_name {
@@ -590,7 +610,10 @@ impl VisitMut for VendorImportRenamer<'_> {
                 mapped.clone().into(),
                 DUMMY_SP,
             )));
-            self.rewrites += 1;
+            *self
+                .rewrites_by_target
+                .entry((target_chunk_id.clone(), target_file.clone()))
+                .or_insert(0) += 1;
         }
     }
 }
@@ -1248,4 +1271,166 @@ fn is_valid_identifier(name: &str) -> bool {
         return false;
     }
     chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use artifact::{ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile};
+
+    #[test]
+    fn rename_vendor_exports_rewrites_multiple_vendor_targets_in_one_call() {
+        let mut artifact = JsPipelineArtifact::default();
+        insert_chunk(
+            &mut artifact,
+            "app",
+            r#"import { a } from "../vendor-a/entry.js";
+import { b as localB } from "../vendor-b/entry.js";
+console.log(a, localB);
+"#,
+        );
+        insert_chunk(
+            &mut artifact,
+            "vendor-a",
+            r#"import { b } from "../vendor-b/entry.js";
+const a = 1;
+export { a as alpha };
+console.log(b);
+"#,
+        );
+        insert_chunk(
+            &mut artifact,
+            "vendor-b",
+            r#"const b = 2;
+export { b as beta };
+"#,
+        );
+
+        let vendor = BTreeMap::from([
+            (
+                "vendor-a.js".to_string(),
+                VendorMark {
+                    identity: "a".to_string(),
+                    role: VendorRole::Module,
+                    level: VendorLevel::BoundaryRename,
+                },
+            ),
+            (
+                "vendor-b.js".to_string(),
+                VendorMark {
+                    identity: "b".to_string(),
+                    role: VendorRole::Module,
+                    level: VendorLevel::BoundaryRename,
+                },
+            ),
+        ]);
+
+        let manifest = rename_vendor_exports(&mut artifact, &vendor).unwrap();
+
+        assert_eq!(manifest.counts.considered, 2);
+        assert_eq!(manifest.counts.chunks_with_mapping, 2);
+        assert_eq!(manifest.counts.rewrites, 3);
+        assert_eq!(manifest.details[0].chunk_id, "vendor-a");
+        assert_eq!(manifest.details[0].mapping_size, 1);
+        assert_eq!(manifest.details[0].rewrites, 1);
+        assert_eq!(manifest.details[0].callers[0].file, "app/entry.js");
+        assert_eq!(manifest.details[1].chunk_id, "vendor-b");
+        assert_eq!(manifest.details[1].mapping_size, 1);
+        assert_eq!(manifest.details[1].rewrites, 2);
+        assert_eq!(
+            manifest.details[1]
+                .callers
+                .iter()
+                .map(|caller| (caller.file.as_str(), caller.rewrites))
+                .collect::<Vec<_>>(),
+            vec![("app/entry.js", 1), ("vendor-a/entry.js", 1)]
+        );
+
+        assert_eq!(
+            named_imports(&artifact, "app", "entry.js", "../vendor-a/entry.js"),
+            vec![("alpha".to_string(), "a".to_string())]
+        );
+        assert_eq!(
+            named_imports(&artifact, "app", "entry.js", "../vendor-b/entry.js"),
+            vec![("beta".to_string(), "localB".to_string())]
+        );
+        assert_eq!(
+            named_imports(&artifact, "vendor-a", "entry.js", "../vendor-b/entry.js"),
+            vec![("beta".to_string(), "b".to_string())]
+        );
+    }
+
+    fn insert_chunk(artifact: &mut JsPipelineArtifact, chunk_id: &str, source: &str) {
+        let entry_file = "entry.js".to_string();
+        artifact.chunk_order.push(chunk_id.to_string());
+        artifact.chunks.insert(
+            chunk_id.to_string(),
+            JsChunk {
+                entry_file: entry_file.clone(),
+                files: BTreeMap::from([(
+                    entry_file.clone(),
+                    JsFile {
+                        path: entry_file.clone(),
+                        content: Some(source.to_string()),
+                        ast: Some(
+                            parse_js_module(&format!("{chunk_id}/{entry_file}"), source).unwrap(),
+                        ),
+                        header_lines: Vec::new(),
+                        metadata: FileMetadata {
+                            chunk_id: Some(chunk_id.to_string()),
+                            chunk_file: Some(entry_file.clone()),
+                            role: Some(FileRole::Entry),
+                            source_path: Some(format!("{chunk_id}.js")),
+                            ..Default::default()
+                        },
+                    },
+                )]),
+                metadata: ChunkMetadata {
+                    source_path: Some(format!("{chunk_id}.js")),
+                    module_extraction_state: None,
+                },
+            },
+        );
+    }
+
+    fn named_imports(
+        artifact: &JsPipelineArtifact,
+        chunk_id: &str,
+        file: &str,
+        source: &str,
+    ) -> Vec<(String, String)> {
+        let module = &artifact.chunks[chunk_id].files[file]
+            .ast
+            .as_ref()
+            .unwrap()
+            .module;
+        module
+            .body
+            .iter()
+            .find_map(|item| {
+                let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+                    return None;
+                };
+                (str_value(&import.src) == source).then(|| {
+                    import
+                        .specifiers
+                        .iter()
+                        .filter_map(|specifier| {
+                            let ImportSpecifier::Named(named) = specifier else {
+                                return None;
+                            };
+                            Some((
+                                named
+                                    .imported
+                                    .as_ref()
+                                    .map(module_export_name)
+                                    .unwrap_or_else(|| named.local.sym.to_string()),
+                                named.local.sym.to_string(),
+                            ))
+                        })
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
+    }
 }
