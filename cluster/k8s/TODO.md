@@ -111,3 +111,23 @@ Before removing:
 ## `ghcr.io/servercontainers/samba:latest`
 
 No semver tags published. Keep `:latest` until upstream adopts versioned releases.
+
+## Nix cache circular dependency on wyrm2 (incident 2026-05-06)
+
+`attic` and its CNPG postgres are pinned to `region=proxmox`, which in practice
+means wyrm2-only (`talos-pve-cp-0` has the control-plane taint, `rugged` is
+roaming/often NotReady). wyrm2 itself uses `cache.allegedly.works` during
+`nixos-rebuild`. When wyrm2's `/nix/store` crosses the kubelet DiskPressure
+threshold, kubelet adds `node.kubernetes.io/disk-pressure:NoSchedule`, attic +
+postgres get evicted with nowhere to land, the gateway returns 503, and wyrm2
+can't rebuild itself out of the situation.
+
+Options to consider:
+
+- [ ] Add a second `region=proxmox` node (e.g. tolerate the control-plane
+      taint on `talos-pve-cp-0`, or relax the selector to also accept `hil`).
+- [ ] Move attic off wyrm2 entirely so wyrm2's local disk can't take the
+      cache down with it.
+- [ ] Configure a fallback substituter on wyrm2 (e.g. `cache.nixos.org`
+      ahead of `cache.allegedly.works`, or as a fallback) so a degraded
+      attic doesn't block local rebuilds.
