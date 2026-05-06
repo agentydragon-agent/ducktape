@@ -93,7 +93,7 @@ def _debundler_shell_args(args):
 def _execroot_path_arg(path):
     if path.startswith("/"):
         return shell.quote(path)
-    return "\"${OLDPWD}/{}\"".format(path)
+    return "\"${{OLDPWD}}/{}\"".format(path)
 
 debundle_pipeline = rule(
     implementation = _debundle_pipeline_impl,
