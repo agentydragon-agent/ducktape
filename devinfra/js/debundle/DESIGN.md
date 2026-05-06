@@ -1024,24 +1024,34 @@ the consumer. Reads of private residual-entry bindings are not
 importable unless the assignment also exports or colocates the
 provider.
 
+A cross-destination **rebinding write** is never importable. ESM
+imports are live for reads but read-only in the importing module, so
+an owner that assigns `a` must stay in the same destination as the
+owner that declares `a` unless the emitter grows a separate
+live-mutation bridge for that binding.
+
 Call an edge **constraining** when it is an at-init read or a
-side-effect-order edge. Lazy read edges are non-constraining: they
-still contribute imports, but a cycle made entirely of lazy read
-edges is realizable.
+side-effect-order edge. Rebinding write edges are stricter than
+constraining read/order edges: they invalidate any cross-destination
+assignment, even when acyclic. Lazy read edges are
+non-constraining: they still contribute imports, but a cycle made
+entirely of lazy read edges is realizable.
 
 A destination assignment is **valid** iff:
 
 1. Every cross-destination read edge in `Q` is importable.
-2. Every SCC in `Q` contains only non-constraining cross edges.
+2. No cross-destination rebinding write edge remains in `Q`.
+3. Every SCC in `Q` contains only non-constraining cross edges.
    Equivalently, any SCC may contain lazy-read import cycles, but no
-   at-init read and no side-effect-order edge may remain inside a
-   multi-destination SCC.
+   at-init read, rebinding write, or side-effect-order edge may remain
+   inside a multi-destination SCC.
 
 A peel is just a proposed destination assignment for a candidate
 owner set. The peel is valid exactly when the resulting assignment
 is valid by the definition above. Invalid peels have two primary
-explanations: a non-importable read crosses the cut, or a
-constraining edge remains in a quotient SCC.
+explanations: a non-importable read crosses the cut, a rebinding
+write crosses the cut, or a constraining edge remains in a quotient
+SCC.
 
 The same definition gives a graph-theoretic target for "smallest
 atomic modules that are still valid." Start from the finest
@@ -1770,8 +1780,9 @@ Everything downstream needs is here:
     - If `b` is `Imported { imported_from, imported_name, .. }`:
       `import { imported_name as b } from <imported_from>`.
 - "What can be peeled without backtracking" = candidate assignments
-  whose owner-graph quotient validates and whose cross-destination
-  reads are importable.
+  whose owner-graph quotient validates, whose cross-destination reads
+  are importable, and whose rebinding writes stay inside one
+  destination.
 - "Identity of cross-chunk deps" = `bindings.values()` filtered
   to `Imported { imported_from, .. }` give us the set of
   external chunks our schedule talks to; that's the

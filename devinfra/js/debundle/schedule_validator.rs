@@ -39,6 +39,10 @@ pub use report_schema::*;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
+use binding_targets::{
+    TargetAccessRecorder, binding_names, record_assign_target, record_pat_write,
+    record_update_target,
+};
 use petgraph::algo::{greedy_feedback_arc_set, tarjan_scc, toposort};
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::graphmap::DiGraphMap;
@@ -1504,35 +1508,6 @@ fn declaration_names(decl: &Decl) -> BTreeSet<String> {
     }
 }
 
-fn binding_names(pattern: &Pat) -> Vec<String> {
-    let mut out = Vec::new();
-    walk_pattern(pattern, &mut out);
-    out
-}
-
-fn walk_pattern(pattern: &Pat, out: &mut Vec<String>) {
-    match pattern {
-        Pat::Ident(id) => out.push(id.id.sym.to_string()),
-        Pat::Array(arr) => {
-            for element in arr.elems.iter().flatten() {
-                walk_pattern(element, out);
-            }
-        }
-        Pat::Object(obj) => {
-            for prop in &obj.props {
-                match prop {
-                    ObjectPatProp::KeyValue(kv) => walk_pattern(&kv.value, out),
-                    ObjectPatProp::Assign(assign) => out.push(assign.key.id.sym.to_string()),
-                    ObjectPatProp::Rest(rest) => walk_pattern(&rest.arg, out),
-                }
-            }
-        }
-        Pat::Rest(rest) => walk_pattern(&rest.arg, out),
-        Pat::Assign(assign) => walk_pattern(&assign.left, out),
-        _ => {}
-    }
-}
-
 /// Visitor that collects ident reads happening at-init only. Stops
 /// at function bodies, method bodies, instance class-field
 /// initializers, getter/setter bodies, and other lazy positions.
@@ -1786,72 +1761,11 @@ impl BindingWriteCollector {
             self.at_init.insert(name.to_string());
         }
     }
+}
 
-    fn record_assign_target(&mut self, target: &AssignTarget) {
-        match target {
-            AssignTarget::Simple(simple) => self.record_simple_assign_target(simple),
-            AssignTarget::Pat(pattern) => self.record_assign_target_pat(pattern),
-        }
-    }
-
-    fn record_simple_assign_target(&mut self, target: &SimpleAssignTarget) {
-        match target {
-            SimpleAssignTarget::Ident(ident) => self.record_write(ident.id.sym.as_ref()),
-            SimpleAssignTarget::Paren(paren) => self.record_assign_expr_target(&paren.expr),
-            // Member writes (`obj.x = ...`) mutate the object, not
-            // the identifier binding cell. They are legal through an
-            // ESM import as long as the object itself is mutable.
-            SimpleAssignTarget::Member(_) | SimpleAssignTarget::OptChain(_) => {}
-            _ => {}
-        }
-    }
-
-    fn record_assign_expr_target(&mut self, target: &Expr) {
-        match target {
-            Expr::Ident(ident) => self.record_write(ident.sym.as_ref()),
-            Expr::Paren(paren) => self.record_assign_expr_target(&paren.expr),
-            Expr::Member(_) | Expr::OptChain(_) => {}
-            _ => {}
-        }
-    }
-
-    fn record_assign_target_pat(&mut self, target: &AssignTargetPat) {
-        match target {
-            AssignTargetPat::Array(array) => {
-                for element in array.elems.iter().flatten() {
-                    self.record_pat_write(element);
-                }
-            }
-            AssignTargetPat::Object(object) => {
-                for prop in &object.props {
-                    match prop {
-                        ObjectPatProp::KeyValue(key_value) => {
-                            self.record_pat_write(&key_value.value);
-                        }
-                        ObjectPatProp::Assign(assign) => {
-                            self.record_write(assign.key.id.sym.as_ref());
-                        }
-                        ObjectPatProp::Rest(rest) => self.record_pat_write(&rest.arg),
-                    }
-                }
-            }
-            AssignTargetPat::Invalid(_) => {}
-        }
-    }
-
-    fn record_pat_write(&mut self, pattern: &Pat) {
-        for name in binding_names(pattern) {
-            self.record_write(&name);
-        }
-    }
-
-    fn record_update_target(&mut self, target: &Expr) {
-        match target {
-            Expr::Ident(ident) => self.record_write(ident.sym.as_ref()),
-            Expr::Paren(paren) => self.record_update_target(&paren.expr),
-            Expr::Member(_) | Expr::OptChain(_) => {}
-            _ => {}
-        }
+impl TargetAccessRecorder for BindingWriteCollector {
+    fn record_binding_write(&mut self, name: &str) {
+        self.record_write(name);
     }
 }
 
@@ -1866,19 +1780,19 @@ impl Visit for BindingWriteCollector {
     fn visit_export_all(&mut self, _node: &ExportAll) {}
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        self.record_assign_target(&node.left);
+        record_assign_target(&node.left, self);
         node.left.visit_with(self);
         node.right.visit_with(self);
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
-        self.record_update_target(&node.arg);
+        record_update_target(&node.arg, self);
         node.arg.visit_with(self);
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
         if let ForHead::Pat(pattern) = &node.left {
-            self.record_pat_write(pattern);
+            record_pat_write(pattern, self);
         }
         node.left.visit_with(self);
         node.right.visit_with(self);
@@ -1887,7 +1801,7 @@ impl Visit for BindingWriteCollector {
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
         if let ForHead::Pat(pattern) = &node.left {
-            self.record_pat_write(pattern);
+            record_pat_write(pattern, self);
         }
         node.left.visit_with(self);
         node.right.visit_with(self);

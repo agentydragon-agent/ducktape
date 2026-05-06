@@ -138,6 +138,14 @@ rust_test(
 )
 
 rust_library(
+    name = "binding_targets",
+    srcs = ["binding_targets.rs"],
+    crate_root = "binding_targets.rs",
+    edition = "2024",
+    deps = ["@crates//:swc_ecma_ast"],
+)
+
+rust_library(
     name = "schedule_validator",
     srcs = [
         "schedule_validator.rs",
@@ -146,6 +154,7 @@ rust_library(
     crate_root = "schedule_validator.rs",
     edition = "2024",
     deps = [
+        ":binding_targets",
         "@crates//:petgraph",
         "@crates//:serde",
         "@crates//:swc_common",
@@ -260,6 +269,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":binding_targets",
         ":js_ast",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",

@@ -9,6 +9,10 @@ use artifact::{
     ImportSpecifierKind, ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ParserOptionsRecord,
     TopLevelDeclarationKind,
 };
+use binding_targets::{
+    TargetAccessRecorder, binding_names, member_root_ident, record_assign_target,
+    record_member_target, record_pat_write, record_update_target,
+};
 use js_ast::{ParsedJsModule, line_for_span, str_value};
 
 pub struct ProgramAnalysis {
@@ -291,30 +295,6 @@ fn export_default_decl_name(decl: &ExportDefaultDecl) -> Option<String> {
     }
 }
 
-fn binding_names(pattern: &Pat) -> Vec<String> {
-    match pattern {
-        Pat::Ident(ident) => vec![ident.id.sym.to_string()],
-        Pat::Rest(rest) => binding_names(&rest.arg),
-        Pat::Assign(assign) => binding_names(&assign.left),
-        Pat::Array(array) => array
-            .elems
-            .iter()
-            .flatten()
-            .flat_map(binding_names)
-            .collect(),
-        Pat::Object(object) => object
-            .props
-            .iter()
-            .flat_map(|prop| match prop {
-                ObjectPatProp::KeyValue(key_value) => binding_names(&key_value.value),
-                ObjectPatProp::Assign(assign) => vec![assign.key.id.sym.to_string()],
-                ObjectPatProp::Rest(rest) => binding_names(&rest.arg),
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
 fn item_line(parsed: &ParsedJsModule, item: &ModuleItem) -> Option<usize> {
     line_for_span(parsed, item.span())
 }
@@ -412,19 +392,6 @@ impl Visit for ObservableTopLevelEffectCollector {
     }
 }
 
-fn member_root_ident(expr: &Expr) -> Option<&str> {
-    match expr {
-        Expr::Ident(ident) => Some(ident.sym.as_ref()),
-        Expr::Member(member) => member_root_ident(&member.obj),
-        Expr::OptChain(opt_chain) => match &*opt_chain.base {
-            OptChainBase::Member(member) => member_root_ident(&member.obj),
-            OptChainBase::Call(call) => member_root_ident(&call.callee),
-        },
-        Expr::Paren(paren) => member_root_ident(&paren.expr),
-        _ => None,
-    }
-}
-
 struct IdentifierAccessCollector {
     accesses: IdentifierAccesses,
     phase: AccessPhase,
@@ -468,14 +435,14 @@ impl Visit for IdentifierAccessCollector {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        self.record_assign_target(&node.left, false);
+        record_assign_target(&node.left, self);
         node.right.visit_with(self);
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
         match &node.left {
             ForHead::VarDecl(_) => {}
-            ForHead::Pat(pattern) => self.record_pat_write(pattern),
+            ForHead::Pat(pattern) => record_pat_write(pattern, self),
             ForHead::UsingDecl(_) => {}
         }
         node.right.visit_with(self);
@@ -485,7 +452,7 @@ impl Visit for IdentifierAccessCollector {
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
         match &node.left {
             ForHead::VarDecl(_) => {}
-            ForHead::Pat(pattern) => self.record_pat_write(pattern),
+            ForHead::Pat(pattern) => record_pat_write(pattern, self),
             ForHead::UsingDecl(_) => {}
         }
         node.right.visit_with(self);
@@ -496,14 +463,14 @@ impl Visit for IdentifierAccessCollector {
         if node.op == UnaryOp::Delete
             && let Expr::Member(member) = &*node.arg
         {
-            self.record_member_target(member);
+            record_member_target(member, self);
             return;
         }
         node.visit_children_with(self);
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
-        self.record_update_target(&node.arg);
+        record_update_target(&node.arg, self);
     }
 }
 
@@ -545,129 +512,18 @@ impl IdentifierAccessCollector {
             AccessPhase::Lazy => self.accesses.lazy_member_writes.insert(name.to_string()),
         };
     }
-
-    fn record_assign_target(&mut self, target: &AssignTarget, force_member_write: bool) {
-        match target {
-            AssignTarget::Simple(simple) => {
-                self.record_simple_assign_target(simple, force_member_write)
-            }
-            AssignTarget::Pat(pattern) => self.record_assign_target_pat(pattern),
-        }
-    }
-
-    fn record_simple_assign_target(
-        &mut self,
-        target: &SimpleAssignTarget,
-        force_member_write: bool,
-    ) {
-        match target {
-            SimpleAssignTarget::Ident(ident) => {
-                if force_member_write {
-                    self.record_member_write(ident.id.sym.as_ref());
-                } else {
-                    self.record_write(ident.id.sym.as_ref());
-                }
-            }
-            SimpleAssignTarget::Member(member) => {
-                self.record_member_target(member);
-            }
-            SimpleAssignTarget::Paren(paren) => {
-                self.record_assign_expr_target(&paren.expr, force_member_write);
-            }
-            SimpleAssignTarget::OptChain(opt_chain) => {
-                if let Some(name) = opt_chain_base_name(opt_chain) {
-                    self.record_member_write(name);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn record_assign_expr_target(&mut self, target: &Expr, force_member_write: bool) {
-        match target {
-            Expr::Ident(ident) => {
-                if force_member_write {
-                    self.record_member_write(ident.sym.as_ref());
-                } else {
-                    self.record_write(ident.sym.as_ref());
-                }
-            }
-            Expr::Member(member) => self.record_member_target(member),
-            Expr::Paren(paren) => self.record_assign_expr_target(&paren.expr, force_member_write),
-            Expr::OptChain(opt_chain) => {
-                if let Some(name) = opt_chain_base_name(opt_chain) {
-                    self.record_member_write(name);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn record_assign_target_pat(&mut self, target: &AssignTargetPat) {
-        match target {
-            AssignTargetPat::Array(array) => {
-                for element in array.elems.iter().flatten() {
-                    self.record_pat_write(element);
-                }
-            }
-            AssignTargetPat::Object(object) => {
-                for prop in &object.props {
-                    match prop {
-                        ObjectPatProp::KeyValue(key_value) => {
-                            self.record_pat_write(&key_value.value);
-                        }
-                        ObjectPatProp::Assign(assign) => {
-                            self.record_write(assign.key.id.sym.as_ref());
-                        }
-                        ObjectPatProp::Rest(rest) => {
-                            self.record_pat_write(&rest.arg);
-                        }
-                    }
-                }
-            }
-            AssignTargetPat::Invalid(_) => {}
-        }
-    }
-
-    fn record_pat_write(&mut self, pattern: &Pat) {
-        for name in binding_names(pattern) {
-            self.record_write(&name);
-        }
-    }
-
-    fn record_member_target(&mut self, member: &MemberExpr) {
-        if let Some(name) = member_root_ident(&member.obj) {
-            self.record_member_write(name);
-        }
-    }
-
-    fn record_update_target(&mut self, target: &Expr) {
-        match target {
-            Expr::Ident(ident) => {
-                self.record_read(ident.sym.as_ref());
-                self.record_write(ident.sym.as_ref());
-            }
-            Expr::Member(member) => {
-                if let Some(name) = member_root_ident(&member.obj) {
-                    self.record_read(name);
-                    self.record_member_write(name);
-                }
-            }
-            Expr::Paren(paren) => self.record_update_target(&paren.expr),
-            Expr::OptChain(opt_chain) => {
-                if let Some(name) = opt_chain_base_name(opt_chain) {
-                    self.record_read(name);
-                    self.record_member_write(name);
-                }
-            }
-            _ => {}
-        }
-    }
 }
 
-fn opt_chain_base_name(opt_chain: &OptChainExpr) -> Option<&str> {
-    match &*opt_chain.base {
-        OptChainBase::Member(member) => member_root_ident(&member.obj),
-        OptChainBase::Call(call) => member_root_ident(&call.callee),
+impl TargetAccessRecorder for IdentifierAccessCollector {
+    fn record_binding_read(&mut self, name: &str) {
+        self.record_read(name);
+    }
+
+    fn record_binding_write(&mut self, name: &str) {
+        self.record_write(name);
+    }
+
+    fn record_member_write(&mut self, name: &str) {
+        IdentifierAccessCollector::record_member_write(self, name);
     }
 }
