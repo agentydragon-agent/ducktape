@@ -597,6 +597,14 @@ struct ImportedReexport {
     public_name: String,
 }
 
+#[derive(Default)]
+struct ModuleReferenceNeeds<'a> {
+    cross_module_imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
+    residual_entry_imports: BTreeMap<String, String>,
+    missing_residual_exports: BTreeSet<String>,
+    runtime_reimports: BTreeMap<String, &'a RuntimeImportInfo>,
+}
+
 type SourceImportResolutionKey = (String, String, String);
 type SourceImportResolution = Option<(String, String, String)>;
 
@@ -881,21 +889,31 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         let mut body = std::mem::take(&mut selected_by_module[index]);
         let local_renames = naturalize_module_body(&mut body, plan);
         let body_facts = collect_module_body_facts(&body);
-        let mut module_imports = cross_module_imports_for_body(
+        let ModuleReferenceNeeds {
+            cross_module_imports_by_provider,
+            residual_entry_imports,
+            missing_residual_exports,
+            runtime_reimports,
+        } = plan_module_reference_needs(
             index,
-            &plan.target_file,
             &body_facts,
             schedule,
-            module_plans,
+            declaration_by_name,
+            binding_assignment,
+            &entry_exports_by_original_local,
+            runtime_import_facts,
+        );
+        let mut module_imports = cross_module_imports_for_plan(
+            &plan.target_file,
+            cross_module_imports_by_provider,
+            schedule,
         );
         let mut residual_entry_imports = residual_entry_imports_for_moved_body(
             &plan.id,
             entry_file,
             &plan.target_file,
-            declaration_by_name,
-            binding_assignment,
-            &entry_exports_by_original_local,
-            &body_facts,
+            residual_entry_imports,
+            missing_residual_exports,
         )?;
         // Re-import any source-chunk import-specifier-bound locals that
         // moved code in `body` references but no top-level decl
@@ -905,12 +923,10 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         // throws `ReferenceError: gge is not defined` at runtime.
         let mut runtime_reimports = source_chunk_imports_for_moved_body(
             &mut source_import_cache,
-            runtime_import_facts,
             chunk_id,
             entry_file,
             &plan.target_file,
-            &body_facts,
-            schedule,
+            runtime_reimports,
         )?;
         module_imports.append(&mut residual_entry_imports);
         module_imports.append(&mut runtime_reimports);
@@ -1468,34 +1484,61 @@ fn collect_imported_reexports_by_module(
     by_module
 }
 
-fn cross_module_imports_for_body(
+fn plan_module_reference_needs<'a>(
     module_index: usize,
-    from_file: &str,
     body_facts: &ModuleBodyFacts,
     schedule: &Schedule,
-    _module_plans: &[ModulePlan],
-) -> Vec<ModuleItem> {
-    let mut imports_by_provider = BTreeMap::<usize, BTreeMap<String, String>>::new();
+    declaration_by_name: &BTreeMap<String, usize>,
+    binding_assignment: &BTreeMap<String, usize>,
+    entry_exports_by_original_local: &BTreeMap<String, String>,
+    runtime_import_facts: &'a RuntimeImportFacts,
+) -> ModuleReferenceNeeds<'a> {
+    let mut needs = ModuleReferenceNeeds::default();
     for name in &body_facts.referenced_idents {
-        let Some(ModuleId::Logical(LogicalModuleIndex(provider_index))) = schedule.owner_of(name)
-        else {
-            continue;
-        };
-        if provider_index == module_index {
+        if let Some(ModuleId::Logical(LogicalModuleIndex(provider_index))) = schedule.owner_of(name)
+        {
+            if provider_index != module_index
+                && let Some(provider) = schedule.logical_module(LogicalModuleIndex(provider_index))
+                && let Some(exported_name) = provider.rename_map.get(name)
+            {
+                needs
+                    .cross_module_imports_by_provider
+                    .entry(provider_index)
+                    .or_default()
+                    .insert(name.clone(), exported_name.clone());
+            }
             continue;
         }
-        let Some(provider) = schedule.logical_module(LogicalModuleIndex(provider_index)) else {
-            continue;
-        };
-        let Some(exported_name) = provider.rename_map.get(name) else {
-            continue;
-        };
-        imports_by_provider
-            .entry(provider_index)
-            .or_default()
-            .insert(name.clone(), exported_name.clone());
-    }
 
+        if !body_facts.provided_locals.contains(name)
+            && !binding_assignment.contains_key(name)
+            && declaration_by_name.contains_key(name)
+        {
+            if let Some(exported_name) = entry_exports_by_original_local.get(name) {
+                needs
+                    .residual_entry_imports
+                    .insert(name.clone(), exported_name.clone());
+            } else {
+                needs.missing_residual_exports.insert(name.clone());
+            }
+            continue;
+        }
+
+        if body_facts.imported_locals.contains(name) {
+            continue;
+        }
+        if let Some(info) = runtime_import_facts.imports.get(name) {
+            needs.runtime_reimports.insert(name.clone(), info);
+        }
+    }
+    needs
+}
+
+fn cross_module_imports_for_plan(
+    from_file: &str,
+    mut imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
+    schedule: &Schedule,
+) -> Vec<ModuleItem> {
     // Sort providers by their position in the schedule's
     // `linker_order` (a topological linearization of `I ∪ S`).
     // ECMA-262's depth-first link traversal visits each module's
@@ -1525,27 +1568,9 @@ fn residual_entry_imports_for_moved_body(
     module_id: &str,
     entry_file: &str,
     from_file: &str,
-    declaration_by_name: &BTreeMap<String, usize>,
-    binding_assignment: &BTreeMap<String, usize>,
-    entry_exports_by_original_local: &BTreeMap<String, String>,
-    body_facts: &ModuleBodyFacts,
+    imports: BTreeMap<String, String>,
+    missing_exports: BTreeSet<String>,
 ) -> Result<Vec<ModuleItem>> {
-    let mut imports = BTreeMap::<String, String>::new();
-    let mut missing_exports = BTreeSet::<String>::new();
-    for name in &body_facts.referenced_idents {
-        if body_facts.provided_locals.contains(name) || binding_assignment.contains_key(name) {
-            continue;
-        }
-        if !declaration_by_name.contains_key(name) {
-            continue;
-        }
-        let Some(exported_name) = entry_exports_by_original_local.get(name) else {
-            missing_exports.insert(name.clone());
-            continue;
-        };
-        imports.insert(name.clone(), exported_name.clone());
-    }
-
     if !missing_exports.is_empty() {
         bail!(
             "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry; refusing to emit free references. Keep those bindings with the moved module, expose them from entry, or use an explicit residual module.",
@@ -2432,30 +2457,11 @@ fn resolve_imported_binding(
 /// skips materialized files).
 fn source_chunk_imports_for_moved_body(
     source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
-    runtime_import_facts: &RuntimeImportFacts,
     source_chunk_id: &str,
     source_runtime_file: &str,
     dest_target_file: &str,
-    body_facts: &ModuleBodyFacts,
-    schedule: &Schedule,
+    needed: BTreeMap<String, &RuntimeImportInfo>,
 ) -> Result<Vec<ModuleItem>> {
-    let mut needed = BTreeMap::<String, &RuntimeImportInfo>::new();
-    for name in &body_facts.referenced_idents {
-        if body_facts.imported_locals.contains(name) {
-            continue;
-        }
-        if schedule.owner_of(name).is_some() {
-            // Owned by some logical module — `cross_module_imports_for_body`
-            // emits a cross-module import for it. (Imported bindings have
-            // `owner_of(...) == None`; they fall through to the source-chunk
-            // re-import below since no plan can satisfy the moved code's
-            // reference cross-module.)
-            continue;
-        }
-        if let Some(info) = runtime_import_facts.imports.get(name) {
-            needed.insert(name.clone(), info);
-        }
-    }
     let mut result = Vec::new();
     let dest_dir = join_module_path(&[source_chunk_id, &module_path_dirname(dest_target_file)]);
     for (local, info) in needed {
