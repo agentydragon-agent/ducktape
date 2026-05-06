@@ -5,10 +5,10 @@
 //! owner-graph quotient and scheduling problem:
 //!
 //! 1. For each top-level statement in the source chunk, compute the
-//!    bindings it declares, the bindings it reads at-init, the
-//!    bindings it reads lazily (inside function/method bodies, etc.),
-//!    whether it has an observable side effect, and its source
-//!    ordinal.
+//!    bindings it declares, the bindings it reads or writes at-init,
+//!    the bindings it reads or writes lazily (inside function/method
+//!    bodies, etc.), whether it has an observable side effect, and its
+//!    source ordinal.
 //! 2. Build a fine-grained owner graph over those statements.
 //!    Owner edges record "this owner reads that binding" and
 //!    side-effect source-order constraints before module grouping.
@@ -21,12 +21,15 @@
 //!    for evaluation order.
 //! 5. Validate: every `I ∪ S` SCC must be realizable. Lazy-only
 //!    SCCs are allowed; SCCs with an at-init read or side-effect
-//!    ordering edge are unrealizable. `materialize_logical_modules`
-//!    aborts when this validator reports such cycles.
+//!    ordering edge are unrealizable. Separately, rebinding writes
+//!    may not cross destination modules at all: ESM imports are
+//!    live for reads but read-only in the importer.
+//!    `materialize_logical_modules` aborts when this validator
+//!    reports either class of violation.
 //!
-//! The output is a JSON report listing the cycles + their evidence
-//! (which `(statement, binding)` pairs form each cycle). The report
-//! is written next to the existing manifests as
+//! The output is a JSON report listing cycle evidence and
+//! cross-destination assignment evidence. The report is written next
+//! to the existing manifests as
 //! `<chunk_id>/schedule.json`.
 
 #[path = "schedule_validator/report_schema.rs"]
@@ -256,9 +259,12 @@ impl Schedule {
     }
 
     /// Run SCC analysis over the dep graph. Spec authors consume the
-    /// resulting report to fix any cycles.
+    /// resulting report to fix any cycles or cross-destination
+    /// rebinding writes.
     pub fn validate(&self) -> ScheduleReport {
         let mut report = validate_schedule(&self.dep_graph, &|id| self.module_name(id));
+        report.cross_destination_assignments =
+            validate_cross_destination_assignments(&self.owner_graph, &|id| self.module_name(id));
         report.linker_order = self
             .linker_order
             .iter()
@@ -281,12 +287,18 @@ pub struct StatementFacts {
     pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<BindingName>,
     pub reads_at_init: BTreeSet<BindingName>,
+    pub writes_at_init: BTreeSet<BindingName>,
     /// Reads happening only inside lazy syntactic positions (function
     /// bodies, instance class-field initializers, getters/setters,
     /// constructor bodies). May overlap with `reads_at_init` if the
     /// same name appears in both eager and lazy positions of the
     /// statement.
     pub reads_lazy: BTreeSet<BindingName>,
+    /// Rebinding writes happening only inside lazy syntactic
+    /// positions. Member writes (`obj.x = ...`) are intentionally
+    /// excluded: mutating an imported object is legal, but rebinding
+    /// the imported binding cell is not.
+    pub writes_lazy: BTreeSet<BindingName>,
     pub has_side_effect: bool,
     pub kind: StatementKind,
 }
@@ -932,13 +944,17 @@ fn analyze_item(
     item.visit_with(&mut at_init);
     let mut lazy = LazyReadCollector::default();
     item.visit_with(&mut lazy);
+    let mut writes = BindingWriteCollector::default();
+    item.visit_with(&mut writes);
     let has_side_effect = item_has_side_effect(item, kind, shadowed, declared_pure, graph);
     StatementFacts {
         ordinal,
         source_location: None,
         declared,
         reads_at_init: at_init.names,
+        writes_at_init: writes.at_init,
         reads_lazy: lazy.names,
+        writes_lazy: writes.lazy,
         has_side_effect,
         kind,
     }
@@ -1746,6 +1762,235 @@ impl Visit for LazyReadCollector {
     }
 }
 
+/// Visitor that collects rebinding writes to identifier bindings,
+/// split by whether the write runs at module initialization or only
+/// from a lazy syntactic position.
+#[derive(Default)]
+struct BindingWriteCollector {
+    at_init: BTreeSet<String>,
+    lazy: BTreeSet<String>,
+    in_lazy: bool,
+}
+
+impl BindingWriteCollector {
+    fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
+        let prev = std::mem::replace(&mut self.in_lazy, true);
+        f(self);
+        self.in_lazy = prev;
+    }
+
+    fn record_write(&mut self, name: &str) {
+        if self.in_lazy {
+            self.lazy.insert(name.to_string());
+        } else {
+            self.at_init.insert(name.to_string());
+        }
+    }
+
+    fn record_assign_target(&mut self, target: &AssignTarget) {
+        match target {
+            AssignTarget::Simple(simple) => self.record_simple_assign_target(simple),
+            AssignTarget::Pat(pattern) => self.record_assign_target_pat(pattern),
+        }
+    }
+
+    fn record_simple_assign_target(&mut self, target: &SimpleAssignTarget) {
+        match target {
+            SimpleAssignTarget::Ident(ident) => self.record_write(ident.id.sym.as_ref()),
+            SimpleAssignTarget::Paren(paren) => self.record_assign_expr_target(&paren.expr),
+            // Member writes (`obj.x = ...`) mutate the object, not
+            // the identifier binding cell. They are legal through an
+            // ESM import as long as the object itself is mutable.
+            SimpleAssignTarget::Member(_) | SimpleAssignTarget::OptChain(_) => {}
+            _ => {}
+        }
+    }
+
+    fn record_assign_expr_target(&mut self, target: &Expr) {
+        match target {
+            Expr::Ident(ident) => self.record_write(ident.sym.as_ref()),
+            Expr::Paren(paren) => self.record_assign_expr_target(&paren.expr),
+            Expr::Member(_) | Expr::OptChain(_) => {}
+            _ => {}
+        }
+    }
+
+    fn record_assign_target_pat(&mut self, target: &AssignTargetPat) {
+        match target {
+            AssignTargetPat::Array(array) => {
+                for element in array.elems.iter().flatten() {
+                    self.record_pat_write(element);
+                }
+            }
+            AssignTargetPat::Object(object) => {
+                for prop in &object.props {
+                    match prop {
+                        ObjectPatProp::KeyValue(key_value) => {
+                            self.record_pat_write(&key_value.value);
+                        }
+                        ObjectPatProp::Assign(assign) => {
+                            self.record_write(assign.key.id.sym.as_ref());
+                        }
+                        ObjectPatProp::Rest(rest) => self.record_pat_write(&rest.arg),
+                    }
+                }
+            }
+            AssignTargetPat::Invalid(_) => {}
+        }
+    }
+
+    fn record_pat_write(&mut self, pattern: &Pat) {
+        for name in binding_names(pattern) {
+            self.record_write(&name);
+        }
+    }
+
+    fn record_update_target(&mut self, target: &Expr) {
+        match target {
+            Expr::Ident(ident) => self.record_write(ident.sym.as_ref()),
+            Expr::Paren(paren) => self.record_update_target(&paren.expr),
+            Expr::Member(_) | Expr::OptChain(_) => {}
+            _ => {}
+        }
+    }
+}
+
+impl Visit for BindingWriteCollector {
+    fn visit_ident(&mut self, _node: &Ident) {}
+
+    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+
+    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+
+    fn visit_named_export(&mut self, _node: &NamedExport) {}
+    fn visit_export_all(&mut self, _node: &ExportAll) {}
+
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        self.record_assign_target(&node.left);
+        node.left.visit_with(self);
+        node.right.visit_with(self);
+    }
+
+    fn visit_update_expr(&mut self, node: &UpdateExpr) {
+        self.record_update_target(&node.arg);
+        node.arg.visit_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        if let ForHead::Pat(pattern) = &node.left {
+            self.record_pat_write(pattern);
+        }
+        node.left.visit_with(self);
+        node.right.visit_with(self);
+        node.body.visit_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        if let ForHead::Pat(pattern) = &node.left {
+            self.record_pat_write(pattern);
+        }
+        node.left.visit_with(self);
+        node.right.visit_with(self);
+        node.body.visit_with(self);
+    }
+
+    fn visit_function(&mut self, node: &Function) {
+        self.descend_lazy(|s| node.visit_children_with(s));
+    }
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        self.descend_lazy(|s| node.visit_children_with(s));
+    }
+    fn visit_method_prop(&mut self, node: &MethodProp) {
+        node.key.visit_with(self);
+        self.descend_lazy(|s| node.function.visit_with(s));
+    }
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        node.key.visit_with(self);
+        self.descend_lazy(|s| {
+            if let Some(body) = &node.body {
+                body.visit_with(s);
+            }
+        });
+    }
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        node.key.visit_with(self);
+        node.param.visit_with(self);
+        self.descend_lazy(|s| {
+            if let Some(body) = &node.body {
+                body.visit_with(s);
+            }
+        });
+    }
+
+    fn visit_class(&mut self, node: &Class) {
+        for decorator in &node.decorators {
+            decorator.visit_with(self);
+        }
+        if let Some(super_class) = &node.super_class {
+            super_class.visit_with(self);
+        }
+        for member in &node.body {
+            self.visit_class_member(member);
+        }
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        match member {
+            ClassMember::Method(method) => {
+                self.visit_prop_name(&method.key);
+                self.descend_lazy(|s| method.function.visit_with(s));
+            }
+            ClassMember::PrivateMethod(method) => {
+                self.descend_lazy(|s| method.function.visit_with(s));
+            }
+            ClassMember::Constructor(ctor) => {
+                self.descend_lazy(|s| ctor.visit_children_with(s));
+            }
+            ClassMember::ClassProp(prop) => {
+                self.visit_prop_name(&prop.key);
+                if prop.is_static {
+                    if let Some(value) = &prop.value {
+                        value.visit_with(self);
+                    }
+                } else if let Some(value) = &prop.value {
+                    self.descend_lazy(|s| value.visit_with(s));
+                }
+            }
+            ClassMember::PrivateProp(prop) => {
+                if prop.is_static {
+                    if let Some(value) = &prop.value {
+                        value.visit_with(self);
+                    }
+                } else if let Some(value) = &prop.value {
+                    self.descend_lazy(|s| value.visit_with(s));
+                }
+            }
+            ClassMember::StaticBlock(block) => {
+                block.visit_with(self);
+            }
+            ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {}
+            ClassMember::AutoAccessor(accessor) => {
+                if let Key::Public(name) = &accessor.key {
+                    self.visit_prop_name(name);
+                }
+                if accessor.is_static {
+                    if let Some(value) = &accessor.value {
+                        value.visit_with(self);
+                    }
+                } else if let Some(value) = &accessor.value {
+                    self.descend_lazy(|s| value.visit_with(s));
+                }
+            }
+        }
+    }
+
+    fn visit_prop_name(&mut self, name: &PropName) {
+        if let PropName::Computed(computed) = name {
+            computed.expr.visit_with(self);
+        }
+    }
+}
+
 /// One reason an edge `(from, to)` exists, with the source
 /// statement ordinal that produced it. This is the single source of
 /// truth for edge semantics:
@@ -1755,6 +2000,11 @@ impl Visit for LazyReadCollector {
 /// - `LazyRead` contributes to the imports graph `I`, but does not
 ///   constrain realizability inside an SCC because the read fires
 ///   after module evaluation.
+/// - `AtInitWrite` / `LazyWrite` describe rebinding writes. A
+///   cross-destination write is rejected outright because ESM imports
+///   are read-only in the importing module; same-destination writes
+///   are represented only at owner level and don't become module
+///   imports.
 /// - `SideEffectOrder` contributes to `S` and constrains
 ///   realizability because source-order side effects require a
 ///   topological order.
@@ -1765,6 +2015,14 @@ pub enum EdgeReason {
         binding: BindingName,
     },
     LazyRead {
+        statement_ordinal: StatementOrdinal,
+        binding: BindingName,
+    },
+    AtInitWrite {
+        statement_ordinal: StatementOrdinal,
+        binding: BindingName,
+    },
+    LazyWrite {
         statement_ordinal: StatementOrdinal,
         binding: BindingName,
     },
@@ -1782,6 +2040,8 @@ impl EdgeReason {
         match self {
             Self::AtInitRead { .. } => EdgeKind::AtInitRead,
             Self::LazyRead { .. } => EdgeKind::LazyRead,
+            Self::AtInitWrite { .. } => EdgeKind::AtInitWrite,
+            Self::LazyWrite { .. } => EdgeKind::LazyWrite,
             Self::SideEffectOrder { .. } => EdgeKind::SideEffectOrder,
         }
     }
@@ -1794,13 +2054,22 @@ impl EdgeReason {
             | Self::LazyRead {
                 statement_ordinal, ..
             }
+            | Self::AtInitWrite {
+                statement_ordinal, ..
+            }
+            | Self::LazyWrite {
+                statement_ordinal, ..
+            }
             | Self::SideEffectOrder { statement_ordinal } => *statement_ordinal,
         }
     }
 
     fn binding(&self) -> Option<&BindingName> {
         match self {
-            Self::AtInitRead { binding, .. } | Self::LazyRead { binding, .. } => Some(binding),
+            Self::AtInitRead { binding, .. }
+            | Self::LazyRead { binding, .. }
+            | Self::AtInitWrite { binding, .. }
+            | Self::LazyWrite { binding, .. } => Some(binding),
             Self::SideEffectOrder { .. } => None,
         }
     }
@@ -1811,6 +2080,10 @@ impl EdgeReason {
 
     fn is_lazy_read(&self) -> bool {
         matches!(self, Self::LazyRead { .. })
+    }
+
+    fn is_binding_write(&self) -> bool {
+        matches!(self, Self::AtInitWrite { .. } | Self::LazyWrite { .. })
     }
 
     fn is_side_effect_order(&self) -> bool {
@@ -1827,6 +2100,8 @@ impl EdgeReason {
 pub enum EdgeKind {
     AtInitRead,
     LazyRead,
+    AtInitWrite,
+    LazyWrite,
     SideEffectOrder,
 }
 
@@ -1908,13 +2183,20 @@ impl EdgeMetadata {
         self.reasons.iter().any(EdgeReason::is_side_effect_order)
     }
 
-    /// `true` if this edge constrains the realizable evaluation
-    /// order — an at-init read (`R`) or a side-effect ordering
-    /// (`S`) edge. Lazy-only edges don't, because the reads they
-    /// represent fire after every module in the cycle has
-    /// finished evaluating.
+    /// `true` if at least one reason is a rebinding write. These
+    /// edges are rejected outright when they cross destination
+    /// modules because imported ESM bindings are read-only.
+    pub fn has_binding_write(&self) -> bool {
+        self.reasons.iter().any(EdgeReason::is_binding_write)
+    }
+
+    /// `true` if this edge constrains realizability — an at-init
+    /// read (`R`), a side-effect ordering (`S`) edge, or a rebinding
+    /// write. Lazy read-only edges don't, because the reads they
+    /// represent fire after every module in the cycle has finished
+    /// evaluating.
     pub fn constrains_realizability(&self) -> bool {
-        self.has_at_init_read() || self.has_side_effect_ordering()
+        self.has_at_init_read() || self.has_side_effect_ordering() || self.has_binding_write()
     }
 }
 
@@ -2017,7 +2299,7 @@ pub fn build_owner_graph(
         }
     }
 
-    let record_read = |graph: &mut OwnerGraph, from: OwnerId, reason: EdgeReason| {
+    let record_binding_edge = |graph: &mut OwnerGraph, from: OwnerId, reason: EdgeReason| {
         let Some(binding) = reason.binding() else {
             return;
         };
@@ -2029,7 +2311,7 @@ pub fn build_owner_graph(
     for stmt in facts {
         let from = OwnerId(stmt.ordinal.0);
         for binding in &stmt.reads_at_init {
-            record_read(
+            record_binding_edge(
                 &mut graph,
                 from,
                 EdgeReason::AtInitRead {
@@ -2039,10 +2321,30 @@ pub fn build_owner_graph(
             );
         }
         for binding in &stmt.reads_lazy {
-            record_read(
+            record_binding_edge(
                 &mut graph,
                 from,
                 EdgeReason::LazyRead {
+                    statement_ordinal: stmt.ordinal,
+                    binding: binding.clone(),
+                },
+            );
+        }
+        for binding in &stmt.writes_at_init {
+            record_binding_edge(
+                &mut graph,
+                from,
+                EdgeReason::AtInitWrite {
+                    statement_ordinal: stmt.ordinal,
+                    binding: binding.clone(),
+                },
+            );
+        }
+        for binding in &stmt.writes_lazy {
+            record_binding_edge(
+                &mut graph,
+                from,
+                EdgeReason::LazyWrite {
                     statement_ordinal: stmt.ordinal,
                     binding: binding.clone(),
                 },
@@ -2120,12 +2422,33 @@ where
 #[derive(Debug, Clone, Serialize)]
 pub struct ScheduleReport {
     pub cycles: Vec<CycleReport>,
+    /// Rebinding writes whose assigning owner and binding owner are
+    /// destined for different output modules. These specs are always
+    /// invalid because emitted ESM imports are read-only in the
+    /// importing module.
+    pub cross_destination_assignments: Vec<CrossDestinationAssignmentReport>,
     /// Topological linearization of `I ∪ S` rooted at the entry,
     /// dependency-first. Empty when the dep graph has cycles
     /// (validation rejects). Captured here so debug tooling can
     /// see the linker's evaluation order without re-running
     /// materialization. See DESIGN.md "Lemma 2".
     pub linker_order: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CrossDestinationAssignmentReport {
+    pub binding: BindingName,
+    pub assigner_owner: String,
+    pub binding_owner: String,
+    pub assigner_statement_ordinal: StatementOrdinal,
+    pub binding_statement_ordinal: StatementOrdinal,
+    pub assigner_module: String,
+    pub binding_module: String,
+    pub kind: EdgeKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigner_source_location: Option<SourceLocation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_source_location: Option<SourceLocation>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3428,6 +3751,34 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     out
 }
 
+/// Render a compact human-readable summary of cross-destination
+/// rebinding writes for the materializer bail message.
+pub fn render_cross_destination_assignment_summary(
+    assignments: &[CrossDestinationAssignmentReport],
+) -> String {
+    let mut out = String::new();
+    for assignment in assignments.iter().take(10) {
+        out.push_str(&format!(
+            "  assigner {} in {} writes mutable binding `{}` owned by {} in {} ({:?}, assigner statement #{}, binding statement #{}).\n",
+            assignment.assigner_owner,
+            assignment.assigner_module,
+            assignment.binding,
+            assignment.binding_owner,
+            assignment.binding_module,
+            assignment.kind,
+            assignment.assigner_statement_ordinal.0,
+            assignment.binding_statement_ordinal.0,
+        ));
+    }
+    if assignments.len() > 10 {
+        out.push_str(&format!(
+            "  ... and {} more cross-destination assignment(s).\n",
+            assignments.len() - 10
+        ));
+    }
+    out
+}
+
 fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
     use std::collections::HashSet;
     let mut seen: HashSet<(&str, &str)> = HashSet::new();
@@ -3492,8 +3843,62 @@ pub fn validate_schedule(
     }
     ScheduleReport {
         cycles,
+        cross_destination_assignments: Vec::new(),
         linker_order: Vec::new(),
     }
+}
+
+fn validate_cross_destination_assignments(
+    owner_graph: &OwnerGraph,
+    module_name: &dyn Fn(ModuleId) -> String,
+) -> Vec<CrossDestinationAssignmentReport> {
+    let mut violations = Vec::new();
+    for (from, to, weight) in owner_graph.iter_edges() {
+        let Some(from_node) = owner_graph.node(from) else {
+            continue;
+        };
+        let Some(to_node) = owner_graph.node(to) else {
+            continue;
+        };
+        if from_node.destination == to_node.destination {
+            continue;
+        }
+        for reason in &weight.reasons {
+            if !reason.is_binding_write() {
+                continue;
+            }
+            let Some(binding) = reason.binding() else {
+                continue;
+            };
+            violations.push(CrossDestinationAssignmentReport {
+                binding: binding.clone(),
+                assigner_owner: owner_key(from),
+                binding_owner: owner_key(to),
+                assigner_statement_ordinal: from_node.statement_ordinal,
+                binding_statement_ordinal: to_node.statement_ordinal,
+                assigner_module: module_name(from_node.destination),
+                binding_module: module_name(to_node.destination),
+                kind: reason.kind(),
+                assigner_source_location: from_node.source_location.clone(),
+                binding_source_location: to_node.source_location.clone(),
+            });
+        }
+    }
+    violations.sort_by(|a, b| {
+        (
+            a.assigner_statement_ordinal,
+            a.binding_statement_ordinal,
+            a.binding.as_str(),
+            a.kind,
+        )
+            .cmp(&(
+                b.assigner_statement_ordinal,
+                b.binding_statement_ordinal,
+                b.binding.as_str(),
+                b.kind,
+            ))
+    });
+    violations
 }
 
 /// Compute a near-minimum cut of realizability-constraining edges
@@ -3924,6 +4329,40 @@ mod tests {
             report.cycles.is_empty(),
             "lazy-only cycle is realizable; the gate must accept and emit no cycle (got {:?})",
             report.cycles,
+        );
+    }
+
+    #[test]
+    fn cross_destination_lazy_write_is_rejected() {
+        let schedule = schedule_for(
+            "let A = 0; function B() { A = 1; }",
+            &[("A", logical(0)), ("B", ModuleId::ResidualEntry)],
+        );
+
+        let report = schedule.validate();
+        assert_eq!(
+            report.cross_destination_assignments.len(),
+            1,
+            "expected residual B's assignment to A to be rejected: {report:?}",
+        );
+        let assignment = &report.cross_destination_assignments[0];
+        assert_eq!(assignment.binding, "A");
+        assert_eq!(assignment.assigner_module, "<residual_entry>");
+        assert_eq!(assignment.binding_module, "mod_0");
+        assert_eq!(assignment.kind, EdgeKind::LazyWrite);
+    }
+
+    #[test]
+    fn same_destination_lazy_write_is_allowed() {
+        let schedule = schedule_for(
+            "let A = 0; function B() { A = 1; }",
+            &[("A", logical(0)), ("B", logical(0))],
+        );
+
+        let report = schedule.validate();
+        assert!(
+            report.cross_destination_assignments.is_empty(),
+            "same-destination rebinding writes should stay local to the emitted module: {report:?}",
         );
     }
 

@@ -31,7 +31,6 @@ export { b };
 }
 
 #[test]
-#[ignore = "TODO(debundle): reject specs that peel a binding while leaving an assigner in entry"]
 fn rejects_extracted_binding_assigned_by_residual_owner() {
     // This is the minimal shape behind the Tana boot-progress
     // `Assignment to constant variable` failure: the spec peels a
@@ -41,12 +40,12 @@ fn rejects_extracted_binding_assigned_by_residual_owner() {
     // assignment because imported ESM bindings are read-only in the
     // importing module.
     //
-    // TODO(debundle): the realizability/schedule validation phase
-    // should reject this spec before emission. A binding with a
-    // cross-destination assignment cannot be safely peeled unless
-    // every top-level owner that may assign it is peeled into the
-    // same destination, or the emitter grows a sound live-mutation
-    // bridge for that binding.
+    // The realizability/schedule validation phase must reject this
+    // spec before emission. A binding with a cross-destination
+    // assignment cannot be safely peeled unless every top-level
+    // owner that may assign it is peeled into the same destination,
+    // or the emitter grows a sound live-mutation bridge for that
+    // binding.
     let mut opts = FixtureOpts::new(
         r#"let a = 0;
 function b() {
@@ -59,7 +58,7 @@ export { a };
         vec![logical_module("state", &[Member::new("a")])],
     );
     opts.include_residual = false;
-    expect_logical_modules_e2e_rejection(
+    expect_logical_modules_e2e_rejection_containing_all(
         opts,
         &["assignment", "assigner", "mutable", "cross-destination"],
     );

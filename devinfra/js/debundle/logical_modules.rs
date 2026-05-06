@@ -21,7 +21,8 @@ use artifact::{
 use js_ast::{ParsedJsModule, line_range_for_span, set_str_value, str_value};
 use schedule_validator::{
     BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
-    Schedule, analyze_chunk_with_source_locations, render_cycle_summary,
+    Schedule, analyze_chunk_with_source_locations, render_cross_destination_assignment_summary,
+    render_cycle_summary,
 };
 use spec::{BindingSourceKind, ChunkRenames, LogicalModule, MemberPurity, ResidualModule};
 
@@ -531,6 +532,16 @@ fn materialize_logical_chunk(
                 &owner_graph_report,
             )
         })?;
+    }
+
+    if !schedule_report.cross_destination_assignments.is_empty() {
+        let summary = render_cross_destination_assignment_summary(
+            &schedule_report.cross_destination_assignments,
+        );
+        bail!(
+            "materialize_logical_modules: chunk {chunk_id} has {} cross-destination assignment(s) to mutable binding(s); spec is unrealizable because an assigner would have to rebind an imported ESM binding, which is read-only in the importing module. Move each assigner owner into the binding's destination, keep the mutable binding with its assigner, or add a sound live-mutation bridge before peeling. Full evidence written to <reports>/{chunk_id}/schedule.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            schedule_report.cross_destination_assignments.len(),
+        );
     }
 
     if !schedule_report.cycles.is_empty() {
