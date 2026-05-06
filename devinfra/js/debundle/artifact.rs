@@ -403,6 +403,50 @@ impl JsPipelineArtifact {
         }
         Ok(out)
     }
+
+    pub fn source_import_resolver(&self) -> Result<ArtifactSourceImportResolver<'_>> {
+        Ok(ArtifactSourceImportResolver {
+            artifact: self,
+            source_chunk_index: self.source_chunk_index()?,
+        })
+    }
+}
+
+pub struct ArtifactSourceImportResolver<'a> {
+    artifact: &'a JsPipelineArtifact,
+    source_chunk_index: BTreeMap<String, String>,
+}
+
+impl ArtifactSourceImportResolver<'_> {
+    pub fn resolve(
+        &self,
+        source: &str,
+        caller_chunk_id: &str,
+        caller_file: &str,
+    ) -> Result<Option<(String, String, String)>> {
+        if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
+            return Ok(None);
+        }
+        let Some(caller_source_path) =
+            source_path_for_artifact_file(self.artifact, caller_chunk_id, caller_file)?
+        else {
+            return Ok(None);
+        };
+        let Some(imported_source_path) =
+            resolve_chunk_source_path_reference(source, &caller_source_path)
+        else {
+            return Ok(None);
+        };
+        let Some(target_chunk_id) = self.source_chunk_index.get(&imported_source_path).cloned()
+        else {
+            return Ok(None);
+        };
+        let Some(target_entry_file) = get_chunk_entry_path(self.artifact, &target_chunk_id) else {
+            return Ok(None);
+        };
+        let path = join_module_path(&[target_chunk_id.as_str(), target_entry_file.as_str()]);
+        Ok(Some((target_chunk_id, target_entry_file, path)))
+    }
 }
 
 pub fn load_js_chunks(
@@ -753,28 +797,9 @@ pub fn resolve_artifact_source_import_reference(
     caller_chunk_id: &str,
     caller_file: &str,
 ) -> Result<Option<(String, String, String)>> {
-    if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
-        return Ok(None);
-    }
-    let Some(caller_source_path) =
-        source_path_for_artifact_file(artifact, caller_chunk_id, caller_file)?
-    else {
-        return Ok(None);
-    };
-    let Some(imported_source_path) =
-        resolve_chunk_source_path_reference(source, &caller_source_path)
-    else {
-        return Ok(None);
-    };
-    let source_index = artifact.source_chunk_index()?;
-    let Some(target_chunk_id) = source_index.get(&imported_source_path).cloned() else {
-        return Ok(None);
-    };
-    let Some(target_entry_file) = get_chunk_entry_path(artifact, &target_chunk_id) else {
-        return Ok(None);
-    };
-    let path = join_module_path(&[target_chunk_id.as_str(), target_entry_file.as_str()]);
-    Ok(Some((target_chunk_id, target_entry_file, path)))
+    artifact
+        .source_import_resolver()?
+        .resolve(source, caller_chunk_id, caller_file)
 }
 
 pub fn relative_module_specifier(from_dir: &Path, target_path: &Path) -> String {
