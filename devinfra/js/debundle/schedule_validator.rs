@@ -131,6 +131,7 @@ pub struct Schedule {
     pub logical_modules: Vec<LogicalModule>,
     pub chunk_renames: BTreeMap<BindingName, BindingName>,
     pub owner_graph: OwnerGraph,
+    owner_edges: Vec<OwnerEdgeEntry>,
     pub dep_graph: ModuleDepGraph,
     owner_report_ids_by_binding: BTreeMap<BindingName, Vec<String>>,
     /// Topological linearization of `I ∪ S`, dependency-first
@@ -159,8 +160,12 @@ impl Schedule {
     ) -> Self {
         let ownership = owned_view(&bindings);
         let owner_graph = build_owner_graph(&facts, &ownership);
+        let owner_edges = collect_owner_edge_entries(&owner_graph);
         let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
-        let dep_graph = quotient_owner_graph(&owner_graph);
+        let dep_graph =
+            quotient_owner_graph_with_destinations(&owner_graph, &owner_edges, |_, node| {
+                node.destination
+            });
         let linker_order = compute_linker_order(&dep_graph, &logical_modules);
         let linker_position_by_module = linker_order
             .iter()
@@ -175,6 +180,7 @@ impl Schedule {
             logical_modules,
             chunk_renames,
             owner_graph,
+            owner_edges,
             dep_graph,
             owner_report_ids_by_binding,
             linker_order,
@@ -2122,8 +2128,8 @@ struct OwnerEdgeEntry {
 #[derive(Debug, Clone, Default)]
 struct QuotientEdgeAccumulator {
     kinds: BTreeSet<EdgeKind>,
-    owner_edge_ids: Vec<String>,
-    constraining_owner_edge_ids: Vec<String>,
+    owner_edge_indices: Vec<usize>,
+    constraining_owner_edge_indices: Vec<usize>,
     reason_count: usize,
     constrains_realizability: bool,
 }
@@ -2183,11 +2189,11 @@ struct CandidateGraphAdjustment {
 }
 
 fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
-    let owner_edges = collect_owner_edge_entries(&schedule.owner_graph);
-    let quotient_edges = build_quotient_edge_reports(schedule, &owner_edges);
+    let owner_edges = &schedule.owner_edges;
+    let quotient_edges = build_quotient_edge_reports(schedule, owner_edges);
     let quotient_nodes = build_quotient_node_reports(schedule);
     let quotient_sccs = build_quotient_scc_reports(schedule, &quotient_edges);
-    let peelability = build_peelability_report(schedule, &owner_edges, &quotient_edges);
+    let peelability = build_peelability_report(schedule, owner_edges, &quotient_edges);
     OwnerGraphReport {
         chunk_id: schedule.chunk_id.clone(),
         nodes: schedule
@@ -2345,7 +2351,7 @@ where
 {
     let mut accum = BTreeMap::<(ModuleId, ModuleId), QuotientEdgeAccumulator>::new();
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
-    for edge in owner_edges {
+    for (edge_idx, edge) in owner_edges.iter().enumerate() {
         let Some(from_node) = owner_graph.node(edge.from) else {
             continue;
         };
@@ -2362,9 +2368,9 @@ where
         }
         let entry = accum.entry((from, to)).or_default();
         entry.kinds.insert(edge.reason.kind());
-        entry.owner_edge_ids.push(edge.id.clone());
+        entry.owner_edge_indices.push(edge_idx);
         if edge.reason.constrains_realizability() {
-            entry.constraining_owner_edge_ids.push(edge.id.clone());
+            entry.constraining_owner_edge_indices.push(edge_idx);
         }
         entry.reason_count += 1;
         entry.constrains_realizability |= edge.reason.constrains_realizability();
@@ -2377,11 +2383,22 @@ where
             source: module_key(from),
             target: module_key(to),
             edge_kinds: entry.kinds.into_iter().collect(),
-            owner_edge_ids: entry.owner_edge_ids,
-            constraining_owner_edge_ids: entry.constraining_owner_edge_ids,
+            owner_edge_ids: owner_edge_ids(owner_edges, entry.owner_edge_indices),
+            constraining_owner_edge_ids: owner_edge_ids(
+                owner_edges,
+                entry.constraining_owner_edge_indices,
+            ),
             reason_count: entry.reason_count,
             constrains_realizability: entry.constrains_realizability,
         })
+        .collect()
+}
+
+fn owner_edge_ids(owner_edges: &[OwnerEdgeEntry], indices: Vec<usize>) -> Vec<String> {
+    indices
+        .into_iter()
+        .filter_map(|idx| owner_edges.get(idx))
+        .map(|edge| edge.id.clone())
         .collect()
 }
 
@@ -2389,6 +2406,7 @@ fn build_quotient_scc_reports(
     schedule: &Schedule,
     quotient_edges: &[QuotientEdgeReport],
 ) -> Vec<QuotientSccReport> {
+    let quotient_edges_by_source = quotient_edge_indices_by_source(quotient_edges);
     let mut sccs = Vec::new();
     for scc in tarjan_scc(&schedule.dep_graph.graph) {
         let is_cycle = scc.len() > 1
@@ -2396,18 +2414,25 @@ fn build_quotient_scc_reports(
         if !is_cycle {
             continue;
         }
-        let in_scc: BTreeSet<String> = scc.iter().copied().map(module_key).collect();
+        let in_scc: BTreeSet<ModuleId> = scc.iter().copied().collect();
         let mut module_edge_ids = Vec::new();
         let mut constraining_module_edge_ids = Vec::new();
-        for edge in quotient_edges {
-            if in_scc.contains(&edge.source) && in_scc.contains(&edge.target) {
+        for &source in &in_scc {
+            let Some(out_edges) = quotient_edges_by_source.get(&source) else {
+                continue;
+            };
+            for &(target, edge_idx) in out_edges {
+                if !in_scc.contains(&target) {
+                    continue;
+                }
+                let edge = &quotient_edges[edge_idx];
                 module_edge_ids.push(edge.id.clone());
                 if edge.constrains_realizability {
                     constraining_module_edge_ids.push(edge.id.clone());
                 }
             }
         }
-        let mut modules: Vec<String> = in_scc.into_iter().collect();
+        let mut modules: Vec<String> = in_scc.iter().copied().map(module_key).collect();
         modules.sort();
         let mut labels: Vec<String> = modules
             .iter()
@@ -2431,6 +2456,22 @@ fn build_quotient_scc_reports(
         });
     }
     sccs
+}
+
+fn quotient_edge_indices_by_source(
+    quotient_edges: &[QuotientEdgeReport],
+) -> BTreeMap<ModuleId, Vec<(ModuleId, usize)>> {
+    let mut by_source = BTreeMap::<ModuleId, Vec<(ModuleId, usize)>>::new();
+    for (idx, edge) in quotient_edges.iter().enumerate() {
+        let Some(source) = module_id_from_key(&edge.source) else {
+            continue;
+        };
+        let Some(target) = module_id_from_key(&edge.target) else {
+            continue;
+        };
+        by_source.entry(source).or_default().push((target, idx));
+    }
+    by_source
 }
 
 fn build_peelability_report(
@@ -3127,9 +3168,9 @@ fn candidate_incident_edges(
         }
         let entry = accum.entry((direction, module)).or_default();
         entry.kinds.insert(edge.reason.kind());
-        entry.owner_edge_ids.push(edge.id.clone());
+        entry.owner_edge_indices.push(edge_idx);
         if edge.reason.constrains_realizability() {
-            entry.constraining_owner_edge_ids.push(edge.id.clone());
+            entry.constraining_owner_edge_indices.push(edge_idx);
         }
         entry.reason_count += 1;
         entry.constrains_realizability |= edge.reason.constrains_realizability();
@@ -3144,7 +3185,10 @@ fn candidate_incident_edges(
             id: format!("candidate_edge:{}", candidate_edges.len()),
             direction,
             module_idx,
-            constraining_owner_edge_ids: entry.constraining_owner_edge_ids,
+            constraining_owner_edge_ids: owner_edge_ids(
+                context.owner_edges,
+                entry.constraining_owner_edge_indices,
+            ),
             constrains_realizability: entry.constrains_realizability,
         });
     }
