@@ -101,8 +101,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("host", help="host basename under secrets/nebula, e.g. pixel6")
     parser.add_argument("--output", type=Path, help="output path; defaults to /tmp/<host>.mobile-nebula.yaml")
+    # Mobile Nebula note (2026-05-06): Pixel6 works on the Nebula mesh with DNS
+    # disabled and mesh services reached by Nebula IP. Android ignores
+    # match_domains entirely (NebulaVpnService.kt has no split-DNS wiring), so
+    # dns_resolvers becomes global DNS and breaks internet domains. Keep DNS off
+    # by default; opt in only after a CoreDNS forwarder on a VPS Nebula IP can
+    # forward nebula.allegedly.works to lighthouse:53 and everything else to a
+    # public resolver.
     parser.add_argument(
-        "--no-dns", action="store_true", help="omit Mobile Nebula DNS resolvers; use direct 10.42.x.y addresses"
+        "--dns",
+        action="store_true",
+        help="include Mobile Nebula DNS resolvers; off by default because Android treats them as global DNS",
     )
     return parser.parse_args()
 
@@ -128,7 +137,7 @@ def main() -> int:
         cert=cert_path.read_text(),
         key=decrypt_sops_binary(key_path),
         mesh_config=json.loads(mesh_path.read_text()),
-        include_dns=not args.no_dns,
+        include_dns=args.dns,
     )
 
     output.parent.mkdir(parents=True, exist_ok=True)

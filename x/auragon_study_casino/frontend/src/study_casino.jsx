@@ -40,25 +40,7 @@ const SLOT_SYMBOLS = [
   { id: "club", glyph: "♣", color: "#f5e8c7", weight: 14, payout: 3 },
 ];
 
-const CARD_SUITS = ["♠", "♥", "♦", "♣"];
-const CARD_RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const BLACKJACK_DECKS = 4;
-
-function makeShoe(decks = BLACKJACK_DECKS) {
-  const cards = [];
-  for (let d = 0; d < decks; d++) {
-    for (const s of CARD_SUITS) {
-      for (const r of CARD_RANKS) {
-        cards.push({ suit: s, rank: r, id: `${d}-${s}-${r}-${Math.random().toString(36).slice(2, 8)}` });
-      }
-    }
-  }
-  for (let i = cards.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [cards[i], cards[j]] = [cards[j], cards[i]];
-  }
-  return cards;
-}
 
 function cardRankValue(rank) {
   if (rank === "A") return 11;
@@ -78,24 +60,6 @@ function handValue(cards) {
     aces--;
   }
   return total;
-}
-
-function isBlackjack(cards) {
-  return cards.length === 2 && handValue(cards) === 21;
-}
-
-function auditCards(cards) {
-  return cards.map((c) => ({ rank: c.rank, suit: c.suit }));
-}
-
-function weightedPick(items) {
-  const total = items.reduce((s, i) => s + i.weight, 0);
-  let r = Math.random() * total;
-  for (const it of items) {
-    r -= it.weight;
-    if (r <= 0) return it;
-  }
-  return items[items.length - 1];
 }
 
 function numColor(n) {
@@ -170,9 +134,12 @@ export default function StudyCasino() {
     addPrize,
     deletePrize,
     convertToTokens,
-    addTokens,
-    addCredits,
-    recordGameEvent,
+    spinSlots,
+    spinRoulette,
+    blackjackDeal,
+    blackjackHit,
+    blackjackStand,
+    blackjackDouble,
     exportData,
     importData,
     resetData,
@@ -547,9 +514,12 @@ export default function StudyCasino() {
           <CasinoView
             credits={credits}
             tokens={tokens}
-            addCredits={addCredits}
-            addTokens={addTokens}
-            recordGameEvent={recordGameEvent}
+            spinSlots={spinSlots}
+            spinRoulette={spinRoulette}
+            blackjackDeal={blackjackDeal}
+            blackjackHit={blackjackHit}
+            blackjackStand={blackjackStand}
+            blackjackDouble={blackjackDouble}
           />
         )}
         {view === "prizes" && (
@@ -780,9 +750,27 @@ function StudyView({
 // ============================================================
 // CASINO VIEW
 // ============================================================
-function CasinoView({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
+function CasinoView({
+  credits,
+  tokens,
+  spinSlots,
+  spinRoulette,
+  blackjackDeal,
+  blackjackHit,
+  blackjackStand,
+  blackjackDouble,
+}) {
   const [game, setGame] = useState("roulette");
-  const gameProps = { credits, tokens, addCredits, addTokens, recordGameEvent };
+  const gameProps = {
+    credits,
+    tokens,
+    spinSlots,
+    spinRoulette,
+    blackjackDeal,
+    blackjackHit,
+    blackjackStand,
+    blackjackDouble,
+  };
 
   return (
     <div>
@@ -825,7 +813,7 @@ function CasinoView({ credits, tokens, addCredits, addTokens, recordGameEvent })
 // ============================================================
 // ROULETTE
 // ============================================================
-function Roulette({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
+function Roulette({ credits, spinRoulette }) {
   const [betAmount, setBetAmount] = useState(10);
   const [betType, setBetType] = useState("red"); // red, black, odd, even, low, high, dozen1, dozen2, dozen3, number
   const [betNumber, setBetNumber] = useState(7);
@@ -837,48 +825,25 @@ function Roulette({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
 
   const canSpin = !spinning && betAmount > 0 && betAmount <= credits;
 
-  const checkWin = (num) => {
-    if (num === 0 && betType !== "number") return { won: false, mult: 0 };
-    switch (betType) {
-      case "red":
-        return { won: RED.has(num), mult: 2 };
-      case "black":
-        return { won: num !== 0 && !RED.has(num), mult: 2 };
-      case "odd":
-        return { won: num % 2 === 1, mult: 2 };
-      case "even":
-        return { won: num !== 0 && num % 2 === 0, mult: 2 };
-      case "low":
-        return { won: num >= 1 && num <= 18, mult: 2 };
-      case "high":
-        return { won: num >= 19 && num <= 36, mult: 2 };
-      case "dozen1":
-        return { won: num >= 1 && num <= 12, mult: 3 };
-      case "dozen2":
-        return { won: num >= 13 && num <= 24, mult: 3 };
-      case "dozen3":
-        return { won: num >= 25 && num <= 36, mult: 3 };
-      case "number":
-        return { won: num === betNumber, mult: 36 };
-      default:
-        return { won: false, mult: 0 };
-    }
-  };
-
-  const spin = () => {
+  const spin = async () => {
     if (!canSpin) return;
     const wager = betAmount;
-    const creditsBefore = credits;
-    const tokensBefore = tokens;
     const betTypeSnapshot = betType;
     const betNumberSnapshot = betNumber;
-    const pickedIdx = Math.floor(Math.random() * WHEEL.length);
-    const picked = WHEEL[pickedIdx];
+    let serverResult;
+    try {
+      serverResult = await spinRoulette({
+        wagerCredits: wager,
+        betType: betTypeSnapshot,
+        betNumber: betNumberSnapshot,
+      });
+    } catch (e) {
+      console.debug("[Casino] roulette spin failed:", e.message ?? String(e));
+      return;
+    }
+    const pickedIdx = serverResult.result_index;
+    const picked = serverResult.result_number;
 
-    // Take the bet up front against the doc; the local Y.Doc updates
-    // synchronously so the UI re-renders immediately, and sync.js pushes
-    // it to the server in the background.
-    addCredits(-wager);
     setSpinning(true);
     setResult(null);
 
@@ -890,33 +855,12 @@ function Roulette({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
     setRotation(finalRotation);
 
     setTimeout(() => {
-      const w = checkWin(picked);
-      const grossPayout = w.won ? wager * w.mult : 0;
-      // Whole payout becomes tokens; the bet was already debited from credits.
-      // The casino is a pure credits→tokens funnel — see validators.py.
+      const grossPayout = serverResult.payout_tokens;
       if (grossPayout > 0) {
-        addTokens(grossPayout);
         setWinBurst({ key: Date.now(), amount: grossPayout });
       }
-      recordGameEvent({
-        game: "roulette",
-        wagerCredits: wager,
-        payoutTokens: grossPayout,
-        creditsBefore,
-        creditsAfter: Math.max(0, creditsBefore - wager),
-        tokensBefore,
-        tokensAfter: tokensBefore + grossPayout,
-        outcome: {
-          bet_type: betTypeSnapshot,
-          bet_number: betTypeSnapshot === "number" ? betNumberSnapshot : null,
-          result_number: picked,
-          result_color: numColor(picked),
-          won: w.won,
-          multiplier: w.mult,
-        },
-      });
-      setResult({ number: picked, won: w.won, payout: grossPayout });
-      setHistory((h) => [{ number: picked, won: w.won }, ...h].slice(0, 10));
+      setResult({ number: picked, won: serverResult.won, payout: grossPayout });
+      setHistory((h) => [{ number: picked, won: serverResult.won }, ...h].slice(0, 10));
       setSpinning(false);
     }, 4200);
   };
@@ -1258,7 +1202,7 @@ function Roulette({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
 // ============================================================
 // SLOTS
 // ============================================================
-function Slots({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
+function Slots({ credits, spinSlots }) {
   const [bet, setBet] = useState(5);
   const [targets, setTargets] = useState([SLOT_SYMBOLS[2], SLOT_SYMBOLS[3], SLOT_SYMBOLS[4]]);
   const [spinning, setSpinning] = useState(false);
@@ -1267,55 +1211,28 @@ function Slots({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
 
   const canSpin = !spinning && bet > 0 && bet <= credits;
 
-  const spin = () => {
+  const spin = async () => {
     if (!canSpin) return;
     const wager = bet;
-    const creditsBefore = credits;
-    const tokensBefore = tokens;
-    addCredits(-wager);
+    let serverResult;
+    try {
+      serverResult = await spinSlots(wager);
+    } catch (e) {
+      console.debug("[Casino] slots spin failed:", e.message ?? String(e));
+      return;
+    }
     setSpinning(true);
     setLastResult(null);
 
-    const picks = [weightedPick(SLOT_SYMBOLS), weightedPick(SLOT_SYMBOLS), weightedPick(SLOT_SYMBOLS)];
+    const picks = serverResult.symbols.map((id) => SLOT_SYMBOLS.find((s) => s.id === id) || SLOT_SYMBOLS[0]);
     setTargets(picks);
 
     setTimeout(() => {
-      let grossPayout = 0;
-      let label = "";
-      const [a, b, c] = picks;
-      if (a.id === b.id && b.id === c.id) {
-        grossPayout = wager * a.payout;
-        label = `Triple ${a.glyph} · ${a.payout}×`;
-      } else if (a.id === b.id || b.id === c.id || a.id === c.id) {
-        grossPayout = Math.floor(wager * 1.5);
-        label = "Pair · 1.5×";
-      } else {
-        label = "No match";
-      }
+      const grossPayout = serverResult.payout_tokens;
+      const label = serverResult.label;
       if (grossPayout > 0) {
-        addTokens(grossPayout);
         setWinBurst({ key: Date.now(), amount: grossPayout });
       }
-      recordGameEvent({
-        game: "slots",
-        wagerCredits: wager,
-        payoutTokens: grossPayout,
-        creditsBefore,
-        creditsAfter: Math.max(0, creditsBefore - wager),
-        tokensBefore,
-        tokensAfter: tokensBefore + grossPayout,
-        outcome: {
-          symbols: picks.map((p) => p.id),
-          glyphs: picks.map((p) => p.glyph),
-          label,
-          payout_kind:
-            a.id === b.id && b.id === c.id
-              ? "triple"
-              : a.id === b.id || b.id === c.id || a.id === c.id
-                ? "pair"
-                : "none",
-        },
-      });
       setLastResult({ picks, payout: grossPayout, label });
       setSpinning(false);
     }, 4000);
@@ -1534,8 +1451,8 @@ function SlotReel({ target, index, spinning }) {
 // ============================================================
 // BLACKJACK
 // ============================================================
-function Blackjack({ credits, tokens, addCredits, addTokens, recordGameEvent }) {
-  const [shoe, setShoe] = useState(() => makeShoe(BLACKJACK_DECKS));
+function Blackjack({ credits, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble }) {
+  const [handId, setHandId] = useState(null);
   const [playerHand, setPlayerHand] = useState([]);
   const [dealerHand, setDealerHand] = useState([]);
   const [phase, setPhase] = useState("betting"); // betting | playing | dealer | done
@@ -1544,7 +1461,7 @@ function Blackjack({ credits, tokens, addCredits, addTokens, recordGameEvent }) 
   const [result, setResult] = useState(null); // { outcome, payout, text }
   const [holeHidden, setHoleHidden] = useState(true);
   const [winBurst, setWinBurst] = useState(null);
-  const handAuditRef = useRef(null);
+  const [pending, setPending] = useState(false);
 
   const playerValue = useMemo(() => handValue(playerHand), [playerHand]);
   const dealerValue = useMemo(() => handValue(dealerHand), [dealerHand]);
@@ -1553,188 +1470,77 @@ function Blackjack({ credits, tokens, addCredits, addTokens, recordGameEvent }) 
     return handValue([dealerHand[0]]);
   }, [dealerHand, holeHidden]);
 
-  const canDeal = phase === "betting" && betInput > 0 && betInput <= credits;
-  const canHit = phase === "playing" && playerValue < 21;
-  const canStand = phase === "playing";
-  const canDouble = phase === "playing" && playerHand.length === 2 && credits >= wager;
+  const canDeal = phase === "betting" && !pending && betInput > 0 && betInput <= credits;
+  const canHit = phase === "playing" && !pending && handId && playerValue < 21;
+  const canStand = phase === "playing" && !pending && handId;
+  const canDouble = phase === "playing" && !pending && handId && playerHand.length === 2 && credits >= wager;
 
-  const drawCards = (src, n) => {
-    const drawn = src.slice(src.length - n);
-    const remaining = src.slice(0, src.length - n);
-    return [drawn, remaining];
-  };
-
-  const settle = (finalPlayer, finalDealer, currentWager) => {
-    const pv = handValue(finalPlayer);
-    const dv = handValue(finalDealer);
-    const pBJ = isBlackjack(finalPlayer);
-    const dBJ = isBlackjack(finalDealer);
-    let outcome, payout, text;
-
-    if (pv > 21) {
-      outcome = "bust";
-      payout = 0;
-      text = "Bust. Dealer takes it.";
-    } else if (pBJ && !dBJ) {
-      outcome = "blackjack";
-      payout = Math.floor(currentWager * 2.5);
-      text = "Blackjack! Pays 3:2.";
-    } else if (pBJ && dBJ) {
-      outcome = "push";
-      payout = currentWager;
-      text = "Both blackjack. Push.";
-    } else if (!pBJ && dBJ) {
-      outcome = "lose";
-      payout = 0;
-      text = "Dealer blackjack.";
-    } else if (dv > 21) {
-      outcome = "dealerBust";
-      payout = currentWager * 2;
-      text = "Dealer busts. You win.";
-    } else if (pv > dv) {
-      outcome = "win";
-      payout = currentWager * 2;
-      text = "You win.";
-    } else if (pv === dv) {
-      outcome = "push";
-      payout = currentWager;
-      text = "Push.";
+  const applyServerHand = (state) => {
+    setHandId(state.hand_id);
+    setPlayerHand(state.player_cards || []);
+    setDealerHand(state.dealer_cards || []);
+    setWager(state.current_wager || 0);
+    setHoleHidden(!!state.hole_hidden);
+    if (state.phase === "done" && state.settlement) {
+      const payout = state.settlement.payout_tokens || 0;
+      setResult({ outcome: state.settlement.outcome, payout, text: state.settlement.text });
+      if (payout > 0) setWinBurst({ key: Date.now(), amount: payout });
+      setPhase("done");
     } else {
-      outcome = "lose";
-      payout = 0;
-      text = "Dealer wins.";
+      setResult(null);
+      setPhase("playing");
     }
-
-    // Whole gross payout becomes tokens; bet was already debited at deal time.
-    if (payout > 0) {
-      addTokens(payout);
-      setWinBurst({ key: Date.now(), amount: payout });
-    }
-    const audit = handAuditRef.current;
-    if (audit) {
-      recordGameEvent({
-        game: "blackjack",
-        wagerCredits: currentWager,
-        payoutTokens: payout,
-        creditsBefore: audit.creditsBefore,
-        creditsAfter: Math.max(0, audit.creditsBefore - currentWager),
-        tokensBefore: audit.tokensBefore,
-        tokensAfter: audit.tokensBefore + payout,
-        outcome: {
-          outcome,
-          text,
-          initial_wager: audit.initialWager,
-          doubled: currentWager > audit.initialWager,
-          player_cards: auditCards(finalPlayer),
-          dealer_cards: auditCards(finalDealer),
-          player_value: pv,
-          dealer_value: dv,
-          player_blackjack: pBJ,
-          dealer_blackjack: dBJ,
-        },
-      });
-    }
-    setResult({ outcome, payout, text });
-    setPhase("done");
-    setHoleHidden(false);
   };
 
-  const playDealer = (currentDealer, currentShoe, finalPlayer, currentWager) => {
-    setHoleHidden(false);
-    const step = (hand, sh) => {
-      if (handValue(hand) >= 17) {
-        setTimeout(() => settle(finalPlayer, hand, currentWager), 500);
-        return;
-      }
-      setTimeout(() => {
-        const [drawn, rest] = drawCards(sh, 1);
-        const newHand = [...hand, ...drawn];
-        setDealerHand(newHand);
-        setShoe(rest);
-        step(newHand, rest);
-      }, 650);
-    };
-    step(currentDealer, currentShoe);
-  };
-
-  const deal = () => {
+  const deal = async () => {
     if (!canDeal) return;
-    // Reshuffle if below cut card
-    let workingShoe = shoe;
-    if (workingShoe.length < 52) workingShoe = makeShoe(BLACKJACK_DECKS);
-
-    const initialWager = betInput;
-    handAuditRef.current = {
-      creditsBefore: credits,
-      tokensBefore: tokens,
-      initialWager,
-    };
-
-    addCredits(-initialWager);
-    setWager(initialWager);
-    setResult(null);
-    setHoleHidden(true);
-
-    const [p1, s1] = drawCards(workingShoe, 1);
-    const [d1, s2] = drawCards(s1, 1);
-    const [p2, s3] = drawCards(s2, 1);
-    const [d2, s4] = drawCards(s3, 1);
-
-    const ph = [...p1, ...p2];
-    const dh = [...d1, ...d2];
-    setPlayerHand(ph);
-    setDealerHand(dh);
-    setShoe(s4);
-
-    // Check for immediate blackjack or dealer-up-card ace/ten (simplified: no insurance)
-    if (isBlackjack(ph) || isBlackjack(dh)) {
-      setTimeout(() => {
-        setHoleHidden(false);
-        setTimeout(() => settle(ph, dh, initialWager), 500);
-      }, 600);
-      return;
+    setPending(true);
+    try {
+      applyServerHand(await blackjackDeal(betInput));
+    } catch (e) {
+      console.debug("[Casino] blackjack deal failed:", e.message ?? String(e));
+    } finally {
+      setPending(false);
     }
-
-    setPhase("playing");
   };
 
-  const hit = () => {
+  const hit = async () => {
     if (!canHit) return;
-    const [drawn, rest] = drawCards(shoe, 1);
-    const newHand = [...playerHand, ...drawn];
-    setPlayerHand(newHand);
-    setShoe(rest);
-    const v = handValue(newHand);
-    if (v > 21) {
-      setPhase("dealer");
-      setTimeout(() => settle(newHand, dealerHand, wager), 600);
-    } else if (v === 21) {
-      setPhase("dealer");
-      setTimeout(() => playDealer(dealerHand, rest, newHand, wager), 600);
+    setPending(true);
+    try {
+      applyServerHand(await blackjackHit(handId));
+    } catch (e) {
+      console.debug("[Casino] blackjack hit failed:", e.message ?? String(e));
+    } finally {
+      setPending(false);
     }
   };
 
-  const stand = () => {
+  const stand = async () => {
     if (!canStand) return;
     setPhase("dealer");
-    setTimeout(() => playDealer(dealerHand, shoe, playerHand, wager), 400);
+    setPending(true);
+    try {
+      applyServerHand(await blackjackStand(handId));
+    } catch (e) {
+      console.debug("[Casino] blackjack stand failed:", e.message ?? String(e));
+      setPhase("playing");
+    } finally {
+      setPending(false);
+    }
   };
 
-  const doubleDown = () => {
+  const doubleDown = async () => {
     if (!canDouble) return;
-    addCredits(-wager);
-    const newWager = wager * 2;
-    setWager(newWager);
-    const [drawn, rest] = drawCards(shoe, 1);
-    const newHand = [...playerHand, ...drawn];
-    setPlayerHand(newHand);
-    setShoe(rest);
     setPhase("dealer");
-    const v = handValue(newHand);
-    if (v > 21) {
-      setTimeout(() => settle(newHand, dealerHand, newWager), 600);
-    } else {
-      setTimeout(() => playDealer(dealerHand, rest, newHand, newWager), 700);
+    setPending(true);
+    try {
+      applyServerHand(await blackjackDouble(handId));
+    } catch (e) {
+      console.debug("[Casino] blackjack double failed:", e.message ?? String(e));
+      setPhase("playing");
+    } finally {
+      setPending(false);
     }
   };
 
@@ -1744,7 +1550,7 @@ function Blackjack({ credits, tokens, addCredits, addTokens, recordGameEvent }) 
     setResult(null);
     setWager(0);
     setHoleHidden(true);
-    handAuditRef.current = null;
+    setHandId(null);
     setPhase("betting");
   };
 
@@ -1775,7 +1581,7 @@ function Blackjack({ credits, tokens, addCredits, addTokens, recordGameEvent }) 
           </div>
           <div style={{ display: "flex", gap: 8, minHeight: 92, flexWrap: "wrap" }}>
             {dealerHand.map((c, i) => (
-              <PlayingCard key={c.id} card={c} hidden={i === 1 && holeHidden} />
+              <PlayingCard key={`${c.rank}-${c.suit}-${i}`} card={c} hidden={i === 1 && holeHidden} />
             ))}
           </div>
         </div>
@@ -1794,8 +1600,8 @@ function Blackjack({ credits, tokens, addCredits, addTokens, recordGameEvent }) 
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, minHeight: 92, flexWrap: "wrap" }}>
-            {playerHand.map((c) => (
-              <PlayingCard key={c.id} card={c} />
+            {playerHand.map((c, i) => (
+              <PlayingCard key={`${c.rank}-${c.suit}-${i}`} card={c} />
             ))}
           </div>
         </div>
@@ -1940,7 +1746,7 @@ function Blackjack({ credits, tokens, addCredits, addTokens, recordGameEvent }) 
               textTransform: "uppercase",
             }}
           >
-            Shoe: {shoe.length} / {BLACKJACK_DECKS * 52} cards
+            Server-owned shoe
           </div>
         </div>
       </div>

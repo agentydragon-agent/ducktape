@@ -158,6 +158,88 @@ def test_game_event_validation_rejects_bad_game(client: TestClient) -> None:
     assert r.status_code == 422
 
 
+def test_server_action_convert_is_idempotent_and_updates_doc(client: TestClient) -> None:
+    boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+    casino = Casino.from_update(_unb64(boot["update_b64"]))
+    sv = casino.get_state()
+    casino.balance["credits"] = 10
+    client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+
+    body = {"client_action_id": "convert-1", "state_vector_b64": "", "amount": 4}
+    first = client.post("/actions/convert", json=body)
+    assert first.status_code == 200, first.text
+    duplicate = client.post("/actions/convert", json=body)
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["event"]["id"] == first.json()["event"]["id"]
+
+    fresh = Casino.from_update(
+        _unb64(client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()["update_b64"])
+    )
+    assert int(fresh.balance["credits"]) == 6
+    assert int(fresh.balance["tokens"]) == 4
+
+
+def test_server_resolved_slots_updates_doc_and_logs(client: TestClient) -> None:
+    boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+    casino = Casino.from_update(_unb64(boot["update_b64"]))
+    sv = casino.get_state()
+    casino.balance["credits"] = 5
+    client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+
+    r = client.post(
+        "/casino/slots/spin", json={"client_action_id": "slots-1", "state_vector_b64": "", "wager_credits": 1}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["event"]["action_type"] == "casino.slots.spin"
+    assert body["game_event"]["source"] == "server_resolved"
+    assert body["game_event"]["rng_version"] == "server-secrets-v1"
+
+    fresh = Casino.from_update(
+        _unb64(client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()["update_b64"])
+    )
+    assert int(fresh.balance["credits"]) == 4
+    assert int(fresh.balance["tokens"]) == body["result"]["payout_tokens"]
+
+
+def test_prize_redeem_server_action_updates_prize_log(client: TestClient) -> None:
+    boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+    casino = Casino.from_update(_unb64(boot["update_b64"]))
+    sv = casino.get_state()
+    casino.balance["tokens"] = 100
+    client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+
+    r = client.post(
+        "/actions/prize/redeem", json={"client_action_id": "redeem-1", "state_vector_b64": "", "prize_id": "p1"}
+    )
+    assert r.status_code == 200, r.text
+
+    fresh = Casino.from_update(
+        _unb64(client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()["update_b64"])
+    )
+    assert int(fresh.balance["tokens"]) == 70
+    assert len(fresh.prize_log) == 1
+    assert fresh.prize_log[0]["name"] == "Anime episode break"
+
+
+def test_enforce_mode_rejects_direct_economy_sync_and_client_reported_events(tmp_path: Path) -> None:
+    app = create_app(
+        Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist", authority_mode="enforce")
+    )
+    with TestClient(app) as client:
+        boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+        casino = Casino.from_update(_unb64(boot["update_b64"]))
+        sv = casino.get_state()
+        casino.balance["credits"] = 25
+
+        r = client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+        assert r.status_code == 409
+        assert r.json()["rejection"]["rule"] == "server_authority"
+
+        event = client.post("/game-events", json=_game_event_body("evt-enforce"))
+        assert event.status_code == 409
+
+
 def test_pre_alembic_user_db_is_baselined_and_upgraded(tmp_path: Path) -> None:
     db_path = tmp_path / "casino-default.db"
     with sqlite3.connect(db_path) as conn:
@@ -170,8 +252,9 @@ def test_pre_alembic_user_db_is_baselined_and_upgraded(tmp_path: Path) -> None:
         assert r.status_code == 200, r.text
 
     with sqlite3.connect(db_path) as conn:
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0002",)
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0003",)
         assert conn.execute("SELECT count(*) FROM game_events").fetchone() == (1,)
+        assert conn.execute("SELECT count(*) FROM state_snapshots").fetchone() == (1,)
 
 
 def test_users_have_isolated_state(tmp_path: Path) -> None:

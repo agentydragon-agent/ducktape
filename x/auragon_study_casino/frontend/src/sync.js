@@ -385,6 +385,22 @@ class CasinoSync {
   mutate(fn) {
     this.doc.transact(fn);
   }
+
+  getStateVectorB64() {
+    return bytesToB64(Y.encodeStateVector(this.doc));
+  }
+
+  applyServerActionResponse(body) {
+    const serverUpdate = b64ToBytes(body.update_b64);
+    if (serverUpdate.byteLength > 0) {
+      Y.applyUpdate(this.doc, serverUpdate, ORIGIN_REMOTE);
+    }
+    const sv = b64ToBytes(body.state_vector_b64);
+    this.lastServerSV = sv.byteLength > 0 ? sv : null;
+    this._undoManager.clear();
+    this.status.set({ kind: "ok", lastSyncedAt: Date.now() });
+    return body.result;
+  }
 }
 
 export const casinoSync = new CasinoSync();

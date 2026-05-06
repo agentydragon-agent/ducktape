@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from x.auragon_study_casino.models import GameEventRow
+from x.auragon_study_casino.models import GameEventRow, LedgerEventRow
 
 _MAX_OUTCOME_JSON_BYTES = 16 * 1024
 
@@ -67,6 +67,8 @@ class GameEventRead(BaseModel):
     tokens_after: int
     server_credits: int
     server_tokens: int
+    rules_version: str | None = None
+    rng_version: str | None = None
     outcome: dict[str, Any]
 
 
@@ -87,5 +89,43 @@ def game_event_from_row(row: GameEventRow) -> GameEventRead:
         tokens_after=row.tokens_after,
         server_credits=row.server_credits,
         server_tokens=row.server_tokens,
+        rules_version=row.rules_version,
+        rng_version=row.rng_version,
         outcome=json.loads(row.outcome_json),
+    )
+
+
+class LedgerEventRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    client_action_id: str
+    server_at_ms: int
+    action_type: str
+    source: Literal["server_action", "legacy_client_sync"]
+    rules_version: str
+    rng_version: str | None = None
+    credits_before: int
+    credits_after: int
+    tokens_before: int
+    tokens_after: int
+    details: dict[str, Any]
+    result: dict[str, Any]
+
+
+def ledger_event_from_row(row: LedgerEventRow) -> LedgerEventRead:
+    return LedgerEventRead(
+        id=row.id,
+        client_action_id=row.client_action_id,
+        server_at_ms=row.server_at_ms,
+        action_type=row.action_type,
+        source=cast(Literal["server_action", "legacy_client_sync"], row.source),
+        rules_version=row.rules_version,
+        rng_version=row.rng_version,
+        credits_before=row.credits_before,
+        credits_after=row.credits_after,
+        tokens_before=row.tokens_before,
+        tokens_after=row.tokens_after,
+        details=json.loads(row.details_json),
+        result=json.loads(row.result_json),
     )

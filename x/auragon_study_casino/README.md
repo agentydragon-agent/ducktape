@@ -14,11 +14,13 @@ Lives at <https://casino.allegedly.works>.
 | Path                                   | What it is                                                 |
 | -------------------------------------- | ---------------------------------------------------------- |
 | `app.py`                               | FastAPI backend: `POST /sync`, `/healthz`, static frontend |
+| `actions.py`                           | Pydantic schemas for server-authoritative action endpoints |
 | `config.py`                            | Pydantic settings (DATA_DIR, host, port)                   |
 | `doc_shape.py`                         | Casino Y.Doc schema (mirror of frontend/src/sync.js)       |
 | `validators.py`                        | Post-merge constraint checks (credits ≥ 0, prize shape…)   |
-| `models.py`                            | SQLAlchemy `doc` row holding the binary Y update blob      |
-| `events.py`                            | Pydantic schemas for client-reported game audit events     |
+| `models.py`                            | SQLAlchemy rows for Y.Doc, ledger, snapshots, game events  |
+| `events.py`                            | Pydantic schemas for game and ledger event reads           |
+| `games.py`                             | Server-side slots, roulette, and blackjack rules/RNG       |
 | `store.py`                             | DocStore: validate-then-persist client updates             |
 | `migrations/`                          | Alembic migrations for the per-user SQLite database        |
 | `test_doc_shape.py`                    | pycrdt API + Casino schema sanity                          |
@@ -78,11 +80,21 @@ prize_log : Y.Array[Y.Map { id, name, cost, at_ms }]
 active    : Y.Map — legacy, kept for one-time migration only
 ```
 
-Client-reported casino outcomes are stored outside the Y.Doc in the
-per-user SQLite `game_events` table through `POST /game-events`. The
-log is append-only, server-stamped, and queryable via `GET /game-events`,
-but it is not proof of fairness until game resolution moves server-side.
-See <../../plans/study_casino_server_resolution.md> for the migration plan.
+Server-authoritative actions now own balance-changing operations. The
+frontend sends intent to endpoints such as `/casino/slots/spin`,
+`/casino/roulette/spin`, `/casino/blackjack/*`, `/actions/convert`, and
+`/actions/prize/redeem`; the backend validates the canonical balance,
+settles outcomes with server-side randomness where needed, writes an
+append-only `ledger_events` row, updates the canonical Y.Doc projection,
+and returns the Y update for the client to apply.
+
+`game_events` remains the queryable casino history. Rows from server
+actions use `source = "server_resolved"` plus `rules_version` and
+`rng_version`. Legacy client-reported `POST /game-events` is still
+available while `STUDY_CASINO_AUTHORITY_MODE=observe`, but is rejected in
+`enforce` mode. State snapshots are stored before import/reset and on
+initial authority adoption so the raw Y.Doc blob remains recoverable.
+See <TODO.md> for the staged enforcement and cleanup checklist.
 
 CRDTs guarantee convergence but not business rules — the server's
 validators (credits ≥ 0, tokens ≥ 0, prize shape, session shape) are

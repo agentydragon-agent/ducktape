@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -50,6 +51,13 @@ class Settings(BaseSettings):
     public_url: str = Field(
         default="https://casino.allegedly.works",
         description="Public base URL of this app, used to build the OIDC redirect_uri.",
+    )
+    authority_mode: Literal["observe", "enforce"] = Field(
+        default="observe",
+        description=(
+            "Server-authority rollout mode. observe logs legacy direct economy syncs; "
+            "enforce rejects client syncs that directly change balance or prize_log."
+        ),
     )
 
     def oidc_config(self) -> OidcConfig | None:

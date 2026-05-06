@@ -6,9 +6,8 @@
 //     casino.credits / casino.tokens / casino.sessions / ...
 //     casino.startSession("Biochem"); casino.redeem(prize); ...
 //
-// All mutations are server-validated through `/ws` (driven by sync.js);
-// optimistic updates happen because the local Y.Doc updates synchronously
-// while the network round-trip happens in the background.
+// Non-economy document edits still sync through `/ws`. Balance-changing
+// operations call server action endpoints, then apply the returned Y update.
 //
 // Active sessions live in the `sessions` Y.Map as entries with no
 // `ended_at_ms` field.  `activeSession` is derived by finding the single
@@ -77,9 +76,9 @@ export function useCasino() {
     : null;
 
   // === Mutations ===
-  // Each one wraps `casinoSync.mutate` (which calls doc.transact) so the
-  // UndoManager treats the change as a single unit — important so that a
-  // server rejection rolls back the whole user-visible action.
+  // Local-only session timing and prize catalog edits still use Y.Doc
+  // transactions. Anything that changes credits, tokens, or prize_log goes
+  // through `serverAction`.
 
   const startSession = (subject) => {
     if (activeSession) return; // one session at a time — illegal to start while one is running
@@ -118,34 +117,41 @@ export function useCasino() {
     });
   };
 
-  // Helpers used by every mutation that bumps a balance: read the current
-  // value from the Y.Map *inside the transaction* so a remote update that
-  // landed between render and the actual mutation can't be clobbered.
-  const currentCredits = () => Math.floor(casinoSync.balance.get("credits") ?? 0);
-  const currentTokens = () => Math.floor(casinoSync.balance.get("tokens") ?? 0);
+  const newActionId = (prefix) =>
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? `${prefix}:${crypto.randomUUID()}`
+      : `${prefix}:${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  const serverAction = async (path, prefix, payload = {}) => {
+    const body = {
+      ...payload,
+      client_action_id: payload.client_action_id ?? newActionId(prefix),
+      state_vector_b64: casinoSync.getStateVectorB64(),
+    };
+    const resp = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      let message = `${resp.status}`;
+      try {
+        const error = await resp.json();
+        message = error?.detail?.message ?? error?.detail ?? message;
+      } catch {
+        // Keep the status-only message if the body is not JSON.
+      }
+      throw new Error(message);
+    }
+    return casinoSync.applyServerActionResponse(await resp.json());
+  };
 
   const stopSession = () => {
     if (!activeSession) return;
-    const sec = elapsedSeconds(activeSession);
-    const min = Math.floor(sec / 60);
-    casinoSync.mutate(() => {
-      if (sec <= 0) {
-        // Zero-elapsed sessions are discarded rather than creating noise in history.
-        casinoSync.sessions.delete(activeSession.id);
-        return;
-      }
-      const m = casinoSync.sessions.get(activeSession.id);
-      if (!m) return;
-      m.set("seconds", sec);
-      m.set("ended_at_ms", Date.now());
-      // Clear in-progress fields to keep the completed entry compact.
-      m.delete("start_time_ms");
-      m.delete("paused");
-      m.delete("paused_duration_ms");
-      m.delete("pause_started_at_ms");
-      if (min > 0) {
-        casinoSync.balance.set("credits", currentCredits() + min);
-      }
+    return serverAction("/actions/session/complete", "session.complete", {
+      session_id: activeSession.id,
+      ended_at_ms: Date.now(),
     });
   };
 
@@ -159,54 +165,31 @@ export function useCasino() {
     if (!old) return;
     const newSec = typeof updates.seconds === "number" ? Math.max(0, updates.seconds) : old.seconds;
     const newSubject = updates.subject || old.subject;
-    const delta = Math.floor(newSec / 60) - Math.floor(old.seconds / 60);
-    casinoSync.mutate(() => {
-      const m = casinoSync.sessions.get(id);
-      if (!m) return;
-      m.set("subject", newSubject);
-      m.set("seconds", newSec);
-      if (delta !== 0) {
-        casinoSync.balance.set("credits", Math.max(0, currentCredits() + delta));
-      }
+    return serverAction("/actions/session/edit", "session.edit", {
+      session_id: id,
+      subject: newSubject,
+      seconds: newSec,
     });
   };
 
   const deleteSession = (id) => {
     const old = sessions.find((s) => s.id === id);
     if (!old) return;
-    const min = Math.floor(old.seconds / 60);
-    casinoSync.mutate(() => {
-      casinoSync.sessions.delete(id);
-      casinoSync.balance.set("credits", Math.max(0, currentCredits() - min));
-    });
+    return serverAction("/actions/session/delete", "session.delete", { session_id: id });
   };
 
   const addPastSession = (subject, seconds, endedAtMs) => {
     if (!subject || seconds <= 0) return;
-    const id = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const min = Math.floor(seconds / 60);
-    casinoSync.mutate(() => {
-      const sm = new Y.Map();
-      casinoSync.sessions.set(id, sm);
-      sm.set("subject", subject);
-      sm.set("seconds", seconds);
-      sm.set("ended_at_ms", endedAtMs);
-      casinoSync.balance.set("credits", currentCredits() + min);
+    return serverAction("/actions/session/add-past", "session.add", {
+      subject,
+      seconds,
+      ended_at_ms: endedAtMs,
     });
   };
 
   const redeemPrize = (prize) => {
     if (tokens < prize.cost) return;
-    const id = `r-${Date.now()}`;
-    casinoSync.mutate(() => {
-      casinoSync.balance.set("tokens", currentTokens() - prize.cost);
-      const entry = new Y.Map();
-      casinoSync.prizeLog.push([entry]);
-      entry.set("id", id);
-      entry.set("name", prize.name);
-      entry.set("cost", prize.cost);
-      entry.set("at_ms", Date.now());
-    });
+    return serverAction("/actions/prize/redeem", "prize.redeem", { prize_id: prize.id });
   };
 
   const addPrize = (name, cost) => {
@@ -227,64 +210,27 @@ export function useCasino() {
   const convertToTokens = (amount) => {
     const n = Math.max(0, Math.floor(amount));
     if (n <= 0 || n > credits) return;
-    casinoSync.mutate(() => {
-      casinoSync.balance.set("credits", currentCredits() - n);
-      casinoSync.balance.set("tokens", currentTokens() + n);
-    });
+    return serverAction("/actions/convert", "convert", { amount: n });
   };
 
-  // Direct credits / tokens delta helpers (used by the gambling components).
-  // These read the current value from Y.Map *inside* the transaction to avoid
-  // closure staleness if multiple deltas land within one user action or while
-  // a remote update is being applied.
-  const addTokens = (delta) => {
-    if (delta === 0) return;
-    casinoSync.mutate(() => {
-      const current = Math.floor(casinoSync.balance.get("tokens") ?? 0);
-      casinoSync.balance.set("tokens", Math.max(0, current + delta));
-    });
-  };
-  const addCredits = (delta) => {
-    if (delta === 0) return;
-    casinoSync.mutate(() => {
-      const current = Math.floor(casinoSync.balance.get("credits") ?? 0);
-      casinoSync.balance.set("credits", Math.max(0, current + delta));
-    });
-  };
+  const spinSlots = (wagerCredits) =>
+    serverAction("/casino/slots/spin", "slots.spin", { wager_credits: Math.floor(wagerCredits) });
 
-  const recordGameEvent = (event) => {
-    const eventId =
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    const intValue = (value) => Math.max(0, Math.floor(Number(value) || 0));
-    const body = {
-      client_event_id: eventId,
-      occurred_at_ms: Date.now(),
-      game: event.game,
-      event_type: "settle",
-      wager_credits: intValue(event.wagerCredits),
-      payout_tokens: intValue(event.payoutTokens),
-      credits_before: intValue(event.creditsBefore),
-      credits_after: intValue(event.creditsAfter),
-      tokens_before: intValue(event.tokensBefore),
-      tokens_after: intValue(event.tokensAfter),
-      outcome: event.outcome ?? {},
-    };
-    fetch("/game-events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      keepalive: true,
-      body: JSON.stringify(body),
-    })
-      .then((resp) => {
-        if (!resp.ok) console.debug("[CasinoAudit] event log rejected:", resp.status);
-      })
-      .catch((e) => {
-        console.debug("[CasinoAudit] event log failed:", e.message ?? String(e));
-      });
-  };
+  const spinRoulette = ({ wagerCredits, betType, betNumber }) =>
+    serverAction("/casino/roulette/spin", "roulette.spin", {
+      wager_credits: Math.floor(wagerCredits),
+      bet_type: betType,
+      bet_number: betType === "number" ? betNumber : null,
+    });
+
+  const blackjackDeal = (wagerCredits) =>
+    serverAction("/casino/blackjack/deal", "blackjack.deal", { wager_credits: Math.floor(wagerCredits) });
+
+  const blackjackHit = (handId) => serverAction("/casino/blackjack/hit", "blackjack.hit", { hand_id: handId });
+
+  const blackjackStand = (handId) => serverAction("/casino/blackjack/stand", "blackjack.stand", { hand_id: handId });
+
+  const blackjackDouble = (handId) => serverAction("/casino/blackjack/double", "blackjack.double", { hand_id: handId });
 
   const exportData = () => {
     const data = {
@@ -309,61 +255,11 @@ export function useCasino() {
   };
 
   const importData = (data) => {
-    casinoSync.mutate(() => {
-      casinoSync.balance.set("credits", typeof data.credits === "number" ? data.credits : 0);
-      casinoSync.balance.set("tokens", typeof data.tokens === "number" ? data.tokens : 0);
-      casinoSync.sessions.clear();
-      for (const s of data.sessions ?? []) {
-        const sm = new Y.Map();
-        casinoSync.sessions.set(s.id, sm);
-        sm.set("subject", s.subject);
-        sm.set("seconds", s.seconds);
-        sm.set("ended_at_ms", s.endedAt);
-      }
-      if (Array.isArray(data.prizes) && data.prizes.length > 0) {
-        casinoSync.prizes.clear();
-        for (const p of data.prizes) {
-          const pm = new Y.Map();
-          casinoSync.prizes.set(p.id, pm);
-          pm.set("name", p.name);
-          pm.set("cost", p.cost);
-        }
-      }
-      if (Array.isArray(data.prizeLog)) {
-        // Y.Array doesn't have a clear() helper that survives every Yjs
-        // version; delete in a single pass instead.
-        casinoSync.prizeLog.delete(0, casinoSync.prizeLog.length);
-        for (const e of data.prizeLog) {
-          const pm = new Y.Map();
-          casinoSync.prizeLog.push([pm]);
-          pm.set("id", e.id);
-          pm.set("name", e.name);
-          pm.set("cost", e.cost);
-          pm.set("at_ms", e.at);
-        }
-      }
-      // Restore active session if present (from v3 export or legacy export).
-      if (data.activeSession) {
-        const id = `active-${Date.now()}`;
-        const sm = new Y.Map();
-        casinoSync.sessions.set(id, sm);
-        sm.set("subject", data.activeSession.subject);
-        sm.set("start_time_ms", data.activeSession.startTime ?? Date.now());
-        sm.set("paused", !!data.activeSession.paused);
-        sm.set("paused_duration_ms", data.activeSession.pausedDuration ?? 0);
-        sm.set("pause_started_at_ms", data.activeSession.pauseStartedAt ?? null);
-      }
-    });
+    return serverAction("/actions/import", "data.import", { data });
   };
 
   const resetData = () => {
-    casinoSync.mutate(() => {
-      casinoSync.balance.set("credits", 0);
-      casinoSync.balance.set("tokens", 0);
-      casinoSync.sessions.clear();
-      casinoSync.prizeLog.delete(0, casinoSync.prizeLog.length);
-      // Prizes intentionally retained; the user re-curates the catalog.
-    });
+    return serverAction("/actions/reset", "data.reset");
   };
 
   return {
@@ -385,9 +281,12 @@ export function useCasino() {
     addPrize,
     deletePrize,
     convertToTokens,
-    addTokens,
-    addCredits,
-    recordGameEvent,
+    spinSlots,
+    spinRoulette,
+    blackjackDeal,
+    blackjackHit,
+    blackjackStand,
+    blackjackDouble,
     exportData,
     importData,
     resetData,

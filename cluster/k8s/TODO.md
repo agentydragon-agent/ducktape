@@ -2,6 +2,14 @@
 
 Audit findings deferred for later.
 
+## Study Casino PVC backups
+
+- [ ] Choose and deploy a cluster PVC backup solution, then enable backups for
+      `study-casino/study-casino-data` every 3 hours. Preserve `/data`
+      SQLite state (`casino-*.db`, WAL/SHM files when present), keep enough
+      retention to use the available storage comfortably, and include a tested
+      restore path before relying on it.
+
 ## Mitmproxy: forward in-cluster + label-selector fix (DRAFT, uncommitted)
 
 The Kyverno `inject-mitmproxy` policy auto-injects `HTTP_PROXY` into every
@@ -41,10 +49,8 @@ but losing the bypass escape hatch.
 
 - [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
 
-## Mobile Nebula phone access
+## Mobile Nebula phone followups
 
-- [ ] Decide what the Pixel should do now that `pixel6.nebula.allegedly.works`
-      is on the Nebula mesh.
 - [ ] Test cluster-hosted ActivityWatch from the phone over Nebula, either by
       browser/API against `activitywatch.nebula.allegedly.works` or direct
       `10.42.0.40` if Android/Mobile Nebula DNS behavior is awkward.
