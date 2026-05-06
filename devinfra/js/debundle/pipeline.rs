@@ -31,7 +31,7 @@ pub struct TransformCli {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransformSpecSource {
-    Executable { path: PathBuf },
+    Flat { path: PathBuf },
     Tree(CompileSpecTreeOptions),
 }
 
@@ -43,13 +43,13 @@ pub enum TransformSpecSource {
 #[command(
     name = "debundle",
     version,
-    about = "Run the debundle transform pipeline from an executable or tree-shaped spec.",
-    long_about = "Runs the transform pipeline described by an executable spec or tree-shaped authoring spec. Pipeline stages \
+    about = "Run the debundle transform pipeline from a flat or tree-shaped spec.",
+    long_about = "Runs the transform pipeline described by a flat transform spec or tree-shaped authoring spec. Pipeline stages \
                   dispatch directly to registered functions; this target does not invoke \
                   Bazel from inside the pipeline. Specs are parsed as YAML."
 )]
 pub struct TransformArgs {
-    /// Path to an executable transform spec YAML.
+    /// Path to a flat transform spec YAML.
     #[arg(long)]
     pub spec: Option<PathBuf>,
     /// Path to a tree-shaped authoring config YAML.
@@ -107,7 +107,7 @@ fn resolve_spec_source(
         (Some(_), Some(_)) => {
             bail!("pass either --spec or --tree-config, not both");
         }
-        (Some(path), None) => Ok(TransformSpecSource::Executable {
+        (Some(path), None) => Ok(TransformSpecSource::Flat {
             path: resolve_runfiles_path(path.clone(), runfiles),
         }),
         (None, Some(config_path)) => {
@@ -398,14 +398,14 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
 
 fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
     match source {
-        TransformSpecSource::Executable { path } => load_executable_transform_spec(path),
+        TransformSpecSource::Flat { path } => load_flat_transform_spec(path),
         TransformSpecSource::Tree(options) => compile_spec_tree(options),
     }
 }
 
 fn spec_source_description(source: &TransformSpecSource) -> String {
     match source {
-        TransformSpecSource::Executable { path } => path.display().to_string(),
+        TransformSpecSource::Flat { path } => path.display().to_string(),
         TransformSpecSource::Tree(options) => options.config_path.display().to_string(),
     }
 }
@@ -783,7 +783,7 @@ fn run_step_with_result<T>(
     Ok(value)
 }
 
-fn load_executable_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
+fn load_flat_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
     let raw = fs::read(spec_path).with_context(|| format!("reading {}", spec_path.display()))?;
     serde_yaml::from_slice(&raw)
         .with_context(|| format!("Failed to parse {} as YAML", spec_path.display()))
@@ -864,7 +864,7 @@ mod tests {
         let cli = args.resolve().expect("resolve cli");
         assert_eq!(
             cli.spec_source,
-            TransformSpecSource::Executable {
+            TransformSpecSource::Flat {
                 path: PathBuf::from("spec.yaml")
             }
         );
@@ -1052,7 +1052,7 @@ mod tests {
         )?;
 
         let summary = run_transform_cli(&TransformCli {
-            spec_source: TransformSpecSource::Executable { path: spec_path },
+            spec_source: TransformSpecSource::Flat { path: spec_path },
             package_roots: HashMap::new(),
             packages_root: None,
             force: false,
@@ -1267,7 +1267,7 @@ mod tests {
         fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
 
         let summary = run_transform_cli(&TransformCli {
-            spec_source: TransformSpecSource::Executable { path: spec_path },
+            spec_source: TransformSpecSource::Flat { path: spec_path },
             package_roots: HashMap::new(),
             packages_root: None,
             force: true,

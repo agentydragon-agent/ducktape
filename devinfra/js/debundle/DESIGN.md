@@ -1525,7 +1525,7 @@ value. Each stage either observes that artifact, replaces it with a
 prepared artifact, or mutates it in place; there is no separate
 pipeline state object with a second identity.
 
-The executable spec is YAML decoded directly into typed serde
+The flat transform spec is YAML decoded directly into typed serde
 structures. It carries inputs, declarative data maps, and optional
 output configs; it is not an operation list and has no top-level
 `kind`/`schema_version` compatibility envelope. Report fields and
@@ -1536,7 +1536,7 @@ string vocabulary.
 Some downstream repos keep a higher-level authoring tree where YAML
 files are laid out like the eventual emitted JavaScript modules. That
 shape is a debundler-owned authoring layer: `debundle` compiles it
-into the same typed executable spec in memory, then runs the fixed
+into the same typed flat transform spec in memory, then runs the fixed
 pipeline below. The owner-graph reports are the bridge: they expose
 source owner ids, readable member names, destinations, blockers, and
 peel-set hyperedges so authoring tools can mostly project and filter

@@ -361,9 +361,9 @@ them with typed structs and enums.
   extension slots) or comes straight from an external JSON input.
 - Debundler-owned JSON does not get compatibility envelopes by default. Do
   not add top-level `kind`, `schema_version`, `operations`, or stage-list
-  fields to executable specs or other owned JSON unless a real external
+  fields to flat transform specs or other owned JSON unless a real external
   consumer needs them.
-- Executable specs contain inputs and author decisions only. Keep analysis
+- Flat transform specs contain inputs and author decisions only. Keep analysis
   provenance and notes (`evidence`, `notes`, `confidence`, `export_shape`)
   out of `VendorMark`; put that context in docs or diagnostic side outputs.
 
@@ -404,7 +404,7 @@ preparation and before data-gated transforms.
 
 ## Spec-level declarative sections
 
-The executable spec carries declarative top-level data maps, not an operation
+The flat transform spec carries declarative top-level data maps, not an operation
 or pipeline list. Transform code reads these maps directly via typed serde
 structs in <spec.rs>.
 
