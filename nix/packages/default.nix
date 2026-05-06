@@ -227,6 +227,7 @@ in
   kubernetes-mcp-server = pkgs.callPackage ./kubernetes-mcp-server.nix { };
   bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };
   bb = pkgs.callPackage ./bb.nix { inherit artifacts; };
+  telegram-desktop = pkgs.callPackage ./telegram-desktop.nix { };
 
   bbapi = pkgs.stdenv.mkDerivation {
     pname = "bbapi";
