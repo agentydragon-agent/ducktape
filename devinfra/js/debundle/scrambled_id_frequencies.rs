@@ -192,7 +192,7 @@ pub fn compute_with_clock(
             .get(&chunk_id)
             .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
         for (file_path, file) in &chunk.files {
-            let Some(parsed) = file.ast.as_ref() else {
+            let Some(parsed) = file.ast() else {
                 continue;
             };
             for site in scrambled_top_level_sites(parsed, &chunk_id, file_path) {
@@ -226,7 +226,7 @@ pub fn compute_with_clock(
             .get(&chunk_id)
             .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
         for (file_path, file) in &chunk.files {
-            let Some(parsed) = file.ast.as_ref() else {
+            let Some(parsed) = file.ast() else {
                 continue;
             };
             let mut counter = ReferenceCounter {

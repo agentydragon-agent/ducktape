@@ -12,11 +12,27 @@ use js_ast::{ParsedJsModule, emit_js_module};
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
 #[derive(Default)]
+pub struct LoadedJsChunks {
+    pub chunk_order: Vec<String>,
+    pub chunks: BTreeMap<String, JsChunk>,
+}
+
 pub struct JsPipelineArtifact {
     pub chunk_order: Vec<String>,
     pub chunks: BTreeMap<String, JsChunk>,
-    pub root_manifest: Option<ArtifactManifest>,
+    pub root_manifest: ArtifactManifest,
     pub chunk_manifests: BTreeMap<String, ChunkManifest>,
+}
+
+impl Default for JsPipelineArtifact {
+    fn default() -> Self {
+        Self {
+            chunk_order: Vec::new(),
+            chunks: BTreeMap::new(),
+            root_manifest: ArtifactManifest::empty(),
+            chunk_manifests: BTreeMap::new(),
+        }
+    }
 }
 
 pub struct JsChunk {
@@ -27,10 +43,77 @@ pub struct JsChunk {
 
 pub struct JsFile {
     pub path: String,
-    pub content: Option<String>,
-    pub ast: Option<ParsedJsModule>,
+    pub body: JsFileBody,
     pub header_lines: Vec<String>,
     pub metadata: FileMetadata,
+}
+
+pub struct JsFileAstParts {
+    pub path: String,
+    pub header_lines: Vec<String>,
+    pub metadata: FileMetadata,
+}
+
+pub enum JsFileBody {
+    Source(String),
+    Ast(ParsedJsModule),
+}
+
+impl JsFile {
+    pub fn source(&self) -> Option<&str> {
+        match &self.body {
+            JsFileBody::Source(source) => Some(source),
+            JsFileBody::Ast(_) => None,
+        }
+    }
+
+    pub fn into_source(self) -> Option<String> {
+        match self.body {
+            JsFileBody::Source(source) => Some(source),
+            JsFileBody::Ast(_) => None,
+        }
+    }
+
+    pub fn ast(&self) -> Option<&ParsedJsModule> {
+        match &self.body {
+            JsFileBody::Source(_) => None,
+            JsFileBody::Ast(ast) => Some(ast),
+        }
+    }
+
+    pub fn into_ast_parts(self) -> Option<(JsFileAstParts, ParsedJsModule)> {
+        match self.body {
+            JsFileBody::Ast(ast) => Some((
+                JsFileAstParts {
+                    path: self.path,
+                    header_lines: self.header_lines,
+                    metadata: self.metadata,
+                },
+                ast,
+            )),
+            JsFileBody::Source(_) => None,
+        }
+    }
+
+    pub fn from_ast_parts(parts: JsFileAstParts, ast: ParsedJsModule) -> Self {
+        Self {
+            path: parts.path,
+            body: JsFileBody::Ast(ast),
+            header_lines: parts.header_lines,
+            metadata: parts.metadata,
+        }
+    }
+
+    pub fn is_ast(&self) -> bool {
+        matches!(self.body, JsFileBody::Ast(_))
+    }
+
+    pub fn render_source(&self) -> Result<String> {
+        match &self.body {
+            JsFileBody::Source(source) => Ok(source.clone()),
+            JsFileBody::Ast(ast) => emit_js_module(ast, &self.header_lines),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -352,6 +435,36 @@ pub enum TopLevelDeclarationKind {
     Variable,
 }
 
+impl LoadedJsChunks {
+    pub fn list_chunk_ids(&self) -> Vec<String> {
+        if self.chunk_order.is_empty() {
+            self.chunks.keys().cloned().collect()
+        } else {
+            self.chunk_order.clone()
+        }
+    }
+}
+
+impl ArtifactManifest {
+    pub fn empty() -> Self {
+        Self {
+            counts: ArtifactCounts {
+                chunks: 0,
+                kept_top_level_declaration_owners: 0,
+                top_level_side_effects: 0,
+                export_aliases: 0,
+                unresolved_exports: 0,
+                selected_module_lowerings: None,
+            },
+            chunks: Vec::new(),
+            logical_modules: None,
+            selected_module_lowerings: None,
+            scrambled_identifier_frequencies: None,
+            output_metrics: None,
+        }
+    }
+}
+
 impl JsPipelineArtifact {
     pub fn list_chunk_ids(&self) -> Vec<String> {
         if self.chunk_order.is_empty() {
@@ -584,12 +697,12 @@ impl ArtifactReferenceIndex {
 pub fn load_js_chunks(
     input_root: &Path,
     js_list_path: &Path,
-) -> Result<(JsPipelineArtifact, LoadedJsChunksManifest)> {
+) -> Result<(LoadedJsChunks, LoadedJsChunksManifest)> {
     let js_files = parse_js_list(
         &fs::read_to_string(js_list_path)
             .with_context(|| format!("reading {}", js_list_path.display()))?,
     )?;
-    let mut artifact = JsPipelineArtifact::default();
+    let mut chunks = LoadedJsChunks::default();
     for source_path in &js_files {
         let absolute_path = input_root.join(source_path);
         let entry_file = Path::new(source_path)
@@ -605,8 +718,7 @@ pub fn load_js_chunks(
             entry_file.clone(),
             JsFile {
                 path: entry_file.clone(),
-                content: Some(content),
-                ast: None,
+                body: JsFileBody::Source(content),
                 header_lines: Vec::new(),
                 metadata: FileMetadata {
                     chunk_id: Some(chunk_id.clone()),
@@ -617,8 +729,8 @@ pub fn load_js_chunks(
                 },
             },
         );
-        artifact.chunk_order.push(chunk_id.clone());
-        artifact.chunks.insert(
+        chunks.chunk_order.push(chunk_id.clone());
+        chunks.chunks.insert(
             chunk_id.clone(),
             JsChunk {
                 entry_file,
@@ -651,7 +763,7 @@ pub fn load_js_chunks(
             .collect::<Result<Vec<_>>>()?,
         js_files,
     };
-    Ok((artifact, manifest))
+    Ok((chunks, manifest))
 }
 
 pub fn materialize_artifact_scripts(
@@ -723,13 +835,7 @@ fn materialize_chunk_file(
         .files
         .get(&file)
         .with_context(|| format!("missing artifact file {chunk_id}/{file}"))?;
-    let rendered = if let Some(ast) = file_artifact.ast.as_ref() {
-        emit_js_module(ast, &file_artifact.header_lines)?
-    } else {
-        file_artifact.content.clone().with_context(|| {
-            format!("artifact file has neither AST nor content: {chunk_id}/{file}")
-        })?
-    };
+    let rendered = file_artifact.render_source()?;
     let output_path = artifact_file_output_path_from_parts(chunk_id, &file, file_artifact)
         .unwrap_or_else(|| join_module_path(&[chunk_id, &file]));
     let target_path = if file_artifact.metadata.output_path.is_some() {

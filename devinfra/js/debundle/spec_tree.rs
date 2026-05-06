@@ -17,6 +17,7 @@ pub struct CompileSpecTreeOptions {
     pub modules_root: PathBuf,
     pub vendor_marks_path: PathBuf,
     pub ancillary_modules_path: Option<PathBuf>,
+    pub source_root: Option<PathBuf>,
     pub out_root: PathBuf,
     pub force: bool,
 }
@@ -100,6 +101,10 @@ struct ModuleSource {
 
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
     let config: AuthoringConfig = read_yaml(&options.config_path)?;
+    let source_root = options.source_root.as_deref();
+    let input_root = source_path(source_root, config.inputs.root);
+    let js_list_path = source_path(source_root, config.inputs.js_list_path);
+    let asset_summary_path = source_path(source_root, config.browser_harness.asset_summary_path);
     let layout = OutputLayout::new(options.out_root.clone());
     let (active_modules, deferred_members) =
         load_main_chunk_modules(&options.modules_root, &config.main_chunk_id)?;
@@ -111,8 +116,8 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
 
     Ok(TransformSpec {
         inputs: LoadJsChunksArgs {
-            input_root: config.inputs.root.clone(),
-            js_list_path: config.inputs.js_list_path.clone(),
+            input_root: input_root.clone(),
+            js_list_path,
         },
         vendor: vendor_map(read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks)?,
         logical_modules: logical_modules_map(module_sources)?,
@@ -133,12 +138,22 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         },
         write_js_tree: None,
         emit_browser_harness: Some(EmitBrowserHarnessConfig {
-            asset_summary_path: config.browser_harness.asset_summary_path,
+            asset_summary_path,
             out_dir: layout.app_root,
-            snapshot_root: config.inputs.root,
+            snapshot_root: input_root,
             force: options.force,
         }),
     })
+}
+
+fn source_path(source_root: Option<&Path>, path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else if let Some(root) = source_root {
+        root.join(path)
+    } else {
+        path
+    }
 }
 
 fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
@@ -427,6 +442,7 @@ browser_harness:
             modules_root: modules,
             vendor_marks_path: vendor_marks,
             ancillary_modules_path: Some(ancillary),
+            source_root: None,
             out_root: PathBuf::from("out/override"),
             force: true,
         }
@@ -460,6 +476,28 @@ browser_harness:
         assert_eq!(spec.vendor["static/vendor.js"].identity, "example");
         assert!(spec.materialize_logical_modules.force);
         assert!(spec.emit_browser_harness.unwrap().force);
+    }
+
+    #[test]
+    fn resolves_config_source_paths_against_source_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut options = fixture(temp.path());
+        options.source_root = Some(PathBuf::from("/execroot"));
+
+        let spec = compile_spec_tree(&options).unwrap();
+
+        assert_eq!(
+            spec.inputs.input_root,
+            Path::new("/execroot/snapshots/test")
+        );
+        assert_eq!(
+            spec.inputs.js_list_path,
+            Path::new("/execroot/extracted/js-files.txt")
+        );
+        assert_eq!(
+            spec.emit_browser_harness.unwrap().asset_summary_path,
+            Path::new("/execroot/extracted/asset-summary.json")
+        );
     }
 
     #[test]

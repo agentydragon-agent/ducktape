@@ -11,8 +11,8 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    ArtifactReferenceIndex, JsPipelineArtifact, get_chunk_entry_path, list_chunk_file_paths,
-    manifest_relative_path, path_from_module_path,
+    ArtifactReferenceIndex, JsFile, JsFileAstParts, JsPipelineArtifact, get_chunk_entry_path,
+    list_chunk_file_paths, manifest_relative_path, path_from_module_path,
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 use spec::{SwapMark, VendorLevel, VendorMark, VendorRole, WrapperShape};
@@ -61,6 +61,11 @@ pub struct RenameVendorExportsManifest {
     pub details: Vec<RenameVendorExportsDetail>,
 }
 
+pub struct RenameVendorExportsResult {
+    pub artifact: JsPipelineArtifact,
+    pub manifest: RenameVendorExportsManifest,
+}
+
 #[derive(Debug, Clone)]
 pub struct RenameVendorExportsCounts {
     pub considered: usize,
@@ -87,6 +92,11 @@ pub struct RenameVendorExportsCaller {
 pub struct VendorResolutionManifest {
     pub resolutions: BTreeMap<String, VendorResolution>,
     pub counts: VendorResolutionCounts,
+}
+
+pub struct SwapVendorChunksResult {
+    pub artifact: JsPipelineArtifact,
+    pub manifest: VendorResolutionManifest,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -160,9 +170,9 @@ pub fn apply_vendor_annotations(
 }
 
 pub fn rename_vendor_exports(
-    artifact: &mut JsPipelineArtifact,
+    mut artifact: JsPipelineArtifact,
     vendor: &BTreeMap<String, VendorMark>,
-) -> Result<RenameVendorExportsManifest> {
+) -> Result<RenameVendorExportsResult> {
     let mut ops = Vec::<RenameVendorExportOp>::new();
     let mut mappings = VendorExportMappings::new();
     let mut total_rewrites = 0usize;
@@ -177,7 +187,8 @@ pub fn rename_vendor_exports(
     }) {
         let chunk_path_owned = chunk_path.clone();
         let chunk_id = chunk_id_from_chunk_path(chunk_path, "rename_vendor_exports")?;
-        let vendor_entry_relative_file = get_chunk_entry_path(artifact, &chunk_id).with_context(|| {
+        let vendor_entry_relative_file =
+            get_chunk_entry_path(&artifact, &chunk_id).with_context(|| {
             format!(
                 "rename_vendor_exports vendor entry {chunk_path_owned} targets missing chunk (chunk_id={chunk_id})"
             )
@@ -187,7 +198,7 @@ pub fn rename_vendor_exports(
                 .chunks
                 .get(&chunk_id)
                 .and_then(|chunk| chunk.files.get(&vendor_entry_relative_file))
-                .and_then(|file| file.ast.as_ref())
+                .and_then(|file| file.ast())
                 .with_context(|| {
                     format!("rename_vendor_exports vendor chunk {chunk_id} is missing entry AST")
                 })?;
@@ -210,7 +221,7 @@ pub fn rename_vendor_exports(
 
     let mut caller_counts_by_target = BTreeMap::<(String, String), BTreeMap<String, usize>>::new();
     if !mappings.is_empty() {
-        let references = ArtifactReferenceIndex::build(artifact)?;
+        let references = ArtifactReferenceIndex::build(&artifact)?;
         let file_keys = artifact.list_js_file_keys();
         let mut jobs = Vec::new();
         for (caller_chunk_id, file_path) in file_keys {
@@ -218,20 +229,21 @@ pub fn rename_vendor_exports(
                 .chunks
                 .get(&caller_chunk_id)
                 .and_then(|chunk| chunk.files.get(&file_path))
-                .and_then(|file| file.ast.as_ref())
+                .and_then(|file| file.ast())
                 .is_some();
             if !has_ast {
                 continue;
             }
-            let ast = artifact
+            let (parts, ast) = artifact
                 .chunks
                 .get_mut(&caller_chunk_id)
-                .and_then(|chunk| chunk.files.get_mut(&file_path))
-                .and_then(|file| file.ast.take())
+                .and_then(|chunk| chunk.files.remove(&file_path))
+                .and_then(|file| file.into_ast_parts())
                 .with_context(|| format!("missing AST for {caller_chunk_id}/{file_path}"))?;
             jobs.push(VendorRenameFileJob {
                 caller_chunk_id,
                 file_path,
+                parts,
                 ast,
             });
         }
@@ -243,9 +255,12 @@ pub fn rename_vendor_exports(
             artifact
                 .chunks
                 .get_mut(&result.caller_chunk_id)
-                .and_then(|chunk| chunk.files.get_mut(&result.file_path))
-                .context("missing file while restoring AST")?
-                .ast = Some(result.ast);
+                .context("missing chunk while restoring AST")?
+                .files
+                .insert(
+                    result.file_path.clone(),
+                    JsFile::from_ast_parts(result.parts, result.ast),
+                );
             for (target, rewrites) in result.rewrites_by_target {
                 total_rewrites += rewrites;
                 caller_counts_by_target.entry(target).or_default().insert(
@@ -274,13 +289,16 @@ pub fn rename_vendor_exports(
         });
     }
 
-    Ok(RenameVendorExportsManifest {
-        counts: RenameVendorExportsCounts {
-            considered,
-            chunks_with_mapping,
-            rewrites: total_rewrites,
+    Ok(RenameVendorExportsResult {
+        artifact,
+        manifest: RenameVendorExportsManifest {
+            counts: RenameVendorExportsCounts {
+                considered,
+                chunks_with_mapping,
+                rewrites: total_rewrites,
+            },
+            details,
         },
-        details,
     })
 }
 
@@ -296,12 +314,14 @@ struct RenameVendorExportOp {
 struct VendorRenameFileJob {
     caller_chunk_id: String,
     file_path: String,
+    parts: JsFileAstParts,
     ast: ParsedJsModule,
 }
 
 struct VendorRenameFileResult {
     caller_chunk_id: String,
     file_path: String,
+    parts: JsFileAstParts,
     ast: ParsedJsModule,
     rewrites_by_target: BTreeMap<(String, String), usize>,
 }
@@ -322,6 +342,7 @@ fn rename_vendor_imports_in_file(
     VendorRenameFileResult {
         caller_chunk_id: job.caller_chunk_id,
         file_path: job.file_path,
+        parts: job.parts,
         ast: job.ast,
         rewrites_by_target: rewriter.rewrites_by_target,
     }
@@ -513,10 +534,10 @@ fn resolve_vendor_swap(
 }
 
 pub fn swap_vendor_chunks(
-    artifact: &mut JsPipelineArtifact,
+    mut artifact: JsPipelineArtifact,
     vendor: &BTreeMap<String, VendorMark>,
     options: SwapVendorOptions<'_>,
-) -> Result<VendorResolutionManifest> {
+) -> Result<SwapVendorChunksResult> {
     let ops: Vec<(&String, &VendorMark, &SwapMark)> = vendor
         .iter()
         .filter_map(|(chunk_path, mark)| match &mark.level {
@@ -524,12 +545,12 @@ pub fn swap_vendor_chunks(
             _ => None,
         })
         .collect();
-    let import_alignment_index = build_import_alignment_index(artifact)?;
+    let import_alignment_index = build_import_alignment_index(&artifact)?;
     let jobs = ops
         .iter()
         .map(|(chunk_path, _mark, swap)| {
         let chunk_id = chunk_id_from_chunk_path(chunk_path, "swap_vendor_chunks")?;
-        let entry_relative_file = get_chunk_entry_path(artifact, &chunk_id).with_context(|| {
+            let entry_relative_file = get_chunk_entry_path(&artifact, &chunk_id).with_context(|| {
             format!(
                 "swap_vendor_chunks vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_id})"
             )
@@ -538,7 +559,7 @@ pub fn swap_vendor_chunks(
             .chunks
             .get(&chunk_id)
             .and_then(|chunk| chunk.files.get(&entry_relative_file))
-            .and_then(|file| file.ast.as_ref())
+            .and_then(|file| file.ast())
             .with_context(|| {
                 format!("swap_vendor_chunks vendor chunk {chunk_id} is missing entry AST")
             })?;
@@ -569,16 +590,15 @@ pub fn swap_vendor_chunks(
     }
 
     let chunk_count = artifact.list_chunk_ids().len();
-    if let Some(root_manifest) = &mut artifact.root_manifest {
-        let removed = resolutions
-            .keys()
-            .map(|chunk_path| chunk_id_from_chunk_path(chunk_path, "swap_vendor_chunks"))
-            .collect::<Result<BTreeSet<_>>>()?;
-        root_manifest.counts.chunks = chunk_count;
-        root_manifest
-            .chunks
-            .retain(|chunk| !removed.contains(&chunk.chunk_id));
-    }
+    let removed = resolutions
+        .keys()
+        .map(|chunk_path| chunk_id_from_chunk_path(chunk_path, "swap_vendor_chunks"))
+        .collect::<Result<BTreeSet<_>>>()?;
+    artifact.root_manifest.counts.chunks = chunk_count;
+    artifact
+        .root_manifest
+        .chunks
+        .retain(|chunk| !removed.contains(&chunk.chunk_id));
 
     if options.write
         && let Some(output_manifest_path) = options.output_manifest_path
@@ -599,9 +619,12 @@ pub fn swap_vendor_chunks(
     }
 
     let swapped = resolutions.len();
-    Ok(VendorResolutionManifest {
-        resolutions,
-        counts: VendorResolutionCounts { swapped },
+    Ok(SwapVendorChunksResult {
+        artifact,
+        manifest: VendorResolutionManifest {
+            resolutions,
+            counts: VendorResolutionCounts { swapped },
+        },
     })
 }
 
@@ -724,11 +747,7 @@ fn build_import_alignment_index(
             continue;
         };
         for caller_file in list_chunk_file_paths(chunk) {
-            let Some(ast) = chunk
-                .files
-                .get(&caller_file)
-                .and_then(|file| file.ast.as_ref())
-            else {
+            let Some(ast) = chunk.files.get(&caller_file).and_then(|file| file.ast()) else {
                 continue;
             };
             for item in &ast.module.body {
@@ -1398,7 +1417,9 @@ export { b as beta };
             ),
         ]);
 
-        let manifest = rename_vendor_exports(&mut artifact, &vendor).unwrap();
+        let result = rename_vendor_exports(artifact, &vendor).unwrap();
+        let artifact = result.artifact;
+        let manifest = result.manifest;
 
         assert_eq!(manifest.counts.considered, 2);
         assert_eq!(manifest.counts.chunks_with_mapping, 2);
@@ -1444,8 +1465,7 @@ export { b as beta };
                     entry_file.clone(),
                     JsFile {
                         path: entry_file.clone(),
-                        content: Some(source.to_string()),
-                        ast: Some(
+                        body: artifact::JsFileBody::Ast(
                             parse_js_module(&format!("{chunk_id}/{entry_file}"), source).unwrap(),
                         ),
                         header_lines: Vec::new(),
@@ -1472,11 +1492,7 @@ export { b as beta };
         file: &str,
         source: &str,
     ) -> Vec<(String, String)> {
-        let module = &artifact.chunks[chunk_id].files[file]
-            .ast
-            .as_ref()
-            .unwrap()
-            .module;
+        let module = &artifact.chunks[chunk_id].files[file].ast().unwrap().module;
         module
             .body
             .iter()

@@ -64,6 +64,9 @@ pub struct TransformArgs {
     /// Optional path to ancillary logical-module source YAML.
     #[arg(long = "tree-ancillary-modules")]
     pub tree_ancillary_modules: Option<PathBuf>,
+    /// Root for source-relative paths embedded in the tree-shaped config YAML.
+    #[arg(long = "tree-source-root")]
+    pub tree_source_root: Option<PathBuf>,
     /// Output root used when compiling tree-shaped authoring sources.
     #[arg(long = "out-root")]
     pub out_root: Option<PathBuf>,
@@ -121,6 +124,10 @@ fn resolve_spec_source(
                 vendor_marks_path: resolve_runfiles_path(vendor_marks_path, runfiles),
                 ancillary_modules_path: args
                     .tree_ancillary_modules
+                    .clone()
+                    .map(|path| resolve_runfiles_path(path, runfiles)),
+                source_root: args
+                    .tree_source_root
                     .clone()
                     .map(|path| resolve_runfiles_path(path, runfiles)),
                 out_root: resolve_runfiles_path(out_root, runfiles),
@@ -282,14 +289,14 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             Ok(result)
         },
     )?;
-    let mut artifact = prepare_result.artifact;
     let mut steps = Vec::new();
 
-    run_step(
+    let rewrite_result = run_step_with_result(
         &mut steps,
         PipelineStage::RewriteChunkEntrySpecifiers,
-        || rewrite_chunk_entry_specifiers(&mut artifact).map(|_| ()),
+        || rewrite_chunk_entry_specifiers(prepare_result.artifact),
     )?;
+    let mut artifact = rewrite_result.artifact;
 
     // Vendor stages: each is internally filtered by `level`, so it's
     // safe to always invoke them when `vendor` carries any entries.
@@ -304,9 +311,11 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             .values()
             .any(|m| matches!(m.level, VendorLevel::BoundaryRename | VendorLevel::Swap(_)))
         {
-            run_step(&mut steps, PipelineStage::RenameVendorExports, || {
-                rename_vendor_exports(&mut artifact, &spec.vendor).map(|_| ())
-            })?;
+            let rename_result =
+                run_step_with_result(&mut steps, PipelineStage::RenameVendorExports, || {
+                    rename_vendor_exports(artifact, &spec.vendor)
+                })?;
+            artifact = rename_result.artifact;
         }
         if spec
             .vendor
@@ -318,20 +327,21 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 output_wrapper_dir,
                 write,
             } = spec.swap_vendor_chunks.clone();
-            run_step(&mut steps, PipelineStage::SwapVendorChunks, || {
-                swap_vendor_chunks(
-                    &mut artifact,
-                    &spec.vendor,
-                    SwapVendorOptions {
-                        package_roots: &cli.package_roots,
-                        packages_root: &cli.packages_root,
-                        output_manifest_path,
-                        output_wrapper_dir,
-                        write,
-                    },
-                )
-                .map(|_| ())
-            })?;
+            let swap_result =
+                run_step_with_result(&mut steps, PipelineStage::SwapVendorChunks, || {
+                    swap_vendor_chunks(
+                        artifact,
+                        &spec.vendor,
+                        SwapVendorOptions {
+                            package_roots: &cli.package_roots,
+                            packages_root: &cli.packages_root,
+                            output_manifest_path,
+                            output_wrapper_dir,
+                            write,
+                        },
+                    )
+                })?;
+            artifact = swap_result.artifact;
         }
     }
 
@@ -345,24 +355,25 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             target_dir,
         } = spec.materialize_logical_modules.clone();
         let force = force || cli.force;
-        run_step(&mut steps, PipelineStage::MaterializeLogicalModules, || {
-            materialize_logical_modules(
-                &mut artifact,
-                &spec.logical_modules,
-                &spec.residual_modules,
-                &spec.chunk_renames,
-                MaterializeLogicalModulesOptions {
-                    chunk_ids: materialise_chunk_ids,
-                    file,
-                    prune_other_chunks,
-                    force,
-                    report_out_dir,
-                    report_summary_path,
-                    target_dir,
-                },
-            )
-            .map(|_| ())
-        })?;
+        let materialize_result =
+            run_step_with_result(&mut steps, PipelineStage::MaterializeLogicalModules, || {
+                materialize_logical_modules(
+                    artifact,
+                    &spec.logical_modules,
+                    &spec.residual_modules,
+                    &spec.chunk_renames,
+                    MaterializeLogicalModulesOptions {
+                        chunk_ids: materialise_chunk_ids,
+                        file,
+                        prune_other_chunks,
+                        force,
+                        report_out_dir,
+                        report_summary_path,
+                        target_dir,
+                    },
+                )
+            })?;
+        artifact = materialize_result.artifact;
     }
 
     if let Some(cfg) = &spec.write_js_tree {
@@ -460,7 +471,7 @@ enum AstParseReason {
 
 fn build_ast_parse_plan(
     spec: &TransformSpec,
-    artifact: &artifact::JsPipelineArtifact,
+    artifact: &artifact::LoadedJsChunks,
     materialise_chunk_ids: &[String],
 ) -> AstParsePlan {
     let vendor_needs_graph_ast = spec
@@ -490,8 +501,8 @@ fn build_ast_parse_plan(
                     source_bytes: chunk
                         .files
                         .values()
-                        .filter_map(|file| file.content.as_ref())
-                        .map(String::len)
+                        .filter_map(|file| file.source())
+                        .map(str::len)
                         .sum(),
                     reasons: BTreeSet::new(),
                 },
@@ -573,7 +584,7 @@ fn add_parse_reason(
 }
 
 fn vendor_caller_reasons(
-    artifact: &artifact::JsPipelineArtifact,
+    artifact: &artifact::LoadedJsChunks,
     vendor_source_paths: &[(String, String, AstParseReason)],
 ) -> Vec<(String, AstParseReason)> {
     let mut out = Vec::new();
@@ -588,7 +599,7 @@ fn vendor_caller_reasons(
             .unwrap_or(caller_chunk_id.as_str());
         let caller_source_dir = module_path_dirname(caller_source_path);
         for file in chunk.files.values() {
-            let Some(content) = file.content.as_deref() else {
+            let Some(content) = file.source() else {
                 continue;
             };
             let mut matched = false;
@@ -888,6 +899,8 @@ mod tests {
             "vendor_marks.yaml",
             "--tree-ancillary-modules",
             "ancillary.yaml",
+            "--tree-source-root",
+            "/workspace",
             "--out-root",
             "out",
         ])
@@ -900,6 +913,7 @@ mod tests {
                 modules_root: PathBuf::from("modules"),
                 vendor_marks_path: PathBuf::from("vendor_marks.yaml"),
                 ancillary_modules_path: Some(PathBuf::from("ancillary.yaml")),
+                source_root: Some(PathBuf::from("/workspace")),
                 out_root: PathBuf::from("out"),
                 force: false,
             })
@@ -1324,8 +1338,8 @@ mod tests {
 
     fn artifact_with_chunks<const N: usize>(
         chunks: [(&str, &str, &str); N],
-    ) -> artifact::JsPipelineArtifact {
-        let mut artifact = artifact::JsPipelineArtifact::default();
+    ) -> artifact::LoadedJsChunks {
+        let mut artifact = artifact::LoadedJsChunks::default();
         for (chunk_id, source_path, content) in chunks {
             artifact.chunk_order.push(chunk_id.to_string());
             artifact.chunks.insert(
@@ -1336,8 +1350,7 @@ mod tests {
                         "entry.js".to_string(),
                         artifact::JsFile {
                             path: "entry.js".to_string(),
-                            content: Some(content.to_string()),
-                            ast: None,
+                            body: artifact::JsFileBody::Source(content.to_string()),
                             header_lines: Vec::new(),
                             metadata: artifact::FileMetadata {
                                 chunk_id: Some(chunk_id.to_string()),

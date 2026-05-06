@@ -6,14 +6,19 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    ArtifactReferenceIndex, FileRole, JsFile, JsPipelineArtifact, get_chunk_entry_path,
-    join_module_path, module_path_dirname, relative_module_path,
+    ArtifactReferenceIndex, FileRole, JsFile, JsFileAstParts, JsPipelineArtifact,
+    get_chunk_entry_path, join_module_path, module_path_dirname, relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 
 #[derive(Debug, Clone)]
 pub struct RewriteChunkEntrySpecifiersManifest {
     pub counts: RewriteCounts,
+}
+
+pub struct RewriteChunkEntrySpecifiersResult {
+    pub artifact: JsPipelineArtifact,
+    pub manifest: RewriteChunkEntrySpecifiersManifest,
 }
 
 #[derive(Debug, Clone)]
@@ -24,9 +29,9 @@ pub struct RewriteCounts {
 }
 
 pub fn rewrite_chunk_entry_specifiers(
-    artifact: &mut JsPipelineArtifact,
-) -> Result<RewriteChunkEntrySpecifiersManifest> {
-    let references = ArtifactReferenceIndex::build(artifact)?;
+    mut artifact: JsPipelineArtifact,
+) -> Result<RewriteChunkEntrySpecifiersResult> {
+    let references = ArtifactReferenceIndex::build(&artifact)?;
     let mut jobs = Vec::new();
     let chunk_ids = artifact.list_chunk_ids();
 
@@ -46,22 +51,22 @@ pub fn rewrite_chunk_entry_specifiers(
             ) {
                 continue;
             }
-            let ast = {
+            let (parts, ast) = {
                 let chunk = artifact
                     .chunks
                     .get_mut(&chunk_id)
                     .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
                 let file = chunk
                     .files
-                    .get_mut(&file_path)
+                    .remove(&file_path)
                     .with_context(|| format!("missing artifact file {chunk_id}/{file_path}"))?;
-                file.ast
-                    .take()
+                file.into_ast_parts()
                     .with_context(|| format!("artifact file has no AST: {chunk_id}/{file_path}"))?
             };
             jobs.push(RewriteFileJob {
                 chunk_id: chunk_id.clone(),
                 file_path,
+                parts,
                 ast,
             });
         }
@@ -79,24 +84,24 @@ pub fn rewrite_chunk_entry_specifiers(
             .chunks
             .get_mut(&result.chunk_id)
             .with_context(|| format!("missing artifact chunk {}", result.chunk_id))?;
-        let file = chunk.files.get_mut(&result.file_path).with_context(|| {
-            format!(
-                "missing artifact file {}/{}",
-                result.chunk_id, result.file_path
-            )
-        })?;
-        file.ast = Some(result.ast);
+        chunk.files.insert(
+            result.file_path.clone(),
+            JsFile::from_ast_parts(result.parts, result.ast),
+        );
         if result.rewrites > 0 {
             rewritten_files += 1;
             rewritten_specifiers += result.rewrites;
         }
     }
 
-    Ok(RewriteChunkEntrySpecifiersManifest {
-        counts: RewriteCounts {
-            traversed_files,
-            files: rewritten_files,
-            rewrites: rewritten_specifiers,
+    Ok(RewriteChunkEntrySpecifiersResult {
+        artifact,
+        manifest: RewriteChunkEntrySpecifiersManifest {
+            counts: RewriteCounts {
+                traversed_files,
+                files: rewritten_files,
+                rewrites: rewritten_specifiers,
+            },
         },
     })
 }
@@ -104,12 +109,14 @@ pub fn rewrite_chunk_entry_specifiers(
 struct RewriteFileJob {
     chunk_id: String,
     file_path: String,
+    parts: JsFileAstParts,
     ast: ParsedJsModule,
 }
 
 struct RewriteFileResult {
     chunk_id: String,
     file_path: String,
+    parts: JsFileAstParts,
     ast: ParsedJsModule,
     rewrites: usize,
 }
@@ -126,6 +133,7 @@ fn rewrite_file(mut job: RewriteFileJob, references: &ArtifactReferenceIndex) ->
     RewriteFileResult {
         chunk_id: job.chunk_id,
         file_path: job.file_path,
+        parts: job.parts,
         ast: job.ast,
         rewrites,
     }
@@ -149,7 +157,7 @@ pub fn runtime_js_href(
 }
 
 fn should_rewrite_file(file: &JsFile) -> bool {
-    if file.ast.is_none() {
+    if !file.is_ast() {
         return false;
     }
     if file.metadata.role == Some(FileRole::Module)

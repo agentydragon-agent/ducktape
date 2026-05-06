@@ -8,7 +8,7 @@ use serde::Serialize;
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, CANONICAL_CHUNK_ENTRY_FILE, ChunkCounts,
     ChunkFileRecord, ChunkManifest, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
-    JsPipelineArtifact, ParsedJsFileRecord, ParserOptionsRecord,
+    JsFileBody, JsPipelineArtifact, LoadedJsChunks, ParsedJsFileRecord, ParserOptionsRecord,
 };
 use js_ast::{ParsedJsModule, parse_js_module};
 use program_analysis::{
@@ -43,14 +43,14 @@ pub struct ParsedJsFilesCounts {
 }
 
 pub fn prepare_js_chunks(
-    mut artifact: JsPipelineArtifact,
+    mut loaded: LoadedJsChunks,
     options: PrepareJsChunksOptions<'_>,
 ) -> Result<PrepareJsChunksResult> {
-    let chunk_ids = artifact.list_chunk_ids();
+    let chunk_ids = loaded.list_chunk_ids();
     let jobs = chunk_ids
         .iter()
         .map(|chunk_id| {
-            let chunk = artifact
+            let chunk = loaded
                 .chunks
                 .remove(chunk_id)
                 .with_context(|| format!("prepare_js_chunks missing ordered chunk: {chunk_id}"))?;
@@ -103,7 +103,7 @@ pub fn prepare_js_chunks(
         )?;
 
     let manifest = build_artifact_manifest(&chunk_manifests);
-    next.root_manifest = Some(manifest.clone());
+    next.root_manifest = manifest.clone();
     Ok(PrepareJsChunksResult {
         artifact: next,
         manifest,
@@ -144,23 +144,13 @@ fn prepare_chunk(job: PrepareChunkJob) -> Result<PreparedChunk> {
         .clone()
         .unwrap_or_else(|| format!("{chunk_id}.js"));
     let entry_file = chunk.entry_file.clone();
-    let mut entry_artifact_file = chunk.files.remove(&entry_file).with_context(|| {
+    let entry_artifact_file = chunk.files.remove(&entry_file).with_context(|| {
         format!("prepare_js_chunks requires entry file for chunk: {chunk_id}/{entry_file}")
     })?;
     let (manifest, prepared_file, prepared_entry_file, parsed_files) = if should_parse {
-        prepare_parsed_entry(
-            &chunk_id,
-            &entry_file,
-            &source_path,
-            &mut entry_artifact_file,
-        )?
+        prepare_parsed_entry(&chunk_id, &entry_file, &source_path, entry_artifact_file)?
     } else {
-        prepare_unparsed_entry(
-            &chunk_id,
-            &entry_file,
-            &source_path,
-            &mut entry_artifact_file,
-        )?
+        prepare_unparsed_entry(&chunk_id, &entry_file, &source_path, entry_artifact_file)?
     };
     let mut files = BTreeMap::new();
     files.insert(prepared_entry_file.clone(), prepared_file);
@@ -181,9 +171,9 @@ fn prepare_parsed_entry(
     chunk_id: &str,
     entry_file: &str,
     source_path: &str,
-    entry_artifact_file: &mut JsFile,
+    entry_artifact_file: JsFile,
 ) -> Result<(ChunkManifest, JsFile, String, Vec<ParsedJsFileRecord>)> {
-    let content = entry_artifact_file.content.take().with_context(|| {
+    let content = entry_artifact_file.into_source().with_context(|| {
         format!("prepare_js_chunks requires content for parsed chunk: {chunk_id}/{entry_file}")
     })?;
     let source_bytes = content.len();
@@ -217,17 +207,16 @@ fn prepare_unparsed_entry(
     chunk_id: &str,
     entry_file: &str,
     source_path: &str,
-    entry_artifact_file: &mut JsFile,
+    entry_artifact_file: JsFile,
 ) -> Result<(ChunkManifest, JsFile, String, Vec<ParsedJsFileRecord>)> {
-    let content = entry_artifact_file.content.take().with_context(|| {
+    let content = entry_artifact_file.into_source().with_context(|| {
         format!("prepare_js_chunks requires content for unparsed chunk: {chunk_id}/{entry_file}")
     })?;
     Ok((
         build_unparsed_chunk_manifest(chunk_id, entry_file, source_path),
         JsFile {
             path: entry_file.to_string(),
-            content: Some(content),
-            ast: None,
+            body: JsFileBody::Source(content),
             header_lines: Vec::new(),
             metadata: FileMetadata {
                 chunk_id: Some(chunk_id.to_string()),
@@ -254,8 +243,7 @@ fn build_parsed_chunk_manifest(
 fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModule) -> JsFile {
     JsFile {
         path: CANONICAL_CHUNK_ENTRY_FILE.to_string(),
-        content: None,
-        ast: Some(parsed),
+        body: JsFileBody::Ast(parsed),
         header_lines: CANONICALIZE_HEADER_LINES
             .iter()
             .map(|line| (*line).to_string())

@@ -14,6 +14,7 @@ _TREE_SOURCE_PATH_FLAGS = {
     "--tree-ancillary-modules": True,
     "--tree-config": True,
     "--tree-modules": True,
+    "--tree-source-root": True,
     "--tree-vendor-marks": True,
 }
 
@@ -31,6 +32,7 @@ def _debundle_pipeline_impl(ctx):
         debundler_args.extend(["--spec", ctx.file.spec.path])
     else:
         debundler_args.extend(ctx.attr.spec_tree_args)
+        debundler_args.extend(["--tree-source-root", "."])
         debundler_args.extend(["--out-root", out_dir.short_path])
 
     if ctx.attr.force:

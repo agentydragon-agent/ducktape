@@ -61,17 +61,15 @@ pub fn write_js_tree(
     // its manifest-relative path on the root manifest.
     let queue = compute_scrambled_identifier_frequencies(artifact)?;
     let queue_path = write_queue(out_dir, &queue)?;
-    if let Some(root_manifest) = &artifact.root_manifest {
-        let manifest_path = out_dir.join("manifest.json");
-        let mut root_manifest = root_manifest.clone();
-        root_manifest.scrambled_identifier_frequencies =
-            Some(manifest_relative_path(&manifest_path, &queue_path));
-        root_manifest.output_metrics = Some(output_metrics.clone());
-        fs::write(
-            &manifest_path,
-            serde_json::to_string_pretty(&root_manifest)? + "\n",
-        )?;
-    }
+    let manifest_path = out_dir.join("manifest.json");
+    let mut root_manifest = artifact.root_manifest.clone();
+    root_manifest.scrambled_identifier_frequencies =
+        Some(manifest_relative_path(&manifest_path, &queue_path));
+    root_manifest.output_metrics = Some(output_metrics.clone());
+    fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&root_manifest)? + "\n",
+    )?;
     fs::write(
         out_dir.join("package.json"),
         serde_json::to_string_pretty(&PackageManifest {

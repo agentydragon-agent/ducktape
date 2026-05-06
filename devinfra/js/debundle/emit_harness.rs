@@ -100,14 +100,10 @@ pub fn emit_browser_harness(
 
     fs::write(options.out_dir.join("index.html"), index_html)?;
     fs::write(options.out_dir.join("bootstrap.js"), bootstrap)?;
-    let root_manifest = artifact
-        .root_manifest
-        .as_ref()
-        .context("emitBrowserHarness requires artifact manifest")?;
     fs::write(
         options.out_dir.join("chunks.manifest.json"),
         serde_json::to_string_pretty(&ChunksManifest {
-            chunks: &root_manifest.chunks,
+            chunks: &artifact.root_manifest.chunks,
         })? + "\n",
     )?;
     // Make the harness tree self-contained: copy the upstream source HTML
