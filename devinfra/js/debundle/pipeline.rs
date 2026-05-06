@@ -25,6 +25,7 @@ pub struct TransformCli {
     pub spec_path: PathBuf,
     pub package_roots: HashMap<String, PathBuf>,
     pub packages_root: Option<PathBuf>,
+    pub force: bool,
 }
 
 /// Command-line arguments for the debundle transform pipeline.
@@ -50,6 +51,9 @@ pub struct TransformArgs {
     /// Root directory containing per-package sources (alternative to repeated --package-root).
     #[arg(long)]
     pub packages_root: Option<PathBuf>,
+    /// Replace existing output directories for stages that write output trees.
+    #[arg(long)]
+    pub force: bool,
 }
 
 impl TransformArgs {
@@ -67,6 +71,7 @@ impl TransformArgs {
             packages_root: self
                 .packages_root
                 .map(|dir| resolve_runfiles_path(dir, runfiles.as_ref())),
+            force: self.force,
         }
     }
 }
@@ -276,6 +281,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             report_summary_path,
             target_dir,
         } = spec.materialize_logical_modules.clone();
+        let force = force || cli.force;
         run_step(&mut steps, PipelineStage::MaterializeLogicalModules, || {
             materialize_logical_modules(
                 &mut artifact,
@@ -298,16 +304,17 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
 
     if let Some(cfg) = &spec.write_js_tree {
         let out_dir = cfg.out_dir.clone();
-        let force = cfg.force;
+        let force = cfg.force || cli.force;
         run_step(&mut steps, PipelineStage::WriteJsTree, || {
             write_js_tree(&artifact, &out_dir, force).map(|_| ())
         })?;
     }
 
     if let Some(cfg) = &spec.emit_browser_harness {
+        let force = cfg.force || cli.force;
         let opts = EmitBrowserHarnessOptions {
             asset_summary_path: cfg.asset_summary_path.clone(),
-            force: cfg.force,
+            force,
             out_dir: cfg.out_dir.clone(),
             parse_plan_path: parse_plan_report_path.clone(),
             snapshot_root: cfg.snapshot_root.clone(),
@@ -774,6 +781,7 @@ mod tests {
             "pkg=/tmp/pkg",
             "--packages-root",
             "/tmp/packages",
+            "--force",
         ])
         .expect("parse cli");
         let cli = args.resolve();
@@ -783,6 +791,7 @@ mod tests {
             Some(&PathBuf::from("/tmp/pkg"))
         );
         assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
+        assert!(cli.force);
     }
 
     #[test]
@@ -934,6 +943,7 @@ mod tests {
             spec_path,
             package_roots: HashMap::new(),
             packages_root: None,
+            force: false,
         })?;
 
         assert_eq!(summary.steps.len(), 2);
@@ -1089,6 +1099,84 @@ mod tests {
                         .and_then(serde_json::Value::as_u64)
                         .is_some())
         );
+        Ok(())
+    }
+
+    #[test]
+    fn cli_force_overrides_output_stage_force_flags() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let snapshot = root.join("snapshot");
+        let extracted = root.join("extracted");
+        let js_out = root.join("js-out");
+        let harness_out = root.join("harness-out");
+        fs::create_dir_all(snapshot.join("static"))?;
+        fs::create_dir_all(&extracted)?;
+        fs::create_dir_all(&js_out)?;
+        fs::create_dir_all(&harness_out)?;
+        fs::write(js_out.join("stale.txt"), "old")?;
+        fs::write(harness_out.join("stale.txt"), "old")?;
+        fs::write(
+            snapshot.join("index.html"),
+            r#"<!doctype html>
+<script type="module" src="./static/index.js"></script>
+"#,
+        )?;
+        fs::write(
+            snapshot.join("static/index.js"),
+            "globalThis.__value = 1;\n",
+        )?;
+        let js_list_path = extracted.join("js-files.txt");
+        fs::write(&js_list_path, "static/index.js\n")?;
+        let asset_summary_path = extracted.join("asset-summary.json");
+        fs::write(
+            &asset_summary_path,
+            serde_json::to_string(&AssetSummaryFixture {
+                entry_points: AssetSummaryEntryPoints { html: "index.html" },
+            })?,
+        )?;
+
+        let mut spec = empty_transform_spec();
+        spec.inputs = spec::LoadJsChunksArgs {
+            input_root: snapshot.clone(),
+            js_list_path,
+        };
+        spec.write_js_tree = Some(spec::WriteJsTreeConfig {
+            out_dir: js_out.clone(),
+            force: false,
+        });
+        spec.emit_browser_harness = Some(spec::EmitBrowserHarnessConfig {
+            asset_summary_path,
+            out_dir: harness_out.clone(),
+            snapshot_root: snapshot,
+            force: false,
+        });
+        let spec_path = root.join("transform-spec.yaml");
+        fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
+
+        let summary = run_transform_cli(&TransformCli {
+            spec_path,
+            package_roots: HashMap::new(),
+            packages_root: None,
+            force: true,
+        })?;
+
+        assert!(
+            summary
+                .steps
+                .iter()
+                .any(|step| matches!(step.stage, PipelineStage::WriteJsTree))
+        );
+        assert!(
+            summary
+                .steps
+                .iter()
+                .any(|step| matches!(step.stage, PipelineStage::EmitBrowserHarness))
+        );
+        assert!(!js_out.join("stale.txt").exists());
+        assert!(!harness_out.join("stale.txt").exists());
+        assert!(js_out.join("static/index/entry.js").exists());
+        assert!(harness_out.join("bootstrap.js").exists());
         Ok(())
     }
 

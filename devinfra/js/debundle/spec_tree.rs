@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,42 +17,29 @@ pub struct CompileSpecTreeOptions {
     pub modules_root: PathBuf,
     pub vendor_marks_path: PathBuf,
     pub ancillary_modules_path: Option<PathBuf>,
-    pub out_root: Option<PathBuf>,
+    pub out_root: PathBuf,
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AuthoringConfig {
-    #[serde(default, rename = "ui_version")]
-    _ui_version: Option<String>,
-    default_out_root: PathBuf,
     main_chunk_id: String,
-    source_roots: SourceRoots,
-    logical_modules: LogicalModulesPolicy,
+    inputs: AuthoringInputs,
     browser_harness: BrowserHarnessPolicy,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SourceRoots {
-    asset_summary_path: PathBuf,
+struct AuthoringInputs {
+    root: PathBuf,
     js_list_path: PathBuf,
-    snapshot_root: PathBuf,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LogicalModulesPolicy {
-    chunk_ids: BTreeSet<String>,
-    force: bool,
-    #[serde(default)]
-    target_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BrowserHarnessPolicy {
-    force: bool,
+    asset_summary_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -99,10 +86,6 @@ struct AncillaryModulesFile {
 #[serde(deny_unknown_fields)]
 struct ModuleFile {
     #[serde(default)]
-    chunk_id: Option<String>,
-    #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
     members: Vec<Member>,
 }
 
@@ -117,11 +100,7 @@ struct ModuleSource {
 
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
     let config: AuthoringConfig = read_yaml(&options.config_path)?;
-    let out_root = options
-        .out_root
-        .clone()
-        .unwrap_or_else(|| config.default_out_root.clone());
-    let layout = OutputLayout::new(out_root);
+    let layout = OutputLayout::new(options.out_root.clone());
     let (active_modules, deferred_members) =
         load_main_chunk_modules(&options.modules_root, &config.main_chunk_id)?;
     let mut module_sources = active_modules;
@@ -132,11 +111,11 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
 
     Ok(TransformSpec {
         inputs: LoadJsChunksArgs {
-            input_root: config.source_roots.snapshot_root.clone(),
-            js_list_path: config.source_roots.js_list_path.clone(),
+            input_root: config.inputs.root.clone(),
+            js_list_path: config.inputs.js_list_path.clone(),
         },
         vendor: vendor_map(read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks)?,
-        logical_modules: logical_modules_map(module_sources, &config.logical_modules.chunk_ids),
+        logical_modules: logical_modules_map(module_sources)?,
         residual_modules: BTreeMap::new(),
         chunk_renames: chunk_renames_map(&config.main_chunk_id, deferred_members),
         swap_vendor_chunks: SwapVendorChunksConfig {
@@ -147,21 +126,17 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         materialize_logical_modules: MaterializeLogicalModulesConfig {
             file: None,
             prune_other_chunks: false,
-            force: config.logical_modules.force,
+            force: options.force,
             report_out_dir: Some(layout.reports_root.clone()),
             report_summary_path: Some(layout.reports_root.join("summary.json")),
-            target_dir: config
-                .logical_modules
-                .target_dir
-                .clone()
-                .unwrap_or_default(),
+            target_dir: String::new(),
         },
         write_js_tree: None,
         emit_browser_harness: Some(EmitBrowserHarnessConfig {
-            asset_summary_path: config.source_roots.asset_summary_path,
+            asset_summary_path: config.browser_harness.asset_summary_path,
             out_dir: layout.app_root,
-            snapshot_root: config.source_roots.snapshot_root,
-            force: config.browser_harness.force,
+            snapshot_root: config.inputs.root,
+            force: options.force,
         }),
     })
 }
@@ -170,12 +145,9 @@ pub fn write_compiled_spec(spec: &TransformSpec, out_path: &Path) -> Result<()> 
     if let Some(parent) = out_path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
-    let body = serde_yaml::to_string(spec).context("serializing transform spec")?;
-    fs::write(
-        out_path,
-        format!("# Generated transform spec. Edit the versioned YAML sources instead.\n{body}"),
-    )
-    .with_context(|| format!("writing {}", out_path.display()))
+    let file =
+        fs::File::create(out_path).with_context(|| format!("writing {}", out_path.display()))?;
+    serde_yaml::to_writer(file, spec).context("serializing transform spec")
 }
 
 fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
@@ -228,8 +200,8 @@ fn load_main_chunk_modules(
             deferred_members.extend(data.members);
         } else {
             active.push(ModuleSource {
-                chunk_id: data.chunk_id.unwrap_or_else(|| main_chunk_id.to_string()),
-                path: data.path.unwrap_or(module_path),
+                chunk_id: main_chunk_id.to_string(),
+                path: module_path,
                 members: data.members,
             });
         }
@@ -315,23 +287,27 @@ impl VendorMarkSource {
 
 fn logical_modules_map(
     sources: Vec<ModuleSource>,
-    allowed_chunk_ids: &BTreeSet<String>,
-) -> BTreeMap<String, BTreeMap<String, LogicalModule>> {
+) -> Result<BTreeMap<String, BTreeMap<String, LogicalModule>>> {
     let mut out = BTreeMap::new();
     for source in sources {
-        if !allowed_chunk_ids.contains(&source.chunk_id) {
-            continue;
-        }
-        out.entry(source.chunk_id)
+        let previous = out
+            .entry(source.chunk_id.clone())
             .or_insert_with(BTreeMap::new)
             .insert(
-                source.path,
+                source.path.clone(),
                 LogicalModule {
                     members: source.members,
                 },
             );
+        if previous.is_some() {
+            bail!(
+                "duplicate logical module for chunk {} path {}",
+                source.chunk_id,
+                source.path
+            );
+        }
     }
-    out
+    Ok(out)
 }
 
 fn chunk_renames_map(
@@ -393,21 +369,12 @@ mod tests {
         let ancillary = root.join("sources/logical/ancillary_chunk_modules.yaml");
         write_file(
             &config,
-            r#"ui_version: test
-default_out_root: out/default
-main_chunk_id: static/main
-source_roots:
-  asset_summary_path: extracted/asset-summary.json
+            r#"main_chunk_id: static/main
+inputs:
+  root: snapshots/test
   js_list_path: extracted/js-files.txt
-  snapshot_root: snapshots/test
-logical_modules:
-  chunk_ids:
-    - static/main
-    - static/extra
-  force: true
-  target_dir:
 browser_harness:
-  force: true
+  asset_summary_path: extracted/asset-summary.json
 "#,
         );
         write_file(
@@ -425,8 +392,7 @@ browser_harness:
         );
         write_file(
             &modules.join("ui/active.yaml"),
-            r#"path: ui/active
-members:
+            r#"members:
   - name: No
     selector:
       binding:
@@ -455,10 +421,10 @@ members:
           binding:
             name: e
             kind: import_specifier
-  - chunk_id: static/skipped
-    path: chunks/skipped
+  - chunk_id: static/other
+    path: chunks/other
     members:
-      - name: SkippedThing
+      - name: OtherThing
         selector:
           binding:
             name: s
@@ -470,7 +436,53 @@ members:
             modules_root: modules,
             vendor_marks_path: vendor_marks,
             ancillary_modules_path: Some(ancillary),
-            out_root: Some(PathBuf::from("out/override")),
+            out_root: PathBuf::from("out/override"),
+            force: true,
+        }
+    }
+
+    fn legacy_fixture(root: &Path) -> CompileSpecTreeOptions {
+        let config = root.join("spec_config.yaml");
+        let modules = root.join("modules");
+        let vendor_marks = root.join("sources/vendor/vendor_marks.yaml");
+        write_file(
+            &config,
+            r#"default_out_root: out/default
+main_chunk_id: static/main
+source_roots:
+  asset_summary_path: extracted/asset-summary.json
+  js_list_path: extracted/js-files.txt
+  snapshot_root: snapshots/test
+logical_modules:
+  chunk_ids:
+    - static/main
+    - static/extra
+  force: true
+  target_dir:
+browser_harness:
+  force: true
+"#,
+        );
+        write_file(
+            &vendor_marks,
+            r#"vendor_marks:
+  - level: swap
+    chunk_path: static/vendor.js
+    identity: example
+    role: worker
+    package: pkg
+    version: 1.2.3
+    subpath: dist/index.js
+    wrapper_shape: named_from_module_default
+"#,
+        );
+        CompileSpecTreeOptions {
+            config_path: config,
+            modules_root: modules,
+            vendor_marks_path: vendor_marks,
+            ancillary_modules_path: None,
+            out_root: PathBuf::from("out/override"),
+            force: true,
         }
     }
 
@@ -481,7 +493,7 @@ members:
 
         assert!(spec.logical_modules["static/main"].contains_key("ui/active"));
         assert!(spec.logical_modules["static/extra"].contains_key("chunks/extra"));
-        assert!(!spec.logical_modules.contains_key("static/skipped"));
+        assert!(spec.logical_modules["static/other"].contains_key("chunks/other"));
         assert_eq!(
             spec.logical_modules["static/main"]["ui/active"].members[0]
                 .name
@@ -500,6 +512,8 @@ members:
             Path::new("out/override/vendors/manifest.json")
         );
         assert_eq!(spec.vendor["static/vendor.js"].identity, "example");
+        assert!(spec.materialize_logical_modules.force);
+        assert!(spec.emit_browser_harness.unwrap().force);
     }
 
     #[test]
@@ -546,15 +560,59 @@ members:
     }
 
     #[test]
-    fn rejects_explicit_module_target_file() {
+    fn rejects_explicit_module_path() {
         let temp = tempfile::tempdir().unwrap();
         let options = fixture(temp.path());
         write_file(
             &options.modules_root.join("active.yaml"),
-            r#"target_file: modules/active.js
+            r#"path: active
 members: []
 "#,
         );
+
+        let error = compile_spec_tree(&options).unwrap_err();
+        assert!(format!("{error:#}").contains("unknown field"), "{error:#}");
+    }
+
+    #[test]
+    fn rejects_explicit_module_chunk_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let options = fixture(temp.path());
+        write_file(
+            &options.modules_root.join("active.yaml"),
+            r#"chunk_id: static/other
+members: []
+"#,
+        );
+
+        let error = compile_spec_tree(&options).unwrap_err();
+        assert!(format!("{error:#}").contains("unknown field"), "{error:#}");
+    }
+
+    #[test]
+    fn rejects_duplicate_logical_module_ownership() {
+        let temp = tempfile::tempdir().unwrap();
+        let options = fixture(temp.path());
+        write_file(
+            options.ancillary_modules_path.as_ref().unwrap(),
+            r#"modules:
+  - chunk_id: static/main
+    path: ui/active
+    members: []
+"#,
+        );
+
+        let error = compile_spec_tree(&options).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("duplicate logical module"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn rejects_retired_authoring_config_fields() {
+        let temp = tempfile::tempdir().unwrap();
+        let options = legacy_fixture(temp.path());
 
         let error = compile_spec_tree(&options).unwrap_err();
         assert!(format!("{error:#}").contains("unknown field"), "{error:#}");

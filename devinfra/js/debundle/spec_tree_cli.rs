@@ -22,7 +22,9 @@ struct Args {
     #[arg(long)]
     out: PathBuf,
     #[arg(long = "out-root")]
-    out_root: Option<PathBuf>,
+    out_root: PathBuf,
+    #[arg(long)]
+    force: bool,
 }
 
 fn main() -> ExitCode {
@@ -43,6 +45,7 @@ fn real_main() -> anyhow::Result<()> {
         vendor_marks_path: args.vendor_marks,
         ancillary_modules_path: args.ancillary_modules,
         out_root: args.out_root,
+        force: args.force,
     })?;
     write_compiled_spec(&spec, &resolve_output_path(args.out))
 }

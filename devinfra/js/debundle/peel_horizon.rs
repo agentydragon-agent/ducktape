@@ -97,8 +97,6 @@ struct DeferredModule {
 #[serde(deny_unknown_fields)]
 struct ModuleFile {
     #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
     members: Vec<Member>,
 }
 
@@ -286,9 +284,7 @@ fn parse_module_file(
         &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
     )
     .with_context(|| format!("parsing {}", path.display()))?;
-    let module_path = data
-        .path
-        .unwrap_or_else(|| module_path_from_file(path, root, is_deferred));
+    let module_path = module_path_from_file(path, root, is_deferred);
 
     let mut bindings = BTreeSet::new();
     let mut owners = BTreeSet::new();
@@ -620,8 +616,8 @@ mod tests {
         )
     }
 
-    fn module_yaml(path: &str, members: &[(&str, &str)]) -> String {
-        let mut out = format!("path: {path}\nmembers:\n");
+    fn module_yaml(members: &[(&str, &str)]) -> String {
+        let mut out = "members:\n".to_string();
         for (binding, kind) in members {
             out.push_str(&member_yaml(binding, kind));
         }
@@ -717,23 +713,23 @@ mod tests {
         graph_fixture(&graph);
         write_file(
             &modules.join("direct.yaml.deferred"),
-            &module_yaml("direct", &[("a", "variable_declarator")]),
+            &module_yaml(&[("a", "variable_declarator")]),
         );
         write_file(
             &modules.join("needs_companion.yaml.deferred"),
-            &module_yaml("needs_companion", &[("b", "variable_declarator")]),
+            &module_yaml(&[("b", "variable_declarator")]),
         );
         write_file(
             &modules.join("support.yaml"),
-            &module_yaml("support", &[("c", "variable_declarator")]),
+            &module_yaml(&[("c", "variable_declarator")]),
         );
         write_file(
             &modules.join("near.yaml.deferred"),
-            &module_yaml("near", &[("d", "variable_declarator")]),
+            &module_yaml(&[("d", "variable_declarator")]),
         );
         write_file(
             &modules.join("import_only.yaml.deferred"),
-            &module_yaml("import_only", &[("imported", "import_specifier")]),
+            &module_yaml(&[("imported", "import_specifier")]),
         );
 
         let report = analyze_peel_horizon(&options(&modules, &graph)).unwrap();
@@ -772,7 +768,7 @@ mod tests {
         graph_fixture(&graph);
         write_file(
             &modules.join("legacy.yaml.deferred"),
-            &module_yaml("legacy", &[("a", "VariableDeclarator")]),
+            &module_yaml(&[("a", "VariableDeclarator")]),
         );
 
         let error = analyze_peel_horizon(&options(&modules, &graph)).unwrap_err();
@@ -809,21 +805,15 @@ mod tests {
         fs::write(&graph_path, serde_json::to_string(&graph).unwrap()).unwrap();
         write_file(
             &modules.join("needs_companion.yaml.deferred"),
-            &module_yaml(
-                "needs_companion",
-                &[("a", "variable_declarator"), ("b", "variable_declarator")],
-            ),
+            &module_yaml(&[("a", "variable_declarator"), ("b", "variable_declarator")]),
         );
         write_file(
             &modules.join("support.yaml"),
-            &module_yaml(
-                "support",
-                &[
-                    ("c", "variable_declarator"),
-                    ("d", "variable_declarator"),
-                    ("e", "variable_declarator"),
-                ],
-            ),
+            &module_yaml(&[
+                ("c", "variable_declarator"),
+                ("d", "variable_declarator"),
+                ("e", "variable_declarator"),
+            ]),
         );
 
         let report = analyze_peel_horizon(&options(&modules, &graph_path)).unwrap();
