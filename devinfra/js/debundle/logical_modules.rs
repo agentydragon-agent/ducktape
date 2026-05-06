@@ -53,12 +53,9 @@ impl PhaseTimings {
         }
     }
 
-    fn into_ms(mut self, total: Duration) -> BTreeMap<String, f64> {
+    fn into_durations(mut self, total: Duration) -> BTreeMap<String, Duration> {
         self.durations.insert("total".to_string(), total);
         self.durations
-            .into_iter()
-            .map(|(name, duration)| (name, duration.as_secs_f64() * 1000.0))
-            .collect()
     }
 }
 
@@ -66,7 +63,7 @@ impl PhaseTimings {
 pub struct LogicalModuleManifest {
     pub chunks: Vec<LogicalChunkReport>,
     pub counts: LogicalModuleCounts,
-    pub duration_ms: f64,
+    pub duration: Duration,
     pub report_out_dir: Option<String>,
 }
 
@@ -84,7 +81,7 @@ pub struct LogicalChunkReport {
     pub counts: LogicalChunkCounts,
     pub final_module_contents: Vec<FinalModuleContent>,
     pub requested_logical_modules: Vec<RequestedLogicalModule>,
-    pub timings_ms: BTreeMap<String, f64>,
+    pub timings: BTreeMap<String, Duration>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -571,7 +568,7 @@ pub fn materialize_logical_modules(
                 })
                 .collect::<Vec<_>>()
         });
-        let timings_ms = timings.into_ms(chunk_started.elapsed());
+        let timings = timings.into_durations(chunk_started.elapsed());
         let report = LogicalChunkReport {
             chunk_id: chunk_id.clone(),
             counts: LogicalChunkCounts {
@@ -590,7 +587,7 @@ pub fn materialize_logical_modules(
                     residual: request.residual,
                 })
                 .collect(),
-            timings_ms,
+            timings,
         };
         if let Some(report_out_dir) = &report_out_dir {
             write_chunk_report_json(report_out_dir, &chunk_id, "logical_modules.json", &report)?;
@@ -617,7 +614,7 @@ pub fn materialize_logical_modules(
                 .sum(),
         },
         chunks: reports,
-        duration_ms: started.elapsed().as_secs_f64() * 1000.0,
+        duration: started.elapsed(),
         report_out_dir: report_out_dir.as_ref().map(|path| {
             options.report_summary_path.as_ref().map_or_else(
                 || module_path_from_path(path),

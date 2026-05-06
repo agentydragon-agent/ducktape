@@ -8,13 +8,11 @@ use clap::Parser;
 use runfiles::{Runfiles, rlocation};
 use serde::{Deserialize, Serialize};
 
-use artifact::{
-    ComputeJsAstsManifest, compute_js_asts, compute_js_asts_for_chunks, load_js_chunks,
-};
+use artifact::load_js_chunks;
 use artifact::{module_path_dirname, relative_module_path};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
-use normalize::normalize_js_chunks;
+use prepare_chunks::{ParsedJsFilesManifest, PrepareJsChunksOptions, prepare_js_chunks};
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
 use vendor::{
@@ -92,7 +90,6 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TransformRunSummary {
-    #[serde(serialize_with = "serialize_duration_ms")]
     pub duration: Duration,
     pub spec_path: String,
     pub preparation_steps: Vec<TransformStepSummary>,
@@ -102,7 +99,6 @@ pub struct TransformRunSummary {
 #[derive(Debug, Clone, Serialize)]
 pub struct TransformStepSummary {
     pub stage: PipelineStage,
-    #[serde(serialize_with = "serialize_duration_ms")]
     pub duration: Duration,
 }
 
@@ -112,8 +108,7 @@ pub enum PipelineStage {
     LoadTransformSpec,
     ValidateTransformSpec,
     LoadJsChunks,
-    ComputeJsAsts,
-    NormalizeJsChunks,
+    PrepareJsChunks,
     RewriteChunkEntrySpecifiers,
     ApplyVendorAnnotations,
     RenameVendorExports,
@@ -191,7 +186,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         PipelineStage::ValidateTransformSpec,
         || validate_transform_spec(&spec),
     )?;
-    let (mut artifact, _load_manifest) =
+    let (artifact, _load_manifest) =
         run_step_with_result(&mut preparation_steps, PipelineStage::LoadJsChunks, || {
             load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)
         })?;
@@ -206,24 +201,20 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         .collect();
     let ast_parse_plan = build_ast_parse_plan(&spec, &artifact, &materialise_chunk_ids);
     let parse_plan_report_path = parse_plan_report_path(&spec);
-    let _ast_manifest =
-        run_step_with_result(&mut preparation_steps, PipelineStage::ComputeJsAsts, || {
-            let manifest = if ast_parse_plan.mode == AstParseMode::Selective {
-                let chunk_ids = ast_parse_plan.required_chunk_ids();
-                compute_js_asts_for_chunks(&mut artifact, chunk_ids, false)
-            } else {
-                compute_js_asts(&mut artifact, true)
-            }?;
-            if let Some(path) = &parse_plan_report_path {
-                write_parse_plan_report(path, &ast_parse_plan, &manifest)?;
-            }
-            Ok(manifest)
-        })?;
-    let (mut artifact, _normalize_manifest) = run_step_with_result(
+    let prepare_result = run_step_with_result(
         &mut preparation_steps,
-        PipelineStage::NormalizeJsChunks,
-        || normalize_js_chunks(artifact),
+        PipelineStage::PrepareJsChunks,
+        || {
+            let parse_chunk_ids = (ast_parse_plan.mode == AstParseMode::Selective)
+                .then(|| ast_parse_plan.required_chunk_ids());
+            let result = prepare_js_chunks(artifact, PrepareJsChunksOptions { parse_chunk_ids })?;
+            if let Some(path) = &parse_plan_report_path {
+                write_parse_plan_report(path, &ast_parse_plan, &result.parsed_js_files)?;
+            }
+            Ok(result)
+        },
     )?;
+    let mut artifact = prepare_result.artifact;
     let mut steps = Vec::new();
 
     run_step(
@@ -576,7 +567,7 @@ fn parse_plan_report_path(spec: &TransformSpec) -> Option<PathBuf> {
 fn write_parse_plan_report(
     path: &Path,
     plan: &AstParsePlan,
-    manifest: &ComputeJsAstsManifest,
+    manifest: &ParsedJsFilesManifest,
 ) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -614,29 +605,52 @@ struct ParsePlanChunkReport {
     will_parse: bool,
     reasons: Vec<AstParseReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    parse_duration_ms: Option<f64>,
+    parse_duration: Option<Duration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    analysis_duration: Option<Duration>,
 }
 
-fn parse_plan_report(plan: &AstParsePlan, manifest: &ComputeJsAstsManifest) -> ParsePlanReport {
-    let mut parsed_by_chunk = BTreeMap::<String, f64>::new();
-    for parsed_file in &manifest.parsed_files {
-        *parsed_by_chunk
-            .entry(parsed_file.chunk_id.clone())
-            .or_default() += parsed_file.parse_duration_ms;
+#[derive(Clone, Copy, Default)]
+struct ParsedChunkTiming {
+    parse_duration: Duration,
+    analysis_duration: Duration,
+}
+
+impl ParsedChunkTiming {
+    fn add_file(self, parsed_file: &artifact::ParsedJsFileRecord) -> Self {
+        Self {
+            parse_duration: self.parse_duration + parsed_file.parse_duration,
+            analysis_duration: self.analysis_duration + parsed_file.analysis_duration,
+        }
     }
+}
+
+fn parse_plan_report(plan: &AstParsePlan, manifest: &ParsedJsFilesManifest) -> ParsePlanReport {
+    let timings_by_chunk = manifest.parsed_files.iter().fold(
+        BTreeMap::<String, ParsedChunkTiming>::new(),
+        |mut timings, parsed_file| {
+            timings
+                .entry(parsed_file.chunk_id.clone())
+                .and_modify(|timing| *timing = timing.add_file(parsed_file))
+                .or_insert_with(|| ParsedChunkTiming::default().add_file(parsed_file));
+            timings
+        },
+    );
     let chunks = plan
         .chunks
         .values()
-        .map(|chunk| ParsePlanChunkReport {
-            chunk_id: chunk.chunk_id.clone(),
-            entry_file: chunk.entry_file.clone(),
-            source_path: chunk.source_path.clone(),
-            source_bytes: chunk.source_bytes,
-            will_parse: plan.required_chunk_ids.contains(&chunk.chunk_id),
-            reasons: chunk.reasons.iter().cloned().collect(),
-            parse_duration_ms: parsed_by_chunk
-                .get(&chunk.chunk_id)
-                .map(|duration| round_ms(*duration)),
+        .map(|chunk| {
+            let timing = timings_by_chunk.get(&chunk.chunk_id);
+            ParsePlanChunkReport {
+                chunk_id: chunk.chunk_id.clone(),
+                entry_file: chunk.entry_file.clone(),
+                source_path: chunk.source_path.clone(),
+                source_bytes: chunk.source_bytes,
+                will_parse: plan.required_chunk_ids.contains(&chunk.chunk_id),
+                reasons: chunk.reasons.iter().cloned().collect(),
+                parse_duration: timing.map(|timing| timing.parse_duration),
+                analysis_duration: timing.map(|timing| timing.analysis_duration),
+            }
         })
         .collect::<Vec<_>>();
     ParsePlanReport {
@@ -644,7 +658,7 @@ fn parse_plan_report(plan: &AstParsePlan, manifest: &ComputeJsAstsManifest) -> P
         counts: ParsePlanCounts {
             chunks: chunks.len(),
             files: manifest.counts.files,
-            parsed_chunks: parsed_by_chunk.len(),
+            parsed_chunks: timings_by_chunk.len(),
             parsed_files: manifest.counts.parsed,
             source_bytes: chunks.iter().map(|chunk| chunk.source_bytes).sum(),
             parsed_source_bytes: chunks
@@ -655,10 +669,6 @@ fn parse_plan_report(plan: &AstParsePlan, manifest: &ComputeJsAstsManifest) -> P
         },
         chunks,
     }
-}
-
-fn round_ms(value: f64) -> f64 {
-    (value * 1000.0).round() / 1000.0
 }
 
 fn run_step(
@@ -703,13 +713,6 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
         bail!("Transform spec inputs.js_list_path must not be empty");
     }
     Ok(())
-}
-
-fn serialize_duration_ms<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_f64(duration.as_secs_f64() * 1000.0)
 }
 
 #[cfg(test)]
@@ -934,10 +937,10 @@ mod tests {
         })?;
 
         assert_eq!(summary.steps.len(), 2);
-        assert_eq!(summary.preparation_steps.len(), 5);
+        assert_eq!(summary.preparation_steps.len(), 4);
         let rendered_summary = render_transform_summary(&summary);
         assert!(rendered_summary.contains("- load_transform_spec"));
-        assert!(rendered_summary.contains("- compute_js_asts"));
+        assert!(rendered_summary.contains("- prepare_js_chunks"));
         assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
         assert!(rendered_summary.contains("- emit_browser_harness"));
         assert!(out.join("bootstrap.js").exists());
@@ -1068,6 +1071,23 @@ mod tests {
                         |reason| reason.get("kind").and_then(serde_json::Value::as_str)
                             == Some("full_pipeline")
                     ))
+        );
+        assert!(
+            parse_plan
+                .get("chunks")
+                .and_then(serde_json::Value::as_array)
+                .unwrap()
+                .iter()
+                .all(|chunk| chunk
+                    .get("analysis_duration")
+                    .and_then(|duration| duration.get("secs"))
+                    .and_then(serde_json::Value::as_u64)
+                    .is_some()
+                    && chunk
+                        .get("analysis_duration")
+                        .and_then(|duration| duration.get("nanos"))
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some())
         );
         Ok(())
     }

@@ -24,7 +24,6 @@ rust_library(
     deps = [
         ":js_ast",
         "@crates//:anyhow",
-        "@crates//:rayon",
         "@crates//:relative-path",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -264,15 +263,17 @@ rust_library(
 )
 
 rust_library(
-    name = "normalize",
-    srcs = ["normalize.rs"],
-    crate_root = "normalize.rs",
+    name = "prepare_chunks",
+    srcs = ["prepare_chunks.rs"],
+    crate_root = "prepare_chunks.rs",
     edition = "2024",
     deps = [
         ":artifact",
         ":js_ast",
         ":program_analysis",
         "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:serde",
     ],
 )
 
@@ -308,7 +309,7 @@ rust_library(
         ":artifact",
         ":emit_harness",
         ":logical_modules",
-        ":normalize",
+        ":prepare_chunks",
         ":rewrite_specifiers",
         ":scrambled_id_frequencies",
         ":spec",

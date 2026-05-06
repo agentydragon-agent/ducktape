@@ -395,11 +395,12 @@ missing, add one in the path module and keep call sites typed.
 
 ## Spec-level `inputs`
 
-`load_js_chunks`, `compute_js_asts`, `normalize_js_chunks`, and
-`rewrite_chunk_entry_specifiers` are always-on preparation steps. The spec
-configures the load step via `inputs: { input_root, js_list_path }`;
-specifier rewriting runs automatically after normalization and before
-data-gated transforms.
+`load_js_chunks`, `prepare_js_chunks`, and `rewrite_chunk_entry_specifiers`
+are always-on preparation steps. The spec configures the load step via
+`inputs: { input_root, js_list_path }`; chunk preparation parses selected
+chunks, computes shallow program facts, and canonicalizes chunk entries in one
+parallel per-chunk pass. Specifier rewriting runs automatically after
+preparation and before data-gated transforms.
 
 ## Spec-level declarative sections
 

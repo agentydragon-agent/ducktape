@@ -1,14 +1,13 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use rayon::prelude::*;
 use relative_path::RelativePath;
 use serde::Serialize;
 
-use js_ast::{ParsedJsModule, emit_js_module, parse_js_module};
+use js_ast::{ParsedJsModule, emit_js_module};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
@@ -86,23 +85,12 @@ pub struct LoadedChunkRecord {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ComputeJsAstsManifest {
-    pub counts: ComputeJsAstsCounts,
-    pub parsed_files: Vec<ParsedJsFileRecord>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ComputeJsAstsCounts {
-    pub parsed: usize,
-    pub files: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub struct ParsedJsFileRecord {
     pub chunk_id: String,
     pub file: String,
     pub source_bytes: usize,
-    pub parse_duration_ms: f64,
+    pub parse_duration: Duration,
+    pub analysis_duration: Duration,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -535,133 +523,6 @@ pub fn load_js_chunks(
         js_files,
     };
     Ok((artifact, manifest))
-}
-
-pub fn compute_js_asts(
-    artifact: &mut JsPipelineArtifact,
-    drop_content: bool,
-) -> Result<ComputeJsAstsManifest> {
-    compute_js_asts_matching(artifact, drop_content, |_, _| true)
-}
-
-pub fn compute_js_asts_for_chunks(
-    artifact: &mut JsPipelineArtifact,
-    chunk_ids: &std::collections::BTreeSet<String>,
-    drop_content: bool,
-) -> Result<ComputeJsAstsManifest> {
-    compute_js_asts_matching(artifact, drop_content, |chunk_id, _| {
-        chunk_ids.contains(chunk_id)
-    })
-}
-
-fn compute_js_asts_matching(
-    artifact: &mut JsPipelineArtifact,
-    drop_content: bool,
-    should_parse: impl Fn(&str, &str) -> bool,
-) -> Result<ComputeJsAstsManifest> {
-    let keys = artifact.list_js_file_keys();
-    let mut jobs = Vec::new();
-    for (chunk_id, file_path) in &keys {
-        if !should_parse(chunk_id, file_path) {
-            continue;
-        }
-        let chunk = artifact
-            .chunks
-            .get_mut(chunk_id)
-            .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
-        let file = chunk
-            .files
-            .get_mut(file_path)
-            .with_context(|| format!("missing artifact file {chunk_id}/{file_path}"))?;
-        if file.ast.is_some() {
-            continue;
-        }
-        let content = if drop_content {
-            file.content.take().with_context(|| {
-                format!("computeJsAsts requires content for file: {}", file.path)
-            })?
-        } else {
-            file.content.clone().with_context(|| {
-                format!("computeJsAsts requires content for file: {}", file.path)
-            })?
-        };
-        let source_bytes = content.len();
-        jobs.push(ParseJob {
-            chunk_id: chunk_id.clone(),
-            file_path: file_path.clone(),
-            source_name: format!("{chunk_id}/{file_path}"),
-            source_bytes,
-            content,
-        });
-    }
-    let parsed_files = parse_js_jobs(jobs)?;
-    let parsed = parsed_files.len();
-    let mut parsed_records = Vec::with_capacity(parsed);
-    for parsed_file in parsed_files {
-        let chunk = artifact
-            .chunks
-            .get_mut(&parsed_file.chunk_id)
-            .with_context(|| format!("missing artifact chunk {}", parsed_file.chunk_id))?;
-        let file = chunk
-            .files
-            .get_mut(&parsed_file.file_path)
-            .with_context(|| {
-                format!(
-                    "missing artifact file {}/{}",
-                    parsed_file.chunk_id, parsed_file.file_path
-                )
-            })?;
-        parsed_records.push(ParsedJsFileRecord {
-            chunk_id: parsed_file.chunk_id,
-            file: parsed_file.file_path,
-            source_bytes: parsed_file.source_bytes,
-            parse_duration_ms: parsed_file.parse_duration_ms,
-        });
-        file.ast = Some(parsed_file.parsed);
-    }
-    Ok(ComputeJsAstsManifest {
-        counts: ComputeJsAstsCounts {
-            parsed,
-            files: keys.len(),
-        },
-        parsed_files: parsed_records,
-    })
-}
-
-struct ParseJob {
-    chunk_id: String,
-    file_path: String,
-    source_name: String,
-    source_bytes: usize,
-    content: String,
-}
-
-struct ParsedFile {
-    chunk_id: String,
-    file_path: String,
-    source_bytes: usize,
-    parse_duration_ms: f64,
-    parsed: ParsedJsModule,
-}
-
-fn parse_js_jobs(jobs: Vec<ParseJob>) -> Result<Vec<ParsedFile>> {
-    jobs.into_par_iter().map(parse_js_job).collect()
-}
-
-fn parse_js_job(job: ParseJob) -> Result<ParsedFile> {
-    let started = Instant::now();
-    let parsed = parse_js_module(&job.source_name, &job.content)?;
-    Ok(ParsedFile {
-        chunk_id: job.chunk_id,
-        file_path: job.file_path,
-        source_bytes: job.source_bytes,
-        parse_duration_ms: round_ms(started.elapsed().as_secs_f64() * 1000.0),
-        parsed,
-    })
-}
-
-fn round_ms(value: f64) -> f64 {
-    (value * 1000.0).round() / 1000.0
 }
 
 pub fn materialize_artifact_scripts(

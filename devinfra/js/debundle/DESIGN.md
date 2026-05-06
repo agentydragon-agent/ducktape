@@ -1512,7 +1512,7 @@ and `owner_y`, then re-run quotient validation."
 
 The transform is a fixed data flow over one `JsPipelineArtifact`
 value. Each stage either observes that artifact, replaces it with a
-normalized artifact, or mutates it in place; there is no separate
+prepared artifact, or mutates it in place; there is no separate
 pipeline state object with a second identity.
 
 The executable spec is YAML decoded directly into typed serde
@@ -1536,9 +1536,8 @@ repo YAML conventions.
 | Step                             | Module                                         | Runs when                                                                                                                            |
 | -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `load_js_chunks`                 | <artifact.rs>                                  | Always; configured by `inputs`.                                                                                                      |
-| `compute_js_asts`                | <artifact.rs>                                  | Always.                                                                                                                              |
-| `normalize_js_chunks`            | <normalize.rs>                                 | Always.                                                                                                                              |
-| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>                        | Always, after normalization and before data-gated transforms.                                                                        |
+| `prepare_js_chunks`              | <prepare_chunks.rs>                            | Always. In one parallel per-chunk pass, parses selected chunks, computes shallow program facts, and canonicalizes entries.           |
+| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>                        | Always, after chunk preparation and before data-gated transforms.                                                                    |
 | `apply_vendor_annotations`       | <vendor.rs>                                    | When the `vendor` map is non-empty.                                                                                                  |
 | `rename_vendor_exports`          | <vendor.rs>                                    | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                 |
 | `swap_vendor_chunks`             | <vendor.rs>                                    | When a `vendor` entry has `level: swap`.                                                                                             |
