@@ -162,7 +162,7 @@ in
   # Separate data disks (Proxmox virtio disks).
   # autoFormat creates ext4 on first boot; autoResize grows to full disk size.
   # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
-  # virtio4=/dev/vde, virtio5=/dev/vdf
+  # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh
   fileSystems."/var/local-path-provisioner" = {
     device = "/dev/vda";
     fsType = "ext4";
@@ -183,7 +183,7 @@ in
     autoResize = true;
   };
   fileSystems."/home/agentydragon/.cache/bazel" = {
-    device = "/dev/vde"; # 40G SSD (local-zfs) — Bazel output bases
+    device = "/dev/vde"; # 150G SSD (local-zfs) — Bazel output bases
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -193,6 +193,18 @@ in
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
+  };
+  fileSystems."/tmp" = {
+    device = "/dev/vdh"; # 1T HDD (tank-hdd) — scratch space
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+    options = [
+      "nodev"
+      "nosuid"
+      "nofail"
+      "x-systemd.device-timeout=10s"
+    ];
   };
 
   # LVM for OpenEBS LVM LocalPV — thin-provisioned volumes with snapshot support.
@@ -264,6 +276,7 @@ in
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon 0755 agentydragon users -"
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache 0755 agentydragon users -"
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos 0755 agentydragon users -"
+    "d /tmp 1777 root root -"
   ];
 
   # virtiofs shared from Proxmox host (atlas)
