@@ -92,6 +92,7 @@ pub struct TransformRunSummary {
     #[serde(serialize_with = "serialize_duration_ms")]
     pub duration: Duration,
     pub spec_path: String,
+    pub preparation_steps: Vec<TransformStepSummary>,
     pub steps: Vec<TransformStepSummary>,
 }
 
@@ -105,6 +106,11 @@ pub struct TransformStepSummary {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PipelineStage {
+    LoadTransformSpec,
+    ValidateTransformSpec,
+    LoadJsChunks,
+    ComputeJsAsts,
+    NormalizeJsChunks,
     RewriteChunkEntrySpecifiers,
     ApplyVendorAnnotations,
     RenameVendorExports,
@@ -152,6 +158,13 @@ pub fn render_transform_summary(summary: &TransformRunSummary) -> String {
         summary.spec_path,
         humantime::format_duration(summary.duration)
     );
+    for step in &summary.preparation_steps {
+        out.push_str(&format!(
+            "- {} ({})\n",
+            step.stage.report_name(),
+            humantime::format_duration(step.duration),
+        ));
+    }
     for step in &summary.steps {
         out.push_str(&format!(
             "- {} ({})\n",
@@ -163,13 +176,31 @@ pub fn render_transform_summary(summary: &TransformRunSummary) -> String {
 }
 
 pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
-    let spec = load_transform_spec(&cli.spec_path)?;
-    validate_transform_spec(&spec)?;
     let started = Instant::now();
+    let mut preparation_steps = Vec::new();
+    let spec = run_step_with_result(
+        &mut preparation_steps,
+        PipelineStage::LoadTransformSpec,
+        || load_transform_spec(&cli.spec_path),
+    )?;
+    run_step(
+        &mut preparation_steps,
+        PipelineStage::ValidateTransformSpec,
+        || validate_transform_spec(&spec),
+    )?;
     let (mut artifact, _load_manifest) =
-        load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
-    compute_js_asts(&mut artifact, true)?;
-    let (mut artifact, _normalize_manifest) = normalize_js_chunks(artifact)?;
+        run_step_with_result(&mut preparation_steps, PipelineStage::LoadJsChunks, || {
+            load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)
+        })?;
+    let _ast_manifest =
+        run_step_with_result(&mut preparation_steps, PipelineStage::ComputeJsAsts, || {
+            compute_js_asts(&mut artifact, true)
+        })?;
+    let (mut artifact, _normalize_manifest) = run_step_with_result(
+        &mut preparation_steps,
+        PipelineStage::NormalizeJsChunks,
+        || normalize_js_chunks(artifact),
+    )?;
     let mut steps = Vec::new();
 
     run_step(
@@ -284,6 +315,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     Ok(TransformRunSummary {
         duration: started.elapsed(),
         spec_path: cli.spec_path.display().to_string(),
+        preparation_steps,
         steps,
     })
 }
@@ -300,6 +332,20 @@ fn run_step(
         duration: started.elapsed(),
     });
     Ok(())
+}
+
+fn run_step_with_result<T>(
+    steps: &mut Vec<TransformStepSummary>,
+    stage: PipelineStage,
+    body: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    let started = Instant::now();
+    let value = body()?;
+    steps.push(TransformStepSummary {
+        stage,
+        duration: started.elapsed(),
+    });
+    Ok(value)
 }
 
 fn load_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
@@ -460,7 +506,10 @@ mod tests {
         })?;
 
         assert_eq!(summary.steps.len(), 2);
+        assert_eq!(summary.preparation_steps.len(), 5);
         let rendered_summary = render_transform_summary(&summary);
+        assert!(rendered_summary.contains("- load_transform_spec"));
+        assert!(rendered_summary.contains("- compute_js_asts"));
         assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
         assert!(rendered_summary.contains("- emit_browser_harness"));
         assert!(out.join("bootstrap.js").exists());
