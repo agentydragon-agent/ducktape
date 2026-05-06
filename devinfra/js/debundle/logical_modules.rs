@@ -19,8 +19,7 @@ use artifact::{
 use js_ast::{ParsedJsModule, line_range_for_span, set_str_value, str_value};
 use schedule_validator::{
     BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
-    Schedule, analyze_chunk_facts_with_source_locations, find_top_level_await,
-    render_cycle_summary,
+    Schedule, analyze_chunk_with_source_locations, render_cycle_summary,
 };
 use spec::{BindingSourceKind, ChunkRenames, LogicalModule, MemberPurity, ResidualModule};
 
@@ -121,6 +120,7 @@ struct MemberRequest {
 struct TopLevelDecl {
     ordinal: usize,
     names: Vec<String>,
+    exported: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -319,21 +319,6 @@ pub fn materialize_logical_modules(
             }
         }
 
-        // Refuse chunks with top-level `await`. DESIGN.md
-        // assumption A2 — the proof's reverse-DFS argument
-        // doesn't apply to AsyncCycleRoot semantics, so the
-        // realizability theorem doesn't extend. Rejecting here
-        // turns the assumption into an enforced precondition.
-        if let Some(ord) = find_top_level_await(&runtime_ast.module) {
-            anyhow::bail!(
-                "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
-                 at statement #{ordinal} (TLA); the debundler's realizability theorem \
-                 does not cover async modules (DESIGN.md A2). Wrap the awaited code \
-                 in an async function or rewrite as a synchronous initialization.",
-                ordinal = ord.0,
-            );
-        }
-
         let chunk_renames_map = chunk_renames
             .get(&chunk_id)
             .map(collect_chunk_renames)
@@ -357,12 +342,26 @@ pub fn materialize_logical_modules(
                 .filter(|m| m.purity == MemberPurity::Pure)
                 .map(|m| m.binding.clone())
                 .collect();
-            let facts = analyze_chunk_facts_with_source_locations(
+            let analysis = analyze_chunk_with_source_locations(
                 &runtime_ast.module,
                 &declared_pure,
                 Some(&source_path),
                 |span| line_range_for_span(runtime_ast, span),
             );
+            // Refuse chunks with top-level `await`. DESIGN.md
+            // assumption A2 — the proof's reverse-DFS argument
+            // doesn't apply to AsyncCycleRoot semantics, so the
+            // realizability theorem doesn't extend. Rejecting here
+            // turns the assumption into an enforced precondition.
+            if let Some(ord) = analysis.top_level_await {
+                anyhow::bail!(
+                    "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
+                     at statement #{ordinal} (TLA); the debundler's realizability theorem \
+                     does not cover async modules (DESIGN.md A2). Wrap the awaited code \
+                     in an async function or rewrite as a synchronous initialization.",
+                    ordinal = ord.0,
+                );
+            }
             let logical_modules: Vec<ScheduleLogicalModule> = module_plans
                 .iter()
                 .map(|plan| ScheduleLogicalModule {
@@ -374,7 +373,7 @@ pub fn materialize_logical_modules(
                 .collect();
             Schedule::build(
                 chunk_id.clone(),
-                facts,
+                analysis.facts,
                 bindings_catalogue,
                 logical_modules,
                 chunk_renames_map.clone(),
@@ -421,6 +420,7 @@ pub fn materialize_logical_modules(
             chunk_id: &chunk_id,
             source_path: &source_path,
             declarations: &declarations,
+            declaration_by_name: &declaration_by_name,
             module_plans: &module_plans,
             binding_assignment: &binding_assignment,
             schedule: &schedule,
@@ -565,6 +565,7 @@ struct LowerChunkInputs<'a> {
     chunk_id: &'a str,
     source_path: &'a str,
     declarations: &'a [TopLevelDecl],
+    declaration_by_name: &'a BTreeMap<String, usize>,
     module_plans: &'a [ModulePlan],
     binding_assignment: &'a BTreeMap<String, usize>,
     schedule: &'a Schedule,
@@ -653,6 +654,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         chunk_id,
         source_path,
         declarations,
+        declaration_by_name,
         module_plans,
         binding_assignment,
         schedule,
@@ -670,8 +672,9 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         }
     }
 
-    let mut selected_by_module = BTreeMap::<usize, Vec<ModuleItem>>::new();
-    let mut selected_exports_by_module = BTreeMap::<usize, BTreeMap<String, String>>::new();
+    let mut selected_by_module = vec![Vec::<ModuleItem>::new(); module_plans.len()];
+    let mut selected_exports_by_module =
+        vec![Option::<BTreeMap<String, String>>::None; module_plans.len()];
     for (module_index, plan) in module_plans.iter().enumerate() {
         if plan.bindings.is_empty() {
             continue;
@@ -689,7 +692,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         if !exports.is_empty() {
-            selected_exports_by_module.insert(module_index, exports);
+            selected_exports_by_module[module_index] = Some(exports);
         }
     }
 
@@ -841,16 +844,12 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         entry_body.extend(entry_imports);
         entry_body.extend(tail);
     }
-    for export in entry_exports_for_moved_bindings(runtime_ast, binding_assignment) {
+    for export in entry_exports_for_moved_bindings(declarations, binding_assignment) {
         entry_body.push(export);
     }
     trim_dead_named_specifiers(&mut entry_body, &schedule.bindings);
     let entry_exports_by_original_local =
         collect_entry_exports_by_original_local(&entry_body, &entry_binding_renames);
-    let declaration_by_name = declarations
-        .iter()
-        .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
-        .collect::<BTreeMap<_, _>>();
     let imported_reexports_by_module =
         collect_imported_reexports_by_module(schedule, module_plans.len());
     let mut source_import_cache = ArtifactSourceImportResolutionCache::new(artifact);
@@ -879,7 +878,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     let mut applied = Vec::new();
 
     for (index, plan) in module_plans.iter().enumerate() {
-        let mut body = selected_by_module.remove(&index).unwrap_or_default();
+        let mut body = std::mem::take(&mut selected_by_module[index]);
         let local_renames = naturalize_module_body(&mut body, plan);
         let body_facts = collect_module_body_facts(&body);
         let mut module_imports = cross_module_imports_for_body(
@@ -893,7 +892,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             &plan.id,
             entry_file,
             &plan.target_file,
-            &declaration_by_name,
+            declaration_by_name,
             binding_assignment,
             &entry_exports_by_original_local,
             &body_facts,
@@ -943,9 +942,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             );
             import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
         }
-        let exports_have_top_level_decls = selected_exports_by_module.contains_key(&index);
-        if exports_have_top_level_decls {
-            let exports = selected_exports_by_module.get(&index).expect("checked");
+        if let Some(exports) = &selected_exports_by_module[index] {
             let mut exports = final_module_exports(exports, &local_renames);
             exports.extend(
                 import_member_exports
@@ -1133,22 +1130,26 @@ fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {
 fn collect_top_level_declarations(module: &Module) -> Vec<TopLevelDecl> {
     let mut out = Vec::new();
     for (ordinal, item) in module.body.iter().enumerate() {
-        let names = top_level_declaration_names(item);
+        let (names, exported) = top_level_declaration_names(item);
         if names.is_empty() {
             continue;
         }
-        out.push(TopLevelDecl { ordinal, names });
+        out.push(TopLevelDecl {
+            ordinal,
+            names,
+            exported,
+        });
     }
     out
 }
 
-fn top_level_declaration_names(item: &ModuleItem) -> Vec<String> {
+fn top_level_declaration_names(item: &ModuleItem) -> (Vec<String>, bool) {
     match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_names(decl),
+        ModuleItem::Stmt(Stmt::Decl(decl)) => (declaration_names(decl), false),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            declaration_names(&export_decl.decl)
+            (declaration_names(&export_decl.decl), true)
         }
-        _ => Vec::new(),
+        _ => (Vec::new(), false),
     }
 }
 
@@ -1279,12 +1280,11 @@ fn trim_dead_named_specifiers(
     body: &mut [ModuleItem],
     bindings: &BTreeMap<BindingName, BindingKind>,
 ) {
-    let mut refs = BTreeSet::<String>::new();
+    let mut collector = RefCollector::default();
     for item in body.iter() {
-        let mut collector = RefCollector::default();
         item.visit_with(&mut collector);
-        refs.append(&mut collector.names);
     }
+    let refs = collector.names;
     for item in body.iter_mut() {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
             continue;
@@ -1360,7 +1360,7 @@ fn collect_module_body_facts(body: &[ModuleItem]) -> ModuleBodyFacts {
         item.visit_with(&mut ref_collector);
         facts
             .provided_locals
-            .extend(top_level_declaration_names(item));
+            .extend(top_level_declaration_names(item).0);
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
             for specifier in &import.specifiers {
                 match specifier {
@@ -2181,7 +2181,7 @@ fn normalize_optional_relative_dir(value: &str) -> Result<String> {
 fn remaining_item_after_selection(
     item: &ModuleItem,
     binding_assignment: &BTreeMap<String, usize>,
-    selected_by_module: &mut BTreeMap<usize, Vec<ModuleItem>>,
+    selected_by_module: &mut [Vec<ModuleItem>],
 ) -> Result<Vec<ModuleItem>> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => {
@@ -2192,9 +2192,7 @@ fn remaining_item_after_selection(
             decl => {
                 let names = declaration_names(decl);
                 if let Some(module_index) = assigned_module_for_names(&names, binding_assignment) {
-                    selected_by_module
-                        .entry(module_index)
-                        .or_default()
+                    selected_by_module[module_index]
                         .push(ModuleItem::Stmt(Stmt::Decl(decl.clone())));
                     Ok(Vec::new())
                 } else {
@@ -2205,10 +2203,7 @@ fn remaining_item_after_selection(
         ModuleItem::Stmt(Stmt::Decl(decl)) => {
             let names = declaration_names(decl);
             if let Some(module_index) = assigned_module_for_names(&names, binding_assignment) {
-                selected_by_module
-                    .entry(module_index)
-                    .or_default()
-                    .push(item.clone());
+                selected_by_module[module_index].push(item.clone());
                 Ok(Vec::new())
             } else {
                 Ok(vec![item.clone()])
@@ -2222,7 +2217,7 @@ fn split_var_decl(
     var: &VarDecl,
     was_exported: bool,
     binding_assignment: &BTreeMap<String, usize>,
-    selected_by_module: &mut BTreeMap<usize, Vec<ModuleItem>>,
+    selected_by_module: &mut [Vec<ModuleItem>],
 ) -> Result<Vec<ModuleItem>> {
     let mut residual_decls = Vec::new();
     for declarator in &var.decls {
@@ -2235,12 +2230,9 @@ fn split_var_decl(
                 declare: var.declare,
                 decls: vec![declarator.clone()],
             };
-            selected_by_module
-                .entry(module_index)
-                .or_default()
-                .push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(
-                    selected_var,
-                )))));
+            selected_by_module[module_index].push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(
+                Box::new(selected_var),
+            ))));
         } else {
             residual_decls.push(declarator.clone());
         }
@@ -2649,16 +2641,14 @@ fn export_named_for_bindings(bindings: &BTreeMap<String, String>) -> ModuleItem 
 }
 
 fn entry_exports_for_moved_bindings(
-    runtime_ast: &ParsedJsModule,
+    declarations: &[TopLevelDecl],
     binding_assignment: &BTreeMap<String, usize>,
 ) -> Vec<ModuleItem> {
     let mut exports = BTreeMap::<String, String>::new();
-    for item in &runtime_ast.module.body {
-        if let ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) = item {
-            for name in declaration_names(&export_decl.decl) {
-                if binding_assignment.contains_key(&name) {
-                    exports.insert(name.clone(), name);
-                }
+    for decl in declarations.iter().filter(|decl| decl.exported) {
+        for name in &decl.names {
+            if binding_assignment.contains_key(name) {
+                exports.insert(name.clone(), name.clone());
             }
         }
     }

@@ -291,6 +291,12 @@ pub struct StatementFacts {
     pub kind: StatementKind,
 }
 
+#[derive(Debug, Clone)]
+pub struct ChunkFactAnalysis {
+    pub facts: Vec<StatementFacts>,
+    pub top_level_await: Option<StatementOrdinal>,
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StatementKind {
@@ -334,10 +340,10 @@ pub enum StatementKind {
 /// scopes that may legitimately contain `await` without making
 /// the module a top-level-await module.
 pub fn find_top_level_await(module: &Module) -> Option<StatementOrdinal> {
-    let body = split_comma_list_var_decls(&module.body);
+    let body = top_level_item_views(&module.body);
     for (ordinal, item) in body.iter().enumerate() {
         let mut finder = TopLevelAwaitFinder::default();
-        item.visit_with(&mut finder);
+        item.as_module_item().visit_with(&mut finder);
         if finder.found {
             return Some(StatementOrdinal(ordinal));
         }
@@ -421,24 +427,47 @@ pub fn analyze_chunk_facts(
     module: &Module,
     declared_pure: &BTreeSet<String>,
 ) -> Vec<StatementFacts> {
-    analyze_chunk_facts_with_source_locations(module, declared_pure, None, |_| None)
+    analyze_chunk_with_source_locations(module, declared_pure, None, |_| None).facts
 }
 
 pub fn analyze_chunk_facts_with_source_locations<F>(
     module: &Module,
     declared_pure: &BTreeSet<String>,
     source_path: Option<&str>,
-    mut line_range_for_span: F,
+    line_range_for_span: F,
 ) -> Vec<StatementFacts>
 where
     F: FnMut(Span) -> Option<(usize, usize)>,
 {
-    let body = split_comma_list_var_decls(&module.body);
+    analyze_chunk_with_source_locations(module, declared_pure, source_path, line_range_for_span)
+        .facts
+}
+
+pub fn analyze_chunk_with_source_locations<F>(
+    module: &Module,
+    declared_pure: &BTreeSet<String>,
+    source_path: Option<&str>,
+    mut line_range_for_span: F,
+) -> ChunkFactAnalysis
+where
+    F: FnMut(Span) -> Option<(usize, usize)>,
+{
+    let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
     let graph = ChunkCodeGraph::build(&body, &shadowed, declared_pure);
-    body.iter()
+    let mut top_level_await = None;
+    let facts = body
+        .iter()
         .enumerate()
         .map(|(ordinal, item)| {
+            let item = item.as_module_item();
+            if top_level_await.is_none() {
+                let mut finder = TopLevelAwaitFinder::default();
+                item.visit_with(&mut finder);
+                if finder.found {
+                    top_level_await = Some(StatementOrdinal(ordinal));
+                }
+            }
             let mut fact = analyze_item(
                 StatementOrdinal(ordinal),
                 item,
@@ -455,7 +484,11 @@ where
             });
             fact
         })
-        .collect()
+        .collect();
+    ChunkFactAnalysis {
+        facts,
+        top_level_await,
+    }
 }
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
@@ -503,7 +536,7 @@ impl ChunkCodeGraph {
     ///    and total work is `O(N · body_size)` for the whole
     ///    chunk regardless of recursion depth.
     fn build(
-        body: &[ModuleItem],
+        body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
     ) -> Self {
@@ -654,10 +687,12 @@ impl ChunkFunction<'_> {
     }
 }
 
-fn collect_chunk_functions(body: &[ModuleItem]) -> Vec<ChunkFunction<'_>> {
+fn collect_chunk_functions<'a, 'item>(
+    body: &'a [TopLevelItemView<'item>],
+) -> Vec<ChunkFunction<'a>> {
     let mut out = Vec::new();
     for item in body {
-        match item {
+        match item.as_module_item() {
             ModuleItem::Stmt(Stmt::Decl(Decl::Fn(fn_decl))) => push_fn_decl(fn_decl, &mut out),
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => push_var_functions(var, &mut out),
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
@@ -785,11 +820,26 @@ impl Visit for BodyPurityCollector<'_> {
     }
 }
 
-/// Replace every multi-declarator top-level `var/let/const`
-/// (including the form nested in an `export` decl) with N
-/// single-declarator statements preserving source order. Other
-/// statement kinds pass through unchanged.
-fn split_comma_list_var_decls(body: &[ModuleItem]) -> Vec<ModuleItem> {
+enum TopLevelItemView<'a> {
+    Borrowed(&'a ModuleItem),
+    Owned(ModuleItem),
+}
+
+impl TopLevelItemView<'_> {
+    fn as_module_item(&self) -> &ModuleItem {
+        match self {
+            Self::Borrowed(item) => item,
+            Self::Owned(item) => item,
+        }
+    }
+}
+
+/// View the top-level body as analysis statements. Multi-declarator
+/// top-level `var/let/const` statements are split into N
+/// single-declarator statements preserving source order; unchanged
+/// statements stay borrowed so the analyzer does not clone the whole
+/// app chunk just to get per-declarator ownership.
+fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
     let mut out = Vec::with_capacity(body.len());
     for item in body {
         match item {
@@ -802,7 +852,9 @@ fn split_comma_list_var_decls(body: &[ModuleItem]) -> Vec<ModuleItem> {
                         declare: var.declare,
                         decls: vec![decl.clone()],
                     };
-                    out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(single)))));
+                    out.push(TopLevelItemView::Owned(ModuleItem::Stmt(Stmt::Decl(
+                        Decl::Var(Box::new(single)),
+                    ))));
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
@@ -816,16 +868,18 @@ fn split_comma_list_var_decls(body: &[ModuleItem]) -> Vec<ModuleItem> {
                                 declare: var.declare,
                                 decls: vec![decl.clone()],
                             };
-                            out.push(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                                span: export_decl.span,
-                                decl: Decl::Var(Box::new(single)),
-                            })));
+                            out.push(TopLevelItemView::Owned(ModuleItem::ModuleDecl(
+                                ModuleDecl::ExportDecl(ExportDecl {
+                                    span: export_decl.span,
+                                    decl: Decl::Var(Box::new(single)),
+                                }),
+                            )));
                         }
                     }
-                    _ => out.push(item.clone()),
+                    _ => out.push(TopLevelItemView::Borrowed(item)),
                 }
             }
-            _ => out.push(item.clone()),
+            _ => out.push(TopLevelItemView::Borrowed(item)),
         }
     }
     out
@@ -839,7 +893,7 @@ fn split_comma_list_var_decls(body: &[ModuleItem]) -> Vec<ModuleItem> {
 /// shadows — `const Math = …` and
 /// `import { Math } from "./userland"` both make `Math.PI` an
 /// Unknown read, not the global constant. See DESIGN.md A8.
-fn compute_shadowed_globals(body: &[ModuleItem]) -> BTreeSet<&'static str> {
+fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
     let mut shadowed = BTreeSet::new();
     let try_shadow = |name: &str, into: &mut BTreeSet<&'static str>| {
         if let Some(global) = WHITELIST_RECEIVERS.iter().copied().find(|r| *r == name) {
@@ -847,6 +901,7 @@ fn compute_shadowed_globals(body: &[ModuleItem]) -> BTreeSet<&'static str> {
         }
     };
     for item in body {
+        let item = item.as_module_item();
         for name in collect_declared_names(item) {
             try_shadow(name.as_str(), &mut shadowed);
         }
@@ -4259,7 +4314,8 @@ mod tests {
     /// module. Lets tests check the shadowing fallback.
     fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
         let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-        let shadowed = compute_shadowed_globals(&module.body);
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
         let var = match module.body.last().expect("non-empty body") {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
             other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
@@ -4277,7 +4333,8 @@ mod tests {
     /// explicit declared-pure binding set.
     fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) -> Purity {
         let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-        let shadowed = compute_shadowed_globals(&module.body);
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
         let declared_pure: BTreeSet<String> = declared.iter().map(|s| (*s).to_string()).collect();
         let var = match module.body.last().expect("non-empty body") {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
@@ -4689,7 +4746,7 @@ mod tests {
     /// chunk parsing → function collection → fixed-point.
     fn fn_purity(src: &str, name: &str) -> Option<Purity> {
         let module = parse(src);
-        let body = split_comma_list_var_decls(&module.body);
+        let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
         let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
         graph.function_purity(name)
@@ -4774,10 +4831,10 @@ mod tests {
         // resolves through `ChunkCodeGraph::function_purity`. With
         // `f` body Pure, the call is Pure.
         let module = parse("function f() { return 42; } const x = f();");
-        let body = split_comma_list_var_decls(&module.body);
+        let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
         let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-        let var = match &body[1] {
+        let var = match body[1].as_module_item() {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
             other => panic!("expected VarDecl, got {other:?}"),
         };
