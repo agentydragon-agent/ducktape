@@ -129,6 +129,7 @@ pub struct Schedule {
     pub facts: Vec<StatementFacts>,
     pub bindings: BTreeMap<BindingName, BindingKind>,
     pub logical_modules: Vec<LogicalModule>,
+    pub chunk_renames: BTreeMap<BindingName, BindingName>,
     pub owner_graph: OwnerGraph,
     pub dep_graph: ModuleDepGraph,
     /// Topological linearization of `I ∪ S`, dependency-first
@@ -152,6 +153,7 @@ impl Schedule {
         facts: Vec<StatementFacts>,
         bindings: BTreeMap<BindingName, BindingKind>,
         logical_modules: Vec<LogicalModule>,
+        chunk_renames: BTreeMap<BindingName, BindingName>,
     ) -> Self {
         let ownership = owned_view(&bindings);
         let owner_graph = build_owner_graph(&facts, &ownership);
@@ -162,6 +164,7 @@ impl Schedule {
             facts,
             bindings,
             logical_modules,
+            chunk_renames,
             owner_graph,
             dep_graph,
             linker_order,
@@ -2172,7 +2175,7 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
                 id: owner_key(node.id),
                 statement_ordinal: node.statement_ordinal,
                 source_location: node.source_location.clone(),
-                declared: node.declared.iter().cloned().collect(),
+                declared_bindings: binding_reports(schedule, node.declared.iter()),
                 statement_kind: node.kind,
                 has_side_effect: node.has_side_effect,
                 destination: module_report_ref(schedule, node.destination),
@@ -2197,6 +2200,42 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
             sccs: quotient_sccs,
         },
         peelability,
+    }
+}
+
+fn binding_reports<'a, I>(schedule: &Schedule, bindings: I) -> Vec<BindingReport>
+where
+    I: IntoIterator<Item = &'a BindingName>,
+{
+    bindings
+        .into_iter()
+        .map(|binding| BindingReport {
+            binding: binding.clone(),
+            export_name: export_name_for_binding(schedule, binding),
+        })
+        .collect()
+}
+
+fn export_name_for_binding(schedule: &Schedule, binding: &BindingName) -> BindingName {
+    let Some(BindingKind::Owned { owner }) = schedule.bindings.get(binding) else {
+        return schedule
+            .chunk_renames
+            .get(binding)
+            .cloned()
+            .unwrap_or_else(|| binding.clone());
+    };
+    match owner {
+        ModuleId::Logical(LogicalModuleIndex(idx)) => schedule
+            .logical_modules
+            .get(*idx)
+            .and_then(|module| module.rename_map.get(binding))
+            .cloned()
+            .unwrap_or_else(|| binding.clone()),
+        ModuleId::ResidualEntry => schedule
+            .chunk_renames
+            .get(binding)
+            .cloned()
+            .unwrap_or_else(|| binding.clone()),
     }
 }
 
@@ -2454,7 +2493,7 @@ fn build_peelability_report(
     candidates.extend(dependency_closure_candidates);
 
     let (residual_owner_horizon, minimal_peel_set_ids) =
-        build_residual_owner_horizon(&declared_by_owner, &candidates);
+        build_residual_owner_horizon(schedule, &declared_by_owner, &candidates);
     let minimal_peel_sets = candidates
         .iter()
         .filter(|candidate| minimal_peel_set_ids.contains(&candidate.id))
@@ -2462,7 +2501,7 @@ fn build_peelability_report(
             candidate_id: candidate.id.clone(),
             owner_set_kind: candidate.owner_set_kind,
             owner_ids: candidate.owner_ids.clone(),
-            bindings: candidate.bindings.clone(),
+            members: candidate.members.clone(),
         })
         .collect();
 
@@ -2478,6 +2517,7 @@ fn build_peelability_report(
 }
 
 fn build_residual_owner_horizon(
+    schedule: &Schedule,
     declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
     candidates: &[OwnerGraphPeelCandidateReport],
 ) -> (Vec<ResidualOwnerPeelHorizonReport>, BTreeSet<String>) {
@@ -2526,14 +2566,14 @@ fn build_residual_owner_horizon(
         minimal_options.sort_by(|a, b| {
             (
                 a.owner_ids.len(),
-                a.bindings.len(),
-                a.bindings.as_slice(),
+                a.members.len(),
+                a.members.as_slice(),
                 a.id.as_str(),
             )
                 .cmp(&(
                     b.owner_ids.len(),
-                    b.bindings.len(),
-                    b.bindings.as_slice(),
+                    b.members.len(),
+                    b.members.as_slice(),
                     b.id.as_str(),
                 ))
         });
@@ -2565,18 +2605,27 @@ fn build_residual_owner_horizon(
                     .filter(|id| *id != &owner_key)
                     .cloned()
                     .collect(),
-                companion_bindings: candidate
-                    .bindings
+                companion_members: candidate
+                    .members
                     .iter()
-                    .filter(|binding| !owner_bindings.contains(binding.as_str()))
+                    .filter(|member| !owner_bindings.contains(member.binding.as_str()))
                     .cloned()
                     .collect(),
             });
         }
 
+        let node = schedule
+            .owner_graph
+            .node(*owner_id)
+            .expect("residual owner horizon should reference an existing owner");
         rows.push(ResidualOwnerPeelHorizonReport {
             owner_id: owner_key.clone(),
-            bindings: bindings.clone(),
+            statement_ordinal: node.statement_ordinal,
+            source_location: node.source_location.clone(),
+            statement_kind: node.kind,
+            has_side_effect: node.has_side_effect,
+            current_destination: module_report_ref(schedule, node.destination),
+            members: binding_reports(schedule, bindings.iter()),
             status,
             peel_set_ids,
             companion_options,
@@ -2915,8 +2964,8 @@ fn evaluate_residual_peel_candidate(
         owner_set_kind: kind,
         status,
         owner_ids: owner_id_keys,
-        bindings: declared,
-        source_destination: module_report_ref(schedule, first_owner.destination),
+        members: binding_reports(schedule, declared.iter()),
+        current_destination: module_report_ref(schedule, first_owner.destination),
         hypothetical_destination: HypotheticalPeelDestinationReport {
             id: candidate_id,
             label: candidate_label,
@@ -2964,14 +3013,15 @@ fn candidate_residual_dependencies(
     }
     accum
         .into_iter()
-        .map(
-            |(destination, entry)| PeelBlockingResidualDependencyReport {
+        .map(|(destination, entry)| {
+            let read_members = binding_reports(schedule, entry.bindings.iter());
+            PeelBlockingResidualDependencyReport {
                 destination: module_report_ref(schedule, destination),
                 owner_edge_ids: entry.owner_edge_ids.into_iter().collect(),
-                read_bindings: entry.bindings.into_iter().collect(),
+                read_members,
                 edge_kinds: entry.kinds.into_iter().collect(),
-            },
-        )
+            }
+        })
         .collect()
 }
 
@@ -3652,6 +3702,13 @@ mod tests {
         }
     }
 
+    fn member_bindings(members: &[BindingReport]) -> Vec<String> {
+        members
+            .iter()
+            .map(|member| member.binding.clone())
+            .collect()
+    }
+
     #[test]
     fn cycle_detected_between_two_modules() {
         // mod_a owns A; A's init reads B (owned by mod_b).
@@ -3817,7 +3874,13 @@ mod tests {
                 rename_map: BTreeMap::new(),
             })
             .collect();
-        Schedule::build("test_chunk".to_string(), facts, bindings, logical_modules)
+        Schedule::build(
+            "test_chunk".to_string(),
+            facts,
+            bindings,
+            logical_modules,
+            BTreeMap::new(),
+        )
     }
 
     fn schedule_with_residual_module(
@@ -3850,7 +3913,13 @@ mod tests {
                 rename_map: BTreeMap::new(),
             },
         ];
-        Schedule::build("test_chunk".to_string(), facts, bindings, logical_modules)
+        Schedule::build(
+            "test_chunk".to_string(),
+            facts,
+            bindings,
+            logical_modules,
+            BTreeMap::new(),
+        )
     }
 
     #[test]
@@ -3907,18 +3976,23 @@ mod tests {
             .peelability
             .residual_owner_horizon
             .iter()
-            .find(|owner| owner.bindings == vec!["Leaf".to_string()])
+            .find(|owner| member_bindings(&owner.members) == vec!["Leaf".to_string()])
             .expect("Leaf horizon should be reported");
         assert_eq!(leaf_horizon.status, ResidualOwnerPeelStatus::Direct);
         assert_eq!(leaf_horizon.peel_set_ids.len(), 1);
         assert!(leaf_horizon.companion_options.is_empty());
+        assert_eq!(leaf_horizon.statement_ordinal, StatementOrdinal(0));
+        assert_eq!(leaf_horizon.statement_kind, StatementKind::VarDecl);
+        assert_eq!(leaf_horizon.current_destination.label, "residual");
         assert!(
             report
                 .peelability
                 .minimal_peel_sets
                 .iter()
-                .any(|set| set.bindings == vec!["Leaf".to_string()]
-                    && set.owner_set_kind == PeelCandidateKind::SingleOwner),
+                .any(
+                    |set| member_bindings(&set.members) == vec!["Leaf".to_string()]
+                        && set.owner_set_kind == PeelCandidateKind::SingleOwner
+                ),
             "Leaf should appear as a singleton peel set: {:#?}",
             report.peelability,
         );
@@ -3926,7 +4000,7 @@ mod tests {
             .peelability
             .evaluated_owner_sets
             .iter()
-            .find(|candidate| candidate.bindings == vec!["Leaf".to_string()])
+            .find(|candidate| member_bindings(&candidate.members) == vec!["Leaf".to_string()])
             .expect("Leaf candidate should be reported");
         assert_eq!(leaf.owner_set_kind, PeelCandidateKind::SingleOwner);
         assert_eq!(leaf.status, PeelCandidateStatus::PeelableNow);
@@ -3942,14 +4016,15 @@ mod tests {
             .peelability
             .residual_owner_horizon
             .iter()
-            .find(|owner| owner.bindings == vec!["Leaf".to_string()])
+            .find(|owner| member_bindings(&owner.members) == vec!["Leaf".to_string()])
             .expect("Leaf horizon should be reported");
         assert_eq!(leaf_horizon.status, ResidualOwnerPeelStatus::WithCompanions);
         assert!(
             leaf_horizon
                 .companion_options
                 .iter()
-                .any(|option| option.companion_bindings == vec!["Dep".to_string()]),
+                .any(|option| member_bindings(&option.companion_members)
+                    == vec!["Dep".to_string()]),
             "Leaf should point at Dep as a required companion: {:#?}",
             report.peelability,
         );
@@ -3957,7 +4032,7 @@ mod tests {
             .peelability
             .evaluated_owner_sets
             .iter()
-            .find(|candidate| candidate.bindings == vec!["Leaf".to_string()])
+            .find(|candidate| member_bindings(&candidate.members) == vec!["Leaf".to_string()])
             .expect("Leaf candidate should be reported");
         assert_eq!(leaf.owner_set_kind, PeelCandidateKind::SingleOwner);
         assert_eq!(leaf.status, PeelCandidateStatus::BlockedResidualDependency);
@@ -3968,15 +4043,14 @@ mod tests {
         assert!(
             leaf.residual_dependency_blockers
                 .iter()
-                .any(
-                    |dependency| dependency.read_bindings == vec!["Dep".to_string()]
-                        && !dependency.owner_edge_ids.is_empty()
-                ),
+                .any(|dependency| member_bindings(&dependency.read_members)
+                    == vec!["Dep".to_string()]
+                    && !dependency.owner_edge_ids.is_empty()),
             "blocked candidate should point at residual-entry read evidence: {leaf:#?}",
         );
         assert!(
             report.peelability.minimal_peel_sets.iter().any(|closure| {
-                closure.bindings == vec!["Dep".to_string(), "Leaf".to_string()]
+                member_bindings(&closure.members) == vec!["Dep".to_string(), "Leaf".to_string()]
                     && closure.owner_ids.len() == 2
             }),
             "Leaf should be peelable together with its residual-entry dependency: {:#?}",
@@ -3994,14 +4068,14 @@ mod tests {
             .peelability
             .residual_owner_horizon
             .iter()
-            .find(|owner| owner.bindings == vec!["A".to_string()])
+            .find(|owner| member_bindings(&owner.members) == vec!["A".to_string()])
             .expect("A horizon should be reported");
         assert_eq!(a_horizon.status, ResidualOwnerPeelStatus::WithCompanions);
         let a = report
             .peelability
             .evaluated_owner_sets
             .iter()
-            .find(|candidate| candidate.bindings == vec!["A".to_string()])
+            .find(|candidate| member_bindings(&candidate.members) == vec!["A".to_string()])
             .expect("A candidate should be reported");
         assert_eq!(a.owner_set_kind, PeelCandidateKind::SingleOwner);
         assert_eq!(a.status, PeelCandidateStatus::BlockedCycle);
@@ -4017,7 +4091,7 @@ mod tests {
             .iter()
             .find(|candidate| {
                 candidate.owner_set_kind == PeelCandidateKind::OwnerPair
-                    && candidate.bindings == vec!["A".to_string(), "B".to_string()]
+                    && member_bindings(&candidate.members) == vec!["A".to_string(), "B".to_string()]
             })
             .expect("A+B should be reported as a pair-only peel candidate");
         assert_eq!(pair.status, PeelCandidateStatus::PeelableNow);
@@ -4028,7 +4102,8 @@ mod tests {
                 .peelability
                 .minimal_peel_sets
                 .iter()
-                .any(|closure| closure.bindings == vec!["A".to_string(), "B".to_string()]),
+                .any(|closure| member_bindings(&closure.members)
+                    == vec!["A".to_string(), "B".to_string()]),
             "pair closure summary should include A+B: {:#?}",
             report.peelability,
         );

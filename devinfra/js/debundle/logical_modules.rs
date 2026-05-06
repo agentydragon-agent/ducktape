@@ -330,6 +330,12 @@ pub fn materialize_logical_modules(
             );
         }
 
+        let chunk_renames_map = chunk_renames
+            .get(&chunk_id)
+            .map(collect_chunk_renames)
+            .transpose()?
+            .unwrap_or_default();
+
         // Run the schedule validator (see <DESIGN.md>). Computed here
         // (before `lower_chunk` mutates the artifact) to keep the
         // immutable borrow on `runtime_ast` simple. The report is
@@ -362,7 +368,13 @@ pub fn materialize_logical_modules(
                     rename_map: plan.bindings.clone(),
                 })
                 .collect();
-            Schedule::build(chunk_id.clone(), facts, bindings_catalogue, logical_modules)
+            Schedule::build(
+                chunk_id.clone(),
+                facts,
+                bindings_catalogue,
+                logical_modules,
+                chunk_renames_map.clone(),
+            )
         };
         let schedule_report = schedule.validate();
         if let Some(report_out_dir) = &report_out_dir {
@@ -397,11 +409,6 @@ pub fn materialize_logical_modules(
             );
         }
 
-        let chunk_renames_map = chunk_renames
-            .get(&chunk_id)
-            .map(collect_chunk_renames)
-            .transpose()?
-            .unwrap_or_default();
         let lowered = lower_chunk(LowerChunkInputs {
             artifact,
             runtime_ast,

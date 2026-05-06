@@ -9,7 +9,8 @@
 
 use debundle_e2e_support::*;
 use schedule_validator::{
-    EdgeKind, OwnerGraphReport, PeelCandidateKind, PeelCandidateStatus, ResidualOwnerPeelStatus,
+    BindingReport, EdgeKind, OwnerGraphReport, PeelCandidateKind, PeelCandidateStatus,
+    ResidualOwnerPeelStatus,
 };
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -21,6 +22,20 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> T {
             .unwrap_or_else(|err| panic!("read JSON report {}: {err}", path.display())),
     )
     .unwrap_or_else(|err| panic!("parse JSON report {}: {err}", path.display()))
+}
+
+fn binding_names(members: &[BindingReport]) -> Vec<String> {
+    members
+        .iter()
+        .map(|member| member.binding.clone())
+        .collect()
+}
+
+fn binding_report(binding: &str, export_name: &str) -> BindingReport {
+    BindingReport {
+        binding: binding.to_string(),
+        export_name: export_name.to_string(),
+    }
 }
 
 // --- R cycles (both back-edges at-init) ----------------------------------
@@ -205,8 +220,10 @@ export { A, B, Existing };
     for binding in ["A", "B"] {
         assert!(
             peelability.residual_owner_horizon.iter().any(|owner| {
-                owner.bindings == vec![binding.to_string()]
+                binding_names(&owner.members) == vec![binding.to_string()]
                     && owner.status == ResidualOwnerPeelStatus::WithCompanions
+                    && owner.current_destination.residual
+                    && owner.source_location.is_some()
             }),
             "{binding} should be classified as peelable only with companions: {graph:#?}",
         );
@@ -215,7 +232,8 @@ export { A, B, Existing };
         peelability.evaluated_owner_sets.iter().any(|candidate| {
             candidate.owner_set_kind == PeelCandidateKind::SingleOwner
                 && candidate.status == PeelCandidateStatus::BlockedCycle
-                && candidate.bindings == vec!["A".to_string()]
+                && binding_names(&candidate.members) == vec!["A".to_string()]
+                && candidate.current_destination.residual
                 && candidate
                     .cycle_blockers
                     .iter()
@@ -228,16 +246,15 @@ export { A, B, Existing };
             candidate.owner_set_kind == PeelCandidateKind::OwnerPair
                 && candidate.status == PeelCandidateStatus::PeelableNow
                 && candidate.owner_ids.len() == 2
-                && candidate.bindings == vec!["A".to_string(), "B".to_string()]
+                && binding_names(&candidate.members) == vec!["A".to_string(), "B".to_string()]
                 && candidate.cycle_blockers.is_empty()
         }),
         "A+B should be reported as a peelable pair closure: {graph:#?}",
     );
     assert!(
-        peelability
-            .minimal_peel_sets
-            .iter()
-            .any(|closure| { closure.bindings == vec!["A".to_string(), "B".to_string()] }),
+        peelability.minimal_peel_sets.iter().any(|closure| {
+            binding_names(&closure.members) == vec!["A".to_string(), "B".to_string()]
+        }),
         "pair-only peelability should be summarized in minimal_peel_sets: {graph:#?}",
     );
 }
@@ -253,6 +270,13 @@ export { Leaf, Dep, Existing };
 "#,
         vec![logical_module("existing", &[Member::new("Existing")])],
     );
+    opts.chunk_renames = Some(json!({
+        "id": "chunk_renames__static_app",
+        "members": [
+            { "name": "ReadableLeaf", "selector": { "binding": { "name": "Leaf" } } },
+            { "name": "ReadableDep", "selector": { "binding": { "name": "Dep" } } }
+        ],
+    }));
     opts.include_residual = false;
     let fixture = run_logical_modules_e2e_fixture(opts);
     assert_entry_output(&fixture, "existing\n");
@@ -262,12 +286,13 @@ export { Leaf, Dep, Existing };
     let peelability = &graph.peelability;
     assert!(
         peelability.residual_owner_horizon.iter().any(|owner| {
-            owner.bindings == vec!["Leaf".to_string()]
+            owner.members == vec![binding_report("Leaf", "ReadableLeaf")]
                 && owner.status == ResidualOwnerPeelStatus::WithCompanions
-                && owner
-                    .companion_options
-                    .iter()
-                    .any(|option| option.companion_bindings == vec!["Dep".to_string()])
+                && owner.current_destination.residual
+                && owner.statement_ordinal.0 == 0
+                && owner.companion_options.iter().any(|option| {
+                    option.companion_members == vec![binding_report("Dep", "ReadableDep")]
+                })
         }),
         "Leaf should require Dep as a companion peel: {graph:#?}",
     );
@@ -275,12 +300,12 @@ export { Leaf, Dep, Existing };
         peelability.evaluated_owner_sets.iter().any(|candidate| {
             candidate.owner_set_kind == PeelCandidateKind::SingleOwner
                 && candidate.status == PeelCandidateStatus::BlockedResidualDependency
-                && candidate.bindings == vec!["Leaf".to_string()]
+                && candidate.members == vec![binding_report("Leaf", "ReadableLeaf")]
                 && candidate
                     .residual_dependency_blockers
                     .iter()
                     .any(|dependency| {
-                        dependency.read_bindings == vec!["Dep".to_string()]
+                        dependency.read_members == vec![binding_report("Dep", "ReadableDep")]
                             && !dependency.owner_edge_ids.is_empty()
                     })
         }),

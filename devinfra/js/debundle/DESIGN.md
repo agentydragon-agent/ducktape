@@ -894,11 +894,13 @@ The report exposes the graph data needed to make that decision
 without re-running emitted JS:
 
 - the owner vertices and their stable report ids, statement
-  ordinals, declared bindings, current destinations, and proposed
+  ordinals, source locations, declared member bindings with
+  readable export names, current destinations, and proposed
   destinations;
 - the owner edges, with binding/read-kind/side-effect-order
   provenance and statement ordinals;
-- candidate assignments with status and quotient-cycle cut evidence.
+- candidate assignments with status, readable member lists,
+  residual-dependency blockers, and quotient-cycle cut evidence.
 
 Downstream peel skills should read it before editing YAML: promote
 `peelability.minimal_peel_sets[]` first. For an individual symbol,
@@ -959,8 +961,8 @@ The report writes this as:
   owner with `status`, `peel_set_ids`, and any
   `companion_options[]`
 - `peelability.evaluated_owner_sets[]`, each with `status`,
-  `owner_set_kind`, `owner_ids`, `bindings`,
-  `source_destination`, `hypothetical_destination`,
+  `owner_set_kind`, `owner_ids`, `members`,
+  `current_destination`, `hypothetical_destination`,
   `residual_dependency_blockers[]`, and `cycle_blockers[]`
 
 ### Detailed graph side output
@@ -976,8 +978,10 @@ The detailed output is machine-readable, typed, and debundler-owned.
 For each chunk it includes:
 
 - run metadata: chunk id and source paths;
-- owner vertices: report id, statement ordinal, declared bindings,
-  owner kind, side-effect classification, and current destination;
+- owner vertices: report id, statement ordinal, source location,
+  declared bindings as `members[]`-shaped `{binding, export_name}`
+  records, owner kind, side-effect classification, and current
+  destination;
 - owner edges: `source`, `target`, edge kind, optional binding,
   statement ordinal, and whether the edge constrains realizability;
 - quotient projections for the current assignment: module nodes,
@@ -986,6 +990,9 @@ For each chunk it includes:
 - residual peelability projections:
   `minimal_peel_sets`, `residual_owner_horizon`, and
   per-candidate blocker evidence in `evaluated_owner_sets`.
+  These projections carry the same `{binding, export_name}` member
+  records used by spec authoring, so downstream tools do not need to
+  reparse repo-specific module YAML just to recover readable names.
 
 New fields can add source spans, input/spec hashes, direct importability
 classifications, and closure suggestions without changing the underlying
@@ -1511,6 +1518,16 @@ output configs; it is not an operation list and has no top-level
 stage names use the same default snake_case serde names as the Rust
 types, so emitted diagnostics do not maintain a second hand-written
 string vocabulary.
+
+Some downstream repos keep a higher-level authoring tree where YAML
+files are laid out like the eventual emitted JavaScript modules. That
+shape is useful enough to become a debundler-owned authoring layer,
+but it should lower into the same typed executable spec before this
+pipeline runs. The owner-graph reports are the bridge: they expose
+source owner ids, readable member names, destinations, blockers, and
+peel-set hyperedges so an authoring layer can mostly project and
+filter debundler facts instead of re-analyzing JavaScript or private
+repo YAML conventions.
 
 | Step                             | Module                                         | Runs when                                                                                                                            |
 | -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
