@@ -337,9 +337,9 @@ by checking the shape of debundled output, the test belongs in `e2e/`.
 ### Forbidden test shapes
 
 - Mocking the pipeline or any of its stages.
-- Constructing `JsPipelineArtifact`, `ChunkManifest`, or other intermediate
-  pipeline types by hand to drive a stage in isolation, when feeding an
-  input fixture through the real pipeline reaches the same code path.
+- Constructing intermediate pipeline artifact or manifest types by hand to
+  drive a stage in isolation, when feeding an input fixture through the real
+  pipeline reaches the same code path.
 
 ## Native Rust Shapes
 

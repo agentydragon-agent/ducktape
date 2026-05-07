@@ -1520,10 +1520,11 @@ and `owner_y`, then re-run quotient validation."
 
 ## Architecture
 
-The transform is a fixed data flow over one `JsPipelineArtifact`
-value. Each stage either observes that artifact, replaces it with a
-prepared artifact, or mutates it in place; there is no separate
-pipeline state object with a second identity.
+The transform is a fixed data flow over explicit artifact phases:
+input loading produces loaded chunk data; preparation produces the
+parsed/prepared chunk artifact consumed by rewrite, vendor,
+logical-materialization, and output stages. The pipeline should not
+grow a second mutable "state" object parallel to those phase outputs.
 
 The flat transform spec is YAML decoded directly into typed serde
 structures. It carries inputs, declarative data maps, and optional
