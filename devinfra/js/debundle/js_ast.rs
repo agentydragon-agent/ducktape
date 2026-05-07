@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use swc_common::sync::Lrc;
-use swc_common::{FileName, SourceMap};
+use swc_common::{BytePos, FileName, SourceMap};
 use swc_ecma_ast::{Module, Str};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -10,6 +10,78 @@ use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 pub struct ParsedJsModule {
     pub cm: Lrc<SourceMap>,
     pub module: Module,
+}
+
+impl ParsedJsModule {
+    pub fn line_index(&self) -> SourceLineIndex {
+        SourceLineIndex::for_source_map(&self.cm)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SourceLineIndex {
+    files: Vec<FileLineIndex>,
+}
+
+#[derive(Clone, Debug)]
+struct FileLineIndex {
+    start_pos: BytePos,
+    line_starts: Vec<BytePos>,
+}
+
+impl SourceLineIndex {
+    pub fn for_source_map(cm: &SourceMap) -> Self {
+        let files = cm
+            .files()
+            .iter()
+            .map(|file| FileLineIndex {
+                start_pos: file.start_pos,
+                line_starts: file.analyze().lines.clone(),
+            })
+            .collect();
+        Self { files }
+    }
+
+    pub fn line_for_span(&self, span: swc_common::Span) -> Option<usize> {
+        if span.is_dummy() {
+            return None;
+        }
+        self.line_for_pos(span.lo())
+    }
+
+    pub fn line_range_for_span(&self, span: swc_common::Span) -> Option<(usize, usize)> {
+        if span.is_dummy() {
+            return None;
+        }
+        Some((self.line_for_pos(span.lo())?, self.line_for_pos(span.hi())?))
+    }
+
+    fn line_for_pos(&self, pos: BytePos) -> Option<usize> {
+        if pos.is_dummy() {
+            return None;
+        }
+        let file = self.file_for_pos(pos)?;
+        Some(file.line_for_pos(pos))
+    }
+
+    fn file_for_pos(&self, pos: BytePos) -> Option<&FileLineIndex> {
+        let index = self.files.partition_point(|file| file.start_pos <= pos);
+        if index == 0 {
+            None
+        } else {
+            self.files.get(index - 1)
+        }
+    }
+}
+
+impl FileLineIndex {
+    fn line_for_pos(&self, pos: BytePos) -> usize {
+        match self.line_starts.binary_search(&pos) {
+            Ok(line_index) => line_index + 1,
+            Err(0) => 0,
+            Err(insert_index) => insert_index,
+        }
+    }
 }
 
 pub fn parse_js_module(source_name: &str, source: &str) -> Result<ParsedJsModule> {
@@ -91,22 +163,14 @@ pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Resul
 }
 
 pub fn line_for_span(parsed: &ParsedJsModule, span: swc_common::Span) -> Option<usize> {
-    if span.is_dummy() {
-        return None;
-    }
-    Some(parsed.cm.lookup_char_pos(span.lo()).line)
+    parsed.line_index().line_for_span(span)
 }
 
 pub fn line_range_for_span(
     parsed: &ParsedJsModule,
     span: swc_common::Span,
 ) -> Option<(usize, usize)> {
-    if span.is_dummy() {
-        return None;
-    }
-    let start = parsed.cm.lookup_char_pos(span.lo()).line;
-    let end = parsed.cm.lookup_char_pos(span.hi()).line;
-    Some((start, end))
+    parsed.line_index().line_range_for_span(span)
 }
 
 pub fn str_value(value: &Str) -> String {
@@ -125,4 +189,46 @@ fn default_syntax() -> Syntax {
         no_early_errors: true,
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swc_common::{DUMMY_SP, Spanned};
+
+    #[test]
+    fn source_line_index_matches_source_map_line_numbers() {
+        let parsed = parse_js_module(
+            "test.js",
+            "import a from 'a';\n\nconst b =\n  a;\nexport { b };\n",
+        )
+        .unwrap();
+        let line_index = parsed.line_index();
+
+        for item in &parsed.module.body {
+            let span = item.span();
+            assert_eq!(
+                line_index.line_for_span(span),
+                Some(parsed.cm.lookup_char_pos(span.lo()).line)
+            );
+            assert_eq!(
+                line_index.line_range_for_span(span),
+                Some((
+                    parsed.cm.lookup_char_pos(span.lo()).line,
+                    parsed.cm.lookup_char_pos(span.hi()).line,
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn source_line_index_ignores_dummy_spans() {
+        let parsed = parse_js_module("test.js", "const a = 1;\n").unwrap();
+        let line_index = parsed.line_index();
+
+        assert_eq!(line_for_span(&parsed, DUMMY_SP), None);
+        assert_eq!(line_range_for_span(&parsed, DUMMY_SP), None);
+        assert_eq!(line_index.line_for_span(DUMMY_SP), None);
+        assert_eq!(line_index.line_range_for_span(DUMMY_SP), None);
+    }
 }

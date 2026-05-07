@@ -13,7 +13,7 @@ use binding_targets::{
     TargetAccessRecorder, binding_names, member_root_ident, record_assign_target,
     record_member_target, record_pat_write, record_update_target,
 };
-use js_ast::{ParsedJsModule, line_for_span, str_value};
+use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 
 pub struct ProgramAnalysis {
     pub imports: Vec<ImportRecord>,
@@ -90,6 +90,7 @@ pub struct IdentifierAccesses {
 }
 
 pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
+    let line_index = parsed.line_index();
     let mut imports = Vec::new();
     let mut import_by_local_name = HashMap::new();
     let mut export_aliases = Vec::new();
@@ -101,7 +102,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
 
     for (ordinal, item) in parsed.module.body.iter().enumerate() {
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
-            let import_record = describe_import(parsed, decl, imports.len());
+            let import_record = describe_import(&line_index, decl, imports.len());
             for specifier in &import_record.specifiers {
                 let mut specifier = specifier.clone();
                 specifier.source = Some(import_record.source.clone());
@@ -123,7 +124,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                                 .as_ref()
                                 .unwrap_or(&named_specifier.orig),
                         ),
-                        line: line_for_span(parsed, named.span),
+                        line: line_index.line_for_span(named.span),
                         local: Some(module_export_name(&named_specifier.orig)),
                     });
                 }
@@ -134,7 +135,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         if let ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(default_decl)) = item {
             export_aliases.push(ExportAliasRecord {
                 exported: "default".to_string(),
-                line: line_for_span(parsed, default_decl.span),
+                line: line_index.line_for_span(default_decl.span),
                 local: export_default_decl_name(default_decl),
             });
             continue;
@@ -143,7 +144,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         if let ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) = item {
             export_aliases.push(ExportAliasRecord {
                 exported: "default".to_string(),
-                line: line_for_span(parsed, default_expr.span),
+                line: line_index.line_for_span(default_expr.span),
                 local: None,
             });
             continue;
@@ -153,7 +154,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             let accesses = identifier_accesses_in_module_item(item, kind.into());
             owners.push(OwnerRecord {
                 id: format!("owner_{:05}", owners.len()),
-                line: item_line(parsed, item),
+                line: item_line(&line_index, item),
                 names,
                 ordinal,
                 kind,
@@ -244,11 +245,11 @@ pub fn build_chunk_manifest_from_analysis(
     }
 }
 
-fn describe_import(parsed: &ParsedJsModule, decl: &ImportDecl, index: usize) -> ImportRecord {
+fn describe_import(line_index: &SourceLineIndex, decl: &ImportDecl, index: usize) -> ImportRecord {
     let source = str_value(&decl.src);
     ImportRecord {
         id: format!("import_{index:05}"),
-        line: line_for_span(parsed, decl.span),
+        line: line_index.line_for_span(decl.span),
         source,
         specifiers: decl
             .specifiers
@@ -295,8 +296,8 @@ fn export_default_decl_name(decl: &ExportDefaultDecl) -> Option<String> {
     }
 }
 
-fn item_line(parsed: &ParsedJsModule, item: &ModuleItem) -> Option<usize> {
-    line_for_span(parsed, item.span())
+fn item_line(line_index: &SourceLineIndex, item: &ModuleItem) -> Option<usize> {
+    line_index.line_for_span(item.span())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

@@ -23,7 +23,7 @@ use artifact::{
     SelectedModuleLowering, get_chunk_entry_path, join_module_path, manifest_relative_path,
     module_path_dirname, module_path_from_path, normalize_module_path, relative_module_path,
 };
-use js_ast::{ParsedJsModule, line_range_for_span, set_str_value, str_value};
+use js_ast::{ParsedJsModule, set_str_value, str_value};
 use spec::{BindingSourceKind, ChunkRenames, LogicalModule, MemberPurity, ResidualModule};
 
 const LOWERING_FILE_PRAGMA: &str =
@@ -498,12 +498,15 @@ fn materialize_logical_chunk(
                 .map(|m| m.binding.clone())
                 .collect()
         });
+        let line_index = time_phase!(timings, "build_source_line_index", {
+            runtime_ast.line_index()
+        });
         let analysis = time_phase!(timings, "analyze_chunk_facts", {
             analyze_chunk_with_source_locations(
                 &runtime_ast.module,
                 &declared_pure,
                 Some(&source_path),
-                |span| line_range_for_span(runtime_ast, span),
+                |span| line_index.line_range_for_span(span),
             )
         });
         if let Some(ord) = analysis.top_level_await {

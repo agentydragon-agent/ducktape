@@ -16,6 +16,12 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "js_ast_test",
+    crate = ":js_ast",
+    edition = "2024",
+)
+
 rust_library(
     name = "artifact",
     srcs = ["artifact.rs"],
