@@ -16,5 +16,6 @@ spec:
   dependsOn:
     - name: openhands-namespace
     - name: openhands-secrets
+    - name: openhands-sandboxes
     - name: gateway
     - name: authentik

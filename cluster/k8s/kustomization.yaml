@@ -237,6 +237,7 @@ resources:
   # --- openhands ---
   - openhands/namespace/flux-kustomization.yaml
   - openhands/secrets/flux-kustomization.yaml
+  - openhands/sandboxes/flux-kustomization.yaml
   - openhands/app/flux-kustomization.yaml
 
   # --- proxmox-proxy ---

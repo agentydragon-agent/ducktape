@@ -19,6 +19,7 @@ spec:
       labels:
         app.kubernetes.io/name: openhands
     spec:
+      serviceAccountName: openhands
       # Entrypoint requires root to set up sandbox user; SANDBOX_USER_ID=0
       # skips the docker-socket setup path in entrypoint.sh.
       securityContext:
@@ -32,9 +33,6 @@ spec:
             - containerPort: 3000
               name: http
           env:
-            # Podman socket from wyrm2 host is mounted at /var/run/docker.sock.
-            # OpenHands defaults to Docker runtime; Podman's REST API is compatible.
-            # Persistence: SQLite DB + settings/keys stored here.
             - name: OH_PERSISTENCE_DIR
               value: /.openhands
             - name: FILE_STORE_PATH
@@ -59,14 +57,14 @@ spec:
                 secretKeyRef:
                   name: openhands-secrets
                   key: GITHUB_TOKEN
-            # Ollama: in-cluster, no key needed. Add more LLM providers here as env vars.
             - name: OLLAMA_BASE_URL
               value: http://ollama.ollama:11434
           volumeMounts:
             - name: data
               mountPath: /.openhands
-            - name: podman-socket
-              mountPath: /var/run/docker.sock
+            - name: config-toml
+              mountPath: /app/config.toml
+              subPath: config.toml
           resources:
             requests:
               cpu: 200m
@@ -91,7 +89,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: openhands-data
-        - name: podman-socket
-          hostPath:
-            path: /run/podman/podman.sock
-            type: Socket
+        - name: config-toml
+          configMap:
+            name: openhands-config-toml
