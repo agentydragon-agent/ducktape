@@ -12,16 +12,28 @@ shape, testing the binary against a live account.
 
 A previous version of this doc described a `nix-shell` recipe with
 `mkShell { inherit (telegram-desktop.unwrapped) buildInputs ...; }` plus
-manual `cmake -G Ninja $cmakeFlags ..`. **It builds, but the resulting
-binary crashes at startup** (`emoji_config.cpp:447 _sprites.size()`
-assertion — Qt fails to decode WebP from compiled-in resources, almost
-certainly because nix's `qt6.qtimageformats` plugin path is missing
-when run directly from the build dir).
+manual `cmake -G Ninja $cmakeFlags ..`. Two failure modes hit:
+
+1. **Built binary crashes at startup** —
+   `emoji_config.cpp:447 _sprites.size()` assertion — Qt fails to
+   decode WebP from compiled-in resources, almost certainly because
+   nix's `qt6.qtimageformats` plugin path is missing when run
+   directly from the build dir.
+2. **Incremental rebuilds fail** —
+   `stdafx.h:26: fatal error: QtCore/QMap: No such file or directory`
+   (observed 2026-05-06 against a build dir that previously linked
+   fine). The PCH was generated without `__SSP_STRONG__` and is
+   therefore skipped by GCC, exposing the fact that tdesktop's
+   `<QtCore/QMap>`-style sub-header includes resolve only via the
+   PCH path.
 
 Trying to reverse-engineer all the `cmakeFlags`, `preConfigure` hooks,
-and runtime `QT_PLUGIN_PATH` plumbing nixpkgs sets up is a yak-shave.
-Tdesktop ships their own CI build environment as a Docker image. Use
-that — it's the maintainer-tested path and it just works.
+the runtime `QT_PLUGIN_PATH` plumbing, and the PCH-define alignment
+nixpkgs sets up is a yak-shave. Tdesktop ships their own CI build
+environment as a Docker image. Use that — it's the maintainer-tested
+path and it just works. If you find a stale `build/` dir in the
+checkout from a previous nix-shell experiment, ignore it; only `out/`
+is the docker workflow's truth.
 
 ## One-time setup
 
@@ -110,8 +122,8 @@ docker run --rm -it -u $(id -u) \
 
 The build dir lands in `out/Release/` (or `out/Debug/`) on the host —
 bind-mounted, so it persists across container runs. The binary itself
-ends up at `out/Release/Telegram/Telegram` (or
-`out/Debug/Telegram/Telegram`).
+ends up at `out/Release/Telegram` (or `out/Debug/Telegram`) — that
+path is the executable file, not a directory.
 
 **First build**: roughly 30–90 min on wyrm2. Most of the heavy deps
 are pre-built into the image, so this is ~tdesktop's own sources +
@@ -126,7 +138,7 @@ gymnastics. Use a throwaway workdir to keep iteration runs isolated
 from your real `~/.local/share/TelegramDesktop`:
 
 ```bash
-./out/Release/Telegram/Telegram -workdir /tmp/td-test
+./out/Release/Telegram -workdir /tmp/td-test
 ```
 
 Log in via QR scan from the phone, let it sync, then:
@@ -135,10 +147,33 @@ Log in via QR scan from the phone, let it sync, then:
 grep "Poll Debug" /tmp/td-test/log.txt
 ```
 
-That's the marker emitted by the patch when clamping kicks in. The
-line includes `pollId`, `closeDate`, `deltaSec`, `deltaDays`, and the
-first 120 chars of the poll's question text — enough to identify
-which chat the bad poll lives in.
+That's the marker emitted by the patch when clamping kicks in. Each
+line carries:
+
+- `pollId`, `closeDate`, `deltaSec`, `deltaDays` — poll identity and
+  how far past the INT_MAX-ms ceiling the timer would have been.
+- `peerId`, `peerName`, `username` — the chat the poll lives in,
+  resolved via `Session::_pollExampleItem` (populated in
+  `MediaPoll`'s ctor) with a `_pollViews` fallback.
+- `msgId`, `topicRootId`, `topicTitle` — the example message and, for
+  forum supergroups, the topic. Useful when the chat title doesn't
+  match the question text and Telegram desktop search misses it
+  (forum topics, archived chats, voted-in polls in channels you
+  haven't opened recently).
+- First 120 chars of the poll's question text.
+
+If the line carries `chat=(unknown)` instead of the per-field block,
+neither `_pollExampleItem` nor `_pollViews` had an entry — the poll
+arrived via an update path that doesn't go through
+`MediaPoll::MediaPoll`. Re-running after the chat gets opened tends
+to populate it.
+
+### Confirmed reproducer
+
+A `forum supergroup` poll closing >25 days out (`deltaDays > 24.855`).
+Caught here on 2026-05-06 with a "Are you attending Futerkon 2026?"
+poll on `pollId=5172431876236771535`, `deltaDays≈28.7` — would have
+hit `base/timer.cpp:100` `Assertion Failed!` without the clamp.
 
 ## Inner loop (incremental rebuilds)
 
@@ -162,12 +197,20 @@ docker run --rm -it -u $(id -u) -v "$PWD:/usr/src/tdesktop" \
   -D TDESKTOP_API_ID=611335 \
   -D TDESKTOP_API_HASH=d524b414d21f4d37f08684c1df41ac9c
 # 3. Re-run the binary:
-./out/Release/Telegram/Telegram -workdir /tmp/td-test
+./out/Release/Telegram -workdir /tmp/td-test
 ```
 
 Step 2 is seconds-to-minutes for a one-file change — ninja recompiles
 the touched object plus links the executable. Container startup itself
 is a few seconds.
+
+**Header-file edits cascade.** Touching a widely-included header like
+`data_session.h` invalidates ~every TU that includes it, which for
+this header is most of `Telegram/`. The "incremental" rebuild then
+takes ~1–2h on wyrm2 (~1h42m measured 2026-05-06 for a single field
+addition + one-line method declaration). Prefer .cpp-only edits when
+iterating on the patch shape; only touch the header once the API is
+stable.
 
 To force a full reconfigure (e.g., after a `git pull` that touched
 `CMakeLists.txt`):
