@@ -32,11 +32,8 @@ spec:
             - containerPort: 3000
               name: http
           env:
-            # Run process-based sandbox (no Docker socket needed).
-            # CLEANUP: evaluate upgrading to Podman socket (/run/podman/podman.sock on wyrm2)
-            # or remote agent-server once the process sandbox proves insufficient.
-            - name: RUNTIME
-              value: local
+            # Podman socket from wyrm2 host is mounted at /var/run/docker.sock.
+            # OpenHands defaults to Docker runtime; Podman's REST API is compatible.
             # Persistence: SQLite DB + settings/keys stored here.
             - name: OH_PERSISTENCE_DIR
               value: /.openhands
@@ -68,6 +65,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /.openhands
+            - name: podman-socket
+              mountPath: /var/run/docker.sock
           resources:
             requests:
               cpu: 200m
@@ -92,3 +91,7 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: openhands-data
+        - name: podman-socket
+          hostPath:
+            path: /run/podman/podman.sock
+            type: Socket
