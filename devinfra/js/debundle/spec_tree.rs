@@ -16,7 +16,6 @@ pub struct CompileSpecTreeOptions {
     pub config_path: PathBuf,
     pub modules_root: PathBuf,
     pub vendor_marks_path: PathBuf,
-    pub ancillary_modules_path: Option<PathBuf>,
     pub source_root: Option<PathBuf>,
     pub out_root: PathBuf,
     pub force: bool,
@@ -78,13 +77,6 @@ enum VendorLevelSource {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct AncillaryModulesFile {
-    #[serde(default)]
-    modules: Vec<ModuleSource>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ModuleFile {
     #[serde(default)]
     members: Vec<Member>,
@@ -106,13 +98,8 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
     let js_list_path = source_path(source_root, config.inputs.js_list_path);
     let asset_summary_path = source_path(source_root, config.browser_harness.asset_summary_path);
     let layout = OutputLayout::new(options.out_root.clone());
-    let (active_modules, deferred_members) =
+    let (module_sources, deferred_members) =
         load_main_chunk_modules(&options.modules_root, &config.main_chunk_id)?;
-    let mut module_sources = active_modules;
-    if let Some(path) = &options.ancillary_modules_path {
-        let ancillary: AncillaryModulesFile = read_yaml(path)?;
-        module_sources.extend(ancillary.modules);
-    }
 
     Ok(TransformSpec {
         inputs: LoadJsChunksArgs {
@@ -372,7 +359,6 @@ mod tests {
         let config = root.join("spec_config.yaml");
         let modules = root.join("modules");
         let vendor_marks = root.join("sources/vendor/vendor_marks.yaml");
-        let ancillary = root.join("sources/logical/ancillary_chunk_modules.yaml");
         write_file(
             &config,
             r#"main_chunk_id: static/main
@@ -416,32 +402,10 @@ browser_harness:
         kind: function_declaration
 "#,
         );
-        write_file(
-            &ancillary,
-            r#"modules:
-  - chunk_id: static/extra
-    path: chunks/extra
-    members:
-      - name: ExtraThing
-        selector:
-          binding:
-            name: e
-            kind: import_specifier
-  - chunk_id: static/other
-    path: chunks/other
-    members:
-      - name: OtherThing
-        selector:
-          binding:
-            name: s
-            kind: variable_declarator
-"#,
-        );
         CompileSpecTreeOptions {
             config_path: config,
             modules_root: modules,
             vendor_marks_path: vendor_marks,
-            ancillary_modules_path: Some(ancillary),
             source_root: None,
             out_root: PathBuf::from("out/override"),
             force: true,
@@ -449,13 +413,11 @@ browser_harness:
     }
 
     #[test]
-    fn compiles_tree_sources_into_executable_transform_spec() {
+    fn compiles_tree_sources_into_flat_transform_spec() {
         let temp = tempfile::tempdir().unwrap();
         let spec = compile_spec_tree(&fixture(temp.path())).unwrap();
 
         assert!(spec.logical_modules["static/main"].contains_key("ui/active"));
-        assert!(spec.logical_modules["static/extra"].contains_key("chunks/extra"));
-        assert!(spec.logical_modules["static/other"].contains_key("chunks/other"));
         assert_eq!(
             spec.logical_modules["static/main"]["ui/active"].members[0]
                 .name
@@ -574,29 +536,9 @@ members: []
     }
 
     #[test]
-    fn rejects_duplicate_logical_module_ownership() {
-        let temp = tempfile::tempdir().unwrap();
-        let options = fixture(temp.path());
-        write_file(
-            options.ancillary_modules_path.as_ref().unwrap(),
-            r#"modules:
-  - chunk_id: static/main
-    path: ui/active
-    members: []
-"#,
-        );
-
-        let error = compile_spec_tree(&options).unwrap_err();
-        assert!(
-            format!("{error:#}").contains("duplicate logical module"),
-            "{error:#}"
-        );
-    }
-
-    #[test]
     fn rejects_unknown_authoring_config_fields() {
         let temp = tempfile::tempdir().unwrap();
-        let mut options = fixture(temp.path());
+        let options = fixture(temp.path());
         write_file(
             &options.config_path,
             r#"main_chunk_id: static/main
@@ -608,7 +550,6 @@ browser_harness:
 extra_authoring_field: old
 "#,
         );
-        options.ancillary_modules_path = None;
 
         let error = compile_spec_tree(&options).unwrap_err();
         assert!(format!("{error:#}").contains("unknown field"), "{error:#}");

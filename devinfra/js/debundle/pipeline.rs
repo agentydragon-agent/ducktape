@@ -61,9 +61,6 @@ pub struct TransformArgs {
     /// Path to tree-shaped vendor marks YAML.
     #[arg(long = "tree-vendor-marks")]
     pub tree_vendor_marks: Option<PathBuf>,
-    /// Optional path to ancillary logical-module source YAML.
-    #[arg(long = "tree-ancillary-modules")]
-    pub tree_ancillary_modules: Option<PathBuf>,
     /// Root for source-relative paths embedded in the tree-shaped config YAML.
     #[arg(long = "tree-source-root")]
     pub tree_source_root: Option<PathBuf>,
@@ -122,10 +119,6 @@ fn resolve_spec_source(
                 config_path: resolve_runfiles_path(config_path.clone(), runfiles),
                 modules_root: resolve_runfiles_path(modules_root, runfiles),
                 vendor_marks_path: resolve_runfiles_path(vendor_marks_path, runfiles),
-                ancillary_modules_path: args
-                    .tree_ancillary_modules
-                    .clone()
-                    .map(|path| resolve_runfiles_path(path, runfiles)),
                 source_root: args
                     .tree_source_root
                     .clone()
@@ -897,8 +890,6 @@ mod tests {
             "modules",
             "--tree-vendor-marks",
             "vendor_marks.yaml",
-            "--tree-ancillary-modules",
-            "ancillary.yaml",
             "--tree-source-root",
             "/workspace",
             "--out-root",
@@ -912,7 +903,6 @@ mod tests {
                 config_path: PathBuf::from("spec_config.yaml"),
                 modules_root: PathBuf::from("modules"),
                 vendor_marks_path: PathBuf::from("vendor_marks.yaml"),
-                ancillary_modules_path: Some(PathBuf::from("ancillary.yaml")),
                 source_root: Some(PathBuf::from("/workspace")),
                 out_root: PathBuf::from("out"),
                 force: false,

@@ -11,7 +11,6 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
 
 _TREE_SOURCE_PATH_FLAGS = {
-    "--tree-ancillary-modules": True,
     "--tree-config": True,
     "--tree-modules": True,
     "--tree-source-root": True,
