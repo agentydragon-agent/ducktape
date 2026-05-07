@@ -27,7 +27,7 @@ spec:
         kubernetes.io/hostname: wyrm2
       containers:
         - name: openhands
-          image: ghcr.io/all-hands-ai/openhands:0.62.0
+          image: ghcr.io/all-hands-ai/openhands:1.7.0
           ports:
             - containerPort: 3000
               name: http
