@@ -101,6 +101,85 @@ props/frontend layer means a regression that survives synthetic
 tests will only show up against the private corpus, where iteration
 is slower and the repro can't be shared publicly.
 
+## Performance Profiling
+
+Use external profiling before adding fine-grained timing boilerplate
+to production code. The default workflow for finding hot spots is a
+profile-mode debundler binary: optimized code with debug symbols, run
+against the real corpus under tools such as `perf record` /
+`perf report` for stack samples and `valgrind --tool=massif` or an
+equivalent allocator profiler for memory behavior.
+
+Profile-mode samples answer "where is the runtime going relative to
+total time?" They are the right tool for discovering hot stack
+patterns, accidental repeated full-graph walks, map-heavy inner loops,
+avoidable clones, missing indexes, bad data structures, and algorithmic
+shape problems. Many fixes should be structural: change maps to dense
+typed-id vectors, cache instead of recomputing, use a better graph
+algorithm, fuse passes, or adopt a proven crate/data structure rather
+than sprinkling more counters through the code.
+
+Use production builds for absolute elapsed-time numbers. Profile-mode
+builds intentionally trade exact wall-clock comparability for symbolic
+samples. Keep production telemetry coarse and useful for users of the
+pipeline; don't add detailed stage fields solely because an optimization
+investigation needs temporary visibility.
+
+Build the profile binary with Bazel, not Cargo, so it uses the same deps
+and toolchain as the pipeline:
+
+```sh
+nix develop --command bazelisk \
+  --output_base=/tmp/wyrm2-scratch/$USER/bazel-output/ducktape-profile \
+  build //devinfra/js/debundle:debundle \
+  --config=nolint \
+  --compilation_mode=opt \
+  --strip=never \
+  --@rules_rust//rust/settings:extra_rustc_flags=-Cdebuginfo=2 \
+  --remote_download_outputs=all
+```
+
+When profiling a downstream `debundle_pipeline` action, first ask Bazel
+for the action command so the profile run uses the same spec paths,
+package roots, and working directory as the real build:
+
+```sh
+nix develop --command bazelisk \
+  --output_base=/tmp/wyrm2-scratch/$USER/bazel-output/gaffer-profile-inputs \
+  build //tana/re/web/spec:debundle_78d928dca7 \
+  --config=nolint \
+  --remote_download_outputs=all
+
+nix develop --command bazelisk \
+  --output_base=/tmp/wyrm2-scratch/$USER/bazel-output/gaffer-profile-inputs \
+  aquery 'mnemonic("DebundlePipeline", //tana/re/web/spec:debundle_78d928dca7)' \
+  --include_commandline \
+  --config=nolint
+```
+
+Then run the profile-built binary under `perf`, substituting the
+debundler path in that action command with the binary from the profile
+output base and keeping the action's `cd "${BAZEL_BINDIR}"` shape:
+
+```sh
+perf record -F 99 -e cycles:u --call-graph dwarf,8192 \
+  -o /tmp/wyrm2-scratch/$USER/profile/tana-debundle/perf.data \
+  -- /tmp/wyrm2-scratch/$USER/bazel-output/ducktape-profile/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle \
+  ...same debundle args from the DebundlePipeline action...
+```
+
+For heap shape, run the same profile-built binary and arguments under
+Massif:
+
+```sh
+valgrind --tool=massif \
+  --massif-out-file=/tmp/wyrm2-scratch/$USER/profile/tana-debundle/massif.out \
+  /tmp/wyrm2-scratch/$USER/bazel-output/ducktape-profile/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle \
+  ...same debundle args from the DebundlePipeline action...
+ms_print /tmp/wyrm2-scratch/$USER/profile/tana-debundle/massif.out \
+  >/tmp/wyrm2-scratch/$USER/profile/tana-debundle/ms_print.txt
+```
+
 ## Test shape preferences
 
 Strongly prefer **executable e2e tests with high-level assertions**
