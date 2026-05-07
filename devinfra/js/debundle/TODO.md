@@ -193,6 +193,32 @@ Tana peel loop:
   `(file, role)` pairs into a typed map if the output consumers do not depend
   on order. Keep the manifest easy to diff and easy to read.
 
+## Parser / analysis ownership audit followups
+
+Syntax-derived facts should come from the SWC-backed parse/analysis path and
+then flow through artifact manifests or indexes. Do not add phase-local string
+scans, regexes, or miniature JavaScript parsers to answer questions the real
+parser already answered.
+
+Known cleanup targets:
+
+- Keep import/specifier facts downstream of `prepare_js_chunks`: the pipeline
+  should parse/analyze chunks once, then derive vendor-caller and chunk-reference
+  decisions from `ChunkManifest.imports` / artifact indexes. No pre-parse source
+  scanning for import strings.
+- `vendor.rs` still has AST-local import alignment and vendor import-renaming
+  walks. The mutation pass needs an AST visitor, but the "which source imports
+  which chunk / which named bindings" facts should be fed from artifact import
+  indexes rather than rebuilt by ad hoc per-stage AST scans.
+- `program_analysis.rs` currently records dynamic-import count but not dynamic
+  import source records. If later pipeline decisions need dynamic import
+  sources, extend the shallow analysis schema once instead of discovering them
+  again in another stage.
+- `rewrite_specifiers.rs` and vendor import rewriting duplicate source
+  resolution logic around relative/source import references. Centralize the
+  resolution/index query API so mutation stages ask the same typed question and
+  differ only in how they rewrite the matched AST node.
+
 ## Vendor swap edge cases
 
 - `named_from_default`: documented acceptance contract is "upstream

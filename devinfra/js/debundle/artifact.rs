@@ -1198,7 +1198,10 @@ fn source_path_for_artifact_file(
     Ok(artifact.chunk_source_path(chunk_id))
 }
 
-fn resolve_chunk_source_path_reference(source: &str, caller_source_path: &str) -> Option<String> {
+pub fn resolve_chunk_source_path_reference(
+    source: &str,
+    caller_source_path: &str,
+) -> Option<String> {
     let imported_path = if source.starts_with('/') {
         normalize_module_path(source.trim_start_matches('/')).ok()?
     } else {
