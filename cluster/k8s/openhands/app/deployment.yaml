@@ -27,7 +27,7 @@ spec:
         kubernetes.io/hostname: wyrm2
       containers:
         - name: openhands
-          image: ghcr.io/all-hands-ai/openhands:1.7.0
+          image: ghcr.io/all-hands-ai/openhands:main
           ports:
             - containerPort: 3000
               name: http
@@ -57,6 +57,11 @@ spec:
                 secretKeyRef:
                   name: openhands-secrets
                   key: OPENAI_API_KEY
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openhands-secrets
+                  key: GITHUB_TOKEN
             # Ollama: in-cluster, no key needed. Add more LLM providers here as env vars.
             - name: OLLAMA_BASE_URL
               value: http://ollama.ollama:11434

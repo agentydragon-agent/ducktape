@@ -61,6 +61,15 @@ but losing the bypass escape hatch.
       the device, probably via Termux/OpenSSH, with explicit keys and a clear
       power/background-execution story.
 
+## OpenHands: self-hosted git provider
+
+OpenHands supports GitHub and GitLab natively (PAT or OAuth App). Consider pointing
+it at a self-hosted option — either cluster Gitea (`git.allegedly.works`) or a
+self-hosted GitLab instance — so agent work can land in private repos without relying
+on `github.com`. GitLab PAT just needs `GITLAB_TOKEN` env var (same pattern as
+`GITHUB_TOKEN`); Gitea would need a git-credential helper or embedded PAT in URLs
+since there's no first-class Gitea provider in OpenHands.
+
 ## OpenHands sandbox egress isolation
 
 - [ ] Add NetworkPolicy/CiliumNetworkPolicy to `openhands-sandboxes` namespace blocking
