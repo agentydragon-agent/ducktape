@@ -39,7 +39,7 @@
 //! Rendered as `"<chunk_id>:<owner_file>:<ordinal>"` for human-readable
 //! diffing across runs.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -118,7 +118,8 @@ pub fn compute_with_clock(
     // Most minified names are unique across the bundle, but in principle
     // two chunks can independently mint the same letter pair for separate
     // symbols, so we keep a Vec and resolve references chunk-locally.
-    let mut sites_by_name: BTreeMap<String, Vec<DeclSite>> = BTreeMap::new();
+    let mut sites_by_name: HashMap<String, Vec<DeclSite>> = HashMap::new();
+    let mut interest_names_by_chunk = HashMap::<String, HashSet<String>>::new();
 
     for chunk_id in artifact.list_chunk_ids() {
         let chunk = artifact.js_chunk(&chunk_id)?;
@@ -131,6 +132,10 @@ pub fn compute_with_clock(
                 continue;
             };
             for site in unrenamed_top_level_sites(parsed, &chunk_id, file_path, &input_names) {
+                interest_names_by_chunk
+                    .entry(site.owner_chunk.clone())
+                    .or_default()
+                    .insert(site.name.clone());
                 sites_by_name
                     .entry(site.name.clone())
                     .or_default()
@@ -157,13 +162,16 @@ pub fn compute_with_clock(
     // that in here so a "names everywhere" symbol shows its true fanout.
     for chunk_id in artifact.list_chunk_ids() {
         let chunk = artifact.js_chunk(&chunk_id)?;
+        let Some(of_interest) = interest_names_by_chunk.get(&chunk_id) else {
+            continue;
+        };
         for (file_path, file) in &chunk.files {
             let Some(parsed) = file.ast() else {
                 continue;
             };
             let mut counter = ReferenceCounter {
-                of_interest: &sites_by_name,
-                local_counts: BTreeMap::new(),
+                of_interest,
+                local_counts: HashMap::new(),
             };
             parsed.module.visit_with(&mut counter);
             let module_key = format!("{chunk_id}/{file_path}");
@@ -224,9 +232,11 @@ pub fn compute_with_clock(
         b.ref_count
             .cmp(&a.ref_count)
             .then_with(|| b.fanout_modules.cmp(&a.fanout_modules))
-            // Final tiebreak on selector keeps ordering byte-stable across
-            // identical re-runs even when ref_count + fanout collide.
             .then_with(|| a.selector.cmp(&b.selector))
+            // Final tiebreak on name keeps ordering byte-stable across
+            // identical re-runs when a single declaration row binds
+            // multiple names and therefore shares a selector.
+            .then_with(|| a.name.cmp(&b.name))
     });
 
     let total_references = entries.iter().map(|entry| entry.ref_count).sum();
@@ -239,10 +249,8 @@ pub fn compute_with_clock(
     })
 }
 
-fn input_bundle_names_by_chunk(
-    artifact: &JsPipelineArtifact,
-) -> BTreeMap<String, BTreeSet<String>> {
-    let mut names_by_chunk = BTreeMap::<String, BTreeSet<String>>::new();
+fn input_bundle_names_by_chunk(artifact: &JsPipelineArtifact) -> HashMap<String, HashSet<String>> {
+    let mut names_by_chunk = HashMap::<String, HashSet<String>>::new();
     for chunk in &artifact.chunks {
         let names = names_by_chunk.entry(chunk.chunk_id.clone()).or_default();
         for declaration in &chunk.manifest.kept_top_level_declarations {
@@ -263,7 +271,7 @@ fn input_bundle_names_by_chunk(
     names_by_chunk
 }
 
-fn is_input_bundle_name(name: &str, input_names: &BTreeSet<String>) -> bool {
+fn is_input_bundle_name(name: &str, input_names: &HashSet<String>) -> bool {
     input_names.contains(name)
 }
 
@@ -297,7 +305,7 @@ struct DeclSite {
     owner_file: String,
     owner_ordinal: usize,
     ref_count: usize,
-    referencing_modules: BTreeSet<String>,
+    referencing_modules: HashSet<String>,
 }
 
 /// Walk a parsed module's body, returning one [`DeclSite`] per top-level
@@ -308,7 +316,7 @@ fn unrenamed_top_level_sites(
     parsed: &ParsedJsModule,
     chunk_id: &str,
     file_path: &str,
-    input_names: &BTreeSet<String>,
+    input_names: &HashSet<String>,
 ) -> Vec<DeclSite> {
     let mut out = Vec::new();
     for (ordinal, item) in parsed.module.body.iter().enumerate() {
@@ -322,7 +330,7 @@ fn unrenamed_top_level_sites(
                 owner_file: file_path.to_string(),
                 owner_ordinal: ordinal,
                 ref_count: 0,
-                referencing_modules: BTreeSet::new(),
+                referencing_modules: HashSet::new(),
             });
         }
     }
@@ -410,14 +418,14 @@ fn pat_names(pat: &Pat) -> Vec<String> {
 /// This is intentionally close to babel's `isReferencedIdentifier` —
 /// see the deleted JS implementation's `identifierRole`.
 struct ReferenceCounter<'a> {
-    of_interest: &'a BTreeMap<String, Vec<DeclSite>>,
-    local_counts: BTreeMap<String, usize>,
+    of_interest: &'a HashSet<String>,
+    local_counts: HashMap<String, usize>,
 }
 
 impl Visit for ReferenceCounter<'_> {
     fn visit_ident(&mut self, node: &Ident) {
         let name = node.sym.as_ref();
-        if self.of_interest.contains_key(name) {
+        if self.of_interest.contains(name) {
             *self.local_counts.entry(name.to_string()).or_default() += 1;
         }
     }
@@ -507,7 +515,7 @@ mod tests {
 
     #[test]
     fn input_bundle_name_detection_uses_origin_not_spelling() {
-        let input_names = BTreeSet::from([
+        let input_names = HashSet::from([
             "aH".to_string(),
             "getUserData".to_string(),
             "__vite__mapDeps".to_string(),
