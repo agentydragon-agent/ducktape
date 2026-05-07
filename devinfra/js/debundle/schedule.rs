@@ -11,7 +11,7 @@ pub struct Schedule {
     pub owner_graph: OwnerGraph,
     owner_edges: Vec<OwnerEdgeEntry>,
     pub dep_graph: ModuleDepGraph,
-    owner_report_ids_by_binding: BTreeMap<BindingName, Vec<String>>,
+    owner_report_ids_by_binding: Vec<Vec<String>>,
     /// Topological linearization of `I ∪ S`, dependency-first
     /// (the module at index 0 must evaluate before any other; the
     /// last module — typically the residual entry — evaluates
@@ -101,35 +101,39 @@ impl Schedule {
         self.logical_modules.get(idx.0)
     }
 
+    pub fn binding_name(&self, id: BindingId) -> &BindingName {
+        self.owner_graph.binding_table.required_name(id)
+    }
+
     pub fn owner_report_ids_for_bindings<'a>(
         &self,
         names: impl IntoIterator<Item = &'a str>,
     ) -> Vec<String> {
         names
             .into_iter()
-            .filter_map(|name| self.owner_report_ids_by_binding.get(name))
+            .filter_map(|name| self.owner_graph.binding_table.get(name))
+            .filter_map(|binding| self.owner_report_ids_by_binding.get(binding.0))
             .flat_map(|ids| ids.iter().cloned())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
     }
 
-    fn build_owner_report_ids_by_binding(
-        owner_graph: &OwnerGraph,
-    ) -> BTreeMap<BindingName, Vec<String>> {
-        let mut by_binding = BTreeMap::<BindingName, BTreeSet<String>>::new();
-        for node in owner_graph.nodes.values() {
+    fn build_owner_report_ids_by_binding(owner_graph: &OwnerGraph) -> Vec<Vec<String>> {
+        let mut by_binding = (0..owner_graph.binding_table.len())
+            .map(|_| BTreeSet::<String>::new())
+            .collect::<Vec<_>>();
+        for node in owner_graph.iter_nodes() {
             let report_id = owner_key(node.id);
             for binding in &node.declared {
-                by_binding
-                    .entry(binding.clone())
-                    .or_default()
-                    .insert(report_id.clone());
+                if let Some(ids) = by_binding.get_mut(binding.0) {
+                    ids.insert(report_id.clone());
+                }
             }
         }
         by_binding
             .into_iter()
-            .map(|(binding, ids)| (binding, ids.into_iter().collect()))
+            .map(|ids| ids.into_iter().collect())
             .collect()
     }
 

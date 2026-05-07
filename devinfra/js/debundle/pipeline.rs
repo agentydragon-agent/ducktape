@@ -176,7 +176,9 @@ pub enum PipelineStage {
     LoadTransformSpec,
     ValidateTransformSpec,
     LoadJsChunks,
+    BuildAstParsePlan,
     PrepareJsChunks,
+    WriteParsePlanReport,
     BuildArtifactIndexes,
     RewriteChunkEntrySpecifiers,
     ApplyVendorAnnotations,
@@ -268,7 +270,17 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let ast_parse_plan = build_ast_parse_plan(&spec, &artifact, &materialise_chunk_ids);
+    let ast_parse_plan = run_step_with_result(
+        &mut preparation_steps,
+        PipelineStage::BuildAstParsePlan,
+        || {
+            Ok(build_ast_parse_plan(
+                &spec,
+                &artifact,
+                &materialise_chunk_ids,
+            ))
+        },
+    )?;
     let parse_plan_report_path = parse_plan_report_path(&spec);
     let prepare_result = run_step_with_result(
         &mut preparation_steps,
@@ -276,13 +288,16 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         || {
             let parse_chunk_ids = (ast_parse_plan.mode == AstParseMode::Selective)
                 .then(|| ast_parse_plan.required_chunk_ids());
-            let result = prepare_js_chunks(artifact, PrepareJsChunksOptions { parse_chunk_ids })?;
-            if let Some(path) = &parse_plan_report_path {
-                write_parse_plan_report(path, &ast_parse_plan, &result.parsed_js_files)?;
-            }
-            Ok(result)
+            prepare_js_chunks(artifact, PrepareJsChunksOptions { parse_chunk_ids })
         },
     )?;
+    if let Some(path) = &parse_plan_report_path {
+        run_step(
+            &mut preparation_steps,
+            PipelineStage::WriteParsePlanReport,
+            || write_parse_plan_report(path, &ast_parse_plan, &prepare_result.parsed_js_files),
+        )?;
+    }
     let mut steps = Vec::new();
     let artifact_indexes =
         run_step_with_result(&mut steps, PipelineStage::BuildArtifactIndexes, || {
@@ -677,6 +692,7 @@ fn write_parse_plan_report(
 struct ParsePlanReport {
     mode: AstParseMode,
     counts: ParsePlanCounts,
+    timings: ParsePlanTimings,
     chunks: Vec<ParsePlanChunkReport>,
 }
 
@@ -688,6 +704,13 @@ struct ParsePlanCounts {
     parsed_files: usize,
     source_bytes: usize,
     parsed_source_bytes: usize,
+}
+
+#[derive(Serialize)]
+struct ParsePlanTimings {
+    parse_duration: Duration,
+    analysis_duration: Duration,
+    parse_and_analysis_duration: Duration,
 }
 
 #[derive(Serialize)]
@@ -747,6 +770,14 @@ fn parse_plan_report(plan: &AstParsePlan, manifest: &ParsedJsFilesManifest) -> P
             }
         })
         .collect::<Vec<_>>();
+    let timings = timings_by_chunk
+        .values()
+        .fold(ParsedChunkTiming::default(), |total, timing| {
+            ParsedChunkTiming {
+                parse_duration: total.parse_duration + timing.parse_duration,
+                analysis_duration: total.analysis_duration + timing.analysis_duration,
+            }
+        });
     ParsePlanReport {
         mode: plan.mode,
         counts: ParsePlanCounts {
@@ -760,6 +791,11 @@ fn parse_plan_report(plan: &AstParsePlan, manifest: &ParsedJsFilesManifest) -> P
                 .filter(|chunk| chunk.will_parse)
                 .map(|chunk| chunk.source_bytes)
                 .sum(),
+        },
+        timings: ParsePlanTimings {
+            parse_duration: timings.parse_duration,
+            analysis_duration: timings.analysis_duration,
+            parse_and_analysis_duration: timings.parse_duration + timings.analysis_duration,
         },
         chunks,
     }
@@ -1069,10 +1105,12 @@ mod tests {
         })?;
 
         assert_eq!(summary.steps.len(), 3);
-        assert_eq!(summary.preparation_steps.len(), 4);
+        assert_eq!(summary.preparation_steps.len(), 6);
         let rendered_summary = render_transform_summary(&summary);
         assert!(rendered_summary.contains("- load_transform_spec"));
+        assert!(rendered_summary.contains("- build_ast_parse_plan"));
         assert!(rendered_summary.contains("- prepare_js_chunks"));
+        assert!(rendered_summary.contains("- write_parse_plan_report"));
         assert!(rendered_summary.contains("- build_artifact_indexes"));
         assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
         assert!(rendered_summary.contains("- emit_browser_harness"));
@@ -1191,6 +1229,24 @@ mod tests {
         );
         assert!(
             parse_plan
+                .pointer("/timings/parse_duration/secs")
+                .and_then(serde_json::Value::as_u64)
+                .is_some()
+        );
+        assert!(
+            parse_plan
+                .pointer("/timings/analysis_duration/secs")
+                .and_then(serde_json::Value::as_u64)
+                .is_some()
+        );
+        assert!(
+            parse_plan
+                .pointer("/timings/parse_and_analysis_duration/secs")
+                .and_then(serde_json::Value::as_u64)
+                .is_some()
+        );
+        assert!(
+            parse_plan
                 .get("chunks")
                 .and_then(serde_json::Value::as_array)
                 .unwrap()
@@ -1218,6 +1274,23 @@ mod tests {
                     .is_some()
                     && chunk
                         .get("analysis_duration")
+                        .and_then(|duration| duration.get("nanos"))
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some())
+        );
+        assert!(
+            parse_plan
+                .get("chunks")
+                .and_then(serde_json::Value::as_array)
+                .unwrap()
+                .iter()
+                .all(|chunk| chunk
+                    .get("parse_duration")
+                    .and_then(|duration| duration.get("secs"))
+                    .and_then(serde_json::Value::as_u64)
+                    .is_some()
+                    && chunk
+                        .get("parse_duration")
                         .and_then(|duration| duration.get("nanos"))
                         .and_then(serde_json::Value::as_u64)
                         .is_some())

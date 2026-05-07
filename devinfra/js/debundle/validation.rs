@@ -208,7 +208,9 @@ pub fn validate_schedule(
                     from: module_name(from),
                     to: module_name(to),
                     statement_ordinal: reason.statement_ordinal(),
-                    binding: reason.binding().cloned(),
+                    binding: reason
+                        .binding()
+                        .map(|binding| graph.binding_table.required_name(binding).clone()),
                     kind: reason.kind(),
                 });
             }
@@ -246,11 +248,12 @@ fn validate_cross_destination_assignments(
             if !reason.is_binding_write() {
                 continue;
             }
-            let Some(binding) = reason.binding() else {
+            let Some(binding_id) = reason.binding() else {
                 continue;
             };
+            let binding = owner_graph.binding_table.required_name(binding_id).clone();
             violations.push(CrossDestinationAssignmentReport {
-                binding: binding.clone(),
+                binding,
                 assigner_owner: owner_key(from),
                 binding_owner: owner_key(to),
                 assigner_statement_ordinal: from_node.statement_ordinal,
@@ -404,7 +407,9 @@ fn compute_realizability_cut(
                 from: module_name(u),
                 to: module_name(v),
                 statement_ordinal: reason.statement_ordinal(),
-                binding: reason.binding().cloned(),
+                binding: reason
+                    .binding()
+                    .map(|binding| graph.binding_table.required_name(binding).clone()),
                 kind: reason.kind(),
             });
         }

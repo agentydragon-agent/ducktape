@@ -39,8 +39,8 @@ struct ReverseModuleAdjEdge {
 
 struct PeelabilityContext<'a> {
     owner_edges: &'a [OwnerEdgeEntry],
-    owner_out_edges: BTreeMap<OwnerId, Vec<usize>>,
-    owner_in_edges: BTreeMap<OwnerId, Vec<usize>>,
+    owner_out_edges: Vec<Vec<usize>>,
+    owner_in_edges: Vec<Vec<usize>>,
     module_index: BTreeMap<ModuleId, usize>,
     modules: Vec<ModuleId>,
     forward_edges: Vec<Vec<ModuleAdjEdge>>,
@@ -72,8 +72,7 @@ fn build_peelability_report(
 ) -> OwnerGraphPeelabilityReport {
     let residual_destinations: BTreeSet<ModuleId> = schedule
         .owner_graph
-        .nodes
-        .values()
+        .iter_nodes()
         .filter_map(|node| {
             is_residual_destination(schedule, node.destination).then_some(node.destination)
         })
@@ -81,7 +80,7 @@ fn build_peelability_report(
 
     let context = PeelabilityContext::new(schedule, owner_edges, quotient_edges);
     let mut declared_by_owner = BTreeMap::<OwnerId, Vec<BindingName>>::new();
-    for node in schedule.owner_graph.nodes.values() {
+    for node in schedule.owner_graph.iter_nodes() {
         if !is_residual_destination(schedule, node.destination) {
             continue;
         }
@@ -295,6 +294,7 @@ fn build_candidate_owner_sets(candidates: &[PeelCandidateEvaluation]) -> Vec<BTr
 fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<BindingName> {
     node.declared
         .iter()
+        .map(|binding| schedule.binding_name(*binding))
         .filter(|name| {
             !matches!(
                 schedule.bindings.get(*name),
@@ -316,7 +316,7 @@ impl<'a> PeelabilityContext<'a> {
         for idx in 0..schedule.logical_modules.len() {
             modules.insert(ModuleId::Logical(LogicalModuleIndex(idx)));
         }
-        for node in schedule.owner_graph.nodes.values() {
+        for node in schedule.owner_graph.iter_nodes() {
             modules.insert(node.destination);
         }
         for edge in quotient_edges {
@@ -335,12 +335,17 @@ impl<'a> PeelabilityContext<'a> {
             .map(|(idx, id)| (id, idx))
             .collect();
 
-        let mut owner_out_edges = BTreeMap::<OwnerId, Vec<usize>>::new();
-        let mut owner_in_edges = BTreeMap::<OwnerId, Vec<usize>>::new();
+        let owner_count = schedule.owner_graph.nodes.len();
+        let mut owner_out_edges = vec![Vec::new(); owner_count];
+        let mut owner_in_edges = vec![Vec::new(); owner_count];
         let mut module_pair_totals = BTreeMap::<(ModuleId, ModuleId), ModulePairTotals>::new();
         for (idx, edge) in owner_edges.iter().enumerate() {
-            owner_out_edges.entry(edge.from).or_default().push(idx);
-            owner_in_edges.entry(edge.to).or_default().push(idx);
+            if let Some(indices) = owner_out_edges.get_mut(edge.from.0) {
+                indices.push(idx);
+            }
+            if let Some(indices) = owner_in_edges.get_mut(edge.to.0) {
+                indices.push(idx);
+            }
 
             let Some(from_node) = schedule.owner_graph.node(edge.from) else {
                 continue;
@@ -394,6 +399,20 @@ impl<'a> PeelabilityContext<'a> {
 
     fn module_idx(&self, module: ModuleId) -> Option<usize> {
         self.module_index.get(&module).copied()
+    }
+
+    fn owner_out_edge_indices(&self, owner_id: OwnerId) -> &[usize] {
+        self.owner_out_edges
+            .get(owner_id.0)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    fn owner_in_edge_indices(&self, owner_id: OwnerId) -> &[usize] {
+        self.owner_in_edges
+            .get(owner_id.0)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     fn current_edge_remains(
@@ -523,7 +542,7 @@ fn residual_dependency_closure_candidates(
 }
 
 struct ResidualDependencyClosureIndex {
-    component_by_owner: BTreeMap<OwnerId, usize>,
+    component_by_owner: Vec<Option<usize>>,
     component_members: Vec<Vec<OwnerId>>,
     component_successors: Vec<Vec<usize>>,
     component_closure_cache: Vec<Option<Vec<OwnerId>>>,
@@ -532,18 +551,20 @@ struct ResidualDependencyClosureIndex {
 impl ResidualDependencyClosureIndex {
     fn new(schedule: &Schedule, context: &PeelabilityContext<'_>) -> Self {
         let mut graph = DiGraph::<OwnerId, ()>::new();
-        let mut node_by_owner = BTreeMap::<OwnerId, NodeIndex>::new();
-        for node in schedule.owner_graph.nodes.values() {
+        let mut node_by_owner = vec![None; schedule.owner_graph.nodes.len()];
+        for node in schedule.owner_graph.iter_nodes() {
             if !is_residual_destination(schedule, node.destination) {
                 continue;
             }
-            node_by_owner.insert(node.id, graph.add_node(node.id));
+            if let Some(slot) = node_by_owner.get_mut(node.id.0) {
+                *slot = Some(graph.add_node(node.id));
+            }
         }
         for edge in context.owner_edges {
-            let Some(&from) = node_by_owner.get(&edge.from) else {
+            let Some(from) = node_by_owner.get(edge.from.0).and_then(|node| *node) else {
                 continue;
             };
-            let Some(&to) = node_by_owner.get(&edge.to) else {
+            let Some(to) = node_by_owner.get(edge.to.0).and_then(|node| *node) else {
                 continue;
             };
             graph.add_edge(from, to, ());
@@ -564,14 +585,15 @@ impl ResidualDependencyClosureIndex {
 
         let component_by_owner = node_by_owner
             .iter()
-            .map(|(&owner_id, &node_idx)| (owner_id, component_by_node[node_idx.index()]))
-            .collect::<BTreeMap<_, _>>();
+            .map(|node_idx| node_idx.map(|idx| component_by_node[idx.index()]))
+            .collect::<Vec<_>>();
         let mut component_successors = vec![Vec::<usize>::new(); component_members.len()];
         for edge in context.owner_edges {
-            let Some(&from_component) = component_by_owner.get(&edge.from) else {
+            let Some(from_component) = component_by_owner.get(edge.from.0).copied().flatten()
+            else {
                 continue;
             };
-            let Some(&to_component) = component_by_owner.get(&edge.to) else {
+            let Some(to_component) = component_by_owner.get(edge.to.0).copied().flatten() else {
                 continue;
             };
             if from_component != to_component {
@@ -592,7 +614,7 @@ impl ResidualDependencyClosureIndex {
     }
 
     fn component_for_owner(&self, owner_id: OwnerId) -> Option<usize> {
-        self.component_by_owner.get(&owner_id).copied()
+        self.component_by_owner.get(owner_id.0).copied().flatten()
     }
 
     fn closure_for_component(&mut self, component_idx: usize) -> Vec<OwnerId> {
@@ -676,12 +698,8 @@ fn candidate_cross_destination_write_edge_indices(
 ) -> BTreeSet<usize> {
     let mut edge_indices = BTreeSet::new();
     for owner_id in moved_owners {
-        if let Some(indices) = context.owner_out_edges.get(owner_id) {
-            edge_indices.extend(indices.iter().copied());
-        }
-        if let Some(indices) = context.owner_in_edges.get(owner_id) {
-            edge_indices.extend(indices.iter().copied());
-        }
+        edge_indices.extend(context.owner_out_edge_indices(*owner_id).iter().copied());
+        edge_indices.extend(context.owner_in_edge_indices(*owner_id).iter().copied());
     }
     edge_indices
         .into_iter()
@@ -699,10 +717,7 @@ fn candidate_has_residual_dependency(
     moved_owners: &BTreeSet<OwnerId>,
 ) -> bool {
     for owner_id in moved_owners {
-        let Some(edge_indices) = context.owner_out_edges.get(owner_id) else {
-            continue;
-        };
-        for &edge_idx in edge_indices {
+        for &edge_idx in context.owner_out_edge_indices(*owner_id) {
             let edge = &context.owner_edges[edge_idx];
             if moved_owners.contains(&edge.to) {
                 continue;
@@ -726,12 +741,8 @@ fn candidate_incident_edges(
 ) -> (Vec<CandidateIncidentEdge>, CandidateGraphAdjustment) {
     let mut edge_indices = BTreeSet::new();
     for owner_id in moved_owners {
-        if let Some(indices) = context.owner_out_edges.get(owner_id) {
-            edge_indices.extend(indices.iter().copied());
-        }
-        if let Some(indices) = context.owner_in_edges.get(owner_id) {
-            edge_indices.extend(indices.iter().copied());
-        }
+        edge_indices.extend(context.owner_out_edge_indices(*owner_id).iter().copied());
+        edge_indices.extend(context.owner_in_edge_indices(*owner_id).iter().copied());
     }
 
     let mut adjustment = CandidateGraphAdjustment::default();

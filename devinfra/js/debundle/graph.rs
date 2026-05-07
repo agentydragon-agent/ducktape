@@ -19,19 +19,19 @@
 pub enum EdgeReason {
     AtInitRead {
         statement_ordinal: StatementOrdinal,
-        binding: BindingName,
+        binding: BindingId,
     },
     LazyRead {
         statement_ordinal: StatementOrdinal,
-        binding: BindingName,
+        binding: BindingId,
     },
     AtInitWrite {
         statement_ordinal: StatementOrdinal,
-        binding: BindingName,
+        binding: BindingId,
     },
     LazyWrite {
         statement_ordinal: StatementOrdinal,
-        binding: BindingName,
+        binding: BindingId,
     },
     SideEffectOrder {
         statement_ordinal: StatementOrdinal,
@@ -71,12 +71,12 @@ impl EdgeReason {
         }
     }
 
-    fn binding(&self) -> Option<&BindingName> {
+    fn binding(&self) -> Option<BindingId> {
         match self {
             Self::AtInitRead { binding, .. }
             | Self::LazyRead { binding, .. }
             | Self::AtInitWrite { binding, .. }
-            | Self::LazyWrite { binding, .. } => Some(binding),
+            | Self::LazyWrite { binding, .. } => Some(*binding),
             Self::SideEffectOrder { .. } => None,
         }
     }
@@ -124,7 +124,8 @@ pub struct OwnerId(pub usize);
 /// is the quotient of this graph by `OwnerNode.destination`.
 #[derive(Debug, Clone, Default)]
 pub struct OwnerGraph {
-    pub nodes: BTreeMap<OwnerId, OwnerNode>,
+    pub binding_table: BindingTable,
+    pub nodes: Vec<OwnerNode>,
     pub graph: DiGraphMap<OwnerId, EdgeMetadata>,
 }
 
@@ -133,7 +134,7 @@ pub struct OwnerNode {
     pub id: OwnerId,
     pub statement_ordinal: StatementOrdinal,
     pub source_location: Option<SourceLocation>,
-    pub declared: BTreeSet<BindingName>,
+    pub declared: BTreeSet<BindingId>,
     pub kind: StatementKind,
     pub has_side_effect: bool,
     pub destination: ModuleId,
@@ -159,7 +160,11 @@ impl OwnerGraph {
     }
 
     pub fn node(&self, id: OwnerId) -> Option<&OwnerNode> {
-        self.nodes.get(&id)
+        self.nodes.get(id.0).filter(|node| node.id == id)
+    }
+
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &OwnerNode> {
+        self.nodes.iter()
     }
 }
 
@@ -218,6 +223,7 @@ impl EdgeMetadata {
 /// `tarjan_scc`.
 #[derive(Debug, Clone, Default)]
 pub struct ModuleDepGraph {
+    pub binding_table: BindingTable,
     pub graph: DiGraphMap<ModuleId, EdgeMetadata>,
 }
 
@@ -274,54 +280,66 @@ pub fn build_owner_graph(
     binding_assignment: &BTreeMap<BindingName, ModuleId>,
 ) -> OwnerGraph {
     let mut graph = OwnerGraph::default();
-    let stmt_owner = |stmt: &StatementFacts| -> ModuleId {
-        stmt.declared
-            .iter()
-            .filter_map(|name| binding_assignment.get(name).copied())
-            .next()
-            .unwrap_or(ModuleId::ResidualEntry)
-    };
-
-    for stmt in facts {
-        let id = OwnerId(stmt.ordinal.0);
-        graph.nodes.insert(
-            id,
-            OwnerNode {
-                id,
-                statement_ordinal: stmt.ordinal,
-                source_location: stmt.source_location.clone(),
-                declared: stmt.declared.clone(),
-                kind: stmt.kind,
-                has_side_effect: stmt.has_side_effect,
-                destination: stmt_owner(stmt),
-            },
-        );
-        graph.graph.add_node(id);
-    }
-
     let mut binding_table = BindingTable::default();
     let mut binding_owner = Vec::<Option<OwnerId>>::new();
+    let mut declared_by_stmt = Vec::<BTreeSet<BindingId>>::with_capacity(facts.len());
     for stmt in facts {
+        let mut declared = BTreeSet::new();
         for binding in &stmt.declared {
             let binding_id = binding_table.intern(binding.clone());
             if binding_owner.len() <= binding_id.0 {
                 binding_owner.resize(binding_id.0 + 1, None);
             }
             binding_owner[binding_id.0] = Some(OwnerId(stmt.ordinal.0));
+            declared.insert(binding_id);
         }
+        declared_by_stmt.push(declared);
     }
 
-    let record_binding_edge = |graph: &mut OwnerGraph, from: OwnerId, reason: EdgeReason| {
-        let Some(binding) = reason.binding() else {
-            return;
+    let mut binding_assignment_by_id = vec![None; binding_table.len()];
+    for (binding, destination) in binding_assignment {
+        let Some(binding_id) = binding_table.get(binding) else {
+            continue;
         };
+        binding_assignment_by_id[binding_id.0] = Some(*destination);
+    }
+
+    for (stmt, declared) in facts.iter().zip(declared_by_stmt.iter()) {
+        let id = OwnerId(stmt.ordinal.0);
+        let destination = declared
+            .iter()
+            .filter_map(|binding_id| {
+                binding_assignment_by_id
+                    .get(binding_id.0)
+                    .copied()
+                    .flatten()
+            })
+            .next()
+            .unwrap_or(ModuleId::ResidualEntry);
+        graph.nodes.push(OwnerNode {
+            id,
+            statement_ordinal: stmt.ordinal,
+            source_location: stmt.source_location.clone(),
+            declared: declared.clone(),
+            kind: stmt.kind,
+            has_side_effect: stmt.has_side_effect,
+            destination,
+        });
+        graph.graph.add_node(id);
+    }
+
+    let record_binding_edge = |graph: &mut OwnerGraph,
+                               from: OwnerId,
+                               binding: &BindingName,
+                               make_reason: fn(StatementOrdinal, BindingId) -> EdgeReason,
+                               statement_ordinal: StatementOrdinal| {
         let Some(binding_id) = binding_table.get(binding) else {
             return; // not declared in this chunk (global, ImportSpecifier, never-declared)
         };
         let Some(Some(to)) = binding_owner.get(binding_id.0) else {
             return; // not declared in this chunk (global, ImportSpecifier, never-declared)
         };
-        graph.record_reason(from, *to, reason);
+        graph.record_reason(from, *to, make_reason(statement_ordinal, binding_id));
     };
     for stmt in facts {
         let from = OwnerId(stmt.ordinal.0);
@@ -329,40 +347,48 @@ pub fn build_owner_graph(
             record_binding_edge(
                 &mut graph,
                 from,
-                EdgeReason::AtInitRead {
-                    statement_ordinal: stmt.ordinal,
-                    binding: binding.clone(),
+                binding,
+                |statement_ordinal, binding| EdgeReason::AtInitRead {
+                    statement_ordinal,
+                    binding,
                 },
+                stmt.ordinal,
             );
         }
         for binding in &stmt.reads_lazy {
             record_binding_edge(
                 &mut graph,
                 from,
-                EdgeReason::LazyRead {
-                    statement_ordinal: stmt.ordinal,
-                    binding: binding.clone(),
+                binding,
+                |statement_ordinal, binding| EdgeReason::LazyRead {
+                    statement_ordinal,
+                    binding,
                 },
+                stmt.ordinal,
             );
         }
         for binding in &stmt.writes_at_init {
             record_binding_edge(
                 &mut graph,
                 from,
-                EdgeReason::AtInitWrite {
-                    statement_ordinal: stmt.ordinal,
-                    binding: binding.clone(),
+                binding,
+                |statement_ordinal, binding| EdgeReason::AtInitWrite {
+                    statement_ordinal,
+                    binding,
                 },
+                stmt.ordinal,
             );
         }
         for binding in &stmt.writes_lazy {
             record_binding_edge(
                 &mut graph,
                 from,
-                EdgeReason::LazyWrite {
-                    statement_ordinal: stmt.ordinal,
-                    binding: binding.clone(),
+                binding,
+                |statement_ordinal, binding| EdgeReason::LazyWrite {
+                    statement_ordinal,
+                    binding,
                 },
+                stmt.ordinal,
             );
         }
     }
@@ -392,6 +418,7 @@ pub fn build_owner_graph(
         previous_side_effect_owner = Some(from);
     }
 
+    graph.binding_table = binding_table;
     graph
 }
 
@@ -412,6 +439,7 @@ where
     F: FnMut(OwnerId, &OwnerNode) -> ModuleId,
 {
     let mut graph = ModuleDepGraph::default();
+    graph.binding_table = owner_graph.binding_table.clone();
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in owner_edges {
         let Some(from_node) = owner_graph.node(edge.from) else {
@@ -460,14 +488,14 @@ fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerEdgeEntry> {
             a.1.0,
             a.2.kind(),
             a.2.statement_ordinal(),
-            a.2.binding().map(String::as_str),
+            a.2.binding(),
         )
             .cmp(&(
                 b.0.0,
                 b.1.0,
                 b.2.kind(),
                 b.2.statement_ordinal(),
-                b.2.binding().map(String::as_str),
+                b.2.binding(),
             ))
     });
     entries

@@ -20,7 +20,7 @@ use binding_targets::{
     record_update_target,
 };
 use petgraph::algo::{greedy_feedback_arc_set, tarjan_scc, toposort};
-use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::graph::DiGraph;
 use petgraph::graphmap::DiGraphMap;
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};

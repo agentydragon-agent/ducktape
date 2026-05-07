@@ -6,13 +6,12 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
     let peelability = build_peelability_report(schedule, owner_edges, &quotient_edges);
     let nodes = schedule
         .owner_graph
-        .nodes
-        .values()
+        .iter_nodes()
         .map(|node| OwnerGraphNodeReport {
             id: owner_key(node.id),
             statement_ordinal: node.statement_ordinal,
             source_location: node.source_location.clone(),
-            declared_bindings: binding_reports(schedule, node.declared.iter()),
+            declared_bindings: binding_reports_for_ids(schedule, node.declared.iter().copied()),
             statement_kind: node.kind,
             has_side_effect: node.has_side_effect,
             destination: module_report_ref(schedule, node.destination),
@@ -25,7 +24,10 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
             source: owner_key(edge.from),
             target: owner_key(edge.to),
             edge_kind: edge.reason.kind(),
-            binding: edge.reason.binding().cloned(),
+            binding: edge
+                .reason
+                .binding()
+                .map(|binding| schedule.binding_name(binding).to_string()),
             statement_ordinal: edge.reason.statement_ordinal(),
             constrains_realizability: edge.reason.constrains_realizability(),
         })
@@ -41,6 +43,18 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
         },
         peelability,
     }
+}
+
+fn binding_reports_for_ids<I>(schedule: &Schedule, bindings: I) -> Vec<BindingReport>
+where
+    I: IntoIterator<Item = BindingId>,
+{
+    binding_reports(
+        schedule,
+        bindings
+            .into_iter()
+            .map(|binding| schedule.binding_name(binding)),
+    )
 }
 
 fn binding_reports<'a, I>(schedule: &Schedule, bindings: I) -> Vec<BindingReport>
@@ -85,7 +99,7 @@ fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
     for idx in 0..schedule.logical_modules.len() {
         modules.insert(ModuleId::Logical(LogicalModuleIndex(idx)));
     }
-    for node in schedule.owner_graph.nodes.values() {
+    for node in schedule.owner_graph.iter_nodes() {
         modules.insert(node.destination);
     }
     for (from, to, _) in schedule.dep_graph.iter_edges() {

@@ -366,7 +366,7 @@ mod tests {
                 EdgeReason::AtInitRead {
                     binding,
                     statement_ordinal: StatementOrdinal(0),
-                } if binding == "X"
+                } if schedule.binding_name(*binding) == "X"
             )),
             "owner graph should retain the unassigned declared provider edge: {owner_edge:?}",
         );

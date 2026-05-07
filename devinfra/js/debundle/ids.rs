@@ -55,6 +55,11 @@ impl BindingTable {
         self.names.get(id.0)
     }
 
+    pub fn required_name(&self, id: BindingId) -> &BindingName {
+        self.name(id)
+            .expect("BindingId should come from this BindingTable")
+    }
+
     pub fn len(&self) -> usize {
         self.names.len()
     }

@@ -103,20 +103,23 @@ declarations, and a redeclaration through an import is a
 SyntaxError. So the pair `(chunk_id, name)` is a one-to-one
 identifier for a binding.
 
-We use that pair as the canonical _binding key_. Concretely:
+That pair is the conceptual _binding key_ at repo/tool boundaries.
+Inside a single chunk analysis, the chunk is already contextual, so
+the hot graph paths intern local names into compact typed ids:
 
 ```rust
-pub struct BindingId {
-    pub chunk: ChunkId,
-    pub name: String,  // local name in the chunk's top-level scope
+pub struct BindingId(pub usize);
+
+pub struct BindingTable {
+    names: Vec<BindingName>,
+    ids_by_name: HashMap<BindingName, BindingId>,
 }
 ```
 
-Within a single chunk's pipeline (the common path — most of the
-debundler operates per-chunk), the key collapses to just `name`,
-and the chunk is contextual. Outside that context (e.g. in tools
-that walk multiple chunks at once, or in cross-chunk dep edges),
-the full pair is required.
+Reports and specs still spell bindings by `BindingName`; internal
+owner graph edges, owner declarations, and per-chunk indexes use
+`BindingId` so algorithms can use vector lookups instead of repeatedly
+keying hot paths by strings.
 
 Names are stable across the readability rename pass. The rename
 pass changes the _emitted_ identifier in the destination module's
@@ -1544,18 +1547,22 @@ peel-set hyperedges so authoring tools can mostly project and filter
 debundler facts instead of re-analyzing JavaScript or private repo
 YAML conventions.
 
-| Step                             | Module                                | Runs when                                                                                                                            |
-| -------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `load_js_chunks`                 | <artifact.rs>                         | Always; configured by `inputs`.                                                                                                      |
-| `prepare_js_chunks`              | <prepare_chunks.rs>                   | Always. In one parallel per-chunk pass, parses selected chunks, computes shallow program facts, and canonicalizes entries.           |
-| `build_artifact_indexes`         | <artifact.rs>                         | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                  |
-| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>               | Always, after chunk preparation and before data-gated transforms.                                                                    |
-| `apply_vendor_annotations`       | <vendor.rs>                           | When the `vendor` map is non-empty.                                                                                                  |
-| `rename_vendor_exports`          | <vendor.rs>                           | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                 |
-| `swap_vendor_chunks`             | <vendor.rs>                           | When a `vendor` entry has `level: swap`.                                                                                             |
-| `materialize_logical_modules`    | <logical_modules.rs> + analysis files | When `logical_modules` or `residual_modules` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits. |
-| `write_js_tree`                  | <write_tree.rs>                       | When `write_js_tree` output config is present; writes JS tree manifests with exact `output_metrics`.                                 |
-| `emit_browser_harness`           | <emit_harness.rs>                     | When `emit_browser_harness` output config is present; writes browser harness manifests with exact `output_metrics`.                  |
+| Step                             | Module                                | Runs when                                                                                                                             |
+| -------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `load_transform_spec`            | <pipeline.rs>                         | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                            |
+| `validate_transform_spec`        | <spec.rs>                             | Always after spec load.                                                                                                               |
+| `load_js_chunks`                 | <artifact.rs>                         | Always; configured by `inputs`.                                                                                                       |
+| `build_ast_parse_plan`           | <pipeline.rs>                         | Always after chunk load. Decides whether the run needs full AST parsing or can parse only selected chunks.                            |
+| `prepare_js_chunks`              | <prepare_chunks.rs>                   | Always. In one parallel per-chunk pass, parses selected chunks, computes shallow program facts, and canonicalizes entries.            |
+| `write_parse_plan_report`        | <pipeline.rs>                         | When an output tree is requested. Writes the parse-plan side output with aggregate parse/analyze timings and per-chunk parse reasons. |
+| `build_artifact_indexes`         | <artifact.rs>                         | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                   |
+| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>               | Always, after chunk preparation and before data-gated transforms.                                                                     |
+| `apply_vendor_annotations`       | <vendor.rs>                           | When the `vendor` map is non-empty.                                                                                                   |
+| `rename_vendor_exports`          | <vendor.rs>                           | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                  |
+| `swap_vendor_chunks`             | <vendor.rs>                           | When a `vendor` entry has `level: swap`.                                                                                              |
+| `materialize_logical_modules`    | <logical_modules.rs> + analysis files | When `logical_modules` or `residual_modules` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits.  |
+| `write_js_tree`                  | <write_tree.rs>                       | When `write_js_tree` output config is present; writes JS tree manifests with exact `output_metrics`.                                  |
+| `emit_browser_harness`           | <emit_harness.rs>                     | When `emit_browser_harness` output config is present; writes browser harness manifests with exact `output_metrics`.                   |
 
 Within `materialize_logical_modules`, the substages are:
 
