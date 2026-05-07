@@ -61,6 +61,13 @@ but losing the bypass escape hatch.
       the device, probably via Termux/OpenSSH, with explicit keys and a clear
       power/background-execution story.
 
+## OpenHands sandbox egress isolation
+
+- [ ] Add NetworkPolicy/CiliumNetworkPolicy to `openhands-sandboxes` namespace blocking
+      egress to internal cluster IP ranges (pod CIDR `10.244.0.0/16`, service CIDR
+      `10.96.0.0/12`). Only allow egress to external internet + DNS (port 53 to
+      kube-dns). Agent pods shouldn't reach internal cluster services by default.
+
 ## Missing CiliumNetworkPolicy
 
 71% of namespaces lack network policies. Tracked in `cluster/docs/plan.md`.

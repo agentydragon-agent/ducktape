@@ -234,6 +234,11 @@ resources:
   - tandoor/db/flux-kustomization.yaml
   - tandoor/app/flux-kustomization.yaml
 
+  # --- openhands ---
+  - openhands/namespace/flux-kustomization.yaml
+  - openhands/secrets/flux-kustomization.yaml
+  - openhands/app/flux-kustomization.yaml
+
   # --- proxmox-proxy ---
   - proxmox-proxy/flux-kustomization.yaml
 
