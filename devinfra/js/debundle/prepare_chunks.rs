@@ -242,7 +242,7 @@ fn build_artifact_manifest(manifests: &[ChunkManifest]) -> ArtifactManifest {
             .collect(),
         logical_modules: None,
         selected_module_lowerings: None,
-        scrambled_identifier_frequencies: None,
+        identifier_rename_queue: None,
         output_metrics: None,
     }
 }

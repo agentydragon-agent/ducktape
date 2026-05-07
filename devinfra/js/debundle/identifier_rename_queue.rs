@@ -1,34 +1,25 @@
-//! Scrambled-identifier frequency queue: a priority list of still-
-//! scrambled top-level symbols, keyed by stable selector identity, ranked
-//! by how much reference surface they occupy in the bundle.
+//! Identifier rename priority queue: a priority list of top-level
+//! bundle symbols that still have their input-bundle names, keyed by
+//! stable selector identity and ranked by how much reference surface
+//! they occupy in the output tree.
 //!
 //! This is the **side output** every pipeline run emits to drive the
-//! reverse-engineering workflow: which still-scrambled symbols should
-//! the next rename / module-extraction wave attack to buy the most
+//! reverse-engineering workflow: which still-unrenamed symbols should
+//! the next rename / module-extraction wave address to buy the most
 //! readability per unit of effort?
 //!
-//! ## Heuristic
+//! ## Candidate predicate
 //!
-//! [`is_scrambled_name`] decides whether a top-level binding name still
-//! looks like a production minifier's letter-pair output (the shape
-//! Vite/esbuild/terser produce on `minify: true`). The heuristic:
-//!
-//! - Length ≤ 4: scrambled (covers 1-3 letters + optional `$N` digits;
-//!   includes `aH`, `aH$1`, `a`, `_x`, `__t`).
-//! - All-caps acronym: NOT scrambled (`URL`, `API`).
-//! - camelCase ≥ 5 chars: NOT scrambled (`getUserId`, `parseQuery`).
-//! - underscore-or-dollar in a short ≤ 6 name: scrambled.
-//! - mixed-case ≤ 5 chars without natural shape: scrambled.
-//!
-//! The heuristic is intentionally conservative on the side of "scrambled"
-//! — false positives only mean a well-named symbol shows up in the queue
-//! and the RE'er skips it. False negatives lose RE coverage, so the bias
-//! is to flag.
+//! The queue does not inspect spelling. A symbol is included when the
+//! final output binding name is still one of the names recorded from the
+//! input bundle for the owning chunk. Once a spec/module extraction pass
+//! gives that binding a new readable name, its final name no longer
+//! matches the bundle-origin name and it disappears from this queue.
 //!
 //! ## Stable selector
 //!
 //! The selector encodes a symbol identity that survives upstream
-//! version bumps even when the scrambled letter pair regenerates:
+//! version bumps even when minified names regenerate:
 //!
 //! - `chunk_id`: the chunk source path (e.g. `static/index-DI2GynTv`).
 //!   Vite-emitted chunk filenames carry a content hash; the unhashed
@@ -69,76 +60,18 @@ use js_ast::ParsedJsModule;
 /// shape changes; existing readers MUST validate this field before
 /// trying to decode entries.
 /// Suggested filename for the side-output JSON.
-pub const OUTPUT_FILENAME: &str = "scrambled-identifier-frequencies.json";
+pub const OUTPUT_FILENAME: &str = "identifier-rename-queue.json";
 
-/// Decide whether `name` is a developer-readable identifier or the kind
-/// of scrambled letter-pair a production minifier produces (Vite,
-/// esbuild, terser, swc-minify on `minify: true`).
-///
-/// See module-level docs for the heuristic rationale; the test module at
-/// the bottom of this file exercises every documented edge case.
-pub fn is_scrambled_name(name: &str) -> bool {
-    if name.is_empty() {
-        return false;
-    }
-    if name.chars().any(|c| !is_identifier_char(c)) {
-        return false;
-    }
-    // All-caps acronyms (URL, API, ID, SVG, JSON) are NOT scrambled even
-    // when short — they're conventional developer names.
-    if name.len() >= 2 && name.chars().all(|c| !c.is_ascii_lowercase()) && has_letter(name) {
-        return false;
-    }
-    let len = name.chars().count();
-    // Length ≤ 4 covers production-minifier letter pairs (`aH`, `aB$1`)
-    // and short developer-internal names (`__t`, `_x`, `a`).
-    if len <= 4 {
-        return true;
-    }
-    // `__name`, `__defProp`, ECMAScript pollyfills internal markers — by
-    // convention these are compiler/runtime internals and generally not
-    // RE-targets. Flag them as scrambled so they're surfaced for review.
-    if name.starts_with("__") {
-        return true;
-    }
-    let has_dollar_or_underscore = name.contains('$') || name.contains('_');
-    if len <= 6 && has_dollar_or_underscore {
-        return true;
-    }
-    if len <= 5 && name.chars().any(|c| c.is_ascii_digit()) {
-        return true;
-    }
-    if len <= 5 && has_lowercase(name) && has_uppercase(name) {
-        return true;
-    }
-    false
-}
-
-fn is_identifier_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_' || c == '$'
-}
-
-fn has_letter(name: &str) -> bool {
-    name.chars().any(|c| c.is_ascii_alphabetic())
-}
-
-fn has_lowercase(name: &str) -> bool {
-    name.chars().any(|c| c.is_ascii_lowercase())
-}
-
-fn has_uppercase(name: &str) -> bool {
-    name.chars().any(|c| c.is_ascii_uppercase())
-}
-
-/// One entry in the priority queue: a still-scrambled top-level symbol
+/// One entry in the priority queue: a still-unrenamed top-level symbol
 /// ranked by how much reference surface it occupies.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub struct FrequencyEntry {
+pub struct RenameQueueEntry {
     /// Stable selector — see module-level docs.
     pub selector: String,
-    /// The current scrambled name (changes across version bumps).
-    pub scrambled_name: String,
+    /// Current output binding name. Queue membership guarantees this is
+    /// also a name that came from the input bundle for this chunk.
+    pub name: String,
     /// Total reference count across the bundle.
     pub ref_count: usize,
     /// Number of distinct `<chunk_id>/<file>` modules that reference
@@ -154,47 +87,52 @@ pub struct FrequencyEntry {
 /// Top-level shape of the emitted JSON.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub struct FrequencyQueue {
+pub struct IdentifierRenameQueue {
     pub generated_at_iso: String,
-    pub total_scrambled_symbols: usize,
+    pub total_unrenamed_symbols: usize,
     pub total_references: usize,
-    pub entries: Vec<FrequencyEntry>,
+    pub entries: Vec<RenameQueueEntry>,
 }
 
 /// Compute the queue from the *final* artifact state — post-rename,
 /// post-materialize. Pure function over the artifact; does not touch
 /// the filesystem.
-pub fn compute_scrambled_identifier_frequencies(
+pub fn compute_identifier_rename_queue(
     artifact: &JsPipelineArtifact,
-) -> Result<FrequencyQueue> {
+) -> Result<IdentifierRenameQueue> {
     compute_with_clock(artifact, SystemTime::now())
 }
 
-/// Same as [`compute_scrambled_identifier_frequencies`] but with an
+/// Same as [`compute_identifier_rename_queue`] but with an
 /// injected wall clock for deterministic testing.
 pub fn compute_with_clock(
     artifact: &JsPipelineArtifact,
     now: SystemTime,
-) -> Result<FrequencyQueue> {
-    // Per-chunk, per-file: walk the AST to identify top-level scrambled
-    // declarations (the candidates), then tally references across the
-    // whole bundle.
+) -> Result<IdentifierRenameQueue> {
+    // Per-chunk, per-file: walk the final AST to identify top-level
+    // declarations whose names still match input-bundle names, then
+    // tally references across the whole bundle.
+    let input_names_by_chunk = input_bundle_names_by_chunk(artifact);
 
-    // Map each scrambled name -> list of declaration sites that bind it.
-    // Most scrambled names are unique across the bundle, but in principle
+    // Map each current name -> list of declaration sites that bind it.
+    // Most minified names are unique across the bundle, but in principle
     // two chunks can independently mint the same letter pair for separate
     // symbols, so we keep a Vec and resolve references chunk-locally.
     let mut sites_by_name: BTreeMap<String, Vec<DeclSite>> = BTreeMap::new();
 
     for chunk_id in artifact.list_chunk_ids() {
         let chunk = artifact.js_chunk(&chunk_id)?;
+        let input_names = input_names_by_chunk
+            .get(&chunk_id)
+            .cloned()
+            .unwrap_or_default();
         for (file_path, file) in &chunk.files {
             let Some(parsed) = file.ast() else {
                 continue;
             };
-            for site in scrambled_top_level_sites(parsed, &chunk_id, file_path) {
+            for site in unrenamed_top_level_sites(parsed, &chunk_id, file_path, &input_names) {
                 sites_by_name
-                    .entry(site.scrambled_name.clone())
+                    .entry(site.name.clone())
                     .or_default()
                     .push(site);
             }
@@ -202,11 +140,11 @@ pub fn compute_with_clock(
     }
 
     // Tally references: visit every file, count ident references that
-    // resolve to one of our scrambled names declared *in the same chunk*.
+    // resolve to one of our queued names declared *in the same chunk*.
     //
     // Cross-chunk reference resolution would require following each
     // file's import bindings back to the declaring chunk; we don't do
-    // that here because the same scrambled letter pair (`e`, `t`, `n`)
+    // that here because the same minified letter pair (`e`, `t`, `n`)
     // is reused across many independently-minified chunks, so a naive
     // cross-chunk attribution attaches the same reference to every
     // chunk's `e` symbol. Counting only within-chunk references gives
@@ -214,7 +152,7 @@ pub fn compute_with_clock(
     // renaming THIS declaration. Cross-chunk reference attribution is
     // tracked as a follow-up.
     //
-    // TODO(scrambled-cross-chunk): once `materialize_logical_modules`
+    // TODO(rename-queue-cross-chunk): once `materialize_logical_modules`
     // resolves imports onto a stable cross-chunk binding identity, fold
     // that in here so a "names everywhere" symbol shows its true fanout.
     for chunk_id in artifact.list_chunk_ids() {
@@ -237,7 +175,7 @@ pub fn compute_with_clock(
                 // *same file* (the local binding shadows everything
                 // else); fall back to same-chunk sites if the scanning
                 // file doesn't declare this name itself. This keeps
-                // per-file scrambled imports (`m` shadowing each
+                // per-file minified imports (`m` shadowing each
                 // file's own `m`) from each receiving every other
                 // file's reference count.
                 let in_same_file = sites
@@ -266,16 +204,16 @@ pub fn compute_with_clock(
         }
     }
 
-    let mut entries: Vec<FrequencyEntry> = sites_by_name
+    let mut entries: Vec<RenameQueueEntry> = sites_by_name
         .into_iter()
         .flat_map(|(_, sites)| sites.into_iter())
-        .map(|site| FrequencyEntry {
+        .map(|site| RenameQueueEntry {
             selector: format!(
                 "{}:{}:{}",
                 site.owner_chunk, site.owner_file, site.owner_ordinal
             ),
             owner_file: format!("{}/{}", site.owner_chunk, site.owner_file),
-            scrambled_name: site.scrambled_name,
+            name: site.name,
             ref_count: site.ref_count,
             fanout_modules: site.referencing_modules.len(),
             owner_chunk: site.owner_chunk,
@@ -293,22 +231,50 @@ pub fn compute_with_clock(
 
     let total_references = entries.iter().map(|entry| entry.ref_count).sum();
 
-    Ok(FrequencyQueue {
+    Ok(IdentifierRenameQueue {
         generated_at_iso: format_iso(now),
-        total_scrambled_symbols: entries.len(),
+        total_unrenamed_symbols: entries.len(),
         total_references,
         entries,
     })
+}
+
+fn input_bundle_names_by_chunk(
+    artifact: &JsPipelineArtifact,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut names_by_chunk = BTreeMap::<String, BTreeSet<String>>::new();
+    for chunk in &artifact.chunks {
+        let names = names_by_chunk.entry(chunk.chunk_id.clone()).or_default();
+        for declaration in &chunk.manifest.kept_top_level_declarations {
+            names.extend(declaration.names.iter().cloned());
+        }
+        for import in &chunk.manifest.imports {
+            names.extend(
+                import
+                    .specifiers
+                    .iter()
+                    .map(|specifier| specifier.local.clone()),
+            );
+        }
+        for lowering in chunk.manifest.selected_module_lowerings.iter().flatten() {
+            names.extend(lowering.binding_names.iter().cloned());
+        }
+    }
+    names_by_chunk
+}
+
+fn is_input_bundle_name(name: &str, input_names: &BTreeSet<String>) -> bool {
+    input_names.contains(name)
 }
 
 fn format_iso(now: SystemTime) -> String {
     chrono::DateTime::<Utc>::from(now).to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
-/// Write the queue to `<dir>/scrambled-identifier-frequencies.json` and
+/// Write the queue to `<dir>/identifier-rename-queue.json` and
 /// return the path written. Idempotent: caller is free to re-emit on
 /// every run.
-pub fn write_queue(dir: &Path, queue: &FrequencyQueue) -> Result<std::path::PathBuf> {
+pub fn write_queue(dir: &Path, queue: &IdentifierRenameQueue) -> Result<std::path::PathBuf> {
     let path = dir.join(OUTPUT_FILENAME);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -322,11 +288,11 @@ pub fn write_queue(dir: &Path, queue: &FrequencyQueue) -> Result<std::path::Path
 // ---------------------------------------------------------------------------
 
 /// Top-level declaration site we tally references for. The fields here
-/// mirror [`FrequencyEntry`]'s identity portion; ref/fanout counts are
+/// mirror [`RenameQueueEntry`]'s identity portion; ref/fanout counts are
 /// kept separately in `compute_with_clock` since this struct is used as
 /// a per-walk record only.
 struct DeclSite {
-    scrambled_name: String,
+    name: String,
     owner_chunk: String,
     owner_file: String,
     owner_ordinal: usize,
@@ -335,22 +301,23 @@ struct DeclSite {
 }
 
 /// Walk a parsed module's body, returning one [`DeclSite`] per top-level
-/// scrambled binding. Bindings inside non-top-level scopes (function
+/// still-unrenamed binding. Bindings inside non-top-level scopes (function
 /// bodies, class members) are skipped — those are local letters that
 /// don't belong in the bundle-scope priority queue.
-fn scrambled_top_level_sites(
+fn unrenamed_top_level_sites(
     parsed: &ParsedJsModule,
     chunk_id: &str,
     file_path: &str,
+    input_names: &BTreeSet<String>,
 ) -> Vec<DeclSite> {
     let mut out = Vec::new();
     for (ordinal, item) in parsed.module.body.iter().enumerate() {
         for name in top_level_binding_names(item) {
-            if !is_scrambled_name(&name) {
+            if !is_input_bundle_name(&name, input_names) {
                 continue;
             }
             out.push(DeclSite {
-                scrambled_name: name,
+                name,
                 owner_chunk: chunk_id.to_string(),
                 owner_file: file_path.to_string(),
                 owner_ordinal: ordinal,
@@ -365,7 +332,7 @@ fn scrambled_top_level_sites(
 /// Names bound at module top-level by `item`. Mirrors the surface
 /// `program_analysis::analyze_program_shallow` already classifies as
 /// "owners" — function/class/var declarations, including the same
-/// shapes wrapped in `export`. Import locals also count: a scrambled
+/// shapes wrapped in `export`. Import locals also count: a minified
 /// import alias is a top-level binding that other modules see.
 fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {
     match item {
@@ -539,61 +506,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_scrambled_name_handles_documented_edge_cases() {
-        // Letter pairs (production minifier output): scrambled.
-        assert!(is_scrambled_name("aH"));
-        assert!(is_scrambled_name("aH$1"));
-        // Length-1 letter: scrambled.
-        assert!(is_scrambled_name("a"));
-        // Leading underscore is a compile-internal name; flag.
-        assert!(is_scrambled_name("__t"));
-        // Short underscore-prefixed is also scrambled.
-        assert!(is_scrambled_name("_x"));
-
-        // Conventional all-caps acronyms: NOT scrambled.
-        assert!(!is_scrambled_name("URL"));
-        assert!(!is_scrambled_name("API"));
-        // Real camelCase identifier: NOT scrambled.
-        assert!(!is_scrambled_name("getUserId"));
-        // Empty string is not an identifier at all.
-        assert!(!is_scrambled_name(""));
-    }
-
-    #[test]
-    fn is_scrambled_name_long_developer_names_pass_through() {
-        for name in [
-            "buildTaskContextPrompt",
-            "useContextProvider",
-            "validateInputAndDispatch",
-            "registerAllExtensions",
-        ] {
-            assert!(
-                !is_scrambled_name(name),
-                "{name} should not be classified as scrambled"
-            );
-        }
-    }
-
-    #[test]
-    fn is_scrambled_name_classifies_minifier_shapes_as_scrambled() {
-        for name in [
-            "aB",     // pure letter pair
-            "aB$1",   // letter pair with collision suffix
-            "x9",     // mixed-case-with-digit short
-            "_a",     // underscore-prefixed letter
-            "$id$2",  // dollar-laden short
-            "abcd",   // all-lower 4-char short
-            "Abc1",   // mixed-case digit, length 4
-            "ab$cd",  // length-5 with $
-            "ab_cd",  // length-5 with _
-            "__t",    // length-3 leading-underscore
-            "__name", // length-6 starts with __
-        ] {
-            assert!(
-                is_scrambled_name(name),
-                "{name} should be classified as scrambled"
-            );
-        }
+    fn input_bundle_name_detection_uses_origin_not_spelling() {
+        let input_names = BTreeSet::from([
+            "aH".to_string(),
+            "getUserData".to_string(),
+            "__vite__mapDeps".to_string(),
+        ]);
+        assert!(is_input_bundle_name("aH", &input_names));
+        assert!(is_input_bundle_name("getUserData", &input_names));
+        assert!(is_input_bundle_name("__vite__mapDeps", &input_names));
+        assert!(!is_input_bundle_name("renamedUsefulThing", &input_names));
+        assert!(!is_input_bundle_name("bC", &input_names));
     }
 
     #[test]

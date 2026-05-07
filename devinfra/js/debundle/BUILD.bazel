@@ -50,8 +50,8 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":identifier_rename_queue",
         ":js_ast",
-        ":scrambled_id_frequencies",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -126,8 +126,8 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":identifier_rename_queue",
         ":rewrite_specifiers",
-        ":scrambled_id_frequencies",
         "@crates//:anyhow",
         "@crates//:lol_html",
         "@crates//:serde",
@@ -296,9 +296,9 @@ rust_library(
 )
 
 rust_library(
-    name = "scrambled_id_frequencies",
-    srcs = ["scrambled_id_frequencies.rs"],
-    crate_root = "scrambled_id_frequencies.rs",
+    name = "identifier_rename_queue",
+    srcs = ["identifier_rename_queue.rs"],
+    crate_root = "identifier_rename_queue.rs",
     edition = "2024",
     deps = [
         ":artifact",
@@ -313,8 +313,8 @@ rust_library(
 )
 
 rust_test(
-    name = "scrambled_id_frequencies_test",
-    crate = ":scrambled_id_frequencies",
+    name = "identifier_rename_queue_test",
+    crate = ":identifier_rename_queue",
     edition = "2024",
 )
 
@@ -326,10 +326,10 @@ rust_library(
     deps = [
         ":artifact",
         ":emit_harness",
+        ":identifier_rename_queue",
         ":logical_modules",
         ":prepare_chunks",
         ":rewrite_specifiers",
-        ":scrambled_id_frequencies",
         ":spec",
         ":spec_tree",
         ":vendor",

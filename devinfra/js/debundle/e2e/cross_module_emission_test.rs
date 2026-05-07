@@ -199,8 +199,8 @@ console.log(w({ a: null, b: "d" }));
 // --- Consumer-side import-local disambiguation ---------------------------
 
 #[test]
-fn renames_consumer_import_local_when_a_second_plan_claims_the_same_scrambled_binding() {
-    // Two plans claim the same scrambled `binding`. Without
+fn renames_consumer_import_local_when_a_second_plan_claims_the_same_input_binding() {
+    // Two plans claim the same input-bundle `binding`. Without
     // disambiguation the second emit's import shadows the first
     // and the file fails to parse. The materializer mints a
     // `$N` suffix on the second.
@@ -228,29 +228,38 @@ export { aH };
     let entry = fs::read_to_string(&fixture.entry_path).expect("read entry.js");
 
     assert!(
-        entry.contains(r#"import { readableA as aH } from "./modules/mod_a.js""#),
-        "expected unrenamed-local mod_a import; entry was:\n{entry}",
+        entry.contains(r#"import { readableA } from "./modules/mod_a.js""#),
+        "expected readable-local mod_a import; entry was:\n{entry}",
     );
     assert!(
-        entry.contains(r#"import { plainAh as aH$1 } from "./modules/mod_b.js""#),
-        "expected fresh-suffix mod_b import; entry was:\n{entry}",
+        entry.contains(r#"import { plainAh } from "./modules/mod_b.js""#),
+        "expected readable-local mod_b import; entry was:\n{entry}",
     );
-    // Body refs to the second-claimed binding follow the rename.
+    let import_lines = entry
+        .lines()
+        .filter(|line| line.starts_with("import "))
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
-        entry.contains("console.log(aH$1)"),
-        "expected console.log to be rewritten to aH$1; entry was:\n{entry}",
+        !import_lines.contains("readableA as aH") && !import_lines.contains("plainAh as aH"),
+        "input-bundle name should not survive as an import alias; entry was:\n{entry}",
     );
-    // Public re-export name survives: `export { aH$1 as aH }`,
-    // not `export { aH$1 }`. AST walk so a corrupt
-    // `aH$1 as aH$1` doesn't slip past a substring match.
-    assert_export_named_specifier(&entry, "aH$1", Some("aH"));
+    // Body refs to the second-claimed binding follow the readable rename.
+    assert!(
+        entry.contains("console.log(plainAh)"),
+        "expected console.log to be rewritten to plainAh; entry was:\n{entry}",
+    );
+    // Public re-export name survives: `export { plainAh as aH }`,
+    // not `export { plainAh }`. AST walk so a corrupt
+    // `plainAh as plainAh` doesn't slip past a substring match.
+    assert_export_named_specifier(&entry, "plainAh", Some("aH"));
     assert_unique_import_locals(&entry);
 }
 
 #[test]
-fn keeps_unrelated_consumer_import_locals_unchanged() {
-    // Single-plan sanity: disambiguation is a no-op with no
-    // collision.
+fn uses_readable_consumer_import_local_when_there_is_no_collision() {
+    // Single-plan sanity: a spec rename becomes the consumer-side import
+    // local too; no input-bundle alias is needed when there is no collision.
     let opts = FixtureOpts::new(
         r#"const aH = 7;
 console.log(aH);
@@ -267,14 +276,52 @@ export { aH };
     let entry = fs::read_to_string(&fixture.entry_path).expect("read entry.js");
 
     assert!(
-        entry.contains(r#"import { readableA as aH } from "./modules/mod_a.js""#),
-        "expected unrenamed mod_a import; entry was:\n{entry}",
+        entry.contains(r#"import { readableA } from "./modules/mod_a.js""#),
+        "expected readable-local mod_a import; entry was:\n{entry}",
     );
+    assert!(
+        entry.contains("console.log(readableA)"),
+        "expected entry body to use readableA; entry was:\n{entry}",
+    );
+    assert_export_named_specifier(&entry, "readableA", Some("aH"));
     assert!(
         !entry.contains("aH$1"),
         "no fresh-suffix should appear when there is no collision; entry was:\n{entry}",
     );
     assert_entry_output(&fixture, "7\n");
+}
+
+#[test]
+fn readable_import_avoids_nested_binding_collision() {
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"const aH = 1;
+function bC(readableA) {
+  return aH + readableA;
+}
+console.log(bC(2));
+export { aH, bC };
+"#,
+        vec![logical_module(
+            "mod_a",
+            &[Member::renamed("readableA", "aH")],
+        )],
+    ));
+    let residual = fs::read_to_string(
+        fixture
+            .out_root
+            .join("static/app/modules/residual/unhandled.js"),
+    )
+    .expect("read residual module");
+
+    assert!(
+        residual.contains(r#"import { readableA as readableA$1 } from "../mod_a.js""#),
+        "expected import local to avoid nested readableA binding; residual was:\n{residual}",
+    );
+    assert!(
+        residual.contains("return readableA$1 + readableA"),
+        "expected imported binding refs to use fresh local and parameter refs to stay local; residual was:\n{residual}",
+    );
+    assert_entry_output(&fixture, "3\n");
 }
 
 #[test]

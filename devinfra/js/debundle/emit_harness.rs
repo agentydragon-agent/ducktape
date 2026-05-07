@@ -12,8 +12,8 @@ use artifact::{
     manifest_relative_path, materialize_artifact_scripts, module_path_from_path,
     normalize_module_path, path_from_module_path,
 };
+use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 use rewrite_specifiers::runtime_js_href;
-use scrambled_id_frequencies::{compute_scrambled_identifier_frequencies, write_queue};
 
 pub struct EmitBrowserHarnessOptions {
     pub asset_summary_path: PathBuf,
@@ -121,10 +121,10 @@ pub fn emit_browser_harness(
     copy_output_file(&options.asset_summary_path, &asset_summary_in_tree)?;
     let manifest_path = options.out_dir.join("manifest.json");
     let rel = |target: &Path| manifest_relative_path(&manifest_path, target);
-    // The scrambled-identifier frequency queue is a side output of every
+    // The identifier rename priority queue is a side output of every
     // harness emit; write it now so its path can be recorded in the
     // manifest.
-    let queue = compute_scrambled_identifier_frequencies(artifact)?;
+    let queue = compute_identifier_rename_queue(artifact)?;
     let queue_path = write_queue(&options.out_dir, &queue)?;
     let parse_plan = options
         .parse_plan_path
@@ -143,7 +143,7 @@ pub fn emit_browser_harness(
             .map(|entry| entry.path.clone())
             .collect(),
         parse_plan,
-        scrambled_identifier_frequencies: rel(&queue_path),
+        identifier_rename_queue: rel(&queue_path),
         output_metrics,
         generated: HarnessGeneratedManifest {
             bootstrap: rel(&options.out_dir.join("bootstrap.js")),
@@ -185,11 +185,11 @@ struct HarnessManifest {
     copied_assets: Vec<String>,
     entry_scripts: Vec<String>,
     module_preloads: Vec<String>,
-    /// Path to the scrambled-identifier frequency queue JSON (always
+    /// Path to the identifier rename priority queue JSON (always
     /// emitted as a side output). Manifest-relative.
     #[serde(skip_serializing_if = "Option::is_none")]
     parse_plan: Option<String>,
-    scrambled_identifier_frequencies: String,
+    identifier_rename_queue: String,
     output_metrics: OutputMetrics,
     generated: HarnessGeneratedManifest,
 }

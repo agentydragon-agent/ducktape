@@ -186,13 +186,13 @@ pub struct ArtifactManifest {
     pub logical_modules: Option<RootLogicalModulesSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_module_lowerings: Option<Vec<SelectedModuleLowering>>,
-    /// Path (manifest-relative) to the scrambled-identifier frequency
-    /// queue side output, when this manifest was produced by a stage
-    /// that emits to a writable directory (e.g. `write_js_tree`).
+    /// Path (manifest-relative) to the identifier rename priority queue
+    /// side output, when this manifest was produced by a stage that
+    /// emits to a writable directory (e.g. `write_js_tree`).
     /// `None` for early-pipeline manifests that never see a final
     /// output directory.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scrambled_identifier_frequencies: Option<String>,
+    pub identifier_rename_queue: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_metrics: Option<OutputMetrics>,
 }
@@ -484,7 +484,7 @@ impl ArtifactManifest {
             chunks: Vec::new(),
             logical_modules: None,
             selected_module_lowerings: None,
-            scrambled_identifier_frequencies: None,
+            identifier_rename_queue: None,
             output_metrics: None,
         }
     }

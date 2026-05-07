@@ -18,7 +18,7 @@ downstream corpora, etc.) is re-peeled from a versioned spec; the
 spec is the source of truth for
 which symbols belong where and what they should be called. The
 debundler executes the spec, emits side-output analyses (priority
-queue of still-scrambled symbols, etc.) that drive the next wave of
+queue of still-unrenamed symbols, etc.) that drive the next wave of
 spec edits, and is itself improved as new shapes / bugs / heuristic
 opportunities surface.
 

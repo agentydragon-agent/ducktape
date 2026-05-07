@@ -10,6 +10,11 @@ including the `BindingKind::Imported` collapse that closes out
 the parallel `import_members` channel. The items in this file
 are smaller, mostly-orthogonal cleanups.
 
+## Code hygiene
+
+- Shorten overlong e2e/unit test function names while preserving the behavior
+  each test pins.
+
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against
@@ -38,7 +43,7 @@ Use a Bazel-managed Excalidraw build. Two viable paths:
   level / minifier settings.
 
 Either way, the build configuration must produce a realistic
-production bundle: minify on, scrambled identifiers,
+production bundle: minify on, identifier renames,
 production-tree-shaken, real chunk-split boundaries. A development
 build (with un-mangled names and source maps inlined) won't exercise
 the debundler's RE-relevant code paths.
@@ -107,54 +112,18 @@ smaller minimised e2e under `devinfra/js/debundle/e2e/`) rather than
 only fixing it behind the private repo. The latter loses the
 public-CI signal and the public-bug-report leverage.
 
-## Propagate readable rename across consumers
-
-When a `logical_modules` entry renames a scrambled binding `<scrambled>`
-to readable `<readable>`, the consumer-side import is currently
-emitted as `import { <readable> as <scrambled> } from "..."` and every
-reference in the consumer body still spells the original scrambled
-local. The disambiguation pass in `logical_modules.rs` only mints a
-fresh `<scrambled>$N` when the original local would collide.
-
-A nicer endpoint is to fold the new readable name through every
-consumer too: drop the alias (`import { <readable> }`) and rename
-every reference in the consumer body from `<scrambled>` to
-`<readable>`. That's pure readability gain — instead of `fp(x)` in a
-consumer's body, the body reads `<readable>(x)`.
-
-Edge cases the implementation must handle:
-
-- A consumer that already has its own top-level `<readable>` decl
-  must keep the alias (collision in the consumer's own scope).
-- Chains of re-exports (`export { <scrambled> } from "..."`) need the
-  re-export's `orig` rewritten too.
-- Locals that shadow `<readable>` inside a function body must not be
-  rewritten.
-
-Reuse the scope-tracking infrastructure the disambiguation pass
-already builds.
-
 ## RE coverage side-output
 
-Implemented in <scrambled_id_frequencies.rs> as a side output of every
+Implemented in <identifier_rename_queue.rs> as a side output of every
 manifest-emitting pipeline run (`emit_browser_harness`, `write_js_tree`).
-The JSON lands at `<out_dir>/scrambled-identifier-frequencies.json` and
+The JSON lands at `<out_dir>/identifier-rename-queue.json` and
 the path is recorded on the stage's manifest under
-`scrambled_identifier_frequencies`.
+`identifier_rename_queue`.
 
-The scrambled-name heuristic in `is_scrambled_name` is intentionally
-conservative on the side of "scrambled"; documented edge cases live in
-the focused unit tests at the bottom of the module. Two known
-tunability concerns recorded as in-code TODOs:
-
-- The length-5 mixed-case arm flags `setId`-shaped names as scrambled.
-  This is technically a false positive for some hand-written short
-  developer names. Tightening once we have real-bundle calibration data
-  is recorded inline.
-- `__name`-style identifiers (length > 4 with `__` prefix) are flagged
-  scrambled because they're typically compiler/runtime internals. If a
-  developer codebase deliberately uses leading-underscore short names,
-  this surfaces them.
+Queue membership is origin-based, not spelling-based: a final output
+top-level binding is queued when it still has a name recorded from the
+input bundle for that chunk. Once the spec gives the binding a readable
+output name, it leaves the queue.
 
 ## Logical materialization breadth
 

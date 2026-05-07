@@ -1014,6 +1014,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         }
         body_renames.insert(binding.clone(), export_name.clone());
     }
+    occupied.extend(collect_local_binding_names(&entry_body));
     for (module_index, plan) in module_plans.iter().enumerate() {
         if plan.bindings.is_empty() {
             continue;
@@ -1090,7 +1091,11 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         );
     }
     time_phase!(timings, "entry_exports_and_trim", {
-        for export in entry_exports_for_moved_bindings(declarations, binding_assignment) {
+        for export in entry_exports_for_moved_bindings(
+            declarations,
+            binding_assignment,
+            &entry_binding_renames,
+        ) {
             entry_body.push(export);
         }
         trim_dead_named_specifiers(&mut entry_body, &schedule.bindings);
@@ -1150,11 +1155,15 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 runtime_import_facts,
             )
         });
+        let mut module_import_renames = BTreeMap::<String, String>::new();
+        let mut module_import_locals = collect_local_binding_names(&body);
         let mut module_imports = time_phase!(timings, "module.build_cross_imports", {
             cross_module_imports_for_plan(
                 &plan.target_file,
                 cross_module_imports_by_provider,
                 schedule,
+                &mut module_import_locals,
+                &mut module_import_renames,
             )
         });
         let mut residual_entry_imports = time_phase!(timings, "module.build_residual_imports", {
@@ -1164,8 +1173,18 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 &plan.target_file,
                 residual_entry_imports,
                 missing_residual_exports,
+                &mut module_import_locals,
+                &mut module_import_renames,
             )
         })?;
+        if !module_import_renames.is_empty() {
+            let mut renamer = IdentifierRenamer {
+                renames: &module_import_renames,
+            };
+            for item in body.iter_mut() {
+                item.visit_mut_with(&mut renamer);
+            }
+        }
         // Re-import any source-chunk import-specifier-bound locals that
         // moved code in `body` references but no top-level decl
         // satisfies (e.g. `const { decode } = gge;` where `gge` was an
@@ -1823,6 +1842,8 @@ fn cross_module_imports_for_plan(
     from_file: &str,
     mut imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
     schedule: &Schedule,
+    occupied: &mut BTreeSet<String>,
+    renames: &mut BTreeMap<String, String>,
 ) -> Vec<ModuleItem> {
     // Sort providers by their position in the schedule's
     // `linker_order` (a topological linearization of `I ∪ S`).
@@ -1844,7 +1865,10 @@ fn cross_module_imports_for_plan(
             let bindings = imports_by_provider.remove(&provider_index)?;
             schedule
                 .logical_module(LogicalModuleIndex(provider_index))
-                .map(|provider| import_decl_for_plan(from_file, &provider.target_file, &bindings))
+                .map(|provider| {
+                    let resolved = disambiguate_import_locals(&bindings, occupied, renames);
+                    import_decl_for_plan(from_file, &provider.target_file, &resolved)
+                })
         })
         .collect()
 }
@@ -1855,6 +1879,8 @@ fn residual_entry_imports_for_moved_body(
     from_file: &str,
     imports: BTreeMap<String, String>,
     missing_exports: BTreeSet<String>,
+    occupied: &mut BTreeSet<String>,
+    renames: &mut BTreeMap<String, String>,
 ) -> Result<Vec<ModuleItem>> {
     if !missing_exports.is_empty() {
         bail!(
@@ -1865,7 +1891,8 @@ fn residual_entry_imports_for_moved_body(
     if imports.is_empty() {
         return Ok(Vec::new());
     }
-    Ok(vec![import_decl_for_plan(from_file, entry_file, &imports)])
+    let resolved = disambiguate_import_locals(&imports, occupied, renames);
+    Ok(vec![import_decl_for_plan(from_file, entry_file, &resolved)])
 }
 
 fn collect_entry_exports_by_original_local(
@@ -2586,7 +2613,7 @@ fn assigned_module_for_names(
 /// Used to disambiguate consumer-side `import { exportedName as localName }`
 /// emissions whose `localName` would collide with another binding in the
 /// same scope (e.g. a surviving import or top-level declaration that
-/// already uses the scrambled name). `export { name }` re-exports without
+/// already uses the input-bundle name). `export { name }` re-exports without
 /// `from` are references, not bindings, so they aren't tracked here; the
 /// IdentifierRenamer pass that follows the disambiguation rewrites their
 /// `orig` ident along with every other body reference.
@@ -2637,10 +2664,37 @@ fn collect_occupied_local_names(body: &[ModuleItem]) -> BTreeSet<String> {
     occupied
 }
 
-/// Map plan-side `local -> exported` to `actual_local -> exported`,
-/// minting a fresh `<local>$N` whenever the requested local would collide
-/// with `occupied`. Records original-to-fresh entries in `renames` so the
-/// caller can rewrite consumer-body references after emission.
+/// Names bound anywhere under `body`. This is stricter than file-scope
+/// occupancy: readable import locals must avoid nested bindings too, or the
+/// follow-up body rewrite can accidentally capture references that were
+/// supposed to resolve to the import.
+fn collect_local_binding_names(body: &[ModuleItem]) -> BTreeSet<String> {
+    struct Collector {
+        names: BTreeSet<String>,
+    }
+
+    impl Visit for Collector {
+        fn visit_binding_ident(&mut self, ident: &BindingIdent) {
+            self.names.insert(ident.id.sym.to_string());
+        }
+    }
+
+    let mut collector = Collector {
+        names: BTreeSet::new(),
+    };
+    for item in body {
+        item.visit_with(&mut collector);
+    }
+    collector.names
+}
+
+/// Map plan-side `original -> exported` to `actual_local -> exported`.
+///
+/// When a spec gives a binding a readable exported name, prefer that
+/// readable name as the consumer-side local too. That keeps the final
+/// emitted tree from retaining the input-bundle name merely as an import
+/// alias. Collisions still mint a fresh local and get recorded in
+/// `renames` so the entry body can be rewritten after emission.
 fn disambiguate_import_locals(
     bindings: &BTreeMap<String, String>,
     occupied: &mut BTreeSet<String>,
@@ -2648,15 +2702,21 @@ fn disambiguate_import_locals(
 ) -> BTreeMap<String, String> {
     bindings
         .iter()
-        .map(|(local, exported)| {
-            let actual = if occupied.contains(local) {
-                let fresh = mint_fresh_local_name(local, occupied);
-                renames.insert(local.clone(), fresh.clone());
-                fresh
+        .map(|(original, exported)| {
+            let preferred = if exported != original {
+                exported.as_str()
             } else {
-                local.clone()
+                original.as_str()
+            };
+            let actual = if occupied.contains(preferred) {
+                mint_fresh_local_name(preferred, occupied)
+            } else {
+                preferred.to_string()
             };
             occupied.insert(actual.clone());
+            if actual != *original {
+                renames.insert(original.clone(), actual.clone());
+            }
             (actual, exported.clone())
         })
         .collect()
@@ -2941,12 +3001,17 @@ fn export_named_for_bindings(bindings: &BTreeMap<String, String>) -> ModuleItem 
 fn entry_exports_for_moved_bindings(
     declarations: &[TopLevelDecl],
     binding_assignment: &BTreeMap<String, usize>,
+    entry_renames: &BTreeMap<String, String>,
 ) -> Vec<ModuleItem> {
     let mut exports = BTreeMap::<String, String>::new();
     for decl in declarations.iter().filter(|decl| decl.exported) {
         for name in &decl.names {
             if binding_assignment.contains_key(name) {
-                exports.insert(name.clone(), name.clone());
+                let final_local = entry_renames
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| name.clone());
+                exports.insert(final_local, name.clone());
             }
         }
     }

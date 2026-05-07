@@ -7,7 +7,7 @@ use serde::Serialize;
 use artifact::{
     JsPipelineArtifact, list_chunk_file_paths, manifest_relative_path, materialize_artifact_scripts,
 };
-use scrambled_id_frequencies::{compute_scrambled_identifier_frequencies, write_queue};
+use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 
 #[derive(Debug, Clone)]
 pub struct WriteJsTreeManifest {
@@ -51,14 +51,14 @@ pub fn write_js_tree(
         .collect::<Vec<_>>();
     let output_metrics = materialize_artifact_scripts(artifact, out_dir)?;
 
-    // The scrambled-identifier frequency queue is a side output of every
+    // The identifier rename priority queue is a side output of every
     // pipeline run that writes a tree manifest. Emit it now and record
     // its manifest-relative path on the root manifest.
-    let queue = compute_scrambled_identifier_frequencies(artifact)?;
+    let queue = compute_identifier_rename_queue(artifact)?;
     let queue_path = write_queue(out_dir, &queue)?;
     let manifest_path = out_dir.join("manifest.json");
     let mut root_manifest = artifact.root_manifest.clone();
-    root_manifest.scrambled_identifier_frequencies =
+    root_manifest.identifier_rename_queue =
         Some(manifest_relative_path(&manifest_path, &queue_path));
     root_manifest.output_metrics = Some(output_metrics.clone());
     fs::write(

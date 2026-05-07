@@ -2111,7 +2111,7 @@ Primary:
 Secondary:
 
 - <vendor.rs>, <rewrite_specifiers.rs>, <emit_harness.rs>,
-  <write_tree.rs>, <scrambled_id_frequencies.rs> — supporting
+  <write_tree.rs>, <identifier_rename_queue.rs> — supporting
   transforms and side-output producers.
 
 Tracking:
