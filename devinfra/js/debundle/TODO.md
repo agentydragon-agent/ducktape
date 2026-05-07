@@ -10,11 +10,6 @@ including the `BindingKind::Imported` collapse that closes out
 the parallel `import_members` channel. The items in this file
 are smaller, mostly-orthogonal cleanups.
 
-## Code hygiene
-
-- Shorten overlong e2e/unit test function names while preserving the behavior
-  each test pins.
-
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against

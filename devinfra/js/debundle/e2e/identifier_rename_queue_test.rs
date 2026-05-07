@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::fs;
 
 #[test]
-fn emits_a_rename_queue_alongside_the_write_tree_manifest() {
+fn emits_rename_queue_manifest() {
     // The synthetic bundle has four top-level input-bundle bindings:
     //   - `aH` is referenced 5x within the entry (inside `bC`, `dE`,
     //     and the trailing console.log) so it tops the queue.
@@ -19,7 +19,7 @@ fn emits_a_rename_queue_alongside_the_write_tree_manifest() {
     //     identifier shape.
     //   - `URL` is a builtin acronym shape, but it's a reference to the
     //     global, NOT a top-level binding, so it just doesn't show up.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const aH = "scrambled-most-referenced";
 function bC() { return aH + aH; }
 const dE = bC() + aH + aH;
@@ -105,8 +105,8 @@ export { aH, bC, dE };
 }
 
 #[test]
-fn renamed_members_disappear_even_when_the_input_name_was_minifier_shaped() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+fn renamed_members_leave_queue() {
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const aH = "renamed";
 const bC = aH + aH;
 console.log(aH, bC);
@@ -141,8 +141,8 @@ export { aH, bC };
 }
 
 #[test]
-fn manifest_records_the_queue_path_at_a_relative_path() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+fn manifest_records_queue_path() {
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const xY = 1;
 console.log(xY);
 export { xY };
@@ -165,11 +165,11 @@ export { xY };
 }
 
 #[test]
-fn entries_are_byte_identical_across_repeated_runs_against_same_inputs() {
+fn entries_stay_stable_across_runs() {
     // Stable-selector test: re-running the pipeline against the same
     // synthetic bundle must yield byte-identical `entries` payloads
     // (selectors don't drift, sort is deterministic).
-    let first = read_entries_payload(run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let first = read_entries_payload(run_fixture(FixtureOpts::new(
         r#"const aH = "stable";
 function bC() { return aH; }
 const dE = bC();
@@ -178,7 +178,7 @@ export { aH, bC, dE };
 "#,
         vec![],
     )));
-    let second = read_entries_payload(run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let second = read_entries_payload(run_fixture(FixtureOpts::new(
         r#"const aH = "stable";
 function bC() { return aH; }
 const dE = bC();

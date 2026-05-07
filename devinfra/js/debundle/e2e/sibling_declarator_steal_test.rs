@@ -38,7 +38,7 @@ export { a, b, c };
             ),
         ],
     );
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
 
     // mod_x must own `a`'s decl + its export.
     assert_module_exports(

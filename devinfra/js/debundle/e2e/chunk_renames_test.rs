@@ -65,7 +65,7 @@ export { x };
         include_residual: false,
         extra_files: &[],
     };
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
     // The chunk evaluates: orphan logs "before", x's init runs (sets
     // globalThis.__touched and binds "x-value"), orphan logs the
     // value. With the in-place rename, the entry source emits
@@ -114,7 +114,7 @@ export const y = "dep-y";
 "#,
         )],
     };
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
 
     assert_entry_output(&fixture, "local dep-x dep-y\n");
     assert_module_source(
@@ -161,7 +161,7 @@ export { helper, run };
         include_residual: false,
         extra_files: &[],
     };
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
 
     assert_entry_output(&fixture, "entry\n");
     assert_module_source(
@@ -206,8 +206,5 @@ export { run };
         extra_files: &[],
     };
 
-    expect_logical_modules_e2e_rejection_containing_all(
-        opts,
-        &["mod_run", "helper", "not exported by entry"],
-    );
+    expect_rejection_containing_all(opts, &["mod_run", "helper", "not exported by entry"]);
 }

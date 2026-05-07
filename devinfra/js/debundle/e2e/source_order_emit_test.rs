@@ -13,7 +13,7 @@ fn realizable_spec_emits_source_order_modules() {
     // order emit lands them inline as `const A = f();` /
     // `const B = g();` in their respective modules with cross-
     // module imports as needed.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function f() { return "a"; }
 function g() { return "b"; }
 const A = f();

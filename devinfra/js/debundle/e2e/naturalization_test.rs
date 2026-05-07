@@ -7,7 +7,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn renames_destructured_object_params_to_readable_shorthand() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function a({ value: n }) { return n; }
 console.log(a({ value: 1 }));
 export { a };
@@ -25,7 +25,7 @@ export { a };
 
 #[test]
 fn keeps_outer_aliases_when_nested_readable_candidates_reuse_the_same_target() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function z() {
   return "z";
 }
@@ -56,7 +56,7 @@ export { z, b, f };
 
 #[test]
 fn renames_constructor_params_from_this_property_assignments() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"class A {
   constructor(n) { this.value = n; }
 }
@@ -76,7 +76,7 @@ export { A };
 
 #[test]
 fn renames_return_object_aliases_to_readable_shorthand_locals() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function a(o) {
   const n = o.value;
   return { value: n };

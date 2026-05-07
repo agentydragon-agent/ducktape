@@ -213,7 +213,7 @@ pub struct RejectedFixture {
     _root: TempDir,
 }
 
-pub fn run_logical_modules_e2e_fixture(opts: FixtureOpts<'_>) -> Fixture {
+pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.out_root.join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
@@ -259,12 +259,9 @@ pub fn run_logical_modules_e2e_fixture(opts: FixtureOpts<'_>) -> Fixture {
 ///
 /// For tests that need to assert *specific evidence* in the error
 /// (e.g. "the cycle report names mod_a AND mod_b"), use
-/// [`expect_logical_modules_e2e_rejection_containing_all`] instead.
-pub fn expect_logical_modules_e2e_rejection(
-    opts: FixtureOpts<'_>,
-    error_substring_alternatives: &[&str],
-) {
-    let rejected = run_logical_modules_e2e_rejection_fixture(opts);
+/// [`expect_rejection_containing_all`] instead.
+pub fn expect_rejection(opts: FixtureOpts<'_>, error_substring_alternatives: &[&str]) {
+    let rejected = run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     let stderr_lower = stderr.to_lowercase();
     assert!(
@@ -275,17 +272,14 @@ pub fn expect_logical_modules_e2e_rejection(
     );
 }
 
-/// Stricter sibling of [`expect_logical_modules_e2e_rejection`]: the
+/// Stricter sibling of [`expect_rejection`]: the
 /// stderr must contain **every** substring in `required_substrings`,
 /// not just one. Use when the test's contract is that the error
 /// names specific evidence (every module in a cycle, every binding
 /// in a collision, etc.); a generic-but-empty error wouldn't pass
 /// the contract.
-pub fn expect_logical_modules_e2e_rejection_containing_all(
-    opts: FixtureOpts<'_>,
-    required_substrings: &[&str],
-) {
-    let rejected = run_logical_modules_e2e_rejection_fixture(opts);
+pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, required_substrings: &[&str]) {
+    let rejected = run_rejection_fixture(opts);
     let stderr = rejected.stderr;
     let stderr_lower = stderr.to_lowercase();
     let missing: Vec<&str> = required_substrings
@@ -299,7 +293,7 @@ pub fn expect_logical_modules_e2e_rejection_containing_all(
     );
 }
 
-pub fn run_logical_modules_e2e_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.out_root.join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
@@ -611,7 +605,7 @@ fn spawn_transform(spec_path: &Path) -> CommandResult {
 
 /// Run `debundle --spec <path> [--package-root <name>=<dir> ...]` and return its
 /// captured stdio + exit status. Used by tests that exercise pipeline stages
-/// outside the logical-modules harness in [`run_logical_modules_e2e_fixture`].
+/// outside the logical-modules harness in [`run_fixture`].
 pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> CommandResult {
     let bin = debundler_path();
     let mut command = Command::new(&bin);

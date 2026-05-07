@@ -12,7 +12,7 @@ fn preserves_source_order_evaluation_across_split_declarator_fragments() {
     // Single declaration with cross-fragment dep `c = a + b`. Selecting `c`
     // forces the closure to pull `a` and `b` into the module while `z` stays
     // in residual.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const a = 1, b = 2, c = a + b;
 const z = "z";
 console.log(c);
@@ -32,7 +32,7 @@ export { c, z };
 
 #[test]
 fn preserves_function_declaration_hoisting_across_modules() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function a() { return b(); }
 const c = a();
 function b() { return "b"; }
@@ -61,7 +61,7 @@ export { c };
 
 #[test]
 fn preserves_default_references_after_readable_and_explicit_renames() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const q = () => "a";
 const b = ({ a: c = q } = {}) => c();
 console.log(b({}), b({ a: () => "b" }));
@@ -83,7 +83,7 @@ export { q, b };
 
 #[test]
 fn extracts_a_class_declaration_without_changing_runtime() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"class A { static label() { return "a"; } }
 function b() { return A.label(); }
 console.log(b());
@@ -102,7 +102,7 @@ export { A, b };
 
 #[test]
 fn lowers_ts_enum_style_self_referencing_var_declarations_correctly() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"var A = ((B) => { B.X = "x"; B.Y = "y"; return B; })(A || {});
 function b() { return A.X; }
 console.log(b());
@@ -126,7 +126,7 @@ fn emits_extracted_decls_inline_in_their_module() {
     // The runtime side effect references `c` (residual), not the
     // extracted bindings; mod_x carries the original `const`/
     // `function` declarations as-is.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const a = 1;
 function b() { return a; }
 const c = b();
@@ -155,7 +155,7 @@ fn emits_top_level_effects_inline_in_extracted_module() {
     // `console.log(a)` — and an at-init read of `a` in the residual.
     // Both run in the same direction (mod_x evaluates before the
     // residual), so `I ∪ S` is acyclic and the materializer emits.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const a = (globalThis.log = "hi", 1);
 console.log(a);
 export { a };
@@ -176,7 +176,7 @@ export { a };
 fn rejects_extraction_with_a_propagated_final_name_collision() {
     // Two members both renamed to "a" — one from the variable `a`, one from
     // function `b`. The extractor should refuse before emitting.
-    expect_logical_modules_e2e_rejection(
+    expect_rejection(
         FixtureOpts::new(
             r#"const a = 1;
 function b() { return a; }

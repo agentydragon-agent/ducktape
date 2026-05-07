@@ -96,7 +96,7 @@ fn inferred_pure_hof_wrapper_across_modules_emits_no_s_cycle() {
     // an `S` cycle that the gate rejects. With inferred purity,
     // no `S` edges are emitted between the modules and the
     // build accepts.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function wrap(f) { return { kind: "wrapped", impl: f }; }
 const A = wrap(function () { return "a"; });
 const B = wrap(function () { return "b"; });
@@ -119,7 +119,7 @@ fn inferred_pure_schema_builder_across_modules_emits_no_s_cycle() {
     // `Object.freeze` is a statically-known pure built-in;
     // `schema(spec)` returns the frozen spec object. All `schema(...)`
     // top-level statements in the chunk should be classified pure.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function schema(spec) { return Object.freeze(spec); }
 const userSchema = schema({ kind: "user" });
 const productSchema = schema({ kind: "product" });
@@ -145,7 +145,7 @@ fn inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle() {
     // `new Set([...])`, `new Map([...])`, `new RegExp("...")` with
     // literal-only args are pure by built-in catalogue. The
     // current classifier marks all `Expr::New` as `Unknown`.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const tagsA = new Set(["alpha", "beta"]);
 const tagsB = new Set(["gamma"]);
 const cfgA = new Map([["k1", 1]]);
@@ -189,7 +189,7 @@ fn inferred_pure_static_object_method_aliasing_emits_no_s_cycle() {
     // well-known `Object` global, the analyzer should
     // recognize that no standard property is a getter, so
     // reading the function reference is side-effect-free.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const define = Object.defineProperty;
 const freeze = Object.freeze;
 const values = Object.values;
@@ -218,7 +218,7 @@ fn inferred_pure_iife_enum_builder_emits_no_s_cycle() {
     // mutates its own parameter (a fresh object) and returns
     // it. All writes are local to the parameter; no globals
     // are touched. The whole expression is pure.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"var Status = ((n) => ((n.OK = 0), (n.WARN = 1), (n.ERROR = 2), n))({});
 var Color = ((n) => ((n.RED = "r"), (n.GREEN = "g"), (n.BLUE = "b"), n))({});
 var Tag = ((n) => ((n[(n.SMALL = 0)] = "small"), (n[(n.LARGE = 1)] = "large"), n))({});
@@ -239,7 +239,7 @@ fn inferred_pure_recursive_function_classified_pure() {
     // `odd(n - 1)`; `odd(n)` calls `even(n - 1)`. Recursive
     // analysis must terminate (memoize per-function visit
     // status) and conclude both pure.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function even(n) { return n === 0 ? true : odd(n - 1); }
 function odd(n) { return n === 0 ? false : even(n - 1); }
 const fourEven = even(4);
@@ -268,7 +268,7 @@ fn inferred_impure_globalthis_write_still_rejected() {
     // modules close an `S` cycle that the gate must still
     // reject — the relaxation in this PR's main purity-
     // inference work must not over-relax to allow this.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"const a1 = (globalThis.tag = "a1", 1);
 const b1 = (globalThis.tag = "b1", 2);
@@ -292,7 +292,7 @@ fn inferred_impure_console_log_still_rejected() {
     // classified impure. Top-level statements that invoke
     // such a function across modules must still produce S
     // edges and reject the spec.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"function logged(x) { console.log("init:", x); return x; }
 const a1 = logged("a1");
@@ -318,7 +318,7 @@ fn inferred_impure_via_transitively_impure_callee_still_rejected() {
     // back to `caller` and reject specs that distribute
     // `caller(...)` calls across modules in interleaved
     // source order.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"function tainted() { globalThis.touched = true; return 1; }
 function caller(label) { tainted(); return { label }; }
@@ -352,7 +352,7 @@ fn declared_pure_member_suppresses_s_edges_for_opaque_call() {
     // `dispatcher` member with `purity: "pure"`. The
     // validator trusts the assertion and stops emitting
     // `S` edges for `dispatcher(...)` call sites.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const registry = {
   alpha: function (x) { return { handled: "alpha", x }; },
   beta: function (x) { return { handled: "beta", x }; },
@@ -407,7 +407,7 @@ fn declared_pure_member_does_not_bypass_at_init_read_cycle() {
     // mod_a still reads `B` from mod_b at-init, and `wrap(A)`
     // in mod_b still reads `A` from mod_a at-init: the `R`
     // graph has a cycle and the gate must still reject.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"function wrap(x) { return { ref: x }; }
 const A = "a";
@@ -466,7 +466,7 @@ fn declared_pure_annotation_applies_only_to_annotated_member_positive() {
     // close a cycle. The companion `..._negative` test pins
     // the other half: the annotation does not bleed onto
     // unannotated members.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function pureWrap(x) { return { val: x }; }
 function impureWrap(x) { globalThis.lastWrap = x; return { val: x }; }
 const A = pureWrap("a");
@@ -520,7 +520,7 @@ fn declared_pure_annotation_applies_only_to_annotated_member_negative() {
     // `S` graph has cross-module edges in both directions and
     // the gate must reject. The `pureWrap` annotation does
     // not bleed onto sibling members.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"function pureWrap(x) { return { val: x }; }
 function impureWrap(x) { globalThis.lastWrap = x; return { val: x }; }

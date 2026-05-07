@@ -110,7 +110,7 @@ export { A, B, C, D };
             ),
         ],
     );
-    expect_logical_modules_e2e_rejection(opts, &["cycle", "mod_x", "mod_y"]);
+    expect_rejection(opts, &["cycle", "mod_x", "mod_y"]);
 }
 
 // --- I cycles via lazy back-edges ----------------------------------------
@@ -124,7 +124,7 @@ fn rejects_cycle_through_lazy_back_edge() {
     // `R` cross-module edge inside the SCC is enough for the
     // realizability gate to bail. (Without the bail the linker
     // would TDZ on B's initializer.)
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"const A = "a-value";
 function readB() { return B; }
@@ -155,7 +155,7 @@ fn accepts_cycle_when_all_back_edges_are_lazy() {
     // cross-module edges — only `L` edges. The realizability
     // gate must accept this spec; rejecting would over-restrict
     // the realizable subset of `I ∪ S` cycles.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const A = "a-value";
 const B = "b-value";
 function readA() { return A; }
@@ -176,7 +176,7 @@ export { A, B, readA, readB };
 
 #[test]
 fn owner_graph_report_is_written_for_successful_specs() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const A = "a-value";
 const B = "b-value";
 function readA() { return A; }
@@ -240,7 +240,7 @@ export { A, B, readA, readB };
 
 #[test]
 fn write_tree_manifests_include_output_metrics() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const A = "a-value";
 const B = "b-value";
 console.log(A, B);
@@ -359,7 +359,7 @@ export { A, B };
 
 #[test]
 fn owner_graph_report_identifies_pair_only_residual_peel_in_emitted_js_fixture() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"var A = B || "fallback";
 var B = A + "-b";
 const Existing = B + "-existing";
@@ -413,7 +413,7 @@ export { Leaf, Dep, Existing };
         ],
     }));
     opts.include_residual = false;
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "existing\n");
 
     let graph: OwnerGraphReport =
@@ -446,7 +446,7 @@ export { Leaf, Dep, Existing };
 
 #[test]
 fn owner_graph_report_does_not_offer_singleton_peel_for_residual_written_binding() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"let a = 0;
 function b() {
   a = 1;
@@ -491,7 +491,7 @@ export { a, b, existing };
 
 #[test]
 fn owner_graph_report_is_written_before_rejection() {
-    let rejected = run_logical_modules_e2e_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture(FixtureOpts::new(
         r#"const A = "a-value";
 function readB() { return B; }
 const B = A + "-postfix";
@@ -536,7 +536,7 @@ export { A, B, readB };
 fn init_call_order_respects_cross_module_dependency() {
     // mod_a owns x1 + x2 (x2 reads y.id at-init); mod_b owns y.
     // R-edge mod_a → mod_b; ESM linker evaluates mod_b first.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const x1 = { id: "x1" };
 const y = { id: "k" };
 const x2 = { [y.id]: "v" };
@@ -574,7 +574,7 @@ fn pure_const_decls_across_modules_dont_create_s_cycles() {
     // source order. A coarse `has_side_effect` would generate S
     // edges in both directions; `classify_expr_purity` sees these
     // as Pure and S stays empty.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const a1 = 1;
 const b1 = 2;
 const a2 = "x";
@@ -603,7 +603,7 @@ fn s_only_cycle_is_rejected() {
     // Three side-effecting `globalThis.tag = ...` writes
     // interleaved across mod_a (ord 0, 2) and mod_b (ord 1). No
     // R/I edges; S alone closes the cycle.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"const a1 = (globalThis.tag = "a1", 1);
 const b1 = (globalThis.tag = "b1", 2);
@@ -624,7 +624,7 @@ export { a1, a2, b1 };
 
 #[test]
 fn side_effect_owner_edges_do_not_use_binding_sentinels() {
-    let rejected = run_logical_modules_e2e_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture(FixtureOpts::new(
         r#"const a1 = (globalThis.tag = "a1", 1);
 const b1 = (globalThis.tag = "b1", 2);
 const a2 = (globalThis.tag = "a2", 3);
@@ -658,7 +658,7 @@ fn comma_list_split_does_not_invent_cross_module_cycle() {
     // mod_y → mod_x edge from `Y = a_in_x`, closes a cycle.
     // Pre-analysis split: B's row stands alone; X is in mod_y
     // (same module); no spurious edge.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const a_in_x = "x";
 const X = 42;
 const A = 1, B = X;
@@ -686,7 +686,7 @@ fn comma_list_split_surfaces_missed_cross_module_cycle() {
     // mod_y → mod_x edge disappears and validator accepts a spec
     // that TDZs at runtime. Pre-analysis split keeps B's row
     // attributed to mod_y; cycle re-surfaces.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"const a_in_x = "x";
 const A = 1, B = a_in_x;
@@ -717,7 +717,7 @@ fn top_level_await_is_rejected() {
     // `await` at module-top isn't covered by the realizability
     // theorem (A2). The materializer rejects before fact analysis
     // runs.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"async function fetchData() { return 42; }
 const value = await fetchData();
@@ -734,7 +734,7 @@ export { value };
 fn await_inside_async_function_is_allowed() {
     // `await` inside an async function body is fine — the lazy
     // boundary keeps the module synchronous.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"async function fetchData() {
   return await Promise.resolve(42);
 }
@@ -756,7 +756,7 @@ fn await_in_instance_class_field_is_allowed() {
     // time. An `await` there is *not* top-level. (Per spec the
     // host method must be `async` for the `await` to be syntactically
     // valid; we use a lazy method here.)
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"class C {
   async run() { return await Promise.resolve("ok"); }
 }
@@ -777,7 +777,7 @@ fn await_in_static_class_field_is_rejected() {
     // is a SyntaxError outside async contexts, but the visitor
     // rejects any reachable AwaitExpr regardless of whether the
     // surrounding host is well-formed.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"async function f() { return 1; }
 class C {
@@ -801,7 +801,7 @@ fn await_in_computed_class_method_key_is_rejected() {
     // Computed property keys are evaluated at class-decl time
     // (eager) regardless of `is_static`. An `await` there is
     // top-level.
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"async function k() { return "m"; }
 class C {

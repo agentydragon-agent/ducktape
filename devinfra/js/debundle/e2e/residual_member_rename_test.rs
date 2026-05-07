@@ -30,7 +30,7 @@ export { a, b };
         include_residual: false,
         extra_files: &[],
     };
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
     // `a` was renamed to `FirstFn`; `b` is unmentioned and keeps its
     // source name. Both live in the residual catch-all.
     assert_module_exports(

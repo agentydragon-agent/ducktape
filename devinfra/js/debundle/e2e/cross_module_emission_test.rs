@@ -12,7 +12,7 @@ fn extracted_module_imports_unowned_helper_from_residual() {
     // Spec claims only `b`. Its helper `a` is unclaimed, so `a`
     // stays in residual; mod_x imports it (no implicit closure
     // pull).
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const a = x => "h:" + x;
 const b = x => a(x);
 console.log(b("y"));
@@ -58,7 +58,7 @@ export { a };
         vec![logical_module("state", &[Member::new("a")])],
     );
     opts.include_residual = false;
-    expect_logical_modules_e2e_rejection_containing_all(
+    expect_rejection_containing_all(
         opts,
         &["assignment", "assigner", "mutable", "cross-destination"],
     );
@@ -76,7 +76,7 @@ export { Text };
         vec![logical_module("shared/ui/text", &[Member::new("Text")])],
     );
     opts.include_residual = false;
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/shared/ui/text.js",
@@ -109,7 +109,7 @@ export { Text };
         vec![logical_module("shared/ui/text", &[Member::new("Text")])],
     );
     opts.include_residual = false;
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/shared/ui/text.js",
@@ -130,7 +130,7 @@ export { Text };
 fn explicit_modules_share_a_residual_helper_via_imports() {
     // Helper `r` is unclaimed; both `inner` (owns `s`) and
     // `outer` (owns `t`) import it from residual.
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const q = "a";
 function r() { return q; }
 function s() { return "b" + r(); }
@@ -160,7 +160,7 @@ export { t, s };
 
 #[test]
 fn imports_renamed_dependencies_across_split_declarators() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const q = o => o.a, r = o => o.b;
 const s = o => q(o) ?? r(o);
 console.log(s({ a: null, b: "c" }));
@@ -199,7 +199,7 @@ console.log(w({ a: null, b: "d" }));
 // --- Consumer-side import-local disambiguation ---------------------------
 
 #[test]
-fn renames_consumer_import_local_when_a_second_plan_claims_the_same_input_binding() {
+fn duplicate_claims_use_readable_imports() {
     // Two plans claim the same input-bundle `binding`. Without
     // disambiguation the second emit's import shadows the first
     // and the file fails to parse. The materializer mints a
@@ -224,7 +224,7 @@ export { aH };
             ),
         ],
     );
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
     let entry = fs::read_to_string(&fixture.entry_path).expect("read entry.js");
 
     assert!(
@@ -257,7 +257,7 @@ export { aH };
 }
 
 #[test]
-fn uses_readable_consumer_import_local_when_there_is_no_collision() {
+fn readable_import_without_collision() {
     // Single-plan sanity: a spec rename becomes the consumer-side import
     // local too; no input-bundle alias is needed when there is no collision.
     let opts = FixtureOpts::new(
@@ -272,7 +272,7 @@ export { aH };
             }),
         )],
     );
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
     let entry = fs::read_to_string(&fixture.entry_path).expect("read entry.js");
 
     assert!(
@@ -292,8 +292,8 @@ export { aH };
 }
 
 #[test]
-fn readable_import_avoids_nested_binding_collision() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+fn readable_import_avoids_nested_collision() {
+    let fixture = run_fixture(FixtureOpts::new(
         r#"const aH = 1;
 function bC(readableA) {
   return aH + readableA;
@@ -356,7 +356,7 @@ export { destructure, alias, consumer };
             ],
         )],
     );
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
     let module_path = fixture.out_root.join("static/app/modules/mod_x.js");
     let module_src = fs::read_to_string(&module_path).expect("read modules/mod_x.js");
 
@@ -393,7 +393,7 @@ export { a };
         "static/vendor.js",
         "export const x = 42;\nexport default x;\n",
     )];
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
 
     let mod_x = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_x.js"))
         .expect("read mod_x.js");
@@ -443,7 +443,7 @@ export { a };
         ],
     );
     opts.extra_files = &[("static/vendor.js", "export const j = () => 42;\n")];
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
 
     assert_module_exports(
         &fixture.out_root,
@@ -486,7 +486,7 @@ export { bridge };
         "static/vendor.js",
         "export const mu = { decode: () => \"ok\" };\n",
     )];
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
 
     let mod_x = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_x.js"))
         .expect("read mod_x.js");
@@ -542,7 +542,7 @@ export { bridge };
         ],
     );
     opts.extra_files = &[("static/app/vendor.js", "export const x = 42;\n")];
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
 
     let mod_b = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_b.js"))
         .expect("read mod_b.js");
@@ -605,7 +605,7 @@ export { composed };
         ],
     );
     opts.extra_files = &[("static/app/vendor.js", "export const dep = 41;\n")];
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
 
     let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
         .expect("read residual entry");

@@ -6,7 +6,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn rebases_worker_constructor_url_to_runtime_relative_module_url() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"function a() { return new Worker("./b.js"); }
 console.log(typeof a);
 export { a };
@@ -24,7 +24,7 @@ export { a };
 
 #[test]
 fn rebases_dynamic_import_specifiers_to_runtime_relative_paths() {
-    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+    let fixture = run_fixture(FixtureOpts::new(
         r#"async function a() { const m = await import("./b.js"); return m.x; }
 console.log(typeof a);
 export { a };

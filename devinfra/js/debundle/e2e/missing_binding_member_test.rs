@@ -29,7 +29,7 @@ export { a };
             }),
         )],
     );
-    let fixture = run_logical_modules_e2e_fixture(opts);
+    let fixture = run_fixture(opts);
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/mod_x.js",
