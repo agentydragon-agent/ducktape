@@ -232,9 +232,9 @@ pub fn materialize_logical_modules(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let mut reports = Vec::new();
+    let mut reports = Vec::with_capacity(chunk_results.len());
     let mut applied = Vec::<SelectedModuleLowering>::new();
-    for chunk_result in chunk_results {
+    for chunk_result in &chunk_results {
         if let Some(report_out_dir) = &report_out_dir {
             write_chunk_report_json(
                 report_out_dir,
@@ -243,12 +243,10 @@ pub fn materialize_logical_modules(
                 &chunk_result.report,
             )?;
         }
-        let chunk_applied = chunk_result.applied.clone();
-        let report = chunk_result.report.clone();
-        merge_materialized_logical_chunk(&mut artifact, &target_dir, chunk_result)?;
-        applied.extend(chunk_applied);
-        reports.push(report);
+        applied.extend(chunk_result.applied.iter().cloned());
+        reports.push(chunk_result.report.clone());
     }
+    artifact = apply_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
 
     update_root_manifest(&mut artifact, &reports, &applied);
     let duration = started.elapsed();
@@ -658,11 +656,44 @@ fn materialize_logical_chunk(
     })
 }
 
-fn merge_materialized_logical_chunk(
-    artifact: &mut JsPipelineArtifact,
+fn apply_materialized_logical_chunks(
+    mut artifact: JsPipelineArtifact,
     target_dir: &str,
+    chunks: Vec<MaterializedLogicalChunk>,
+) -> Result<JsPipelineArtifact> {
+    let mut replacements = BTreeMap::<String, MaterializedLogicalChunk>::new();
+    for chunk in chunks {
+        let chunk_id = chunk.chunk_id.clone();
+        if replacements.insert(chunk_id.clone(), chunk).is_some() {
+            bail!("materialize_logical_modules produced duplicate chunk_id: {chunk_id}");
+        }
+    }
+
+    let source_chunks = std::mem::take(&mut artifact.chunks);
+    let mut output_chunks = Vec::with_capacity(source_chunks.len() + replacements.len());
+    for chunk_artifact in source_chunks {
+        if let Some(replacement) = replacements.remove(&chunk_artifact.chunk_id) {
+            output_chunks.push(materialized_chunk_artifact(
+                target_dir,
+                Some(chunk_artifact.manifest),
+                replacement,
+            ));
+        } else {
+            output_chunks.push(chunk_artifact);
+        }
+    }
+    for replacement in replacements.into_values() {
+        output_chunks.push(materialized_chunk_artifact(target_dir, None, replacement));
+    }
+    artifact.chunks = output_chunks;
+    Ok(artifact)
+}
+
+fn materialized_chunk_artifact(
+    target_dir: &str,
+    base_manifest: Option<ChunkManifest>,
     chunk: MaterializedLogicalChunk,
-) -> Result<()> {
+) -> ChunkArtifact {
     let MaterializedLogicalChunk {
         chunk_id,
         target_file,
@@ -680,33 +711,14 @@ fn merge_materialized_logical_chunk(
         runtime_file: target_file.clone(),
         target_dir: target_dir.to_string(),
     };
-    let mut manifest = artifact
-        .find_chunk(&chunk_id)
-        .map(|chunk| chunk.manifest.clone())
-        .unwrap_or_else(|| ChunkManifest {
-            chunk_id: chunk_id.clone(),
-            source_path: source_path.clone(),
-            parser: Default::default(),
-            entry_file: target_file.clone(),
-            counts: Default::default(),
-            files: Vec::new(),
-            imports: Vec::new(),
-            export_aliases: Vec::new(),
-            unresolved_exports: Vec::new(),
-            kept_top_level_declarations: Vec::new(),
-            logical_modules: None,
-            selected_module_lowerings: None,
-            output_metrics: None,
-        });
-    manifest.entry_file = target_file.clone();
-    manifest.files = file_records
+    let manifest_files = file_records
         .iter()
         .map(|(file, role)| ChunkFileRecord {
             file: file.clone(),
             role: *role,
         })
         .collect();
-    manifest.logical_modules = Some(ChunkLogicalModulesSummary {
+    let logical_modules = Some(ChunkLogicalModulesSummary {
         count: report.counts.final_modules,
         module_ids: report
             .final_module_contents
@@ -715,21 +727,39 @@ fn merge_materialized_logical_chunk(
             .collect(),
         target_dir: target_dir.to_string(),
     });
+    let js = JsChunk {
+        entry_file: target_file.clone(),
+        files,
+        metadata: ChunkMetadata {
+            source_path: Some(source_path.clone()),
+            module_extraction_state: Some(module_extraction_state),
+        },
+    };
+    let mut manifest = base_manifest.unwrap_or_else(|| ChunkManifest {
+        chunk_id: chunk_id.clone(),
+        source_path,
+        parser: Default::default(),
+        entry_file: target_file.clone(),
+        counts: Default::default(),
+        files: Vec::new(),
+        imports: Vec::new(),
+        export_aliases: Vec::new(),
+        unresolved_exports: Vec::new(),
+        kept_top_level_declarations: Vec::new(),
+        logical_modules: None,
+        selected_module_lowerings: None,
+        output_metrics: None,
+    });
+    manifest.entry_file = target_file;
+    manifest.files = manifest_files;
+    manifest.logical_modules = logical_modules;
     manifest.selected_module_lowerings = Some(applied);
 
-    artifact.upsert_chunk(ChunkArtifact {
-        chunk_id: chunk_id.clone(),
-        js: JsChunk {
-            entry_file: target_file.clone(),
-            files,
-            metadata: ChunkMetadata {
-                source_path: Some(source_path),
-                module_extraction_state: Some(module_extraction_state),
-            },
-        },
+    ChunkArtifact {
+        chunk_id,
+        js,
         manifest,
-    });
-    Ok(())
+    }
 }
 
 struct LoweredChunk {

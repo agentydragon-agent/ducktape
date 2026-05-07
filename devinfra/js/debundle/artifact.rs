@@ -402,12 +402,35 @@ pub struct ImportSpecifierRecord {
     pub source: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImportSpecifierKind {
     Named,
     Default,
     Namespace,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ImportReferenceKind {
+    ArtifactPath,
+    SourcePath,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedImportReference {
+    pub kind: ImportReferenceKind,
+    pub target_chunk_id: String,
+    pub target_file: String,
+    pub target_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedManifestImport {
+    pub caller_chunk_id: String,
+    pub caller_file: String,
+    pub source: String,
+    pub target: ResolvedImportReference,
+    pub named_imports: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -527,32 +550,6 @@ impl JsPipelineArtifact {
         self.chunks.retain(|chunk| keep(&chunk.chunk_id));
     }
 
-    pub fn upsert_chunk(&mut self, chunk: ChunkArtifact) {
-        if let Some(existing) = self
-            .chunks
-            .iter_mut()
-            .find(|existing| existing.chunk_id == chunk.chunk_id)
-        {
-            *existing = chunk;
-        } else {
-            self.chunks.push(chunk);
-        }
-    }
-
-    pub fn list_js_file_keys(&self) -> Vec<(String, String)> {
-        self.chunks
-            .iter()
-            .flat_map(|chunk_artifact| {
-                chunk_artifact
-                    .js
-                    .files
-                    .keys()
-                    .map(|file| (chunk_artifact.chunk_id.clone(), file.clone()))
-                    .collect::<Vec<_>>()
-            })
-            .collect()
-    }
-
     pub fn chunk_source_path(&self, chunk_id: &str) -> Option<String> {
         self.find_chunk(chunk_id)
             .map(|chunk| chunk.manifest.source_path.clone())
@@ -622,6 +619,7 @@ pub struct ArtifactIndexes {
     file_source_paths: BTreeMap<(String, String), String>,
     entry_files: BTreeMap<String, String>,
     file_output_paths: BTreeMap<(String, String), String>,
+    manifest_imports_by_target_chunk: BTreeMap<String, Vec<ResolvedManifestImport>>,
 }
 
 impl ArtifactIndexes {
@@ -681,7 +679,7 @@ impl ArtifactIndexes {
             }
         }
 
-        Ok(Self {
+        let mut indexes = Self {
             chunk_id_index,
             output_path_index,
             source_chunk_index,
@@ -689,7 +687,10 @@ impl ArtifactIndexes {
             file_source_paths,
             entry_files,
             file_output_paths,
-        })
+            manifest_imports_by_target_chunk: BTreeMap::new(),
+        };
+        indexes.index_manifest_imports(artifact);
+        Ok(indexes)
     }
 
     pub fn chunk_index(&self, chunk_id: &str) -> Option<usize> {
@@ -700,7 +701,7 @@ impl ArtifactIndexes {
         self.source_chunk_index.get(source_path).cloned()
     }
 
-    pub fn resolve_import_reference(
+    fn resolve_artifact_output_reference(
         &self,
         source: &str,
         caller_chunk_id: &str,
@@ -716,12 +717,35 @@ impl ArtifactIndexes {
         self.output_path_index.get(&resolved_path).cloned()
     }
 
-    pub fn resolve_source_import_reference(
+    pub fn resolve_runtime_import_reference(
         &self,
         source: &str,
         caller_chunk_id: &str,
         caller_file: &str,
-    ) -> Option<(String, String, String)> {
+    ) -> Option<ResolvedImportReference> {
+        self.resolve_artifact_output_reference(source, caller_chunk_id, caller_file)
+            .map(|(target_chunk_id, target_file)| {
+                let target_path = self
+                    .file_output_paths
+                    .get(&(target_chunk_id.clone(), target_file.clone()))
+                    .cloned()
+                    .unwrap_or_else(|| join_module_path(&[&target_chunk_id, &target_file]));
+                ResolvedImportReference {
+                    kind: ImportReferenceKind::ArtifactPath,
+                    target_chunk_id,
+                    target_file,
+                    target_path,
+                }
+            })
+            .or_else(|| self.resolve_source_path_reference(source, caller_chunk_id, caller_file))
+    }
+
+    fn resolve_source_path_reference(
+        &self,
+        source: &str,
+        caller_chunk_id: &str,
+        caller_file: &str,
+    ) -> Option<ResolvedImportReference> {
         if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
             return None;
         }
@@ -737,21 +761,59 @@ impl ArtifactIndexes {
             .get(&(target_chunk_id.clone(), target_entry_file.clone()))
             .cloned()
             .unwrap_or_else(|| join_module_path(&[&target_chunk_id, &target_entry_file]));
-        Some((target_chunk_id, target_entry_file, path))
+        Some(ResolvedImportReference {
+            kind: ImportReferenceKind::SourcePath,
+            target_chunk_id,
+            target_file: target_entry_file,
+            target_path: path,
+        })
     }
 
-    pub fn resolve_import_to_chunk_id(
-        &self,
-        source: &str,
-        caller_chunk_id: &str,
-        caller_file: &str,
-    ) -> Option<String> {
-        self.resolve_import_reference(source, caller_chunk_id, caller_file)
-            .map(|(chunk_id, _file)| chunk_id)
-            .or_else(|| {
-                self.resolve_source_import_reference(source, caller_chunk_id, caller_file)
-                    .map(|(chunk_id, _file, _path)| chunk_id)
-            })
+    pub fn manifest_imports_targeting_chunk<'a>(
+        &'a self,
+        target_chunk_id: &str,
+    ) -> impl Iterator<Item = &'a ResolvedManifestImport> {
+        self.manifest_imports_by_target_chunk
+            .get(target_chunk_id)
+            .into_iter()
+            .flat_map(|imports| imports.iter())
+    }
+
+    fn index_manifest_imports(&mut self, artifact: &JsPipelineArtifact) {
+        for chunk in &artifact.chunks {
+            let caller_chunk_id = chunk.chunk_id.clone();
+            let caller_file = chunk.manifest.entry_file.clone();
+            for import in &chunk.manifest.imports {
+                let Some(target) = self.resolve_runtime_import_reference(
+                    &import.source,
+                    &caller_chunk_id,
+                    &caller_file,
+                ) else {
+                    continue;
+                };
+                let record = ResolvedManifestImport {
+                    caller_chunk_id: caller_chunk_id.clone(),
+                    caller_file: caller_file.clone(),
+                    source: import.source.clone(),
+                    target,
+                    named_imports: import
+                        .specifiers
+                        .iter()
+                        .filter(|specifier| specifier.kind == ImportSpecifierKind::Named)
+                        .map(|specifier| {
+                            specifier
+                                .imported
+                                .clone()
+                                .unwrap_or_else(|| specifier.local.clone())
+                        })
+                        .collect(),
+                };
+                self.manifest_imports_by_target_chunk
+                    .entry(record.target.target_chunk_id.clone())
+                    .or_default()
+                    .push(record);
+            }
+        }
     }
 }
 

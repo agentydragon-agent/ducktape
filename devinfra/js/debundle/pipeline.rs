@@ -8,7 +8,8 @@ use clap::Parser;
 use runfiles::{Runfiles, rlocation};
 use serde::{Deserialize, Serialize};
 
-use artifact::{ArtifactIndexes, load_js_chunks, resolve_chunk_source_path_reference};
+use artifact::ArtifactIndexes;
+use artifact::load_js_chunks;
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
 use prepare_chunks::{ParsedJsFilesManifest, prepare_js_chunks};
@@ -275,14 +276,19 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         PipelineStage::PrepareJsChunks,
         || prepare_js_chunks(artifact),
     )?;
+    let artifact_indexes = run_step_with_result(
+        &mut preparation_steps,
+        PipelineStage::BuildArtifactIndexes,
+        || ArtifactIndexes::build(&prepare_result.artifact),
+    )?;
     let ast_parse_plan = run_step_with_result(
         &mut preparation_steps,
         PipelineStage::BuildAstParsePlan,
         || {
             Ok(build_ast_parse_plan(
                 &spec,
-                &prepare_result.artifact,
-                &prepare_result.parsed_js_files,
+                &prepare_result,
+                &artifact_indexes,
                 &materialise_chunk_ids,
             ))
         },
@@ -295,10 +301,6 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         )?;
     }
     let mut steps = Vec::new();
-    let artifact_indexes =
-        run_step_with_result(&mut steps, PipelineStage::BuildArtifactIndexes, || {
-            ArtifactIndexes::build(&prepare_result.artifact)
-        })?;
 
     let rewrite_result = run_step_with_result(
         &mut steps,
@@ -475,7 +477,23 @@ enum AstParseReason {
 
 fn build_ast_parse_plan(
     spec: &TransformSpec,
+    prepared: &prepare_chunks::PrepareJsChunksResult,
+    artifact_indexes: &ArtifactIndexes,
+    materialise_chunk_ids: &[String],
+) -> AstParsePlan {
+    compute_ast_parse_plan(
+        spec,
+        &prepared.artifact,
+        artifact_indexes,
+        &prepared.parsed_js_files,
+        materialise_chunk_ids,
+    )
+}
+
+fn compute_ast_parse_plan(
+    spec: &TransformSpec,
     artifact: &artifact::JsPipelineArtifact,
+    artifact_indexes: &ArtifactIndexes,
     manifest: &ParsedJsFilesManifest,
     materialise_chunk_ids: &[String],
 ) -> AstParsePlan {
@@ -563,7 +581,9 @@ fn build_ast_parse_plan(
         add_parse_reason(&mut chunks, vendor_chunk_id, reason.clone());
     }
     if !vendor_source_paths.is_empty() {
-        for (caller_chunk_id, reason) in vendor_caller_reasons(artifact, &vendor_source_paths) {
+        for (caller_chunk_id, reason) in
+            vendor_caller_reasons(artifact_indexes, &vendor_source_paths)
+        {
             add_parse_reason(&mut chunks, &caller_chunk_id, reason);
         }
     }
@@ -591,19 +611,18 @@ fn add_parse_reason(
 }
 
 fn vendor_caller_reasons(
-    artifact: &artifact::JsPipelineArtifact,
+    artifact_indexes: &ArtifactIndexes,
     vendor_source_paths: &[(String, String, AstParseReason)],
 ) -> Vec<(String, AstParseReason)> {
-    let import_index = ArtifactImportSpecifierIndex::build(artifact);
     vendor_source_paths
         .iter()
         .flat_map(|(vendor_chunk_id, vendor_source_path, _)| {
-            import_index
-                .callers_for_source_path(vendor_source_path)
-                .filter(move |caller_chunk_id| *caller_chunk_id != vendor_chunk_id)
-                .map(move |caller_chunk_id| {
+            artifact_indexes
+                .manifest_imports_targeting_chunk(vendor_chunk_id)
+                .filter(move |import| import.caller_chunk_id != *vendor_chunk_id)
+                .map(move |import| {
                     (
-                        caller_chunk_id.clone(),
+                        import.caller_chunk_id.clone(),
                         AstParseReason::VendorCaller {
                             vendor_chunk_id: vendor_chunk_id.clone(),
                             vendor_chunk_path: vendor_source_path.clone(),
@@ -612,43 +631,6 @@ fn vendor_caller_reasons(
                 })
         })
         .collect()
-}
-
-#[derive(Debug, Default)]
-struct ArtifactImportSpecifierIndex {
-    callers_by_source_path: BTreeMap<String, BTreeSet<String>>,
-}
-
-impl ArtifactImportSpecifierIndex {
-    fn build(artifact: &artifact::JsPipelineArtifact) -> Self {
-        let mut index = Self::default();
-        for chunk in &artifact.chunks {
-            for import in &chunk.manifest.imports {
-                let Some(imported_source_path) = resolve_chunk_source_path_reference(
-                    &import.source,
-                    &chunk.manifest.source_path,
-                ) else {
-                    continue;
-                };
-                index
-                    .callers_by_source_path
-                    .entry(imported_source_path)
-                    .or_default()
-                    .insert(chunk.chunk_id.clone());
-            }
-        }
-        index
-    }
-
-    fn callers_for_source_path<'a>(
-        &'a self,
-        source_path: &str,
-    ) -> impl Iterator<Item = &'a String> {
-        self.callers_by_source_path
-            .get(source_path)
-            .into_iter()
-            .flat_map(|callers| callers.iter())
-    }
 }
 
 fn parse_plan_report_path(spec: &TransformSpec) -> Option<PathBuf> {
@@ -964,12 +946,7 @@ mod tests {
         ]);
 
         let materialise_chunk_ids = spec.chunk_renames.keys().cloned().collect::<Vec<_>>();
-        let plan = build_ast_parse_plan(
-            &spec,
-            &artifact.artifact,
-            &artifact.parsed_js_files,
-            &materialise_chunk_ids,
-        );
+        let plan = test_ast_parse_plan(&spec, &artifact, &materialise_chunk_ids);
 
         assert_eq!(plan.mode, AstParseMode::Selective);
         assert_eq!(
@@ -1008,7 +985,7 @@ mod tests {
             ),
         ]);
 
-        let plan = build_ast_parse_plan(&spec, &artifact.artifact, &artifact.parsed_js_files, &[]);
+        let plan = test_ast_parse_plan(&spec, &artifact, &[]);
 
         assert_eq!(
             plan.required_chunk_ids,
@@ -1062,7 +1039,7 @@ mod tests {
             ),
         ]);
 
-        let plan = build_ast_parse_plan(&spec, &artifact.artifact, &artifact.parsed_js_files, &[]);
+        let plan = test_ast_parse_plan(&spec, &artifact, &[]);
 
         assert_eq!(
             plan.required_chunk_ids,
@@ -1148,8 +1125,8 @@ mod tests {
             force: false,
         })?;
 
-        assert_eq!(summary.steps.len(), 3);
-        assert_eq!(summary.preparation_steps.len(), 6);
+        assert_eq!(summary.steps.len(), 2);
+        assert_eq!(summary.preparation_steps.len(), 7);
         let rendered_summary = render_transform_summary(&summary);
         assert!(rendered_summary.contains("- load_transform_spec"));
         assert!(rendered_summary.contains("- build_ast_parse_plan"));
@@ -1454,6 +1431,15 @@ mod tests {
         chunks: [(&str, &str, &str); N],
     ) -> prepare_chunks::PrepareJsChunksResult {
         prepare_js_chunks(artifact_with_chunks(chunks)).expect("prepare chunks")
+    }
+
+    fn test_ast_parse_plan(
+        spec: &TransformSpec,
+        artifact: &prepare_chunks::PrepareJsChunksResult,
+        materialise_chunk_ids: &[String],
+    ) -> AstParsePlan {
+        let artifact_indexes = ArtifactIndexes::build(&artifact.artifact).unwrap();
+        build_ast_parse_plan(spec, artifact, &artifact_indexes, materialise_chunk_ids)
     }
 
     fn artifact_with_chunks<const N: usize>(
