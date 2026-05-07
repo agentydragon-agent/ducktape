@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -12,7 +12,7 @@ use artifact::ArtifactIndexes;
 use artifact::load_js_chunks;
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
-use prepare_chunks::{ParsedJsFilesManifest, prepare_js_chunks};
+use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
@@ -176,9 +176,7 @@ pub enum PipelineStage {
     LoadTransformSpec,
     ValidateTransformSpec,
     LoadJsChunks,
-    BuildAstParsePlan,
     PrepareJsChunks,
-    WriteParsePlanReport,
     BuildArtifactIndexes,
     RewriteChunkEntrySpecifiers,
     ApplyVendorAnnotations,
@@ -270,36 +268,16 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let parse_plan_report_path = parse_plan_report_path(&spec);
     let prepare_result = run_step_with_result(
         &mut preparation_steps,
         PipelineStage::PrepareJsChunks,
-        || prepare_js_chunks(artifact),
+        || prepare_js_chunks(&spec, artifact),
     )?;
     let artifact_indexes = run_step_with_result(
         &mut preparation_steps,
         PipelineStage::BuildArtifactIndexes,
         || ArtifactIndexes::build(&prepare_result.artifact),
     )?;
-    let ast_parse_plan = run_step_with_result(
-        &mut preparation_steps,
-        PipelineStage::BuildAstParsePlan,
-        || {
-            Ok(build_ast_parse_plan(
-                &spec,
-                &prepare_result,
-                &artifact_indexes,
-                &materialise_chunk_ids,
-            ))
-        },
-    )?;
-    if let Some(path) = &parse_plan_report_path {
-        run_step(
-            &mut preparation_steps,
-            PipelineStage::WriteParsePlanReport,
-            || write_parse_plan_report(path, &ast_parse_plan, &prepare_result.parsed_js_files),
-        )?;
-    }
     let mut steps = Vec::new();
 
     let rewrite_result = run_step_with_result(
@@ -402,7 +380,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             asset_summary_path: cfg.asset_summary_path.clone(),
             force,
             out_dir: cfg.out_dir.clone(),
-            parse_plan_path: parse_plan_report_path.clone(),
+            parse_plan_path: None,
             snapshot_root: cfg.snapshot_root.clone(),
         };
         run_step(&mut steps, PipelineStage::EmitBrowserHarness, || {
@@ -433,344 +411,6 @@ fn spec_source_description(source: &TransformSpecSource) -> String {
     }
 }
 
-#[derive(Debug, Clone)]
-struct AstParsePlan {
-    mode: AstParseMode,
-    chunks: BTreeMap<String, AstParseChunkPlan>,
-    required_chunk_ids: BTreeSet<String>,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum AstParseMode {
-    Full,
-    Selective,
-}
-
-#[derive(Debug, Clone)]
-struct AstParseChunkPlan {
-    chunk_id: String,
-    entry_file: String,
-    source_path: String,
-    source_bytes: usize,
-    reasons: BTreeSet<AstParseReason>,
-}
-
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum AstParseReason {
-    FullPipeline,
-    LogicalModule,
-    ResidualModule,
-    ChunkRename,
-    VendorBoundaryRenameTarget {
-        chunk_path: String,
-    },
-    VendorSwapTarget {
-        chunk_path: String,
-    },
-    VendorCaller {
-        vendor_chunk_id: String,
-        vendor_chunk_path: String,
-    },
-}
-
-fn build_ast_parse_plan(
-    spec: &TransformSpec,
-    prepared: &prepare_chunks::PrepareJsChunksResult,
-    artifact_indexes: &ArtifactIndexes,
-    materialise_chunk_ids: &[String],
-) -> AstParsePlan {
-    compute_ast_parse_plan(
-        spec,
-        &prepared.artifact,
-        artifact_indexes,
-        &prepared.parsed_js_files,
-        materialise_chunk_ids,
-    )
-}
-
-fn compute_ast_parse_plan(
-    spec: &TransformSpec,
-    artifact: &artifact::JsPipelineArtifact,
-    artifact_indexes: &ArtifactIndexes,
-    manifest: &ParsedJsFilesManifest,
-    materialise_chunk_ids: &[String],
-) -> AstParsePlan {
-    let source_bytes_by_chunk =
-        manifest
-            .parsed_files
-            .iter()
-            .fold(BTreeMap::<String, usize>::new(), |mut out, file| {
-                *out.entry(file.chunk_id.clone()).or_default() += file.source_bytes;
-                out
-            });
-    let vendor_needs_graph_ast = spec
-        .vendor
-        .values()
-        .any(|m| matches!(m.level, VendorLevel::BoundaryRename | VendorLevel::Swap(_)));
-    let mode = if vendor_needs_graph_ast || !materialise_chunk_ids.is_empty() {
-        AstParseMode::Selective
-    } else {
-        AstParseMode::Full
-    };
-    let mut chunks = artifact
-        .list_chunk_ids()
-        .into_iter()
-        .filter_map(|chunk_id| {
-            let chunk = artifact.find_chunk(&chunk_id)?;
-            Some((
-                chunk_id.clone(),
-                AstParseChunkPlan {
-                    chunk_id,
-                    entry_file: chunk.manifest.entry_file.clone(),
-                    source_path: chunk.manifest.source_path.clone(),
-                    source_bytes: source_bytes_by_chunk
-                        .get(&chunk.chunk_id)
-                        .copied()
-                        .unwrap_or_default(),
-                    reasons: BTreeSet::new(),
-                },
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let all_chunk_ids = chunks.keys().cloned().collect::<BTreeSet<_>>();
-
-    if mode == AstParseMode::Full {
-        for chunk in chunks.values_mut() {
-            chunk.reasons.insert(AstParseReason::FullPipeline);
-        }
-        return AstParsePlan {
-            required_chunk_ids: all_chunk_ids,
-            mode,
-            chunks,
-        };
-    }
-
-    for chunk_id in spec.logical_modules.keys() {
-        add_parse_reason(&mut chunks, chunk_id, AstParseReason::LogicalModule);
-    }
-    for chunk_id in spec.residual_modules.keys() {
-        add_parse_reason(&mut chunks, chunk_id, AstParseReason::ResidualModule);
-    }
-    for chunk_id in spec.chunk_renames.keys() {
-        add_parse_reason(&mut chunks, chunk_id, AstParseReason::ChunkRename);
-    }
-
-    let vendor_source_paths = spec
-        .vendor
-        .iter()
-        .filter_map(|(chunk_path, mark)| {
-            let chunk_id = chunk_path.strip_suffix(".js")?;
-            if !all_chunk_ids.contains(chunk_id) {
-                return None;
-            }
-            let reason = match mark.level {
-                VendorLevel::BoundaryRename => AstParseReason::VendorBoundaryRenameTarget {
-                    chunk_path: chunk_path.clone(),
-                },
-                VendorLevel::Swap(_) => AstParseReason::VendorSwapTarget {
-                    chunk_path: chunk_path.clone(),
-                },
-                VendorLevel::Suppress => return None,
-            };
-            Some((chunk_id.to_string(), chunk_path.clone(), reason))
-        })
-        .collect::<Vec<_>>();
-    for (vendor_chunk_id, _, reason) in &vendor_source_paths {
-        add_parse_reason(&mut chunks, vendor_chunk_id, reason.clone());
-    }
-    if !vendor_source_paths.is_empty() {
-        for (caller_chunk_id, reason) in
-            vendor_caller_reasons(artifact_indexes, &vendor_source_paths)
-        {
-            add_parse_reason(&mut chunks, &caller_chunk_id, reason);
-        }
-    }
-
-    let required_chunk_ids = chunks
-        .iter()
-        .filter(|(_, chunk)| !chunk.reasons.is_empty())
-        .map(|(chunk_id, _)| chunk_id.clone())
-        .collect();
-    AstParsePlan {
-        mode,
-        chunks,
-        required_chunk_ids,
-    }
-}
-
-fn add_parse_reason(
-    chunks: &mut BTreeMap<String, AstParseChunkPlan>,
-    chunk_id: &str,
-    reason: AstParseReason,
-) {
-    if let Some(chunk) = chunks.get_mut(chunk_id) {
-        chunk.reasons.insert(reason);
-    }
-}
-
-fn vendor_caller_reasons(
-    artifact_indexes: &ArtifactIndexes,
-    vendor_source_paths: &[(String, String, AstParseReason)],
-) -> Vec<(String, AstParseReason)> {
-    vendor_source_paths
-        .iter()
-        .flat_map(|(vendor_chunk_id, vendor_source_path, _)| {
-            artifact_indexes
-                .manifest_imports_targeting_chunk(vendor_chunk_id)
-                .filter(move |import| import.caller_chunk_id != *vendor_chunk_id)
-                .map(move |import| {
-                    (
-                        import.caller_chunk_id.clone(),
-                        AstParseReason::VendorCaller {
-                            vendor_chunk_id: vendor_chunk_id.clone(),
-                            vendor_chunk_path: vendor_source_path.clone(),
-                        },
-                    )
-                })
-        })
-        .collect()
-}
-
-fn parse_plan_report_path(spec: &TransformSpec) -> Option<PathBuf> {
-    spec.emit_browser_harness
-        .as_ref()
-        .map(|cfg| cfg.out_dir.join("analysis/parse_plan.json"))
-        .or_else(|| {
-            spec.write_js_tree
-                .as_ref()
-                .map(|cfg| cfg.out_dir.join("analysis/parse_plan.json"))
-        })
-}
-
-fn write_parse_plan_report(
-    path: &Path,
-    plan: &AstParsePlan,
-    manifest: &ParsedJsFilesManifest,
-) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(
-        path,
-        serde_json::to_string_pretty(&parse_plan_report(plan, manifest))? + "\n",
-    )?;
-    Ok(())
-}
-
-#[derive(Serialize)]
-struct ParsePlanReport {
-    mode: AstParseMode,
-    counts: ParsePlanCounts,
-    timings: ParsePlanTimings,
-    chunks: Vec<ParsePlanChunkReport>,
-}
-
-#[derive(Serialize)]
-struct ParsePlanCounts {
-    chunks: usize,
-    files: usize,
-    parsed_chunks: usize,
-    parsed_files: usize,
-    source_bytes: usize,
-    selected_source_bytes: usize,
-}
-
-#[derive(Serialize)]
-struct ParsePlanTimings {
-    parse_duration: Duration,
-    analysis_duration: Duration,
-    parse_and_analysis_duration: Duration,
-}
-
-#[derive(Serialize)]
-struct ParsePlanChunkReport {
-    chunk_id: String,
-    entry_file: String,
-    source_path: String,
-    source_bytes: usize,
-    selected_for_ast_transform: bool,
-    reasons: Vec<AstParseReason>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    parse_duration: Option<Duration>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    analysis_duration: Option<Duration>,
-}
-
-#[derive(Clone, Copy, Default)]
-struct ParsedChunkTiming {
-    parse_duration: Duration,
-    analysis_duration: Duration,
-}
-
-impl ParsedChunkTiming {
-    fn add_file(self, parsed_file: &artifact::ParsedJsFileRecord) -> Self {
-        Self {
-            parse_duration: self.parse_duration + parsed_file.parse_duration,
-            analysis_duration: self.analysis_duration + parsed_file.analysis_duration,
-        }
-    }
-}
-
-fn parse_plan_report(plan: &AstParsePlan, manifest: &ParsedJsFilesManifest) -> ParsePlanReport {
-    let timings_by_chunk = manifest.parsed_files.iter().fold(
-        BTreeMap::<String, ParsedChunkTiming>::new(),
-        |mut timings, parsed_file| {
-            timings
-                .entry(parsed_file.chunk_id.clone())
-                .and_modify(|timing| *timing = timing.add_file(parsed_file))
-                .or_insert_with(|| ParsedChunkTiming::default().add_file(parsed_file));
-            timings
-        },
-    );
-    let chunks = plan
-        .chunks
-        .values()
-        .map(|chunk| {
-            let timing = timings_by_chunk.get(&chunk.chunk_id);
-            ParsePlanChunkReport {
-                chunk_id: chunk.chunk_id.clone(),
-                entry_file: chunk.entry_file.clone(),
-                source_path: chunk.source_path.clone(),
-                source_bytes: chunk.source_bytes,
-                selected_for_ast_transform: plan.required_chunk_ids.contains(&chunk.chunk_id),
-                reasons: chunk.reasons.iter().cloned().collect(),
-                parse_duration: timing.map(|timing| timing.parse_duration),
-                analysis_duration: timing.map(|timing| timing.analysis_duration),
-            }
-        })
-        .collect::<Vec<_>>();
-    let timings = timings_by_chunk
-        .values()
-        .fold(ParsedChunkTiming::default(), |total, timing| {
-            ParsedChunkTiming {
-                parse_duration: total.parse_duration + timing.parse_duration,
-                analysis_duration: total.analysis_duration + timing.analysis_duration,
-            }
-        });
-    ParsePlanReport {
-        mode: plan.mode,
-        counts: ParsePlanCounts {
-            chunks: chunks.len(),
-            files: manifest.counts.files,
-            parsed_chunks: timings_by_chunk.len(),
-            parsed_files: manifest.counts.parsed,
-            source_bytes: chunks.iter().map(|chunk| chunk.source_bytes).sum(),
-            selected_source_bytes: chunks
-                .iter()
-                .filter(|chunk| chunk.selected_for_ast_transform)
-                .map(|chunk| chunk.source_bytes)
-                .sum(),
-        },
-        timings: ParsePlanTimings {
-            parse_duration: timings.parse_duration,
-            analysis_duration: timings.analysis_duration,
-            parse_and_analysis_duration: timings.parse_duration + timings.analysis_duration,
-        },
-        chunks,
-    }
-}
 
 fn run_step(
     steps: &mut Vec<TransformStepSummary>,
@@ -923,141 +563,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ast_selection_ignores_absent_vendor_targets() {
-        let mut spec = empty_transform_spec();
-        spec.chunk_renames
-            .insert("static/app".to_string(), spec::ChunkRenames::default());
-        spec.vendor.insert(
-            "static/missing-vendor.js".to_string(),
-            swap_vendor_mark("missing vendor"),
-        );
-        let artifact = prepare_artifact_with_chunks([
-            (
-                "static/app",
-                "static/app.js",
-                "import('./missing-vendor.js');\n",
-            ),
-            (
-                "static/caller",
-                "static/caller.js",
-                "import('./missing-vendor.js');\n",
-            ),
-        ]);
-
-        let materialise_chunk_ids = spec.chunk_renames.keys().cloned().collect::<Vec<_>>();
-        let plan = test_ast_parse_plan(&spec, &artifact, &materialise_chunk_ids);
-
-        assert_eq!(plan.mode, AstParseMode::Selective);
-        assert_eq!(
-            plan.required_chunk_ids,
-            BTreeSet::from(["static/app".to_string()])
-        );
-        assert_eq!(
-            plan.chunks["static/app"].reasons,
-            BTreeSet::from([AstParseReason::ChunkRename])
-        );
-        assert!(plan.chunks["static/caller"].reasons.is_empty());
-    }
-
-    #[test]
-    fn ast_selection_includes_present_vendor_targets_and_callers() {
-        let mut spec = empty_transform_spec();
-        spec.vendor.insert(
-            "static/vendor-target.js".to_string(),
-            swap_vendor_mark("present vendor"),
-        );
-        let artifact = prepare_artifact_with_chunks([
-            (
-                "static/app",
-                "static/app.js",
-                "import { otherValue } from './other-vendor.js';\n",
-            ),
-            (
-                "static/caller",
-                "static/caller.js",
-                "import { vendorValue } from './vendor-target.js';\n",
-            ),
-            (
-                "static/vendor-target",
-                "static/vendor-target.js",
-                "export const vendorValue = 1;\n",
-            ),
-        ]);
-
-        let plan = test_ast_parse_plan(&spec, &artifact, &[]);
-
-        assert_eq!(
-            plan.required_chunk_ids,
-            BTreeSet::from([
-                "static/caller".to_string(),
-                "static/vendor-target".to_string()
-            ])
-        );
-        assert_eq!(
-            plan.chunks["static/vendor-target"].reasons,
-            BTreeSet::from([AstParseReason::VendorSwapTarget {
-                chunk_path: "static/vendor-target.js".to_string(),
-            }])
-        );
-        assert_eq!(
-            plan.chunks["static/caller"].reasons,
-            BTreeSet::from([AstParseReason::VendorCaller {
-                vendor_chunk_id: "static/vendor-target".to_string(),
-                vendor_chunk_path: "static/vendor-target.js".to_string(),
-            }])
-        );
-    }
-
-    #[test]
-    fn ast_selection_uses_import_specifiers_not_arbitrary_strings() {
-        let mut spec = empty_transform_spec();
-        spec.vendor.insert(
-            "static/vendor-target.js".to_string(),
-            swap_vendor_mark("present vendor"),
-        );
-        let artifact = prepare_artifact_with_chunks([
-            (
-                "static/string-only",
-                "static/string-only.js",
-                "const literal = './vendor-target.js';\n// import './vendor-target.js'\n",
-            ),
-            (
-                "static/comment-block",
-                "static/comment-block.js",
-                "/* export * from './vendor-target.js'; */\n",
-            ),
-            (
-                "static/caller",
-                "static/caller.js",
-                "import { vendorValue } from './vendor-target.js';\n",
-            ),
-            (
-                "static/vendor-target",
-                "static/vendor-target.js",
-                "export const vendorValue = 1;\n",
-            ),
-        ]);
-
-        let plan = test_ast_parse_plan(&spec, &artifact, &[]);
-
-        assert_eq!(
-            plan.required_chunk_ids,
-            BTreeSet::from([
-                "static/caller".to_string(),
-                "static/vendor-target".to_string()
-            ])
-        );
-        assert!(plan.chunks["static/string-only"].reasons.is_empty());
-        assert!(plan.chunks["static/comment-block"].reasons.is_empty());
-        assert_eq!(
-            plan.chunks["static/caller"].reasons,
-            BTreeSet::from([AstParseReason::VendorCaller {
-                vendor_chunk_id: "static/vendor-target".to_string(),
-                vendor_chunk_path: "static/vendor-target.js".to_string(),
-            }])
-        );
-    }
 
     #[test]
     fn run_transform_cli_writes_spec_pipeline_outputs() -> Result<()> {
@@ -1414,66 +919,4 @@ mod tests {
         }
     }
 
-    fn swap_vendor_mark(identity: &str) -> spec::VendorMark {
-        spec::VendorMark {
-            identity: identity.to_string(),
-            role: spec::VendorRole::Module,
-            level: VendorLevel::Swap(spec::SwapMark {
-                package: "pkg".to_string(),
-                version: "1.0.0".to_string(),
-                subpath: "index.js".to_string(),
-                wrapper_shape: None,
-            }),
-        }
-    }
-
-    fn prepare_artifact_with_chunks<const N: usize>(
-        chunks: [(&str, &str, &str); N],
-    ) -> prepare_chunks::PrepareJsChunksResult {
-        prepare_js_chunks(artifact_with_chunks(chunks)).expect("prepare chunks")
-    }
-
-    fn test_ast_parse_plan(
-        spec: &TransformSpec,
-        artifact: &prepare_chunks::PrepareJsChunksResult,
-        materialise_chunk_ids: &[String],
-    ) -> AstParsePlan {
-        let artifact_indexes = ArtifactIndexes::build(&artifact.artifact).unwrap();
-        build_ast_parse_plan(spec, artifact, &artifact_indexes, materialise_chunk_ids)
-    }
-
-    fn artifact_with_chunks<const N: usize>(
-        chunks: [(&str, &str, &str); N],
-    ) -> artifact::LoadedJsChunks {
-        let mut artifact = artifact::LoadedJsChunks::default();
-        for (chunk_id, source_path, content) in chunks {
-            artifact.chunk_order.push(chunk_id.to_string());
-            artifact.chunks.insert(
-                chunk_id.to_string(),
-                artifact::JsChunk {
-                    entry_file: "entry.js".to_string(),
-                    files: BTreeMap::from([(
-                        "entry.js".to_string(),
-                        artifact::JsFile {
-                            path: "entry.js".to_string(),
-                            body: artifact::JsFileBody::Source(content.to_string()),
-                            header_lines: Vec::new(),
-                            metadata: artifact::FileMetadata {
-                                chunk_id: Some(chunk_id.to_string()),
-                                chunk_file: Some("entry.js".to_string()),
-                                role: Some(artifact::FileRole::Entry),
-                                source_path: Some(source_path.to_string()),
-                                ..Default::default()
-                            },
-                        },
-                    )]),
-                    metadata: artifact::ChunkMetadata {
-                        source_path: Some(source_path.to_string()),
-                        ..Default::default()
-                    },
-                },
-            );
-        }
-        artifact
-    }
 }
