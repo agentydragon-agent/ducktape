@@ -1,0 +1,200 @@
+/// Single per-chunk schedule. Carries everything downstream code
+/// needs to validate cycles and emit modules in an order that
+/// respects `I ∪ S`.
+#[derive(Debug, Clone)]
+pub struct Schedule {
+    pub chunk_id: String,
+    pub facts: Vec<StatementFacts>,
+    pub bindings: BTreeMap<BindingName, BindingKind>,
+    pub logical_modules: Vec<LogicalModule>,
+    pub chunk_renames: BTreeMap<BindingName, BindingName>,
+    pub owner_graph: OwnerGraph,
+    owner_edges: Vec<OwnerEdgeEntry>,
+    pub dep_graph: ModuleDepGraph,
+    owner_report_ids_by_binding: BTreeMap<BindingName, Vec<String>>,
+    /// Topological linearization of `I ∪ S`, dependency-first
+    /// (the module at index 0 must evaluate before any other; the
+    /// last module — typically the residual entry — evaluates
+    /// last). Empty when `dep_graph` has cycles (validation will
+    /// reject the spec). Used by the emitter to author each
+    /// module's `import` directive list in an order that steers
+    /// ECMA-262's linker DFS toward an `I ∪ S`-respecting
+    /// evaluation order; see DESIGN.md "Lemma 2".
+    pub linker_order: Vec<ModuleId>,
+    linker_position_by_module: BTreeMap<ModuleId, usize>,
+}
+
+impl Schedule {
+    /// Build a schedule from chunk facts + the binding catalogue +
+    /// spec-derived logical modules. `bindings` should already have
+    /// every `Owned` binding the spec assigned and every `Imported`
+    /// binding the spec re-exports.
+    pub fn build(
+        chunk_id: String,
+        facts: Vec<StatementFacts>,
+        bindings: BTreeMap<BindingName, BindingKind>,
+        logical_modules: Vec<LogicalModule>,
+        chunk_renames: BTreeMap<BindingName, BindingName>,
+    ) -> Self {
+        let ownership = owned_view(&bindings);
+        let owner_graph = build_owner_graph(&facts, &ownership);
+        let owner_edges = collect_owner_edge_entries(&owner_graph);
+        let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
+        let dep_graph =
+            quotient_owner_graph_with_destinations(&owner_graph, &owner_edges, |_, node| {
+                node.destination
+            });
+        let linker_order = compute_linker_order(&dep_graph, &logical_modules);
+        let linker_position_by_module = linker_order
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(idx, id)| (id, idx))
+            .collect();
+        Self {
+            chunk_id,
+            facts,
+            bindings,
+            logical_modules,
+            chunk_renames,
+            owner_graph,
+            owner_edges,
+            dep_graph,
+            owner_report_ids_by_binding,
+            linker_order,
+            linker_position_by_module,
+        }
+    }
+
+    /// Position of `id` in `linker_order`, if present. Used by the
+    /// emitter to sort each module's `import` directives so that
+    /// ECMA-262's depth-first link traversal evaluates dependencies
+    /// before dependents.
+    pub fn linker_position(&self, id: ModuleId) -> Option<usize> {
+        self.linker_position_by_module.get(&id).copied()
+    }
+
+    /// Render `id` to a human-readable label (used in cycle reports).
+    pub fn module_name(&self, id: ModuleId) -> String {
+        match id {
+            ModuleId::ResidualEntry => "<residual_entry>".to_string(),
+            ModuleId::Logical(LogicalModuleIndex(idx)) => self
+                .logical_modules
+                .get(idx)
+                .map(|m| m.id.clone())
+                .unwrap_or_else(|| format!("<module#{idx}>")),
+        }
+    }
+
+    /// Which logical module owns a binding (by local name), if any.
+    /// Returns `None` for names that aren't `Owned` in this schedule
+    /// (e.g. globals, imported bindings, names not in the spec).
+    pub fn owner_of(&self, name: &str) -> Option<ModuleId> {
+        self.bindings.get(name).and_then(|kind| match kind {
+            BindingKind::Owned { owner } => Some(*owner),
+            BindingKind::Imported { .. } => None,
+        })
+    }
+
+    /// Lookup a logical module by index.
+    pub fn logical_module(&self, idx: LogicalModuleIndex) -> Option<&LogicalModule> {
+        self.logical_modules.get(idx.0)
+    }
+
+    pub fn owner_report_ids_for_bindings<'a>(
+        &self,
+        names: impl IntoIterator<Item = &'a str>,
+    ) -> Vec<String> {
+        names
+            .into_iter()
+            .filter_map(|name| self.owner_report_ids_by_binding.get(name))
+            .flat_map(|ids| ids.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn build_owner_report_ids_by_binding(
+        owner_graph: &OwnerGraph,
+    ) -> BTreeMap<BindingName, Vec<String>> {
+        let mut by_binding = BTreeMap::<BindingName, BTreeSet<String>>::new();
+        for node in owner_graph.nodes.values() {
+            let report_id = owner_key(node.id);
+            for binding in &node.declared {
+                by_binding
+                    .entry(binding.clone())
+                    .or_default()
+                    .insert(report_id.clone());
+            }
+        }
+        by_binding
+            .into_iter()
+            .map(|(binding, ids)| (binding, ids.into_iter().collect()))
+            .collect()
+    }
+
+    /// Run SCC analysis over the dep graph. Spec authors consume the
+    /// resulting report to fix any cycles or cross-destination
+    /// rebinding writes.
+    pub fn validate(&self) -> ScheduleReport {
+        let mut report = validate_schedule(&self.dep_graph, &|id| self.module_name(id));
+        report.cross_destination_assignments =
+            validate_cross_destination_assignments(&self.owner_graph, &|id| self.module_name(id));
+        report.linker_order = self
+            .linker_order
+            .iter()
+            .map(|id| self.module_name(*id))
+            .collect();
+        report
+    }
+
+    /// High-fidelity node-link view of the fine owner graph plus
+    /// its current module quotient. Written as
+    /// `<chunk_id>/owner_graph.json` for downstream peel tooling.
+    pub fn owner_graph_report(&self) -> OwnerGraphReport {
+        build_owner_graph_report(self)
+    }
+}
+
+fn owned_view(bindings: &BTreeMap<BindingName, BindingKind>) -> BTreeMap<BindingName, ModuleId> {
+    bindings
+        .iter()
+        .filter_map(|(name, kind)| match kind {
+            BindingKind::Owned { owner } => Some((name.clone(), *owner)),
+            BindingKind::Imported { .. } => None,
+        })
+        .collect()
+}
+
+/// Topological linearization of the dep graph, dependency-first.
+/// Empty if the graph has cycles (`tarjan_scc` plus the validator
+/// gate handle that case).
+///
+/// The dep-graph edge convention is `(M, M')` meaning `M` depends
+/// on `M'`. `petgraph::algo::toposort` returns `u`-before-`v` for
+/// every edge `(u, v)`, which under our convention puts dependents
+/// before dependencies. The returned order is reversed so the
+/// dependency comes first — matching the order ECMA-262's link
+/// traversal needs to evaluate (deepest leaf first).
+fn compute_linker_order(
+    dep_graph: &ModuleDepGraph,
+    logical_modules: &[LogicalModule],
+) -> Vec<ModuleId> {
+    let mut graph = DiGraphMap::<ModuleId, ()>::new();
+    // Add every module the schedule knows about so the order
+    // covers them even if they have no dep-graph edges (singleton
+    // leaves still need a deterministic position for emit ordering).
+    graph.add_node(ModuleId::ResidualEntry);
+    for idx in 0..logical_modules.len() {
+        graph.add_node(ModuleId::Logical(LogicalModuleIndex(idx)));
+    }
+    for (from, to, _) in dep_graph.iter_edges() {
+        graph.add_node(from);
+        graph.add_node(to);
+        graph.add_edge(from, to, ());
+    }
+    match toposort(&graph, None) {
+        Ok(order) => order.into_iter().rev().collect(),
+        Err(_) => Vec::new(),
+    }
+}

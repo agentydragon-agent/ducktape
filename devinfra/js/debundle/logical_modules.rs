@@ -11,19 +11,19 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-use artifact::{
-    ArtifactSourceImportResolver, ChunkFileRecord, ChunkLogicalModulesSummary, ChunkMetadata,
-    FileMetadata, FileRole, JsChunk, JsFile, JsFileBody, JsPipelineArtifact, ModuleExtractionState,
-    RootLogicalModulesSummary, SelectedModuleLowering, get_chunk_entry_path, join_module_path,
-    manifest_relative_path, module_path_dirname, module_path_from_path, normalize_module_path,
-    relative_module_path,
-};
-use js_ast::{ParsedJsModule, line_range_for_span, set_str_value, str_value};
-use schedule_validator::{
+use analysis::{
     BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
     Schedule, analyze_chunk_with_source_locations, render_cross_destination_assignment_summary,
     render_cycle_summary,
 };
+use artifact::{
+    ArtifactIndexes, ArtifactSourceImportResolver, ChunkArtifact, ChunkFileRecord,
+    ChunkLogicalModulesSummary, ChunkManifest, ChunkMetadata, FileMetadata, FileRole, JsChunk,
+    JsFile, JsFileBody, JsPipelineArtifact, ModuleExtractionState, RootLogicalModulesSummary,
+    SelectedModuleLowering, get_chunk_entry_path, join_module_path, manifest_relative_path,
+    module_path_dirname, module_path_from_path, normalize_module_path, relative_module_path,
+};
+use js_ast::{ParsedJsModule, line_range_for_span, set_str_value, str_value};
 use spec::{BindingSourceKind, ChunkRenames, LogicalModule, MemberPurity, ResidualModule};
 
 const LOWERING_FILE_PRAGMA: &str =
@@ -66,6 +66,7 @@ pub struct LogicalModuleManifest {
     pub chunks: Vec<LogicalChunkReport>,
     pub counts: LogicalModuleCounts,
     pub duration: Duration,
+    pub timings: BTreeMap<String, Duration>,
     pub report_out_dir: Option<String>,
 }
 
@@ -209,6 +210,9 @@ pub fn materialize_logical_modules(
     if options.prune_other_chunks {
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
+    let index_started = Instant::now();
+    let artifact_indexes = ArtifactIndexes::build(&artifact)?;
+    let index_duration = index_started.elapsed();
 
     let artifact_ref: &JsPipelineArtifact = &artifact;
     let chunk_results = selected_chunk_ids
@@ -216,6 +220,7 @@ pub fn materialize_logical_modules(
         .map(|chunk_id| {
             materialize_logical_chunk(MaterializeLogicalChunkInputs {
                 artifact: artifact_ref,
+                artifact_indexes: &artifact_indexes,
                 logical_modules,
                 residual_modules,
                 chunk_renames,
@@ -246,6 +251,10 @@ pub fn materialize_logical_modules(
     }
 
     update_root_manifest(&mut artifact, &reports, &applied);
+    let duration = started.elapsed();
+    let mut aggregate_timings = aggregate_logical_timings(&reports);
+    aggregate_timings.insert("build_artifact_indexes".to_string(), index_duration);
+    aggregate_timings.insert("total".to_string(), duration);
     let manifest = LogicalModuleManifest {
         counts: LogicalModuleCounts {
             applied: applied.len(),
@@ -263,7 +272,8 @@ pub fn materialize_logical_modules(
                 .sum(),
         },
         chunks: reports,
-        duration: started.elapsed(),
+        duration,
+        timings: aggregate_timings,
         report_out_dir: report_out_dir.as_ref().map(|path| {
             options.report_summary_path.as_ref().map_or_else(
                 || module_path_from_path(path),
@@ -284,8 +294,19 @@ pub fn materialize_logical_modules(
     Ok(MaterializeLogicalModulesResult { artifact, manifest })
 }
 
+fn aggregate_logical_timings(reports: &[LogicalChunkReport]) -> BTreeMap<String, Duration> {
+    let mut timings = BTreeMap::<String, Duration>::new();
+    for report in reports {
+        for (name, duration) in &report.timings {
+            *timings.entry(format!("chunks.{name}")).or_default() += *duration;
+        }
+    }
+    timings
+}
+
 struct MaterializeLogicalChunkInputs<'a> {
     artifact: &'a JsPipelineArtifact,
+    artifact_indexes: &'a ArtifactIndexes,
     logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     residual_modules: &'a BTreeMap<String, ResidualModule>,
     chunk_renames: &'a BTreeMap<String, ChunkRenames>,
@@ -310,6 +331,7 @@ fn materialize_logical_chunk(
 ) -> Result<MaterializedLogicalChunk> {
     let MaterializeLogicalChunkInputs {
         artifact,
+        artifact_indexes,
         logical_modules,
         residual_modules,
         chunk_renames,
@@ -331,9 +353,9 @@ fn materialize_logical_chunk(
             })
     })?;
     let runtime_file = artifact
-        .chunks
-        .get(chunk_id)
-        .and_then(|chunk| chunk.files.get(&target_file))
+        .js_chunk(chunk_id)?
+        .files
+        .get(&target_file)
         .with_context(|| {
             format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
         })?;
@@ -347,9 +369,14 @@ fn materialize_logical_chunk(
         .clone()
         .or_else(|| artifact.chunk_source_path(chunk_id))
         .unwrap_or_else(|| format!("{chunk_id}.js"));
-    let runtime_import_facts = time_phase!(timings, "collect_runtime_import_facts", {
-        collect_runtime_import_facts(&runtime_ast.module.body)
+    let chunk_ast_analysis = time_phase!(timings, "analyze_chunk_ast", {
+        analyze_chunk_ast(&runtime_ast.module)
     });
+    let ChunkAstAnalysis {
+        runtime_import_facts,
+        declarations,
+        declaration_by_name,
+    } = chunk_ast_analysis;
     let requests = time_phase!(timings, "build_requests", {
         logical_requests_for_chunk(
             logical_modules.get(chunk_id),
@@ -366,21 +393,12 @@ fn materialize_logical_chunk(
         .collect::<Vec<_>>();
     let residual_request = requests.iter().find(|request| request.residual).cloned();
 
-    let declarations = time_phase!(timings, "collect_top_level_declarations", {
-        collect_top_level_declarations(&runtime_ast.module)
-    });
-    let declaration_by_name = time_phase!(timings, "index_declarations_by_name", {
-        declarations
-            .iter()
-            .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
-            .collect::<BTreeMap<_, _>>()
-    });
-
     let build_module_plans_started = Instant::now();
     let mut binding_assignment = BTreeMap::<String, usize>::new();
     let mut module_plans = Vec::new();
     let mut bindings_catalogue = BTreeMap::<BindingName, BindingKind>::new();
-    let mut imported_binding_resolver = ArtifactSourceImportResolutionCache::new(artifact);
+    let mut imported_binding_resolver =
+        ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
     for (index, request) in explicit_requests.iter_mut().enumerate() {
         let mut bindings = BTreeMap::new();
@@ -570,6 +588,7 @@ fn materialize_logical_chunk(
     let lowered = time_phase!(timings, "lower_chunk_total", {
         lower_chunk(LowerChunkInputs {
             artifact,
+            artifact_indexes,
             runtime_ast,
             header_lines: &header_lines,
             entry_file: &target_file,
@@ -661,9 +680,46 @@ fn merge_materialized_logical_chunk(
         runtime_file: target_file.clone(),
         target_dir: target_dir.to_string(),
     };
-    artifact.chunks.insert(
-        chunk_id.clone(),
-        JsChunk {
+    let mut manifest = artifact
+        .find_chunk(&chunk_id)
+        .map(|chunk| chunk.manifest.clone())
+        .unwrap_or_else(|| ChunkManifest {
+            chunk_id: chunk_id.clone(),
+            source_path: source_path.clone(),
+            parser: Default::default(),
+            entry_file: target_file.clone(),
+            counts: Default::default(),
+            files: Vec::new(),
+            imports: Vec::new(),
+            export_aliases: Vec::new(),
+            unresolved_exports: Vec::new(),
+            kept_top_level_declarations: Vec::new(),
+            logical_modules: None,
+            selected_module_lowerings: None,
+            output_metrics: None,
+        });
+    manifest.entry_file = target_file.clone();
+    manifest.files = file_records
+        .iter()
+        .map(|(file, role)| ChunkFileRecord {
+            file: file.clone(),
+            role: *role,
+        })
+        .collect();
+    manifest.logical_modules = Some(ChunkLogicalModulesSummary {
+        count: report.counts.final_modules,
+        module_ids: report
+            .final_module_contents
+            .iter()
+            .map(|module| module.id.clone())
+            .collect(),
+        target_dir: target_dir.to_string(),
+    });
+    manifest.selected_module_lowerings = Some(applied);
+
+    artifact.upsert_chunk(ChunkArtifact {
+        chunk_id: chunk_id.clone(),
+        js: JsChunk {
             entry_file: target_file.clone(),
             files,
             metadata: ChunkMetadata {
@@ -671,30 +727,8 @@ fn merge_materialized_logical_chunk(
                 module_extraction_state: Some(module_extraction_state),
             },
         },
-    );
-    if !artifact.chunk_order.contains(&chunk_id) {
-        artifact.chunk_order.push(chunk_id.clone());
-    }
-    if let Some(manifest) = artifact.chunk_manifests.get_mut(&chunk_id) {
-        manifest.entry_file = target_file;
-        manifest.files = file_records
-            .iter()
-            .map(|(file, role)| ChunkFileRecord {
-                file: file.clone(),
-                role: *role,
-            })
-            .collect();
-        manifest.logical_modules = Some(ChunkLogicalModulesSummary {
-            count: report.counts.final_modules,
-            module_ids: report
-                .final_module_contents
-                .iter()
-                .map(|module| module.id.clone())
-                .collect(),
-            target_dir: target_dir.to_string(),
-        });
-        manifest.selected_module_lowerings = Some(applied);
-    }
+        manifest,
+    });
     Ok(())
 }
 
@@ -707,6 +741,7 @@ struct LoweredChunk {
 
 struct LowerChunkInputs<'a> {
     artifact: &'a JsPipelineArtifact,
+    artifact_indexes: &'a ArtifactIndexes,
     runtime_ast: &'a ParsedJsModule,
     header_lines: &'a [String],
     entry_file: &'a str,
@@ -758,14 +793,16 @@ type SourceImportResolution = Option<(String, String, String)>;
 
 struct ArtifactSourceImportResolutionCache<'a> {
     artifact: &'a JsPipelineArtifact,
+    indexes: &'a ArtifactIndexes,
     resolutions: BTreeMap<SourceImportResolutionKey, SourceImportResolution>,
     resolver: Option<ArtifactSourceImportResolver<'a>>,
 }
 
 impl<'a> ArtifactSourceImportResolutionCache<'a> {
-    fn new(artifact: &'a JsPipelineArtifact) -> Self {
+    fn new(artifact: &'a JsPipelineArtifact, indexes: &'a ArtifactIndexes) -> Self {
         Self {
             artifact,
+            indexes,
             resolutions: BTreeMap::new(),
             resolver: None,
         }
@@ -789,7 +826,7 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
             return Ok(resolved.clone());
         }
         if self.resolver.is_none() {
-            self.resolver = Some(self.artifact.source_import_resolver()?);
+            self.resolver = Some(self.artifact.source_import_resolver(self.indexes));
         }
         let resolved = self
             .resolver
@@ -804,6 +841,7 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
 fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     let LowerChunkInputs {
         artifact,
+        artifact_indexes,
         runtime_ast,
         header_lines,
         entry_file,
@@ -1030,7 +1068,8 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     let imported_reexports_by_module = time_phase!(timings, "collect_imported_reexports", {
         collect_imported_reexports_by_module(schedule, module_plans.len())
     });
-    let mut source_import_cache = ArtifactSourceImportResolutionCache::new(artifact);
+    let mut source_import_cache =
+        ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
 
     let mut files = vec![JsFile {
         path: entry_file.to_string(),
@@ -1345,20 +1384,35 @@ fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {
         .collect()
 }
 
-fn collect_top_level_declarations(module: &Module) -> Vec<TopLevelDecl> {
-    let mut out = Vec::new();
+struct ChunkAstAnalysis {
+    runtime_import_facts: RuntimeImportFacts,
+    declarations: Vec<TopLevelDecl>,
+    declaration_by_name: BTreeMap<String, usize>,
+}
+
+fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
+    let mut imports = BTreeMap::<String, RuntimeImportInfo>::new();
+    let mut declarations = Vec::new();
     for (ordinal, item) in module.body.iter().enumerate() {
         let (names, exported) = top_level_declaration_names(item);
-        if names.is_empty() {
-            continue;
+        if !names.is_empty() {
+            declarations.push(TopLevelDecl {
+                ordinal,
+                names,
+                exported,
+            });
         }
-        out.push(TopLevelDecl {
-            ordinal,
-            names,
-            exported,
-        });
+        record_runtime_imports(item, &mut imports);
     }
-    out
+    let declaration_by_name = declarations
+        .iter()
+        .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
+        .collect::<BTreeMap<_, _>>();
+    ChunkAstAnalysis {
+        runtime_import_facts: RuntimeImportFacts { imports },
+        declarations,
+        declaration_by_name,
+    }
 }
 
 fn top_level_declaration_names(item: &ModuleItem) -> (Vec<String>, bool) {
@@ -1606,52 +1660,48 @@ fn collect_module_body_facts(body: &[ModuleItem]) -> ModuleBodyFacts {
     facts
 }
 
-fn collect_runtime_import_facts(runtime_body: &[ModuleItem]) -> RuntimeImportFacts {
-    let mut imports = BTreeMap::<String, RuntimeImportInfo>::new();
-    for item in runtime_body {
-        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-            continue;
-        };
-        let src = str_value(&import.src);
-        for specifier in &import.specifiers {
-            match specifier {
-                ImportSpecifier::Named(named) => {
-                    let local = named.local.sym.to_string();
-                    let imported = match &named.imported {
-                        Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
-                        Some(ModuleExportName::Str(s)) => str_value(s),
-                        None => named.local.sym.to_string(),
-                    };
-                    imports.insert(
-                        local,
-                        RuntimeImportInfo {
-                            kind: RuntimeImportKind::Named { imported },
-                            src: src.clone(),
-                        },
-                    );
-                }
-                ImportSpecifier::Default(default) => {
-                    imports.insert(
-                        default.local.sym.to_string(),
-                        RuntimeImportInfo {
-                            kind: RuntimeImportKind::Default,
-                            src: src.clone(),
-                        },
-                    );
-                }
-                ImportSpecifier::Namespace(namespace) => {
-                    imports.insert(
-                        namespace.local.sym.to_string(),
-                        RuntimeImportInfo {
-                            kind: RuntimeImportKind::Namespace,
-                            src: src.clone(),
-                        },
-                    );
-                }
+fn record_runtime_imports(item: &ModuleItem, imports: &mut BTreeMap<String, RuntimeImportInfo>) {
+    let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+        return;
+    };
+    let src = str_value(&import.src);
+    for specifier in &import.specifiers {
+        match specifier {
+            ImportSpecifier::Named(named) => {
+                let local = named.local.sym.to_string();
+                let imported = match &named.imported {
+                    Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
+                    Some(ModuleExportName::Str(s)) => str_value(s),
+                    None => named.local.sym.to_string(),
+                };
+                imports.insert(
+                    local,
+                    RuntimeImportInfo {
+                        kind: RuntimeImportKind::Named { imported },
+                        src: src.clone(),
+                    },
+                );
+            }
+            ImportSpecifier::Default(default) => {
+                imports.insert(
+                    default.local.sym.to_string(),
+                    RuntimeImportInfo {
+                        kind: RuntimeImportKind::Default,
+                        src: src.clone(),
+                    },
+                );
+            }
+            ImportSpecifier::Namespace(namespace) => {
+                imports.insert(
+                    namespace.local.sym.to_string(),
+                    RuntimeImportInfo {
+                        kind: RuntimeImportKind::Namespace,
+                        src: src.clone(),
+                    },
+                );
             }
         }
     }
-    RuntimeImportFacts { imports }
 }
 
 fn collect_imported_reexports_by_module(
@@ -2876,15 +2926,7 @@ fn entry_exports_for_moved_bindings(
 
 fn prune_artifact_to_chunk_ids(artifact: &mut JsPipelineArtifact, selected: &[String]) {
     let selected = selected.iter().cloned().collect::<BTreeSet<_>>();
-    artifact
-        .chunks
-        .retain(|chunk_id, _| selected.contains(chunk_id));
-    artifact
-        .chunk_order
-        .retain(|chunk_id| selected.contains(chunk_id));
-    artifact
-        .chunk_manifests
-        .retain(|chunk_id, _| selected.contains(chunk_id));
+    artifact.retain_chunks(|chunk_id| selected.contains(chunk_id));
     artifact
         .root_manifest
         .chunks

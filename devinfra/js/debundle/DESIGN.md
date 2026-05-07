@@ -714,7 +714,7 @@ or refuses with cycle evidence. There is no runtime check, no
 init-wrapper safety net, no per-load TDZ guard. By construction,
 the emitter never produces JavaScript that the ESM linker has to
 puzzle through a cyclic at-init read graph for. If the spec
-describes an unrealizable decomposition (`R` or `S` cycles), the
+describes an unrealizable analysis (`R` or `S` cycles), the
 spec is wrong; we report the cycle and let the author fix it.
 
 This is the contract the user-visible artifact relies on. Any
@@ -1544,41 +1544,45 @@ peel-set hyperedges so authoring tools can mostly project and filter
 debundler facts instead of re-analyzing JavaScript or private repo
 YAML conventions.
 
-| Step                             | Module                                         | Runs when                                                                                                                            |
-| -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `load_js_chunks`                 | <artifact.rs>                                  | Always; configured by `inputs`.                                                                                                      |
-| `prepare_js_chunks`              | <prepare_chunks.rs>                            | Always. In one parallel per-chunk pass, parses selected chunks, computes shallow program facts, and canonicalizes entries.           |
-| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>                        | Always, after chunk preparation and before data-gated transforms.                                                                    |
-| `apply_vendor_annotations`       | <vendor.rs>                                    | When the `vendor` map is non-empty.                                                                                                  |
-| `rename_vendor_exports`          | <vendor.rs>                                    | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                 |
-| `swap_vendor_chunks`             | <vendor.rs>                                    | When a `vendor` entry has `level: swap`.                                                                                             |
-| `materialize_logical_modules`    | <logical_modules.rs> + <schedule_validator.rs> | When `logical_modules` or `residual_modules` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits. |
-| `write_js_tree`                  | <write_tree.rs>                                | When `write_js_tree` output config is present; writes JS tree manifests with exact `output_metrics`.                                 |
-| `emit_browser_harness`           | <emit_harness.rs>                              | When `emit_browser_harness` output config is present; writes browser harness manifests with exact `output_metrics`.                  |
+| Step                             | Module                                | Runs when                                                                                                                            |
+| -------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `load_js_chunks`                 | <artifact.rs>                         | Always; configured by `inputs`.                                                                                                      |
+| `prepare_js_chunks`              | <prepare_chunks.rs>                   | Always. In one parallel per-chunk pass, parses selected chunks, computes shallow program facts, and canonicalizes entries.           |
+| `build_artifact_indexes`         | <artifact.rs>                         | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                  |
+| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>               | Always, after chunk preparation and before data-gated transforms.                                                                    |
+| `apply_vendor_annotations`       | <vendor.rs>                           | When the `vendor` map is non-empty.                                                                                                  |
+| `rename_vendor_exports`          | <vendor.rs>                           | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                 |
+| `swap_vendor_chunks`             | <vendor.rs>                           | When a `vendor` entry has `level: swap`.                                                                                             |
+| `materialize_logical_modules`    | <logical_modules.rs> + analysis files | When `logical_modules` or `residual_modules` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits. |
+| `write_js_tree`                  | <write_tree.rs>                       | When `write_js_tree` output config is present; writes JS tree manifests with exact `output_metrics`.                                 |
+| `emit_browser_harness`           | <emit_harness.rs>                     | When `emit_browser_harness` output config is present; writes browser harness manifests with exact `output_metrics`.                  |
 
 Within `materialize_logical_modules`, the substages are:
 
 1. **Spec parsing** → `LogicalRequest` / `ModulePlan` per chunk.
-2. **Statement-facts analysis** (<schedule_validator.rs>:
+2. **Chunk AST analysis** (<logical_modules.rs>:
+   `analyze_chunk_ast`) → top-level declarations, declaration index,
+   and runtime import facts in one top-level scan.
+3. **Statement-facts analysis** (<facts.rs>:
    `analyze_chunk_facts`) → `Vec<StatementFacts>`.
-3. **Owner graph construction** → owner vertices plus read and
+4. **Owner graph construction** (<graph.rs>) → owner vertices plus read and
    side-effect-order evidence. This is a first-class intermediate
    and report side output.
-4. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
+5. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
    the spec's explicit member list. Bindings with no spec entry
    default to `ResidualEntry`; nothing pulls implicitly. (See
    [Spec explicitness](#spec-explicitness-and-diagnostics).)
-5. **Quotient + validation** (<schedule_validator.rs>:
-   `quotient_owner_graph`, `validate_schedule`). The quotient graph
+6. **Quotient + validation** (<graph.rs>, <validation.rs>).
+   The quotient graph
    collapses owners by destination, aggregates edge reasons, and
    validates the resulting `I ∪ S`.
-6. **Diagnostics projections** — cycle evidence and peelability
+7. **Diagnostics projections** — cycle evidence and peelability
    reports are projections of the same owner graph + quotient, not
    separate heuristic analyses.
-7. **Cycle resolution gate** — if the validator finds an
+8. **Cycle resolution gate** — if the validator finds an
    unrealizable cycle, the pipeline aborts with the cycle
    evidence.
-8. **Source-order emission** — each module's body in source order;
+9. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
    No init wrappers.
 
@@ -1876,7 +1880,7 @@ emitted into source. Wrapping it would force `.0` everywhere a
 real-text-vs-id distinction doesn't exist. The other four are
 genuinely different things and earn a wrapper.
 
-`ModuleId` (already in <schedule_validator.rs>) is a tagged
+`ModuleId` (in <ids.rs>) is a tagged
 union over these:
 
 ```rust
@@ -1988,7 +1992,7 @@ Not yet pinned by tests (and at least some not implemented):
   if transform isn't applied, the JSX visitor needs explicit
   handling.
 
-Action: add a unit test per case to <schedule_validator.rs>;
+Action: add a unit test per case to <facts.rs> / <purity.rs>;
 fill the visitor's gaps. Aim for an exhaustive table.
 
 #### Side-effect classification is conservative
@@ -2087,8 +2091,11 @@ exploration before crossing the relevant phase.
 Primary:
 
 - <DESIGN.md> — this document.
-- <schedule_validator.rs> — `StatementFacts` analyzer,
-  `ModuleDepGraph` builder, `validate_schedule`.
+- <facts.rs> — `StatementFacts` analyzer.
+- <graph.rs> — owner graph and `ModuleDepGraph` builders.
+- <validation.rs> — realizability checks.
+- <schedule.rs> — schedule construction and linker-order reasoning.
+- <peelability.rs> — residual peelability horizon.
 - <logical_modules.rs> — main splitting transform.
 - <pipeline.rs> — fixed transform composition.
 - <program_analysis.rs> — chunk metadata + side-effect

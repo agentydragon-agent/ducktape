@@ -6,8 +6,8 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    ArtifactReferenceIndex, FileRole, JsFile, JsFileAstParts, JsPipelineArtifact,
-    get_chunk_entry_path, join_module_path, module_path_dirname, relative_module_path,
+    ArtifactIndexes, FileRole, JsFile, JsFileAstParts, JsPipelineArtifact, get_chunk_entry_path,
+    join_module_path, module_path_dirname, relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 
@@ -30,32 +30,30 @@ pub struct RewriteCounts {
 
 pub fn rewrite_chunk_entry_specifiers(
     mut artifact: JsPipelineArtifact,
+    references: &ArtifactIndexes,
 ) -> Result<RewriteChunkEntrySpecifiersResult> {
-    let references = ArtifactReferenceIndex::build(&artifact)?;
     let mut jobs = Vec::new();
     let chunk_ids = artifact.list_chunk_ids();
 
     for chunk_id in chunk_ids {
         let file_paths = artifact
-            .chunks
-            .get(&chunk_id)
-            .map(|chunk| chunk.files.keys().cloned().collect::<Vec<_>>())
-            .unwrap_or_default();
+            .js_chunk(&chunk_id)?
+            .files
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
         for file_path in file_paths {
             if !should_rewrite_file(
                 artifact
-                    .chunks
-                    .get(&chunk_id)
-                    .and_then(|chunk| chunk.files.get(&file_path))
+                    .js_chunk(&chunk_id)?
+                    .files
+                    .get(&file_path)
                     .context("missing artifact file while checking rewrite eligibility")?,
             ) {
                 continue;
             }
             let (parts, ast) = {
-                let chunk = artifact
-                    .chunks
-                    .get_mut(&chunk_id)
-                    .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
+                let chunk = artifact.js_chunk_mut(&chunk_id)?;
                 let file = chunk
                     .files
                     .remove(&file_path)
@@ -80,10 +78,7 @@ pub fn rewrite_chunk_entry_specifiers(
     let mut rewritten_files = 0usize;
     let mut rewritten_specifiers = 0usize;
     for result in results {
-        let chunk = artifact
-            .chunks
-            .get_mut(&result.chunk_id)
-            .with_context(|| format!("missing artifact chunk {}", result.chunk_id))?;
+        let chunk = artifact.js_chunk_mut(&result.chunk_id)?;
         chunk.files.insert(
             result.file_path.clone(),
             JsFile::from_ast_parts(result.parts, result.ast),
@@ -121,7 +116,7 @@ struct RewriteFileResult {
     rewrites: usize,
 }
 
-fn rewrite_file(mut job: RewriteFileJob, references: &ArtifactReferenceIndex) -> RewriteFileResult {
+fn rewrite_file(mut job: RewriteFileJob, references: &ArtifactIndexes) -> RewriteFileResult {
     let mut rewriter = RuntimeSourceRewriter {
         references,
         caller_chunk_id: job.chunk_id.clone(),
@@ -169,7 +164,7 @@ fn should_rewrite_file(file: &JsFile) -> bool {
 }
 
 struct RuntimeSourceRewriter<'a> {
-    references: &'a ArtifactReferenceIndex,
+    references: &'a ArtifactIndexes,
     caller_chunk_id: String,
     caller_file: String,
     rewrites: usize,

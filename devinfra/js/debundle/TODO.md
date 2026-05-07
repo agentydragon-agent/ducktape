@@ -4,7 +4,7 @@ Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
 The big architectural item — replacing the legacy init-wrapper
-lowering with a static schedule validator + source-order emit —
+lowering with a static analysis engine + source-order emit —
 landed in phases 1 → 4 (see <DESIGN.md> "Status" table),
 including the `BindingKind::Imported` collapse that closes out
 the parallel `import_members` channel. The items in this file
@@ -170,14 +170,22 @@ Still to do:
 
 ## Graph pass performance and module boundaries
 
-The current owner-graph framing is in place, but `schedule_validator.rs` is
-still too broad as a module and some passes should be tightened before the
-next large Tana peel loop:
+The current owner-graph framing is in place and lives in flat, concept-named
+analysis files. Some passes should still be tightened before the next large
+Tana peel loop:
 
-- Split `schedule_validator.rs` by pipeline stage: statement-fact extraction,
-  owner graph construction, quotient/realizability validation, and peelability
-  reporting. Preserve the current single-pass data flow while making each stage
-  easier to profile and reason about independently.
+- Keep telemetry complete as the pipeline keeps moving toward functional
+  per-chunk products: index build/rebuild, fused AST analysis, purity, owner
+  graph construction, quotient graph construction, validation,
+  peelability/report generation, lowering, and output writing should all have
+  useful durations in the emitted reports.
+- Move repeated timing helpers into one shared Rust module once a second pass
+  needs them outside the current local macro sites.
+- Continue moving hot-path code toward typed ids and array lookups where the
+  data is chunk-local; keep strings at spec, diagnostic, and serialization
+  boundaries.
+- Add focused regression coverage for `ArtifactIndexes` rebuild boundaries as
+  more structural artifact mutations are optimized.
 - Profile the Tana debundle action around `materialize_logical_modules` and
   `rename_vendor_exports`; avoid whole-graph clone/rescan patterns where a
   graph pass or indexed lookup can answer the same question.

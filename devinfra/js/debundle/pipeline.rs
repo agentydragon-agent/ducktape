@@ -8,7 +8,7 @@ use clap::Parser;
 use runfiles::{Runfiles, rlocation};
 use serde::{Deserialize, Serialize};
 
-use artifact::load_js_chunks;
+use artifact::{ArtifactIndexes, load_js_chunks};
 use artifact::{module_path_dirname, relative_module_path};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
@@ -177,6 +177,7 @@ pub enum PipelineStage {
     ValidateTransformSpec,
     LoadJsChunks,
     PrepareJsChunks,
+    BuildArtifactIndexes,
     RewriteChunkEntrySpecifiers,
     ApplyVendorAnnotations,
     RenameVendorExports,
@@ -283,11 +284,15 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         },
     )?;
     let mut steps = Vec::new();
+    let artifact_indexes =
+        run_step_with_result(&mut steps, PipelineStage::BuildArtifactIndexes, || {
+            ArtifactIndexes::build(&prepare_result.artifact)
+        })?;
 
     let rewrite_result = run_step_with_result(
         &mut steps,
         PipelineStage::RewriteChunkEntrySpecifiers,
-        || rewrite_chunk_entry_specifiers(prepare_result.artifact),
+        || rewrite_chunk_entry_specifiers(prepare_result.artifact, &artifact_indexes),
     )?;
     let mut artifact = rewrite_result.artifact;
 
@@ -306,7 +311,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         {
             let rename_result =
                 run_step_with_result(&mut steps, PipelineStage::RenameVendorExports, || {
-                    rename_vendor_exports(artifact, &spec.vendor)
+                    rename_vendor_exports(artifact, &spec.vendor, &artifact_indexes)
                 })?;
             artifact = rename_result.artifact;
         }
@@ -325,6 +330,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                     swap_vendor_chunks(
                         artifact,
                         &spec.vendor,
+                        &artifact_indexes,
                         SwapVendorOptions {
                             package_roots: &cli.package_roots,
                             packages_root: &cli.packages_root,
@@ -1062,11 +1068,12 @@ mod tests {
             force: false,
         })?;
 
-        assert_eq!(summary.steps.len(), 2);
+        assert_eq!(summary.steps.len(), 3);
         assert_eq!(summary.preparation_steps.len(), 4);
         let rendered_summary = render_transform_summary(&summary);
         assert!(rendered_summary.contains("- load_transform_spec"));
         assert!(rendered_summary.contains("- prepare_js_chunks"));
+        assert!(rendered_summary.contains("- build_artifact_indexes"));
         assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
         assert!(rendered_summary.contains("- emit_browser_harness"));
         assert!(out.join("bootstrap.js").exists());

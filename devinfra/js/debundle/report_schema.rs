@@ -1,7 +1,3 @@
-use serde::{Deserialize, Serialize};
-
-use super::{BindingName, EdgeKind, StatementKind, StatementOrdinal};
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceLocation {
     pub source_path: String,

@@ -28,7 +28,7 @@ Three things that should follow from that:
   side-output analyses, and heuristic generators that make spec
   authoring nice and convenient — fewer clicks, fewer round-trips,
   no peeking into git history. The pipeline emits machine-readable
-  artifacts so consuming tools can suggest module decompositions /
+  artifacts so consuming tools can suggest owner/module splits /
   rename targets / chunk seams; the spec author reviews and commits
   decisions explicitly.
 - **Heuristics surface signals, the spec makes decisions.** Heuristic
@@ -198,7 +198,7 @@ await detection, dependency-graph cycles, etc.
 
 The purity classifier's `PURE_STATIC_PROPS`, `PURE_STATIC_CALLS`,
 and `PURE_GLOBAL_CALLS` whitelists in
-<schedule_validator.rs> directly drive S-edge construction. An
+<purity.rs> directly drive S-edge construction. An
 over-approximating entry — a built-in flagged Pure that can in
 fact fire user code on some argument — drops S edges the
 realizability theorem needs, and can let a cyclic spec slip past
@@ -229,7 +229,7 @@ any arg), or by introducing stronger argument analysis (e.g., a
 operations be admitted _under syntactic gates_ on the arguments.
 Never add an entry "because the common case is fine."
 
-The schedule validator carries an inline TODO listing patterns
+The analysis engine carries an inline TODO listing patterns
 that would become admissible once a primitive-arg gate exists —
 treat that as the queue for safe whitelist growth.
 

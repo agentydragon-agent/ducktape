@@ -18,21 +18,23 @@ pub struct LoadedJsChunks {
 }
 
 pub struct JsPipelineArtifact {
-    pub chunk_order: Vec<String>,
-    pub chunks: BTreeMap<String, JsChunk>,
+    pub chunks: Vec<ChunkArtifact>,
     pub root_manifest: ArtifactManifest,
-    pub chunk_manifests: BTreeMap<String, ChunkManifest>,
 }
 
 impl Default for JsPipelineArtifact {
     fn default() -> Self {
         Self {
-            chunk_order: Vec::new(),
-            chunks: BTreeMap::new(),
+            chunks: Vec::new(),
             root_manifest: ArtifactManifest::empty(),
-            chunk_manifests: BTreeMap::new(),
         }
     }
+}
+
+pub struct ChunkArtifact {
+    pub chunk_id: String,
+    pub js: JsChunk,
+    pub manifest: ChunkManifest,
 }
 
 pub struct JsChunk {
@@ -364,7 +366,7 @@ impl Default for ParserOptionsRecord {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ChunkCounts {
     pub dynamic_imports: usize,
     pub export_aliases: usize,
@@ -467,67 +469,114 @@ impl ArtifactManifest {
 
 impl JsPipelineArtifact {
     pub fn list_chunk_ids(&self) -> Vec<String> {
-        if self.chunk_order.is_empty() {
-            self.chunks.keys().cloned().collect()
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.chunk_id.clone())
+            .collect()
+    }
+
+    pub fn has_chunk(&self, chunk_id: &str) -> bool {
+        self.find_chunk(chunk_id).is_some()
+    }
+
+    pub fn find_chunk(&self, chunk_id: &str) -> Option<&ChunkArtifact> {
+        self.chunks.iter().find(|chunk| chunk.chunk_id == chunk_id)
+    }
+
+    pub fn chunk(&self, chunk_id: &str) -> Result<&ChunkArtifact> {
+        self.find_chunk(chunk_id)
+            .with_context(|| format!("missing artifact chunk {chunk_id}"))
+    }
+
+    pub fn find_chunk_mut(&mut self, chunk_id: &str) -> Option<&mut ChunkArtifact> {
+        self.chunks
+            .iter_mut()
+            .find(|chunk| chunk.chunk_id == chunk_id)
+    }
+
+    pub fn chunk_mut(&mut self, chunk_id: &str) -> Result<&mut ChunkArtifact> {
+        self.find_chunk_mut(chunk_id)
+            .with_context(|| format!("missing artifact chunk {chunk_id}"))
+    }
+
+    pub fn find_js_chunk(&self, chunk_id: &str) -> Option<&JsChunk> {
+        self.find_chunk(chunk_id).map(|chunk| &chunk.js)
+    }
+
+    pub fn js_chunk(&self, chunk_id: &str) -> Result<&JsChunk> {
+        Ok(&self.chunk(chunk_id)?.js)
+    }
+
+    pub fn find_js_chunk_mut(&mut self, chunk_id: &str) -> Option<&mut JsChunk> {
+        self.find_chunk_mut(chunk_id).map(|chunk| &mut chunk.js)
+    }
+
+    pub fn js_chunk_mut(&mut self, chunk_id: &str) -> Result<&mut JsChunk> {
+        Ok(&mut self.chunk_mut(chunk_id)?.js)
+    }
+
+    pub fn remove_chunk(&mut self, chunk_id: &str) -> Option<ChunkArtifact> {
+        let index = self
+            .chunks
+            .iter()
+            .position(|chunk| chunk.chunk_id == chunk_id)?;
+        Some(self.chunks.remove(index))
+    }
+
+    pub fn retain_chunks(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.chunks.retain(|chunk| keep(&chunk.chunk_id));
+    }
+
+    pub fn upsert_chunk(&mut self, chunk: ChunkArtifact) {
+        if let Some(existing) = self
+            .chunks
+            .iter_mut()
+            .find(|existing| existing.chunk_id == chunk.chunk_id)
+        {
+            *existing = chunk;
         } else {
-            self.chunk_order.clone()
+            self.chunks.push(chunk);
         }
     }
 
     pub fn list_js_file_keys(&self) -> Vec<(String, String)> {
-        self.list_chunk_ids()
-            .into_iter()
-            .flat_map(|chunk_id| {
-                self.chunks
-                    .get(&chunk_id)
-                    .map(|chunk| {
-                        chunk
-                            .files
-                            .keys()
-                            .map(|file| (chunk_id.clone(), file.clone()))
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default()
+        self.chunks
+            .iter()
+            .flat_map(|chunk_artifact| {
+                chunk_artifact
+                    .js
+                    .files
+                    .keys()
+                    .map(|file| (chunk_artifact.chunk_id.clone(), file.clone()))
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
 
     pub fn chunk_source_path(&self, chunk_id: &str) -> Option<String> {
-        self.chunk_manifests
-            .get(chunk_id)
-            .map(|manifest| manifest.source_path.clone())
+        self.find_chunk(chunk_id)
+            .map(|chunk| chunk.manifest.source_path.clone())
             .or_else(|| {
-                self.chunks
-                    .get(chunk_id)
+                self.find_js_chunk(chunk_id)
                     .and_then(|chunk| chunk.metadata.source_path.clone())
             })
             .or_else(|| Some(format!("{chunk_id}.js")))
     }
 
-    pub fn source_chunk_index(&self) -> Result<BTreeMap<String, String>> {
-        let mut out = BTreeMap::new();
-        for chunk_id in self.list_chunk_ids() {
-            let Some(source_path) = self.chunk_source_path(&chunk_id) else {
-                continue;
-            };
-            if let Some(existing) = out.insert(source_path.clone(), chunk_id.clone()) {
-                bail!("Duplicate chunk sourcePath {source_path}: {existing} and {chunk_id}");
-            }
-        }
-        Ok(out)
-    }
-
-    pub fn source_import_resolver(&self) -> Result<ArtifactSourceImportResolver<'_>> {
-        Ok(ArtifactSourceImportResolver {
+    pub fn source_import_resolver<'a>(
+        &'a self,
+        indexes: &'a ArtifactIndexes,
+    ) -> ArtifactSourceImportResolver<'a> {
+        ArtifactSourceImportResolver {
             artifact: self,
-            source_chunk_index: self.source_chunk_index()?,
-        })
+            indexes,
+        }
     }
 }
 
 pub struct ArtifactSourceImportResolver<'a> {
     artifact: &'a JsPipelineArtifact,
-    source_chunk_index: BTreeMap<String, String>,
+    indexes: &'a ArtifactIndexes,
 }
 
 impl ArtifactSourceImportResolver<'_> {
@@ -550,8 +599,7 @@ impl ArtifactSourceImportResolver<'_> {
         else {
             return Ok(None);
         };
-        let Some(target_chunk_id) = self.source_chunk_index.get(&imported_source_path).cloned()
-        else {
+        let Some(target_chunk_id) = self.indexes.chunk_id_for_source(&imported_source_path) else {
             return Ok(None);
         };
         let Some(target_entry_file) = get_chunk_entry_path(self.artifact, &target_chunk_id) else {
@@ -566,7 +614,8 @@ impl ArtifactSourceImportResolver<'_> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ArtifactReferenceIndex {
+pub struct ArtifactIndexes {
+    chunk_id_index: BTreeMap<String, usize>,
     output_path_index: BTreeMap<String, (String, String)>,
     source_chunk_index: BTreeMap<String, String>,
     chunk_source_paths: BTreeMap<String, String>,
@@ -575,8 +624,9 @@ pub struct ArtifactReferenceIndex {
     file_output_paths: BTreeMap<(String, String), String>,
 }
 
-impl ArtifactReferenceIndex {
+impl ArtifactIndexes {
     pub fn build(artifact: &JsPipelineArtifact) -> Result<Self> {
+        let mut chunk_id_index = BTreeMap::new();
         let mut output_path_index = BTreeMap::new();
         let mut source_chunk_index = BTreeMap::new();
         let mut chunk_source_paths = BTreeMap::new();
@@ -584,10 +634,12 @@ impl ArtifactReferenceIndex {
         let mut entry_files = BTreeMap::new();
         let mut file_output_paths = BTreeMap::new();
 
-        for chunk_id in artifact.list_chunk_ids() {
-            let Some(chunk) = artifact.chunks.get(&chunk_id) else {
-                continue;
-            };
+        for (index, chunk_artifact) in artifact.chunks.iter().enumerate() {
+            let chunk_id = &chunk_artifact.chunk_id;
+            if let Some(existing) = chunk_id_index.insert(chunk_id.clone(), index) {
+                bail!("Duplicate chunk id {chunk_id}: indexes {existing} and {index}");
+            }
+            let chunk = &chunk_artifact.js;
             entry_files.insert(chunk_id.clone(), chunk.entry_file.clone());
             if let Some(source_path) = artifact.chunk_source_path(&chunk_id) {
                 if let Some(existing) =
@@ -606,7 +658,7 @@ impl ArtifactReferenceIndex {
                     .metadata
                     .source_path
                     .clone()
-                    .or_else(|| chunk_source_paths.get(&chunk_id).cloned())
+                    .or_else(|| chunk_source_paths.get(chunk_id).cloned())
                 {
                     file_source_paths.insert(key.clone(), source_path);
                 }
@@ -630,6 +682,7 @@ impl ArtifactReferenceIndex {
         }
 
         Ok(Self {
+            chunk_id_index,
             output_path_index,
             source_chunk_index,
             chunk_source_paths,
@@ -637,6 +690,14 @@ impl ArtifactReferenceIndex {
             entry_files,
             file_output_paths,
         })
+    }
+
+    pub fn chunk_index(&self, chunk_id: &str) -> Option<usize> {
+        self.chunk_id_index.get(chunk_id).copied()
+    }
+
+    pub fn chunk_id_for_source(&self, source_path: &str) -> Option<String> {
+        self.source_chunk_index.get(source_path).cloned()
     }
 
     pub fn resolve_import_reference(
@@ -789,10 +850,8 @@ fn materialize_chunk_scripts(
     selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
     chunk_id: String,
 ) -> Result<Vec<OutputFileMetric>> {
-    let chunk = artifact
-        .chunks
-        .get(&chunk_id)
-        .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
+    let chunk_artifact = artifact.chunk(&chunk_id)?;
+    let chunk = &chunk_artifact.js;
     let chunk_out_dir = out_dir.join(path_from_module_path(&chunk_id));
     fs::create_dir_all(&chunk_out_dir)?;
     let metrics = list_chunk_file_paths(chunk)
@@ -808,18 +867,16 @@ fn materialize_chunk_scripts(
             )
         })
         .collect::<Result<Vec<_>>>()?;
-    if let Some(manifest) = artifact.chunk_manifests.get(&chunk_id) {
-        let mut manifest = manifest.clone();
-        manifest.output_metrics = Some(OutputMetrics::from_file_metrics(
-            metrics
-                .iter()
-                .map(|metric| chunk_relative_metric(&chunk_id, metric)),
-        ));
-        fs::write(
-            chunk_out_dir.join("manifest.json"),
-            serde_json::to_string_pretty(&manifest)? + "\n",
-        )?;
-    }
+    let mut manifest = chunk_artifact.manifest.clone();
+    manifest.output_metrics = Some(OutputMetrics::from_file_metrics(
+        metrics
+            .iter()
+            .map(|metric| chunk_relative_metric(&chunk_id, metric)),
+    ));
+    fs::write(
+        chunk_out_dir.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest)? + "\n",
+    )?;
     Ok(metrics)
 }
 
@@ -874,9 +931,9 @@ fn selected_module_by_chunk_file(
     artifact: &JsPipelineArtifact,
 ) -> BTreeMap<(String, String), &SelectedModuleLowering> {
     artifact
-        .chunk_manifests
-        .values()
-        .flat_map(|manifest| manifest.selected_module_lowerings.iter().flatten())
+        .chunks
+        .iter()
+        .flat_map(|chunk| chunk.manifest.selected_module_lowerings.iter().flatten())
         .map(|lowering| {
             (
                 (lowering.chunk_id.clone(), lowering.target_file.clone()),
@@ -951,13 +1008,12 @@ fn fraction(part: usize, total: usize) -> f64 {
 }
 
 pub fn get_chunk_entry_path(artifact: &JsPipelineArtifact, chunk_id: &str) -> Option<String> {
-    let chunk = artifact.chunks.get(chunk_id)?;
+    let chunk_artifact = artifact.find_chunk(chunk_id)?;
+    let chunk = &chunk_artifact.js;
     if !chunk.entry_file.is_empty() && chunk.files.contains_key(&chunk.entry_file) {
         return Some(chunk.entry_file.clone());
     }
-    artifact
-        .chunk_manifests
-        .get(chunk_id)
+    Some(&chunk_artifact.manifest)
         .and_then(|manifest| {
             chunk
                 .files
@@ -981,7 +1037,7 @@ pub fn artifact_file_output_path(
     chunk_id: &str,
     file: &str,
 ) -> Option<String> {
-    let chunk = artifact.chunks.get(chunk_id)?;
+    let chunk = artifact.find_js_chunk(chunk_id)?;
     let file_artifact = chunk.files.get(file)?;
     artifact_file_output_path_from_parts(chunk_id, file, file_artifact)
 }
@@ -1129,7 +1185,7 @@ fn source_path_for_artifact_file(
     chunk_id: &str,
     file: &str,
 ) -> Result<Option<String>> {
-    let Some(chunk) = artifact.chunks.get(chunk_id) else {
+    let Some(chunk) = artifact.find_js_chunk(chunk_id) else {
         return Ok(None);
     };
     if let Some(source_path) = chunk

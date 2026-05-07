@@ -11,7 +11,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    ArtifactReferenceIndex, JsFile, JsFileAstParts, JsPipelineArtifact, get_chunk_entry_path,
+    ArtifactIndexes, JsFile, JsFileAstParts, JsPipelineArtifact, get_chunk_entry_path,
     list_chunk_file_paths, manifest_relative_path, path_from_module_path,
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
@@ -172,6 +172,7 @@ pub fn apply_vendor_annotations(
 pub fn rename_vendor_exports(
     mut artifact: JsPipelineArtifact,
     vendor: &BTreeMap<String, VendorMark>,
+    references: &ArtifactIndexes,
 ) -> Result<RenameVendorExportsResult> {
     let mut ops = Vec::<RenameVendorExportOp>::new();
     let mut mappings = VendorExportMappings::new();
@@ -195,9 +196,9 @@ pub fn rename_vendor_exports(
         })?;
         let mapping = {
             let vendor_ast = artifact
-                .chunks
-                .get(&chunk_id)
-                .and_then(|chunk| chunk.files.get(&vendor_entry_relative_file))
+                .js_chunk(&chunk_id)?
+                .files
+                .get(&vendor_entry_relative_file)
                 .and_then(|file| file.ast())
                 .with_context(|| {
                     format!("rename_vendor_exports vendor chunk {chunk_id} is missing entry AST")
@@ -221,23 +222,22 @@ pub fn rename_vendor_exports(
 
     let mut caller_counts_by_target = BTreeMap::<(String, String), BTreeMap<String, usize>>::new();
     if !mappings.is_empty() {
-        let references = ArtifactReferenceIndex::build(&artifact)?;
         let file_keys = artifact.list_js_file_keys();
         let mut jobs = Vec::new();
         for (caller_chunk_id, file_path) in file_keys {
             let has_ast = artifact
-                .chunks
-                .get(&caller_chunk_id)
-                .and_then(|chunk| chunk.files.get(&file_path))
+                .js_chunk(&caller_chunk_id)?
+                .files
+                .get(&file_path)
                 .and_then(|file| file.ast())
                 .is_some();
             if !has_ast {
                 continue;
             }
             let (parts, ast) = artifact
-                .chunks
-                .get_mut(&caller_chunk_id)
-                .and_then(|chunk| chunk.files.remove(&file_path))
+                .js_chunk_mut(&caller_chunk_id)?
+                .files
+                .remove(&file_path)
                 .and_then(|file| file.into_ast_parts())
                 .with_context(|| format!("missing AST for {caller_chunk_id}/{file_path}"))?;
             jobs.push(VendorRenameFileJob {
@@ -253,9 +253,7 @@ pub fn rename_vendor_exports(
             .collect::<Vec<_>>();
         for result in results {
             artifact
-                .chunks
-                .get_mut(&result.caller_chunk_id)
-                .context("missing chunk while restoring AST")?
+                .js_chunk_mut(&result.caller_chunk_id)?
                 .files
                 .insert(
                     result.file_path.clone(),
@@ -328,7 +326,7 @@ struct VendorRenameFileResult {
 
 fn rename_vendor_imports_in_file(
     mut job: VendorRenameFileJob,
-    references: &ArtifactReferenceIndex,
+    references: &ArtifactIndexes,
     mappings: &VendorExportMappings,
 ) -> VendorRenameFileResult {
     let mut rewriter = VendorImportRenamer {
@@ -536,6 +534,7 @@ fn resolve_vendor_swap(
 pub fn swap_vendor_chunks(
     mut artifact: JsPipelineArtifact,
     vendor: &BTreeMap<String, VendorMark>,
+    references: &ArtifactIndexes,
     options: SwapVendorOptions<'_>,
 ) -> Result<SwapVendorChunksResult> {
     let ops: Vec<(&String, &VendorMark, &SwapMark)> = vendor
@@ -545,7 +544,7 @@ pub fn swap_vendor_chunks(
             _ => None,
         })
         .collect();
-    let import_alignment_index = build_import_alignment_index(&artifact)?;
+    let import_alignment_index = build_import_alignment_index(&artifact, references)?;
     let jobs = ops
         .iter()
         .map(|(chunk_path, _mark, swap)| {
@@ -556,9 +555,9 @@ pub fn swap_vendor_chunks(
             )
         })?;
         let entry_ast = artifact
-            .chunks
-            .get(&chunk_id)
-            .and_then(|chunk| chunk.files.get(&entry_relative_file))
+            .js_chunk(&chunk_id)?
+            .files
+            .get(&entry_relative_file)
             .and_then(|file| file.ast())
             .with_context(|| {
                 format!("swap_vendor_chunks vendor chunk {chunk_id} is missing entry AST")
@@ -581,11 +580,7 @@ pub fn swap_vendor_chunks(
         .collect::<Result<Vec<_>>>()?;
     let mut resolutions = BTreeMap::<String, VendorResolution>::new();
     for resolution in resolved {
-        artifact.chunks.remove(&resolution.chunk_id);
-        artifact
-            .chunk_order
-            .retain(|candidate| candidate != &resolution.chunk_id);
-        artifact.chunk_manifests.remove(&resolution.chunk_id);
+        artifact.remove_chunk(&resolution.chunk_id);
         resolutions.insert(resolution.chunk_path.clone(), resolution);
     }
 
@@ -669,7 +664,7 @@ fn collect_boundary_mapping(module: &Module) -> BTreeMap<String, String> {
 }
 
 struct VendorImportRenamer<'a> {
-    references: &'a ArtifactReferenceIndex,
+    references: &'a ArtifactIndexes,
     caller_chunk_id: String,
     caller_file: String,
     mappings: &'a VendorExportMappings,
@@ -739,13 +734,11 @@ struct ImportAlignmentRecord {
 
 fn build_import_alignment_index(
     artifact: &JsPipelineArtifact,
+    references: &ArtifactIndexes,
 ) -> Result<BTreeMap<String, Vec<ImportAlignmentRecord>>> {
-    let references = ArtifactReferenceIndex::build(artifact)?;
     let mut index = BTreeMap::<String, Vec<ImportAlignmentRecord>>::new();
     for caller_chunk_id in artifact.list_chunk_ids() {
-        let Some(chunk) = artifact.chunks.get(&caller_chunk_id) else {
-            continue;
-        };
+        let chunk = artifact.js_chunk(&caller_chunk_id)?;
         for caller_file in list_chunk_file_paths(chunk) {
             let Some(ast) = chunk.files.get(&caller_file).and_then(|file| file.ast()) else {
                 continue;
@@ -1368,7 +1361,9 @@ fn is_valid_identifier(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use artifact::{ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile};
+    use artifact::{
+        ChunkArtifact, ChunkManifest, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
+    };
 
     #[test]
     fn rename_vendor_exports_rewrites_multiple_vendor_targets_in_one_call() {
@@ -1417,7 +1412,8 @@ export { b as beta };
             ),
         ]);
 
-        let result = rename_vendor_exports(artifact, &vendor).unwrap();
+        let references = ArtifactIndexes::build(&artifact).unwrap();
+        let result = rename_vendor_exports(artifact, &vendor, &references).unwrap();
         let artifact = result.artifact;
         let manifest = result.manifest;
 
@@ -1456,10 +1452,9 @@ export { b as beta };
 
     fn insert_chunk(artifact: &mut JsPipelineArtifact, chunk_id: &str, source: &str) {
         let entry_file = "entry.js".to_string();
-        artifact.chunk_order.push(chunk_id.to_string());
-        artifact.chunks.insert(
-            chunk_id.to_string(),
-            JsChunk {
+        artifact.upsert_chunk(ChunkArtifact {
+            chunk_id: chunk_id.to_string(),
+            js: JsChunk {
                 entry_file: entry_file.clone(),
                 files: BTreeMap::from([(
                     entry_file.clone(),
@@ -1483,7 +1478,22 @@ export { b as beta };
                     module_extraction_state: None,
                 },
             },
-        );
+            manifest: ChunkManifest {
+                chunk_id: chunk_id.to_string(),
+                source_path: format!("{chunk_id}.js"),
+                parser: Default::default(),
+                entry_file,
+                counts: Default::default(),
+                files: Vec::new(),
+                imports: Vec::new(),
+                export_aliases: Vec::new(),
+                unresolved_exports: Vec::new(),
+                kept_top_level_declarations: Vec::new(),
+                logical_modules: None,
+                selected_module_lowerings: None,
+                output_metrics: None,
+            },
+        });
     }
 
     fn named_imports(
@@ -1492,7 +1502,15 @@ export { b as beta };
         file: &str,
         source: &str,
     ) -> Vec<(String, String)> {
-        let module = &artifact.chunks[chunk_id].files[file].ast().unwrap().module;
+        let module = &artifact
+            .js_chunk(chunk_id)
+            .unwrap()
+            .files
+            .get(file)
+            .unwrap()
+            .ast()
+            .unwrap()
+            .module;
         module
             .body
             .iter()

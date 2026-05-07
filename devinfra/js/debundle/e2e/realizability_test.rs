@@ -7,10 +7,10 @@
 //! match, or rejection with cycle evidence naming the implicated
 //! modules.
 
-use debundle_e2e_support::*;
-use schedule_validator::{
+use analysis::{
     BindingReport, EdgeKind, OwnerGraphReport, PeelCandidateKind, ResidualOwnerPeelStatus,
 };
+use debundle_e2e_support::*;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::{fs, path::Path};

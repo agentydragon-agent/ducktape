@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use schedule_validator::{BindingReport, OwnerGraphReport, PeelCandidateKind};
+use analysis::{BindingReport, OwnerGraphReport, PeelCandidateKind};
 use spec::{BindingSourceKind, Member};
 
 #[derive(Debug, Clone)]
@@ -583,7 +583,7 @@ fn module_path_from_file(path: &Path, root: &Path, is_deferred: bool) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use schedule_validator::{
+    use analysis::{
         ModuleReportRef, OwnerGraphNodeReport, OwnerGraphPeelSetReport,
         OwnerGraphPeelabilityReport, OwnerGraphQuotientReport, OwnerGraphReport, StatementKind,
         StatementOrdinal,

@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use serde::Serialize;
 
 use artifact::{
@@ -39,16 +39,11 @@ pub fn write_js_tree(
     let files = chunk_ids
         .iter()
         .map(|chunk_id| {
-            artifact
-                .chunks
-                .get(chunk_id)
-                .with_context(|| format!("missing artifact chunk {chunk_id}"))
-                .map(|chunk| {
-                    list_chunk_file_paths(chunk)
-                        .into_iter()
-                        .map(|file_path| format!("{chunk_id}/{file_path}"))
-                        .collect::<Vec<_>>()
-                })
+            let chunk = artifact.js_chunk(chunk_id)?;
+            Ok(list_chunk_file_paths(chunk)
+                .into_iter()
+                .map(|file_path| format!("{chunk_id}/{file_path}"))
+                .collect::<Vec<_>>())
         })
         .collect::<Result<Vec<_>>>()?
         .into_iter()

@@ -6,9 +6,10 @@ use rayon::prelude::*;
 use serde::Serialize;
 
 use artifact::{
-    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, CANONICAL_CHUNK_ENTRY_FILE, ChunkCounts,
-    ChunkFileRecord, ChunkManifest, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
-    JsFileBody, JsPipelineArtifact, LoadedJsChunks, ParsedJsFileRecord, ParserOptionsRecord,
+    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, CANONICAL_CHUNK_ENTRY_FILE,
+    ChunkArtifact, ChunkCounts, ChunkFileRecord, ChunkManifest, ChunkMetadata, FileMetadata,
+    FileRole, JsChunk, JsFile, JsFileBody, JsPipelineArtifact, LoadedJsChunks, ParsedJsFileRecord,
+    ParserOptionsRecord,
 };
 use js_ast::{ParsedJsModule, parse_js_module};
 use program_analysis::{
@@ -71,38 +72,36 @@ pub fn prepare_js_chunks(
         .map(prepare_chunk)
         .collect::<Result<Vec<_>>>()?;
 
-    let (mut next, chunk_manifests, parsed_files) =
-        chunk_ids.into_iter().zip(prepared_chunks).try_fold(
-            (
-                JsPipelineArtifact::default(),
-                Vec::<ChunkManifest>::new(),
-                Vec::<ParsedJsFileRecord>::new(),
-            ),
-            |(mut next, mut chunk_manifests, mut parsed_files), (chunk_id, prepared)| {
-                if prepared.chunk_id != chunk_id {
-                    bail!(
-                        "prepare_js_chunks reordered prepared chunks: expected {chunk_id}, got {}",
-                        prepared.chunk_id
-                    );
-                }
-                next.chunk_order.push(chunk_id.clone());
-                next.chunk_manifests
-                    .insert(chunk_id.clone(), prepared.manifest.clone());
-                next.chunks.insert(
-                    chunk_id,
-                    JsChunk {
-                        entry_file: prepared.entry_file,
-                        files: prepared.files,
-                        metadata: prepared.metadata,
-                    },
+    let (mut next, manifests, parsed_files) = chunk_ids.into_iter().zip(prepared_chunks).try_fold(
+        (
+            JsPipelineArtifact::default(),
+            Vec::<ChunkManifest>::new(),
+            Vec::<ParsedJsFileRecord>::new(),
+        ),
+        |(mut next, mut manifests, mut parsed_files), (chunk_id, prepared)| {
+            if prepared.chunk_id != chunk_id {
+                bail!(
+                    "prepare_js_chunks reordered prepared chunks: expected {chunk_id}, got {}",
+                    prepared.chunk_id
                 );
-                parsed_files.extend(prepared.parsed_files);
-                chunk_manifests.push(prepared.manifest);
-                Ok::<_, anyhow::Error>((next, chunk_manifests, parsed_files))
-            },
-        )?;
+            }
+            let manifest = prepared.manifest.clone();
+            next.chunks.push(ChunkArtifact {
+                chunk_id,
+                js: JsChunk {
+                    entry_file: prepared.entry_file,
+                    files: prepared.files,
+                    metadata: prepared.metadata,
+                },
+                manifest: manifest.clone(),
+            });
+            parsed_files.extend(prepared.parsed_files);
+            manifests.push(manifest);
+            Ok::<_, anyhow::Error>((next, manifests, parsed_files))
+        },
+    )?;
 
-    let manifest = build_artifact_manifest(&chunk_manifests);
+    let manifest = build_artifact_manifest(&manifests);
     next.root_manifest = manifest.clone();
     Ok(PrepareJsChunksResult {
         artifact: next,
@@ -292,29 +291,29 @@ fn build_unparsed_chunk_manifest(
     }
 }
 
-fn build_artifact_manifest(chunk_manifests: &[ChunkManifest]) -> ArtifactManifest {
+fn build_artifact_manifest(manifests: &[ChunkManifest]) -> ArtifactManifest {
     ArtifactManifest {
         counts: ArtifactCounts {
-            chunks: chunk_manifests.len(),
-            kept_top_level_declaration_owners: chunk_manifests
+            chunks: manifests.len(),
+            kept_top_level_declaration_owners: manifests
                 .iter()
                 .map(|manifest| manifest.counts.kept_top_level_declaration_owners)
                 .sum(),
-            top_level_side_effects: chunk_manifests
+            top_level_side_effects: manifests
                 .iter()
                 .map(|manifest| manifest.counts.top_level_side_effects)
                 .sum(),
-            export_aliases: chunk_manifests
+            export_aliases: manifests
                 .iter()
                 .map(|manifest| manifest.counts.export_aliases)
                 .sum(),
-            unresolved_exports: chunk_manifests
+            unresolved_exports: manifests
                 .iter()
                 .map(|manifest| manifest.counts.unresolved_exports)
                 .sum(),
             selected_module_lowerings: None,
         },
-        chunks: chunk_manifests
+        chunks: manifests
             .iter()
             .map(|manifest| ArtifactChunkRecord {
                 chunk_id: manifest.chunk_id.clone(),

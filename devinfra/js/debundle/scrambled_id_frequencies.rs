@@ -52,7 +52,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::SystemTime;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use swc_ecma_ast::{
@@ -187,10 +187,7 @@ pub fn compute_with_clock(
     let mut sites_by_name: BTreeMap<String, Vec<DeclSite>> = BTreeMap::new();
 
     for chunk_id in artifact.list_chunk_ids() {
-        let chunk = artifact
-            .chunks
-            .get(&chunk_id)
-            .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
+        let chunk = artifact.js_chunk(&chunk_id)?;
         for (file_path, file) in &chunk.files {
             let Some(parsed) = file.ast() else {
                 continue;
@@ -221,10 +218,7 @@ pub fn compute_with_clock(
     // resolves imports onto a stable cross-chunk binding identity, fold
     // that in here so a "names everywhere" symbol shows its true fanout.
     for chunk_id in artifact.list_chunk_ids() {
-        let chunk = artifact
-            .chunks
-            .get(&chunk_id)
-            .with_context(|| format!("missing artifact chunk {chunk_id}"))?;
+        let chunk = artifact.js_chunk(&chunk_id)?;
         for (file_path, file) in &chunk.files {
             let Some(parsed) = file.ast() else {
                 continue;
