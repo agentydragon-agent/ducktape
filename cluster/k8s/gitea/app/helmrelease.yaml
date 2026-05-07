@@ -46,9 +46,11 @@ spec:
     # Gitea configuration
     gitea:
       admin:
-        # Username and password from ESO-generated secret
+        # Username and password from SOPS secret
         existingSecret: "gitea-admin-password"
         email: "admin@allegedly.works"
+        # Password set once on creation, never reset (SSO for normal use)
+        passwordMode: initialOnlyNoReset
 
       # OAuth2 authentication sources
       oauth:
@@ -153,7 +155,7 @@ spec:
     persistence:
       enabled: true
       size: 10Gi
-      storageClass: TODO # replace before unsuspending
+      storageClass: lvm-proxmox-hdd
 
     # PostgreSQL: external CNPG cluster (gitea-db)
     postgresql:

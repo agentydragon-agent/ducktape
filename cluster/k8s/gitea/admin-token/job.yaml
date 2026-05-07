@@ -1,4 +1,5 @@
 ---
+# TODO: Remove this job and its kustomization entirely - admin token not used
 # Kubernetes Job to generate Gitea admin API token for Terraform
 # This job creates a token via Gitea API using BasicAuth with admin password
 # Token is stored in gitea-admin-token secret for Terraform consumption

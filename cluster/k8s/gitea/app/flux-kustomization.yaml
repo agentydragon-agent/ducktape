@@ -4,7 +4,7 @@ metadata:
   name: gitea
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -26,7 +26,8 @@ spec:
     - name: gateway
     - name: cert-manager
     - name: gitea-secrets
-    - name: authentik # Wait for Authentik worker to apply SSO blueprints
-    - name: authentik-blueprint-gitea-secret # Wait for OAuth secret to be synced from Vault
+    - name: reflector # Mirrors gitea-oauth-client-secret from authentik namespace
+    - name: sso-providers-tf # Writes gitea-oauth-client-secret to authentik namespace
+    - name: authentik # Authentik must be running for OIDC
     # Gitea validates OIDC at init time (configure-gitea init container fetches discovery URL).
     # Other SSO apps (Harbor, Matrix, Grafana) validate lazily at first login, so they don't need this.
