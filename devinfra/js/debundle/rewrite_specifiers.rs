@@ -103,7 +103,6 @@ struct RewriteFileJob {
 
 struct RewriteFileResult {
     chunk_index: usize,
-    chunk_id: String,
     file_path: String,
     parts: JsFileAstParts,
     ast: ParsedJsModule,
@@ -121,7 +120,6 @@ fn rewrite_file(mut job: RewriteFileJob, references: &ArtifactIndexes) -> Rewrit
     let rewrites = rewriter.rewrites;
     RewriteFileResult {
         chunk_index: job.chunk_index,
-        chunk_id: job.chunk_id,
         file_path: job.file_path,
         parts: job.parts,
         ast: job.ast,

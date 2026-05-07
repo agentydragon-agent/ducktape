@@ -1,3 +1,19 @@
+use std::collections::BTreeSet;
+
+use binding_targets::{
+    TargetAccessRecorder, binding_names, record_assign_target, record_pat_write,
+    record_update_target,
+};
+use serde::{Deserialize, Serialize};
+use swc_common::{Span, Spanned};
+use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
+
+use crate::purity::{
+    ChunkCodeGraph, Purity, WHITELIST_RECEIVERS, class_has_static_observable, classify_expr_purity,
+};
+use crate::{BindingName, SourceLocation, StatementOrdinal};
+
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
     pub ordinal: StatementOrdinal,
@@ -220,13 +236,13 @@ where
     }
 }
 
-enum TopLevelItemView<'a> {
+pub(crate) enum TopLevelItemView<'a> {
     Borrowed(&'a ModuleItem),
     Owned(ModuleItem),
 }
 
 impl TopLevelItemView<'_> {
-    fn as_module_item(&self) -> &ModuleItem {
+    pub(crate) fn as_module_item(&self) -> &ModuleItem {
         match self {
             Self::Borrowed(item) => item,
             Self::Owned(item) => item,
@@ -239,7 +255,7 @@ impl TopLevelItemView<'_> {
 /// single-declarator statements preserving source order; unchanged
 /// statements stay borrowed so the analyzer does not clone the whole
 /// app chunk just to get per-declarator ownership.
-fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
+pub(crate) fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
     let mut out = Vec::with_capacity(body.len());
     for item in body {
         match item {
@@ -293,7 +309,7 @@ fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
 /// shadows — `const Math = …` and
 /// `import { Math } from "./userland"` both make `Math.PI` an
 /// Unknown read, not the global constant. See DESIGN.md A8.
-fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
+pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
     let mut shadowed = BTreeSet::new();
     let try_shadow = |name: &str, into: &mut BTreeSet<&'static str>| {
         if let Some(global) = WHITELIST_RECEIVERS.iter().copied().find(|r| *r == name) {

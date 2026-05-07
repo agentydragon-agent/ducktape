@@ -154,11 +154,11 @@ rust_library(
 rust_library(
     name = "analysis",
     srcs = [
-        "analysis.rs",
         "analysis_tests.rs",
         "facts.rs",
         "graph.rs",
         "ids.rs",
+        "lib.rs",
         "peelability.rs",
         "purity.rs",
         "report_schema.rs",
@@ -166,7 +166,7 @@ rust_library(
         "schedule.rs",
         "validation.rs",
     ],
-    crate_root = "analysis.rs",
+    crate_root = "lib.rs",
     edition = "2024",
     deps = [
         ":binding_targets",

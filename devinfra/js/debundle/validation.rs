@@ -1,3 +1,17 @@
+use std::collections::{HashMap, HashSet};
+
+use petgraph::algo::{greedy_feedback_arc_set, tarjan_scc};
+use petgraph::graph::DiGraph;
+use petgraph::graphmap::DiGraphMap;
+use petgraph::visit::EdgeRef;
+use serde::Serialize;
+
+use crate::reports::owner_key;
+use crate::{
+    BindingName, EdgeKind, EdgeMetadata, ModuleDepGraph, ModuleId, OwnerGraph, SourceLocation,
+    StatementOrdinal,
+};
+
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
 pub struct ScheduleReport {
@@ -229,7 +243,7 @@ pub fn validate_schedule(
     }
 }
 
-fn validate_cross_destination_assignments(
+pub(crate) fn validate_cross_destination_assignments(
     owner_graph: &OwnerGraph,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> Vec<CrossDestinationAssignmentReport> {

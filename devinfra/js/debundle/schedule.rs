@@ -1,3 +1,19 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use petgraph::algo::toposort;
+use petgraph::graphmap::DiGraphMap;
+
+use crate::graph::{
+    OwnerEdgeEntry, build_owner_graph, collect_owner_edge_entries,
+    quotient_owner_graph_with_destinations,
+};
+use crate::reports::{build_owner_graph_report, owner_key};
+use crate::validation::{validate_cross_destination_assignments, validate_schedule};
+use crate::{
+    BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleDepGraph,
+    ModuleId, OwnerGraph, OwnerGraphReport, ScheduleReport, StatementFacts,
+};
+
 /// Single per-chunk schedule. Carries everything downstream code
 /// needs to validate cycles and emit modules in an order that
 /// respects `I ∪ S`.
@@ -9,7 +25,7 @@ pub struct Schedule {
     pub logical_modules: Vec<LogicalModule>,
     pub chunk_renames: BTreeMap<BindingName, BindingName>,
     pub owner_graph: OwnerGraph,
-    owner_edges: Vec<OwnerEdgeEntry>,
+    pub(crate) owner_edges: Vec<OwnerEdgeEntry>,
     pub dep_graph: ModuleDepGraph,
     owner_report_ids_by_binding: Vec<Vec<String>>,
     /// Topological linearization of `I ∪ S`, dependency-first

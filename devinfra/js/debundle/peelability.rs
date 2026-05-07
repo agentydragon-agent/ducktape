@@ -1,3 +1,19 @@
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use petgraph::algo::tarjan_scc;
+use petgraph::graph::DiGraph;
+
+use crate::graph::OwnerEdgeEntry;
+use crate::reports::{
+    binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
+};
+use crate::{
+    BindingKind, BindingName, LogicalModuleIndex, ModuleId, OwnerGraphPeelSetReport,
+    OwnerGraphPeelabilityReport, OwnerId, OwnerNode, PeelCandidateKind, PeelCandidateStatus,
+    QuotientEdgeReport, ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport,
+    ResidualOwnerPeelStatus, Schedule,
+};
+
 #[derive(Debug, Clone, Default)]
 struct CandidateEdgeAccumulator {
     constraining_owner_edge_indices: Vec<usize>,
@@ -65,7 +81,7 @@ struct PeelCandidateEvaluation {
     constraining_owner_edge_indices: BTreeSet<usize>,
 }
 
-fn build_peelability_report(
+pub(crate) fn build_peelability_report(
     schedule: &Schedule,
     owner_edges: &[OwnerEdgeEntry],
     quotient_edges: &[QuotientEdgeReport],

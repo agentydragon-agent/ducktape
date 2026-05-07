@@ -1,6 +1,11 @@
 mod tests {
-    use super::*;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use crate::facts::{compute_shadowed_globals, top_level_item_views};
+    use crate::purity::{ChunkCodeGraph, Purity, classify_expr_purity};
+    use crate::*;
     use swc_common::{FileName, sync::Lrc};
+    use swc_ecma_ast::*;
     use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
     fn parse(source: &str) -> Module {

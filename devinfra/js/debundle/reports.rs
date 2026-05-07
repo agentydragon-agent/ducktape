@@ -1,4 +1,23 @@
-fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
+use std::collections::{BTreeMap, BTreeSet};
+
+use petgraph::algo::tarjan_scc;
+
+use crate::graph::OwnerEdgeEntry;
+use crate::peelability::build_peelability_report;
+use crate::{
+    BindingId, BindingKind, BindingName, BindingReport, EdgeKind, LogicalModuleIndex, ModuleId,
+    ModuleReportRef, OwnerGraph, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+    OwnerGraphQuotientReport, OwnerGraphReport, OwnerId, OwnerNode, QuotientEdgeReport,
+    QuotientSccReport, Schedule,
+};
+
+#[derive(Debug, Clone, Default)]
+struct QuotientEdgeAccumulator {
+    kinds: BTreeSet<EdgeKind>,
+    constrains_realizability: bool,
+}
+
+pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
     let owner_edges = &schedule.owner_edges;
     let quotient_edges = build_quotient_edge_reports(schedule, owner_edges);
     let quotient_nodes = build_quotient_node_reports(schedule);
@@ -45,7 +64,7 @@ fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
     }
 }
 
-fn binding_reports_for_ids<I>(schedule: &Schedule, bindings: I) -> Vec<BindingReport>
+pub(crate) fn binding_reports_for_ids<I>(schedule: &Schedule, bindings: I) -> Vec<BindingReport>
 where
     I: IntoIterator<Item = BindingId>,
 {
@@ -57,7 +76,7 @@ where
     )
 }
 
-fn binding_reports<'a, I>(schedule: &Schedule, bindings: I) -> Vec<BindingReport>
+pub(crate) fn binding_reports<'a, I>(schedule: &Schedule, bindings: I) -> Vec<BindingReport>
 where
     I: IntoIterator<Item = &'a BindingName>,
 {
@@ -235,7 +254,7 @@ fn quotient_edge_indices_by_source(
     by_source
 }
 
-fn is_residual_destination(schedule: &Schedule, id: ModuleId) -> bool {
+pub(crate) fn is_residual_destination(schedule: &Schedule, id: ModuleId) -> bool {
     match id {
         ModuleId::ResidualEntry => true,
         ModuleId::Logical(LogicalModuleIndex(idx)) => schedule
@@ -245,18 +264,18 @@ fn is_residual_destination(schedule: &Schedule, id: ModuleId) -> bool {
     }
 }
 
-fn owner_key(id: OwnerId) -> String {
+pub(crate) fn owner_key(id: OwnerId) -> String {
     format!("owner:{}", id.0)
 }
 
-fn module_key(id: ModuleId) -> String {
+pub(crate) fn module_key(id: ModuleId) -> String {
     match id {
         ModuleId::ResidualEntry => "residual".to_string(),
         ModuleId::Logical(LogicalModuleIndex(idx)) => format!("logical:{idx}"),
     }
 }
 
-fn module_id_from_key(key: &str) -> Option<ModuleId> {
+pub(crate) fn module_id_from_key(key: &str) -> Option<ModuleId> {
     if key == "residual" {
         return Some(ModuleId::ResidualEntry);
     }
@@ -265,7 +284,7 @@ fn module_id_from_key(key: &str) -> Option<ModuleId> {
         .map(|idx| ModuleId::Logical(LogicalModuleIndex(idx)))
 }
 
-fn module_report_ref(schedule: &Schedule, id: ModuleId) -> ModuleReportRef {
+pub(crate) fn module_report_ref(schedule: &Schedule, id: ModuleId) -> ModuleReportRef {
     match id {
         ModuleId::ResidualEntry => ModuleReportRef {
             id: module_key(id),

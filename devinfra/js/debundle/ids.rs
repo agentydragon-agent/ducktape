@@ -1,3 +1,7 @@
+use std::collections::{BTreeMap, HashMap};
+
+use serde::{Deserialize, Serialize};
+
 /// Index into the materializer's `module_plans` list, identifying a
 /// logical module produced by the spec.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]

@@ -1,3 +1,13 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use petgraph::graphmap::DiGraphMap;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    BindingId, BindingName, BindingTable, ModuleId, SourceLocation, StatementFacts, StatementKind,
+    StatementOrdinal,
+};
+
 /// One reason an edge `(from, to)` exists, with the source
 /// statement ordinal that produced it. This is the single source of
 /// truth for edge semantics:
@@ -39,11 +49,11 @@ pub enum EdgeReason {
 }
 
 impl EdgeReason {
-    fn side_effect_order(statement_ordinal: StatementOrdinal) -> Self {
+    pub(crate) fn side_effect_order(statement_ordinal: StatementOrdinal) -> Self {
         Self::SideEffectOrder { statement_ordinal }
     }
 
-    fn kind(&self) -> EdgeKind {
+    pub(crate) fn kind(&self) -> EdgeKind {
         match self {
             Self::AtInitRead { .. } => EdgeKind::AtInitRead,
             Self::LazyRead { .. } => EdgeKind::LazyRead,
@@ -53,7 +63,7 @@ impl EdgeReason {
         }
     }
 
-    fn statement_ordinal(&self) -> StatementOrdinal {
+    pub(crate) fn statement_ordinal(&self) -> StatementOrdinal {
         match self {
             Self::AtInitRead {
                 statement_ordinal, ..
@@ -71,7 +81,7 @@ impl EdgeReason {
         }
     }
 
-    fn binding(&self) -> Option<BindingId> {
+    pub(crate) fn binding(&self) -> Option<BindingId> {
         match self {
             Self::AtInitRead { binding, .. }
             | Self::LazyRead { binding, .. }
@@ -81,23 +91,23 @@ impl EdgeReason {
         }
     }
 
-    fn is_at_init_read(&self) -> bool {
+    pub(crate) fn is_at_init_read(&self) -> bool {
         matches!(self, Self::AtInitRead { .. })
     }
 
-    fn is_lazy_read(&self) -> bool {
+    pub(crate) fn is_lazy_read(&self) -> bool {
         matches!(self, Self::LazyRead { .. })
     }
 
-    fn is_binding_write(&self) -> bool {
+    pub(crate) fn is_binding_write(&self) -> bool {
         matches!(self, Self::AtInitWrite { .. } | Self::LazyWrite { .. })
     }
 
-    fn is_side_effect_order(&self) -> bool {
+    pub(crate) fn is_side_effect_order(&self) -> bool {
         matches!(self, Self::SideEffectOrder { .. })
     }
 
-    fn constrains_realizability(&self) -> bool {
+    pub(crate) fn constrains_realizability(&self) -> bool {
         !self.is_lazy_read()
     }
 }
@@ -430,7 +440,7 @@ pub fn quotient_owner_graph(owner_graph: &OwnerGraph) -> ModuleDepGraph {
     quotient_owner_graph_with_destinations(owner_graph, &owner_edges, |_, node| node.destination)
 }
 
-fn quotient_owner_graph_with_destinations<F>(
+pub(crate) fn quotient_owner_graph_with_destinations<F>(
     owner_graph: &OwnerGraph,
     owner_edges: &[OwnerEdgeEntry],
     mut destination_for: F,
@@ -462,20 +472,14 @@ where
 }
 
 #[derive(Debug, Clone)]
-struct OwnerEdgeEntry {
-    id: String,
-    from: OwnerId,
-    to: OwnerId,
-    reason: EdgeReason,
+pub(crate) struct OwnerEdgeEntry {
+    pub(crate) id: String,
+    pub(crate) from: OwnerId,
+    pub(crate) to: OwnerId,
+    pub(crate) reason: EdgeReason,
 }
 
-#[derive(Debug, Clone, Default)]
-struct QuotientEdgeAccumulator {
-    kinds: BTreeSet<EdgeKind>,
-    constrains_realizability: bool,
-}
-
-fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerEdgeEntry> {
+pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerEdgeEntry> {
     let mut entries = Vec::new();
     for (from, to, weight) in owner_graph.iter_edges() {
         for reason in &weight.reasons {

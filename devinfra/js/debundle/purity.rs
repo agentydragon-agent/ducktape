@@ -1,3 +1,12 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use petgraph::algo::tarjan_scc;
+use petgraph::graphmap::DiGraphMap;
+use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
+
+use crate::facts::TopLevelItemView;
+
 /// Chunk-wide code graph: indexes top-level bindings and answers
 /// queries the classifier needs that go beyond per-expression
 /// inspection. Currently exposes function-body purity for
@@ -42,7 +51,7 @@ impl ChunkCodeGraph {
     ///    terminal), so per-SCC work is `O(scc_size · body_size)`,
     ///    and total work is `O(N · body_size)` for the whole
     ///    chunk regardless of recursion depth.
-    fn build(
+    pub(crate) fn build(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
@@ -135,7 +144,7 @@ impl ChunkCodeGraph {
     /// Purity of the chunk-local function bound to `name`, if any.
     /// Returns `None` for non-function bindings (imports, vars,
     /// classes) and for names not bound at chunk top.
-    fn function_purity(&self, name: &str) -> Option<Purity> {
+    pub(crate) fn function_purity(&self, name: &str) -> Option<Purity> {
         match self.bindings.get(name)? {
             ChunkBinding::Function { purity } => Some(*purity),
         }
@@ -334,7 +343,7 @@ impl Visit for BodyPurityCollector<'_> {
 /// `new`, member access — could be a getter — etc.) and is
 /// treated as `Impure` by `has_side_effect` for soundness.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum Purity {
+pub(crate) enum Purity {
     Pure,
     Impure,
     Unknown,
@@ -452,7 +461,8 @@ const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
 /// `analyze_chunk_facts` populates the shadowed-globals set, and
 /// the classifier suppresses whitelist hits for any name in it —
 /// e.g. `const Math = …` makes `Math.PI` fall back to `Unknown`.
-const WHITELIST_RECEIVERS: &[&str] = &["Math", "Array", "Symbol", "Number", "Boolean", "Object"];
+pub(crate) const WHITELIST_RECEIVERS: &[&str] =
+    &["Math", "Array", "Symbol", "Number", "Boolean", "Object"];
 
 // TODO: extend the call whitelist with operations that are *Pure
 // when their arguments are statically known to be primitives*
@@ -495,7 +505,7 @@ const WHITELIST_RECEIVERS: &[&str] = &["Math", "Array", "Symbol", "Number", "Boo
 // on any argument shape (see AGENTS.md "Pure-call whitelist
 // soundness").
 
-fn classify_expr_purity(
+pub(crate) fn classify_expr_purity(
     expr: &Expr,
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
@@ -741,7 +751,7 @@ fn classify_propname_purity(
 /// runs, but `extends` references are tracked as `R`-edges
 /// elsewhere — here we only report whether the class itself
 /// _additionally_ has observable side-effecting init code.
-fn class_has_static_observable(
+pub(crate) fn class_has_static_observable(
     class: &Class,
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
