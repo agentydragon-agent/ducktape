@@ -5,7 +5,19 @@ metadata:
   namespace: kagent
 spec:
   interval: 10m
+  # The chart pulls ~12 subcharts (kmcp, querydoc, plus 9 stock cluster-ops
+  # agents). The default 5m timeout is too tight; upgrades that touch the
+  # `default-model-config` ModelConfig race against all those Deployments
+  # rolling. 15m is comfortable.
   install:
+    timeout: 15m
+    remediation:
+      retries: 3
+  upgrade:
+    timeout: 15m
+    # Helm-controller's default upgrade.remediation.retries is 0 — any single
+    # transient failure becomes terminal and self-heal stops. Match the
+    # install side so a flaky reconcile doesn't permanently wedge the HR.
     remediation:
       retries: 3
   dependsOn:
