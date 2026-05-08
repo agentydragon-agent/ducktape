@@ -45,12 +45,12 @@ spec:
     # built-in agent (k8s-agent, cilium-*, istio-agent, helm-agent, etc.) hard-
     # references by name, and the controller uses it as the default for new
     # agents created from the UI. We point it at z.ai's OpenAI-compatible
-    # endpoint at https://api.z.ai/api/paas/v4 — that's where GLM models are
-    # exposed natively. (The /api/anthropic endpoint also serves glm-5.1, but
-    # `provider: OpenAI` better matches the actual model vendor and avoids
-    # confusion with claude-* model names.) `providers.openAI` does not pass
-    # `baseUrl` through to the rendered ModelConfig, so it's added via the
-    # postRenderer below.
+    # **Coding Plan** endpoint at https://api.z.ai/api/coding/paas/v4 (per
+    # docs/z_ai_api.md): the general /api/paas/v4 endpoint does not count
+    # against the coding-plan quota and returns 429 "Insufficient balance"
+    # for accounts on the coding subscription. `providers.openAI` does not
+    # pass `baseUrl` through to the rendered ModelConfig, so it's added via
+    # the postRenderer below.
     providers:
       default: openAI
       openAI:
@@ -163,4 +163,4 @@ spec:
                 name: default-model-config
               spec:
                 openAI:
-                  baseUrl: https://api.z.ai/api/paas/v4
+                  baseUrl: https://api.z.ai/api/coding/paas/v4
