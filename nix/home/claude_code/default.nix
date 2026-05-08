@@ -473,6 +473,11 @@ in
         };
       };
 
+      # Enable sandbox-runtime debug logging so network allow/deny decisions
+      # (e.g. "Denied by config rule: telemetry.aspect.build:443") appear in
+      # ~/.claude/debug/ session logs.
+      env.SRT_DEBUG = "1";
+
       # Auto-generated from cfg.plugins
       enabledPlugins = lib.listToAttrs (
         map (spec: {
