@@ -72,6 +72,7 @@ nix/**/result
 
 # Project-specific
 **/.claude/settings.local.json
+**/.claude/scheduled_tasks.lock
 worktrees
 cluster/.git
 cluster/.claude/
@@ -121,3 +122,4 @@ cluster/.claude/
 !/devinfra/claude/web_env/rootfs/home/claude/.claude/skills
 !/devinfra/claude/web_env/rootfs/root/.claude/settings.json
 !/devinfra/claude/web_env/rootfs/root/.claude/skills
+tgarchive/*.session
