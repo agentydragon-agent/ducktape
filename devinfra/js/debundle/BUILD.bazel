@@ -225,6 +225,38 @@ rust_binary(
 )
 
 rust_library(
+    name = "peel_inventory",
+    srcs = ["peel_inventory.rs"],
+    crate_root = "peel_inventory.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "peel_inventory_test",
+    crate = ":peel_inventory",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_binary(
+    name = "peel_inventory_cli",
+    srcs = ["peel_inventory_cli.rs"],
+    crate_root = "peel_inventory_cli.rs",
+    edition = "2024",
+    deps = [
+        ":peel_inventory",
+        "@crates//:anyhow",
+        "@crates//:clap",
+    ],
+)
+
+rust_library(
     name = "spec_tree",
     srcs = ["spec_tree.rs"],
     crate_root = "spec_tree.rs",
