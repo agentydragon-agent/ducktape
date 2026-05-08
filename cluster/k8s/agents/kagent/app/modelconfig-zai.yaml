@@ -1,0 +1,12 @@
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: zai-claude
+  namespace: kagent
+spec:
+  provider: Anthropic
+  model: glm-5.1
+  apiKeySecret: kagent-zai
+  apiKeySecretKey: ZAI_API_KEY
+  anthropic:
+    baseUrl: https://api.z.ai/api/anthropic

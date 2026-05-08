@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   retryInterval: 1m
-  suspend: true
+  suspend: false
   interval: 10m
   path: ./cluster/k8s/agents/kagent/app
   prune: true
@@ -20,6 +20,9 @@ spec:
   dependsOn:
     - name: kagent-namespace
     - name: kagent-secrets
+    - name: kagent-db
     - name: gateway
     - name: cert-manager-environment
-    - name: authentik # Wait for Authentik worker to apply SSO blueprints
+    # Wait for the SSO providers TF root to create the kagent OIDC client +
+    # reflected kagent-oauth2-proxy Secret in the kagent namespace.
+    - name: sso-providers-tf

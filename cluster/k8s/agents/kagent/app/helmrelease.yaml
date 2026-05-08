@@ -20,15 +20,19 @@ spec:
         namespace: kagent
       reconcileStrategy: Revision
       interval: 5m
+  # Postgres URL pulled from the CNPG-generated kagent-db-app Secret's `uri` key.
+  # Flux substitutes it into values.database.postgres.url at apply time, so the
+  # connection string never lands in git.
+  valuesFrom:
+    - kind: Secret
+      name: kagent-db-app
+      valuesKey: uri
+      targetPath: database.postgres.url
   values:
-    # Use Anthropic provider
-    providers:
-      default: anthropic
-      anthropic:
-        provider: Anthropic
-        model: "claude-sonnet-4-6"
-        apiKeySecretRef: kagent-anthropic
-        apiKeySecretKey: ANTHROPIC_API_KEY
+    # Disable the chart's providers shortcut — it doesn't expose `baseUrl`,
+    # which we need for z.ai. We declare a raw ModelConfig CRD instead, see
+    # modelconfig-zai.yaml.
+    providers: {}
 
     # Controller configuration
     controller:
@@ -41,6 +45,15 @@ spec:
         limits:
           cpu: 1000m
           memory: 512Mi
+      auth:
+        # JWT from the bundled oauth2-proxy is trusted; controller maps the
+        # `email` claim to the user identity surfaced in the UI.
+        mode: trusted-proxy
+        userIdClaim: email
+      # CNPG kagent-db is region-pinned to proxmox; app must match (R5 in
+      # cluster/docs/cnpg_conventions.md).
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
 
     # UI configuration
     ui:
@@ -57,13 +70,40 @@ spec:
         ports:
           port: 8080
           targetPort: 8080
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
 
-    # Database - use SQLite for simplicity
+    # External Postgres (CNPG cluster kagent-db). The connection string itself
+    # comes from valuesFrom above; only the type switch lives in git.
     database:
-      type: sqlite
-      sqlite:
-        databaseName: kagent.db
+      type: postgres
+      postgres:
+        vectorEnabled: false
 
     # KMCP server for MCP protocol
     kmcp:
       enabled: true
+
+    # Authentik-fronted OIDC. Cookie + client secret come from the
+    # kagent-oauth2-proxy Secret reflected from the authentik namespace
+    # by tf/gitops/sso-providers/provider_kagent.tf.
+    #
+    # The kagent chart already wires extraArgs (provider=oidc, branded
+    # login templates, skip-auth-regex for static assets, scope incl.
+    # groups, etc.) and references $(OIDC_ISSUER_URL) / $(OIDC_REDIRECT_URL)
+    # via env. We only override those env values + reverse-proxy.
+    oauth2-proxy:
+      enabled: true
+      config:
+        existingSecret: kagent-oauth2-proxy
+      extraEnv:
+        - name: OIDC_ISSUER_URL
+          value: https://auth.allegedly.works/application/o/kagent/
+        - name: OIDC_REDIRECT_URL
+          value: https://kagent.allegedly.works/oauth2/callback
+        - name: UPSTREAM_URL
+          value: http://kagent-ui:8080
+      extraArgs:
+        # Trust X-Forwarded-* headers from the cluster-gateway Envoy so the
+        # OIDC redirect URLs are computed against the public hostname.
+        reverse-proxy: "true"
