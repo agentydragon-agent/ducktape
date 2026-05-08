@@ -129,7 +129,9 @@ spec:
   # The chart's `providers.openAI` shortcut does not expose
   # `spec.openAI.baseUrl` on the ModelConfig it generates, so the rendered
   # default-model-config would point at api.openai.com — wrong for our
-  # z.ai key. Patch the rendered CR to pin the z.ai endpoint.
+  # z.ai key. Patch the rendered CR to pin the z.ai endpoint. Strategic-
+  # merge form (vs. JSON patch) so kustomize creates the missing
+  # `/spec/openAI` parent automatically.
   postRenderers:
     - kustomize:
         patches:
@@ -137,6 +139,10 @@ spec:
               kind: ModelConfig
               name: default-model-config
             patch: |
-              - op: add
-                path: /spec/openAI/baseUrl
-                value: https://api.z.ai/api/paas/v4
+              apiVersion: kagent.dev/v1alpha2
+              kind: ModelConfig
+              metadata:
+                name: default-model-config
+              spec:
+                openAI:
+                  baseUrl: https://api.z.ai/api/paas/v4
