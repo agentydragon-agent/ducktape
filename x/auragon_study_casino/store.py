@@ -34,17 +34,10 @@ from alembic.config import Config as AlembicConfig
 from pycrdt import Doc, Map
 from sqlalchemy import create_engine, event, inspect, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from x.auragon_study_casino.doc_shape import DEFAULT_PRIZES, Casino
-from x.auragon_study_casino.events import (
-    GameEventCreate,
-    GameEventRead,
-    LedgerEventRead,
-    game_event_from_row,
-    ledger_event_from_row,
-)
+from x.auragon_study_casino.events import GameEventRead, LedgerEventRead, game_event_from_row, ledger_event_from_row
 from x.auragon_study_casino.games import RULES_VERSION
 from x.auragon_study_casino.models import DocRow, GameEventRow, LedgerEventRow, StateSnapshotRow
 from x.auragon_study_casino.validators import ValidationError, validate
@@ -122,10 +115,7 @@ ServerActionMutator = Callable[[Casino, Any, int], ActionMutation]
 class DocStore:
     """Owns the canonical Y.Doc and gates writes through the validators."""
 
-    def __init__(self, db_path: Path, authority_mode: str = "observe") -> None:
-        if authority_mode not in {"observe", "enforce"}:
-            raise ValueError(f"invalid authority_mode {authority_mode!r}")
-        self._authority_mode = authority_mode
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._engine: Engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
@@ -310,8 +300,6 @@ class DocStore:
         """
         with self._lock:
             before_economy = self._economy_fingerprint(self._canonical)
-            before_credits = self._credits(self._canonical)
-            before_tokens = self._tokens(self._canonical)
             trial = Casino.from_update(self._canonical.get_update())
             try:
                 trial.apply_update(client_update)
@@ -323,9 +311,7 @@ class DocStore:
             except ValidationError as e:
                 return Rejected(rule=e.rule, message=e.message)
 
-            after_economy = self._economy_fingerprint(trial)
-            economy_changed = after_economy != before_economy
-            if economy_changed and self._authority_mode == "enforce":
+            if self._economy_fingerprint(trial) != before_economy:
                 return Rejected(
                     rule="server_authority",
                     message="balance and prize log changes must go through server action endpoints",
@@ -333,78 +319,13 @@ class DocStore:
 
             # Persist first; only swap _canonical after the DB commits so a
             # disk error can't leave memory ahead of the persisted state.
-            trial_update = trial.get_update()
             with self._Session() as s, s.begin():
                 row = s.scalar(select(DocRow).where(DocRow.id == 1).with_for_update())
                 assert row is not None
-                row.update_blob = trial_update
-                if economy_changed:
-                    now_ms = int(time.time() * 1000)
-                    s.add(
-                        LedgerEventRow(
-                            client_action_id=f"legacy-sync-{now_ms}-{uuid.uuid4()}",
-                            server_at_ms=now_ms,
-                            action_type="legacy_client_sync",
-                            source="legacy_client_sync",
-                            rules_version=RULES_VERSION,
-                            rng_version=None,
-                            credits_before=before_credits,
-                            credits_after=self._credits(trial),
-                            tokens_before=before_tokens,
-                            tokens_after=self._tokens(trial),
-                            details_json=self._json({"mode": self._authority_mode}),
-                            result_json=self._json({"accepted": True}),
-                        )
-                    )
+                row.update_blob = trial.get_update()
             self._canonical = trial
 
             return Accepted(server_update=trial.get_update(client_state_vector), server_state_vector=trial.get_state())
-
-    def record_game_event(self, event: GameEventCreate) -> GameEventRead:
-        """Persist one client-reported casino event.
-
-        The event is intentionally outside the Y.Doc: it is append-only,
-        server-stamped, queryable, and does not inflate every client's CRDT
-        payload. Until game resolution moves server-side, the row should be
-        interpreted as an audit trail of what the browser reported, not as
-        cryptographic proof of the draw.
-        """
-        with self._lock:
-            server_credits = int(self._canonical.balance.get("credits", 0))
-            server_tokens = int(self._canonical.balance.get("tokens", 0))
-
-        row = GameEventRow(
-            client_event_id=event.client_event_id,
-            server_at_ms=int(time.time() * 1000),
-            occurred_at_ms=event.occurred_at_ms,
-            game=event.game,
-            event_type=event.event_type,
-            source="client_reported",
-            wager_credits=event.wager_credits,
-            payout_tokens=event.payout_tokens,
-            credits_before=event.credits_before,
-            credits_after=event.credits_after,
-            tokens_before=event.tokens_before,
-            tokens_after=event.tokens_after,
-            server_credits=server_credits,
-            server_tokens=server_tokens,
-            outcome_json=event.outcome_json(),
-        )
-        with self._Session() as s:
-            existing = s.scalar(select(GameEventRow).where(GameEventRow.client_event_id == event.client_event_id))
-            if existing is not None:
-                return game_event_from_row(existing)
-            try:
-                s.add(row)
-                s.commit()
-            except IntegrityError:
-                s.rollback()
-                existing = s.scalar(select(GameEventRow).where(GameEventRow.client_event_id == event.client_event_id))
-                if existing is not None:
-                    return game_event_from_row(existing)
-                raise
-            s.refresh(row)
-            return game_event_from_row(row)
 
     def list_game_events(self, limit: int = 100) -> list[GameEventRead]:
         with self._Session() as s:

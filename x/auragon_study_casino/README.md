@@ -88,13 +88,14 @@ settles outcomes with server-side randomness where needed, writes an
 append-only `ledger_events` row, updates the canonical Y.Doc projection,
 and returns the Y update for the client to apply.
 
-`game_events` remains the queryable casino history. Rows from server
-actions use `source = "server_resolved"` plus `rules_version` and
-`rng_version`. Legacy client-reported `POST /game-events` is still
-available while `STUDY_CASINO_AUTHORITY_MODE=observe`, but is rejected in
-`enforce` mode. State snapshots are stored before import/reset and on
+`game_events` remains the queryable casino history. New rows are written
+exclusively from server actions with `source = "server_resolved"` plus
+`rules_version` and `rng_version`. Direct client syncs that would change
+`balance` or `prize_log` are rejected with `rule="server_authority"`.
+Pre-2026-05-07 rows with `source = "client_reported"` (and the matching
+`legacy_client_sync` rows in `ledger_events`) remain readable but are no
+longer produced. State snapshots are stored before import/reset and on
 initial authority adoption so the raw Y.Doc blob remains recoverable.
-See <TODO.md> for the staged enforcement and cleanup checklist.
 
 CRDTs guarantee convergence but not business rules — the server's
 validators (credits ≥ 0, tokens ≥ 0, prize shape, session shape) are

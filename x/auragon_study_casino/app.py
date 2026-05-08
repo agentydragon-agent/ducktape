@@ -24,10 +24,10 @@ blobs encoded as base64 in a JSON envelope:
             should undo its last local transaction (Y.UndoManager) and
             surface the rule + message in a SyncIcon toast.
 
-User-facing state still lives in the Y.Doc. Economy-changing operations now
-also have server-authoritative action endpoints that validate, log, mutate the
-canonical Y.Doc, and return the Y update for the caller. Legacy direct
-client-reported casino events remain only for observe-mode compatibility.
+User-facing state still lives in the Y.Doc. Economy-changing operations are
+server-authoritative: action endpoints validate, log, mutate the canonical
+Y.Doc, and return the Y update for the caller. Direct client syncs that would
+change `balance` or `prize_log` are rejected with `rule="server_authority"`.
 
 Multi-user: each authenticated user gets a separate SQLite database
 (`casino-<username>.db`). When OIDC is not configured the app falls
@@ -70,7 +70,7 @@ from x.auragon_study_casino.actions import (
 )
 from x.auragon_study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
 from x.auragon_study_casino.config import Settings
-from x.auragon_study_casino.events import GameEventCreate, GameEventRead
+from x.auragon_study_casino.events import GameEventRead
 from x.auragon_study_casino.games import (
     RNG_VERSION,
     SecretsRandom,
@@ -246,7 +246,7 @@ def create_app(settings: Settings) -> FastAPI:
         if username not in stores:
             if not _SAFE_USERNAME.match(username):
                 raise HTTPException(status_code=400, detail=f"invalid username: {username!r}")
-            stores[username] = DocStore(data_dir / f"casino-{username}.db", authority_mode=settings.authority_mode)
+            stores[username] = DocStore(data_dir / f"casino-{username}.db")
         return stores[username]
 
     oidc = settings.oidc_config()
@@ -318,23 +318,6 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/me")
     def me(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, str]:
         return {"username": username}
-
-    @app.post("/game-events")
-    def record_game_event(body: GameEventCreate, username: Annotated[str, Depends(current_user_dep)]) -> GameEventRead:
-        if settings.authority_mode == "enforce":
-            raise HTTPException(
-                status_code=409, detail={"rule": "server_authority", "message": "casino events must be server-resolved"}
-            )
-        store = get_store(username)
-        event = store.record_game_event(body)
-        logger.info(
-            "game event recorded: user=%s game=%s wager=%d payout=%d",
-            username,
-            event.game,
-            event.wager_credits,
-            event.payout_tokens,
-        )
-        return event
 
     @app.get("/game-events")
     def list_game_events(

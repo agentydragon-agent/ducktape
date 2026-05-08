@@ -26,12 +26,11 @@ class DocRow(Base):
 
 
 class GameEventRow(Base):
-    """Append-only, client-reported casino event audit record.
+    """Append-only server-resolved casino event audit record.
 
-    The current implementation still resolves games in the browser, so rows
-    here are not proof of fair randomness. They are a server-stamped audit trail
-    of what the client reported, plus the server's canonical balance observed
-    when the event was recorded.
+    Every row is server-stamped with the canonical balance observed when the
+    event was committed. Pre-cutover rows with `source="client_reported"`
+    remain readable but are no longer written.
     """
 
     __tablename__ = "game_events"
@@ -43,7 +42,7 @@ class GameEventRow(Base):
     occurred_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     game: Mapped[str] = mapped_column(String(32), nullable=False)
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    source: Mapped[str] = mapped_column(String(32), nullable=False, default="client_reported")
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="server_resolved")
     wager_credits: Mapped[int] = mapped_column(Integer, nullable=False)
     payout_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     credits_before: Mapped[int] = mapped_column(Integer, nullable=False)

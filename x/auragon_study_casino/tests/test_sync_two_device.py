@@ -124,9 +124,14 @@ def http() -> Iterator[httpx.Client]:
 
 
 def test_long_absence_does_not_nuke_other_device_state(casino_server: str, http: httpx.Client) -> None:
-    """Phone accumulates a week of state; laptop comes back, *pulls first*,
+    """Phone accumulates a week of sessions; laptop comes back, *pulls first*,
     and sees everything. Then any local edit on the laptop merges with the
     server without dropping phone's prior writes.
+
+    Economy state (credits / tokens / prize_log) is server-authoritative — only
+    server-action endpoints can change it — so this test exercises CRDT
+    convergence on the non-economy `sessions` map, which is the same code path
+    that needs to converge on real devices.
 
     Both devices bootstrap (sync once) before writing. That mirrors the
     production frontend, which only enables the mutation UI after the
@@ -136,9 +141,6 @@ def test_long_absence_does_not_nuke_other_device_state(casino_server: str, http:
     one side."""
     phone = FakeDevice(casino_server, http)
     assert phone.sync().status_code == 200  # bootstrap
-
-    phone.casino.balance["credits"] = 142
-    phone.casino.balance["tokens"] = 88
 
     for sid, subject, secs in [("s-1", "Biochem", 3600), ("s-2", "Anatomy", 1500)]:
         m: Map = Map()
@@ -150,8 +152,6 @@ def test_long_absence_does_not_nuke_other_device_state(casino_server: str, http:
 
     laptop = FakeDevice(casino_server, http)
     assert laptop.sync().status_code == 200  # bootstrap pull
-    assert int(laptop.casino.balance["credits"]) == 142
-    assert int(laptop.casino.balance["tokens"]) == 88
     assert len(laptop.casino.sessions) == 2
 
     laptop.casino.sessions["s-3"] = Map()
@@ -174,22 +174,23 @@ def test_concurrent_disjoint_writes_both_persist(casino_server: str, http: httpx
     phone.sync()
     laptop.sync()
 
-    phone.casino.balance["credits"] = 60
+    phone.casino.sessions["phone-1"] = Map()
+    phone.casino.sessions["phone-1"]["subject"] = "Pharmacology"
+    phone.casino.sessions["phone-1"]["seconds"] = 1800
+    phone.casino.sessions["phone-1"]["ended_at_ms"] = 1_700_000_000_000
 
-    laptop.casino.sessions["s-1"] = Map()
-    laptop.casino.sessions["s-1"]["subject"] = "Anatomy"
-    laptop.casino.sessions["s-1"]["seconds"] = 1500
-    laptop.casino.sessions["s-1"]["ended_at_ms"] = 1_700_000_000_000
+    laptop.casino.sessions["laptop-1"] = Map()
+    laptop.casino.sessions["laptop-1"]["subject"] = "Anatomy"
+    laptop.casino.sessions["laptop-1"]["seconds"] = 1500
+    laptop.casino.sessions["laptop-1"]["ended_at_ms"] = 1_700_000_000_000
 
     phone.sync()
     laptop.sync()
     phone.sync()  # phone catches laptop's session
-    laptop.sync()  # laptop catches phone's credits
+    laptop.sync()  # laptop catches phone's session
 
-    assert int(phone.casino.balance["credits"]) == 60
-    assert "s-1" in phone.casino.sessions
-    assert int(laptop.casino.balance["credits"]) == 60
-    assert "s-1" in laptop.casino.sessions
+    assert {"phone-1", "laptop-1"}.issubset({sid for sid, _ in phone.casino.sessions.items()})
+    assert {"phone-1", "laptop-1"}.issubset({sid for sid, _ in laptop.casino.sessions.items()})
 
 
 def test_offline_writes_replay_on_reconnect(casino_server: str, http: httpx.Client) -> None:

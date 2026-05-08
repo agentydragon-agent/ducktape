@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
+from pycrdt import Map
 
 from x.auragon_study_casino.app import create_app
 from x.auragon_study_casino.config import Settings
@@ -27,6 +28,30 @@ def _b64(b: bytes) -> str:
 
 def _unb64(s: str) -> bytes:
     return base64.b64decode(s)
+
+
+def _grant_credits(client: TestClient, n: int, action_id: str = "seed-credits") -> None:
+    """Earn `n` credits via /actions/session/add-past (seconds = n * 60)."""
+    r = client.post(
+        "/actions/session/add-past",
+        json={
+            "client_action_id": action_id,
+            "state_vector_b64": "",
+            "subject": "Seed",
+            "seconds": n * 60,
+            "ended_at_ms": 1_700_000_000_000,
+        },
+    )
+    assert r.status_code == 200, r.text
+
+
+def _grant_tokens(client: TestClient, n: int, action_prefix: str = "seed-tokens") -> None:
+    """Earn `n` tokens by adding a session for `n` credits then converting all of them."""
+    _grant_credits(client, n, action_id=f"{action_prefix}-credits")
+    r = client.post(
+        "/actions/convert", json={"client_action_id": f"{action_prefix}-convert", "state_vector_b64": "", "amount": n}
+    )
+    assert r.status_code == 200, r.text
 
 
 def test_healthz(client: TestClient) -> None:
@@ -49,12 +74,16 @@ def test_pure_pull_returns_seed_state(client: TestClient) -> None:
     assert len(casino.prizes) > 0
 
 
-def test_round_trip_credit_increment(client: TestClient) -> None:
-    """Bootstrap, mutate locally, push to server, confirm canonical updated."""
+def test_round_trip_session_added_via_sync(client: TestClient) -> None:
+    """Bootstrap, mutate a non-economy field locally, push to server, confirm canonical updated."""
     boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
     casino = Casino.from_update(_unb64(boot["update_b64"]))
     sv_before = casino.get_state()
-    casino.balance["credits"] = 25
+    sm: Map = Map()
+    casino.sessions["s1"] = sm
+    sm["subject"] = "Biochem"
+    sm["seconds"] = 1500
+    sm["ended_at_ms"] = 1_700_000_000_000
 
     r = client.post(
         "/sync", json={"state_vector_b64": _b64(sv_before), "update_b64": _b64(casino.get_update(sv_before))}
@@ -64,7 +93,8 @@ def test_round_trip_credit_increment(client: TestClient) -> None:
     # Reload state from server to confirm persistence.
     r2 = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""})
     fresh = Casino.from_update(_unb64(r2.json()["update_b64"]))
-    assert int(fresh.balance["credits"]) == 25
+    assert "s1" in fresh.sessions
+    assert fresh.sessions["s1"]["subject"] == "Biochem"
 
 
 def test_negative_credits_rejected_with_409(client: TestClient) -> None:
@@ -94,16 +124,21 @@ def test_invalid_base64_rejected_with_400(client: TestClient) -> None:
 
 
 def test_two_clients_converge_via_server(client: TestClient) -> None:
-    """Phone writes credits=30, syncs. Laptop bootstraps and reads the value."""
+    """Phone adds a session, syncs. Laptop bootstraps and reads the session."""
     boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
     phone = Casino.from_update(_unb64(boot["update_b64"]))
     sv_before = phone.get_state()
-    phone.balance["credits"] = 30
+    sm: Map = Map()
+    phone.sessions["s1"] = sm
+    sm["subject"] = "Pharmacology"
+    sm["seconds"] = 1800
+    sm["ended_at_ms"] = 1_700_000_000_000
     client.post("/sync", json={"state_vector_b64": _b64(sv_before), "update_b64": _b64(phone.get_update(sv_before))})
 
     laptop_boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
     laptop = Casino.from_update(_unb64(laptop_boot["update_b64"]))
-    assert int(laptop.balance["credits"]) == 30
+    assert "s1" in laptop.sessions
+    assert laptop.sessions["s1"]["subject"] == "Pharmacology"
 
 
 def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
@@ -113,57 +148,8 @@ def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
     assert r.json() == {"username": "default"}
 
 
-def _game_event_body(client_event_id: str = "evt-1") -> dict:
-    return {
-        "client_event_id": client_event_id,
-        "occurred_at_ms": 1_700_000_000_000,
-        "game": "slots",
-        "event_type": "settle",
-        "wager_credits": 5,
-        "payout_tokens": 7,
-        "credits_before": 12,
-        "credits_after": 7,
-        "tokens_before": 20,
-        "tokens_after": 27,
-        "outcome": {"symbols": ["club", "club", "spade"], "payout_kind": "pair"},
-    }
-
-
-def test_game_event_log_round_trip_and_idempotency(client: TestClient) -> None:
-    r = client.post("/game-events", json=_game_event_body())
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["id"] == 1
-    assert body["source"] == "client_reported"
-    assert body["game"] == "slots"
-    assert body["wager_credits"] == 5
-    assert body["payout_tokens"] == 7
-    assert body["server_credits"] == 0
-    assert body["server_tokens"] == 0
-    assert body["outcome"] == {"symbols": ["club", "club", "spade"], "payout_kind": "pair"}
-
-    duplicate = client.post("/game-events", json=_game_event_body())
-    assert duplicate.status_code == 200, duplicate.text
-    assert duplicate.json()["id"] == body["id"]
-
-    listed = client.get("/game-events?limit=10")
-    assert listed.status_code == 200
-    assert [e["client_event_id"] for e in listed.json()] == ["evt-1"]
-
-
-def test_game_event_validation_rejects_bad_game(client: TestClient) -> None:
-    event = _game_event_body()
-    event["game"] = "coinflip"
-    r = client.post("/game-events", json=event)
-    assert r.status_code == 422
-
-
 def test_server_action_convert_is_idempotent_and_updates_doc(client: TestClient) -> None:
-    boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
-    casino = Casino.from_update(_unb64(boot["update_b64"]))
-    sv = casino.get_state()
-    casino.balance["credits"] = 10
-    client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+    _grant_credits(client, 10)
 
     body = {"client_action_id": "convert-1", "state_vector_b64": "", "amount": 4}
     first = client.post("/actions/convert", json=body)
@@ -180,11 +166,7 @@ def test_server_action_convert_is_idempotent_and_updates_doc(client: TestClient)
 
 
 def test_server_resolved_slots_updates_doc_and_logs(client: TestClient) -> None:
-    boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
-    casino = Casino.from_update(_unb64(boot["update_b64"]))
-    sv = casino.get_state()
-    casino.balance["credits"] = 5
-    client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+    _grant_credits(client, 5)
 
     r = client.post(
         "/casino/slots/spin", json={"client_action_id": "slots-1", "state_vector_b64": "", "wager_credits": 1}
@@ -203,11 +185,7 @@ def test_server_resolved_slots_updates_doc_and_logs(client: TestClient) -> None:
 
 
 def test_prize_redeem_server_action_updates_prize_log(client: TestClient) -> None:
-    boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
-    casino = Casino.from_update(_unb64(boot["update_b64"]))
-    sv = casino.get_state()
-    casino.balance["tokens"] = 100
-    client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+    _grant_tokens(client, 100)
 
     r = client.post(
         "/actions/prize/redeem", json={"client_action_id": "redeem-1", "state_vector_b64": "", "prize_id": "p1"}
@@ -222,22 +200,15 @@ def test_prize_redeem_server_action_updates_prize_log(client: TestClient) -> Non
     assert fresh.prize_log[0]["name"] == "Anime episode break"
 
 
-def test_enforce_mode_rejects_direct_economy_sync_and_client_reported_events(tmp_path: Path) -> None:
-    app = create_app(
-        Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist", authority_mode="enforce")
-    )
-    with TestClient(app) as client:
-        boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
-        casino = Casino.from_update(_unb64(boot["update_b64"]))
-        sv = casino.get_state()
-        casino.balance["credits"] = 25
+def test_direct_economy_sync_rejected(client: TestClient) -> None:
+    boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+    casino = Casino.from_update(_unb64(boot["update_b64"]))
+    sv = casino.get_state()
+    casino.balance["credits"] = 25
 
-        r = client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
-        assert r.status_code == 409
-        assert r.json()["rejection"]["rule"] == "server_authority"
-
-        event = client.post("/game-events", json=_game_event_body("evt-enforce"))
-        assert event.status_code == 409
+    r = client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+    assert r.status_code == 409
+    assert r.json()["rejection"]["rule"] == "server_authority"
 
 
 def test_pre_alembic_user_db_is_baselined_and_upgraded(tmp_path: Path) -> None:
@@ -248,12 +219,13 @@ def test_pre_alembic_user_db_is_baselined_and_upgraded(tmp_path: Path) -> None:
 
     app = create_app(Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist"))
     with TestClient(app) as c:
-        r = c.post("/game-events", json=_game_event_body("evt-baseline"))
+        # First request creates the DocStore for "default" and triggers
+        # `alembic upgrade head` against the pre-Alembic schema baselined at 0001.
+        r = c.post("/sync", json={"state_vector_b64": "", "update_b64": ""})
         assert r.status_code == 200, r.text
 
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0003",)
-        assert conn.execute("SELECT count(*) FROM game_events").fetchone() == (1,)
         assert conn.execute("SELECT count(*) FROM state_snapshots").fetchone() == (1,)
 
 
@@ -263,19 +235,21 @@ def test_users_have_isolated_state(tmp_path: Path) -> None:
     dep = app.state.current_user_dep
 
     with TestClient(app) as client:
-        # Alice earns 50 credits.
+        # Alice earns 50 credits via a server action.
         app.dependency_overrides[dep] = lambda: "alice"
-        boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
-        casino = Casino.from_update(_unb64(boot["update_b64"]))
-        sv = casino.get_state()
-        casino.balance["credits"] = 50
-        client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+        _grant_credits(client, 50, action_id="alice-seed")
+
+        alice_fresh = Casino.from_update(
+            _unb64(client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()["update_b64"])
+        )
+        assert int(alice_fresh.balance["credits"]) == 50
 
         # Bob's state is independent — still at 0.
         app.dependency_overrides[dep] = lambda: "bob"
         boot_bob = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
         bob_casino = Casino.from_update(_unb64(boot_bob["update_b64"]))
         assert int(bob_casino.balance["credits"]) == 0
+        assert len(bob_casino.sessions) == 0
 
         # Separate DB files confirm per-user storage.
         assert (tmp_path / "casino-alice.db").exists()
@@ -300,12 +274,16 @@ def test_ws_bootstrap_on_connect(ws_client: TestClient) -> None:
 
 
 def test_ws_sync_accepted(ws_client: TestClient) -> None:
-    """Client pushes a credit mutation; server accepts and returns its state vector."""
+    """Client pushes a non-economy mutation; server accepts and returns its state vector."""
     with ws_client.websocket_connect("/ws") as ws:
         boot = ws.receive_json()
         casino = Casino.from_update(_unb64(boot["update_b64"]))
         sv_before = casino.get_state()
-        casino.balance["credits"] = 42
+        sm: Map = Map()
+        casino.sessions["ws-1"] = sm
+        sm["subject"] = "Anatomy"
+        sm["seconds"] = 600
+        sm["ended_at_ms"] = 1_700_000_000_000
         ws.send_json(
             {"type": "sync", "state_vector_b64": _b64(sv_before), "update_b64": _b64(casino.get_update(sv_before))}
         )
@@ -336,11 +314,15 @@ def test_ws_server_push_to_other_tab(tmp_path: Path) -> None:
     with TestClient(app) as client, client.websocket_connect("/ws") as ws1, client.websocket_connect("/ws") as ws2:
         # Drain bootstrap messages.
         boot1 = ws1.receive_json()
-        _ws2_boot = ws2.receive_json()
+        ws2.receive_json()
 
         casino = Casino.from_update(_unb64(boot1["update_b64"]))
         sv_before = casino.get_state()
-        casino.balance["credits"] = 7
+        sm: Map = Map()
+        casino.sessions["ws-push"] = sm
+        sm["subject"] = "Biochem"
+        sm["seconds"] = 600
+        sm["ended_at_ms"] = 1_700_000_000_000
         ws1.send_json(
             {"type": "sync", "state_vector_b64": _b64(sv_before), "update_b64": _b64(casino.get_update(sv_before))}
         )
@@ -351,7 +333,8 @@ def test_ws_server_push_to_other_tab(tmp_path: Path) -> None:
     assert accepted["type"] == "accepted"
     assert push["type"] == "server_push"
     pushed_casino = Casino.from_update(_unb64(push["update_b64"]))
-    assert int(pushed_casino.balance["credits"]) == 7
+    assert "ws-push" in pushed_casino.sessions
+    assert pushed_casino.sessions["ws-push"]["subject"] == "Biochem"
 
 
 def test_ws_payload_too_large(ws_client: TestClient) -> None:
