@@ -5,5 +5,4 @@ namespace: kagent
 
 resources:
   - helmrelease.yaml
-  - modelconfig-zai.yaml
   - httproute.yaml

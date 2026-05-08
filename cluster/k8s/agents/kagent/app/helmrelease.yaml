@@ -29,10 +29,23 @@ spec:
       valuesKey: uri
       targetPath: database.postgres.url
   values:
-    # Disable the chart's providers shortcut — it doesn't expose `baseUrl`,
-    # which we need for z.ai. We declare a raw ModelConfig CRD instead, see
-    # modelconfig-zai.yaml.
-    providers: {}
+    # The chart auto-creates a `default-model-config` ModelConfig CR that every
+    # built-in agent (k8s-agent, cilium-*, istio-agent, helm-agent, etc.) hard-
+    # references by name, and the controller uses it as the default for new
+    # agents created from the UI. We point it at z.ai's OpenAI-compatible
+    # endpoint at https://api.z.ai/api/paas/v4 — that's where GLM models are
+    # exposed natively. (The /api/anthropic endpoint also serves glm-5.1, but
+    # `provider: OpenAI` better matches the actual model vendor and avoids
+    # confusion with claude-* model names.) `providers.openAI` does not pass
+    # `baseUrl` through to the rendered ModelConfig, so it's added via the
+    # postRenderer below.
+    providers:
+      default: openAI
+      openAI:
+        provider: OpenAI
+        model: glm-5.1
+        apiKeySecretRef: kagent-zai
+        apiKeySecretKey: ZAI_API_KEY
 
     # Controller configuration
     controller:
@@ -79,6 +92,11 @@ spec:
       type: postgres
       postgres:
         vectorEnabled: false
+      # The chart's bundled postgres Deployment is unconfigured (no PVC, hardcoded
+      # creds) and only meant for dev. Disable it so we don't carry an orphan
+      # `kagent-postgresql-*` Pending pod.
+      bundled:
+        enabled: false
 
     # KMCP server for MCP protocol
     kmcp:
@@ -107,3 +125,18 @@ spec:
         # Trust X-Forwarded-* headers from the cluster-gateway Envoy so the
         # OIDC redirect URLs are computed against the public hostname.
         reverse-proxy: "true"
+
+  # The chart's `providers.openAI` shortcut does not expose
+  # `spec.openAI.baseUrl` on the ModelConfig it generates, so the rendered
+  # default-model-config would point at api.openai.com — wrong for our
+  # z.ai key. Patch the rendered CR to pin the z.ai endpoint.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: ModelConfig
+              name: default-model-config
+            patch: |
+              - op: add
+                path: /spec/openAI/baseUrl
+                value: https://api.z.ai/api/paas/v4
