@@ -19,3 +19,4 @@ spec:
     - name: openhands-sandboxes
     - name: gateway
     - name: authentik
+    - name: external-secrets-operator
