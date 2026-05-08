@@ -137,6 +137,12 @@ spec:
         # Trust X-Forwarded-* headers from the cluster-gateway Envoy so the
         # OIDC redirect URLs are computed against the public hostname.
         reverse-proxy: "true"
+        # Authentik does not populate `email_verified` in the id_token for
+        # locally-managed users (only for users who arrived via OAuth
+        # sources like Google), so oauth2-proxy fails the callback with
+        # `email in id_token isn't verified`. We trust Authentik for
+        # email validity in this homelab.
+        insecure-oidc-allow-unverified-email: "true"
 
   # The chart's `providers.openAI` shortcut does not expose
   # `spec.openAI.baseUrl` on the ModelConfig it generates, so the rendered
