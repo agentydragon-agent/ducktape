@@ -13,12 +13,12 @@ spec:
       namespace: kagent
   chart:
     spec:
-      chart: helm/kagent
+      chart: kagent
+      version: 0.9.2
       sourceRef:
-        kind: GitRepository
+        kind: HelmRepository
         name: kagent
         namespace: kagent
-      reconcileStrategy: Revision
       interval: 5m
   # Postgres URL pulled from the CNPG-generated kagent-db-app Secret's `uri` key.
   # Flux substitutes it into values.database.postgres.url at apply time, so the
