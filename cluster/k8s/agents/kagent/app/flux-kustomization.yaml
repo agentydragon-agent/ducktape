@@ -21,6 +21,9 @@ spec:
     - name: kagent-namespace
     - name: kagent-secrets
     - name: kagent-db
+    # The CRDs (notably ModelConfig) must exist before flux dry-runs the
+    # ModelConfig manifest in this Kustomization.
+    - name: kagent-crds
     - name: gateway
     - name: cert-manager-environment
     # Wait for the SSO providers TF root to create the kagent OIDC client +
