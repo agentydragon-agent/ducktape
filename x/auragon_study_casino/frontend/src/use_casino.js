@@ -1,163 +1,142 @@
-// Single React hook that exposes the casino's reactive state + mutation
-// functions, swallowing the Y.Map/Y.Array iteration boilerplate. Lets
-// study_casino.jsx swap its giant useState block for one line:
+// Single React hook exposing reactive state + every mutation. The data
+// model is now server-authoritative SQLite — no CRDT — and the active
+// study-session timer lives in localStorage on the client (only
+// `/actions/session/complete` ever turns it into a server-side row).
 //
 //     const casino = useCasino();
 //     casino.credits / casino.tokens / casino.sessions / ...
-//     casino.startSession("Biochem"); casino.redeem(prize); ...
+//     casino.startSession("Biochem");        // local
+//     casino.stopSession();                  // server action
+//     casino.redeemPrize(prize);             // server action
 //
-// Non-economy document edits still sync through `/ws`. Balance-changing
-// operations call server action endpoints, then apply the returned Y update.
-//
-// Active sessions live in the `sessions` Y.Map as entries with no
-// `ended_at_ms` field.  `activeSession` is derived by finding the single
-// sessions entry whose `ended_at_ms` is absent; `sessions` returns only
-// completed entries.
+// study_casino.jsx consumes the public surface below; keep it stable when
+// swapping the underlying transport.
 
-import { casinoSync, Y } from "./sync.js";
-import { useYArray, useYMap } from "./y_hooks.js";
+import { useEffect, useState } from "react";
+
+import { casinoSync, useCasinoState } from "./sync.js";
+
+const ACTIVE_SESSION_LS_KEY = "casino:active_session";
+
+function readActiveSession() {
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_SESSION_LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.subject !== "string" || typeof parsed?.startTime !== "number") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveSession(session) {
+  if (session === null) {
+    window.localStorage.removeItem(ACTIVE_SESSION_LS_KEY);
+  } else {
+    window.localStorage.setItem(ACTIVE_SESSION_LS_KEY, JSON.stringify(session));
+  }
+  // Notify all useActiveSession() subscribers in this tab. The
+  // `storage` event only fires across tabs, not within the same tab.
+  window.dispatchEvent(new CustomEvent("casino:active_session_changed"));
+}
+
+function useActiveSession() {
+  const [session, setSession] = useState(readActiveSession());
+  useEffect(() => {
+    const refresh = () => setSession(readActiveSession());
+    window.addEventListener("casino:active_session_changed", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("casino:active_session_changed", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+  return session;
+}
+
+const newActionId = (prefix) =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? `${prefix}:${crypto.randomUUID()}`
+    : `${prefix}:${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 export function useCasino() {
-  const balance = useYMap(casinoSync.balance);
-  const sessionsMap = useYMap(casinoSync.sessions);
-  const prizesMap = useYMap(casinoSync.prizes);
-  const prizeLogArr = useYArray(casinoSync.prizeLog);
+  const state = useCasinoState();
+  const activeSession = useActiveSession();
 
-  // Derived plain-JS views that downstream JSX expects unchanged. We round
-  // the balance numbers because Yjs stores them as float64.
-  //
-  // These derivations are deliberately *not* memoized: a deep edit (e.g.,
-  // editing a session's subject) does not change `sessionsMap`'s identity
-  // or `.size`, and `useMemo([sessionsMap, sessionsMap.size, ...])` would
-  // hand back a stale snapshot even though `observeDeep` correctly
-  // re-rendered the component. The map iteration is cheap enough to do
-  // every render.
-  const credits = Math.floor(balance.get("credits") ?? 0);
-  const tokens = Math.floor(balance.get("tokens") ?? 0);
+  const balance = state?.balance ?? { credits: 0, tokens: 0 };
+  const credits = Math.floor(balance.credits ?? 0);
+  const tokens = Math.floor(balance.tokens ?? 0);
 
-  // Completed sessions only — those with ended_at_ms set.
-  const sessions = [...sessionsMap.entries()]
-    .filter(([, m]) => !!m.get("ended_at_ms"))
-    .map(([id, m]) => ({
-      id,
-      subject: m.get("subject"),
-      seconds: Math.floor(m.get("seconds") ?? 0),
-      endedAt: Math.floor(m.get("ended_at_ms") ?? 0),
-    }))
-    .sort((a, b) => b.endedAt - a.endedAt);
-
-  const prizes = [...prizesMap.entries()].map(([id, m]) => ({
-    id,
-    name: m.get("name"),
-    cost: Math.floor(m.get("cost") ?? 0),
+  // Server returns server-shaped fields (ended_at_ms, at_ms); the JSX layer
+  // uses camelCase aliases (endedAt, at) — translate at this seam.
+  const sessions = (state?.sessions ?? []).map((row) => ({
+    id: row.id,
+    subject: row.subject,
+    seconds: Math.floor(row.seconds ?? 0),
+    endedAt: Math.floor(row.ended_at_ms ?? 0),
+  }));
+  const prizes = (state?.prizes ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    cost: Math.floor(row.cost ?? 0),
+  }));
+  const prizeLog = (state?.prize_log ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    cost: Math.floor(row.cost ?? 0),
+    at: Math.floor(row.at_ms ?? 0),
   }));
 
-  const prizeLog = prizeLogArr
-    .toArray()
-    .map((m) => ({
-      id: m.get("id"),
-      name: m.get("name"),
-      cost: Math.floor(m.get("cost") ?? 0),
-      at: Math.floor(m.get("at_ms") ?? 0),
-    }))
-    .sort((a, b) => b.at - a.at);
-
-  // In-progress session: the single sessions entry without ended_at_ms.
-  const activeRaw = [...sessionsMap.entries()].find(([, m]) => !m.get("ended_at_ms"));
-  const activeSession = activeRaw
-    ? {
-        id: activeRaw[0],
-        subject: activeRaw[1].get("subject"),
-        startTime: Math.floor(activeRaw[1].get("start_time_ms") ?? 0),
-        paused: !!activeRaw[1].get("paused"),
-        pausedDuration: Math.floor(activeRaw[1].get("paused_duration_ms") ?? 0),
-        pauseStartedAt: activeRaw[1].get("pause_started_at_ms"),
-      }
-    : null;
-
-  // === Mutations ===
-  // Local-only session timing and prize catalog edits still use Y.Doc
-  // transactions. Anything that changes credits, tokens, or prize_log goes
-  // through `serverAction`.
-
+  // === Local-only active-session lifecycle ===
   const startSession = (subject) => {
-    if (activeSession) return; // one session at a time — illegal to start while one is running
-    const id = `active-${Date.now()}`;
-    casinoSync.mutate(() => {
-      const sm = new Y.Map();
-      casinoSync.sessions.set(id, sm);
-      sm.set("subject", subject);
-      sm.set("start_time_ms", Date.now());
-      sm.set("paused", false);
-      sm.set("paused_duration_ms", 0);
-      sm.set("pause_started_at_ms", null);
+    if (activeSession) return;
+    writeActiveSession({
+      subject,
+      startTime: Date.now(),
+      paused: false,
+      pausedDuration: 0,
+      pauseStartedAt: null,
     });
   };
 
   const pauseSession = () => {
     if (!activeSession || activeSession.paused) return;
-    casinoSync.mutate(() => {
-      const m = casinoSync.sessions.get(activeSession.id);
-      if (!m) return;
-      m.set("paused", true);
-      m.set("pause_started_at_ms", Date.now());
-    });
+    writeActiveSession({ ...activeSession, paused: true, pauseStartedAt: Date.now() });
   };
 
   const resumeSession = () => {
     if (!activeSession || !activeSession.paused) return;
     const now = Date.now();
     const pausedFor = now - (activeSession.pauseStartedAt ?? now);
-    casinoSync.mutate(() => {
-      const m = casinoSync.sessions.get(activeSession.id);
-      if (!m) return;
-      m.set("paused", false);
-      m.set("pause_started_at_ms", null);
-      m.set("paused_duration_ms", activeSession.pausedDuration + Math.max(0, pausedFor));
-    });
-  };
-
-  const newActionId = (prefix) =>
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? `${prefix}:${crypto.randomUUID()}`
-      : `${prefix}:${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
-  const serverAction = async (path, prefix, payload = {}) => {
-    const body = {
-      ...payload,
-      client_action_id: payload.client_action_id ?? newActionId(prefix),
-      state_vector_b64: casinoSync.getStateVectorB64(),
-    };
-    const resp = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      let message = `${resp.status}`;
-      try {
-        const error = await resp.json();
-        message = error?.detail?.message ?? error?.detail ?? message;
-      } catch {
-        // Keep the status-only message if the body is not JSON.
-      }
-      throw new Error(message);
-    }
-    return casinoSync.applyServerActionResponse(await resp.json());
-  };
-
-  const stopSession = () => {
-    if (!activeSession) return;
-    return serverAction("/actions/session/complete", "session.complete", {
-      session_id: activeSession.id,
-      ended_at_ms: Date.now(),
+    writeActiveSession({
+      ...activeSession,
+      paused: false,
+      pauseStartedAt: null,
+      pausedDuration: (activeSession.pausedDuration ?? 0) + Math.max(0, pausedFor),
     });
   };
 
   const cancelSession = () => {
+    writeActiveSession(null);
+  };
+
+  // === Server actions ===
+  const stopSession = async () => {
     if (!activeSession) return;
-    casinoSync.mutate(() => casinoSync.sessions.delete(activeSession.id));
+    const endedAt = Date.now();
+    try {
+      await casinoSync.postAction("/actions/session/complete", {
+        client_action_id: newActionId("session.complete"),
+        subject: activeSession.subject,
+        start_time_ms: activeSession.startTime,
+        paused_duration_ms: activeSession.pausedDuration ?? 0,
+        ended_at_ms: endedAt,
+      });
+      writeActiveSession(null);
+    } catch {
+      // postAction surfaced the error already; keep the active session so the user can retry.
+    }
   };
 
   const editSession = (id, updates) => {
@@ -165,7 +144,8 @@ export function useCasino() {
     if (!old) return;
     const newSec = typeof updates.seconds === "number" ? Math.max(0, updates.seconds) : old.seconds;
     const newSubject = updates.subject || old.subject;
-    return serverAction("/actions/session/edit", "session.edit", {
+    return casinoSync.postAction("/actions/session/edit", {
+      client_action_id: newActionId("session.edit"),
       session_id: id,
       subject: newSubject,
       seconds: newSec,
@@ -175,12 +155,16 @@ export function useCasino() {
   const deleteSession = (id) => {
     const old = sessions.find((s) => s.id === id);
     if (!old) return;
-    return serverAction("/actions/session/delete", "session.delete", { session_id: id });
+    return casinoSync.postAction("/actions/session/delete", {
+      client_action_id: newActionId("session.delete"),
+      session_id: id,
+    });
   };
 
   const addPastSession = (subject, seconds, endedAtMs) => {
     if (!subject || seconds <= 0) return;
-    return serverAction("/actions/session/add-past", "session.add", {
+    return casinoSync.postAction("/actions/session/add-past", {
+      client_action_id: newActionId("session.add"),
       subject,
       seconds,
       ended_at_ms: endedAtMs,
@@ -189,52 +173,77 @@ export function useCasino() {
 
   const redeemPrize = (prize) => {
     if (tokens < prize.cost) return;
-    return serverAction("/actions/prize/redeem", "prize.redeem", { prize_id: prize.id });
+    return casinoSync.postAction("/actions/prize/redeem", {
+      client_action_id: newActionId("prize.redeem"),
+      prize_id: prize.id,
+    });
   };
 
   const addPrize = (name, cost) => {
     if (!name || cost <= 0) return;
-    const id = `p${Date.now()}`;
-    casinoSync.mutate(() => {
-      const m = new Y.Map();
-      casinoSync.prizes.set(id, m);
-      m.set("name", name);
-      m.set("cost", cost);
+    return casinoSync.postAction("/actions/prize/create", {
+      client_action_id: newActionId("prize.create"),
+      name,
+      cost: Math.floor(cost),
     });
   };
 
-  const deletePrize = (id) => {
-    casinoSync.mutate(() => casinoSync.prizes.delete(id));
-  };
+  const deletePrize = (id) =>
+    casinoSync.postAction("/actions/prize/delete", {
+      client_action_id: newActionId("prize.delete"),
+      prize_id: id,
+    });
 
   const convertToTokens = (amount) => {
     const n = Math.max(0, Math.floor(amount));
     if (n <= 0 || n > credits) return;
-    return serverAction("/actions/convert", "convert", { amount: n });
+    return casinoSync.postAction("/actions/convert", {
+      client_action_id: newActionId("convert"),
+      amount: n,
+    });
   };
 
   const spinSlots = (wagerCredits) =>
-    serverAction("/casino/slots/spin", "slots.spin", { wager_credits: Math.floor(wagerCredits) });
+    casinoSync.postAction("/casino/slots/spin", {
+      client_action_id: newActionId("slots.spin"),
+      wager_credits: Math.floor(wagerCredits),
+    });
 
   const spinRoulette = ({ wagerCredits, betType, betNumber }) =>
-    serverAction("/casino/roulette/spin", "roulette.spin", {
+    casinoSync.postAction("/casino/roulette/spin", {
+      client_action_id: newActionId("roulette.spin"),
       wager_credits: Math.floor(wagerCredits),
       bet_type: betType,
       bet_number: betType === "number" ? betNumber : null,
     });
 
   const blackjackDeal = (wagerCredits) =>
-    serverAction("/casino/blackjack/deal", "blackjack.deal", { wager_credits: Math.floor(wagerCredits) });
+    casinoSync.postAction("/casino/blackjack/deal", {
+      client_action_id: newActionId("blackjack.deal"),
+      wager_credits: Math.floor(wagerCredits),
+    });
 
-  const blackjackHit = (handId) => serverAction("/casino/blackjack/hit", "blackjack.hit", { hand_id: handId });
+  const blackjackHit = (handId) =>
+    casinoSync.postAction("/casino/blackjack/hit", {
+      client_action_id: newActionId("blackjack.hit"),
+      hand_id: handId,
+    });
 
-  const blackjackStand = (handId) => serverAction("/casino/blackjack/stand", "blackjack.stand", { hand_id: handId });
+  const blackjackStand = (handId) =>
+    casinoSync.postAction("/casino/blackjack/stand", {
+      client_action_id: newActionId("blackjack.stand"),
+      hand_id: handId,
+    });
 
-  const blackjackDouble = (handId) => serverAction("/casino/blackjack/double", "blackjack.double", { hand_id: handId });
+  const blackjackDouble = (handId) =>
+    casinoSync.postAction("/casino/blackjack/double", {
+      client_action_id: newActionId("blackjack.double"),
+      hand_id: handId,
+    });
 
   const exportData = () => {
     const data = {
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
       credits,
       tokens,
@@ -254,13 +263,16 @@ export function useCasino() {
     URL.revokeObjectURL(url);
   };
 
-  const importData = (data) => {
-    return serverAction("/actions/import", "data.import", { data });
-  };
+  const importData = (data) =>
+    casinoSync.postAction("/actions/import", {
+      client_action_id: newActionId("data.import"),
+      data,
+    });
 
-  const resetData = () => {
-    return serverAction("/actions/reset", "data.reset");
-  };
+  const resetData = () =>
+    casinoSync.postAction("/actions/reset", {
+      client_action_id: newActionId("data.reset"),
+    });
 
   return {
     credits,
@@ -291,12 +303,4 @@ export function useCasino() {
     importData,
     resetData,
   };
-}
-
-function elapsedSeconds(session) {
-  if (!session) return 0;
-  const now = Date.now();
-  let ms = now - session.startTime - (session.pausedDuration ?? 0);
-  if (session.paused && session.pauseStartedAt) ms -= now - session.pauseStartedAt;
-  return Math.max(0, ms / 1000);
 }

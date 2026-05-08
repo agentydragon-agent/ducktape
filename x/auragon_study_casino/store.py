@@ -1,21 +1,22 @@
-"""Server-authoritative DocStore for the casino's Y.Doc.
+"""Per-user SQLite-backed store for the Study Casino.
 
-The store holds one Y.Doc in memory and persists it as a single binary
-update blob in SQLite. Every `POST /sync` request goes through
-`apply_client_update`, which:
+Canonical state lives in five small tables:
 
-1. Builds a *trial* doc by cloning the canonical state and applying
-   the inbound client update on top of it.
-2. Runs every validator from `validators.py` against the trial.
-3. On success, promotes the trial to canonical, persists, and returns
-   the binary diff the client doesn't yet have.
-4. On failure, the canonical doc is unchanged and the caller gets a
-   `Rejected` describing which rule was violated.
+- `balance` — single row, credits / tokens
+- `sessions` — completed study sessions
+- `prizes` — user-editable prize catalog
+- `prize_log` — append-only redemption log
+- `state_snapshots` — JSON dumps before destructive `import`/`reset`
 
-The Y.Doc is not used as an unbounded casino audit log. Server actions write
-append-only `ledger_events`, server-resolved casino rows in `game_events`, and
-snapshots before destructive state replacement; the Y.Doc remains the
-replicated projection clients subscribe to.
+Plus the audit logs `game_events` and `ledger_events`, and the in-flight
+`blackjack_hands` table.
+
+Pre-2026-05-08 deployments stored canonical state in a single Y-CRDT
+binary blob; the `0004_drop_ydoc_layer` migration backfilled the
+relational tables and dropped the blob. From this commit forward the
+runtime no longer reads a Y.Doc — every server action mutates ORM rows
+inside one SQLite transaction and writes a `ledger_events` row keyed by
+`client_action_id` so retried calls are idempotent.
 """
 
 from __future__ import annotations
@@ -26,27 +27,41 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from threading import RLock
 from typing import Any
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
-from pycrdt import Doc, Map
-from sqlalchemy import create_engine, event, inspect, select
+from sqlalchemy import create_engine, delete, event, inspect, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
-from x.auragon_study_casino.doc_shape import DEFAULT_PRIZES, Casino
-from x.auragon_study_casino.events import GameEventRead, LedgerEventRead, game_event_from_row, ledger_event_from_row
+from x.auragon_study_casino.events import (
+    GameEventRead,
+    LedgerEventRead,
+    game_event_from_row,
+    ledger_event_from_row,
+)
 from x.auragon_study_casino.games import RULES_VERSION
-from x.auragon_study_casino.models import DocRow, GameEventRow, LedgerEventRow, StateSnapshotRow
-from x.auragon_study_casino.validators import ValidationError, validate
+from x.auragon_study_casino.models import (
+    BalanceRow,
+    GameEventRow,
+    LedgerEventRow,
+    PrizeLogRow,
+    PrizeRow,
+    SessionRow,
+    StateSnapshotRow,
+)
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 
 def _run_alembic_migrations(engine: Engine) -> None:
-    """Run pending migrations, baselining pre-Alembic DBs at the doc table."""
+    """Run pending migrations, baselining pre-Alembic DBs at the doc table.
+
+    Pre-Alembic schemas (DBs predating 0001) had a `doc` table but no
+    `alembic_version` row — stamp them at 0001 first so 0001's create-table
+    doesn't conflict, then upgrade through to head.
+    """
     cfg = AlembicConfig()
     cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
     with engine.begin() as conn:
@@ -55,27 +70,6 @@ def _run_alembic_migrations(engine: Engine) -> None:
         if "doc" in tables and "alembic_version" not in tables:
             alembic_command.stamp(cfg, "0001")
         alembic_command.upgrade(cfg, "head")
-
-
-@dataclass(frozen=True)
-class Accepted:
-    """The client's update was applied and persisted."""
-
-    server_update: bytes
-    """Binary update the client should apply to catch up to the server's
-    current state, computed against the state vector the client sent."""
-
-    server_state_vector: bytes
-    """Server's state vector after the merge — the client should remember
-    this and pass it on the next sync as `since_state_vector`."""
-
-
-@dataclass(frozen=True)
-class Rejected:
-    """The client's update would have violated a business rule."""
-
-    rule: str
-    message: str
 
 
 @dataclass(frozen=True)
@@ -88,11 +82,18 @@ class ActionRejectedError(Exception):
 
 @dataclass(frozen=True)
 class ActionMutation:
-    """Result returned by a server-action mutator before persistence."""
+    """Result returned by a server-action mutator before persistence.
+
+    Fields:
+        result: the JSON-shaped action result returned to the caller.
+        details: free-form metadata persisted in `ledger_events.details_json`.
+        game_event: optional dict to fan out into a `game_events` row.
+        rng_version: which RNG version (if any) produced this outcome.
+        rules_version: which rules version produced this outcome.
+    """
 
     result: dict[str, Any]
     details: dict[str, Any] | None = None
-    replacement: Casino | None = None
     game_event: dict[str, Any] | None = None
     rng_version: str | None = None
     rules_version: str = RULES_VERSION
@@ -100,232 +101,43 @@ class ActionMutation:
 
 @dataclass(frozen=True)
 class ServerActionResult:
-    """Committed server action plus the Y.Doc update for the caller."""
+    """Committed server action."""
 
     event: LedgerEventRead
     result: dict[str, Any]
-    server_update: bytes
-    server_state_vector: bytes
     game_event: GameEventRead | None = None
 
 
-ServerActionMutator = Callable[[Casino, Any, int], ActionMutation]
+# Mutators take an open Session + the server's `now_ms` and return an
+# ActionMutation. They read/write ORM rows directly; the run_server_action
+# wrapper handles the surrounding transaction, idempotency check, snapshot,
+# and ledger insert.
+ServerActionMutator = Callable[[Session, int], ActionMutation]
 
 
-class DocStore:
-    """Owns the canonical Y.Doc and gates writes through the validators."""
+class SqlStore:
+    """Owns one user's SQLite database; runs migrations on open."""
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._engine: Engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+        self._engine: Engine = create_engine(
+            f"sqlite:///{db_path}", connect_args={"check_same_thread": False}
+        )
         with self._engine.connect() as conn:
             conn.exec_driver_sql("PRAGMA journal_mode=WAL")
             conn.commit()
         _run_alembic_migrations(self._engine)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
 
-        # Lock around the canonical doc + persistence step. pycrdt is not
-        # thread-safe and FastAPI may serve requests from multiple threads;
-        # the critical section (clone → apply → validate → persist) needs
-        # to be atomic.
-        self._lock = RLock()
+    # ── Read-side ───────────────────────────────────────────────────────────
 
-        # Seed an empty canonical doc on first boot.
+    def state_dump(self) -> dict[str, Any]:
+        """Return the full canonical state — same shape as
+        `state_snapshots.decoded_json`. The casino frontend's `GET /state`
+        returns this verbatim."""
         with self._Session() as s:
-            row = s.scalar(select(DocRow).where(DocRow.id == 1))
-            if row is None:
-                seed = Casino.empty()
-                s.add(DocRow(id=1, update_blob=seed.get_update()))
-                s.commit()
-                self._canonical = seed
-            else:
-                self._canonical = Casino.from_update(row.update_blob)
-        self._ensure_initial_snapshot()
-
-    @property
-    def canonical(self) -> Casino:
-        """Read-only access to the canonical doc; do not mutate."""
-        return self._canonical
-
-    def get_update_for_client(self, client_state_vector: bytes | None) -> bytes:
-        """Binary update the client needs to catch up to the server's view."""
-        with self._lock:
-            return self._canonical.get_update(client_state_vector)
-
-    def get_server_state_vector(self) -> bytes:
-        with self._lock:
-            return self._canonical.get_state()
-
-    def snapshot_for_client(self, client_state_vector: bytes | None) -> tuple[bytes, bytes]:
-        """Return (update_for_client, server_state_vector) atomically.
-
-        Two callers (`/sync`'s pure-pull path and the bootstrap path) want a
-        binary update and the matching server state vector. Calling
-        `get_update_for_client` and `get_server_state_vector` separately is
-        racy: another thread can promote a new canonical between the two
-        unlocked sections, leaving the client with an update from version V
-        and a state vector from version V+1. Generate the pair under a
-        single lock acquisition.
-        """
-        with self._lock:
-            return (self._canonical.get_update(client_state_vector), self._canonical.get_state())
-
-    def run_server_action(
-        self,
-        *,
-        client_action_id: str,
-        action_type: str,
-        client_state_vector: bytes | None,
-        mutator: ServerActionMutator,
-        snapshot_reason: str | None = None,
-        snapshot_note: str | None = None,
-    ) -> ServerActionResult:
-        """Run one idempotent, server-authoritative mutation.
-
-        The mutation, validation, Y.Doc persistence, and event inserts commit in
-        one SQLite transaction. `_canonical` is promoted only after the DB
-        commit succeeds, matching `apply_client_update`'s durability contract.
-        """
-        with self._lock:
-            existing_game_event: GameEventRead | None = None
-            with self._Session() as s:
-                existing = s.scalar(select(LedgerEventRow).where(LedgerEventRow.client_action_id == client_action_id))
-                if existing is not None:
-                    if existing.action_type.startswith("casino.") or existing.action_type.startswith("blackjack."):
-                        game_row = s.scalar(
-                            select(GameEventRow).where(GameEventRow.client_event_id == client_action_id)
-                        )
-                        if game_row is not None:
-                            existing_game_event = game_event_from_row(game_row)
-                    return ServerActionResult(
-                        event=ledger_event_from_row(existing),
-                        result=json.loads(existing.result_json),
-                        server_update=self._canonical.get_update(client_state_vector),
-                        server_state_vector=self._canonical.get_state(),
-                        game_event=existing_game_event,
-                    )
-
-            now_ms = int(time.time() * 1000)
-            before_credits = self._credits(self._canonical)
-            before_tokens = self._tokens(self._canonical)
-            trial = Casino.from_update(self._canonical.get_update())
-
-            with self._Session() as s, s.begin():
-                if snapshot_reason is not None:
-                    s.add(self._snapshot_row(snapshot_reason, now_ms, snapshot_note))
-
-                mutation = mutator(trial, s, now_ms)
-                next_casino = mutation.replacement or trial
-                try:
-                    validate(next_casino)
-                except ValidationError as e:
-                    raise ActionRejectedError(rule=e.rule, message=e.message) from e
-
-                after_credits = self._credits(next_casino)
-                after_tokens = self._tokens(next_casino)
-                result_json = self._json(mutation.result)
-                details_json = self._json(mutation.details or {})
-                event_row = LedgerEventRow(
-                    client_action_id=client_action_id,
-                    server_at_ms=now_ms,
-                    action_type=action_type,
-                    source="server_action",
-                    rules_version=mutation.rules_version,
-                    rng_version=mutation.rng_version,
-                    credits_before=before_credits,
-                    credits_after=after_credits,
-                    tokens_before=before_tokens,
-                    tokens_after=after_tokens,
-                    details_json=details_json,
-                    result_json=result_json,
-                )
-                s.add(event_row)
-
-                game_event_row: GameEventRow | None = None
-                if mutation.game_event is not None:
-                    game_event_row = self._game_event_row(
-                        client_event_id=client_action_id,
-                        server_at_ms=now_ms,
-                        event=mutation.game_event,
-                        credits_before=before_credits,
-                        credits_after=after_credits,
-                        tokens_before=before_tokens,
-                        tokens_after=after_tokens,
-                        server_credits=after_credits,
-                        server_tokens=after_tokens,
-                        rules_version=mutation.rules_version,
-                        rng_version=mutation.rng_version,
-                    )
-                    s.add(game_event_row)
-
-                trial_update = next_casino.get_update()
-                row = s.scalar(select(DocRow).where(DocRow.id == 1).with_for_update())
-                assert row is not None
-                row.update_blob = trial_update
-                s.flush()
-                s.refresh(event_row)
-                if game_event_row is not None:
-                    s.refresh(game_event_row)
-                    game_event = game_event_from_row(game_event_row)
-                else:
-                    game_event = None
-
-            self._canonical = next_casino
-            return ServerActionResult(
-                event=ledger_event_from_row(event_row),
-                result=json.loads(result_json),
-                server_update=next_casino.get_update(client_state_vector),
-                server_state_vector=next_casino.get_state(),
-                game_event=game_event,
-            )
-
-    def apply_client_update(self, client_update: bytes, client_state_vector: bytes) -> Accepted | Rejected:
-        """Apply `client_update` to a trial Casino, validate, persist on success.
-
-        `client_state_vector` is the state vector the client had *before*
-        producing this update; we use it to compute the minimal `server_update`
-        the client still needs after our merge.
-
-        Failure modes, all reported via `Rejected` so the client can surface a
-        toast and roll back rather than seeing a 500:
-        - `invalid_update`: pycrdt couldn't decode the client's binary blob
-          (corrupt or truncated). Catching here keeps a malformed payload
-          from taking the sync surface down.
-        - one of the validators in `validators.py` raised.
-
-        Persistence ordering is **persist first, then promote**: the SQLite
-        write commits before `_canonical` swaps, so a disk error can't leave
-        the in-memory doc ahead of what survives a process restart.
-        """
-        with self._lock:
-            before_economy = self._economy_fingerprint(self._canonical)
-            trial = Casino.from_update(self._canonical.get_update())
-            try:
-                trial.apply_update(client_update)
-            except Exception as e:
-                return Rejected(rule="invalid_update", message=f"could not decode client update: {e}")
-
-            try:
-                validate(trial)
-            except ValidationError as e:
-                return Rejected(rule=e.rule, message=e.message)
-
-            if self._economy_fingerprint(trial) != before_economy:
-                return Rejected(
-                    rule="server_authority",
-                    message="balance and prize log changes must go through server action endpoints",
-                )
-
-            # Persist first; only swap _canonical after the DB commits so a
-            # disk error can't leave memory ahead of the persisted state.
-            with self._Session() as s, s.begin():
-                row = s.scalar(select(DocRow).where(DocRow.id == 1).with_for_update())
-                assert row is not None
-                row.update_blob = trial.get_update()
-            self._canonical = trial
-
-            return Accepted(server_update=trial.get_update(client_state_vector), server_state_vector=trial.get_state())
+            return self._state_dump(s)
 
     def list_game_events(self, limit: int = 100) -> list[GameEventRead]:
         with self._Session() as s:
@@ -337,66 +149,197 @@ class DocStore:
             rows = list(s.scalars(select(LedgerEventRow).order_by(LedgerEventRow.id.desc()).limit(limit)).all())
             return [ledger_event_from_row(row) for row in rows]
 
-    def build_import_casino(self, data: dict[str, Any]) -> Casino:
-        casino = Casino(Doc())
-        casino.balance["credits"] = int(data.get("credits", 0))
-        casino.balance["tokens"] = int(data.get("tokens", 0))
+    # ── Write-side ──────────────────────────────────────────────────────────
+
+    def run_server_action(
+        self,
+        *,
+        client_action_id: str,
+        action_type: str,
+        mutator: ServerActionMutator,
+        snapshot_reason: str | None = None,
+        snapshot_note: str | None = None,
+    ) -> ServerActionResult:
+        """Run one idempotent, server-authoritative mutation.
+
+        Idempotency: if a `ledger_events` row with this `client_action_id`
+        already exists, the prior result is returned without replaying the
+        mutation. Persistence: the mutation, ledger insert, optional
+        `game_events` row, and optional `state_snapshots` row commit in one
+        SQLite transaction; either all land or none do.
+        """
+        with self._Session() as s, s.begin():
+            existing = s.scalar(
+                select(LedgerEventRow).where(LedgerEventRow.client_action_id == client_action_id)
+            )
+            if existing is not None:
+                game_event: GameEventRead | None = None
+                if existing.action_type.startswith("casino.") or existing.action_type.startswith("blackjack."):
+                    game_row = s.scalar(
+                        select(GameEventRow).where(GameEventRow.client_event_id == client_action_id)
+                    )
+                    if game_row is not None:
+                        game_event = game_event_from_row(game_row)
+                return ServerActionResult(
+                    event=ledger_event_from_row(existing),
+                    result=json.loads(existing.result_json),
+                    game_event=game_event,
+                )
+
+            now_ms = int(time.time() * 1000)
+            balance = self._balance(s)
+            before_credits = balance.credits
+            before_tokens = balance.tokens
+
+            if snapshot_reason is not None:
+                s.add(self._snapshot_row(s, snapshot_reason, now_ms, snapshot_note))
+
+            mutation = mutator(s, now_ms)
+
+            # Re-read balance after mutation; mutator may have changed it.
+            s.flush()
+            s.refresh(balance)
+            after_credits = balance.credits
+            after_tokens = balance.tokens
+
+            result_json = self._json(mutation.result)
+            details_json = self._json(mutation.details or {})
+            event_row = LedgerEventRow(
+                client_action_id=client_action_id,
+                server_at_ms=now_ms,
+                action_type=action_type,
+                source="server_action",
+                rules_version=mutation.rules_version,
+                rng_version=mutation.rng_version,
+                credits_before=before_credits,
+                credits_after=after_credits,
+                tokens_before=before_tokens,
+                tokens_after=after_tokens,
+                details_json=details_json,
+                result_json=result_json,
+            )
+            s.add(event_row)
+
+            game_event_row: GameEventRow | None = None
+            if mutation.game_event is not None:
+                game_event_row = self._game_event_row(
+                    client_event_id=client_action_id,
+                    server_at_ms=now_ms,
+                    event=mutation.game_event,
+                    credits_before=before_credits,
+                    credits_after=after_credits,
+                    tokens_before=before_tokens,
+                    tokens_after=after_tokens,
+                    server_credits=after_credits,
+                    server_tokens=after_tokens,
+                    rules_version=mutation.rules_version,
+                    rng_version=mutation.rng_version,
+                )
+                s.add(game_event_row)
+
+            s.flush()
+            s.refresh(event_row)
+            if game_event_row is not None:
+                s.refresh(game_event_row)
+                game_event_out = game_event_from_row(game_event_row)
+            else:
+                game_event_out = None
+
+        return ServerActionResult(
+            event=ledger_event_from_row(event_row),
+            result=json.loads(result_json),
+            game_event=game_event_out,
+        )
+
+    # ── Helpers used by import/reset mutators ───────────────────────────────
+
+    def replace_state_for_import(self, s: Session, data: dict[str, Any]) -> None:
+        """Wipe sessions/prizes/prize_log + reset balance, then populate from
+        the import payload. Must be called from within a `run_server_action`
+        mutator (the surrounding transaction guarantees atomicity).
+        """
+        s.execute(delete(SessionRow))
+        s.execute(delete(PrizeRow))
+        s.execute(delete(PrizeLogRow))
+        balance = self._balance(s)
+        balance.credits = int(data.get("credits", 0))
+        balance.tokens = int(data.get("tokens", 0))
+
         for session in data.get("sessions", []) or []:
             session_id = str(session.get("id") or f"imported-{uuid.uuid4()}")
-            sm: Map = Map()
-            casino.sessions[session_id] = sm
-            sm["subject"] = str(session.get("subject") or "Imported")
-            sm["seconds"] = int(session.get("seconds", 0))
-            sm["ended_at_ms"] = int(session.get("endedAt") or session.get("ended_at_ms") or 0)
-        for prize_id, name, cost in self._prizes_from_import(data):
-            pm: Map = Map()
-            casino.prizes[prize_id] = pm
-            pm["name"] = name
-            pm["cost"] = int(cost)
-        for prize in data.get("prizeLog", []) or []:
-            entry: Map = Map()
-            casino.prize_log.append(entry)
-            entry["id"] = str(prize.get("id") or f"imported-redemption-{uuid.uuid4()}")
-            entry["name"] = str(prize.get("name") or "Imported prize")
-            entry["cost"] = int(prize.get("cost", 0))
-            entry["at_ms"] = int(prize.get("at") or prize.get("at_ms") or 0)
-        if data.get("activeSession"):
-            active = data["activeSession"]
-            active_sm: Map = Map()
-            session_id = f"active-{uuid.uuid4()}"
-            casino.sessions[session_id] = active_sm
-            active_sm["subject"] = str(active.get("subject") or "Imported")
-            active_sm["start_time_ms"] = int(
-                active.get("startTime") or active.get("start_time_ms") or int(time.time() * 1000)
+            s.add(
+                SessionRow(
+                    id=session_id,
+                    subject=str(session.get("subject") or "Imported"),
+                    seconds=int(session.get("seconds", 0)),
+                    ended_at_ms=int(session.get("endedAt") or session.get("ended_at_ms") or 0),
+                )
             )
-            active_sm["paused"] = bool(active.get("paused", False))
-            active_sm["paused_duration_ms"] = int(active.get("pausedDuration") or active.get("paused_duration_ms") or 0)
-            active_sm["pause_started_at_ms"] = active.get("pauseStartedAt") or active.get("pause_started_at_ms")
-        return casino
 
-    def build_reset_casino(self) -> Casino:
-        casino = Casino(Doc())
-        casino.balance["credits"] = 0
-        casino.balance["tokens"] = 0
-        for prize_id, prize in self._canonical.prizes.items():
-            pm: Map = Map()
-            casino.prizes[str(prize_id)] = pm
-            pm["name"] = prize.get("name")
-            pm["cost"] = int(prize.get("cost", 0))
-        return casino
+        prizes_data = data.get("prizes") or _DEFAULT_PRIZES_AS_DICTS
+        for prize in prizes_data:
+            prize_id = str(prize.get("id") or f"p-{uuid.uuid4()}")
+            s.add(
+                PrizeRow(
+                    id=prize_id,
+                    name=str(prize.get("name") or "Imported prize"),
+                    cost=int(prize.get("cost", 1)),
+                )
+            )
 
-    def _ensure_initial_snapshot(self) -> None:
-        with self._Session() as s, s.begin():
-            existing = s.scalar(select(StateSnapshotRow).limit(1))
-            if existing is None:
-                s.add(self._snapshot_row("initial_authority_adoption", int(time.time() * 1000), None))
+        for entry in data.get("prizeLog") or data.get("prize_log") or []:
+            entry_id = str(entry.get("id") or f"imported-redemption-{uuid.uuid4()}")
+            s.add(
+                PrizeLogRow(
+                    id=entry_id,
+                    name=str(entry.get("name") or "Imported prize"),
+                    cost=int(entry.get("cost", 0)),
+                    at_ms=int(entry.get("at") or entry.get("at_ms") or 0),
+                )
+            )
 
-    def _snapshot_row(self, reason: str, now_ms: int, note: str | None) -> StateSnapshotRow:
+    def replace_state_for_reset(self, s: Session) -> None:
+        """Wipe sessions/prize_log, zero balance, keep the current prize
+        catalog. Equivalent to the legacy `build_reset_casino` behaviour."""
+        s.execute(delete(SessionRow))
+        s.execute(delete(PrizeLogRow))
+        balance = self._balance(s)
+        balance.credits = 0
+        balance.tokens = 0
+
+    # ── Internal ────────────────────────────────────────────────────────────
+
+    def _balance(self, s: Session) -> BalanceRow:
+        balance = s.scalar(select(BalanceRow).where(BalanceRow.id == 1).with_for_update())
+        if balance is None:
+            # Migration 0004 always inserts the singleton row, but be paranoid
+            # so a corrupted DB raises something descriptive instead of None
+            # propagating.
+            raise RuntimeError("balance row missing — DB was not migrated to 0004")
+        return balance
+
+    def _state_dump(self, s: Session) -> dict[str, Any]:
+        balance = self._balance(s)
+        sessions = list(s.scalars(select(SessionRow).order_by(SessionRow.ended_at_ms.desc())).all())
+        prizes = list(s.scalars(select(PrizeRow).order_by(PrizeRow.id)).all())
+        prize_log = list(s.scalars(select(PrizeLogRow).order_by(PrizeLogRow.at_ms.desc())).all())
+        return {
+            "balance": {"credits": balance.credits, "tokens": balance.tokens},
+            "sessions": [
+                {"id": row.id, "subject": row.subject, "seconds": row.seconds, "ended_at_ms": row.ended_at_ms}
+                for row in sessions
+            ],
+            "prizes": [{"id": row.id, "name": row.name, "cost": row.cost} for row in prizes],
+            "prize_log": [
+                {"id": row.id, "name": row.name, "cost": row.cost, "at_ms": row.at_ms} for row in prize_log
+            ],
+        }
+
+    def _snapshot_row(self, s: Session, reason: str, now_ms: int, note: str | None) -> StateSnapshotRow:
         return StateSnapshotRow(
             server_at_ms=now_ms,
             reason=reason,
-            doc_update_blob=self._canonical.get_update(),
-            decoded_json=self._json(self._casino_json(self._canonical)),
+            decoded_json=self._json(self._state_dump(s)),
             note=note,
         )
 
@@ -435,61 +378,22 @@ class DocStore:
             rng_version=rng_version,
         )
 
-    def _economy_fingerprint(self, casino: Casino) -> dict[str, Any]:
-        return {
-            "credits": self._credits(casino),
-            "tokens": self._tokens(casino),
-            "prize_log": [
-                {
-                    "id": entry.get("id"),
-                    "name": entry.get("name"),
-                    "cost": int(entry.get("cost", 0)),
-                    "at_ms": int(entry.get("at_ms", 0)),
-                }
-                for entry in casino.prize_log
-            ],
-        }
-
-    def _casino_json(self, casino: Casino) -> dict[str, Any]:
-        return {
-            "balance": {"credits": self._credits(casino), "tokens": self._tokens(casino)},
-            "sessions": [dict(session.items()) | {"id": session_id} for session_id, session in casino.sessions.items()],
-            "prizes": [
-                {"id": prize_id, "name": prize.get("name"), "cost": int(prize.get("cost", 0))}
-                for prize_id, prize in casino.prizes.items()
-            ],
-            "prize_log": [
-                {
-                    "id": entry.get("id"),
-                    "name": entry.get("name"),
-                    "cost": int(entry.get("cost", 0)),
-                    "at_ms": int(entry.get("at_ms", 0)),
-                }
-                for entry in casino.prize_log
-            ],
-        }
-
-    @staticmethod
-    def _credits(casino: Casino) -> int:
-        return int(casino.balance.get("credits", 0))
-
-    @staticmethod
-    def _tokens(casino: Casino) -> int:
-        return int(casino.balance.get("tokens", 0))
-
     @staticmethod
     def _json(value: Any) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
-    @staticmethod
-    def _prizes_from_import(data: dict[str, Any]) -> list[tuple[str, str, int]]:
-        prizes = data.get("prizes")
-        if prizes:
-            return [
-                (str(p.get("id") or f"p-{uuid.uuid4()}"), str(p.get("name") or "Imported prize"), int(p.get("cost", 1)))
-                for p in prizes
-            ]
-        return DEFAULT_PRIZES
+
+# Default prize catalog used by `replace_state_for_import` when the import
+# payload doesn't include a `prizes` list. Matches what migration 0004 seeds
+# into a fresh DB.
+_DEFAULT_PRIZES_AS_DICTS: list[dict[str, Any]] = [
+    {"id": "p1", "name": "Anime episode break", "cost": 30},
+    {"id": "p2", "name": "Nice coffee shop trip", "cost": 60},
+    {"id": "p3", "name": "Takeout night", "cost": 120},
+    {"id": "p4", "name": "Nice dinner out with Rai", "cost": 240},
+    {"id": "p5", "name": "Buy a new game", "cost": 600},
+    {"id": "p6", "name": "Weekend getaway", "cost": 1800},
+]
 
 
 # Enable WAL on every pooled connection.

@@ -11,36 +11,32 @@ Lives at <https://casino.allegedly.works>.
 
 ## Layout
 
-| Path                                   | What it is                                                 |
-| -------------------------------------- | ---------------------------------------------------------- |
-| `app.py`                               | FastAPI backend: `POST /sync`, `/healthz`, static frontend |
-| `actions.py`                           | Pydantic schemas for server-authoritative action endpoints |
-| `config.py`                            | Pydantic settings (DATA_DIR, host, port)                   |
-| `doc_shape.py`                         | Casino Y.Doc schema (mirror of frontend/src/sync.js)       |
-| `validators.py`                        | Post-merge constraint checks (credits ≥ 0, prize shape…)   |
-| `models.py`                            | SQLAlchemy rows for Y.Doc, ledger, snapshots, game events  |
-| `events.py`                            | Pydantic schemas for game and ledger event reads           |
-| `games.py`                             | Server-side slots, roulette, and blackjack rules/RNG       |
-| `store.py`                             | DocStore: validate-then-persist client updates             |
-| `migrations/`                          | Alembic migrations for the per-user SQLite database        |
-| `test_doc_shape.py`                    | pycrdt API + Casino schema sanity                          |
-| `test_validators.py`                   | Per-rule rejection coverage                                |
-| `test_store.py`                        | DocStore round-trip + persistence + validation gate        |
-| `test_app.py`                          | HTTP-surface coverage of `/sync`                           |
-| `tests/test_sync_two_device.py`        | Two-client multi-device sync E2E (pycrdt-driven)           |
-| `frontend/src/study_casino.jsx`        | The React component (originally a claude.ai artifact)      |
-| `frontend/src/sync.js`                 | Y.Doc + y-indexeddb + HTTP poll provider against `/sync`   |
-| `frontend/src/y_hooks.js`              | useYMap / useYArray / useSyncStatus React hooks            |
-| `frontend/src/use_casino.js`           | Single hook exposing reactive state + every mutation       |
-| `frontend/src/SyncBanner.jsx`          | Header banner + toast for offline/rejected/syncing states  |
-| `frontend/src/main.jsx`                | Entry — renders into `#root`, registers service worker     |
-| `frontend/index.html`                  | App shell (manifest link, theme color, apple-\* meta)      |
-| `frontend/public/manifest.webmanifest` | PWA manifest                                               |
-| `frontend/public/sw.js`                | Kill-switch service worker (unregisters + clears caches)   |
-| `frontend/public/icon.svg`             | App icon                                                   |
-| `frontend/public/fonts/`               | Hermetic latin-subset fonts (Outfit, Playfair Display)     |
-| `frontend/vite.config.js`              | Production bundler config (Vite + @vitejs/plugin-react)    |
-| `BUILD.bazel` / `frontend/BUILD.bazel` | Bazel wiring                                               |
+| Path                                   | What it is                                                                       |
+| -------------------------------------- | -------------------------------------------------------------------------------- |
+| `app.py`                               | FastAPI backend: REST + thin WebSocket fan-out, static frontend                  |
+| `actions.py`                           | Pydantic schemas for server-authoritative action endpoints                       |
+| `config.py`                            | Pydantic settings (DATA_DIR, host, port)                                         |
+| `models.py`                            | SQLAlchemy rows: balance, sessions, prizes, prize_log, ledger, snapshots, hands  |
+| `events.py`                            | Pydantic schemas for game and ledger event reads                                 |
+| `games.py`                             | Server-side slots, roulette, and blackjack rules/RNG                             |
+| `store.py`                             | `SqlStore`: idempotent server-action runner over SQLite                          |
+| `migrations/`                          | Alembic migrations for the per-user SQLite database                              |
+| `migrations/test_0004_backfill.py`     | Round-trip test for the irreversible Y.Doc → relational backfill                 |
+| `test_store.py`                        | SqlStore: idempotency, snapshots, validators                                     |
+| `test_app.py`                          | HTTP-surface coverage of every action + `/state` + `/ws`                         |
+| `tests/test_e2e_browser.py`            | Real-Playwright browser smoke (sync ok, state 5xx → offline)                     |
+| `frontend/src/study_casino.jsx`        | The React component (originally a claude.ai artifact)                            |
+| `frontend/src/sync.js`                 | REST client + state-changed WebSocket subscriber                                 |
+| `frontend/src/use_casino.js`           | Single hook exposing reactive state + every mutation                             |
+| `frontend/src/SyncIcon.jsx`            | Header status icon + rejection toast                                             |
+| `frontend/src/main.jsx`                | Entry — renders into `#root`, unregisters legacy service workers                 |
+| `frontend/index.html`                  | App shell (manifest link, theme color, apple-\* meta)                            |
+| `frontend/public/manifest.webmanifest` | PWA manifest                                                                     |
+| `frontend/public/sw.js`                | Kill-switch service worker (unregisters + clears caches)                         |
+| `frontend/public/icon.svg`             | App icon                                                                         |
+| `frontend/public/fonts/`               | Hermetic latin-subset fonts (Outfit, Playfair Display)                           |
+| `frontend/vite.config.js`              | Production bundler config (Vite + @vitejs/plugin-react)                          |
+| `BUILD.bazel` / `frontend/BUILD.bazel` | Bazel wiring                                                                     |
 
 ## Auth
 
@@ -51,56 +47,68 @@ authenticated user. Authentik resources (OAuth2 provider, application, policy
 bindings) are managed by TF at
 `tf/gitops/sso-providers/provider_study_casino.tf`.
 
-## State sync
+## State
 
-Y-CRDT, server-authoritative validation. The server holds one Y.Doc
-in memory and persists it as a single binary update blob in SQLite.
-Clients sync via a persistent WebSocket at `/ws` (JSON, both directions):
+Canonical state is a small relational schema in per-user SQLite:
 
-- Client → server: `{"type":"sync","state_vector_b64":"...","update_b64":"..."}`
-- Server → client: `{"type":"accepted",...}` | `{"type":"rejected","rule","message"}`
-  | `{"type":"server_push",...}` (fan-out to other tabs when one tab syncs)
+| Table             | Purpose                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `balance`         | Singleton row (`id = 1`); credits, tokens. CHECK constraints enforce `≥ 0`.        |
+| `sessions`        | One row per completed study session. In-progress sessions are client-side only.    |
+| `prizes`          | User-editable prize catalog.                                                        |
+| `prize_log`       | Append-only redemption log.                                                        |
+| `ledger_events`   | Append-only audit trail of every server action, keyed by `client_action_id`.       |
+| `game_events`     | Server-resolved slots/roulette/blackjack settlements.                              |
+| `state_snapshots` | JSON dumps before `/actions/import` / `/actions/reset`.                            |
+| `blackjack_hands` | In-flight hand state between deal and settlement.                                  |
 
-On acceptance the client clears its `Y.UndoManager` undo stack so
-already-synced changes can't be rolled back by a later rejection.
-On rejection the stack (which only contains post-last-sync changes) is
-drained, and the client pulls fresh state from the server.
+`GET /state` returns a JSON view of `balance` + `sessions` + `prizes` +
+`prize_log`. The frontend caches this and refetches on every successful
+action and on every WebSocket `state_changed` ping.
 
-Document shape — mirrored verbatim between `doc_shape.py` (server)
-and `frontend/src/sync.js` (client):
+## Wire surface
 
 ```
-balance   : Y.Map { credits: number, tokens: number }
-sessions  : Y.Map[id, Y.Map] — all sessions, in-progress or completed
-            in-progress (no ended_at_ms): { subject, start_time_ms,
-              paused, paused_duration_ms, pause_started_at_ms }
-            completed: { subject, seconds, ended_at_ms }
-prizes    : Y.Map[id, Y.Map { name, cost }]
-prize_log : Y.Array[Y.Map { id, name, cost, at_ms }]
-active    : Y.Map — legacy, kept for one-time migration only
+GET  /state                          → full canonical state JSON
+POST /actions/session/complete       — commit an active session (client supplies timing)
+POST /actions/session/add-past       — backfill a past session
+POST /actions/session/edit           — rename / re-time a completed session
+POST /actions/session/delete         — drop a completed session
+POST /actions/convert                — credits → tokens
+POST /actions/prize/{create,delete}  — manage the prize catalog
+POST /actions/prize/redeem           — spend tokens on a prize
+POST /actions/import / /actions/reset — bulk replace / wipe state (snapshot saved)
+POST /casino/slots/spin              — server-resolved slots
+POST /casino/roulette/spin           — server-resolved roulette
+POST /casino/blackjack/{deal,hit,stand,double} — server-resolved blackjack
+GET  /game-events / /ledger-events   — read-only audit listings
+GET  /me / /healthz                  — auth introspection / liveness
+WS   /ws                             — broadcasts {"type":"state_changed"} to every
+                                        tab of the same user after a successful action
 ```
 
-Server-authoritative actions now own balance-changing operations. The
-frontend sends intent to endpoints such as `/casino/slots/spin`,
-`/casino/roulette/spin`, `/casino/blackjack/*`, `/actions/convert`, and
-`/actions/prize/redeem`; the backend validates the canonical balance,
-settles outcomes with server-side randomness where needed, writes an
-append-only `ledger_events` row, updates the canonical Y.Doc projection,
-and returns the Y update for the client to apply.
+The active study-session timer (start / pause / resume / cancel) lives in
+client `localStorage`; the server only learns about it when the user calls
+`/actions/session/complete`. Every action carries a `client_action_id` —
+retried calls return the original `ledger_events` row without replaying
+the mutation.
 
-`game_events` remains the queryable casino history. New rows are written
-exclusively from server actions with `source = "server_resolved"` plus
-`rules_version` and `rng_version`. Direct client syncs that would change
-`balance` or `prize_log` are rejected with `rule="server_authority"`.
-Pre-2026-05-07 rows with `source = "client_reported"` (and the matching
-`legacy_client_sync` rows in `ledger_events`) remain readable but are no
-longer produced. State snapshots are stored before import/reset and on
-initial authority adoption so the raw Y.Doc blob remains recoverable.
+`game_events` is the queryable casino history. Pre-2026-05-07 rows have
+`source="client_reported"` (legacy direct settlements) and
+`source="server_resolved"` rows are written from this point forward.
+Pre-cutover `ledger_events` rows with `source="legacy_client_sync"`
+similarly remain readable; both sets of literals are kept in `events.py`
+so historical rows still deserialize.
 
-CRDTs guarantee convergence but not business rules — the server's
-validators (credits ≥ 0, tokens ≥ 0, prize shape, session shape) are
-the only thing keeping the casino's economy honest. See
-<validators.py> for the rule list and the rejection contract.
+## Validation
+
+DB CHECK constraints + Pydantic field validators police the rules:
+`balance.credits ≥ 0`, `balance.tokens ≥ 0`, `prizes.cost > 0`,
+`sessions.subject` non-empty, etc. A mutator that would violate a CHECK
+raises an SQLAlchemy `IntegrityError` at commit; the surrounding
+`run_server_action` transaction rolls back. A mutator that explicitly
+raises `ActionRejectedError("rule", "message")` produces a 409 with the
+structured detail (e.g., `rule="insufficient_credits"`).
 
 ## Build
 

@@ -1,14 +1,13 @@
 """End-to-end browser tests: real Playwright browser against real uvicorn backend.
 
 Scenarios:
-1. App loads, first WebSocket sync completes, syncing banner disappears.
-2. Server sends a malformed Yjs update over WebSocket — status transitions to
-   `offline` (not stuck on `syncing`), exercising the Y.applyUpdate error path.
+1. App loads, the first `GET /state` succeeds, status banner reaches "ok".
+2. Server can't be reached for `/state` (mocked 503) — status transitions to
+   `offline`, not stuck on `syncing`.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 import time
@@ -26,7 +25,7 @@ from x.auragon_study_casino.app import create_app
 from x.auragon_study_casino.config import Settings
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, Page, Playwright, WebSocketRoute
+    from playwright.sync_api import Browser, Page, Playwright, Route
 
 
 @pytest.fixture
@@ -37,7 +36,7 @@ def browser(playwright_sync: Playwright) -> Iterator[Browser]:
         headless=True,
         executable_path=executable,
         # Flags needed for containerized/RBE environments (no user namespace,
-        # /dev/shm may be tiny). Without these, IndexedDB can fail to open.
+        # /dev/shm may be tiny).
         args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
     )
     try:
@@ -90,63 +89,39 @@ def _attach_logs(page: Page) -> list[str]:
     return logs
 
 
-def test_initial_sync_completes(page: Page, casino_server: str) -> None:
-    """App loads, performs the first /sync round-trip, and clears the syncing banner."""
+def test_initial_state_fetch_completes(page: Page, casino_server: str) -> None:
+    """App loads, /state succeeds, banner reaches 'ok'."""
     logs = _attach_logs(page)
 
-    sync_responses: list[dict] = []
+    state_responses: list[dict] = []
     page.on(
-        "response", lambda r: sync_responses.append({"url": r.url, "status": r.status}) if "/sync" in r.url else None
+        "response",
+        lambda r: state_responses.append({"url": r.url, "status": r.status}) if "/state" in r.url else None,
     )
 
     page.goto(casino_server)
     print(f"\n[e2e] page loaded, title={page.title()!r}")
 
-    # The syncing banner renders from the initial JS state (kind: "syncing"),
-    # so it should be visible immediately after React mounts.
-    page.wait_for_selector("[data-testid='sync-banner-syncing']", state="visible", timeout=15_000)
-    print(f"[e2e] syncing banner appeared, logs so far: {logs}")
-
-    # Wait for the syncing banner to go away (sync round-trip complete or failed).
-    # 30 s gives plenty of time on slow RBE workers: IDB init + 200ms debounce +
-    # first uvicorn request cold-start + SQLite init.
-    page.wait_for_selector("[data-testid='sync-banner-syncing']", state="detached", timeout=30_000)
-    print(f"[e2e] sync completed, sync_responses={sync_responses}, logs={logs}")
+    # ok banner appears once `GET /state` resolves successfully.
+    page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
+    print(f"[e2e] sync ok, state_responses={state_responses}, logs={logs}")
 
     assert page.locator("[data-testid='sync-banner-offline']").count() == 0, (
-        f"offline banner showing after sync\nsync_responses={sync_responses}\nlogs={logs}"
+        f"offline banner showing after first state fetch\nstate_responses={state_responses}\nlogs={logs}"
     )
 
 
-def test_corrupt_server_update_shows_offline_not_stuck_syncing(page: Page, casino_server: str) -> None:
-    """When the WebSocket server sends bytes that are not valid Yjs, status should
-    transition to `offline` rather than remaining stuck on `syncing`.
-    Exercises the try/catch around Y.applyUpdate in sync.js."""
+def test_state_5xx_shows_offline_not_stuck_syncing(page: Page, casino_server: str) -> None:
+    """When `GET /state` returns 5xx, the banner transitions to `offline`
+    rather than remaining stuck on `syncing`."""
     logs = _attach_logs(page)
 
-    def handle_ws(ws_route: WebSocketRoute) -> None:
-        # Mock the WebSocket: respond to every client message with a corrupt
-        # "accepted" payload so Y.applyUpdate always fails.
-        def on_message(message: str | bytes) -> None:
-            ws_route.send(
-                json.dumps(
-                    {
-                        "type": "accepted",
-                        "update_b64": "bm90LXlqcy1kYXRh",  # b64("not-yjs-data")
-                        "state_vector_b64": "",
-                    }
-                )
-            )
+    def handle_state(route: Route) -> None:
+        route.fulfill(status=503, body="boom")
 
-        ws_route.on_message(on_message)
-
-    page.route_web_socket("**/ws", handle_ws)
+    page.route("**/state", handle_state)
     page.goto(casino_server)
-    print(f"\n[e2e] page loaded for corrupt test, title={page.title()!r}")
-
-    # Wait for syncing banner to appear first (confirms React mounted and WS connected).
-    page.wait_for_selector("[data-testid='sync-banner-syncing']", state="visible", timeout=15_000)
-    print(f"[e2e] syncing banner appeared in corrupt test, logs so far: {logs}")
+    print(f"\n[e2e] page loaded for 5xx test, title={page.title()!r}")
 
     page.wait_for_selector("[data-testid='sync-banner-offline']", state="visible", timeout=30_000)
     print(f"[e2e] offline banner appeared, logs={logs}")

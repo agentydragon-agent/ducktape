@@ -25,19 +25,7 @@ filegroup(
 js_library(
     name = "sync",
     srcs = ["src/sync.js"],
-    deps = [
-        ":node_modules/y-indexeddb",
-        ":node_modules/yjs",
-    ],
-)
-
-js_library(
-    name = "y_hooks",
-    srcs = ["src/y_hooks.js"],
-    deps = [
-        ":node_modules/react",
-        ":sync",
-    ],
+    deps = [":node_modules/react"],
 )
 
 js_library(
@@ -46,7 +34,6 @@ js_library(
     deps = [
         ":node_modules/react",
         ":sync",
-        ":y_hooks",
     ],
 )
 
@@ -56,7 +43,6 @@ js_library(
     deps = [
         ":node_modules/react",
         ":sync",
-        ":y_hooks",
     ],
 )
 

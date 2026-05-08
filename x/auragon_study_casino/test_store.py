@@ -1,4 +1,4 @@
-"""DocStore: validate-then-persist behaviour and round-trip via SQLite."""
+"""SqlStore: state-dump, idempotent server actions, snapshot semantics."""
 
 from __future__ import annotations
 
@@ -6,126 +6,178 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from pycrdt import Map
+from sqlalchemy import select
 
-from x.auragon_study_casino.doc_shape import Casino
-from x.auragon_study_casino.store import Accepted, DocStore, Rejected
+from x.auragon_study_casino.models import BalanceRow, StateSnapshotRow
+from x.auragon_study_casino.store import (
+    ActionMutation,
+    ActionRejectedError,
+    ServerActionResult,
+    SqlStore,
+)
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> DocStore:
-    return DocStore(tmp_path / "casino.db")
+def store(tmp_path: Path) -> SqlStore:
+    return SqlStore(tmp_path / "casino.db")
 
 
-def _client_with_initial_state(store: DocStore) -> Casino:
-    """Bootstrap a client casino from the server's current update."""
-    return Casino.from_update(store.get_update_for_client(None))
+def test_fresh_store_has_zero_balance_and_default_prizes(store: SqlStore) -> None:
+    state = store.state_dump()
+    assert state["balance"] == {"credits": 0, "tokens": 0}
+    assert state["sessions"] == []
+    assert state["prize_log"] == []
+    assert len(state["prizes"]) == 6  # DEFAULT_PRIZES
 
 
-def test_seed_state_is_empty(store: DocStore) -> None:
-    assert int(store.canonical.balance["credits"]) == 0
-    assert int(store.canonical.balance["tokens"]) == 0
+def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -> None:
+    def grant_credits(s, _now_ms):
+        balance = s.scalar(select(BalanceRow).where(BalanceRow.id == 1).with_for_update())
+        balance.credits += 7
+        return ActionMutation(result={"granted": 7}, details={"reason": "test"})
+
+    result = store.run_server_action(
+        client_action_id="act-1", action_type="test.grant", mutator=grant_credits
+    )
+    assert isinstance(result, ServerActionResult)
+    assert result.event.action_type == "test.grant"
+    assert result.event.credits_before == 0
+    assert result.event.credits_after == 7
+    assert result.result == {"granted": 7}
+
+    state = store.state_dump()
+    assert state["balance"]["credits"] == 7
+
+    ledger = store.list_ledger_events()
+    assert len(ledger) == 1
+    assert ledger[0].client_action_id == "act-1"
 
 
-def _add_session(client: Casino, sid: str, subject: str, seconds: int, ended_at_ms: int = 1_700_000_000_000) -> None:
-    sm: Map = Map()
-    client.sessions[sid] = sm
-    sm["subject"] = subject
-    sm["seconds"] = seconds
-    sm["ended_at_ms"] = ended_at_ms
+def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
+    def grant_credits(s, _now_ms):
+        balance = s.scalar(select(BalanceRow).where(BalanceRow.id == 1).with_for_update())
+        balance.credits += 5
+        return ActionMutation(result={"granted": 5})
+
+    first = store.run_server_action(
+        client_action_id="act-dup", action_type="test.grant", mutator=grant_credits
+    )
+    second = store.run_server_action(
+        client_action_id="act-dup", action_type="test.grant", mutator=grant_credits
+    )
+    assert second.event.id == first.event.id
+    assert second.result == first.result
+    # Mutator was NOT replayed — credits stayed at 5, not 10.
+    assert store.state_dump()["balance"]["credits"] == 5
 
 
-def test_round_trip_accepts_valid_non_economy_update(store: DocStore) -> None:
-    client = _client_with_initial_state(store)
-    sv = client.get_state()
-    _add_session(client, "s1", "Biochem", 1500)
+def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
+    def half_then_reject(s, _now_ms):
+        balance = s.scalar(select(BalanceRow).where(BalanceRow.id == 1).with_for_update())
+        balance.credits += 99
+        raise ActionRejectedError("nope", "no good")
 
-    result = store.apply_client_update(client.get_update(sv), sv)
-    assert isinstance(result, Accepted)
-    assert "s1" in store.canonical.sessions
-    assert store.canonical.sessions["s1"]["subject"] == "Biochem"
+    with pytest.raises(ActionRejectedError):
+        store.run_server_action(
+            client_action_id="act-reject", action_type="test.reject", mutator=half_then_reject
+        )
 
-
-def test_direct_economy_sync_is_rejected(store: DocStore) -> None:
-    client = _client_with_initial_state(store)
-    sv = client.get_state()
-    client.balance["credits"] = 50
-
-    result = store.apply_client_update(client.get_update(sv), sv)
-    assert isinstance(result, Rejected)
-    assert result.rule == "server_authority"
-    assert int(store.canonical.balance["credits"]) == 0
+    # Transaction was rolled back: balance unchanged, no ledger row.
+    assert store.state_dump()["balance"]["credits"] == 0
+    assert len(store.list_ledger_events()) == 0
 
 
-def test_negative_credits_update_is_rejected_and_canonical_unchanged(store: DocStore) -> None:
-    """Validator catches `credits < 0` even though the server-authority rule
-    would also reject this — the validator runs first so its rule is what the
-    caller sees."""
-    client = _client_with_initial_state(store)
-    sv = client.get_state()
-    client.balance["credits"] = -10
+def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
+    def import_payload(s, _now_ms):
+        store.replace_state_for_import(
+            s,
+            {
+                "credits": 11,
+                "tokens": 22,
+                "sessions": [],
+                "prizes": [{"id": "p-only", "name": "Only", "cost": 5}],
+                "prize_log": [],
+            },
+        )
+        return ActionMutation(result={"imported": True})
 
-    result = store.apply_client_update(client.get_update(sv), sv)
-    assert isinstance(result, Rejected)
-    assert result.rule == "credits_nonneg"
-    assert int(store.canonical.balance["credits"]) == 0
+    store.run_server_action(
+        client_action_id="act-import",
+        action_type="data.import",
+        mutator=import_payload,
+        snapshot_reason="before_import",
+        snapshot_note="unit test",
+    )
+
+    state = store.state_dump()
+    assert state["balance"] == {"credits": 11, "tokens": 22}
+    assert [p["id"] for p in state["prizes"]] == ["p-only"]
+
+    with store._Session() as s:
+        snapshots = list(s.scalars(select(StateSnapshotRow).order_by(StateSnapshotRow.id)).all())
+    assert len(snapshots) == 1
+    assert snapshots[0].reason == "before_import"
+    assert snapshots[0].note == "unit test"
 
 
-def test_canonical_persists_across_restart(tmp_path: Path) -> None:
+def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
+    def grant_then_reset(s, _now_ms):
+        balance = s.scalar(select(BalanceRow).where(BalanceRow.id == 1).with_for_update())
+        balance.credits = 50
+        balance.tokens = 30
+        return ActionMutation(result={"granted": True})
+
+    store.run_server_action(client_action_id="act-grant", action_type="test.grant", mutator=grant_then_reset)
+    pre_reset = store.state_dump()
+    assert pre_reset["balance"] == {"credits": 50, "tokens": 30}
+
+    def reset(s, _now_ms):
+        store.replace_state_for_reset(s)
+        return ActionMutation(result={"reset": True})
+
+    store.run_server_action(
+        client_action_id="act-reset",
+        action_type="data.reset",
+        mutator=reset,
+        snapshot_reason="before_reset",
+    )
+
+    state = store.state_dump()
+    assert state["balance"] == {"credits": 0, "tokens": 0}
+    assert state["sessions"] == []
+    assert state["prize_log"] == []
+    assert len(state["prizes"]) == 6  # default catalog preserved
+
+
+def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
+    """The CHECK constraint is the last line of defence if a buggy mutator
+    misses a pre-flight check."""
+    def goes_negative(s, _now_ms):
+        balance = s.scalar(select(BalanceRow).where(BalanceRow.id == 1).with_for_update())
+        balance.credits = -1
+        return ActionMutation(result={"oops": True})
+
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError):
+        store.run_server_action(
+            client_action_id="act-bug", action_type="test.bug", mutator=goes_negative
+        )
+
+
+def test_state_persists_across_reopen(tmp_path: Path) -> None:
     db = tmp_path / "casino.db"
-    store_a = DocStore(db)
-    client = _client_with_initial_state(store_a)
-    sv = client.get_state()
-    _add_session(client, "s1", "Anatomy", 2400)
-    store_a.apply_client_update(client.get_update(sv), sv)
+    store_a = SqlStore(db)
 
-    store_b = DocStore(db)  # reopen
-    assert "s1" in store_b.canonical.sessions
-    assert store_b.canonical.sessions["s1"]["subject"] == "Anatomy"
+    def grant(s, _now_ms):
+        balance = s.scalar(select(BalanceRow).where(BalanceRow.id == 1).with_for_update())
+        balance.credits = 13
+        return ActionMutation(result={"granted": True})
 
+    store_a.run_server_action(client_action_id="reopen-1", action_type="test.grant", mutator=grant)
 
-def test_two_devices_concurrent_disjoint_updates_both_land(store: DocStore) -> None:
-    """Two devices add disjoint non-economy sessions; both persist after sync.
-
-    Per the /sync contract, `client_state_vector` is the *client's current*
-    SV (so the server can compute a minimal diff back to the caller); the
-    update bytes are produced against the client's last-known server SV
-    (here `base_sv`). Conflating the two would still pass the assertions
-    (Yjs is idempotent under double-application) but would not exercise
-    the wire shape the production frontend uses.
-    """
-    base_sv = store.get_server_state_vector()
-    base_update = store.get_update_for_client(None)
-
-    phone = Casino.from_update(base_update)
-    laptop = Casino.from_update(base_update)
-
-    _add_session(phone, "phone-1", "Pharmacology", 3600)
-    _add_session(laptop, "laptop-1", "Anatomy", 1500)
-
-    r1 = store.apply_client_update(phone.get_update(base_sv), phone.get_state())
-    assert isinstance(r1, Accepted)
-    r2 = store.apply_client_update(laptop.get_update(base_sv), laptop.get_state())
-    assert isinstance(r2, Accepted)
-
-    canonical = store.canonical
-    assert "phone-1" in canonical.sessions
-    assert "laptop-1" in canonical.sessions
-    assert canonical.sessions["phone-1"]["subject"] == "Pharmacology"
-    assert canonical.sessions["laptop-1"]["subject"] == "Anatomy"
-
-
-def test_server_never_persists_negative_tokens(store: DocStore) -> None:
-    """The validator gate guarantees that no client update — however it
-    arrives, however it merges — can land canonical with tokens < 0."""
-    bad = _client_with_initial_state(store)
-    bad_sv = bad.get_state()
-    bad.balance["tokens"] = -50
-
-    result = store.apply_client_update(bad.get_update(bad_sv), bad_sv)
-    assert isinstance(result, Rejected)
-    assert result.rule == "tokens_nonneg"
-    assert int(store.canonical.balance["tokens"]) == 0
+    store_b = SqlStore(db)
+    assert store_b.state_dump()["balance"]["credits"] == 13
 
 
 if __name__ == "__main__":

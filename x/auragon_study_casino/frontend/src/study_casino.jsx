@@ -110,10 +110,10 @@ const COLORS = {
 
 export default function StudyCasino() {
   const [view, setView] = useState("study");
-  // Y.Doc-backed reactive state + every mutation function we need. The
-  // single hook replaces the legacy useState/applySnapshot/emitEvents
-  // machinery; multi-device sync now happens through the websocket-less
-  // HTTP poll provider in `sync.js`. See use_casino.js for the doc shape.
+  // Reactive state + every mutation function. State is fetched from
+  // `GET /state` (refetched after every action and on every WS
+  // `state_changed` ping); the active study-session timer lives in
+  // localStorage. See use_casino.js for the public surface.
   const casino = useCasino();
   const {
     credits,

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-import { casinoSync } from "./sync.js";
-import { useSyncRejection, useSyncStatus } from "./y_hooks.js";
+import { casinoSync, useSyncRejection, useSyncStatus } from "./sync.js";
 
 const COLORS = {
   gold: "#d4a548",

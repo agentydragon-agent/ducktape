@@ -1,13 +1,19 @@
-"""SQLAlchemy models for the Y.Doc-backed state store.
+"""SQLAlchemy models for the casino's per-user SQLite database.
 
-The canonical app state is one row containing the latest binary Y-CRDT
-update. Client-reported casino outcomes are stored separately as an
-append-only audit log so the Y.Doc does not grow with every spin or hand.
+Canonical state lives in `balance` (1 row), `sessions`, `prizes`, and
+`prize_log`. The `ledger_events` and `game_events` audit logs are
+append-only and survive everything that mutates state. `state_snapshots`
+keeps a JSON dump before destructive imports/resets so a bad import is
+recoverable.
+
+Pre-2026-05-08 deployments stored canonical state as a single Y-CRDT
+binary blob in a `doc` table; the `0004_drop_ydoc_layer` migration
+backfills the relational tables and drops `doc`.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -15,21 +21,76 @@ class Base(DeclarativeBase):
     pass
 
 
-class DocRow(Base):
-    """The single canonical Y.Doc, serialized as a binary update blob."""
+class BalanceRow(Base):
+    """The single canonical economy row. Always `id = 1`."""
 
-    __tablename__ = "doc"
-    __table_args__ = (CheckConstraint("id = 1", name="doc_single_row"),)
+    __tablename__ = "balance"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="balance_single_row"),
+        CheckConstraint("credits >= 0", name="balance_credits_nonneg"),
+        CheckConstraint("tokens >= 0", name="balance_tokens_nonneg"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    update_blob: Mapped[bytes] = mapped_column(LargeBinary)
+    credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class SessionRow(Base):
+    """One completed study session.
+
+    In-progress sessions are not persisted server-side — they live in the
+    client's localStorage and only become a SessionRow when the user calls
+    `/actions/session/complete` (or `/actions/session/add-past` for a
+    manually backfilled session). `seconds` is non-negative; `ended_at_ms`
+    is the wall-clock end time. `subject` is the user-chosen study topic.
+    """
+
+    __tablename__ = "sessions"
+    __table_args__ = (
+        CheckConstraint("seconds >= 0", name="sessions_seconds_nonneg"),
+        CheckConstraint("length(subject) > 0", name="sessions_subject_nonempty"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(120), nullable=False)
+    seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    ended_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PrizeRow(Base):
+    """One entry in the user-editable prize catalog."""
+
+    __tablename__ = "prizes"
+    __table_args__ = (
+        CheckConstraint("cost > 0", name="prizes_cost_positive"),
+        CheckConstraint("length(name) > 0", name="prizes_name_nonempty"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    cost: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PrizeLogRow(Base):
+    """Append-only redemption log. `prize_id` may reference a deleted
+    prize; we keep the snapshotted name + cost so the history survives
+    catalog edits."""
+
+    __tablename__ = "prize_log"
+    __table_args__ = (CheckConstraint("cost >= 0", name="prize_log_cost_nonneg"),)
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    cost: Mapped[int] = mapped_column(Integer, nullable=False)
+    at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class GameEventRow(Base):
     """Append-only server-resolved casino event audit record.
 
-    Every row is server-stamped with the canonical balance observed when the
-    event was committed. Pre-cutover rows with `source="client_reported"`
+    Every row is server-stamped with the canonical balance observed when
+    the event was committed. Pre-cutover rows with `source="client_reported"`
     remain readable but are no longer written.
     """
 
@@ -83,14 +144,19 @@ class LedgerEventRow(Base):
 
 
 class StateSnapshotRow(Base):
-    """Raw Y.Doc snapshots taken before destructive/server-authority changes."""
+    """JSON snapshots taken before destructive (`import`/`reset`) actions.
+
+    Pre-0004 rows additionally carried a `doc_update_blob` column with the
+    raw Y.Doc binary; that column is dropped by the 0004 migration after
+    the relational backfill. `decoded_json` is the human-readable canonical
+    state (matches the shape returned by `GET /state`).
+    """
 
     __tablename__ = "state_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     server_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(String(64), nullable=False)
-    doc_update_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     decoded_json: Mapped[str] = mapped_column(Text, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -112,3 +178,5 @@ class BlackjackHandRow(Base):
     player_json: Mapped[str] = mapped_column(Text, nullable=False)
     dealer_json: Mapped[str] = mapped_column(Text, nullable=False)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+

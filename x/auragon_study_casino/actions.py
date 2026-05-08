@@ -1,4 +1,11 @@
-"""Pydantic wire models for server-authoritative Study Casino actions."""
+"""Pydantic wire models for server-authoritative Study Casino actions.
+
+State sync is no longer CRDT-based — clients refetch `GET /state` after each
+successful action (the server pushes a `state_changed` ping over `/ws` so
+other tabs of the same user know to refetch). Every action carries a
+`client_action_id` that the server uses as the idempotency key on
+`ledger_events`.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +22,6 @@ class ActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     client_action_id: str = Field(min_length=1, max_length=128, pattern=_ACTION_ID_PATTERN)
-    state_vector_b64: str = Field(default="", max_length=4 * 1024 * 1024)
 
 
 class ActionResponse(BaseModel):
@@ -24,14 +30,22 @@ class ActionResponse(BaseModel):
     client_action_id: str
     event: LedgerEventRead
     result: dict[str, Any]
-    update_b64: str
-    state_vector_b64: str
     game_event: GameEventRead | None = None
 
 
 class SessionCompleteRequest(ActionRequest):
+    """An active session (kept in client localStorage) is finishing.
+
+    The client provides the timing data — the server has no in-progress
+    session record to consult — and inserts a SessionRow with `seconds`
+    computed from the supplied wall-clock interval.
+    """
+
+    subject: str = Field(min_length=1, max_length=120)
+    start_time_ms: int = Field(ge=0)
+    paused_duration_ms: int = Field(default=0, ge=0)
+    ended_at_ms: int = Field(ge=0)
     session_id: str | None = Field(default=None, max_length=128)
-    ended_at_ms: int | None = Field(default=None, ge=0)
 
 
 class AddPastSessionRequest(ActionRequest):
@@ -53,6 +67,16 @@ class DeleteSessionRequest(ActionRequest):
 
 class ConvertRequest(ActionRequest):
     amount: int = Field(gt=0)
+
+
+class PrizeCreateRequest(ActionRequest):
+    name: str = Field(min_length=1, max_length=120)
+    cost: int = Field(gt=0)
+    prize_id: str | None = Field(default=None, max_length=128)
+
+
+class PrizeDeleteRequest(ActionRequest):
+    prize_id: str = Field(min_length=1, max_length=128)
 
 
 class PrizeRedeemRequest(ActionRequest):
