@@ -123,3 +123,4 @@ cluster/.claude/
 !/devinfra/claude/web_env/rootfs/root/.claude/settings.json
 !/devinfra/claude/web_env/rootfs/root/.claude/skills
 tgarchive/*.session
+tgarchive/backup/
