@@ -547,7 +547,9 @@ async def _snapshot_into(out_dir: Path) -> None:
 
 
 @task
-def reverse_engineer_go_crypto(*, message_limit: int = 1000, time_limit: int = 43200) -> Task:
+def reverse_engineer_go_crypto(
+    *, message_limit: int = 1000, time_limit: int = 43200, judge_model: str = _DEFAULT_JUDGE_MODEL
+) -> Task:
     """Recover compilable Go source from a garbled go_crypto_server binary."""
     skill_dir = _stage_skill()
     target_binary = _stage_target_binary()
@@ -594,7 +596,7 @@ def reverse_engineer_go_crypto(*, message_limit: int = 1000, time_limit: int = 4
         # agent would skip a post-agent solver. The scorer runs even
         # then, in its own time_limit/2 context.
         solver=as_solver(agent),
-        scorer=rubric_judge(),
+        scorer=rubric_judge(judge_model=judge_model),
         sandbox=SandboxEnvironmentSpec(type="docker", config=str(compose_path)),
         message_limit=message_limit,
         time_limit=time_limit,

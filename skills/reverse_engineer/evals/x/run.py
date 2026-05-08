@@ -35,6 +35,9 @@ def main() -> None:
     add_common_flags(parser, default_model="anthropic/claude-haiku-4-5-20251001")
     parser.add_argument("--message-limit", type=int, default=1000)
     parser.add_argument(
+        "--judge-model", default=None, help="Rubric judge model (default: anthropic/claude-sonnet-4-6)."
+    )
+    parser.add_argument(
         "--time-limit",
         type=int,
         default=43200,
@@ -50,10 +53,14 @@ def main() -> None:
         # rollout that produced it.
         os.environ["RE_EVAL_SNAPSHOT_DIR"] = str(log_dir)
 
+    judge_model = args.judge_model or "anthropic/claude-sonnet-4-6"
+
     run_eval(
         args=args,
         log_subdir="eval_logs",
-        task_factory=lambda: reverse_engineer_go_crypto(message_limit=args.message_limit, time_limit=args.time_limit),
+        task_factory=lambda: reverse_engineer_go_crypto(
+            message_limit=args.message_limit, time_limit=args.time_limit, judge_model=judge_model
+        ),
         pre_eval=_stamp_snapshot_dir,
     )
 

@@ -33,6 +33,11 @@ _PROVIDER_API_KEY_ENV: dict[str, str] = {
 
 def validate_credentials(model: str) -> None:
     provider = model.split("/", 1)[0]
+    if provider == "openai-api":
+        # Inspect's openai-api provider validates credentials internally
+        # (derives <SERVICE>_API_KEY from the service segment). Skip our
+        # check — Inspect's error message is clear enough.
+        return
     if (env_var := _PROVIDER_API_KEY_ENV.get(provider)) and not os.environ.get(env_var):
         sys.exit(f"{env_var} is not set; refusing to run {model!r}.")
 
