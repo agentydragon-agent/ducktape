@@ -1,5 +1,7 @@
 common --enable_bzlmod
 common --experimental_isolated_extension_usages
+# Disable Aspect telemetry (aspect_tools_telemetry) so builds don't POST to telemetry.aspect.build
+common --repo_env=DO_NOT_TRACK=1
 
 # Strict action env: actions get a fixed PATH (/bin:/usr/bin:/usr/local/bin)
 # instead of inheriting the client's PATH. Prevents NixOS /nix/store paths
