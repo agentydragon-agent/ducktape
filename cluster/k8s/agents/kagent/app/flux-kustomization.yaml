@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   retryInterval: 1m
-  suspend: false
+  suspend: true
   interval: 10m
   path: ./cluster/k8s/agents/kagent/app
   prune: true

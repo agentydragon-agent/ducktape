@@ -1,7 +1,16 @@
 # kagent — status
 
-Revived on 2026-05-08. Reachable at <https://kagent.allegedly.works> behind
-Authentik OIDC via the chart's bundled `oauth2-proxy` subchart.
+**Suspended 2026-05-08.** All Flux kustomizations except `kagent-namespace` are
+suspended (app, crds, db, secrets). Namespace and resources deleted from cluster.
+Reason: kagent lacks tool-call output truncation/limiting — a
+single MCP call (`kubectl get events`, full pod listings) dumps enough text
+into the event history that the next request exceeds z.ai's per-prompt cap
+(error 1261), killing the session. This makes the platform too fragile for
+cluster-ops use. See the "Tool-output robustness" section in
+<../../../docs/self_hosted_coding_agent_platforms.md>.
+
+Originally revived on 2026-05-08. Reachable at <https://kagent.allegedly.works>
+behind Authentik OIDC via the chart's bundled `oauth2-proxy` subchart.
 
 ## Working
 
