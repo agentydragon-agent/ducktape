@@ -31,3 +31,10 @@ rules:
       - jobs
       - cronjobs
     verbs: ["*"]
+
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources:
+      - clusters
+      - publications
+      - subscriptions
+    verbs: ["*"]
