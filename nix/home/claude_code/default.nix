@@ -242,7 +242,7 @@ let
   # Directories where Read/Grep/Glob are always allowed without prompting
   alwaysAllowedReadDirs = [
     "~/.claude" # Claude Code session history, settings, commands
-    "/nix" # Nix store and configuration
+    "/nix"
   ]
   ++ cfg.extraAllowedReadDirs;
 
@@ -259,11 +259,14 @@ let
     "app.buildbuddy.io" # BuildBuddy remote build UI
     "remote.buildbuddy.io" # BuildBuddy remote execution/cache
     "bcr.bazel.build" # Bazel Central Registry
-    "github.com" # GitHub repos and downloads
-    "raw.githubusercontent.com" # GitHub raw file access
-    "release-assets.githubusercontent.com" # GitHub release downloads
-    "files.pythonhosted.org" # PyPI wheel downloads
-    "docs.siderolabs.com" # Talos/Omni docs and llms.txt
+    "github.com"
+    "raw.githubusercontent.com"
+    "release-assets.githubusercontent.com"
+    "files.pythonhosted.org" # PyPI wheels
+    "docs.siderolabs.com" # Talos/Omni docs
+    "index.crates.io"
+    "static.crates.io"
+    "go.dev"
   ]
   ++ cfg.extraAllowedWebFetchDomains;
 

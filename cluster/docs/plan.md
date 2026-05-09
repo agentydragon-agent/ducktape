@@ -30,6 +30,10 @@ CloudNativePG `local-path`.
   (`arc-secrets`) are deployed. GitHub runner pod/statefulset removed.
 - **Props**: `props` — suspended 2026-04-06. Secrets (`props-secrets`) are deployed.
 - **Scanner**: `scanner` — suspended.
+- **kagent**: `kagent`, `kagent-crds`, `kagent-db`, `kagent-secrets` — suspended
+  2026-05-08. No tool-call output truncation; sessions die on large MCP outputs
+  (z.ai error 1261). Namespace and resources deleted. See
+  <../k8s/agents/kagent/TODO.md>.
 
 ## Next Actions
 
