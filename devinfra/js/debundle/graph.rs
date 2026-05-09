@@ -530,3 +530,60 @@ pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerE
         })
         .collect()
 }
+
+/// Predicate shared by `materialize_logical_modules` and
+/// `peelability.rs`: given a candidate set of moved owners and the
+/// post-peel entry export set, report binding names that moved bodies
+/// would reference free — bindings declared by an owner that stays in
+/// residual but aren't on entry's export list.
+///
+/// SSOT for the materializer's "moved module references residual entry
+/// binding(s) … not exported by entry" rejection: when this returns a
+/// non-empty set, the materializer would reject and peelability marks
+/// the candidate `BlockedEmitResolvability`. Mirrors the
+/// `constrains_realizability` SSOT introduced in `f86e84b7e`.
+///
+/// Inputs:
+/// - `owner_graph`: nodes carry each owner's destination module.
+/// - `owner_edges`: per-reason owner-graph edges; the `binding` on
+///   each edge tells us which top-level chunk binding the read
+///   targets.
+/// - `moved_owners`: the candidate's moved owner set (a peel of these
+///   is the hypothetical change being evaluated).
+/// - `entry_exported_names`: post-peel entry export set, i.e.
+///   pre-existing source exports ∪ bindings of all owners that end up
+///   in a logical module (the candidate's bindings are auto-exported
+///   by `entry_exports_for_moved_bindings`).
+pub(crate) fn peel_emit_blocked_residual_bindings(
+    owner_graph: &OwnerGraph,
+    owner_edges: &[OwnerEdgeEntry],
+    moved_owners: &BTreeSet<OwnerId>,
+    entry_exported_names: &BTreeSet<BindingName>,
+) -> BTreeSet<BindingName> {
+    let mut blocked = BTreeSet::new();
+    for edge in owner_edges {
+        if !moved_owners.contains(&edge.from) {
+            continue;
+        }
+        if moved_owners.contains(&edge.to) {
+            continue;
+        }
+        let Some(to_node) = owner_graph.node(edge.to) else {
+            continue;
+        };
+        if !matches!(to_node.destination, ModuleId::ResidualEntry) {
+            continue;
+        }
+        let Some(binding_id) = edge.reason.binding() else {
+            continue;
+        };
+        let Some(name) = owner_graph.binding_table.name(binding_id) else {
+            continue;
+        };
+        if entry_exported_names.contains(name) {
+            continue;
+        }
+        blocked.insert(name.clone());
+    }
+    blocked
+}

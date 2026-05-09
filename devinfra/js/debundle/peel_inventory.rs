@@ -61,13 +61,26 @@ pub struct PeelInventoryRecord {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum ForbiddenRecord {
-    BlockedCycle { blocking_edges: Vec<String> },
-    ResidualDependency { missing: Vec<String> },
+    BlockedCycle {
+        blocking_edges: Vec<String>,
+    },
+    ResidualDependency {
+        missing: Vec<String>,
+    },
+    /// The candidate's moved bodies reference residual entry
+    /// binding(s) that aren't on entry's export list. Mirrors the
+    /// materializer's "moved module references residual entry
+    /// binding(s) … not exported by entry" rejection. Comes from
+    /// peelability's emit-resolvability projection (`status ==
+    /// blocked_emit_resolvability` in `evaluated_owner_sets[]`).
+    EmitResolvability {
+        missing: Vec<String>,
+    },
 }
 
-/// Optional `peelability.evaluated_owner_sets[]` entries. Not part of
-/// the typed `OwnerGraphReport` schema yet; we deserialize them out of
-/// the raw JSON and tolerate them being absent.
+/// `peelability.evaluated_owner_sets[]` entries. Tolerated as absent
+/// for older `owner_graph.json` outputs that predate the
+/// emit-resolvability projection.
 #[derive(Debug, Clone, Deserialize)]
 struct EvaluatedOwnerSet {
     #[serde(default)]
@@ -78,6 +91,8 @@ struct EvaluatedOwnerSet {
     cycle_blockers: Vec<String>,
     #[serde(default)]
     residual_dependency_blockers: Vec<String>,
+    #[serde(default)]
+    emit_blocked_residual_bindings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -121,12 +136,23 @@ fn build_inventory_from(
 
     let mut blocked_by_owner: BTreeMap<String, Vec<ForbiddenRecord>> = BTreeMap::new();
     for evaluated in evaluated_owner_sets {
+        // Status keys mirror the snake-case rendering of
+        // `PeelCandidateStatus` in `report_schema.rs`. The producer
+        // pre-1.x called residual-dep "blocked_residual_dep"; the
+        // current rendering is "blocked_residual_dependency". Accept
+        // both for backward compat with older `owner_graph.json` files
+        // (e.g. when bisecting through devel).
         let record = match evaluated.status.as_str() {
             "blocked_cycle" => Some(ForbiddenRecord::BlockedCycle {
                 blocking_edges: evaluated.cycle_blockers.clone(),
             }),
-            "blocked_residual_dep" => Some(ForbiddenRecord::ResidualDependency {
-                missing: evaluated.residual_dependency_blockers.clone(),
+            "blocked_residual_dep" | "blocked_residual_dependency" => {
+                Some(ForbiddenRecord::ResidualDependency {
+                    missing: evaluated.residual_dependency_blockers.clone(),
+                })
+            }
+            "blocked_emit_resolvability" => Some(ForbiddenRecord::EmitResolvability {
+                missing: evaluated.emit_blocked_residual_bindings.clone(),
             }),
             _ => None,
         };
@@ -518,18 +544,21 @@ mod tests {
                         candidate_id: "peel_candidate:owner:0".to_string(),
                         owner_ids: vec!["owner:0".to_string()],
                         members: vec![member("ZZ", "PaymentError")],
+                        emit_blocked_residual_bindings: Vec::new(),
                     },
                     // Single owner with no readable rename and no deferred home.
                     OwnerGraphPeelSetReport {
                         candidate_id: "peel_candidate:owner:1".to_string(),
                         owner_ids: vec!["owner:1".to_string()],
                         members: vec![member("createBillingRoute", "createBillingRoute")],
+                        emit_blocked_residual_bindings: Vec::new(),
                     },
                     // Owner pair sharing one deferred home.
                     OwnerGraphPeelSetReport {
                         candidate_id: "peel_candidate:owner:2".to_string(),
                         owner_ids: vec!["owner:2".to_string(), "owner:3".to_string()],
                         members: vec![member("aa", "loadInvoice"), member("bb", "bb")],
+                        emit_blocked_residual_bindings: Vec::new(),
                     },
                 ],
                 residual_owner_horizon: vec![
@@ -537,6 +566,7 @@ mod tests {
                     horizon("owner:2", 2, 100, 140, vec![member("aa", "loadInvoice")]),
                     horizon("owner:3", 3, 90, 110, vec![member("bb", "bb")]),
                 ],
+                evaluated_owner_sets: Vec::new(),
             },
         }
     }
@@ -610,18 +640,21 @@ mod tests {
                 owner_ids: vec!["owner:1".to_string()],
                 cycle_blockers: vec!["edge:42".to_string()],
                 residual_dependency_blockers: Vec::new(),
+                emit_blocked_residual_bindings: Vec::new(),
             },
             EvaluatedOwnerSet {
                 status: "blocked_residual_dep".to_string(),
                 owner_ids: vec!["owner:2".to_string()],
                 cycle_blockers: Vec::new(),
                 residual_dependency_blockers: vec!["dep:Foo".to_string()],
+                emit_blocked_residual_bindings: Vec::new(),
             },
             EvaluatedOwnerSet {
                 status: "peelable_now".to_string(),
                 owner_ids: vec!["owner:0".to_string()],
                 cycle_blockers: Vec::new(),
                 residual_dependency_blockers: Vec::new(),
+                emit_blocked_residual_bindings: Vec::new(),
             },
         ];
 
@@ -643,6 +676,31 @@ mod tests {
             vec![ForbiddenRecord::ResidualDependency {
                 missing: vec!["dep:Foo".to_string()]
             }]
+        );
+    }
+
+    #[test]
+    fn emit_resolvability_blocker_surfaces_in_forbidden() {
+        let graph = graph_fixture();
+        let evaluated = vec![EvaluatedOwnerSet {
+            status: "blocked_emit_resolvability".to_string(),
+            owner_ids: vec!["owner:0".to_string()],
+            cycle_blockers: Vec::new(),
+            residual_dependency_blockers: Vec::new(),
+            emit_blocked_residual_bindings: vec!["helper".to_string(), "internal".to_string()],
+        }];
+
+        let inventory = build_inventory_from(&graph, &evaluated, &BTreeMap::new());
+        let zz = inventory
+            .iter()
+            .find(|record| record.candidate_id == "peel_candidate:owner:0")
+            .expect("ZZ candidate should be present");
+
+        assert_eq!(
+            zz.forbidden,
+            vec![ForbiddenRecord::EmitResolvability {
+                missing: vec!["helper".to_string(), "internal".to_string()],
+            }],
         );
     }
 

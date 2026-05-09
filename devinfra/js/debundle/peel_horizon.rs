@@ -658,6 +658,7 @@ mod tests {
                 residual_destinations: Vec::new(),
                 minimal_peel_sets,
                 residual_owner_horizon: Vec::new(),
+                evaluated_owner_sets: Vec::new(),
             },
         }
     }
@@ -680,6 +681,7 @@ mod tests {
                     export_name: binding.to_string(),
                 })
                 .collect(),
+            emit_blocked_residual_bindings: Vec::new(),
         }
     }
 

@@ -81,6 +81,40 @@ pub struct OwnerGraphPeelabilityReport {
     pub residual_destinations: Vec<ModuleReportRef>,
     pub minimal_peel_sets: Vec<OwnerGraphPeelSetReport>,
     pub residual_owner_horizon: Vec<ResidualOwnerPeelHorizonReport>,
+    /// Every peel candidate the analyzer evaluated, with its
+    /// terminal status. `minimal_peel_sets[]` is the subset where
+    /// `status == peelable_now`; this list also surfaces blocked
+    /// candidates so downstream tooling (peel inventory, lane
+    /// dispatchers) can see WHY a candidate was rejected — including
+    /// the new `blocked_emit_resolvability` projection that lifts
+    /// `materialize_logical_modules`'s "moved module references
+    /// residual entry binding(s) … not exported by entry" rejection
+    /// into peelability.
+    #[serde(default)]
+    pub evaluated_owner_sets: Vec<EvaluatedPeelCandidateReport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvaluatedPeelCandidateReport {
+    pub candidate_id: String,
+    pub owner_ids: Vec<String>,
+    pub members: Vec<BindingReport>,
+    pub status: PeelCandidateStatus,
+    /// Owner-edge ids that close the cycle for `BlockedCycle`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycle_blockers: Vec<String>,
+    /// Owner ids whose residual dependency forces `BlockedResidualDependency`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub residual_dependency_blockers: Vec<String>,
+    /// Residual binding names referenced by the candidate's moved
+    /// bodies that aren't on entry's export list (post-peel). Empty
+    /// unless `status == blocked_emit_resolvability`. Mirrors the
+    /// materializer's "moved module references residual entry
+    /// binding(s) … not exported by entry" rejection so agents can
+    /// pre-filter unpeelable candidates without invoking the
+    /// materializer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emit_blocked_residual_bindings: Vec<BindingName>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,6 +152,13 @@ pub struct OwnerGraphPeelSetReport {
     pub candidate_id: String,
     pub owner_ids: Vec<String>,
     pub members: Vec<BindingReport>,
+    /// Always empty for entries in `minimal_peel_sets[]` (those are
+    /// the `peelable_now` candidates; if this list weren't empty the
+    /// candidate would be `blocked_emit_resolvability` instead). Kept
+    /// on the schema so JSON consumers see a stable shape next to
+    /// `evaluated_owner_sets[].emit_blocked_residual_bindings`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emit_blocked_residual_bindings: Vec<BindingName>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -126,6 +167,13 @@ pub enum PeelCandidateStatus {
     PeelableNow,
     BlockedCycle,
     BlockedResidualDependency,
+    /// The candidate's moved bodies reference residual entry
+    /// binding(s) that aren't on entry's post-peel export list.
+    /// Lifted from `materialize_logical_modules`'s
+    /// "moved module references residual entry binding(s) … not
+    /// exported by entry" rejection — agents read this to skip
+    /// candidates the materializer would reject.
+    BlockedEmitResolvability,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -374,6 +374,7 @@ fn materialize_logical_chunk(
         runtime_import_facts,
         declarations,
         declaration_by_name,
+        pre_existing_entry_exports,
     } = chunk_ast_analysis;
     let requests = time_phase!(timings, "build_requests", {
         logical_requests_for_chunk(
@@ -538,6 +539,7 @@ fn materialize_logical_chunk(
                 logical_modules,
                 chunk_renames_map.clone(),
             )
+            .with_pre_existing_entry_exports(pre_existing_entry_exports.clone())
         })
     };
     let schedule_report = time_phase!(timings, "validate_schedule", { schedule.validate() });
@@ -1440,14 +1442,27 @@ struct ChunkAstAnalysis {
     runtime_import_facts: RuntimeImportFacts,
     declarations: Vec<TopLevelDecl>,
     declaration_by_name: BTreeMap<String, usize>,
+    /// Names that the source chunk's entry already exports (via
+    /// `export { foo, bar }` re-exports of local bindings, or
+    /// `export const foo = …` style declarations). Passed to
+    /// [`Schedule::with_pre_existing_entry_exports`] so
+    /// peelability's emit-resolvability projection can predict
+    /// the materializer's "moved module references residual entry
+    /// binding(s) … not exported by entry" rejection without
+    /// re-walking the AST.
+    pre_existing_entry_exports: BTreeSet<String>,
 }
 
 fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     let mut imports = BTreeMap::<String, RuntimeImportInfo>::new();
     let mut declarations = Vec::new();
+    let mut pre_existing_entry_exports = BTreeSet::<String>::new();
     for (ordinal, item) in module.body.iter().enumerate() {
         let (names, exported) = top_level_declaration_names(item);
         if !names.is_empty() {
+            if exported {
+                pre_existing_entry_exports.extend(names.iter().cloned());
+            }
             declarations.push(TopLevelDecl {
                 ordinal,
                 names,
@@ -1455,6 +1470,7 @@ fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
             });
         }
         record_runtime_imports(item, &mut imports);
+        record_pre_existing_named_exports(item, &mut pre_existing_entry_exports);
     }
     let declaration_by_name = declarations
         .iter()
@@ -1464,6 +1480,32 @@ fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         runtime_import_facts: RuntimeImportFacts { imports },
         declarations,
         declaration_by_name,
+        pre_existing_entry_exports,
+    }
+}
+
+/// Pick up `export { foo, bar as baz }` (no `from`) — i.e. re-exports
+/// of locally-declared bindings. `export … from …` is excluded
+/// because those don't bind a local name in entry. `ExportDecl`
+/// (e.g. `export const foo = …`) is already covered by
+/// `top_level_declaration_names` returning `(names, exported = true)`.
+fn record_pre_existing_named_exports(item: &ModuleItem, out: &mut BTreeSet<String>) {
+    let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
+        return;
+    };
+    if named.src.is_some() {
+        return;
+    }
+    for specifier in &named.specifiers {
+        let ExportSpecifier::Named(specifier) = specifier else {
+            continue;
+        };
+        // The exported value is the local binding (`orig`); the
+        // public name (`exported`) is irrelevant to the
+        // emit-resolvability check, which keys off the local name.
+        if let Some(local) = module_export_ident_name(&specifier.orig) {
+            out.insert(local);
+        }
     }
 }
 

@@ -62,5 +62,6 @@ rust_library(
         "cross_module_emission_test",
         "purity_test",
         "peelability_lazy_only_residual_test",
+        "peelability_emit_resolvability_test",
     ]
 ]

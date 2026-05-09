@@ -3,15 +3,15 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 
-use crate::graph::OwnerEdgeEntry;
+use crate::graph::{OwnerEdgeEntry, peel_emit_blocked_residual_bindings};
 use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
 use crate::{
-    BindingKind, BindingName, LogicalModuleIndex, ModuleId, OwnerGraphPeelSetReport,
-    OwnerGraphPeelabilityReport, OwnerId, OwnerNode, PeelCandidateStatus, QuotientEdgeReport,
-    ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
-    Schedule,
+    BindingKind, BindingName, EvaluatedPeelCandidateReport, LogicalModuleIndex, ModuleId,
+    OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport, OwnerId, OwnerNode, PeelCandidateStatus,
+    QuotientEdgeReport, ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport,
+    ResidualOwnerPeelStatus, Schedule,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -78,6 +78,16 @@ struct PeelCandidateEvaluation {
     owner_ids: Vec<OwnerId>,
     members: Vec<BindingName>,
     constraining_owner_edge_indices: BTreeSet<usize>,
+    /// Owner ids whose residual dependency forced the candidate into
+    /// `BlockedResidualDependency`. Empty for other statuses. Surfaces
+    /// in `evaluated_owner_sets[].residual_dependency_blockers` so
+    /// callers can pinpoint which residual neighbor blocked the peel.
+    residual_dependency_blocker_owner_ids: Vec<OwnerId>,
+    /// Residual binding names that the candidate's moved bodies
+    /// reference but entry doesn't export — populated only when
+    /// `status == BlockedEmitResolvability`. SSOT'd via
+    /// [`peel_emit_blocked_residual_bindings`] in `graph.rs`.
+    emit_blocked_residual_bindings: Vec<BindingName>,
 }
 
 pub(crate) fn build_peelability_report(
@@ -158,6 +168,29 @@ pub(crate) fn build_peelability_report(
             candidate_id: candidate.id.clone(),
             owner_ids: candidate.owner_ids.iter().copied().map(owner_key).collect(),
             members: binding_reports(schedule, candidate.members.iter()),
+            emit_blocked_residual_bindings: candidate.emit_blocked_residual_bindings.clone(),
+        })
+        .collect();
+
+    let evaluated_owner_sets = candidates
+        .iter()
+        .map(|candidate| EvaluatedPeelCandidateReport {
+            candidate_id: candidate.id.clone(),
+            owner_ids: candidate.owner_ids.iter().copied().map(owner_key).collect(),
+            members: binding_reports(schedule, candidate.members.iter()),
+            status: candidate.status,
+            cycle_blockers: candidate
+                .constraining_owner_edge_indices
+                .iter()
+                .filter_map(|idx| owner_edges.get(*idx).map(|edge| edge.id.clone()))
+                .collect(),
+            residual_dependency_blockers: candidate
+                .residual_dependency_blocker_owner_ids
+                .iter()
+                .copied()
+                .map(owner_key)
+                .collect(),
+            emit_blocked_residual_bindings: candidate.emit_blocked_residual_bindings.clone(),
         })
         .collect();
 
@@ -168,6 +201,7 @@ pub(crate) fn build_peelability_report(
             .collect(),
         minimal_peel_sets,
         residual_owner_horizon,
+        evaluated_owner_sets,
     }
 }
 
@@ -653,8 +687,9 @@ fn evaluate_residual_peel_candidate(
     let moved_owners: BTreeSet<OwnerId> = owner_ids.iter().copied().collect();
     let owner_id_keys: Vec<String> = owner_ids.iter().copied().map(owner_key).collect();
     let candidate_id = format!("peel_candidate:{}", owner_id_keys.join("+"));
-    let has_residual_dependency =
-        candidate_has_residual_dependency(schedule, context, &moved_owners);
+    let residual_dependency_blocker_owner_ids =
+        candidate_residual_dependency_blocker_owner_ids(schedule, context, &moved_owners);
+    let has_residual_dependency = !residual_dependency_blocker_owner_ids.is_empty();
     let cross_destination_write_edge_indices =
         candidate_cross_destination_write_edge_indices(context, &moved_owners);
     let constraining_owner_edge_indices = if has_residual_dependency {
@@ -666,10 +701,44 @@ fn evaluate_residual_peel_candidate(
             candidate_incident_edges(schedule, context, &moved_owners);
         candidate_blocking_scc_owner_edge_indices(context, &candidate_edges, &adjustment)
     };
+
+    // Emit-resolvability projection: even if the candidate passes
+    // cycle/realizability checks, `materialize_logical_modules` will
+    // reject it when a moved body references a residual entry binding
+    // that isn't on entry's export list. Compute that here using the
+    // shared predicate so peelability and the materializer can't
+    // drift (cf. `constrains_realizability` SSOT in f86e84b7e).
+    //
+    // Skipped when the schedule was built without AST analysis (no
+    // `pre_existing_entry_exports` set) — that's the test-helper case
+    // where there's no chunk source to derive exports from. Real
+    // pipeline runs always populate the set.
+    let blocks_via_cycle = !constraining_owner_edge_indices.is_empty();
+    let emit_blocked_residual_bindings: Vec<BindingName> =
+        if has_residual_dependency || blocks_via_cycle {
+            // Already blocked for a stronger reason; no need to also
+            // surface emit-resolvability blockers.
+            Vec::new()
+        } else {
+            match post_peel_entry_exports_for_candidate(schedule, &declared) {
+                Some(post_peel_entry_exports) => peel_emit_blocked_residual_bindings(
+                    &schedule.owner_graph,
+                    context.owner_edges,
+                    &moved_owners,
+                    &post_peel_entry_exports,
+                )
+                .into_iter()
+                .collect(),
+                None => Vec::new(),
+            }
+        };
+
     let status = if has_residual_dependency {
         PeelCandidateStatus::BlockedResidualDependency
-    } else if !constraining_owner_edge_indices.is_empty() {
+    } else if blocks_via_cycle {
         PeelCandidateStatus::BlockedCycle
+    } else if !emit_blocked_residual_bindings.is_empty() {
+        PeelCandidateStatus::BlockedEmitResolvability
     } else {
         PeelCandidateStatus::PeelableNow
     };
@@ -680,7 +749,29 @@ fn evaluate_residual_peel_candidate(
         owner_ids: owner_ids.to_vec(),
         members: declared,
         constraining_owner_edge_indices,
+        residual_dependency_blocker_owner_ids,
+        emit_blocked_residual_bindings,
     }
+}
+
+/// Post-peel entry export set for a candidate: the schedule's pre-peel
+/// entry exports (pre-existing source exports plus bindings of owners
+/// already in a logical module) plus the candidate's bindings, which
+/// `entry_exports_for_moved_bindings` would auto-export from entry on
+/// emit.
+///
+/// Returns `None` when the schedule has no AST-derived
+/// pre-existing-export set; callers treat that as "skip the
+/// emit-resolvability projection".
+fn post_peel_entry_exports_for_candidate(
+    schedule: &Schedule,
+    candidate_members: &[BindingName],
+) -> Option<BTreeSet<BindingName>> {
+    let mut exports = schedule.entry_exported_binding_names()?;
+    for member in candidate_members {
+        exports.insert(member.clone());
+    }
+    Some(exports)
 }
 
 fn candidate_cross_destination_write_edge_indices(
@@ -702,11 +793,12 @@ fn candidate_cross_destination_write_edge_indices(
         .collect()
 }
 
-fn candidate_has_residual_dependency(
+fn candidate_residual_dependency_blocker_owner_ids(
     schedule: &Schedule,
     context: &PeelabilityContext<'_>,
     moved_owners: &BTreeSet<OwnerId>,
-) -> bool {
+) -> Vec<OwnerId> {
+    let mut blockers = BTreeSet::new();
     for owner_id in moved_owners {
         for &edge_idx in context.owner_out_edge_indices(*owner_id) {
             let edge = &context.owner_edges[edge_idx];
@@ -722,10 +814,10 @@ fn candidate_has_residual_dependency(
             if to_node.destination != ModuleId::ResidualEntry {
                 continue;
             }
-            return true;
+            blockers.insert(edge.to);
         }
     }
-    false
+    blockers.into_iter().collect()
 }
 
 fn candidate_incident_edges(

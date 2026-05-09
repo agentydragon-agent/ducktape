@@ -37,11 +37,11 @@ pub use ids::{
     StatementOrdinal,
 };
 pub use report_schema::{
-    BindingReport, ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-    OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport, OwnerGraphQuotientReport,
-    OwnerGraphReport, PeelCandidateStatus, QuotientEdgeReport, QuotientSccReport,
-    ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
-    SourceLocation,
+    BindingReport, EvaluatedPeelCandidateReport, ModuleReportRef, OwnerGraphEdgeReport,
+    OwnerGraphNodeReport, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport,
+    OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus, QuotientEdgeReport,
+    QuotientSccReport, ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport,
+    ResidualOwnerPeelStatus, SourceLocation,
 };
 pub use schedule::Schedule;
 pub use validation::{
