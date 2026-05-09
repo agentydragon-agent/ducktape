@@ -10,10 +10,11 @@ use artifact::{
     ChunkArtifact, ChunkManifest, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
     JsFileBody, JsPipelineArtifact, LoadedJsChunks, ParsedJsFileRecord,
 };
-use js_ast::{ParsedJsModule, parse_js_module, emit_js_module};
+use js_ast::{ParsedJsModule, emit_js_module, parse_js_module};
 use program_analysis::{
     ProgramAnalysis, analyze_program_shallow, build_chunk_manifest_from_analysis,
 };
+use rewrite_specifiers::ast_has_rewritable_specifier;
 use spec::TransformSpec;
 
 const CANONICALIZE_HEADER_LINES: &[&str] = &[
@@ -62,12 +63,15 @@ pub fn prepare_js_chunks(
                 chunk_id: chunk_id.clone(),
                 chunk: JsChunk {
                     entry_file: entry_file.clone(),
-                    files: BTreeMap::from([(entry_file.clone(), JsFile {
-                        path: entry_file.clone(),
-                        body: JsFileBody::Source(original_source.clone()),
-                        header_lines: Vec::new(),
-                        metadata: FileMetadata::default(),
-                    })]),
+                    files: BTreeMap::from([(
+                        entry_file.clone(),
+                        JsFile {
+                            path: entry_file.clone(),
+                            body: JsFileBody::Source(original_source.clone()),
+                            header_lines: Vec::new(),
+                            metadata: FileMetadata::default(),
+                        },
+                    )]),
                     metadata: chunk.metadata,
                 },
                 original_source,
@@ -99,16 +103,23 @@ pub fn prepare_js_chunks(
         })
         .collect();
 
-    // Second pass: replace ASTs with original source for chunks that don't need them
+    // Second pass: replace ASTs with original source for chunks that don't need them.
+    //
+    // A chunk needs to keep its AST if any downstream stage will read it. The
+    // predicates below cover spec-driven stages (logical modules, residual
+    // modules, renames, vendor); on top of those, `rewrite_chunk_entry_specifiers`
+    // runs unconditionally for every chunk, so we must also keep the AST whenever
+    // that stage would actually rewrite anything in this chunk's entry. The
+    // unified predicate `ast_has_rewritable_specifier` mirrors `rewrite_source`
+    // exactly — both treat a specifier as rewriteable iff it is a relative path
+    // (`.` or `/` prefix). Sharing the predicate prevents drift if either side
+    // grows.
     let prepared_chunks = parsed_chunks
         .into_iter()
         .map(|(chunk_id, mut prepared, original_source)| {
-            let needs_ast = needs_ast_for_chunk(
-                &chunk_id,
-                spec,
-                &import_index,
-                &vendor_target_chunk_ids,
-            );
+            let needs_ast =
+                needs_ast_for_chunk(&chunk_id, spec, &import_index, &vendor_target_chunk_ids)
+                    || entry_has_rewritable_specifier(&prepared);
 
             if !needs_ast {
                 // Replace AST with original source
@@ -316,19 +327,15 @@ fn build_import_index(chunks: &[(String, PreparedChunk, String)]) -> BTreeMap<St
     chunks
         .iter()
         .flat_map(|(chunk_id, prepared, _)| {
-            prepared
-                .manifest
-                .imports
-                .iter()
-                .filter_map(move |import| {
-                    // Extract target chunk id from import source
-                    // Import sources are relative paths like "./other-chunk.js"
-                    // We need to convert them to chunk ids
-                    let target_chunk_id = import.source.strip_prefix("./").and_then(|s| {
-                        s.strip_suffix(".js").or(Some(s)) // Try both .js and no extension
-                    })?;
-                    Some((target_chunk_id.to_string(), chunk_id.clone()))
-                })
+            prepared.manifest.imports.iter().filter_map(move |import| {
+                // Extract target chunk id from import source
+                // Import sources are relative paths like "./other-chunk.js"
+                // We need to convert them to chunk ids
+                let target_chunk_id = import.source.strip_prefix("./").and_then(|s| {
+                    s.strip_suffix(".js").or(Some(s)) // Try both .js and no extension
+                })?;
+                Some((target_chunk_id.to_string(), chunk_id.clone()))
+            })
         })
         .fold(
             BTreeMap::new(),
@@ -339,6 +346,22 @@ fn build_import_index(chunks: &[(String, PreparedChunk, String)]) -> BTreeMap<St
                 acc
             },
         )
+}
+
+/// True iff this chunk's entry-file AST contains any specifier that
+/// `rewrite_chunk_entry_specifiers` could rewrite. Looking at the actual
+/// AST (rather than the manifest's static-import list) is what makes this
+/// coherent with the rewrite phase: we cover dynamic `import(...)` and
+/// `new Worker(...)` shapes too, and we apply the same relative-path
+/// gate (`.` / `/` prefix) that `rewrite_source` uses.
+fn entry_has_rewritable_specifier(prepared: &PreparedChunk) -> bool {
+    let Some(entry) = prepared.files.get(&prepared.entry_file) else {
+        return false;
+    };
+    let JsFileBody::Ast(parsed) = &entry.body else {
+        return false;
+    };
+    ast_has_rewritable_specifier(parsed)
 }
 
 /// Determine if a chunk needs to keep its AST based on the spec and import index.

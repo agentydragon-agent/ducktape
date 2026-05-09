@@ -19,7 +19,6 @@ pub struct EmitBrowserHarnessOptions {
     pub asset_summary_path: PathBuf,
     pub force: bool,
     pub out_dir: PathBuf,
-    pub parse_plan_path: Option<PathBuf>,
     pub snapshot_root: PathBuf,
 }
 
@@ -126,10 +125,6 @@ pub fn emit_browser_harness(
     // manifest.
     let queue = compute_identifier_rename_queue(artifact)?;
     let queue_path = write_queue(&options.out_dir, &queue)?;
-    let parse_plan = options
-        .parse_plan_path
-        .as_deref()
-        .map(|path| manifest_relative_path(&manifest_path, path));
     let manifest = HarnessManifest {
         source_html: rel(&source_html_in_tree),
         asset_summary_path: rel(&asset_summary_in_tree),
@@ -142,7 +137,6 @@ pub fn emit_browser_harness(
             .iter()
             .map(|entry| entry.path.clone())
             .collect(),
-        parse_plan,
         identifier_rename_queue: rel(&queue_path),
         output_metrics,
         generated: HarnessGeneratedManifest {
@@ -187,8 +181,6 @@ struct HarnessManifest {
     module_preloads: Vec<String>,
     /// Path to the identifier rename priority queue JSON (always
     /// emitted as a side output). Manifest-relative.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    parse_plan: Option<String>,
     identifier_rename_queue: String,
     output_metrics: OutputMetrics,
     generated: HarnessGeneratedManifest,

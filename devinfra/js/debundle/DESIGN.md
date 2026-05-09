@@ -1553,8 +1553,6 @@ YAML conventions.
 | `validate_transform_spec`        | <spec.rs>                             | Always after spec load.                                                                                                              |
 | `load_js_chunks`                 | <artifact.rs>                         | Always; configured by `inputs`.                                                                                                      |
 | `prepare_js_chunks`              | <prepare_chunks.rs>                   | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.      |
-| `build_ast_parse_plan`           | <pipeline.rs>                         | Always after preparation. Uses manifest import facts and the spec to explain which chunks are selected by downstream AST transforms. |
-| `write_parse_plan_report`        | <pipeline.rs>                         | When an output tree is requested. Writes aggregate parse/analyze timings and per-chunk AST-transform selection reasons.              |
 | `build_artifact_indexes`         | <artifact.rs>                         | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                  |
 | `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>               | Always, after chunk preparation and before data-gated transforms.                                                                    |
 | `apply_vendor_annotations`       | <vendor.rs>                           | When the `vendor` map is non-empty.                                                                                                  |

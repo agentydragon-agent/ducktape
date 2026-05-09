@@ -380,7 +380,6 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             asset_summary_path: cfg.asset_summary_path.clone(),
             force,
             out_dir: cfg.out_dir.clone(),
-            parse_plan_path: None,
             snapshot_root: cfg.snapshot_root.clone(),
         };
         run_step(&mut steps, PipelineStage::EmitBrowserHarness, || {
@@ -410,7 +409,6 @@ fn spec_source_description(source: &TransformSpecSource) -> String {
         TransformSpecSource::Tree(options) => options.config_path.display().to_string(),
     }
 }
-
 
 fn run_step(
     steps: &mut Vec<TransformStepSummary>,
@@ -563,7 +561,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn run_transform_cli_writes_spec_pipeline_outputs() -> Result<()> {
         let temp = tempfile::tempdir()?;
@@ -631,12 +628,10 @@ mod tests {
         })?;
 
         assert_eq!(summary.steps.len(), 2);
-        assert_eq!(summary.preparation_steps.len(), 7);
+        assert_eq!(summary.preparation_steps.len(), 5);
         let rendered_summary = render_transform_summary(&summary);
         assert!(rendered_summary.contains("- load_transform_spec"));
-        assert!(rendered_summary.contains("- build_ast_parse_plan"));
         assert!(rendered_summary.contains("- prepare_js_chunks"));
-        assert!(rendered_summary.contains("- write_parse_plan_report"));
         assert!(rendered_summary.contains("- build_artifact_indexes"));
         assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
         assert!(rendered_summary.contains("- emit_browser_harness"));
@@ -695,11 +690,9 @@ mod tests {
             manifest.get("schema_version").is_none(),
             "harness manifest should not carry a compatibility schema_version"
         );
-        assert_eq!(
-            manifest
-                .get("parse_plan")
-                .and_then(serde_json::Value::as_str),
-            Some("analysis/parse_plan.json")
+        assert!(
+            manifest.get("parse_plan").is_none(),
+            "harness manifest should no longer carry a parse_plan field"
         );
         for field in [
             "source_html",
@@ -734,92 +727,6 @@ mod tests {
                 .and_then(serde_json::Value::as_array)
                 .map(Vec::len),
             Some(2)
-        );
-        let parse_plan: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(out.join("analysis/parse_plan.json"))?)?;
-        assert_eq!(
-            parse_plan.get("mode").and_then(serde_json::Value::as_str),
-            Some("full")
-        );
-        assert_eq!(
-            parse_plan
-                .pointer("/counts/chunks")
-                .and_then(serde_json::Value::as_u64),
-            Some(2)
-        );
-        assert_eq!(
-            parse_plan
-                .pointer("/counts/parsed_chunks")
-                .and_then(serde_json::Value::as_u64),
-            Some(2)
-        );
-        assert!(
-            parse_plan
-                .pointer("/timings/parse_duration/secs")
-                .and_then(serde_json::Value::as_u64)
-                .is_some()
-        );
-        assert!(
-            parse_plan
-                .pointer("/timings/analysis_duration/secs")
-                .and_then(serde_json::Value::as_u64)
-                .is_some()
-        );
-        assert!(
-            parse_plan
-                .pointer("/timings/parse_and_analysis_duration/secs")
-                .and_then(serde_json::Value::as_u64)
-                .is_some()
-        );
-        assert!(
-            parse_plan
-                .get("chunks")
-                .and_then(serde_json::Value::as_array)
-                .unwrap()
-                .iter()
-                .all(|chunk| chunk
-                    .get("reasons")
-                    .and_then(serde_json::Value::as_array)
-                    .unwrap()
-                    .iter()
-                    .any(
-                        |reason| reason.get("kind").and_then(serde_json::Value::as_str)
-                            == Some("full_pipeline")
-                    ))
-        );
-        assert!(
-            parse_plan
-                .get("chunks")
-                .and_then(serde_json::Value::as_array)
-                .unwrap()
-                .iter()
-                .all(|chunk| chunk
-                    .get("analysis_duration")
-                    .and_then(|duration| duration.get("secs"))
-                    .and_then(serde_json::Value::as_u64)
-                    .is_some()
-                    && chunk
-                        .get("analysis_duration")
-                        .and_then(|duration| duration.get("nanos"))
-                        .and_then(serde_json::Value::as_u64)
-                        .is_some())
-        );
-        assert!(
-            parse_plan
-                .get("chunks")
-                .and_then(serde_json::Value::as_array)
-                .unwrap()
-                .iter()
-                .all(|chunk| chunk
-                    .get("parse_duration")
-                    .and_then(|duration| duration.get("secs"))
-                    .and_then(serde_json::Value::as_u64)
-                    .is_some()
-                    && chunk
-                        .get("parse_duration")
-                        .and_then(|duration| duration.get("nanos"))
-                        .and_then(serde_json::Value::as_u64)
-                        .is_some())
         );
         Ok(())
     }
@@ -918,5 +825,4 @@ mod tests {
             emit_browser_harness: None,
         }
     }
-
 }

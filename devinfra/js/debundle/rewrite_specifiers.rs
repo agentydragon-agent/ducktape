@@ -3,7 +3,7 @@ use rayon::prelude::*;
 use std::path::Path;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
-use swc_ecma_visit::{VisitMut, VisitMutWith};
+use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use artifact::{
     ArtifactIndexes, FileRole, ImportReferenceKind, JsFile, JsFileAstParts, JsPipelineArtifact,
@@ -154,6 +154,88 @@ fn should_rewrite_file(file: &JsFile) -> bool {
         return false;
     }
     true
+}
+
+/// Returns true when the parsed module contains any specifier that
+/// `rewrite_chunk_entry_specifiers` could rewrite. This is the
+/// canonical predicate for "do we still need this AST after parse?":
+/// any `import`, `export … from`, `import(...)`, or
+/// `new Worker(...)` / `new SharedWorker(...)` whose source is a
+/// relative path (starts with `.` or `/`). All other shapes are
+/// short-circuited inside `rewrite_source`, so they would never
+/// trigger a rewrite.
+///
+/// `prepare_js_chunks` consults this to decide whether to drop the
+/// AST in favor of the original source: dropping is safe iff this
+/// returns false. Sharing the predicate between the prepare and
+/// rewrite stages prevents drift — if `rewrite_chunk_entry_specifiers`
+/// learns about a new specifier shape, this function must learn about
+/// it too.
+pub fn ast_has_rewritable_specifier(parsed: &ParsedJsModule) -> bool {
+    let mut detector = RewritableSpecifierDetector { found: false };
+    parsed.module.visit_with(&mut detector);
+    detector.found
+}
+
+fn is_relative_specifier(source: &str) -> bool {
+    source.starts_with('.') || source.starts_with('/')
+}
+
+struct RewritableSpecifierDetector {
+    found: bool,
+}
+
+impl Visit for RewritableSpecifierDetector {
+    fn visit_import_decl(&mut self, node: &ImportDecl) {
+        if !self.found && is_relative_specifier(&str_value(&node.src)) {
+            self.found = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_named_export(&mut self, node: &NamedExport) {
+        if !self.found
+            && let Some(src) = &node.src
+            && is_relative_specifier(&str_value(src))
+        {
+            self.found = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_export_all(&mut self, node: &ExportAll) {
+        if !self.found && is_relative_specifier(&str_value(&node.src)) {
+            self.found = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if !self.found
+            && matches!(node.callee, Callee::Import(_))
+            && let Some(first) = node.args.first()
+            && first.spread.is_none()
+            && let Expr::Lit(Lit::Str(string)) = &*first.expr
+            && is_relative_specifier(&str_value(string))
+        {
+            self.found = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_new_expr(&mut self, node: &NewExpr) {
+        if !self.found
+            && is_runtime_worker_constructor(&node.callee)
+            && let Some(args) = &node.args
+            && let Some(first) = args.first()
+            && first.spread.is_none()
+            && let Expr::Lit(Lit::Str(string)) = &*first.expr
+            && is_relative_specifier(&str_value(string))
+        {
+            self.found = true;
+        }
+        node.visit_children_with(self);
+    }
 }
 
 struct RuntimeSourceRewriter<'a> {

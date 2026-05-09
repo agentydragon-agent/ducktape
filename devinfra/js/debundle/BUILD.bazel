@@ -321,6 +321,7 @@ rust_library(
         ":artifact",
         ":js_ast",
         ":program_analysis",
+        ":rewrite_specifiers",
         ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",
