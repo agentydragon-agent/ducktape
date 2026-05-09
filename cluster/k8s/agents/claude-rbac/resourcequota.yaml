@@ -9,8 +9,8 @@ spec:
     requests.memory: 16Gi
     limits.cpu: "8"
     limits.memory: 16Gi
-    pods: "20"
-    services: "10"
-    configmaps: "20"
-    persistentvolumeclaims: "10"
+    pods: "50"
+    services: "30"
+    configmaps: "30"
+    persistentvolumeclaims: "30"
     requests.storage: 50Gi
