@@ -108,7 +108,18 @@ impl EdgeReason {
     }
 
     pub(crate) fn constrains_realizability(&self) -> bool {
-        !self.is_lazy_read()
+        // Whitelist: every variant except `LazyRead` constrains
+        // realizability today. Stated positively (rather than as
+        // `!self.is_lazy_read()`) so adding a new `EdgeReason`
+        // variant forces an explicit decision here instead of
+        // silently classifying it as constraining.
+        matches!(
+            self,
+            Self::AtInitRead { .. }
+                | Self::AtInitWrite { .. }
+                | Self::LazyWrite { .. }
+                | Self::SideEffectOrder { .. }
+        )
     }
 }
 
@@ -212,13 +223,19 @@ impl EdgeMetadata {
         self.reasons.iter().any(EdgeReason::is_binding_write)
     }
 
-    /// `true` if this edge constrains realizability — an at-init
-    /// read (`R`), a side-effect ordering (`S`) edge, or a rebinding
-    /// write. Lazy read-only edges don't, because the reads they
+    /// `true` if this edge constrains realizability — at least one
+    /// of its reasons is realizability-constraining (an at-init
+    /// read `R`, a side-effect ordering `S` edge, or a rebinding
+    /// write). Lazy read-only edges don't, because the reads they
     /// represent fire after every module in the cycle has finished
     /// evaluating.
+    ///
+    /// Delegates to `EdgeReason::constrains_realizability` to keep
+    /// the per-edge and per-reason definitions in lockstep.
     pub fn constrains_realizability(&self) -> bool {
-        self.has_at_init_read() || self.has_side_effect_ordering() || self.has_binding_write()
+        self.reasons
+            .iter()
+            .any(EdgeReason::constrains_realizability)
     }
 }
 

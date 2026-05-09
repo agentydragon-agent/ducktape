@@ -414,7 +414,7 @@ fn compute_realizability_cut(
             .remove_edge(u, v)
             .expect("edge picked from working graph just above");
         for reason in &weight.reasons {
-            if reason.is_lazy_read() {
+            if !reason.constrains_realizability() {
                 continue;
             }
             cut.push(CycleEdge {
