@@ -690,7 +690,7 @@ screenshot, mouse, keyboard, OCR). K8s manifests and Dockerfiles created in
 
 ### Phase 2: Add Visual Capabilities
 
-**Note:** Kagent kustomizations (`kagent`, `kagent-namespace`, `kagent-secrets`) are
+**Note:** Kagent kustomizations (`kagent-{namespace,secrets}` and `kagent`) are
 currently **suspended** in Flux. Kagent is not actively deployed. Resume Phase 2 by
 unsuspending these kustomizations.
 

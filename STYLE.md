@@ -339,3 +339,20 @@ Use backtick inline code (`` `...` ``) or fenced code blocks for any code-like t
 - Set JUPYTER\_\* dirs and HOME
 - Map fs.read_paths → ro binds
 ```
+
+### Brace-Expansion Shorthand for Lists
+
+When listing multiple items that share a common prefix, prefer brace-expansion shorthand over naming each individually. Only use when there are 2+ suffixed variants (single-item braces like `foo-{bar}` are worse than plain `foo-bar`).
+
+```markdown
+# Good — concise, pattern is clear
+
+- **Gitea**: `gitea-{namespace,secrets,db,admin-token,servicemonitor}`
+- **kagent**: `kagent-{crds,db,secrets}`
+- Directories: `k8s/langfuse/{namespace,secrets,db,app}/`
+
+# Bad — verbose, every item spelled out
+
+- **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `gitea-db`,
+  `gitea-admin-token`, `gitea-servicemonitor`
+```
