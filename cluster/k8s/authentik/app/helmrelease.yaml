@@ -68,10 +68,10 @@ spec:
 
       # Secrets now loaded per-component via server.envFrom and worker.envFrom
 
-    # Server deployment — 2 replicas spread across VPS nodes
+    # Server deployment — single replica (VPS memory too tight for 2+ with current requests)
     server:
       name: server
-      replicas: 2
+      replicas: 1
 
       # Preferred (not required) anti-affinity allows a surge pod to land on
       # an occupied node while still spreading replicas across nodes when possible.
@@ -148,10 +148,10 @@ spec:
           cpu: 500m
           memory: 1Gi
 
-    # Worker deployment — 2 replicas spread across VPS nodes
+    # Worker deployment — single replica
     worker:
       name: worker
-      replicas: 2
+      replicas: 1
 
       deploymentStrategy:
         type: RollingUpdate
