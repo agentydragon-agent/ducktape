@@ -4,7 +4,8 @@ metadata:
   name: gitea-db
   namespace: flux-system
 spec:
-  suspend: false
+  suspend: true
+  # Wyrm2 offline during relocation — suspended until hardware is back up.
   retryInterval: 1m
   interval: 10m
   timeout: 5m

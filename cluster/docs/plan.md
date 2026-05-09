@@ -15,8 +15,8 @@ CloudNativePG `local-path`.
 ## Suspended Kustomizations
 
 - **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `gitea-admin-token`,
-  `gitea-servicemonitor`, `authentik-blueprint-gitea-secret` — VPS memory pressure
-  (2026-03-17 OOM). Re-enable after rebalancing.
+  `gitea-servicemonitor` — re-suspended 2026-05-09 for wyrm2 relocation.
+  Resources and CNPG database deleted. Re-enable once hardware is back up.
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
 - **InvenTree**: `inventree`, `inventree-namespace`, `inventree-secrets`,
   `inventree-token-provisioner`, `authentik-blueprint-inventree-secret` — VPS memory pressure.
