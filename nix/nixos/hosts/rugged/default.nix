@@ -35,6 +35,7 @@ in
     ./foxconn-wwan.nix
     ./local_llm_arc.nix
     ./local_llm_npu.nix
+    ./iio-debug.nix
   ];
 
   # TODO: enable Attic substituter for cache.allegedly.works/{main,gaffer}.
@@ -90,6 +91,10 @@ in
   };
   # IIO sensor proxy for accelerometer (auto screen rotation)
   hardware.sensor.iio.enable = true;
+
+  # Capture state across suspend cycles + watchdog probes for the
+  # auto-rotate wedge. See debug/rugged/auto_rotate.md.
+  ducktape.iioDebug.enable = true;
 
   services = {
     avahi = {
