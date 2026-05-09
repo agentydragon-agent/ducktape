@@ -10,6 +10,16 @@
 # mutates the Deployment template AND the Pod-level rule fires at Pod
 # creation, volumes/env/mounts get duplicated. With autogen off, only
 # Pod admission is mutated.
+#
+# All rules restrict to CREATE operations only. The patchesJson6902 "add /-"
+# (append) has no idempotency check — if the policy re-evaluates on UPDATE,
+# it appends the same volume/env/mount a second time and the API server
+# rejects the request (duplicate volume name / mount path / env var). This
+# blocked the Kubernetes Job controller from PATCHing completed pods to
+# remove the batch.kubernetes.io/job-tracking finalizer, which prevented
+# Jobs from transitioning to Complete. Since proxy injection only needs to
+# happen at pod creation, matching CREATE-only avoids the re-mutation
+# entirely.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -34,6 +44,7 @@ spec:
           - resources:
               kinds: [Pod]
               namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              operations: [CREATE]
       mutate:
         patchesJson6902: |-
           - op: add
@@ -49,6 +60,7 @@ spec:
           - resources:
               kinds: [Pod]
               namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              operations: [CREATE]
       mutate:
         foreach:
           - list: "request.object.spec.containers"
@@ -101,6 +113,7 @@ spec:
           - resources:
               kinds: [Pod]
               namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              operations: [CREATE]
       preconditions:
         any:
           - key: "{{ (request.object.spec.initContainers || `[]`) | length(@) }}"
