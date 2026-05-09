@@ -25,7 +25,7 @@ CloudNativePG `local-path`.
   volumes on wyrm2. Namespace kept active for `claude-rbac` RoleBinding dependency.
 - **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
 - **Airlock**: `airlock` — unsuspended 2026-04-12 (FastAPI bug fixed, new image deployed). `google-workspace-mcp` depends on this.
-- **ARC**: `arc-{namespace}` — suspended 2026-04-11, resources deleted. Secrets
+- **ARC**: `arc-namespace` — suspended 2026-04-11, resources deleted. Secrets
   (`arc-secrets`) are deployed. GitHub runner pod/statefulset removed.
 - **Props**: `props` — suspended 2026-04-06. Secrets (`props-secrets`) are deployed.
 - **Scanner**: `scanner` — suspended.
