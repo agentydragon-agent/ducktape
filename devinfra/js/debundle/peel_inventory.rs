@@ -8,7 +8,6 @@
 //! - `members` : `[(input_binding, export_name)]`. `export_name` differs
 //!   from `binding` when the rename queue has already named it readably.
 //! - `has_readable` : at least one member has a renamed export name.
-//! - `owner_set_kind` : `single_owner` | `owner_pair` | `owner_closure`.
 //! - `deferred_homes` : path-prefixes of `*.yaml.deferred` files (relative
 //!   to the modules root, with the suffix stripped) that currently list
 //!   any of the candidate's input bindings — the source the move drains.
@@ -35,7 +34,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use analysis::{OwnerGraphReport, PeelCandidateKind};
+use analysis::OwnerGraphReport;
 
 #[derive(Debug, Clone)]
 pub struct PeelInventoryOptions {
@@ -46,7 +45,7 @@ pub struct PeelInventoryOptions {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PeelInventoryRecord {
     pub candidate_id: String,
-    pub owner_set_kind: PeelCandidateKind,
+    pub owner_count: usize,
     /// `(input_binding, export_name)` pairs.
     pub members: Vec<(String, String)>,
     pub has_readable: bool,
@@ -192,7 +191,7 @@ fn build_inventory_from(
 
         inventory.push(PeelInventoryRecord {
             candidate_id: peel_set.candidate_id.clone(),
-            owner_set_kind: peel_set.owner_set_kind,
+            owner_count: peel_set.owner_ids.len(),
             members,
             has_readable,
             deferred_homes,
@@ -383,45 +382,21 @@ pub fn render_inventory(records: &[PeelInventoryRecord], view: InventoryView) ->
     }
 }
 
-fn owner_set_rank(kind: PeelCandidateKind) -> usize {
-    match kind {
-        PeelCandidateKind::SingleOwner => 0,
-        PeelCandidateKind::OwnerPair => 1,
-        PeelCandidateKind::OwnerClosure => 2,
-    }
-}
-
-fn owner_set_short(kind: PeelCandidateKind) -> &'static str {
-    match kind {
-        PeelCandidateKind::SingleOwner => "single",
-        PeelCandidateKind::OwnerPair => "owner_",
-        PeelCandidateKind::OwnerClosure => "owner_",
-    }
-}
-
-fn owner_set_long(kind: PeelCandidateKind) -> &'static str {
-    match kind {
-        PeelCandidateKind::SingleOwner => "single_owner",
-        PeelCandidateKind::OwnerPair => "owner_pair",
-        PeelCandidateKind::OwnerClosure => "owner_closure",
-    }
+/// Short owner-count label, e.g. `n=1`, `n=2`, `n=3`.
+fn owner_count_short(owner_count: usize) -> String {
+    format!("n={owner_count}")
 }
 
 fn render_flat(records: &[PeelInventoryRecord], limit: usize) -> String {
     let mut sorted: Vec<&PeelInventoryRecord> = records.iter().collect();
-    sorted.sort_by_key(|record| {
-        (
-            owner_set_rank(record.owner_set_kind),
-            Reverse(record.has_readable),
-        )
-    });
+    sorted.sort_by_key(|record| (record.owner_count, Reverse(record.has_readable)));
     let mut out = String::new();
     for record in sorted.into_iter().take(limit) {
         let members = format_members(&record.members);
         let marker = if record.has_readable { "★" } else { " " };
         out.push_str(&format!(
-            "  {marker} [{kind:14}] -> {dest:40}  {members}\n",
-            kind = owner_set_long(record.owner_set_kind),
+            "  {marker} [{label:14}] -> {dest:40}  {members}\n",
+            label = owner_count_short(record.owner_count),
             dest = record.proposed_dir,
             members = members,
         ));
@@ -449,9 +424,9 @@ fn render_by_destination(records: &[PeelInventoryRecord], limit: usize) -> Strin
         for record in candidates.into_iter().take(30) {
             let members = format_members(&record.members);
             let marker = if record.has_readable { "★" } else { " " };
-            let kind = owner_set_short(record.owner_set_kind);
+            let label = owner_count_short(record.owner_count);
             out.push_str(&format!(
-                "  {marker} [{kind}] {members}    (from {primary})\n",
+                "  {marker} [{label}] {members}    (from {primary})\n",
                 primary = record.primary_yaml,
             ));
         }
@@ -541,21 +516,18 @@ mod tests {
                     // Direct, single owner, has readable rename.
                     OwnerGraphPeelSetReport {
                         candidate_id: "peel_candidate:owner:0".to_string(),
-                        owner_set_kind: PeelCandidateKind::SingleOwner,
                         owner_ids: vec!["owner:0".to_string()],
                         members: vec![member("ZZ", "PaymentError")],
                     },
                     // Single owner with no readable rename and no deferred home.
                     OwnerGraphPeelSetReport {
                         candidate_id: "peel_candidate:owner:1".to_string(),
-                        owner_set_kind: PeelCandidateKind::SingleOwner,
                         owner_ids: vec!["owner:1".to_string()],
                         members: vec![member("createBillingRoute", "createBillingRoute")],
                     },
                     // Owner pair sharing one deferred home.
                     OwnerGraphPeelSetReport {
                         candidate_id: "peel_candidate:owner:2".to_string(),
-                        owner_set_kind: PeelCandidateKind::OwnerPair,
                         owner_ids: vec!["owner:2".to_string(), "owner:3".to_string()],
                         members: vec![member("aa", "loadInvoice"), member("bb", "bb")],
                     },

@@ -39,9 +39,9 @@ pub use ids::{
 pub use report_schema::{
     BindingReport, ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport,
     OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport, OwnerGraphQuotientReport,
-    OwnerGraphReport, PeelCandidateKind, PeelCandidateStatus, QuotientEdgeReport,
-    QuotientSccReport, ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport,
-    ResidualOwnerPeelStatus, SourceLocation,
+    OwnerGraphReport, PeelCandidateStatus, QuotientEdgeReport, QuotientSccReport,
+    ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
+    SourceLocation,
 };
 pub use schedule::Schedule;
 pub use validation::{

@@ -116,17 +116,8 @@ pub struct ResidualOwnerCompanionOptionReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OwnerGraphPeelSetReport {
     pub candidate_id: String,
-    pub owner_set_kind: PeelCandidateKind,
     pub owner_ids: Vec<String>,
     pub members: Vec<BindingReport>,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeelCandidateKind {
-    SingleOwner,
-    OwnerPair,
-    OwnerClosure,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]

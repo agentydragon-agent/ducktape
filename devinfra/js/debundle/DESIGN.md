@@ -958,8 +958,8 @@ candidate, it keeps internal constraining owner-edge evidence and
 seeds pairs from residual owners that are direct endpoints of those
 constraining edges. Each seeded pair is tested by the same
 fresh-destination quotient operation above. Only pairs whose
-candidate SCC is realizable are reported as
-`owner_set_kind: "owner_pair"` / `status: "peelable_now"`. This
+candidate SCC is realizable are reported as a peel set with
+`owner_ids.len() == 2` / `status: "peelable_now"`. This
 captures the common "A and B can move, but only together" case
 while keeping the report tied to actual cycle evidence instead of
 speculative all-pairs search.

@@ -9,9 +9,9 @@ use crate::reports::{
 };
 use crate::{
     BindingKind, BindingName, LogicalModuleIndex, ModuleId, OwnerGraphPeelSetReport,
-    OwnerGraphPeelabilityReport, OwnerId, OwnerNode, PeelCandidateKind, PeelCandidateStatus,
-    QuotientEdgeReport, ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport,
-    ResidualOwnerPeelStatus, Schedule,
+    OwnerGraphPeelabilityReport, OwnerId, OwnerNode, PeelCandidateStatus, QuotientEdgeReport,
+    ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
+    Schedule,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -74,7 +74,6 @@ struct CandidateGraphAdjustment {
 #[derive(Debug, Clone)]
 struct PeelCandidateEvaluation {
     id: String,
-    owner_set_kind: PeelCandidateKind,
     status: PeelCandidateStatus,
     owner_ids: Vec<OwnerId>,
     members: Vec<BindingName>,
@@ -111,13 +110,7 @@ pub(crate) fn build_peelability_report(
     for (&owner_id, declared) in &declared_by_owner {
         singleton_candidates.push((
             owner_id,
-            evaluate_residual_peel_candidate(
-                schedule,
-                &context,
-                &[owner_id],
-                declared.clone(),
-                PeelCandidateKind::SingleOwner,
-            ),
+            evaluate_residual_peel_candidate(schedule, &context, &[owner_id], declared.clone()),
         ));
     }
 
@@ -135,13 +128,8 @@ pub(crate) fn build_peelability_report(
         declared.sort();
         declared.dedup();
 
-        let candidate = evaluate_residual_peel_candidate(
-            schedule,
-            &context,
-            &[left, right],
-            declared,
-            PeelCandidateKind::OwnerPair,
-        );
+        let candidate =
+            evaluate_residual_peel_candidate(schedule, &context, &[left, right], declared);
         if candidate.status == PeelCandidateStatus::PeelableNow {
             pair_candidates.push(candidate);
         }
@@ -168,7 +156,6 @@ pub(crate) fn build_peelability_report(
         .filter(|candidate| minimal_peel_set_ids.contains(&candidate.id))
         .map(|candidate| OwnerGraphPeelSetReport {
             candidate_id: candidate.id.clone(),
-            owner_set_kind: candidate.owner_set_kind,
             owner_ids: candidate.owner_ids.iter().copied().map(owner_key).collect(),
             members: binding_reports(schedule, candidate.members.iter()),
         })
@@ -539,17 +526,7 @@ fn residual_dependency_closure_candidates(
         declared.sort();
         declared.dedup();
 
-        let candidate = evaluate_residual_peel_candidate(
-            schedule,
-            context,
-            &closure,
-            declared,
-            if closure.len() == 2 {
-                PeelCandidateKind::OwnerPair
-            } else {
-                PeelCandidateKind::OwnerClosure
-            },
-        );
+        let candidate = evaluate_residual_peel_candidate(schedule, context, &closure, declared);
         if candidate.status == PeelCandidateStatus::PeelableNow {
             candidates.push(candidate);
         }
@@ -672,7 +649,6 @@ fn evaluate_residual_peel_candidate(
     context: &PeelabilityContext<'_>,
     owner_ids: &[OwnerId],
     declared: Vec<BindingName>,
-    kind: PeelCandidateKind,
 ) -> PeelCandidateEvaluation {
     let moved_owners: BTreeSet<OwnerId> = owner_ids.iter().copied().collect();
     let owner_id_keys: Vec<String> = owner_ids.iter().copied().map(owner_key).collect();
@@ -700,7 +676,6 @@ fn evaluate_residual_peel_candidate(
 
     PeelCandidateEvaluation {
         id: candidate_id,
-        owner_set_kind: kind,
         status,
         owner_ids: owner_ids.to_vec(),
         members: declared,

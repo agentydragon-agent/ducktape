@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use analysis::{BindingReport, OwnerGraphReport, PeelCandidateKind};
+use analysis::{BindingReport, OwnerGraphReport};
 use spec::{BindingSourceKind, Member};
 
 #[derive(Debug, Clone)]
@@ -43,7 +43,6 @@ pub struct ModuleCoverage {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct CompanionCandidate {
-    pub owner_set_kind: PeelCandidateKind,
     pub members: Vec<BindingReport>,
     pub add_members: Vec<BindingReport>,
     pub owner_ids: Vec<String>,
@@ -70,7 +69,6 @@ type SymbolHomesByBinding = BTreeMap<String, Vec<SymbolHome>>;
 
 #[derive(Debug, Clone)]
 struct PeelCandidate {
-    owner_set_kind: PeelCandidateKind,
     members: Vec<BindingReport>,
     owner_ids: Vec<String>,
     bindings: BTreeSet<String>,
@@ -212,7 +210,6 @@ fn graph_index(graph: &OwnerGraphReport) -> GraphIndex {
                 .push(candidate_index);
         }
         candidates.push(PeelCandidate {
-            owner_set_kind: candidate.owner_set_kind,
             members: sorted_members(candidate.members.clone()),
             owner_ids: candidate.owner_ids.clone(),
             bindings,
@@ -336,7 +333,7 @@ fn coverage(
         if !candidate.bindings.is_subset(&module.bindings) {
             continue;
         }
-        if candidate.owner_set_kind != PeelCandidateKind::SingleOwner {
+        if candidate.owner_ids.len() > 1 {
             closure_candidates += 1;
         }
         covered.extend(candidate.binding_order.iter().cloned());
@@ -372,7 +369,6 @@ fn coverage(
             continue;
         }
         companion_candidates.push(CompanionCandidate {
-            owner_set_kind: candidate.owner_set_kind,
             members: candidate.members.clone(),
             add_members: extra
                 .iter()
@@ -668,13 +664,11 @@ mod tests {
 
     fn peel_set(
         candidate_id: &str,
-        owner_set_kind: PeelCandidateKind,
         owner_ids: &[usize],
         members: &[&str],
     ) -> OwnerGraphPeelSetReport {
         OwnerGraphPeelSetReport {
             candidate_id: candidate_id.to_string(),
-            owner_set_kind,
             owner_ids: owner_ids
                 .iter()
                 .map(|ordinal| format!("owner:{ordinal}"))
@@ -693,13 +687,8 @@ mod tests {
         let report = owner_graph_report(
             &["a", "b", "c", "d"],
             vec![
-                peel_set("candidate:a", PeelCandidateKind::SingleOwner, &[0], &["a"]),
-                peel_set(
-                    "candidate:bc",
-                    PeelCandidateKind::OwnerPair,
-                    &[1, 2],
-                    &["b", "c"],
-                ),
+                peel_set("candidate:a", &[0], &["a"]),
+                peel_set("candidate:bc", &[1, 2], &["b", "c"]),
             ],
         );
         fs::write(graph_path, serde_json::to_string(&report).unwrap()).unwrap();
@@ -786,20 +775,10 @@ mod tests {
         let graph = owner_graph_report(
             &["a", "b", "c", "d", "e"],
             vec![
-                peel_set("candidate:a", PeelCandidateKind::SingleOwner, &[0], &["a"]),
-                peel_set("candidate:e", PeelCandidateKind::SingleOwner, &[4], &["e"]),
-                peel_set(
-                    "candidate:bd",
-                    PeelCandidateKind::OwnerPair,
-                    &[1, 3],
-                    &["b", "d"],
-                ),
-                peel_set(
-                    "candidate:bc",
-                    PeelCandidateKind::OwnerPair,
-                    &[1, 2],
-                    &["b", "c"],
-                ),
+                peel_set("candidate:a", &[0], &["a"]),
+                peel_set("candidate:e", &[4], &["e"]),
+                peel_set("candidate:bd", &[1, 3], &["b", "d"]),
+                peel_set("candidate:bc", &[1, 2], &["b", "c"]),
             ],
         );
         fs::write(&graph_path, serde_json::to_string(&graph).unwrap()).unwrap();

@@ -425,7 +425,7 @@ mod tests {
                 .iter()
                 .any(
                     |set| member_bindings(&set.members) == vec!["Leaf".to_string()]
-                        && set.owner_set_kind == PeelCandidateKind::SingleOwner
+                        && set.owner_ids.len() == 1
                 ),
             "Leaf should appear as a singleton peel set: {:#?}",
             report.peelability,
@@ -452,7 +452,7 @@ mod tests {
         assert!(
             report.peelability.minimal_peel_sets.iter().any(|closure| {
                 member_bindings(&closure.members) == vec!["Leaf".to_string()]
-                    && closure.owner_set_kind == PeelCandidateKind::SingleOwner
+                    && closure.owner_ids.len() == 1
             }),
             "Leaf should be peelable as a singleton when only lazy-reading residual Dep: {:#?}",
             report.peelability,

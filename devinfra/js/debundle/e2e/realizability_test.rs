@@ -7,9 +7,7 @@
 //! match, or rejection with cycle evidence naming the implicated
 //! modules.
 
-use analysis::{
-    BindingReport, EdgeKind, OwnerGraphReport, PeelCandidateKind, ResidualOwnerPeelStatus,
-};
+use analysis::{BindingReport, EdgeKind, OwnerGraphReport, ResidualOwnerPeelStatus};
 use debundle_e2e_support::*;
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -387,7 +385,6 @@ export { A, B, Existing };
     assert!(
         peelability.minimal_peel_sets.iter().any(|closure| {
             binding_names(&closure.members) == vec!["A".to_string(), "B".to_string()]
-                && closure.owner_set_kind == PeelCandidateKind::OwnerPair
                 && closure.owner_ids.len() == 2
         }),
         "pair-only peelability should be summarized in minimal_peel_sets: {graph:#?}",
@@ -430,7 +427,7 @@ export { Leaf, Dep, Existing };
     );
     assert!(
         peelability.minimal_peel_sets.iter().any(|closure| {
-            closure.owner_set_kind == PeelCandidateKind::SingleOwner
+            closure.owner_ids.len() == 1
                 && closure.members == vec![binding_report("Leaf", "ReadableLeaf")]
         }),
         "singleton {{Leaf}} should be in minimal_peel_sets: {graph:#?}",
@@ -468,14 +465,14 @@ export { a, b, existing };
     );
     assert!(
         !peelability.minimal_peel_sets.iter().any(|candidate| {
-            candidate.owner_set_kind == PeelCandidateKind::SingleOwner
+            candidate.owner_ids.len() == 1
                 && binding_names(&candidate.members) == vec!["a".to_string()]
         }),
         "peelability must not propose extracting only written binding a: {graph:#?}",
     );
     assert!(
         peelability.minimal_peel_sets.iter().any(|candidate| {
-            candidate.owner_set_kind == PeelCandidateKind::OwnerPair
+            candidate.owner_ids.len() == 2
                 && binding_names(&candidate.members) == vec!["a".to_string(), "b".to_string()]
         }),
         "a+b should be the minimal safe peel set: {graph:#?}",

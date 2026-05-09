@@ -40,7 +40,7 @@
 //! that — and consequently fails on current `devel`, where the
 //! rule still considers lazy edges.
 
-use analysis::{OwnerGraphReport, PeelCandidateKind, ResidualOwnerPeelStatus};
+use analysis::{OwnerGraphReport, ResidualOwnerPeelStatus};
 use debundle_e2e_support::*;
 use serde::de::DeserializeOwned;
 use std::{fs, path::Path};
@@ -94,7 +94,7 @@ export { Leaf, Dep, Existing };
     // candidate covering `Leaf` alone — no companion needed.
     assert!(
         peelability.minimal_peel_sets.iter().any(|candidate| {
-            candidate.owner_set_kind == PeelCandidateKind::SingleOwner
+            candidate.owner_ids.len() == 1
                 && candidate.members.len() == 1
                 && candidate.members[0].binding == "Leaf"
         }),
