@@ -735,6 +735,9 @@ fn candidate_has_residual_dependency(
     for owner_id in moved_owners {
         for &edge_idx in context.owner_out_edge_indices(*owner_id) {
             let edge = &context.owner_edges[edge_idx];
+            if !edge.reason.constrains_realizability() {
+                continue;
+            }
             if moved_owners.contains(&edge.to) {
                 continue;
             }

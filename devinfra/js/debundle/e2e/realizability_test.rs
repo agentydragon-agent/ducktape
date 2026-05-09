@@ -395,7 +395,7 @@ export { A, B, Existing };
 }
 
 #[test]
-fn owner_graph_report_blocks_residual_entry_dependency_peel_candidate() {
+fn owner_graph_report_allows_lazy_only_residual_dependency_peel_candidate() {
     let mut opts = FixtureOpts::new(
         r#"function Leaf() { return Dep; }
 const Dep = "dep";
@@ -422,25 +422,18 @@ export { Leaf, Dep, Existing };
     assert!(
         peelability.residual_owner_horizon.iter().any(|owner| {
             owner.members == vec![binding_report("Leaf", "ReadableLeaf")]
-                && owner.status == ResidualOwnerPeelStatus::WithCompanions
+                && owner.status == ResidualOwnerPeelStatus::Direct
                 && owner.current_destination.residual
                 && owner.statement_ordinal.0 == 0
-                && owner.companion_options.iter().any(|option| {
-                    option.companion_members == vec![binding_report("Dep", "ReadableDep")]
-                })
         }),
-        "Leaf should require Dep as a companion peel: {graph:#?}",
+        "Leaf's only cross-edge to residual is a lazy read, so it should be Direct-peelable: {graph:#?}",
     );
     assert!(
         peelability.minimal_peel_sets.iter().any(|closure| {
-            closure.owner_set_kind == PeelCandidateKind::OwnerPair
-                && closure.members
-                    == vec![
-                        binding_report("Dep", "ReadableDep"),
-                        binding_report("Leaf", "ReadableLeaf"),
-                    ]
+            closure.owner_set_kind == PeelCandidateKind::SingleOwner
+                && closure.members == vec![binding_report("Leaf", "ReadableLeaf")]
         }),
-        "Leaf+Dep should be summarized in minimal_peel_sets: {graph:#?}",
+        "singleton {{Leaf}} should be in minimal_peel_sets: {graph:#?}",
     );
 }
 

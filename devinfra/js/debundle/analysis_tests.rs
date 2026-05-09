@@ -433,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn peelability_blocks_symbol_that_would_import_from_residual_entry() {
+    fn peelability_allows_symbol_with_lazy_only_residual_dependency() {
         let schedule = schedule_for("function Leaf() { return Dep; } const Dep = 1;", &[]);
 
         let report = schedule.owner_graph_report();
@@ -443,22 +443,18 @@ mod tests {
             .iter()
             .find(|owner| member_bindings(&owner.members) == vec!["Leaf".to_string()])
             .expect("Leaf horizon should be reported");
-        assert_eq!(leaf_horizon.status, ResidualOwnerPeelStatus::WithCompanions);
+        assert_eq!(leaf_horizon.status, ResidualOwnerPeelStatus::Direct);
         assert!(
-            leaf_horizon
-                .companion_options
-                .iter()
-                .any(|option| member_bindings(&option.companion_members)
-                    == vec!["Dep".to_string()]),
-            "Leaf should point at Dep as a required companion: {:#?}",
+            leaf_horizon.companion_options.is_empty(),
+            "Leaf needs no companion when its residual edge is lazy-only: {:#?}",
             report.peelability,
         );
         assert!(
             report.peelability.minimal_peel_sets.iter().any(|closure| {
-                member_bindings(&closure.members) == vec!["Dep".to_string(), "Leaf".to_string()]
-                    && closure.owner_ids.len() == 2
+                member_bindings(&closure.members) == vec!["Leaf".to_string()]
+                    && closure.owner_set_kind == PeelCandidateKind::SingleOwner
             }),
-            "Leaf should be peelable together with its residual-entry dependency: {:#?}",
+            "Leaf should be peelable as a singleton when only lazy-reading residual Dep: {:#?}",
             report.peelability,
         );
     }
