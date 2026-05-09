@@ -5,6 +5,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
+  # Suspended — currently using Grocy instead.
+  suspend: true
   path: ./cluster/k8s/tandoor/namespace
   prune: true
   sourceRef:
