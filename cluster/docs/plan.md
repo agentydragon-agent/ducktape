@@ -34,9 +34,13 @@ CloudNativePG `local-path`.
   2026-05-08. No tool-call output truncation; sessions die on large MCP outputs
   (z.ai error 1261). Namespace and resources deleted. See
   <../k8s/agents/kagent/TODO.md>.
+- **SDR**: `sdr` — suspended 2026-05-09. Temporarily disabled until the radio
+  hardware is set up again after relocation to new place.
 
 ## Next Actions
 
+- [ ] **Restore SDR kustomization** — unsuspend `cluster/k8s/sdr/flux-kustomization.yaml`
+      (remove `suspend: true`) once the radio hardware is set up at the new place.
 - [ ] **Evaluate lighter registry to replace Harbor** — Harbor is only used for (a) pull-through
       proxy cache (Docker Hub, GHCR, GCR, Quay, k8s.io) configured as Talos containerd mirrors,
       and (b) props agent image storage. Candidates: [Zot](https://zotregistry.dev/) (single binary,

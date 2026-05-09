@@ -5,6 +5,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
+  # Temporarily disabled until the radio is set up again after relocation.
+  suspend: true
   retryInterval: 1m
   path: ./cluster/k8s/sdr
   prune: true
