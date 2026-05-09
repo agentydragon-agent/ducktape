@@ -14,26 +14,24 @@ CloudNativePG `local-path`.
 
 ## Suspended Kustomizations
 
-- **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `gitea-admin-token`,
-  `gitea-servicemonitor` — re-suspended 2026-05-09 for wyrm2 relocation.
-  Resources and CNPG database deleted. Re-enable once hardware is back up.
+- **Gitea**: `gitea-{namespace,secrets,db,admin-token,servicemonitor}` — re-suspended
+  2026-05-09 for wyrm2 relocation. Resources and CNPG database deleted.
+  Re-enable once hardware is back up.
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
-- **InvenTree**: `inventree`, `inventree-namespace`, `inventree-secrets`,
-  `inventree-token-provisioner`, `authentik-blueprint-inventree-secret` — VPS memory pressure.
-- **Firecrawl**: `firecrawl`, `firecrawl-namespace`, `firecrawl-db`
-- **Langfuse**: `langfuse`, `langfuse-secrets`, `langfuse-db` —
-  suspended 2026-03-31, degraded Longhorn volumes on wyrm2. Namespace kept active
-  for `claude-rbac` RoleBinding dependency.
+- **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
+  `authentik-blueprint-inventree-secret` — VPS memory pressure.
+- **Firecrawl**: `firecrawl-{namespace,db}`
+- **Langfuse**: `langfuse-{secrets,db}` — suspended 2026-03-31, degraded Longhorn
+  volumes on wyrm2. Namespace kept active for `claude-rbac` RoleBinding dependency.
 - **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
 - **Airlock**: `airlock` — unsuspended 2026-04-12 (FastAPI bug fixed, new image deployed). `google-workspace-mcp` depends on this.
-- **ARC**: `arc`, `arc-namespace` — suspended 2026-04-11, resources deleted. Secrets
+- **ARC**: `arc-{namespace}` — suspended 2026-04-11, resources deleted. Secrets
   (`arc-secrets`) are deployed. GitHub runner pod/statefulset removed.
 - **Props**: `props` — suspended 2026-04-06. Secrets (`props-secrets`) are deployed.
 - **Scanner**: `scanner` — suspended.
-- **kagent**: `kagent`, `kagent-crds`, `kagent-db`, `kagent-secrets` — suspended
-  2026-05-08. No tool-call output truncation; sessions die on large MCP outputs
-  (z.ai error 1261). Namespace and resources deleted. See
-  <../k8s/agents/kagent/TODO.md>.
+- **kagent**: `kagent-{crds,db,secrets}` — suspended 2026-05-08. No tool-call output
+  truncation; sessions die on large MCP outputs (z.ai error 1261). Namespace and
+  resources deleted. See <../k8s/agents/kagent/TODO.md>.
 - **SDR**: `sdr` — suspended 2026-05-09. Temporarily disabled until the radio
   hardware is set up again after relocation to new place.
 
