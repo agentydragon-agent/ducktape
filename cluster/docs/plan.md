@@ -41,6 +41,8 @@ CloudNativePG `local-path`.
 
 - [ ] **Restore SDR kustomization** — unsuspend `cluster/k8s/sdr/flux-kustomization.yaml`
       (remove `suspend: true`) once the radio hardware is set up at the new place.
+- [ ] **Resume CPAP sync CronJob** — unsuspend `cluster/k8s/cpap-sync/cronjob.yaml`
+      (remove `suspend: true`) once wyrm2 is back online after relocation.
 - [ ] **Evaluate lighter registry to replace Harbor** — Harbor is only used for (a) pull-through
       proxy cache (Docker Hub, GHCR, GCR, Quay, k8s.io) configured as Talos containerd mirrors,
       and (b) props agent image storage. Candidates: [Zot](https://zotregistry.dev/) (single binary,
