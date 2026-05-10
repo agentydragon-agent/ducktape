@@ -250,6 +250,32 @@ cd terraform/main && tofu apply -target=kubernetes_secret.sops_age_cluster_secre
 pre-commit run --all-files
 ```
 
+## PVC File Ownership After Restore
+
+`kubectl cp` into a PVC creates files owned by root (uid 0). Most app containers
+run as non-root (typically uid 1000). SQLite WAL mode needs write access to the DB
+file _and_ the ability to create `-wal` and `-shm` siblings alongside it. If the app
+container can't write to the restored files, it fails with `sqlite3.OperationalError:
+attempt to write a readonly database` despite the healthz endpoint passing (it may
+not touch the DB on startup).
+
+**Fix**: After `kubectl cp`, run a root pod on the same PVC and:
+
+```bash
+chown <app-uid>:0 /data/*.db
+chmod 644 /data/*.db
+chmod 777 /data        # SQLite needs to create -wal/-shm files in the directory
+```
+
+On `hcloud-volumes`, `chown` may fail with "Operation not permitted" even from uid 0
+(due to idmapped mounts). Workaround: `chmod 666` the DB files and `chmod 777` the
+directory instead — the app gets write access via other/world bits.
+
+**Prevention**: Use a restore pod with `runAsUser` matching the app's uid so files
+are created with correct ownership from the start. If `kubectl cp` still creates as
+root, pipe through `tar` inside the container with `su` or use an init container that
+chowns before the app starts.
+
 ## Health Checks
 
 ### Nebula Mesh
