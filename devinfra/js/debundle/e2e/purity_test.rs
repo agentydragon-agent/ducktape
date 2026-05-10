@@ -563,3 +563,444 @@ export { A, B, C, pureWrap, impureWrap };
         &["cycle", "mod_a", "mod_b", "side-effect"],
     );
 }
+
+// ---------------------------------------------------------------------------
+// Builtin constructors — `new Container()` purity.
+// ---------------------------------------------------------------------------
+
+// `new Map()`/`Set()`/`WeakMap()`/`WeakSet()`/`Array()` allocate
+// the fresh container and return — no iterator protocol, no
+// user-code getters. Same admission contract as
+// `PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS` / `PURE_GLOBAL_CALLS`.
+// Also covers the array-literal-iterable form for `Set`/`Map`:
+// built-in Array iterator + primitive-key Set.add/Map.set fire
+// no user code, so an Array-literal arg with all-Pure
+// elements (no spreads) is also pure.
+//
+// Cycle-forcing fixture: `b = new <Container>();` peeled to
+// b_module while previous-SE neighbor `a` (IIFE call) and a
+// downstream reader of `b` stay in residual. Without the rule
+// `new …` is Unknown → b is SE → b → a s-edge crosses into
+// residual; combined with residual → b_module (c reads b at
+// init), spec is unrealizable. With the rule `new <Container>()`
+// is Pure → b drops out of the S-chain.
+
+#[test]
+fn new_map() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = (() => 1)();
+const b = new Map();
+const c = b.size + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const b = new Map()"],
+        &["const a"],
+    );
+    assert_entry_output(&fixture, "1\n");
+}
+
+#[test]
+fn new_set() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = (() => 1)();
+const b = new Set();
+const c = b.size + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const b = new Set()"],
+        &["const a"],
+    );
+    assert_entry_output(&fixture, "1\n");
+}
+
+#[test]
+fn new_weakmap() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = (() => 1)();
+const b = new WeakMap();
+const c = (b ? "y" : "n") + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const b = new WeakMap()"],
+        &["const a"],
+    );
+    assert_entry_output(&fixture, "y1\n");
+}
+
+#[test]
+fn new_array() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = (() => 1)();
+const b = new Array();
+const c = b.length + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const b = new Array()"],
+        &["const a"],
+    );
+    assert_entry_output(&fixture, "1\n");
+}
+
+#[test]
+fn new_set_with_array_of_primitives() {
+    // `new Set([prim_lit, prim_lit, ...])` — Array literal with
+    // all-Pure elements. ECMA-262 §24.2.1.1: iterates via the
+    // built-in Array iterator and calls `Set.add` per element;
+    // no user code on primitive keys.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = (() => 1)();
+const b = new Set(["x", "y", "z"]);
+const c = b.size + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const b = new Set("],
+        &["const a"],
+    );
+    assert_entry_output(&fixture, "4\n");
+}
+
+#[test]
+fn new_map_with_array_of_pure_pairs() {
+    // `new Map([[k, v], [k, v], ...])` — Array of 2-tuple Array
+    // literals with primitive keys + pure values. Map's
+    // construct path Get's [0]/[1] of each entry (own data
+    // properties on a fresh Array, no getter) and Map.set's
+    // them (primitive key SameValueZero, no user code).
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = (() => 1)();
+const b = new Map([["x", 1], ["y", 2]]);
+const c = b.get("x") + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const b = new Map(", r#""x""#],
+        &["const a"],
+    );
+    assert_entry_output(&fixture, "2\n");
+}
+
+#[test]
+fn class_static_new_map_field() {
+    // Class-declaration shape: `static x = new Map()` is the
+    // only static-side-effect candidate. Without the rule the
+    // class is flagged side-effecting and pulled into the
+    // S-chain.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = (() => 1)();
+class C {
+  static x = new Map();
+}
+const c = C.x.size + a;
+console.log(c);
+export { a, C, c };
+"#,
+        vec![logical_module("c_module", &[Member::new("C")])],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/c_module.js",
+        &["class C", "static x = new Map()"],
+        &["const a"],
+    );
+    assert_entry_output(&fixture, "1\n");
+}
+
+// ---------------------------------------------------------------------------
+// chunk_renames purity propagation.
+// ---------------------------------------------------------------------------
+
+// Pin `purity: pure` propagation from chunk_renames members
+// into `declared_pure`.
+//
+// `Member.purity` is collected only from logical-module
+// members today. `chunk_renames.members[].purity` and
+// `residual_modules.members[].purity` are silently dropped.
+// That forces the spec author to either peel the binding into
+// a 1-member logical module just to get the purity hint
+// propagated, or leave the call classified `Unknown`.
+//
+// Refinement: chunk_renames + residual_modules members with
+// `purity: pure` contribute to `declared_pure` alongside
+// logical-module members. One spec entry per imported function
+// carries both the rename (via the existing chunk_renames
+// pipeline) and the purity hint.
+//
+// In-residual rename behavior is already pinned by
+// `chunk_renames_test`; this test focuses on the purity-side
+// propagation.
+#[test]
+fn chunk_rename_with_purity_pure_propagates_to_call_classifier() {
+    // Fixture:
+    //   - vendor.js exports a function `f`.
+    //   - entry imports `f as cx`.
+    //   - `const a = (() => 1)();`  — SE, stays in residual
+    //   - `const b = cx();`          — would be SE without the rule
+    //                                  (imported, not in declared_pure)
+    //   - `const c = a + b;`         — reads b at init
+    //   - peel target: b → b_module
+    //
+    // Without the rule:
+    //   cx() is Unknown → b is SE → b → a s-edge across
+    //   b_module → residual. Combined with residual → b_module
+    //   (c's at-init read of b), cycle.
+    //
+    // With the rule:
+    //   chunk_renames carries `purity: pure` for cx → cx in
+    //   declared_pure → cx() is Pure → b is Pure → no S-chain
+    //   participation. Only edge: residual → b_module. DAG.
+    let opts = FixtureOpts {
+        source: r#"import { f as cx } from "./vendor.js";
+const a = (() => 1)();
+const b = cx();
+const c = a + b;
+console.log(c);
+export { a, b, c };
+"#,
+        logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
+        residual: None,
+        chunk_renames: Some(json!({
+            "id": "chunk_renames__static_app",
+            "members": [
+                {
+                    "name": "getMobxGlobalState",
+                    "selector": {
+                        "binding": {
+                            "name": "cx",
+                            "kind": "import_specifier",
+                        },
+                    },
+                    "purity": "pure",
+                },
+            ],
+        })),
+        chunk_id: "static/app",
+        include_residual: true,
+        extra_files: &[(
+            "static/app/vendor.js",
+            "export function f() { return 1; }\n",
+        )],
+    };
+    let fixture = run_fixture(opts);
+
+    // The peel succeeded: b is in b_module without dragging a.
+    // The fact that the build didn't error on a cycle proves
+    // that `cx()` was classified Pure by the call classifier.
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const b = "],
+        &["const a", "(()=>1)"],
+    );
+
+    // Behaviour preserved: c == a + b == 1 + 1 == 2.
+    assert_entry_output(&fixture, "2\n");
+}
+
+// ---------------------------------------------------------------------------
+// OptChain purity.
+// ---------------------------------------------------------------------------
+
+// Pin OptChain purity classification.
+//
+// `window?.foo?.bar` is observably equivalent to `window.foo.bar`
+// modulo the short-circuit when `window` or `window.foo` is
+// null/undefined. Optional chaining doesn't add semantic side
+// effects of its own; it only short-circuits.
+//
+// Today `purity::classify_expr_purity` returns
+// `Purity::Unknown` for any `Expr::OptChain` regardless of what
+// it expands to, so a `var x = window?.X?.Y;` initializer is
+// classified `has_side_effect = true` even when the underlying
+// chain reads only safe globals. That spurious has_side_effect
+// makes the var participate in the side-effect-order chain, and
+// a peel proposal that would otherwise be a clean
+// Direct-peelable singleton is forced to drag in whatever the
+// immediately-prior side-effecting owner happens to be.
+//
+// On Tana this manifests as the `dg = window?.Meticulous?.…`
+// declarator being chained to the constructor-call declarator
+// `Lge = new $g()` that precedes it in the same comma-list,
+// creating a cross-module side-effect-order edge that closes a
+// 4-module cycle (apply_decorators → tana_logger →
+// test_detection → workspace/invite/state) once the spec
+// claims dg in its proper home.
+//
+// Refinement under test: when `Expr::OptChain` is encountered,
+// recurse through its base (`OptChainBase::Member` /
+// `OptChainBase::Call`) and classify by the underlying access.
+// For static-property reads on a whitelisted receiver (Math,
+// Array, …), this returns `Pure`. The Tana case
+// (`window?.Meticulous?.…`) needs R2 (extending the
+// whitelist to host globals) on top — this test pins R1
+// using a receiver that's already on the whitelist.
+#[test]
+fn optional_chain_on_whitelisted_receiver_classified_pure() {
+    // Cycle-forcing fixture:
+    //   1. const X = (() => "x")();              — side-effecting (IIFE call); stays in residual
+    //   2. const Y = Number?.MAX_SAFE_INTEGER;   — currently OptChain → Unknown → side-effecting; peeled to y_module
+    //   3. const Z = Y + 1;                       — reads Y at init; stays in residual
+    //   4. console.log(Z);
+    //   5. export { X, Y, Z };
+    //
+    // Today (no R1):
+    //   Y has has_side_effect=true (OptChain → Unknown).
+    //   S-edges (transitive reduction over SE owners):
+    //     Y → X        (Y depends on X via source order, both SE)
+    //     console.log(Z) → Y
+    //   After peeling Y to y_module, the schedule sees:
+    //     y_module → residual (from Y → X s-edge)
+    //     residual → y_module (residual reads Y at init via const Z = Y + 1)
+    //   That's a cycle in I ∪ S. Validator rejects the spec.
+    //
+    // After R1:
+    //   Y is `Pure` (OptChain recurses into Number.MAX_SAFE_INTEGER
+    //   which is whitelisted), so Y has has_side_effect=false.
+    //   No Y → X s-edge. Only edge: residual → y_module
+    //   (Z's at-init read of Y). DAG. Validator accepts.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const X = (() => "x")();
+const Y = Number?.MAX_SAFE_INTEGER;
+const Z = Y + 1;
+console.log(Z);
+export { X, Y, Z };
+"#,
+        vec![logical_module("y_module", &[Member::new("Y")])],
+    ));
+
+    // y_module owns Y but does NOT own X — X stays in residual.
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/y_module.js",
+        &["const Y = Number?.MAX_SAFE_INTEGER", "export {", "Y"],
+        &["const X", "(()=>\"x\")"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const X", "const Z"],
+        &["const Y"],
+    );
+
+    // Behaviour preserved: console.log(Z) prints
+    // String(Number.MAX_SAFE_INTEGER + 1).
+    assert_entry_output(&fixture, "9007199254740992\n");
+}
+
+// ---------------------------------------------------------------------------
+// Symbol purity.
+// ---------------------------------------------------------------------------
+
+// Pin `Symbol(primitive_literal)` purity classification.
+//
+// ECMA-262 §20.4.1.1 says `Symbol(description)`:
+//   1. If NewTarget is not undefined, throw TypeError.
+//   2. If description is undefined, let descString be undefined.
+//   3. Else, let descString be ? ToString(description).
+//   4. Return a new unique Symbol value whose [[Description]]
+//      is descString.
+//
+// For a primitive-literal `description` (string, number,
+// boolean, null, bigint) the `ToString` step runs no user code,
+// so the call has no observable side effects beyond producing a
+// fresh symbol primitive. Same admission contract as the
+// existing `PURE_GLOBAL_CALLS` whitelist (`Boolean`).
+//
+// Without this rule, the classifier returns `Purity::Unknown`
+// for any `Symbol(...)` call, the declarator is flagged
+// `has_side_effect = true`, and the binding gets pulled into the
+// source-order side-effect-order chain. In real chunks that's
+// enough to close phantom multi-module cycles when the spec
+// tries to peel a `Symbol`-bound brand declarator into its own
+// module.
+#[test]
+fn symbol_with_string_literal_arg_classified_pure() {
+    // Cycle-forcing fixture: the spec peels `b` (a
+    // `Symbol(string-literal)`) into `b_module`. Source-order
+    // surrounds `b` with one preceding side-effecting declarator
+    // `a` (the IIFE call) so b would inherit a previous-SE
+    // s-edge to a if it were classified side-effecting, plus a
+    // following declarator `c` whose initializer reads `b` at
+    // init so residual has a forward read-dep into b_module.
+    //
+    // Without this rule: Symbol(...) is Unknown → b is SE →
+    // b → a s-edge → cross-module b_module → residual after
+    // peel. Combined with residual → b_module (c reads b at
+    // init), spec is unrealizable.
+    //
+    // With this rule: Symbol("b") is Pure → b is not SE → no
+    // b → a s-edge. Only edge: residual → b_module. DAG.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = (() => 1)();
+const b = Symbol("b");
+const c = b.description + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const b = Symbol(", "export {", "b"],
+        &["const a", "(()=>1)"],
+    );
+    assert_entry_output(&fixture, "b1\n");
+}
+
+#[test]
+fn symbol_with_no_args_classified_pure() {
+    // No description argument — pure under the same rule
+    // (ECMA-262 §20.4.1.1 step 2: descString is undefined when
+    // description is undefined, no ToString call).
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const a = (() => 1)();
+const b = Symbol();
+const c = (typeof b) + a;
+console.log(c);
+export { a, b, c };
+"#,
+        vec![logical_module("b_module", &[Member::new("b")])],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/b_module.js",
+        &["const b = Symbol()", "export {", "b"],
+        &["const a"],
+    );
+    assert_entry_output(&fixture, "symbol1\n");
+}
