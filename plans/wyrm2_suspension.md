@@ -7,7 +7,7 @@ Machine will be physically relocated and offline for ~2 weeks.
 - [x] **props** — deleted Deployment, CNPG cluster (`props-db`), PVC, all Secrets, namespace. Set `spec.suspend: true` on Flux Kustomizations (props-{namespace,db,secrets,app}, harbor-props).
 - [x] **openhands** — deleted Deployment, PVC (`openhands-data`), all Secrets, namespace. Set `spec.suspend: true` on Flux Kustomizations (openhands-{namespace,secrets,sandboxes,app}).
   - `TODO`: reevaluate whether to redeploy after machine comes back.
-- [ ] **openclaw** — back up any persistent state to `~/drive/2026-05-10-cluster-suspensions/openclaw/`, then delete StatefulSet, PVCs, K8s objects.
+- [x] **openclaw** — backed up persistent state to `~/drive/2026-05-10-cluster-suspensions/openclaw/openclaw-data.tar.gz` (17Mi). Deleted StatefulSet, PVCs, Deployments, Services, Secrets, ConfigMaps, NetworkPolicies, and all 3 namespaces (openclaw-gateway, openclaw-mitmproxy, openclaw-sandbox). Set `spec.suspend: true` on 8 Flux Kustomizations.
   - `TODO`: play with it again once machine is restored.
 - [x] **thrive-scraper** — deleted CronJob, Deployment, PVC (`thrive-data`), all Secrets, namespace. Set `spec.suspend: true` on Flux Kustomization in gaffer-private.
 
