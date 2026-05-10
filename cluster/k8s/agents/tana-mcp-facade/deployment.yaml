@@ -56,17 +56,22 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "200m"
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /healthz
               port: 8765
-            initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8765
-            initialDelaySeconds: 15
             periodSeconds: 20
       volumes:
         - name: fastmcp-state
