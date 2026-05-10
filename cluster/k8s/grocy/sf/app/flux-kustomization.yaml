@@ -4,6 +4,7 @@ metadata:
   name: grocy-sf
   namespace: flux-system
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -15,7 +16,6 @@ spec:
   wait: true
   dependsOn:
     - name: gateway
-    - name: proxmox-csi
     - name: cert-manager-issuer-config
     - name: cert-manager-environment
     - name: authentik

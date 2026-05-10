@@ -5,7 +5,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: lvm-proxmox-hdd
+  storageClassName: local-path-hetzner
   resources:
     requests:
       storage: 1Gi
