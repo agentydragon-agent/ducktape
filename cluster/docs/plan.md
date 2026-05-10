@@ -191,6 +191,23 @@ CloudNativePG `local-path`.
       proxy auth, recipe import)
 - [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
       `langfuse/langfuse-s3`.
+- [ ] Delete the generic `local-path` StorageClass (not region-pinned; superseded by
+      `local-path-hetzner` and `local-path-proxmox`).
+- [ ] Fix Goldilocks VPA over-requesting memory on VPS pods. VPA `updateMode: Auto`
+      mutates pod requests on creation but old pods retain stale high values until
+      restarted. This caused grocy-sf to fail scheduling (97% memory requested on VPS
+      workers despite 65-78% actual usage). **Root cause**: Goldilocks auto-creates VPAs
+      with no resource policy, and VPA recommendations accumulate historical peaks.
+      **Proposed solution**: (1) Add `goldilocks.fairwinds.com/vpa-resource-policy`
+      annotations to all namespaces with memory min/max bounds (enforce via Kyverno).
+      (2) Switch VPA `updateMode` from `Auto` to `Initial` for non-critical workloads
+      so stale requests don't block scheduling — let pod restarts pick up new values
+      naturally. (3) Consider running the Kubernetes Descheduler (`k8s-sigs/descheduler`)
+      with `RemoveDuplicates` and `LowNodeUtilization` strategies to spread pods across
+      VPS workers and evict those with grossly inflated requests. Descheduler is the
+      right tool for _rebalancing_ after VPA shrinks requests, but the root fix is
+      bounding VPA recommendations via resource policies so they never balloon in the
+      first place.
 - Loki + MinIO:
   - [ ] Reconsider MinIO on control-plane nodes: currently 4 replicas across all
         VPS nodes (2 CP + 2 worker) with CP tolerations. Alternative: 2 replicas on
