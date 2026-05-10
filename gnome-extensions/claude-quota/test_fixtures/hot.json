@@ -1,0 +1,21 @@
+{
+  "_comment": "Pace-based hot and realistic z.ai off-peak scenario. claude: short=hot(dev+20, 50% used at 30% elapsed)/long=ok(dev+0) → panel hot but label '+0%' (long pace). codex: both ok(dev+0) → panel ok. zai: short=null (off-peak, no window active)/long=warn(dev+10, 40% at 30%) → panel warn, popup '5h: no data'.",
+  "claude": {
+    "short": { "usedPercent": 50, "resetSeconds": 12600, "windowSeconds": 18000 },
+    "long": { "usedPercent": 30, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": null,
+    "error": null
+  },
+  "codex": {
+    "short": { "usedPercent": 30, "resetSeconds": 12600, "windowSeconds": 18000 },
+    "long": { "usedPercent": 30, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": null,
+    "error": null
+  },
+  "zai": {
+    "short": null,
+    "long": { "usedPercent": 40, "resetSeconds": 423360, "windowSeconds": 604800 },
+    "lastFetch": null,
+    "error": null
+  }
+}
