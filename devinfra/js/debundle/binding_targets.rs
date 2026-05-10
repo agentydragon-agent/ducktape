@@ -12,33 +12,39 @@ pub trait TargetAccessRecorder {
     fn record_member_write(&mut self, _name: &str) {}
 }
 
-pub fn binding_names(pattern: &Pat) -> Vec<String> {
-    let mut out = Vec::new();
-    walk_pattern(pattern, &mut out);
-    out
-}
-
-fn walk_pattern(pattern: &Pat, out: &mut Vec<String>) {
-    match pattern {
-        Pat::Ident(id) => out.push(id.id.sym.to_string()),
-        Pat::Array(arr) => {
-            for element in arr.elems.iter().flatten() {
-                walk_pattern(element, out);
-            }
-        }
-        Pat::Object(obj) => {
-            for prop in &obj.props {
-                match prop {
-                    ObjectPatProp::KeyValue(key_value) => walk_pattern(&key_value.value, out),
-                    ObjectPatProp::Assign(assign) => out.push(assign.key.id.sym.to_string()),
-                    ObjectPatProp::Rest(rest) => walk_pattern(&rest.arg, out),
-                }
-            }
-        }
-        Pat::Rest(rest) => walk_pattern(&rest.arg, out),
-        Pat::Assign(assign) => walk_pattern(&assign.left, out),
-        _ => {}
+pub fn binding_names(pattern: &Pat) -> impl Iterator<Item = String> + '_ {
+    enum Work<'a> {
+        Pat(&'a Pat),
+        BindIdent(&'a BindingIdent),
     }
+    let mut stack = vec![Work::Pat(pattern)];
+    std::iter::from_fn(move || {
+        loop {
+            match stack.pop()? {
+                Work::BindIdent(id) => return Some(id.id.sym.to_string()),
+                Work::Pat(pat) => match pat {
+                    Pat::Ident(id) => return Some(id.id.sym.to_string()),
+                    Pat::Array(arr) => {
+                        for elem in arr.elems.iter().flatten().rev() {
+                            stack.push(Work::Pat(elem));
+                        }
+                    }
+                    Pat::Object(obj) => {
+                        for prop in obj.props.iter().rev() {
+                            match prop {
+                                ObjectPatProp::KeyValue(kv) => stack.push(Work::Pat(&kv.value)),
+                                ObjectPatProp::Assign(a) => stack.push(Work::BindIdent(&a.key)),
+                                ObjectPatProp::Rest(rest) => stack.push(Work::Pat(&rest.arg)),
+                            }
+                        }
+                    }
+                    Pat::Rest(rest) => stack.push(Work::Pat(&rest.arg)),
+                    Pat::Assign(assign) => stack.push(Work::Pat(&assign.left)),
+                    _ => {}
+                },
+            }
+        }
+    })
 }
 
 pub fn record_assign_target(target: &AssignTarget, recorder: &mut impl TargetAccessRecorder) {

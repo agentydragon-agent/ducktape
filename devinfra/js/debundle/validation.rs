@@ -104,7 +104,6 @@ pub struct CycleEdge {
 /// - Cut total size (number of constraining reasons selected by
 ///   the FAS heuristic).
 pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
-    use std::collections::HashMap;
     let mut out = String::new();
     for (i, cycle) in cycles.iter().enumerate() {
         let mut in_degree: HashMap<&str, usize> = HashMap::new();
@@ -173,7 +172,6 @@ pub fn render_cross_destination_assignment_summary(
 }
 
 fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
-    use std::collections::HashSet;
     let mut seen: HashSet<(&str, &str)> = HashSet::new();
     for edge in cut {
         seen.insert((edge.from.as_str(), edge.to.as_str()));
