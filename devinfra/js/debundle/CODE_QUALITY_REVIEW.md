@@ -12,14 +12,7 @@ Highest-impact style/design/conciseness improvements identified across `devinfra
 live in a shared trait or base visitor that delegates to a callback, eliminating ~60 lines of
 structural duplication.
 
-### 2. Unify `record_reason` between `OwnerGraph` and `ModuleDepGraph` in `graph.rs`
-
-`graph.rs:160-172` and `graph.rs:253-266` contain identical `record_reason` methods (skip
-self-edges, conditionally add edge, push reason) differing only in node type. A single generic
-function `fn record_reason<N: Copy + Ord + Hash>(graph: &mut DiGraphMap<N, EdgeMetadata>, …)`
-would serve both.
-
-### 3. Decouple `RewritableSpecifierDetector` from `RuntimeSourceRewriter` in `rewrite_specifiers.rs`
+### 2. Decouple `RewritableSpecifierDetector` from `RuntimeSourceRewriter` in `rewrite_specifiers.rs`
 
 Both independently match the same five AST shapes (import decl, named export, export all,
 dynamic import, new Worker) with the same guard conditions. The doc comment warns they must stay
