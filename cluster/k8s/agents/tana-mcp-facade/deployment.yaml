@@ -9,7 +9,7 @@ metadata:
     description: "Public Authentik-backed MCP facade for Tana, running the shared mcp-oauth-facade image. Access is enforced by Authentik group membership; the server injects a static downstream PAT."
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: tana-mcp-facade
