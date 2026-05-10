@@ -447,10 +447,23 @@ VPA deployed (`k8s/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
 Default mode "Off" (recommendation-only). Enable per namespace.
 
 **TODO**: Require explicit `goldilocks.fairwinds.com/vpa-resource-policy` annotations
-with `minAllowed` on all namespaces that use `updateMode: auto`. Without a floor,
-VPA can recommend absurdly low CPU (e.g., 15m) that prevents containers from starting.
-Consider a Kyverno policy to enforce this cluster-wide. See airlock namespace for
-working example (JSON format required, not YAML).
+on all namespaces/deployments that use `updateMode: auto`. Without a policy:
+
+- VPA can recommend absurdly low CPU (e.g., 15m) that causes throttling.
+  Consider a Kyverno policy to enforce this cluster-wide. See airlock namespace
+  for working example (JSON format required, not YAML).
+
+**CPU limits policy**: for workloads with expensive cold starts (Python/JVM),
+use `"controlledValues":"RequestsOnly"` so VPA only sets CPU requests and never
+adds a CPU limit. CFS CPU limits are a hard rate limiter enforced by cgroups
+regardless of node load — a pod capped at 60m gets 60ms/s of CPU even on a
+completely idle node. Removing the CPU limit lets cold-start bursts use idle
+capacity; when the node is contended, CFS shares CPU proportionally to requests
+(compressible resource — no pod is killed). Memory limits remain useful
+(`RequestsAndLimits`) since memory is incompressible.
+
+See `cluster/k8s/agents/tana-mcp-facade/deployment.yaml` for a working example
+(fastmcp takes ~6 CPU-seconds to import; at 60m limit this costs 100s wall time).
 
 ### Alertmanager -> ntfy Bridge
 

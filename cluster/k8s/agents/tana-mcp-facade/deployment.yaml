@@ -8,8 +8,14 @@ metadata:
   annotations:
     description: "Public Authentik-backed MCP facade for Tana, running the shared mcp-oauth-facade image. Access is enforced by Authentik group membership; the server injects a static downstream PAT."
     reloader.stakater.com/auto: "true"
+    # CPU: VPA manages requests only — no CPU limit so cold-start bursts aren't
+    # throttled. fastmcp takes ~6 CPU-seconds to import; at a 60m limit that's
+    # 100s wall time even on an idle node (cgroups CFS is a hard rate limiter
+    # regardless of node load). CPU is compressible: without a limit the pod
+    # bursts freely on idle capacity and gets its fair share when contended.
+    # Memory limits are still managed (RequestsAndLimits is the default).
     goldilocks.fairwinds.com/vpa-resource-policy: >
-      {"containerPolicies":[{"containerName":"server","minAllowed":{"cpu":"25m"}}]}
+      {"containerPolicies":[{"containerName":"server","minAllowed":{"cpu":"25m"},"controlledValues":"RequestsOnly"}]}
 spec:
   replicas: 1
   selector:
@@ -57,7 +63,6 @@ spec:
               cpu: "50m"
             limits:
               memory: "256Mi"
-              cpu: "200m"
           startupProbe:
             httpGet:
               path: /healthz
