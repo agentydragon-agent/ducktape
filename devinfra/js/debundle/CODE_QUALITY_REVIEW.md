@@ -2,27 +2,6 @@
 
 Highest-impact style/design/conciseness improvements identified across `devinfra/js/debundle/`.
 
-## Completed
-
-- **ChunkId intern table** (`ids.rs`): `ChunkId(usize)` newtype + `ChunkTable`; eliminates
-  string cloning on every chunk access. (2026-05-10)
-- **`ArtifactIndexes` `BTreeMap` → `HashMap`**: All hot-path lookup maps now use `HashMap`.
-  Removed dead `chunk_id_index` field and `chunk_index()` method. (2026-05-10)
-- **`JsChunk.files` `BTreeMap<String, JsFile>` → `Vec<JsFile>`**: Chunks carry 1–2 files in
-  practice; BTreeMap overhead was pure waste. Added `get_file` / `remove_file` / `insert_file` /
-  `file_paths` helpers on `JsChunk`. (2026-05-10)
-- **Extract shared `visit_class_member` helpers from 4 visitors** (`facts.rs`): collapsed the
-  ~160 lines of near-identical class-member match arms into `visit_eager_member_parts`; all four
-  visitors now delegate to it. (2026-05-09)
-- **`EdgeReason` field-access accessors**: `statement_ordinal()` / `binding()` already use
-  concise pattern matching with alternation — no verbose destructuring remains.
-- **`PhaseTimings::add`** already takes `impl Into<String>`.
-- **`selected_module_by_chunk_file` → `HashMap`** (`artifact.rs`): pure lookup map, no ordering
-  needed; `parse_js_list` dedup set → `HashSet`; removed `BTreeMap` import. (2026-05-10)
-- **`BTreeSet::from([x])` in `facts.rs`**: replaced 4 sites of
-  `std::iter::once(x).collect::<BTreeSet<_>>()` in `declaration_names` /
-  `collect_declared_names`. (2026-05-10)
-
 ## Pending
 
 ### 1. Deduplicate lazy-boundary visitor methods in `facts.rs`
