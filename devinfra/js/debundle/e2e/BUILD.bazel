@@ -63,5 +63,6 @@ rust_library(
         "purity_test",
         "peelability_lazy_only_residual_test",
         "peelability_emit_resolvability_test",
+        "peelability_three_vertex_scc_test",
     ]
 ]
