@@ -252,7 +252,7 @@ pub fn rename_vendor_exports(
         }
         let results = jobs
             .into_par_iter()
-            .map(|job| rename_vendor_imports_in_file(job, &references, &mappings))
+            .map(|job| rename_vendor_imports_in_file(job, references, &mappings))
             .collect::<Vec<_>>();
         for result in results {
             artifact

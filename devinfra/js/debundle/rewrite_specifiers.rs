@@ -64,7 +64,7 @@ pub fn rewrite_chunk_entry_specifiers(
     let traversed_files = jobs.len();
     let results = jobs
         .into_par_iter()
-        .map(|job| rewrite_file(job, &references))
+        .map(|job| rewrite_file(job, references))
         .collect::<Vec<_>>();
 
     let mut rewritten_files = 0usize;
