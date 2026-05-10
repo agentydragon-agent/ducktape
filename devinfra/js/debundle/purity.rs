@@ -446,6 +446,18 @@ const PURE_GLOBAL_CALLS: &[&str] = &[
 ///   rule never fires for it.
 const PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS: &[&str] = &["Symbol"];
 
+/// Built-in container constructors whose `new X()` (no args)
+/// form is pure. ECMA-262 spec for each construct algorithm:
+/// step 1 short-circuits when iterable/length is undefined,
+/// returning a fresh empty container without invoking any user
+/// code (no iterator protocol, no getters fired). Same admission
+/// contract as `PURE_GLOBAL_CALLS`. The arg-bearing forms
+/// (`new Map([[k,v]])`, `new Array(n)`) are NOT covered — they
+/// open up iterator protocol / coercion paths and stay
+/// `Unknown` until a follow-up adds the relevant arg shape
+/// rules.
+const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &["Map", "Set", "WeakMap", "WeakSet", "Array"];
+
 /// Static-property READS on these globals are Pure: the property
 /// is an own data property of the receiver per ECMA-262 (no getter
 /// fires) and accessing it has no observable side effect.
@@ -634,7 +646,8 @@ pub(crate) fn classify_expr_purity(
             ),
         },
         Expr::Call(call) => classify_call_purity(call, shadowed, declared_pure, graph),
-        Expr::New(_) | Expr::TaggedTpl(_) => Purity::Unknown,
+        Expr::New(new_expr) => classify_new_expr_purity(new_expr, shadowed),
+        Expr::TaggedTpl(_) => Purity::Unknown,
         Expr::Assign(_) | Expr::Update(_) => Purity::Impure,
         Expr::Await(_) | Expr::Yield(_) => Purity::Impure,
         // Anything we didn't enumerate falls into the Unknown
@@ -669,6 +682,28 @@ fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str
         .chain(PURE_STATIC_CALLS.iter())
         .find_map(|(r, p)| (*r == recv && *p == prop_sym).then_some(*p))?;
     Some((recv, prop))
+}
+
+/// Purity of a `new X(args…)` expression. Matches the
+/// no-arg form of a built-in container constructor in
+/// `PURE_BUILTIN_NEW_NO_ARGS` against an unshadowed Ident
+/// callee. All other shapes (arg-bearing constructors,
+/// non-Ident callees, shadowed names, tagged templates) fall
+/// through to `Unknown`.
+fn classify_new_expr_purity(new_expr: &NewExpr, shadowed: &BTreeSet<&'static str>) -> Purity {
+    let Expr::Ident(callee) = new_expr.callee.as_ref() else {
+        return Purity::Unknown;
+    };
+    if let Some(name) = PURE_BUILTIN_NEW_NO_ARGS
+        .iter()
+        .copied()
+        .find(|n| *n == callee.sym.as_ref())
+        && !shadowed.contains(name)
+        && new_expr.args.as_ref().map_or(0, Vec::len) == 0
+    {
+        return Purity::Pure;
+    }
+    Purity::Unknown
 }
 
 /// Purity of `member` taken as an r-value member access
