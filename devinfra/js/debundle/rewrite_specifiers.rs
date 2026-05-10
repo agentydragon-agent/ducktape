@@ -167,20 +167,16 @@ fn should_rewrite_file(file: &JsFile) -> bool {
 }
 
 /// Returns true when the parsed module contains any specifier that
-/// `rewrite_chunk_entry_specifiers` could rewrite. This is the
-/// canonical predicate for "do we still need this AST after parse?":
-/// any `import`, `export … from`, `import(...)`, or
-/// `new Worker(...)` / `new SharedWorker(...)` whose source is a
-/// relative path (starts with `.` or `/`). All other shapes are
-/// short-circuited inside `rewrite_source`, so they would never
-/// trigger a rewrite.
+/// `rewrite_chunk_entry_specifiers` could rewrite: any `import`,
+/// `export … from`, `import(...)`, or `new Worker(...)` /
+/// `new SharedWorker(...)` whose source is a relative path (starts
+/// with `.` or `/`).
 ///
 /// `prepare_js_chunks` consults this to decide whether to drop the
 /// AST in favor of the original source: dropping is safe iff this
-/// returns false. Sharing the predicate between the prepare and
-/// rewrite stages prevents drift — if `rewrite_chunk_entry_specifiers`
-/// learns about a new specifier shape, this function must learn about
-/// it too.
+/// returns false. Both this function and `RuntimeSourceRewriter` use
+/// the same `dynamic_import_str` / `worker_new_str` guards, so they
+/// stay in sync automatically.
 pub fn ast_has_rewritable_specifier(parsed: &ParsedJsModule) -> bool {
     let mut detector = RewritableSpecifierDetector { found: false };
     parsed.module.visit_with(&mut detector);
@@ -189,6 +185,43 @@ pub fn ast_has_rewritable_specifier(parsed: &ParsedJsModule) -> bool {
 
 fn is_relative_specifier(source: &str) -> bool {
     source.starts_with('.') || source.starts_with('/')
+}
+
+fn dynamic_import_str(node: &CallExpr) -> Option<&Str> {
+    if matches!(node.callee, Callee::Import(_))
+        && let Some(first) = node.args.first()
+        && first.spread.is_none()
+        && let Expr::Lit(Lit::Str(s)) = &*first.expr
+    {
+        Some(s)
+    } else {
+        None
+    }
+}
+
+fn dynamic_import_str_mut(node: &mut CallExpr) -> Option<&mut Str> {
+    if matches!(node.callee, Callee::Import(_))
+        && let Some(first) = node.args.first_mut()
+        && first.spread.is_none()
+        && let Expr::Lit(Lit::Str(s)) = &mut *first.expr
+    {
+        Some(s)
+    } else {
+        None
+    }
+}
+
+fn worker_new_str(node: &NewExpr) -> Option<&Str> {
+    if is_runtime_worker_constructor(&node.callee)
+        && let Some(args) = &node.args
+        && let Some(first) = args.first()
+        && first.spread.is_none()
+        && let Expr::Lit(Lit::Str(s)) = &*first.expr
+    {
+        Some(s)
+    } else {
+        None
+    }
 }
 
 struct RewritableSpecifierDetector {
@@ -222,11 +255,7 @@ impl Visit for RewritableSpecifierDetector {
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if !self.found
-            && matches!(node.callee, Callee::Import(_))
-            && let Some(first) = node.args.first()
-            && first.spread.is_none()
-            && let Expr::Lit(Lit::Str(string)) = &*first.expr
-            && is_relative_specifier(&str_value(string))
+            && dynamic_import_str(node).is_some_and(|s| is_relative_specifier(&str_value(s)))
         {
             self.found = true;
         }
@@ -234,13 +263,7 @@ impl Visit for RewritableSpecifierDetector {
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
-        if !self.found
-            && is_runtime_worker_constructor(&node.callee)
-            && let Some(args) = &node.args
-            && let Some(first) = args.first()
-            && first.spread.is_none()
-            && let Expr::Lit(Lit::Str(string)) = &*first.expr
-            && is_relative_specifier(&str_value(string))
+        if !self.found && worker_new_str(node).is_some_and(|s| is_relative_specifier(&str_value(s)))
         {
             self.found = true;
         }
@@ -315,26 +338,18 @@ impl VisitMut for RuntimeSourceRewriter<'_> {
     }
 
     fn visit_mut_call_expr(&mut self, node: &mut CallExpr) {
-        if matches!(node.callee, Callee::Import(_))
-            && let Some(first) = node.args.first_mut()
-            && first.spread.is_none()
-            && let Expr::Lit(Lit::Str(string)) = &mut *first.expr
-        {
+        if let Some(string) = dynamic_import_str_mut(node) {
             self.rewrite_str(string);
         }
         node.visit_mut_children_with(self);
     }
 
     fn visit_mut_new_expr(&mut self, node: &mut NewExpr) {
-        if is_runtime_worker_constructor(&node.callee)
-            && let Some(args) = &mut node.args
-            && let Some(first) = args.first_mut()
-            && first.spread.is_none()
-            && let Expr::Lit(Lit::Str(string)) = &mut *first.expr
-        {
-            let source = str_value(string);
+        if let Some(source) = worker_new_str(node).map(str_value) {
             if let Ok(rewritten) = self.rewrite_source(&source)
                 && rewritten != source
+                && let Some(args) = &mut node.args
+                && let Some(first) = args.first_mut()
             {
                 first.expr = Box::new(new_url_expr(rewritten));
                 self.rewrites += 1;
