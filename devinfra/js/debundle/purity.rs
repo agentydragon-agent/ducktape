@@ -451,9 +451,27 @@ const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
     // The bare alias form `const define = Object.defineProperty;`
     // appears in real specs as a renamed shortcut.
     ("Object", "defineProperty"),
+    ("Object", "defineProperties"),
     ("Object", "freeze"),
     ("Object", "values"),
     ("Object", "keys"),
+    ("Object", "entries"),
+    ("Object", "fromEntries"),
+    ("Object", "getOwnPropertyDescriptor"),
+    ("Object", "getOwnPropertyDescriptors"),
+    ("Object", "getOwnPropertyNames"),
+    ("Object", "getOwnPropertySymbols"),
+    ("Object", "getPrototypeOf"),
+    ("Object", "setPrototypeOf"),
+    ("Object", "create"),
+    ("Object", "assign"),
+    ("Object", "is"),
+    ("Object", "isFrozen"),
+    ("Object", "isSealed"),
+    ("Object", "isExtensible"),
+    ("Object", "preventExtensions"),
+    ("Object", "seal"),
+    ("Object", "hasOwn"),
 ];
 
 /// Receiver / global-callable names whose whitelist firing depends
