@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use spec::{
-    ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
+    AnonymousStatement, ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
     MaterializeLogicalModulesConfig, Member, SwapMark, SwapVendorChunksConfig, TransformSpec,
     VendorLevel, VendorMark, VendorRole, WrapperShape,
 };
@@ -80,6 +80,8 @@ enum VendorLevelSource {
 struct ModuleFile {
     #[serde(default)]
     members: Vec<Member>,
+    #[serde(default)]
+    anonymous_statements: Vec<AnonymousStatement>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -89,6 +91,8 @@ struct ModuleSource {
     path: String,
     #[serde(default)]
     members: Vec<Member>,
+    #[serde(default)]
+    anonymous_statements: Vec<AnonymousStatement>,
 }
 
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
@@ -191,11 +195,15 @@ fn load_main_chunk_modules(
         let data: ModuleFile = read_yaml(&path)?;
         if is_deferred {
             deferred_members.extend(data.members);
+            // Deferred files don't get materialized; their
+            // anonymous_statements (if any) are dropped on the
+            // floor — there's no logical module to attach them to.
         } else {
             active.push(ModuleSource {
                 chunk_id: main_chunk_id.to_string(),
                 path: module_path,
                 members: data.members,
+                anonymous_statements: data.anonymous_statements,
             });
         }
     }
@@ -290,7 +298,7 @@ fn logical_modules_map(
                 source.path.clone(),
                 LogicalModule {
                     members: source.members,
-                    anonymous_statements: Vec::new(),
+                    anonymous_statements: source.anonymous_statements,
                 },
             );
         if previous.is_some() {
