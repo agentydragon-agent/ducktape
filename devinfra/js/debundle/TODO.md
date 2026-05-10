@@ -132,6 +132,55 @@ Still to do:
 - Keep new analysis tooling on the existing owner-graph and peelability side
   outputs; do not add parallel selected-owner cache formats.
 
+## Materialize-stage hot-loop optimizations
+
+From `perf record` against the Tana debundle pipeline (Gaffer
+`tana/re/web/spec/profile_reports/2026-05-10-tana-debundle.md`):
+`materialize_logical_modules` is now 89% of the total transform
+time, dominated by `build_owner_graph_report` (22.54 s) and
+`write_owner_graph_report` (6.55 s). Hot-loop priorities, ordered
+by leverage:
+
+1. **Cache `Schedule::entry_exported_binding_names` across peel
+   candidates.** Top single-line win. Currently rebuilt from
+   scratch in every `peelability::evaluate_residual_peel_candidate`
+   call (≥1500 candidates per chunk on Tana). Cache once per
+   chunk into a `Schedule` field; have the per-candidate evaluator
+   borrow the cached set. Profile shows 13.37% children in this
+   function alone, plus much of the 22.92% self-time `malloc`
+   overhead. Conservatively a 5–10× speedup on
+   `build_owner_graph_report`.
+
+2. **Cache `reports::export_name_for_binding` lookups.** Allocates
+   a fresh `String` clone per binding per candidate. The lookup
+   walks `schedule.bindings`, then `chunk_renames` /
+   `logical_modules.rename_map` per binding. Pre-compute a
+   `HashMap<BindingName, BindingName>` per chunk once; the
+   per-candidate path becomes a single lookup. Profile shows
+   11.60% children. Comes after item 1.
+
+3. **Compact / stream `owner_graph.json` writes.**
+   `write_owner_graph_report` is 6.55 s. The JSON tree gets fully
+   allocated before serialization;
+   `serde_json::ser::format_escaped_str` is at 5.58% self from
+   string-field escaping. Either stream the JSON directly to disk
+   (skip the intermediate report tree), or shrink the wire shape.
+   The per-owner `purity.reasons[]` arrays added in `a7b3e490`
+   add per-non-pure-owner JSON weight that may be opt-in-able.
+
+4. **Reduce `BTreeMap` usage on chunk-local hot paths.**
+   `__memcmp_evex_movbe` at 9.81% self and `BTreeMap::insert` at
+   9.93% children indicate the per-candidate maps are key-compared
+   on string keys. Switching to a `HashMap` (or a typed
+   `BindingId` index over a chunk-scoped intern table — already
+   in place for some structures) wins ~1.5–2× on those operations.
+
+5. **AST visit churn in `prepare_js_chunks`.** The stage is now
+   small (679 ms / ~4.5% of total) but
+   `swc_ecma_ast::expr::Expr::visit_children_with` shows up
+   repeatedly at 0.55%–1.16% self entries (totalling ~3-4%).
+   Backlog item once items 1-3 land.
+
 ## Graph pass performance and module boundaries
 
 The current owner-graph framing is in place and lives in flat, concept-named
