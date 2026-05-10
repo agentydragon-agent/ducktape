@@ -114,57 +114,8 @@ impl Visit for TopLevelAwaitFinder {
     fn visit_getter_prop(&mut self, _node: &GetterProp) {}
     fn visit_setter_prop(&mut self, _node: &SetterProp) {}
 
-    // Class-member handling mirrors `AtInitReadCollector::visit_class_member`:
-    //   - computed property keys are eager (evaluated at class-decl
-    //     time) regardless of `is_static`;
-    //   - `is_static` field initializers + static blocks are eager;
-    //   - instance field initializers are evaluated per-`new`, so
-    //     they're lazy from the class-decl's POV;
-    //   - method bodies are functions and the `visit_function`
-    //     override above keeps them lazy.
     fn visit_class_member(&mut self, member: &ClassMember) {
-        match member {
-            ClassMember::Method(method) => {
-                self.visit_prop_name(&method.key);
-            }
-            ClassMember::PrivateMethod(_) => {}
-            ClassMember::Constructor(_) => {}
-            ClassMember::ClassProp(prop) => {
-                self.visit_prop_name(&prop.key);
-                if prop.is_static
-                    && let Some(value) = &prop.value
-                {
-                    value.visit_with(self);
-                }
-            }
-            ClassMember::PrivateProp(prop) => {
-                if prop.is_static
-                    && let Some(value) = &prop.value
-                {
-                    value.visit_with(self);
-                }
-            }
-            ClassMember::StaticBlock(block) => {
-                block.visit_with(self);
-            }
-            ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {}
-            ClassMember::AutoAccessor(accessor) => {
-                if let Key::Public(name) = &accessor.key {
-                    self.visit_prop_name(name);
-                }
-                if accessor.is_static
-                    && let Some(value) = &accessor.value
-                {
-                    value.visit_with(self);
-                }
-            }
-        }
-    }
-
-    fn visit_prop_name(&mut self, name: &PropName) {
-        if let PropName::Computed(computed) = name {
-            computed.expr.visit_with(self);
-        }
+        visit_eager_member_parts(self, member);
     }
 }
 
@@ -509,69 +460,11 @@ impl Visit for AtInitReadCollector {
     fn visit_setter_prop(&mut self, _node: &SetterProp) {}
 
     fn visit_class(&mut self, node: &Class) {
-        // Decorators on the class are eager.
-        for decorator in &node.decorators {
-            decorator.visit_with(self);
-        }
-        // Extends-clause is eager.
-        if let Some(super_class) = &node.super_class {
-            super_class.visit_with(self);
-        }
-        for member in &node.body {
-            self.visit_class_member(member);
-        }
+        visit_class_decl(self, node, |v, m| v.visit_class_member(m));
     }
 
     fn visit_class_member(&mut self, member: &ClassMember) {
-        match member {
-            ClassMember::Method(method) => {
-                // Method's name (computed key) is eager; body is lazy.
-                self.visit_prop_name(&method.key);
-            }
-            ClassMember::PrivateMethod(_) => {}
-            ClassMember::Constructor(_) => {}
-            ClassMember::ClassProp(prop) => {
-                // Computed keys are eager regardless of static-ness.
-                self.visit_prop_name(&prop.key);
-                if prop.is_static {
-                    if let Some(value) = &prop.value {
-                        value.visit_with(self);
-                    }
-                }
-                // Instance field initializers are evaluated per-
-                // instance — lazy from the class-decl's POV.
-            }
-            ClassMember::PrivateProp(prop) => {
-                if prop.is_static {
-                    if let Some(value) = &prop.value {
-                        value.visit_with(self);
-                    }
-                }
-            }
-            ClassMember::StaticBlock(block) => {
-                // Static block runs at class-decl time.
-                block.visit_with(self);
-            }
-            ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {}
-            ClassMember::AutoAccessor(accessor) => {
-                // accessor.key is a `Key` enum (Public/Private); for
-                // public computed keys descend into the expression.
-                if let Key::Public(name) = &accessor.key {
-                    self.visit_prop_name(name);
-                }
-                if accessor.is_static {
-                    if let Some(value) = &accessor.value {
-                        value.visit_with(self);
-                    }
-                }
-            }
-        }
-    }
-
-    fn visit_prop_name(&mut self, name: &PropName) {
-        if let PropName::Computed(computed) = name {
-            computed.expr.visit_with(self);
-        }
+        visit_eager_member_parts(self, member);
     }
 }
 
@@ -633,21 +526,13 @@ impl Visit for LazyReadCollector {
     }
 
     fn visit_class(&mut self, node: &Class) {
-        for decorator in &node.decorators {
-            decorator.visit_with(self);
-        }
-        if let Some(super_class) = &node.super_class {
-            super_class.visit_with(self);
-        }
-        for member in &node.body {
-            self.visit_class_member(member);
-        }
+        visit_class_decl(self, node, |v, m| v.visit_class_member(m));
     }
 
     fn visit_class_member(&mut self, member: &ClassMember) {
+        visit_eager_member_parts(self, member);
         match member {
             ClassMember::Method(method) => {
-                self.visit_prop_name(&method.key);
                 self.descend_lazy(|s| method.function.visit_with(s));
             }
             ClassMember::PrivateMethod(method) => {
@@ -656,47 +541,22 @@ impl Visit for LazyReadCollector {
             ClassMember::Constructor(ctor) => {
                 self.descend_lazy(|s| ctor.visit_children_with(s));
             }
-            ClassMember::ClassProp(prop) => {
-                self.visit_prop_name(&prop.key);
-                if prop.is_static {
-                    if let Some(value) = &prop.value {
-                        value.visit_with(self);
-                    }
-                } else if let Some(value) = &prop.value {
+            ClassMember::ClassProp(prop) if !prop.is_static => {
+                if let Some(value) = &prop.value {
                     self.descend_lazy(|s| value.visit_with(s));
                 }
             }
-            ClassMember::PrivateProp(prop) => {
-                if prop.is_static {
-                    if let Some(value) = &prop.value {
-                        value.visit_with(self);
-                    }
-                } else if let Some(value) = &prop.value {
+            ClassMember::PrivateProp(prop) if !prop.is_static => {
+                if let Some(value) = &prop.value {
                     self.descend_lazy(|s| value.visit_with(s));
                 }
             }
-            ClassMember::StaticBlock(block) => {
-                block.visit_with(self);
-            }
-            ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {}
-            ClassMember::AutoAccessor(accessor) => {
-                if let Key::Public(name) = &accessor.key {
-                    self.visit_prop_name(name);
-                }
-                if accessor.is_static {
-                    if let Some(value) = &accessor.value {
-                        value.visit_with(self);
-                    }
-                } else if let Some(value) = &accessor.value {
+            ClassMember::AutoAccessor(accessor) if !accessor.is_static => {
+                if let Some(value) = &accessor.value {
                     self.descend_lazy(|s| value.visit_with(s));
                 }
             }
-        }
-    }
-
-    fn visit_prop_name(&mut self, name: &PropName) {
-        if let PropName::Computed(computed) = name {
-            computed.expr.visit_with(self);
+            _ => {}
         }
     }
 }
@@ -801,21 +661,13 @@ impl Visit for BindingWriteCollector {
     }
 
     fn visit_class(&mut self, node: &Class) {
-        for decorator in &node.decorators {
-            decorator.visit_with(self);
-        }
-        if let Some(super_class) = &node.super_class {
-            super_class.visit_with(self);
-        }
-        for member in &node.body {
-            self.visit_class_member(member);
-        }
+        visit_class_decl(self, node, |v, m| v.visit_class_member(m));
     }
 
     fn visit_class_member(&mut self, member: &ClassMember) {
+        visit_eager_member_parts(self, member);
         match member {
             ClassMember::Method(method) => {
-                self.visit_prop_name(&method.key);
                 self.descend_lazy(|s| method.function.visit_with(s));
             }
             ClassMember::PrivateMethod(method) => {
@@ -824,47 +676,82 @@ impl Visit for BindingWriteCollector {
             ClassMember::Constructor(ctor) => {
                 self.descend_lazy(|s| ctor.visit_children_with(s));
             }
-            ClassMember::ClassProp(prop) => {
-                self.visit_prop_name(&prop.key);
-                if prop.is_static {
-                    if let Some(value) = &prop.value {
-                        value.visit_with(self);
-                    }
-                } else if let Some(value) = &prop.value {
+            ClassMember::ClassProp(prop) if !prop.is_static => {
+                if let Some(value) = &prop.value {
                     self.descend_lazy(|s| value.visit_with(s));
                 }
             }
-            ClassMember::PrivateProp(prop) => {
-                if prop.is_static {
-                    if let Some(value) = &prop.value {
-                        value.visit_with(self);
-                    }
-                } else if let Some(value) = &prop.value {
+            ClassMember::PrivateProp(prop) if !prop.is_static => {
+                if let Some(value) = &prop.value {
                     self.descend_lazy(|s| value.visit_with(s));
                 }
             }
-            ClassMember::StaticBlock(block) => {
-                block.visit_with(self);
-            }
-            ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {}
-            ClassMember::AutoAccessor(accessor) => {
-                if let Key::Public(name) = &accessor.key {
-                    self.visit_prop_name(name);
-                }
-                if accessor.is_static {
-                    if let Some(value) = &accessor.value {
-                        value.visit_with(self);
-                    }
-                } else if let Some(value) = &accessor.value {
+            ClassMember::AutoAccessor(accessor) if !accessor.is_static => {
+                if let Some(value) = &accessor.value {
                     self.descend_lazy(|s| value.visit_with(s));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn visit_computed_prop_name<V: Visit>(v: &mut V, name: &PropName) {
+    if let PropName::Computed(computed) = name {
+        computed.expr.visit_with(v);
+    }
+}
+
+fn visit_class_decl<V: Visit>(
+    v: &mut V,
+    node: &Class,
+    mut visit_member: impl FnMut(&mut V, &ClassMember),
+) {
+    for decorator in &node.decorators {
+        decorator.visit_with(v);
+    }
+    if let Some(super_class) = &node.super_class {
+        super_class.visit_with(v);
+    }
+    for member in &node.body {
+        visit_member(v, member);
+    }
+}
+
+fn visit_eager_member_parts<V: Visit>(v: &mut V, member: &ClassMember) {
+    match member {
+        ClassMember::Method(method) => {
+            visit_computed_prop_name(v, &method.key);
+        }
+        ClassMember::PrivateMethod(_) | ClassMember::Constructor(_) => {}
+        ClassMember::ClassProp(prop) => {
+            visit_computed_prop_name(v, &prop.key);
+            if prop.is_static {
+                if let Some(value) = &prop.value {
+                    value.visit_with(v);
                 }
             }
         }
-    }
-
-    fn visit_prop_name(&mut self, name: &PropName) {
-        if let PropName::Computed(computed) = name {
-            computed.expr.visit_with(self);
+        ClassMember::PrivateProp(prop) => {
+            if prop.is_static {
+                if let Some(value) = &prop.value {
+                    value.visit_with(v);
+                }
+            }
+        }
+        ClassMember::StaticBlock(block) => {
+            block.visit_with(v);
+        }
+        ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {}
+        ClassMember::AutoAccessor(accessor) => {
+            if let Key::Public(name) = &accessor.key {
+                visit_computed_prop_name(v, name);
+            }
+            if accessor.is_static {
+                if let Some(value) = &accessor.value {
+                    value.visit_with(v);
+                }
+            }
         }
     }
 }
