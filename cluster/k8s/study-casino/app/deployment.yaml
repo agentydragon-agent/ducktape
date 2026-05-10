@@ -10,7 +10,7 @@ metadata:
 spec:
   # Single replica because the PVC is RWO and SQLite WAL doesn't tolerate
   # concurrent writers across processes.
-  replicas: 0
+  replicas: 1
   strategy:
     # Recreate instead of RollingUpdate so the old pod releases the PVC
     # before the new one tries to mount it.
