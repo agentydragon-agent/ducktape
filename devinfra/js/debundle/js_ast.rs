@@ -103,10 +103,7 @@ pub fn parse_js_module(source_name: &str, source: &str) -> Result<ParsedJsModule
 /// `ParsedJsModule::source_text()`.
 pub fn parse_js_module_consuming(source_name: &str, source: String) -> Result<ParsedJsModule> {
     let cm: Lrc<SourceMap> = Default::default();
-    let fm = cm.new_source_file(
-        FileName::Custom(source_name.to_string()).into(),
-        source,
-    );
+    let fm = cm.new_source_file(FileName::Custom(source_name.to_string()).into(), source);
     let module = parse_module_from_source_file(source_name, &fm)?;
     Ok(ParsedJsModule { cm, module })
 }

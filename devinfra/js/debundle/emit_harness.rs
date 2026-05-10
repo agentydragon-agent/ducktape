@@ -84,9 +84,13 @@ pub fn emit_browser_harness(
         .iter()
         .chain(preload_entries.iter().map(|entry| &entry.path))
     {
-        let chunk_id = chunk_id_for_js_path(path)?;
-        if !artifact.has_chunk(&chunk_id) {
-            bail!("Snapshot manifest does not contain chunk {chunk_id}");
+        let chunk_name = chunk_id_for_js_path(path)?;
+        let chunk_id = artifact
+            .chunk_table
+            .get(&chunk_name)
+            .with_context(|| format!("Snapshot manifest does not contain chunk {chunk_name}"))?;
+        if !artifact.has_chunk(chunk_id) {
+            bail!("Snapshot manifest does not contain chunk {chunk_name}");
         }
     }
 

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use relative_path::RelativePath;
 use serde::Serialize;
 
-use analysis::{ChunkId, ChunkTable};
+pub use analysis::{ChunkId, ChunkTable};
 use js_ast::{ParsedJsModule, emit_js_module};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
@@ -22,6 +22,7 @@ pub struct LoadedJsChunks {
 pub struct JsPipelineArtifact {
     pub chunks: Vec<ChunkArtifact>,
     pub root_manifest: ArtifactManifest,
+    pub chunk_table: ChunkTable,
 }
 
 impl Default for JsPipelineArtifact {
@@ -29,20 +30,48 @@ impl Default for JsPipelineArtifact {
         Self {
             chunks: Vec::new(),
             root_manifest: ArtifactManifest::empty(),
+            chunk_table: ChunkTable::default(),
         }
     }
 }
 
 pub struct ChunkArtifact {
-    pub chunk_id: String,
+    pub chunk_id: ChunkId,
     pub js: JsChunk,
     pub manifest: ChunkManifest,
 }
 
 pub struct JsChunk {
     pub entry_file: String,
-    pub files: BTreeMap<String, JsFile>,
+    pub files: Vec<JsFile>,
     pub metadata: ChunkMetadata,
+}
+
+impl JsChunk {
+    pub fn get_file(&self, path: &str) -> Option<&JsFile> {
+        self.files.iter().find(|f| f.path == path)
+    }
+
+    pub fn get_file_mut(&mut self, path: &str) -> Option<&mut JsFile> {
+        self.files.iter_mut().find(|f| f.path == path)
+    }
+
+    pub fn remove_file(&mut self, path: &str) -> Option<JsFile> {
+        let pos = self.files.iter().position(|f| f.path == path)?;
+        Some(self.files.swap_remove(pos))
+    }
+
+    pub fn insert_file(&mut self, file: JsFile) {
+        if let Some(pos) = self.files.iter().position(|f| f.path == file.path) {
+            self.files[pos] = file;
+        } else {
+            self.files.push(file);
+        }
+    }
+
+    pub fn file_paths(&self) -> impl Iterator<Item = &str> {
+        self.files.iter().map(|f| f.path.as_str())
+    }
 }
 
 pub struct JsFile {
@@ -421,14 +450,14 @@ pub enum ImportReferenceKind {
 #[derive(Debug, Clone)]
 pub struct ResolvedImportReference {
     pub kind: ImportReferenceKind,
-    pub target_chunk_id: String,
+    pub target_chunk_id: ChunkId,
     pub target_file: String,
     pub target_path: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedManifestImport {
-    pub caller_chunk_id: String,
+    pub caller_chunk_id: ChunkId,
     pub caller_file: String,
     pub source: String,
     pub target: ResolvedImportReference,
@@ -508,54 +537,59 @@ impl ArtifactManifest {
 }
 
 impl JsPipelineArtifact {
-    pub fn list_chunk_ids(&self) -> Vec<String> {
+    pub fn list_chunk_ids(&self) -> Vec<ChunkId> {
+        self.chunks.iter().map(|chunk| chunk.chunk_id).collect()
+    }
+
+    pub fn list_chunk_ids_as_strings(&self) -> Vec<String> {
         self.chunks
             .iter()
-            .map(|chunk| chunk.chunk_id.clone())
+            .map(|chunk| self.chunk_table.name(chunk.chunk_id).to_string())
             .collect()
     }
 
-    pub fn has_chunk(&self, chunk_id: &str) -> bool {
+    pub fn has_chunk(&self, chunk_id: ChunkId) -> bool {
         self.find_chunk(chunk_id).is_some()
     }
 
-    pub fn find_chunk(&self, chunk_id: &str) -> Option<&ChunkArtifact> {
+    pub fn find_chunk(&self, chunk_id: ChunkId) -> Option<&ChunkArtifact> {
         self.chunks.iter().find(|chunk| chunk.chunk_id == chunk_id)
     }
 
-    pub fn chunk(&self, chunk_id: &str) -> Result<&ChunkArtifact> {
+    pub fn chunk(&self, chunk_id: ChunkId) -> Result<&ChunkArtifact> {
         self.find_chunk(chunk_id)
-            .with_context(|| format!("missing artifact chunk {chunk_id}"))
+            .with_context(|| format!("missing artifact chunk {}", self.chunk_table.name(chunk_id)))
     }
 
-    pub fn find_chunk_mut(&mut self, chunk_id: &str) -> Option<&mut ChunkArtifact> {
+    pub fn find_chunk_mut(&mut self, chunk_id: ChunkId) -> Option<&mut ChunkArtifact> {
         self.chunks
             .iter_mut()
             .find(|chunk| chunk.chunk_id == chunk_id)
     }
 
-    pub fn chunk_mut(&mut self, chunk_id: &str) -> Result<&mut ChunkArtifact> {
+    pub fn chunk_mut(&mut self, chunk_id: ChunkId) -> Result<&mut ChunkArtifact> {
+        let chunk_name = self.chunk_table.name(chunk_id).to_string();
         self.find_chunk_mut(chunk_id)
-            .with_context(|| format!("missing artifact chunk {chunk_id}"))
+            .with_context(|| format!("missing artifact chunk {chunk_name}"))
     }
 
-    pub fn find_js_chunk(&self, chunk_id: &str) -> Option<&JsChunk> {
+    pub fn find_js_chunk(&self, chunk_id: ChunkId) -> Option<&JsChunk> {
         self.find_chunk(chunk_id).map(|chunk| &chunk.js)
     }
 
-    pub fn js_chunk(&self, chunk_id: &str) -> Result<&JsChunk> {
+    pub fn js_chunk(&self, chunk_id: ChunkId) -> Result<&JsChunk> {
         Ok(&self.chunk(chunk_id)?.js)
     }
 
-    pub fn find_js_chunk_mut(&mut self, chunk_id: &str) -> Option<&mut JsChunk> {
+    pub fn find_js_chunk_mut(&mut self, chunk_id: ChunkId) -> Option<&mut JsChunk> {
         self.find_chunk_mut(chunk_id).map(|chunk| &mut chunk.js)
     }
 
-    pub fn js_chunk_mut(&mut self, chunk_id: &str) -> Result<&mut JsChunk> {
+    pub fn js_chunk_mut(&mut self, chunk_id: ChunkId) -> Result<&mut JsChunk> {
         Ok(&mut self.chunk_mut(chunk_id)?.js)
     }
 
-    pub fn remove_chunk(&mut self, chunk_id: &str) -> Option<ChunkArtifact> {
+    pub fn remove_chunk(&mut self, chunk_id: ChunkId) -> Option<ChunkArtifact> {
         let index = self
             .chunks
             .iter()
@@ -563,18 +597,18 @@ impl JsPipelineArtifact {
         Some(self.chunks.remove(index))
     }
 
-    pub fn retain_chunks(&mut self, mut keep: impl FnMut(&str) -> bool) {
-        self.chunks.retain(|chunk| keep(&chunk.chunk_id));
+    pub fn retain_chunks(&mut self, mut keep: impl FnMut(ChunkId) -> bool) {
+        self.chunks.retain(|chunk| keep(chunk.chunk_id));
     }
 
-    pub fn chunk_source_path(&self, chunk_id: &str) -> Option<String> {
+    pub fn chunk_source_path(&self, chunk_id: ChunkId) -> Option<String> {
         self.find_chunk(chunk_id)
             .map(|chunk| chunk.manifest.source_path.clone())
             .or_else(|| {
                 self.find_js_chunk(chunk_id)
                     .and_then(|chunk| chunk.metadata.source_path.clone())
             })
-            .or_else(|| Some(format!("{chunk_id}.js")))
+            .or_else(|| Some(format!("{}.js", self.chunk_table.name(chunk_id))))
     }
 
     pub fn source_import_resolver<'a>(
@@ -597,7 +631,7 @@ impl ArtifactSourceImportResolver<'_> {
     pub fn resolve(
         &self,
         source: &str,
-        caller_chunk_id: &str,
+        caller_chunk_id: ChunkId,
         caller_file: &str,
     ) -> Result<Option<(String, String, String)>> {
         if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
@@ -616,78 +650,83 @@ impl ArtifactSourceImportResolver<'_> {
         let Some(target_chunk_id) = self.indexes.chunk_id_for_source(&imported_source_path) else {
             return Ok(None);
         };
-        let Some(target_entry_file) = get_chunk_entry_path(self.artifact, &target_chunk_id) else {
+        let target_chunk_name = self.artifact.chunk_table.name(target_chunk_id);
+        let Some(target_entry_file) = get_chunk_entry_path(self.artifact, target_chunk_id) else {
             return Ok(None);
         };
-        let path = artifact_file_output_path(self.artifact, &target_chunk_id, &target_entry_file)
-            .unwrap_or_else(|| {
-                join_module_path(&[target_chunk_id.as_str(), target_entry_file.as_str()])
-            });
-        Ok(Some((target_chunk_id, target_entry_file, path)))
+        let path = artifact_file_output_path(self.artifact, target_chunk_id, &target_entry_file)
+            .unwrap_or_else(|| join_module_path(&[target_chunk_name, target_entry_file.as_str()]));
+        Ok(Some((
+            target_chunk_name.to_string(),
+            target_entry_file,
+            path,
+        )))
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ArtifactIndexes {
-    chunk_id_index: BTreeMap<String, usize>,
-    output_path_index: BTreeMap<String, (String, String)>,
-    source_chunk_index: BTreeMap<String, String>,
-    chunk_source_paths: BTreeMap<String, String>,
-    file_source_paths: BTreeMap<(String, String), String>,
-    entry_files: BTreeMap<String, String>,
-    file_output_paths: BTreeMap<(String, String), String>,
-    manifest_imports_by_target_chunk: BTreeMap<String, Vec<ResolvedManifestImport>>,
+    output_path_index: HashMap<String, (ChunkId, String)>,
+    source_chunk_index: HashMap<String, ChunkId>,
+    chunk_source_paths: HashMap<ChunkId, String>,
+    file_source_paths: HashMap<(ChunkId, String), String>,
+    entry_files: HashMap<ChunkId, String>,
+    file_output_paths: HashMap<(ChunkId, String), String>,
+    manifest_imports_by_target_chunk: HashMap<ChunkId, Vec<ResolvedManifestImport>>,
 }
 
 impl ArtifactIndexes {
     pub fn build(artifact: &JsPipelineArtifact) -> Result<Self> {
-        let mut chunk_id_index = BTreeMap::new();
-        let mut output_path_index = BTreeMap::new();
-        let mut source_chunk_index = BTreeMap::new();
-        let mut chunk_source_paths = BTreeMap::new();
-        let mut file_source_paths = BTreeMap::new();
-        let mut entry_files = BTreeMap::new();
-        let mut file_output_paths = BTreeMap::new();
+        let mut seen_chunk_ids = HashSet::new();
+        let mut output_path_index = HashMap::new();
+        let mut source_chunk_index = HashMap::new();
+        let mut chunk_source_paths = HashMap::new();
+        let mut file_source_paths = HashMap::new();
+        let mut entry_files = HashMap::new();
+        let mut file_output_paths = HashMap::new();
 
         for (index, chunk_artifact) in artifact.chunks.iter().enumerate() {
-            let chunk_id = &chunk_artifact.chunk_id;
-            if let Some(existing) = chunk_id_index.insert(chunk_id.clone(), index) {
-                bail!("Duplicate chunk id {chunk_id}: indexes {existing} and {index}");
+            let chunk_id = chunk_artifact.chunk_id;
+            let chunk_name = artifact.chunk_table.name(chunk_id);
+            if !seen_chunk_ids.insert(chunk_id) {
+                bail!("Duplicate chunk id {chunk_name} at index {index}");
             }
             let chunk = &chunk_artifact.js;
-            entry_files.insert(chunk_id.clone(), chunk.entry_file.clone());
-            if let Some(source_path) = artifact.chunk_source_path(&chunk_id) {
-                if let Some(existing) =
-                    source_chunk_index.insert(source_path.clone(), chunk_id.clone())
-                {
-                    bail!("Duplicate chunk sourcePath {source_path}: {existing} and {chunk_id}");
+            entry_files.insert(chunk_id, chunk.entry_file.clone());
+            if let Some(source_path) = artifact.chunk_source_path(chunk_id) {
+                if let Some(existing) = source_chunk_index.insert(source_path.clone(), chunk_id) {
+                    bail!(
+                        "Duplicate chunk sourcePath {source_path}: {} and {}",
+                        artifact.chunk_table.name(existing),
+                        chunk_name
+                    );
                 }
-                chunk_source_paths.insert(chunk_id.clone(), source_path);
+                chunk_source_paths.insert(chunk_id, source_path);
             }
             for file_path in list_chunk_file_paths(chunk) {
-                let Some(file) = chunk.files.get(&file_path) else {
+                let Some(file) = chunk.get_file(&file_path) else {
                     continue;
                 };
-                let key = (chunk_id.clone(), file_path.clone());
+                let key = (chunk_id, file_path.clone());
                 if let Some(source_path) = file
                     .metadata
                     .source_path
                     .clone()
-                    .or_else(|| chunk_source_paths.get(chunk_id).cloned())
+                    .or_else(|| chunk_source_paths.get(&chunk_id).cloned())
                 {
                     file_source_paths.insert(key.clone(), source_path);
                 }
                 if let Some(output_path) =
-                    artifact_file_output_path_from_parts(&chunk_id, &file_path, file)
+                    artifact_file_output_path_from_parts(chunk_name, &file_path, file)
                 {
                     if let Some(existing) =
                         output_path_index.insert(output_path.clone(), key.clone())
                     {
                         bail!(
                             "Duplicate artifact output path {output_path}: {}/{} and {}/{}",
-                            existing.0,
+                            artifact.chunk_table.name(existing.0),
                             existing.1,
-                            key.0,
+                            chunk_name,
                             key.1
                         );
                     }
@@ -697,38 +736,33 @@ impl ArtifactIndexes {
         }
 
         let mut indexes = Self {
-            chunk_id_index,
             output_path_index,
             source_chunk_index,
             chunk_source_paths,
             file_source_paths,
             entry_files,
             file_output_paths,
-            manifest_imports_by_target_chunk: BTreeMap::new(),
+            manifest_imports_by_target_chunk: HashMap::new(),
         };
         indexes.index_manifest_imports(artifact);
         Ok(indexes)
     }
 
-    pub fn chunk_index(&self, chunk_id: &str) -> Option<usize> {
-        self.chunk_id_index.get(chunk_id).copied()
-    }
-
-    pub fn chunk_id_for_source(&self, source_path: &str) -> Option<String> {
-        self.source_chunk_index.get(source_path).cloned()
+    pub fn chunk_id_for_source(&self, source_path: &str) -> Option<ChunkId> {
+        self.source_chunk_index.get(source_path).copied()
     }
 
     fn resolve_artifact_output_reference(
         &self,
         source: &str,
-        caller_chunk_id: &str,
+        caller_chunk_name: &str,
         caller_file: &str,
-    ) -> Option<(String, String)> {
+    ) -> Option<(ChunkId, String)> {
         if source.is_empty() || !source.starts_with('.') {
             return None;
         }
         let caller_dir =
-            join_module_path(&[caller_chunk_id, module_path_dirname(caller_file).as_str()]);
+            join_module_path(&[caller_chunk_name, module_path_dirname(caller_file).as_str()]);
         let resolved_path =
             normalize_module_path(&join_module_path(&[caller_dir.as_str(), source])).ok()?;
         self.output_path_index.get(&resolved_path).cloned()
@@ -737,79 +771,86 @@ impl ArtifactIndexes {
     pub fn resolve_runtime_import_reference(
         &self,
         source: &str,
-        caller_chunk_id: &str,
+        caller_chunk_id: ChunkId,
         caller_file: &str,
+        chunk_table: &ChunkTable,
     ) -> Option<ResolvedImportReference> {
-        self.resolve_artifact_output_reference(source, caller_chunk_id, caller_file)
-            .map(|(target_chunk_id, target_file)| {
-                let target_path = self
-                    .file_output_paths
-                    .get(&(target_chunk_id.clone(), target_file.clone()))
-                    .cloned()
-                    .unwrap_or_else(|| join_module_path(&[&target_chunk_id, &target_file]));
-                ResolvedImportReference {
-                    kind: ImportReferenceKind::ArtifactPath,
-                    target_chunk_id,
-                    target_file,
-                    target_path,
-                }
-            })
-            .or_else(|| self.resolve_source_path_reference(source, caller_chunk_id, caller_file))
+        let caller_chunk_name = chunk_table.name(caller_chunk_id);
+        if let Some((target_chunk_id, target_file)) =
+            self.resolve_artifact_output_reference(source, caller_chunk_name, caller_file)
+        {
+            let target_chunk_name = chunk_table.name(target_chunk_id);
+            let target_path = self
+                .file_output_paths
+                .get(&(target_chunk_id, target_file.clone()))
+                .cloned()
+                .unwrap_or_else(|| join_module_path(&[target_chunk_name, &target_file]));
+            return Some(ResolvedImportReference {
+                kind: ImportReferenceKind::ArtifactPath,
+                target_chunk_id,
+                target_file,
+                target_path,
+            });
+        }
+        self.resolve_source_path_reference(source, caller_chunk_id, caller_file, chunk_table)
     }
 
     fn resolve_source_path_reference(
         &self,
         source: &str,
-        caller_chunk_id: &str,
+        caller_chunk_id: ChunkId,
         caller_file: &str,
+        chunk_table: &ChunkTable,
     ) -> Option<ResolvedImportReference> {
         if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
             return None;
         }
         let caller_source_path = self
             .file_source_paths
-            .get(&(caller_chunk_id.to_string(), caller_file.to_string()))
-            .or_else(|| self.chunk_source_paths.get(caller_chunk_id))?;
+            .get(&(caller_chunk_id, caller_file.to_string()))
+            .or_else(|| self.chunk_source_paths.get(&caller_chunk_id))?;
         let imported_source_path = resolve_chunk_source_path_reference(source, caller_source_path)?;
-        let target_chunk_id = self.source_chunk_index.get(&imported_source_path)?.clone();
-        let target_entry_file = self.entry_files.get(&target_chunk_id)?.clone();
+        let target_chunk_id = self.source_chunk_index.get(&imported_source_path)?;
+        let target_entry_file = self.entry_files.get(target_chunk_id)?.clone();
+        let target_chunk_name = chunk_table.name(*target_chunk_id);
         let path = self
             .file_output_paths
-            .get(&(target_chunk_id.clone(), target_entry_file.clone()))
+            .get(&(*target_chunk_id, target_entry_file.clone()))
             .cloned()
-            .unwrap_or_else(|| join_module_path(&[&target_chunk_id, &target_entry_file]));
+            .unwrap_or_else(|| join_module_path(&[target_chunk_name, &target_entry_file]));
         Some(ResolvedImportReference {
             kind: ImportReferenceKind::SourcePath,
-            target_chunk_id,
+            target_chunk_id: *target_chunk_id,
             target_file: target_entry_file,
             target_path: path,
         })
     }
 
-    pub fn manifest_imports_targeting_chunk<'a>(
-        &'a self,
-        target_chunk_id: &str,
-    ) -> impl Iterator<Item = &'a ResolvedManifestImport> {
+    pub fn manifest_imports_targeting_chunk(
+        &self,
+        target_chunk_id: ChunkId,
+    ) -> impl Iterator<Item = &ResolvedManifestImport> {
         self.manifest_imports_by_target_chunk
-            .get(target_chunk_id)
+            .get(&target_chunk_id)
             .into_iter()
             .flat_map(|imports| imports.iter())
     }
 
     fn index_manifest_imports(&mut self, artifact: &JsPipelineArtifact) {
         for chunk in &artifact.chunks {
-            let caller_chunk_id = chunk.chunk_id.clone();
+            let caller_chunk_id = chunk.chunk_id;
             let caller_file = chunk.manifest.entry_file.clone();
             for import in &chunk.manifest.imports {
                 let Some(target) = self.resolve_runtime_import_reference(
                     &import.source,
-                    &caller_chunk_id,
+                    caller_chunk_id,
                     &caller_file,
+                    &artifact.chunk_table,
                 ) else {
                     continue;
                 };
                 let record = ResolvedManifestImport {
-                    caller_chunk_id: caller_chunk_id.clone(),
+                    caller_chunk_id,
                     caller_file: caller_file.clone(),
                     source: import.source.clone(),
                     target,
@@ -826,7 +867,7 @@ impl ArtifactIndexes {
                         .collect(),
                 };
                 self.manifest_imports_by_target_chunk
-                    .entry(record.target.target_chunk_id.clone())
+                    .entry(record.target.target_chunk_id)
                     .or_default()
                     .push(record);
             }
@@ -854,22 +895,18 @@ pub fn load_js_chunks(
         let chunk_id = chunks.chunk_table.intern(chunk_name.clone());
         let content = fs::read_to_string(&absolute_path)
             .with_context(|| format!("reading {}", absolute_path.display()))?;
-        let mut files = BTreeMap::new();
-        files.insert(
-            entry_file.clone(),
-            JsFile {
-                path: entry_file.clone(),
-                body: JsFileBody::Source(content),
-                header_lines: Vec::new(),
-                metadata: FileMetadata {
-                    chunk_id: Some(chunk_name),
-                    chunk_file: Some(entry_file.clone()),
-                    role: Some(FileRole::Entry),
-                    source_path: Some(source_path.clone()),
-                    ..Default::default()
-                },
+        let files = vec![JsFile {
+            path: entry_file.clone(),
+            body: JsFileBody::Source(content),
+            header_lines: Vec::new(),
+            metadata: FileMetadata {
+                chunk_id: Some(chunk_name),
+                chunk_file: Some(entry_file.clone()),
+                role: Some(FileRole::Entry),
+                source_path: Some(source_path.clone()),
+                ..Default::default()
             },
-        );
+        }];
         chunks.chunk_order.push(chunk_id);
         // Extend the vec to fit the new chunk id.
         while chunks.chunks.len() <= chunk_id.0 {
@@ -929,18 +966,19 @@ fn materialize_chunk_scripts(
     artifact: &JsPipelineArtifact,
     out_dir: &Path,
     selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
-    chunk_id: String,
+    chunk_id: ChunkId,
 ) -> Result<Vec<OutputFileMetric>> {
-    let chunk_artifact = artifact.chunk(&chunk_id)?;
+    let chunk_name = artifact.chunk_table.name(chunk_id).to_string();
+    let chunk_artifact = artifact.chunk(chunk_id)?;
     let chunk = &chunk_artifact.js;
-    let chunk_out_dir = out_dir.join(path_from_module_path(&chunk_id));
+    let chunk_out_dir = out_dir.join(path_from_module_path(&chunk_name));
     fs::create_dir_all(&chunk_out_dir)?;
     let metrics = list_chunk_file_paths(chunk)
         .into_iter()
         .map(|file| {
             materialize_chunk_file(
                 chunk,
-                &chunk_id,
+                &chunk_name,
                 out_dir,
                 &chunk_out_dir,
                 selected_module_by_chunk_file,
@@ -952,7 +990,7 @@ fn materialize_chunk_scripts(
     manifest.output_metrics = Some(OutputMetrics::from_file_metrics(
         metrics
             .iter()
-            .map(|metric| chunk_relative_metric(&chunk_id, metric)),
+            .map(|metric| chunk_relative_metric(&chunk_name, metric)),
     ));
     fs::write(
         chunk_out_dir.join("manifest.json"),
@@ -970,8 +1008,7 @@ fn materialize_chunk_file(
     file: String,
 ) -> Result<OutputFileMetric> {
     let file_artifact = chunk
-        .files
-        .get(&file)
+        .get_file(&file)
         .with_context(|| format!("missing artifact file {chunk_id}/{file}"))?;
     let rendered = file_artifact.render_source()?;
     let output_path = artifact_file_output_path_from_parts(chunk_id, &file, file_artifact)
@@ -1088,21 +1125,21 @@ fn fraction(part: usize, total: usize) -> f64 {
     }
 }
 
-pub fn get_chunk_entry_path(artifact: &JsPipelineArtifact, chunk_id: &str) -> Option<String> {
+pub fn get_chunk_entry_path(artifact: &JsPipelineArtifact, chunk_id: ChunkId) -> Option<String> {
     let chunk_artifact = artifact.find_chunk(chunk_id)?;
     let chunk = &chunk_artifact.js;
-    if !chunk.entry_file.is_empty() && chunk.files.contains_key(&chunk.entry_file) {
+    if !chunk.entry_file.is_empty() && chunk.get_file(&chunk.entry_file).is_some() {
         return Some(chunk.entry_file.clone());
     }
     Some(&chunk_artifact.manifest)
         .and_then(|manifest| {
             chunk
-                .files
-                .contains_key(&manifest.entry_file)
+                .get_file(&manifest.entry_file)
+                .is_some()
                 .then(|| manifest.entry_file.clone())
         })
         .or_else(|| {
-            chunk.files.values().find_map(|file| {
+            chunk.files.iter().find_map(|file| {
                 matches!(
                     file.metadata.role,
                     Some(FileRole::Entry | FileRole::Runtime)
@@ -1110,17 +1147,18 @@ pub fn get_chunk_entry_path(artifact: &JsPipelineArtifact, chunk_id: &str) -> Op
                 .then(|| file.path.clone())
             })
         })
-        .or_else(|| chunk.files.keys().next().cloned())
+        .or_else(|| chunk.files.first().map(|f| f.path.clone()))
 }
 
 pub fn artifact_file_output_path(
     artifact: &JsPipelineArtifact,
-    chunk_id: &str,
+    chunk_id: ChunkId,
     file: &str,
 ) -> Option<String> {
+    let chunk_name = artifact.chunk_table.name(chunk_id);
     let chunk = artifact.find_js_chunk(chunk_id)?;
-    let file_artifact = chunk.files.get(file)?;
-    artifact_file_output_path_from_parts(chunk_id, file, file_artifact)
+    let file_artifact = chunk.get_file(file)?;
+    artifact_file_output_path_from_parts(chunk_name, file, file_artifact)
 }
 
 fn artifact_file_output_path_from_parts(
@@ -1238,7 +1276,10 @@ pub fn join_module_path(parts: &[&str]) -> String {
 }
 
 pub fn list_chunk_file_paths(chunk: &JsChunk) -> Vec<String> {
-    let mut paths = chunk.files.keys().cloned().collect::<Vec<_>>();
+    let mut paths = chunk
+        .file_paths()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
     paths.sort_by(|left, right| {
         if left == &chunk.entry_file {
             std::cmp::Ordering::Less
@@ -1263,15 +1304,14 @@ pub fn module_path_dirname(path: &str) -> String {
 
 fn source_path_for_artifact_file(
     artifact: &JsPipelineArtifact,
-    chunk_id: &str,
+    chunk_id: ChunkId,
     file: &str,
 ) -> Result<Option<String>> {
     let Some(chunk) = artifact.find_js_chunk(chunk_id) else {
         return Ok(None);
     };
     if let Some(source_path) = chunk
-        .files
-        .get(file)
+        .get_file(file)
         .and_then(|artifact_file| artifact_file.metadata.source_path.clone())
     {
         return Ok(Some(source_path));

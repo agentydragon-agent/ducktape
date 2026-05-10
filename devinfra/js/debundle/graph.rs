@@ -95,10 +95,6 @@ impl EdgeReason {
         matches!(self, Self::AtInitRead { .. })
     }
 
-    pub(crate) fn is_lazy_read(&self) -> bool {
-        matches!(self, Self::LazyRead { .. })
-    }
-
     pub(crate) fn is_binding_write(&self) -> bool {
         matches!(self, Self::AtInitWrite { .. } | Self::LazyWrite { .. })
     }
@@ -109,10 +105,9 @@ impl EdgeReason {
 
     pub(crate) fn constrains_realizability(&self) -> bool {
         // Whitelist: every variant except `LazyRead` constrains
-        // realizability today. Stated positively (rather than as
-        // `!self.is_lazy_read()`) so adding a new `EdgeReason`
-        // variant forces an explicit decision here instead of
-        // silently classifying it as constraining.
+        // realizability today. Stated positively so adding a new
+        // `EdgeReason` variant forces an explicit decision here
+        // instead of silently classifying it as constraining.
         matches!(
             self,
             Self::AtInitRead { .. }
@@ -465,8 +460,10 @@ pub(crate) fn quotient_owner_graph_with_destinations<F>(
 where
     F: FnMut(OwnerId, &OwnerNode) -> ModuleId,
 {
-    let mut graph = ModuleDepGraph::default();
-    graph.binding_table = owner_graph.binding_table.clone();
+    let mut graph = ModuleDepGraph {
+        binding_table: owner_graph.binding_table.clone(),
+        graph: DiGraphMap::new(),
+    };
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in owner_edges {
         let Some(from_node) = owner_graph.node(edge.from) else {

@@ -6,8 +6,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use artifact::{
-    ArtifactIndexes, FileRole, ImportReferenceKind, JsFile, JsFileAstParts, JsPipelineArtifact,
-    get_chunk_entry_path, join_module_path, module_path_dirname, relative_module_path,
+    ArtifactIndexes, ChunkId, ChunkTable, FileRole, ImportReferenceKind, JsFile, JsFileAstParts,
+    JsPipelineArtifact, get_chunk_entry_path, join_module_path, module_path_dirname,
+    relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 
@@ -34,11 +35,17 @@ pub fn rewrite_chunk_entry_specifiers(
 ) -> Result<RewriteChunkEntrySpecifiersResult> {
     let mut jobs = Vec::new();
 
+    let chunk_table = artifact.chunk_table.clone();
     for (chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
-        let chunk_id = chunk_artifact.chunk_id.clone();
-        let file_paths = chunk_artifact.js.files.keys().cloned().collect::<Vec<_>>();
+        let chunk_id = chunk_artifact.chunk_id;
+        let chunk_name = chunk_table.name(chunk_id).to_string();
+        let file_paths = chunk_artifact
+            .js
+            .file_paths()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
         for file_path in file_paths {
-            let Some(file) = chunk_artifact.js.files.get(&file_path) else {
+            let Some(file) = chunk_artifact.js.get_file(&file_path) else {
                 continue;
             };
             if !should_rewrite_file(file) {
@@ -46,15 +53,14 @@ pub fn rewrite_chunk_entry_specifiers(
             }
             let file = chunk_artifact
                 .js
-                .files
-                .remove(&file_path)
-                .with_context(|| format!("missing artifact file {chunk_id}/{file_path}"))?;
+                .remove_file(&file_path)
+                .with_context(|| format!("missing artifact file {chunk_name}/{file_path}"))?;
             let (parts, ast) = file
                 .into_ast_parts()
-                .with_context(|| format!("artifact file has no AST: {chunk_id}/{file_path}"))?;
+                .with_context(|| format!("artifact file has no AST: {chunk_name}/{file_path}"))?;
             jobs.push(RewriteFileJob {
                 chunk_index,
-                chunk_id: chunk_id.clone(),
+                chunk_id,
                 file_path,
                 parts,
                 ast,
@@ -64,17 +70,14 @@ pub fn rewrite_chunk_entry_specifiers(
     let traversed_files = jobs.len();
     let results = jobs
         .into_par_iter()
-        .map(|job| rewrite_file(job, references))
+        .map(|job| rewrite_file(job, references, &chunk_table))
         .collect::<Vec<_>>();
 
     let mut rewritten_files = 0usize;
     let mut rewritten_specifiers = 0usize;
     for result in results {
         let chunk = &mut artifact.chunks[result.chunk_index].js;
-        chunk.files.insert(
-            result.file_path.clone(),
-            JsFile::from_ast_parts(result.parts, result.ast),
-        );
+        chunk.insert_file(JsFile::from_ast_parts(result.parts, result.ast));
         if result.rewrites > 0 {
             rewritten_files += 1;
             rewritten_specifiers += result.rewrites;
@@ -95,7 +98,7 @@ pub fn rewrite_chunk_entry_specifiers(
 
 struct RewriteFileJob {
     chunk_index: usize,
-    chunk_id: String,
+    chunk_id: ChunkId,
     file_path: String,
     parts: JsFileAstParts,
     ast: ParsedJsModule,
@@ -103,16 +106,20 @@ struct RewriteFileJob {
 
 struct RewriteFileResult {
     chunk_index: usize,
-    file_path: String,
     parts: JsFileAstParts,
     ast: ParsedJsModule,
     rewrites: usize,
 }
 
-fn rewrite_file(mut job: RewriteFileJob, references: &ArtifactIndexes) -> RewriteFileResult {
+fn rewrite_file(
+    mut job: RewriteFileJob,
+    references: &ArtifactIndexes,
+    chunk_table: &ChunkTable,
+) -> RewriteFileResult {
     let mut rewriter = RuntimeSourceRewriter {
         references,
-        caller_chunk_id: job.chunk_id.clone(),
+        chunk_table,
+        caller_chunk_id: job.chunk_id,
         caller_file: job.file_path.clone(),
         rewrites: 0,
     };
@@ -120,7 +127,6 @@ fn rewrite_file(mut job: RewriteFileJob, references: &ArtifactIndexes) -> Rewrit
     let rewrites = rewriter.rewrites;
     RewriteFileResult {
         chunk_index: job.chunk_index,
-        file_path: job.file_path,
         parts: job.parts,
         ast: job.ast,
         rewrites,
@@ -133,13 +139,17 @@ pub fn runtime_js_href(
     out_dir: &Path,
     runtime_root: &Path,
 ) -> Result<String> {
-    let chunk_id = js_path
+    let chunk_name = js_path
         .strip_suffix(".js")
         .with_context(|| format!("Expected a .js path: {js_path}"))?;
+    let chunk_id = artifact
+        .chunk_table
+        .get(chunk_name)
+        .with_context(|| format!("Unknown chunk: {chunk_name}"))?;
     let entry_file = get_chunk_entry_path(artifact, chunk_id)
-        .with_context(|| format!("Missing chunk entry file for {chunk_id}"))?;
+        .with_context(|| format!("Missing chunk entry file for {chunk_name}"))?;
     let entry_path = runtime_root
-        .join(chunk_id.split('/').collect::<std::path::PathBuf>())
+        .join(chunk_name.split('/').collect::<std::path::PathBuf>())
         .join(entry_file.split('/').collect::<std::path::PathBuf>());
     Ok(artifact::relative_module_specifier(out_dir, &entry_path))
 }
@@ -240,7 +250,8 @@ impl Visit for RewritableSpecifierDetector {
 
 struct RuntimeSourceRewriter<'a> {
     references: &'a ArtifactIndexes,
-    caller_chunk_id: String,
+    chunk_table: &'a ChunkTable,
+    caller_chunk_id: ChunkId,
     caller_file: String,
     rewrites: usize,
 }
@@ -252,16 +263,18 @@ impl RuntimeSourceRewriter<'_> {
         }
         let Some(resolved) = self.references.resolve_runtime_import_reference(
             source,
-            &self.caller_chunk_id,
+            self.caller_chunk_id,
             &self.caller_file,
+            self.chunk_table,
         ) else {
             return Ok(source.to_string());
         };
         if resolved.kind == ImportReferenceKind::ArtifactPath {
             return Ok(source.to_string());
         }
+        let caller_chunk_name = self.chunk_table.name(self.caller_chunk_id);
         let caller_dir = join_module_path(&[
-            self.caller_chunk_id.as_str(),
+            caller_chunk_name,
             module_path_dirname(&self.caller_file).as_str(),
         ]);
         let mut rewritten = relative_module_path(&caller_dir, &resolved.target_path);

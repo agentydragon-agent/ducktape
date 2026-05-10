@@ -315,7 +315,7 @@ fn name_value(line: &str) -> Option<String> {
         return None;
     }
     let after_key = after_indent.strip_prefix("name:")?;
-    let after_gap = after_key.trim_start_matches(|c: char| c == ' ' || c == '\t');
+    let after_gap = after_key.trim_start_matches([' ', '\t']);
     if after_gap.len() == after_key.len() {
         // `\s+` after `name:` requires at least one whitespace.
         return None;

@@ -68,6 +68,10 @@ impl ChunkTable {
     pub fn len(&self) -> usize {
         self.names.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -102,6 +106,10 @@ impl BindingTable {
 
     pub fn len(&self) -> usize {
         self.names.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
     }
 }
 

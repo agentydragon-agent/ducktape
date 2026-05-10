@@ -38,11 +38,12 @@ pub fn write_js_tree(
     let chunk_ids = artifact.list_chunk_ids();
     let files = chunk_ids
         .iter()
-        .map(|chunk_id| {
+        .map(|&chunk_id| {
+            let chunk_name = artifact.chunk_table.name(chunk_id);
             let chunk = artifact.js_chunk(chunk_id)?;
             Ok(list_chunk_file_paths(chunk)
                 .into_iter()
-                .map(|file_path| format!("{chunk_id}/{file_path}"))
+                .map(|file_path| format!("{chunk_name}/{file_path}"))
                 .collect::<Vec<_>>())
         })
         .collect::<Result<Vec<_>>>()?

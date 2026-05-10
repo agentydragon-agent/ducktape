@@ -121,17 +121,19 @@ pub fn compute_with_clock(
     let mut sites_by_name: HashMap<String, Vec<DeclSite>> = HashMap::new();
     let mut interest_names_by_chunk = HashMap::<String, HashSet<String>>::new();
 
-    for chunk_id in artifact.list_chunk_ids() {
-        let chunk = artifact.js_chunk(&chunk_id)?;
+    for chunk_id_interned in artifact.list_chunk_ids() {
+        let chunk_id = artifact.chunk_table.name(chunk_id_interned);
+        let chunk = artifact.js_chunk(chunk_id_interned)?;
         let input_names = input_names_by_chunk
-            .get(&chunk_id)
+            .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        for (file_path, file) in &chunk.files {
+        for file in &chunk.files {
+            let file_path = file.path.as_str();
             let Some(parsed) = file.ast() else {
                 continue;
             };
-            for site in unrenamed_top_level_sites(parsed, &chunk_id, file_path, &input_names) {
+            for site in unrenamed_top_level_sites(parsed, chunk_id, file_path, &input_names) {
                 interest_names_by_chunk
                     .entry(site.owner_chunk.clone())
                     .or_default()
@@ -160,12 +162,14 @@ pub fn compute_with_clock(
     // TODO(rename-queue-cross-chunk): once `materialize_logical_modules`
     // resolves imports onto a stable cross-chunk binding identity, fold
     // that in here so a "names everywhere" symbol shows its true fanout.
-    for chunk_id in artifact.list_chunk_ids() {
-        let chunk = artifact.js_chunk(&chunk_id)?;
-        let Some(of_interest) = interest_names_by_chunk.get(&chunk_id) else {
+    for chunk_id_interned in artifact.list_chunk_ids() {
+        let chunk_id = artifact.chunk_table.name(chunk_id_interned);
+        let chunk = artifact.js_chunk(chunk_id_interned)?;
+        let Some(of_interest) = interest_names_by_chunk.get(chunk_id) else {
             continue;
         };
-        for (file_path, file) in &chunk.files {
+        for file in &chunk.files {
+            let file_path = file.path.as_str();
             let Some(parsed) = file.ast() else {
                 continue;
             };
@@ -252,7 +256,8 @@ pub fn compute_with_clock(
 fn input_bundle_names_by_chunk(artifact: &JsPipelineArtifact) -> HashMap<String, HashSet<String>> {
     let mut names_by_chunk = HashMap::<String, HashSet<String>>::new();
     for chunk in &artifact.chunks {
-        let names = names_by_chunk.entry(chunk.chunk_id.clone()).or_default();
+        let chunk_name = artifact.chunk_table.name(chunk.chunk_id).to_string();
+        let names = names_by_chunk.entry(chunk_name).or_default();
         for declaration in &chunk.manifest.kept_top_level_declarations {
             names.extend(declaration.names.iter().cloned());
         }

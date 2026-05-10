@@ -61,24 +61,19 @@ export { Existing };
         .iter()
         .find(|candidate| candidate.members.len() == 1 && candidate.members[0].binding == "Helper")
         .unwrap_or_else(|| {
-            panic!(
-                "evaluated_owner_sets should include singleton {{Helper}}: {:#?}",
-                peelability,
-            )
+            panic!("evaluated_owner_sets should include singleton {{Helper}}: {peelability:#?}")
         });
 
     assert_eq!(
         helper_candidate.status,
         PeelCandidateStatus::BlockedEmitResolvability,
         "{{Helper}} should be flagged blocked_emit_resolvability \
-         (lazy read of unexported residual binding Internal): {:#?}",
-        peelability,
+         (lazy read of unexported residual binding Internal): {peelability:#?}",
     );
     assert_eq!(
         helper_candidate.emit_blocked_residual_bindings,
         vec!["Internal".to_string()],
-        "emit_blocked_residual_bindings should pinpoint Internal: {:#?}",
-        helper_candidate,
+        "emit_blocked_residual_bindings should pinpoint Internal: {helper_candidate:#?}",
     );
 
     // The materializer would reject a {Helper} peel — make sure the
@@ -88,7 +83,6 @@ export { Existing };
         !peelability.minimal_peel_sets.iter().any(|candidate| {
             candidate.members.len() == 1 && candidate.members[0].binding == "Helper"
         }),
-        "minimal_peel_sets must omit {{Helper}} when emit-resolvability blocks it: {:#?}",
-        peelability,
+        "minimal_peel_sets must omit {{Helper}} when emit-resolvability blocks it: {peelability:#?}",
     );
 }

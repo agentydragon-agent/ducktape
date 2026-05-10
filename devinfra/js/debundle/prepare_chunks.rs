@@ -45,11 +45,14 @@ pub fn prepare_js_chunks(
     spec: &TransformSpec,
     mut loaded: LoadedJsChunks,
 ) -> Result<PrepareJsChunksResult> {
+    // Move chunk_table out of loaded; it will be placed on the artifact.
+    let chunk_table = std::mem::take(&mut loaded.chunk_table);
+
     // Collect (ChunkId, name) pairs preserving load order.
     let ordered_ids: Vec<(ChunkId, String)> = loaded
         .chunk_order
         .iter()
-        .map(|id| (*id, loaded.chunk_table.name(*id).to_string()))
+        .map(|id| (*id, chunk_table.name(*id).to_string()))
         .collect();
     let jobs = ordered_ids
         .iter()
@@ -58,7 +61,7 @@ pub fn prepare_js_chunks(
                 format!("prepare_js_chunks missing ordered chunk: {chunk_name}")
             })?;
             let entry_file = chunk.entry_file.clone();
-            let entry_artifact_file = chunk.files.remove(&entry_file).with_context(|| {
+            let entry_artifact_file = chunk.remove_file(&entry_file).with_context(|| {
                 format!(
                     "prepare_js_chunks requires entry file for chunk: {chunk_name}/{entry_file}"
                 )
@@ -69,18 +72,16 @@ pub fn prepare_js_chunks(
                 format!("prepare_js_chunks requires content for chunk: {chunk_name}/{entry_file}")
             })?;
             Ok(PrepareChunkJob {
-                chunk_id: chunk_name.clone(),
+                chunk_id: *chunk_id,
+                chunk_name: chunk_name.clone(),
                 chunk: JsChunk {
                     entry_file: entry_file.clone(),
-                    files: BTreeMap::from([(
-                        entry_file.clone(),
-                        JsFile {
-                            path: entry_file.clone(),
-                            body: JsFileBody::Source(source),
-                            header_lines: Vec::new(),
-                            metadata: FileMetadata::default(),
-                        },
-                    )]),
+                    files: vec![JsFile {
+                        path: entry_file.clone(),
+                        body: JsFileBody::Source(source),
+                        header_lines: Vec::new(),
+                        metadata: FileMetadata::default(),
+                    }],
                     metadata: chunk.metadata,
                 },
             })
@@ -93,9 +94,10 @@ pub fn prepare_js_chunks(
     let parsed_chunks = jobs
         .into_par_iter()
         .map(|job| {
-            let chunk_id = job.chunk_id.clone();
+            let chunk_id = job.chunk_id;
+            let chunk_name = job.chunk_name.clone();
             let parsed = prepare_chunk(job)?;
-            Ok((chunk_id, parsed))
+            Ok((chunk_id, chunk_name, parsed))
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -125,9 +127,9 @@ pub fn prepare_js_chunks(
     // grows.
     let prepared_chunks = parsed_chunks
         .into_iter()
-        .map(|(chunk_id, mut prepared)| {
+        .map(|(chunk_id, chunk_name, mut prepared)| {
             let needs_ast =
-                needs_ast_for_chunk(&chunk_id, spec, &import_index, &vendor_target_chunk_ids)
+                needs_ast_for_chunk(&chunk_name, spec, &import_index, &vendor_target_chunk_ids)
                     || entry_has_rewritable_specifier(&prepared);
 
             if !needs_ast {
@@ -137,17 +139,22 @@ pub fn prepare_js_chunks(
                 // load → JsFileBody::Source clone → SourceMap clone.
                 let source = prepared
                     .files
-                    .get(&prepared.entry_file)
+                    .iter()
+                    .find(|f| f.path == prepared.entry_file)
                     .and_then(|f| f.ast())
                     .map(|parsed| parsed.source_text());
                 if let Some(source) = source {
-                    if let Some(entry_file) = prepared.files.get_mut(&prepared.entry_file) {
+                    if let Some(entry_file) = prepared
+                        .files
+                        .iter_mut()
+                        .find(|f| f.path == prepared.entry_file)
+                    {
                         entry_file.body = JsFileBody::Source(source);
                     }
                 }
             }
 
-            Ok((chunk_id, prepared))
+            Ok((chunk_id, chunk_name, prepared))
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -157,10 +164,10 @@ pub fn prepare_js_chunks(
             Vec::<ChunkManifest>::new(),
             Vec::<ParsedJsFileRecord>::new(),
         ),
-        |(mut next, mut manifests, mut parsed_files), ((_chunk_id, expected_chunk_name), (actual_chunk_id, prepared))| {
-            if actual_chunk_id != expected_chunk_name {
+        |(mut next, mut manifests, mut parsed_files), ((_expected_chunk_id, expected_chunk_name), (actual_chunk_id, actual_chunk_name, prepared))| {
+            if actual_chunk_name != expected_chunk_name {
                 bail!(
-                    "prepare_js_chunks reordered prepared chunks: expected {expected_chunk_name}, got {actual_chunk_id}"
+                    "prepare_js_chunks reordered prepared chunks: expected {expected_chunk_name}, got {actual_chunk_name}"
                 );
             }
             let manifest = prepared.manifest.clone();
@@ -179,6 +186,7 @@ pub fn prepare_js_chunks(
         },
     )?;
 
+    next.chunk_table = chunk_table;
     let manifest = build_artifact_manifest(&manifests);
     next.root_manifest = manifest.clone();
     Ok(PrepareJsChunksResult {
@@ -195,13 +203,14 @@ pub fn prepare_js_chunks(
 }
 
 struct PrepareChunkJob {
-    chunk_id: String,
+    chunk_id: ChunkId,
+    chunk_name: String,
     chunk: JsChunk,
 }
 
 struct PreparedChunk {
     entry_file: String,
-    files: BTreeMap<String, JsFile>,
+    files: Vec<JsFile>,
     metadata: ChunkMetadata,
     manifest: ChunkManifest,
     parsed_files: Vec<ParsedJsFileRecord>,
@@ -209,25 +218,24 @@ struct PreparedChunk {
 
 fn prepare_chunk(job: PrepareChunkJob) -> Result<PreparedChunk> {
     let PrepareChunkJob {
-        chunk_id,
+        chunk_id: _,
+        chunk_name,
         mut chunk,
     } = job;
     let source_path = chunk
         .metadata
         .source_path
         .clone()
-        .unwrap_or_else(|| format!("{chunk_id}.js"));
+        .unwrap_or_else(|| format!("{chunk_name}.js"));
     let entry_file = chunk.entry_file.clone();
-    let entry_artifact_file = chunk.files.remove(&entry_file).with_context(|| {
-        format!("prepare_js_chunks requires entry file for chunk: {chunk_id}/{entry_file}")
+    let entry_artifact_file = chunk.remove_file(&entry_file).with_context(|| {
+        format!("prepare_js_chunks requires entry file for chunk: {chunk_name}/{entry_file}")
     })?;
     let (manifest, prepared_file, prepared_entry_file, parsed_files) =
-        prepare_parsed_entry(&chunk_id, &entry_file, &source_path, entry_artifact_file)?;
-    let mut files = BTreeMap::new();
-    files.insert(prepared_entry_file.clone(), prepared_file);
+        prepare_parsed_entry(&chunk_name, &entry_file, &source_path, entry_artifact_file)?;
     Ok(PreparedChunk {
         entry_file: prepared_entry_file,
-        files,
+        files: vec![prepared_file],
         metadata: ChunkMetadata {
             source_path: Some(source_path),
             module_extraction_state: None,
@@ -337,18 +345,18 @@ fn build_artifact_manifest(manifests: &[ChunkManifest]) -> ArtifactManifest {
 }
 
 /// Build an index of imports by target chunk for vendor caller detection.
-fn build_import_index(chunks: &[(String, PreparedChunk)]) -> BTreeMap<String, Vec<String>> {
+fn build_import_index(
+    chunks: &[(ChunkId, String, PreparedChunk)],
+) -> BTreeMap<String, Vec<String>> {
     chunks
         .iter()
-        .flat_map(|(chunk_id, prepared)| {
+        .flat_map(|(_chunk_id, chunk_name, prepared)| {
             prepared.manifest.imports.iter().filter_map(move |import| {
-                // Extract target chunk id from import source
-                // Import sources are relative paths like "./other-chunk.js"
-                // We need to convert them to chunk ids
-                let target_chunk_id = import.source.strip_prefix("./").and_then(|s| {
-                    s.strip_suffix(".js").or(Some(s)) // Try both .js and no extension
-                })?;
-                Some((target_chunk_id.to_string(), chunk_id.clone()))
+                let target_chunk_id = import
+                    .source
+                    .strip_prefix("./")
+                    .and_then(|s| s.strip_suffix(".js").or(Some(s)))?;
+                Some((target_chunk_id.to_string(), chunk_name.clone()))
             })
         })
         .fold(
@@ -369,7 +377,11 @@ fn build_import_index(chunks: &[(String, PreparedChunk)]) -> BTreeMap<String, Ve
 /// `new Worker(...)` shapes too, and we apply the same relative-path
 /// gate (`.` / `/` prefix) that `rewrite_source` uses.
 fn entry_has_rewritable_specifier(prepared: &PreparedChunk) -> bool {
-    let Some(entry) = prepared.files.get(&prepared.entry_file) else {
+    let Some(entry) = prepared
+        .files
+        .iter()
+        .find(|f| f.path == prepared.entry_file)
+    else {
         return false;
     };
     let JsFileBody::Ast(parsed) = &entry.body else {
