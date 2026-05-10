@@ -2216,6 +2216,24 @@ exploration before crossing the relevant phase.
    selectors because their companions (decorator applications,
    semantic init bridges) are not sinks. Worth tracking but
    not blocking.
+7. **`chunk_renames` cross-module rename propagation.**
+   `chunk_renames` members rename a binding's local-alias
+   references in entry's body via the lowerer's body-rename
+   pipeline. When a binding referenced by the chunk_rename is
+   used INSIDE a logical-module-peeled body too (e.g. an
+   imported `cx` is also called by a binding `b` that the spec
+   peels into `b_module`), the rename does NOT follow into the
+   peeled module's emit — the peeled module retains the
+   original `import { f as cx } …; const b = cx();` shape
+   while residual gets `getMobxGlobalState(...)`. To make the
+   rename uniform, the rename map would need to thread into
+   the per-module emission too (`lower_chunk` /
+   `apply_module_lowering` paths), not just the entry-body
+   rewrite. Out of scope for the purity-propagation change
+   (`logical_modules.rs:528+` declared_pure collection now
+   pulls from chunk_renames members) — those are separate
+   passes of the same map. Track when a real Tana case wants
+   the renamed name everywhere.
 
 ## What this design does not solve
 

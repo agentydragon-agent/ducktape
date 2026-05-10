@@ -477,7 +477,7 @@ fn materialize_logical_chunk(
     }
     drop(imported_binding_resolver);
 
-    if let Some(residual) = residual_request {
+    if let Some(residual) = &residual_request {
         let residual_index = module_plans.len();
         let residual_module_id = ModuleId::Logical(LogicalModuleIndex(residual_index));
         let residual_renames: BTreeMap<&str, &str> = residual
@@ -526,13 +526,38 @@ fn materialize_logical_chunk(
     .unwrap_or_default();
 
     let schedule = {
+        // `purity: pure` hints carried on any spec entry form
+        // (logical-module member, residual-module member,
+        // chunk_renames member) propagate the same way: add the
+        // binding's local name to `declared_pure` so
+        // `classify_callee_call` returns `Pure` for matching call
+        // sites. The author-trust contract is the same regardless
+        // of where the entry lives. See AGENTS.md "Declared
+        // purity".
         let declared_pure: BTreeSet<String> = time_phase!(timings, "collect_declared_pure", {
-            explicit_requests
-                .iter()
-                .flat_map(|req| req.members.iter())
-                .filter(|m| m.purity == MemberPurity::Pure)
-                .map(|m| m.binding.clone())
-                .collect()
+            let mut set = BTreeSet::new();
+            for req in &explicit_requests {
+                for m in &req.members {
+                    if m.purity == MemberPurity::Pure {
+                        set.insert(m.binding.clone());
+                    }
+                }
+            }
+            if let Some(req) = residual_request.as_ref() {
+                for m in &req.members {
+                    if m.purity == MemberPurity::Pure {
+                        set.insert(m.binding.clone());
+                    }
+                }
+            }
+            if let Some(cr) = chunk_renames.get(chunk_id) {
+                for m in &cr.members {
+                    if m.purity == MemberPurity::Pure {
+                        set.insert(m.selector.binding.name.clone());
+                    }
+                }
+            }
+            set
         });
         let line_index = time_phase!(timings, "build_source_line_index", {
             runtime_ast.line_index()
