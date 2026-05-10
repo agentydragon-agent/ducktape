@@ -306,6 +306,7 @@ mod tests {
                 target_file: format!("mod_{i}.js"),
                 residual: false,
                 rename_map: BTreeMap::new(),
+                anonymous_statement_ordinals: Vec::new(),
             })
             .collect();
         Schedule::build(
@@ -339,12 +340,14 @@ mod tests {
                 target_file: "residual/unhandled.js".to_string(),
                 residual: true,
                 rename_map: BTreeMap::new(),
+                anonymous_statement_ordinals: Vec::new(),
             },
             LogicalModule {
                 id: "mod_1".to_string(),
                 target_file: "mod_1.js".to_string(),
                 residual: false,
                 rename_map: BTreeMap::new(),
+                anonymous_statement_ordinals: Vec::new(),
             },
         ];
         Schedule::build(

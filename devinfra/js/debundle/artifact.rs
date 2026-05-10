@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -965,7 +965,7 @@ pub fn materialize_artifact_scripts(
 fn materialize_chunk_scripts(
     artifact: &JsPipelineArtifact,
     out_dir: &Path,
-    selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
+    selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
     chunk_id: ChunkId,
 ) -> Result<Vec<OutputFileMetric>> {
     let chunk_name = artifact.chunk_table.name(chunk_id).to_string();
@@ -1004,7 +1004,7 @@ fn materialize_chunk_file(
     chunk_id: &str,
     out_dir: &Path,
     chunk_out_dir: &Path,
-    selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
+    selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
     file: String,
 ) -> Result<OutputFileMetric> {
     let file_artifact = chunk
@@ -1047,7 +1047,7 @@ fn chunk_relative_metric(chunk_id: &str, metric: &OutputFileMetric) -> OutputFil
 
 fn selected_module_by_chunk_file(
     artifact: &JsPipelineArtifact,
-) -> BTreeMap<(String, String), &SelectedModuleLowering> {
+) -> HashMap<(String, String), &SelectedModuleLowering> {
     artifact
         .chunks
         .iter()
@@ -1066,7 +1066,7 @@ fn output_file_metric(
     output_path: &str,
     artifact_file_path: &str,
     rendered: &str,
-    selected_module_by_chunk_file: &BTreeMap<(String, String), &SelectedModuleLowering>,
+    selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
     role: Option<FileRole>,
 ) -> Result<OutputFileMetric> {
     let lowering = selected_module_by_chunk_file
@@ -1212,7 +1212,7 @@ pub fn normalize_asset_path(path: &str) -> Result<String> {
 
 pub fn parse_js_list(text: &str) -> Result<Vec<String>> {
     let mut out = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
+    let mut seen = HashSet::new();
     for line in text.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {

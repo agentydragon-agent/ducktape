@@ -397,12 +397,12 @@ fn collect_declared_names(item: &ModuleItem) -> BTreeSet<String> {
             DefaultDecl::Fn(fn_expr) => fn_expr
                 .ident
                 .as_ref()
-                .map(|id| std::iter::once(id.sym.to_string()).collect())
+                .map(|id| BTreeSet::from([id.sym.to_string()]))
                 .unwrap_or_default(),
             DefaultDecl::Class(class_expr) => class_expr
                 .ident
                 .as_ref()
-                .map(|id| std::iter::once(id.sym.to_string()).collect())
+                .map(|id| BTreeSet::from([id.sym.to_string()]))
                 .unwrap_or_default(),
             _ => BTreeSet::new(),
         },
@@ -417,8 +417,8 @@ fn declaration_names(decl: &Decl) -> BTreeSet<String> {
             .iter()
             .flat_map(|declarator| binding_names(&declarator.name))
             .collect(),
-        Decl::Fn(fn_decl) => std::iter::once(fn_decl.ident.sym.to_string()).collect(),
-        Decl::Class(class_decl) => std::iter::once(class_decl.ident.sym.to_string()).collect(),
+        Decl::Fn(fn_decl) => BTreeSet::from([fn_decl.ident.sym.to_string()]),
+        Decl::Class(class_decl) => BTreeSet::from([class_decl.ident.sym.to_string()]),
         _ => BTreeSet::new(),
     }
 }

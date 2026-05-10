@@ -715,6 +715,7 @@ fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str
 ///   * No-arg form against `PURE_BUILTIN_NEW_NO_ARGS`.
 ///   * 1-arg Array-literal-iterable form against
 ///     `PURE_BUILTIN_NEW_ARRAY_ITERABLE` (`Set` / `Map`).
+///
 /// Everything else (non-Ident callees, shadowed names, tagged
 /// templates, other arg shapes) falls through to `Unknown`.
 fn classify_new_expr_purity(
