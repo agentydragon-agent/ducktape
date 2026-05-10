@@ -17,6 +17,11 @@ Highest-impact style/design/conciseness improvements identified across `devinfra
 - **`EdgeReason` field-access accessors**: `statement_ordinal()` / `binding()` already use
   concise pattern matching with alternation — no verbose destructuring remains.
 - **`PhaseTimings::add`** already takes `impl Into<String>`.
+- **`selected_module_by_chunk_file` → `HashMap`** (`artifact.rs`): pure lookup map, no ordering
+  needed; `parse_js_list` dedup set → `HashSet`; removed `BTreeMap` import. (2026-05-10)
+- **`BTreeSet::from([x])` in `facts.rs`**: replaced 4 sites of
+  `std::iter::once(x).collect::<BTreeSet<_>>()` in `declaration_names` /
+  `collect_declared_names`. (2026-05-10)
 
 ## Pending
 
@@ -54,12 +59,7 @@ named fields would make ordering intent explicit.
 immediately iterate and discard it. A lazy `BindingNames<'a>` iterator would avoid the
 allocation.
 
-### 6. Replace `std::iter::once(x).collect::<BTreeSet<_>>()` with `BTreeSet::from([x])`
-
-Still present in `facts.rs` at lines ~400, 405, 420, 421 (`declaration_names`,
-`collect_declared_names`). `BTreeSet::from([x])` has been available since Rust 1.56.
-
-### 7. Switch `validation.rs` fully to `HashMap`/`HashSet`
+### 6. Switch `validation.rs` fully to `HashMap`/`HashSet`
 
 `render_cycle_summary` (line 107) and `cut_pairs_count` (line 176) already use `HashMap`/`HashSet`
 locally for performance. The remaining `BTreeMap`/`BTreeSet` uses in the same file should be
