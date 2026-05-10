@@ -153,4 +153,12 @@ pub struct LogicalModule {
     /// owns. Empty when the module re-exports only imported
     /// bindings.
     pub rename_map: BTreeMap<BindingName, BindingName>,
+    /// Source-chunk top-level statement ordinals this module claims
+    /// as anonymous-statement members (owners with empty
+    /// `declared_bindings` that the spec resolves by AST shape via
+    /// `spec::LogicalModule::anonymous_statements`). Schedule uses
+    /// these to override the otherwise-residual destination of those
+    /// owners so cross-destination/cycle checks see the closure as
+    /// the materializer will emit it.
+    pub anonymous_statement_ordinals: Vec<usize>,
 }

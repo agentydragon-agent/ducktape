@@ -20,6 +20,13 @@
 > and `Imported` bindings flow through `Schedule.bindings` /
 > `BindingKind::Imported`, with multi-module re-exports
 > accumulating into one entry's `re_exported_by` map.
+> Anonymous (empty-`declared`) top-level statements have no name
+> to address as a member; a parallel `anonymous_statements`
+> selector list addresses each by its AST shape (verbatim source,
+> matched modulo spans). They co-move with their named-binding
+> companions when the closure requires it, but the spec is still
+> explicit — the author writes the selector, no closure pass
+> infers it.
 
 ## Mission
 
@@ -211,7 +218,11 @@ The spec induces, for each statement:
   names in `declared(S)` to share an owner; comma-list var-decls
   with split owners are split into separate var-decls before this
   step.) For statements with `declared(S) = ∅` (bare expressions,
-  side-effecting statements), `home(S)` is the residual entry
+  side-effecting statements), `home(S)` defaults to the residual
+  entry module **unless** the spec claims `S` via an
+  `anonymous_statements` shape selector on some logical module
+  (see §"Anonymous-statement selectors"); a single shape-selector
+  match overrides the default and routes `S` into the claiming
   module.
 
 ## Owner graph
@@ -825,7 +836,13 @@ The trade-off doesn't pay off in practice:
 
 **Design rule.** The spec is fully explicit. Every owned binding
 has its `owner` named in the spec or defaults to
-`ModuleId::ResidualEntry`. There is no implicit pulling.
+`ModuleId::ResidualEntry`. Empty-`declared` (anonymous) statements
+default to `ResidualEntry` unless explicitly claimed by a logical
+module's `anonymous_statements` shape selector. There is no
+implicit pulling: when a peelability proposal's closure includes
+anonymous companions, the spec author copies their source into
+`anonymous_statements` (one entry per claimed statement); the
+materializer never silently co-moves an anon statement.
 
 The owner graph is the explicit replacement for hidden closure. It
 records the fine-grained "this owner uses that owner" relation before
@@ -1469,6 +1486,109 @@ All entries assigned, no ambiguity.
   is O(entries × bindings) per stratum × strata-depth, which is
   fine at typical bundle scale.
 
+## Anonymous-statement selectors
+
+Binding selectors (above) address an `Owned` binding by name.
+Anonymous (empty-`declared`) statements have no name; they are
+side-effect IIFEs, decorator applications like
+`Ww([Z], $g.prototype, "invites", 2);`, runtime init bridges, and
+similar bare expressions/statements. Empirically, a closure that
+peels a hub-class binding (e.g. `WorkspaceInviteState`) frequently
+must co-move several such statements — they apply decorators to
+the class prototype, register Meticulous record/replay hooks,
+push system-config bridges through helper functions — and an
+algorithmic refinement (treating "fire-and-forget" preludes as
+non-constraining) does not cover them: most are not preludes,
+they semantically belong with the class.
+
+The spec addresses these statements with an
+`anonymous_statements: [...]` list on the same `LogicalModule` as
+the named members, where each entry carries the JS source of the
+target statement verbatim:
+
+```yaml
+workspace/invite/state:
+  members:
+    - selector: { binding: { name: $g } }
+      name: WorkspaceInviteState
+  anonymous_statements:
+    - match: |
+        Ww([Z], $g.prototype, "invites", 2);
+      note: "@observable invites"
+    - match: |
+        Ww([Z], $g.prototype, "isChecking", 2);
+```
+
+### Different from binding selectors
+
+Binding selectors (§"Selector vocabulary and matching") are
+**narrowing predicates** that may admit 0, 1, or many candidate
+bindings; the resolver disambiguates by elimination across all
+spec entries. Anonymous-statement selectors are **unique-by-design
+shape matchers**: each `match` source is parsed as a single SWC
+`Stmt` and compared structurally (`EqIgnoreSpan`) against the
+chunk's top-level statements. The contract is "exactly one
+match." Zero matches is a spec error (the upstream statement was
+likely renamed or removed; the diagnostic points at top-level
+statements with similar shape). Multiple matches is a spec error
+(refine the selector or — if the chunk really contains two
+identical statements — accept that they're indistinguishable
+without context). There is no narrowing across selectors and no
+bipartite forcing: the resolver runs per-entry, independent of
+other anon entries.
+
+This asymmetry is intentional. Bindings have a stable identity
+(the declaration site) that survives mid-statement edits, so
+narrowing makes sense — a candidate set of 3 collapses to 1 when
+the other two get claimed. Anonymous statements have no comparable
+identity; their only handle is the AST shape itself. A loose
+"narrowing" matcher would silently accept an unintended statement
+when an upstream change drops the originally-targeted one — the
+spec would still type-check, the materializer would still emit a
+module, but the wrong code would move. The strict-equality
+contract pushes those failures to spec-validation time with a
+loud diagnostic, mirroring the validator's "cycle = reject"
+philosophy.
+
+### Constraints on the selector source
+
+- The `match` source must parse as JS and contain **exactly one
+  top-level statement**. The resolver feeds it through the same
+  parser the chunk used (`js_ast::parse_js_module_ast`); the
+  parsed module's body must have length 1.
+- Comparison is `EqIgnoreSpan` over `ModuleItem`. Whitespace and
+  comments differences are ignored; identifier names and string
+  literals are not. Identifier names match the chunk's
+  pre-readability-rename form (the same form binding selectors
+  use as `selector.binding.name`).
+- Each anonymous statement may belong to at most one logical
+  module. A duplicate claim across two modules is a spec error;
+  the validator names both modules and the offending statement
+  ordinal.
+
+### Why exact source rather than line/column
+
+Tana's bundle is delivered minified and prettified for analysis;
+neither line nor column is stable across re-prettifies or
+upstream Tana releases. The shape selector survives both: the
+prettifier reformats whitespace but preserves AST structure, and
+upstream changes that touch the statement's content surface as a
+zero-match diagnostic the spec author can fix.
+
+### Schedule integration
+
+`Schedule` validates realizability (the cycle gate over `I ∪ S`)
+by quotienting the owner graph by each owner's destination.
+Anonymous owners default to `ModuleId::ResidualEntry`; the
+schedule overrides that destination for any anon owner the spec
+claimed. Without this override, an anon owner with a constraining
+in-edge from a peeled named owner would create a fake cross-module
+edge — the validator would reject the spec even though the
+materializer would emit the closure correctly. After the override,
+the validator sees the same module dep graph the materializer
+will emit, and the cycle gate fires only on real unrealizable
+splits. See `Schedule::build` in `schedule.rs`.
+
 ## Comma-list var-decls with split owners
 
 The spec's `owner` is a function from binding name to module.
@@ -2073,6 +2193,29 @@ exploration before crossing the relevant phase.
    M_a reads `X` (owned by M_b); stmt#107 in M_b reads `Y`
    (owned by M_a). Resolution: colocate X and Y in one module"
    is the goal.
+5. **Pattern selectors for `anonymous_statements`.** Today the
+   `match` is exact AST equality. Wildcard placeholders
+   (`Ww([?], $g.prototype, ?, ?);` to match every decorator
+   application on `$g.prototype` regardless of the decorator
+   factory or property name) would let one selector entry claim a
+   whole regular cluster — the 6 `Ww(...)` decorator applications
+   in `WorkspaceInviteState` could collapse to a single
+   selector. But this loses the strict-equality-or-loud-failure
+   property and reintroduces narrowing, so the model would need
+   to either bipartite-force across pattern selectors or ban
+   ambiguity. Deferred until a real Tana spec demands it.
+6. **Constraining-graph-sink refinement.** Some anonymous
+   statements (Sentry debug-id IIFE, Vite modulepreload polyfill)
+   are sinks in the constraining edge graph: they have side
+   effects but no observable cross-binding deps. An s-edge from
+   a peeled named owner to such a sink could be exempted as
+   non-constraining, letting the named owner peel without an
+   `anonymous_statements` co-mover. Empirically this would
+   cover ~91 of 4106 currently-blocked horizon bindings in
+   Tana — a small fraction. The other ~4015 still need anon
+   selectors because their companions (decorator applications,
+   semantic init bridges) are not sinks. Worth tracking but
+   not blocking.
 
 ## What this design does not solve
 

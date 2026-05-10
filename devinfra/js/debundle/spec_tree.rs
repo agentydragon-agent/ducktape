@@ -290,6 +290,7 @@ fn logical_modules_map(
                 source.path.clone(),
                 LogicalModule {
                     members: source.members,
+                    anonymous_statements: Vec::new(),
                 },
             );
         if previous.is_some() {

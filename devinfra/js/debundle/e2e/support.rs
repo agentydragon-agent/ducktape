@@ -74,6 +74,14 @@ struct FixtureBindingSelector {
 #[derive(Serialize)]
 struct LogicalModuleBody {
     members: Vec<FixtureMember>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    anonymous_statements: Vec<FixtureAnonymousStatement>,
+}
+
+#[derive(Serialize)]
+struct FixtureAnonymousStatement {
+    #[serde(rename = "match")]
+    match_source: String,
 }
 
 #[derive(Serialize)]
@@ -145,6 +153,34 @@ pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
         path.to_string(),
         serde_json::to_value(LogicalModuleBody {
             members: fixture_members(members),
+            anonymous_statements: Vec::new(),
+        })
+        .expect("logical module fixture must serialize"),
+    )
+}
+
+/// Like [`logical_module`] but also emits an `anonymous_statements:`
+/// list. Each entry's source is matched (modulo spans) against
+/// the chunk's top-level statements; the resolver requires exactly
+/// one match. Use this when the peel needs to co-move side-effect
+/// statements that have no binding name (decorator applications,
+/// IIFE preludes, etc.) — see the round-trip test for the canonical
+/// shape.
+pub fn logical_module_with_anon(
+    path: &str,
+    members: &[Member],
+    anon_matches: &[&str],
+) -> LogicalModuleEntry {
+    (
+        path.to_string(),
+        serde_json::to_value(LogicalModuleBody {
+            members: fixture_members(members),
+            anonymous_statements: anon_matches
+                .iter()
+                .map(|m| FixtureAnonymousStatement {
+                    match_source: (*m).to_string(),
+                })
+                .collect(),
         })
         .expect("logical module fixture must serialize"),
     )

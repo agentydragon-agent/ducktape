@@ -243,6 +243,34 @@ pub enum WrapperShape {
 pub struct LogicalModule {
     #[serde(default)]
     pub members: Vec<Member>,
+    /// Anonymous (empty-`declared_bindings`) top-level statements
+    /// the materializer must co-move into this module's body.
+    /// Required when a peel proposal's closure includes side-effect
+    /// statements that have no name to address as `members`
+    /// (decorator applications, IIFE preludes, runtime init calls).
+    /// Each entry is matched by AST shape against the chunk's
+    /// top-level statements; the resolver requires exactly one
+    /// match per entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anonymous_statements: Vec<AnonymousStatement>,
+}
+
+/// Co-mover spec for a top-level anonymous side-effect statement.
+/// See [`LogicalModule::anonymous_statements`].
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnonymousStatement {
+    /// JS source of the target top-level statement, verbatim.
+    /// Parsed as a single `Stmt` and compared structurally
+    /// (modulo spans) against the chunk's top-level statements.
+    /// Must match exactly one — zero matches and ambiguous matches
+    /// are spec errors.
+    #[serde(rename = "match")]
+    pub match_source: String,
+    /// Optional human-readable note (e.g. "MobX-style decorator on
+    /// $g.prototype.invites"). Ignored by the resolver.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

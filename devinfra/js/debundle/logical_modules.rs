@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde::Serialize;
-use swc_common::{DUMMY_SP, SyntaxContext};
+use swc_common::{DUMMY_SP, EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
@@ -136,6 +136,10 @@ struct LogicalRequest {
     target_path: String,
     residual: bool,
     members: Vec<MemberRequest>,
+    /// Verbatim source of each anonymous-statement member the spec
+    /// asked to co-move into this module. Resolved later (after AST
+    /// analysis) into [`ModulePlan::anonymous_statement_ordinals`].
+    anonymous_match_sources: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +182,14 @@ struct ModulePlan {
     /// in `Schedule.bindings` as `BindingKind::Imported` and their
     /// emit is driven from there.
     bindings: BTreeMap<String, String>,
+    /// Source-chunk statement ordinals of anonymous-statement members
+    /// claimed by this module. These owners have empty
+    /// `declared_bindings`, so they can't be addressed by name —
+    /// the spec resolves them by AST shape (see
+    /// [`spec::LogicalModule::anonymous_statements`]). The
+    /// materializer routes each such statement into this module's
+    /// body in source order, alongside the named members.
+    anonymous_statement_ordinals: Vec<usize>,
 }
 
 pub fn materialize_logical_modules(
@@ -394,6 +406,7 @@ fn materialize_logical_chunk(
 
     let build_module_plans_started = Instant::now();
     let mut binding_assignment = BTreeMap::<String, usize>::new();
+    let mut anonymous_ordinal_assignment = BTreeMap::<usize, usize>::new();
     let mut module_plans = Vec::new();
     let mut bindings_catalogue = BTreeMap::<BindingName, BindingKind>::new();
     let mut imported_binding_resolver =
@@ -401,6 +414,26 @@ fn materialize_logical_chunk(
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
     for (index, request) in explicit_requests.iter_mut().enumerate() {
         let mut bindings = BTreeMap::new();
+        let anonymous_statement_ordinals =
+            resolve_anonymous_statement_ordinals(request, &runtime_ast.module)?;
+        for ordinal in &anonymous_statement_ordinals {
+            if let Some(existing) = anonymous_ordinal_assignment.get(ordinal).copied() {
+                let existing_id: String = module_plans
+                    .get(existing)
+                    .map(|plan: &ModulePlan| plan.id.clone())
+                    .unwrap_or_else(|| format!("<plan#{existing}>"));
+                bail!(
+                    "anonymous_statements[].match in module {} also matches the \
+                     top-level statement at ordinal {} already claimed by module {}; \
+                     each anonymous statement may belong to at most one logical \
+                     module.",
+                    request.id,
+                    ordinal,
+                    existing_id,
+                );
+            }
+            anonymous_ordinal_assignment.insert(*ordinal, index);
+        }
         let dest_target_file = target_file_for_request(target_dir, &request.target_path)?;
         let module_id = ModuleId::Logical(LogicalModuleIndex(index));
         for member in &request.members {
@@ -439,6 +472,7 @@ fn materialize_logical_chunk(
             target_path: request.target_path.clone(),
             explicit: true,
             bindings,
+            anonymous_statement_ordinals,
         });
     }
     drop(imported_binding_resolver);
@@ -477,6 +511,7 @@ fn materialize_logical_chunk(
                 target_path: residual.target_path.clone(),
                 explicit: false,
                 bindings: residual_bindings,
+                anonymous_statement_ordinals: Vec::new(),
             });
         }
     }
@@ -528,6 +563,7 @@ fn materialize_logical_chunk(
                         target_file: plan.target_file.clone(),
                         residual: !plan.explicit,
                         rename_map: plan.bindings.clone(),
+                        anonymous_statement_ordinals: plan.anonymous_statement_ordinals.clone(),
                     })
                     .collect()
             });
@@ -601,6 +637,7 @@ fn materialize_logical_chunk(
             declaration_by_name: &declaration_by_name,
             module_plans: &module_plans,
             binding_assignment: &binding_assignment,
+            anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
             schedule: &schedule,
             chunk_renames: &chunk_renames_map,
             runtime_import_facts: &runtime_import_facts,
@@ -786,6 +823,10 @@ struct LowerChunkInputs<'a> {
     declaration_by_name: &'a BTreeMap<String, usize>,
     module_plans: &'a [ModulePlan],
     binding_assignment: &'a BTreeMap<String, usize>,
+    /// Top-level statement ordinal → module_plan index for owners
+    /// the spec claimed as anonymous-statement members. See
+    /// `ModulePlan::anonymous_statement_ordinals`.
+    anonymous_ordinal_assignment: &'a BTreeMap<usize, usize>,
     schedule: &'a Schedule,
     runtime_import_facts: &'a RuntimeImportFacts,
     /// In-place renames from `TransformSpec::chunk_renames`. Applied
@@ -886,6 +927,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         declaration_by_name,
         module_plans,
         binding_assignment,
+        anonymous_ordinal_assignment,
         schedule,
         runtime_import_facts,
         chunk_renames,
@@ -901,6 +943,9 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             {
                 selected_ordinals.insert(decl.ordinal);
             }
+        }
+        for ordinal in anonymous_ordinal_assignment.keys() {
+            selected_ordinals.insert(*ordinal);
         }
         selected_ordinals
     });
@@ -942,6 +987,12 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         for (ordinal, item) in runtime_ast.module.body.iter().enumerate() {
             if !selected_ordinals.contains(&ordinal) {
                 entry_body.push(item.clone());
+                continue;
+            }
+            // Anonymous-statement members route the entire item to
+            // the claiming module's body — no per-binding splitting.
+            if let Some(module_index) = anonymous_ordinal_assignment.get(&ordinal).copied() {
+                selected_by_module[module_index].push(item.clone());
                 continue;
             }
             let mut remaining =
@@ -1334,11 +1385,17 @@ fn logical_requests_for_chunk(
             let members = build_members(&module.members);
             reject_duplicate_export_names("logical_module", &id, &members)?;
             reject_duplicate_member_bindings("logical_module", &id, &members)?;
+            let anonymous_match_sources = module
+                .anonymous_statements
+                .iter()
+                .map(|stmt| stmt.match_source.clone())
+                .collect();
             requests.push(LogicalRequest {
                 id,
                 target_path: target_path.clone(),
                 residual: false,
                 members,
+                anonymous_match_sources,
             });
         }
     }
@@ -1356,6 +1413,7 @@ fn logical_requests_for_chunk(
             target_path,
             residual: true,
             members,
+            anonymous_match_sources: Vec::new(),
         });
     }
     // Fallback: when the spec is silent about this chunk (no
@@ -1372,6 +1430,7 @@ fn logical_requests_for_chunk(
             target_path: join_module_path(&[target_dir, "unhandled"]),
             residual: true,
             members: Vec::new(),
+            anonymous_match_sources: Vec::new(),
         });
     }
     Ok(requests)
@@ -1417,6 +1476,75 @@ fn collect_chunk_renames(chunk_renames: &ChunkRenames) -> Result<BTreeMap<String
         }
     }
     Ok(renames)
+}
+
+/// Resolve every `anonymous_match_sources` entry on `request` to a
+/// statement ordinal in `runtime_module`'s top-level body. The
+/// resolver requires exactly one match per entry — a 0-match or
+/// ambiguous-match selector is a spec error.
+fn resolve_anonymous_statement_ordinals(
+    request: &LogicalRequest,
+    runtime_module: &Module,
+) -> Result<Vec<usize>> {
+    let mut resolved = Vec::with_capacity(request.anonymous_match_sources.len());
+    for match_source in &request.anonymous_match_sources {
+        let parsed = js_ast::parse_js_module_ast(
+            &format!("<anonymous_statement match in {}>", request.id),
+            match_source,
+        )
+        .with_context(|| {
+            format!(
+                "logical_module {}: anonymous_statements[].match did not parse as JS:\n{match_source}",
+                request.id
+            )
+        })?;
+        let parsed_items: Vec<&ModuleItem> = parsed.body.iter().collect();
+        let needle = match parsed_items.as_slice() {
+            [single] => *single,
+            [] => bail!(
+                "logical_module {}: anonymous_statements[].match parsed to zero \
+                 statements; selector source must contain exactly one top-level \
+                 statement:\n{match_source}",
+                request.id,
+            ),
+            _ => bail!(
+                "logical_module {}: anonymous_statements[].match parsed to {} \
+                 statements; selector source must contain exactly one top-level \
+                 statement:\n{match_source}",
+                request.id,
+                parsed_items.len(),
+            ),
+        };
+        let matches: Vec<usize> = runtime_module
+            .body
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, item)| {
+                if needle.eq_ignore_span(item) {
+                    Some(ordinal)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        match matches.as_slice() {
+            [single] => resolved.push(*single),
+            [] => bail!(
+                "logical_module {}: anonymous_statements[].match did not match any \
+                 top-level statement in the chunk. Selector:\n{match_source}",
+                request.id,
+            ),
+            multiple => bail!(
+                "logical_module {}: anonymous_statements[].match is ambiguous — \
+                 matched {} top-level statements at ordinals {:?}. Refine the \
+                 selector. Source:\n{match_source}",
+                request.id,
+                multiple.len(),
+                multiple,
+            ),
+        }
+    }
+    Ok(resolved)
 }
 
 fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {

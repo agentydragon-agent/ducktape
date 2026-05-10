@@ -66,7 +66,25 @@ impl Schedule {
         chunk_renames: BTreeMap<BindingName, BindingName>,
     ) -> Self {
         let ownership = owned_view(&bindings);
-        let owner_graph = build_owner_graph(&facts, &ownership);
+        let mut owner_graph = build_owner_graph(&facts, &ownership);
+        // Owners of anonymous-statement members would otherwise
+        // default to `ResidualEntry` (no declared binding to look up
+        // in `bindings`). Override their destination to the claiming
+        // logical module so the dep-graph quotient and the
+        // realizability/cycle checks see the closure as the
+        // materializer will emit it.
+        for (idx, module) in logical_modules.iter().enumerate() {
+            let module_id = ModuleId::Logical(LogicalModuleIndex(idx));
+            for ordinal in &module.anonymous_statement_ordinals {
+                if let Some(node) = owner_graph
+                    .nodes
+                    .iter_mut()
+                    .find(|node| node.statement_ordinal.0 == *ordinal)
+                {
+                    node.destination = module_id;
+                }
+            }
+        }
         let owner_edges = collect_owner_edge_entries(&owner_graph);
         let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
         let dep_graph =
