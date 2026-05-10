@@ -49,6 +49,7 @@ rust_library(
     )
     for name in [
         "anonymous_statement_ambiguous_match_test",
+        "anonymous_statement_iife_multiline_test",
         "anonymous_statement_round_trip_test",
         "anonymous_statement_source_order_test",
         "anonymous_statement_zero_match_test",
