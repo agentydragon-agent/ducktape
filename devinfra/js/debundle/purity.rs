@@ -576,19 +576,26 @@ pub(crate) fn classify_expr_purity(
             }
             acc
         }
-        Expr::Member(member) => {
-            if let Some((recv, prop)) = static_member_pair(member)
-                && !shadowed.contains(recv)
-                && (PURE_STATIC_PROPS.contains(&(recv, prop))
-                    || PURE_STATIC_FUNCTION_REFS.contains(&(recv, prop)))
-            {
-                return Purity::Pure;
-            }
-            // `obj.prop` on an arbitrary object can fire a getter;
-            // we can't tell statically.
-            Purity::Unknown
-        }
-        Expr::SuperProp(_) | Expr::OptChain(_) => Purity::Unknown,
+        Expr::Member(member) => classify_member_purity(member, shadowed),
+        Expr::SuperProp(_) => Purity::Unknown,
+        // Optional chaining (`recv?.prop`, `recv?.()`) only adds a
+        // null/undefined short-circuit on top of plain member /
+        // call evaluation; it doesn't introduce side effects of
+        // its own. Recurse through the OptChainBase so an
+        // OptChain that expands to a whitelisted static-property
+        // read or a whitelisted call returns the same `Pure` /
+        // `Unknown` answer the non-optional shape would. R1 in
+        // DESIGN.md "Open design questions / OptChain purity".
+        Expr::OptChain(opt) => match &*opt.base {
+            OptChainBase::Member(member) => classify_member_purity(member, shadowed),
+            OptChainBase::Call(opt_call) => classify_callee_call(
+                &opt_call.callee,
+                &opt_call.args,
+                shadowed,
+                declared_pure,
+                graph,
+            ),
+        },
         Expr::Call(call) => classify_call_purity(call, shadowed, declared_pure, graph),
         Expr::New(_) | Expr::TaggedTpl(_) => Purity::Unknown,
         Expr::Assign(_) | Expr::Update(_) => Purity::Impure,
@@ -627,6 +634,23 @@ fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str
     Some((recv, prop))
 }
 
+/// Purity of `member` taken as an r-value member access
+/// (`recv.prop` or `recv?.prop`). Pure iff the receiver+property
+/// pair is whitelisted and the receiver name isn't shadowed by a
+/// chunk-top declaration. Otherwise `Unknown` — `obj.prop` on an
+/// arbitrary object can fire a getter, which we can't rule out
+/// statically.
+fn classify_member_purity(member: &MemberExpr, shadowed: &BTreeSet<&'static str>) -> Purity {
+    if let Some((recv, prop)) = static_member_pair(member)
+        && !shadowed.contains(recv)
+        && (PURE_STATIC_PROPS.contains(&(recv, prop))
+            || PURE_STATIC_FUNCTION_REFS.contains(&(recv, prop)))
+    {
+        return Purity::Pure;
+    }
+    Purity::Unknown
+}
+
 fn classify_call_purity(
     call: &CallExpr,
     shadowed: &BTreeSet<&'static str>,
@@ -636,6 +660,23 @@ fn classify_call_purity(
     let Callee::Expr(callee_expr) = &call.callee else {
         return Purity::Unknown;
     };
+    classify_callee_call(callee_expr, &call.args, shadowed, declared_pure, graph)
+}
+
+/// Common backbone for `Expr::Call` and `OptChainBase::Call` —
+/// classify a `callee_expr(args…)` invocation. Walks the same
+/// whitelists and chunk-local function-body purity cache the
+/// regular call classifier consults; the only difference between
+/// `Expr::Call` and `OptChainBase::Call` is the null-coalesce
+/// short-circuit on the optional form, which is irrelevant for
+/// side-effect classification.
+fn classify_callee_call(
+    callee_expr: &Expr,
+    args: &[ExprOrSpread],
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
     // Author-declared pure binding: a chunk-local function whose
     // spec member carries `purity: "pure"`. The annotation is an
     // explicit override and wins over both the whitelist and the
@@ -643,37 +684,37 @@ fn classify_call_purity(
     // value is pure regardless of what its body does or whether
     // an import shadows the name). See AGENTS.md "Declared
     // purity".
-    if let Expr::Ident(ident) = callee_expr.as_ref()
+    if let Expr::Ident(ident) = callee_expr
         && declared_pure.contains(ident.sym.as_ref())
     {
-        return all_args_pure(&call.args, shadowed, declared_pure, graph);
+        return all_args_pure(args, shadowed, declared_pure, graph);
     }
     // Chunk-local function declaration: consult the per-chunk
     // function-body purity cache. `Pure` callee + Pure args → Pure;
     // `Impure` callee → Impure (no matter the args); `Unknown`
     // callee inherits.
-    if let Expr::Ident(ident) = callee_expr.as_ref()
+    if let Expr::Ident(ident) = callee_expr
         && let Some(callee_purity) = graph.function_purity(ident.sym.as_ref())
     {
-        return callee_purity.worst(all_args_pure(&call.args, shadowed, declared_pure, graph));
+        return callee_purity.worst(all_args_pure(args, shadowed, declared_pure, graph));
     }
     // `Recv.method(args)` against PURE_STATIC_CALLS.
-    if let Expr::Member(member) = callee_expr.as_ref()
+    if let Expr::Member(member) = callee_expr
         && let Some((recv, prop)) = static_member_pair(member)
         && !shadowed.contains(recv)
         && PURE_STATIC_CALLS.contains(&(recv, prop))
     {
-        return all_args_pure(&call.args, shadowed, declared_pure, graph);
+        return all_args_pure(args, shadowed, declared_pure, graph);
     }
     // `globalCallable(args)` against PURE_GLOBAL_CALLS.
-    if let Expr::Ident(ident) = callee_expr.as_ref()
+    if let Expr::Ident(ident) = callee_expr
         && let Some(name) = PURE_GLOBAL_CALLS
             .iter()
             .copied()
             .find(|n| *n == ident.sym.as_ref())
         && !shadowed.contains(name)
     {
-        return all_args_pure(&call.args, shadowed, declared_pure, graph);
+        return all_args_pure(args, shadowed, declared_pure, graph);
     }
     Purity::Unknown
 }
