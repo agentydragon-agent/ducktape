@@ -164,11 +164,22 @@ export { helper, run };
     let fixture = run_fixture(opts);
 
     assert_entry_output(&fixture, "entry\n");
+    // The rename propagates into the peeled module: the import
+    // pulls `helper` from entry.js under the renamed local alias
+    // `readableHelper`, and the body's `helper()` callsite is
+    // rewritten to `readableHelper()` to match. Without this
+    // propagation, the peeled module would carry the original
+    // alias and produce two disagreeing local aliases for the same
+    // upstream binding (entry's body uses `readableHelper`,
+    // mod_run's body uses `helper`).
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/mod_run.js",
-        &[r#"import { helper } from "../entry.js";"#],
-        &[],
+        &[
+            r#"import { helper as readableHelper } from "../entry.js";"#,
+            "return readableHelper()",
+        ],
+        &["return helper()"],
     );
     assert_generated_module_after_entry_script(
         &fixture.out_root,

@@ -60,6 +60,7 @@ rust_library(
         "vendor_swap_test",
         "identifier_rename_queue_test",
         "sibling_declarator_steal_test",
+        "chunk_rename_cross_module_test",
         "chunk_renames_test",
         "missing_binding_member_test",
         "residual_member_rename_test",

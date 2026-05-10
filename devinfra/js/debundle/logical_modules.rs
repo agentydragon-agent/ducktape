@@ -1224,6 +1224,20 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     let mut file_records = vec![(entry_file.to_string(), FileRole::Entry)];
     let mut applied = Vec::new();
 
+    // Filter chunk_renames down to entries the per-module emit path
+    // should apply: bindings *not* claimed by any logical module.
+    // Claimed bindings get their rename from the module plan
+    // (handled via `disambiguate_import_locals` for cross-module
+    // imports of the binding); the chunk_renames entry is dropped
+    // for those. Mirrors the residual-side rule on body_renames
+    // seeding above. The map is empty for chunks with no
+    // chunk_renames; the per-module renamer is then a no-op.
+    let cross_module_chunk_renames: BTreeMap<String, String> = chunk_renames
+        .iter()
+        .filter(|(binding, _)| !binding_assignment.contains_key(*binding))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
     for (index, plan) in module_plans.iter().enumerate() {
         let mut body = std::mem::take(&mut selected_by_module[index]);
         let local_renames = time_phase!(timings, "module.naturalize_body", {
@@ -1297,6 +1311,23 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         module_imports.append(&mut runtime_reimports);
         module_imports.append(&mut body);
         body = module_imports;
+        // Apply chunk_renames to the assembled module body so that
+        // import-specifier aliases and references in the moved code
+        // both pick up the spec's rename. Without this, residual
+        // entry says `getMobxGlobalState` but the peeled module's
+        // `import { f as cx }` and `cx()` refs still say `cx`,
+        // producing two disagreeing local aliases for the same
+        // upstream binding.
+        if !cross_module_chunk_renames.is_empty() {
+            time_phase!(timings, "module.rename_chunk_renames", {
+                let mut renamer = IdentifierRenamer {
+                    renames: &cross_module_chunk_renames,
+                };
+                for item in body.iter_mut() {
+                    item.visit_mut_with(&mut renamer);
+                }
+            });
+        }
         time_phase!(timings, "module.rewrite_runtime_sources", {
             rewrite_runtime_sources_for_target(&mut body, &plan.target_file);
         });
