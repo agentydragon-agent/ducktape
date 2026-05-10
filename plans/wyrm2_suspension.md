@@ -40,7 +40,7 @@ These are node-level infra or don't need action:
 - [ ] **atuin** (server + CNPG `atuin-db-1`) — shell history sync
 - [ ] **grocy-sf** (grocy + mcp-server) — SF household inventory
 - [ ] **grocy-vallejo** (grocy + mcp-server) — Vallejo household inventory
-- [ ] **matrix** (synapse + CNPG `matrix-db-1`) — Matrix homeserver
+- [x] **matrix** (synapse + CNPG `matrix-db-1`) — deleted Deployment, element-web, CNPG cluster, PVC, all Secrets, HTTPRoutes. Set `spec.suspend: true` on Flux Kustomizations (matrix-{namespace,db,secrets,app}).
 - [ ] **harbor** (full stack: core, db, registry, redis, portal, nginx, jobservice, exporter) — container registry
 - [ ] **nix-cache** (attic + CNPG `attic-db-1`) — Nix binary cache
 
