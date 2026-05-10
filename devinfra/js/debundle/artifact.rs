@@ -7,14 +7,16 @@ use anyhow::{Context, Result, bail};
 use relative_path::RelativePath;
 use serde::Serialize;
 
+use analysis::{ChunkId, ChunkTable};
 use js_ast::{ParsedJsModule, emit_js_module};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
 #[derive(Default)]
 pub struct LoadedJsChunks {
-    pub chunk_order: Vec<String>,
-    pub chunks: BTreeMap<String, JsChunk>,
+    pub chunk_order: Vec<ChunkId>,
+    pub chunks: Vec<Option<JsChunk>>,
+    pub chunk_table: ChunkTable,
 }
 
 pub struct JsPipelineArtifact {
@@ -463,10 +465,25 @@ pub enum TopLevelDeclarationKind {
 impl LoadedJsChunks {
     pub fn list_chunk_ids(&self) -> Vec<String> {
         if self.chunk_order.is_empty() {
-            self.chunks.keys().cloned().collect()
+            self.chunks
+                .iter()
+                .enumerate()
+                .filter_map(|(i, chunk)| {
+                    chunk
+                        .as_ref()
+                        .map(|_| self.chunk_table.name(ChunkId(i)).to_string())
+                })
+                .collect()
         } else {
-            self.chunk_order.clone()
+            self.chunk_order
+                .iter()
+                .map(|id| self.chunk_table.name(*id).to_string())
+                .collect()
         }
+    }
+
+    pub fn take_chunk(&mut self, chunk_id: ChunkId) -> Option<JsChunk> {
+        self.chunks.get_mut(chunk_id.0).and_then(|slot| slot.take())
     }
 }
 
@@ -833,7 +850,8 @@ pub fn load_js_chunks(
             .and_then(|value| value.to_str())
             .context("source path missing file name")?
             .to_string();
-        let chunk_id = chunk_id_for_js_path(source_path)?;
+        let chunk_name = chunk_id_for_js_path(source_path)?;
+        let chunk_id = chunks.chunk_table.intern(chunk_name.clone());
         let content = fs::read_to_string(&absolute_path)
             .with_context(|| format!("reading {}", absolute_path.display()))?;
         let mut files = BTreeMap::new();
@@ -844,7 +862,7 @@ pub fn load_js_chunks(
                 body: JsFileBody::Source(content),
                 header_lines: Vec::new(),
                 metadata: FileMetadata {
-                    chunk_id: Some(chunk_id.clone()),
+                    chunk_id: Some(chunk_name),
                     chunk_file: Some(entry_file.clone()),
                     role: Some(FileRole::Entry),
                     source_path: Some(source_path.clone()),
@@ -852,18 +870,19 @@ pub fn load_js_chunks(
                 },
             },
         );
-        chunks.chunk_order.push(chunk_id.clone());
-        chunks.chunks.insert(
-            chunk_id.clone(),
-            JsChunk {
-                entry_file,
-                files,
-                metadata: ChunkMetadata {
-                    source_path: Some(source_path.clone()),
-                    module_extraction_state: None,
-                },
+        chunks.chunk_order.push(chunk_id);
+        // Extend the vec to fit the new chunk id.
+        while chunks.chunks.len() <= chunk_id.0 {
+            chunks.chunks.push(None);
+        }
+        chunks.chunks[chunk_id.0] = Some(JsChunk {
+            entry_file,
+            files,
+            metadata: ChunkMetadata {
+                source_path: Some(source_path.clone()),
+                module_extraction_state: None,
             },
-        );
+        });
     }
     let manifest = LoadedJsChunksManifest {
         counts: LoadedCounts {

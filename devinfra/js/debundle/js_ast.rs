@@ -16,6 +16,13 @@ impl ParsedJsModule {
     pub fn line_index(&self) -> SourceLineIndex {
         SourceLineIndex::for_source_map(&self.cm)
     }
+
+    /// Clone the source text stored in the SourceMap. Returns the full
+    /// source string that was passed to `parse_js_module` or
+    /// `parse_js_module_consuming`.
+    pub fn source_text(&self) -> String {
+        self.cm.files()[0].src.to_string()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -87,6 +94,19 @@ impl FileLineIndex {
 pub fn parse_js_module(source_name: &str, source: &str) -> Result<ParsedJsModule> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = source_file(&cm, source_name, source);
+    let module = parse_module_from_source_file(source_name, &fm)?;
+    Ok(ParsedJsModule { cm, module })
+}
+
+/// Like `parse_js_module` but takes ownership of the source string, avoiding
+/// the clone inside `source_file`. The source text is retrievable via
+/// `ParsedJsModule::source_text()`.
+pub fn parse_js_module_consuming(source_name: &str, source: String) -> Result<ParsedJsModule> {
+    let cm: Lrc<SourceMap> = Default::default();
+    let fm = cm.new_source_file(
+        FileName::Custom(source_name.to_string()).into(),
+        source,
+    );
     let module = parse_module_from_source_file(source_name, &fm)?;
     Ok(ParsedJsModule { cm, module })
 }

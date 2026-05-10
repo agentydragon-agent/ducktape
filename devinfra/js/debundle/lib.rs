@@ -33,8 +33,8 @@ pub use graph::{
     build_owner_graph, quotient_owner_graph,
 };
 pub use ids::{
-    BindingId, BindingKind, BindingName, BindingTable, LogicalModule, LogicalModuleIndex, ModuleId,
-    StatementOrdinal,
+    BindingId, BindingKind, BindingName, BindingTable, ChunkId, ChunkTable, LogicalModule,
+    LogicalModuleIndex, ModuleId, StatementOrdinal,
 };
 pub use report_schema::{
     BindingReport, EvaluatedPeelCandidateReport, ModuleReportRef, OwnerGraphEdgeReport,

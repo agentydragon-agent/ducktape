@@ -5,12 +5,13 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde::Serialize;
 
+use analysis::ChunkId;
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, CANONICAL_CHUNK_ENTRY_FILE,
     ChunkArtifact, ChunkManifest, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
     JsFileBody, JsPipelineArtifact, LoadedJsChunks, ParsedJsFileRecord,
 };
-use js_ast::{ParsedJsModule, emit_js_module, parse_js_module};
+use js_ast::{ParsedJsModule, parse_js_module_consuming};
 use program_analysis::{
     ProgramAnalysis, analyze_program_shallow, build_chunk_manifest_from_analysis,
 };
@@ -44,49 +45,57 @@ pub fn prepare_js_chunks(
     spec: &TransformSpec,
     mut loaded: LoadedJsChunks,
 ) -> Result<PrepareJsChunksResult> {
-    let chunk_ids = loaded.list_chunk_ids();
-    let jobs = chunk_ids
+    // Collect (ChunkId, name) pairs preserving load order.
+    let ordered_ids: Vec<(ChunkId, String)> = loaded
+        .chunk_order
         .iter()
-        .map(|chunk_id| {
-            let mut chunk = loaded
-                .chunks
-                .remove(chunk_id)
-                .with_context(|| format!("prepare_js_chunks missing ordered chunk: {chunk_id}"))?;
+        .map(|id| (*id, loaded.chunk_table.name(*id).to_string()))
+        .collect();
+    let jobs = ordered_ids
+        .iter()
+        .map(|(chunk_id, chunk_name)| {
+            let mut chunk = loaded.take_chunk(*chunk_id).with_context(|| {
+                format!("prepare_js_chunks missing ordered chunk: {chunk_name}")
+            })?;
             let entry_file = chunk.entry_file.clone();
             let entry_artifact_file = chunk.files.remove(&entry_file).with_context(|| {
-                format!("prepare_js_chunks requires entry file for chunk: {chunk_id}/{entry_file}")
+                format!(
+                    "prepare_js_chunks requires entry file for chunk: {chunk_name}/{entry_file}"
+                )
             })?;
-            let original_source = entry_artifact_file.into_source().with_context(|| {
-                format!("prepare_js_chunks requires content for chunk: {chunk_id}/{entry_file}")
+            // Source text is taken ownership of here; it will be moved into
+            // the SourceMap via parse_js_module_consuming inside prepare_chunk.
+            let source = entry_artifact_file.into_source().with_context(|| {
+                format!("prepare_js_chunks requires content for chunk: {chunk_name}/{entry_file}")
             })?;
             Ok(PrepareChunkJob {
-                chunk_id: chunk_id.clone(),
+                chunk_id: chunk_name.clone(),
                 chunk: JsChunk {
                     entry_file: entry_file.clone(),
                     files: BTreeMap::from([(
                         entry_file.clone(),
                         JsFile {
                             path: entry_file.clone(),
-                            body: JsFileBody::Source(original_source.clone()),
+                            body: JsFileBody::Source(source),
                             header_lines: Vec::new(),
                             metadata: FileMetadata::default(),
                         },
                     )]),
                     metadata: chunk.metadata,
                 },
-                original_source,
             })
         })
         .collect::<Result<Vec<_>>>()?;
     let file_count = jobs.iter().map(|job| job.chunk.files.len()).sum();
 
-    // First pass: parse all chunks and collect imports for vendor caller detection
+    // First pass: parse all chunks and collect imports for vendor caller detection.
+    // Source text moves into the SourceMap; no extra copy.
     let parsed_chunks = jobs
         .into_par_iter()
         .map(|job| {
             let chunk_id = job.chunk_id.clone();
-            let (parsed, original_source) = prepare_chunk(job)?;
-            Ok((chunk_id, parsed, original_source))
+            let parsed = prepare_chunk(job)?;
+            Ok((chunk_id, parsed))
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -116,15 +125,25 @@ pub fn prepare_js_chunks(
     // grows.
     let prepared_chunks = parsed_chunks
         .into_iter()
-        .map(|(chunk_id, mut prepared, original_source)| {
+        .map(|(chunk_id, mut prepared)| {
             let needs_ast =
                 needs_ast_for_chunk(&chunk_id, spec, &import_index, &vendor_target_chunk_ids)
                     || entry_has_rewritable_specifier(&prepared);
 
             if !needs_ast {
-                // Replace AST with original source
-                if let Some(entry_file) = prepared.files.get_mut(&prepared.entry_file) {
-                    entry_file.body = JsFileBody::Source(original_source);
+                // Clone the source text from the SourceMap. We need an owned
+                // String because the AST (which owns the SourceMap) is being
+                // dropped. This is one copy instead of the previous three:
+                // load → JsFileBody::Source clone → SourceMap clone.
+                let source = prepared
+                    .files
+                    .get(&prepared.entry_file)
+                    .and_then(|f| f.ast())
+                    .map(|parsed| parsed.source_text());
+                if let Some(source) = source {
+                    if let Some(entry_file) = prepared.files.get_mut(&prepared.entry_file) {
+                        entry_file.body = JsFileBody::Source(source);
+                    }
                 }
             }
 
@@ -132,17 +151,16 @@ pub fn prepare_js_chunks(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let (mut next, manifests, parsed_files) = chunk_ids.into_iter().zip(prepared_chunks).try_fold(
+    let (mut next, manifests, parsed_files) = ordered_ids.into_iter().zip(prepared_chunks).try_fold(
         (
             JsPipelineArtifact::default(),
             Vec::<ChunkManifest>::new(),
             Vec::<ParsedJsFileRecord>::new(),
         ),
-        |(mut next, mut manifests, mut parsed_files), (expected_chunk_id, (actual_chunk_id, prepared))| {
-            if actual_chunk_id != expected_chunk_id {
+        |(mut next, mut manifests, mut parsed_files), ((_chunk_id, expected_chunk_name), (actual_chunk_id, prepared))| {
+            if actual_chunk_id != expected_chunk_name {
                 bail!(
-                    "prepare_js_chunks reordered prepared chunks: expected {expected_chunk_id}, got {}",
-                    actual_chunk_id
+                    "prepare_js_chunks reordered prepared chunks: expected {expected_chunk_name}, got {actual_chunk_id}"
                 );
             }
             let manifest = prepared.manifest.clone();
@@ -179,7 +197,6 @@ pub fn prepare_js_chunks(
 struct PrepareChunkJob {
     chunk_id: String,
     chunk: JsChunk,
-    original_source: String,
 }
 
 struct PreparedChunk {
@@ -190,11 +207,10 @@ struct PreparedChunk {
     parsed_files: Vec<ParsedJsFileRecord>,
 }
 
-fn prepare_chunk(job: PrepareChunkJob) -> Result<(PreparedChunk, String)> {
+fn prepare_chunk(job: PrepareChunkJob) -> Result<PreparedChunk> {
     let PrepareChunkJob {
         chunk_id,
         mut chunk,
-        original_source,
     } = job;
     let source_path = chunk
         .metadata
@@ -209,19 +225,16 @@ fn prepare_chunk(job: PrepareChunkJob) -> Result<(PreparedChunk, String)> {
         prepare_parsed_entry(&chunk_id, &entry_file, &source_path, entry_artifact_file)?;
     let mut files = BTreeMap::new();
     files.insert(prepared_entry_file.clone(), prepared_file);
-    Ok((
-        PreparedChunk {
-            entry_file: prepared_entry_file,
-            files,
-            metadata: ChunkMetadata {
-                source_path: Some(source_path),
-                module_extraction_state: None,
-            },
-            manifest,
-            parsed_files,
+    Ok(PreparedChunk {
+        entry_file: prepared_entry_file,
+        files,
+        metadata: ChunkMetadata {
+            source_path: Some(source_path),
+            module_extraction_state: None,
         },
-        original_source,
-    ))
+        manifest,
+        parsed_files,
+    })
 }
 
 fn prepare_parsed_entry(
@@ -237,7 +250,8 @@ fn prepare_parsed_entry(
     let source_name = format!("{chunk_id}/{entry_file}");
 
     let parse_started = Instant::now();
-    let parsed = parse_js_module(&source_name, &content)?;
+    // Takes ownership of content — zero extra copies into the SourceMap.
+    let parsed = parse_js_module_consuming(&source_name, content)?;
     let parse_duration = parse_started.elapsed();
 
     let analysis_started = Instant::now();
@@ -323,10 +337,10 @@ fn build_artifact_manifest(manifests: &[ChunkManifest]) -> ArtifactManifest {
 }
 
 /// Build an index of imports by target chunk for vendor caller detection.
-fn build_import_index(chunks: &[(String, PreparedChunk, String)]) -> BTreeMap<String, Vec<String>> {
+fn build_import_index(chunks: &[(String, PreparedChunk)]) -> BTreeMap<String, Vec<String>> {
     chunks
         .iter()
-        .flat_map(|(chunk_id, prepared, _)| {
+        .flat_map(|(chunk_id, prepared)| {
             prepared.manifest.imports.iter().filter_map(move |import| {
                 // Extract target chunk id from import source
                 // Import sources are relative paths like "./other-chunk.js"
@@ -341,7 +355,7 @@ fn build_import_index(chunks: &[(String, PreparedChunk, String)]) -> BTreeMap<St
             BTreeMap::new(),
             |mut acc, (target_chunk_id, caller_chunk_id)| {
                 acc.entry(target_chunk_id)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(caller_chunk_id);
                 acc
             },
