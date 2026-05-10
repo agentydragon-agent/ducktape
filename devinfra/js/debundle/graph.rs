@@ -454,14 +454,14 @@ pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerE
             entries.push((from, to, reason.clone()));
         }
     }
-    entries.sort_by(|a, b| {
-        (a.0.0, a.1.0, a.2.kind, a.2.statement_ordinal, a.2.binding).cmp(&(
-            b.0.0,
-            b.1.0,
-            b.2.kind,
-            b.2.statement_ordinal,
-            b.2.binding,
-        ))
+    entries.sort_by_key(|(from, to, reason)| {
+        (
+            *from,
+            *to,
+            reason.kind,
+            reason.statement_ordinal,
+            reason.binding,
+        )
     });
     entries
         .into_iter()
