@@ -59,8 +59,9 @@ allocation.
 Still present in `facts.rs` at lines ~400, 405, 420, 421 (`declaration_names`,
 `collect_declared_names`). `BTreeSet::from([x])` has been available since Rust 1.56.
 
-### 7. Consolidate `HashMap`/`HashSet` local imports in `validation.rs`
+### 7. Switch `validation.rs` fully to `HashMap`/`HashSet`
 
-`render_cycle_summary` (line 107) and `cut_pairs_count` (line 176) use local `HashMap`/`HashSet`
-imports while the rest of the crate uses `BTreeMap`/`BTreeSet`. Use the tree-based variants
-throughout for consistency, or lift the imports to the top of the file.
+`render_cycle_summary` (line 107) and `cut_pairs_count` (line 176) already use `HashMap`/`HashSet`
+locally for performance. The remaining `BTreeMap`/`BTreeSet` uses in the same file should be
+converted to match — hash-based collections are faster and there is no ordering requirement in
+validation output that would justify the B-tree overhead.
