@@ -541,24 +541,26 @@ fn residual_dependency_closure_candidates(
             continue;
         }
 
+        // Aggregate declared bindings across the closure. Empty-declared
+        // owners (top-level side-effect statements) are kept in the
+        // owner set — moving them is necessary to satisfy
+        // side_effect_order edges to/from named bindings — but they
+        // contribute no bindings to the report's `members` list.
         let mut declared = Vec::new();
-        let mut representable = true;
         for owner in &closure {
-            let Some(owner_declared) = declared_by_owner.get(owner) else {
-                representable = false;
-                break;
-            };
-            if owner_declared.is_empty() {
-                representable = false;
-                break;
+            if let Some(owner_declared) = declared_by_owner.get(owner) {
+                declared.extend(owner_declared.iter().cloned());
             }
-            declared.extend(owner_declared.iter().cloned());
-        }
-        if !representable {
-            continue;
         }
         declared.sort();
         declared.dedup();
+        if declared.is_empty() {
+            // A closure that consists entirely of anonymous owners is
+            // not actionable — there is nothing to land in `members`.
+            // (Pure side-effect-only closures don't peel as a separate
+            // module; they just stay in residual.)
+            continue;
+        }
 
         let candidate = evaluate_residual_peel_candidate(schedule, context, &closure, declared);
         if candidate.status == PeelCandidateStatus::PeelableNow {
