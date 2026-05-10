@@ -18,7 +18,7 @@ use std::fs;
 // peeling: their only peel proposal is a closure where the
 // companions are anonymous statements (decorator applications on
 // the class prototype, runtime init calls, bundle preludes). See
-// `peelability_empty_declared_closure_test` for the analysis-side
+// `peelability_test::singleton_blocked_only_by_side_effect_order_to_anonymous_owner_should_be_peelable`
 // pin; this test pins the materialization-side fix.
 //
 // Spec extension under test: a sibling field on

@@ -16,7 +16,7 @@ use serde_json::json;
 
 #[test]
 fn chunk_rename_propagates_into_peeled_module_body() {
-    // Fixture mirrors `purity_chunk_rename_test`'s shape:
+    // Fixture mirrors `purity_test::chunk_rename_with_purity_pure_propagates_to_call_classifier`'s shape:
     //   - vendor.js exports a function `f`.
     //   - entry imports `f as cx`.
     //   - `const a = (() => 1)();` -- pure-by-IIFE, stays in residual
