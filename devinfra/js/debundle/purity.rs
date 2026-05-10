@@ -427,6 +427,25 @@ const PURE_GLOBAL_CALLS: &[&str] = &[
     "Boolean",
 ];
 
+/// Pure global callables when every argument is a primitive
+/// literal (`Lit::Str` / `Lit::Num` / `Lit::Bool` / `Lit::Null` /
+/// `Lit::BigInt`). The non-literal-arg form falls through to
+/// `Unknown` because the spec-defined coercion path (`ToString`,
+/// `ToNumber`, …) on a non-primitive value can fire user-defined
+/// `[Symbol.toPrimitive]` / `valueOf` / `toString` and
+/// observably modify state.
+///
+/// Soundness contract per entry:
+/// * `Symbol`: ECMA-262 §20.4.1.1 — `Symbol(description)` does
+///   `ToString(description)` (or skips it if description is
+///   undefined) and returns a fresh symbol. `ToString` on a
+///   primitive literal runs no user code, so the call has no
+///   observable side effect beyond the fresh symbol. `Symbol`
+///   without `new`; `new Symbol(...)` throws TypeError, but
+///   `new`-call form is `Expr::New` not `Expr::Call`, so this
+///   rule never fires for it.
+const PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS: &[&str] = &["Symbol"];
+
 /// Static-property READS on these globals are Pure: the property
 /// is an own data property of the receiver per ECMA-262 (no getter
 /// fires) and accessing it has no observable side effect.
@@ -734,7 +753,46 @@ fn classify_callee_call(
     {
         return all_args_pure(args, shadowed, declared_pure, graph);
     }
+    // `globalCallable(prim_lit, …)` against
+    // PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS. Every argument
+    // must be a `Lit::Str/Num/Bool/Null/BigInt` (no spread, no
+    // computed sub-expression). On a match the call has no
+    // observable side effects (per the per-entry soundness
+    // notes on the constant); if any arg is non-literal the
+    // rule doesn't fire and we fall through to `Unknown`.
+    if let Expr::Ident(ident) = callee_expr
+        && let Some(name) = PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS
+            .iter()
+            .copied()
+            .find(|n| *n == ident.sym.as_ref())
+        && !shadowed.contains(name)
+        && args
+            .iter()
+            .all(|arg| arg.spread.is_none() && is_primitive_literal(&arg.expr))
+    {
+        return Purity::Pure;
+    }
     Purity::Unknown
+}
+
+/// True for AST nodes whose evaluation produces a primitive
+/// value with no user-code side effects: string/number/boolean/
+/// null/bigint literals only. `Lit::Regex` is excluded because
+/// it produces a fresh `RegExp` *object* (not a primitive), and
+/// would fail the "no user code on coercion" admission contract
+/// of `PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS`. `Expr::Tpl` is
+/// excluded even when it has zero interpolations because it's
+/// not a `Lit::Str` AST shape — a future refinement could add
+/// it.
+fn is_primitive_literal(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Lit(Lit::Str(_))
+            | Expr::Lit(Lit::Bool(_))
+            | Expr::Lit(Lit::Null(_))
+            | Expr::Lit(Lit::Num(_))
+            | Expr::Lit(Lit::BigInt(_)),
+    )
 }
 
 fn all_args_pure(
