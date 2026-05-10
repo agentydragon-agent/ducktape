@@ -8,10 +8,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  # local-path is fine — state is a tiny JSON blob, single-replica app, and
-  # this data is hobby-grade: losing it just resets my casino credits. No
-  # cross-region replication needed.
-  storageClassName: local-path
+  storageClassName: hcloud-volumes
   resources:
     requests:
       storage: 128Mi
