@@ -25,9 +25,3 @@ Both independently match the same five AST shapes (import decl, named export, ex
 dynamic import, new Worker) with the same guard conditions. The doc comment warns they must stay
 in sync. A single declarative shape descriptor consumed by both visitors would eliminate the
 lockstep coupling.
-
-### 4. Replace opaque 5-tuple sort in `collect_owner_edge_entries` (`graph.rs`)
-
-`graph.rs:503-518` sorts by `(a.0.0, a.1.0, a.2.kind(), a.2.statement_ordinal(), a.2.binding())`
-— a deeply nested unnamed 5-tuple. A `#[derive(Ord)]` sort-key struct or `sort_by_key` with
-named fields would make ordering intent explicit.
