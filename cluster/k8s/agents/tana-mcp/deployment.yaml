@@ -20,7 +20,7 @@ spec:
         app.kubernetes.io/name: tana-mcp
     spec:
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        topology.kubernetes.io/region: hil
       imagePullSecrets:
         - name: harbor-pull-robot
       containers:
