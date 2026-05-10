@@ -31,16 +31,3 @@ lockstep coupling.
 `graph.rs:503-518` sorts by `(a.0.0, a.1.0, a.2.kind(), a.2.statement_ordinal(), a.2.binding())`
 — a deeply nested unnamed 5-tuple. A `#[derive(Ord)]` sort-key struct or `sort_by_key` with
 named fields would make ordering intent explicit.
-
-### 5. Convert `binding_names` from Vec-allocating to an iterator (`binding_targets.rs`)
-
-`binding_targets.rs:15-19` allocates a `Vec<String>` via recursive `walk_pattern`, but callers
-immediately iterate and discard it. A lazy `BindingNames<'a>` iterator would avoid the
-allocation.
-
-### 6. Switch `validation.rs` fully to `HashMap`/`HashSet`
-
-`render_cycle_summary` (line 107) and `cut_pairs_count` (line 176) already use `HashMap`/`HashSet`
-locally for performance. The remaining `BTreeMap`/`BTreeSet` uses in the same file should be
-converted to match — hash-based collections are faster and there is no ordering requirement in
-validation output that would justify the B-tree overhead.
