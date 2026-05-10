@@ -563,7 +563,22 @@ fn materialize_logical_chunk(
                         target_file: plan.target_file.clone(),
                         residual: !plan.explicit,
                         rename_map: plan.bindings.clone(),
-                        anonymous_statement_ordinals: plan.anonymous_statement_ordinals.clone(),
+                        // Schedule's owner graph uses post-comma-list-split
+                        // `StatementOrdinal`s; convert body indices here so
+                        // the destination override targets the right owner
+                        // node (an anon body item is always a single
+                        // post-split position, but earlier comma-list
+                        // var-decls in the chunk shift the count).
+                        anonymous_statement_ordinals: plan
+                            .anonymous_statement_ordinals
+                            .iter()
+                            .map(|body_idx| {
+                                statement_ordinal_for_body_index(
+                                    &runtime_ast.module.body,
+                                    *body_idx,
+                                )
+                            })
+                            .collect(),
                     })
                     .collect()
             });
@@ -1478,8 +1493,40 @@ fn collect_chunk_renames(chunk_renames: &ChunkRenames) -> Result<BTreeMap<String
     Ok(renames)
 }
 
+/// Number of post-comma-list-split positions a top-level body
+/// item produces. `var x = …, y = …;` is one body item but two
+/// post-split owners (and therefore two `StatementOrdinal`s in
+/// the owner graph). All other top-level items count as one.
+/// Mirrors the splitting in `facts::top_level_item_views`.
+fn post_split_top_level_count(item: &ModuleItem) -> usize {
+    fn decl_count(decl: &Decl) -> usize {
+        match decl {
+            Decl::Var(var) if var.decls.len() > 1 => var.decls.len(),
+            _ => 1,
+        }
+    }
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl_count(decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+            decl_count(&export_decl.decl)
+        }
+        _ => 1,
+    }
+}
+
+/// Convert a pre-split body index to the first post-split
+/// `StatementOrdinal` value for that body item. For anonymous
+/// statements (which never split), this is the only ordinal in
+/// the resulting range.
+fn statement_ordinal_for_body_index(body: &[ModuleItem], body_idx: usize) -> usize {
+    body[..body_idx]
+        .iter()
+        .map(post_split_top_level_count)
+        .sum()
+}
+
 /// Resolve every `anonymous_match_sources` entry on `request` to a
-/// statement ordinal in `runtime_module`'s top-level body. The
+/// pre-split body index in `runtime_module`'s top-level body. The
 /// resolver requires exactly one match per entry — a 0-match or
 /// ambiguous-match selector is a spec error.
 fn resolve_anonymous_statement_ordinals(
