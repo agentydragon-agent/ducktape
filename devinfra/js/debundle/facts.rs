@@ -468,6 +468,17 @@ impl Visit for AtInitReadCollector {
     }
 }
 
+/// Shared trait for visitors that track a lazy/eager syntactic boundary.
+trait LazyBoundary: Visit {
+    fn in_lazy_mut(&mut self) -> &mut bool;
+
+    fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
+        let prev = std::mem::replace(self.in_lazy_mut(), true);
+        f(self);
+        *self.in_lazy_mut() = prev;
+    }
+}
+
 /// Visitor that collects ident reads happening inside lazy syntactic
 /// positions only — function bodies, method bodies, constructor
 /// bodies, instance class-field initializers, getter/setter bodies.
@@ -478,11 +489,9 @@ struct LazyReadCollector {
     in_lazy: bool,
 }
 
-impl LazyReadCollector {
-    fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
-        let prev = std::mem::replace(&mut self.in_lazy, true);
-        f(self);
-        self.in_lazy = prev;
+impl LazyBoundary for LazyReadCollector {
+    fn in_lazy_mut(&mut self) -> &mut bool {
+        &mut self.in_lazy
     }
 }
 
@@ -494,70 +503,30 @@ impl Visit for LazyReadCollector {
     }
 
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
-
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
 
     fn visit_function(&mut self, node: &Function) {
-        self.descend_lazy(|s| node.visit_children_with(s));
+        lazy_visit_function(self, node);
     }
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        self.descend_lazy(|s| node.visit_children_with(s));
+        lazy_visit_arrow_expr(self, node);
     }
     fn visit_method_prop(&mut self, node: &MethodProp) {
-        node.key.visit_with(self);
-        self.descend_lazy(|s| node.function.visit_with(s));
+        lazy_visit_method_prop(self, node);
     }
     fn visit_getter_prop(&mut self, node: &GetterProp) {
-        node.key.visit_with(self);
-        self.descend_lazy(|s| {
-            if let Some(body) = &node.body {
-                body.visit_with(s);
-            }
-        });
+        lazy_visit_getter_prop(self, node);
     }
     fn visit_setter_prop(&mut self, node: &SetterProp) {
-        node.key.visit_with(self);
-        node.param.visit_with(self);
-        self.descend_lazy(|s| {
-            if let Some(body) = &node.body {
-                body.visit_with(s);
-            }
-        });
+        lazy_visit_setter_prop(self, node);
     }
 
     fn visit_class(&mut self, node: &Class) {
-        visit_class_decl(self, node, |v, m| v.visit_class_member(m));
+        lazy_visit_class(self, node);
     }
 
     fn visit_class_member(&mut self, member: &ClassMember) {
-        visit_eager_member_parts(self, member);
-        match member {
-            ClassMember::Method(method) => {
-                self.descend_lazy(|s| method.function.visit_with(s));
-            }
-            ClassMember::PrivateMethod(method) => {
-                self.descend_lazy(|s| method.function.visit_with(s));
-            }
-            ClassMember::Constructor(ctor) => {
-                self.descend_lazy(|s| ctor.visit_children_with(s));
-            }
-            ClassMember::ClassProp(prop) if !prop.is_static => {
-                if let Some(value) = &prop.value {
-                    self.descend_lazy(|s| value.visit_with(s));
-                }
-            }
-            ClassMember::PrivateProp(prop) if !prop.is_static => {
-                if let Some(value) = &prop.value {
-                    self.descend_lazy(|s| value.visit_with(s));
-                }
-            }
-            ClassMember::AutoAccessor(accessor) if !accessor.is_static => {
-                if let Some(value) = &accessor.value {
-                    self.descend_lazy(|s| value.visit_with(s));
-                }
-            }
-            _ => {}
-        }
+        lazy_visit_class_member(self, member);
     }
 }
 
@@ -571,13 +540,13 @@ struct BindingWriteCollector {
     in_lazy: bool,
 }
 
-impl BindingWriteCollector {
-    fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
-        let prev = std::mem::replace(&mut self.in_lazy, true);
-        f(self);
-        self.in_lazy = prev;
+impl LazyBoundary for BindingWriteCollector {
+    fn in_lazy_mut(&mut self) -> &mut bool {
+        &mut self.in_lazy
     }
+}
 
+impl BindingWriteCollector {
     fn record_write(&mut self, name: &str) {
         if self.in_lazy {
             self.lazy.insert(name.to_string());
@@ -595,11 +564,8 @@ impl TargetAccessRecorder for BindingWriteCollector {
 
 impl Visit for BindingWriteCollector {
     fn visit_ident(&mut self, _node: &Ident) {}
-
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
-
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
-
     fn visit_named_export(&mut self, _node: &NamedExport) {}
     fn visit_export_all(&mut self, _node: &ExportAll) {}
 
@@ -633,66 +599,94 @@ impl Visit for BindingWriteCollector {
     }
 
     fn visit_function(&mut self, node: &Function) {
-        self.descend_lazy(|s| node.visit_children_with(s));
+        lazy_visit_function(self, node);
     }
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        self.descend_lazy(|s| node.visit_children_with(s));
+        lazy_visit_arrow_expr(self, node);
     }
     fn visit_method_prop(&mut self, node: &MethodProp) {
-        node.key.visit_with(self);
-        self.descend_lazy(|s| node.function.visit_with(s));
+        lazy_visit_method_prop(self, node);
     }
     fn visit_getter_prop(&mut self, node: &GetterProp) {
-        node.key.visit_with(self);
-        self.descend_lazy(|s| {
-            if let Some(body) = &node.body {
-                body.visit_with(s);
-            }
-        });
+        lazy_visit_getter_prop(self, node);
     }
     fn visit_setter_prop(&mut self, node: &SetterProp) {
-        node.key.visit_with(self);
-        node.param.visit_with(self);
-        self.descend_lazy(|s| {
-            if let Some(body) = &node.body {
-                body.visit_with(s);
-            }
-        });
+        lazy_visit_setter_prop(self, node);
     }
 
     fn visit_class(&mut self, node: &Class) {
-        visit_class_decl(self, node, |v, m| v.visit_class_member(m));
+        lazy_visit_class(self, node);
     }
 
     fn visit_class_member(&mut self, member: &ClassMember) {
-        visit_eager_member_parts(self, member);
-        match member {
-            ClassMember::Method(method) => {
-                self.descend_lazy(|s| method.function.visit_with(s));
-            }
-            ClassMember::PrivateMethod(method) => {
-                self.descend_lazy(|s| method.function.visit_with(s));
-            }
-            ClassMember::Constructor(ctor) => {
-                self.descend_lazy(|s| ctor.visit_children_with(s));
-            }
-            ClassMember::ClassProp(prop) if !prop.is_static => {
-                if let Some(value) = &prop.value {
-                    self.descend_lazy(|s| value.visit_with(s));
-                }
-            }
-            ClassMember::PrivateProp(prop) if !prop.is_static => {
-                if let Some(value) = &prop.value {
-                    self.descend_lazy(|s| value.visit_with(s));
-                }
-            }
-            ClassMember::AutoAccessor(accessor) if !accessor.is_static => {
-                if let Some(value) = &accessor.value {
-                    self.descend_lazy(|s| value.visit_with(s));
-                }
-            }
-            _ => {}
+        lazy_visit_class_member(self, member);
+    }
+}
+
+fn lazy_visit_function<V: LazyBoundary>(v: &mut V, node: &Function) {
+    v.descend_lazy(|s| node.visit_children_with(s));
+}
+
+fn lazy_visit_arrow_expr<V: LazyBoundary>(v: &mut V, node: &ArrowExpr) {
+    v.descend_lazy(|s| node.visit_children_with(s));
+}
+
+fn lazy_visit_method_prop<V: LazyBoundary>(v: &mut V, node: &MethodProp) {
+    node.key.visit_with(v);
+    v.descend_lazy(|s| node.function.visit_with(s));
+}
+
+fn lazy_visit_getter_prop<V: LazyBoundary>(v: &mut V, node: &GetterProp) {
+    node.key.visit_with(v);
+    v.descend_lazy(|s| {
+        if let Some(body) = &node.body {
+            body.visit_with(s);
         }
+    });
+}
+
+fn lazy_visit_setter_prop<V: LazyBoundary>(v: &mut V, node: &SetterProp) {
+    node.key.visit_with(v);
+    node.param.visit_with(v);
+    v.descend_lazy(|s| {
+        if let Some(body) = &node.body {
+            body.visit_with(s);
+        }
+    });
+}
+
+fn lazy_visit_class<V: LazyBoundary>(v: &mut V, node: &Class) {
+    visit_class_decl(v, node, |v, m| v.visit_class_member(m));
+}
+
+fn lazy_visit_class_member<V: LazyBoundary>(v: &mut V, member: &ClassMember) {
+    visit_eager_member_parts(v, member);
+    match member {
+        ClassMember::Method(method) => {
+            v.descend_lazy(|s| method.function.visit_with(s));
+        }
+        ClassMember::PrivateMethod(method) => {
+            v.descend_lazy(|s| method.function.visit_with(s));
+        }
+        ClassMember::Constructor(ctor) => {
+            v.descend_lazy(|s| ctor.visit_children_with(s));
+        }
+        ClassMember::ClassProp(prop) if !prop.is_static => {
+            if let Some(value) = &prop.value {
+                v.descend_lazy(|s| value.visit_with(s));
+            }
+        }
+        ClassMember::PrivateProp(prop) if !prop.is_static => {
+            if let Some(value) = &prop.value {
+                v.descend_lazy(|s| value.visit_with(s));
+            }
+        }
+        ClassMember::AutoAccessor(accessor) if !accessor.is_static => {
+            if let Some(value) = &accessor.value {
+                v.descend_lazy(|s| value.visit_with(s));
+            }
+        }
+        _ => {}
     }
 }
 
