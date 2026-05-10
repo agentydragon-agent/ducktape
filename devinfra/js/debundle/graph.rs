@@ -26,95 +26,63 @@ use crate::{
 ///   realizability because source-order side effects require a
 ///   topological order.
 #[derive(Debug, Clone)]
-pub enum EdgeReason {
-    AtInitRead {
-        statement_ordinal: StatementOrdinal,
-        binding: BindingId,
-    },
-    LazyRead {
-        statement_ordinal: StatementOrdinal,
-        binding: BindingId,
-    },
-    AtInitWrite {
-        statement_ordinal: StatementOrdinal,
-        binding: BindingId,
-    },
-    LazyWrite {
-        statement_ordinal: StatementOrdinal,
-        binding: BindingId,
-    },
-    SideEffectOrder {
-        statement_ordinal: StatementOrdinal,
-    },
+pub struct EdgeReason {
+    pub(crate) kind: EdgeKind,
+    pub(crate) statement_ordinal: StatementOrdinal,
+    pub(crate) binding: Option<BindingId>,
 }
 
 impl EdgeReason {
-    pub(crate) fn side_effect_order(statement_ordinal: StatementOrdinal) -> Self {
-        Self::SideEffectOrder { statement_ordinal }
-    }
-
-    pub(crate) fn kind(&self) -> EdgeKind {
-        match self {
-            Self::AtInitRead { .. } => EdgeKind::AtInitRead,
-            Self::LazyRead { .. } => EdgeKind::LazyRead,
-            Self::AtInitWrite { .. } => EdgeKind::AtInitWrite,
-            Self::LazyWrite { .. } => EdgeKind::LazyWrite,
-            Self::SideEffectOrder { .. } => EdgeKind::SideEffectOrder,
+    pub(crate) fn at_init_read(so: StatementOrdinal, b: BindingId) -> Self {
+        Self {
+            kind: EdgeKind::AtInitRead,
+            statement_ordinal: so,
+            binding: Some(b),
         }
     }
-
-    pub(crate) fn statement_ordinal(&self) -> StatementOrdinal {
-        match self {
-            Self::AtInitRead {
-                statement_ordinal, ..
-            }
-            | Self::LazyRead {
-                statement_ordinal, ..
-            }
-            | Self::AtInitWrite {
-                statement_ordinal, ..
-            }
-            | Self::LazyWrite {
-                statement_ordinal, ..
-            }
-            | Self::SideEffectOrder { statement_ordinal } => *statement_ordinal,
+    pub(crate) fn lazy_read(so: StatementOrdinal, b: BindingId) -> Self {
+        Self {
+            kind: EdgeKind::LazyRead,
+            statement_ordinal: so,
+            binding: Some(b),
         }
     }
-
-    pub(crate) fn binding(&self) -> Option<BindingId> {
-        match self {
-            Self::AtInitRead { binding, .. }
-            | Self::LazyRead { binding, .. }
-            | Self::AtInitWrite { binding, .. }
-            | Self::LazyWrite { binding, .. } => Some(*binding),
-            Self::SideEffectOrder { .. } => None,
+    pub(crate) fn at_init_write(so: StatementOrdinal, b: BindingId) -> Self {
+        Self {
+            kind: EdgeKind::AtInitWrite,
+            statement_ordinal: so,
+            binding: Some(b),
+        }
+    }
+    pub(crate) fn lazy_write(so: StatementOrdinal, b: BindingId) -> Self {
+        Self {
+            kind: EdgeKind::LazyWrite,
+            statement_ordinal: so,
+            binding: Some(b),
+        }
+    }
+    pub(crate) fn side_effect_order(so: StatementOrdinal) -> Self {
+        Self {
+            kind: EdgeKind::SideEffectOrder,
+            statement_ordinal: so,
+            binding: None,
         }
     }
 
     pub(crate) fn is_at_init_read(&self) -> bool {
-        matches!(self, Self::AtInitRead { .. })
+        self.kind == EdgeKind::AtInitRead
     }
-
     pub(crate) fn is_binding_write(&self) -> bool {
-        matches!(self, Self::AtInitWrite { .. } | Self::LazyWrite { .. })
+        matches!(self.kind, EdgeKind::AtInitWrite | EdgeKind::LazyWrite)
     }
-
     pub(crate) fn is_side_effect_order(&self) -> bool {
-        matches!(self, Self::SideEffectOrder { .. })
+        self.kind == EdgeKind::SideEffectOrder
     }
-
+    /// Every kind except `LazyRead` constrains realizability.
+    /// Stated as exclusion so adding a new `EdgeKind` variant
+    /// forces an explicit decision here.
     pub(crate) fn constrains_realizability(&self) -> bool {
-        // Whitelist: every variant except `LazyRead` constrains
-        // realizability today. Stated positively so adding a new
-        // `EdgeReason` variant forces an explicit decision here
-        // instead of silently classifying it as constraining.
-        matches!(
-            self,
-            Self::AtInitRead { .. }
-                | Self::AtInitWrite { .. }
-                | Self::LazyWrite { .. }
-                | Self::SideEffectOrder { .. }
-        )
+        self.kind != EdgeKind::LazyRead
     }
 }
 
@@ -156,19 +124,28 @@ pub struct OwnerNode {
     pub destination: ModuleId,
 }
 
+fn record_graph_reason<N: Copy + Ord + std::hash::Hash>(
+    graph: &mut DiGraphMap<N, EdgeMetadata>,
+    from: N,
+    to: N,
+    reason: EdgeReason,
+) {
+    if from == to {
+        return;
+    }
+    if !graph.contains_edge(from, to) {
+        graph.add_edge(from, to, EdgeMetadata::default());
+    }
+    graph
+        .edge_weight_mut(from, to)
+        .unwrap()
+        .reasons
+        .push(reason);
+}
+
 impl OwnerGraph {
     fn record_reason(&mut self, from: OwnerId, to: OwnerId, reason: EdgeReason) {
-        if from == to {
-            return;
-        }
-        if !self.graph.contains_edge(from, to) {
-            self.graph.add_edge(from, to, EdgeMetadata::default());
-        }
-        let weight = self
-            .graph
-            .edge_weight_mut(from, to)
-            .expect("owner edge was just added");
-        weight.reasons.push(reason);
+        record_graph_reason(&mut self.graph, from, to, reason);
     }
 
     pub fn iter_edges(&self) -> impl Iterator<Item = (OwnerId, OwnerId, &EdgeMetadata)> + '_ {
@@ -251,18 +228,7 @@ pub struct ModuleDepGraph {
 
 impl ModuleDepGraph {
     fn record_reason(&mut self, from: ModuleId, to: ModuleId, reason: EdgeReason) {
-        if from == to {
-            return;
-        }
-        if !self.graph.contains_edge(from, to) {
-            self.graph.add_edge(from, to, EdgeMetadata::default());
-        }
-        // Safe: we just ensured the edge exists.
-        let weight = self
-            .graph
-            .edge_weight_mut(from, to)
-            .expect("edge was just added");
-        weight.reasons.push(reason);
+        record_graph_reason(&mut self.graph, from, to, reason);
     }
 
     /// Iterate edges as `(from, to, &EdgeMetadata)`.
@@ -370,10 +336,7 @@ pub fn build_owner_graph(
                 &mut graph,
                 from,
                 binding,
-                |statement_ordinal, binding| EdgeReason::AtInitRead {
-                    statement_ordinal,
-                    binding,
-                },
+                EdgeReason::at_init_read,
                 stmt.ordinal,
             );
         }
@@ -382,10 +345,7 @@ pub fn build_owner_graph(
                 &mut graph,
                 from,
                 binding,
-                |statement_ordinal, binding| EdgeReason::LazyRead {
-                    statement_ordinal,
-                    binding,
-                },
+                EdgeReason::lazy_read,
                 stmt.ordinal,
             );
         }
@@ -394,10 +354,7 @@ pub fn build_owner_graph(
                 &mut graph,
                 from,
                 binding,
-                |statement_ordinal, binding| EdgeReason::AtInitWrite {
-                    statement_ordinal,
-                    binding,
-                },
+                EdgeReason::at_init_write,
                 stmt.ordinal,
             );
         }
@@ -406,10 +363,7 @@ pub fn build_owner_graph(
                 &mut graph,
                 from,
                 binding,
-                |statement_ordinal, binding| EdgeReason::LazyWrite {
-                    statement_ordinal,
-                    binding,
-                },
+                EdgeReason::lazy_write,
                 stmt.ordinal,
             );
         }
@@ -501,20 +455,13 @@ pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerE
         }
     }
     entries.sort_by(|a, b| {
-        (
-            a.0.0,
-            a.1.0,
-            a.2.kind(),
-            a.2.statement_ordinal(),
-            a.2.binding(),
-        )
-            .cmp(&(
-                b.0.0,
-                b.1.0,
-                b.2.kind(),
-                b.2.statement_ordinal(),
-                b.2.binding(),
-            ))
+        (a.0.0, a.1.0, a.2.kind, a.2.statement_ordinal, a.2.binding).cmp(&(
+            b.0.0,
+            b.1.0,
+            b.2.kind,
+            b.2.statement_ordinal,
+            b.2.binding,
+        ))
     });
     entries
         .into_iter()
@@ -571,7 +518,7 @@ pub(crate) fn peel_emit_blocked_residual_bindings(
         if !matches!(to_node.destination, ModuleId::ResidualEntry) {
             continue;
         }
-        let Some(binding_id) = edge.reason.binding() else {
+        let Some(binding_id) = edge.reason.binding else {
             continue;
         };
         let Some(name) = owner_graph.binding_table.name(binding_id) else {

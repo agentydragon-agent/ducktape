@@ -219,11 +219,11 @@ pub fn validate_schedule(
                 evidence.push(CycleEdge {
                     from: module_name(from),
                     to: module_name(to),
-                    statement_ordinal: reason.statement_ordinal(),
+                    statement_ordinal: reason.statement_ordinal,
                     binding: reason
-                        .binding()
+                        .binding
                         .map(|binding| graph.binding_table.required_name(binding).clone()),
-                    kind: reason.kind(),
+                    kind: reason.kind,
                 });
             }
         }
@@ -260,7 +260,7 @@ pub(crate) fn validate_cross_destination_assignments(
             if !reason.is_binding_write() {
                 continue;
             }
-            let Some(binding_id) = reason.binding() else {
+            let Some(binding_id) = reason.binding else {
                 continue;
             };
             let binding = owner_graph.binding_table.required_name(binding_id).clone();
@@ -272,7 +272,7 @@ pub(crate) fn validate_cross_destination_assignments(
                 binding_statement_ordinal: to_node.statement_ordinal,
                 assigner_module: module_name(from_node.destination),
                 binding_module: module_name(to_node.destination),
-                kind: reason.kind(),
+                kind: reason.kind,
                 assigner_source_location: from_node.source_location.clone(),
                 binding_source_location: to_node.source_location.clone(),
             });
@@ -418,11 +418,11 @@ fn compute_realizability_cut(
             cut.push(CycleEdge {
                 from: module_name(u),
                 to: module_name(v),
-                statement_ordinal: reason.statement_ordinal(),
+                statement_ordinal: reason.statement_ordinal,
                 binding: reason
-                    .binding()
+                    .binding
                     .map(|binding| graph.binding_table.required_name(binding).clone()),
-                kind: reason.kind(),
+                kind: reason.kind,
             });
         }
     }

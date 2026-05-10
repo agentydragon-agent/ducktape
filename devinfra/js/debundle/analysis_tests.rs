@@ -369,13 +369,11 @@ mod tests {
             .edge_weight(OwnerId(0), OwnerId(1))
             .expect("A's owner should point at X's owner before quotienting");
         assert!(
-            owner_edge.reasons.iter().any(|reason| matches!(
-                reason,
-                EdgeReason::AtInitRead {
-                    binding,
-                    statement_ordinal: StatementOrdinal(0),
-                } if schedule.binding_name(*binding) == "X"
-            )),
+            owner_edge.reasons.iter().any(|reason| {
+                reason.kind == EdgeKind::AtInitRead
+                    && reason.statement_ordinal == StatementOrdinal(0)
+                    && schedule.binding_name(reason.binding.unwrap()) == "X"
+            }),
             "owner graph should retain the unassigned declared provider edge: {owner_edge:?}",
         );
         assert!(

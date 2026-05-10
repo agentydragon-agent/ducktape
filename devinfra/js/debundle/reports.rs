@@ -42,12 +42,12 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
             id: edge.id.clone(),
             source: owner_key(edge.from),
             target: owner_key(edge.to),
-            edge_kind: edge.reason.kind(),
+            edge_kind: edge.reason.kind,
             binding: edge
                 .reason
-                .binding()
+                .binding
                 .map(|binding| schedule.binding_name(binding).to_string()),
-            statement_ordinal: edge.reason.statement_ordinal(),
+            statement_ordinal: edge.reason.statement_ordinal,
             constrains_realizability: edge.reason.constrains_realizability(),
         })
         .collect();
@@ -166,7 +166,7 @@ where
             continue;
         }
         let entry = accum.entry((from, to)).or_default();
-        entry.kinds.insert(edge.reason.kind());
+        entry.kinds.insert(edge.reason.kind);
         entry.constrains_realizability |= edge.reason.constrains_realizability();
     }
     accum
