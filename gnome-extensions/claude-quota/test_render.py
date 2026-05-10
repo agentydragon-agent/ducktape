@@ -16,24 +16,24 @@ to the right edge of the screen and from the top of the panel to the
 bottom of the menu — so reviewers see the indicator's icons / pace
 labels and the menu's headers / bars / forecast strings in one image.
 
-The fixture matrix uses mixed per-provider state to exercise multiple
-renderer branches per render:
+The fixture matrix uses mixed per-provider state so each render exercises
+multiple tints simultaneously (providers can have different short vs long states):
 
-  warn_cool  Claude warn (+10), Codex cool (-15)  — pace tints both signs
-  hot_ok     Claude hot  (+20), Codex ok    (0)   — extreme + baseline
-  short_hot  short usedPercent ≥ 85 on both       — short-window override
-  error      Claude error string, Codex ok        — error short-circuit
-  empty      both providers null                  — initial / no-data state
+  empty   all providers null                                — unknown/no-data state
+  tints   claude=error; codex=warn-short/cool-long;        — error, warn, cool, hot(absolute), ok
+          zai=absolute-hot-short/ok-long
+  hot     claude=pace-hot-short/ok-long; codex=ok/ok;      — hot(pace), ok, warn, null short window
+          zai=null-short/warn-long
 
 Update flow when the rendering changes intentionally:
 
-    bbr test //gnome-extensions/claude-quota:test_render \\
+    bazelisk test //gnome-extensions/claude-quota:test_render \\
         --test_env=UPDATE_GOLDEN=1 \\
-        --remote_download_outputs=toplevel --nocache_test_results
+        --remote_upload_local_results=false --nocache_test_results
 
-    INV=$(cat ~/.cache/bbr/last_invocation_id)
-    for f in warn_cool hot_ok short_hot error empty; do
-      bbapi artifact "$INV" "$f.png" \\
+    INV=<invocation-id from build output>
+    for f in empty tints hot; do
+      bbapi artifact "$INV" "test.outputs/$f.png" \\
         > "gnome-extensions/claude-quota/__snapshots__/$f.png"
     done
 
@@ -79,7 +79,7 @@ _EXTENSION_STATE_ENABLED = 1
 _TEST_DBUS_DEST = "works.allegedly.ClaudeQuotaTest"
 _TEST_DBUS_PATH = "/works/allegedly/ClaudeQuotaTest"
 
-_FIXTURES = ["warn_cool", "hot_ok", "short_hot", "error", "empty"]
+_FIXTURES = ["empty", "tints", "hot"]
 
 
 @pytest.fixture(scope="module")

@@ -22,28 +22,28 @@ const CLAUDE_OAUTH_SCOPES = [
   "user:file_upload",
 ];
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+const ZAI_QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
 const POLL_INTERVAL_SECONDS = 120;
 const STALE_AFTER_SECONDS = 5 * 60;
 const TOKEN_EXPIRY_SKEW_SECONDS = 30;
 
 // Pace deviation thresholds, in signed percentage points (used% − expected%).
-// TODO: expose via gschema settings (along with poll interval and the
-// short-window override threshold below).
 const PACE_COOL_BELOW = -10;
 const PACE_WARN_ABOVE = 5;
 const PACE_HOT_ABOVE = 15;
 const SHORT_WIN_HOT_PERCENT = 85;
-// Pace deviation is too noisy in the first/last sliver of a window; fall back
-// to absolute-usage tinting and suppress pace numerals when within these edges.
 const STABLE_FRACTION = 0.05;
 
-// Window total lengths. Codex returns `limit_window_seconds`; Claude does not,
-// so the short/long lengths are constants matching the published windows.
+// Window total lengths. Codex returns `limit_window_seconds`; Claude does not.
 const CLAUDE_SHORT_W = 5 * 3600;
 const CLAUDE_LONG_W = 7 * 86400;
+// z.ai: 5h rolling quota (GLM-5.1 burns at 3× during peak hours 14:00–18:00 UTC+8,
+// currently 1× off-peak through end of June). The 7d window always has nextResetTime.
+// The 5h window frequently lacks nextResetTime (especially at 0% usage), so pace math
+// degrades gracefully to usedPercent-only display.
+const ZAI_SHORT_W = 5 * 3600;
+const ZAI_LONG_W = 7 * 86400;
 
-// keyring crate (used by Codex CLI) stores entries under the generic schema
-// with attributes {service, username}. We search by service only.
 const CODEX_KEYRING_SCHEMA = new Secret.Schema("org.freedesktop.Secret.Generic", Secret.SchemaFlags.DONT_MATCH_NAME, {
   service: Secret.SchemaAttributeType.STRING,
   username: Secret.SchemaAttributeType.STRING,
@@ -59,6 +59,19 @@ const TINT_CLASSES = [
   "quota-error",
 ];
 const TINT_RANK = { unknown: 0, stale: 0, ok: 1, cool: 1, warn: 2, hot: 3 };
+
+// Per-provider enable flags are read from ~/.config/claude-quota/config.json.
+// Missing file or missing key → provider is shown (default on).
+function readExtensionConfig() {
+  const path = `${GLib.get_home_dir()}/.config/claude-quota/config.json`;
+  try {
+    const [ok, bytes] = GLib.file_get_contents(path);
+    if (!ok) return {};
+    return JSON.parse(decodeBytes(bytes));
+  } catch {
+    return {};
+  }
+}
 
 function decodeBytes(bytes) {
   return new TextDecoder().decode(typeof bytes.get_data === "function" ? bytes.get_data() : bytes);
@@ -234,19 +247,105 @@ function elapsedFraction(state) {
   return clamp01((state.windowSeconds - state.resetSeconds) / state.windowSeconds);
 }
 
+function windowFromClaude(node, label, windowSeconds) {
+  if (!node) return null;
+  const resetAtMs = parseClaudeResetAtMs(node.resets_at, label);
+  return {
+    usedPercent: node.utilization ?? null,
+    resetAtMs,
+    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
+    windowSeconds,
+  };
+}
+
+function windowFromCodex(node, label) {
+  if (!node) return null;
+  const windowSeconds = Number(node.limit_window_seconds ?? NaN);
+  if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) {
+    throw new Error(`${label} window missing limit_window_seconds`);
+  }
+  const resetAtMs = codexResetAtMsFromResetAfter(node, label);
+  return {
+    usedPercent: node.used_percent ?? null,
+    resetAtMs,
+    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
+    windowSeconds,
+  };
+}
+
+function windowFromZai(node, windowSeconds) {
+  if (!node) return null;
+  const usedPercent = node.percentage ?? null;
+  const resetAtMs = node.nextResetTime ?? null;
+  return {
+    usedPercent,
+    resetAtMs,
+    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
+    windowSeconds,
+  };
+}
+
+function emptyProviderState() {
+  return { short: null, long: null, lastFetch: null, error: null };
+}
+
+// Descriptor for each provider. All runtime state (UI elements, fetch state)
+// is attached at init time and referenced by id.
+const PROVIDER_DEFS = [
+  { id: "claude", label: "Claude", iconFile: "claude-symbolic.svg" },
+  { id: "codex", label: "Codex", iconFile: "openai-symbolic.svg" },
+  { id: "zai", label: "z.ai", iconFile: "zai-symbolic.svg" },
+];
+
 const QuotaIndicator = GObject.registerClass(
   class QuotaIndicator extends PanelMenu.Button {
     _init(extension) {
       super._init(0.0, "AI Quota Tracker", false);
 
       this._iconsDir = `${extension.path}/icons`;
-      this._claude = { short: null, long: null, lastFetch: null, error: null };
-      this._codex = { short: null, long: null, lastFetch: null, error: null };
       this._httpSession = new Soup.Session();
+      this._popupTickId = null;
+
+      const fixturePath = GLib.getenv("CLAUDE_QUOTA_FIXTURE");
+      if (fixturePath) {
+        // Provider visibility derived from which keys are present in the fixture.
+        const [ok, bytes] = GLib.file_get_contents(fixturePath);
+        if (!ok) throw new Error(`fixture not readable: ${fixturePath}`);
+        const fixtureData = JSON.parse(decodeBytes(bytes));
+        const shows = {};
+        for (const { id } of PROVIDER_DEFS) shows[id] = id in fixtureData;
+        this._initUI(shows);
+        this._loadFixtureData(fixtureData);
+        this._exportTestInterface();
+        return;
+      }
+
+      const cfg = readExtensionConfig();
+      const shows = {};
+      for (const { id } of PROVIDER_DEFS) shows[id] = cfg[`show${id.charAt(0).toUpperCase()}${id.slice(1)}`] !== false;
+      this._initUI(shows);
+      this._refresh();
+      this._timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_INTERVAL_SECONDS, () => {
+        this._refresh();
+        return GLib.SOURCE_CONTINUE;
+      });
+    }
+
+    // Set up per-provider state, build panel + popup, wire menu open handler.
+    _initUI(shows) {
+      // _providers: array of enabled provider descriptors with their runtime state and UI refs.
+      this._providers = PROVIDER_DEFS.filter(({ id }) => shows[id]).map((def) => ({
+        ...def,
+        state: emptyProviderState(),
+        icon: null,
+        paceLabel: null,
+        header: null,
+        shortRow: null,
+        longRow: null,
+      }));
 
       this._buildPanel();
       this._buildPopup();
-      this._popupTickId = null;
       this._menuOpenId = this.menu.connect("open-state-changed", (_menu, open) => {
         if (open) {
           this._renderPopup();
@@ -255,39 +354,16 @@ const QuotaIndicator = GObject.registerClass(
           this._stopPopupTick();
         }
       });
-
-      // Test hook: when set, load fixture state from JSON and skip the
-      // network/credential fetch path entirely. Also exports a small
-      // session-bus interface (works.allegedly.ClaudeQuotaTest) so the
-      // render-test driver can open the popup and query its geometry
-      // for golden screenshots. Used by the golden render tests at
-      // //gnome-extensions/claude-quota:test_render.
-      const fixturePath = GLib.getenv("CLAUDE_QUOTA_FIXTURE");
-      if (fixturePath) {
-        this._loadFixture(fixturePath);
-        this._exportTestInterface();
-        return;
-      }
-
-      this._refresh();
-      this._timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_INTERVAL_SECONDS, () => {
-        this._refresh();
-        return GLib.SOURCE_CONTINUE;
-      });
     }
 
-    _loadFixture(path) {
-      const [ok, bytes] = GLib.file_get_contents(path);
-      if (!ok) throw new Error(`fixture not readable: ${path}`);
-      const data = JSON.parse(decodeBytes(bytes));
+    _loadFixtureData(data) {
       const provider = (node) => ({
         short: node?.short ?? null,
         long: node?.long ?? null,
         lastFetch: node?.lastFetch ?? null,
         error: node?.error ?? null,
       });
-      this._claude = provider(data.claude);
-      this._codex = provider(data.codex);
+      for (const p of this._providers) p.state = provider(data[p.id]);
       this._renderPanel();
       this._renderPopup();
     }
@@ -310,16 +386,17 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           "</interface></node>",
         {
-          Reload: (path) => this._loadFixture(path),
+          Reload: (path) => {
+            const [ok, bytes] = GLib.file_get_contents(path);
+            if (!ok) throw new Error(`fixture not readable: ${path}`);
+            this._loadFixtureData(JSON.parse(decodeBytes(bytes)));
+          },
           OpenMenu: () => this.menu.open(false),
           CloseMenu: () => this.menu.close(false),
           GetMenuGeometry: () => {
             const actor = this.menu.actor;
             const [x, y] = actor.get_transformed_position();
             const [w, h] = actor.get_transformed_size();
-            // gjs DBusExportedObject maps a `(iiii)` out-arg to an array
-            // of four ints; a single output value is returned directly,
-            // not wrapped in another array.
             return [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
           },
         }
@@ -351,30 +428,14 @@ const QuotaIndicator = GObject.registerClass(
         style_class: "quota-indicator",
         y_align: Clutter.ActorAlign.CENTER,
       });
-      this._claudeIcon = this._makeIcon("claude-symbolic.svg");
-      this._claudePace = new St.Label({
-        style_class: "quota-pace",
-        y_align: Clutter.ActorAlign.CENTER,
-      });
-      this._codexIcon = this._makeIcon("openai-symbolic.svg");
-      this._codexPace = new St.Label({
-        style_class: "quota-pace",
-        y_align: Clutter.ActorAlign.CENTER,
-      });
-      const claudeBox = new St.BoxLayout({
-        style_class: "quota-provider",
-        y_align: Clutter.ActorAlign.CENTER,
-      });
-      claudeBox.add_child(this._claudeIcon);
-      claudeBox.add_child(this._claudePace);
-      const codexBox = new St.BoxLayout({
-        style_class: "quota-provider",
-        y_align: Clutter.ActorAlign.CENTER,
-      });
-      codexBox.add_child(this._codexIcon);
-      codexBox.add_child(this._codexPace);
-      box.add_child(claudeBox);
-      box.add_child(codexBox);
+      for (const p of this._providers) {
+        p.icon = this._makeIcon(p.iconFile);
+        p.paceLabel = new St.Label({ style_class: "quota-pace", y_align: Clutter.ActorAlign.CENTER });
+        const provBox = new St.BoxLayout({ style_class: "quota-provider", y_align: Clutter.ActorAlign.CENTER });
+        provBox.add_child(p.icon);
+        provBox.add_child(p.paceLabel);
+        box.add_child(provBox);
+      }
       this.add_child(box);
     }
 
@@ -387,23 +448,14 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _buildPopup() {
-      this._claudeHeader = new PopupMenu.PopupSeparatorMenuItem("Claude");
-      this._claudeShort = this._makeQuotaRow("5h");
-      this._claudeLong = this._makeQuotaRow("7d");
-      this._codexHeader = new PopupMenu.PopupSeparatorMenuItem("Codex");
-      this._codexShort = this._makeQuotaRow("5h");
-      this._codexLong = this._makeQuotaRow("7d");
-      const items = [
-        this._claudeHeader,
-        this._claudeShort,
-        this._claudeLong,
-        this._codexHeader,
-        this._codexShort,
-        this._codexLong,
-      ];
-      for (const item of items) this.menu.addMenuItem(item);
-      for (const item of [this._claudeHeader, this._codexHeader]) {
-        item.label.add_style_class_name("quota-popup-header");
+      for (const p of this._providers) {
+        p.header = new PopupMenu.PopupSeparatorMenuItem(p.label);
+        p.shortRow = this._makeQuotaRow("5h");
+        p.longRow = this._makeQuotaRow("7d");
+        this.menu.addMenuItem(p.header);
+        this.menu.addMenuItem(p.shortRow);
+        this.menu.addMenuItem(p.longRow);
+        p.header.label.add_style_class_name("quota-popup-header");
       }
     }
 
@@ -447,10 +499,6 @@ const QuotaIndicator = GObject.registerClass(
       fill._quotaFraction = null;
       fill._quotaTrack = track;
       fill.set_width(0);
-      // notify::allocation (not notify::width) — width is the *requested*
-      // width and may not change between request and first allocation, so
-      // notify::width can miss the very first layout pass and leave the fill
-      // sized off a stale request width until something else triggers a relayout.
       track.connect("notify::allocation", () => this._applyBarFill(fill));
       track.add_child(fill);
       return { track, fill };
@@ -510,8 +558,21 @@ const QuotaIndicator = GObject.registerClass(
       }
     }
 
-    _setProviderError(state, error) {
-      state.error = error;
+    _readZaiAuth() {
+      const path = `${GLib.get_home_dir()}/.config/z.ai/api_key`;
+      try {
+        const [ok, bytes] = GLib.file_get_contents(path);
+        if (!ok) return { error: `${path}: not readable` };
+        const key = decodeBytes(bytes).trim();
+        if (!key) return { error: `${path}: empty` };
+        return { token: key };
+      } catch (error) {
+        return { error: `${path}: ${errorMessage(error)}` };
+      }
+    }
+
+    _providerById(id) {
+      return this._providers.find((p) => p.id === id) ?? null;
     }
 
     _fetchAsync(url, headers, onSuccess, onError) {
@@ -589,12 +650,14 @@ const QuotaIndicator = GObject.registerClass(
           this._fetchClaude(accessToken, auth, false);
         },
         (error) => {
-          this._setProviderError(this._claude, `token refresh failed: ${errorMessage(error)}`);
+          const p = this._providerById("claude");
+          if (p) p.state.error = `token refresh failed: ${errorMessage(error)}`;
         }
       );
     }
 
     _fetchClaude(token, auth, allowRefresh = true) {
+      const p = this._providerById("claude");
       this._fetchAsync(
         CLAUDE_USAGE_URL,
         {
@@ -605,24 +668,23 @@ const QuotaIndicator = GObject.registerClass(
           if (data.five_hour == null && data.seven_day == null) {
             throw new Error(`unexpected response (${objectSummary(data)})`);
           }
-          const short = windowFromClaude(data.five_hour, "5h", CLAUDE_SHORT_W);
-          const long = windowFromClaude(data.seven_day, "7d", CLAUDE_LONG_W);
-          this._claude.short = short;
-          this._claude.long = long;
-          this._claude.lastFetch = Date.now();
-          this._claude.error = null;
+          p.state.short = windowFromClaude(data.five_hour, "5h", CLAUDE_SHORT_W);
+          p.state.long = windowFromClaude(data.seven_day, "7d", CLAUDE_LONG_W);
+          p.state.lastFetch = Date.now();
+          p.state.error = null;
         },
         (error) => {
           if (allowRefresh && auth?.refreshToken && error?.status === 401) {
             this._refreshClaudeToken(auth);
-          } else {
-            this._setProviderError(this._claude, errorMessage(error));
+          } else if (p) {
+            p.state.error = errorMessage(error);
           }
         }
       );
     }
 
     _fetchCodex({ token, accountId }) {
+      const p = this._providerById("codex");
       const headers = {
         Authorization: `Bearer ${token}`,
         "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64) gnome-shell-extension",
@@ -635,15 +697,36 @@ const QuotaIndicator = GObject.registerClass(
           if (data.rate_limit?.primary_window == null && data.rate_limit?.secondary_window == null) {
             throw new Error(`unexpected response (${objectSummary(data)})`);
           }
-          const short = windowFromCodex(data.rate_limit?.primary_window, "5h");
-          const long = windowFromCodex(data.rate_limit?.secondary_window, "7d");
-          this._codex.short = short;
-          this._codex.long = long;
-          this._codex.lastFetch = Date.now();
-          this._codex.error = null;
+          p.state.short = windowFromCodex(data.rate_limit?.primary_window, "5h");
+          p.state.long = windowFromCodex(data.rate_limit?.secondary_window, "7d");
+          p.state.lastFetch = Date.now();
+          p.state.error = null;
         },
         (error) => {
-          this._setProviderError(this._codex, errorMessage(error));
+          if (p) p.state.error = errorMessage(error);
+        }
+      );
+    }
+
+    _fetchZai(token) {
+      const p = this._providerById("zai");
+      this._fetchAsync(
+        ZAI_QUOTA_URL,
+        { Authorization: `Bearer ${token}` },
+        (data) => {
+          if (!Array.isArray(data?.data?.limits)) {
+            throw new Error(`unexpected response (${objectSummary(data)})`);
+          }
+          const limits = data.data.limits;
+          const shortLimit = limits.find((l) => l.type === "TOKENS_LIMIT" && l.unit === 3);
+          const longLimit = limits.find((l) => l.type === "TOKENS_LIMIT" && l.unit === 6);
+          p.state.short = windowFromZai(shortLimit, ZAI_SHORT_W);
+          p.state.long = windowFromZai(longLimit, ZAI_LONG_W);
+          p.state.lastFetch = Date.now();
+          p.state.error = null;
+        },
+        (error) => {
+          if (p) p.state.error = errorMessage(error);
         }
       );
     }
@@ -658,8 +741,7 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderPanel() {
-      this._renderProvider(this._claude, this._claudeIcon, this._claudePace);
-      this._renderProvider(this._codex, this._codexIcon, this._codexPace);
+      for (const p of this._providers) this._renderProvider(p.state, p.icon, p.paceLabel);
     }
 
     _renderProvider(state, icon, paceLabel) {
@@ -690,12 +772,11 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderPopup() {
-      this._renderProviderHeader(this._claudeHeader, "Claude", this._claude);
-      this._renderPopupRow(this._claudeShort, "5h", this._claude.short);
-      this._renderPopupRow(this._claudeLong, "7d", this._claude.long);
-      this._renderProviderHeader(this._codexHeader, "Codex", this._codex);
-      this._renderPopupRow(this._codexShort, "5h", this._codex.short);
-      this._renderPopupRow(this._codexLong, "7d", this._codex.long);
+      for (const p of this._providers) {
+        this._renderProviderHeader(p.header, p.label, p.state);
+        this._renderPopupRow(p.shortRow, "5h", p.state.short);
+        this._renderPopupRow(p.longRow, "7d", p.state.long);
+      }
     }
 
     _renderProviderHeader(item, title, state) {
@@ -751,7 +832,6 @@ const QuotaIndicator = GObject.registerClass(
       }
       const box = fill._quotaTrack.get_allocation_box();
       const trackWidth = box.x2 - box.x1;
-      // Track not yet allocated — defer; notify::allocation will fire again.
       if (!(trackWidth > 0)) return;
       fill.set_width(Math.round(trackWidth * fraction));
     }
@@ -780,19 +860,37 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _refresh() {
-      const claudeAuth = this._readClaudeAuth();
-      if (claudeAuth.token) {
-        if (claudeAuth.expired) {
-          this._refreshClaudeToken(claudeAuth);
+      const claudeP = this._providerById("claude");
+      if (claudeP) {
+        const claudeAuth = this._readClaudeAuth();
+        if (claudeAuth.token) {
+          if (claudeAuth.expired) {
+            this._refreshClaudeToken(claudeAuth);
+          } else {
+            this._fetchClaude(claudeAuth.token, claudeAuth);
+          }
         } else {
-          this._fetchClaude(claudeAuth.token, claudeAuth);
+          claudeP.state.error = claudeAuth.error;
         }
-      } else {
-        this._setProviderError(this._claude, claudeAuth.error);
       }
 
-      const codexAuth = this._readCodexAuth();
-      if (codexAuth) this._fetchCodex(codexAuth);
+      const codexP = this._providerById("codex");
+      if (codexP) {
+        const codexAuth = this._readCodexAuth();
+        if (codexAuth) {
+          this._fetchCodex(codexAuth);
+        }
+      }
+
+      const zaiP = this._providerById("zai");
+      if (zaiP) {
+        const zaiAuth = this._readZaiAuth();
+        if (zaiAuth.token) {
+          this._fetchZai(zaiAuth.token);
+        } else {
+          zaiP.state.error = zaiAuth.error;
+        }
+      }
 
       this._renderPanel();
       this._renderPopup();
@@ -814,32 +912,6 @@ const QuotaIndicator = GObject.registerClass(
     }
   }
 );
-
-function windowFromClaude(node, label, windowSeconds) {
-  if (!node) return null;
-  const resetAtMs = parseClaudeResetAtMs(node.resets_at, label);
-  return {
-    usedPercent: node.utilization ?? null,
-    resetAtMs,
-    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
-    windowSeconds,
-  };
-}
-
-function windowFromCodex(node, label) {
-  if (!node) return null;
-  const windowSeconds = Number(node.limit_window_seconds ?? NaN);
-  if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) {
-    throw new Error(`${label} window missing limit_window_seconds`);
-  }
-  const resetAtMs = codexResetAtMsFromResetAfter(node, label);
-  return {
-    usedPercent: node.used_percent ?? null,
-    resetAtMs,
-    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
-    windowSeconds,
-  };
-}
 
 export default class QuotaExtension extends Extension {
   enable() {

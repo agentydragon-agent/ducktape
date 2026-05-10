@@ -12,6 +12,7 @@ _EXTENSION_SRCS = [
     "stylesheet.css",
     "icons/claude-symbolic.svg",
     "icons/openai-symbolic.svg",
+    "icons/zai-symbolic.svg",
 ]
 
 pkg_files(

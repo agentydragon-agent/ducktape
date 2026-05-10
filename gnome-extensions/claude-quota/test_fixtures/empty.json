@@ -1,5 +1,5 @@
 {
-  "_comment": "Initial state before any fetch — short/long both null on both providers, no error. Renderer takes the (state.short==null && state.long==null) branch: tint=unknown (dim gray icon), pace label cleared, menu rows say 'no data'.",
+  "_comment": "Initial state before any fetch — short/long both null on all providers, no error. Renderer takes the (state.short==null && state.long==null) branch: tint=unknown (dim gray icon), pace label cleared, menu rows say 'no data'.",
   "claude": {
     "short": null,
     "long": null,
@@ -7,6 +7,12 @@
     "error": null
   },
   "codex": {
+    "short": null,
+    "long": null,
+    "lastFetch": null,
+    "error": null
+  },
+  "zai": {
     "short": null,
     "long": null,
     "lastFetch": null,
