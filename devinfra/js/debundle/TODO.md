@@ -224,3 +224,7 @@ mock browser bundle. Extend to:
 - Unusual dynamic import forms.
 - HTML/runtime asset layouts outside the current corpus.
 
+## Authoring config: browser-harness asset root
+
+Add a separate browser-harness asset root only if a real corpus needs static
+asset inputs to come from somewhere other than `inputs.root`.
