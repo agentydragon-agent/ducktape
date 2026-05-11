@@ -313,6 +313,17 @@ creation_rules:
           - *claude-web
           - *codex-cloud-agent
           - *ci
+  # Hetzner Robot webservice credentials (admin + all user keys)
+  - path_regex: secrets/hetzner-robot\.sops\.yaml$
+    encrypted_regex: ^password$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
   # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
   - path_regex: secrets/github-ci-read-pat\.yaml$
     key_groups:
