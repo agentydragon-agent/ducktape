@@ -1,9 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 
-use crate::graph::{OwnerEdgeEntry, peel_emit_blocked_residual_bindings};
+use crate::graph::{OwnerEdge, peel_emit_blocked_residual_bindings};
 use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
@@ -17,10 +17,10 @@ use crate::{
 #[derive(Debug, Clone, Default)]
 struct CandidateEdgeAccumulator {
     constraining_owner_edge_indices: Vec<usize>,
-    constrains_realizability: bool,
+    constrains_init_order: bool,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum CandidateEdgeDirection {
     FromCandidate,
     ToCandidate,
@@ -31,7 +31,7 @@ struct CandidateIncidentEdge {
     direction: CandidateEdgeDirection,
     module_idx: usize,
     constraining_owner_edge_indices: Vec<usize>,
-    constrains_realizability: bool,
+    constrains_init_order: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -54,21 +54,21 @@ struct ReverseModuleAdjEdge {
 }
 
 struct PeelabilityContext<'a> {
-    owner_edges: &'a [OwnerEdgeEntry],
+    owner_edges: &'a [OwnerEdge],
     owner_out_edges: Vec<Vec<usize>>,
     owner_in_edges: Vec<Vec<usize>>,
-    module_index: BTreeMap<ModuleId, usize>,
+    module_index: HashMap<ModuleId, usize>,
     modules: Vec<ModuleId>,
     forward_edges: Vec<Vec<ModuleAdjEdge>>,
     reverse_edges: Vec<Vec<ReverseModuleAdjEdge>>,
-    module_pair_totals: BTreeMap<(ModuleId, ModuleId), ModulePairTotals>,
+    module_pair_totals: HashMap<(ModuleId, ModuleId), ModulePairTotals>,
 }
 
 #[derive(Debug, Clone, Default)]
 struct CandidateGraphAdjustment {
-    removed_reason_count: BTreeMap<(ModuleId, ModuleId), usize>,
-    removed_constraining_reason_count: BTreeMap<(ModuleId, ModuleId), usize>,
-    removed_owner_edge_indices: BTreeSet<usize>,
+    removed_reason_count: HashMap<(ModuleId, ModuleId), usize>,
+    removed_constraining_reason_count: HashMap<(ModuleId, ModuleId), usize>,
+    removed_owner_edge_indices: HashSet<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,21 +92,22 @@ struct PeelCandidateEvaluation {
 
 pub(crate) fn build_peelability_report(
     schedule: &Schedule,
-    owner_edges: &[OwnerEdgeEntry],
+    owner_edges: &[OwnerEdge],
     quotient_edges: &[QuotientEdgeReport],
 ) -> OwnerGraphPeelabilityReport {
     let residual_destinations: BTreeSet<ModuleId> = schedule
         .owner_graph
         .iter_nodes()
         .filter_map(|node| {
-            is_residual_destination(schedule, node.destination).then_some(node.destination)
+            let module = schedule.partition.of(node.id);
+            is_residual_destination(schedule, module).then_some(module)
         })
         .collect();
 
     let context = PeelabilityContext::new(schedule, owner_edges, quotient_edges);
     let mut declared_by_owner = BTreeMap::<OwnerId, Vec<BindingName>>::new();
     for node in schedule.owner_graph.iter_nodes() {
-        if !is_residual_destination(schedule, node.destination) {
+        if !is_residual_destination(schedule, schedule.partition.of(node.id)) {
             continue;
         }
         let declared = residual_declared_for_owner(schedule, node);
@@ -182,7 +183,7 @@ pub(crate) fn build_peelability_report(
             cycle_blockers: candidate
                 .constraining_owner_edge_indices
                 .iter()
-                .filter_map(|idx| owner_edges.get(*idx).map(|edge| edge.id.clone()))
+                .filter_map(|idx| owner_edges.get(*idx).map(|edge| edge.id.report_key()))
                 .collect(),
             residual_dependency_blockers: candidate
                 .residual_dependency_blocker_owner_ids
@@ -311,7 +312,7 @@ fn build_residual_owner_horizon(
             source_location: node.source_location.clone(),
             statement_kind: node.kind,
             purity: node.purity.clone(),
-            current_destination: module_report_ref(schedule, node.destination),
+            current_destination: module_report_ref(schedule, schedule.partition.of(node.id)),
             members: binding_reports(schedule, bindings.iter()),
             status,
             peel_set_ids,
@@ -345,7 +346,7 @@ fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<Bin
 impl<'a> PeelabilityContext<'a> {
     fn new(
         schedule: &Schedule,
-        owner_edges: &'a [OwnerEdgeEntry],
+        owner_edges: &'a [OwnerEdge],
         quotient_edges: &[QuotientEdgeReport],
     ) -> Self {
         let mut modules = BTreeSet::<ModuleId>::new();
@@ -353,8 +354,8 @@ impl<'a> PeelabilityContext<'a> {
         for idx in 0..schedule.logical_modules.len() {
             modules.insert(ModuleId::Logical(LogicalModuleIndex(idx)));
         }
-        for node in schedule.owner_graph.iter_nodes() {
-            modules.insert(node.destination);
+        for (_, module) in schedule.partition.iter() {
+            modules.insert(module);
         }
         for edge in quotient_edges {
             if let Some(source) = module_id_from_key(&edge.source) {
@@ -365,7 +366,7 @@ impl<'a> PeelabilityContext<'a> {
             }
         }
         let modules: Vec<ModuleId> = modules.into_iter().collect();
-        let module_index: BTreeMap<ModuleId, usize> = modules
+        let module_index: HashMap<ModuleId, usize> = modules
             .iter()
             .copied()
             .enumerate()
@@ -375,7 +376,7 @@ impl<'a> PeelabilityContext<'a> {
         let owner_count = schedule.owner_graph.nodes.len();
         let mut owner_out_edges = vec![Vec::new(); owner_count];
         let mut owner_in_edges = vec![Vec::new(); owner_count];
-        let mut module_pair_totals = BTreeMap::<(ModuleId, ModuleId), ModulePairTotals>::new();
+        let mut module_pair_totals = HashMap::<(ModuleId, ModuleId), ModulePairTotals>::new();
         for (idx, edge) in owner_edges.iter().enumerate() {
             if let Some(indices) = owner_out_edges.get_mut(edge.from.0) {
                 indices.push(idx);
@@ -384,20 +385,19 @@ impl<'a> PeelabilityContext<'a> {
                 indices.push(idx);
             }
 
-            let Some(from_node) = schedule.owner_graph.node(edge.from) else {
+            if schedule.owner_graph.node(edge.from).is_none()
+                || schedule.owner_graph.node(edge.to).is_none()
+            {
                 continue;
-            };
-            let Some(to_node) = schedule.owner_graph.node(edge.to) else {
-                continue;
-            };
-            let from = from_node.destination;
-            let to = to_node.destination;
+            }
+            let from = schedule.partition.of(edge.from);
+            let to = schedule.partition.of(edge.to);
             if from == to {
                 continue;
             }
             let totals = module_pair_totals.entry((from, to)).or_default();
             totals.reason_count += 1;
-            if edge.reason.constrains_realizability() {
+            if edge.reason.constrains_init_order() {
                 totals.constraining_reason_count += 1;
                 totals.constraining_owner_edge_indices.push(idx);
             }
@@ -488,7 +488,7 @@ impl<'a> PeelabilityContext<'a> {
 fn residual_pair_candidates_from_singleton_blockers(
     schedule: &Schedule,
     singleton_candidates: &[(OwnerId, PeelCandidateEvaluation)],
-    owner_edges: &[OwnerEdgeEntry],
+    owner_edges: &[OwnerEdge],
     declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
 ) -> BTreeSet<(OwnerId, OwnerId)> {
     let mut pair_owner_sets = BTreeSet::new();
@@ -544,7 +544,7 @@ fn residual_dependency_closure_candidates(
         // Aggregate declared bindings across the closure. Empty-declared
         // owners (top-level side-effect statements) are kept in the
         // owner set — moving them is necessary to satisfy
-        // side_effect_order edges to/from named bindings — but they
+        // sequenced edges to/from named bindings — but they
         // contribute no bindings to the report's `members` list.
         let mut declared = Vec::new();
         for owner in &closure {
@@ -582,7 +582,7 @@ impl ResidualDependencyClosureIndex {
         let mut graph = DiGraph::<OwnerId, ()>::new();
         let mut node_by_owner = vec![None; schedule.owner_graph.nodes.len()];
         for node in schedule.owner_graph.iter_nodes() {
-            if !is_residual_destination(schedule, node.destination) {
+            if !is_residual_destination(schedule, schedule.partition.of(node.id)) {
                 continue;
             }
             if let Some(slot) = node_by_owner.get_mut(node.id.0) {
@@ -662,14 +662,12 @@ impl ResidualDependencyClosureIndex {
 }
 
 fn owners_share_residual_destination(schedule: &Schedule, left: OwnerId, right: OwnerId) -> bool {
-    let Some(left_node) = schedule.owner_graph.node(left) else {
+    if schedule.owner_graph.node(left).is_none() || schedule.owner_graph.node(right).is_none() {
         return false;
-    };
-    let Some(right_node) = schedule.owner_graph.node(right) else {
-        return false;
-    };
-    left_node.destination == right_node.destination
-        && is_residual_destination(schedule, left_node.destination)
+    }
+    let left_module = schedule.partition.of(left);
+    let right_module = schedule.partition.of(right);
+    left_module == right_module && is_residual_destination(schedule, left_module)
 }
 
 fn sorted_owner_pair(left: OwnerId, right: OwnerId) -> (OwnerId, OwnerId) {
@@ -709,7 +707,7 @@ fn evaluate_residual_peel_candidate(
     // reject it when a moved body references a residual entry binding
     // that isn't on entry's export list. Compute that here using the
     // shared predicate so peelability and the materializer can't
-    // drift (cf. `constrains_realizability` SSOT in f86e84b7e).
+    // drift (cf. `constrains_init_order` SSOT in f86e84b7e).
     //
     // Skipped when the schedule was built without AST analysis (no
     // `pre_existing_entry_exports` set) — that's the test-helper case
@@ -722,12 +720,13 @@ fn evaluate_residual_peel_candidate(
             // surface emit-resolvability blockers.
             Vec::new()
         } else {
-            match post_peel_entry_exports_for_candidate(schedule, &declared) {
-                Some(post_peel_entry_exports) => peel_emit_blocked_residual_bindings(
+            match schedule.entry_exported_binding_names() {
+                Some(base_exports) => peel_emit_blocked_residual_bindings(
                     &schedule.owner_graph,
-                    context.owner_edges,
+                    &schedule.partition,
                     &moved_owners,
-                    &post_peel_entry_exports,
+                    base_exports,
+                    &declared,
                 )
                 .into_iter()
                 .collect(),
@@ -756,26 +755,6 @@ fn evaluate_residual_peel_candidate(
     }
 }
 
-/// Post-peel entry export set for a candidate: the schedule's pre-peel
-/// entry exports (pre-existing source exports plus bindings of owners
-/// already in a logical module) plus the candidate's bindings, which
-/// `entry_exports_for_moved_bindings` would auto-export from entry on
-/// emit.
-///
-/// Returns `None` when the schedule has no AST-derived
-/// pre-existing-export set; callers treat that as "skip the
-/// emit-resolvability projection".
-fn post_peel_entry_exports_for_candidate(
-    schedule: &Schedule,
-    candidate_members: &[BindingName],
-) -> Option<BTreeSet<BindingName>> {
-    let mut exports = schedule.entry_exported_binding_names()?;
-    for member in candidate_members {
-        exports.insert(member.clone());
-    }
-    Some(exports)
-}
-
 fn candidate_cross_destination_write_edge_indices(
     context: &PeelabilityContext<'_>,
     moved_owners: &BTreeSet<OwnerId>,
@@ -789,7 +768,7 @@ fn candidate_cross_destination_write_edge_indices(
         .into_iter()
         .filter(|edge_idx| {
             let edge = &context.owner_edges[*edge_idx];
-            edge.reason.is_binding_write()
+            edge.reason.is_rebind()
                 && moved_owners.contains(&edge.from) != moved_owners.contains(&edge.to)
         })
         .collect()
@@ -804,16 +783,16 @@ fn candidate_residual_dependency_blocker_owner_ids(
     for owner_id in moved_owners {
         for &edge_idx in context.owner_out_edge_indices(*owner_id) {
             let edge = &context.owner_edges[edge_idx];
-            if !edge.reason.constrains_realizability() {
+            if !edge.reason.constrains_init_order() {
                 continue;
             }
             if moved_owners.contains(&edge.to) {
                 continue;
             }
-            let Some(to_node) = schedule.owner_graph.node(edge.to) else {
+            if schedule.owner_graph.node(edge.to).is_none() {
                 continue;
-            };
-            if to_node.destination != ModuleId::ResidualEntry {
+            }
+            if schedule.partition.of(edge.to) != ModuleId::ResidualEntry {
                 continue;
             }
             blockers.insert(edge.to);
@@ -834,28 +813,26 @@ fn candidate_incident_edges(
     }
 
     let mut adjustment = CandidateGraphAdjustment::default();
-    let mut accum = BTreeMap::<(CandidateEdgeDirection, ModuleId), CandidateEdgeAccumulator>::new();
-    let mut seen_side_effect_candidate_pairs =
-        BTreeSet::<(CandidateEdgeDirection, ModuleId)>::new();
+    let mut accum = HashMap::<(CandidateEdgeDirection, ModuleId), CandidateEdgeAccumulator>::new();
+    let mut seen_side_effect_candidate_pairs = HashSet::<(CandidateEdgeDirection, ModuleId)>::new();
 
     for edge_idx in edge_indices {
         let edge = &context.owner_edges[edge_idx];
         adjustment.removed_owner_edge_indices.insert(edge_idx);
 
-        let Some(from_node) = schedule.owner_graph.node(edge.from) else {
+        if schedule.owner_graph.node(edge.from).is_none()
+            || schedule.owner_graph.node(edge.to).is_none()
+        {
             continue;
-        };
-        let Some(to_node) = schedule.owner_graph.node(edge.to) else {
-            continue;
-        };
-        let old_from = from_node.destination;
-        let old_to = to_node.destination;
+        }
+        let old_from = schedule.partition.of(edge.from);
+        let old_to = schedule.partition.of(edge.to);
         if old_from != old_to {
             *adjustment
                 .removed_reason_count
                 .entry((old_from, old_to))
                 .or_insert(0) += 1;
-            if edge.reason.constrains_realizability() {
+            if edge.reason.constrains_init_order() {
                 *adjustment
                     .removed_constraining_reason_count
                     .entry((old_from, old_to))
@@ -873,16 +850,16 @@ fn candidate_incident_edges(
         } else {
             (CandidateEdgeDirection::ToCandidate, old_from)
         };
-        if edge.reason.is_side_effect_order()
+        if edge.reason.is_sequenced()
             && !seen_side_effect_candidate_pairs.insert((direction, module))
         {
             continue;
         }
         let entry = accum.entry((direction, module)).or_default();
-        if edge.reason.constrains_realizability() {
+        if edge.reason.constrains_init_order() {
             entry.constraining_owner_edge_indices.push(edge_idx);
         }
-        entry.constrains_realizability |= edge.reason.constrains_realizability();
+        entry.constrains_init_order |= edge.reason.constrains_init_order();
     }
 
     let mut candidate_edges = Vec::new();
@@ -894,7 +871,7 @@ fn candidate_incident_edges(
             direction,
             module_idx,
             constraining_owner_edge_indices: entry.constraining_owner_edge_indices,
-            constrains_realizability: entry.constrains_realizability,
+            constrains_init_order: entry.constrains_init_order,
         });
     }
 
@@ -968,7 +945,7 @@ fn candidate_blocking_scc_owner_edge_indices(
         if !in_scc[edge.module_idx] {
             continue;
         }
-        if edge.constrains_realizability {
+        if edge.constrains_init_order {
             constraining_owner_edge_ids
                 .extend(edge.constraining_owner_edge_indices.iter().copied());
         }

@@ -1,5 +1,5 @@
 mod tests {
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::{BTreeSet, HashMap};
 
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
     use crate::purity::{ChunkCodeGraph, Purity, classify_expr_purity};
@@ -33,39 +33,39 @@ mod tests {
             facts[0].declared,
             ["f"].iter().map(|s| s.to_string()).collect()
         );
-        assert!(!facts[0].reads_at_init.contains("X"));
+        assert!(!facts[0].eager_reads.contains("X"));
         assert_eq!(facts[0].kind, StatementKind::FnDecl);
         // Y declares "Y"; init is `1` (no reads).
         assert_eq!(
             facts[1].declared,
             ["Y"].iter().map(|s| s.to_string()).collect()
         );
-        assert!(facts[1].reads_at_init.is_empty());
+        assert!(facts[1].eager_reads.is_empty());
     }
 
     #[test]
-    fn class_extends_clause_reads_at_init() {
+    fn class_extends_clause_eager_read() {
         let module = parse("class B extends A { run() { return X; } }");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         assert_eq!(facts.len(), 1);
         // extends A is eager; method body reference to X is lazy.
-        assert!(facts[0].reads_at_init.contains("A"));
-        assert!(!facts[0].reads_at_init.contains("X"));
+        assert!(facts[0].eager_reads.contains("A"));
+        assert!(!facts[0].eager_reads.contains("X"));
     }
 
     #[test]
-    fn computed_key_reads_at_init() {
+    fn computed_key_eager_read() {
         let module = parse("const M = { [k.foo]: 1 };");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         // The key expression `k.foo` reads `k` at-init.
-        assert!(facts[0].reads_at_init.contains("k"));
+        assert!(facts[0].eager_reads.contains("k"));
     }
 
     #[test]
-    fn class_static_init_reads_at_init() {
+    fn class_static_init_eager_read() {
         let module = parse("class C { static x = Y; }");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        assert!(facts[0].reads_at_init.contains("Y"));
+        assert!(facts[0].eager_reads.contains("Y"));
     }
 
     #[test]
@@ -74,7 +74,7 @@ mod tests {
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         // Instance field initializer evaluates per-instance, not at
         // class-decl time.
-        assert!(!facts[0].reads_at_init.contains("Y"));
+        assert!(!facts[0].eager_reads.contains("Y"));
     }
 
     fn logical(idx: usize) -> ModuleId {
@@ -115,11 +115,12 @@ mod tests {
         // mod_b owns B; B's init reads A (owned by mod_a).
         let module = parse("const A = B + 1; const B = A + 1;");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
         assert_eq!(report.cycles[0].modules.len(), 2);
@@ -129,12 +130,13 @@ mod tests {
     fn dag_has_no_cycles() {
         let module = parse("const A = 1; const B = A + 1; const C = B + A;");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
         binding_assignment.insert("C".to_string(), logical(2));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert!(
             report.cycles.is_empty(),
@@ -156,12 +158,13 @@ mod tests {
         // L-edge: mod_0 → mod_1 (kind = lazy, binding = B).
         let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("readB".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(
             report.cycles.len(),
@@ -171,12 +174,12 @@ mod tests {
         );
         let cycle = &report.cycles[0];
         assert!(
-            cycle.evidence.iter().any(|e| e.kind == EdgeKind::LazyRead),
+            cycle.evidence.iter().any(|e| e.kind == DepKind::LazyUse),
             "evidence should include the lazy edge, got {:?}",
             cycle.evidence,
         );
         assert!(
-            !cycle.cut.iter().any(|e| e.kind == EdgeKind::LazyRead),
+            !cycle.cut.iter().any(|e| e.kind == DepKind::LazyUse),
             "cut must not include lazy reasons, got {:?}",
             cycle.cut,
         );
@@ -190,7 +193,7 @@ mod tests {
         assert_eq!(entry.from, "mod_1");
         assert_eq!(entry.to, "mod_0");
         assert_eq!(entry.binding.as_deref(), Some("A"));
-        assert_eq!(entry.kind, EdgeKind::AtInitRead);
+        assert_eq!(entry.kind, DepKind::EagerUse);
     }
 
     /// Pure-S cycle: cut consists of side-effect reasons; no
@@ -205,12 +208,13 @@ mod tests {
             r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
         );
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("a1".to_string(), logical(0));
         binding_assignment.insert("a2".to_string(), logical(0));
         binding_assignment.insert("b1".to_string(), logical(1));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
         let cycle = &report.cycles[0];
@@ -220,10 +224,7 @@ mod tests {
             cycle.cut,
         );
         assert!(
-            cycle
-                .cut
-                .iter()
-                .all(|e| e.kind == EdgeKind::SideEffectOrder),
+            cycle.cut.iter().all(|e| e.kind == DepKind::Sequenced),
             "S-only cycle cut should be all side-effect reasons, got {:?}",
             cycle.cut,
         );
@@ -240,13 +241,14 @@ mod tests {
             "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
         );
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("helperA".to_string(), logical(0));
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("helperB".to_string(), logical(1));
         binding_assignment.insert("B".to_string(), logical(1));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert!(
             report.cycles.is_empty(),
@@ -272,7 +274,7 @@ mod tests {
         assert_eq!(assignment.binding, "A");
         assert_eq!(assignment.assigner_module, "<residual_entry>");
         assert_eq!(assignment.binding_module, "mod_0");
-        assert_eq!(assignment.kind, EdgeKind::LazyWrite);
+        assert_eq!(assignment.kind, DepKind::LazyRebind);
     }
 
     #[test]
@@ -292,7 +294,7 @@ mod tests {
     fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> Schedule {
         let module = parse(source);
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut bindings = BTreeMap::new();
+        let mut bindings = HashMap::new();
         let mut max_idx = 0usize;
         for (name, id) in ownership {
             bindings.insert(name.to_string(), BindingKind::Owned { owner: *id });
@@ -305,7 +307,7 @@ mod tests {
                 id: format!("mod_{i}"),
                 target_file: format!("mod_{i}.js"),
                 residual: false,
-                rename_map: BTreeMap::new(),
+                rename_map: HashMap::new(),
                 anonymous_statement_ordinals: Vec::new(),
             })
             .collect();
@@ -314,7 +316,7 @@ mod tests {
             facts,
             bindings,
             logical_modules,
-            BTreeMap::new(),
+            HashMap::new(),
         )
     }
 
@@ -327,7 +329,7 @@ mod tests {
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         let residual = logical(0);
         let logical = logical(1);
-        let mut bindings = BTreeMap::new();
+        let mut bindings = HashMap::new();
         for name in residual_bindings {
             bindings.insert(name.to_string(), BindingKind::Owned { owner: residual });
         }
@@ -339,14 +341,14 @@ mod tests {
                 id: "residual".to_string(),
                 target_file: "residual/unhandled.js".to_string(),
                 residual: true,
-                rename_map: BTreeMap::new(),
+                rename_map: HashMap::new(),
                 anonymous_statement_ordinals: Vec::new(),
             },
             LogicalModule {
                 id: "mod_1".to_string(),
                 target_file: "mod_1.js".to_string(),
                 residual: false,
-                rename_map: BTreeMap::new(),
+                rename_map: HashMap::new(),
                 anonymous_statement_ordinals: Vec::new(),
             },
         ];
@@ -355,7 +357,7 @@ mod tests {
             facts,
             bindings,
             logical_modules,
-            BTreeMap::new(),
+            HashMap::new(),
         )
     }
 
@@ -363,18 +365,15 @@ mod tests {
     fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
         let schedule = schedule_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
 
-        let owner_edge = schedule
-            .owner_graph
-            .graph
-            .edge_weight(OwnerId(0), OwnerId(1))
-            .expect("A's owner should point at X's owner before quotienting");
         assert!(
-            owner_edge.reasons.iter().any(|reason| {
-                reason.kind == EdgeKind::AtInitRead
-                    && reason.statement_ordinal == StatementOrdinal(0)
-                    && schedule.binding_name(reason.binding.unwrap()) == "X"
+            schedule.owner_graph.edges.iter().any(|edge| {
+                edge.from == OwnerId(0)
+                    && edge.to == OwnerId(1)
+                    && edge.reason.kind == DepKind::EagerUse
+                    && edge.reason.statement_ordinal == StatementOrdinal(0)
+                    && schedule.binding_name(edge.reason.binding.unwrap()) == "X"
             }),
-            "owner graph should retain the unassigned declared provider edge: {owner_edge:?}",
+            "owner graph should retain the unassigned declared provider edge",
         );
         assert!(
             schedule

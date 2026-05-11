@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeSet, HashSet};
 
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 
+use crate::partition::Partition;
 use crate::purity::Purity;
 use crate::{
     BindingId, BindingName, BindingTable, ModuleId, SourceLocation, StatementFacts, StatementKind,
@@ -13,88 +14,88 @@ use crate::{
 /// statement ordinal that produced it. This is the single source of
 /// truth for edge semantics:
 ///
-/// - `AtInitRead` constrains ESM evaluation order under TDZ
+/// - `EagerUse` constrains ESM evaluation order under TDZ
 ///   semantics (`R ⊆ I`).
-/// - `LazyRead` contributes to the imports graph `I`, but does not
+/// - `LazyUse` contributes to the imports graph `I`, but does not
 ///   constrain realizability inside an SCC because the read fires
 ///   after module evaluation.
-/// - `AtInitWrite` / `LazyWrite` describe rebinding writes. A
+/// - `EagerRebind` / `LazyRebind` describe rebinding writes. A
 ///   cross-destination write is rejected outright because ESM imports
 ///   are read-only in the importing module; same-destination writes
 ///   are represented only at owner level and don't become module
 ///   imports.
-/// - `SideEffectOrder` contributes to `S` and constrains
+/// - `Sequenced` contributes to `S` and constrains
 ///   realizability because source-order side effects require a
 ///   topological order.
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
-    pub(crate) kind: EdgeKind,
+    pub(crate) kind: DepKind,
     pub(crate) statement_ordinal: StatementOrdinal,
     pub(crate) binding: Option<BindingId>,
 }
 
 impl EdgeReason {
-    pub(crate) fn at_init_read(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn eager_use(so: StatementOrdinal, b: BindingId) -> Self {
         Self {
-            kind: EdgeKind::AtInitRead,
+            kind: DepKind::EagerUse,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn lazy_read(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn lazy_use(so: StatementOrdinal, b: BindingId) -> Self {
         Self {
-            kind: EdgeKind::LazyRead,
+            kind: DepKind::LazyUse,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn at_init_write(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn eager_rebind(so: StatementOrdinal, b: BindingId) -> Self {
         Self {
-            kind: EdgeKind::AtInitWrite,
+            kind: DepKind::EagerRebind,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn lazy_write(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn lazy_rebind(so: StatementOrdinal, b: BindingId) -> Self {
         Self {
-            kind: EdgeKind::LazyWrite,
+            kind: DepKind::LazyRebind,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn side_effect_order(so: StatementOrdinal) -> Self {
+    pub(crate) fn sequenced(so: StatementOrdinal) -> Self {
         Self {
-            kind: EdgeKind::SideEffectOrder,
+            kind: DepKind::Sequenced,
             statement_ordinal: so,
             binding: None,
         }
     }
 
-    pub(crate) fn is_at_init_read(&self) -> bool {
-        self.kind == EdgeKind::AtInitRead
+    pub(crate) fn is_eager_use(&self) -> bool {
+        self.kind == DepKind::EagerUse
     }
-    pub(crate) fn is_binding_write(&self) -> bool {
-        matches!(self.kind, EdgeKind::AtInitWrite | EdgeKind::LazyWrite)
+    pub(crate) fn is_rebind(&self) -> bool {
+        matches!(self.kind, DepKind::EagerRebind | DepKind::LazyRebind)
     }
-    pub(crate) fn is_side_effect_order(&self) -> bool {
-        self.kind == EdgeKind::SideEffectOrder
+    pub(crate) fn is_sequenced(&self) -> bool {
+        self.kind == DepKind::Sequenced
     }
-    /// Every kind except `LazyRead` constrains realizability.
-    /// Stated as exclusion so adding a new `EdgeKind` variant
+    /// Every kind except `LazyUse` constrains realizability.
+    /// Stated as exclusion so adding a new `DepKind` variant
     /// forces an explicit decision here.
-    pub(crate) fn constrains_realizability(&self) -> bool {
-        self.kind != EdgeKind::LazyRead
+    pub(crate) fn constrains_init_order(&self) -> bool {
+        self.kind != DepKind::LazyUse
     }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EdgeKind {
-    AtInitRead,
-    LazyRead,
-    AtInitWrite,
-    LazyWrite,
-    SideEffectOrder,
+pub enum DepKind {
+    EagerUse,
+    LazyUse,
+    EagerRebind,
+    LazyRebind,
+    Sequenced,
 }
 
 /// Stable-in-run identity of an owner graph vertex. V1 owner
@@ -106,12 +107,25 @@ pub struct OwnerId(pub usize);
 /// Fine-grained graph before logical modules are formed. Nodes are
 /// top-level owners/statements; edges are owner-level reads and
 /// source-order side-effect constraints. The module dependency graph
-/// is the quotient of this graph by `OwnerNode.destination`.
+/// is the quotient of this graph by a [`Partition`].
+///
+/// Storage is **flat-edges + CSR adjacency**, the canonical compiler-IR
+/// shape: one [`OwnerEdge`] per reason, indexed by [`OwnerEdgeId`]
+/// (= position in `edges`), with per-node `out_edges` / `in_edges`
+/// adjacency lists for O(deg) traversal. The previous representation
+/// kept two parallel views — a `petgraph::DiGraphMap` for random
+/// access by `(from, to)` and a separate `Vec<OwnerEdge>` for
+/// stable indices into edges; this collapses them.
 #[derive(Debug, Clone, Default)]
 pub struct OwnerGraph {
     pub binding_table: BindingTable,
     pub nodes: Vec<OwnerNode>,
-    pub graph: DiGraphMap<OwnerId, EdgeMetadata>,
+    pub edges: Vec<OwnerEdge>,
+    /// CSR adjacency by source owner. `out_edges[owner.0]` is a list
+    /// of `OwnerEdgeId` indices into `edges`.
+    pub out_edges: Vec<Vec<OwnerEdgeId>>,
+    /// CSR adjacency by target owner.
+    pub in_edges: Vec<Vec<OwnerEdgeId>>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,35 +136,14 @@ pub struct OwnerNode {
     pub declared: BTreeSet<BindingId>,
     pub kind: StatementKind,
     pub purity: Purity,
-    pub destination: ModuleId,
-}
-
-fn record_graph_reason<N: Copy + Ord + std::hash::Hash>(
-    graph: &mut DiGraphMap<N, EdgeMetadata>,
-    from: N,
-    to: N,
-    reason: EdgeReason,
-) {
-    if from == to {
-        return;
-    }
-    if !graph.contains_edge(from, to) {
-        graph.add_edge(from, to, EdgeMetadata::default());
-    }
-    graph
-        .edge_weight_mut(from, to)
-        .unwrap()
-        .reasons
-        .push(reason);
 }
 
 impl OwnerGraph {
-    fn record_reason(&mut self, from: OwnerId, to: OwnerId, reason: EdgeReason) {
-        record_graph_reason(&mut self.graph, from, to, reason);
-    }
-
-    pub fn iter_edges(&self) -> impl Iterator<Item = (OwnerId, OwnerId, &EdgeMetadata)> + '_ {
-        self.graph.all_edges()
+    /// Iterate `&OwnerEdge` in `OwnerEdgeId` order. Each row is one
+    /// reason — multiple reasons between the same `(from, to)` pair
+    /// appear as separate entries.
+    pub fn iter_edges(&self) -> impl Iterator<Item = &OwnerEdge> + '_ {
+        self.edges.iter()
     }
 
     pub fn node(&self, id: OwnerId) -> Option<&OwnerNode> {
@@ -159,6 +152,19 @@ impl OwnerGraph {
 
     pub fn iter_nodes(&self) -> impl Iterator<Item = &OwnerNode> {
         self.nodes.iter()
+    }
+
+    /// Edges originating at `owner`.
+    pub fn out_edges_of(&self, owner: OwnerId) -> &[OwnerEdgeId] {
+        self.out_edges
+            .get(owner.0)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Edges terminating at `owner`.
+    pub fn in_edges_of(&self, owner: OwnerId) -> &[OwnerEdgeId] {
+        self.in_edges.get(owner.0).map(Vec::as_slice).unwrap_or(&[])
     }
 }
 
@@ -176,8 +182,8 @@ impl EdgeMetadata {
     /// `true` if at least one reason is an at-init read. The
     /// realizability gate uses this to decide whether an
     /// `I ∪ S` SCC contains an `R` cross-module edge.
-    pub fn has_at_init_read(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_at_init_read)
+    pub fn has_eager_use(&self) -> bool {
+        self.reasons.iter().any(EdgeReason::is_eager_use)
     }
 
     /// `true` if at least one reason is a side-effect ordering
@@ -185,15 +191,15 @@ impl EdgeMetadata {
     /// constraint is "predecessor must evaluate before
     /// successor", and a cycle has no topological emit order
     /// satisfying every such edge.
-    pub fn has_side_effect_ordering(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_side_effect_order)
+    pub fn has_sequenced(&self) -> bool {
+        self.reasons.iter().any(EdgeReason::is_sequenced)
     }
 
     /// `true` if at least one reason is a rebinding write. These
     /// edges are rejected outright when they cross destination
     /// modules because imported ESM bindings are read-only.
-    pub fn has_binding_write(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_binding_write)
+    pub fn has_rebind(&self) -> bool {
+        self.reasons.iter().any(EdgeReason::is_rebind)
     }
 
     /// `true` if this edge constrains realizability — at least one
@@ -203,12 +209,10 @@ impl EdgeMetadata {
     /// represent fire after every module in the cycle has finished
     /// evaluating.
     ///
-    /// Delegates to `EdgeReason::constrains_realizability` to keep
+    /// Delegates to `EdgeReason::constrains_init_order` to keep
     /// the per-edge and per-reason definitions in lockstep.
-    pub fn constrains_realizability(&self) -> bool {
-        self.reasons
-            .iter()
-            .any(EdgeReason::constrains_realizability)
+    pub fn constrains_init_order(&self) -> bool {
+        self.reasons.iter().any(EdgeReason::constrains_init_order)
     }
 }
 
@@ -222,14 +226,24 @@ impl EdgeMetadata {
 /// edge's reason list. Cycle detection runs through petgraph's
 /// `tarjan_scc`.
 #[derive(Debug, Clone, Default)]
-pub struct ModuleDepGraph {
+pub struct ModuleQuotient {
     pub binding_table: BindingTable,
     pub graph: DiGraphMap<ModuleId, EdgeMetadata>,
 }
 
-impl ModuleDepGraph {
+impl ModuleQuotient {
     fn record_reason(&mut self, from: ModuleId, to: ModuleId, reason: EdgeReason) {
-        record_graph_reason(&mut self.graph, from, to, reason);
+        if from == to {
+            return;
+        }
+        if !self.graph.contains_edge(from, to) {
+            self.graph.add_edge(from, to, EdgeMetadata::default());
+        }
+        self.graph
+            .edge_weight_mut(from, to)
+            .unwrap()
+            .reasons
+            .push(reason);
     }
 
     /// Iterate edges as `(from, to, &EdgeMetadata)`.
@@ -244,34 +258,31 @@ impl ModuleDepGraph {
 
     /// `true` if the directed edge `(from, to)` is present and at
     /// least one of its reasons is an at-init read.
-    pub fn has_at_init_edge(&self, from: ModuleId, to: ModuleId) -> bool {
+    pub fn has_eager_use_edge(&self, from: ModuleId, to: ModuleId) -> bool {
         self.graph
             .edge_weight(from, to)
-            .is_some_and(EdgeMetadata::has_at_init_read)
+            .is_some_and(EdgeMetadata::has_eager_use)
     }
 
     /// `true` if the edge `(from, to)` exists and constrains
     /// realizable evaluation order (at-init read or side-effect
     /// ordering). Used by the realizability gate to decide
     /// whether an `I ∪ S` SCC is unrealizable.
-    pub fn has_realizability_constraining_edge(&self, from: ModuleId, to: ModuleId) -> bool {
+    pub fn has_init_order_constraining_edge(&self, from: ModuleId, to: ModuleId) -> bool {
         self.graph
             .edge_weight(from, to)
-            .is_some_and(EdgeMetadata::constrains_realizability)
+            .is_some_and(EdgeMetadata::constrains_init_order)
     }
 }
 
-/// Build the fine owner graph. Module-level dependencies are not
-/// created here; they are derived later by quotienting owners by
-/// destination.
-pub fn build_owner_graph(
-    facts: &[StatementFacts],
-    binding_assignment: &BTreeMap<BindingName, ModuleId>,
-) -> OwnerGraph {
-    let mut graph = OwnerGraph::default();
+/// Build the fine owner graph from per-statement facts. Pure IR
+/// construction: no module assignment, no quotient. Module-level
+/// dependencies are derived later by [`build_module_quotient`]
+/// given a [`Partition`] mapping owners to destination modules.
+pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
     let mut binding_table = BindingTable::default();
     let mut binding_owner = Vec::<Option<OwnerId>>::new();
-    let mut declared_by_stmt = Vec::<BTreeSet<BindingId>>::with_capacity(facts.len());
+    let mut nodes = Vec::<OwnerNode>::with_capacity(facts.len());
     for stmt in facts {
         let mut declared = BTreeSet::new();
         for binding in &stmt.declared {
@@ -282,89 +293,71 @@ pub fn build_owner_graph(
             binding_owner[binding_id.0] = Some(OwnerId(stmt.ordinal.0));
             declared.insert(binding_id);
         }
-        declared_by_stmt.push(declared);
-    }
-
-    let mut binding_assignment_by_id = vec![None; binding_table.len()];
-    for (binding, destination) in binding_assignment {
-        let Some(binding_id) = binding_table.get(binding) else {
-            continue;
-        };
-        binding_assignment_by_id[binding_id.0] = Some(*destination);
-    }
-
-    for (stmt, declared) in facts.iter().zip(declared_by_stmt.iter()) {
         let id = OwnerId(stmt.ordinal.0);
-        let destination = declared
-            .iter()
-            .filter_map(|binding_id| {
-                binding_assignment_by_id
-                    .get(binding_id.0)
-                    .copied()
-                    .flatten()
-            })
-            .next()
-            .unwrap_or(ModuleId::ResidualEntry);
-        graph.nodes.push(OwnerNode {
+        nodes.push(OwnerNode {
             id,
             statement_ordinal: stmt.ordinal,
             source_location: stmt.source_location.clone(),
-            declared: declared.clone(),
+            declared,
             kind: stmt.kind,
             purity: stmt.purity.clone(),
-            destination,
         });
-        graph.graph.add_node(id);
     }
 
-    let record_binding_edge = |graph: &mut OwnerGraph,
-                               from: OwnerId,
-                               binding: &BindingName,
-                               make_reason: fn(StatementOrdinal, BindingId) -> EdgeReason,
-                               statement_ordinal: StatementOrdinal| {
+    // Collect (from, to, reason) triples; the final `edges` Vec is
+    // sorted at the end so `OwnerEdgeId` indices are stable.
+    let mut raw_edges = Vec::<(OwnerId, OwnerId, EdgeReason)>::new();
+    let push_binding_edge = |raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
+                             from: OwnerId,
+                             binding: &BindingName,
+                             make_reason: fn(StatementOrdinal, BindingId) -> EdgeReason,
+                             statement_ordinal: StatementOrdinal| {
         let Some(binding_id) = binding_table.get(binding) else {
             return; // not declared in this chunk (global, ImportSpecifier, never-declared)
         };
         let Some(Some(to)) = binding_owner.get(binding_id.0) else {
-            return; // not declared in this chunk (global, ImportSpecifier, never-declared)
+            return;
         };
-        graph.record_reason(from, *to, make_reason(statement_ordinal, binding_id));
+        if from == *to {
+            return;
+        }
+        raw_edges.push((from, *to, make_reason(statement_ordinal, binding_id)));
     };
     for stmt in facts {
         let from = OwnerId(stmt.ordinal.0);
-        for binding in &stmt.reads_at_init {
-            record_binding_edge(
-                &mut graph,
+        for binding in &stmt.eager_reads {
+            push_binding_edge(
+                &mut raw_edges,
                 from,
                 binding,
-                EdgeReason::at_init_read,
+                EdgeReason::eager_use,
                 stmt.ordinal,
             );
         }
-        for binding in &stmt.reads_lazy {
-            record_binding_edge(
-                &mut graph,
+        for binding in &stmt.lazy_reads {
+            push_binding_edge(
+                &mut raw_edges,
                 from,
                 binding,
-                EdgeReason::lazy_read,
+                EdgeReason::lazy_use,
                 stmt.ordinal,
             );
         }
-        for binding in &stmt.writes_at_init {
-            record_binding_edge(
-                &mut graph,
+        for binding in &stmt.eager_rebinds {
+            push_binding_edge(
+                &mut raw_edges,
                 from,
                 binding,
-                EdgeReason::at_init_write,
+                EdgeReason::eager_rebind,
                 stmt.ordinal,
             );
         }
-        for binding in &stmt.writes_lazy {
-            record_binding_edge(
-                &mut graph,
+        for binding in &stmt.lazy_rebinds {
+            push_binding_edge(
+                &mut raw_edges,
                 from,
                 binding,
-                EdgeReason::lazy_write,
+                EdgeReason::lazy_rebind,
                 stmt.ordinal,
             );
         }
@@ -385,77 +378,20 @@ pub fn build_owner_graph(
     // that precision the cross-module S graph would be dense
     // enough to reject realistic specs for trivially pure const
     // sequences.
-    //
     let mut previous_side_effect_owner: Option<OwnerId> = None;
     for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
         let from = OwnerId(stmt.ordinal.0);
-        if let Some(to) = previous_side_effect_owner {
-            graph.record_reason(from, to, EdgeReason::side_effect_order(stmt.ordinal));
+        if let Some(to) = previous_side_effect_owner
+            && from != to
+        {
+            raw_edges.push((from, to, EdgeReason::sequenced(stmt.ordinal)));
         }
         previous_side_effect_owner = Some(from);
     }
 
-    graph.binding_table = binding_table;
-    graph
-}
-
-/// Quotient the owner graph by each owner node's destination module.
-/// This is the only path that constructs the module dependency graph
-/// used by validation and emit.
-pub fn quotient_owner_graph(owner_graph: &OwnerGraph) -> ModuleDepGraph {
-    let owner_edges = collect_owner_edge_entries(owner_graph);
-    quotient_owner_graph_with_destinations(owner_graph, &owner_edges, |_, node| node.destination)
-}
-
-pub(crate) fn quotient_owner_graph_with_destinations<F>(
-    owner_graph: &OwnerGraph,
-    owner_edges: &[OwnerEdgeEntry],
-    mut destination_for: F,
-) -> ModuleDepGraph
-where
-    F: FnMut(OwnerId, &OwnerNode) -> ModuleId,
-{
-    let mut graph = ModuleDepGraph {
-        binding_table: owner_graph.binding_table.clone(),
-        graph: DiGraphMap::new(),
-    };
-    let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
-    for edge in owner_edges {
-        let Some(from_node) = owner_graph.node(edge.from) else {
-            continue;
-        };
-        let Some(to_node) = owner_graph.node(edge.to) else {
-            continue;
-        };
-        let from = destination_for(edge.from, from_node);
-        let to = destination_for(edge.to, to_node);
-        if from == to {
-            continue;
-        }
-        if edge.reason.is_side_effect_order() && !seen_side_effect_module_pairs.insert((from, to)) {
-            continue;
-        }
-        graph.record_reason(from, to, edge.reason.clone());
-    }
-    graph
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct OwnerEdgeEntry {
-    pub(crate) id: String,
-    pub(crate) from: OwnerId,
-    pub(crate) to: OwnerId,
-    pub(crate) reason: EdgeReason,
-}
-
-pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerEdgeEntry> {
-    let mut entries = Vec::new();
-    for (from, to, weight) in owner_graph.iter_edges() {
-        for reason in &weight.reasons {
-            entries.push((from, to, reason.clone()));
-        }
-    }
-    entries.sort_by_key(|(from, to, reason)| {
+    // Sort + assign stable `OwnerEdgeId` indices, then build CSR
+    // adjacency in one pass.
+    raw_edges.sort_by_key(|(from, to, reason)| {
         (
             *from,
             *to,
@@ -464,16 +400,84 @@ pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerE
             reason.binding,
         )
     });
-    entries
+    let edges: Vec<OwnerEdge> = raw_edges
         .into_iter()
         .enumerate()
-        .map(|(idx, (from, to, reason))| OwnerEdgeEntry {
-            id: format!("owner_edge:{idx}"),
+        .map(|(idx, (from, to, reason))| OwnerEdge {
+            id: OwnerEdgeId(idx),
             from,
             to,
             reason,
         })
-        .collect()
+        .collect();
+    let mut out_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
+    let mut in_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
+    for edge in &edges {
+        if let Some(slot) = out_edges.get_mut(edge.from.0) {
+            slot.push(edge.id);
+        }
+        if let Some(slot) = in_edges.get_mut(edge.to.0) {
+            slot.push(edge.id);
+        }
+    }
+
+    OwnerGraph {
+        binding_table,
+        nodes,
+        edges,
+        out_edges,
+        in_edges,
+    }
+}
+
+/// Quotient the owner graph by `partition` to build the module
+/// dependency graph consumed by validation and emit. The single
+/// public construction path; peelability and reports both go through
+/// this for any non-hypothetical quotient.
+pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleQuotient {
+    let mut graph = ModuleQuotient {
+        binding_table: owner_graph.binding_table.clone(),
+        graph: DiGraphMap::new(),
+    };
+    let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
+    for edge in &owner_graph.edges {
+        let from = partition.of(edge.from);
+        let to = partition.of(edge.to);
+        if from == to {
+            continue;
+        }
+        if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
+            continue;
+        }
+        graph.record_reason(from, to, edge.reason.clone());
+    }
+    graph
+}
+
+/// Stable per-chunk identity of an owner-graph edge. Equal to the
+/// edge's position in [`OwnerGraph::edges`]. The previous
+/// representation stored the report-shape spelling
+/// (`format!("owner_edge:{idx}")`) on every entry; that spelling is
+/// `O(n_edges)` strings allocated per chunk and
+/// `O(n_blockers × n_candidates)` clones inside the peelability hot
+/// loop. Carry the typed index instead and let the report layer do
+/// the formatting at its single serialization boundary via
+/// [`OwnerEdgeId::report_key`].
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct OwnerEdgeId(pub usize);
+
+impl OwnerEdgeId {
+    pub(crate) fn report_key(self) -> String {
+        format!("owner_edge:{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OwnerEdge {
+    pub id: OwnerEdgeId,
+    pub from: OwnerId,
+    pub to: OwnerId,
+    pub reason: EdgeReason,
 }
 
 /// Predicate shared by `materialize_logical_modules` and
@@ -486,37 +490,48 @@ pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerE
 /// binding(s) … not exported by entry" rejection: when this returns a
 /// non-empty set, the materializer would reject and peelability marks
 /// the candidate `BlockedEmitResolvability`. Mirrors the
-/// `constrains_realizability` SSOT introduced in `f86e84b7e`.
+/// `constrains_init_order` SSOT introduced in `f86e84b7e`.
 ///
 /// Inputs:
-/// - `owner_graph`: nodes carry each owner's destination module.
-/// - `owner_edges`: per-reason owner-graph edges; the `binding` on
-///   each edge tells us which top-level chunk binding the read
-///   targets.
+/// - `owner_graph`: source of the per-reason edge list (`.edges`)
+///   walked here, the binding-name table, and `node()` lookups for
+///   each edge's target.
+/// - `partition`: per-owner module assignment. The destination module
+///   of each edge's target is read via `partition.of(edge.to)`; only
+///   targets that land in `ResidualEntry` are considered.
 /// - `moved_owners`: the candidate's moved owner set (a peel of these
 ///   is the hypothetical change being evaluated).
-/// - `entry_exported_names`: post-peel entry export set, i.e.
-///   pre-existing source exports ∪ bindings of all owners that end up
-///   in a logical module (the candidate's bindings are auto-exported
-///   by `entry_exports_for_moved_bindings`).
+/// - `base_entry_exports`: the schedule's cached pre-peel entry
+///   export set — pre-existing source exports plus bindings of any
+///   owner already living in a logical module. Stable across all
+///   candidates evaluated for the same chunk; passed by reference to
+///   avoid the per-candidate clone the previous BTreeSet API forced.
+/// - `candidate_members`: bindings the candidate would auto-export
+///   from entry on emit (via `entry_exports_for_moved_bindings`),
+///   i.e. the per-candidate addition on top of `base_entry_exports`.
 pub(crate) fn peel_emit_blocked_residual_bindings(
     owner_graph: &OwnerGraph,
-    owner_edges: &[OwnerEdgeEntry],
+    partition: &Partition,
     moved_owners: &BTreeSet<OwnerId>,
-    entry_exported_names: &BTreeSet<BindingName>,
+    base_entry_exports: &HashSet<BindingName>,
+    candidate_members: &[BindingName],
 ) -> BTreeSet<BindingName> {
+    // Hoist the candidate-members membership test out of the per-edge
+    // loop; this function is called once per peelability candidate
+    // (≥1500/chunk on Tana), so the inner test wants O(1).
+    let candidate_members_set: HashSet<&BindingName> = candidate_members.iter().collect();
     let mut blocked = BTreeSet::new();
-    for edge in owner_edges {
+    for edge in &owner_graph.edges {
         if !moved_owners.contains(&edge.from) {
             continue;
         }
         if moved_owners.contains(&edge.to) {
             continue;
         }
-        let Some(to_node) = owner_graph.node(edge.to) else {
+        if owner_graph.node(edge.to).is_none() {
             continue;
-        };
-        if !matches!(to_node.destination, ModuleId::ResidualEntry) {
+        }
+        if !matches!(partition.of(edge.to), ModuleId::ResidualEntry) {
             continue;
         }
         let Some(binding_id) = edge.reason.binding else {
@@ -525,7 +540,7 @@ pub(crate) fn peel_emit_blocked_residual_bindings(
         let Some(name) = owner_graph.binding_table.name(binding_id) else {
             continue;
         };
-        if entry_exported_names.contains(name) {
+        if base_entry_exports.contains(name) || candidate_members_set.contains(name) {
             continue;
         }
         blocked.insert(name.clone());

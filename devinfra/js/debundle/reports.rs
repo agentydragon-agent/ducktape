@@ -2,23 +2,22 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::algo::tarjan_scc;
 
-use crate::graph::OwnerEdgeEntry;
+use crate::graph::OwnerEdge;
 use crate::peelability::build_peelability_report;
 use crate::{
-    BindingId, BindingKind, BindingName, BindingReport, EdgeKind, LogicalModuleIndex, ModuleId,
-    ModuleReportRef, OwnerGraph, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-    OwnerGraphQuotientReport, OwnerGraphReport, OwnerId, OwnerNode, QuotientEdgeReport,
-    QuotientSccReport, Schedule,
+    BindingId, BindingName, BindingReport, DepKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
+    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
+    OwnerId, QuotientEdgeReport, QuotientSccReport, Schedule,
 };
 
 #[derive(Debug, Clone, Default)]
 struct QuotientEdgeAccumulator {
-    kinds: BTreeSet<EdgeKind>,
-    constrains_realizability: bool,
+    kinds: BTreeSet<DepKind>,
+    constrains_init_order: bool,
 }
 
 pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
-    let owner_edges = &schedule.owner_edges;
+    let owner_edges = &schedule.owner_graph.edges;
     let quotient_edges = build_quotient_edge_reports(schedule, owner_edges);
     let quotient_nodes = build_quotient_node_reports(schedule);
     let quotient_sccs = build_quotient_scc_reports(schedule, &quotient_edges);
@@ -33,13 +32,13 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
             declared_bindings: binding_reports_for_ids(schedule, node.declared.iter().copied()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
-            destination: module_report_ref(schedule, node.destination),
+            destination: module_report_ref(schedule, schedule.partition.of(node.id)),
         })
         .collect();
     let edges = owner_edges
         .iter()
         .map(|edge| OwnerGraphEdgeReport {
-            id: edge.id.clone(),
+            id: edge.id.report_key(),
             source: owner_key(edge.from),
             target: owner_key(edge.to),
             edge_kind: edge.reason.kind,
@@ -48,7 +47,7 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
                 .binding
                 .map(|binding| schedule.binding_name(binding).to_string()),
             statement_ordinal: edge.reason.statement_ordinal,
-            constrains_realizability: edge.reason.constrains_realizability(),
+            constrains_init_order: edge.reason.constrains_init_order(),
         })
         .collect();
     OwnerGraphReport {
@@ -84,32 +83,9 @@ where
         .into_iter()
         .map(|binding| BindingReport {
             binding: binding.clone(),
-            export_name: export_name_for_binding(schedule, binding),
+            export_name: schedule.export_name_for(binding),
         })
         .collect()
-}
-
-fn export_name_for_binding(schedule: &Schedule, binding: &BindingName) -> BindingName {
-    let Some(BindingKind::Owned { owner }) = schedule.bindings.get(binding) else {
-        return schedule
-            .chunk_renames
-            .get(binding)
-            .cloned()
-            .unwrap_or_else(|| binding.clone());
-    };
-    match owner {
-        ModuleId::Logical(LogicalModuleIndex(idx)) => schedule
-            .logical_modules
-            .get(*idx)
-            .and_then(|module| module.rename_map.get(binding))
-            .cloned()
-            .unwrap_or_else(|| binding.clone()),
-        ModuleId::ResidualEntry => schedule
-            .chunk_renames
-            .get(binding)
-            .cloned()
-            .unwrap_or_else(|| binding.clone()),
-    }
 }
 
 fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
@@ -118,8 +94,8 @@ fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
     for idx in 0..schedule.logical_modules.len() {
         modules.insert(ModuleId::Logical(LogicalModuleIndex(idx)));
     }
-    for node in schedule.owner_graph.iter_nodes() {
-        modules.insert(node.destination);
+    for (_, module) in schedule.partition.iter() {
+        modules.insert(module);
     }
     for (from, to, _) in schedule.dep_graph.iter_edges() {
         modules.insert(from);
@@ -133,41 +109,23 @@ fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
 
 fn build_quotient_edge_reports(
     schedule: &Schedule,
-    owner_edges: &[OwnerEdgeEntry],
+    owner_edges: &[OwnerEdge],
 ) -> Vec<QuotientEdgeReport> {
-    build_quotient_edge_reports_with_destinations(&schedule.owner_graph, owner_edges, |_, node| {
-        node.destination
-    })
-}
-
-fn build_quotient_edge_reports_with_destinations<F>(
-    owner_graph: &OwnerGraph,
-    owner_edges: &[OwnerEdgeEntry],
-    mut destination_for: F,
-) -> Vec<QuotientEdgeReport>
-where
-    F: FnMut(OwnerId, &OwnerNode) -> ModuleId,
-{
+    let partition = &schedule.partition;
     let mut accum = BTreeMap::<(ModuleId, ModuleId), QuotientEdgeAccumulator>::new();
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in owner_edges {
-        let Some(from_node) = owner_graph.node(edge.from) else {
-            continue;
-        };
-        let Some(to_node) = owner_graph.node(edge.to) else {
-            continue;
-        };
-        let from = destination_for(edge.from, from_node);
-        let to = destination_for(edge.to, to_node);
+        let from = partition.of(edge.from);
+        let to = partition.of(edge.to);
         if from == to {
             continue;
         }
-        if edge.reason.is_side_effect_order() && !seen_side_effect_module_pairs.insert((from, to)) {
+        if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
             continue;
         }
         let entry = accum.entry((from, to)).or_default();
         entry.kinds.insert(edge.reason.kind);
-        entry.constrains_realizability |= edge.reason.constrains_realizability();
+        entry.constrains_init_order |= edge.reason.constrains_init_order();
     }
     accum
         .into_iter()
@@ -177,7 +135,7 @@ where
             source: module_key(from),
             target: module_key(to),
             edge_kinds: entry.kinds.into_iter().collect(),
-            constrains_realizability: entry.constrains_realizability,
+            constrains_init_order: entry.constrains_init_order,
         })
         .collect()
 }
@@ -207,7 +165,7 @@ fn build_quotient_scc_reports(
                 }
                 let edge = &quotient_edges[edge_idx];
                 module_edge_ids.push(edge.id.clone());
-                if edge.constrains_realizability {
+                if edge.constrains_init_order {
                     constraining_module_edge_ids.push(edge.id.clone());
                 }
             }
