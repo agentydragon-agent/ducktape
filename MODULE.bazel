@@ -1105,8 +1105,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/net",
-    sum = "h1:eeHFmOGUTtaaPSGNmjBKpbng9MulQsJURQUAfUwY++o=",
-    version = "v0.49.0",
+    sum = "h1:d+qAbo5L0orcWAr0a9JweQpjXF19LMXJE8Ey7hwOdUA=",
+    version = "v0.53.0",
 )
 go_deps.module(
     path = "golang.org/x/sync",
@@ -1125,23 +1125,23 @@ go_deps.module(
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel",
-    sum = "h1:8yPrr/S0ND9QEfTfdP9V+SiwT4E0G7Y5MO7p85nis48=",
-    version = "v1.39.0",
+    sum = "h1:lSQGzTgVR3+sgJDAU/7/ZMjN9Z+vUip7leaqBKy4sho=",
+    version = "v1.42.0",
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/metric",
-    sum = "h1:d1UzonvEZriVfpNKEVmHXbdf909uGTOQjA0HF0Ls5Q0=",
-    version = "v1.39.0",
+    sum = "h1:2jXG+3oZLNXEPfNmnpxKDeZsFI5o4J+nz6xUlaFdF/4=",
+    version = "v1.42.0",
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/sdk",
-    sum = "h1:nMLYcjVsvdui1B/4FRkwjzoRVsMK8uL/cj0OyhKzt18=",
-    version = "v1.39.0",
+    sum = "h1:LyC8+jqk6UJwdrI/8VydAq/hvkFKNHZVIWuslJXYsDo=",
+    version = "v1.42.0",
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/trace",
-    sum = "h1:2d2vfpEDmCJ5zVYz7ijaJdOF59xLomrvj7bjt6/qCJI=",
-    version = "v1.39.0",
+    sum = "h1:OUCgIPt+mzOnaUTpOQcBiM/PLQ/Op7oq6g4LenLmOYY=",
+    version = "v1.42.0",
 )
 go_deps.module(
     path = "google.golang.org/genproto/googleapis/api",
