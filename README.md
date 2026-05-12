@@ -4,25 +4,26 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 
 ## Directory Index
 
-| Directory          | Purpose                              |
-| ------------------ | ------------------------------------ |
-| `agent_cli/`       | Agent REPL CLI                       |
-| `x/agent_server/`  | FastAPI backend, runtime, policy     |
-| `cluster/`         | k8s cluster                          |
-| `tf/`              | GitOps Terraform modules (tofu-ctrl) |
-| `mcp_infra/`       | MCP compositor and utilities         |
-| `agent_pkg/`       | Agent package infrastructure         |
-| `props/`           | LLM critic eval system               |
-| `devinfra/`        | Repo build, CI, lint infrastructure  |
-| `ansible/`         | System configuration (playbooks)     |
-| `wt/`              | Worktree management                  |
-| `openai_utils/`    | OpenAI API utilities                 |
-| `tana/`            | Tana export toolkit                  |
-| `finance/`         | Portfolio tracking (Rust)            |
-| `idea/`            | Lightweight future project ideas     |
-| `trilium/`         | Trilium Notes extensions             |
-| `inventree_utils/` | InventTree plugins                   |
-| `website/`         | Personal website (Hakyll)            |
+| Directory          | Purpose                                   |
+| ------------------ | ----------------------------------------- |
+| `agent_cli/`       | Agent REPL CLI                            |
+| `x/agent_server/`  | FastAPI backend, runtime, policy          |
+| `cluster/`         | k8s cluster                               |
+| `tf/`              | GitOps Terraform modules (tofu-ctrl)      |
+| `mcp_infra/`       | MCP compositor and utilities              |
+| `agent_pkg/`       | Agent package infrastructure              |
+| `props/`           | LLM critic eval system                    |
+| `devinfra/`        | Repo build, CI, lint infrastructure       |
+| `ansible/`         | System configuration (playbooks)          |
+| `wt/`              | Worktree management                       |
+| `openai_utils/`    | OpenAI API utilities                      |
+| `tana/`            | Tana export toolkit                       |
+| `finance/`         | Portfolio tracking (Rust)                 |
+| `augur/`           | Probabilistic financial-futures simulator |
+| `idea/`            | Lightweight future project ideas          |
+| `trilium/`         | Trilium Notes extensions                  |
+| `inventree_utils/` | InventTree plugins                        |
+| `website/`         | Personal website (Hakyll)                 |
 
 ## Build System
 

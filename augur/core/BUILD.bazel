@@ -1,0 +1,356 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "schemas_py",
+    srcs = ["schemas.py"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "casing_py",
+    srcs = ["casing.py"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "backend_py",
+    srcs = ["backend.py"],
+    deps = [
+        ":casing_py",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "scenario_set_py",
+    srcs = ["scenario_set.py"],
+    deps = [
+        ":local_regulation_py",
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "local_regulation_py",
+    srcs = ["local_regulation.py"],
+    deps = [
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "market_bundle_py",
+    srcs = ["market_bundle.py"],
+    deps = [
+        ":local_regulation_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "market_bundle_test_support_py",
+    testonly = True,
+    srcs = ["market_bundle_test_support.py"],
+    deps = [
+        ":local_regulation_py",
+        ":market_bundle_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "property_tax_py",
+    srcs = ["property_tax.py"],
+    deps = [
+        ":local_regulation_py",
+        ":market_bundle_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "property_depreciation_py",
+    srcs = ["property_depreciation.py"],
+    deps = [
+        ":market_bundle_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "property_sale_py",
+    srcs = ["property_sale.py"],
+    deps = [
+        ":local_regulation_py",
+        ":market_bundle_py",
+        ":property_depreciation_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "scenario_engine_py",
+    srcs = ["scenario_engine.py"],
+    deps = [
+        ":local_regulation_py",
+        ":market_bundle_py",
+        ":property_depreciation_py",
+        ":property_sale_py",
+        ":property_tax_py",
+        ":scenario_set_py",
+        ":schemas_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "static_py",
+    srcs = ["static.py"],
+)
+
+py_library(
+    name = "num_py",
+    srcs = ["_num.py"],
+    deps = [
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "augur_accounting_py",
+    srcs = ["augur_accounting.py"],
+    deps = [
+        ":schemas_py",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "personal_wealth_py",
+    srcs = ["personal_wealth.py"],
+    deps = [
+        ":num_py",
+        ":schemas_py",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "ownership_py",
+    srcs = ["ownership.py"],
+    deps = [
+        ":augur_accounting_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "real_estate_py",
+    srcs = ["real_estate.py"],
+    deps = [
+        ":augur_accounting_py",
+        ":ownership_py",
+        ":schemas_py",
+        ":vectorized_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "vectorized_py",
+    srcs = ["vectorized.py"],
+    deps = [
+        ":augur_accounting_py",
+        ":schemas_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "outcome_view_py",
+    srcs = ["outcome_view.py"],
+    deps = [
+        ":augur_accounting_py",
+        ":num_py",
+        ":personal_wealth_py",
+        ":schemas_py",
+        ":vectorized_py",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "rollout_provider_py",
+    srcs = ["rollout_provider.py"],
+    deps = [
+        ":schemas_py",
+    ],
+)
+
+py_library(
+    name = "bootstrap_py",
+    srcs = ["bootstrap.py"],
+    deps = [
+        ":local_regulation_py",
+        ":scenario_set_py",
+        ":schemas_py",
+    ],
+)
+
+py_test(
+    name = "augur_accounting_test",
+    srcs = ["augur_accounting_test.py"],
+    deps = [
+        ":augur_accounting_py",
+        ":schemas_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "backend_test",
+    srcs = ["backend_test.py"],
+    deps = [
+        ":backend_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "legacy_economics_inventory_test",
+    srcs = ["legacy_economics_inventory_test.py"],
+    data = ["legacy_economics_inventory.json"],
+    deps = [
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "scenario_set_test",
+    srcs = ["scenario_set_test.py"],
+    deps = [
+        ":local_regulation_py",
+        ":scenario_set_py",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "market_bundle_test",
+    srcs = ["market_bundle_test.py"],
+    deps = [
+        ":market_bundle_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "property_tax_test",
+    srcs = ["property_tax_test.py"],
+    deps = [
+        ":local_regulation_py",
+        ":market_bundle_test_support_py",
+        ":property_tax_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "property_depreciation_test",
+    srcs = ["property_depreciation_test.py"],
+    deps = [
+        ":market_bundle_test_support_py",
+        ":property_depreciation_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "property_sale_test",
+    srcs = ["property_sale_test.py"],
+    deps = [
+        ":local_regulation_py",
+        ":market_bundle_test_support_py",
+        ":property_sale_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "scenario_engine_test",
+    srcs = ["scenario_engine_test.py"],
+    deps = [
+        ":market_bundle_py",
+        ":scenario_engine_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "vectorized_test",
+    srcs = ["vectorized_test.py"],
+    deps = [
+        ":augur_accounting_py",
+        ":schemas_py",
+        ":vectorized_py",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "ownership_test",
+    srcs = ["ownership_test.py"],
+    deps = [
+        ":augur_accounting_py",
+        ":ownership_py",
+        ":schemas_py",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "real_estate_test",
+    srcs = ["real_estate_test.py"],
+    deps = [
+        ":real_estate_py",
+        ":schemas_py",
+        ":vectorized_py",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

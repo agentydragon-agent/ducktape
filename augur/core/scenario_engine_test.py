@@ -1,0 +1,993 @@
+from __future__ import annotations
+
+import numpy as np
+import pytest_bazel
+
+from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
+from augur.core.scenario_engine import run_scenario_set_vectorized, run_scenario_vectorized
+from augur.core.scenario_set import AccountType, ActionType, EventType, MarketRequest, ScenarioResultStatus, ScenarioSet
+
+
+def _bundle(
+    *,
+    rollout_count: int = 2,
+    horizon_months: int = 3,
+    inflation_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
+    sp500_path: tuple[float, ...] = (1.0, 1.1, 1.2, 1.3),
+    private_equity_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
+    home_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
+    rent_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
+    private_equity_event_month: int | None = None,
+) -> MarketBundle:
+    shape = (rollout_count, horizon_months + 1)
+    month_index = np.arange(horizon_months + 1, dtype="int64")
+
+    def path(values: tuple[float, ...]) -> np.ndarray:
+        return np.broadcast_to(np.asarray(values[: horizon_months + 1], dtype="float64"), shape).copy()
+
+    events = np.zeros(shape, dtype=np.bool_)
+    saleable = np.zeros(shape, dtype="float64")
+    if private_equity_event_month is not None:
+        events[:, private_equity_event_month] = True
+        saleable[:, private_equity_event_month] = 0.5
+    metadata = MarketBundleMetadata(
+        market_model_id="test",
+        random_seed=7,
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+        factor_ids=("generic_sp500", "private_equity_value", "home_value:default"),
+        event_stream_ids=("private_equity_liquidity_event",),
+    )
+    return MarketBundle(
+        month_index=month_index,
+        inflation_multipliers=path(inflation_path),
+        generic_sp500_multipliers=path(sp500_path),
+        home_value_multipliers_by_location={
+            "default": path(home_path),
+            "san_francisco_ca": path(home_path),
+            "vallejo_ca": path(home_path),
+            "mare_island_vallejo_ca": path(home_path),
+        },
+        rent_multipliers_by_location={
+            "default": path(rent_path),
+            "san_francisco_ca": path(rent_path),
+            "vallejo_ca": path(rent_path),
+            "mare_island_vallejo_ca": path(rent_path),
+        },
+        mortgage_30y_rate_pct=np.full(shape, 6.0, dtype="float64"),
+        private_equity_value_multipliers=path(private_equity_path),
+        private_equity_liquidity_event_mask=events,
+        private_equity_tender_sale_fraction=saleable,
+        metadata=metadata,
+    )
+
+
+def _scenario_set_body(*scenarios: dict) -> dict:
+    return {
+        "scenario_set_id": "engine_test",
+        "title": "Engine test",
+        "market_request": {"rollout_count": 2, "horizon_months": 3, "random_seed": 7},
+        "scenarios": list(scenarios),
+    }
+
+
+def _scenario_body(
+    scenario_id: str,
+    *,
+    actors: list[dict] | None = None,
+    cash_usd: float = 10_000,
+    sp500_usd: float = 100_000,
+    sp500_basis_usd: float | None = None,
+    private_equity_usd: float = 50_000,
+    private_equity_basis_usd: float | None = None,
+    private_equity_units: float | None = None,
+    property_selection: dict | None = None,
+    financing: dict | None = None,
+    occupancy_plan: dict | None = None,
+    rental_plan: dict | None = None,
+    tax_profile: dict | None = None,
+    transaction_costs: dict | None = None,
+    property_assumptions: dict | None = None,
+    policies: list[dict] | None = None,
+    events: list[dict] | None = None,
+    tax_regimes: list[str] | None = None,
+) -> dict:
+    return {
+        "scenario_id": scenario_id,
+        "label": scenario_id.replace("_", " ").title(),
+        "actors": actors or [{"actor_id": "rai", "label": "Rai", "role": "primary_owner"}],
+        "events": events or [],
+        "policies": policies or [],
+        "property_selection": property_selection or {},
+        "financing": financing or {},
+        "occupancy_plan": occupancy_plan or {},
+        "rental_plan": rental_plan or {},
+        "tax_profile": tax_profile or {},
+        "transaction_costs": transaction_costs or {},
+        "property_assumptions": property_assumptions or {},
+        "initial_balance_sheet": {
+            "accounts": [
+                {"account_id": "checking", "account_type": "checking", "owner_actor_id": "rai", "balance_usd": cash_usd}
+            ],
+            "assets": [
+                {
+                    "asset_id": "sp500",
+                    "asset_type": "generic_sp500_stock",
+                    "owner_actor_id": "rai",
+                    "value_usd": sp500_usd,
+                    "cost_basis_usd": sp500_basis_usd if sp500_basis_usd is not None else sp500_usd,
+                },
+                {
+                    "asset_id": "private_equity",
+                    "asset_type": "private_equity",
+                    "owner_actor_id": "rai",
+                    "value_usd": private_equity_usd,
+                    "units": private_equity_units,
+                    "cost_basis_usd": private_equity_basis_usd,
+                },
+            ],
+        },
+        "tax_regimes": tax_regimes or [],
+    }
+
+
+def test_portfolio_only_baseline_uses_numpy_paths() -> None:
+    scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("portfolio_only")))
+    scenario = scenario_set.scenarios[0]
+
+    result = run_scenario_vectorized(scenario, _bundle(private_equity_path=(1.0, 1.5, 2.0, 2.5)))
+
+    assert result.cash_usd.shape == (2, 4)
+    np.testing.assert_allclose(result.property_value_usd, 0)
+    np.testing.assert_allclose(result.cash_usd[:, 0], 10_000)
+    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 120_000)
+    np.testing.assert_allclose(result.private_equity_value_usd[:, 2], 100_000)
+    np.testing.assert_allclose(result.net_worth_usd[:, 2], 230_000)
+    assert result.monthly_columns().row_count == 8
+
+
+def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
+    class Provider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def sample_market_bundle(
+            self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
+        ) -> MarketBundle:
+            self.calls += 1
+            return _bundle(rollout_count=rollout_count, horizon_months=horizon_months)
+
+    provider = Provider()
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body("first", private_equity_usd=0), _scenario_body("second", private_equity_usd=0)
+        )
+    )
+
+    response = run_scenario_set_vectorized(scenario_set, market_provider=provider)
+
+    assert provider.calls == 1
+    assert [result.status for result in response.scenario_results] == [
+        ScenarioResultStatus.SIMULATED,
+        ScenarioResultStatus.SIMULATED,
+    ]
+    first_sp500 = response.scenario_results[0].monthly_columns.columns["generic_sp500_value_usd"]
+    second_sp500 = response.scenario_results[1].monthly_columns.columns["generic_sp500_value_usd"]
+    assert first_sp500 == second_sp500
+    assert response.scenario_results[0].metric_fan_columns["net_worth_usd"].row_count == 4
+    assert response.market_metadata["random_seed"] == 7
+
+
+def test_property_purchase_with_mortgage_tracks_debt_and_equity() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "sf_house",
+                cash_usd=300_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                actors=[
+                    {"actor_id": "rai", "label": "Rai", "role": "primary_owner"},
+                    {"actor_id": "auragon", "label": "Auragon", "role": "equity_building_occupant"},
+                ],
+                property_selection={
+                    "property_id": "sf_ashton",
+                    "location_id": "san_francisco_ca",
+                    "purchase_price_usd": 1_000_000,
+                },
+                financing={"financing_mode": "fixed_30", "down_payment_pct": 20, "mortgage_rate_pct": 6},
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(result.purchase_closing_cost_usd[:, 0], 25_000)
+    np.testing.assert_allclose(result.cash_usd[:, 0], 75_000)
+    np.testing.assert_allclose(result.property_value_usd[:, 0], 1_000_000)
+    np.testing.assert_allclose(result.mortgage_balance_usd[:, 0], 800_000)
+    np.testing.assert_allclose(result.home_equity_usd[:, 0], 200_000)
+    assert np.all(result.mortgage_interest_usd[:, 1] > 0)
+    assert np.all(result.mortgage_principal_usd[:, 1] > 0)
+    assert np.all(result.mortgage_balance_usd[:, 1] < 800_000)
+    assert np.all(result.partner_present)
+    np.testing.assert_allclose(result.partner_home_equity_claim_usd, 0)
+
+
+def test_property_purchase_with_cash_financing_has_no_mortgage() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "cash_house",
+                cash_usd=1_250_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "vallejo_calhoun",
+                    "location_id": "vallejo_ca",
+                    "purchase_price_usd": 750_000,
+                },
+                financing={"financing_mode": "cash"},
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(result.purchase_closing_cost_usd[:, 0], 18_750)
+    np.testing.assert_allclose(result.cash_usd[:, 0], 481_250)
+    np.testing.assert_allclose(result.mortgage_balance_usd, 0)
+    np.testing.assert_allclose(result.mortgage_interest_usd, 0)
+    np.testing.assert_allclose(result.home_equity_usd[:, 0], 750_000)
+
+
+def test_purchase_closing_cost_reduces_month_zero_cash() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "purchase_closing",
+                cash_usd=130_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "vallejo_calhoun",
+                    "location_id": "vallejo_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "cash"},
+                transaction_costs={"closing_cost_buy_pct": 2.0},
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(result.purchase_closing_cost_usd[:, 0], 2_000)
+    np.testing.assert_allclose(result.purchase_closing_cost_usd[:, 1:], 0)
+    np.testing.assert_allclose(result.cash_usd[:, 0], 28_000)
+
+
+def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "sale_debt_payoff",
+                cash_usd=100_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "vallejo_calhoun",
+                    "location_id": "vallejo_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "fixed_30", "down_payment_pct": 50, "mortgage_rate_pct": 0},
+                transaction_costs={"closing_cost_sell_pct": 5.0},
+                events=[
+                    {
+                        "event_id": "sale",
+                        "event_type": "property_sale",
+                        "month_index": 3,
+                        "property_id": "vallejo_calhoun",
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(home_path=(1.0, 1.0, 1.1, 1.2)))
+
+    expected_gross = 120_000
+    expected_sale_cost = 6_000
+    expected_debt_payoff = result.mortgage_balance_usd[:, 3]
+    np.testing.assert_allclose(result.property_sale_gross_usd[:, 3], expected_gross)
+    np.testing.assert_allclose(result.sale_closing_cost_usd[:, 3], expected_sale_cost)
+    np.testing.assert_allclose(result.property_sale_debt_payoff_usd[:, 3], expected_debt_payoff)
+    np.testing.assert_allclose(
+        result.property_sale_net_proceeds_usd[:, 3], expected_gross - expected_sale_cost - expected_debt_payoff
+    )
+    np.testing.assert_allclose(
+        result.net_property_sale_cash_flow_usd[:, 3], result.property_sale_net_proceeds_usd[:, 3]
+    )
+
+
+def test_location_local_regulation_drives_property_tax() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "vallejo_mainland",
+                cash_usd=200_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "vallejo_calhoun",
+                    "location_id": "vallejo_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "cash"},
+                events=[
+                    {
+                        "event_id": "sale",
+                        "event_type": "property_sale",
+                        "month_index": 3,
+                        "property_id": "vallejo_calhoun",
+                    }
+                ],
+            ),
+            _scenario_body(
+                "mare_island",
+                cash_usd=200_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "vallejo_lighthouse",
+                    "location_id": "mare_island_vallejo_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "cash"},
+                events=[
+                    {
+                        "event_id": "sale",
+                        "event_type": "property_sale",
+                        "month_index": 3,
+                        "property_id": "vallejo_lighthouse",
+                    }
+                ],
+            ),
+        )
+    )
+
+    mainland = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    mare_island = run_scenario_vectorized(scenario_set.scenarios[1], _bundle())
+
+    np.testing.assert_allclose(mainland.property_tax_usd[:, 1], 100_000 * 0.011 / 12)
+    np.testing.assert_allclose(mare_island.property_tax_usd[:, 1], 100_000 * 0.024 / 12)
+
+
+def test_property_sale_stops_operating_cash_flows_after_sale_month() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "early_sale",
+                cash_usd=150_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "sf_ashton",
+                    "location_id": "san_francisco_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "cash"},
+                property_assumptions={"insurance_annual_usd": 1_200, "maintenance_pct": 1},
+                rental_plan={
+                    "rental_mode": "rent_whole_property",
+                    "start_month": 1,
+                    "end_month": 3,
+                    "monthly_rent_usd": 2_000,
+                },
+                events=[
+                    {"event_id": "sale", "event_type": "property_sale", "month_index": 1, "property_id": "sf_ashton"}
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    assert np.all(result.rental_income_usd[:, 1] > 0)
+    assert np.all(result.property_carrying_cost_usd[:, 1] > 0)
+    np.testing.assert_allclose(result.rental_income_usd[:, 2:], 0)
+    np.testing.assert_allclose(result.property_tax_usd[:, 2:], 0)
+    np.testing.assert_allclose(result.hoa_usd[:, 2:], 0)
+    np.testing.assert_allclose(result.insurance_usd[:, 2:], 0)
+    np.testing.assert_allclose(result.maintenance_usd[:, 2:], 0)
+    np.testing.assert_allclose(result.net_property_cash_flow_usd[:, 2:], 0)
+
+
+def test_capital_gains_exclusion_offsets_property_sale_gain() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "excluded_gain",
+                cash_usd=150_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "sf_ashton",
+                    "location_id": "san_francisco_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "cash"},
+                transaction_costs={"closing_cost_buy_pct": 0, "closing_cost_sell_pct": 0},
+                tax_profile={"cap_gains_exclusion_usd": 250_000, "cap_gains_rate": 30},
+                events=[
+                    {"event_id": "sale", "event_type": "property_sale", "month_index": 3, "property_id": "sf_ashton"}
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(home_path=(1.0, 1.0, 1.5, 2.0)))
+
+    np.testing.assert_allclose(result.realized_property_gain_usd[:, 3], 100_000)
+    np.testing.assert_allclose(result.depreciation_recapture_usd[:, 3], 0)
+    np.testing.assert_allclose(result.taxable_property_gain_usd[:, 3], 0)
+    np.testing.assert_allclose(result.property_sale_tax_usd[:, 3], 0)
+
+
+def test_rental_depreciation_recaptures_on_sale() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "depreciation_recapture",
+                cash_usd=150_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "vallejo_calhoun",
+                    "location_id": "vallejo_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "cash"},
+                transaction_costs={"closing_cost_buy_pct": 0, "closing_cost_sell_pct": 0},
+                property_assumptions={"depreciable_basis_pct": 100},
+                tax_profile={"marginal_tax_rate": 25, "cap_gains_rate": 15, "cap_gains_exclusion_usd": 250_000},
+                rental_plan={
+                    "rental_mode": "rent_whole_property",
+                    "start_month": 1,
+                    "end_month": 3,
+                    "monthly_rent_usd": 0,
+                },
+                events=[
+                    {
+                        "event_id": "sale",
+                        "event_type": "property_sale",
+                        "month_index": 3,
+                        "property_id": "vallejo_calhoun",
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    expected_monthly_depreciation = 100_000 / (27.5 * 12)
+    expected_cumulative_depreciation = expected_monthly_depreciation * 3
+    expected_recapture_tax = expected_cumulative_depreciation * 0.25
+    np.testing.assert_allclose(result.property_depreciation_usd[:, 1:4], expected_monthly_depreciation)
+    np.testing.assert_allclose(result.cumulative_property_depreciation_usd[:, 3], expected_cumulative_depreciation)
+    np.testing.assert_allclose(result.realized_property_gain_usd[:, 3], expected_cumulative_depreciation)
+    np.testing.assert_allclose(result.depreciation_recapture_usd[:, 3], expected_cumulative_depreciation)
+    np.testing.assert_allclose(result.taxable_property_gain_usd[:, 3], expected_cumulative_depreciation)
+    np.testing.assert_allclose(result.property_sale_tax_usd[:, 3], expected_recapture_tax)
+
+
+def test_no_property_scenario_ignores_real_estate_tax_accounting_parameters() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "no_property_sale_params",
+                events=[{"event_id": "sale", "event_type": "property_sale", "month_index": 3}],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(home_path=(1.0, 2.0, 3.0, 4.0)))
+
+    np.testing.assert_allclose(result.purchase_closing_cost_usd, 0)
+    np.testing.assert_allclose(result.sale_closing_cost_usd, 0)
+    np.testing.assert_allclose(result.property_depreciation_usd, 0)
+    np.testing.assert_allclose(result.property_sale_gross_usd, 0)
+    np.testing.assert_allclose(result.property_sale_net_proceeds_usd, 0)
+    np.testing.assert_allclose(result.property_sale_tax_usd, 0)
+    np.testing.assert_allclose(result.net_property_sale_cash_flow_usd, 0)
+    np.testing.assert_allclose(result.cash_usd[:, 0], 10_000)
+    np.testing.assert_allclose(result.cash_usd[:, 3], 10_000)
+
+
+def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "sell_stock",
+                cash_usd=5_000,
+                sp500_usd=50_000,
+                sp500_basis_usd=25_000,
+                private_equity_usd=0,
+                policies=[
+                    {
+                        "policy_id": "checking_floor",
+                        "policy_type": "checking_floor_sell_public_stock",
+                        "actor_id": "rai",
+                        "floor_usd": 10_000,
+                        "sale_amount_usd": 20_000,
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(result.generic_sp500_sale_usd[:, 0], 20_000)
+    np.testing.assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 10_000)
+    np.testing.assert_allclose(result.generic_sp500_sale_gain_usd[:, 0], 10_000)
+    np.testing.assert_allclose(result.checking_floor_action_usd[:, 0], 20_000)
+    np.testing.assert_allclose(result.checking_floor_shortfall_usd[:, 0], 0)
+    np.testing.assert_allclose(result.cash_usd[:, 0], 25_000)
+    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 0], 30_000)
+    np.testing.assert_allclose(result.generic_sp500_sale_usd[:, 1:], 0)
+    assert np.all(result.generic_sp500_value_usd[:, 1] > result.generic_sp500_value_usd[:, 0])
+    assert len(result.actions) == 2
+    assert {action.rollout_index for action in result.actions} == {0, 1}
+    for action in result.actions:
+        assert action.action_type is ActionType.SELL_SP500
+        assert action.month_index == 0
+        assert action.actor_id == "rai"
+        assert action.policy_id == "checking_floor"
+        assert action.amount_usd == 20_000
+        assert action.basis_usd == 10_000
+        assert action.gain_usd == 10_000
+        assert action.shortfall_usd == 0
+
+
+def test_scenario_set_response_serializes_discriminated_actions() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "sell_stock",
+                cash_usd=5_000,
+                sp500_usd=50_000,
+                policies=[
+                    {
+                        "policy_id": "checking_floor",
+                        "policy_type": "checking_floor_sell_public_stock",
+                        "actor_id": "rai",
+                        "floor_usd": 10_000,
+                        "sale_amount_usd": 20_000,
+                    }
+                ],
+            )
+        )
+    )
+
+    response = run_scenario_set_vectorized(scenario_set, market_bundle=_bundle())
+    payload = response.model_dump(mode="json")
+
+    action = payload["scenario_results"][0]["actions"][0]
+    assert action["action_type"] == "sell_sp500"
+    assert action["amount_usd"] == 20_000
+
+
+def test_checking_floor_policy_does_not_sell_when_cash_is_above_floor() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "no_sale",
+                cash_usd=12_000,
+                sp500_usd=50_000,
+                private_equity_usd=0,
+                policies=[
+                    {
+                        "policy_id": "checking_floor",
+                        "policy_type": "checking_floor_sell_public_stock",
+                        "actor_id": "rai",
+                        "floor_usd": 10_000,
+                        "sale_amount_usd": 20_000,
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(result.generic_sp500_sale_usd, 0)
+    np.testing.assert_allclose(result.checking_floor_shortfall_usd, 0)
+    np.testing.assert_allclose(result.cash_usd, 12_000)
+    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 60_000)
+
+
+def test_checking_floor_policy_reports_shortfall_when_public_stock_is_exhausted() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "shortfall",
+                cash_usd=0,
+                sp500_usd=5_000,
+                sp500_basis_usd=1_000,
+                private_equity_usd=0,
+                policies=[
+                    {
+                        "policy_id": "checking_floor",
+                        "policy_type": "checking_floor_sell_public_stock",
+                        "actor_id": "rai",
+                        "floor_usd": 10_000,
+                        "sale_amount_usd": 20_000,
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(result.generic_sp500_sale_usd[:, 0], 5_000)
+    np.testing.assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 1_000)
+    np.testing.assert_allclose(result.cash_usd[:, 0], 5_000)
+    np.testing.assert_allclose(result.generic_sp500_value_usd, 0)
+    np.testing.assert_allclose(result.checking_floor_shortfall_usd[:, 0], 5_000)
+
+
+def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_appreciation() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "auragon",
+                cash_usd=40_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                actors=[
+                    {"actor_id": "rai", "label": "Rai", "role": "primary_owner"},
+                    {"actor_id": "auragon", "label": "Auragon", "role": "equity_building_occupant"},
+                ],
+                property_selection={
+                    "property_id": "vallejo_calhoun",
+                    "location_id": "vallejo_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "fixed_30", "down_payment_pct": 20, "mortgage_rate_pct": 0},
+                occupancy_plan={"occupancy_mode": "owner_lives_in_property", "start_month": 0, "end_month": 2},
+                policies=[
+                    {
+                        "policy_id": "partner_equity",
+                        "policy_type": "partner_equity_accrual",
+                        "actor_id": "auragon",
+                        "base_monthly_payment_usd": 1_000,
+                        "grow_with_inflation": False,
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(
+        scenario_set.scenarios[0],
+        _bundle(
+            horizon_months=4,
+            inflation_path=(1.0, 1.0, 1.0, 1.0, 1.0),
+            sp500_path=(1.0, 1.0, 1.0, 1.0, 1.0),
+            private_equity_path=(1.0, 1.0, 1.0, 1.0, 1.0),
+            home_path=(1.0, 1.0, 1.0, 1.2, 1.5),
+            rent_path=(1.0, 1.0, 1.0, 1.0, 1.0),
+        ),
+    )
+
+    assert np.all(result.partner_contribution_used_usd[:, 1:3] > result.mortgage_principal_usd[:, 1:3])
+    np.testing.assert_allclose(result.partner_contribution_usd[:, 3:], 0)
+    assert np.all(result.partner_ownership_pct[:, 2] > 0)
+    np.testing.assert_allclose(result.partner_ownership_pct[:, 3], result.partner_ownership_pct[:, 2])
+    np.testing.assert_allclose(result.partner_ownership_pct[:, 4], result.partner_ownership_pct[:, 2])
+    assert np.all(result.partner_home_equity_claim_usd[:, 4] > result.partner_home_equity_claim_usd[:, 2])
+    np.testing.assert_allclose(
+        result.owner_home_equity_claim_usd + result.partner_home_equity_claim_usd, result.home_equity_usd
+    )
+    payment_actions = [
+        action for action in result.actions if action.action_type is ActionType.TRANSFER_PARTNER_CONTRIBUTION
+    ]
+    mortgage_actions = [action for action in result.actions if action.action_type is ActionType.PAY_MORTGAGE]
+    equity_actions = [action for action in result.actions if action.action_type is ActionType.ACCRUE_PARTNER_EQUITY]
+    assert len(payment_actions) == 4
+    assert len(mortgage_actions) == 4
+    assert len(equity_actions) == 4
+    assert {action.month_index for action in payment_actions} == {1, 2}
+    assert {action.month_index for action in mortgage_actions} == {1, 2}
+    assert {action.month_index for action in equity_actions} == {1, 2}
+    for action in payment_actions:
+        assert action.actor_id == "auragon"
+        assert action.policy_id == "partner_equity"
+        assert action.recipient_actor_id == "rai"
+        assert action.amount_usd == 1_000
+        assert action.applied_to_house_costs_usd > 0
+    for action in mortgage_actions:
+        assert action.actor_id == "rai"
+        assert action.policy_id == "partner_equity"
+        assert action.mortgage_payment_usd > 0
+        assert action.mortgage_interest_usd == 0
+        assert action.mortgage_principal_usd > 0
+        assert action.mortgage_balance_after_usd < 80_000
+    for action in equity_actions:
+        assert action.actor_id == "auragon"
+        assert action.policy_id == "partner_equity"
+        assert action.beneficiary_actor_id == "auragon"
+        assert action.property_id == "vallejo_calhoun"
+        assert action.house_costs_usd > action.mortgage_principal_usd
+        assert action.cash_transfer_used_for_house_costs_usd > action.principal_credit_usd
+        assert action.principal_credit_usd == action.mortgage_principal_usd
+        assert action.ownership_pct_after > 0
+
+
+def test_rental_income_and_carrying_costs_feed_cash_flow() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "rental",
+                cash_usd=100_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "vallejo_calhoun",
+                    "location_id": "vallejo_ca",
+                    "purchase_price_usd": 300_000,
+                },
+                financing={"financing_mode": "fixed_30", "down_payment_pct": 20, "mortgage_rate_pct": 0},
+                property_assumptions={"insurance_annual_usd": 1_200, "maintenance_pct": 1.2},
+                rental_plan={
+                    "rental_mode": "rent_whole_property",
+                    "start_month": 1,
+                    "end_month": 3,
+                    "monthly_rent_usd": 2_000,
+                    "vacancy_pct": 10,
+                    "management_fee_pct": 5,
+                    "leasing_fee_pct": 12,
+                },
+                events=[
+                    {
+                        "event_id": "purchase",
+                        "event_type": "property_purchase",
+                        "month_index": 0,
+                        "property_id": "vallejo_calhoun",
+                        "hoa_monthly_usd": 100,
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(rent_path=(1.0, 1.0, 1.1, 1.2)))
+
+    expected_month_1_gross = 2_000
+    expected_month_1_income = expected_month_1_gross * 0.9
+    expected_month_1_management = expected_month_1_income * 0.05
+    expected_month_1_leasing = expected_month_1_gross * 0.12 / 12
+    np.testing.assert_allclose(result.rental_gross_income_usd[:, 1], expected_month_1_gross)
+    np.testing.assert_allclose(result.rental_vacancy_loss_usd[:, 1], 200)
+    np.testing.assert_allclose(result.rental_income_usd[:, 1], expected_month_1_income)
+    np.testing.assert_allclose(result.rental_management_fee_usd[:, 1], expected_month_1_management)
+    np.testing.assert_allclose(result.rental_leasing_fee_usd[:, 1], expected_month_1_leasing)
+    np.testing.assert_allclose(result.property_tax_usd[:, 1], 275)
+    np.testing.assert_allclose(result.hoa_usd[:, 1], 100)
+    np.testing.assert_allclose(result.insurance_usd[:, 1], 100)
+    np.testing.assert_allclose(result.maintenance_usd[:, 1], 300)
+    np.testing.assert_allclose(
+        result.property_carrying_cost_usd[:, 1],
+        275 + 100 + 100 + 300 + expected_month_1_management + expected_month_1_leasing,
+    )
+    np.testing.assert_allclose(
+        result.net_property_cash_flow_usd,
+        result.rental_income_usd - result.property_carrying_cost_usd - result.mortgage_payment_usd,
+    )
+    np.testing.assert_allclose(result.cash_usd[:, 1], result.cash_usd[:, 0] + result.net_property_cash_flow_usd[:, 1])
+
+
+def test_purchase_event_parameters_drive_property_costs() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "event_costs",
+                cash_usd=200_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                property_selection={
+                    "property_id": "sf_ashton",
+                    "location_id": "san_francisco_ca",
+                    "purchase_price_usd": 120_000,
+                },
+                financing={"financing_mode": "cash"},
+                property_assumptions={"insurance_annual_usd": 600, "maintenance_pct": 1.0},
+                events=[
+                    {
+                        "event_id": "purchase",
+                        "event_type": "property_purchase",
+                        "month_index": 0,
+                        "actor_id": "rai",
+                        "property_id": "sf_ashton",
+                        "amount_usd": 120_000,
+                        "hoa_monthly_usd": 250,
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(result.property_tax_usd[:, 1], 118)
+    np.testing.assert_allclose(result.hoa_usd[:, 1], 250)
+    np.testing.assert_allclose(result.insurance_usd[:, 1], 50)
+    np.testing.assert_allclose(result.maintenance_usd[:, 1], 100)
+    np.testing.assert_allclose(result.cash_usd[:, 1], result.cash_usd[:, 0] - 518)
+
+
+def test_private_equity_stock_is_not_sold_without_explicit_event() -> None:
+    scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("no_tender")))
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
+
+    np.testing.assert_allclose(result.private_equity_sale_usd, 0)
+    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 1], 25_000)
+    np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
+
+
+def test_private_equity_tender_event_without_policy_does_not_sell() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "tender_without_policy",
+                events=[
+                    {
+                        "event_id": "tender_1",
+                        "event_type": "private_equity_tender",
+                        "month_index": 1,
+                        "amount_usd": 20_000,
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
+
+    np.testing.assert_allclose(result.private_equity_sale_usd, 0)
+    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 1], 50_000)
+    np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
+    assert np.all(result.private_equity_liquidity_event[:, 1])
+    assert result.actions == ()
+
+
+def test_private_equity_sale_requires_explicit_event_and_policy() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "tender",
+                private_equity_basis_usd=0,
+                private_equity_units=100,
+                events=[
+                    {
+                        "event_id": "tender_1",
+                        "event_type": "private_equity_tender",
+                        "month_index": 1,
+                        "actor_id": "rai",
+                        "amount_usd": 20_000,
+                    }
+                ],
+                policies=[
+                    {
+                        "policy_id": "private_equity_tender_rebalance",
+                        "policy_type": "private_equity_tender_rebalance",
+                        "actor_id": "rai",
+                        "proceeds_destination": "cash",
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(result.private_equity_sale_usd[:, 0], 0)
+    np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
+    np.testing.assert_allclose(result.private_equity_sale_usd[:, 2], 0)
+    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 1], 30_000)
+    np.testing.assert_allclose(result.private_equity_sale_basis_usd[:, 1], 0)
+    np.testing.assert_allclose(result.private_equity_sale_tax_usd[:, 1], 6_000)
+    np.testing.assert_allclose(result.cash_usd[:, 1], 24_000)
+    actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
+    assert len(actions) == 2
+    for action in actions:
+        assert action.event_id == "tender_1"
+        assert action.event_type is EventType.PRIVATE_EQUITY_TENDER
+        assert action.actor_id == "rai"
+        assert action.policy_id == "private_equity_tender_rebalance"
+        assert action.amount_usd == 20_000
+        assert action.after_tax_proceeds_usd == 14_000
+        assert action.basis_usd == 0
+        assert action.estimated_tax_usd == 6_000
+        assert action.units_sold == 40
+        assert action.sold_fraction == 0.4
+        assert action.proceeds_destination is AccountType.CHECKING
+
+
+def test_private_equity_tender_rebalance_reinvests_sale_proceeds_in_sp500() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "reinvest_tender",
+                events=[
+                    {
+                        "event_id": "tender_1",
+                        "event_type": "private_equity_tender",
+                        "month_index": 1,
+                        "actor_id": "rai",
+                        "amount_usd": 20_000,
+                    }
+                ],
+                policies=[
+                    {
+                        "policy_id": "private_equity_tender_rebalance",
+                        "policy_type": "private_equity_tender_rebalance",
+                        "actor_id": "rai",
+                        "proceeds_destination": "generic_sp500_stock",
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
+
+    np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
+    np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
+    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 1], 130_000)
+    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 141_818.18181818)
+
+
+def test_private_equity_tender_sale_is_available_only_in_scheduled_month() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "scheduled_tender",
+                events=[
+                    {
+                        "event_id": "tender_2",
+                        "event_type": "private_equity_tender",
+                        "month_index": 2,
+                        "actor_id": "rai",
+                        "amount_usd": 20_000,
+                    }
+                ],
+                policies=[
+                    {
+                        "policy_id": "private_equity_tender_rebalance",
+                        "policy_type": "private_equity_tender_rebalance",
+                        "actor_id": "rai",
+                        "proceeds_destination": "generic_sp500_stock",
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(result.private_equity_sale_usd[:, 0], 0)
+    np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 0)
+    np.testing.assert_allclose(result.private_equity_sale_usd[:, 2], 20_000)
+    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 1], 0)
+    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 2], 30_000)
+    np.testing.assert_allclose(result.cash_usd[:, 2], 10_000)
+    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 140_000)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
