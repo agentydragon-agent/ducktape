@@ -61,7 +61,6 @@ spec:
               cpu: "25m"
             limits:
               memory: "256Mi"
-              cpu: "500m"
           readinessProbe:
             httpGet:
               path: /healthz
