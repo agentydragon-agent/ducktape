@@ -1,0 +1,61 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "scenarios_py",
+    srcs = ["scenarios.py"],
+    deps = [
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "density_py",
+    srcs = ["_density.py"],
+    deps = [
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "market_model_py",
+    srcs = ["market_model.py"],
+    deps = [
+        ":scenarios_py",
+    ],
+)
+
+py_library(
+    name = "metrics_py",
+    srcs = ["metrics.py"],
+    deps = [
+        ":market_model_py",
+        ":scenarios_py",
+    ],
+)
+
+py_library(
+    name = "registry_py",
+    srcs = ["registry.py"],
+    deps = [
+        ":market_model_py",
+        "//augur/model/markets/models:bootstrap_py",
+        "//augur/model/markets/models:dcc_garch_py",
+        "//augur/model/markets/models:var_py",
+        "//augur/model/markets/models:vecm_py",
+        "//augur/model/markets/models:wilkie_py",
+    ],
+)
+
+py_test(
+    name = "metrics_test",
+    srcs = ["metrics_test.py"],
+    deps = [
+        ":market_model_py",
+        ":metrics_py",
+        ":scenarios_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)

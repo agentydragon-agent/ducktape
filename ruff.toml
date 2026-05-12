@@ -164,3 +164,7 @@ split-on-trailing-comma = false
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
 "**/conftest.py" = ["F401", "F811"]
+# augur's market-model docstrings legitimately use Greek letters (α, β, γ) and the × symbol
+# in math notation; unittest-style assertions and broad pytest.raises in the test scaffolding
+# were inherited from gaffer and aren't worth rewriting in this extraction pass.
+"augur/model/markets/**/*.py" = ["RUF002", "RUF003", "PT009", "PT011"]

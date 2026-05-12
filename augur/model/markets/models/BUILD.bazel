@@ -1,0 +1,110 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "var_py",
+    srcs = ["var.py"],
+    deps = [
+        "//augur/model/markets:density_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "var_test",
+    srcs = ["var_test.py"],
+    deps = [
+        ":var_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "wilkie_py",
+    srcs = ["wilkie.py"],
+    deps = [
+        ":var_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "wilkie_test",
+    srcs = ["wilkie_test.py"],
+    deps = [
+        ":wilkie_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "vecm_py",
+    srcs = ["vecm.py"],
+    deps = [
+        "//augur/model/markets:density_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+        "@pypi//statsmodels",
+    ],
+)
+
+py_test(
+    name = "vecm_test",
+    srcs = ["vecm_test.py"],
+    deps = [
+        ":vecm_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "dcc_garch_py",
+    srcs = ["dcc_garch.py"],
+    deps = [
+        "//augur/model/markets:density_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//arch",
+        "@pypi//numpy",
+        "@pypi//scipy",
+    ],
+)
+
+py_test(
+    name = "dcc_garch_test",
+    srcs = ["dcc_garch_test.py"],
+    deps = [
+        ":dcc_garch_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "bootstrap_py",
+    srcs = ["bootstrap.py"],
+    deps = [
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "bootstrap_test",
+    srcs = ["bootstrap_test.py"],
+    deps = [
+        ":bootstrap_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)

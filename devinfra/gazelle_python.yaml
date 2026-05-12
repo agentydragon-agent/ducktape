@@ -39,6 +39,7 @@ manifest:
     anyio: anyio
     apiclient: google_api_python_client
     appdirs: appdirs
+    arch: arch
     argon2: argon2_cffi
     arrow: arrow
     asgi_lifespan: asgi_lifespan
@@ -620,4 +621,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 6ad0ef00470a9070030fe14b020d1730d6f7f64d1895763ac0625067ca58a6bb
+integrity: ca8e46f62f1545228ece0650e7a1a2069d90e48d0ec801fb2c4bfc2d402cf6f0
