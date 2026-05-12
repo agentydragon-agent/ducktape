@@ -36,6 +36,20 @@ py_library(
 )
 
 py_library(
+    name = "data_py",
+    srcs = ["data.py"],
+    data = ["//augur/model/config:market_config_files"],
+    deps = [
+        ":scenarios_py",
+        "//augur/core:schemas_py",
+        "//augur/model:market_data_py",
+        "//augur/model:projection_factor_sources_py",
+        "@pypi//numpy",
+        "@pypi//pandas",
+    ],
+)
+
+py_library(
     name = "registry_py",
     srcs = ["registry.py"],
     deps = [

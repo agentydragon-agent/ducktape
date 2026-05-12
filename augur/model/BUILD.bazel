@@ -1,0 +1,81 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "market_data_py",
+    srcs = ["market_data.py"],
+    deps = [
+        "//augur/core:schemas_py",
+        "@pypi//numpy",
+        "@pypi//pandas",
+    ],
+)
+
+py_library(
+    name = "projection_factor_sources_py",
+    srcs = ["projection_factor_sources.py"],
+)
+
+py_library(
+    name = "macro_rollout_provider_py",
+    srcs = ["macro_rollout_provider.py"],
+    data = ["//augur/model/config:market_config_files"],
+    deps = [
+        ":projection_factor_sources_py",
+        "//augur/core:rollout_provider_py",
+        "//augur/core:schemas_py",
+        "//augur/model/markets:data_py",
+        "//augur/model/markets:market_model_py",
+        "//augur/model/markets:registry_py",
+    ],
+)
+
+py_library(
+    name = "market_bundle_adapter_py",
+    srcs = ["market_bundle_adapter.py"],
+    deps = [
+        "//augur/core:local_regulation_py",
+        "//augur/core:market_bundle_py",
+        "//augur/core:rollout_provider_py",
+        "//augur/core:scenario_set_py",
+        "//augur/core:schemas_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_binary(
+    name = "metrics_report",
+    srcs = ["metrics_report.py"],
+    data = ["//augur/model/config:market_config_files"],
+    deps = [
+        "//augur/model/markets:data_py",
+        "//augur/model/markets:metrics_py",
+        "//augur/model/markets:registry_py",
+    ],
+)
+
+py_test(
+    name = "market_bundle_adapter_test",
+    srcs = ["market_bundle_adapter_test.py"],
+    deps = [
+        ":market_bundle_adapter_py",
+        "//augur/core:scenario_engine_py",
+        "//augur/core:scenario_set_py",
+        "//augur/core:schemas_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "macro_rollout_provider_test",
+    srcs = ["macro_rollout_provider_test.py"],
+    data = ["//augur/model/config:market_config_files"],
+    deps = [
+        ":macro_rollout_provider_py",
+        "//augur/core:schemas_py",
+        "//augur/model/markets:registry_py",
+        "@pypi//numpy",
+    ],
+)
