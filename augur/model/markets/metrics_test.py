@@ -132,8 +132,8 @@ class HeldOutLogDensityTest(unittest.TestCase):
 
         log_returns = historical_log_returns(historical)
         expected_total = float(sum(_gaussian_log_density(log_returns[t], mu, sigma) for t in range(80, 100)))
-        self.assertAlmostEqual(result.total, expected_total, places=10)
-        self.assertAlmostEqual(result.per_month, expected_total / 20, places=10)
+        assert abs(result.total - expected_total) < 10**-10
+        assert abs(result.per_month - expected_total / 20) < 10**-10
 
     def test_per_factor_components_sum_to_joint_for_independent_marginals(self) -> None:
         mu = np.array([0.005, -0.002, 0.001])
@@ -151,7 +151,7 @@ class HeldOutLogDensityTest(unittest.TestCase):
             )
             marginal_total += float(held_out_predictive_log_density(marginal, single_factor, train_fraction=0.5).total)
 
-        self.assertAlmostEqual(joint_result.total, marginal_total, places=8)
+        assert abs(joint_result.total - marginal_total) < 10**-8
 
     def test_per_factor_totals_sum_to_joint_for_independent_marginals(self) -> None:
         mu = np.array([0.005, -0.002, 0.001])
@@ -163,10 +163,10 @@ class HeldOutLogDensityTest(unittest.TestCase):
 
         assert result.per_factor_total is not None
         summed = sum(result.per_factor_total.values())
-        self.assertAlmostEqual(summed, result.total, places=8)
+        assert abs(summed - result.total) < 10**-8
 
         for name, total in result.per_factor_total.items():
-            self.assertAlmostEqual(result.per_factor_per_month[name], total / result.held_out_count, places=10)
+            assert abs(result.per_factor_per_month[name] - total / result.held_out_count) < 10**-10
 
     def test_unscored_model_records_reason_without_crashing(self) -> None:
         mu = np.array([0.0])
@@ -189,7 +189,7 @@ class HeldOutLogDensityTest(unittest.TestCase):
         model = _ConstantGaussianModel(mu=mu, sigma=sigma)
 
         for bad in (0.0, 1.0, -0.1, 1.5):
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="train_fraction must be in"):
                 held_out_predictive_log_density(model, historical, train_fraction=bad)
 
     def test_rejects_train_fraction_that_leaves_no_holdout(self) -> None:
@@ -199,7 +199,7 @@ class HeldOutLogDensityTest(unittest.TestCase):
         model = _ConstantGaussianModel(mu=mu, sigma=sigma)
 
         # 3 transitions × 0.99 rounds to 3 → no held-out months.
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="no held-out months"):
             held_out_predictive_log_density(model, historical, train_fraction=0.99)
 
 
@@ -216,11 +216,11 @@ class RollingOriginPredictiveLogDensityTest(unittest.TestCase):
         log_returns = historical_log_returns(historical)
         expected_total = float(sum(_gaussian_log_density(log_returns[t], mu, sigma) for t in range(10, 50)))
         assert result.n_origins == 40
-        self.assertAlmostEqual(result.total, expected_total, places=10)
-        self.assertAlmostEqual(result.per_month, expected_total / 40, places=10)
+        assert abs(result.total - expected_total) < 10**-10
+        assert abs(result.per_month - expected_total / 40) < 10**-10
         assert result.mean_se > 0.0
         assert result.per_factor_total is not None
-        self.assertAlmostEqual(sum(result.per_factor_total.values()), result.total, places=8)
+        assert abs(sum(result.per_factor_total.values()) - result.total) < 10**-8
 
     def test_refit_every_skips_intermediate_fits(self) -> None:
         # Wrap the synthetic model so we can count fit() calls.
@@ -270,7 +270,7 @@ class MultiStepPredictiveLogDensityTest(unittest.TestCase):
                 cum_var = h * sigma**2
                 diff = observed - cum_mu
                 expected_total += float(np.sum(-0.5 * ((diff**2) / cum_var + np.log(cum_var) + math.log(2 * math.pi))))
-            self.assertAlmostEqual(row.total, expected_total, places=8)
+            assert abs(row.total - expected_total) < 10**-8
 
     def test_unscored_model_records_reason_per_horizon(self) -> None:
         historical = _toy_historical(20, mu=np.array([0.0]), sigma=np.array([0.01]), seed=31)

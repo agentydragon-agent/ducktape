@@ -71,7 +71,7 @@ class Var1GaussianFitTest(unittest.TestCase):
             assert sign > 0
             expected = -0.5 * (3 * math.log(2 * math.pi) + log_det + quad)
             actual = model.log_predictive_density(historical, t)
-            self.assertAlmostEqual(actual, expected, places=8)
+            assert abs(actual - expected) < 10**-8
 
     def test_simulate_returns_positive_finite_multipliers_starting_at_one(self) -> None:
         intercept = np.array([0.005, 0.002])
