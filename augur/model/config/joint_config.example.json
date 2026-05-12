@@ -1,0 +1,42 @@
+{
+  "horizon_start": "2026-04-29",
+  "horizon_years": 30,
+  "source_data": {
+    "fred_sp500_csv": "source/fred_sp500.csv",
+    "yahoo_spy_adjusted_json": "source/yahoo_spy_chart_adjusted.json",
+    "fred_cpi_us_csv": "source/fred_cpi_us.csv",
+    "fred_sf_rent_cpi_csv": "source/fred_sf_rent_cpi.csv",
+    "fred_sfxrsa_csv": "source/fred_sfxrsa.csv",
+    "fred_fhfa_sf_oakland_berkeley_csv": "source/fred_fhfa_sf_oakland_berkeley.csv",
+    "fred_mortgage30_csv": "source/fred_mortgage30.csv",
+    "zillow_city_zhvi_csv": "source/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv",
+    "zillow_home_value_regions": {
+      "home": {
+        "region_name": "San Francisco",
+        "state": "CA"
+      },
+      "vallejo_home": {
+        "region_name": "Vallejo",
+        "state": "CA"
+      }
+    },
+    "minimum_aligned_months": 36
+  },
+  "projection_factor_sources": {
+    "home_value": {
+      "sf_home": "home",
+      "vallejo_home": "vallejo_home"
+    },
+    "rent": {
+      "sf_rent": "rent",
+      "vallejo_rent": "rent"
+    }
+  },
+  "random_seed": 20260429,
+  "simulation": {
+    "rollout_samples": 512
+  },
+  "runtime": {
+    "sampler": "numpy"
+  }
+}

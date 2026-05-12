@@ -99,6 +99,7 @@ cluster/.claude/
 !cluster/k8s/**/config
 !props/specimens/**/claude_linter_v2/config
 !x/claude_linter_v2/config
+!augur/model/config
 !**/claude_hooks/config
 !devinfra/claude/web_env/re/environment_manager/src/internal/config
 
