@@ -52,8 +52,8 @@ def _scenario_set_body(*scenario_ids: str) -> dict[str, Any]:
                 "enabled": True,
                 "color": "#2563eb",
                 "actors": [
-                    {"actor_id": "rai", "label": "Rai", "role": "primary_owner"},
-                    {"actor_id": "auragon", "label": "Auragon", "role": "equity_building_occupant"},
+                    {"actor_id": "owner", "label": "Owner", "role": "primary_owner"},
+                    {"actor_id": "occupant", "label": "Occupant", "role": "equity_building_occupant"},
                 ],
                 "events": [
                     {
@@ -68,7 +68,7 @@ def _scenario_set_body(*scenario_ids: str) -> dict[str, Any]:
                     {
                         "policy_id": "checking_floor",
                         "policy_type": "checking_floor_sell_public_stock",
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "floor_usd": 10000,
                         "sale_amount_usd": 20000,
                     }
@@ -101,7 +101,7 @@ def _scenario_set_body(*scenario_ids: str) -> dict[str, Any]:
                         {
                             "account_id": "checking",
                             "account_type": "checking",
-                            "owner_actor_id": "rai",
+                            "owner_actor_id": "owner",
                             "balance_usd": 25000,
                         }
                     ],
@@ -109,14 +109,14 @@ def _scenario_set_body(*scenario_ids: str) -> dict[str, Any]:
                         {
                             "asset_id": "sp500",
                             "asset_type": "generic_sp500_stock",
-                            "owner_actor_id": "rai",
+                            "owner_actor_id": "owner",
                             "value_usd": 2120000,
                             "cost_basis_usd": 1500000,
                         },
                         {
                             "asset_id": "private_equity",
                             "asset_type": "private_equity",
-                            "owner_actor_id": "rai",
+                            "owner_actor_id": "owner",
                             "value_usd": 0,
                             "units": 23553,
                             "cost_basis_usd": 0,

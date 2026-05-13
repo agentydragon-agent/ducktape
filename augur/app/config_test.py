@@ -38,7 +38,7 @@ def _minimal_config(**overrides: object) -> AugurConfig:
 def test_minimal_config_validates_with_defaults() -> None:
     config = _minimal_config()
 
-    assert config.agents[0].actor_id == "rai"
+    assert config.agents[0].actor_id == "alpha"
     assert config.location_selection is None
     assert config.private_equity_sale_mode == "liquidity_only"
     assert config.minimum_reserve_mode == "projected_deficits"

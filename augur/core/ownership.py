@@ -20,8 +20,8 @@ class MonthlyHouseUseComponents:
 
 @dataclass(frozen=True)
 class OccupantContributionBuildsEquityPolicy:
-    owner_actor: str = "rai"
-    occupant_actor: str = "auragon"
+    owner_actor: str = "owner"
+    occupant_actor: str = "occupant"
     base_monthly_payment_usd: float = 0.0
     payment_growth_annual_pct: float = 0.0
     occupied_months: int = 0

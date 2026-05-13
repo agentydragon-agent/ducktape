@@ -1223,7 +1223,7 @@ def _primary_owner_actor_id(scenario: Scenario) -> str:
     for actor in scenario.actors:
         if actor.role is ActorRole.PRIMARY_OWNER:
             return actor.actor_id
-    return "rai"
+    return "owner"
 
 
 _PolicyT = TypeVar("_PolicyT", bound=_PolicyBase)

@@ -204,7 +204,7 @@ def _event_saleable_fraction(event: PrivateEquityEvent) -> float:
     fraction = float(event.saleable_fraction)
     if not math.isfinite(fraction) or fraction < 0 or fraction > 1:
         raise ValueError(
-            f"OpenAI liquidity event saleable_fraction must be finite and in [0, 1], got {event.saleable_fraction!r}"
+            f"Private-equity liquidity event saleable_fraction must be finite and in [0, 1], got {event.saleable_fraction!r}"
         )
     return fraction
 

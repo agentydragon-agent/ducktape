@@ -224,7 +224,7 @@ def required_array_value(values: list[float], index: int, label: str) -> float:
 def ledger_net_cash_by_month(simulation: SimulationResult) -> dict[int, float]:
     out: dict[int, float] = {}
     for row in simulation.ledger:
-        if row.actor == "rai" and row.domain == "cash":
+        if row.actor == "owner" and row.domain == "cash":
             out[row.month_index] = out.get(row.month_index, 0) + row.amount_usd
     return out
 

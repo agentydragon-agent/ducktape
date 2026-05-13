@@ -415,7 +415,7 @@ def simulate_arrangement(property_: PropertyRequest, knobs: ScenarioKnobs) -> Si
     cumulative_depreciation = 0.0
     suspended_passive_losses = 0.0
 
-    for actor in ("rai", "property"):
+    for actor in ("owner", "property"):
         push_ledger(ledger, 0, actor, "cash", "down_payment", -down_payment)
         push_ledger(ledger, 0, actor, "cash", "closing_buy", -closing_buy)
         push_ledger(ledger, 0, actor, "cash", "portfolio_liquidation_tax", -portfolio_liquidation_tax)
@@ -487,7 +487,7 @@ def simulate_arrangement(property_: PropertyRequest, knobs: ScenarioKnobs) -> Si
             else:
                 suspended_passive_losses += -rental_taxable_income
 
-        for actor in ("property", "rai"):
+        for actor in ("property", "owner"):
             push_ledger(ledger, month_index, actor, "cash", "mortgage_interest", -amort_month.interest_usd)
             push_ledger(ledger, month_index, actor, "cash", "mortgage_principal", -amort_month.principal_usd)
             push_ledger(ledger, month_index, actor, "cash", "property_tax", -property_tax)
@@ -714,7 +714,7 @@ def sale_home_value_at_month(simulation: SimulationResult, snapshot: dict[str, A
 
 
 def project_monthly_sale_path(simulation: SimulationResult) -> list[MonthlySalePathRow]:
-    owner_cash_rows = [row for row in simulation.ledger if row.actor == "rai" and row.domain == "cash"]
+    owner_cash_rows = [row for row in simulation.ledger if row.actor == "owner" and row.domain == "cash"]
     property_cash_rows = [row for row in simulation.ledger if row.actor == "property" and row.domain == "cash"]
     data: list[MonthlySalePathRow] = []
     for month_index in range(simulation.hold_months + 1):

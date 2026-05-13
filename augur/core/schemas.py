@@ -151,7 +151,7 @@ class ScenarioKnobs(KnobsConfig):
 
 
 # ---------------------------------------------------------------------------
-# OpenAI liquidity / joint rollout shapes (round-trip with browser).
+# Private-equity liquidity / joint rollout shapes (round-trip with browser).
 # ---------------------------------------------------------------------------
 
 
@@ -365,7 +365,7 @@ class MonthlySalePathRow(InternalModel):
 
 
 # ---------------------------------------------------------------------------
-# Personal-wealth / OpenAI policy outputs.
+# Personal-wealth / private-equity policy outputs.
 # ---------------------------------------------------------------------------
 
 
@@ -439,7 +439,7 @@ class PolicyActionRental(_PolicyActionBase):
 
 
 class PolicyActionPrivateEquity(_PolicyActionBase):
-    """OpenAI tender / acquisition / IPO sale through the guardrail policy."""
+    """Private-equity tender / acquisition / IPO sale through the guardrail policy."""
 
     action_type: Literal["sold_privateEquity"]
     event_type: str

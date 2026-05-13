@@ -31,7 +31,7 @@ def sale_scenario(
     return Scenario(
         scenario_id="sale",
         label="Sale",
-        actors=(Actor(actor_id="rai", label="Rai", role=ActorRole.PRIMARY_OWNER),),
+        actors=(Actor(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
         events=(PropertySaleEvent(event_id="sell", month_index=3, property_id=PropertyId.SF_ASHTON),),
         property_selection=PropertySelection(
             property_id=PropertyId.SF_ASHTON, location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=100_000

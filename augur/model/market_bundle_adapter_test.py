@@ -176,13 +176,13 @@ def _portfolio_scenario(scenario_id: str, sp500_usd: float) -> dict:
     return {
         "scenario_id": scenario_id,
         "label": scenario_id.title(),
-        "actors": [{"actor_id": "rai", "label": "Rai", "role": "primary_owner"}],
+        "actors": [{"actor_id": "owner", "label": "Owner", "role": "primary_owner"}],
         "initial_balance_sheet": {
             "assets": [
                 {
                     "asset_id": "sp500",
                     "asset_type": "generic_sp500_stock",
-                    "owner_actor_id": "rai",
+                    "owner_actor_id": "owner",
                     "value_usd": sp500_usd,
                 }
             ]

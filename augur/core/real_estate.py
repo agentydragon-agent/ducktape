@@ -72,7 +72,7 @@ def simulate_real_estate_case(
         return RealEstateCaseResult(
             simulation=simulation,
             ownership=None,
-            owner_actor="rai",
+            owner_actor="owner",
             occupant_actor=None,
             owner_ownership_pct=owner_pct,
             occupant_ownership_pct=occupant_pct,

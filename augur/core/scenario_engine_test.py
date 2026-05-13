@@ -95,7 +95,7 @@ def _scenario_body(
     return {
         "scenario_id": scenario_id,
         "label": scenario_id.replace("_", " ").title(),
-        "actors": actors or [{"actor_id": "rai", "label": "Rai", "role": "primary_owner"}],
+        "actors": actors or [{"actor_id": "owner", "label": "Owner", "role": "primary_owner"}],
         "events": events or [],
         "policies": policies or [],
         "property_selection": property_selection or {},
@@ -107,20 +107,25 @@ def _scenario_body(
         "property_assumptions": property_assumptions or {},
         "initial_balance_sheet": {
             "accounts": [
-                {"account_id": "checking", "account_type": "checking", "owner_actor_id": "rai", "balance_usd": cash_usd}
+                {
+                    "account_id": "checking",
+                    "account_type": "checking",
+                    "owner_actor_id": "owner",
+                    "balance_usd": cash_usd,
+                }
             ],
             "assets": [
                 {
                     "asset_id": "sp500",
                     "asset_type": "generic_sp500_stock",
-                    "owner_actor_id": "rai",
+                    "owner_actor_id": "owner",
                     "value_usd": sp500_usd,
                     "cost_basis_usd": sp500_basis_usd if sp500_basis_usd is not None else sp500_usd,
                 },
                 {
                     "asset_id": "private_equity",
                     "asset_type": "private_equity",
-                    "owner_actor_id": "rai",
+                    "owner_actor_id": "owner",
                     "value_usd": private_equity_usd,
                     "units": private_equity_units,
                     "cost_basis_usd": private_equity_basis_usd,
@@ -187,8 +192,8 @@ def test_property_purchase_with_mortgage_tracks_debt_and_equity() -> None:
                 sp500_usd=0,
                 private_equity_usd=0,
                 actors=[
-                    {"actor_id": "rai", "label": "Rai", "role": "primary_owner"},
-                    {"actor_id": "auragon", "label": "Auragon", "role": "equity_building_occupant"},
+                    {"actor_id": "owner", "label": "Owner", "role": "primary_owner"},
+                    {"actor_id": "occupant", "label": "Occupant", "role": "equity_building_occupant"},
                 ],
                 property_selection={
                     "property_id": "sf_ashton",
@@ -518,7 +523,7 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
                     {
                         "policy_id": "checking_floor",
                         "policy_type": "checking_floor_sell_public_stock",
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "floor_usd": 10_000,
                         "sale_amount_usd": 20_000,
                     }
@@ -543,7 +548,7 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
     for action in result.actions:
         assert action.action_type is ActionType.SELL_SP500
         assert action.month_index == 0
-        assert action.actor_id == "rai"
+        assert action.actor_id == "owner"
         assert action.policy_id == "checking_floor"
         assert action.amount_usd == 20_000
         assert action.basis_usd == 10_000
@@ -562,7 +567,7 @@ def test_scenario_set_response_serializes_discriminated_actions() -> None:
                     {
                         "policy_id": "checking_floor",
                         "policy_type": "checking_floor_sell_public_stock",
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "floor_usd": 10_000,
                         "sale_amount_usd": 20_000,
                     }
@@ -591,7 +596,7 @@ def test_checking_floor_policy_does_not_sell_when_cash_is_above_floor() -> None:
                     {
                         "policy_id": "checking_floor",
                         "policy_type": "checking_floor_sell_public_stock",
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "floor_usd": 10_000,
                         "sale_amount_usd": 20_000,
                     }
@@ -621,7 +626,7 @@ def test_checking_floor_policy_reports_shortfall_when_public_stock_is_exhausted(
                     {
                         "policy_id": "checking_floor",
                         "policy_type": "checking_floor_sell_public_stock",
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "floor_usd": 10_000,
                         "sale_amount_usd": 20_000,
                     }
@@ -643,13 +648,13 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
     scenario_set = ScenarioSet.model_validate(
         _scenario_set_body(
             _scenario_body(
-                "auragon",
+                "occupant",
                 cash_usd=40_000,
                 sp500_usd=0,
                 private_equity_usd=0,
                 actors=[
-                    {"actor_id": "rai", "label": "Rai", "role": "primary_owner"},
-                    {"actor_id": "auragon", "label": "Auragon", "role": "equity_building_occupant"},
+                    {"actor_id": "owner", "label": "Owner", "role": "primary_owner"},
+                    {"actor_id": "occupant", "label": "Occupant", "role": "equity_building_occupant"},
                 ],
                 property_selection={
                     "property_id": "vallejo_calhoun",
@@ -662,7 +667,7 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
                     {
                         "policy_id": "partner_equity",
                         "policy_type": "partner_equity_accrual",
-                        "actor_id": "auragon",
+                        "actor_id": "occupant",
                         "base_monthly_payment_usd": 1_000,
                         "grow_with_inflation": False,
                     }
@@ -704,22 +709,22 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
     assert {action.month_index for action in mortgage_actions} == {1, 2}
     assert {action.month_index for action in equity_actions} == {1, 2}
     for action in payment_actions:
-        assert action.actor_id == "auragon"
+        assert action.actor_id == "occupant"
         assert action.policy_id == "partner_equity"
-        assert action.recipient_actor_id == "rai"
+        assert action.recipient_actor_id == "owner"
         assert action.amount_usd == 1_000
         assert action.applied_to_house_costs_usd > 0
     for action in mortgage_actions:
-        assert action.actor_id == "rai"
+        assert action.actor_id == "owner"
         assert action.policy_id == "partner_equity"
         assert action.mortgage_payment_usd > 0
         assert action.mortgage_interest_usd == 0
         assert action.mortgage_principal_usd > 0
         assert action.mortgage_balance_after_usd < 80_000
     for action in equity_actions:
-        assert action.actor_id == "auragon"
+        assert action.actor_id == "occupant"
         assert action.policy_id == "partner_equity"
-        assert action.beneficiary_actor_id == "auragon"
+        assert action.beneficiary_actor_id == "occupant"
         assert action.property_id == "vallejo_calhoun"
         assert action.house_costs_usd > action.mortgage_principal_usd
         assert action.cash_transfer_used_for_house_costs_usd > action.principal_credit_usd
@@ -810,7 +815,7 @@ def test_purchase_event_parameters_drive_property_costs() -> None:
                         "event_id": "purchase",
                         "event_type": "property_purchase",
                         "month_index": 0,
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "property_id": "sf_ashton",
                         "amount_usd": 120_000,
                         "hoa_monthly_usd": 250,
@@ -877,7 +882,7 @@ def test_private_equity_sale_requires_explicit_event_and_policy() -> None:
                         "event_id": "tender_1",
                         "event_type": "private_equity_tender",
                         "month_index": 1,
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "amount_usd": 20_000,
                     }
                 ],
@@ -885,7 +890,7 @@ def test_private_equity_sale_requires_explicit_event_and_policy() -> None:
                     {
                         "policy_id": "private_equity_tender_rebalance",
                         "policy_type": "private_equity_tender_rebalance",
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "proceeds_destination": "cash",
                     }
                 ],
@@ -907,7 +912,7 @@ def test_private_equity_sale_requires_explicit_event_and_policy() -> None:
     for action in actions:
         assert action.event_id == "tender_1"
         assert action.event_type is EventType.PRIVATE_EQUITY_TENDER
-        assert action.actor_id == "rai"
+        assert action.actor_id == "owner"
         assert action.policy_id == "private_equity_tender_rebalance"
         assert action.amount_usd == 20_000
         assert action.after_tax_proceeds_usd == 14_000
@@ -928,7 +933,7 @@ def test_private_equity_tender_rebalance_reinvests_sale_proceeds_in_sp500() -> N
                         "event_id": "tender_1",
                         "event_type": "private_equity_tender",
                         "month_index": 1,
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "amount_usd": 20_000,
                     }
                 ],
@@ -936,7 +941,7 @@ def test_private_equity_tender_rebalance_reinvests_sale_proceeds_in_sp500() -> N
                     {
                         "policy_id": "private_equity_tender_rebalance",
                         "policy_type": "private_equity_tender_rebalance",
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "proceeds_destination": "generic_sp500_stock",
                     }
                 ],
@@ -962,7 +967,7 @@ def test_private_equity_tender_sale_is_available_only_in_scheduled_month() -> No
                         "event_id": "tender_2",
                         "event_type": "private_equity_tender",
                         "month_index": 2,
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "amount_usd": 20_000,
                     }
                 ],
@@ -970,7 +975,7 @@ def test_private_equity_tender_sale_is_available_only_in_scheduled_month() -> No
                     {
                         "policy_id": "private_equity_tender_rebalance",
                         "policy_type": "private_equity_tender_rebalance",
-                        "actor_id": "rai",
+                        "actor_id": "owner",
                         "proceeds_destination": "generic_sp500_stock",
                     }
                 ],

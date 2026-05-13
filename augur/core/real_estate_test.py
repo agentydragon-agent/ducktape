@@ -67,8 +67,8 @@ def vallejo_property() -> PropertyRequest:
 def partner_policy(knobs: ScenarioKnobs) -> OccupantContributionBuildsEquityPolicy:
     occupied_months = int(knobs.owner_occupancy_years * 12)
     return OccupantContributionBuildsEquityPolicy(
-        owner_actor="rai",
-        occupant_actor="auragon",
+        owner_actor="owner",
+        occupant_actor="occupant",
         base_monthly_payment_usd=2_435,
         payment_growth_annual_pct=knobs.inflation,
         occupied_months=occupied_months,
@@ -80,7 +80,7 @@ def test_sf_case_without_occupant_policy_keeps_one_owner_sale_claim() -> None:
     result = simulate_real_estate_case(sf_property(), base_knobs())
 
     assert result.ownership is None
-    assert result.owner_actor == "rai"
+    assert result.owner_actor == "owner"
     assert result.occupant_actor is None
     np.testing.assert_allclose(result.owner_ownership_pct, [1])
     np.testing.assert_allclose(result.occupant_ownership_pct, [0])
@@ -95,8 +95,8 @@ def test_vallejo_case_uses_same_simulator_with_partner_ownership_policy() -> Non
     assert result.simulation.tax_rate == 0.024
     assert result.simulation.financing.rate_pct == pytest.approx(6.83)
     assert result.ownership is not None
-    assert result.owner_actor == "rai"
-    assert result.occupant_actor == "auragon"
+    assert result.owner_actor == "owner"
+    assert result.occupant_actor == "occupant"
     assert result.occupant_ownership_pct[0] > 0
     assert result.occupant_ownership_pct[0] < 1
     np.testing.assert_allclose(

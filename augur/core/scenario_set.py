@@ -258,8 +258,7 @@ class PortfolioTargetRebalancePolicy(_PolicyBase):
 
 class PartnerEquityAccrualPolicy(_PolicyBase):
     """A partner contributes monthly toward a property the primary owner holds, accruing
-    ownership share in proportion to principal credit. Used today for the
-    Auragon-contributes-to-Rai's-house arrangement; generic for any analogous setup."""
+    ownership share in proportion to principal credit."""
 
     policy_type: Literal[PolicyType.PARTNER_EQUITY_ACCRUAL] = PolicyType.PARTNER_EQUITY_ACCRUAL
     base_monthly_payment_usd: NonNegativeFloat = 0.0

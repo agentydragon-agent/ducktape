@@ -4,7 +4,7 @@ Wraps any `MarketModel` implementation from `augur.model.markets.models.*`
 into a `RolloutProvider` the FastAPI server consumes. Composition (provider
 holds a market model) instead of inheritance (model implements provider) so
 each macro model class stays focused on the macro process and doesn't need to
-know about JointRolloutPath / OpenAI / mortgage. Backend selects a model via
+know about JointRolloutPath / private equity / mortgage. Backend selects a model via
 `MacroRolloutProvider.for_label(...)`.
 """
 
