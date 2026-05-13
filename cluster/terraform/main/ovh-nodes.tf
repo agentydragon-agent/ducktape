@@ -45,14 +45,15 @@ data "ovh_dedicated_server" "kimsufi" {
   service_name = var.kimsufi_service_name
 }
 
-data "ovh_dedicated_server_boots" "kimsufi_rescue" {
-  service_name = var.kimsufi_service_name
-  boot_type    = "rescue"
-}
-
-data "ovh_dedicated_server_boots" "kimsufi_harddisk" {
-  service_name = var.kimsufi_service_name
-  boot_type    = "harddisk"
+# Boot IDs are hardcoded because data.ovh_dedicated_server_boots returns BOTH
+# the customer rescue (rescue12-customer, Debian-12-based) AND the iPXE shell
+# (ipxe-shell, an interactive bootloader that does NOT auto-launch a Linux),
+# and the data source only returns the IDs — no kernel/description to filter by.
+# Picking [0] from the list gives iPXE shell → SSH never comes up → install hangs.
+# Verified via GET /dedicated/server/{name}/boot/{id}.
+locals {
+  kimsufi_rescue_boot_id   = 218949 # rescue12-customer (Debian-12)
+  kimsufi_harddisk_boot_id = 1      # harddisk
 }
 
 # ============================================================================
@@ -85,7 +86,7 @@ resource "ovh_dedicated_server" "kimsufi" {
 # subsequent plans would see drift and try to revert to rescue.
 resource "ovh_dedicated_server_update" "kimsufi_rescue" {
   service_name = var.kimsufi_service_name
-  boot_id      = tolist(data.ovh_dedicated_server_boots.kimsufi_rescue.result)[0]
+  boot_id      = local.kimsufi_rescue_boot_id
   depends_on   = [ovh_dedicated_server.kimsufi]
 
   lifecycle {
@@ -96,7 +97,7 @@ resource "ovh_dedicated_server_update" "kimsufi_rescue" {
 # Step 2: Reboot into rescue.
 resource "ovh_dedicated_server_reboot_task" "kimsufi_to_rescue" {
   service_name = var.kimsufi_service_name
-  keepers      = [tostring(tolist(data.ovh_dedicated_server_boots.kimsufi_rescue.result)[0])]
+  keepers      = [tostring(local.kimsufi_rescue_boot_id)]
   depends_on   = [ovh_dedicated_server_update.kimsufi_rescue]
 }
 
@@ -133,14 +134,14 @@ resource "null_resource" "install_talos_kimsufi" {
 # Step 4: Switch to harddisk boot.
 resource "ovh_dedicated_server_update" "kimsufi_harddisk" {
   service_name = var.kimsufi_service_name
-  boot_id      = tolist(data.ovh_dedicated_server_boots.kimsufi_harddisk.result)[0]
+  boot_id      = local.kimsufi_harddisk_boot_id
   depends_on   = [null_resource.install_talos_kimsufi]
 }
 
 # Step 5: Reboot into Talos.
 resource "ovh_dedicated_server_reboot_task" "kimsufi_to_talos" {
   service_name = var.kimsufi_service_name
-  keepers      = [tostring(tolist(data.ovh_dedicated_server_boots.kimsufi_harddisk.result)[0])]
+  keepers      = [tostring(local.kimsufi_harddisk_boot_id)]
   depends_on   = [ovh_dedicated_server_update.kimsufi_harddisk]
 }
 
