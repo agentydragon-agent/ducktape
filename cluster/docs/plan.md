@@ -34,6 +34,10 @@ CloudNativePG `local-path`.
   resources deleted. See <../k8s/agents/kagent/TODO.md>.
 - **SDR**: `sdr` — suspended 2026-05-09. Temporarily disabled until the radio
   hardware is set up again after relocation to new place.
+- **Mimir + Tempo**: `mimir`, `tempo` — suspended 2026-05-13. VPS worker-0 OOM
+  cascade (6072 Mi requested / 7246 Mi allocatable). Unsuspend once there's
+  capacity and we figure out proper memory sizing (VPA resource policies,
+  right-sized requests, or additional node capacity).
 
 ## Next Actions
 
