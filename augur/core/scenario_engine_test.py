@@ -5,7 +5,17 @@ import pytest_bazel
 
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
 from augur.core.scenario_engine import run_scenario_set_vectorized, run_scenario_vectorized
-from augur.core.scenario_set import AccountType, ActionType, EventType, MarketRequest, ScenarioResultStatus, ScenarioSet
+from augur.core.scenario_set import (
+    AccountType,
+    AccruePartnerEquityAction,
+    ActionType,
+    EventType,
+    MarketRequest,
+    PayMortgageAction,
+    ScenarioResultStatus,
+    ScenarioSet,
+    TransferPartnerContributionAction,
+)
 
 
 def _bundle(
@@ -176,6 +186,9 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
         ScenarioResultStatus.SIMULATED,
         ScenarioResultStatus.SIMULATED,
     ]
+    assert response.scenario_results[0].monthly_columns is not None
+    assert response.scenario_results[1].monthly_columns is not None
+    assert response.market_metadata is not None
     first_sp500 = response.scenario_results[0].monthly_columns.columns["generic_sp500_value_usd"]
     second_sp500 = response.scenario_results[1].monthly_columns.columns["generic_sp500_value_usd"]
     assert first_sp500 == second_sp500
@@ -697,39 +710,37 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
     np.testing.assert_allclose(
         result.owner_home_equity_claim_usd + result.partner_home_equity_claim_usd, result.home_equity_usd
     )
-    payment_actions = [
-        action for action in result.actions if action.action_type is ActionType.TRANSFER_PARTNER_CONTRIBUTION
-    ]
-    mortgage_actions = [action for action in result.actions if action.action_type is ActionType.PAY_MORTGAGE]
-    equity_actions = [action for action in result.actions if action.action_type is ActionType.ACCRUE_PARTNER_EQUITY]
+    payment_actions = [action for action in result.actions if isinstance(action, TransferPartnerContributionAction)]
+    mortgage_actions = [action for action in result.actions if isinstance(action, PayMortgageAction)]
+    equity_actions = [action for action in result.actions if isinstance(action, AccruePartnerEquityAction)]
     assert len(payment_actions) == 4
     assert len(mortgage_actions) == 4
     assert len(equity_actions) == 4
     assert {action.month_index for action in payment_actions} == {1, 2}
     assert {action.month_index for action in mortgage_actions} == {1, 2}
     assert {action.month_index for action in equity_actions} == {1, 2}
-    for action in payment_actions:
-        assert action.actor_id == "occupant"
-        assert action.policy_id == "partner_equity"
-        assert action.recipient_actor_id == "owner"
-        assert action.amount_usd == 1_000
-        assert action.applied_to_house_costs_usd > 0
-    for action in mortgage_actions:
-        assert action.actor_id == "owner"
-        assert action.policy_id == "partner_equity"
-        assert action.mortgage_payment_usd > 0
-        assert action.mortgage_interest_usd == 0
-        assert action.mortgage_principal_usd > 0
-        assert action.mortgage_balance_after_usd < 80_000
-    for action in equity_actions:
-        assert action.actor_id == "occupant"
-        assert action.policy_id == "partner_equity"
-        assert action.beneficiary_actor_id == "occupant"
-        assert action.property_id == "vallejo_calhoun"
-        assert action.house_costs_usd > action.mortgage_principal_usd
-        assert action.cash_transfer_used_for_house_costs_usd > action.principal_credit_usd
-        assert action.principal_credit_usd == action.mortgage_principal_usd
-        assert action.ownership_pct_after > 0
+    for payment in payment_actions:
+        assert payment.actor_id == "occupant"
+        assert payment.policy_id == "partner_equity"
+        assert payment.recipient_actor_id == "owner"
+        assert payment.amount_usd == 1_000
+        assert payment.applied_to_house_costs_usd > 0
+    for mortgage in mortgage_actions:
+        assert mortgage.actor_id == "owner"
+        assert mortgage.policy_id == "partner_equity"
+        assert mortgage.mortgage_payment_usd > 0
+        assert mortgage.mortgage_interest_usd == 0
+        assert mortgage.mortgage_principal_usd > 0
+        assert mortgage.mortgage_balance_after_usd < 80_000
+    for equity in equity_actions:
+        assert equity.actor_id == "occupant"
+        assert equity.policy_id == "partner_equity"
+        assert equity.beneficiary_actor_id == "occupant"
+        assert equity.property_id == "vallejo_calhoun"
+        assert equity.house_costs_usd > equity.mortgage_principal_usd
+        assert equity.cash_transfer_used_for_house_costs_usd > equity.principal_credit_usd
+        assert equity.principal_credit_usd == equity.mortgage_principal_usd
+        assert equity.ownership_pct_after > 0
 
 
 def test_rental_income_and_carrying_costs_feed_cash_flow() -> None:

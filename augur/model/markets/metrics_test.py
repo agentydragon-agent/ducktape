@@ -9,6 +9,12 @@ import numpy as np
 import pytest
 
 from augur.model.markets.metrics import (
+    ScoredHeldOutLogDensity,
+    ScoredMultiStepLogDensityRow,
+    ScoredRollingOriginLogDensity,
+    UnscoredHeldOutLogDensity,
+    UnscoredMultiStepLogDensityRow,
+    UnscoredRollingOriginLogDensity,
     held_out_predictive_log_density,
     multi_step_predictive_log_density,
     rolling_origin_predictive_log_density,
@@ -124,11 +130,10 @@ class HeldOutLogDensityTest(unittest.TestCase):
 
         result = held_out_predictive_log_density(model, historical, train_fraction=0.8)
 
+        assert isinstance(result, ScoredHeldOutLogDensity)
         assert result.model_label == "constant_gaussian"
         assert result.train_end == 80
         assert result.held_out_count == 20
-        assert result.total is not None
-        assert result.unscored_reason is None
 
         log_returns = historical_log_returns(historical)
         expected_total = float(sum(_gaussian_log_density(log_returns[t], mu, sigma) for t in range(80, 100)))
@@ -143,13 +148,16 @@ class HeldOutLogDensityTest(unittest.TestCase):
         marginals = [_ConstantGaussianModel(mu=mu[k : k + 1], sigma=sigma[k : k + 1]) for k in range(len(mu))]
 
         joint_result = held_out_predictive_log_density(joint, historical, train_fraction=0.5)
+        assert isinstance(joint_result, ScoredHeldOutLogDensity)
 
         marginal_total = 0.0
         for k, marginal in enumerate(marginals):
             single_factor = HistoricalSeries(
                 factor_names=(f"f{k}",), levels=historical.levels[:, k : k + 1], months=historical.months
             )
-            marginal_total += float(held_out_predictive_log_density(marginal, single_factor, train_fraction=0.5).total)
+            marginal_result = held_out_predictive_log_density(marginal, single_factor, train_fraction=0.5)
+            assert isinstance(marginal_result, ScoredHeldOutLogDensity)
+            marginal_total += marginal_result.total
 
         assert abs(joint_result.total - marginal_total) < 10**-8
 
@@ -161,12 +169,13 @@ class HeldOutLogDensityTest(unittest.TestCase):
 
         result = held_out_predictive_log_density(model, historical, train_fraction=0.5)
 
-        assert result.per_factor_total is not None
-        summed = sum(result.per_factor_total.values())
+        assert isinstance(result, ScoredHeldOutLogDensity)
+        assert result.factor_breakdown is not None
+        summed = sum(result.factor_breakdown.per_factor_total.values())
         assert abs(summed - result.total) < 10**-8
 
-        for name, total in result.per_factor_total.items():
-            assert abs(result.per_factor_per_month[name] - total / result.held_out_count) < 10**-10
+        for name, total in result.factor_breakdown.per_factor_total.items():
+            assert abs(result.factor_breakdown.per_factor_per_month[name] - total / result.held_out_count) < 10**-10
 
     def test_unscored_model_records_reason_without_crashing(self) -> None:
         mu = np.array([0.0])
@@ -176,10 +185,8 @@ class HeldOutLogDensityTest(unittest.TestCase):
 
         result = held_out_predictive_log_density(model, historical, train_fraction=0.7)
 
+        assert isinstance(result, UnscoredHeldOutLogDensity)
         assert result.model_label == "unscored"
-        assert result.total is None
-        assert result.per_month is None
-        assert result.unscored_reason is not None
         assert "returned None" in result.unscored_reason
 
     def test_rejects_invalid_train_fraction(self) -> None:
@@ -215,12 +222,13 @@ class RollingOriginPredictiveLogDensityTest(unittest.TestCase):
 
         log_returns = historical_log_returns(historical)
         expected_total = float(sum(_gaussian_log_density(log_returns[t], mu, sigma) for t in range(10, 50)))
+        assert isinstance(result, ScoredRollingOriginLogDensity)
         assert result.n_origins == 40
         assert abs(result.total - expected_total) < 10**-10
         assert abs(result.per_month - expected_total / 40) < 10**-10
         assert result.mean_se > 0.0
-        assert result.per_factor_total is not None
-        assert abs(sum(result.per_factor_total.values()) - result.total) < 10**-8
+        assert result.factor_breakdown is not None
+        assert abs(sum(result.factor_breakdown.per_factor_total.values()) - result.total) < 10**-8
 
     def test_refit_every_skips_intermediate_fits(self) -> None:
         # Wrap the synthetic model so we can count fit() calls.
@@ -242,9 +250,8 @@ class RollingOriginPredictiveLogDensityTest(unittest.TestCase):
     def test_unscored_model_records_reason(self) -> None:
         historical = _toy_historical(20, mu=np.array([0.0]), sigma=np.array([0.01]), seed=22)
         result = rolling_origin_predictive_log_density(lambda: _UnscoredModel(), historical, min_train=5, refit_every=1)
-        assert result.total is None
-        assert result.per_factor_total is None
-        assert result.unscored_reason is not None
+        assert isinstance(result, UnscoredRollingOriginLogDensity)
+        assert "returned None" in result.unscored_reason
 
 
 class MultiStepPredictiveLogDensityTest(unittest.TestCase):
@@ -260,6 +267,7 @@ class MultiStepPredictiveLogDensityTest(unittest.TestCase):
         log_returns = historical_log_returns(historical)
         train_end = round(60 * 0.5)
         for row in result.rows:
+            assert isinstance(row, ScoredMultiStepLogDensityRow)
             h = row.horizon_months
             n_origins_expected = (60 - h) - train_end + 1
             assert row.n_origins == n_origins_expected
@@ -276,8 +284,7 @@ class MultiStepPredictiveLogDensityTest(unittest.TestCase):
         historical = _toy_historical(20, mu=np.array([0.0]), sigma=np.array([0.01]), seed=31)
         result = multi_step_predictive_log_density(_UnscoredModel(), historical, horizons=(1, 3), train_fraction=0.5)
         for row in result.rows:
-            assert row.total is None
-            assert row.unscored_reason is not None
+            assert isinstance(row, UnscoredMultiStepLogDensityRow)
 
 
 if __name__ == "__main__":

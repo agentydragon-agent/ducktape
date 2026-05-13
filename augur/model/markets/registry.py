@@ -14,6 +14,7 @@ attribute to avoid a silent sync risk. Adding a model means adding one row to
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,24 +28,27 @@ from augur.model.markets.models.wilkie import WilkieCascade, WilkieConfig
 
 @dataclass(frozen=True)
 class MacroModelSpec:
-    model_cls: type[MarketModel]
+    # `Callable[[Any], MarketModel]` rather than `type[MarketModel]` because
+    # MarketModel is a Protocol — mypy can't infer the per-model `__init__`
+    # signature through the protocol type, so the class is treated as a
+    # config-taking factory instead.
+    model_cls: Callable[[Any], MarketModel]
+    label: str
     config: Any
     rolling_origin_refit_every: int = 1
-
-    @property
-    def label(self) -> str:
-        return self.model_cls.label
 
     def build(self) -> MarketModel:
         return self.model_cls(self.config)
 
 
 REGISTRY: tuple[MacroModelSpec, ...] = (
-    MacroModelSpec(model_cls=Var1Gaussian, config=Var1Config()),
-    MacroModelSpec(model_cls=WilkieCascade, config=WilkieConfig()),
-    MacroModelSpec(model_cls=VecmModel, config=VecmConfig(k_ar_diff=1, coint_rank=1)),
-    MacroModelSpec(model_cls=DccGjrGarch, config=DccGjrGarchConfig(), rolling_origin_refit_every=12),
-    MacroModelSpec(model_cls=StationaryBootstrap, config=StationaryBootstrapConfig()),
+    MacroModelSpec(model_cls=Var1Gaussian, label=Var1Gaussian.label, config=Var1Config()),
+    MacroModelSpec(model_cls=WilkieCascade, label=WilkieCascade.label, config=WilkieConfig()),
+    MacroModelSpec(model_cls=VecmModel, label=VecmModel.label, config=VecmConfig(k_ar_diff=1, coint_rank=1)),
+    MacroModelSpec(
+        model_cls=DccGjrGarch, label=DccGjrGarch.label, config=DccGjrGarchConfig(), rolling_origin_refit_every=12
+    ),
+    MacroModelSpec(model_cls=StationaryBootstrap, label=StationaryBootstrap.label, config=StationaryBootstrapConfig()),
 )
 
 BY_LABEL: dict[str, MacroModelSpec] = {spec.label: spec for spec in REGISTRY}

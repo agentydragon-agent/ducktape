@@ -183,7 +183,7 @@ class VecmModel:
             diffs = [log_levels[t - i] - log_levels[t - i - 1] for i in range(self.config.k_ar_diff)]
             mean = mean + self.gamma @ np.concatenate(diffs)
 
-        return mean
+        return np.asarray(mean)
 
     def simulate(self, n_paths: int, n_months: int, seed: int) -> Scenarios:
         rng = np.random.default_rng(seed)

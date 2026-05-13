@@ -11,6 +11,7 @@ from __future__ import annotations
 import itertools
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 
@@ -28,10 +29,12 @@ class MacroRolloutProviderTest(unittest.TestCase):
 
 def _make_test(label: str) -> type:
     class _Test(unittest.TestCase):
+        provider: ClassVar[MacroRolloutProvider]
+
         @classmethod
         def setUpClass(cls) -> None:
             cls.provider = MacroRolloutProvider.for_label(
-                label, config_path=_config_path(), current_private_equity_price_usd=687.69
+                label, config_path=_config_path(), current_private_equity_price_usd=100.0
             )
 
         def test_metadata_populated(self) -> None:

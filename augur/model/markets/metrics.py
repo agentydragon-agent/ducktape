@@ -1,3 +1,11 @@
+"""Held-out / rolling-origin / multi-step predictive log-density metrics.
+
+Result types are discriminated unions: every score is either *scored* (all
+numeric fields populated, no unscored_reason) or *unscored* (only
+`unscored_reason` populated). The union shape makes invalid combinations
+unrepresentable — see `HeldOutLogDensity = ScoredHeldOut | UnscoredHeldOut`,
+etc. Callers `isinstance(result, ScoredHeldOut)` to access numeric fields."""
+
 from __future__ import annotations
 
 import math
@@ -24,30 +32,43 @@ def _summarise_scores(scores: list[float]) -> tuple[float, float, float]:
 
 
 @dataclass(frozen=True)
-class HeldOutLogDensity:
-    """Held-out predictive log-density score for one model on one historical series.
+class FactorBreakdown:
+    """Per-factor marginal univariate scores. Sums don't equal the joint score
+    in general — cross-factor structure lives in the joint covariance
+    off-diagonal."""
 
-    `total` and `per_month` are `None` when the model returned None for any
-    held-out month (i.e. it cannot expose a density). `unscored_reason`
-    records why.
+    per_factor_total: dict[str, float]
+    per_factor_per_month: dict[str, float]
 
-    `per_factor_total` / `per_factor_per_month`: per-factor marginal
-    univariate log-densities aggregated over the held-out window. Useful
-    to localise where a model's joint score comes from. Sums of marginal
-    scores do **not** equal the joint score in general — cross-asset
-    correlations live in the off-diagonal of the joint covariance and
-    don't appear in the marginals. `None` when the model declines to
-    expose marginals (e.g. block bootstrap).
-    """
+
+# ──────────────────────── Held-out single-split ────────────────────────
+
+
+@dataclass(frozen=True)
+class ScoredHeldOutLogDensity:
+    """Held-out predictive log-density, model scored cleanly. `factor_breakdown
+    is None` when the model declines to expose per-factor marginals."""
 
     model_label: str
     train_end: int
     held_out_count: int
-    total: float | None
-    per_month: float | None
-    per_factor_total: dict[str, float] | None
-    per_factor_per_month: dict[str, float] | None
-    unscored_reason: str | None
+    total: float
+    per_month: float
+    factor_breakdown: FactorBreakdown | None
+
+
+@dataclass(frozen=True)
+class UnscoredHeldOutLogDensity:
+    """Held-out predictive log-density: the model returned None at some held-out
+    month."""
+
+    model_label: str
+    train_end: int
+    held_out_count: int
+    unscored_reason: str
+
+
+HeldOutLogDensity = ScoredHeldOutLogDensity | UnscoredHeldOutLogDensity
 
 
 def held_out_predictive_log_density(
@@ -89,14 +110,10 @@ def held_out_predictive_log_density(
     for t in range(train_end, n_steps):
         density = model.log_predictive_density(historical, t)
         if density is None:
-            return HeldOutLogDensity(
+            return UnscoredHeldOutLogDensity(
                 model_label=model.label,
                 train_end=train_end,
                 held_out_count=held_out_count,
-                total=None,
-                per_month=None,
-                per_factor_total=None,
-                per_factor_per_month=None,
                 unscored_reason=f"{model.label}.log_predictive_density returned None at t={t}",
             )
         log_densities.append(density)
@@ -109,48 +126,53 @@ def held_out_predictive_log_density(
                     per_factor_totals[name] += float(value)
 
     total = float(sum(log_densities))
-    if per_factor_supported:
-        per_factor_total = per_factor_totals
-        per_factor_per_month = {name: value / held_out_count for name, value in per_factor_totals.items()}
-    else:
-        per_factor_total = None
-        per_factor_per_month = None
-    return HeldOutLogDensity(
+    factor_breakdown = (
+        FactorBreakdown(
+            per_factor_total=per_factor_totals,
+            per_factor_per_month={name: value / held_out_count for name, value in per_factor_totals.items()},
+        )
+        if per_factor_supported
+        else None
+    )
+    return ScoredHeldOutLogDensity(
         model_label=model.label,
         train_end=train_end,
         held_out_count=held_out_count,
         total=total,
         per_month=total / held_out_count,
-        per_factor_total=per_factor_total,
-        per_factor_per_month=per_factor_per_month,
-        unscored_reason=None,
+        factor_breakdown=factor_breakdown,
     )
 
 
+# ──────────────────────── Rolling-origin ────────────────────────
+
+
 @dataclass(frozen=True)
-class RollingOriginLogDensity:
-    """Rolling-origin one-step-ahead predictive log-density.
-
-    Refits the model at each origin `t ∈ [min_train, n_steps)` (optionally
-    only every `refit_every` steps) and scores the one-step-ahead density
-    `log p(r_{t+1} | r_{1:t+1})`. Compared to the single 80/20 split this
-    yields ~50× more evaluation points on a 117-month series, shrinking
-    the per-month standard error by √(n_eval / 23).
-
-    `mean_se` is the standard error of `per_month`, computed from the
-    variance of the per-origin log-densities.
-    """
+class ScoredRollingOriginLogDensity:
+    """Rolling-origin predictive log-density, scored over `n_origins` origins."""
 
     model_label: str
     min_train: int
     refit_every: int
     n_origins: int
-    total: float | None
-    per_month: float | None
-    mean_se: float | None
-    per_factor_total: dict[str, float] | None
-    per_factor_per_month: dict[str, float] | None
-    unscored_reason: str | None
+    total: float
+    per_month: float
+    mean_se: float
+    factor_breakdown: FactorBreakdown | None
+
+
+@dataclass(frozen=True)
+class UnscoredRollingOriginLogDensity:
+    """Rolling-origin predictive log-density: model returned None at some origin."""
+
+    model_label: str
+    min_train: int
+    refit_every: int
+    n_origins: int
+    unscored_reason: str
+
+
+RollingOriginLogDensity = ScoredRollingOriginLogDensity | UnscoredRollingOriginLogDensity
 
 
 def rolling_origin_predictive_log_density(
@@ -193,16 +215,11 @@ def rolling_origin_predictive_log_density(
 
         density = fit_cache.log_predictive_density(historical, t)
         if density is None:
-            return RollingOriginLogDensity(
+            return UnscoredRollingOriginLogDensity(
                 model_label=label_holder,
                 min_train=min_train,
                 refit_every=refit_every,
                 n_origins=t - min_train,
-                total=None,
-                per_month=None,
-                mean_se=None,
-                per_factor_total=None,
-                per_factor_per_month=None,
                 unscored_reason=(
                     f"{label_holder}.log_predictive_density returned None at t={t} (fit at origin {fit_origin})"
                 ),
@@ -219,14 +236,16 @@ def rolling_origin_predictive_log_density(
     total, per_month, mean_se = _summarise_scores(log_densities)
     n_origins = len(log_densities)
 
-    if per_factor_supported:
-        per_factor_total = per_factor_totals
-        per_factor_per_month = {name: value / n_origins for name, value in per_factor_totals.items()}
-    else:
-        per_factor_total = None
-        per_factor_per_month = None
+    factor_breakdown = (
+        FactorBreakdown(
+            per_factor_total=per_factor_totals,
+            per_factor_per_month={name: value / n_origins for name, value in per_factor_totals.items()},
+        )
+        if per_factor_supported
+        else None
+    )
 
-    return RollingOriginLogDensity(
+    return ScoredRollingOriginLogDensity(
         model_label=label_holder,
         min_train=min_train,
         refit_every=refit_every,
@@ -234,20 +253,30 @@ def rolling_origin_predictive_log_density(
         total=total,
         per_month=per_month,
         mean_se=mean_se,
-        per_factor_total=per_factor_total,
-        per_factor_per_month=per_factor_per_month,
-        unscored_reason=None,
+        factor_breakdown=factor_breakdown,
     )
 
 
+# ──────────────────────── Multi-step ────────────────────────
+
+
 @dataclass(frozen=True)
-class MultiStepLogDensityRow:
+class ScoredMultiStepLogDensityRow:
     horizon_months: int
     n_origins: int
-    total: float | None
-    per_origin: float | None
-    mean_se: float | None
-    unscored_reason: str | None
+    total: float
+    per_origin: float
+    mean_se: float
+
+
+@dataclass(frozen=True)
+class UnscoredMultiStepLogDensityRow:
+    horizon_months: int
+    n_origins: int
+    unscored_reason: str
+
+
+MultiStepLogDensityRow = ScoredMultiStepLogDensityRow | UnscoredMultiStepLogDensityRow
 
 
 @dataclass(frozen=True)
@@ -307,26 +336,17 @@ def multi_step_predictive_log_density(
             scores.append(value)
         if unscored_reason is not None or not scores:
             horizon_rows.append(
-                MultiStepLogDensityRow(
+                UnscoredMultiStepLogDensityRow(
                     horizon_months=h,
                     n_origins=0,
-                    total=None,
-                    per_origin=None,
-                    mean_se=None,
                     unscored_reason=unscored_reason or f"no origins available for horizon {h}",
                 )
             )
             continue
         total, per_origin, mean_se = _summarise_scores(scores)
-        n_origins = len(scores)
         horizon_rows.append(
-            MultiStepLogDensityRow(
-                horizon_months=h,
-                n_origins=n_origins,
-                total=total,
-                per_origin=per_origin,
-                mean_se=mean_se,
-                unscored_reason=None,
+            ScoredMultiStepLogDensityRow(
+                horizon_months=h, n_origins=len(scores), total=total, per_origin=per_origin, mean_se=mean_se
             )
         )
 

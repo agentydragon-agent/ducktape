@@ -63,7 +63,7 @@ def event_sale_capacity(event: PrivateEquityEvent, remaining_units: float) -> fl
     if event.event_type == "acquisition":
         return remaining_units
     saleable = event.saleable_fraction if event.saleable_fraction is not None else 0
-    return remaining_units * np.clip(saleable, 0, 1)
+    return float(remaining_units * np.clip(saleable, 0, 1))
 
 
 def guardrail_sale_units(
@@ -80,14 +80,14 @@ def guardrail_sale_units(
         return 0
     reserve_need_units = max(0, minimum_liquid_reserve - liquid_before_sale) / after_tax_per_unit
     if sale_mode == "liquidity_only":
-        return np.clip(reserve_need_units, 0, allowed_units)
+        return float(np.clip(reserve_need_units, 0, allowed_units))
     if sale_mode == "never_automatic":
         return 0
-    target = np.clip(target_max_net_worth_pct / 100, 0.01, 0.99)
+    target = float(np.clip(target_max_net_worth_pct / 100, 0.01, 0.99))
     max_private_equity_value_after_sale = (target / (1 - target)) * max(0, liquid_before_sale)
     target_remaining_units = max_private_equity_value_after_sale / after_tax_per_unit
     concentration_units = max(0, remaining_units - target_remaining_units)
-    return np.clip(max(reserve_need_units, concentration_units), 0, allowed_units)
+    return float(np.clip(max(reserve_need_units, concentration_units), 0, allowed_units))
 
 
 def build_private_equity_liquidity_path(
@@ -125,6 +125,9 @@ def build_private_equity_liquidity_path(
     rows: list[PrivateEquityLiquidityRow] = []
     for month_index in range(hold_months + 1):
         if has_private_equity_holdings:
+            assert (
+                path is not None
+            )  # guaranteed by the earlier `if has_private_equity_holdings and path is None: raise`
             current_price = assert_finite(path.price_path[month_index], f"privateEquityPath.pricePath[{month_index}]")
         elif path is not None and month_index < len(path.price_path):
             current_price = finite_or(path.price_path[month_index], path.current_price_usd or 0)

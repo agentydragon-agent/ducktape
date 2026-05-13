@@ -170,7 +170,10 @@ def _var1_horizon_density(
 
     cov_cumulative = np.zeros((n_factors, n_factors))
     for s in range(1, h + 1):
-        m_s = sum(a_powers[m] for m in range(h - s + 1))
+        # `sum(<generator>)` defaults to int 0 for empty iterables, so mypy
+        # widens the result to `int | ndarray`; the loop range guarantees at
+        # least one term, so cast for the matmul.
+        m_s = np.asarray(sum(a_powers[m] for m in range(h - s + 1)))
         cov_cumulative = cov_cumulative + m_s @ cov_residual @ m_s.T
 
     cov_cumulative = (cov_cumulative + cov_cumulative.T) / 2 + np.eye(n_factors) * 1e-12
@@ -180,4 +183,4 @@ def _var1_horizon_density(
     inv_cov = np.linalg.inv(cov_cumulative)
     diff = observed_cumulative - cumulative_mean
     quad = float(diff @ inv_cov @ diff)
-    return -0.5 * (n_factors * math.log(2 * math.pi) + log_det + quad)
+    return float(-0.5 * (n_factors * math.log(2 * math.pi) + log_det + quad))

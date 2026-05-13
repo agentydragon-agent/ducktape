@@ -22,4 +22,4 @@ def monthly_property_tax_usd(
     )
     property_tax = property_tax + special_assessment
     property_tax[:, 0] = 0.0
-    return property_tax
+    return np.asarray(property_tax)

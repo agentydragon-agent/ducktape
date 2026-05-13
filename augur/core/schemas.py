@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, computed_field, model_validator
-
-# Local copy to avoid a schemas → augur_accounting circular import.
-# Used by the row-shape `year` computed fields below.
-_MONTHS_PER_YEAR = 12
-
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, model_validator
 
 # ---------------------------------------------------------------------------
 # Base configurations.
@@ -358,11 +353,6 @@ class MonthlySalePathRow(InternalModel):
     owner_sale_claim_usd: float
     owner_equity_ledger_usd: float
 
-    @computed_field
-    @property
-    def year(self) -> float:
-        return self.month_index / _MONTHS_PER_YEAR
-
 
 # ---------------------------------------------------------------------------
 # Personal-wealth / private-equity policy outputs.
@@ -388,11 +378,6 @@ class PrivateEquityLiquidityRow(InternalModel):
     liquidity_shortfall: bool
     sales: list[PrivateEquitySale]
 
-    @computed_field
-    @property
-    def year(self) -> float:
-        return self.month_index / _MONTHS_PER_YEAR
-
 
 class PrivateEquityLiquidityPath(InternalModel):
     rows: list[PrivateEquityLiquidityRow]
@@ -417,11 +402,6 @@ class NetWorthRow(MonthlySalePathRow):
 
 class _PolicyActionBase(InternalModel):
     month_index: int
-
-    @computed_field
-    @property
-    def year(self) -> float:
-        return self.month_index / _MONTHS_PER_YEAR
 
 
 class PolicyActionTrade(_PolicyActionBase):

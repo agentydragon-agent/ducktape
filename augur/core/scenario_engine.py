@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import Any
 
 import numpy as np
 
@@ -1226,12 +1226,9 @@ def _primary_owner_actor_id(scenario: Scenario) -> str:
     return "owner"
 
 
-_PolicyT = TypeVar("_PolicyT", bound=_PolicyBase)
-
-
-def _enabled_policy_of[PolicyT: _PolicyBase](scenario: Scenario, cls: type[_PolicyT]) -> _PolicyT | None:
+def _enabled_policy_of[PolicyT: _PolicyBase](scenario: Scenario, cls: type[PolicyT]) -> PolicyT | None:
     for policy in scenario.policies:
-        if policy.enabled and isinstance(policy, cls):
+        if isinstance(policy, cls) and policy.enabled:
             return policy
     return None
 

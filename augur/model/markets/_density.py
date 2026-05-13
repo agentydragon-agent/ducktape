@@ -14,7 +14,7 @@ def gaussian_logpdf(*, diff: np.ndarray, inv_cov: np.ndarray, log_det: float) ->
     those at fit time."""
     n_factors = diff.shape[0]
     quad = float(diff @ inv_cov @ diff)
-    return -0.5 * (n_factors * math.log(2 * math.pi) + log_det + quad)
+    return float(-0.5 * (n_factors * math.log(2 * math.pi) + log_det + quad))
 
 
 def gaussian_logpdf_from_samples(*, samples: np.ndarray, observation: np.ndarray) -> float | None:
@@ -35,4 +35,4 @@ def gaussian_logpdf_from_samples(*, samples: np.ndarray, observation: np.ndarray
     inv_cov = np.linalg.inv(cov)
     diff = observation - mean
     quad = float(diff @ inv_cov @ diff)
-    return -0.5 * (n_factors * math.log(2 * math.pi) + log_det + quad)
+    return float(-0.5 * (n_factors * math.log(2 * math.pi) + log_det + quad))

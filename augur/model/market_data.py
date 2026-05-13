@@ -128,6 +128,7 @@ def _read_fred_series(path: Path, column: str) -> pd.Series:
 
 
 def _monthly_last(series: pd.Series) -> pd.Series:
+    assert isinstance(series.index, pd.DatetimeIndex), f"expected DatetimeIndex, got {type(series.index).__name__}"
     out = series.groupby(series.index.to_period("M")).last().dropna()
     out = out[out > 0]
     if out.empty:

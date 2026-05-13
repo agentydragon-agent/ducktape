@@ -144,6 +144,7 @@ py_library(
     srcs = ["personal_wealth.py"],
     deps = [
         ":num_py",
+        ":scenario_set_py",
         ":schemas_py",
         "@pypi//numpy",
         "@pypi//pydantic",

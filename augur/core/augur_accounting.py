@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -39,7 +40,7 @@ def year_index_for_month(month_index: int) -> int:
 
 
 def growth_factor_from_annual_pct(annual_pct: float) -> float:
-    return (1 + annual_pct / 100) ** (1 / MONTHS_PER_YEAR)
+    return float((1 + annual_pct / 100) ** (1 / MONTHS_PER_YEAR))
 
 
 def deterministic_multiplier(annual_pct: float, month_index: int) -> float:
@@ -166,7 +167,7 @@ def monthly_mortgage_payment(principal: float, annual_rate: float, years: float)
     n = years * MONTHS_PER_YEAR
     if r == 0:
         return principal / n
-    return (principal * r * (1 + r) ** n) / ((1 + r) ** n - 1)
+    return float((principal * r * (1 + r) ** n) / ((1 + r) ** n - 1))
 
 
 def amortization_schedule(
@@ -303,25 +304,31 @@ def resolve_financing(knobs: KnobsConfig) -> Financing:
             is_cash=False,
         )
 
+    @dataclass(frozen=True)
+    class _Product:
+        label: str
+        term_years: int
+        base_rate_pct: float
+
     product = {
-        FINANCING_MODE_FIXED_30: {"label": "30-year fixed", "term_years": 30, "base_rate_pct": 6.23},
-        FINANCING_MODE_FIXED_15: {"label": "15-year fixed", "term_years": 15, "base_rate_pct": 5.58},
-    }.get(financing_mode, {"label": "30-year fixed", "term_years": 30, "base_rate_pct": 6.23})
+        FINANCING_MODE_FIXED_30: _Product(label="30-year fixed", term_years=30, base_rate_pct=6.23),
+        FINANCING_MODE_FIXED_15: _Product(label="15-year fixed", term_years=15, base_rate_pct=5.58),
+    }.get(financing_mode, _Product(label="30-year fixed", term_years=30, base_rate_pct=6.23))
     credit_spread = credit_score_spread_pct(credit_score)
     ltv_spread = ltv_spread_pct(down_payment_pct)
     occupancy_spread = occupancy_spread_pct(occupancy_type)
-    rate_pct = np.clip(product["base_rate_pct"] + credit_spread + ltv_spread + occupancy_spread, 0, 15)
+    rate_pct = float(np.clip(product.base_rate_pct + credit_spread + ltv_spread + occupancy_spread, 0, 15))
     return Financing(
         financing_mode=financing_mode,
-        financing_label=product["label"],
+        financing_label=product.label,
         occupancy_type=occupancy_type,
         occupancy_label=occupancy_label,
         credit_score=credit_score,
         down_payment_pct=down_payment_pct,
         loan_to_value_pct=loan_to_value_pct,
-        term_years=product["term_years"],
+        term_years=product.term_years,
         rate_pct=rate_pct,
-        base_rate_pct=product["base_rate_pct"],
+        base_rate_pct=product.base_rate_pct,
         credit_spread_pct=credit_spread,
         occupancy_spread_pct=occupancy_spread,
         ltv_spread_pct=ltv_spread,
@@ -611,7 +618,7 @@ def portfolio_growth_factor(
     if not math.isfinite(from_value) or from_value <= 0:
         if require_path:
             raise ValueError(f"Missing positive portfolio multiplier path: {from_month_index}->{end_month_index}")
-        return (1 + knobs.sp500_rate / 100) ** ((end_month_index - from_month_index) / MONTHS_PER_YEAR)
+        return float((1 + knobs.sp500_rate / 100) ** ((end_month_index - from_month_index) / MONTHS_PER_YEAR))
     return to_value / from_value
 
 
@@ -710,7 +717,7 @@ def sale_home_value_at_month(simulation: SimulationResult, snapshot: dict[str, A
     values = simulation.knobs.sale_home_value_multipliers
     if values is not None and 0 <= month_index < len(values) and math.isfinite(float(values[month_index])):
         return simulation.purchase_price_usd * float(values[month_index])
-    return snapshot["home_value_usd"]
+    return float(snapshot["home_value_usd"])
 
 
 def project_monthly_sale_path(simulation: SimulationResult) -> list[MonthlySalePathRow]:

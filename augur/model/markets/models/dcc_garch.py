@@ -217,7 +217,7 @@ class DccGjrGarch:
 
         log_det_h = 2.0 * float(np.sum(np.log(sigma_t)))
         quad = float(z_t @ inv_r @ z_t)
-        return -0.5 * (n_factors * math.log(2 * math.pi) + log_det_h + log_det_r + quad)
+        return float(-0.5 * (n_factors * math.log(2 * math.pi) + log_det_h + log_det_r + quad))
 
     def log_predictive_marginals(self, historical: HistoricalSeries, t: int) -> dict[str, float] | None:
         if t < 1:

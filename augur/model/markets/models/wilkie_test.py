@@ -99,6 +99,7 @@ class WilkieCascadeTest(unittest.TestCase):
             sd = model.residual_sd
             expected = float(np.sum(-0.5 * ((diff / sd) ** 2) - np.log(sd) - 0.5 * math.log(2 * math.pi)))
             actual = model.log_predictive_density(historical, t)
+            assert actual is not None
             assert abs(actual - expected) < 10**-8
 
     def test_simulate_returns_finite_positive_paths_starting_at_one(self) -> None:

@@ -370,7 +370,7 @@ def build_stochastic_outcome_view(
     terminal_private_equity_liquid_value = private_equity_liquid[:, hold_months]
 
     def annual_cagr(values: np.ndarray) -> np.ndarray:
-        return np.expm1(np.log(values) / hold_years) * 100
+        return np.asarray(np.expm1(np.log(values) / hold_years) * 100)
 
     terminal_annual_appreciation = annual_cagr(market_paths.sale_home_value_multipliers[:, hold_months])
     terminal_appreciation = (market_paths.sale_home_value_multipliers[:, hold_months] - 1) * 100

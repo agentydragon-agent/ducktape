@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import ClassVar
-
 import numpy as np
 import pytest_bazel
 
@@ -16,13 +14,13 @@ class _FakeRolloutProvider:
     horizon_start = "2026-05-01"
     horizon_months = 12
     random_seed = 2468
-    latest_observations: ClassVar[dict[str, dict[str, float]]] = {
-        "sp500_latest": {"value": 5000},
-        "mortgage30_latest": {"value": 6.75},
-    }
 
     def __init__(self) -> None:
         self.calls: list[tuple[int, int]] = []
+        self.latest_observations: dict[str, dict[str, float]] = {
+            "sp500_latest": {"value": 5000},
+            "mortgage30_latest": {"value": 6.75},
+        }
 
     def sample_rollouts(self, *, n_rollouts: int, seed: int) -> list[JointRolloutPath]:
         self.calls.append((n_rollouts, seed))
@@ -166,6 +164,9 @@ def test_scenario_set_runner_shares_one_adapter_sample_across_scenarios() -> Non
     response = run_scenario_set_vectorized(scenario_set, market_provider=adapter)
 
     assert provider.calls == [(2, 77)]
+    assert response.scenario_results[0].monthly_columns is not None
+    assert response.scenario_results[1].monthly_columns is not None
+    assert response.market_metadata is not None
     first = response.scenario_results[0].monthly_columns.columns["generic_sp500_value_usd"]
     second = response.scenario_results[1].monthly_columns.columns["generic_sp500_value_usd"]
     np.testing.assert_allclose(np.asarray(second) / np.asarray(first), 2.0)

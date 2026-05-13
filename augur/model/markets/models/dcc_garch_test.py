@@ -33,6 +33,7 @@ class DccGjrGarchTest(unittest.TestCase):
         assert np.all(model.alpha >= 0.0)
         assert np.all(model.beta >= 0.0)
         density = model.log_predictive_density(historical, t=200)
+        assert density is not None
         assert np.isfinite(density)
 
     def test_simulate_produces_valid_paths(self) -> None:

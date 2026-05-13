@@ -34,6 +34,7 @@ class VecmModelTest(unittest.TestCase):
         model.fit(historical)
 
         density = model.log_predictive_density(historical, 200)
+        assert density is not None
         assert np.isfinite(density)
 
     def test_simulate_returns_finite_positive_starting_at_one(self) -> None:
@@ -73,6 +74,7 @@ class VecmModelTest(unittest.TestCase):
 
         for t in (50, 100, 200):
             one_step = model.log_predictive_density(historical, t)
+            assert one_step is not None
             h1 = model.log_predictive_density_at_horizon(historical, t, 1)
             assert h1 is not None
             # MC-Gaussian fit on 5000 samples should be within ~1 nat of closed form.

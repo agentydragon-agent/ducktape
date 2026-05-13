@@ -61,7 +61,7 @@ def evaluate_all(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="House: score every registered macro model on the metric battery.")
+    parser = argparse.ArgumentParser(description="Augur: score every registered macro model on the metric battery.")
     parser.add_argument(
         "--config", type=Path, default=None, help="path to joint_config.example.json (default: bundled)"
     )
