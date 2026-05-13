@@ -10,12 +10,27 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from python.runfiles import runfiles
 
 from augur.core.schemas import SourceDataConfig
 
+_RUNFILES_PREFIX = "runfiles:"
+
 
 def resolve_path(path: str | Path, base_dir: str | Path) -> Path:
-    """Resolve `path` against `base_dir` if relative, return as-is if absolute."""
+    """Resolve `path` against `base_dir` if relative, return as-is if absolute.
+
+    The `runfiles:<rlocation>` prefix routes through the Bazel runfiles library
+    instead — used so config files can reference ducktape-side data CSVs from a
+    deployment-repo config without duplicating the CSVs alongside the config."""
+    path_str = str(path)
+    if path_str.startswith(_RUNFILES_PREFIX):
+        rlocation = path_str[len(_RUNFILES_PREFIX) :]
+        r = runfiles.Create()
+        resolved = r.Rlocation(rlocation) if r is not None else None
+        if not resolved:
+            raise RuntimeError(f"Could not resolve runfiles path: {rlocation}")
+        return Path(resolved)
     p = Path(path)
     if p.is_absolute():
         return p

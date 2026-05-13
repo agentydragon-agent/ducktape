@@ -9,6 +9,7 @@ py_library(
         "//augur/core:schemas_py",
         "@pypi//numpy",
         "@pypi//pandas",
+        "@rules_python//python/runfiles",
     ],
 )
 
