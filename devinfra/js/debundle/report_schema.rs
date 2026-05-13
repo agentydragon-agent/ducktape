@@ -24,6 +24,20 @@ pub struct OwnerGraphReport {
     pub edges: Vec<OwnerGraphEdgeReport>,
     pub quotient: OwnerGraphQuotientReport,
     pub peelability: OwnerGraphPeelabilityReport,
+    /// Binding names the upstream chunk source exports via
+    /// top-level `export {...}` / `export default ...` /
+    /// `export <decl>` statements. Used by the materializer's
+    /// emit-resolvability gate (a moved module may free-reference a
+    /// residual binding iff it's already in entry's export list)
+    /// and by downstream peelability planners (factorizer, etc.)
+    /// that need to predict the same gate's verdict.
+    ///
+    /// Captured pre-materialization from the chunk source AST;
+    /// remains stable across the analysis run. May be absent in
+    /// fixture-only contexts where no chunk source was provided —
+    /// real pipeline runs always populate it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pre_existing_entry_exports: Vec<BindingName>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,6 +194,22 @@ pub enum PeelCandidateStatus {
     /// candidates the materializer would reject.
     BlockedEmitResolvability,
 }
+
+/// Stable value of [`ModuleReportRef::id`] for the implicit
+/// `<residual_entry>` module — the catch-all that holds bindings
+/// the spec hasn't assigned to a logical module. Consumed by
+/// downstream analyzers (factorizer, peel inventory) to gate
+/// residual-entry-only predicates without string-matching the
+/// label (which carries the user-facing `<residual_entry>` form).
+/// SSOT for the `module_key(ModuleId::ResidualEntry)` constant in
+/// `reports::module_key`.
+pub const RESIDUAL_ENTRY_MODULE_ID: &str = "residual";
+
+/// Human-facing display label for the implicit residual entry
+/// (i.e. [`ModuleReportRef::label`] when the module id is
+/// [`RESIDUAL_ENTRY_MODULE_ID`]). SSOT for the constant in
+/// `schedule::module_name`'s `ModuleId::ResidualEntry` arm.
+pub const RESIDUAL_ENTRY_LABEL: &str = "<residual_entry>";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModuleReportRef {
