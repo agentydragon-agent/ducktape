@@ -1,0 +1,27 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "config_py",
+    srcs = ["config.py"],
+    deps = [
+        "//augur/core:local_regulation_py",
+        "//augur/core:scenario_set_py",
+        "//augur/core:schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "config_test",
+    srcs = ["config_test.py"],
+    deps = [
+        ":config_py",
+        "//augur/core:local_regulation_py",
+        "//augur/core:scenario_set_py",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
