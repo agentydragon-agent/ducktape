@@ -38,6 +38,8 @@ CloudNativePG `local-path`.
   cascade (6072 Mi requested / 7246 Mi allocatable). Unsuspend once there's
   capacity and we figure out proper memory sizing (VPA resource policies,
   right-sized requests, or additional node capacity).
+- **Google Workspace MCP**: `google-workspace-mcp` — suspended 2026-05-13.
+  Resources and PVC deleted. Unsuspend once VPS memory pressure resolves.
 
 ## Next Actions
 
