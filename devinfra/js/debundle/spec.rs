@@ -1,13 +1,15 @@
 //! Typed deserialisation surface for `js.ast_transform_spec` YAML files.
 //!
-//! Three declarative top-level maps describe what the spec wants applied:
+//! Two declarative top-level maps describe what the spec wants applied:
 //!
 //! - `vendor` keyed by chunk path (`"static/lib.js"` → [`VendorMark`]).
 //! - `logical_modules` keyed by chunk id, then target path
 //!   (`"static/app"` → `"foo/bar/baz.js"` → [`LogicalModule`]).
-//! - `residual_modules` keyed by chunk id (`"static/app"` →
-//!   [`ResidualModule`]). At most one residual per chunk — encoded by the
-//!   map shape.
+//!
+//! A third per-chunk map, `unassigned_mode`, decides what happens to
+//! top-level statements that no `logical_modules` entry explicitly
+//! claims (catch-all to entry, catch-all to a separate file, or one
+//! synthetic mini-factor per atomic unit). See [`UnassignedMode`].
 //!
 //! Pipeline stages run in a fixed canonical order; each stage is either
 //! always-on or gated by the contents of those maps / by the presence of a
@@ -33,8 +35,6 @@ pub struct TransformSpec {
     pub vendor: BTreeMap<String, VendorMark>,
     #[serde(default)]
     pub logical_modules: BTreeMap<String, BTreeMap<String, LogicalModule>>,
-    #[serde(default)]
-    pub residual_modules: BTreeMap<String, ResidualModule>,
     /// Per-chunk in-place renames for bindings staying in entry's
     /// body (i.e. *not* assigned to a logical module and not pulled
     /// into the explicit residual). The materializer collects these
@@ -52,6 +52,12 @@ pub struct TransformSpec {
     /// for those.
     #[serde(default)]
     pub chunk_renames: BTreeMap<String, ChunkRenames>,
+    /// Per-chunk control over what happens to top-level statements
+    /// the spec doesn't explicitly claim for any logical module.
+    /// See [`UnassignedMode`]; absent entries default to
+    /// [`UnassignedMode::InlineInEntry`].
+    #[serde(default)]
+    pub unassigned_mode: BTreeMap<String, UnassignedMode>,
 
     // --- per-stage configuration ---
     /// Output configuration for `swap_vendor_chunks`. The stage runs
@@ -62,9 +68,9 @@ pub struct TransformSpec {
     #[serde(default)]
     pub swap_vendor_chunks: SwapVendorChunksConfig,
     /// Configuration for `materialize_logical_modules`. The stage runs
-    /// whenever `logical_modules ∪ residual_modules` is non-empty; the
-    /// chunk ids it processes are exactly the union of those maps'
-    /// keys. This field only carries auxiliary options.
+    /// whenever `logical_modules ∪ unassigned_mode ∪ chunk_renames`
+    /// is non-empty; the chunk ids it processes are the union of
+    /// those maps' keys. This field only carries auxiliary options.
     #[serde(default)]
     pub materialize_logical_modules: MaterializeLogicalModulesConfig,
     /// When set, persist the artifact tree to `out_dir`.
@@ -109,8 +115,9 @@ pub struct MaterializeLogicalModulesConfig {
     #[serde(default)]
     pub file: Option<String>,
     /// Defaults to `true` — drop chunks outside the materialised set
-    /// (the union of `logical_modules` and `residual_modules` keys)
-    /// before materialising. Set `false` to keep them.
+    /// (the union of `logical_modules`, `unassigned_mode`, and
+    /// `chunk_renames` keys) before materialising. Set `false` to
+    /// keep them.
     #[serde(default = "default_true")]
     pub prune_other_chunks: bool,
     #[serde(default)]
@@ -210,6 +217,62 @@ pub enum VendorLevel {
     Swap(SwapMark),
 }
 
+/// What [`TransformSpec::unassigned_mode`] means for a chunk's
+/// top-level statements that the YAML doesn't explicitly claim for
+/// any logical module. The atomic-factor-unit primitive in
+/// `analysis::atomic_units` partitions the chunk's owners into
+/// minimal co-location groups; this enum decides what destination
+/// each *unclaimed* unit lands in.
+///
+/// The three variants are mutually exclusive — every chunk picks
+/// exactly one destination policy. Subsuming the previous
+/// `residual_modules` map: today's `CatchallFile` variant covers
+/// the case the standalone map used to express ("emit unclaimed
+/// code to a separate file at `target`").
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum UnassignedMode {
+    /// Default. Unclaimed bindings stay inline in the chunk's entry
+    /// file (owned by `ModuleId::ResidualEntry`); no separate
+    /// residual module is emitted. Renames against unclaimed
+    /// bindings come from [`TransformSpec::chunk_renames`] and are
+    /// applied in-place by the lowerer.
+    #[default]
+    InlineInEntry,
+    /// Unclaimed bindings emit to a separate logical module at
+    /// `target` (defaults to [`DEFAULT_RESIDUAL_MODULE_PATH`]). The
+    /// module behaves like any other logical module — it can be a
+    /// peel destination for factorize proposals — but structurally
+    /// is the catch-all for unclaimed code. Renames for bindings
+    /// that land in this catch-all should be expressed by listing
+    /// them as members of a regular `logical_modules` entry at the
+    /// same `target` path; the materializer joins explicit member
+    /// claims with unclaimed overflow on a per-binding basis.
+    CatchallFile {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
+    },
+    /// One synthetic mini-factor per unclaimed atomic factor unit.
+    /// The residual catch-all collapses to whatever truly cannot
+    /// be peeled (typically empty for clean chunks). See
+    /// FACTORIZE.md.
+    MiniFactors,
+}
+
+impl UnassignedMode {
+    /// Convenience accessor for [`CatchallFile::target`]: returns
+    /// the configured target path (or [`DEFAULT_RESIDUAL_MODULE_PATH`]
+    /// when none) iff `self` is [`CatchallFile`], else `None`.
+    pub fn catchall_file_target(&self) -> Option<&str> {
+        match self {
+            UnassignedMode::CatchallFile { target } => {
+                Some(target.as_deref().unwrap_or(DEFAULT_RESIDUAL_MODULE_PATH))
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SwapMark {
     pub package: String,
@@ -236,7 +299,7 @@ pub enum WrapperShape {
     NamedFromModuleDefault,
 }
 
-// --- Logical / Residual modules ------------------------------------------
+// --- Logical modules -----------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -273,24 +336,12 @@ pub struct AnonymousStatement {
     pub note: Option<String>,
 }
 
-/// Default value the [`ResidualModule::target`] path falls back
-/// to when the spec author omits it. SSOT consumed by the
-/// materializer (`logical_modules::build_residual_module`) and
-/// by analysis tools that want to match the canonical residual
+/// Default value the [`UnassignedMode::CatchallFile`] target path
+/// falls back to when the spec author omits it. SSOT consumed by
+/// the materializer (`logical_modules` residual synthesis) and by
+/// analysis tools that want to match the canonical residual
 /// catch-all path.
 pub const DEFAULT_RESIDUAL_MODULE_PATH: &str = "residual/unhandled";
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ResidualModule {
-    /// Logical-module path the residual catch-all writes to. Defaults to
-    /// [`DEFAULT_RESIDUAL_MODULE_PATH`] when absent.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub target: Option<String>,
-    #[serde(default)]
-    pub members: Vec<Member>,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

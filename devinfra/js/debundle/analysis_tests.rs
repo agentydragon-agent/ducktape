@@ -257,24 +257,45 @@ mod tests {
         );
     }
 
+    /// LazyRebind atomic-unit split: declarer and assigner of a
+    /// mutable binding must materialize together. `factor_assembly`
+    /// records this as an `atomic_unit_conflicts` entry on the
+    /// schedule; the materializer bails on any non-empty list.
     #[test]
     fn cross_destination_lazy_write_is_rejected() {
         let schedule = schedule_for(
             "let A = 0; function B() { A = 1; }",
             &[("A", logical(0)), ("B", ModuleId::ResidualEntry)],
         );
-
         let report = schedule.validate();
         assert_eq!(
-            report.cross_destination_assignments.len(),
+            report.atomic_unit_conflicts.len(),
             1,
-            "expected residual B's assignment to A to be rejected: {report:?}",
+            "expected one atomic-unit conflict (A and B share a LazyRebind atomic unit but the spec splits them): {report:?}",
         );
-        let assignment = &report.cross_destination_assignments[0];
-        assert_eq!(assignment.binding, "A");
-        assert_eq!(assignment.assigner_module, "<residual_entry>");
-        assert_eq!(assignment.binding_module, "mod_0");
-        assert_eq!(assignment.kind, DepKind::LazyRebind);
+        let conflict = &report.atomic_unit_conflicts[0];
+        assert_eq!(
+            distinct_claim_modules(conflict),
+            vec![
+                ModuleId::Logical(LogicalModuleIndex(0)),
+                ModuleId::ResidualEntry
+            ],
+        );
+    }
+
+    /// Sorted distinct destination modules across a conflict's claims —
+    /// the typed equivalent of the prior string-rendered
+    /// `conflicting_modules` field on `AtomicUnitConflictReport`.
+    fn distinct_claim_modules(conflict: &AtomicUnitConflict) -> Vec<ModuleId> {
+        let mut modules: Vec<ModuleId> = conflict
+            .claims
+            .iter()
+            .map(|c| c.module)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        modules.sort();
+        modules
     }
 
     #[test]
@@ -286,7 +307,7 @@ mod tests {
 
         let report = schedule.validate();
         assert!(
-            report.cross_destination_assignments.is_empty(),
+            report.atomic_unit_conflicts.is_empty(),
             "same-destination rebinding writes should stay local to the emitted module: {report:?}",
         );
     }
@@ -500,27 +521,29 @@ mod tests {
         );
 
         let report = schedule.owner_graph_report();
-        assert!(
-            report.peelability.minimal_peel_sets.is_empty(),
-            "two-owner closures should not be reported when any pair remains cyclic: {:#?}",
-            report.peelability,
-        );
+        // The three-owner closure {A,B,C} is the only legitimate peel:
+        // moving any strict subset leaves a back-pointer to the source
+        // destination. No pair-peel is overclaimed.
+        for horizon in &report.peelability.residual_owner_horizon {
+            for companion in &horizon.companion_options {
+                assert_eq!(
+                    companion.companion_owner_ids.len(),
+                    2,
+                    "only the full three-owner closure should be reported, \
+                     not any two-owner pair: {horizon:#?}",
+                );
+            }
+        }
         assert!(
             report
                 .peelability
                 .residual_owner_horizon
                 .iter()
-                .all(|owner| owner.status == ResidualOwnerPeelStatus::Blocked),
-            "three-owner at-init cycle should not expose direct or companion peels: {:#?}",
-            report.peelability,
-        );
-        assert!(
-            report
-                .peelability
-                .residual_owner_horizon
-                .iter()
-                .all(|owner| owner.companion_options.is_empty()),
-            "no pair should be reported as peelable for a three-owner cycle: {:#?}",
+                .all(
+                    |owner| owner.status == ResidualOwnerPeelStatus::WithCompanions
+                        || owner.status == ResidualOwnerPeelStatus::Blocked
+                ),
+            "three-owner at-init cycle should not expose direct peels: {:#?}",
             report.peelability,
         );
     }
@@ -2430,10 +2453,15 @@ mod tests {
 
     #[test]
     fn validate_returns_empty_linker_order_for_cyclic_spec() {
-        // mod_0 reads B (mod_1); mod_1 reads A (mod_0). Cycle.
+        // Cross-unit module cycle: mod_0 owns `A` and `readB`,
+        // mod_1 owns `B`. `readB` lazily reads B (mod_0 → mod_1),
+        // and B eagerly reads A (mod_1 → mod_0). Atomic units stay
+        // singletons because LazyUse is dropped from `G_atomic`, so
+        // `factor_assembly` accepts the partition; the cycle shows up
+        // at the module quotient where the validator catches it.
         let schedule = schedule_for(
-            "const A = B + 1; const B = A + 1;",
-            &[("A", logical(0)), ("B", logical(1))],
+            "const A = 1; function readB() { return B; } const B = A + 1;",
+            &[("A", logical(0)), ("readB", logical(0)), ("B", logical(1))],
         );
         let report = schedule.validate();
         assert!(!report.cycles.is_empty(), "expected a cycle in {report:?}",);
@@ -2441,6 +2469,366 @@ mod tests {
             report.linker_order.is_empty(),
             "linker_order must be empty when the dep graph is cyclic; got {:?}",
             report.linker_order,
+        );
+    }
+
+    fn atomic_units_for(source: &str) -> Vec<AtomicUnit> {
+        let module = parse(source);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let owner_graph = build_owner_graph(&facts);
+        compute_atomic_units(&owner_graph)
+    }
+
+    fn unit_sizes(units: &[AtomicUnit]) -> Vec<usize> {
+        let mut sizes: Vec<usize> = units.iter().map(|u| u.members.len()).collect();
+        sizes.sort_unstable();
+        sizes
+    }
+
+    fn assert_partitions_all_owners(units: &[AtomicUnit], total_owners: usize) {
+        let summed: usize = units.iter().map(|u| u.members.len()).sum();
+        assert_eq!(
+            summed, total_owners,
+            "atomic units must cover every owner exactly once; got units {units:?}",
+        );
+        let mut seen = BTreeSet::new();
+        for unit in units {
+            for owner in &unit.members {
+                assert!(
+                    seen.insert(*owner),
+                    "owner {owner:?} appears in more than one atomic unit",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn atomic_units_singletons_for_independent_owners() {
+        // No edges → each owner is its own atomic unit.
+        let units = atomic_units_for("const A = 1; const B = 2; const C = 3;");
+        assert_partitions_all_owners(&units, 3);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn atomic_units_eager_use_chain_stays_split() {
+        // A → B → C via EagerUse: directed-only edges, no cycle, so
+        // each owner remains its own unit.
+        let units = atomic_units_for("const C = 3; const B = C + 1; const A = B + 1;");
+        assert_partitions_all_owners(&units, 3);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn atomic_units_eager_use_cycle_merges() {
+        // A and B form an EagerUse cycle → must co-locate.
+        let units = atomic_units_for("const A = B + 1; const B = A + 1;");
+        assert_partitions_all_owners(&units, 2);
+        assert_eq!(unit_sizes(&units), vec![2]);
+    }
+
+    #[test]
+    fn atomic_units_lazy_use_cycle_stays_split() {
+        // Two functions that reference each other lazily plus their
+        // bindings — no constraining edges, so all four owners are
+        // independent units.
+        let units = atomic_units_for(
+            "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
+        );
+        assert_partitions_all_owners(&units, 4);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn atomic_units_sequenced_chain_stays_split() {
+        // Three side-effecting top-level statements form a directed
+        // Sequenced chain. A directed source-order edge alone is
+        // satisfiable by linker order — no co-location forced — so
+        // every owner stays in its own atomic unit. Co-location
+        // would only kick in if some non-Sequenced edge ran in the
+        // reverse direction.
+        let units = atomic_units_for(
+            r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
+        );
+        assert_partitions_all_owners(&units, 3);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn atomic_units_sequenced_plus_reverse_eager_merges() {
+        // A Sequenced source-order edge in one direction plus an
+        // EagerUse read in the reverse direction forms an SCC in
+        // `G_atomic` and forces co-location.
+        // `const A = 1;` is pure (no side effect, no Sequenced edge);
+        // `const x = (globalThis.tag = "x", A);` is side-effecting AND
+        // eagerly reads `A`. The eager read draws `x → A`; the
+        // Sequenced edge from the next side-effect (`const y = ...`)
+        // gives `y → x`. Eager `y → A` adds `y → A` too. So {x, y}
+        // ends up merged only if some edge reverses through A. Use a
+        // shape that produces a real cycle:
+        // `let A = 1; A = (globalThis.tag = "x", 2); A = (globalThis.tag = "y", 3);`
+        // — top-level Sequenced + EagerRebind force {A, stmt_1, stmt_2}
+        // into one unit (Rebind bidirectional + Sequenced directed
+        // form a cycle).
+        let units = atomic_units_for(
+            r#"let A = 1; A = (globalThis.tag = "x", 2); A = (globalThis.tag = "y", 3);"#,
+        );
+        assert_partitions_all_owners(&units, 3);
+        assert_eq!(unit_sizes(&units), vec![3]);
+    }
+
+    #[test]
+    fn atomic_units_lazy_rebind_merges() {
+        // `let A = 0; function B() { A = 1; }` produces a LazyRebind
+        // edge from B → A. LazyRebind is bidirectional in `G_atomic`,
+        // so A and B collapse into one unit.
+        let units = atomic_units_for("let A = 0; function B() { A = 1; }");
+        assert_partitions_all_owners(&units, 2);
+        assert_eq!(unit_sizes(&units), vec![2]);
+    }
+
+    fn partition_summary(schedule: &Schedule) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = schedule
+            .owner_graph
+            .iter_nodes()
+            .map(|node| {
+                let declared: Vec<String> = node
+                    .declared
+                    .iter()
+                    .filter_map(|b| schedule.owner_graph.binding_table.name(*b).cloned())
+                    .collect();
+                let key = if declared.is_empty() {
+                    format!("stmt_{}", node.statement_ordinal.0)
+                } else {
+                    declared.join(",")
+                };
+                (key, render(schedule.partition.of(node.id)))
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn factor_assembly_unclaimed_owners_default_to_residual() {
+        let schedule = schedule_for("const A = 1; const B = 2;", &[]);
+        let summary = partition_summary(&schedule);
+        assert_eq!(
+            summary,
+            vec![
+                ("A".to_string(), "<residual>".to_string()),
+                ("B".to_string(), "<residual>".to_string()),
+            ],
+        );
+    }
+
+    #[test]
+    fn factor_assembly_single_claim_with_unclaimed_unit_members_is_a_conflict() {
+        // `const A = B + 1; const B = A + 1;` is one EagerUse cycle —
+        // a single atomic unit. Claiming A for mod_0 leaves B
+        // defaulting to residual entry, which splits the unit
+        // across {mod_0, <residual_entry>} — unrealizable. The spec
+        // author needs to either also assign B (or leave both
+        // unassigned), or remove the constraining edge that fused
+        // them in the first place. The factorize proposals layer
+        // (`crate::factorize`) may suggest "extend mod_0 to include
+        // B" as an advisory edit, but factor_assembly refuses to
+        // silently move B for the user.
+        let schedule = schedule_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
+        let report = schedule.validate();
+        assert_eq!(
+            report.atomic_unit_conflicts.len(),
+            1,
+            "expected the half-claimed EagerUse cycle to surface as an atomic-unit conflict: {report:?}",
+        );
+        assert_eq!(
+            distinct_claim_modules(&report.atomic_unit_conflicts[0]),
+            vec![
+                ModuleId::Logical(LogicalModuleIndex(0)),
+                ModuleId::ResidualEntry
+            ],
+        );
+    }
+
+    #[test]
+    fn factor_assembly_concordant_claims_within_unit_are_fine() {
+        // Both members of the same atomic unit claimed for the same
+        // module — that's the spec author being explicit, not a
+        // conflict.
+        let schedule = schedule_for(
+            "const A = B + 1; const B = A + 1;",
+            &[("A", logical(0)), ("B", logical(0))],
+        );
+        let summary = partition_summary(&schedule);
+        assert_eq!(
+            summary,
+            vec![
+                ("A".to_string(), "mod_0".to_string()),
+                ("B".to_string(), "mod_0".to_string()),
+            ],
+        );
+    }
+
+    #[test]
+    fn factor_assembly_records_conflict_on_split_eager_use_cycle() {
+        let schedule = schedule_for(
+            "const A = B + 1; const B = A + 1;",
+            &[("A", logical(0)), ("B", logical(1))],
+        );
+        let report = schedule.validate();
+        assert_eq!(
+            report.atomic_unit_conflicts.len(),
+            1,
+            "expected the A↔B EagerUse cycle to surface as an atomic-unit conflict: {report:?}",
+        );
+        let conflict = &report.atomic_unit_conflicts[0];
+        assert_eq!(
+            distinct_claim_modules(conflict),
+            vec![
+                ModuleId::Logical(LogicalModuleIndex(0)),
+                ModuleId::Logical(LogicalModuleIndex(1)),
+            ],
+        );
+    }
+
+    #[test]
+    fn factor_assembly_records_no_conflict_for_sequenced_only_chain() {
+        // Three side-effect statements, source-ordered. Directed
+        // Sequenced edges alone form a chain in `G_atomic`, not an
+        // SCC, so every owner is its own atomic unit and the spec
+        // can split them across modules without violating
+        // co-location. The validator may still flag a module-level
+        // cycle when the spec creates one through reverse claims,
+        // but factor_assembly itself does not panic / record a
+        // conflict here.
+        let schedule = schedule_for(
+            r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
+            &[("a1", logical(0)), ("b1", logical(1)), ("a2", logical(0))],
+        );
+        let report = schedule.validate();
+        assert!(
+            report.atomic_unit_conflicts.is_empty(),
+            "Sequenced-only chains never force co-location: {report:?}",
+        );
+    }
+
+    #[test]
+    fn factor_assembly_independent_owners_keep_independent_claims() {
+        // Three eager-use chain: A → B → C, no cycle, three atomic
+        // units. Each owner's claim takes effect independently.
+        let schedule = schedule_for(
+            "const C = 3; const B = C + 1; const A = B + 1;",
+            &[("A", logical(0)), ("B", logical(1)), ("C", logical(0))],
+        );
+        let summary = partition_summary(&schedule);
+        assert_eq!(
+            summary,
+            vec![
+                ("A".to_string(), "mod_0".to_string()),
+                ("B".to_string(), "mod_1".to_string()),
+                ("C".to_string(), "mod_0".to_string()),
+            ],
+        );
+    }
+
+    /// Supernode-aware factorize: a YAML-claimed module `mod_0`
+    /// (with owners `A`, `B`) plus one unclaimed `C` that sits in the
+    /// same EagerUse cycle as `A` should produce a single proposal
+    /// cell — an extension of `mod_0` that absorbs `C`. The closure
+    /// graph collapses owners(A), owners(B) into `Supernode(mod_0)`
+    /// (internal edges between them disappear); `Loose(C)` joins the
+    /// supernode's SCC via the bidirectional EagerUse cycle
+    /// `A↔C`. The cell's `extends_module_id` resolves to mod_0's
+    /// `module_key`, and `extension_owner_ids` carries C's owner.
+    #[test]
+    fn factorize_proposes_extension_for_module_with_unclaimed_cycle_member() {
+        let schedule = schedule_for(
+            "const B = 1; const A = C + 1; const C = A + 1;",
+            &[("A", logical(0)), ("B", logical(0))],
+        );
+        let report = schedule.owner_graph_report().factorize;
+        let extensions: Vec<&FactorizeCell> = report
+            .cells
+            .iter()
+            .filter(|cell| cell.extends_module_id.is_some())
+            .collect();
+        assert_eq!(
+            extensions.len(),
+            1,
+            "expected exactly one extension proposal, got {:#?}",
+            report.cells,
+        );
+        let cell = extensions[0];
+        assert_eq!(
+            cell.extends_module_id.as_deref(),
+            Some("logical:0"),
+            "extension should target mod_0's stable module key",
+        );
+        // C's owner is statement_ordinal 2 ⇒ OwnerId(2) ⇒ "owner:2".
+        assert_eq!(
+            cell.extension_owner_ids,
+            vec!["owner:2".to_string()],
+            "only C should be the loose extension owner",
+        );
+        // Cell binding ids include the new C plus the supernode's
+        // existing A. (B's owner is in the supernode but doesn't
+        // sit in the same SCC; it survives as a stable supernode-
+        // only cell and gets skipped.)
+        let bindings: BTreeSet<String> = cell.binding_ids.iter().cloned().collect();
+        assert!(
+            bindings.contains("A") && bindings.contains("C"),
+            "extension cell should expose A (from supernode) and C (the addition): {bindings:?}",
+        );
+    }
+
+    /// Supernode-aware factorize: two unclaimed owners that
+    /// form a Sequenced + reverse-EagerUse SCC should land in one
+    /// fresh-module proposal cell. The closure graph's Sequenced
+    /// rule emits `earlier → later` (inversion of the owner-graph's
+    /// `later → earlier` Sequenced edge); the reverse EagerUse from
+    /// the later statement reading the earlier statement's binding
+    /// emits `later → earlier`. The two directions form an SCC.
+    #[test]
+    fn factorize_emits_fresh_module_proposal_for_sequenced_plus_eager_scc() {
+        // stmt 0: `const X = init();` — impure (call), declares X.
+        // stmt 1: `const Y = step(X);` — impure (call), declares Y,
+        //                                reads X eagerly.
+        // Owner graph edges:
+        //   * EagerUse owner(Y) → owner(X) on binding X
+        //   * Sequenced owner(Y) → owner(X) (later stmt depends on
+        //     earlier side-effect having run)
+        // Closure projection (both owners are loose, no supernode):
+        //   * EagerUse `from→to`           → Loose(Y) → Loose(X)
+        //   * Sequenced `to→from` (inverted) → Loose(X) → Loose(Y)
+        // ⇒ single SCC, fresh-module proposal.
+        let schedule = schedule_for("const X = init(); const Y = step(X);", &[]);
+        let report = schedule.owner_graph_report().factorize;
+        let fresh: Vec<&FactorizeCell> = report
+            .cells
+            .iter()
+            .filter(|cell| cell.extends_module_id.is_none())
+            .collect();
+        assert_eq!(
+            fresh.len(),
+            1,
+            "expected one fresh-module cell for the {{X, Y}} SCC, got {:#?}",
+            report.cells,
+        );
+        let cell = fresh[0];
+        assert!(
+            cell.extension_owner_ids.is_empty(),
+            "fresh-module proposals carry no extension owners: {cell:#?}",
+        );
+        assert!(
+            cell.proposed_module_id.starts_with("auto_partition_"),
+            "fresh-module cells keep the auto_partition_NNNN id shape: {}",
+            cell.proposed_module_id,
+        );
+        let bindings: BTreeSet<String> = cell.binding_ids.iter().cloned().collect();
+        let expected: BTreeSet<String> = ["X".to_string(), "Y".to_string()].into_iter().collect();
+        assert_eq!(
+            bindings, expected,
+            "fresh-module cell members should be exactly {{X, Y}}: {bindings:?}",
         );
     }
 

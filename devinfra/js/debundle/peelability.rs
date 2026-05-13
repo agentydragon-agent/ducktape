@@ -3,15 +3,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 
-use crate::graph::{OwnerEdge, peel_emit_blocked_residual_bindings};
+use crate::graph::{OwnerEdge, peel_emit_blocked_source_destination_bindings};
 use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
 use crate::{
-    BindingKind, BindingName, EvaluatedPeelCandidateReport, LogicalModuleIndex, ModuleId,
-    OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport, OwnerId, OwnerNode, PeelCandidateStatus,
-    QuotientEdgeReport, ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport,
-    ResidualOwnerPeelStatus, Schedule,
+    AtomicUnit, BindingKind, BindingName, DepKind, EvaluatedPeelCandidateReport,
+    LogicalModuleIndex, ModuleId, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport, OwnerId,
+    OwnerNode, PeelCandidateStatus, QuotientEdgeReport, ResidualOwnerCompanionOptionReport,
+    ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus, Schedule, compute_atomic_units,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -62,6 +62,11 @@ pub(crate) struct PeelabilityContext<'a> {
     forward_edges: Vec<Vec<ModuleAdjEdge>>,
     reverse_edges: Vec<Vec<ReverseModuleAdjEdge>>,
     module_pair_totals: HashMap<(ModuleId, ModuleId), ModulePairTotals>,
+    /// Atomic units of the schedule's owner graph (SCCs of the
+    /// constraining-edge subgraph `G_atomic`). Used by
+    /// `candidate_atomic_unit_split_edge_indices` to detect candidates
+    /// whose moved set would split an atomic unit across modules.
+    atomic_units: Vec<AtomicUnit>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -86,7 +91,7 @@ pub(crate) struct PeelCandidateEvaluation {
     /// Residual binding names that the candidate's moved bodies
     /// reference but entry doesn't export — populated only when
     /// `status == BlockedEmitResolvability`. SSOT'd via
-    /// [`peel_emit_blocked_residual_bindings`] in `graph.rs`.
+    /// [`peel_emit_blocked_source_destination_bindings`] in `graph.rs`.
     pub(crate) emit_blocked_residual_bindings: Vec<BindingName>,
 }
 
@@ -121,7 +126,7 @@ pub(crate) fn build_peelability_report(
     for (&owner_id, declared) in &declared_by_owner {
         singleton_candidates.push((
             owner_id,
-            evaluate_residual_peel_candidate(schedule, &context, &[owner_id], declared.clone()),
+            evaluate_peel_candidate(schedule, &context, &[owner_id], declared.clone()),
         ));
     }
 
@@ -139,8 +144,7 @@ pub(crate) fn build_peelability_report(
         declared.sort();
         declared.dedup();
 
-        let candidate =
-            evaluate_residual_peel_candidate(schedule, &context, &[left, right], declared);
+        let candidate = evaluate_peel_candidate(schedule, &context, &[left, right], declared);
         if candidate.status == PeelCandidateStatus::PeelableNow {
             pair_candidates.push(candidate);
         }
@@ -422,6 +426,8 @@ impl<'a> PeelabilityContext<'a> {
             });
         }
 
+        let atomic_units = compute_atomic_units(&schedule.owner_graph);
+
         Self {
             owner_edges,
             owner_out_edges,
@@ -431,6 +437,7 @@ impl<'a> PeelabilityContext<'a> {
             forward_edges,
             reverse_edges,
             module_pair_totals,
+            atomic_units,
         }
     }
 
@@ -562,7 +569,7 @@ fn residual_dependency_closure_candidates(
             continue;
         }
 
-        let candidate = evaluate_residual_peel_candidate(schedule, context, &closure, declared);
+        let candidate = evaluate_peel_candidate(schedule, context, &closure, declared);
         if candidate.status == PeelCandidateStatus::PeelableNow {
             candidates.push(candidate);
         }
@@ -678,7 +685,7 @@ fn sorted_owner_pair(left: OwnerId, right: OwnerId) -> (OwnerId, OwnerId) {
     }
 }
 
-pub(crate) fn evaluate_residual_peel_candidate(
+pub(crate) fn evaluate_peel_candidate(
     schedule: &Schedule,
     context: &PeelabilityContext<'_>,
     owner_ids: &[OwnerId],
@@ -688,14 +695,14 @@ pub(crate) fn evaluate_residual_peel_candidate(
     let owner_id_keys: Vec<String> = owner_ids.iter().copied().map(owner_key).collect();
     let candidate_id = format!("peel_candidate:{}", owner_id_keys.join("+"));
     let residual_dependency_blocker_owner_ids =
-        candidate_residual_dependency_blocker_owner_ids(schedule, context, &moved_owners);
+        candidate_source_destination_blocker_owner_ids(schedule, context, &moved_owners);
     let has_residual_dependency = !residual_dependency_blocker_owner_ids.is_empty();
-    let cross_destination_write_edge_indices =
-        candidate_cross_destination_write_edge_indices(context, &moved_owners);
+    let atomic_unit_split_edge_indices =
+        candidate_atomic_unit_split_edge_indices(context, &moved_owners);
     let constraining_owner_edge_indices = if has_residual_dependency {
         BTreeSet::new()
-    } else if !cross_destination_write_edge_indices.is_empty() {
-        cross_destination_write_edge_indices
+    } else if !atomic_unit_split_edge_indices.is_empty() {
+        atomic_unit_split_edge_indices
     } else {
         let (candidate_edges, adjustment) =
             candidate_incident_edges(schedule, context, &moved_owners);
@@ -721,7 +728,7 @@ pub(crate) fn evaluate_residual_peel_candidate(
             Vec::new()
         } else {
             match schedule.entry_exported_binding_names() {
-                Some(base_exports) => peel_emit_blocked_residual_bindings(
+                Some(base_exports) => peel_emit_blocked_source_destination_bindings(
                     &schedule.owner_graph,
                     &schedule.partition,
                     &moved_owners,
@@ -755,30 +762,67 @@ pub(crate) fn evaluate_residual_peel_candidate(
     }
 }
 
-fn candidate_cross_destination_write_edge_indices(
+/// Per-candidate atomic-unit check: returns the constraining owner-edge
+/// indices for every atomic unit the candidate would split across
+/// modules (at least one member moved, at least one not). Within a
+/// split unit, "constraining" means every edge with both endpoints in
+/// the unit whose `DepKind` isn't `LazyUse`. This subsumes the prior
+/// rebind-only cross-destination check: rebind edges already make
+/// `G_atomic` bidirectional between their endpoints, so any
+/// cross-boundary rebind pair was a unit split — but the unified check
+/// also catches EagerUse cycles that span the candidate boundary.
+/// `candidate_blocking_scc_owner_edge_indices` covers those too, so
+/// the verdict (Peelable / Blocked) is unchanged.
+fn candidate_atomic_unit_split_edge_indices(
     context: &PeelabilityContext<'_>,
     moved_owners: &BTreeSet<OwnerId>,
 ) -> BTreeSet<usize> {
-    let mut edge_indices = BTreeSet::new();
-    for owner_id in moved_owners {
-        edge_indices.extend(context.owner_out_edge_indices(*owner_id).iter().copied());
-        edge_indices.extend(context.owner_in_edge_indices(*owner_id).iter().copied());
+    let mut blocking_edges = BTreeSet::new();
+    for unit in &context.atomic_units {
+        let mut has_moved = false;
+        let mut has_not_moved = false;
+        for member in &unit.members {
+            if moved_owners.contains(member) {
+                has_moved = true;
+            } else {
+                has_not_moved = true;
+            }
+            if has_moved && has_not_moved {
+                break;
+            }
+        }
+        if !(has_moved && has_not_moved) {
+            continue;
+        }
+        for (idx, edge) in context.owner_edges.iter().enumerate() {
+            if edge.reason.kind == DepKind::LazyUse {
+                continue;
+            }
+            if unit.members.contains(&edge.from) && unit.members.contains(&edge.to) {
+                blocking_edges.insert(idx);
+            }
+        }
     }
-    edge_indices
-        .into_iter()
-        .filter(|edge_idx| {
-            let edge = &context.owner_edges[*edge_idx];
-            edge.reason.is_rebind()
-                && moved_owners.contains(&edge.from) != moved_owners.contains(&edge.to)
-        })
-        .collect()
+    blocking_edges
 }
 
-fn candidate_residual_dependency_blocker_owner_ids(
+/// Blockers are owners *outside* the moved set that the moved set
+/// depends on through a `constrains_init_order` edge AND that
+/// currently live in the same source destination the moved owners
+/// are being peeled from. After the hypothetical peel, those
+/// neighbors would be left behind — creating a back-pointer from
+/// the new destination to the source. `source_destination` is
+/// derived from `moved_owners` (all moved owners share one
+/// destination by precondition).
+fn candidate_source_destination_blocker_owner_ids(
     schedule: &Schedule,
     context: &PeelabilityContext<'_>,
     moved_owners: &BTreeSet<OwnerId>,
 ) -> Vec<OwnerId> {
+    let Some(&first) = moved_owners.iter().next() else {
+        return Vec::new();
+    };
+    let source_destination = schedule.partition.of(first);
     let mut blockers = BTreeSet::new();
     for owner_id in moved_owners {
         for &edge_idx in context.owner_out_edge_indices(*owner_id) {
@@ -792,7 +836,7 @@ fn candidate_residual_dependency_blocker_owner_ids(
             if schedule.owner_graph.node(edge.to).is_none() {
                 continue;
             }
-            if schedule.partition.of(edge.to) != ModuleId::ResidualEntry {
+            if schedule.partition.of(edge.to) != source_destination {
                 continue;
             }
             blockers.insert(edge.to);

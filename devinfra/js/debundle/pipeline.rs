@@ -262,7 +262,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     let materialise_chunk_ids: Vec<String> = spec
         .logical_modules
         .keys()
-        .chain(spec.residual_modules.keys())
+        .chain(spec.unassigned_mode.keys())
         .chain(spec.chunk_renames.keys())
         .cloned()
         .collect::<BTreeSet<_>>()
@@ -350,8 +350,8 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 materialize_logical_modules(
                     artifact,
                     &spec.logical_modules,
-                    &spec.residual_modules,
                     &spec.chunk_renames,
+                    &spec.unassigned_mode,
                     MaterializeLogicalModulesOptions {
                         chunk_ids: materialise_chunk_ids,
                         file,
@@ -817,8 +817,8 @@ mod tests {
             },
             vendor: BTreeMap::new(),
             logical_modules: BTreeMap::new(),
-            residual_modules: BTreeMap::new(),
             chunk_renames: BTreeMap::new(),
+            unassigned_mode: BTreeMap::new(),
             swap_vendor_chunks: SwapVendorChunksConfig::default(),
             materialize_logical_modules: MaterializeLogicalModulesConfig::default(),
             write_js_tree: None,

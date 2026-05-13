@@ -3,10 +3,12 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
 
-use crate::graph::{build_module_quotient, build_owner_graph};
+use crate::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units};
+use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
+use crate::graph::build_module_quotient;
 use crate::partition::Partition;
 use crate::reports::{build_owner_graph_report, owner_key};
-use crate::validation::{validate_cross_destination_assignments, validate_schedule};
+use crate::validation::validate_schedule;
 use crate::{
     BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId,
     ModuleQuotient, OwnerGraph, OwnerGraphReport, RESIDUAL_ENTRY_LABEL, ScheduleReport,
@@ -37,6 +39,13 @@ pub struct Schedule {
     /// owner graph. Stored separately from the IR so the IR stays
     /// immutable across hypothetical refinements during peelability.
     pub partition: Partition,
+    /// Atomic-factor-unit splits the spec demands but the
+    /// constraining-edge SCC analysis forbids — populated by
+    /// `factor_assembly` when YAML claims split an atomic unit across
+    /// destination modules. Non-empty means the spec is unrealizable
+    /// by construction; the materializer bails on these before
+    /// emitting code.
+    pub assembly_conflicts: Vec<AtomicUnitConflict>,
     pub dep_graph: ModuleQuotient,
     owner_report_ids_by_binding: Vec<Vec<String>>,
     /// Topological linearization of `I ∪ S`, dependency-first
@@ -63,7 +72,7 @@ pub struct Schedule {
     /// Consumed by the emit-resolvability projection in
     /// `peelability.rs` and the matching predicate in
     /// `materialize_logical_modules` (SSOT — see
-    /// [`crate::graph::peel_emit_blocked_residual_bindings`]).
+    /// [`crate::graph::peel_emit_blocked_source_destination_bindings`]).
     entry_exported_binding_names_cache: Option<HashSet<BindingName>>,
     /// The pre-existing entry exports as passed in to
     /// [`Self::with_pre_existing_entry_exports`], stored verbatim
@@ -88,6 +97,11 @@ impl Schedule {
     /// spec-derived logical modules. `bindings` should already have
     /// every `Owned` binding the spec assigned and every `Imported`
     /// binding the spec re-exports.
+    ///
+    /// Convenience constructor: computes the owner graph and atomic
+    /// units internally. Call sites that already have those precomputed
+    /// (e.g. the materializer reuses them for mini-factor synthesis)
+    /// should call [`Self::build_with`] instead.
     pub fn build(
         chunk_id: String,
         facts: Vec<StatementFacts>,
@@ -95,8 +109,36 @@ impl Schedule {
         logical_modules: Vec<LogicalModule>,
         chunk_renames: HashMap<BindingName, BindingName>,
     ) -> Self {
-        let owner_graph = build_owner_graph(&facts);
-        let partition = build_partition(&owner_graph, &bindings, &logical_modules);
+        let precomputed = compute_owner_graph_and_units(&facts);
+        Self::build_with(
+            chunk_id,
+            facts,
+            precomputed,
+            bindings,
+            logical_modules,
+            chunk_renames,
+        )
+    }
+
+    /// Build a schedule reusing a caller-computed owner graph + atomic
+    /// units. The materializer computes these once per chunk for
+    /// mini-factor synthesis and passes them in here so `Schedule`
+    /// doesn't redo the work.
+    pub fn build_with(
+        chunk_id: String,
+        facts: Vec<StatementFacts>,
+        precomputed: OwnerGraphAndUnits,
+        bindings: HashMap<BindingName, BindingKind>,
+        logical_modules: Vec<LogicalModule>,
+        chunk_renames: HashMap<BindingName, BindingName>,
+    ) -> Self {
+        let OwnerGraphAndUnits {
+            owner_graph,
+            atomic_units,
+        } = precomputed;
+        let outcome = assemble_partition(&owner_graph, &atomic_units, &bindings, &logical_modules);
+        let partition = outcome.partition;
+        let assembly_conflicts = outcome.conflicts;
         let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
         let dep_graph = build_module_quotient(&owner_graph, &partition);
         let linker_order = compute_linker_order(&dep_graph, &logical_modules);
@@ -116,6 +158,7 @@ impl Schedule {
             chunk_renames,
             owner_graph,
             partition,
+            assembly_conflicts,
             dep_graph,
             owner_report_ids_by_binding,
             linker_order,
@@ -130,7 +173,7 @@ impl Schedule {
     /// already exports. Folds them together with the names of every
     /// owner already assigned to a logical module into the cached
     /// post-Owned export set queried by the emit-resolvability
-    /// projection in [`crate::graph::peel_emit_blocked_residual_bindings`].
+    /// projection in [`crate::graph::peel_emit_blocked_source_destination_bindings`].
     pub fn with_pre_existing_entry_exports(mut self, exports: BTreeSet<BindingName>) -> Self {
         let mut cache: HashSet<BindingName> = exports.iter().cloned().collect();
         for (name, kind) in &self.bindings {
@@ -261,14 +304,10 @@ impl Schedule {
     }
 
     /// Run SCC analysis over the dep graph. Spec authors consume the
-    /// resulting report to fix any cycles or cross-destination
-    /// rebinding writes.
+    /// resulting report to fix any cycles or atomic-unit conflicts.
     pub fn validate(&self) -> ScheduleReport {
         let mut report = validate_schedule(&self.dep_graph, &|id| self.module_name(id));
-        report.cross_destination_assignments =
-            validate_cross_destination_assignments(&self.owner_graph, &self.partition, &|id| {
-                self.module_name(id)
-            });
+        report.atomic_unit_conflicts = self.assembly_conflicts.clone();
         report.linker_order = self
             .linker_order
             .iter()
@@ -344,43 +383,6 @@ fn build_export_name_by_binding(
         }
     }
     out
-}
-
-/// Build the partition consumed by quotient + validation:
-///
-/// 1. Seed every owner that declares an `Owned` binding with that
-///    binding's module assignment.
-/// 2. Apply the anonymous-statement override from each logical
-///    module — owners with empty `declared` (e.g. side-effect
-///    expression statements) get routed into the claiming module
-///    by source ordinal so the realizability checks see the closure
-///    the materializer will emit.
-fn build_partition(
-    owner_graph: &OwnerGraph,
-    bindings: &HashMap<BindingName, BindingKind>,
-    logical_modules: &[LogicalModule],
-) -> Partition {
-    let owned: HashMap<BindingName, ModuleId> = bindings
-        .iter()
-        .filter_map(|(name, kind)| match kind {
-            BindingKind::Owned { owner } => Some((name.clone(), *owner)),
-            BindingKind::Imported { .. } => None,
-        })
-        .collect();
-    let mut partition = Partition::from_binding_assignment(owner_graph, &owned);
-    for (idx, module) in logical_modules.iter().enumerate() {
-        let module_id = ModuleId::Logical(LogicalModuleIndex(idx));
-        for ordinal in &module.anonymous_statement_ordinals {
-            if let Some(node) = owner_graph
-                .nodes
-                .iter()
-                .find(|node| node.statement_ordinal.0 == *ordinal)
-            {
-                partition.set(node.id, module_id);
-            }
-        }
-    }
-    partition
 }
 
 /// Topological linearization of the dep graph, dependency-first.

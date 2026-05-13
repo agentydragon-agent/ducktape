@@ -42,7 +42,7 @@ pub struct OwnerGraphReport {
     /// `Schedule::owner_graph_report`; empty `cells` when there
     /// are no residual owners. Each cell carries a verdict from
     /// the SSOT predicate in
-    /// `peelability::evaluate_residual_peel_candidate`, so
+    /// `peelability::evaluate_peel_candidate`, so
     /// `cells[].landable_today == true` matches what
     /// `materialize_logical_modules` would actually accept.
     #[serde(default)]
@@ -225,7 +225,7 @@ impl Default for FactorizeOptions {
 /// embedded in [`OwnerGraphReport::factorize`]. Carries proposed
 /// module partitions over the residual owner surface, each
 /// evaluated by the same predicate `materialize_logical_modules`
-/// uses (SSOT via `peelability::evaluate_residual_peel_candidate`).
+/// uses (SSOT via `peelability::evaluate_peel_candidate`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FactorizeReport {
     pub size_cap_lines: usize,
@@ -250,7 +250,7 @@ pub struct FactorizeCell {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_line_range: Option<[usize; 2]>,
     pub ordinal_span: usize,
-    /// Verdict from `peelability::evaluate_residual_peel_candidate`
+    /// Verdict from `peelability::evaluate_peel_candidate`
     /// applied to the cell's final owner set (after auto-grow).
     pub status: PeelCandidateStatus,
     /// `true` iff `status == PeelableNow`. Mirrors the materializer's
@@ -275,6 +275,19 @@ pub struct FactorizeCell {
     /// auto-exports those bindings. Informational.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub active_modules_referenced: Vec<String>,
+    /// Set when this cell is an **extension proposal**: an existing
+    /// YAML-claimed module's id (as in [`ModuleReportRef::id`]) that
+    /// the closure graph showed must absorb the loose owners in
+    /// `extension_owner_ids` for the partition to stay valid.
+    /// `None` for fresh-module proposals (where the cell contains
+    /// only loose / residual owners).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends_module_id: Option<String>,
+    /// Loose owner ids (residual today) that this proposal would
+    /// move into the existing module identified by
+    /// `extends_module_id`. Empty for fresh-module proposals (where
+    /// every owner in `owner_ids` is part of the proposal itself).
+    pub extension_owner_ids: Vec<String>,
 }
 
 /// Stable value of [`ModuleReportRef::id`] for the implicit

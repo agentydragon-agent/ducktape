@@ -13,6 +13,8 @@
 //! 5. Validate realizability, derive peelability, and emit reports from that
 //!    same graph model.
 
+mod atomic_units;
+mod factor_assembly;
 mod factorize;
 mod facts;
 mod graph;
@@ -25,6 +27,12 @@ mod reports;
 mod schedule;
 mod validation;
 
+pub use atomic_units::{
+    AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units,
+};
+pub use factor_assembly::{
+    AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
+};
 pub use factorize::build_factorize_report;
 pub use facts::{
     ChunkFactAnalysis, StatementFacts, StatementKind, analyze_chunk_facts,
@@ -51,8 +59,8 @@ pub use report_schema::{
 };
 pub use schedule::Schedule;
 pub use validation::{
-    CrossDestinationAssignmentReport, CycleEdge, CycleReport, ScheduleReport,
-    render_cross_destination_assignment_summary, render_cycle_summary, validate_schedule,
+    CycleEdge, CycleReport, ScheduleReport, render_atomic_unit_conflict_summary,
+    render_cycle_summary, validate_schedule,
 };
 
 #[cfg(test)]

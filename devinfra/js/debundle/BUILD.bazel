@@ -156,6 +156,8 @@ rust_library(
     name = "analysis",
     srcs = [
         "analysis_tests.rs",
+        "atomic_units.rs",
+        "factor_assembly.rs",
         "factorize.rs",
         "facts.rs",
         "graph.rs",
@@ -216,19 +218,6 @@ rust_test(
     deps = ["@crates//:tempfile"],
 )
 
-rust_binary(
-    name = "peel_horizon_cli",
-    srcs = ["peel_horizon_cli.rs"],
-    crate_root = "peel_horizon_cli.rs",
-    edition = "2024",
-    deps = [
-        ":peel_horizon",
-        "@crates//:anyhow",
-        "@crates//:clap",
-        "@crates//:serde_json",
-    ],
-)
-
 rust_library(
     name = "spec_modules",
     srcs = ["spec_modules.rs"],
@@ -270,19 +259,6 @@ rust_test(
     edition = "2024",
 )
 
-rust_binary(
-    name = "peel_factorize_cli",
-    srcs = ["peel_factorize_cli.rs"],
-    crate_root = "peel_factorize_cli.rs",
-    edition = "2024",
-    deps = [
-        ":peel_factorize",
-        "@crates//:anyhow",
-        "@crates//:clap",
-        "@crates//:serde_json",
-    ],
-)
-
 rust_library(
     name = "peel_inventory",
     srcs = ["peel_inventory.rs"],
@@ -304,16 +280,28 @@ rust_test(
     deps = ["@crates//:tempfile"],
 )
 
-rust_binary(
-    name = "peel_inventory_cli",
-    srcs = ["peel_inventory_cli.rs"],
-    crate_root = "peel_inventory_cli.rs",
+rust_library(
+    name = "peel_cli_lib",
+    srcs = ["peel_cli.rs"],
+    crate_name = "peel_cli",
+    crate_root = "peel_cli.rs",
     edition = "2024",
     deps = [
+        ":peel_factorize",
+        ":peel_horizon",
         ":peel_inventory",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:serde_json",
     ],
+)
+
+rust_binary(
+    name = "peel_cli",
+    srcs = ["peel_cli_main.rs"],
+    crate_root = "peel_cli_main.rs",
+    edition = "2024",
+    deps = [":peel_cli_lib"],
 )
 
 rust_library(
