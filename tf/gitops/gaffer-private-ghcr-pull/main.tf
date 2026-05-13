@@ -27,7 +27,7 @@ locals {
   # `gaffer-ghcr-pull`. Add a new namespace here when wiring up a new
   # gaffer-private app.
   consumer_namespaces = [
-    "house-vallejo",
+    "augur",
     "thrive-scraper",
   ]
 }

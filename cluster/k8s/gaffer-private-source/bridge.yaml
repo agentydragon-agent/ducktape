@@ -16,7 +16,7 @@ spec:
   prune: true
   # No `wait: true` — pod readiness depends on the GHCR pull secret
   # (provisioned by the gaffer-private-ghcr-pull Kustomization, which
-  # in turn dependsOn this one to ensure the house-vallejo namespace
+  # in turn dependsOn this one to ensure the augur namespace
   # exists). Waiting here would circle back. The downstream
   # Kustomization tolerates apply-then-eventually-ready.
   dependsOn:
