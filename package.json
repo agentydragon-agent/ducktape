@@ -51,6 +51,7 @@
     "@storybook/svelte": "^8.6.15",
     "@storybook/svelte-vite": "^8.6.15",
     "@sveltejs/vite-plugin-svelte": "^5.1.0",
+    "@tailwindcss/cli": "^4.1.18",
     "@tailwindcss/vite": "^4.1.18",
     "@tsconfig/svelte": "^5.0.4",
     "@types/dompurify": "^2.3.3",

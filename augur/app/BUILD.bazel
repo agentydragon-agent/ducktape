@@ -1,3 +1,7 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -69,5 +73,116 @@ py_library(
         "//augur/model:macro_rollout_provider_py",
         "//augur/model/markets:registry_py",
         "@pypi//uvicorn",
+    ],
+)
+
+# -- Frontend bundle -----------------------------------------------------------
+#
+# Generic augur React app + its tailwind-driven stylesheet. The bundle excludes
+# property-image assets — deployments (e.g. gaffer) overlay those on top of
+# `:bundle_base` to produce the final image bundle.
+
+REACT_DEPS = ["//:node_modules/react"]
+
+js_library(
+    name = "augur_app",
+    srcs = [
+        "augur-app.jsx",
+        "augur_client.js",
+    ],
+    deps = REACT_DEPS + [
+        "//augur/app/lib:backend_client",
+        "//augur/app/lib:casing",
+        "//augur/app/lib:columnar",
+        "//augur/app/lib:scenario_set_state",
+    ],
+)
+
+js_library(
+    name = "main_lib",
+    srcs = ["main.jsx"],
+    deps = REACT_DEPS + [
+        ":augur_app",
+        "//:node_modules/react-dom",
+    ],
+)
+
+esbuild(
+    name = "main_bundle",
+    config = {
+        "jsx": "automatic",
+    },
+    entry_point = "main.jsx",
+    format = "esm",
+    output = "dist/main.js",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":main_lib"],
+)
+
+# Tailwind v4 scans `@source`-declared files for class names. We concatenate
+# every .jsx/.js source whose classes we want to keep into a single text file
+# the stylesheet references.
+filegroup(
+    name = "tailwind_content_srcs",
+    srcs = [
+        "augur-app.jsx",
+        "augur_client.js",
+        "index.html",
+        "main.jsx",
+        "//augur/app/lib:backend_client",
+        "//augur/app/lib:casing",
+        "//augur/app/lib:columnar",
+        "//augur/app/lib:scenario_set_state",
+    ],
+)
+
+genrule(
+    name = "tailwind_content_index",
+    srcs = [":tailwind_content_srcs"],
+    outs = ["tailwind_content.txt"],
+    cmd = "cat $(SRCS) > $@",
+)
+
+tailwindcss_bin.tailwindcss_binary(
+    name = "tailwind_cli",
+    data = [
+        "//:node_modules/@tailwindcss/cli",
+        # `@import "tailwindcss"` in styles.src.css resolves to this package.
+        "//:node_modules/tailwindcss",
+    ],
+)
+
+js_run_binary(
+    name = "styles_css",
+    srcs = [
+        "styles.src.css",
+        ":tailwind_content_index",
+    ],
+    outs = ["dist/styles.css"],
+    args = [
+        "--input",
+        "styles.src.css",
+        "--output",
+        "dist/styles.css",
+        "--minify",
+    ],
+    chdir = package_name(),
+    tool = ":tailwind_cli",
+)
+
+copy_file(
+    name = "bundle_index_html",
+    src = "index.html",
+    out = "dist/index.html",
+)
+
+filegroup(
+    name = "bundle_base",
+    srcs = [
+        ":bundle_index_html",
+        ":main_bundle",
+        ":styles_css",
     ],
 )
