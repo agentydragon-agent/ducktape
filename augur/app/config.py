@@ -15,9 +15,11 @@ container reads).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
 
+import yaml
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
 
 from augur.core.bootstrap import DefaultScenario
@@ -25,11 +27,14 @@ from augur.core.local_regulation import LocationId
 from augur.core.scenario_set import ActorRole
 from augur.core.schemas import ApiModel
 
+AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
+DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
+
 
 class AgentDefinition(ApiModel):
     """An economic actor the simulator can attribute state to.
 
-    Actor IDs are user-provided identity strings (e.g. "rai", "auragon").
+    Actor IDs are user-provided identity strings (e.g. "primary", "partner").
     The role is a typed concept the policy / scenario engine consumes."""
 
     actor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
@@ -40,9 +45,9 @@ class AgentDefinition(ApiModel):
 class ConcentratedHoldingConfig(ApiModel):
     """A single private-company equity holding owned by one of the agents.
 
-    The user-facing label (e.g. "OpenAI") is display data; the simulator
-    treats this generically. `holding_id` is the lowercase machine-readable
-    identifier used in event streams and scenario actions."""
+    The user-facing `label` is display data; the simulator treats holdings
+    generically. `holding_id` is the lowercase machine-readable identifier
+    used in event streams and scenario actions."""
 
     holding_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
@@ -110,3 +115,26 @@ class AugurConfig(ApiModel):
     pmms_survey_date: str | None = None
     default_rollout_samples: PositiveInt = 128
     bootstrap_default_scenarios: tuple[DefaultScenario, ...] = ()
+
+
+def load_augur_config(path: Path) -> AugurConfig:
+    """Parse + validate an AugurConfig from a YAML file."""
+    return AugurConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+def resolve_augur_config_path() -> Path:
+    """Return the path the runtime should read AugurConfig from.
+
+    Order of resolution: `$AUGUR_CONFIG_PATH` if set, else
+    `/etc/augur/config.yaml` (the conventional k8s ConfigMap mount point)."""
+    if env := os.environ.get(AUGUR_CONFIG_PATH_ENV_VAR):
+        return Path(env)
+    return DEFAULT_AUGUR_CONFIG_PATH
+
+
+def dump_augur_config_yaml(config: AugurConfig) -> str:
+    """Serialize an AugurConfig to a stable YAML string for ConfigMap mounts.
+
+    Uses Pydantic's JSON-mode dump (so Path/Enum fields serialize cleanly) then
+    re-emits as YAML with sorted keys and block style for diff stability."""
+    return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=True, default_flow_style=False)

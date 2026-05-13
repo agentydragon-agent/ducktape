@@ -35,7 +35,7 @@ def portfolio_growth_factor(
         return to_value / from_value
     if require_path:
         raise ValueError(
-            f"Missing portfolio multiplier path for OpenAI sale proceeds: {from_month_index}->{to_month_index}"
+            f"Missing portfolio multiplier path for private-equity sale proceeds: {from_month_index}->{to_month_index}"
         )
     return 1
 

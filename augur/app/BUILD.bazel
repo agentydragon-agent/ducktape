@@ -15,6 +15,7 @@ py_library(
         "//augur/core:scenario_set_py",
         "//augur/core:schemas_py",
         "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 

@@ -15,15 +15,19 @@ from augur.app.config import (
     FinanceSnapshot,
     PersonalFinanceConfig,
     PropertyCatalogConfig,
+    dump_augur_config_yaml,
+    load_augur_config,
 )
 from augur.core.local_regulation import LocationId
 from augur.core.scenario_set import ActorRole
 
 
 def _minimal_config(**overrides: object) -> AugurConfig:
+    """Build a placeholder AugurConfig for schema-shape tests. Values are
+    intentionally generic — deployments supply their own real values."""
     defaults: dict[str, object] = {
-        "agents": (AgentDefinition(actor_id="rai", label="Rai", role=ActorRole.PRIMARY_OWNER),),
-        "personal_finance": PersonalFinanceConfig(cash_usd=10_000),
+        "agents": (AgentDefinition(actor_id="alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER),),
+        "personal_finance": PersonalFinanceConfig(cash_usd=1.0),
         "property_catalog": PropertyCatalogConfig(properties_path="/tmp/properties.json"),
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
     }
@@ -45,13 +49,13 @@ def test_minimal_config_validates_with_defaults() -> None:
 def test_concentrated_holdings_round_trip_through_json() -> None:
     config = _minimal_config(
         personal_finance=PersonalFinanceConfig(
-            cash_usd=21_000,
+            cash_usd=100.0,
             minimum_liquid_reserve_usd=0,
             concentrated_holdings=(
                 ConcentratedHoldingConfig(
-                    holding_id="openai",
-                    label="OpenAI",
-                    units=23_553,
+                    holding_id="example_holding",
+                    label="Example Holding",
+                    units=10,
                     basis_per_unit_usd=0,
                     tax_rate_pct=35,
                     target_max_net_worth_pct=60,
@@ -63,9 +67,9 @@ def test_concentrated_holdings_round_trip_through_json() -> None:
     reloaded = AugurConfig.model_validate_json(config.model_dump_json())
 
     holding = reloaded.personal_finance.concentrated_holdings[0]
-    assert holding.holding_id == "openai"
-    assert holding.label == "OpenAI"
-    assert holding.units == 23_553
+    assert holding.holding_id == "example_holding"
+    assert holding.label == "Example Holding"
+    assert holding.units == 10
     assert holding.tax_rate_pct == 35
 
 
@@ -87,12 +91,12 @@ def test_at_least_one_agent_required() -> None:
 
 def test_actor_id_must_be_snake_case() -> None:
     with pytest.raises(ValidationError, match="String should match pattern"):
-        AgentDefinition(actor_id="Rai", label="Rai", role=ActorRole.PRIMARY_OWNER)
+        AgentDefinition(actor_id="Alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER)
 
 
 def test_holding_id_must_be_snake_case() -> None:
     with pytest.raises(ValidationError, match="String should match pattern"):
-        ConcentratedHoldingConfig(holding_id="OpenAI", label="OpenAI", units=100)
+        ConcentratedHoldingConfig(holding_id="ExampleHolding", label="Example", units=100)
 
 
 def test_snapshot_optional_fields_default_to_zero() -> None:
@@ -108,16 +112,26 @@ def test_snapshot_carries_per_holding_fmv() -> None:
         as_of_date="2026-05-12",
         concentrated_holdings=(
             ConcentratedHoldingSnapshot(
-                holding_id="openai", units=23_553, fmv_usd_per_unit=687.69, valuation_source="Shareworks FMV"
+                holding_id="example_holding", units=10, fmv_usd_per_unit=1.5, valuation_source="placeholder"
             ),
         ),
     )
-    assert snapshot.concentrated_holdings[0].fmv_usd_per_unit == 687.69
+    assert snapshot.concentrated_holdings[0].fmv_usd_per_unit == 1.5
 
 
 def test_unknown_field_is_rejected() -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         _minimal_config(extra_field="nope")
+
+
+def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
+    config = _minimal_config(location_selection=(LocationId.SAN_FRANCISCO_CA,), starting_portfolio_usd=100.0)
+
+    path = tmp_path / "config.yaml"
+    path.write_text(dump_augur_config_yaml(config), encoding="utf-8")
+    reloaded = load_augur_config(path)
+
+    assert reloaded == config
 
 
 if __name__ == "__main__":
