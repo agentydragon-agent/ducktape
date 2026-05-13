@@ -43,6 +43,19 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **Re-key admin-only SOPS files to include user keys** — admin age key currently
+      lives only on wyrm2, which is offline in a SF storage unit. `.sops.yaml` rules say
+      `secrets/nebula/ca.sops.key` and `k8s/tofu-state/db/credentials.sops.yaml` (among
+      others) should be encrypted to admin + 4 user keys, but the files in git still have
+      only admin. Discovered 2026-05-13 trying to provision the Kimsufi node from rugged.
+      Blocks: `tofu apply` of any resource needing the Nebula CA (e.g. `null_resource.nebula_node_cert`
+      for the Kimsufi worker). Also blocks `tofu init` (PG backend creds in
+      `tofu-state/db/credentials.sops.yaml`). - Partial workaround for PG backend: fetch creds from k8s instead of SOPS in
+      `cluster/.envrc` — `kubectl -n tofu-state get secret tofu-state-db-credentials`
+      works with current `claude-rbac`/user kubeconfig. - Real fix when wyrm2 is back: `sops updatekeys` on every file where `.sops.yaml`
+      lists more recipients than the file actually has. Audit with
+      `for f in $(git ls-files '*.sops.*'); do jq -r '.sops.age[]?.recipient' $f; done`
+      and compare to expected recipients per rule.
 - [ ] **Restore SDR kustomization** — unsuspend `cluster/k8s/sdr/flux-kustomization.yaml`
       (remove `suspend: true`) once the radio hardware is set up at the new place.
 - [ ] **Resume CPAP sync CronJob** — unsuspend `cluster/k8s/cpap-sync/cronjob.yaml`
