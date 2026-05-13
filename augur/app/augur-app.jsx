@@ -56,7 +56,7 @@ function fmtInteger(value) {
 }
 
 function fmtMetricValue(metricName, value) {
-  if (metricName?.endsWith("Pct") || metricName === "auragonOwnershipPct") {
+  if (metricName?.endsWith("Pct") || metricName === "partnerOwnershipPct") {
     return fmtPct(value);
   }
   if (metricName?.endsWith("Usd") || metricName?.includes("Value") || metricName?.includes("CashFlow")) {
@@ -142,8 +142,8 @@ function metricOptionsFromResult(result) {
     "netPropertySaleCashFlowUsd",
     "privateEquityValueUsd",
     "privateEquityTenderAvailableValueUsd",
-    "auragonHomeEquityClaimUsd",
-    "auragonOwnershipPct",
+    "partnerHomeEquityClaimUsd",
+    "partnerOwnershipPct",
     "checkingFloorShortfallUsd",
   ];
   return [...metricNames].sort((left, right) => {
@@ -338,10 +338,10 @@ function TerminalPercentileSnapshot({ scenarioResult }) {
     ["Mortgage", "mortgageBalanceUsd", fmtUsd],
     ["Property sale proceeds", "propertySaleNetProceedsUsd", fmtUsd],
     ["Sale cash flow", "netPropertySaleCashFlowUsd", fmtUsd],
-    ["OpenAI private", "privateEquityValueUsd", fmtUsd],
-    ["OpenAI tender available", "privateEquityTenderAvailableValueUsd", fmtUsd],
-    ["Auragon equity", "auragonHomeEquityClaimUsd", fmtUsd],
-    ["Auragon ownership", "auragonOwnershipPct", fmtPct],
+    ["Private equity value", "privateEquityValueUsd", fmtUsd],
+    ["Tender available", "privateEquityTenderAvailableValueUsd", fmtUsd],
+    ["Partner equity", "partnerHomeEquityClaimUsd", fmtUsd],
+    ["Partner ownership", "partnerOwnershipPct", fmtPct],
   ]
     .map(([label, metricName, formatter]) => [label, metricFanTerminal(scenarioResult, metricName), formatter])
     .filter(([, row]) => row);
@@ -464,23 +464,25 @@ function SaleTaxLoanPanel({ property, scenario, scenarioResult }) {
   );
 }
 
-function PartnerOwnershipPanel({ scenarioResult }) {
+function PartnerOwnershipPanel({ scenarioResult, bootstrap }) {
+  const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
+  const partnerLabel = partner?.label ?? "Partner";
   const rows = rowsFromTable(scenarioResult?.monthlyColumns);
   if (rows.length === 0) return null;
   const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === 0);
   const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
   const hasAuragon = rows.some(
-    (row) => row.auragonPresent || row.auragonContributionUsd || row.auragonHomeEquityClaimUsd
+    (row) => row.partnerPresent || row.partnerContributionUsd || row.partnerHomeEquityClaimUsd
   );
   if (!hasAuragon) return null;
   const firstPathContribution = rolloutRows.reduce(
-    (total, row) => total + (Number(row.auragonContributionUsd) || 0),
+    (total, row) => total + (Number(row.partnerContributionUsd) || 0),
     0
   );
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Auragon contribution and equity</div>
+        <div className="augur-eyebrow">{partnerLabel} contribution and equity</div>
       </div>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
@@ -511,10 +513,10 @@ function PartnerOwnershipPanel({ scenarioResult }) {
               return (
                 <tr key={row.monthIndex}>
                   <td>{row.monthIndex}</td>
-                  <td>{fmtUsd(row.auragonContributionUsd)}</td>
-                  <td>{fmtUsd(row.auragonContributionUsedUsd)}</td>
-                  <td>{fmtUsd(row.auragonHomeEquityClaimUsd)}</td>
-                  <td>{fmtPct(row.auragonOwnershipPct)}</td>
+                  <td>{fmtUsd(row.partnerContributionUsd)}</td>
+                  <td>{fmtUsd(row.partnerContributionUsedUsd)}</td>
+                  <td>{fmtUsd(row.partnerHomeEquityClaimUsd)}</td>
+                  <td>{fmtPct(row.partnerOwnershipPct)}</td>
                 </tr>
               );
             })}
@@ -596,13 +598,13 @@ function PrivateEquityLiquidityPanel({ scenarioResult }) {
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">OpenAI private stock liquidity</div>
+        <div className="augur-eyebrow">Private equity liquidity</div>
       </div>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-3">
         {[
-          ["OpenAI private", fmtUsd(terminalP50(scenarioResult, "finalPrivateEquityValueUsd"))],
-          ["OpenAI tender available", fmtUsd(terminalP50(scenarioResult, "finalPrivateEquityTenderAvailableValueUsd"))],
-          ["OpenAI sales", fmtUsd(terminalP50(scenarioResult, "totalPrivateEquitySaleUsd"))],
+          ["Private equity value", fmtUsd(terminalP50(scenarioResult, "finalPrivateEquityValueUsd"))],
+          ["Tender available", fmtUsd(terminalP50(scenarioResult, "finalPrivateEquityTenderAvailableValueUsd"))],
+          ["Sales", fmtUsd(terminalP50(scenarioResult, "totalPrivateEquitySaleUsd"))],
         ].map(([label, value]) => (
           <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
             <div className="augur-eyebrow">{label}</div>
@@ -639,6 +641,10 @@ function PrivateEquityLiquidityPanel({ scenarioResult }) {
 }
 
 function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange, bootstrap }) {
+  const primary = bootstrap?.agents?.find((a) => a.role === "primary_owner");
+  const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
+  const primaryLabel = primary?.label ?? "Owner";
+  const partnerLabel = partner?.label ?? "Partner";
   const scenarios = scenarioSetInput.scenarios;
   const propertiesById = useMemo(
     () => new Map(bootstrap.properties.map((property) => [property.id, property])),
@@ -768,7 +774,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                   />
                 </label>
                 <span className="shrink-0 rounded border border-slate-200 px-2 py-1 text-xs augur-muted dark:border-slate-700">
-                  {scenario.actorPolicy === "owner_plus_partner" ? "Auragon" : "Rai"}
+                  {scenario.actorPolicy === "owner_plus_partner" ? partnerLabel : primaryLabel}
                 </span>
               </div>
             </div>
@@ -781,6 +787,10 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
 
 function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootstrap }) {
   if (!scenario) return null;
+  const primary = bootstrap?.agents?.find((a) => a.role === "primary_owner");
+  const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
+  const primaryLabel = primary?.label ?? "Owner";
+  const partnerLabel = partner?.label ?? "Partner";
   const privateEquityEvents = scenario.privateEquityEvents ?? [];
 
   function updateScenario(patch) {
@@ -892,10 +902,10 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             onChange={(actorPolicy) => updateScenario({ actorPolicy })}
           />
           <OptionButtons
-            label="Where Rai lives"
-            options={bootstrap.raiResidenceModeOptions}
-            value={scenario.raiResidenceMode}
-            onChange={(raiResidenceMode) => updateScenario({ raiResidenceMode })}
+            label={`Where ${primaryLabel} lives`}
+            options={bootstrap.ownerResidenceModeOptions}
+            value={scenario.ownerResidenceMode}
+            onChange={(ownerResidenceMode) => updateScenario({ ownerResidenceMode })}
           />
           <OptionButtons
             label="Rental use"
@@ -1106,23 +1116,23 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               onChange={(startingPortfolioUsd) => updateScenario({ startingPortfolioUsd })}
             />
             <NumberField
-              label="OpenAI private stock value"
+              label="Private equity value"
               value={scenario.privateEquityValueUsd}
               onChange={(privateEquityValueUsd) => updateScenario({ privateEquityValueUsd })}
             />
             <NumberField
-              label="OpenAI private stock units"
+              label="Private equity units"
               step={1}
               value={scenario.privateEquityUnits}
               onChange={(privateEquityUnits) => updateScenario({ privateEquityUnits })}
             />
             <NumberField
-              label="OpenAI tender sale"
+              label="Tender sale"
               value={scenario.privateEquityTenderSaleAmountUsd}
               onChange={(privateEquityTenderSaleAmountUsd) => updateScenario({ privateEquityTenderSaleAmountUsd })}
             />
             <NumberField
-              label="OpenAI tender month"
+              label="Tender month"
               min={0}
               step={1}
               value={scenario.privateEquityTenderMonth}
@@ -1137,16 +1147,16 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               options={PRIVATE_EQUITY_TENDER_PROCEEDS_OPTIONS}
             />
             <NumberField
-              label="Auragon payment"
+              label={`${partnerLabel} payment`}
               step={50}
-              value={scenario.auragonPaymentMonthlyUsd}
-              onChange={(auragonPaymentMonthlyUsd) => updateScenario({ auragonPaymentMonthlyUsd })}
+              value={scenario.partnerPaymentMonthlyUsd}
+              onChange={(partnerPaymentMonthlyUsd) => updateScenario({ partnerPaymentMonthlyUsd })}
               suffix="/ mo"
             />
           </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <div className="augur-eyebrow">OpenAI event schedule</div>
+              <div className="augur-eyebrow">Private equity event schedule</div>
               <button type="button" className="augur-tone-button augur-tone-neutral" onClick={addPrivateEquityEvent}>
                 Add event
               </button>
@@ -1159,20 +1169,20 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
                     className="grid gap-3 border-t border-slate-200 pt-3 dark:border-slate-700 sm:grid-cols-[minmax(0,1fr)_7rem_9rem_auto]"
                   >
                     <SelectField
-                      label={`OpenAI event ${index + 1} type`}
+                      label={`Event ${index + 1} type`}
                       value={event.eventType}
                       onChange={(eventType) => updatePrivateEquityEvent(index, { eventType })}
                       options={PRIVATE_EQUITY_EVENT_OPTIONS}
                     />
                     <NumberField
-                      label={`OpenAI event ${index + 1} month`}
+                      label={`Event ${index + 1} month`}
                       min={0}
                       step={1}
                       value={event.monthIndex}
                       onChange={(monthIndex) => updatePrivateEquityEvent(index, { monthIndex })}
                     />
                     <NumberField
-                      label={`OpenAI event ${index + 1} amount`}
+                      label={`Event ${index + 1} amount`}
                       value={event.amountUsd}
                       onChange={(amountUsd) => updatePrivateEquityEvent(index, { amountUsd })}
                     />
@@ -1348,9 +1358,9 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
     ["finalGenericSp500ValueUsd", "SP500 value"],
     ["totalGenericSp500SaleUsd", "SP500 sales"],
     ["finalCheckingFloorShortfallUsd", "SP500 shortfall"],
-    ["finalPrivateEquityValueUsd", "OpenAI private"],
-    ["finalPrivateEquityTenderAvailableValueUsd", "OpenAI tender available"],
-    ["totalPrivateEquitySaleUsd", "OpenAI sales"],
+    ["finalPrivateEquityValueUsd", "Private equity"],
+    ["finalPrivateEquityTenderAvailableValueUsd", "Tender available"],
+    ["totalPrivateEquitySaleUsd", "Sales"],
     ["finalHomeEquityUsd", "Home equity"],
     ["finalMortgageBalanceUsd", "Mortgage"],
     ["totalRentalIncomeUsd", "Rent income"],
@@ -1361,9 +1371,9 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
     ["totalPropertySaleTaxUsd", "Sale tax"],
     ["totalSaleClosingCostUsd", "Sale costs"],
     ["finalCumulativePropertyDepreciationUsd", "Cum. depreciation"],
-    ["totalPartnerContributionUsedUsd", "Auragon contrib."],
-    ["finalPartnerHomeEquityClaimUsd", "Auragon equity"],
-    ["finalPartnerOwnershipPct", "Auragon own."],
+    ["totalPartnerContributionUsedUsd", "Partner contrib."],
+    ["finalPartnerHomeEquityClaimUsd", "Partner equity"],
+    ["finalPartnerOwnershipPct", "Partner own."],
   ];
   return (
     <section className="augur-card overflow-hidden">
@@ -1505,9 +1515,9 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
     ["genericSp500ValueUsd", "SP500 value", fmtUsd],
     ["genericSp500SaleUsd", "SP500 sales", fmtUsd],
     ["checkingFloorShortfallUsd", "Shortfall", fmtUsd],
-    ["privateEquityValueUsd", "OpenAI private", fmtUsd],
-    ["privateEquityTenderAvailableValueUsd", "OpenAI tender available", fmtUsd],
-    ["privateEquitySaleUsd", "OpenAI sale", fmtUsd],
+    ["privateEquityValueUsd", "Private equity", fmtUsd],
+    ["privateEquityTenderAvailableValueUsd", "Tender available", fmtUsd],
+    ["privateEquitySaleUsd", "Sale", fmtUsd],
     ["propertyValueUsd", "Property value", fmtUsd],
     ["propertyTaxUsd", "Property tax", fmtUsd],
     ["hoaUsd", "HOA", fmtUsd],
@@ -1529,10 +1539,10 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
     ["propertySaleTaxUsd", "Sale tax", fmtUsd],
     ["propertySaleDebtPayoffUsd", "Debt payoff", fmtUsd],
     ["netPropertySaleCashFlowUsd", "Sale cash flow", fmtUsd],
-    ["auragonContributionUsd", "Auragon contrib.", fmtUsd],
-    ["auragonContributionUsedUsd", "Auragon used", fmtUsd],
-    ["auragonHomeEquityClaimUsd", "Auragon equity", fmtUsd],
-    ["auragonOwnershipPct", "Auragon own.", fmtPct],
+    ["partnerContributionUsd", "Partner contrib.", fmtUsd],
+    ["partnerContributionUsedUsd", "Partner used", fmtUsd],
+    ["partnerHomeEquityClaimUsd", "Partner equity", fmtUsd],
+    ["partnerOwnershipPct", "Partner own.", fmtPct],
     ["homeEquityUsd", "Home equity", fmtUsd],
     ["netWorthUsd", "Net worth", fmtUsd],
   ].filter(([column]) => monthlyRows.some((row) => row[column] !== undefined));
@@ -1805,7 +1815,7 @@ export default function AugurApp() {
               selectedRolloutIndex={selectedRolloutIndex}
               onSelectedRolloutIndexChange={setSelectedRolloutIndex}
             />
-            <PartnerOwnershipPanel scenarioResult={selectedScenarioResult} />
+            <PartnerOwnershipPanel scenarioResult={selectedScenarioResult} bootstrap={bootstrap} />
             <LiquidityPolicyPanel scenarioResult={selectedScenarioResult} />
             <PrivateEquityLiquidityPanel scenarioResult={selectedScenarioResult} />
           </div>

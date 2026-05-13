@@ -19,10 +19,11 @@ const bootstrap = {
   defaultInitialCheckingUsd: 25_000,
   defaultCheckingFloorUsd: 10_000,
   defaultCheckingSaleAmountUsd: 20_000,
+  defaultPartnerMonthlyPaymentUsd: 2_435,
   defaultRolloutSamples: 16,
   defaultScenarios: [
     { propertyId: "sf_ashton", actorPolicy: "owner_only" },
-    { propertyId: "vallejo_calhoun", actorPolicy: "owner_plus_partner", label: "Calhoun St + Auragon" },
+    { propertyId: "vallejo_calhoun", actorPolicy: "owner_plus_partner", label: "Calhoun St + Partner" },
   ],
   defaultKnobs: {
     holdYears: 5,
@@ -50,12 +51,16 @@ const bootstrap = {
     counterfactualRentGrowth: 3,
   },
   actorPolicyOptions: [
-    { id: "owner_only", label: "Rai only" },
-    { id: "owner_plus_partner", label: "Rai + Auragon" },
+    { id: "owner_only", label: "Alpha only" },
+    { id: "owner_plus_partner", label: "Alpha + Beta" },
   ],
-  raiResidenceModeOptions: [
+  ownerResidenceModeOptions: [
     { id: "selected_property", label: "Selected" },
     { id: "rental_elsewhere", label: "Elsewhere" },
+  ],
+  agents: [
+    { actorId: "alpha", label: "Alpha", role: "primary_owner" },
+    { actorId: "beta", label: "Beta", role: "equity_building_occupant" },
   ],
   rentalUsePolicyOptions: [
     { id: "not_rented", label: "Not rented" },
@@ -163,7 +168,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(sfScenario.financing.credit_score, 701);
   assert.equal(sfScenario.policies[0].policy_type, "checking_floor_sell_public_stock");
   assert.equal(tenderPolicy.policy_id, "private_equity_tender_rebalance");
-  assert.equal(tenderPolicy.actor_id, "rai");
+  assert.equal(tenderPolicy.actor_id, "alpha");
   assert.equal(tenderPolicy.parameters.proceeds_destination, "generic_sp500_stock");
   assert.equal(sfScenario.rental_plan.rental_mode, "rent_rooms_while_owner_lives_there");
   assert.equal(sfScenario.rental_plan.rooms_rented, 2);
@@ -204,13 +209,14 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     {
       asset_id: "private_equity_private",
       asset_type: "private_equity",
-      owner_actor_id: "rai",
+      owner_actor_id: "alpha",
       value_usd: 123_000,
       units: 456,
       cost_basis_usd: 0,
     }
   );
   assert.equal(backendRequest.scenarios[1].policies[0].policy_type, "partner_equity_accrual");
+  assert.equal(backendRequest.scenarios[1].policies[0].actor_id, "beta");
 });
 
 test("URL state round-trips only input state", () => {
@@ -274,7 +280,7 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   ]);
 });
 
-test("OpenAI scheduled sale requests normalize into backend events", () => {
+test("scheduled private equity sale requests normalize into backend events", () => {
   const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
   input.scenarios[0] = {
     ...input.scenarios[0],

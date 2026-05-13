@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 
 from augur.core.local_regulation import LocalRegulation, LocationId
-from augur.core.scenario_set import PropertyId
+from augur.core.scenario_set import ActorRole, PropertyId
 from augur.core.schemas import ApiModel, ScenarioKnobs
 
 
@@ -64,6 +64,12 @@ class RentalUsePolicyOption(Option):
 
 class LiquidReservePolicyOption(Option):
     id: LiquidReservePolicyId
+
+
+class AgentOption(ApiModel):
+    actor_id: str
+    label: str
+    role: ActorRole
 
 
 class DefaultScenario(ApiModel):
@@ -128,3 +134,5 @@ class BootstrapResponse(ApiModel):
     owner_residence_mode_options: list[OwnerResidenceModeOption]
     rental_use_policy_options: list[RentalUsePolicyOption]
     liquid_reserve_policy_options: list[LiquidReservePolicyOption]
+    agents: list[AgentOption]
+    default_partner_monthly_payment_usd: float = 0

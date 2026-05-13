@@ -65,6 +65,7 @@ class PersonalFinanceConfig(ApiModel):
     cash_usd: float
     minimum_liquid_reserve_usd: NonNegativeFloat = 0.0
     concentrated_holdings: tuple[ConcentratedHoldingConfig, ...] = ()
+    default_partner_monthly_payment_usd: NonNegativeFloat = 0.0
 
 
 class PropertyCatalogConfig(ApiModel):

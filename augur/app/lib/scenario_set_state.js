@@ -115,10 +115,10 @@ export function createScenarioInput(bootstrap, overrides = {}) {
       overrides.actorPolicy ??
       bootstrap?.defaultActorPolicy ??
       defaultOption(bootstrap?.actorPolicyOptions, "owner_only"),
-    raiResidenceMode:
-      overrides.raiResidenceMode ??
+    ownerResidenceMode:
+      overrides.ownerResidenceMode ??
       bootstrap?.defaultOwnerResidenceMode ??
-      defaultOption(bootstrap?.raiResidenceModeOptions, "selected_property"),
+      defaultOption(bootstrap?.ownerResidenceModeOptions, "selected_property"),
     rentalUsePolicy:
       overrides.rentalUsePolicy ??
       bootstrap?.defaultRentalUsePolicy ??
@@ -134,7 +134,10 @@ export function createScenarioInput(bootstrap, overrides = {}) {
       bootstrap?.defaultCheckingSaleAmountUsd ?? 20_000
     ),
     startingPortfolioUsd: finiteNumber(overrides.startingPortfolioUsd, defaultKnobs.startingPortfolioUsd ?? 0),
-    auragonPaymentMonthlyUsd: finiteNumber(overrides.auragonPaymentMonthlyUsd, 2435),
+    partnerPaymentMonthlyUsd: finiteNumber(
+      overrides.partnerPaymentMonthlyUsd,
+      bootstrap?.defaultPartnerMonthlyPaymentUsd ?? 0
+    ),
     holdYears: positiveNumber(overrides.holdYears, defaultKnobs.holdYears ?? 5),
     financingMode: FINANCING_MODE_IDS.has(overrides.financingMode)
       ? overrides.financingMode
@@ -208,7 +211,7 @@ export function createDefaultScenarioSetInput(bootstrap) {
 function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
   const propertyIds = new Set((bootstrap?.properties ?? []).map((property) => property.id));
   const actorPolicyIds = optionIds(bootstrap?.actorPolicyOptions);
-  const raiResidenceModeIds = optionIds(bootstrap?.raiResidenceModeOptions);
+  const ownerResidenceModeIds = optionIds(bootstrap?.ownerResidenceModeOptions);
   const rentalUsePolicyIds = optionIds(bootstrap?.rentalUsePolicyOptions);
   const liquidReservePolicyIds = optionIds(bootstrap?.liquidReservePolicyOptions);
   const defaultScenario = createScenarioInput(bootstrap, { index });
@@ -225,9 +228,9 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
     color: typeof scenario?.color === "string" && scenario.color ? scenario.color : defaultScenario.color,
     propertyId: propertyIds.has(scenario?.propertyId) ? scenario.propertyId : defaultScenario.propertyId,
     actorPolicy: actorPolicyIds.has(scenario?.actorPolicy) ? scenario.actorPolicy : defaultScenario.actorPolicy,
-    raiResidenceMode: raiResidenceModeIds.has(scenario?.raiResidenceMode)
-      ? scenario.raiResidenceMode
-      : defaultScenario.raiResidenceMode,
+    ownerResidenceMode: ownerResidenceModeIds.has(scenario?.ownerResidenceMode)
+      ? scenario.ownerResidenceMode
+      : defaultScenario.ownerResidenceMode,
     rentalUsePolicy: rentalUsePolicyIds.has(scenario?.rentalUsePolicy)
       ? scenario.rentalUsePolicy
       : defaultScenario.rentalUsePolicy,
@@ -238,9 +241,9 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
     checkingFloorUsd: finiteNumber(scenario?.checkingFloorUsd, defaultScenario.checkingFloorUsd),
     checkingSaleAmountUsd: positiveNumber(scenario?.checkingSaleAmountUsd, defaultScenario.checkingSaleAmountUsd),
     startingPortfolioUsd: finiteNumber(scenario?.startingPortfolioUsd, defaultScenario.startingPortfolioUsd),
-    auragonPaymentMonthlyUsd: finiteNumber(
-      scenario?.auragonPaymentMonthlyUsd,
-      defaultScenario.auragonPaymentMonthlyUsd
+    partnerPaymentMonthlyUsd: finiteNumber(
+      scenario?.partnerPaymentMonthlyUsd,
+      defaultScenario.partnerPaymentMonthlyUsd
     ),
     holdYears: positiveNumber(scenario?.holdYears, defaultScenario.holdYears),
     financingMode: FINANCING_MODE_IDS.has(scenario?.financingMode)
@@ -320,11 +323,18 @@ export function normalizeScenarioSetInput(input, bootstrap) {
   };
 }
 
+function agentsByRole(bootstrap) {
+  const agents = bootstrap?.agents ?? [];
+  const primary = agents.find((a) => a.role === "primary_owner");
+  const partner = agents.find((a) => a.role === "equity_building_occupant") ?? null;
+  return { primary, partner };
+}
+
 function occupancyModeForScenario(scenario) {
-  if (scenario.raiResidenceMode === "other_owned_property") {
+  if (scenario.ownerResidenceMode === "other_owned_property") {
     return "owner_lives_in_other_owned_property";
   }
-  if (scenario.raiResidenceMode === "rental_elsewhere") {
+  if (scenario.ownerResidenceMode === "rental_elsewhere") {
     return "owner_rents_elsewhere";
   }
   if (scenario.rentalUsePolicy === "rent_whole_property") {
@@ -343,16 +353,17 @@ function rentalModeForScenario(scenario) {
   return "not_rented";
 }
 
-function scenarioPolicies(scenario) {
+function scenarioPolicies(scenario, bootstrap) {
+  const { primary, partner } = agentsByRole(bootstrap);
   const policies = [];
-  if (scenario.actorPolicy === "owner_plus_partner") {
+  if (scenario.actorPolicy === "owner_plus_partner" && partner) {
     policies.push({
       policyId: "partner_equity_accrual",
       policyType: "partner_equity_accrual",
-      actorId: "auragon",
+      actorId: partner.actorId,
       enabled: scenario.enabled,
       parameters: {
-        baseMonthlyPaymentUsd: scenario.auragonPaymentMonthlyUsd,
+        baseMonthlyPaymentUsd: scenario.partnerPaymentMonthlyUsd,
       },
     });
   }
@@ -360,7 +371,7 @@ function scenarioPolicies(scenario) {
     policies.push({
       policyId: "checking_floor",
       policyType: "checking_floor_sell_public_stock",
-      actorId: "rai",
+      actorId: primary.actorId,
       enabled: true,
       parameters: {
         floorUsd: scenario.checkingFloorUsd,
@@ -375,7 +386,7 @@ function scenarioPolicies(scenario) {
     policies.push({
       policyId: "private_equity_tender_rebalance",
       policyType: "private_equity_tender_rebalance",
-      actorId: "rai",
+      actorId: primary.actorId,
       enabled: true,
       parameters: {
         proceedsDestination: scenario.privateEquityTenderProceedsDestination,
@@ -385,19 +396,20 @@ function scenarioPolicies(scenario) {
   return policies;
 }
 
-function scenarioActors(scenario) {
+function scenarioActors(scenario, bootstrap) {
+  const { primary, partner } = agentsByRole(bootstrap);
   const actors = [
     {
-      actorId: "rai",
-      label: "Rai",
-      role: "primary_owner",
+      actorId: primary.actorId,
+      label: primary.label,
+      role: primary.role,
     },
   ];
-  if (scenario.actorPolicy === "owner_plus_partner") {
+  if (scenario.actorPolicy === "owner_plus_partner" && partner) {
     actors.push({
-      actorId: "auragon",
-      label: "Auragon",
-      role: "equity_building_occupant",
+      actorId: partner.actorId,
+      label: partner.label,
+      role: partner.role,
     });
   }
   return actors;
@@ -411,7 +423,8 @@ function scenarioAccountingParameters(scenario, property) {
   };
 }
 
-function scenarioEvents(scenario, property) {
+function scenarioEvents(scenario, property, bootstrap) {
+  const { primary } = agentsByRole(bootstrap);
   const downPaymentPct = scenario.downPaymentPct;
   const loanAmountUsd = Math.max(0, (property?.priceUsd ?? 0) * (1 - downPaymentPct / 100));
   const events = [
@@ -419,7 +432,7 @@ function scenarioEvents(scenario, property) {
       eventId: "purchase",
       eventType: "property_purchase",
       monthIndex: 0,
-      actorId: "rai",
+      actorId: primary.actorId,
       propertyId: scenario.propertyId,
       amountUsd: property?.priceUsd ?? 0,
       description: "Property purchase at scenario start.",
@@ -432,7 +445,7 @@ function scenarioEvents(scenario, property) {
       eventId: "mortgage",
       eventType: "mortgage_origination",
       monthIndex: 0,
-      actorId: "rai",
+      actorId: primary.actorId,
       propertyId: scenario.propertyId,
       amountUsd: loanAmountUsd,
       description: "Mortgage originated at scenario start.",
@@ -453,9 +466,9 @@ function scenarioEvents(scenario, property) {
         0,
         Math.floor(nullableNumber(scenario.privateEquityTenderMonth, DEFAULT_PRIVATE_EQUITY_TENDER_MONTH))
       ),
-      actorId: "rai",
+      actorId: primary.actorId,
       amountUsd: scenario.privateEquityTenderSaleAmountUsd,
-      description: "Requested OpenAI tender sale.",
+      description: "Requested tender sale.",
       parameters: {
         proceedsDestination: scenario.privateEquityTenderProceedsDestination,
       },
@@ -467,9 +480,9 @@ function scenarioEvents(scenario, property) {
       eventId: privateEquityEvent.eventId,
       eventType: privateEquityEvent.eventType,
       monthIndex: Math.max(0, Math.floor(privateEquityEvent.monthIndex)),
-      actorId: "rai",
+      actorId: primary.actorId,
       amountUsd: privateEquityEvent.amountUsd,
-      description: "Scheduled OpenAI liquidity sale request.",
+      description: "Scheduled liquidity sale request.",
       parameters: {
         proceedsDestination: scenario.privateEquityTenderProceedsDestination,
       },
@@ -478,12 +491,13 @@ function scenarioEvents(scenario, property) {
   return events;
 }
 
-function scenarioBalanceSheet(scenario) {
+function scenarioBalanceSheet(scenario, bootstrap) {
+  const { primary } = agentsByRole(bootstrap);
   const assets = [
     {
       assetId: "sp500",
       assetType: "generic_sp500_stock",
-      ownerActorId: "rai",
+      ownerActorId: primary.actorId,
       valueUsd: scenario.startingPortfolioUsd,
       costBasisUsd: scenario.startingPortfolioUsd,
     },
@@ -492,7 +506,7 @@ function scenarioBalanceSheet(scenario) {
     assets.push({
       assetId: "private_equity_private",
       assetType: "private_equity",
-      ownerActorId: "rai",
+      ownerActorId: primary.actorId,
       valueUsd: scenario.privateEquityValueUsd,
       units: Math.max(0, scenario.privateEquityUnits),
       costBasisUsd: 0,
@@ -503,7 +517,7 @@ function scenarioBalanceSheet(scenario) {
       {
         accountId: "checking",
         accountType: "checking",
-        ownerActorId: "rai",
+        ownerActorId: primary.actorId,
         balanceUsd: scenario.initialCheckingUsd,
       },
     ],
@@ -523,9 +537,9 @@ function scenarioToBackendScenario(scenario, bootstrap) {
     label: scenario.label,
     enabled: scenario.enabled,
     color: scenario.color,
-    actors: scenarioActors(scenario),
-    events: scenarioEvents(scenario, property),
-    policies: scenarioPolicies(scenario),
+    actors: scenarioActors(scenario, bootstrap),
+    events: scenarioEvents(scenario, property, bootstrap),
+    policies: scenarioPolicies(scenario, bootstrap),
     propertySelection: {
       propertyId: scenario.propertyId,
     },
@@ -538,7 +552,7 @@ function scenarioToBackendScenario(scenario, bootstrap) {
     },
     occupancyPlan: {
       occupancyMode: occupancyModeForScenario(scenario),
-      raiResidencePropertyId: scenario.raiResidenceMode === "selected_property" ? scenario.propertyId : null,
+      ownerResidencePropertyId: scenario.ownerResidenceMode === "selected_property" ? scenario.propertyId : null,
       startMonth: 0,
       endMonth: scenario.rentalUsePolicy === "rent_whole_property" ? 0 : holdMonths,
     },
@@ -571,7 +585,7 @@ function scenarioToBackendScenario(scenario, bootstrap) {
       maintenancePct: scenario.maintenancePct,
       depreciableBasisPct: scenario.depreciableBasisPct,
     },
-    initialBalanceSheet: scenarioBalanceSheet(scenario),
+    initialBalanceSheet: scenarioBalanceSheet(scenario, bootstrap),
   };
 }
 
@@ -594,14 +608,14 @@ function serializableScenario(scenario) {
     color: scenario.color,
     propertyId: scenario.propertyId,
     actorPolicy: scenario.actorPolicy,
-    raiResidenceMode: scenario.raiResidenceMode,
+    ownerResidenceMode: scenario.ownerResidenceMode,
     rentalUsePolicy: scenario.rentalUsePolicy,
     liquidReservePolicy: scenario.liquidReservePolicy,
     initialCheckingUsd: scenario.initialCheckingUsd,
     checkingFloorUsd: scenario.checkingFloorUsd,
     checkingSaleAmountUsd: scenario.checkingSaleAmountUsd,
     startingPortfolioUsd: scenario.startingPortfolioUsd,
-    auragonPaymentMonthlyUsd: scenario.auragonPaymentMonthlyUsd,
+    partnerPaymentMonthlyUsd: scenario.partnerPaymentMonthlyUsd,
     holdYears: scenario.holdYears,
     financingMode: scenario.financingMode,
     downPaymentPct: scenario.downPaymentPct,

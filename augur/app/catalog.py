@@ -13,6 +13,7 @@ from augur.app.config import AugurConfig
 from augur.core.bootstrap import (
     ActorPolicyId,
     ActorPolicyOption,
+    AgentOption,
     BootstrapResponse,
     HomeValueFactorId,
     LiquidReservePolicyId,
@@ -232,4 +233,6 @@ def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
         owner_residence_mode_options=_owner_residence_mode_options(primary),
         rental_use_policy_options=_rental_use_policy_options(primary, partner),
         liquid_reserve_policy_options=LIQUID_RESERVE_POLICY_OPTIONS,
+        agents=[AgentOption(actor_id=agent.actor_id, label=agent.label, role=agent.role) for agent in config.agents],
+        default_partner_monthly_payment_usd=config.personal_finance.default_partner_monthly_payment_usd,
     )
