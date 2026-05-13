@@ -78,5 +78,7 @@ py_test(
         "//augur/core:schemas_py",
         "//augur/model/markets:registry_py",
         "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

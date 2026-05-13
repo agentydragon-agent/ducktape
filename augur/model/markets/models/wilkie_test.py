@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import math
-import unittest
 
 import numpy as np
+import pytest_bazel
 
 from augur.model.markets.models.wilkie import WilkieCascade
 from augur.model.markets.scenarios import HistoricalSeries, historical_log_returns
@@ -42,7 +42,7 @@ def _generate_cascade(
     return log_returns
 
 
-class WilkieCascadeTest(unittest.TestCase):
+class TestWilkieCascade:
     def test_recovers_known_cascade_parameters(self) -> None:
         factor_names = ("inflation", "rent", "home", "sp500")
         intercept = np.array([0.002, 0.001, 0.003, 0.005])
@@ -130,4 +130,4 @@ class WilkieCascadeTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest_bazel.main()

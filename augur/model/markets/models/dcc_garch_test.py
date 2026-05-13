@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import unittest
-
 import numpy as np
+import pytest_bazel
 
 from augur.model.markets.models.dcc_garch import DccGjrGarch
 from augur.model.markets.scenarios import HistoricalSeries
@@ -22,7 +21,7 @@ def _toy_historical(n_steps: int = 400, n_factors: int = 2, seed: int = 0) -> Hi
     return HistoricalSeries(factor_names=("sp500", "rent"), levels=levels, months=months)
 
 
-class DccGjrGarchTest(unittest.TestCase):
+class TestDccGjrGarch:
     def test_fit_runs_and_predictive_density_is_finite(self) -> None:
         historical = _toy_historical()
         model = DccGjrGarch()
@@ -48,4 +47,4 @@ class DccGjrGarchTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest_bazel.main()

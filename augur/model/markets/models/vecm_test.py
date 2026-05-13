@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import unittest
-
 import numpy as np
+import pytest_bazel
 
 from augur.model.markets.models.vecm import VecmConfig, VecmModel
 from augur.model.markets.scenarios import HistoricalSeries
@@ -16,7 +15,7 @@ def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
     return HistoricalSeries(factor_names=tuple(f"f{i}" for i in range(levels.shape[1])), levels=levels, months=months)
 
 
-class VecmModelTest(unittest.TestCase):
+class TestVecmModel:
     def test_fit_runs_on_simulated_cointegrated_series(self) -> None:
         # Build a 2-factor cointegrated random walk: r2 = r1 + small mean-reverting noise.
         rng = np.random.default_rng(42)
@@ -82,4 +81,4 @@ class VecmModelTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest_bazel.main()

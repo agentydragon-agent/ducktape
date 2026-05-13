@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import math
-import unittest
 
 import numpy as np
+import pytest_bazel
 
 from augur.model.markets.models.var import Var1Gaussian
 from augur.model.markets.scenarios import HistoricalSeries, historical_log_returns
@@ -33,7 +33,7 @@ def _generate_var1(
     return log_returns
 
 
-class Var1GaussianFitTest(unittest.TestCase):
+class TestVar1GaussianFit:
     def test_recovers_known_var1_parameters(self) -> None:
         intercept = np.array([0.005, 0.002])
         coef = np.array([[0.30, 0.10], [-0.05, 0.20]])
@@ -92,4 +92,4 @@ class Var1GaussianFitTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest_bazel.main()

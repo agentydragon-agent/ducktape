@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import unittest
-
 import numpy as np
+import pytest_bazel
 
 from augur.model.markets.models.bootstrap import StationaryBootstrap, StationaryBootstrapConfig
 from augur.model.markets.scenarios import HistoricalSeries
@@ -18,7 +17,7 @@ def _toy_historical(n_steps: int, n_factors: int, seed: int) -> HistoricalSeries
     return HistoricalSeries(factor_names=tuple(f"f{i}" for i in range(n_factors)), levels=levels, months=months)
 
 
-class StationaryBootstrapTest(unittest.TestCase):
+class TestStationaryBootstrap:
     def test_simulate_uses_only_historical_log_returns(self) -> None:
         historical = _toy_historical(50, 2, seed=1)
         model = StationaryBootstrap(StationaryBootstrapConfig(expected_block_length=8.0))
@@ -45,4 +44,4 @@ class StationaryBootstrapTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest_bazel.main()

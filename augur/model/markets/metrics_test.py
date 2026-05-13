@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import math
-import unittest
 
 import numpy as np
 import pytest
+import pytest_bazel
 
 from augur.model.markets.metrics import (
     ScoredHeldOutLogDensity,
@@ -121,7 +121,7 @@ def _toy_historical(n_steps: int, *, mu: np.ndarray, sigma: np.ndarray, seed: in
     return HistoricalSeries(factor_names=tuple(f"f{i}" for i in range(n_factors)), levels=levels, months=months)
 
 
-class HeldOutLogDensityTest(unittest.TestCase):
+class TestHeldOutLogDensity:
     def test_matches_closed_form_gaussian_on_held_out_window(self) -> None:
         mu = np.array([0.005, 0.003])
         sigma = np.array([0.04, 0.025])
@@ -210,7 +210,7 @@ class HeldOutLogDensityTest(unittest.TestCase):
             held_out_predictive_log_density(model, historical, train_fraction=0.99)
 
 
-class RollingOriginPredictiveLogDensityTest(unittest.TestCase):
+class TestRollingOriginPredictiveLogDensity:
     def test_total_matches_closed_form_gaussian_over_all_origins(self) -> None:
         mu = np.array([0.005, 0.001])
         sigma = np.array([0.04, 0.02])
@@ -254,7 +254,7 @@ class RollingOriginPredictiveLogDensityTest(unittest.TestCase):
         assert "returned None" in result.unscored_reason
 
 
-class MultiStepPredictiveLogDensityTest(unittest.TestCase):
+class TestMultiStepPredictiveLogDensity:
     def test_horizons_match_closed_form_for_iid_gaussian(self) -> None:
         mu = np.array([0.005, 0.001])
         sigma = np.array([0.04, 0.02])
@@ -288,4 +288,4 @@ class MultiStepPredictiveLogDensityTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest_bazel.main()
