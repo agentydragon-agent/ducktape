@@ -21,6 +21,7 @@ terraform {
     local = { source = "hashicorp/local", version = "~> 2.5.0" }
     null  = { source = "hashicorp/null", version = "~> 3.2.0" }
     tls   = { source = "hashicorp/tls", version = "~> 4.1.0" }
+    ovh   = { source = "ovh/ovh", version = "~> 2.0" }
   }
 }
 
@@ -75,3 +76,14 @@ provider "hcloud" {
 }
 
 provider "talos" {}
+
+data "sops_file" "ovh_credentials" {
+  source_file = "${path.module}/../../../secrets/ovh-credentials.sops.yaml"
+}
+
+provider "ovh" {
+  endpoint           = "ovh-us"
+  application_key    = data.sops_file.ovh_credentials.data["application_key"]
+  application_secret = data.sops_file.ovh_credentials.data["application_secret"]
+  consumer_key       = data.sops_file.ovh_credentials.data["consumer_key"]
+}

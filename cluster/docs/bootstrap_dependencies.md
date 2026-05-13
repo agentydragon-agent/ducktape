@@ -69,6 +69,7 @@ secrets that Flux and tofu consume.
 | `secrets/ducktape-automation.<date>.private-key.sops.pem` | GitHub App PEM (RSA, SOPS bin)     | Admin age key + cluster-secrets + ci                           | L5: Flux git auth (mirrored into `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml`) |
 | `secrets/shared/cluster-secrets-age.yaml`                 | Age keypair (private + public)     | Admin age key                                                  | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret)                                     |
 | `secrets/shared/cluster-tokens.yaml`                      | Hetzner + Proxmox API tokens       | Admin age key + user age keys                                  | `.envrc` → `TF_VAR_hcloud_token`, `PROXMOX_VE_API_TOKEN`                                             |
+| `secrets/ovh-credentials.sops.yaml`                       | OVH API credentials (AK/AS/CK)     | Admin age key + user age keys                                  | `terraform.tf` OVH provider → `ovh-nodes.tf` Kimsufi provisioning                                    |
 | `secrets/k8s-ca.crt`                                      | K8s cluster CA cert (plaintext)    | None                                                           | L7: kubelet TLS on NixOS workers                                                                     |
 | `secrets/k8s-worker.yaml`                                 | k8s bootstrap token                | Admin age key                                                  | L7: kubelet TLS bootstrap on NixOS workers                                                           |
 | `cluster/k8s/**/*.sops.yaml` (27 files)                   | App credentials (API keys, tokens) | Admin age key + cluster age key                                | L6: individual services + L5 Flux git auth (`ducktape-automation-github-app`)                        |
@@ -91,6 +92,10 @@ GitHub → repo settings �� deploy keys. Redeploy via `tofu apply`.
 (Hetzner console) and Proxmox token (Proxmox UI → API Tokens), SOPS-encrypt
 to `secrets/shared/cluster-tokens.yaml`, commit. `.envrc` picks them up automatically.
 
+**If `secrets/ovh-credentials.sops.yaml` is lost**: Create new API credentials at
+`https://api.us.ovhcloud.com/createToken/` (GET/PUT/POST/DELETE on `/dedicated/server/*`),
+SOPS-encrypt to `secrets/ovh-credentials.sops.yaml`, commit.
+
 **If a `k8s/**/\*.sops.yaml` app credential is lost\*\*: Re-enter the credential
 from the external service (see [App Credentials](#app-credentials) below),
 SOPS-encrypt, commit, push. Flux picks it up automatically.
@@ -106,7 +111,7 @@ backend. Resources have `lifecycle { prevent_destroy = true }`.
 | `proxmox_virtual_environment_user.persistent`                     | L2: roles                                     | Proxmox users (kubernetes-csi@pve, terraform@pve) | L2: tokens                              |
 | `proxmox_virtual_environment_user_token.persistent`               | L2: users                                     | API tokens for CSI + terraform                    | L3: Proxmox VM creation; L6: CSI driver |
 | `local_file.nebula_ca_crt` / `local_sensitive_file.nebula_ca_key` | L1: `secrets/nebula/ca.{crt,sops.key}`        | CA cert/key on disk                               | L2: node cert signing                   |
-| `null_resource.nebula_node_cert` (5 Talos nodes)                  | L2: CA on disk                                | Per-node cert+key at `nebula-certs/`              | L3: Talos machine config (embedded)     |
+| `null_resource.nebula_node_cert` (6 Talos nodes incl. kimsufi)    | L2: CA on disk                                | Per-node cert+key at `nebula-certs/`              | L3: Talos machine config (embedded)     |
 | `talos_machine_secrets.cluster`                                   | `var.talos_version`                           | CA keypairs, bootstrap token, etcd certs          | L3: all Talos machine configs           |
 | `kubernetes_namespace.flux_system`                                | L3: kubeconfig                                | `flux-system` namespace                           | L2: SOPS age secret; L5: Flux           |
 | `kubernetes_secret.sops_age_cluster_secrets`                      | L1: `secrets/shared/cluster-secrets-age.yaml` | k8s secret in flux-system                         | L5: Flux SOPS decryption                |

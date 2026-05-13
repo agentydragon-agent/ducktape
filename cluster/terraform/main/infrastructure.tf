@@ -39,7 +39,7 @@ locals {
   bootstrap_node = "vps0"
 
   # Total expected node count (for health checks)
-  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes)
+  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes) + 1 # +1 kimsufi
 
   # All controlplane endpoints (for talosconfig) - VPS CP IPs + Proxmox controlplane IPs
   all_controlplane_ips = concat(

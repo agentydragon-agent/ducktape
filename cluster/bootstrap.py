@@ -78,6 +78,14 @@ INFRA_TARGETS = [
     "kubernetes_namespace.flux_system",
     "kubernetes_secret.sops_age_cluster_secrets",
     "kubernetes_config_map.cluster_info",
+    # OVH Kimsufi worker node (bare metal, rescue→dd→harddisk provisioning)
+    "ovh_dedicated_server.kimsufi",
+    "ovh_dedicated_server_update.kimsufi_rescue",
+    "ovh_dedicated_server_reboot_task.kimsufi_to_rescue",
+    "null_resource.install_talos_kimsufi",
+    "ovh_dedicated_server_update.kimsufi_harddisk",
+    "ovh_dedicated_server_reboot_task.kimsufi_to_talos",
+    "talos_machine_configuration_apply.kimsufi",
 ]
 
 

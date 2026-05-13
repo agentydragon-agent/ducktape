@@ -324,6 +324,16 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
 
+  # OVH API credentials for Terraform (US endpoint, HIL Kimsufi node)
+  - path_regex: secrets/ovh-credentials\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
   # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
   - path_regex: secrets/github-ci-read-pat\.yaml$
     key_groups:

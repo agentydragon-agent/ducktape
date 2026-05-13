@@ -76,3 +76,9 @@ variable "nixos_rebuild" {
   type        = bool
   default     = false
 }
+
+variable "kimsufi_service_name" {
+  description = "OVH service name of the Kimsufi KS-1 server (e.g. ns12345.ip-1-2-3.us)"
+  type        = string
+  default     = ""
+}
