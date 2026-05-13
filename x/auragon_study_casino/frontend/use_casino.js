@@ -14,7 +14,7 @@
 
 import { useEffect, useState } from "react";
 
-import { casinoSync, useCasinoState } from "./sync.js";
+import { casinoSync, useCasinoState, useSyncStatus } from "./sync.js";
 
 const ACTIVE_SESSION_LS_KEY = "casino:active_session";
 
@@ -63,6 +63,8 @@ const newActionId = (prefix) =>
 export function useCasino() {
   const state = useCasinoState();
   const activeSession = useActiveSession();
+  const syncStatus = useSyncStatus();
+  const offline = syncStatus.kind === "offline";
 
   const balance = state?.balance ?? { credits: 0, tokens: 0 };
   const credits = Math.floor(balance.credits ?? 0);
@@ -275,6 +277,7 @@ export function useCasino() {
     });
 
   return {
+    offline,
     credits,
     tokens,
     sessions,

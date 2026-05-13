@@ -6,8 +6,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-import StudyCasino from "../../src/study_casino.jsx";
-import { casinoSync } from "../../src/sync.js";
+import StudyCasino from "../../study_casino.jsx";
+import { casinoSync } from "../../sync.js";
 
 const FROZEN_NOW_MS = Date.parse("2025-02-01T12:00:00Z");
 

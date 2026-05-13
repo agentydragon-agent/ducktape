@@ -24,13 +24,13 @@ filegroup(
 
 js_library(
     name = "sync",
-    srcs = ["src/sync.js"],
+    srcs = ["sync.js"],
     deps = [":node_modules/react"],
 )
 
 js_library(
     name = "use_casino",
-    srcs = ["src/use_casino.js"],
+    srcs = ["use_casino.js"],
     deps = [
         ":node_modules/react",
         ":sync",
@@ -39,7 +39,7 @@ js_library(
 
 js_library(
     name = "sync_icon",
-    srcs = ["src/SyncIcon.jsx"],
+    srcs = ["SyncIcon.jsx"],
     deps = [
         ":node_modules/react",
         ":sync",
@@ -47,10 +47,77 @@ js_library(
 )
 
 js_library(
-    name = "study_casino",
-    srcs = ["src/study_casino.jsx"],
+    name = "shared",
+    srcs = ["shared.jsx"],
+    deps = [":node_modules/react"],
+)
+
+js_library(
+    name = "study_view",
+    srcs = ["StudyView.jsx"],
     deps = [
         ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "roulette",
+    srcs = ["Roulette.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "slots",
+    srcs = ["Slots.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "blackjack",
+    srcs = ["Blackjack.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "prizes_view",
+    srcs = ["PrizesView.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "stats_view",
+    srcs = ["StatsView.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+    ],
+)
+
+js_library(
+    name = "study_casino",
+    srcs = ["study_casino.jsx"],
+    deps = [
+        ":blackjack",
+        ":node_modules/react",
+        ":prizes_view",
+        ":roulette",
+        ":shared",
+        ":slots",
+        ":stats_view",
+        ":study_view",
         ":sync_icon",
         ":use_casino",
     ],
@@ -58,7 +125,7 @@ js_library(
 
 js_library(
     name = "main",
-    srcs = ["src/main.jsx"],
+    srcs = ["main.jsx"],
     deps = [
         ":node_modules/react",
         ":node_modules/react-dom",
