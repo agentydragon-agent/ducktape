@@ -32,7 +32,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: app
-          image: ghcr.io/agentydragon/study-casino:devel-20260511073007-e5beb76 # {"$imagepolicy": "flux-system:study-casino"}
+          image: ghcr.io/agentydragon/study-casino:devel-20260513005045-27a4563 # {"$imagepolicy": "flux-system:study-casino"}
           imagePullPolicy: Always
           ports:
             - name: http
