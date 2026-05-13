@@ -3,6 +3,8 @@ must satisfy without exercising any actual file loading."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
@@ -132,6 +134,29 @@ def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
     reloaded = load_augur_config(path)
 
     assert reloaded == config
+
+
+def test_relative_property_catalog_paths_anchor_against_yaml_dir(tmp_path) -> None:
+    """ConfigMap mounts put config.yaml + properties.json side-by-side, so the
+    yaml stores `properties_path: properties.json` and the loader resolves
+    against the yaml's directory."""
+    (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "config.yaml").write_text(
+        dump_augur_config_yaml(
+            _minimal_config(
+                property_catalog=PropertyCatalogConfig(
+                    properties_path=Path("properties.json"), asset_dir=Path("assets")
+                )
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = load_augur_config(tmp_path / "config.yaml")
+
+    assert reloaded.property_catalog.properties_path == (tmp_path / "properties.json").resolve()
+    assert reloaded.property_catalog.asset_dir == (tmp_path / "assets").resolve()
 
 
 if __name__ == "__main__":

@@ -118,8 +118,31 @@ class AugurConfig(ApiModel):
 
 
 def load_augur_config(path: Path) -> AugurConfig:
-    """Parse + validate an AugurConfig from a YAML file."""
-    return AugurConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    """Parse + validate an AugurConfig from a YAML file.
+
+    Relative `property_catalog.properties_path` and `property_catalog.asset_dir`
+    are anchored against the yaml's parent directory — useful for ConfigMap
+    mounts where the yaml and the property data live side-by-side (e.g.
+    `/etc/augur/{config.yaml,properties.json}`)."""
+    config = AugurConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    return _anchor_property_catalog_paths(config, base_dir=path.parent)
+
+
+def _anchor_property_catalog_paths(config: AugurConfig, *, base_dir: Path) -> AugurConfig:
+    catalog = config.property_catalog
+    properties_path = catalog.properties_path
+    if not properties_path.is_absolute():
+        properties_path = (base_dir / properties_path).resolve()
+    asset_dir = catalog.asset_dir
+    if asset_dir is not None and not asset_dir.is_absolute():
+        asset_dir = (base_dir / asset_dir).resolve()
+    if properties_path == catalog.properties_path and asset_dir == catalog.asset_dir:
+        return config
+    return config.model_copy(
+        update={
+            "property_catalog": catalog.model_copy(update={"properties_path": properties_path, "asset_dir": asset_dir})
+        }
+    )
 
 
 def resolve_augur_config_path() -> Path:
