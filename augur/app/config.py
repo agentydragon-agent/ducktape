@@ -20,6 +20,7 @@ from typing import Literal
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
 
+from augur.core.bootstrap import DefaultScenario
 from augur.core.local_regulation import LocationId
 from augur.core.scenario_set import ActorRole
 from augur.core.schemas import ApiModel
@@ -108,3 +109,4 @@ class AugurConfig(ApiModel):
     starting_portfolio_usd: NonNegativeFloat = 0.0
     pmms_survey_date: str | None = None
     default_rollout_samples: PositiveInt = 128
+    bootstrap_default_scenarios: tuple[DefaultScenario, ...] = ()

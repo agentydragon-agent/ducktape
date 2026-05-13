@@ -28,7 +28,7 @@ def _minimal_config(**overrides: object) -> AugurConfig:
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
     }
     defaults.update(overrides)
-    return AugurConfig(**defaults)  # type: ignore[arg-type]
+    return AugurConfig(**defaults)
 
 
 def test_minimal_config_validates_with_defaults() -> None:
@@ -117,7 +117,7 @@ def test_snapshot_carries_per_holding_fmv() -> None:
 
 def test_unknown_field_is_rejected() -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        _minimal_config(extra_field="nope")  # type: ignore[call-arg]
+        _minimal_config(extra_field="nope")
 
 
 if __name__ == "__main__":
