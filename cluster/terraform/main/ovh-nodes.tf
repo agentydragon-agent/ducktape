@@ -56,15 +56,23 @@ data "ovh_dedicated_server_boots" "kimsufi_harddisk" {
 }
 
 # ============================================================================
+# SSH KEY — for OVH rescue mode authentication
+# ============================================================================
+
+# ED25519 keypair injected into the OVH rescue environment so remote-exec can
+# SSH in to dd the Talos image. Stored in SOPS (secrets/ovh-rescue-ssh.sops.yaml),
+# not generated in-TF, so it survives state loss without breaking access.
+data "sops_file" "ovh_rescue_ssh" {
+  source_file = "${path.module}/../../../secrets/ovh-rescue-ssh.sops.yaml"
+}
+
+# ============================================================================
 # OVH SERVER RESOURCE — sets rescue SSH key
 # ============================================================================
 
-# Inject the cluster SSH key into rescue env so remote-exec can authenticate.
-# tls_private_key.ssh is created by hetzner-nodes.tf for the Hetzner nodes;
-# reusing it here avoids generating a second key pair.
 resource "ovh_dedicated_server" "kimsufi" {
   service_name   = var.kimsufi_service_name
-  rescue_ssh_key = tls_private_key.ssh.public_key_openssh
+  rescue_ssh_key = data.sops_file.ovh_rescue_ssh.data["public_key"]
 }
 
 # ============================================================================
@@ -88,10 +96,8 @@ resource "ovh_dedicated_server_update" "kimsufi_rescue" {
 # Step 2: Reboot into rescue.
 resource "ovh_dedicated_server_reboot_task" "kimsufi_to_rescue" {
   service_name = var.kimsufi_service_name
-  keepers = {
-    boot_id = tolist(data.ovh_dedicated_server_boots.kimsufi_rescue.result)[0]
-  }
-  depends_on = [ovh_dedicated_server_update.kimsufi_rescue]
+  keepers      = [tostring(tolist(data.ovh_dedicated_server_boots.kimsufi_rescue.result)[0])]
+  depends_on   = [ovh_dedicated_server_update.kimsufi_rescue]
 }
 
 # Step 3: SSH into rescue, dd Talos image.
@@ -107,7 +113,7 @@ resource "null_resource" "install_talos_kimsufi" {
     type        = "ssh"
     host        = data.ovh_dedicated_server.kimsufi.ip
     user        = "root"
-    private_key = tls_private_key.ssh.private_key_pem
+    private_key = data.sops_file.ovh_rescue_ssh.data["private_key"]
     timeout     = "15m"
   }
 
@@ -134,10 +140,8 @@ resource "ovh_dedicated_server_update" "kimsufi_harddisk" {
 # Step 5: Reboot into Talos.
 resource "ovh_dedicated_server_reboot_task" "kimsufi_to_talos" {
   service_name = var.kimsufi_service_name
-  keepers = {
-    boot = tolist(data.ovh_dedicated_server_boots.kimsufi_harddisk.result)[0]
-  }
-  depends_on = [ovh_dedicated_server_update.kimsufi_harddisk]
+  keepers      = [tostring(tolist(data.ovh_dedicated_server_boots.kimsufi_harddisk.result)[0])]
+  depends_on   = [ovh_dedicated_server_update.kimsufi_harddisk]
 }
 
 # ============================================================================

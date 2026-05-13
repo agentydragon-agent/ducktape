@@ -334,6 +334,17 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
 
+  # OVH rescue-mode SSH key (ED25519, used to SSH into rescue and dd Talos image)
+  - path_regex: secrets/ovh-rescue-ssh\.sops\.yaml$
+    encrypted_regex: ^private_key$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
   # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
   - path_regex: secrets/github-ci-read-pat\.yaml$
     key_groups:

@@ -13,12 +13,12 @@ locals {
 
   # Maps TF node keys → persistent-auth node names for cert lookup
   nebula_node_names = {
-    vps0             = "talos-vps-cp-0.nebula.allegedly.works"
-    vps1             = "talos-vps-cp-1.nebula.allegedly.works"
-    pve_cp0          = "talos-pve-cp-0.nebula.allegedly.works"
-    vps_worker0      = "talos-vps-worker-0.nebula.allegedly.works"
-    vps_worker1      = "talos-vps-worker-1.nebula.allegedly.works"
-    kimsufi_worker0  = "talos-kimsufi-worker-0.nebula.allegedly.works"
+    vps0            = "talos-vps-cp-0.nebula.allegedly.works"
+    vps1            = "talos-vps-cp-1.nebula.allegedly.works"
+    pve_cp0         = "talos-pve-cp-0.nebula.allegedly.works"
+    vps_worker0     = "talos-vps-worker-0.nebula.allegedly.works"
+    vps_worker1     = "talos-vps-worker-1.nebula.allegedly.works"
+    kimsufi_worker0 = "talos-kimsufi-worker-0.nebula.allegedly.works"
   }
 
   nebula_certs = {

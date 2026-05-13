@@ -129,9 +129,9 @@ locals {
   # Groups are unused (no nebula firewall rules reference them) but kept
   # minimal for future use.
   talos_nebula_nodes = {
-    "talos-vps-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.1/16", groups = "lighthouse" }
-    "talos-vps-cp-1.nebula.allegedly.works"     = { ip = "10.42.0.2/16", groups = "lighthouse" }
-    "talos-pve-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.10/16", groups = "" }
+    "talos-vps-cp-0.nebula.allegedly.works"         = { ip = "10.42.0.1/16", groups = "lighthouse" }
+    "talos-vps-cp-1.nebula.allegedly.works"         = { ip = "10.42.0.2/16", groups = "lighthouse" }
+    "talos-pve-cp-0.nebula.allegedly.works"         = { ip = "10.42.0.10/16", groups = "" }
     "talos-vps-worker-0.nebula.allegedly.works"     = { ip = "10.42.0.11/16", groups = "lighthouse" }
     "talos-vps-worker-1.nebula.allegedly.works"     = { ip = "10.42.0.12/16", groups = "lighthouse" }
     "talos-kimsufi-worker-0.nebula.allegedly.works" = { ip = "10.42.0.13/16", groups = "lighthouse" }
