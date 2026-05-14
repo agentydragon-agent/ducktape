@@ -17,7 +17,10 @@ def parse_frontmatter_text(text: str) -> Mapping[str, object]:
     except ValueError as exc:
         raise ValueError("malformed YAML frontmatter delimiters") from exc
 
-    data = yaml.safe_load(frontmatter)
+    try:
+        data = yaml.safe_load(frontmatter)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"invalid YAML frontmatter: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError("frontmatter must decode to a mapping")
     return data

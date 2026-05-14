@@ -7,7 +7,29 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 _FRONTMATTER_TEST_LIB = "//skills:skill_frontmatter_test_lib"
+_FRONTMATTER_VALIDATION_BIN = "//skills:frontmatter_validation_bin"
 _SKILL_SPEC_LIB = "//skills:skill_spec"
+
+def _as_label(src):
+    if src.startswith("//") or src.startswith(":"):
+        return src
+    return ":" + src
+
+def _is_skill_md(src):
+    return paths.basename(src.split(":")[-1]) == "SKILL.md"
+
+def _validated_skill_md(name, entry_idx, src_idx, src):
+    target = "{}_validated_skill_md_{}_{}".format(name, entry_idx, src_idx)
+    out = "{}_validated_skill_md_{}_{}.md".format(name, entry_idx, src_idx)
+    src_label = _as_label(src)
+    native.genrule(
+        name = target,
+        srcs = [src_label],
+        outs = [out],
+        cmd = "$(location {}) $(location {}) $@".format(_FRONTMATTER_VALIDATION_BIN, src_label),
+        tools = [_FRONTMATTER_VALIDATION_BIN],
+    )
+    return ":" + target
 
 def skill_spec_library(name, tar_basename, package_name, visibility = None):
     """Generate a py_library exporting `SPEC = SkillSpec(...)` for a skill tar.
@@ -74,16 +96,22 @@ def skill_package(name, srcs = None, contents = None, visibility = None):
     seen_destinations = {}
 
     for entry_idx, entry in enumerate(entries):
+        packaged_srcs = []
+        renames = {}
         for src in entry.srcs:
             public_srcs.append(src)
             if entry.preserve_paths and (src.startswith("//") or ":" in src):
                 fail("skill_package preserve_paths=True only supports same-package files: {}".format(src))
 
             if entry.preserve_paths:
-                destination = src
+                destination_without_prefix = src
             else:
                 basename = paths.basename(src.split(":")[-1])
-                destination = "{}/{}".format(entry.prefix, basename) if entry.prefix else basename
+                destination_without_prefix = basename
+            destination = "{}/{}".format(
+                entry.prefix,
+                destination_without_prefix,
+            ) if entry.prefix else destination_without_prefix
 
             if destination in seen_destinations:
                 fail("skill_package would package duplicate destination '{}' from '{}' and '{}'".format(
@@ -92,12 +120,19 @@ def skill_package(name, srcs = None, contents = None, visibility = None):
                     src,
                 ))
             seen_destinations[destination] = src
+            if _is_skill_md(src):
+                packaged_src = _validated_skill_md(name, entry_idx, len(packaged_srcs), src)
+                renames[packaged_src] = destination_without_prefix
+            else:
+                packaged_src = src
+            packaged_srcs.append(packaged_src)
 
         pkg_name = "{}_pkg_{}".format(name, entry_idx)
         pkg_files(
             name = pkg_name,
-            srcs = entry.srcs,
+            srcs = packaged_srcs,
             prefix = entry.prefix if entry.prefix else None,
+            renames = renames,
             strip_prefix = strip_prefix.from_pkg() if entry.preserve_paths else strip_prefix.files_only(),
         )
         packaged_targets.append(":" + pkg_name)

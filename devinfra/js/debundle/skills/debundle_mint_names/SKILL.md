@@ -1,6 +1,10 @@
 ---
 name: debundle_mint_names
-description: "Assign descriptive names to unrenamed symbols in any debundle spec. Reads the emitted JS, understands each symbol's implementation and call sites, and updates the YAML spec `name:` field. Does NOT move modules or edit taxonomy. Trigger: user wants to name/rename minified symbols in a debundle RE spec."
+description: >
+  Assign descriptive names to unrenamed symbols in any debundle spec. Reads the
+  emitted JS, understands each symbol's implementation and call sites, and
+  updates the YAML spec `name:` field. Does NOT move modules or edit taxonomy.
+  Trigger: user wants to name/rename minified symbols in a debundle RE spec.
 ---
 
 # Debundle Mint Names
