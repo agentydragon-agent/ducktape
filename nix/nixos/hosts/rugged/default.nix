@@ -106,11 +106,17 @@ in
     printing.enable = true;
     thermald.enable = true; # Intel thermal management
     upower.enable = true; # Battery status (dual battery support)
-    logind.settings.Login = {
-      HandleLidSwitch = "suspend";
-      HandleLidSwitchExternalPower = "lock";
-      HandlePowerKey = "suspend";
-      HandlePowerKeyLongPress = "poweroff";
+    logind = {
+      # Keep user processes (tmux, etc.) alive across GNOME logout/login
+      extraConfig = ''
+        KillUserProcesses=no
+      '';
+      settings.Login = {
+        HandleLidSwitch = "suspend";
+        HandleLidSwitchExternalPower = "lock";
+        HandlePowerKey = "suspend";
+        HandlePowerKeyLongPress = "poweroff";
+      };
     };
   };
 
