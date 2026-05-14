@@ -43,6 +43,12 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **Add Kimsufi/OVH worker public IP to the public DNS pool**.
+      `tf/gitops/dns-records/main.tf` still hardcodes only the four Hetzner VPS
+      ExternalIPs in `local.vps_ips`, which backs the wildcard and apex Route53
+      A records. Add the Kimsufi worker's public IP from OVH/Terraform once
+      confirmed, and consider renaming `vps_ips` to something like
+      `public_gateway_ips` so the mixed Hetzner + OVH pool is explicit.
 - [ ] **OVH API token: add `/services/*` scopes, drop kimsufi display_name workaround**.
       Current OVH token only has `/dedicated/server/*`. The `ovh_dedicated_server`
       resource auto-syncs `iam.displayName` into `display_name` state on every Read,
