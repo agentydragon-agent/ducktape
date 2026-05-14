@@ -105,16 +105,17 @@ market_bundle=None)` returns a typed `SimulationRun`; callers can inspect a
 ## Active Step 7: Arrays Reconcile To Ledger
 
 Current status: first-pass reconciliation coverage exists, public row-level
-detail is available, and the first recurring cash-flow arrays now derive from
-ledger rows. The remaining work is to keep shrinking bespoke array math without
-changing monthly-column semantics.
+detail is available, and the first recurring cash-flow plus sale transaction
+arrays now derive from ledger rows. The remaining work is to keep shrinking
+bespoke array math without changing monthly-column semantics.
 
 Next slices:
 
 1. Generalize the ledger-derived matrix helper if the next array families need
    multiple categories, actor filters, property filters, or balance snapshots.
-2. Move sale-related reporting arrays toward ledger/state derivation once tax
-   timing and basis semantics are explicit enough.
+2. Move remaining sale explanatory arrays toward accounting detail once tax
+   timing, basis, exclusion, and depreciation-recapture semantics are explicit
+   enough.
 3. Keep the existing monthly columns stable, and keep reconciliation tests in
    place as guardrails.
 4. Add any missing causes/IDs needed by derivation. Do not add ad hoc string
@@ -129,6 +130,10 @@ Done for Step 7:
 - Monthly spend, mortgage interest/principal/payment, rental income/fees,
   property carrying costs, and net property cash flow derive from ledger rows
   before being exposed as monthly result arrays.
+- SP500 sale/basis/gain/tax, checking-floor sale action, private-equity
+  sale/basis/tax, property sale gross/closing cost/debt payoff/tax/net
+  proceeds, and net property sale cash flow derive from ledger rows before
+  being exposed as monthly result arrays.
 - E2E tests reconstruct matrices from ledger/snapshot rows for monthly spend,
   SP500 sales/taxes, PE sales/taxes, mortgage payments, rental/property
   operating cash flows, property sale settlement/taxes, and partner-equity

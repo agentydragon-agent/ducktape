@@ -658,6 +658,11 @@ def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
     gross_equity_claim = rollout.series("home_equity_usd")[sale_month] * ownership_pct
 
     np.testing.assert_allclose(rollout.series("property_sale_net_proceeds_usd")[sale_month], sale_net_proceeds)
+    np.testing.assert_allclose(rollout.series("property_sale_debt_payoff_usd")[sale_month], sale_action.debt_payoff_usd)
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="property_sale", category="property_sale_debt_payoff"),
+        result.matrix("property_sale_debt_payoff_usd"),
+    )
     assert sale_net_proceeds < rollout.series("home_equity_usd")[sale_month]
     assert not np.isclose(expected_partner_claim, gross_equity_claim)
     np.testing.assert_allclose(rollout.series("partner_home_equity_claim_usd")[sale_month], expected_partner_claim)

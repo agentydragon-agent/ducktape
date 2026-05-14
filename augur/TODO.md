@@ -4,13 +4,14 @@ Last design scan: 2026-05-14.
 
 ## Next
 
-- [ ] Continue `plans/e2e_redesign.md` Step 7 by moving sale-related transaction arrays toward ledger/state derivation once tax timing and basis semantics are explicit enough.
+- [ ] Continue `plans/e2e_redesign.md` Step 7 by separating remaining state snapshot arrays from transaction-flow arrays, then derive the practical transaction-flow arrays from ledger/state detail.
 
 ## Step 7 Scope
 
 - [x] Persist actor-keyed ledger entries and balance snapshots into scenario result detail. Public `ScenarioResult`, `ScenarioRun`, and selected-rollout detail now expose row-level ledger/snapshot records.
 - [x] Add reconciliation e2e tests for current policy arrays: monthly spend, SP500 sales and taxes, private-equity sales and taxes, mortgage payments, rental/property operating cash flows, property sale settlement/taxes, and partner-equity ledgers/claims.
 - [x] Derive recurring cash-flow arrays from ledger rows: monthly spend, mortgage interest/principal/payment, rental income/fees, property carrying costs, and net property cash flow.
+- [x] Derive sale transaction arrays from ledger rows: SP500 sale/basis/gain/tax, checking-floor sale action, private-equity sale/basis/tax, property sale gross/closing cost/debt payoff/tax/net proceeds, and net property sale cash flow.
 - [ ] Make arrays derive from state/ledger where practical. Where an array remains bespoke for performance or UI compatibility, assert that it reconciles to the ledger total and document any intentional difference.
 - [x] Expand one-rollout detail beyond curves/actions/ledger/snapshots to include market observations and explicit policy decisions.
 

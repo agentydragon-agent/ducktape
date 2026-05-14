@@ -531,16 +531,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         maintenance_usd=property_cash_flow.maintenance_usd * property_live_mask,
     )
     generic_sp500_value = np.zeros((rollout_count, month_count), dtype="float64")
-    generic_sp500_sale = np.zeros((rollout_count, month_count), dtype="float64")
-    generic_sp500_sale_basis = np.zeros((rollout_count, month_count), dtype="float64")
     generic_sp500_sale_gain = np.zeros((rollout_count, month_count), dtype="float64")
     generic_sp500_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
-    checking_floor_action = np.zeros((rollout_count, month_count), dtype="float64")
     checking_floor_shortfall = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_value = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_liquidity_available_value = np.zeros((rollout_count, month_count), dtype="float64")
-    private_equity_sale = np.zeros((rollout_count, month_count), dtype="float64")
-    private_equity_sale_basis = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_taxable_gain = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     cash = np.zeros((rollout_count, month_count), dtype="float64")
@@ -617,7 +612,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         )
         market_liquidity_available_value = market_opportunity.liquidity_available_value_usd
         private_equity_sale_month = np.zeros(rollout_count, dtype="float64")
-        private_equity_sale_basis_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_taxable_gain_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_tax_month = np.zeros(rollout_count, dtype="float64")
         for private_equity_sale_policy in private_equity_sale_policies:
@@ -674,7 +668,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             remaining_private_equity_basis = sale_application.remaining_basis_usd
             remaining_private_equity_units = sale_application.remaining_units
             private_equity_sale_month = private_equity_sale_month + sale_application.sale_usd
-            private_equity_sale_basis_month = private_equity_sale_basis_month + sale_application.basis_usd
             private_equity_sale_taxable_gain_month = (
                 private_equity_sale_taxable_gain_month + sale_application.taxable_gain_usd
             )
@@ -722,13 +715,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
 
         cash[:, month] = current_cash
         generic_sp500_value[:, month] = sp500_value_after_sale
-        generic_sp500_sale[:, month] = sp500_sale
-        generic_sp500_sale_basis[:, month] = sp500_basis
         generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis
-        checking_floor_action[:, month] = sp500_sale
         checking_floor_shortfall[:, month] = sp500_shortfall
-        private_equity_sale[:, month] = private_equity_sale_month
-        private_equity_sale_basis[:, month] = private_equity_sale_basis_month
         private_equity_sale_taxable_gain[:, month] = private_equity_sale_taxable_gain_month
         private_equity_sale_tax[:, month] = private_equity_sale_tax_month
         private_equity_liquidity_available_value[:, month] = np.maximum(
@@ -756,7 +744,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     partner_equity = _settle_partner_equity_on_property_sale(
         partner_equity, sale_month=disposition.sale_month, property_sale_net_proceeds_usd=property_sale_net_proceeds
     )
-    net_property_sale_cash_flow = property_sale_net_proceeds
     tax_cash_adjustment = np.cumsum(
         (disposition.property_sale_tax_usd - property_sale_tax)
         + (private_equity_sale_tax - adjusted_private_equity_sale_tax)
@@ -937,23 +924,96 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     net_property_cash_flow_from_ledger = (
         rental_income_from_ledger - property_carrying_cost_from_ledger - mortgage_payment_from_ledger
     )
+    generic_sp500_sale_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="asset",
+        category="generic_sp500_sale",
+    )
+    generic_sp500_sale_basis_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="basis",
+        category="generic_sp500_sale_basis",
+    )
+    generic_sp500_sale_tax_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="tax",
+        category="generic_sp500_sale_tax",
+    )
+    private_equity_sale_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="asset",
+        category="private_equity_sale",
+    )
+    private_equity_sale_basis_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="basis",
+        category="private_equity_sale_basis",
+    )
+    private_equity_sale_tax_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="tax",
+        category="private_equity_sale_tax",
+    )
+    property_sale_gross_from_ledger = _ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="property_sale",
+        category="property_sale_gross",
+    )
+    sale_closing_cost_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="property_sale",
+        category="sale_closing_cost",
+    )
+    property_sale_debt_payoff_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="property_sale",
+        category="property_sale_debt_payoff",
+    )
+    property_sale_tax_from_ledger = -_ledger_amount_matrix(
+        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="tax", category="property_sale_tax"
+    )
+    property_sale_net_proceeds_from_ledger = _ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="cash",
+        category="property_sale_net_proceeds",
+    )
     return ScenarioRunArrays(
         scenario_id=scenario.scenario_id,
         scenario_label=scenario.label,
         month_index=month_index,
         cash_usd=cash,
         generic_sp500_value_usd=generic_sp500_value,
-        generic_sp500_sale_usd=generic_sp500_sale,
-        generic_sp500_sale_basis_usd=generic_sp500_sale_basis,
-        generic_sp500_sale_gain_usd=generic_sp500_sale_gain,
-        generic_sp500_sale_tax_usd=generic_sp500_sale_tax,
-        checking_floor_action_usd=checking_floor_action,
+        generic_sp500_sale_usd=generic_sp500_sale_from_ledger,
+        generic_sp500_sale_basis_usd=generic_sp500_sale_basis_from_ledger,
+        generic_sp500_sale_gain_usd=generic_sp500_sale_from_ledger - generic_sp500_sale_basis_from_ledger,
+        generic_sp500_sale_tax_usd=generic_sp500_sale_tax_from_ledger,
+        checking_floor_action_usd=generic_sp500_sale_from_ledger,
         checking_floor_shortfall_usd=checking_floor_shortfall,
         private_equity_value_usd=private_equity_value,
         private_equity_liquidity_available_value_usd=private_equity_liquidity_available_value,
-        private_equity_sale_usd=private_equity_sale,
-        private_equity_sale_basis_usd=private_equity_sale_basis,
-        private_equity_sale_tax_usd=private_equity_sale_tax,
+        private_equity_sale_usd=private_equity_sale_from_ledger,
+        private_equity_sale_basis_usd=private_equity_sale_basis_from_ledger,
+        private_equity_sale_tax_usd=private_equity_sale_tax_from_ledger,
         federal_income_tax_usd=annual_tax.federal_income_tax_usd,
         california_income_tax_usd=annual_tax.california_income_tax_usd,
         total_income_tax_usd=annual_tax.total_income_tax_usd,
@@ -975,13 +1035,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         property_carrying_cost_usd=property_carrying_cost_from_ledger,
         net_property_cash_flow_usd=net_property_cash_flow_from_ledger,
         purchase_closing_cost_usd=disposition.purchase_closing_cost_usd,
-        sale_closing_cost_usd=disposition.sale_closing_cost_usd,
+        sale_closing_cost_usd=sale_closing_cost_from_ledger,
         property_depreciation_usd=disposition.property_depreciation_usd,
         cumulative_property_depreciation_usd=disposition.cumulative_property_depreciation_usd,
-        property_sale_gross_usd=disposition.property_sale_gross_usd,
-        property_sale_net_proceeds_usd=property_sale_net_proceeds,
-        property_sale_tax_usd=property_sale_tax,
-        property_sale_debt_payoff_usd=disposition.property_sale_debt_payoff_usd,
+        property_sale_gross_usd=property_sale_gross_from_ledger,
+        property_sale_net_proceeds_usd=property_sale_net_proceeds_from_ledger,
+        property_sale_tax_usd=property_sale_tax_from_ledger,
+        property_sale_debt_payoff_usd=property_sale_debt_payoff_from_ledger,
         property_sale_adjusted_basis_usd=disposition.property_sale_adjusted_basis_usd,
         realized_property_gain_usd=disposition.realized_property_gain_usd,
         property_sale_capital_gain_usd=disposition.property_sale_capital_gain_usd,
@@ -989,7 +1049,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         taxable_property_capital_gain_usd=disposition.taxable_property_capital_gain_usd,
         taxable_property_gain_usd=disposition.taxable_property_gain_usd,
         depreciation_recapture_usd=disposition.depreciation_recapture_usd,
-        net_property_sale_cash_flow_usd=net_property_sale_cash_flow,
+        net_property_sale_cash_flow_usd=property_sale_net_proceeds_from_ledger,
         home_equity_usd=home_equity,
         owner_home_equity_claim_usd=owner_home_equity_claim,
         partner_home_equity_claim_usd=partner_home_equity_claim,
