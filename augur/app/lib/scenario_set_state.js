@@ -570,7 +570,7 @@ function scenarioToBackendScenario(scenario, bootstrap) {
 export function scenarioSetInputToRequest(input, bootstrap) {
   const normalized = normalizeScenarioSetInput(input, bootstrap);
   return {
-    scenarioSetId: "house_futures_explorer",
+    scenarioSetId: "augur_futures_explorer",
     title: normalized.title,
     marketRequest: normalized.marketRequest,
     reportSpec: normalized.reportSpec,

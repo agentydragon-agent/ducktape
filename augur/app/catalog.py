@@ -31,6 +31,28 @@ from augur.core.local_regulation import LOCAL_REGULATION_BY_LOCATION, LocationId
 from augur.core.scenario_set import ActorRole
 from augur.core.schemas import ScenarioKnobs
 
+LOCATION_A = Location(
+    id=LocationId.LOCATION_A,
+    label="Location A",
+    city="Location A",
+    state="Fixture",
+    home_value_factor_id=HomeValueFactorId.LOCATION_A_HOME,
+    rent_factor_id=RentFactorId.LOCATION_A_RENT,
+    local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.LOCATION_A],
+    notes=("Synthetic public fixture location.",),
+)
+
+LOCATION_B = Location(
+    id=LocationId.LOCATION_B,
+    label="Location B",
+    city="Location B",
+    state="Fixture",
+    home_value_factor_id=HomeValueFactorId.LOCATION_B_HOME,
+    rent_factor_id=RentFactorId.LOCATION_B_RENT,
+    local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.LOCATION_B],
+    notes=("Synthetic public fixture location.",),
+)
+
 SF_LOCATION = Location(
     id=LocationId.SAN_FRANCISCO_CA,
     label="San Francisco, CA",
@@ -67,7 +89,7 @@ VALLEJO_MARE_ISLAND_LOCATION = Location(
     ),
 )
 
-LOCATIONS = (SF_LOCATION, VALLEJO_MAINLAND_LOCATION, VALLEJO_MARE_ISLAND_LOCATION)
+LOCATIONS = (LOCATION_A, LOCATION_B, SF_LOCATION, VALLEJO_MAINLAND_LOCATION, VALLEJO_MARE_ISLAND_LOCATION)
 
 LOCATION_BY_ID = {location.id: location for location in LOCATIONS}
 
@@ -210,12 +232,22 @@ def load_properties(config: AugurConfig) -> tuple[Property, ...]:
 
 
 def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
-    properties = sorted(
-        load_properties(config), key=lambda property_: (property_.location.city, property_.price_usd, property_.id)
+    loaded_properties = load_properties(config)
+    selected_location_ids = (
+        set(config.location_selection)
+        if config.location_selection is not None
+        else {property_.location_id for property_ in loaded_properties}
     )
+    locations = [location for location in LOCATIONS if location.id in selected_location_ids]
+    properties = sorted(
+        (property_ for property_ in loaded_properties if property_.location_id in selected_location_ids),
+        key=lambda property_: (property_.location.city, property_.price_usd, property_.id),
+    )
+    if not properties:
+        raise ValueError("Augur property catalog has no properties after applying location_selection")
     primary, partner = _agents_by_role(config)
     return BootstrapResponse(
-        locations=list(LOCATIONS),
+        locations=locations,
         properties=properties,
         default_property_id=properties[0].id,
         default_actor_policy=ActorPolicyId.OWNER_ONLY,

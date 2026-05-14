@@ -1,0 +1,44 @@
+agents:
+  - actor_id: agent_a
+    label: Agent A
+    role: primary_owner
+  - actor_id: agent_b
+    label: Agent B
+    role: equity_building_occupant
+bootstrap_default_scenarios:
+  - actor_policy: owner_only
+    label: Location A baseline
+    property_id: location_a_property
+  - actor_policy: owner_plus_partner
+    label: Location B shared
+    property_id: location_b_property
+default_rollout_samples: 8
+location_selection:
+  - location_a
+  - location_b
+minimum_reserve_mode: projected_deficits
+personal_finance:
+  cash_usd: 50000.0
+  concentrated_holdings:
+    - basis_per_unit_usd: 5.0
+      holding_id: private_holding_a
+      label: Private Holding A
+      units: 1000
+  default_partner_monthly_payment_usd: 2000.0
+  minimum_liquid_reserve_usd: 10000.0
+pmms_survey_date: "2026-05-14"
+property_catalog:
+  properties_path: properties.json
+reserve_forward_months: 12
+snapshot:
+  as_of_date: "2026-05-14"
+  cash_usd: 50000.0
+  concentrated_holdings:
+    - fmv_usd_per_unit: 25.0
+      holding_id: private_holding_a
+      units: 1000
+      valuation_source: public fixture
+  notes:
+    - Public e2e fixture; values are synthetic.
+  sp500_proxy_portfolio_usd: 150000.0
+starting_portfolio_usd: 150000.0

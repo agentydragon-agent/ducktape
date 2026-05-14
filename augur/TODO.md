@@ -5,8 +5,8 @@ Last design scan: 2026-05-14.
 ## Next
 
 - [ ] Continue `plans/e2e_redesign.md` Step 7 by replacing `allocated_to_source_month` tax timing with realistic annual/estimated-payment liability timing.
-- [ ] Add public Augur app/server e2e tests backed by non-private fixtures: generated fixture `AugurConfig`, deterministic/noop market provider path, representative property fixtures, and Playwright coverage for the generic UI.
-- [ ] Add a public Bazel-runnable Augur server binary that accepts `--config`, `--dist-dir`, and `--rollout-config` so private deployments do not need their own `serve.py` wrapper.
+- [x] Add public Augur app/server e2e tests backed by non-private fixtures: fixture `AugurConfig`, deterministic/noop market provider path, representative property fixtures, and Playwright coverage for the generic UI.
+- [x] Add a public Bazel-runnable Augur server binary that accepts `--config`, `--dist-dir`, and `--rollout-config` so private deployments do not need their own `serve.py` wrapper.
 - [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 
 ## Step 7 Scope
@@ -44,5 +44,5 @@ Last design scan: 2026-05-14.
 
 - [ ] Key partner-equity reporting by partner actor or make it derivable from actor-keyed ledger entries. Aggregate scenario arrays are fine for charts but should not be the only public detail.
 - [ ] Reconsider whether to reintroduce per-component partner contribution reporting for interest, property tax, insurance, HOA, and maintenance.
-- [ ] Replace deployment-private app e2e tests as the main confidence signal. Gaffer should mostly generate YAML/provide private assets; public Augur behavior should be covered in ducktape with fixtures that are not real personal data.
+- [x] Replace deployment-private app e2e tests as the main confidence signal. Public Augur behavior now has a ducktape browser smoke backed by non-private fixtures; gaffer can keep only private-config/assets coverage.
 - [ ] Refresh `augur/SPEC.md` once policy execution, sale taxes, and one-rollout detail have stabilized.

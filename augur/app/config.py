@@ -96,9 +96,9 @@ class AugurConfig(ApiModel):
     """The single root configuration object an augur deployment reads
     at startup. Everything user-specific lives here.
 
-    `location_selection = None` (the default) means surface every location
-    registered in `augur.core.local_regulation.LOCAL_REGULATION_BY_LOCATION`.
-    A non-None tuple restricts the UI / scenarios to that subset.
+    `location_selection = None` (the default) means surface the locations
+    represented by the loaded property catalog. A non-None tuple restricts
+    the UI / scenarios to that subset.
     """
 
     agents: tuple[AgentDefinition, ...] = Field(min_length=1)

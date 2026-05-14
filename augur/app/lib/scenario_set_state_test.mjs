@@ -11,7 +11,7 @@ import {
 import { decamelizeObjectKeys } from "./casing.js";
 
 const bootstrap = {
-  defaultPropertyId: "sf_ashton",
+  defaultPropertyId: "location_a_property",
   defaultActorPolicy: "owner_only",
   defaultOwnerResidenceMode: "selected_property",
   defaultRentalUsePolicy: "not_rented",
@@ -22,8 +22,8 @@ const bootstrap = {
   defaultPartnerMonthlyPaymentUsd: 2_435,
   defaultRolloutSamples: 16,
   defaultScenarios: [
-    { propertyId: "sf_ashton", actorPolicy: "owner_only" },
-    { propertyId: "vallejo_calhoun", actorPolicy: "owner_plus_partner", label: "Calhoun St + Partner" },
+    { propertyId: "location_a_property", actorPolicy: "owner_only" },
+    { propertyId: "location_b_property", actorPolicy: "owner_plus_partner", label: "Location B shared" },
   ],
   defaultKnobs: {
     holdYears: 5,
@@ -73,37 +73,37 @@ const bootstrap = {
   ],
   properties: [
     {
-      id: "sf_ashton",
-      address: "Ashton Ave",
+      id: "location_a_property",
+      address: "Location A Property",
       priceUsd: 998_000,
       hoaMonthlyUsd: 321,
       rentEstimateUsd: 4_200,
       beds: 3,
       location: {
-        id: "san_francisco_ca",
-        localRegulation: { propertyTaxAnnualPct: 1.18, localTransferTaxPct: 0, specialAssessmentAnnualUsd: 0 },
+        id: "location_a",
+        localRegulation: { propertyTaxAnnualPct: 1, localTransferTaxPct: 0, specialAssessmentAnnualUsd: 0 },
       },
     },
     {
-      id: "vallejo_calhoun",
-      address: "Calhoun St",
+      id: "location_b_property",
+      address: "Location B Property",
       priceUsd: 520_000,
       rentEstimateUsd: 3_100,
       beds: 4,
       location: {
-        id: "vallejo_ca",
-        localRegulation: { propertyTaxAnnualPct: 1.1, localTransferTaxPct: 0, specialAssessmentAnnualUsd: 0 },
+        id: "location_b",
+        localRegulation: { propertyTaxAnnualPct: 1, localTransferTaxPct: 0, specialAssessmentAnnualUsd: 0 },
       },
     },
   ],
 };
 
-test("default input creates comparable SF and Vallejo scenarios", () => {
+test("default input creates comparable generic location scenarios", () => {
   const input = createDefaultScenarioSetInput(bootstrap);
 
   assert.equal(input.scenarios.length, 2);
-  assert.equal(input.scenarios[0].propertyId, "sf_ashton");
-  assert.equal(input.scenarios[1].propertyId, "vallejo_calhoun");
+  assert.equal(input.scenarios[0].propertyId, "location_a_property");
+  assert.equal(input.scenarios[1].propertyId, "location_b_property");
   assert.equal(input.scenarios[1].actorPolicy, "owner_plus_partner");
 });
 
@@ -151,46 +151,46 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   };
   const request = scenarioSetInputToRequest(input, bootstrap);
   const backendRequest = decamelizeObjectKeys(request);
-  const sfScenario = backendRequest.scenarios[0];
-  const purchaseEvent = sfScenario.events.find((event) => event.event_type === "property_purchase");
-  const mortgageEvent = sfScenario.events.find((event) => event.event_type === "mortgage_origination");
-  const saleRequestEvent = sfScenario.events.find((event) => event.event_type === "private_equity_sale_request");
-  const ipoEvent = sfScenario.events.find((event) => event.event_id === "private_equity_ipo_request");
-  const salePolicy = sfScenario.policies.find((policy) => policy.policy_type === "private_equity_sale");
+  const firstScenario = backendRequest.scenarios[0];
+  const purchaseEvent = firstScenario.events.find((event) => event.event_type === "property_purchase");
+  const mortgageEvent = firstScenario.events.find((event) => event.event_type === "mortgage_origination");
+  const saleRequestEvent = firstScenario.events.find((event) => event.event_type === "private_equity_sale_request");
+  const ipoEvent = firstScenario.events.find((event) => event.event_id === "private_equity_ipo_request");
+  const salePolicy = firstScenario.policies.find((policy) => policy.policy_type === "private_equity_sale");
 
-  assert.equal(backendRequest.scenario_set_id, "house_futures_explorer");
-  assert.deepEqual(sfScenario.property_selection, { property_id: "sf_ashton" });
-  assert.equal(sfScenario.tax_regimes, undefined);
-  assert.equal(sfScenario.financing.financing_mode, "custom");
-  assert.equal(sfScenario.financing.down_payment_pct, 42);
-  assert.equal(sfScenario.financing.mortgage_rate_pct, 7.25);
-  assert.equal(sfScenario.financing.mortgage_term_years, 18);
-  assert.equal(sfScenario.financing.credit_score, 701);
-  assert.equal(sfScenario.policies[0].policy_type, "checking_floor_sell_public_stock");
-  assert.equal(sfScenario.policies[0].floor_usd, 10_000);
-  assert.equal(sfScenario.policies[0].sale_amount_usd, 20_000);
+  assert.equal(backendRequest.scenario_set_id, "augur_futures_explorer");
+  assert.deepEqual(firstScenario.property_selection, { property_id: "location_a_property" });
+  assert.equal(firstScenario.tax_regimes, undefined);
+  assert.equal(firstScenario.financing.financing_mode, "custom");
+  assert.equal(firstScenario.financing.down_payment_pct, 42);
+  assert.equal(firstScenario.financing.mortgage_rate_pct, 7.25);
+  assert.equal(firstScenario.financing.mortgage_term_years, 18);
+  assert.equal(firstScenario.financing.credit_score, 701);
+  assert.equal(firstScenario.policies[0].policy_type, "checking_floor_sell_public_stock");
+  assert.equal(firstScenario.policies[0].floor_usd, 10_000);
+  assert.equal(firstScenario.policies[0].sale_amount_usd, 20_000);
   assert.equal(salePolicy.policy_id, "private_equity_sale");
   assert.equal(salePolicy.actor_id, "alpha");
   assert.equal(salePolicy.proceeds_destination, "generic_sp500_stock");
   assert.deepEqual(salePolicy.sale_rule, { sale_rule_type: "manual_requests_only" });
-  assert.equal(sfScenario.rental_plan.rental_mode, "rent_rooms_while_owner_lives_there");
-  assert.equal(sfScenario.rental_plan.rooms_rented, 2);
-  assert.equal(sfScenario.rental_plan.room_rent_monthly_usd, 1_650);
-  assert.equal(sfScenario.rental_plan.vacancy_pct, 12);
-  assert.equal(sfScenario.rental_plan.room_vacancy_pct, 11);
-  assert.equal(sfScenario.rental_plan.management_fee_pct, 9.5);
-  assert.equal(sfScenario.rental_plan.leasing_fee_pct, 50);
+  assert.equal(firstScenario.rental_plan.rental_mode, "rent_rooms_while_owner_lives_there");
+  assert.equal(firstScenario.rental_plan.rooms_rented, 2);
+  assert.equal(firstScenario.rental_plan.room_rent_monthly_usd, 1_650);
+  assert.equal(firstScenario.rental_plan.vacancy_pct, 12);
+  assert.equal(firstScenario.rental_plan.room_vacancy_pct, 11);
+  assert.equal(firstScenario.rental_plan.management_fee_pct, 9.5);
+  assert.equal(firstScenario.rental_plan.leasing_fee_pct, 50);
   assert.equal(purchaseEvent.hoa_monthly_usd, 321);
-  assert.deepEqual(sfScenario.tax_profile, {
+  assert.deepEqual(firstScenario.tax_profile, {
     marginal_tax_rate: 37,
     cap_gains_rate: 28,
     cap_gains_exclusion_usd: 500_000,
   });
-  assert.deepEqual(sfScenario.transaction_costs, {
+  assert.deepEqual(firstScenario.transaction_costs, {
     closing_cost_buy_pct: 3.1,
     closing_cost_sell_pct: 5.9,
   });
-  assert.deepEqual(sfScenario.property_assumptions, {
+  assert.deepEqual(firstScenario.property_assumptions, {
     insurance_annual_usd: 3_200,
     maintenance_pct: 1.4,
     depreciable_basis_pct: 75,
@@ -203,7 +203,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(ipoEvent.month_index, 60);
   assert.equal(ipoEvent.amount_usd, 125_000);
   assert.deepEqual(
-    sfScenario.initial_balance_sheet.assets.find((asset) => asset.asset_type === "private_equity"),
+    firstScenario.initial_balance_sheet.assets.find((asset) => asset.asset_type === "private_equity"),
     {
       asset_id: "private_equity_private",
       asset_type: "private_equity",
@@ -230,7 +230,7 @@ test("URL state round-trips only input state", () => {
 
   assert.deepEqual(decoded.scenarioResults, undefined);
   assert.deepEqual(decoded.scenarios[0].backendResult, undefined);
-  assert.equal(decoded.scenarios[0].propertyId, "sf_ashton");
+  assert.equal(decoded.scenarios[0].propertyId, "location_a_property");
 });
 
 test("URL state round-trips rich scenario controls in camelCase", () => {

@@ -29,17 +29,16 @@ class LiquidReservePolicyId(StrEnum):
     CHECKING_FLOOR_SP500 = "checking_floor_sp500"
 
 
-class SourceCatalogId(StrEnum):
-    SF = "sf"
-    VALLEJO = "vallejo"
-
-
 class HomeValueFactorId(StrEnum):
+    LOCATION_A_HOME = "location_a_home"
+    LOCATION_B_HOME = "location_b_home"
     SF_HOME = "sf_home"
     VALLEJO_HOME = "vallejo_home"
 
 
 class RentFactorId(StrEnum):
+    LOCATION_A_RENT = "location_a_rent"
+    LOCATION_B_RENT = "location_b_rent"
     SF_RENT = "sf_rent"
     VALLEJO_RENT = "vallejo_rent"
 
@@ -91,7 +90,7 @@ class Location(ApiModel):
 
 class PropertyRecord(ApiModel):
     id: str
-    source_catalog_id: SourceCatalogId
+    source_catalog_id: str
     source_property_id: str
     location_id: LocationId
     address: str

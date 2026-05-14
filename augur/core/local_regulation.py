@@ -8,6 +8,8 @@ from augur.core.schemas import ApiModel, Percentage
 
 
 class LocationId(StrEnum):
+    LOCATION_A = "location_a"
+    LOCATION_B = "location_b"
     SAN_FRANCISCO_CA = "san_francisco_ca"
     VALLEJO_CA = "vallejo_ca"
     MARE_ISLAND_VALLEJO_CA = "mare_island_vallejo_ca"
@@ -27,6 +29,14 @@ class LocalRegulation(ApiModel):
 
 
 LOCAL_REGULATION_BY_LOCATION: dict[LocationId, LocalRegulation] = {
+    LocationId.LOCATION_A: LocalRegulation(
+        property_tax_annual_pct=1.0,
+        notes="Synthetic public fixture location; deployments should supply a real local regulation source.",
+    ),
+    LocationId.LOCATION_B: LocalRegulation(
+        property_tax_annual_pct=1.0,
+        notes="Synthetic public fixture location; deployments should supply a real local regulation source.",
+    ),
     LocationId.SAN_FRANCISCO_CA: LocalRegulation(
         property_tax_annual_pct=1.18,
         notes="San Francisco secured property-tax default used by the consolidated house model.",

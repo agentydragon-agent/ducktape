@@ -165,6 +165,54 @@ def sample_market_bundle_for_request(provider: MarketBundleProvider, market_requ
     )
 
 
+@dataclass(frozen=True)
+class FlatMarketBundleProvider:
+    """Deterministic flat market provider for fixture-backed app/e2e runs."""
+
+    mortgage_30y_rate_pct: float = 6.5
+    private_equity_liquidity_event_months: tuple[int, ...] = (12,)
+
+    def sample_market_bundle(
+        self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
+    ) -> MarketBundle:
+        shape = (rollout_count, horizon_months + 1)
+        flat = np.ones(shape, dtype="float64")
+        mortgage_rate = np.full(shape, self.mortgage_30y_rate_pct, dtype="float64")
+        private_equity_events = np.zeros(shape, dtype=np.bool_)
+        for month in self.private_equity_liquidity_event_months:
+            if 0 <= month <= horizon_months:
+                private_equity_events[:, month] = True
+        home_by_location = {"default": flat, **{location.value: flat for location in LocationId}}
+        rent_by_location = {"default": flat, **{location.value: flat for location in LocationId}}
+        factor_ids = (
+            "inflation",
+            "generic_sp500",
+            "private_equity_value",
+            "mortgage_30y_rate",
+            "home_value:default",
+            "rent:default",
+        )
+        return MarketBundle(
+            month_index=np.arange(horizon_months + 1, dtype="int64"),
+            inflation_multipliers=flat,
+            generic_sp500_multipliers=flat,
+            home_value_multipliers_by_location=home_by_location,
+            rent_multipliers_by_location=rent_by_location,
+            mortgage_30y_rate_pct=mortgage_rate,
+            private_equity_value_multipliers=flat,
+            private_equity_liquidity_event_mask=private_equity_events,
+            metadata=MarketBundleMetadata(
+                market_model_id=market_request.market_model_id,
+                random_seed=seed,
+                rollout_count=rollout_count,
+                horizon_months=horizon_months,
+                factor_ids=factor_ids,
+                event_stream_ids=("private_equity_liquidity_event",),
+                notes=("deterministic flat provider for fixture-backed app/e2e runs",),
+            ),
+        )
+
+
 class SimpleMarketBundleProvider:
     """Small stochastic provider used until richer market models plug in."""
 
@@ -218,6 +266,8 @@ class SimpleMarketBundleProvider:
         home_by_location = _location_factor_map(
             home_base,
             annual_adjustment_pct={
+                LocationId.LOCATION_A.value: 0.0,
+                LocationId.LOCATION_B.value: 0.0,
                 LocationId.SAN_FRANCISCO_CA.value: 0.3,
                 LocationId.VALLEJO_CA.value: -0.2,
                 LocationId.MARE_ISLAND_VALLEJO_CA.value: -0.1,
@@ -226,6 +276,8 @@ class SimpleMarketBundleProvider:
         rent_by_location = _location_factor_map(
             rent_base,
             annual_adjustment_pct={
+                LocationId.LOCATION_A.value: 0.0,
+                LocationId.LOCATION_B.value: 0.0,
                 LocationId.SAN_FRANCISCO_CA.value: 0.4,
                 LocationId.VALLEJO_CA.value: -0.1,
                 LocationId.MARE_ISLAND_VALLEJO_CA.value: 0.0,
