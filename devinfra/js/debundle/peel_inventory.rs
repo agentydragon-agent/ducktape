@@ -1,5 +1,5 @@
 //! Build a parseable inventory of peelable bindings from a debundle
-//! `owner_graph.json` plus a tree of `*.yaml.deferred` spec files.
+//! `owner_graph.json` plus the spec-root `binding_patches.yaml`.
 //!
 //! For each candidate in `peelability.minimal_peel_sets[]`, emit a record
 //! with everything an agent needs to assign a destination — without
@@ -8,23 +8,22 @@
 //! - `members` : `[(input_binding, export_name)]`. `export_name` differs
 //!   from `binding` when the rename queue has already named it readably.
 //! - `has_readable` : at least one member has a renamed export name.
-//! - `deferred_homes` : path-prefixes of `*.yaml.deferred` files (relative
-//!   to the modules root, with the suffix stripped) that currently list
-//!   any of the candidate's input bindings — the source the move drains.
-//! - `primary_yaml` : first `deferred_home` (alphabetical), or
-//!   `<residual_only>` if none.
+//! - `patch_files` : non-emitting patch files that currently list any of
+//!   the candidate's input bindings.
+//! - `primary_source` : first `patch_files` entry, or `<residual_only>`
+//!   if none.
 //! - `source_lines` : `(start_line, end_line)` aggregated from
 //!   `peelability.residual_owner_horizon[].source_location` for the
 //!   candidate's owners — useful for grouping co-located bindings.
 //! - `proposed_dir` : best-guess destination directory derived from the
-//!   readable export name and `primary_yaml`. Hint, not a rule.
+//!   readable export name and `primary_source`. Hint, not a rule.
 //! - `forbidden` : list of cycle / residual-dependency blockers from
 //!   `peelability.evaluated_owner_sets[]` (when present in the graph)
 //!   that prevent specific destinations. Empty for clean direct peels.
 //!
 //! This module is generic over `owner_graph.json` — it knows nothing
 //! about Tana or any other specific bundle, only the debundler's own
-//! report schema and the spec compiler's `*.yaml.deferred` convention.
+//! report schema and binding patch authoring convention.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -36,6 +35,7 @@ use serde::{Deserialize, Serialize};
 
 use analysis::OwnerGraphReport;
 use spec::DEFAULT_RESIDUAL_MODULE_PATH;
+use spec_modules::load_binding_patch_members;
 
 #[derive(Debug, Clone)]
 pub struct PeelInventoryOptions {
@@ -50,8 +50,8 @@ pub struct PeelInventoryRecord {
     /// `(input_binding, export_name)` pairs.
     pub members: Vec<(String, String)>,
     pub has_readable: bool,
-    pub deferred_homes: Vec<String>,
-    pub primary_yaml: String,
+    pub patch_files: Vec<String>,
+    pub primary_source: String,
     /// `[start_line, end_line]` aggregated across the candidate's owners,
     /// or `None` if no owner has a `source_location`.
     pub source_lines: Option<(usize, usize)>,
@@ -114,11 +114,11 @@ pub fn build_inventory(options: &PeelInventoryOptions) -> Result<Vec<PeelInvento
         .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
     let evaluated: EvaluatedSetsRoot = serde_json::from_str(&body)
         .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
-    let binding_to_deferred = build_binding_to_deferred(&options.modules_root)?;
+    let binding_to_patch = build_binding_to_patch(&options.modules_root)?;
     Ok(build_inventory_from(
         &graph,
         &evaluated.peelability.evaluated_owner_sets,
-        &binding_to_deferred,
+        &binding_to_patch,
     ))
 }
 
@@ -126,7 +126,7 @@ pub fn build_inventory(options: &PeelInventoryOptions) -> Result<Vec<PeelInvento
 fn build_inventory_from(
     graph: &OwnerGraphReport,
     evaluated_owner_sets: &[EvaluatedOwnerSet],
-    binding_to_deferred: &BTreeMap<String, Vec<String>>,
+    binding_to_patch: &BTreeMap<String, Vec<String>>,
 ) -> Vec<PeelInventoryRecord> {
     let horizon_by_owner: BTreeMap<&str, &analysis::ResidualOwnerPeelHorizonReport> = graph
         .peelability
@@ -190,14 +190,14 @@ fn build_inventory_from(
             });
         }
 
-        let mut deferred_homes: BTreeSet<String> = BTreeSet::new();
+        let mut patch_files: BTreeSet<String> = BTreeSet::new();
         for (binding, _) in &members {
-            if let Some(homes) = binding_to_deferred.get(binding) {
-                deferred_homes.extend(homes.iter().cloned());
+            if let Some(files) = binding_to_patch.get(binding) {
+                patch_files.extend(files.iter().cloned());
             }
         }
-        let deferred_homes: Vec<String> = deferred_homes.into_iter().collect();
-        let primary_yaml = deferred_homes
+        let patch_files: Vec<String> = patch_files.into_iter().collect();
+        let primary_source = patch_files
             .first()
             .cloned()
             .unwrap_or_else(|| "<residual_only>".to_string());
@@ -207,7 +207,7 @@ fn build_inventory_from(
             .find(|(binding, name)| binding != name)
             .map(|(_, name)| name.clone())
             .unwrap_or_else(|| members[0].1.clone());
-        let proposed_dir = derive_proposed_dir(&primary_readable, &primary_yaml);
+        let proposed_dir = derive_proposed_dir(&primary_readable, &primary_source);
 
         let mut forbidden: Vec<ForbiddenRecord> = Vec::new();
         for owner_id in &peel_set.owner_ids {
@@ -221,8 +221,8 @@ fn build_inventory_from(
             owner_count: peel_set.owner_ids.len(),
             members,
             has_readable,
-            deferred_homes,
-            primary_yaml,
+            patch_files,
+            primary_source,
             source_lines: source_loc,
             proposed_dir,
             forbidden,
@@ -231,19 +231,13 @@ fn build_inventory_from(
     inventory
 }
 
-fn build_binding_to_deferred(modules_root: &Path) -> Result<BTreeMap<String, Vec<String>>> {
-    let mut files = Vec::new();
-    collect_deferred_files(modules_root, &mut files)?;
-    files.sort();
-
+fn build_binding_to_patch(modules_root: &Path) -> Result<BTreeMap<String, Vec<String>>> {
     let mut result: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for path in files {
-        let rel = relative_yaml_prefix(&path, modules_root);
-        let body =
-            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-        for binding in parse_binding_names(&body) {
-            result.entry(binding).or_default().push(rel.clone());
-        }
+    for member in load_binding_patch_members(modules_root)? {
+        result
+            .entry(member.selector.binding.name)
+            .or_default()
+            .push("binding_patches".to_string());
     }
     for entries in result.values_mut() {
         entries.sort();
@@ -252,96 +246,21 @@ fn build_binding_to_deferred(modules_root: &Path) -> Result<BTreeMap<String, Vec
     Ok(result)
 }
 
-fn collect_deferred_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    if !root.is_dir() {
-        return Ok(());
-    }
-    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
-        let path = entry
-            .with_context(|| format!("walking {}", root.display()))?
-            .path();
-        if path.is_dir() {
-            collect_deferred_files(&path, out)?;
-        } else if is_deferred_yaml(&path) {
-            out.push(path);
-        }
-    }
-    Ok(())
-}
-
-fn is_deferred_yaml(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".yaml.deferred"))
-}
-
-fn relative_yaml_prefix(path: &Path, root: &Path) -> String {
-    let relative = path
-        .strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/");
-    relative
-        .strip_suffix(".yaml.deferred")
-        .map(str::to_string)
-        .unwrap_or(relative)
-}
-
-/// Mirror of the Python prototype's binding extractor:
-/// scan top-down for `binding:` lines, then return the first `name:`
-/// child line as the binding name.
-fn parse_binding_names(body: &str) -> Vec<String> {
-    let mut bindings = Vec::new();
-    let mut in_binding = false;
-    for line in body.lines() {
-        if line.trim_start().starts_with("binding:") {
-            in_binding = true;
-            continue;
-        }
-        if in_binding && let Some(name) = name_value(line) {
-            bindings.push(name);
-            in_binding = false;
-        }
-    }
-    bindings
-}
-
-/// Match `\s+name:\s+(\S+)`: one or more leading whitespace chars, the
-/// literal `name:`, one or more whitespace chars, then a non-whitespace
-/// token captured to end-of-token.
-fn name_value(line: &str) -> Option<String> {
-    let after_indent = line.trim_start_matches(|c: char| c.is_whitespace());
-    if after_indent.len() == line.len() {
-        // No leading whitespace — `\s+` requires at least one.
-        return None;
-    }
-    let after_key = after_indent.strip_prefix("name:")?;
-    let after_gap = after_key.trim_start_matches([' ', '\t']);
-    if after_gap.len() == after_key.len() {
-        // `\s+` after `name:` requires at least one whitespace.
-        return None;
-    }
-    let value: String = after_gap
-        .chars()
-        .take_while(|c| !c.is_whitespace())
-        .collect();
-    if value.is_empty() { None } else { Some(value) }
-}
-
-/// Heuristic destination rules — generic across spec trees, harmless when
-/// `primary_yaml` already locates the candidate. They activate only when
-/// the candidate has no current `*.yaml.deferred` home.
-fn derive_proposed_dir(export: &str, current_yaml: &str) -> String {
-    if !current_yaml.is_empty()
-        && current_yaml != "<residual_only>"
-        && current_yaml != DEFAULT_RESIDUAL_MODULE_PATH
+/// Heuristic destination rules — generic across spec trees. They activate
+/// when the candidate has no current emitted module home; the spec-root
+/// `binding_patches` source is not itself a destination hint.
+fn derive_proposed_dir(export: &str, current_source: &str) -> String {
+    if !current_source.is_empty()
+        && current_source != "<residual_only>"
+        && current_source != "binding_patches"
+        && current_source != DEFAULT_RESIDUAL_MODULE_PATH
     {
-        // Mirror Python's `os.path.dirname(current_yaml) or current_yaml`:
+        // Mirror Python's `os.path.dirname(current_source) or current_source`:
         // strip the last `/`-segment; if there is none (or the parent is
-        // empty), fall back to `current_yaml` itself.
-        return match current_yaml.rsplit_once('/') {
+        // empty), fall back to `current_source` itself.
+        return match current_source.rsplit_once('/') {
             Some((parent, _)) if !parent.is_empty() => parent.to_string(),
-            _ => current_yaml.to_string(),
+            _ => current_source.to_string(),
         };
     }
     if matches_error_suffix(export) {
@@ -454,7 +373,7 @@ fn render_by_destination(records: &[PeelInventoryRecord], limit: usize) -> Strin
             let label = owner_count_short(record.owner_count);
             out.push_str(&format!(
                 "  {marker} [{label}] {members}    (from {primary})\n",
-                primary = record.primary_yaml,
+                primary = record.primary_source,
             ));
         }
     }
@@ -547,14 +466,14 @@ mod tests {
                         members: vec![member("ZZ", "PaymentError")],
                         emit_blocked_residual_bindings: Vec::new(),
                     },
-                    // Single owner with no readable rename and no deferred home.
+                    // Single owner with no readable rename and no patch.
                     OwnerGraphPeelSetReport {
                         candidate_id: "peel_candidate:owner:1".to_string(),
                         owner_ids: vec!["owner:1".to_string()],
                         members: vec![member("createBillingRoute", "createBillingRoute")],
                         emit_blocked_residual_bindings: Vec::new(),
                     },
-                    // Owner pair sharing one deferred home.
+                    // Owner pair sharing the patch file.
                     OwnerGraphPeelSetReport {
                         candidate_id: "peel_candidate:owner:2".to_string(),
                         owner_ids: vec!["owner:2".to_string(), "owner:3".to_string()],
@@ -578,23 +497,18 @@ mod tests {
     fn build_inventory_from_synthetic_graph() {
         let temp = tempfile::tempdir().unwrap();
         let modules = temp.path().join("modules");
-        // ZZ lives in a deferred file; primary_yaml should derive from there.
+        // ZZ, aa, and bb live in the non-emitting patch stream.
         write_file(
-            &modules.join("billing/payments.yaml.deferred"),
-            "members:\n  - name: PaymentError\n    selector:\n      binding:\n        name: ZZ\n",
+            &temp.path().join("binding_patches.yaml"),
+            "members:\n  - name: PaymentError\n    selector:\n      binding:\n        name: ZZ\n  - name: loadInvoice\n    selector:\n      binding:\n        kind: function_declaration\n        name: aa\n  - name: bb\n    selector:\n      binding:\n        name: bb\n",
         );
-        // aa and bb co-located in another deferred file.
-        write_file(
-            &modules.join("billing/invoices.yaml.deferred"),
-            "members:\n  - name: loadInvoice\n    selector:\n      binding:\n        kind: function_declaration\n        name: aa\n  - name: bb\n    selector:\n      binding:\n        name: bb\n",
-        );
-        // A non-deferred yaml file should be ignored.
+        // Emitted module YAML files are not patch sources.
         write_file(
             &modules.join("billing/other.yaml"),
             "members:\n  - name: keep\n    selector:\n      binding:\n        name: ZZ\n",
         );
 
-        let bindings = build_binding_to_deferred(&modules).unwrap();
+        let bindings = build_binding_to_patch(&modules).unwrap();
         let graph = graph_fixture();
         let inventory = build_inventory_from(&graph, &[], &bindings);
 
@@ -611,27 +525,27 @@ mod tests {
             vec![("ZZ".to_string(), "PaymentError".to_string())]
         );
         assert!(zz.has_readable);
-        assert_eq!(zz.deferred_homes, vec!["billing/payments".to_string()]);
-        assert_eq!(zz.primary_yaml, "billing/payments");
-        assert_eq!(zz.proposed_dir, "billing");
+        assert_eq!(zz.patch_files, vec!["binding_patches".to_string()]);
+        assert_eq!(zz.primary_source, "binding_patches");
+        assert_eq!(zz.proposed_dir, "TBD");
         assert_eq!(zz.source_lines, Some((10, 20)));
         assert!(zz.forbidden.is_empty());
 
         let create_route = by_id["peel_candidate:owner:1"];
         assert!(!create_route.has_readable);
-        assert!(create_route.deferred_homes.is_empty());
-        assert_eq!(create_route.primary_yaml, "<residual_only>");
+        assert!(create_route.patch_files.is_empty());
+        assert_eq!(create_route.primary_source, "<residual_only>");
         // Falls into the create*Route heuristic because no current home.
         assert_eq!(create_route.proposed_dir, "local_api/routes");
         assert_eq!(create_route.source_lines, None);
 
         let pair = by_id["peel_candidate:owner:2"];
         assert!(pair.has_readable);
-        assert_eq!(pair.deferred_homes, vec!["billing/invoices".to_string()]);
-        assert_eq!(pair.primary_yaml, "billing/invoices");
+        assert_eq!(pair.patch_files, vec!["binding_patches".to_string()]);
+        assert_eq!(pair.primary_source, "binding_patches");
         // start = min(100, 90) = 90, end = max(140, 110) = 140
         assert_eq!(pair.source_lines, Some((90, 140)));
-        assert_eq!(pair.proposed_dir, "billing");
+        assert_eq!(pair.proposed_dir, "TBD");
     }
 
     #[test]
@@ -708,26 +622,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_binding_names_handles_kind_before_name() {
-        let body = r"members:
-  - name: First
-    selector:
-      binding:
-        kind: function_declaration
-        name: aa
-  - name: Second
-    selector:
-      binding:
-        name: bb
-        kind: variable_declarator
-";
-        assert_eq!(
-            parse_binding_names(body),
-            vec!["aa".to_string(), "bb".to_string()]
-        );
-    }
-
-    #[test]
     fn heuristic_dest_rules_match_python_prototype() {
         // Python's `re.compile(r"Error$").match(export)` is anchored at
         // both ends and only matches the literal string "Error".
@@ -751,12 +645,17 @@ mod tests {
         );
         assert_eq!(derive_proposed_dir("migrateuser", "<residual_only>"), "TBD");
         assert_eq!(derive_proposed_dir("foo", "<residual_only>"), "TBD");
-        // Heuristics do not override an existing deferred home.
+        // Heuristics do not override an existing emitted-module home.
         assert_eq!(
             derive_proposed_dir("PaymentError", "billing/payments"),
             "billing"
         );
-        // Single-segment current_yaml falls back to itself.
+        // The patch stream is not itself a destination hint.
+        assert_eq!(
+            derive_proposed_dir("PaymentError", "binding_patches"),
+            "TBD"
+        );
+        // Single-segment emitted-module homes fall back to themselves.
         assert_eq!(derive_proposed_dir("PaymentError", "topfile"), "topfile");
     }
 }

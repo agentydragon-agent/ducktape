@@ -666,7 +666,7 @@ fn materialize_logical_chunk(
         // member, chunk_renames member) propagate the same way:
         // collect them by local binding name and feed them into fact
         // analysis. They are semantic trust assertions, not ownership
-        // claims; deferred YAMLs routed through chunk_renames still
+        // claims; binding patches routed through chunk_renames still
         // do not force factorizer grouping.
         let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
             let mut hints = AnalysisHints::default();

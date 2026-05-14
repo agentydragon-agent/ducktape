@@ -4,7 +4,7 @@
 //!
 //! ## Background — the bug this op was added to fix
 //!
-//! Previously, the gaffer-side `.yaml.deferred` workflow stuffed its
+//! Previously, the gaffer-side non-emitting patch workflow stuffed its
 //! rename ops into a residual module's `members` list so the
 //! residual-member-rename path applied them. That works mechanically
 //! but the residual-member-rename path needs a `Logical(R)` module,

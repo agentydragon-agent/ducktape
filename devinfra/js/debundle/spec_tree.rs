@@ -7,11 +7,12 @@ use serde::Deserialize;
 
 use spec::{
     AnonymousStatement, ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
-    MaterializeLogicalModulesConfig, Member, SwapMark, SwapVendorChunksConfig, TransformSpec,
-    UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
+    MaterializeLogicalModulesConfig, Member, MemberEffect, MemberPurity, SwapMark,
+    SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
+    WrapperShape,
 };
 use spec_modules::{
-    collect_module_files, is_deferred_yaml, module_path_from_file, read_module_file,
+    collect_module_files, load_binding_patch_members, module_path_from_file, read_module_file,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,8 +103,11 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
     let js_list_path = source_path(source_root, config.inputs.js_list_path);
     let asset_summary_path = source_path(source_root, config.browser_harness.asset_summary_path);
     let layout = OutputLayout::new(options.out_root.clone());
-    let (module_sources, deferred_members) =
-        load_main_chunk_modules(&options.modules_root, &config.main_chunk_id)?;
+    let module_sources = load_main_chunk_modules(&options.modules_root, &config.main_chunk_id)?;
+    let binding_patch_members = load_binding_patch_members(&options.modules_root)?
+        .into_iter()
+        .filter(|member| !is_trivial_binding_patch(member))
+        .collect();
 
     Ok(TransformSpec {
         inputs: LoadJsChunksArgs {
@@ -112,7 +116,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         },
         vendor: vendor_map(read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks)?,
         logical_modules: logical_modules_map(module_sources)?,
-        chunk_renames: chunk_renames_map(&config.main_chunk_id, deferred_members),
+        chunk_renames: chunk_renames_map(&config.main_chunk_id, binding_patch_members),
         unassigned_mode: config.unassigned_mode,
         swap_vendor_chunks: SwapVendorChunksConfig {
             output_manifest_path: Some(layout.vendor_manifest_path.clone()),
@@ -173,32 +177,31 @@ impl OutputLayout {
     }
 }
 
-fn load_main_chunk_modules(
-    modules_root: &Path,
-    main_chunk_id: &str,
-) -> Result<(Vec<ModuleSource>, Vec<Member>)> {
+fn load_main_chunk_modules(modules_root: &Path, main_chunk_id: &str) -> Result<Vec<ModuleSource>> {
     let mut active = Vec::new();
-    let mut deferred_members = Vec::new();
     for path in collect_module_files(modules_root)? {
-        let is_deferred = is_deferred_yaml(&path);
-        let module_path = module_path_from_file(&path, modules_root, is_deferred);
+        let module_path = module_path_from_file(&path, modules_root);
         let data = read_module_file(&path)?;
-        if is_deferred {
-            // Deferred files don't get materialized; their
-            // anonymous_statements (if any) are dropped on the
-            // floor — there's no logical module to attach them to.
-            deferred_members.extend(data.members);
-        } else {
-            active.push(ModuleSource {
-                chunk_id: main_chunk_id.to_string(),
-                path: module_path,
-                members: data.members,
-                anonymous_statements: data.anonymous_statements,
-            });
-        }
+        active.push(ModuleSource {
+            chunk_id: main_chunk_id.to_string(),
+            path: module_path,
+            members: data.members,
+            anonymous_statements: data.anonymous_statements,
+        });
     }
     active.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok((active, deferred_members))
+    Ok(active)
+}
+
+fn is_trivial_binding_patch(member: &Member) -> bool {
+    let binding_name = &member.selector.binding.name;
+    let name_is_noop = member
+        .name
+        .as_ref()
+        .is_none_or(|export_name| export_name == binding_name);
+    name_is_noop
+        && matches!(member.purity, MemberPurity::Default)
+        && matches!(member.effect, MemberEffect::Default)
 }
 
 fn vendor_map(sources: Vec<VendorMarkSource>) -> Result<BTreeMap<String, VendorMark>> {
@@ -289,16 +292,16 @@ fn logical_modules_map(
 
 fn chunk_renames_map(
     main_chunk_id: &str,
-    deferred_members: Vec<Member>,
+    binding_patch_members: Vec<Member>,
 ) -> BTreeMap<String, ChunkRenames> {
-    if deferred_members.is_empty() {
+    if binding_patch_members.is_empty() {
         return BTreeMap::new();
     }
     BTreeMap::from([(
         main_chunk_id.to_string(),
         ChunkRenames {
             id: None,
-            members: deferred_members,
+            members: binding_patch_members,
         },
     )])
 }
@@ -356,9 +359,9 @@ unassigned_mode:
 "#,
         );
         write_file(
-            &modules.join("deferred.yaml.deferred"),
+            &root.join("binding_patches.yaml"),
             r#"members:
-  - name: DeferredThing
+  - name: PatchedThing
     selector:
       binding:
         name: d
@@ -389,7 +392,7 @@ unassigned_mode:
         );
         assert_eq!(
             spec.chunk_renames["static/main"].members[0].name.as_deref(),
-            Some("DeferredThing")
+            Some("PatchedThing")
         );
         assert_eq!(
             spec.swap_vendor_chunks
@@ -401,6 +404,35 @@ unassigned_mode:
         assert_eq!(spec.vendor["static/vendor.js"].identity, "example");
         assert!(spec.materialize_logical_modules.force);
         assert!(spec.emit_browser_harness.unwrap().force);
+    }
+
+    #[test]
+    fn drops_trivial_binding_patches() {
+        let temp = tempfile::tempdir().unwrap();
+        let options = fixture(temp.path());
+        write_file(
+            &temp.path().join("binding_patches.yaml"),
+            r#"members:
+  - name: same
+    selector:
+      binding:
+        name: same
+        kind: variable_declarator
+  - name: UsefulName
+    selector:
+      binding:
+        name: min
+        kind: function_declaration
+"#,
+        );
+
+        let spec = compile_spec_tree(&options).unwrap();
+
+        assert_eq!(spec.chunk_renames["static/main"].members.len(), 1);
+        assert_eq!(
+            spec.chunk_renames["static/main"].members[0].name.as_deref(),
+            Some("UsefulName")
+        );
     }
 
     #[test]

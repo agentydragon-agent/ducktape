@@ -361,7 +361,7 @@ fn factorizer_combines_blocked_consumer_with_all_landable_prerequisites_when_und
     // reads both, so promoting `consumer` alone would fail
     // emit-resolvability. The useful proposal is the whole closure:
     // {dep_a, dep_b, consumer}. This pins the factorizer behavior we
-    // want for Tana deferred queues: do not force lane workers to
+    // want for Tana patch queues: do not force lane workers to
     // discover and hand-assemble every blocked cell's prerequisite
     // closure when the closure itself is small enough to review.
     let chunk_source = r#"const anchor = "anchor";

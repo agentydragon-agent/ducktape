@@ -9,7 +9,8 @@ use serde::Serialize;
 use analysis::{BindingReport, OwnerGraphReport};
 use spec::BindingSourceKind;
 use spec_modules::{
-    collect_module_files, is_deferred_yaml, module_path_from_file, read_module_file,
+    collect_module_files, default_binding_patches_path, load_binding_patch_members,
+    module_path_from_file, read_module_file,
 };
 
 #[derive(Debug, Clone)]
@@ -64,10 +65,10 @@ pub struct SymbolHome {
     pub name: String,
     pub path: String,
     pub file: String,
-    pub deferred: bool,
+    pub patch: bool,
 }
 
-type DeferredModules = Vec<DeferredModule>;
+type PatchSets = Vec<PatchSet>;
 type SymbolHomesByBinding = BTreeMap<String, Vec<SymbolHome>>;
 
 #[derive(Debug, Clone)]
@@ -87,7 +88,7 @@ struct GraphIndex {
 }
 
 #[derive(Debug, Clone)]
-struct DeferredModule {
+struct PatchSet {
     path: String,
     file: PathBuf,
     bindings: BTreeSet<String>,
@@ -162,7 +163,7 @@ pub fn render_peel_horizon_report(
     let mut out = String::new();
     push_table(
         &mut out,
-        "fully peelable deferred modules",
+        "fully peelable binding patch sets",
         &report.full,
         limit,
     );
@@ -233,37 +234,69 @@ fn graph_index(graph: &OwnerGraphReport) -> GraphIndex {
 fn load_modules_and_symbols(
     root: &Path,
     owner_by_binding: &BTreeMap<String, String>,
-) -> Result<(DeferredModules, SymbolHomesByBinding)> {
-    let mut deferred_modules = Vec::new();
+) -> Result<(PatchSets, SymbolHomesByBinding)> {
+    let mut patch_sets = Vec::new();
     let mut symbols: BTreeMap<String, Vec<SymbolHome>> = BTreeMap::new();
 
     for path in collect_module_files(root)? {
-        let (module, module_symbols) = parse_module_file(&path, root, owner_by_binding)?;
-        if is_deferred_yaml(&path) {
-            deferred_modules.push(module);
-        }
+        let module_symbols = parse_module_symbols(&path, root)?;
         for (binding, home) in module_symbols {
             symbols.entry(binding).or_default().push(home);
         }
     }
 
-    Ok((deferred_modules, symbols))
+    if let Some((patch_set, patch_symbols)) = parse_binding_patches(root, owner_by_binding)? {
+        patch_sets.push(patch_set);
+        for (binding, home) in patch_symbols {
+            symbols.entry(binding).or_default().push(home);
+        }
+    }
+
+    Ok((patch_sets, symbols))
 }
 
-fn parse_module_file(
-    path: &Path,
+fn parse_module_symbols(path: &Path, root: &Path) -> Result<BTreeMap<String, SymbolHome>> {
+    let data = read_module_file(path)?;
+    let module_path = module_path_from_file(path, root);
+
+    let mut symbol_homes = BTreeMap::new();
+
+    for member in data.members {
+        let binding = member.selector.binding;
+        if matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)) {
+            continue;
+        }
+        let export_name = member.name.unwrap_or_else(|| binding.name.clone());
+        symbol_homes.insert(
+            binding.name.clone(),
+            SymbolHome {
+                binding: binding.name,
+                name: export_name,
+                path: module_path.clone(),
+                file: path.display().to_string(),
+                patch: false,
+            },
+        );
+    }
+
+    Ok(symbol_homes)
+}
+
+fn parse_binding_patches(
     root: &Path,
     owner_by_binding: &BTreeMap<String, String>,
-) -> Result<(DeferredModule, BTreeMap<String, SymbolHome>)> {
-    let is_deferred = is_deferred_yaml(path);
-    let data = read_module_file(path)?;
-    let module_path = module_path_from_file(path, root, is_deferred);
-
+) -> Result<Option<(PatchSet, BTreeMap<String, SymbolHome>)>> {
+    let members = load_binding_patch_members(root)?;
+    if members.is_empty() {
+        return Ok(None);
+    }
+    let path = default_binding_patches_path(root);
+    let patch_path = "binding_patches".to_string();
     let mut bindings = BTreeSet::new();
     let mut owners = BTreeSet::new();
     let mut symbol_homes = BTreeMap::new();
 
-    for member in data.members {
+    for member in members {
         let binding = member.selector.binding;
         if matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)) {
             continue;
@@ -278,26 +311,26 @@ fn parse_module_file(
             SymbolHome {
                 binding: binding.name,
                 name: export_name,
-                path: module_path.clone(),
+                path: patch_path.clone(),
                 file: path.display().to_string(),
-                deferred: is_deferred,
+                patch: true,
             },
         );
     }
 
-    Ok((
-        DeferredModule {
-            path: module_path,
-            file: path.to_path_buf(),
+    Ok(Some((
+        PatchSet {
+            path: patch_path,
+            file: path,
             bindings,
             owners,
         },
         symbol_homes,
-    ))
+    )))
 }
 
 fn coverage(
-    module: &DeferredModule,
+    module: &PatchSet,
     graph_index: &GraphIndex,
     max_companions: usize,
     symbols: &BTreeMap<String, Vec<SymbolHome>>,
@@ -458,7 +491,7 @@ fn format_companion(
             } else {
                 format!("{}->{}", home.binding, home.name)
             };
-            let suffix = if home.deferred { ".deferred" } else { "" };
+            let suffix = if home.patch { " patch" } else { "" };
             format!("{name}@{}{suffix}", home.path)
         })
         .collect::<Vec<_>>()
@@ -646,58 +679,33 @@ mod tests {
     }
 
     #[test]
-    fn ranks_direct_companion_and_near_peels() {
+    fn ranks_binding_patch_set_with_companion_peel() {
         let temp = tempfile::tempdir().unwrap();
         let modules = temp.path().join("modules");
         let graph = temp.path().join("owner_graph.json");
+        fs::create_dir_all(&modules).unwrap();
         graph_fixture(&graph);
         write_file(
-            &modules.join("direct.yaml.deferred"),
-            &module_yaml(&[("a", "variable_declarator")]),
-        );
-        write_file(
-            &modules.join("needs_companion.yaml.deferred"),
+            &temp.path().join("binding_patches.yaml"),
             &module_yaml(&[("b", "variable_declarator")]),
         );
         write_file(
             &modules.join("support.yaml"),
             &module_yaml(&[("c", "variable_declarator")]),
         );
-        write_file(
-            &modules.join("near.yaml.deferred"),
-            &module_yaml(&[("d", "variable_declarator")]),
-        );
-        write_file(
-            &modules.join("import_only.yaml.deferred"),
-            &module_yaml(&[("imported", "import_specifier")]),
-        );
 
         let report = analyze_peel_horizon(&options(&modules, &graph)).unwrap();
 
-        assert_eq!(
-            report
-                .full
-                .iter()
-                .map(|row| row.path.as_str())
-                .collect::<Vec<_>>(),
-            vec!["direct"]
-        );
+        assert!(report.full.is_empty());
         assert_eq!(
             report
                 .with_companions
                 .iter()
                 .map(|row| (row.path.as_str(), row.companions.clone()))
                 .collect::<Vec<_>>(),
-            vec![("needs_companion", vec!["c".to_string()])]
+            vec![("binding_patches", vec!["c".to_string()])]
         );
-        assert_eq!(
-            report
-                .near
-                .iter()
-                .map(|row| row.path.as_str())
-                .collect::<Vec<_>>(),
-            vec!["near"]
-        );
+        assert!(report.near.is_empty());
     }
 
     #[test]
@@ -712,12 +720,17 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let modules = temp.path().join("modules");
         let graph = temp.path().join("owner_graph.json");
+        fs::create_dir_all(&modules).unwrap();
         graph_fixture(&graph);
         write_file(
-            &modules.join("with_side_effects.yaml.deferred"),
+            &temp.path().join("binding_patches.yaml"),
+            &module_yaml(&[("a", "variable_declarator")]),
+        );
+        write_file(
+            &modules.join("with_side_effects.yaml"),
             &format!(
                 "{}\nanonymous_statements:\n  - match: 'window.foo;'\n    note: smoke test\n",
-                module_yaml(&[("a", "variable_declarator")]),
+                module_yaml(&[("c", "variable_declarator")]),
             ),
         );
 
@@ -729,7 +742,7 @@ mod tests {
                 .iter()
                 .map(|row| row.path.as_str())
                 .collect::<Vec<_>>(),
-            vec!["with_side_effects"]
+            vec!["binding_patches"]
         );
     }
 
@@ -738,15 +751,16 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let modules = temp.path().join("modules");
         let graph = temp.path().join("owner_graph.json");
+        fs::create_dir_all(&modules).unwrap();
         graph_fixture(&graph);
         write_file(
-            &modules.join("legacy.yaml.deferred"),
+            &temp.path().join("binding_patches.yaml"),
             &module_yaml(&[("a", "VariableDeclarator")]),
         );
 
         let error = analyze_peel_horizon(&options(&modules, &graph)).unwrap_err();
         assert!(
-            error.to_string().contains("legacy.yaml.deferred"),
+            error.to_string().contains("binding_patches.yaml"),
             "{error:#}"
         );
     }
@@ -767,7 +781,7 @@ mod tests {
         );
         fs::write(&graph_path, serde_json::to_string(&graph).unwrap()).unwrap();
         write_file(
-            &modules.join("needs_companion.yaml.deferred"),
+            &temp.path().join("binding_patches.yaml"),
             &module_yaml(&[("a", "variable_declarator"), ("b", "variable_declarator")]),
         );
         write_file(
@@ -787,7 +801,7 @@ mod tests {
                 .iter()
                 .map(|row| (row.path.as_str(), row.companions.clone()))
                 .collect::<Vec<_>>(),
-            vec![("needs_companion", vec!["c".to_string()])]
+            vec![("binding_patches", vec!["c".to_string()])]
         );
         assert_eq!(
             report.with_companions[0]

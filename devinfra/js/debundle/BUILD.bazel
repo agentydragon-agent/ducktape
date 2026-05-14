@@ -267,6 +267,7 @@ rust_library(
     deps = [
         ":analysis",
         ":spec",
+        ":spec_modules",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",

@@ -1,7 +1,7 @@
 //! Unified peel CLI frontend.
 //!
 //! `peel_cli` is the entry point for the three peel views — factorize
-//! (module-partition proposals), horizon (deferred-YAML coverage ranking), and
+//! (module-partition proposals), horizon (binding-patch coverage ranking), and
 //! inventory (per-binding peelability).
 
 use std::path::PathBuf;
@@ -18,7 +18,7 @@ pub enum PeelView {
     /// Propose module partitions from owner_graph.json + spec modules tree
     /// (annotated FactorizeReport cells). Always JSON.
     Factorize,
-    /// Rank `*.yaml.deferred` files by member coverage against the owner graph.
+    /// Rank binding patch coverage against the owner graph.
     /// Text by default; `--json` for the underlying report.
     Horizon,
     /// Per-binding view of individually peelable bindings, with proposed_dir
@@ -40,7 +40,7 @@ pub struct UnifiedArgs {
     #[arg(long = "graph")]
     pub owner_graph_path: PathBuf,
 
-    /// Root of `*.yaml` / `*.yaml.deferred` spec files.
+    /// Root of emitted-module `*.yaml` spec files.
     #[arg(long = "modules")]
     pub modules_root: PathBuf,
 

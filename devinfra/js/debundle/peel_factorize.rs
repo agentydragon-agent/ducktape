@@ -1,6 +1,6 @@
 //! CLI-facing peel proposer that **annotates** the analyzer's
-//! SSOT factorize cells with spec-tree context (active claims,
-//! deferred-module attribution) and cell-graph metrics.
+//! SSOT factorize cells with spec-tree context (active claims) and
+//! cell-graph metrics.
 //!
 //! The certifying proposal algorithm itself lives in
 //! `analysis::factorize` and runs at owner-graph build time. The
@@ -8,11 +8,6 @@
 //! `OwnerGraphReport.factorize`. This crate reads those precomputed
 //! certified cells and adds:
 //!
-//! - `seeded_from_deferred`: which `*.yaml.deferred` module paths
-//!   contributed members to each cell. Empty means a brand-new
-//!   cell purely from un-claimed residual bindings; one path means
-//!   "grow this existing deferred module"; multiple means "merge
-//!   these deferred modules together".
 //! - `edges_to_active_modules` / `active_modules_referenced`:
 //!   outgoing constraining edges from each cell to active-claimed
 //!   binding modules (safe references — active modules materialize
@@ -35,7 +30,7 @@ use analysis::{
     FactorizeCell, FactorizeDiagnosticReason, OwnerGraphReport, PeelCandidateStatus,
     RESIDUAL_ENTRY_MODULE_ID,
 };
-use spec_modules::{load_active_claims, load_deferred_groups};
+use spec_modules::load_active_claims;
 
 #[derive(Debug, Clone)]
 pub struct PeelFactorizeOptions {
@@ -131,16 +126,6 @@ pub struct FactorizeProposal {
     /// Mirrors the materializer predicate; certified proposals are
     /// `true`.
     pub landable_today: bool,
-    /// Deferred module paths whose bindings ended up in this
-    /// cell:
-    /// * Empty → a brand-new cell composed purely of residual
-    ///   singleton bindings.
-    /// * One path → "grow this existing deferred module by
-    ///   absorbing the residual bindings listed in
-    ///   `binding_ids \ <deferred module's current members>`".
-    /// * Two or more paths → "merge these deferred modules
-    ///   together (and optionally add residual bindings)".
-    pub seeded_from_deferred: Vec<String>,
     /// When this proposal is **extending an existing active
     /// module** (i.e. the analyzer's supernode-aware factorize
     /// emitted an `extends_module_id` on the underlying cell),
@@ -174,8 +159,6 @@ pub struct FactorizeDiagnosticReport {
     pub cycle_blocker_owner_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub active_modules_referenced: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub seeded_from_deferred: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extends_module_id: Option<String>,
 }
@@ -187,19 +170,12 @@ pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFact
     )
     .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
     let claims = load_active_claims(&options.modules_root)?;
-    let deferred = load_deferred_groups(&options.modules_root)?;
-    Ok(factorize(
-        &graph,
-        &claims,
-        &deferred,
-        options.size_cap_lines,
-    ))
+    Ok(factorize(&graph, &claims, options.size_cap_lines))
 }
 
 pub fn factorize(
     graph: &OwnerGraphReport,
     active_claims: &BTreeMap<String, String>,
-    deferred_groups: &BTreeMap<String, String>,
     size_cap_lines: usize,
 ) -> PeelFactorizeReport {
     let owner_index: HashMap<&str, usize> = graph
@@ -240,8 +216,7 @@ pub fn factorize(
     // Analyzer cells are certified proposals. Defensively move any
     // legacy non-landable cell into diagnostics instead of surfacing
     // it as a proposal.
-    let mut diagnostics: Vec<FactorizeDiagnosticReport> =
-        diagnostics_from_analyzer(graph, deferred_groups);
+    let mut diagnostics: Vec<FactorizeDiagnosticReport> = diagnostics_from_analyzer(graph);
     let mut cells: Vec<(Cell, Verdict)> = Vec::new();
     for cell in &graph.factorize.cells {
         if cell.landable_today && cell.status == PeelCandidateStatus::PeelableNow {
@@ -255,11 +230,7 @@ pub fn factorize(
                 },
             ));
         } else {
-            diagnostics.push(diagnostic_from_legacy_cell(
-                diagnostics.len(),
-                cell,
-                deferred_groups,
-            ));
+            diagnostics.push(diagnostic_from_legacy_cell(diagnostics.len(), cell));
         }
     }
     // Per-cell edge accounting. We walk every constraining edge
@@ -294,7 +265,6 @@ pub fn factorize(
         &residual_constraining_edges,
         &edges_to_active,
         graph,
-        deferred_groups,
     );
     let status_counts = status_counts(&proposals);
     let diagnostic_counts = diagnostic_counts(&diagnostics);
@@ -344,54 +314,30 @@ fn cell_from_factorize_cell(
     }
 }
 
-fn diagnostics_from_analyzer(
-    graph: &OwnerGraphReport,
-    deferred_groups: &BTreeMap<String, String>,
-) -> Vec<FactorizeDiagnosticReport> {
+fn diagnostics_from_analyzer(graph: &OwnerGraphReport) -> Vec<FactorizeDiagnosticReport> {
     graph
         .factorize
         .diagnostics
         .iter()
-        .map(|diagnostic| {
-            let mut seeded_from_deferred: Vec<String> = diagnostic
-                .binding_ids
-                .iter()
-                .filter_map(|binding| deferred_groups.get(binding.as_str()).cloned())
-                .collect();
-            seeded_from_deferred.sort();
-            seeded_from_deferred.dedup();
-            FactorizeDiagnosticReport {
-                diagnostic_id: diagnostic.diagnostic_id.clone(),
-                owner_ids: diagnostic.owner_ids.clone(),
-                binding_ids: diagnostic.binding_ids.clone(),
-                size_lines_estimate: diagnostic.size_lines_estimate,
-                size_members: diagnostic.size_members,
-                source_line_range: diagnostic.source_line_range,
-                ordinal_span: diagnostic.ordinal_span,
-                status: diagnostic.status,
-                reason: diagnostic.reason,
-                emit_blocked_residual_bindings: diagnostic.emit_blocked_residual_bindings.clone(),
-                cycle_blocker_owner_ids: diagnostic.cycle_blocker_owner_ids.clone(),
-                active_modules_referenced: diagnostic.active_modules_referenced.clone(),
-                seeded_from_deferred,
-                extends_module_id: diagnostic.extends_module_id.clone(),
-            }
+        .map(|diagnostic| FactorizeDiagnosticReport {
+            diagnostic_id: diagnostic.diagnostic_id.clone(),
+            owner_ids: diagnostic.owner_ids.clone(),
+            binding_ids: diagnostic.binding_ids.clone(),
+            size_lines_estimate: diagnostic.size_lines_estimate,
+            size_members: diagnostic.size_members,
+            source_line_range: diagnostic.source_line_range,
+            ordinal_span: diagnostic.ordinal_span,
+            status: diagnostic.status,
+            reason: diagnostic.reason,
+            emit_blocked_residual_bindings: diagnostic.emit_blocked_residual_bindings.clone(),
+            cycle_blocker_owner_ids: diagnostic.cycle_blocker_owner_ids.clone(),
+            active_modules_referenced: diagnostic.active_modules_referenced.clone(),
+            extends_module_id: diagnostic.extends_module_id.clone(),
         })
         .collect()
 }
 
-fn diagnostic_from_legacy_cell(
-    idx: usize,
-    cell: &FactorizeCell,
-    deferred_groups: &BTreeMap<String, String>,
-) -> FactorizeDiagnosticReport {
-    let mut seeded_from_deferred: Vec<String> = cell
-        .binding_ids
-        .iter()
-        .filter_map(|binding| deferred_groups.get(binding.as_str()).cloned())
-        .collect();
-    seeded_from_deferred.sort();
-    seeded_from_deferred.dedup();
+fn diagnostic_from_legacy_cell(idx: usize, cell: &FactorizeCell) -> FactorizeDiagnosticReport {
     FactorizeDiagnosticReport {
         diagnostic_id: format!("legacy_factorize_cell_{idx:04}"),
         owner_ids: cell.owner_ids.clone(),
@@ -405,7 +351,6 @@ fn diagnostic_from_legacy_cell(
         emit_blocked_residual_bindings: cell.emit_blocked_residual_bindings.clone(),
         cycle_blocker_owner_ids: cell.cycle_blocker_owner_ids.clone(),
         active_modules_referenced: cell.active_modules_referenced.clone(),
-        seeded_from_deferred,
         extends_module_id: cell.extends_module_id.clone(),
     }
 }
@@ -447,7 +392,6 @@ struct ProposalContext<'a> {
     graph: &'a OwnerGraphReport,
     residual_edges: &'a [(usize, usize)],
     active_edges: &'a [(usize, String)],
-    deferred_groups: &'a BTreeMap<String, String>,
     owner_to_cell: HashMap<usize, usize>,
 }
 
@@ -456,7 +400,6 @@ fn emit_proposals(
     residual_edges: &[(usize, usize)],
     active_edges: &[(usize, String)],
     graph: &OwnerGraphReport,
-    deferred_groups: &BTreeMap<String, String>,
 ) -> Vec<FactorizeProposal> {
     let mut owner_to_cell: HashMap<usize, usize> = HashMap::new();
     for (cell_idx, (cell, _)) in cells.iter().enumerate() {
@@ -469,7 +412,6 @@ fn emit_proposals(
         graph,
         residual_edges,
         active_edges,
-        deferred_groups,
         owner_to_cell,
     };
 
@@ -576,7 +518,6 @@ fn build_proposal(
     let mut owner_ids: Vec<String> = Vec::with_capacity(cell.owners.len());
     let mut anonymous_owner_ids: Vec<String> = Vec::new();
     let mut binding_ids: BTreeSet<String> = BTreeSet::new();
-    let mut seeded: BTreeSet<String> = BTreeSet::new();
     let mut start_line = usize::MAX;
     let mut end_line = 0usize;
     let mut have_loc = false;
@@ -590,9 +531,6 @@ fn build_proposal(
         }
         for binding in &node.declared_bindings {
             binding_ids.insert(binding.binding.clone());
-            if let Some(module_path) = ctx.deferred_groups.get(binding.binding.as_str()) {
-                seeded.insert(module_path.clone());
-            }
         }
         if let Some(loc) = &node.source_location {
             have_loc = true;
@@ -680,7 +618,6 @@ fn build_proposal(
         cycle_blocker_owner_ids,
         status: verdict.status,
         landable_today: verdict.landable_today,
-        seeded_from_deferred: seeded.into_iter().collect(),
         extends_module_id: cell.extends_module_id.clone(),
         extension_owner_ids,
     }
@@ -1036,7 +973,7 @@ mod tests {
             vec![],
             vec![],
         );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 10_000);
+        let report = factorize(&graph, &no_claims(), 10_000);
         assert_eq!(report.residual_owner_count, 2);
         assert!(report.proposals.is_empty());
     }
@@ -1061,7 +998,7 @@ mod tests {
             ),
         ];
         let graph = graph_with_cells(nodes, vec![], cells);
-        let report = factorize(&graph, &no_claims(), &no_claims(), 10_000);
+        let report = factorize(&graph, &no_claims(), 10_000);
         assert_eq!(report.proposals.len(), 2);
         assert!(report.proposals.iter().all(|p| p.size_members == 1));
         assert!(report.proposals.iter().all(|p| p.landable_today));
@@ -1084,75 +1021,6 @@ mod tests {
                 count: 2,
                 landable_count: 2,
             }],
-        );
-    }
-
-    #[test]
-    fn deferred_group_attribution_is_annotated_per_cell() {
-        // Two cells. Cell 0 contains binding `a` which is in
-        // `mod/x.yaml.deferred`. Cell 1 contains binding `b` which
-        // isn't in any deferred group. Expected: cell 0 reports
-        // `seeded_from_deferred = ["mod/x"]`; cell 1 reports empty.
-        let nodes = vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)];
-        let cells = vec![
-            cell(
-                "auto_partition_0000",
-                &["a"],
-                &nodes,
-                PeelCandidateStatus::PeelableNow,
-                &[],
-            ),
-            cell(
-                "auto_partition_0001",
-                &["b"],
-                &nodes,
-                PeelCandidateStatus::PeelableNow,
-                &[],
-            ),
-        ];
-        let graph = graph_with_cells(nodes, vec![], cells);
-        let deferred = BTreeMap::from([("a".to_string(), "mod/x".to_string())]);
-        let report = factorize(&graph, &no_claims(), &deferred, 10_000);
-        let cell_a = report
-            .proposals
-            .iter()
-            .find(|p| p.binding_ids.contains(&"a".to_string()))
-            .expect("cell containing a");
-        assert_eq!(cell_a.seeded_from_deferred, vec!["mod/x".to_string()]);
-        let cell_b = report
-            .proposals
-            .iter()
-            .find(|p| p.binding_ids.contains(&"b".to_string()))
-            .expect("cell containing b");
-        assert!(cell_b.seeded_from_deferred.is_empty());
-    }
-
-    #[test]
-    fn multi_deferred_module_merge_is_annotated_with_all_paths() {
-        // Single cell containing bindings `a` (deferred `mod/x`)
-        // and `b` (deferred `mod/y`). The cell is the result of the
-        // analyzer merging the two deferred members via a
-        // constraining edge. The CLI surfaces both deferred paths
-        // — signal to the spec author that promoting this cell
-        // means "merge mod/x and mod/y together".
-        let nodes = vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)];
-        let cells = vec![cell(
-            "auto_partition_0000",
-            &["a", "b"],
-            &nodes,
-            PeelCandidateStatus::PeelableNow,
-            &[],
-        )];
-        let graph = graph_with_cells(nodes, vec![], cells);
-        let deferred = BTreeMap::from([
-            ("a".to_string(), "mod/x".to_string()),
-            ("b".to_string(), "mod/y".to_string()),
-        ]);
-        let report = factorize(&graph, &no_claims(), &deferred, 10_000);
-        assert_eq!(report.proposals.len(), 1);
-        assert_eq!(
-            report.proposals[0].seeded_from_deferred,
-            vec!["mod/x".to_string(), "mod/y".to_string()],
         );
     }
 
@@ -1182,7 +1050,7 @@ mod tests {
             ),
         ];
         let graph = graph_with_cells(nodes, edges, cells);
-        let report = factorize(&graph, &no_claims(), &no_claims(), 15);
+        let report = factorize(&graph, &no_claims(), 15);
         let by_binding = |b: &str| -> &FactorizeProposal {
             report
                 .proposals
@@ -1218,7 +1086,7 @@ mod tests {
         )];
         let graph = graph_with_cells(nodes, edges, cells);
         let claims = BTreeMap::from([("a".to_string(), "ui/x".to_string())]);
-        let report = factorize(&graph, &claims, &no_claims(), 10_000);
+        let report = factorize(&graph, &claims, 10_000);
         assert_eq!(report.proposals.len(), 1);
         assert_eq!(report.proposals[0].edges_to_active_modules, 1);
         assert_eq!(
@@ -1261,7 +1129,7 @@ mod tests {
             ),
         ];
         let graph = graph_with_cells(nodes, edges, cells);
-        let report = factorize(&graph, &no_claims(), &no_claims(), 12);
+        let report = factorize(&graph, &no_claims(), 12);
         assert!(
             !report
                 .proposals
@@ -1309,7 +1177,7 @@ mod tests {
             ),
         ];
         let graph = graph_with_cells(nodes, vec![], cells);
-        let report = factorize(&graph, &no_claims(), &no_claims(), 10_000);
+        let report = factorize(&graph, &no_claims(), 10_000);
         assert!(
             !report
                 .proposals

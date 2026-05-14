@@ -3,7 +3,7 @@
 //! at the chunk's `unassigned_mode: catchall_file` target.
 //!
 //! Before the residual-config unification, the gaffer-side
-//! `.yaml.deferred` workflow routed rename ops through a separate
+//! non-emitting patch workflow routed rename ops through a separate
 //! `residual_modules` map's `members` field. With `residual_modules`
 //! folded into `UnassignedMode::CatchallFile`, the same effect is
 //! expressed by declaring a regular `logical_modules` entry at the
