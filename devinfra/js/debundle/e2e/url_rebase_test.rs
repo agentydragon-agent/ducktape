@@ -23,6 +23,29 @@ export { a };
 }
 
 #[test]
+fn rebases_import_meta_url_constructor_from_original_runtime_file() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function buildWorkerUrl() {
+  return new URL("../worker-chunk/entry.js", import.meta.url);
+}
+console.log(typeof buildWorkerUrl);
+export { buildWorkerUrl };
+"#,
+        vec![logical_module(
+            "nested/worker_url",
+            &[Member::new("buildWorkerUrl")],
+        )],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/nested/worker_url.js",
+        &[r#"new URL("../../../worker-chunk/entry.js", import.meta.url)"#],
+        &[r#"new URL("../worker-chunk/entry.js", import.meta.url)"#],
+    );
+    assert_entry_output(&fixture, "function\n");
+}
+
+#[test]
 fn rebases_dynamic_import_specifiers_to_runtime_relative_paths() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"async function a() { const m = await import("./b.js"); return m.x; }
