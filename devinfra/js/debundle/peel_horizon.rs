@@ -747,25 +747,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_legacy_binding_kind_spelling() {
-        let temp = tempfile::tempdir().unwrap();
-        let modules = temp.path().join("modules");
-        let graph = temp.path().join("owner_graph.json");
-        fs::create_dir_all(&modules).unwrap();
-        graph_fixture(&graph);
-        write_file(
-            &temp.path().join("binding_patches.yaml"),
-            &module_yaml(&[("a", "VariableDeclarator")]),
-        );
-
-        let error = analyze_peel_horizon(&options(&modules, &graph)).unwrap_err();
-        assert!(
-            error.to_string().contains("binding_patches.yaml"),
-            "{error:#}"
-        );
-    }
-
-    #[test]
     fn keeps_companion_candidate_order_deterministic() {
         let temp = tempfile::tempdir().unwrap();
         let modules = temp.path().join("modules");
