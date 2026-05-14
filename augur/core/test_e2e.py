@@ -512,6 +512,113 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     np.testing.assert_allclose(action.net_proceeds_usd, sale_value - sale_closing_cost - sale_tax)
 
 
+def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None:
+    """The public response payload preserves per-rollout action details for UI inspection."""
+    scenario = Scenario(
+        scenario_id="serialized_sale_actions",
+        label="Serialized Sale Actions",
+        actors=(_simple_actor(),),
+        events=(
+            PrivateEquitySaleRequestEvent(event_id="pe_sale", month_index=1, actor_id="alpha", amount_usd=50_000),
+            PropertySaleEvent(event_id="property_sale", month_index=2, property_id="test_property"),
+        ),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+        ),
+        financing=Financing(financing_mode=FinancingMode.CASH),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=6.5),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=550_000,
+                ),
+            ),
+            assets=(
+                GenericSp500StockPosition(
+                    asset_id="sp500",
+                    asset_type=AssetType.GENERIC_SP500_STOCK,
+                    owner_actor_id="alpha",
+                    value_usd=50_000,
+                    cost_basis_usd=25_000,
+                ),
+                PrivateEquityPosition(
+                    asset_id="pe",
+                    asset_type=AssetType.PRIVATE_EQUITY,
+                    owner_actor_id="alpha",
+                    value_usd=100_000,
+                    cost_basis_usd=40_000,
+                    units=100,
+                ),
+            ),
+        ),
+        policies=(
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="checking_floor", actor_id="alpha", floor_usd=60_000, sale_amount_usd=20_000
+            ),
+            PrivateEquitySalePolicy(policy_id="private_equity_sale", actor_id="alpha", proceeds_destination="cash"),
+        ),
+    )
+    scenario_set = ScenarioSet(
+        scenario_set_id="serialized_sale_actions_set",
+        title="Serialized Sale Actions Set",
+        market_request=MarketRequest(market_model_id="e2e_noop", rollout_count=1, horizon_months=2, random_seed=0),
+        scenarios=(scenario,),
+    )
+
+    run = simulate_set(
+        scenario_set,
+        market_provider=NoopMarketBundleProvider(home_path=(1.0, 1.0, 1.8), private_equity_liquidity_event_months=(1,)),
+    )
+    payload = run.to_response().model_dump(mode="json")
+
+    result = payload["scenario_results"][0]
+    assert {"federal_income_tax_usd", "california_income_tax_usd", "generic_sp500_sale_tax_usd"} <= set(
+        result["monthly_columns"]["columns"]
+    )
+    actions = {action["action_type"]: action for action in result["actions"]}
+    assert set(actions) == {"sell_sp500", "sell_private_equity", "settle_property_sale"}
+
+    sp500_action = actions["sell_sp500"]
+    assert sp500_action["amount_usd"] == 20_000
+    assert sp500_action["basis_usd"] == 10_000
+    assert sp500_action["gain_usd"] == 10_000
+    assert sp500_action["tax_usd"] > 0
+    np.testing.assert_allclose(
+        sp500_action["after_tax_proceeds_usd"], sp500_action["amount_usd"] - sp500_action["tax_usd"]
+    )
+
+    private_equity_action = actions["sell_private_equity"]
+    assert private_equity_action["event_id"] == "pe_sale"
+    assert private_equity_action["event_type"] == "private_equity_sale_request"
+    assert private_equity_action["amount_usd"] == 50_000
+    assert private_equity_action["basis_usd"] == 20_000
+    assert private_equity_action["taxable_gain_usd"] == 30_000
+    assert private_equity_action["estimated_tax_usd"] > 0
+    np.testing.assert_allclose(
+        private_equity_action["after_tax_proceeds_usd"],
+        private_equity_action["amount_usd"] - private_equity_action["estimated_tax_usd"],
+    )
+
+    property_action = actions["settle_property_sale"]
+    assert property_action["event_id"] == "property_sale"
+    assert property_action["property_id"] == "test_property"
+    assert property_action["gross_sale_usd"] == 900_000
+    assert property_action["selling_cost_usd"] == 58_500
+    assert property_action["adjusted_basis_usd"] == 500_000
+    assert property_action["taxable_capital_gain_usd"] == 91_500
+    assert property_action["tax_usd"] > 0
+    np.testing.assert_allclose(
+        property_action["net_proceeds_usd"],
+        property_action["gross_sale_usd"]
+        - property_action["selling_cost_usd"]
+        - property_action["debt_payoff_usd"]
+        - property_action["tax_usd"],
+    )
+
+
 def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
     """A rented property records rent, vacancy, management fee, carrying cost,
     and owner cash impact in the simulated trajectory."""
