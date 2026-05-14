@@ -265,7 +265,7 @@ py_wheel(
     entry_points = {
         "console_scripts": [
             "claude-hook = devinfra.claude.hook_daemon.hook_dispatch:main",
-            "claude-statusline = devinfra.claude.statusline:main",
+            "claude-statusline = devinfra.claude.statusline.statusline:main",
         ],
     },
     python_requires = ">=3.13",

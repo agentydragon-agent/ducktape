@@ -10,6 +10,7 @@ pkg_tar(
         "//skills/backtrace:backtrace_tar",
         "//skills/branch_splitter:branch_splitter_tar",
         "//skills/buildbuddy_api:buildbuddy_api_tar",
+        "//skills/debundle-mint-names:debundle-mint-names_tar",
         "//skills/cihealth:cihealth_tar",
         "//skills/cluster_health:cluster_health_tar",
         "//skills/cnpg_region_switch:cnpg_region_switch_tar",
