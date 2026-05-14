@@ -86,6 +86,24 @@ def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> 
     np.testing.assert_allclose(sale.property_sale_tax_usd[:, 3], expected_depreciation * 0.25)
 
 
+def test_property_without_sale_event_returns_zero_sale_cash_flow() -> None:
+    bundle = constant_market_bundle()
+    scenario = sale_scenario().model_copy(update={"events": ()})
+    sale = property_disposition_arrays(
+        scenario,
+        bundle,
+        property_value_usd=100_000 * bundle.home_value_multipliers(LocationId.SAN_FRANCISCO_CA),
+        mortgage_balance_usd=np.full((2, 4), 40_000.0),
+        purchase_price_usd=100_000,
+        local_regulation=LocalRegulation(property_tax_annual_pct=1.2, notes="test"),
+    )
+
+    assert sale.sale_month is None
+    np.testing.assert_allclose(sale.property_sale_gross_usd, 0)
+    np.testing.assert_allclose(sale.property_sale_net_proceeds_usd, 0)
+    np.testing.assert_allclose(sale.net_property_sale_cash_flow_usd, 0)
+
+
 def test_no_property_sale_returns_zero_arrays_without_local_regulation() -> None:
     sale = empty_property_disposition_arrays(constant_market_bundle())
 

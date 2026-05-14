@@ -102,8 +102,9 @@ For one rollout, given a `Scenario`:
    d. Each agent's policies produce actions in deterministic order.
    e. Engine validates + applies actions; ledger records them.
    f. Record the per-month row (one row per agent + portfolio-wide aggregates).
-4. At horizon, apply terminal sale if scenario specifies it; record terminal
-   row.
+4. At horizon, record the terminal row. A property is sold only if the
+   scenario includes a `PropertySaleEvent`; otherwise it remains owned and
+   contributes home equity rather than sale cash.
 
 ## Outputs
 

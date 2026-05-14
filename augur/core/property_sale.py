@@ -43,6 +43,7 @@ def property_disposition_arrays(
     transaction_costs = scenario.transaction_costs
     tax_profile = scenario.tax_profile
     sale_month = property_sale_month(scenario, market_bundle.horizon_months)
+    depreciation_through_month = sale_month if sale_month is not None else market_bundle.horizon_months
     purchase_closing_cost = np.zeros(shape, dtype="float64")
     purchase_closing_cost[:, 0] = purchase_price_usd * (transaction_costs.closing_cost_buy_pct / 100)
     property_depreciation = monthly_property_depreciation_usd(
@@ -50,12 +51,13 @@ def property_disposition_arrays(
         market_bundle,
         purchase_price_usd=purchase_price_usd,
         purchase_closing_cost_usd=float(purchase_closing_cost[0, 0]),
-        sale_month=sale_month,
+        sale_month=depreciation_through_month,
     )
     cumulative_depreciation = np.cumsum(property_depreciation, axis=1)
 
     sale_mask = np.zeros(shape, dtype="float64")
-    sale_mask[:, sale_month] = 1.0
+    if sale_month is not None:
+        sale_mask[:, sale_month] = 1.0
     sale_gross = property_value_usd * sale_mask
     sale_closing_cost = sale_gross * (
         (transaction_costs.closing_cost_sell_pct + local_regulation.local_transfer_tax_pct) / 100
@@ -111,7 +113,7 @@ def empty_property_disposition_arrays(market_bundle: MarketBundle) -> PropertyDi
     )
 
 
-def property_sale_month(scenario: Scenario, horizon_months: int) -> int:
+def property_sale_month(scenario: Scenario, horizon_months: int) -> int | None:
     explicit_sale_months = [
         int(event.month_index)
         for event in scenario.events
@@ -120,12 +122,4 @@ def property_sale_month(scenario: Scenario, horizon_months: int) -> int:
     ]
     if explicit_sale_months:
         return max(0, min(*explicit_sale_months, horizon_months))
-
-    explicit_end_months: list[int] = []
-    if scenario.occupancy_plan.end_month is not None:
-        explicit_end_months.append(int(scenario.occupancy_plan.end_month))
-    if scenario.rental_plan.end_month is not None:
-        explicit_end_months.append(int(scenario.rental_plan.end_month))
-    if explicit_end_months:
-        return max(0, min(max(explicit_end_months), horizon_months))
-    return horizon_months
+    return None

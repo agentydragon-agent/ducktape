@@ -266,6 +266,7 @@ class PartnerEquityAccrualPolicy(_PolicyBase):
     ownership share in proportion to principal credit."""
 
     policy_type: Literal[PolicyType.PARTNER_EQUITY_ACCRUAL] = PolicyType.PARTNER_EQUITY_ACCRUAL
+    property_id: PropertyId | None = None
     base_monthly_payment_usd: NonNegativeFloat = 0.0
     grow_with_inflation: bool = True
     payment_growth_annual_pct: NonNegativeFloat = 0.0

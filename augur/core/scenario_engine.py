@@ -803,7 +803,7 @@ def _record_partner_agreement_actions(
     mortgage_balance_usd: np.ndarray,
 ) -> None:
     policy = _enabled_policy_of(scenario, PartnerEquityAccrualPolicy)
-    property_id = scenario.property_selection.property_id
+    property_id = _partner_equity_property_id(scenario, policy)
     if policy is None or property_id is None:
         return
     owner_actor_id = _primary_owner_actor_id(scenario)
@@ -969,7 +969,8 @@ def _partner_equity_arrays(
 ) -> PartnerEquityArrays:
     zeros = np.zeros_like(home_equity_usd, dtype="float64")
     policy = _enabled_policy_of(scenario, PartnerEquityAccrualPolicy)
-    if policy is None or not _has_partner(scenario) or scenario.property_selection.property_id is None:
+    property_id = _partner_equity_property_id(scenario, policy)
+    if policy is None or not _has_partner(scenario) or property_id is None:
         return PartnerEquityArrays(
             contribution_usd=zeros,
             contribution_used_usd=zeros,
@@ -1027,6 +1028,12 @@ def _partner_equity_arrays(
         ownership_pct=ownership_pct,
         home_equity_claim_usd=claim,
     )
+
+
+def _partner_equity_property_id(scenario: Scenario, policy: PartnerEquityAccrualPolicy | None) -> str | None:
+    if policy is None:
+        return None
+    return policy.property_id or scenario.property_selection.property_id
 
 
 def _partner_payment_growth(policy: PartnerEquityAccrualPolicy, market_bundle: MarketBundle) -> np.ndarray:

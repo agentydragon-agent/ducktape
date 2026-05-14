@@ -17,6 +17,7 @@ from augur.core.scenario_set import (
     ActorRole,
     EventType,
     MortgageLiability,
+    PartnerEquityAccrualPolicy,
     RealEstateAssetPosition,
     RentalMode,
     Scenario,
@@ -265,6 +266,8 @@ def _validate_scenario(scenario: Scenario, path: str) -> list[str]:
         )
     for index, policy in enumerate(scenario.policies):
         _validate_actor_ref(errors, actor_id_set, policy.actor_id, f"{path}.policies[{index}].actor_id")
+        if isinstance(policy, PartnerEquityAccrualPolicy):
+            _validate_partner_equity_policy(errors, scenario, policy, f"{path}.policies[{index}]")
     for index, event in enumerate(scenario.events):
         if event.actor_id is not None:
             _validate_actor_ref(errors, actor_id_set, event.actor_id, f"{path}.events[{index}].actor_id")
@@ -302,6 +305,19 @@ def _validate_rental_plan(errors: list[str], scenario: Scenario, path: str) -> N
     rental = scenario.rental_plan
     if rental.rental_mode is not RentalMode.NOT_RENTED and scenario.property_selection.property_id is None:
         errors.append(f"{path}.rental_plan.rental_mode requires property_selection.property_id")
+
+
+def _validate_partner_equity_policy(
+    errors: list[str], scenario: Scenario, policy: PartnerEquityAccrualPolicy, path: str
+) -> None:
+    selected_property_id = scenario.property_selection.property_id
+    if selected_property_id is None:
+        errors.append(f"{path}.property_id requires property_selection.property_id")
+        return
+    if policy.property_id is not None and policy.property_id != selected_property_id:
+        errors.append(
+            f"{path}.property_id references {policy.property_id!r}, but scenario selects {selected_property_id!r}"
+        )
 
 
 def _known_property_ids(scenario: Scenario) -> set[str]:

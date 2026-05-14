@@ -185,7 +185,9 @@ spirals to pull these changes forward when the current surface gets in the way.
    should not be split across fields that can contradict each other. Prefer
    either: initial positions in `initial_balance_sheet` plus scheduled future
    events, or explicit month-0 events that create positions. Document the rule
-   and validate duplicates.
+   and validate duplicates. A property sale is a scheduled transition: do not
+   implicitly liquidate real estate at the horizon just because the simulation
+   ended.
 7. **Make result inspection typed and local**: callers should not have to
    spelunk `monthly_columns["cash_usd"]`. Add accessors like
    `run.scenario("base").series("cash_usd", rollout=0)`,
@@ -372,6 +374,10 @@ that tax calculation uses `LocalRegulation` instead of hidden defaults.
   coverage for capital-gains tax after the primary-residence exclusion.
 - Depreciation recapture remains covered in focused property-sale tests; bring
   it into an e2e spiral when rental income and depreciation are widened.
+- Spiral 7 exposed that no-sale property scenarios were implicitly liquidating
+  at the horizon. That is now fixed: only an explicit `PropertySaleEvent`
+  produces property-sale cash flow, while no-sale terminal results keep home
+  equity in net worth.
 
 ## Spiral 4: Rental Income
 
@@ -479,13 +485,38 @@ Remaining cleanup:
 
 ## Spiral 7: Partner Equity Accrual
 
-**Test**: Two agents. Partner contributes $2k/month. After 60 months, verify
-partner ownership percentage, equity claim, owner claim, and contribution
-ledger.
+**DONE**: Two agents. Partner contributes $1k/month toward a $100k property
+with a 0% fixed-30 mortgage. After 60 months, verify partner contribution
+arrays, unallocated excess, mortgage paydown, partner ownership percentage,
+partner equity claim, owner claim, owner cash, and action logs for partner
+cash transfer, mortgage payment, and equity accrual.
 
 This is the first multi-agent e2e test. It should force clarity on aggregate
 vs per-agent result arrays and on how actor IDs flow through accounts, assets,
 policies, and actions.
+
+Cleanup completed:
+
+- `PartnerEquityAccrualPolicy` can now name its `property_id`; omitting it
+  keeps the current single-selected-property shorthand.
+- Core validation rejects partner-equity policies that reference a property
+  other than the selected scenario property.
+- Property disposition no longer treats absence of a sale event as an implicit
+  horizon sale. Sale cash flow now requires `PropertySaleEvent`.
+
+Remaining cleanup:
+
+- Partner equity still uses a single first-enabled policy because current
+  result arrays are aggregate, not keyed by partner actor. Either validate this
+  as an intentional single-agreement limitation or introduce per-partner
+  ledgers before allowing multiple concurrent partner-equity policies.
+- `PayMortgageAction` still appears only through partner-equity action
+  recording even though owner mortgage payments occur in ordinary property
+  scenarios. The ledger cleanup should make mortgage payment an ordinary
+  liability-payment entry.
+- Split `TransferPartnerContributionAction` into actual cash movement and
+  applied-to-house-cost accounting. The model now records unallocated excess,
+  but a ledger needs to say where that excess lives.
 
 ## Spiral N+: Structural Cleanup
 

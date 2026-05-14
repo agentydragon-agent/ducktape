@@ -20,6 +20,7 @@ from augur.core.market_bundle_test_support import NoopMarketBundleProvider
 from augur.core.scenario_set import (
     AccountBalance,
     AccountType,
+    AccruePartnerEquityAction,
     Actor,
     ActorRole,
     AssetType,
@@ -32,6 +33,8 @@ from augur.core.scenario_set import (
     MarketRequest,
     MonthlySpendAction,
     MonthlySpendPolicy,
+    PartnerEquityAccrualPolicy,
+    PayMortgageAction,
     PrivateEquityPosition,
     PrivateEquitySalePolicy,
     PrivateEquitySaleRequestEvent,
@@ -45,6 +48,7 @@ from augur.core.scenario_set import (
     SellSp500Action,
     TaxProfile,
     TransactionCosts,
+    TransferPartnerContributionAction,
     WholePropertyRentalPlan,
 )
 
@@ -115,6 +119,33 @@ def test_simulate_set_rejects_policy_with_unknown_actor_path() -> None:
     )
 
     with pytest.raises(ValueError, match=r"scenarios\[0\]\.policies\[0\]\.actor_id references unknown actor 'ghost'"):
+        _run_scenario(scenario, horizon_months=12)
+
+
+def test_simulate_set_rejects_partner_equity_policy_for_other_property() -> None:
+    """Property-specific partner-equity policies must name the selected property."""
+    scenario = Scenario(
+        scenario_id="invalid_partner_property",
+        label="Invalid Partner Property",
+        actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=LocationId.VALLEJO_CA, purchase_price_usd=100_000
+        ),
+        policies=(
+            PartnerEquityAccrualPolicy(
+                policy_id="partner_equity",
+                actor_id="beta",
+                property_id="other_property",
+                base_monthly_payment_usd=1_000,
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"scenarios\[0\]\.policies\[0\]\.property_id references 'other_property', "
+        r"but scenario selects 'test_property'",
+    ):
         _run_scenario(scenario, horizon_months=12)
 
 
@@ -289,6 +320,104 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
     np.testing.assert_allclose(rollout.series("mortgage_principal_usd")[1], expected_month_1_principal)
     np.testing.assert_allclose(rollout.series("mortgage_payment_usd")[1], payment)
     np.testing.assert_allclose(rollout.series("mortgage_balance_usd")[1], loan_amount - expected_month_1_principal)
+
+
+def test_partner_equity_accrual_records_contributions_and_claims() -> None:
+    """A partner contribution policy acts like a housing-cost contribution program.
+
+    The partner sends cash every occupied month. Contributions are applied to
+    house costs first, and the portion covering mortgage principal increases the
+    partner's equity claim.
+    """
+    purchase_price = 100_000
+    down_payment_pct = 20
+    down_payment = purchase_price * down_payment_pct / 100
+    loan_amount = purchase_price - down_payment
+    monthly_principal = loan_amount / (30 * 12)
+    horizon_months = 60
+
+    scenario = Scenario(
+        scenario_id="partner_equity_accrual",
+        label="Partner Equity Accrual",
+        actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=LocationId.VALLEJO_CA, purchase_price_usd=purchase_price
+        ),
+        financing=Financing(
+            financing_mode=FinancingMode.FIXED_30, down_payment_pct=down_payment_pct, mortgage_rate_pct=0
+        ),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
+        property_assumptions=PropertyAssumptions(insurance_annual_usd=0, maintenance_pct=0),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=40_000
+                ),
+            )
+        ),
+        policies=(
+            PartnerEquityAccrualPolicy(
+                policy_id="partner_equity",
+                actor_id="beta",
+                property_id="test_property",
+                base_monthly_payment_usd=1_000,
+                occupied_months=horizon_months,
+                grow_with_inflation=False,
+            ),
+        ),
+    )
+
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+
+    partner_principal_credit = monthly_principal * horizon_months
+    expected_owner_ledger = down_payment
+    expected_partner_ledger = partner_principal_credit
+    expected_ownership_pct = expected_partner_ledger / (expected_owner_ledger + expected_partner_ledger)
+    expected_terminal_mortgage_balance = loan_amount - partner_principal_credit
+    expected_home_equity = purchase_price - expected_terminal_mortgage_balance
+    rollout = result.rollout(0)
+
+    np.testing.assert_allclose(rollout.series("partner_contribution_usd")[0], 0)
+    np.testing.assert_allclose(rollout.series("partner_contribution_usd")[1:], 1_000)
+    assert np.all(rollout.series("partner_unallocated_excess_usd")[1:] > 0)
+    np.testing.assert_allclose(rollout.series("partner_ownership_pct")[60], expected_ownership_pct)
+    np.testing.assert_allclose(rollout.series("mortgage_balance_usd")[60], expected_terminal_mortgage_balance)
+    np.testing.assert_allclose(rollout.series("home_equity_usd")[60], expected_home_equity)
+    np.testing.assert_allclose(rollout.series("partner_home_equity_claim_usd")[60], expected_partner_ledger)
+    np.testing.assert_allclose(rollout.series("owner_home_equity_claim_usd")[60], expected_owner_ledger)
+    np.testing.assert_allclose(
+        rollout.series("partner_home_equity_claim_usd")[60] + rollout.series("owner_home_equity_claim_usd")[60],
+        expected_home_equity,
+    )
+    np.testing.assert_allclose(rollout.series("cash_usd")[0], 20_000)
+    np.testing.assert_allclose(rollout.series("cash_usd")[60], 20_000)
+
+    transfers = result.actions(TransferPartnerContributionAction)
+    assert len(transfers) == horizon_months
+    assert transfers[0].month_index == 1
+    assert transfers[-1].month_index == horizon_months
+    assert all(action.actor_id == "beta" for action in transfers)
+    assert all(action.recipient_actor_id == "alpha" for action in transfers)
+    assert all(action.amount_usd == 1_000 for action in transfers)
+    np.testing.assert_allclose(
+        [action.applied_to_house_costs_usd for action in transfers], rollout.series("partner_contribution_used_usd")[1:]
+    )
+    assert all(action.unallocated_amount_usd > 0 for action in transfers)
+
+    mortgage_payments = result.actions(PayMortgageAction)
+    assert len(mortgage_payments) == horizon_months
+    assert mortgage_payments[0].actor_id == "alpha"
+    np.testing.assert_allclose(mortgage_payments[0].mortgage_principal_usd, monthly_principal)
+    np.testing.assert_allclose(mortgage_payments[-1].mortgage_balance_after_usd, expected_terminal_mortgage_balance)
+
+    accruals = result.actions(AccruePartnerEquityAction)
+    assert len(accruals) == horizon_months
+    assert accruals[0].actor_id == "beta"
+    assert accruals[0].beneficiary_actor_id == "beta"
+    assert accruals[0].property_id == "test_property"
+    np.testing.assert_allclose(accruals[0].principal_credit_usd, monthly_principal)
+    np.testing.assert_allclose(accruals[-1].ownership_pct_after, expected_ownership_pct)
+    np.testing.assert_allclose(accruals[-1].home_equity_claim_usd_after, expected_partner_ledger)
 
 
 def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
