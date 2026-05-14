@@ -21,10 +21,10 @@
 //!   `other_residual_cells_referenced`: cell-graph relationship
 //!   counts derived from the partition the analyzer chose.
 //!
-//! The `landable_today`, `emit_blocked_residual_bindings`, and
-//! `oversize` verdicts come straight from the analyzer's SSOT cell
-//! (matching the materializer's gate predicates exactly); we don't
-//! recompute them.
+//! The `status`, `landable_today`, blocker lists, and `oversize`
+//! verdicts come straight from the analyzer's SSOT cell (matching
+//! the materializer's gate predicates exactly); we don't recompute
+//! them.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::{FactorizeCell, OwnerGraphReport, RESIDUAL_ENTRY_MODULE_ID};
+use analysis::{FactorizeCell, OwnerGraphReport, PeelCandidateStatus, RESIDUAL_ENTRY_MODULE_ID};
 use spec_modules::{load_active_claims, load_deferred_groups};
 
 #[derive(Debug, Clone)]
@@ -54,6 +54,25 @@ pub struct PeelFactorizeReport {
     pub size_cap_lines: usize,
     pub residual_owner_count: usize,
     pub active_claimed_binding_count: usize,
+    /// Counts by analyzer verdict status after CLI agglomeration.
+    /// Keys use the report's stable snake_case status spelling.
+    pub status_counts: BTreeMap<String, usize>,
+    /// Proposal size histograms. Each bucket includes total count
+    /// plus how many proposals in the bucket are landable today.
+    pub size_distributions: FactorizeSizeDistributions,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FactorizeSizeDistributions {
+    pub by_members: Vec<FactorizeSizeBucketCount>,
+    pub by_lines: Vec<FactorizeSizeBucketCount>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FactorizeSizeBucketCount {
+    pub bucket: String,
+    pub count: usize,
+    pub landable_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -107,6 +126,18 @@ pub struct FactorizeProposal {
     /// `materialize_logical_modules`'s emit-resolvability gate.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emit_blocked_residual_bindings: Vec<String>,
+    /// Owner ids that block this proposal on the materializer's
+    /// cycle / residual-dependency gate. Populated when
+    /// `status` is `blocked_cycle` or `blocked_residual_dependency`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycle_blocker_owner_ids: Vec<String>,
+    /// Analyzer verdict for this proposal's final owner set. This
+    /// is the most direct explanation for non-landable proposals:
+    /// `blocked_emit_resolvability` pairs with
+    /// `emit_blocked_residual_bindings`; `blocked_cycle` and
+    /// `blocked_residual_dependency` pair with
+    /// `cycle_blocker_owner_ids`.
+    pub status: PeelCandidateStatus,
     /// `true` iff both gates would pass:
     /// * `edges_to_other_residual_cells == 0` (cycle gate).
     /// * `emit_blocked_residual_bindings.is_empty()`
@@ -223,8 +254,10 @@ pub fn factorize(
             (
                 cell_from_factorize_cell(cell, graph, &owner_index),
                 Verdict {
+                    status: cell.status,
                     landable_today: cell.landable_today,
                     emit_blocked_residual_bindings: cell.emit_blocked_residual_bindings.clone(),
+                    cycle_blocker_owner_ids: cell.cycle_blocker_owner_ids.clone(),
                 },
             )
         })
@@ -278,11 +311,15 @@ pub fn factorize(
         deferred_groups,
         size_cap_lines,
     );
+    let status_counts = status_counts(&proposals);
+    let size_distributions = size_distributions(&proposals);
     PeelFactorizeReport {
         proposals,
         size_cap_lines,
         residual_owner_count: residual.len(),
         active_claimed_binding_count: active_claims.len(),
+        status_counts,
+        size_distributions,
     }
 }
 
@@ -341,8 +378,10 @@ struct Cell {
 /// `emit_blocked_residual_bindings`.
 #[derive(Debug, Clone)]
 struct Verdict {
+    status: PeelCandidateStatus,
     landable_today: bool,
     emit_blocked_residual_bindings: Vec<String>,
+    cycle_blocker_owner_ids: Vec<String>,
 }
 
 /// Greedy agglomeration of landable closure cells along inter-cell
@@ -472,6 +511,10 @@ fn agglomerate_landable_cells(
                 cells[keep].0.extension_owner_idxs.clear();
             }
             // Drop's emit-blocked is empty (landable) so no merge needed there.
+            cells[keep].1.status = PeelCandidateStatus::PeelableNow;
+            cells[keep].1.landable_today = true;
+            cells[keep].1.emit_blocked_residual_bindings.clear();
+            cells[keep].1.cycle_blocker_owner_ids.clear();
             out_neighbors[keep] = merged_out;
             in_neighbors[keep] = merged_in;
             out_neighbors[drop].clear();
@@ -655,8 +698,10 @@ fn merge_cell_closure(
     cells[keep].0.lines = total_lines;
     cells[keep].0.extends_module_id = common_extends;
     cells[keep].0.extension_owner_idxs = merged_extension_owner_idxs;
+    cells[keep].1.status = PeelCandidateStatus::PeelableNow;
     cells[keep].1.landable_today = true;
     cells[keep].1.emit_blocked_residual_bindings.clear();
+    cells[keep].1.cycle_blocker_owner_ids.clear();
 
     for &idx in closure.iter().rev() {
         if idx != keep {
@@ -874,9 +919,9 @@ fn build_proposal(
     }
     let active_modules_referenced: Vec<String> = active_targets.into_iter().collect();
 
-    // `landable_today`, `emit_blocked_residual_bindings`, and
-    // `oversize` come straight from the analyzer's SSOT verdict on
-    // this cell (computed once via
+    // `status`, `landable_today`, blocker lists, and `oversize`
+    // come straight from the analyzer's SSOT verdict on this cell
+    // (computed once via
     // `peelability::evaluate_peel_candidate` at owner-graph
     // build time). The CLI used to recompute them from the JSON
     // shape, which drifted from the predicate on edges through
@@ -884,6 +929,7 @@ fn build_proposal(
     // residual_entry cycles even though entry mediates them).
     let emit_blocked_residual_bindings: Vec<String> =
         verdict.emit_blocked_residual_bindings.clone();
+    let cycle_blocker_owner_ids = verdict.cycle_blocker_owner_ids.clone();
     let extension_owner_ids: Vec<String> = {
         let mut ids: Vec<String> = cell
             .extension_owner_idxs
@@ -916,11 +962,108 @@ fn build_proposal(
         edges_to_active_modules: to_active,
         active_modules_referenced,
         emit_blocked_residual_bindings,
+        cycle_blocker_owner_ids,
+        status: verdict.status,
         landable_today: verdict.landable_today,
         oversize: cell.lines > ctx.size_cap_lines,
         seeded_from_deferred: seeded.into_iter().collect(),
         extends_module_id: cell.extends_module_id.clone(),
         extension_owner_ids,
+    }
+}
+
+fn status_counts(proposals: &[FactorizeProposal]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for proposal in proposals {
+        *counts
+            .entry(status_key(proposal.status).to_string())
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn size_distributions(proposals: &[FactorizeProposal]) -> FactorizeSizeDistributions {
+    FactorizeSizeDistributions {
+        by_members: bucket_counts(proposals, |proposal| proposal.size_members, member_bucket),
+        by_lines: bucket_counts(
+            proposals,
+            |proposal| proposal.size_lines_estimate,
+            line_bucket,
+        ),
+    }
+}
+
+fn bucket_counts(
+    proposals: &[FactorizeProposal],
+    value: fn(&FactorizeProposal) -> usize,
+    bucket: fn(usize) -> &'static str,
+) -> Vec<FactorizeSizeBucketCount> {
+    const SIZE_BUCKETS: &[&str] = &[
+        "0", "1", "2", "3-5", "6-10", "11-20", "21-50", "51-100", "101-250", "251-500", "501-1000",
+        ">1000",
+    ];
+    let mut counts: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
+    for proposal in proposals {
+        let entry = counts.entry(bucket(value(proposal))).or_default();
+        entry.0 += 1;
+        if proposal.landable_today {
+            entry.1 += 1;
+        }
+    }
+    SIZE_BUCKETS
+        .iter()
+        .filter_map(|bucket| {
+            counts
+                .get(bucket)
+                .map(|(count, landable_count)| FactorizeSizeBucketCount {
+                    bucket: (*bucket).to_string(),
+                    count: *count,
+                    landable_count: *landable_count,
+                })
+        })
+        .collect()
+}
+
+fn member_bucket(value: usize) -> &'static str {
+    match value {
+        0 => "0",
+        1 => "1",
+        2 => "2",
+        3..=5 => "3-5",
+        6..=10 => "6-10",
+        11..=20 => "11-20",
+        21..=50 => "21-50",
+        51..=100 => "51-100",
+        101..=250 => "101-250",
+        251..=500 => "251-500",
+        501..=1000 => "501-1000",
+        _ => ">1000",
+    }
+}
+
+fn line_bucket(value: usize) -> &'static str {
+    match value {
+        0 => "0",
+        1 => "1",
+        2 => "2",
+        3..=5 => "3-5",
+        6..=10 => "6-10",
+        11..=20 => "11-20",
+        21..=50 => "21-50",
+        51..=100 => "51-100",
+        101..=250 => "101-250",
+        251..=500 => "251-500",
+        501..=1000 => "501-1000",
+        _ => ">1000",
+    }
+}
+
+fn status_key(status: PeelCandidateStatus) -> &'static str {
+    match status {
+        PeelCandidateStatus::PeelableNow => "peelable_now",
+        PeelCandidateStatus::BlockedCycle => "blocked_cycle",
+        PeelCandidateStatus::BlockedResidualDependency => "blocked_residual_dependency",
+        PeelCandidateStatus::BlockedEmitResolvability => "blocked_emit_resolvability",
     }
 }
 
@@ -1085,6 +1228,17 @@ mod tests {
         status: PeelCandidateStatus,
         emit_blocked: &[&str],
     ) -> FactorizeCell {
+        cell_with_blockers(id, owner_ids, nodes, status, emit_blocked, &[])
+    }
+
+    fn cell_with_blockers(
+        id: &str,
+        owner_ids: &[&str],
+        nodes: &[OwnerGraphNodeReport],
+        status: PeelCandidateStatus,
+        emit_blocked: &[&str],
+        cycle_blockers: &[&str],
+    ) -> FactorizeCell {
         let owners: Vec<String> = owner_ids.iter().map(|s| s.to_string()).collect();
         let mut bindings: Vec<String> = Vec::new();
         let mut anonymous: Vec<String> = Vec::new();
@@ -1131,7 +1285,7 @@ mod tests {
             landable_today: landable,
             oversize: false,
             emit_blocked_residual_bindings: emit_blocked.iter().map(|s| s.to_string()).collect(),
-            cycle_blocker_owner_ids: Vec::new(),
+            cycle_blocker_owner_ids: cycle_blockers.iter().map(|s| s.to_string()).collect(),
             active_modules_referenced: Vec::new(),
             extends_module_id: None,
             extension_owner_ids: Vec::new(),
@@ -1178,6 +1332,26 @@ mod tests {
         assert_eq!(report.proposals.len(), 2);
         assert!(report.proposals.iter().all(|p| p.size_members == 1));
         assert!(report.proposals.iter().all(|p| p.landable_today));
+        assert_eq!(
+            report.status_counts,
+            BTreeMap::from([("peelable_now".to_string(), 2)]),
+        );
+        assert_eq!(
+            report.size_distributions.by_members,
+            vec![FactorizeSizeBucketCount {
+                bucket: "1".to_string(),
+                count: 2,
+                landable_count: 2,
+            }],
+        );
+        assert_eq!(
+            report.size_distributions.by_lines,
+            vec![FactorizeSizeBucketCount {
+                bucket: "6-10".to_string(),
+                count: 2,
+                landable_count: 2,
+            }],
+        );
     }
 
     #[test]
@@ -1365,6 +1539,55 @@ mod tests {
             consumer.emit_blocked_residual_bindings,
             vec!["dep".to_string()],
         );
+        assert_eq!(
+            consumer.status,
+            PeelCandidateStatus::BlockedEmitResolvability
+        );
         assert!(!consumer.landable_today);
+    }
+
+    #[test]
+    fn analyzer_cycle_blocker_verdict_passes_through_to_proposal() {
+        let nodes = vec![
+            owner("consumer", 1, &["consumer"], 10),
+            owner("blocker", 2, &["blocker"], 5),
+        ];
+        let cells = vec![
+            cell_with_blockers(
+                "auto_partition_0000",
+                &["consumer"],
+                &nodes,
+                PeelCandidateStatus::BlockedCycle,
+                &[],
+                &["blocker"],
+            ),
+            cell(
+                "auto_partition_0001",
+                &["blocker"],
+                &nodes,
+                PeelCandidateStatus::PeelableNow,
+                &[],
+            ),
+        ];
+        let graph = graph_with_cells(nodes, vec![], cells);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let consumer = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids.contains(&"consumer".to_string()))
+            .expect("consumer cell");
+        assert_eq!(consumer.status, PeelCandidateStatus::BlockedCycle);
+        assert_eq!(
+            consumer.cycle_blocker_owner_ids,
+            vec!["blocker".to_string()]
+        );
+        assert!(!consumer.landable_today);
+        assert_eq!(
+            report.status_counts,
+            BTreeMap::from([
+                ("blocked_cycle".to_string(), 1),
+                ("peelable_now".to_string(), 1),
+            ]),
+        );
     }
 }
