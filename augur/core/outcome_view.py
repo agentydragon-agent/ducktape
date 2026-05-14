@@ -9,7 +9,7 @@ import numpy as np
 from augur.core._num import require_finite as required_number
 from augur.core.augur_accounting import MONTHS_PER_YEAR
 from augur.core.personal_wealth import build_private_equity_liquidity_path
-from augur.core.scenario_set import LiquidityReservePolicy, PrivateEquityTenderRebalancePolicy
+from augur.core.scenario_set import LiquidityReservePolicy, PrivateEquitySalePolicy
 from augur.core.schemas import (
     ColumnarTable,
     HistogramBucket,
@@ -308,7 +308,7 @@ def build_stochastic_outcome_view(
     cash_usd: float,
     private_equity_units: float,
     private_equity_basis_per_unit_usd: float,
-    rebalance_policy: PrivateEquityTenderRebalancePolicy,
+    sale_policy: PrivateEquitySalePolicy,
     reserve_policy: LiquidityReservePolicy,
     rollouts: int | None = None,
 ) -> StochasticOutcomeView:
@@ -348,7 +348,7 @@ def build_stochastic_outcome_view(
             private_equity_units=private_equity_units,
             private_equity_basis_per_unit_usd=private_equity_basis_per_unit_usd,
             minimum_liquid_reserve_usd=float(minimum_reserves[index]),
-            rebalance_policy=rebalance_policy,
+            sale_policy=sale_policy,
             portfolio_multipliers=market_paths.portfolio_multipliers[index].tolist(),
         )
         private_equity_liquidity_paths.append(private_equity_liquidity_path)
@@ -420,7 +420,7 @@ def build_stochastic_outcome_view(
     return StochasticOutcomeView(
         model_run=ModelRunMetadata(
             fitted_with="PyMC joint backend",
-            policy={"rebalance": rebalance_policy.model_dump(), "reserve": reserve_policy.model_dump()},
+            policy={"private_equity_sale": sale_policy.model_dump(), "reserve": reserve_policy.model_dump()},
         ),
         rollouts=rollout_count,
         probability_buy_wins=float(np.mean(terminal_deltas > 0)),

@@ -1,0 +1,364 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, fields
+from typing import Any, TypeVar, overload
+
+import numpy as np
+
+from augur.core.market_bundle import (
+    MarketBundle,
+    MarketBundleProvider,
+    SimpleMarketBundleProvider,
+    sample_market_bundle_for_request,
+)
+from augur.core.scenario_engine import ScenarioRunArrays, run_scenario_vectorized
+from augur.core.scenario_set import (
+    ActorEquityClaimLiability,
+    ActorRole,
+    EventType,
+    MortgageLiability,
+    RealEstateAssetPosition,
+    RentalMode,
+    Scenario,
+    ScenarioAcceptedSummary,
+    ScenarioResult,
+    ScenarioResultStatus,
+    ScenarioSet,
+    ScenarioSetRunResponse,
+    SimulationAction,
+)
+
+ActionT = TypeVar("ActionT")
+
+
+class SimulationValidationError(ValueError):
+    """Raised when a typed scenario is internally inconsistent."""
+
+
+@dataclass(frozen=True)
+class RolloutDetail:
+    scenario_run: ScenarioRun
+    rollout_index: int
+
+    def series(self, metric: str) -> np.ndarray:
+        return self.scenario_run.series(metric, rollout=self.rollout_index)
+
+    def terminal(self, metric: str) -> float:
+        return float(self.scenario_run.terminal(metric, rollout=self.rollout_index))
+
+    @overload
+    def actions(self, action_type: type[ActionT]) -> tuple[ActionT, ...]: ...
+
+    @overload
+    def actions(self, action_type: None = None) -> tuple[SimulationAction, ...]: ...
+
+    def actions(self, action_type: type[Any] | None = None) -> tuple[Any, ...]:
+        return self.scenario_run.actions(action_type, rollout=self.rollout_index)
+
+
+@dataclass(frozen=True)
+class ScenarioRun:
+    scenario: Scenario
+    arrays: ScenarioRunArrays | None
+    warnings: tuple[str, ...] = ()
+
+    @property
+    def scenario_id(self) -> str:
+        return self.scenario.scenario_id
+
+    @property
+    def status(self) -> ScenarioResultStatus:
+        return ScenarioResultStatus.SIMULATED if self.arrays is not None else ScenarioResultStatus.DISABLED
+
+    def matrix(self, metric: str) -> np.ndarray:
+        value = self._metric_array(metric)
+        if value.ndim != 2:
+            raise KeyError(f"metric {metric!r} is not rollout/month shaped")
+        return value.copy()
+
+    def series(self, metric: str, *, rollout: int = 0) -> np.ndarray:
+        value = self._metric_array(metric)
+        if value.ndim == 1:
+            return value.copy()
+        self._validate_rollout_index(rollout)
+        return value[rollout, :].copy()
+
+    def terminal(self, metric: str, *, rollout: int | None = 0) -> float | np.ndarray:
+        value = self._metric_array(metric)
+        if value.ndim == 1:
+            return float(value[-1])
+        if rollout is None:
+            return value[:, -1].copy()
+        self._validate_rollout_index(rollout)
+        return float(value[rollout, -1])
+
+    def rollout(self, rollout_index: int) -> RolloutDetail:
+        self._validate_rollout_index(rollout_index)
+        return RolloutDetail(scenario_run=self, rollout_index=rollout_index)
+
+    @overload
+    def actions(self, action_type: type[ActionT], *, rollout: int | None = None) -> tuple[ActionT, ...]: ...
+
+    @overload
+    def actions(self, action_type: None = None, *, rollout: int | None = None) -> tuple[SimulationAction, ...]: ...
+
+    def actions(self, action_type: type[Any] | None = None, *, rollout: int | None = None) -> tuple[Any, ...]:
+        if self.arrays is None:
+            return ()
+        actions: tuple[Any, ...] = self.arrays.actions
+        if action_type is not None:
+            actions = tuple(action for action in actions if isinstance(action, action_type))
+        if rollout is not None:
+            self._validate_rollout_index(rollout)
+            actions = tuple(action for action in actions if action.rollout_index == rollout)
+        return actions
+
+    def to_response_result(self) -> ScenarioResult:
+        if self.arrays is None:
+            return ScenarioResult(
+                scenario_id=self.scenario.scenario_id,
+                scenario_label=self.scenario.label,
+                status=ScenarioResultStatus.DISABLED,
+                summary=_accepted_summary(self.scenario),
+                warnings=self.warnings,
+            )
+        return ScenarioResult(
+            scenario_id=self.scenario.scenario_id,
+            scenario_label=self.scenario.label,
+            status=ScenarioResultStatus.SIMULATED,
+            summary=_accepted_summary(self.scenario),
+            metric_fan_columns=self.arrays.metric_fan_columns(),
+            monthly_columns=self.arrays.monthly_columns(),
+            terminal_columns=self.arrays.terminal_columns(),
+            actions=self.arrays.actions,
+            warnings=self.warnings,
+        )
+
+    def _metric_array(self, metric: str) -> np.ndarray:
+        if self.arrays is None:
+            raise ValueError(f"scenario {self.scenario_id!r} was not simulated")
+        value = getattr(self.arrays, metric, None)
+        if not isinstance(value, np.ndarray):
+            available = ", ".join(_available_metric_names())
+            raise KeyError(f"unknown metric {metric!r}; available metrics: {available}")
+        return value
+
+    def _validate_rollout_index(self, rollout: int) -> None:
+        if self.arrays is None:
+            raise ValueError(f"scenario {self.scenario_id!r} was not simulated")
+        if rollout < 0 or rollout >= self.arrays.rollout_count:
+            raise IndexError(
+                f"rollout index {rollout} out of range for scenario {self.scenario_id!r} "
+                f"with {self.arrays.rollout_count} rollouts"
+            )
+
+
+@dataclass(frozen=True)
+class SimulationRun:
+    scenario_set: ScenarioSet
+    market_bundle: MarketBundle
+    scenario_runs: tuple[ScenarioRun, ...]
+    warnings: tuple[str, ...] = ()
+
+    def scenario(self, scenario_id: str) -> ScenarioRun:
+        for scenario_run in self.scenario_runs:
+            if scenario_run.scenario_id == scenario_id:
+                return scenario_run
+        available = ", ".join(run.scenario_id for run in self.scenario_runs)
+        raise KeyError(f"unknown scenario {scenario_id!r}; available scenarios: {available}")
+
+    def to_response(self) -> ScenarioSetRunResponse:
+        return ScenarioSetRunResponse(
+            scenario_set_id=self.scenario_set.scenario_set_id,
+            request=self.scenario_set,
+            market_request=self.scenario_set.market_request,
+            report_spec=self.scenario_set.report_spec,
+            market_metadata=self.market_bundle.metadata.to_json_dict(),
+            scenario_results=tuple(scenario_run.to_response_result() for scenario_run in self.scenario_runs),
+            warnings=self.warnings,
+        )
+
+
+def simulate_set(
+    scenario_set: ScenarioSet,
+    *,
+    market_provider: MarketBundleProvider | None = None,
+    market_bundle: MarketBundle | None = None,
+) -> SimulationRun:
+    """Simulate a typed scenario set and return a distribution-first result object."""
+
+    if market_provider is not None and market_bundle is not None:
+        raise ValueError("pass either market_provider or market_bundle, not both")
+    validate_scenario_set(scenario_set)
+    if not scenario_set.market_request.shared_market_paths:
+        raise SimulationValidationError("market_request.shared_market_paths=false is not yet supported")
+    if market_bundle is None:
+        provider = market_provider or SimpleMarketBundleProvider()
+        market_bundle = sample_market_bundle_for_request(provider, scenario_set.market_request)
+    _validate_market_bundle_matches_request(scenario_set, market_bundle)
+
+    scenario_runs: list[ScenarioRun] = []
+    for scenario in scenario_set.scenarios:
+        if not scenario.enabled:
+            scenario_runs.append(ScenarioRun(scenario=scenario, arrays=None))
+            continue
+        scenario_runs.append(ScenarioRun(scenario=scenario, arrays=run_scenario_vectorized(scenario, market_bundle)))
+    return SimulationRun(scenario_set=scenario_set, market_bundle=market_bundle, scenario_runs=tuple(scenario_runs))
+
+
+def validate_scenario_set(scenario_set: ScenarioSet) -> None:
+    errors: list[str] = []
+    for scenario_index, scenario in enumerate(scenario_set.scenarios):
+        errors.extend(_validate_scenario(scenario, f"scenarios[{scenario_index}]"))
+    if errors:
+        raise SimulationValidationError("; ".join(errors))
+
+
+def _validate_scenario(scenario: Scenario, path: str) -> list[str]:
+    errors: list[str] = []
+    actor_ids = [actor.actor_id for actor in scenario.actors]
+    actor_id_set = set(actor_ids)
+    _append_duplicate_errors(errors, actor_ids, f"{path}.actors", "actor_id")
+
+    primary_owners = [actor.actor_id for actor in scenario.actors if actor.role is ActorRole.PRIMARY_OWNER]
+    if len(primary_owners) > 1:
+        errors.append(f"{path}.actors must contain at most one primary_owner actor, got {primary_owners}")
+
+    balance_sheet = scenario.initial_balance_sheet
+    _append_duplicate_errors(
+        errors,
+        [account.account_id for account in balance_sheet.accounts],
+        f"{path}.initial_balance_sheet.accounts",
+        "account_id",
+    )
+    _append_duplicate_errors(
+        errors, [asset.asset_id for asset in balance_sheet.assets], f"{path}.initial_balance_sheet.assets", "asset_id"
+    )
+    _append_duplicate_errors(
+        errors,
+        [liability.liability_id for liability in balance_sheet.liabilities],
+        f"{path}.initial_balance_sheet.liabilities",
+        "liability_id",
+    )
+    _append_duplicate_errors(errors, [event.event_id for event in scenario.events], f"{path}.events", "event_id")
+    _append_duplicate_errors(
+        errors, [policy.policy_id for policy in scenario.policies], f"{path}.policies", "policy_id"
+    )
+
+    for index, account in enumerate(balance_sheet.accounts):
+        _validate_actor_ref(
+            errors,
+            actor_id_set,
+            account.owner_actor_id,
+            f"{path}.initial_balance_sheet.accounts[{index}].owner_actor_id",
+        )
+    for index, asset in enumerate(balance_sheet.assets):
+        _validate_actor_ref(
+            errors, actor_id_set, asset.owner_actor_id, f"{path}.initial_balance_sheet.assets[{index}].owner_actor_id"
+        )
+    for index, liability in enumerate(balance_sheet.liabilities):
+        _validate_actor_ref(
+            errors,
+            actor_id_set,
+            liability.owner_actor_id,
+            f"{path}.initial_balance_sheet.liabilities[{index}].owner_actor_id",
+        )
+    for index, policy in enumerate(scenario.policies):
+        _validate_actor_ref(errors, actor_id_set, policy.actor_id, f"{path}.policies[{index}].actor_id")
+    for index, event in enumerate(scenario.events):
+        if event.actor_id is not None:
+            _validate_actor_ref(errors, actor_id_set, event.actor_id, f"{path}.events[{index}].actor_id")
+
+    known_property_ids = _known_property_ids(scenario)
+    owner_residence_property_id = scenario.occupancy_plan.owner_residence_property_id
+    if owner_residence_property_id is not None and owner_residence_property_id not in known_property_ids:
+        errors.append(
+            f"{path}.occupancy_plan.owner_residence_property_id references unknown property "
+            f"{owner_residence_property_id!r}"
+        )
+    _validate_property_selection(errors, scenario, path)
+    _validate_rental_plan(errors, scenario, path)
+    for index, event in enumerate(scenario.events):
+        if event.property_id is None:
+            continue
+        if event.event_type is EventType.PROPERTY_PURCHASE:
+            continue
+        if event.property_id not in known_property_ids:
+            errors.append(f"{path}.events[{index}].property_id references unknown property {event.property_id!r}")
+    return errors
+
+
+def _validate_property_selection(errors: list[str], scenario: Scenario, path: str) -> None:
+    selection = scenario.property_selection
+    if selection.property_id is None:
+        return
+    if selection.location_id is None:
+        errors.append(f"{path}.property_selection.location_id is required when property_id is set")
+    if selection.purchase_price_usd is None:
+        errors.append(f"{path}.property_selection.purchase_price_usd is required when property_id is set")
+
+
+def _validate_rental_plan(errors: list[str], scenario: Scenario, path: str) -> None:
+    rental = scenario.rental_plan
+    if rental.rental_mode is not RentalMode.NOT_RENTED and scenario.property_selection.property_id is None:
+        errors.append(f"{path}.rental_plan.rental_mode requires property_selection.property_id")
+
+
+def _known_property_ids(scenario: Scenario) -> set[str]:
+    property_ids: set[str] = set()
+    if scenario.property_selection.property_id is not None:
+        property_ids.add(scenario.property_selection.property_id)
+    for asset in scenario.initial_balance_sheet.assets:
+        if isinstance(asset, RealEstateAssetPosition):
+            property_ids.add(asset.property_id)
+    for liability in scenario.initial_balance_sheet.liabilities:
+        if isinstance(liability, MortgageLiability | ActorEquityClaimLiability) and liability.property_id is not None:
+            property_ids.add(liability.property_id)
+    return property_ids
+
+
+def _validate_actor_ref(errors: list[str], actor_ids: set[str], actor_id: str, path: str) -> None:
+    if actor_id not in actor_ids:
+        errors.append(f"{path} references unknown actor {actor_id!r}")
+
+
+def _append_duplicate_errors(errors: list[str], values: list[str], path: str, field_name: str) -> None:
+    duplicate_values = sorted({value for value in values if values.count(value) > 1})
+    if duplicate_values:
+        errors.append(f"{path} contains duplicate {field_name} values: {duplicate_values}")
+
+
+def _validate_market_bundle_matches_request(scenario_set: ScenarioSet, market_bundle: MarketBundle) -> None:
+    request = scenario_set.market_request
+    errors: list[str] = []
+    if market_bundle.rollout_count != int(request.rollout_count):
+        errors.append(
+            "market_bundle.rollout_count "
+            f"{market_bundle.rollout_count} does not match market_request.rollout_count {request.rollout_count}"
+        )
+    if market_bundle.horizon_months != int(request.horizon_months):
+        errors.append(
+            "market_bundle.horizon_months "
+            f"{market_bundle.horizon_months} does not match market_request.horizon_months {request.horizon_months}"
+        )
+    if errors:
+        raise SimulationValidationError("; ".join(errors))
+
+
+def _accepted_summary(scenario: Scenario) -> ScenarioAcceptedSummary:
+    return ScenarioAcceptedSummary(
+        enabled=scenario.enabled,
+        property_id=scenario.property_selection.property_id,
+        location_id=scenario.location_id,
+        actor_count=len(scenario.actors),
+        event_count=len(scenario.events),
+        policy_count=len(scenario.policies),
+    )
+
+
+def _available_metric_names() -> tuple[str, ...]:
+    return tuple(
+        field.name
+        for field in fields(ScenarioRunArrays)
+        if field.name not in {"actions", "scenario_id", "scenario_label"}
+    )

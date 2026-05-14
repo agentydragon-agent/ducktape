@@ -20,13 +20,13 @@ const FINANCING_OPTIONS = [
   { id: "cash", label: "Cash" },
 ];
 
-const PRIVATE_EQUITY_TENDER_PROCEEDS_OPTIONS = [
+const PRIVATE_EQUITY_SALE_PROCEEDS_OPTIONS = [
   { id: "cash", label: "Keep as cash" },
   { id: "generic_sp500_stock", label: "Reinvest in SP500" },
 ];
 
 const PRIVATE_EQUITY_EVENT_OPTIONS = [
-  { id: "private_equity_tender", label: "Tender" },
+  { id: "private_equity_sale_request", label: "Sale request" },
   { id: "private_equity_ipo", label: "IPO" },
   { id: "private_equity_acquisition", label: "Acquisition" },
 ];
@@ -141,7 +141,7 @@ function metricOptionsFromResult(result) {
     "propertySaleNetProceedsUsd",
     "netPropertySaleCashFlowUsd",
     "privateEquityValueUsd",
-    "privateEquityTenderAvailableValueUsd",
+    "privateEquityLiquidityAvailableValueUsd",
     "partnerHomeEquityClaimUsd",
     "partnerOwnershipPct",
     "checkingFloorShortfallUsd",
@@ -339,7 +339,7 @@ function TerminalPercentileSnapshot({ scenarioResult }) {
     ["Property sale proceeds", "propertySaleNetProceedsUsd", fmtUsd],
     ["Sale cash flow", "netPropertySaleCashFlowUsd", fmtUsd],
     ["Private equity value", "privateEquityValueUsd", fmtUsd],
-    ["Tender available", "privateEquityTenderAvailableValueUsd", fmtUsd],
+    ["Liquidity available", "privateEquityLiquidityAvailableValueUsd", fmtUsd],
     ["Partner equity", "partnerHomeEquityClaimUsd", fmtUsd],
     ["Partner ownership", "partnerOwnershipPct", fmtPct],
   ]
@@ -586,7 +586,7 @@ function PrivateEquityLiquidityPanel({ scenarioResult }) {
   const rows = rowsFromTable(scenarioResult?.monthlyColumns);
   if (rows.length === 0) return null;
   const hasPrivateEquity = rows.some(
-    (row) => row.privateEquityValueUsd || row.privateEquityTenderAvailableValueUsd || row.privateEquitySaleUsd
+    (row) => row.privateEquityValueUsd || row.privateEquityLiquidityAvailableValueUsd || row.privateEquitySaleUsd
   );
   if (!hasPrivateEquity) return null;
   const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === 0);
@@ -603,7 +603,7 @@ function PrivateEquityLiquidityPanel({ scenarioResult }) {
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-3">
         {[
           ["Private equity value", fmtUsd(terminalP50(scenarioResult, "finalPrivateEquityValueUsd"))],
-          ["Tender available", fmtUsd(terminalP50(scenarioResult, "finalPrivateEquityTenderAvailableValueUsd"))],
+          ["Liquidity available", fmtUsd(terminalP50(scenarioResult, "finalPrivateEquityLiquidityAvailableValueUsd"))],
           ["Sales", fmtUsd(terminalP50(scenarioResult, "totalPrivateEquitySaleUsd"))],
         ].map(([label, value]) => (
           <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
@@ -618,7 +618,7 @@ function PrivateEquityLiquidityPanel({ scenarioResult }) {
             <tr>
               <th>Month</th>
               <th>Private value</th>
-              <th>Tender available</th>
+              <th>Liquidity available</th>
               <th>Sale</th>
               <th>Liquidity event</th>
             </tr>
@@ -628,7 +628,7 @@ function PrivateEquityLiquidityPanel({ scenarioResult }) {
               <tr key={row.monthIndex}>
                 <td>{fmtInteger(row.monthIndex)}</td>
                 <td>{fmtUsd(row.privateEquityValueUsd)}</td>
-                <td>{fmtUsd(row.privateEquityTenderAvailableValueUsd)}</td>
+                <td>{fmtUsd(row.privateEquityLiquidityAvailableValueUsd)}</td>
                 <td>{fmtUsd(row.privateEquitySaleUsd)}</td>
                 <td>{row.privateEquityLiquidityEvent ? "yes" : "no"}</td>
               </tr>
@@ -819,9 +819,9 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
         ...privateEquityEvents,
         {
           eventId: nextPrivateEquityEventId(),
-          eventType: "private_equity_tender",
-          monthIndex: Math.max(0, Math.floor(Number(scenario.privateEquityTenderMonth) || 12)),
-          amountUsd: Math.max(50_000, Number(scenario.privateEquityTenderSaleAmountUsd) || 0),
+          eventType: "private_equity_sale_request",
+          monthIndex: Math.max(0, Math.floor(Number(scenario.privateEquitySaleRequestMonth) || 12)),
+          amountUsd: Math.max(50_000, Number(scenario.privateEquitySaleRequestAmountUsd) || 0),
         },
       ],
     });
@@ -1127,24 +1127,24 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               onChange={(privateEquityUnits) => updateScenario({ privateEquityUnits })}
             />
             <NumberField
-              label="Tender sale"
-              value={scenario.privateEquityTenderSaleAmountUsd}
-              onChange={(privateEquityTenderSaleAmountUsd) => updateScenario({ privateEquityTenderSaleAmountUsd })}
+              label="Sale request"
+              value={scenario.privateEquitySaleRequestAmountUsd}
+              onChange={(privateEquitySaleRequestAmountUsd) => updateScenario({ privateEquitySaleRequestAmountUsd })}
             />
             <NumberField
-              label="Tender month"
+              label="Request month"
               min={0}
               step={1}
-              value={scenario.privateEquityTenderMonth}
-              onChange={(privateEquityTenderMonth) => updateScenario({ privateEquityTenderMonth })}
+              value={scenario.privateEquitySaleRequestMonth}
+              onChange={(privateEquitySaleRequestMonth) => updateScenario({ privateEquitySaleRequestMonth })}
             />
             <SelectField
-              label="Tender proceeds"
-              value={scenario.privateEquityTenderProceedsDestination}
-              onChange={(privateEquityTenderProceedsDestination) =>
-                updateScenario({ privateEquityTenderProceedsDestination })
+              label="Sale proceeds"
+              value={scenario.privateEquitySaleProceedsDestination}
+              onChange={(privateEquitySaleProceedsDestination) =>
+                updateScenario({ privateEquitySaleProceedsDestination })
               }
-              options={PRIVATE_EQUITY_TENDER_PROCEEDS_OPTIONS}
+              options={PRIVATE_EQUITY_SALE_PROCEEDS_OPTIONS}
             />
             <NumberField
               label={`${partnerLabel} payment`}
@@ -1359,7 +1359,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
     ["totalGenericSp500SaleUsd", "SP500 sales"],
     ["finalCheckingFloorShortfallUsd", "SP500 shortfall"],
     ["finalPrivateEquityValueUsd", "Private equity"],
-    ["finalPrivateEquityTenderAvailableValueUsd", "Tender available"],
+    ["finalPrivateEquityLiquidityAvailableValueUsd", "Liquidity available"],
     ["totalPrivateEquitySaleUsd", "Sales"],
     ["finalHomeEquityUsd", "Home equity"],
     ["finalMortgageBalanceUsd", "Mortgage"],
@@ -1516,7 +1516,7 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
     ["genericSp500SaleUsd", "SP500 sales", fmtUsd],
     ["checkingFloorShortfallUsd", "Shortfall", fmtUsd],
     ["privateEquityValueUsd", "Private equity", fmtUsd],
-    ["privateEquityTenderAvailableValueUsd", "Tender available", fmtUsd],
+    ["privateEquityLiquidityAvailableValueUsd", "Liquidity available", fmtUsd],
     ["privateEquitySaleUsd", "Sale", fmtUsd],
     ["propertyValueUsd", "Property value", fmtUsd],
     ["propertyTaxUsd", "Property tax", fmtUsd],

@@ -42,7 +42,6 @@ def test_minimal_config_validates_with_defaults() -> None:
 
     assert config.agents[0].actor_id == "alpha"
     assert config.location_selection is None
-    assert config.private_equity_sale_mode == "liquidity_only"
     assert config.minimum_reserve_mode == "projected_deficits"
     assert config.reserve_forward_months == 12
     assert config.default_rollout_samples == 128
@@ -55,12 +54,7 @@ def test_concentrated_holdings_round_trip_through_json() -> None:
             minimum_liquid_reserve_usd=0,
             concentrated_holdings=(
                 ConcentratedHoldingConfig(
-                    holding_id="example_holding",
-                    label="Example Holding",
-                    units=10,
-                    basis_per_unit_usd=0,
-                    tax_rate_pct=35,
-                    target_max_net_worth_pct=60,
+                    holding_id="example_holding", label="Example Holding", units=10, basis_per_unit_usd=0
                 ),
             ),
         )
@@ -72,7 +66,7 @@ def test_concentrated_holdings_round_trip_through_json() -> None:
     assert holding.holding_id == "example_holding"
     assert holding.label == "Example Holding"
     assert holding.units == 10
-    assert holding.tax_rate_pct == 35
+    assert holding.basis_per_unit_usd == 0
 
 
 def test_location_selection_accepts_known_ids() -> None:

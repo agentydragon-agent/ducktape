@@ -6,7 +6,7 @@ from collections import defaultdict
 import numpy as np
 
 from augur.core._num import finite_or, require_finite as assert_finite
-from augur.core.scenario_set import PrivateEquityTenderRebalancePolicy
+from augur.core.scenario_set import FixedAmountPrivateEquitySaleRule, PrivateEquitySalePolicy
 from augur.core.schemas import (
     MonthlySalePathRow,
     NetWorthRow,
@@ -59,35 +59,14 @@ def invested_proceeds_at_month(
     )
 
 
-def event_sale_capacity(event: PrivateEquityEvent, remaining_units: float) -> float:
-    if event.event_type == "acquisition":
-        return remaining_units
-    saleable = event.saleable_fraction if event.saleable_fraction is not None else 0
-    return float(remaining_units * np.clip(saleable, 0, 1))
-
-
-def guardrail_sale_units(
-    *,
-    allowed_units: float,
-    after_tax_per_unit: float,
-    liquid_before_sale: float,
-    remaining_units: float,
-    minimum_liquid_reserve: float,
-    target_max_net_worth_pct: float,
-    sale_mode: str,
+def private_equity_sale_units_for_opportunity(
+    *, policy: PrivateEquitySalePolicy, event_price_usd: float, remaining_units: float
 ) -> float:
-    if allowed_units <= 0 or after_tax_per_unit <= 0:
-        return 0
-    reserve_need_units = max(0, minimum_liquid_reserve - liquid_before_sale) / after_tax_per_unit
-    if sale_mode == "liquidity_only":
-        return float(np.clip(reserve_need_units, 0, allowed_units))
-    if sale_mode == "never_automatic":
-        return 0
-    target = float(np.clip(target_max_net_worth_pct / 100, 0.01, 0.99))
-    max_private_equity_value_after_sale = (target / (1 - target)) * max(0, liquid_before_sale)
-    target_remaining_units = max_private_equity_value_after_sale / after_tax_per_unit
-    concentration_units = max(0, remaining_units - target_remaining_units)
-    return float(np.clip(max(reserve_need_units, concentration_units), 0, allowed_units))
+    if event_price_usd <= 0:
+        return 0.0
+    if isinstance(policy.sale_rule, FixedAmountPrivateEquitySaleRule):
+        return float(np.clip(policy.sale_rule.amount_usd / event_price_usd, 0, remaining_units))
+    return 0.0
 
 
 def build_private_equity_liquidity_path(
@@ -98,7 +77,8 @@ def build_private_equity_liquidity_path(
     private_equity_units: float,
     private_equity_basis_per_unit_usd: float,
     minimum_liquid_reserve_usd: float,
-    rebalance_policy: PrivateEquityTenderRebalancePolicy,
+    sale_policy: PrivateEquitySalePolicy,
+    private_equity_tax_rate_pct: float = 0.0,
     portfolio_multipliers: list[float] | None = None,
 ) -> PrivateEquityLiquidityPath:
     if not base_liquid_path:
@@ -107,7 +87,7 @@ def build_private_equity_liquidity_path(
     path = private_equity_path
     hold_months = max(0, len(base_liquid_path) - 1)
     has_private_equity_holdings = private_equity_units > 0
-    tax_rate = np.clip(rebalance_policy.tax_rate_pct / 100, 0, 0.8)
+    tax_rate = np.clip(private_equity_tax_rate_pct / 100, 0, 0.8)
     basis = private_equity_basis_per_unit_usd
     remaining_units = private_equity_units
     sales: list[PrivateEquitySale] = []
@@ -146,16 +126,8 @@ def build_private_equity_liquidity_path(
                 if has_private_equity_holdings
                 else finite_or(event.price_usd_per_unit, current_price)
             )
-            allowed_units = event_sale_capacity(event, remaining_units)
-            after_tax_per_unit = after_tax_unit_value(event_price, basis, tax_rate)
-            sale_units = guardrail_sale_units(
-                allowed_units=allowed_units,
-                after_tax_per_unit=after_tax_per_unit,
-                liquid_before_sale=liquid_before_sale,
-                remaining_units=remaining_units,
-                minimum_liquid_reserve=minimum_liquid_reserve_usd,
-                target_max_net_worth_pct=rebalance_policy.target_max_net_worth_pct,
-                sale_mode=rebalance_policy.sale_mode,
+            sale_units = private_equity_sale_units_for_opportunity(
+                policy=sale_policy, event_price_usd=event_price, remaining_units=remaining_units
             )
             if sale_units <= 0:
                 continue

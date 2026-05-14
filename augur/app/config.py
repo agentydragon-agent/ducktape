@@ -53,8 +53,6 @@ class ConcentratedHoldingConfig(ApiModel):
     label: str
     units: NonNegativeInt
     basis_per_unit_usd: NonNegativeFloat = 0.0
-    tax_rate_pct: NonNegativeFloat = 0.0
-    target_max_net_worth_pct: NonNegativeFloat = 100.0
 
 
 class PersonalFinanceConfig(ApiModel):
@@ -109,7 +107,6 @@ class AugurConfig(ApiModel):
     property_catalog: PropertyCatalogConfig
     snapshot: FinanceSnapshot
     location_selection: tuple[LocationId, ...] | None = None
-    private_equity_sale_mode: Literal["liquidity_only", "reserve_and_rebalance", "never_automatic"] = "liquidity_only"
     minimum_reserve_mode: Literal["fixed", "projected_deficits"] = "projected_deficits"
     reserve_forward_months: NonNegativeInt = 12
     starting_portfolio_usd: NonNegativeFloat = 0.0

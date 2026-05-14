@@ -50,12 +50,12 @@ py_library(
     deps = [
         ":catalog_py",
         ":config_py",
+        "//augur/core:api_py",
         "//augur/core:augur_accounting_py",
         "//augur/core:bootstrap_py",
         "//augur/core:local_regulation_py",
         "//augur/core:market_bundle_py",
         "//augur/core:rollout_provider_py",
-        "//augur/core:scenario_engine_py",
         "//augur/core:scenario_set_py",
         "//augur/core:schemas_py",
         "//augur/model:market_bundle_adapter_py",

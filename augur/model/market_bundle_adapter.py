@@ -10,7 +10,7 @@ from augur.core.local_regulation import LocationId
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
 from augur.core.rollout_provider import RolloutProvider
 from augur.core.scenario_set import MarketRequest
-from augur.core.schemas import JointRolloutPath, PrivateEquityEvent
+from augur.core.schemas import JointRolloutPath
 
 _HOME_FACTOR_LOCATION_KEYS: dict[str, tuple[str, ...]] = {
     "sf_home": (LocationId.SAN_FRANCISCO_CA.value,),
@@ -56,9 +56,7 @@ class RolloutProviderMarketBundleProvider:
             factor_location_keys=_RENT_FACTOR_LOCATION_KEYS,
             horizon_months=horizon_months,
         )
-        private_equity_events, private_equity_tender_sale_fraction = _private_equity_liquidity_arrays(
-            rollouts, horizon_months=horizon_months
-        )
+        private_equity_events = _private_equity_liquidity_arrays(rollouts, horizon_months=horizon_months)
         metadata = MarketBundleMetadata(
             market_model_id=market_request.market_model_id,
             random_seed=effective_seed,
@@ -84,7 +82,6 @@ class RolloutProviderMarketBundleProvider:
             ),
             private_equity_value_multipliers=_private_equity_value_multipliers(rollouts, horizon_months=horizon_months),
             private_equity_liquidity_event_mask=private_equity_events,
-            private_equity_tender_sale_fraction=private_equity_tender_sale_fraction,
             metadata=metadata,
         )
 
@@ -178,35 +175,15 @@ def _private_equity_value_multipliers(rollouts: tuple[JointRolloutPath, ...], *,
     return np.vstack(rows).astype("float64", copy=False)
 
 
-def _private_equity_liquidity_arrays(
-    rollouts: tuple[JointRolloutPath, ...], *, horizon_months: int
-) -> tuple[np.ndarray, np.ndarray]:
+def _private_equity_liquidity_arrays(rollouts: tuple[JointRolloutPath, ...], *, horizon_months: int) -> np.ndarray:
     shape = (len(rollouts), horizon_months + 1)
     event_mask = np.zeros(shape, dtype=np.bool_)
-    saleable_fraction = np.zeros(shape, dtype="float64")
     for rollout_index, rollout in enumerate(rollouts):
         for event in rollout.private_equity_path.events:
             if event.month_index < 0 or event.month_index > horizon_months:
                 continue
-            fraction = _event_saleable_fraction(event)
             event_mask[rollout_index, event.month_index] = True
-            saleable_fraction[rollout_index, event.month_index] = max(
-                saleable_fraction[rollout_index, event.month_index], fraction
-            )
-    return event_mask, saleable_fraction
-
-
-def _event_saleable_fraction(event: PrivateEquityEvent) -> float:
-    if event.event_type == "acquisition":
-        return 1.0
-    if event.saleable_fraction is None:
-        return 0.0
-    fraction = float(event.saleable_fraction)
-    if not math.isfinite(fraction) or fraction < 0 or fraction > 1:
-        raise ValueError(
-            f"Private-equity liquidity event saleable_fraction must be finite and in [0, 1], got {event.saleable_fraction!r}"
-        )
-    return fraction
+    return event_mask
 
 
 def _factor_ids(rollouts: tuple[JointRolloutPath, ...]) -> tuple[str, ...]:

@@ -50,7 +50,6 @@ class MarketBundle:
     mortgage_30y_rate_pct: np.ndarray
     private_equity_value_multipliers: np.ndarray
     private_equity_liquidity_event_mask: np.ndarray
-    private_equity_tender_sale_fraction: np.ndarray
     metadata: MarketBundleMetadata
 
     def __post_init__(self) -> None:
@@ -79,13 +78,6 @@ class MarketBundle:
             name="private_equity_liquidity_event_mask",
             expected_shape=expected_shape,
         )
-        self._validate_fraction(
-            self.private_equity_tender_sale_fraction,
-            name="private_equity_tender_sale_fraction",
-            expected_shape=expected_shape,
-        )
-        if np.any((self.private_equity_tender_sale_fraction > 0) & ~self.private_equity_liquidity_event_mask):
-            raise ValueError("private_equity_tender_sale_fraction may be positive only during liquidity events")
 
         for name, values in self.home_value_multipliers_by_location.items():
             self._validate_multiplier(
@@ -157,12 +149,6 @@ class MarketBundle:
         if values.dtype != np.bool_:
             raise TypeError(f"{name} must have bool dtype")
 
-    @classmethod
-    def _validate_fraction(cls, values: np.ndarray, *, name: str, expected_shape: tuple[int, int]) -> None:
-        cls._validate_float_matrix(values, name=name, expected_shape=expected_shape)
-        if np.any((values < 0) | (values > 1)):
-            raise ValueError(f"{name} must be in [0, 1]")
-
 
 class MarketBundleProvider(Protocol):
     def sample_market_bundle(
@@ -229,8 +215,6 @@ class SimpleMarketBundleProvider:
         if horizon_months >= 12:
             event_draws = rng.random((rollout_count, horizon_months))
             private_equity_events[:, 1:] = event_draws < (1 / 72)
-        tender_sale_fraction = np.where(private_equity_events, 1.0, 0.0).astype("float64")
-
         home_by_location = _location_factor_map(
             home_base,
             annual_adjustment_pct={
@@ -275,7 +259,6 @@ class SimpleMarketBundleProvider:
             mortgage_30y_rate_pct=mortgage_rate,
             private_equity_value_multipliers=private_equity_value,
             private_equity_liquidity_event_mask=private_equity_events,
-            private_equity_tender_sale_fraction=tender_sale_fraction,
             metadata=metadata,
         )
 

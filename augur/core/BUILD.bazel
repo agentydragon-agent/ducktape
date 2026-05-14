@@ -64,6 +64,7 @@ py_library(
     deps = [
         ":local_regulation_py",
         ":market_bundle_py",
+        ":scenario_set_py",
         "@pypi//numpy",
     ],
 )
@@ -111,6 +112,17 @@ py_library(
         ":property_tax_py",
         ":scenario_set_py",
         ":schemas_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "api_py",
+    srcs = ["api.py"],
+    deps = [
+        ":market_bundle_py",
+        ":scenario_engine_py",
+        ":scenario_set_py",
         "@pypi//numpy",
     ],
 )
@@ -350,6 +362,20 @@ py_test(
         ":real_estate_py",
         ":schemas_py",
         ":vectorized_py",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    deps = [
+        ":api_py",
+        ":market_bundle_py",
+        ":market_bundle_test_support_py",
+        ":scenario_set_py",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

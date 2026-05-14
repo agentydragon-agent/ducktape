@@ -159,7 +159,6 @@ class PrivateEquityEvent(InternalModel):
     # regime.
     event_type: Literal["tender", "acquisition"]
     price_usd_per_unit: float
-    saleable_fraction: float | None = None
 
 
 class PrivateEquityPath(InternalModel):

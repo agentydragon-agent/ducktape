@@ -50,10 +50,7 @@ class _FakeRolloutProvider:
                         price_path=private_equity_price.tolist(),
                         events=[
                             PrivateEquityEvent(
-                                month_index=2,
-                                event_type="tender",
-                                price_usd_per_unit=float(private_equity_price[2]),
-                                saleable_fraction=0.25 + 0.05 * rollout_index,
+                                month_index=2, event_type="tender", price_usd_per_unit=float(private_equity_price[2])
                             ),
                             PrivateEquityEvent(
                                 month_index=5,
@@ -61,10 +58,7 @@ class _FakeRolloutProvider:
                                 price_usd_per_unit=float(private_equity_price[5]),
                             ),
                             PrivateEquityEvent(
-                                month_index=99,
-                                event_type="tender",
-                                price_usd_per_unit=float(private_equity_price[-1]),
-                                saleable_fraction=0.9,
+                                month_index=99, event_type="tender", price_usd_per_unit=float(private_equity_price[-1])
                             ),
                         ],
                     ),
@@ -119,9 +113,6 @@ def test_rollout_provider_market_bundle_adapter_maps_shapes_factors_and_metadata
     assert bundle.private_equity_liquidity_event_mask[1, 2]
     assert bundle.private_equity_liquidity_event_mask[0, 5]
     assert not bundle.private_equity_liquidity_event_mask[0, 6]
-    np.testing.assert_allclose(bundle.private_equity_tender_sale_fraction[:, 2], [0.25, 0.30])
-    np.testing.assert_allclose(bundle.private_equity_tender_sale_fraction[:, 5], [1.0, 1.0])
-    np.testing.assert_allclose(bundle.private_equity_tender_sale_fraction[:, 6], [0.0, 0.0])
 
     factor_ids = set(bundle.metadata.factor_ids)
     assert "inflation" in factor_ids

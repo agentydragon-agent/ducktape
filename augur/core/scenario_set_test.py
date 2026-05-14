@@ -16,7 +16,6 @@ from augur.core.scenario_set import (
     FinancingMode,
     OccupancyMode,
     PolicyType,
-    PropertyId,
     RentalMode,
     ScenarioAcceptedSummary,
     ScenarioResult,
@@ -154,7 +153,7 @@ def test_scenario_set_accepts_one_and_two_scenarios_with_typed_enums() -> None:
     assert first.actors[0].role is ActorRole.PRIMARY_OWNER
     assert first.initial_balance_sheet.accounts[0].account_type is AccountType.CHECKING
     assert first.initial_balance_sheet.assets[0].asset_type is AssetType.GENERIC_SP500_STOCK
-    assert first.property_selection.property_id is PropertyId.SF_ASHTON
+    assert first.property_selection.property_id == "sf_ashton"
     assert first.property_selection.location_id is LocationId.SAN_FRANCISCO_CA
     assert first.financing.financing_mode is FinancingMode.FIXED_30
     assert first.occupancy_plan.occupancy_mode is OccupancyMode.OWNER_LIVES_IN_PROPERTY
@@ -202,7 +201,7 @@ def test_scenario_result_serialization_has_no_projection_compatibility_field() -
         status=ScenarioResultStatus.SIMULATED,
         summary=ScenarioAcceptedSummary(
             enabled=True,
-            property_id=PropertyId.SF_ASHTON,
+            property_id="sf_ashton",
             location_id=LocationId.SAN_FRANCISCO_CA,
             actor_count=1,
             event_count=0,

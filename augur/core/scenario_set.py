@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt, model_validator
+from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
 from augur.core.local_regulation import LocationId
 from augur.core.schemas import ApiModel, ColumnarTable, Percentage
@@ -17,18 +17,24 @@ class EventType(StrEnum):
     START_RENTAL = "start_rental"
     STOP_RENTAL = "stop_rental"
     PORTFOLIO_TRADE = "portfolio_trade"
-    PRIVATE_EQUITY_TENDER = "private_equity_tender"
+    PRIVATE_EQUITY_SALE_REQUEST = "private_equity_sale_request"
     PRIVATE_EQUITY_IPO = "private_equity_ipo"
     PRIVATE_EQUITY_ACQUISITION = "private_equity_acquisition"
 
 
 class PolicyType(StrEnum):
     CHECKING_FLOOR_SELL_PUBLIC_STOCK = "checking_floor_sell_public_stock"
-    PRIVATE_EQUITY_TENDER_REBALANCE = "private_equity_tender_rebalance"
+    PRIVATE_EQUITY_SALE = "private_equity_sale"
     PORTFOLIO_TARGET_REBALANCE = "portfolio_target_rebalance"
     PARTNER_EQUITY_ACCRUAL = "partner_equity_accrual"
     MANUAL_EVENT_SCHEDULE = "manual_event_schedule"
     LIQUIDITY_RESERVE = "liquidity_reserve"
+    MONTHLY_SPEND = "monthly_spend"
+
+
+class PrivateEquitySaleRuleType(StrEnum):
+    MANUAL_REQUESTS_ONLY = "manual_requests_only"
+    FIXED_AMOUNT_ON_OPPORTUNITY = "fixed_amount_on_opportunity"
 
 
 class ActionType(StrEnum):
@@ -37,6 +43,7 @@ class ActionType(StrEnum):
     TRANSFER_PARTNER_CONTRIBUTION = "transfer_partner_contribution"
     PAY_MORTGAGE = "pay_mortgage"
     ACCRUE_PARTNER_EQUITY = "accrue_partner_equity"
+    MONTHLY_SPEND = "monthly_spend"
 
 
 class ActorRole(StrEnum):
@@ -67,22 +74,7 @@ class LiabilityType(StrEnum):
     ACTOR_EQUITY_CLAIM = "actor_equity_claim"
 
 
-class PropertyId(StrEnum):
-    SF_ASHTON = "sf_ashton"
-    SF_THIRTIETH = "sf_thirtieth"
-    SF_THIRTYNINTH = "sf_thirtyninth"
-    SF_CAROLINA = "sf_carolina"
-    SF_MARKET = "sf_market"
-    SF_BELVEDERE = "sf_belvedere"
-    VALLEJO_CALHOUN = "vallejo_calhoun"
-    VALLEJO_LIGHTHOUSE = "vallejo_lighthouse"
-    VALLEJO_LIGHTHOUSE403 = "vallejo_lighthouse403"
-    VALLEJO_LIGHTHOUSE237 = "vallejo_lighthouse237"
-    VALLEJO_PARROTT = "vallejo_parrott"
-    VALLEJO_SANTAPAULA = "vallejo_santapaula"
-    VALLEJO_MADRONE = "vallejo_madrone"
-    VALLEJO_BALDWIN = "vallejo_baldwin"
-    VALLEJO_FORDHAM = "vallejo_fordham"
+PropertyId = str
 
 
 class OccupancyMode(StrEnum):
@@ -185,8 +177,9 @@ class PortfolioTradeEvent(_EventBase):
     event_type: Literal[EventType.PORTFOLIO_TRADE] = EventType.PORTFOLIO_TRADE
 
 
-class PrivateEquityTenderEvent(_EventBase):
-    event_type: Literal[EventType.PRIVATE_EQUITY_TENDER] = EventType.PRIVATE_EQUITY_TENDER
+class PrivateEquitySaleRequestEvent(_EventBase):
+    event_type: Literal[EventType.PRIVATE_EQUITY_SALE_REQUEST] = EventType.PRIVATE_EQUITY_SALE_REQUEST
+    amount_usd: PositiveFloat
 
 
 class PrivateEquityIpoEvent(_EventBase):
@@ -205,7 +198,7 @@ Event = Annotated[
     | StartRentalEvent
     | StopRentalEvent
     | PortfolioTradeEvent
-    | PrivateEquityTenderEvent
+    | PrivateEquitySaleRequestEvent
     | PrivateEquityIpoEvent
     | PrivateEquityAcquisitionEvent,
     Field(discriminator="event_type"),
@@ -226,18 +219,30 @@ class CheckingFloorSellPublicStockPolicy(_PolicyBase):
     sale_amount_usd: NonNegativeFloat = 0.0
 
 
-class PrivateEquityTenderRebalancePolicy(_PolicyBase):
-    """At tender events, sell private equity into the chosen destination (cash or SP500).
-    `sale_mode` controls the trigger for an automatic sale at a tender event:
-    `liquidity_only` sells only enough to cover a liquidity-reserve shortfall;
-    `reserve_and_rebalance` additionally sells down to a target concentration
-    (`target_max_net_worth_pct`); `never_automatic` never triggers automatic sales."""
+class ManualPrivateEquitySaleRule(ApiModel):
+    sale_rule_type: Literal[PrivateEquitySaleRuleType.MANUAL_REQUESTS_ONLY] = (
+        PrivateEquitySaleRuleType.MANUAL_REQUESTS_ONLY
+    )
 
-    policy_type: Literal[PolicyType.PRIVATE_EQUITY_TENDER_REBALANCE] = PolicyType.PRIVATE_EQUITY_TENDER_REBALANCE
+
+class FixedAmountPrivateEquitySaleRule(ApiModel):
+    sale_rule_type: Literal[PrivateEquitySaleRuleType.FIXED_AMOUNT_ON_OPPORTUNITY] = (
+        PrivateEquitySaleRuleType.FIXED_AMOUNT_ON_OPPORTUNITY
+    )
+    amount_usd: PositiveFloat
+
+
+PrivateEquitySaleRule = Annotated[
+    ManualPrivateEquitySaleRule | FixedAmountPrivateEquitySaleRule, Field(discriminator="sale_rule_type")
+]
+
+
+class PrivateEquitySalePolicy(_PolicyBase):
+    """Sell private equity on explicit sale requests or market liquidity opportunities."""
+
+    policy_type: Literal[PolicyType.PRIVATE_EQUITY_SALE] = PolicyType.PRIVATE_EQUITY_SALE
     proceeds_destination: Literal["cash", "generic_sp500_stock"] = "cash"
-    sale_mode: Literal["liquidity_only", "reserve_and_rebalance", "never_automatic"] = "liquidity_only"
-    tax_rate_pct: NonNegativeFloat = 0.0
-    target_max_net_worth_pct: NonNegativeFloat = 100.0
+    sale_rule: PrivateEquitySaleRule = Field(default_factory=ManualPrivateEquitySaleRule)
 
 
 class LiquidityReservePolicy(_PolicyBase):
@@ -272,13 +277,25 @@ class ManualEventSchedulePolicy(_PolicyBase):
     policy_type: Literal[PolicyType.MANUAL_EVENT_SCHEDULE] = PolicyType.MANUAL_EVENT_SCHEDULE
 
 
+class MonthlySpendPolicy(_PolicyBase):
+    """Agent spends a fixed amount each month from checking (e.g. living expenses).
+
+    When `inflation_adjusted` is true, the spend grows with the market
+    bundle's inflation multipliers."""
+
+    policy_type: Literal[PolicyType.MONTHLY_SPEND] = PolicyType.MONTHLY_SPEND
+    monthly_spend_usd: NonNegativeFloat
+    inflation_adjusted: bool = False
+
+
 Policy = Annotated[
     CheckingFloorSellPublicStockPolicy
-    | PrivateEquityTenderRebalancePolicy
+    | PrivateEquitySalePolicy
     | PortfolioTargetRebalancePolicy
     | PartnerEquityAccrualPolicy
     | ManualEventSchedulePolicy
-    | LiquidityReservePolicy,
+    | LiquidityReservePolicy
+    | MonthlySpendPolicy,
     Field(discriminator="policy_type"),
 ]
 
@@ -300,8 +317,8 @@ class SellSp500Action(_SimulationActionBase):
 
 class SellPrivateEquityAction(_SimulationActionBase):
     action_type: Literal[ActionType.SELL_PRIVATE_EQUITY] = ActionType.SELL_PRIVATE_EQUITY
-    event_id: str
-    event_type: EventType
+    event_id: str | None = None
+    event_type: EventType | None = None
     amount_usd: float
     after_tax_proceeds_usd: float
     basis_usd: float
@@ -341,12 +358,19 @@ class AccruePartnerEquityAction(_SimulationActionBase):
     home_equity_claim_usd_after: float
 
 
+class MonthlySpendAction(_SimulationActionBase):
+    action_type: Literal[ActionType.MONTHLY_SPEND] = ActionType.MONTHLY_SPEND
+    amount_usd: float
+    inflation_multiplier: float = 1.0
+
+
 SimulationAction = Annotated[
     SellSp500Action
     | SellPrivateEquityAction
     | TransferPartnerContributionAction
     | PayMortgageAction
-    | AccruePartnerEquityAction,
+    | AccruePartnerEquityAction
+    | MonthlySpendAction,
     Field(discriminator="action_type"),
 ]
 
@@ -416,8 +440,7 @@ class OccupancyPlan(ApiModel):
         return self
 
 
-class RentalPlan(ApiModel):
-    rental_mode: RentalMode = RentalMode.NOT_RENTED
+class _RentalPlanBase(ApiModel):
     start_month: NonNegativeInt | None = None
     end_month: NonNegativeInt | None = None
     monthly_rent_usd: NonNegativeFloat | None = None
@@ -429,10 +452,37 @@ class RentalPlan(ApiModel):
     leasing_fee_pct: NonNegativeFloat = 0
 
     @model_validator(mode="after")
-    def _end_after_start(self) -> RentalPlan:
+    def _end_after_start(self) -> _RentalPlanBase:
         if self.start_month is not None and self.end_month is not None and self.end_month < self.start_month:
             raise ValueError("end_month must be greater than or equal to start_month")
         return self
+
+
+class NotRentedRentalPlan(_RentalPlanBase):
+    rental_mode: Literal[RentalMode.NOT_RENTED] = RentalMode.NOT_RENTED
+
+
+class WholePropertyRentalPlan(_RentalPlanBase):
+    rental_mode: Literal[RentalMode.RENT_WHOLE_PROPERTY] = RentalMode.RENT_WHOLE_PROPERTY
+    monthly_rent_usd: NonNegativeFloat
+
+
+class TransitionWholePropertyRentalPlan(_RentalPlanBase):
+    rental_mode: Literal[RentalMode.TRANSITION_TO_WHOLE_PROPERTY_RENTAL] = (
+        RentalMode.TRANSITION_TO_WHOLE_PROPERTY_RENTAL
+    )
+    monthly_rent_usd: NonNegativeFloat
+
+
+class RoomRentalPlan(_RentalPlanBase):
+    rental_mode: Literal[RentalMode.RENT_ROOMS_WHILE_OWNER_LIVES_THERE] = RentalMode.RENT_ROOMS_WHILE_OWNER_LIVES_THERE
+    room_rent_monthly_usd: NonNegativeFloat
+
+
+RentalPlan = Annotated[
+    NotRentedRentalPlan | WholePropertyRentalPlan | TransitionWholePropertyRentalPlan | RoomRentalPlan,
+    Field(discriminator="rental_mode"),
+]
 
 
 class AccountBalance(ApiModel):
@@ -533,12 +583,16 @@ class Scenario(ApiModel):
     property_selection: PropertySelection = Field(default_factory=PropertySelection)
     financing: Financing = Field(default_factory=Financing)
     occupancy_plan: OccupancyPlan = Field(default_factory=OccupancyPlan)
-    rental_plan: RentalPlan = Field(default_factory=RentalPlan)
+    rental_plan: RentalPlan = Field(default_factory=NotRentedRentalPlan)
     tax_profile: TaxProfile = Field(default_factory=TaxProfile)
     transaction_costs: TransactionCosts = Field(default_factory=TransactionCosts)
     property_assumptions: PropertyAssumptions = Field(default_factory=PropertyAssumptions)
     initial_balance_sheet: InitialBalanceSheet = Field(default_factory=InitialBalanceSheet)
     tax_regimes: tuple[TaxRegime, ...] = ()
+
+    @property
+    def location_id(self) -> LocationId | None:
+        return self.property_selection.location_id
 
 
 class ScenarioSet(ApiModel):

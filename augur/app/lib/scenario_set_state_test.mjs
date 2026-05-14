@@ -136,13 +136,13 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     counterfactualRentGrowth: 4.2,
     privateEquityValueUsd: 123_000,
     privateEquityUnits: 456,
-    privateEquityTenderSaleAmountUsd: 25_000,
-    privateEquityTenderMonth: 18,
-    privateEquityTenderProceedsDestination: "generic_sp500_stock",
+    privateEquitySaleRequestAmountUsd: 25_000,
+    privateEquitySaleRequestMonth: 18,
+    privateEquitySaleProceedsDestination: "generic_sp500_stock",
     privateEquityEvents: [
       {
-        eventId: "private_equity_followup_tender",
-        eventType: "private_equity_tender",
+        eventId: "private_equity_followup_sale",
+        eventType: "private_equity_sale_request",
         monthIndex: 30,
         amountUsd: 40_000,
       },
@@ -154,9 +154,9 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   const sfScenario = backendRequest.scenarios[0];
   const purchaseEvent = sfScenario.events.find((event) => event.event_type === "property_purchase");
   const mortgageEvent = sfScenario.events.find((event) => event.event_type === "mortgage_origination");
-  const tenderEvent = sfScenario.events.find((event) => event.event_type === "private_equity_tender");
+  const saleRequestEvent = sfScenario.events.find((event) => event.event_type === "private_equity_sale_request");
   const ipoEvent = sfScenario.events.find((event) => event.event_id === "private_equity_ipo_request");
-  const tenderPolicy = sfScenario.policies.find((policy) => policy.policy_type === "private_equity_tender_rebalance");
+  const salePolicy = sfScenario.policies.find((policy) => policy.policy_type === "private_equity_sale");
 
   assert.equal(backendRequest.scenario_set_id, "house_futures_explorer");
   assert.deepEqual(sfScenario.property_selection, { property_id: "sf_ashton" });
@@ -167,9 +167,12 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(sfScenario.financing.mortgage_term_years, 18);
   assert.equal(sfScenario.financing.credit_score, 701);
   assert.equal(sfScenario.policies[0].policy_type, "checking_floor_sell_public_stock");
-  assert.equal(tenderPolicy.policy_id, "private_equity_tender_rebalance");
-  assert.equal(tenderPolicy.actor_id, "alpha");
-  assert.equal(tenderPolicy.parameters.proceeds_destination, "generic_sp500_stock");
+  assert.equal(sfScenario.policies[0].floor_usd, 10_000);
+  assert.equal(sfScenario.policies[0].sale_amount_usd, 20_000);
+  assert.equal(salePolicy.policy_id, "private_equity_sale");
+  assert.equal(salePolicy.actor_id, "alpha");
+  assert.equal(salePolicy.proceeds_destination, "generic_sp500_stock");
+  assert.deepEqual(salePolicy.sale_rule, { sale_rule_type: "manual_requests_only" });
   assert.equal(sfScenario.rental_plan.rental_mode, "rent_rooms_while_owner_lives_there");
   assert.equal(sfScenario.rental_plan.rooms_rented, 2);
   assert.equal(sfScenario.rental_plan.room_rent_monthly_usd, 1_650);
@@ -177,9 +180,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(sfScenario.rental_plan.room_vacancy_pct, 11);
   assert.equal(sfScenario.rental_plan.management_fee_pct, 9.5);
   assert.equal(sfScenario.rental_plan.leasing_fee_pct, 50);
-  assert.equal(purchaseEvent.parameters.hoa_monthly_usd, 321);
-  assert.equal(purchaseEvent.parameters.custom_counterfactual_rent_monthly_usd, 5_100);
-  assert.equal(purchaseEvent.parameters.counterfactual_rent_growth, 4.2);
+  assert.equal(purchaseEvent.hoa_monthly_usd, 321);
   assert.deepEqual(sfScenario.tax_profile, {
     marginal_tax_rate: 37,
     cap_gains_rate: 28,
@@ -194,16 +195,13 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     maintenance_pct: 1.4,
     depreciable_basis_pct: 75,
   });
-  assert.equal(mortgageEvent.parameters.down_payment_pct, 42);
-  assert.equal(mortgageEvent.parameters.financing_mode, "custom");
-  assert.equal(tenderEvent.event_id, "private_equity_tender");
-  assert.equal(tenderEvent.month_index, 18);
-  assert.equal(tenderEvent.amount_usd, 25_000);
-  assert.equal(tenderEvent.parameters.proceeds_destination, "generic_sp500_stock");
+  assert.ok(Math.abs(mortgageEvent.amount_usd - 578_840) < 1e-6);
+  assert.equal(saleRequestEvent.event_id, "private_equity_sale_request");
+  assert.equal(saleRequestEvent.month_index, 18);
+  assert.equal(saleRequestEvent.amount_usd, 25_000);
   assert.equal(ipoEvent.event_type, "private_equity_ipo");
   assert.equal(ipoEvent.month_index, 60);
   assert.equal(ipoEvent.amount_usd, 125_000);
-  assert.equal(ipoEvent.parameters.proceeds_destination, "generic_sp500_stock");
   assert.deepEqual(
     sfScenario.initial_balance_sheet.assets.find((asset) => asset.asset_type === "private_equity"),
     {
@@ -217,6 +215,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   );
   assert.equal(backendRequest.scenarios[1].policies[0].policy_type, "partner_equity_accrual");
   assert.equal(backendRequest.scenarios[1].policies[0].actor_id, "beta");
+  assert.equal(backendRequest.scenarios[1].policies[0].base_monthly_payment_usd, 2_435);
 });
 
 test("URL state round-trips only input state", () => {
@@ -245,13 +244,13 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
     customCounterfactualRentMonthlyUsd: 5_300,
     privateEquityValueUsd: 987_000,
     privateEquityUnits: 1_234,
-    privateEquityTenderSaleAmountUsd: 250_000,
-    privateEquityTenderMonth: 24,
-    privateEquityTenderProceedsDestination: "generic_sp500_stock",
+    privateEquitySaleRequestAmountUsd: 250_000,
+    privateEquitySaleRequestMonth: 24,
+    privateEquitySaleProceedsDestination: "generic_sp500_stock",
     privateEquityEvents: [
       {
-        eventId: "private_equity_followup_tender",
-        eventType: "private_equity_tender",
+        eventId: "private_equity_followup_sale",
+        eventType: "private_equity_sale_request",
         monthIndex: 48,
         amountUsd: 75_000,
       },
@@ -267,13 +266,13 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   assert.equal(decoded.scenarios[0].customCounterfactualRentMonthlyUsd, 5_300);
   assert.equal(decoded.scenarios[0].privateEquityValueUsd, 987_000);
   assert.equal(decoded.scenarios[0].privateEquityUnits, 1_234);
-  assert.equal(decoded.scenarios[0].privateEquityTenderSaleAmountUsd, 250_000);
-  assert.equal(decoded.scenarios[0].privateEquityTenderMonth, 24);
-  assert.equal(decoded.scenarios[0].privateEquityTenderProceedsDestination, "generic_sp500_stock");
+  assert.equal(decoded.scenarios[0].privateEquitySaleRequestAmountUsd, 250_000);
+  assert.equal(decoded.scenarios[0].privateEquitySaleRequestMonth, 24);
+  assert.equal(decoded.scenarios[0].privateEquitySaleProceedsDestination, "generic_sp500_stock");
   assert.deepEqual(decoded.scenarios[0].privateEquityEvents, [
     {
-      eventId: "private_equity_followup_tender",
-      eventType: "private_equity_tender",
+      eventId: "private_equity_followup_sale",
+      eventType: "private_equity_sale_request",
       monthIndex: 48,
       amountUsd: 75_000,
     },
@@ -284,11 +283,11 @@ test("scheduled private equity sale requests normalize into backend events", () 
   const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
   input.scenarios[0] = {
     ...input.scenarios[0],
-    privateEquityTenderSaleAmountUsd: 75_000,
+    privateEquitySaleRequestAmountUsd: 75_000,
     privateEquityEvents: [
       { eventId: "bad id", eventType: "bad_event_type", monthIndex: "24", amountUsd: 25_000 },
       { eventId: "bad id", eventType: "private_equity_acquisition", monthIndex: 36, amountUsd: 50_000 },
-      { eventId: "zero_sale", eventType: "private_equity_tender", monthIndex: 48, amountUsd: 0 },
+      { eventId: "zero_sale", eventType: "private_equity_sale_request", monthIndex: 48, amountUsd: 0 },
     ],
   };
 
@@ -300,8 +299,8 @@ test("scheduled private equity sale requests normalize into backend events", () 
   assert.deepEqual(
     privateEquityEvents.map((event) => [event.event_id, event.event_type, event.month_index, event.amount_usd]),
     [
-      ["private_equity_tender", "private_equity_tender", 12, 75_000],
-      ["private_equity_event_1", "private_equity_tender", 24, 25_000],
+      ["private_equity_sale_request", "private_equity_sale_request", 12, 75_000],
+      ["private_equity_event_1", "private_equity_sale_request", 24, 25_000],
       ["private_equity_event_2", "private_equity_acquisition", 36, 50_000],
     ]
   );

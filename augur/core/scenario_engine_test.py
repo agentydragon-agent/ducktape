@@ -36,10 +36,8 @@ def _bundle(
         return np.broadcast_to(np.asarray(values[: horizon_months + 1], dtype="float64"), shape).copy()
 
     events = np.zeros(shape, dtype=np.bool_)
-    saleable = np.zeros(shape, dtype="float64")
     if private_equity_event_month is not None:
         events[:, private_equity_event_month] = True
-        saleable[:, private_equity_event_month] = 0.5
     metadata = MarketBundleMetadata(
         market_model_id="test",
         random_seed=7,
@@ -67,7 +65,6 @@ def _bundle(
         mortgage_30y_rate_pct=np.full(shape, 6.0, dtype="float64"),
         private_equity_value_multipliers=path(private_equity_path),
         private_equity_liquidity_event_mask=events,
-        private_equity_tender_sale_fraction=saleable,
         metadata=metadata,
     )
 
@@ -111,7 +108,7 @@ def _scenario_body(
         "property_selection": property_selection or {},
         "financing": financing or {},
         "occupancy_plan": occupancy_plan or {},
-        "rental_plan": rental_plan or {},
+        "rental_plan": rental_plan or {"rental_mode": "not_rented"},
         "tax_profile": tax_profile or {},
         "transaction_costs": transaction_costs or {},
         "property_assumptions": property_assumptions or {},
@@ -218,7 +215,11 @@ def test_property_purchase_with_mortgage_tracks_debt_and_equity() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    np.testing.assert_allclose(no_opportunity.private_equity_sale_usd, 0)
+    np.testing.assert_allclose(no_opportunity.private_equity_liquidity_available_value_usd, 0)
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=2))
 
     np.testing.assert_allclose(result.purchase_closing_cost_usd[:, 0], 25_000)
     np.testing.assert_allclose(result.cash_usd[:, 0], 75_000)
@@ -846,24 +847,24 @@ def test_purchase_event_parameters_drive_property_costs() -> None:
 
 
 def test_private_equity_stock_is_not_sold_without_explicit_event() -> None:
-    scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("no_tender")))
+    scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("no_sale_request")))
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
 
     np.testing.assert_allclose(result.private_equity_sale_usd, 0)
-    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 1], 25_000)
+    np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 1], 50_000)
     np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
 
 
-def test_private_equity_tender_event_without_policy_does_not_sell() -> None:
+def test_private_equity_sale_request_without_policy_does_not_sell() -> None:
     scenario_set = ScenarioSet.model_validate(
         _scenario_set_body(
             _scenario_body(
-                "tender_without_policy",
+                "sale_request_without_policy",
                 events=[
                     {
-                        "event_id": "tender_1",
-                        "event_type": "private_equity_tender",
+                        "event_id": "sale_request_1",
+                        "event_type": "private_equity_sale_request",
                         "month_index": 1,
                         "amount_usd": 20_000,
                     }
@@ -875,23 +876,23 @@ def test_private_equity_tender_event_without_policy_does_not_sell() -> None:
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
 
     np.testing.assert_allclose(result.private_equity_sale_usd, 0)
-    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 1], 50_000)
+    np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 1], 50_000)
     np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
     assert np.all(result.private_equity_liquidity_event[:, 1])
     assert result.actions == ()
 
 
-def test_private_equity_sale_requires_explicit_event_and_policy() -> None:
+def test_private_equity_sale_requires_explicit_request_opportunity_and_policy() -> None:
     scenario_set = ScenarioSet.model_validate(
         _scenario_set_body(
             _scenario_body(
-                "tender",
+                "sale_request",
                 private_equity_basis_usd=0,
                 private_equity_units=100,
                 events=[
                     {
-                        "event_id": "tender_1",
-                        "event_type": "private_equity_tender",
+                        "event_id": "sale_request_1",
+                        "event_type": "private_equity_sale_request",
                         "month_index": 1,
                         "actor_id": "owner",
                         "amount_usd": 20_000,
@@ -899,8 +900,8 @@ def test_private_equity_sale_requires_explicit_event_and_policy() -> None:
                 ],
                 policies=[
                     {
-                        "policy_id": "private_equity_tender_rebalance",
-                        "policy_type": "private_equity_tender_rebalance",
+                        "policy_id": "private_equity_sale",
+                        "policy_type": "private_equity_sale",
                         "actor_id": "owner",
                         "proceeds_destination": "cash",
                     }
@@ -909,22 +910,22 @@ def test_private_equity_sale_requires_explicit_event_and_policy() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
 
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 0], 0)
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 2], 0)
-    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 1], 30_000)
+    np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 1], 30_000)
     np.testing.assert_allclose(result.private_equity_sale_basis_usd[:, 1], 0)
     np.testing.assert_allclose(result.private_equity_sale_tax_usd[:, 1], 6_000)
     np.testing.assert_allclose(result.cash_usd[:, 1], 24_000)
     actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
     assert len(actions) == 2
     for action in actions:
-        assert action.event_id == "tender_1"
-        assert action.event_type is EventType.PRIVATE_EQUITY_TENDER
+        assert action.event_id == "sale_request_1"
+        assert action.event_type is EventType.PRIVATE_EQUITY_SALE_REQUEST
         assert action.actor_id == "owner"
-        assert action.policy_id == "private_equity_tender_rebalance"
+        assert action.policy_id == "private_equity_sale"
         assert action.amount_usd == 20_000
         assert action.after_tax_proceeds_usd == 14_000
         assert action.basis_usd == 0
@@ -934,15 +935,15 @@ def test_private_equity_sale_requires_explicit_event_and_policy() -> None:
         assert action.proceeds_destination is AccountType.CHECKING
 
 
-def test_private_equity_tender_rebalance_reinvests_sale_proceeds_in_sp500() -> None:
+def test_private_equity_sale_policy_reinvests_sale_proceeds_in_sp500() -> None:
     scenario_set = ScenarioSet.model_validate(
         _scenario_set_body(
             _scenario_body(
-                "reinvest_tender",
+                "reinvest_sale_request",
                 events=[
                     {
-                        "event_id": "tender_1",
-                        "event_type": "private_equity_tender",
+                        "event_id": "sale_request_1",
+                        "event_type": "private_equity_sale_request",
                         "month_index": 1,
                         "actor_id": "owner",
                         "amount_usd": 20_000,
@@ -950,8 +951,8 @@ def test_private_equity_tender_rebalance_reinvests_sale_proceeds_in_sp500() -> N
                 ],
                 policies=[
                     {
-                        "policy_id": "private_equity_tender_rebalance",
-                        "policy_type": "private_equity_tender_rebalance",
+                        "policy_id": "private_equity_sale",
+                        "policy_type": "private_equity_sale",
                         "actor_id": "owner",
                         "proceeds_destination": "generic_sp500_stock",
                     }
@@ -968,15 +969,15 @@ def test_private_equity_tender_rebalance_reinvests_sale_proceeds_in_sp500() -> N
     np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 141_818.18181818)
 
 
-def test_private_equity_tender_sale_is_available_only_in_scheduled_month() -> None:
+def test_private_equity_sale_request_sells_only_when_market_opportunity_is_available() -> None:
     scenario_set = ScenarioSet.model_validate(
         _scenario_set_body(
             _scenario_body(
-                "scheduled_tender",
+                "scheduled_sale_request",
                 events=[
                     {
-                        "event_id": "tender_2",
-                        "event_type": "private_equity_tender",
+                        "event_id": "sale_request_2",
+                        "event_type": "private_equity_sale_request",
                         "month_index": 2,
                         "actor_id": "owner",
                         "amount_usd": 20_000,
@@ -984,8 +985,8 @@ def test_private_equity_tender_sale_is_available_only_in_scheduled_month() -> No
                 ],
                 policies=[
                     {
-                        "policy_id": "private_equity_tender_rebalance",
-                        "policy_type": "private_equity_tender_rebalance",
+                        "policy_id": "private_equity_sale",
+                        "policy_type": "private_equity_sale",
                         "actor_id": "owner",
                         "proceeds_destination": "generic_sp500_stock",
                     }
@@ -994,13 +995,21 @@ def test_private_equity_tender_sale_is_available_only_in_scheduled_month() -> No
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+
+    np.testing.assert_allclose(no_opportunity.private_equity_sale_usd, 0)
+    np.testing.assert_allclose(no_opportunity.private_equity_liquidity_available_value_usd, 0)
+    assert not np.any(no_opportunity.private_equity_liquidity_event)
+    assert no_opportunity.actions == ()
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=2))
 
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 0], 0)
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 0)
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 2], 20_000)
-    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 1], 0)
-    np.testing.assert_allclose(result.private_equity_tender_available_value_usd[:, 2], 30_000)
+    np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 1], 0)
+    np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 2], 30_000)
+    assert np.all(result.private_equity_liquidity_event[:, 2])
     np.testing.assert_allclose(result.cash_usd[:, 2], 10_000)
     np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 140_000)
 

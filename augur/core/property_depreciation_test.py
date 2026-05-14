@@ -13,6 +13,8 @@ from augur.core.scenario_set import (
     RentalMode,
     RentalPlan,
     Scenario,
+    TransitionWholePropertyRentalPlan,
+    WholePropertyRentalPlan,
 )
 
 
@@ -32,7 +34,9 @@ def test_rental_active_mask_starts_after_occupancy_for_transition_rental() -> No
         label="Transition",
         actors=(Actor(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
         occupancy_plan=OccupancyPlan(end_month=2),
-        rental_plan=RentalPlan(rental_mode=RentalMode.TRANSITION_TO_WHOLE_PROPERTY_RENTAL, monthly_rent_usd=2_000),
+        rental_plan=TransitionWholePropertyRentalPlan(
+            rental_mode=RentalMode.TRANSITION_TO_WHOLE_PROPERTY_RENTAL, monthly_rent_usd=2_000
+        ),
     )
 
     np.testing.assert_array_equal(
@@ -44,7 +48,9 @@ def test_rental_active_mask_starts_after_occupancy_for_transition_rental() -> No
 def test_depreciation_only_applies_during_active_rental_months_before_sale() -> None:
     depreciation = monthly_property_depreciation_usd(
         scenario_with_rental_plan(
-            RentalPlan(rental_mode=RentalMode.RENT_WHOLE_PROPERTY, start_month=2, end_month=4, monthly_rent_usd=2_000)
+            WholePropertyRentalPlan(
+                rental_mode=RentalMode.RENT_WHOLE_PROPERTY, start_month=2, end_month=4, monthly_rent_usd=2_000
+            )
         ),
         constant_market_bundle(horizon_months=6),
         purchase_price_usd=330_000,

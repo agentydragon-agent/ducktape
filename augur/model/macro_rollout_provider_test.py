@@ -85,7 +85,6 @@ def test_private_equity_path_flat_with_yearly_tenders(provider: MacroRolloutProv
     assert len(tender_months) > 0
     for event in path.events:
         assert event.event_type == "tender"
-        assert event.saleable_fraction == 1.0
     for first, second in itertools.pairwise(tender_months):
         assert second - first == 12
     assert tender_months[0] == 12

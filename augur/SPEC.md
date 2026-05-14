@@ -13,15 +13,15 @@ records what an outside observer can rely on.
 
 ### Entities
 
-| Entity      | What it is                                                                                                           | Examples                                                                                                                      |
-| ----------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `Agent`     | An economic actor with state (cash, holdings, liabilities, ownership shares) and a set of policies.                  | a primary owner, an equity-building occupant                                                                                  |
-| `Asset`     | Something an agent owns that has value. Discriminated subtype determines valuation and liquidity model.              | a `LiquidSecurity` tracking SP500, a `PrivateEquity` holding, a `RealEstate` property                                         |
-| `Liability` | A debt an agent owes, with an amortization schedule.                                                                 | a mortgage on a property                                                                                                      |
-| `Market`    | A stochastic factor producing per-rollout paths.                                                                     | SP500 total return, a local home-price index, a local rent index, CPI, mortgage rate, per-`PrivateEquity` price+tender stream |
-| `Policy`    | A typed rule attached to an agent: `(state, market, time) → list[Action]`. Composable; an agent can hold any number. | liquidity-reserve maintenance, max-concentration rebalancing, partner-equity agreement, mortgage payment, rental management   |
-| `Action`    | An atomic mutation applied to state.                                                                                 | `SellAsset`, `BuyAsset`, `Transfer(from, to, amount)`, `PayLiability`, `AccrueOwnership`, `OccupyProperty`, `RentProperty`    |
-| `Scenario`  | A bundle: agents + assets + liabilities + initial state + policies + which markets to sample from + horizon.         | "primary buys property X with partner contributing"                                                                           |
+| Entity      | What it is                                                                                                           | Examples                                                                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `Agent`     | An economic actor with state (cash, holdings, liabilities, ownership shares) and a set of policies.                  | a primary owner, an equity-building occupant                                                                                             |
+| `Asset`     | Something an agent owns that has value. Discriminated subtype determines valuation and liquidity model.              | a `LiquidSecurity` tracking SP500, a `PrivateEquity` holding, a `RealEstate` property                                                    |
+| `Liability` | A debt an agent owes, with an amortization schedule.                                                                 | a mortgage on a property                                                                                                                 |
+| `Market`    | A stochastic factor producing per-rollout paths.                                                                     | SP500 total return, a local home-price index, a local rent index, CPI, mortgage rate, per-`PrivateEquity` price + liquidity-event stream |
+| `Policy`    | A typed rule attached to an agent: `(state, market, time) → list[Action]`. Composable; an agent can hold any number. | liquidity-reserve maintenance, max-concentration rebalancing, partner-equity agreement, mortgage payment, rental management              |
+| `Action`    | An atomic mutation applied to state.                                                                                 | `SellAsset`, `BuyAsset`, `Transfer(from, to, amount)`, `PayLiability`, `AccrueOwnership`, `OccupyProperty`, `RentProperty`               |
+| `Scenario`  | A bundle: agents + assets + liabilities + initial state + policies + which markets to sample from + horizon.         | "primary buys property X with partner contributing"                                                                                      |
 
 ### Asset subtypes
 
@@ -36,14 +36,14 @@ records what an outside observer can rely on.
 
 A discriminated union. Current variants:
 
-| Variant        | Meaning                                                                                                                                              | Status       |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| `TenderOnly`   | Sale only at discrete tender events. Tender stream is a sampled stochastic process (event arrivals + per-event saleable fraction + per-event price). | Implemented. |
-| `PublicMarket` | Free sale at the spot price each month, subject to optional `lockup_end_month`.                                                                      | Future.      |
-| `Acquisition`  | One-shot conversion at a fixed `cash_per_unit_usd` at a sampled `event_month`.                                                                       | Future.      |
+| Variant              | Meaning                                                                                                                                   | Status       |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `LiquidityEventOnly` | Sale only at discrete sampled liquidity opportunities. The event stream is a stochastic process with binary arrivals and per-event price. | Implemented. |
+| `PublicMarket`       | Free sale at the spot price each month, subject to optional `lockup_end_month`.                                                           | Future.      |
+| `Acquisition`        | One-shot conversion at a fixed `cash_per_unit_usd` at a sampled `event_month`.                                                            | Future.      |
 
 A `PrivateEquity` asset can transition between regimes via a sampled
-**regime-change event** (e.g. an IPO converts `TenderOnly` → `PublicMarket`).
+**regime-change event** (e.g. an IPO converts `LiquidityEventOnly` → `PublicMarket`).
 Regime changes are not currently implemented; the model carries them in the
 event-type vocabulary as a TODO.
 
@@ -51,14 +51,13 @@ event-type vocabulary as a TODO.
 
 Policies are first-class typed objects. The current policy vocabulary:
 
-| Policy                    | Inputs                                                                        | Action(s) emitted                                                        |
-| ------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `LiquidityReservePolicy`  | Minimum-reserve target (months of expenses or fixed $).                       | Sell from liquid security or eligible `PrivateEquity` to top up reserve. |
-| `MaxConcentrationPolicy`  | Target max % of net worth in `PrivateEquity`.                                 | Sell `PrivateEquity` at eligible liquidity events to rebalance.          |
-| `PartnerEquityAgreement`  | Contributor agent, owner agent, property, monthly amount, share-accrual rule. | `Transfer` + `AccrueOwnership`.                                          |
-| `MortgagePaymentPolicy`   | Mortgage liability, payer agent, cash source.                                 | `PayLiability` from owner cash flow.                                     |
-| `RentalUsePolicy`         | Property, mode (occupied / rented / partial), tenant pool.                    | `OccupyProperty` / `RentProperty`.                                       |
-| `OccupancyDecisionPolicy` | Property, move-out month, alternative housing config.                         | Transitions occupation phase; potentially triggers `RentProperty`.       |
+| Policy                    | Inputs                                                                                      | Action(s) emitted                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `PrivateEquitySalePolicy` | Manual sale requests and/or sale-rule configuration for sampled PE liquidity opportunities. | Sell `PrivateEquity` when a sale request or automatic rule intersects with market liquidity. |
+| `PartnerEquityAgreement`  | Contributor agent, owner agent, property, monthly amount, share-accrual rule.               | `Transfer` + `AccrueOwnership`.                                                              |
+| `MortgagePaymentPolicy`   | Mortgage liability, payer agent, cash source.                                               | `PayLiability` from owner cash flow.                                                         |
+| `RentalUsePolicy`         | Property, mode (occupied / rented / partial), tenant pool.                                  | `OccupyProperty` / `RentProperty`.                                                           |
+| `OccupancyDecisionPolicy` | Property, move-out month, alternative housing config.                                       | Transitions occupation phase; potentially triggers `RentProperty`.                           |
 
 Policies do not encode actor identities in their type names — actor IDs are
 data in scenario configuration, not type-system distinctions.

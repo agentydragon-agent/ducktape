@@ -8,12 +8,12 @@ from typing import Any
 
 from augur.app.catalog import build_bootstrap_payload
 from augur.app.config import AugurConfig
+from augur.core.api import simulate_set
 from augur.core.augur_accounting import MONTHS_PER_YEAR
 from augur.core.bootstrap import ActorPolicyId, Property
 from augur.core.local_regulation import LocationId
 from augur.core.market_bundle import MarketBundleProvider, SimpleMarketBundleProvider
 from augur.core.rollout_provider import RolloutProvider
-from augur.core.scenario_engine import run_scenario_set_vectorized
 from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario, ScenarioSet, ScenarioSetRunResponse, TaxRegime
 from augur.core.schemas import ScenarioKnobs
 from augur.model.market_bundle_adapter import RolloutProviderMarketBundleProvider
@@ -61,7 +61,7 @@ class AugurBackend:
         scenario_set = ScenarioSet.model_validate(body)
         self._validate_scenario_set_property_references(scenario_set)
         scenario_set = self._scenario_set_with_catalog_defaults(scenario_set)
-        return run_scenario_set_vectorized(scenario_set, market_provider=self.market_bundle_provider)
+        return simulate_set(scenario_set, market_provider=self.market_bundle_provider).to_response()
 
     def _default_knobs_for_provider(self, knobs: ScenarioKnobs) -> ScenarioKnobs:
         if self.rollout_provider is None:
@@ -74,12 +74,12 @@ class AugurBackend:
             property_id = scenario.property_selection.property_id
             if property_id is None:
                 continue
-            property_ = self._property_by_id[property_id.value]
+            property_ = self._property_by_id[property_id]
             requested_location = scenario.property_selection.location_id
             if requested_location is not None and requested_location.value != property_.location_id.value:
                 raise ValueError(
                     "scenario property/location mismatch: "
-                    f"{scenario.scenario_id} uses {property_id.value!r} with {requested_location.value!r}"
+                    f"{scenario.scenario_id} uses {property_id!r} with {requested_location.value!r}"
                 )
 
     def _scenario_set_with_catalog_defaults(self, scenario_set: ScenarioSet) -> ScenarioSet:
@@ -89,7 +89,7 @@ class AugurBackend:
             if property_id is None:
                 scenarios.append(scenario)
                 continue
-            property_ = self._property_by_id[property_id.value]
+            property_ = self._property_by_id[property_id]
             selection = scenario.property_selection.model_copy(
                 update={
                     "location_id": scenario.property_selection.location_id or property_.location_id,

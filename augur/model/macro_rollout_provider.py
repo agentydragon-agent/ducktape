@@ -62,15 +62,11 @@ class MacroRolloutProvider:
         inflation_idx = self._factor_index["inflation"]
 
         flat_price_path = [self._current_private_equity_price_usd] * (self.horizon_months + 1)
-        # Synthetic tender events at fixed yearly intervals; saleable_fraction=1.0
-        # matches the prior tender-only emission and the documented "pretend you
-        # can always sell everything" simplification.
+        # Synthetic tender events at fixed yearly intervals. Tender events are
+        # binary; sale sizing belongs to policy, not the market event.
         events = [
             PrivateEquityEvent(
-                month_index=month,
-                event_type="tender",
-                price_usd_per_unit=self._current_private_equity_price_usd,
-                saleable_fraction=1.0,
+                month_index=month, event_type="tender", price_usd_per_unit=self._current_private_equity_price_usd
             )
             for month in range(_TENDER_INTERVAL_MONTHS, self.horizon_months + 1, _TENDER_INTERVAL_MONTHS)
         ]

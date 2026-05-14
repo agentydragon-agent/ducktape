@@ -32,8 +32,6 @@ def test_simple_market_bundle_shapes_and_reproducibility() -> None:
     np.testing.assert_allclose(first.generic_sp500_multipliers, second.generic_sp500_multipliers)
     np.testing.assert_allclose(first.inflation_multipliers[:, 0], 1.0)
     np.testing.assert_allclose(first.private_equity_value_multipliers[:, 0], 1.0)
-    assert np.all(first.private_equity_tender_sale_fraction >= 0)
-    assert np.all(first.private_equity_tender_sale_fraction <= 1)
 
 
 def test_market_bundle_rejects_bad_shapes() -> None:
@@ -52,7 +50,6 @@ def test_market_bundle_rejects_bad_shapes() -> None:
             mortgage_30y_rate_pct=np.full((2, 4), 6.5, dtype="float64"),
             private_equity_value_multipliers=valid,
             private_equity_liquidity_event_mask=np.zeros((2, 4), dtype=np.bool_),
-            private_equity_tender_sale_fraction=np.zeros((2, 4), dtype="float64"),
             metadata=metadata,
         )
 

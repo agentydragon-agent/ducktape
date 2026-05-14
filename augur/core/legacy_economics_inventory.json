@@ -10,7 +10,7 @@
       "AssetType.generic_sp500_stock",
       "MarketRequest.market_model_id",
       "Scenario.initial_balance_sheet.assets",
-      "Policy.parameters"
+      "Policy fields"
     ],
     "live_source_refs": ["x/augur/app/personal_defaults.py", "x/augur/core/schemas.py"],
     "historical_source_refs": ["d0a581643750b47e3537fe8128c03e61ff808bcd:x/augur/legacy/sf/README.md"],
@@ -25,7 +25,7 @@
     "disposition": "planned",
     "new_model_fields": [
       "AssetPosition.cost_basis_usd",
-      "Policy.parameters",
+      "Policy fields",
       "TaxRegime.federal_capital_gains",
       "TaxRegime.california_income_tax"
     ],
@@ -49,13 +49,13 @@
       "AssetType.private_equity",
       "AssetPosition.units",
       "AssetPosition.cost_basis_usd",
-      "EventType.private_equity_tender",
+      "EventType.private_equity_sale_request",
       "EventType.private_equity_ipo",
       "EventType.private_equity_acquisition"
     ],
     "live_source_refs": ["x/augur/app/personal_defaults.py", "x/augur/core/schemas.py"],
     "historical_source_refs": ["d0a581643750b47e3537fe8128c03e61ff808bcd:x/augur/legacy/sf/README.md"],
-    "notes": "OpenAI remains a private-stock placeholder in A1; sparse tender/public-liquidity events will become explicit simulator events later."
+    "notes": "OpenAI remains a private-stock placeholder in A1; manual sale requests are modeled separately from stochastic market liquidity opportunities."
   },
   {
     "id": "private_equity_sale_and_rebalance_policy",
@@ -69,13 +69,13 @@
     "category": "private_equity_stock",
     "disposition": "planned",
     "new_model_fields": [
-      "PolicyType.private_equity_tender_rebalance",
-      "Policy.parameters",
-      "EventType.private_equity_tender",
+      "PolicyType.private_equity_sale",
+      "PrivateEquitySalePolicy.sale_rule",
+      "EventType.private_equity_sale_request",
       "AssetType.generic_sp500_stock"
     ],
     "live_source_refs": ["x/augur/app/personal_defaults.py", "x/augur/core/schemas.py"],
-    "notes": "The existing OpenAI guardrail sale policy becomes a state-to-action policy constrained by future liquidity events."
+    "notes": "The existing OpenAI guardrail sale policy becomes typed sale-rule configuration constrained by market liquidity opportunities."
   },
   {
     "id": "mortgage_interest_tax_shield",
@@ -84,7 +84,7 @@
     "legacy_names": ["tax_shield_usd", "taxShieldOffsetUsd", "cum_tax_shield_usd"],
     "category": "mortgage_tax_shield",
     "disposition": "planned",
-    "new_model_fields": ["TaxRegime.federal_mortgage_interest", "ReportMetric.tax_cash_flow", "Policy.parameters"],
+    "new_model_fields": ["TaxRegime.federal_mortgage_interest", "ReportMetric.tax_cash_flow", "Policy fields"],
     "historical_source_refs": [
       "d0a581643750b47e3537fe8128c03e61ff808bcd:x/augur/legacy/sf/README.md",
       "d0a581643750b47e3537fe8128c03e61ff808bcd:x/augur/legacy/sf/model/analysis.py",

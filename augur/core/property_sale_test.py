@@ -9,8 +9,8 @@ from augur.core.property_sale import empty_property_disposition_arrays, property
 from augur.core.scenario_set import (
     Actor,
     ActorRole,
+    NotRentedRentalPlan,
     PropertyAssumptions,
-    PropertyId,
     PropertySaleEvent,
     PropertySelection,
     RentalMode,
@@ -18,6 +18,7 @@ from augur.core.scenario_set import (
     Scenario,
     TaxProfile,
     TransactionCosts,
+    WholePropertyRentalPlan,
 )
 
 
@@ -32,11 +33,11 @@ def sale_scenario(
         scenario_id="sale",
         label="Sale",
         actors=(Actor(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
-        events=(PropertySaleEvent(event_id="sell", month_index=3, property_id=PropertyId.SF_ASHTON),),
+        events=(PropertySaleEvent(event_id="sell", month_index=3, property_id="sf_ashton"),),
         property_selection=PropertySelection(
-            property_id=PropertyId.SF_ASHTON, location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=100_000
+            property_id="sf_ashton", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=100_000
         ),
-        rental_plan=rental_plan or RentalPlan(),
+        rental_plan=rental_plan or NotRentedRentalPlan(),
         property_assumptions=property_assumptions or PropertyAssumptions(),
         tax_profile=tax_profile or TaxProfile(cap_gains_exclusion_usd=0, cap_gains_rate=20),
         transaction_costs=transaction_costs or TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=5),
@@ -65,7 +66,7 @@ def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> 
     bundle = constant_market_bundle()
     sale = property_disposition_arrays(
         sale_scenario(
-            rental_plan=RentalPlan(
+            rental_plan=WholePropertyRentalPlan(
                 rental_mode=RentalMode.RENT_WHOLE_PROPERTY, start_month=1, end_month=3, monthly_rent_usd=0
             ),
             property_assumptions=PropertyAssumptions(depreciable_basis_pct=100),

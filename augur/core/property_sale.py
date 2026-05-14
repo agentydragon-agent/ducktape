@@ -116,7 +116,7 @@ def property_sale_month(scenario: Scenario, horizon_months: int) -> int:
         int(event.month_index)
         for event in scenario.events
         if event.event_type is EventType.PROPERTY_SALE
-        and (event.property_id is None or event.property_id is scenario.property_selection.property_id)
+        and (event.property_id is None or event.property_id == scenario.property_selection.property_id)
     ]
     if explicit_sale_months:
         return max(0, min(*explicit_sale_months, horizon_months))
