@@ -5,11 +5,14 @@ import pytest_bazel
 
 from augur.core.policy_runtime import (
     actor_policy_programs,
+    apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
     checking_floor_sell_public_stock_instruction,
     enabled_rules_of_type,
+    monthly_spend_debit_instruction,
 )
 from augur.core.scenario_set import (
+    AccountType,
     Actor,
     ActorRole,
     AssetType,
@@ -74,6 +77,28 @@ def test_checking_floor_instruction_applier_clips_sale_and_records_shortfall() -
     np.testing.assert_allclose(result.remaining_units, [0.0, 120.0, 200.0])
     np.testing.assert_allclose(result.remaining_basis_usd, [0.0, 60.0, 100.0])
     np.testing.assert_allclose(result.shortfall_usd, [10.0, 0.0, 0.0])
+
+
+def test_monthly_spend_instruction_applier_debits_cash_and_records_ledger() -> None:
+    policy = MonthlySpendPolicy(
+        policy_id="living_expenses", actor_id="alpha", monthly_spend_usd=100, inflation_adjusted=True
+    )
+    decision = monthly_spend_debit_instruction(policy, inflation_multiplier=np.array([1.0, 1.2, 1.5]))
+
+    result = apply_debit_account_instruction(decision.debit, current_cash_usd=np.array([1_000.0, 500.0, 50.0]))
+
+    assert decision.debit.account_type is AccountType.CHECKING
+    assert decision.debit.category == "monthly_spend"
+    np.testing.assert_allclose(decision.inflation_multiplier, [1.0, 1.2, 1.5])
+    np.testing.assert_allclose(result.debit_usd, [100.0, 120.0, 150.0])
+    np.testing.assert_allclose(result.current_cash_usd, [900.0, 380.0, -100.0])
+    assert len(result.ledger_entries) == 1
+    spend_ledger = result.ledger_entries[0]
+    assert spend_ledger.actor_id == "alpha"
+    assert spend_ledger.policy_id == "living_expenses"
+    assert spend_ledger.domain == "cash"
+    assert spend_ledger.category == "monthly_spend"
+    np.testing.assert_allclose(spend_ledger.amount_usd, [-100.0, -120.0, -150.0])
 
 
 if __name__ == "__main__":

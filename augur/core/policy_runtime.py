@@ -4,7 +4,15 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from augur.core.scenario_set import AssetType, CheckingFloorSellPublicStockPolicy, Policy, Scenario, _PolicyBase
+from augur.core.scenario_set import (
+    AccountType,
+    AssetType,
+    CheckingFloorSellPublicStockPolicy,
+    MonthlySpendPolicy,
+    Policy,
+    Scenario,
+    _PolicyBase,
+)
 
 
 @dataclass(frozen=True)
@@ -29,6 +37,21 @@ class SellAssetInstructionBatch:
 
 
 @dataclass(frozen=True)
+class DebitAccountInstructionBatch:
+    actor_id: str
+    policy_id: str
+    account_type: AccountType
+    amount_usd: np.ndarray
+    category: str
+
+
+@dataclass(frozen=True)
+class MonthlySpendDecisionBatch:
+    debit: DebitAccountInstructionBatch
+    inflation_multiplier: np.ndarray
+
+
+@dataclass(frozen=True)
 class GenericSp500SaleApplication:
     current_cash_usd: np.ndarray
     remaining_units: np.ndarray
@@ -43,8 +66,16 @@ class GenericSp500SaleApplication:
 class LedgerEntryBatch:
     actor_id: str
     policy_id: str | None
+    domain: str
     amount_usd: np.ndarray
     category: str
+
+
+@dataclass(frozen=True)
+class DebitAccountApplication:
+    current_cash_usd: np.ndarray
+    debit_usd: np.ndarray
+    ledger_entries: tuple[LedgerEntryBatch, ...]
 
 
 def actor_policy_programs(scenario: Scenario) -> tuple[ActorPolicyProgram, ...]:
@@ -73,6 +104,42 @@ def checking_floor_sell_public_stock_instruction(
         asset_type=AssetType.GENERIC_SP500_STOCK,
         requested_amount_usd=requested_sale,
         target_cash_floor_usd=float(policy.floor_usd),
+    )
+
+
+def monthly_spend_debit_instruction(
+    policy: MonthlySpendPolicy, *, inflation_multiplier: np.ndarray
+) -> MonthlySpendDecisionBatch:
+    applied_multiplier = (
+        inflation_multiplier if policy.inflation_adjusted else np.ones_like(inflation_multiplier, dtype="float64")
+    )
+    debit = DebitAccountInstructionBatch(
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        account_type=AccountType.CHECKING,
+        amount_usd=float(policy.monthly_spend_usd) * applied_multiplier,
+        category="monthly_spend",
+    )
+    return MonthlySpendDecisionBatch(debit=debit, inflation_multiplier=applied_multiplier)
+
+
+def apply_debit_account_instruction(
+    instruction: DebitAccountInstructionBatch, *, current_cash_usd: np.ndarray
+) -> DebitAccountApplication:
+    if instruction.account_type is not AccountType.CHECKING:
+        raise ValueError(f"unsupported account type for cash debit applier: {instruction.account_type}")
+
+    ledger_entry = LedgerEntryBatch(
+        actor_id=instruction.actor_id,
+        policy_id=instruction.policy_id,
+        domain="cash",
+        amount_usd=-instruction.amount_usd,
+        category=instruction.category,
+    )
+    return DebitAccountApplication(
+        current_cash_usd=current_cash_usd - instruction.amount_usd,
+        debit_usd=instruction.amount_usd,
+        ledger_entries=(ledger_entry,),
     )
 
 

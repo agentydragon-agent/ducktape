@@ -14,9 +14,11 @@ from augur.core.market_bundle import (
 )
 from augur.core.policy_runtime import (
     actor_policy_programs,
+    apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
     checking_floor_sell_public_stock_instruction,
     enabled_rules_of_type,
+    monthly_spend_debit_instruction,
 )
 from augur.core.property_depreciation import rental_active_mask
 from augur.core.property_sale import empty_property_disposition_arrays, property_disposition_arrays
@@ -426,10 +428,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     cash = np.zeros((rollout_count, month_count), dtype="float64")
     monthly_spend_arr = np.zeros((rollout_count, month_count), dtype="float64")
     policy_programs = actor_policy_programs(scenario)
-    spend_policies = _enabled_policies_of(scenario, MonthlySpendPolicy)
     private_equity_sale_requests = _private_equity_sale_requests_by_month(scenario)
     private_equity_liquidity_event = market_bundle.private_equity_liquidity_event_mask.copy()
     private_equity_sale_policy = _enabled_policy_of(scenario, PrivateEquitySalePolicy)
+    spend_policies = enabled_rules_of_type(policy_programs, MonthlySpendPolicy)
     checking_policies = enabled_rules_of_type(policy_programs, CheckingFloorSellPublicStockPolicy)
     remaining_private_equity_fraction = np.ones(rollout_count, dtype="float64")
     remaining_sp500_units = np.divide(
@@ -456,20 +458,19 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
 
         if month > 0:
             for spend_policy in spend_policies:
-                inflation_multiplier = (
-                    market_bundle.inflation_multipliers[:, month]
-                    if spend_policy.inflation_adjusted
-                    else np.ones(rollout_count, dtype="float64")
+                spend_decision = monthly_spend_debit_instruction(
+                    spend_policy, inflation_multiplier=market_bundle.inflation_multipliers[:, month]
                 )
-                spend_amount = float(spend_policy.monthly_spend_usd) * inflation_multiplier
-                current_cash = current_cash - spend_amount
-                monthly_spend_arr[:, month] = monthly_spend_arr[:, month] + spend_amount
+                spend_application = apply_debit_account_instruction(spend_decision.debit, current_cash_usd=current_cash)
+                current_cash = spend_application.current_cash_usd
+                spend_ledger = spend_application.ledger_entries[0]
+                monthly_spend_arr[:, month] = monthly_spend_arr[:, month] - spend_ledger.amount_usd
                 _record_monthly_spend_actions(
                     actions,
                     month_index=int(month_index[month]),
                     policy=spend_policy,
-                    amount_usd=spend_amount,
-                    inflation_multiplier=inflation_multiplier,
+                    amount_usd=spend_application.debit_usd,
+                    inflation_multiplier=spend_decision.inflation_multiplier,
                 )
 
         private_equity_value_before_sale = (

@@ -661,12 +661,20 @@ Remaining before this slice is fully ledger-backed:
 
 ### Step 3: Move Monthly Spend to Debit Instructions
 
-Refactor `MonthlySpendPolicy` into a policy rule that emits
-`TransferCashInstruction` or `DebitAccountInstruction` from the actor's chosen
-cash account. The applier records spend ledger entries and updates cash.
+**DONE (first slice)**: `MonthlySpendPolicy` now evaluates through the policy
+runtime and emits a `DebitAccountInstructionBatch` against the actor's checking
+account. The debit applier records a cash ledger entry and updates cash.
 
-Acceptance: multiple monthly-spend policies remain legal and run in program
-order; spend arrays are derived from ledger totals.
+Acceptance met for the current checking-account model: multiple monthly-spend
+policies remain legal and run in actor program order; spend arrays are derived
+from the cash ledger entry emitted by the debit applier.
+
+Remaining before this is a complete account model:
+
+- Replace the single scenario cash array with named cash/account state so a
+  policy can choose a specific funding account.
+- Persist ledger entries into public result detail once the result API exposes
+  a ledger view.
 
 ### Step 4: Move Private-Equity Sales to Opportunity + Instruction
 
