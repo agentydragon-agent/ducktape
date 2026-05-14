@@ -51,10 +51,9 @@ py_library(
 
 py_binary(
     name = "frontmatter_validation_bin",
-    srcs = ["frontmatter_validation.py"],
-    main = "frontmatter_validation.py",
+    main_module = "skills.frontmatter_validation",
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pyyaml"],
+    deps = [":frontmatter_validation"],
 )
 
 py_library(
