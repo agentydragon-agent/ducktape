@@ -21,11 +21,13 @@ from augur.core.policy_runtime import (
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
     apply_mortgage_payment,
+    apply_partner_house_cost_contribution,
     apply_private_equity_sale_instruction,
     apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
     enabled_rules_of_type,
     monthly_spend_debit_instruction,
+    partner_contribution_instruction,
     private_equity_sale_instruction,
     private_equity_sale_opportunity,
 )
@@ -973,13 +975,17 @@ def _partner_equity_arrays(
     house_uses = (
         mortgage_interest_usd + mortgage_principal_usd + property_tax_usd + hoa_usd + insurance_usd + maintenance_usd
     )
-    contribution_used = np.where(active, np.minimum(configured_payment, house_uses), 0.0)
-    unallocated_excess = np.where(active, np.maximum(0.0, configured_payment - contribution_used), 0.0)
-    contribution_share = np.divide(
-        contribution_used, house_uses, out=np.zeros_like(contribution_used), where=house_uses > 0
+    contribution_instruction = partner_contribution_instruction(
+        policy, recipient_actor_id=_primary_owner_actor_id(scenario), contribution_usd=configured_payment
     )
-    principal_credit = mortgage_principal_usd * contribution_share
-    owner_principal = mortgage_principal_usd - principal_credit
+    contribution_application = apply_partner_house_cost_contribution(
+        contribution_instruction, house_costs_usd=house_uses, mortgage_principal_usd=mortgage_principal_usd
+    )
+    contribution_used = contribution_application.contribution_used_usd
+    unallocated_excess = contribution_application.unallocated_excess_usd
+    contribution_share = contribution_application.house_cost_share
+    principal_credit = contribution_application.principal_credit_usd
+    owner_principal = contribution_application.owner_principal_usd
     partner_equity_ledger = np.cumsum(principal_credit, axis=1)
     owner_equity_ledger = owner_initial_equity_usd + np.cumsum(owner_principal, axis=1)
     total_equity_ledger = partner_equity_ledger + owner_equity_ledger

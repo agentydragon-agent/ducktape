@@ -11,6 +11,7 @@ from augur.core.scenario_set import (
     EventType,
     FixedAmountPrivateEquitySaleRule,
     MonthlySpendPolicy,
+    PartnerEquityAccrualPolicy,
     Policy,
     PrivateEquitySalePolicy,
     Scenario,
@@ -44,6 +45,15 @@ class DebitAccountInstructionBatch:
     actor_id: str
     policy_id: str
     account_type: AccountType
+    amount_usd: np.ndarray
+    category: str
+
+
+@dataclass(frozen=True)
+class TransferCashInstructionBatch:
+    actor_id: str
+    policy_id: str
+    recipient_actor_id: str
     amount_usd: np.ndarray
     category: str
 
@@ -136,6 +146,18 @@ class PropertyOperatingCashFlowApplication:
 
 
 @dataclass(frozen=True)
+class PartnerHouseCostContributionApplication:
+    transfer: TransferCashInstructionBatch
+    house_costs_usd: np.ndarray
+    contribution_used_usd: np.ndarray
+    unallocated_excess_usd: np.ndarray
+    house_cost_share: np.ndarray
+    principal_credit_usd: np.ndarray
+    owner_principal_usd: np.ndarray
+    ledger_entries: tuple[LedgerEntryBatch, ...]
+
+
+@dataclass(frozen=True)
 class PrivateEquitySaleApplication:
     sale_usd: np.ndarray
     basis_usd: np.ndarray
@@ -195,6 +217,18 @@ def monthly_spend_debit_instruction(
     return MonthlySpendDecisionBatch(debit=debit, inflation_multiplier=applied_multiplier)
 
 
+def partner_contribution_instruction(
+    policy: PartnerEquityAccrualPolicy, *, recipient_actor_id: str, contribution_usd: np.ndarray
+) -> TransferCashInstructionBatch:
+    return TransferCashInstructionBatch(
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        recipient_actor_id=recipient_actor_id,
+        amount_usd=contribution_usd,
+        category="partner_contribution",
+    )
+
+
 def apply_debit_account_instruction(
     instruction: DebitAccountInstructionBatch, *, current_cash_usd: np.ndarray
 ) -> DebitAccountApplication:
@@ -212,6 +246,58 @@ def apply_debit_account_instruction(
         current_cash_usd=current_cash_usd - instruction.amount_usd,
         debit_usd=instruction.amount_usd,
         ledger_entries=(ledger_entry,),
+    )
+
+
+def apply_partner_house_cost_contribution(
+    instruction: TransferCashInstructionBatch, *, house_costs_usd: np.ndarray, mortgage_principal_usd: np.ndarray
+) -> PartnerHouseCostContributionApplication:
+    contribution_used_usd = np.minimum(instruction.amount_usd, house_costs_usd)
+    unallocated_excess_usd = np.maximum(0.0, instruction.amount_usd - contribution_used_usd)
+    house_cost_share = np.divide(
+        contribution_used_usd, house_costs_usd, out=np.zeros_like(contribution_used_usd), where=house_costs_usd > 0
+    )
+    principal_credit_usd = mortgage_principal_usd * house_cost_share
+    owner_principal_usd = np.maximum(0.0, mortgage_principal_usd - principal_credit_usd)
+    ledger_entries = (
+        LedgerEntryBatch(
+            actor_id=instruction.actor_id,
+            policy_id=instruction.policy_id,
+            domain="cash",
+            amount_usd=-instruction.amount_usd,
+            category="partner_contribution_transfer",
+        ),
+        LedgerEntryBatch(
+            actor_id=instruction.recipient_actor_id,
+            policy_id=instruction.policy_id,
+            domain="cash",
+            amount_usd=contribution_used_usd,
+            category="partner_contribution_used_for_house_costs",
+        ),
+        LedgerEntryBatch(
+            actor_id=instruction.recipient_actor_id,
+            policy_id=instruction.policy_id,
+            domain="escrow",
+            amount_usd=unallocated_excess_usd,
+            category="partner_contribution_unallocated",
+        ),
+        LedgerEntryBatch(
+            actor_id=instruction.actor_id,
+            policy_id=instruction.policy_id,
+            domain="ownership",
+            amount_usd=principal_credit_usd,
+            category="partner_principal_credit",
+        ),
+    )
+    return PartnerHouseCostContributionApplication(
+        transfer=instruction,
+        house_costs_usd=house_costs_usd,
+        contribution_used_usd=contribution_used_usd,
+        unallocated_excess_usd=unallocated_excess_usd,
+        house_cost_share=house_cost_share,
+        principal_credit_usd=principal_credit_usd,
+        owner_principal_usd=owner_principal_usd,
+        ledger_entries=ledger_entries,
     )
 
 

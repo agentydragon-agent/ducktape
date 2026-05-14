@@ -733,16 +733,22 @@ carrying-cost arrays are produced by an applier with ledger entries.
 
 ### Step 6: Move Partner Equity to Contract Instructions
 
+**DONE (first slice)**: Partner contributions now compile into a
+`TransferCashInstructionBatch`, and house-cost allocation runs through
+`apply_partner_house_cost_contribution()`. That applier records contribution
+transfer, used house-cost funding, unallocated escrow, and partner principal
+credit ledger entries while preserving the existing aggregate result arrays and
+actions.
+
 Refactor partner equity as a policy/contract rule:
 
-- The partner contribution rule emits a cash-transfer instruction.
-- The house-cost applier allocates the transfer against current eligible costs.
 - The ownership applier credits principal share into a per-partner ledger.
 - Unallocated contribution excess is recorded as cash, escrow, refund, or an
   explicit liability according to the modeled agreement.
 
-Acceptance: partner-equity outputs are keyed by partner actor or derivable from
-ledger entries; multiple partner agreements are no longer silently collapsed.
+Remaining acceptance: partner-equity outputs are keyed by partner actor or
+derivable from ledger entries; multiple partner agreements are no longer
+silently collapsed.
 
 ### Step 7: Make Arrays Reconcile to Ledger
 

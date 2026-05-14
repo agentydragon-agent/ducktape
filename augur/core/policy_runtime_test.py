@@ -8,11 +8,13 @@ from augur.core.policy_runtime import (
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
     apply_mortgage_payment,
+    apply_partner_house_cost_contribution,
     apply_private_equity_sale_instruction,
     apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
     enabled_rules_of_type,
     monthly_spend_debit_instruction,
+    partner_contribution_instruction,
     private_equity_sale_instruction,
     private_equity_sale_opportunity,
 )
@@ -24,6 +26,7 @@ from augur.core.scenario_set import (
     CheckingFloorSellPublicStockPolicy,
     FixedAmountPrivateEquitySaleRule,
     MonthlySpendPolicy,
+    PartnerEquityAccrualPolicy,
     PrivateEquitySalePolicy,
     Scenario,
 )
@@ -132,6 +135,39 @@ def test_mortgage_payment_application_records_cash_and_liability_ledger() -> Non
     np.testing.assert_allclose(result.ledger_entries[0].amount_usd, [-0.0, -2_000.0])
     np.testing.assert_allclose(result.ledger_entries[1].amount_usd, [-0.0, -500.0])
     np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [-0.0, -500.0])
+
+
+def test_partner_contribution_instruction_applies_house_costs_and_principal_credit() -> None:
+    policy = PartnerEquityAccrualPolicy(policy_id="partner_equity", actor_id="beta", base_monthly_payment_usd=1_000)
+    instruction = partner_contribution_instruction(
+        policy, recipient_actor_id="alpha", contribution_usd=np.array([0.0, 1_000.0, 3_000.0])
+    )
+
+    result = apply_partner_house_cost_contribution(
+        instruction,
+        house_costs_usd=np.array([0.0, 2_000.0, 2_000.0]),
+        mortgage_principal_usd=np.array([0.0, 400.0, 500.0]),
+    )
+
+    assert instruction.actor_id == "beta"
+    assert instruction.recipient_actor_id == "alpha"
+    assert instruction.policy_id == "partner_equity"
+    assert instruction.category == "partner_contribution"
+    np.testing.assert_allclose(result.contribution_used_usd, [0.0, 1_000.0, 2_000.0])
+    np.testing.assert_allclose(result.unallocated_excess_usd, [0.0, 0.0, 1_000.0])
+    np.testing.assert_allclose(result.house_cost_share, [0.0, 0.5, 1.0])
+    np.testing.assert_allclose(result.principal_credit_usd, [0.0, 200.0, 500.0])
+    np.testing.assert_allclose(result.owner_principal_usd, [0.0, 200.0, 0.0])
+    assert [(entry.actor_id, entry.domain, entry.category) for entry in result.ledger_entries] == [
+        ("beta", "cash", "partner_contribution_transfer"),
+        ("alpha", "cash", "partner_contribution_used_for_house_costs"),
+        ("alpha", "escrow", "partner_contribution_unallocated"),
+        ("beta", "ownership", "partner_principal_credit"),
+    ]
+    np.testing.assert_allclose(result.ledger_entries[0].amount_usd, [-0.0, -1_000.0, -3_000.0])
+    np.testing.assert_allclose(result.ledger_entries[1].amount_usd, [0.0, 1_000.0, 2_000.0])
+    np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [0.0, 0.0, 1_000.0])
+    np.testing.assert_allclose(result.ledger_entries[3].amount_usd, [0.0, 200.0, 500.0])
 
 
 def test_property_operating_cash_flow_application_records_cash_ledger() -> None:
