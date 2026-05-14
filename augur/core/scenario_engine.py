@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -706,6 +706,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         - disposition.property_sale_debt_payoff_usd
         - property_sale_tax
     )
+    partner_equity = _settle_partner_equity_on_property_sale(
+        partner_equity, sale_month=disposition.sale_month, property_sale_net_proceeds_usd=property_sale_net_proceeds
+    )
     net_property_sale_cash_flow = property_sale_net_proceeds
     tax_cash_adjustment = np.cumsum(
         (disposition.property_sale_tax_usd - property_sale_tax)
@@ -1331,6 +1334,49 @@ def _partner_equity_arrays(
         home_equity_claim_usd=home_equity_claim,
         owner_home_equity_claim_usd=home_equity_usd - home_equity_claim,
         agreements=tuple(agreements),
+    )
+
+
+def _settle_partner_equity_on_property_sale(
+    partner_equity: PartnerEquityArrays, *, sale_month: int | None, property_sale_net_proceeds_usd: np.ndarray
+) -> PartnerEquityArrays:
+    if sale_month is None or not partner_equity.agreements:
+        return partner_equity
+
+    agreements = tuple(
+        _settle_partner_equity_agreement_on_property_sale(
+            agreement, sale_month=sale_month, property_sale_net_proceeds_usd=property_sale_net_proceeds_usd
+        )
+        for agreement in partner_equity.agreements
+    )
+    partner_home_equity_claim_usd = sum(
+        (agreement.home_equity_claim_usd for agreement in agreements),
+        start=np.zeros_like(partner_equity.home_equity_claim_usd),
+    )
+    owner_home_equity_claim_usd = partner_equity.owner_home_equity_claim_usd.copy()
+    sale_net_proceeds = property_sale_net_proceeds_usd[:, sale_month]
+    owner_home_equity_claim_usd[:, sale_month:] = (
+        sale_net_proceeds[:, None] - partner_home_equity_claim_usd[:, sale_month:]
+    )
+    return replace(
+        partner_equity,
+        home_equity_claim_usd=partner_home_equity_claim_usd,
+        owner_home_equity_claim_usd=owner_home_equity_claim_usd,
+        agreements=agreements,
+    )
+
+
+def _settle_partner_equity_agreement_on_property_sale(
+    agreement: PartnerEquityAgreementArrays, *, sale_month: int, property_sale_net_proceeds_usd: np.ndarray
+) -> PartnerEquityAgreementArrays:
+    home_equity_claim_usd = agreement.home_equity_claim_usd.copy()
+    owner_home_equity_claim_usd = agreement.owner_home_equity_claim_usd.copy()
+    sale_net_proceeds = property_sale_net_proceeds_usd[:, sale_month]
+    partner_sale_claim = np.maximum(0.0, sale_net_proceeds) * agreement.ownership_pct[:, sale_month]
+    home_equity_claim_usd[:, sale_month:] = partner_sale_claim[:, None]
+    owner_home_equity_claim_usd[:, sale_month:] = sale_net_proceeds[:, None] - partner_sale_claim[:, None]
+    return replace(
+        agreement, home_equity_claim_usd=home_equity_claim_usd, owner_home_equity_claim_usd=owner_home_equity_claim_usd
     )
 
 

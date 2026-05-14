@@ -794,6 +794,17 @@ allocates the incremental federal/CA tax back to the sale months and sale
 sources. Monthly and terminal result columns now expose federal, California,
 total income tax, SP500 sale tax, PE sale tax, and property-sale tax.
 
+**DONE (response serialization coverage)**: The public `simulate_set()`
+response payload now has e2e coverage for one-rollout sale action detail across
+SP500 sales, private-equity sales, and `settle_property_sale` actions with tax
+fields.
+
+**DONE (partner sale-claim slice)**: Partner sale claims now settle against the
+tax-adjusted property sale net proceeds instead of mark-to-market home equity.
+From the sale month onward, partner and owner claim arrays allocate the
+`SettlePropertySaleAction` / property settlement net proceeds after transaction
+costs, debt payoff, depreciation recapture tax, and capital-gains tax.
+
 Refactor partner equity as a policy/contract rule:
 
 - Unallocated contribution excess is recorded as cash, escrow, refund, or an
@@ -809,13 +820,6 @@ Refactor partner equity as a policy/contract rule:
   reporting for interest, tax, insurance, HOA, and maintenance. The deleted
   side path reported those slices; the current core exposes total house costs,
   contribution used, house-cost share, and principal credit.
-- Reimplement partner sale-claim allocation against `SettlePropertySaleAction`
-  / property sale settlement net proceeds instead of mark-to-market home
-  equity. This should allocate from proceeds after transaction costs, debt
-  payoff, depreciation recapture tax, and capital-gains tax.
-- Add a serialization/e2e assertion for the `settle_property_sale` action in
-  the public `simulate_set()` response payload, not only the in-memory action
-  model.
 - Refresh `augur/SPEC.md` once the scenario-set simulator's public promises
   around policies, sale taxes, and one-rollout action detail stabilize.
 - Clean up private-equity event vocabulary. TODO: make liquidity opportunities,

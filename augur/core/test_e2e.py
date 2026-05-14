@@ -512,6 +512,72 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     np.testing.assert_allclose(action.net_proceeds_usd, sale_value - sale_closing_cost - sale_tax)
 
 
+def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
+    """A partner sale claim is allocated from actual sale proceeds, not unsold home equity."""
+    purchase_price = 100_000
+    sale_month = 3
+    scenario = Scenario(
+        scenario_id="partner_sale_claim",
+        label="Partner Sale Claim",
+        actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
+        events=(PropertySaleEvent(event_id="sale", month_index=sale_month, property_id="test_property"),),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=LocationId.VALLEJO_CA, purchase_price_usd=purchase_price
+        ),
+        financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=0),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=10),
+        property_assumptions=PropertyAssumptions(insurance_annual_usd=0, maintenance_pct=0),
+        tax_profile=TaxProfile(cap_gains_exclusion_usd=0),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=40_000
+                ),
+            )
+        ),
+        policies=(
+            PartnerEquityAccrualPolicy(
+                policy_id="partner_equity",
+                actor_id="beta",
+                property_id="test_property",
+                base_monthly_payment_usd=1_000,
+                occupied_months=sale_month,
+                grow_with_inflation=False,
+            ),
+        ),
+    )
+    result = _run_scenario(
+        scenario, horizon_months=4, market_provider=NoopMarketBundleProvider(home_path=(1.0, 1.0, 1.0, 2.0, 2.5))
+    )
+
+    rollout = result.rollout(0)
+    sale_action = rollout.actions(SettlePropertySaleAction)[0]
+    sale_net_proceeds = sale_action.net_proceeds_usd
+    ownership_pct = rollout.series("partner_ownership_pct")[sale_month]
+    expected_partner_claim = sale_net_proceeds * ownership_pct
+    expected_owner_claim = sale_net_proceeds - expected_partner_claim
+    gross_equity_claim = rollout.series("home_equity_usd")[sale_month] * ownership_pct
+
+    np.testing.assert_allclose(rollout.series("property_sale_net_proceeds_usd")[sale_month], sale_net_proceeds)
+    assert sale_net_proceeds < rollout.series("home_equity_usd")[sale_month]
+    assert not np.isclose(expected_partner_claim, gross_equity_claim)
+    np.testing.assert_allclose(rollout.series("partner_home_equity_claim_usd")[sale_month], expected_partner_claim)
+    np.testing.assert_allclose(rollout.series("owner_home_equity_claim_usd")[sale_month], expected_owner_claim)
+    np.testing.assert_allclose(
+        rollout.series("partner_home_equity_claim_usd")[sale_month]
+        + rollout.series("owner_home_equity_claim_usd")[sale_month],
+        sale_net_proceeds,
+    )
+    np.testing.assert_allclose(rollout.series("partner_home_equity_claim_usd")[4], expected_partner_claim)
+    np.testing.assert_allclose(rollout.series("owner_home_equity_claim_usd")[4], expected_owner_claim)
+
+    sale_month_accruals = [
+        action for action in rollout.actions(AccruePartnerEquityAction) if action.month_index == sale_month
+    ]
+    assert len(sale_month_accruals) == 1
+    np.testing.assert_allclose(sale_month_accruals[0].home_equity_claim_usd_after, expected_partner_claim)
+
+
 def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None:
     """The public response payload preserves per-rollout action details for UI inspection."""
     scenario = Scenario(
