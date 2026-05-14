@@ -3421,6 +3421,42 @@ fn collect_local_binding_names(body: &[ModuleItem]) -> BTreeSet<String> {
         fn visit_binding_ident(&mut self, ident: &BindingIdent) {
             self.names.insert(ident.id.sym.to_string());
         }
+
+        fn visit_class_decl(&mut self, decl: &ClassDecl) {
+            self.names.insert(decl.ident.sym.to_string());
+            decl.class.visit_with(self);
+        }
+
+        fn visit_class_expr(&mut self, expr: &ClassExpr) {
+            if let Some(ident) = &expr.ident {
+                self.names.insert(ident.sym.to_string());
+            }
+            expr.class.visit_with(self);
+        }
+
+        fn visit_fn_decl(&mut self, decl: &FnDecl) {
+            self.names.insert(decl.ident.sym.to_string());
+            decl.function.visit_with(self);
+        }
+
+        fn visit_fn_expr(&mut self, expr: &FnExpr) {
+            if let Some(ident) = &expr.ident {
+                self.names.insert(ident.sym.to_string());
+            }
+            expr.function.visit_with(self);
+        }
+
+        fn visit_import_default_specifier(&mut self, specifier: &ImportDefaultSpecifier) {
+            self.names.insert(specifier.local.sym.to_string());
+        }
+
+        fn visit_import_named_specifier(&mut self, specifier: &ImportNamedSpecifier) {
+            self.names.insert(specifier.local.sym.to_string());
+        }
+
+        fn visit_import_star_as_specifier(&mut self, specifier: &ImportStarAsSpecifier) {
+            self.names.insert(specifier.local.sym.to_string());
+        }
     }
 
     let mut collector = Collector {

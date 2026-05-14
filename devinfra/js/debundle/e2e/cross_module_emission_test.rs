@@ -324,6 +324,56 @@ export { aH, bC };
 }
 
 #[test]
+fn readable_import_avoids_top_level_function_decl_collision() {
+    // Collision shape:
+    //
+    //   provider exports a as sharedReadableName
+    //   consumer owns b, also exported as sharedReadableName, and calls a.
+    //
+    // The consumer module must alias the imported provider binding; otherwise the
+    // emitted module declares the same lexical name twice and Chromium rejects
+    // it with "Identifier 'sharedReadableName' has already been declared".
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function a() {
+  return "provider";
+}
+function b() {
+  return "local";
+}
+function c() {
+  return a() + ":" + b();
+}
+console.log(c());
+export { a, b, c };
+"#,
+        vec![
+            logical_module("provider", &[Member::renamed("sharedReadableName", "a")]),
+            logical_module(
+                "consumer",
+                &[
+                    Member::renamed("sharedReadableName", "b"),
+                    Member::renamed("run", "c"),
+                ],
+            ),
+        ],
+    ));
+    let consumer = fs::read_to_string(fixture.out_root.join("static/app/modules/consumer.js"))
+        .expect("read consumer module");
+
+    parse_module(&consumer);
+    assert_unique_lexical_decls_per_scope(&consumer, "sharedReadableName");
+    assert!(
+        consumer.contains("sharedReadableName as sharedReadableName$1"),
+        "expected imported readable name to be aliased away from local function decl; got:\n{consumer}",
+    );
+    assert!(
+        consumer.contains("sharedReadableName$1() + \":\" + sharedReadableName()"),
+        "expected provider refs to use import alias and local refs to stay local; got:\n{consumer}",
+    );
+    assert_entry_output(&fixture, "provider:local\n");
+}
+
+#[test]
 fn does_not_collapse_two_distinct_locals_onto_the_same_readable_name() {
     // Two heuristic readable-rename rules pick the same target
     // for different inputs (`o → readable` from destructuring,
@@ -557,17 +607,17 @@ export { bridge };
 
 #[test]
 fn residual_public_export_name_does_not_capture_unrelated_chunk_renamed_import() {
-    // Tana-shaped collision:
+    // Collision shape:
     //
-    //   import { o as B } from "./vendor.js";  // source local B = observer()
+    //   import { o as B } from "./vendor.js";  // source local B = vendor helper
     //   const St = ...;                        // residual entry helper
     //   export { St as B };                    // public entry export B
     //
     // The two `B`s live in different namespaces. The moved body needs
     // `St` from entry and the vendor import local `B`; chunk_renames
-    // then naturalizes them to `DialogButtonRow` and `mobxObserver`.
-    // The entry import must therefore be `B as DialogButtonRow`, not
-    // `B as mobxObserver`.
+    // then naturalizes them to `entryHelper` and `vendorHelper`.
+    // The entry import must therefore be `B as entryHelper`, not
+    // `B as vendorHelper`.
     let opts = FixtureOpts {
         source: r#"import { o as B } from "./vendor.js";
 const St = value => "row:" + value;
@@ -577,18 +627,18 @@ function Ite() {
 export { St as B, Ite };
 "#,
         logical_modules: vec![logical_module(
-            "commands/navigation/where_is",
-            &[Member::renamed("whereIsCommand", "Ite")],
+            "feature/consumer",
+            &[Member::renamed("runConsumer", "Ite")],
         )],
         chunk_renames: Some(json!({
             "id": "chunk_renames__static_app",
             "members": [
                 {
-                    "name": "mobxObserver",
+                    "name": "vendorHelper",
                     "selector": { "binding": { "name": "B", "kind": "import_specifier" } },
                 },
                 {
-                    "name": "DialogButtonRow",
+                    "name": "entryHelper",
                     "selector": { "binding": { "name": "St" } },
                 },
             ],
@@ -598,7 +648,7 @@ export { St as B, Ite };
         extra_files: &[(
             "static/app/vendor.js",
             r#"export function o(value) {
-  return "observed:" + value;
+  return "wrapped:" + value;
 }
 "#,
         )],
@@ -608,30 +658,30 @@ export { St as B, Ite };
     let moved = fs::read_to_string(
         fixture
             .out_root
-            .join("static/app/modules/commands/navigation/where_is.js"),
+            .join("static/app/modules/feature/consumer.js"),
     )
-    .expect("read moved where_is module");
+    .expect("read moved consumer module");
     parse_module(&moved);
     assert_unique_import_locals(&moved);
 
     assert!(
-        moved.contains("B as DialogButtonRow"),
+        moved.contains("B as entryHelper"),
         "entry's public export B must be imported under its entry-local name; got:\n{moved}",
     );
     assert!(
-        moved.contains("o as mobxObserver"),
-        "vendor import local B must keep the mobxObserver readable name; got:\n{moved}",
+        moved.contains("o as vendorHelper"),
+        "vendor import local B must keep the vendor-helper readable name; got:\n{moved}",
     );
     assert!(
-        !moved.contains("B as mobxObserver"),
-        "entry export B must not be mistaken for the vendor observer binding; got:\n{moved}",
+        !moved.contains("B as vendorHelper"),
+        "entry export B must not be mistaken for the vendor binding; got:\n{moved}",
     );
     assert_generated_module_after_entry_script(
         &fixture.out_root,
-        r#"const { whereIsCommand } = await import("./static/app/modules/commands/navigation/where_is.js");
-console.log(whereIsCommand());
+        r#"const { runConsumer } = await import("./static/app/modules/feature/consumer.js");
+console.log(runConsumer());
 "#,
-        "row:observed:ok\n",
+        "row:wrapped:ok\n",
     );
 }
 
