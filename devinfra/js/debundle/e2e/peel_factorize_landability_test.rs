@@ -20,6 +20,10 @@
 //! 3. **Multi-prereq closure** — same shape with two independent
 //!    prerequisites, pinning that a blocked consumer can absorb all
 //!    small prerequisites at once.
+//! 4. **Shared-prereq closure** — two blocked consumers share the
+//!    same small prerequisite; the factorizer should merge the
+//!    whole closure instead of leaving the prerequisite as a
+//!    singleton leaf.
 
 use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
@@ -187,6 +191,61 @@ export { anchor, consumer };
                     Member::new("dep_a"),
                     Member::new("dep_b"),
                     Member::new("consumer"),
+                ],
+            ),
+        ],
+    );
+    let _ = run_fixture(promoted_opts);
+}
+
+#[test]
+fn factorizer_combines_multiple_consumers_with_shared_prerequisite_when_under_cap() {
+    // `shared` is a small residual prerequisite used by two residual
+    // consumers. Promoting either consumer alone would leave a
+    // residual dependency, and promoting only {shared, consumer_a}
+    // would still leave consumer_b blocked. The useful factor is the
+    // full shared-prerequisite closure.
+    let chunk_source = r#"const anchor = "anchor";
+const shared = "shared";
+const consumer_a = shared + "/a";
+const consumer_b = shared + "/b";
+export { anchor, consumer_a, consumer_b };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 2000);
+
+    let combined = report
+        .proposals
+        .iter()
+        .find(|p| {
+            p.binding_ids.contains(&"shared".to_string())
+                && p.binding_ids.contains(&"consumer_a".to_string())
+                && p.binding_ids.contains(&"consumer_b".to_string())
+        })
+        .expect("factorizer should combine both consumers with their shared prerequisite");
+    assert!(
+        combined.landable_today,
+        "combined shared-prerequisite closure must be landable; got {combined:?}",
+    );
+
+    let promoted_opts = FixtureOpts::new(
+        chunk_source,
+        vec![
+            logical_module("anchors/anchor", &[Member::new("anchor")]),
+            logical_module(
+                "helpers/shared_consumer_closure",
+                &[
+                    Member::new("shared"),
+                    Member::new("consumer_a"),
+                    Member::new("consumer_b"),
                 ],
             ),
         ],
