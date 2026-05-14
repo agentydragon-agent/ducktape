@@ -44,8 +44,8 @@ pub struct UnifiedArgs {
     #[arg(long = "modules")]
     pub modules_root: PathBuf,
 
-    /// Hard line ceiling per emitted cell (factorize view).
-    #[arg(long = "size-cap-lines", default_value_t = 2000)]
+    /// Hard line ceiling per emitted proposal (factorize view).
+    #[arg(long = "size-cap-lines", default_value_t = 10_000)]
     pub size_cap_lines: usize,
 
     /// Row limit (horizon and inventory views).

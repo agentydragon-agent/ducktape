@@ -2833,6 +2833,44 @@ mod tests {
     }
 
     #[test]
+    fn factorize_reports_size_cap_closure_as_diagnostic_not_partial_proposal() {
+        let schedule = schedule_for(
+            r#"const dep_a = "left";
+const dep_b = "right";
+function consumer() { return dep_a + dep_b; }"#,
+            &[],
+        )
+        .with_pre_existing_entry_exports(BTreeSet::new());
+        let report = schedule
+            .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
+
+        assert!(
+            report
+                .factorize
+                .diagnostics
+                .iter()
+                .any(
+                    |diagnostic| diagnostic.reason == FactorizeDiagnosticReason::ExceedsSizeCap
+                        && diagnostic
+                            .binding_ids
+                            .iter()
+                            .any(|binding| binding == "consumer")
+                ),
+            "size-cap exact closure should be diagnostic-only: {:#?}",
+            report.factorize,
+        );
+        assert!(
+            !report
+                .factorize
+                .cells
+                .iter()
+                .any(|cell| cell.binding_ids == vec!["consumer".to_string()]),
+            "factorize must not emit a partial singleton proposal for a size-capped closure: {:#?}",
+            report.factorize,
+        );
+    }
+
+    #[test]
     fn schedule_report_serializes_linker_order_as_snake_case() {
         let schedule = schedule_for(
             "const A = 1; const B = A + 1;",

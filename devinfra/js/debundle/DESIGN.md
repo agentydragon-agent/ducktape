@@ -261,8 +261,10 @@ The owner graph is the right abstraction for tooling:
 
 - "Can this thing be peeled?" is a proposed reassignment of one or
   more owner vertices.
-- "What else must move with it?" is a closure/SCC/cut question over
-  owner-level read and side-effect edges.
+- "What else must move with it?" is a candidate-construction
+  question over owner-level read, write, and side-effect edges. The
+  answer is not proof by itself; the resulting assignment must still
+  be checked by the same quotient validator as a handwritten spec.
 - "Why did this fail?" should point at owner-level edges first, then
   at the derived module edge they induced.
 
@@ -1068,31 +1070,205 @@ A destination assignment is **valid** iff:
    at-init read, rebinding write, or side-effect-order edge may remain
    inside a multi-destination SCC.
 
-A peel is just a proposed destination assignment for a candidate
-owner set. The peel is valid exactly when the resulting assignment
-is valid by the definition above. Invalid peels have two primary
-explanations: a non-importable read crosses the cut, a rebinding
-write crosses the cut, or a constraining edge remains in a quotient
-SCC.
+A peel is just a proposed destination assignment for an owner set.
+The peel is valid exactly when the resulting assignment is valid by
+the definition above. Invalid peels have three primary explanations:
+a non-importable read crosses the cut, a rebinding write crosses the
+cut, or a constraining edge remains in a quotient SCC.
 
-The same definition gives a graph-theoretic target for "smallest
-atomic modules that are still valid." Start from the finest
-partition of owners allowed by syntax. Then repeatedly:
+This definition is intentionally a predicate over a complete
+destination assignment, not a single graph-factorization trick. Some
+relations are true equivalence constraints:
 
-1. Union the endpoints of every read edge that cannot be made
-   importable under the current export policy.
-2. Quotient by the current partition and find SCCs.
-3. For every constraining cross edge that lies inside a quotient
-   SCC, union that edge's endpoints.
+- Rebinding edges force colocation because ESM imports are read-only.
+- SCCs of at-init/side-effect constraints can force colocation when a
+  split would leave a constraining edge inside a quotient SCC.
 
-When this reaches a fixed point, the partition is the finest valid
-partition under the current edge labels and importability policy:
-any valid assignment must coarsen it. The key graph fact is that
-quotienting preserves reachability between distinct blocks; if a
-constraining edge's endpoints remain in different blocks and the
-target can still reach the source, that edge remains inside an
-unrealizable SCC. Collapsing the constraining edge is therefore
-necessary, and repeating this operation is sufficient.
+Other relations are not equivalence constraints:
+
+- A directed at-init read `A -> B` does not mean `A` and `B` must
+  colocate. It can be satisfied by an import when the quotient stays
+  realizable.
+- A lazy read never constrains evaluation order, but it still emits an
+  import. If the target binding is private to the residual entry, a
+  split containing the lazy consumer is invalid until the provider is
+  colocated or made importable.
+- A side-effect-order edge is an ordering constraint, not a value
+  dependency. It may be satisfiable by the chosen module evaluation
+  order, or it may participate in an unrealizable quotient SCC.
+
+So "factorize the graph" is not the problem statement. The problem is:
+construct owner sets whose induced destination assignment is valid under
+the same static semantics as materialization. The graph is the data
+structure used to compute that proof.
+
+### Factorization proposals
+
+`factorize` exists to propose useful module assignments for code that
+currently lives in the residual/deferred surface. Its output has the
+same correctness contract as a handwritten YAML edit.
+
+Terminology is strict:
+
+- A **proposal** is an owner set plus destination assignment that is
+  already proven valid.
+- A **frontier item** is an internal worklist state that has not yet
+  been proven valid. Frontier items may be grown, rejected, or reported
+  as blocker diagnostics, but they are not proposals.
+- A **diagnostic** may describe why a frontier item failed. It must not
+  be presented as a module assignment the author can land.
+
+Every emitted proposal must satisfy:
+
+1. It corresponds to a concrete destination assignment.
+2. The assignment passes the same validity predicate above:
+   importability, no cross-destination rebinding writes, and no
+   unrealizable quotient SCC.
+3. The proof is static and local to the owner graph. It does not rely
+   on emitting JS, running a browser, or observing production-scale
+   behavior.
+
+The generator may be conservative and miss valid modules. It may not
+emit an invalid module as a proposal.
+
+### Correct factorization algorithm shape
+
+A scalable factorizer should be a certifying closure algorithm over
+precomputed owner-graph indexes:
+
+Proposal generation is not heuristic. The frontiers are generated by a
+deterministic input enumeration and monotone closure under exact static
+obligations. Heuristics are allowed only after certification, for
+ranking or display.
+
+1. Enumerate deterministic frontier starts from the input surface:
+   deferred YAML groups, residual owners, known extension targets, and
+   other explicitly configured surfaces. These starts are not
+   candidates and are never emitted directly.
+2. Close each frontier item under hard local requirements:
+   - include all owners in any atomic unit split by the frontier item;
+   - include owners needed to eliminate cross-destination rebinding
+     writes;
+   - include provider owners for private residual bindings that the
+     frontier item reads, including lazy reads, unless the export
+     policy makes those bindings importable.
+3. Validate the resulting hypothetical assignment with the same
+   quotient/importability predicate used by materialization.
+4. If validation reports a blocker with an exact owner-level repair,
+   grow the frontier item and repeat:
+   - private residual read -> add the binding's provider owner;
+   - atomic-unit split or rebinding split -> add the unit/assigner
+     owners;
+   - constraining quotient cycle -> add a small owner-level cut or
+     companion set, then revalidate.
+5. Emit a proposal only when validation succeeds. Otherwise stop with a
+   diagnostic when the frontier item exceeds the size cap, reaches an
+   active-module conflict the generator is not allowed to rewrite, has
+   no exact repair, or repeats a previous owner set.
+
+The implementation should be staged this way:
+
+1. Build immutable indexes from the owner graph:
+   - owner -> incident owner edges, grouped by edge kind and
+     constraining/non-constraining status;
+   - binding -> provider owner and export/importability metadata;
+   - owner -> current destination;
+   - atomic unit id -> member owners;
+   - owner -> atomic unit id;
+   - destination quotient adjacency with owner-edge provenance.
+2. Build frontier starts. Starts are just worklist seeds; they are not
+   displayed as proposals and do not need to be valid.
+3. Run closure for each start with a queue of exact obligations. Each
+   obligation either adds owners/atomic units, proves that an import is
+   legal, or produces a blocker that the closure logic cannot repair.
+4. Certify the closed owner set by constructing the hypothetical
+   destination assignment and running the shared validity predicate.
+5. When certification fails with an exact repair, enqueue that repair
+   and continue. When it fails without an exact repair, record a
+   diagnostic. When it succeeds, emit a proposal.
+6. Rank and coalesce only emitted proposals. This can prefer fewer
+   files, better names, larger useful reductions, or existing module
+   namespaces, but it must not affect validity.
+
+This is fast enough because the expensive facts are shared: owner
+edges, binding-to-owner, owner-to-destination, atomic units, and
+quotient adjacency are all indexed once per chunk. Each frontier item
+is grown by a monotone worklist and is abandoned as soon as it exceeds
+the review size cap. The search space is a bounded set of certified
+closures, not all subsets of residual owners.
+
+The important invariant is:
+
+> `factorize` emits only certified proposals. A reported module
+> assignment is not a candidate unless the full owner set has already
+> passed exact validation.
+
+This invariant is stronger than "the SCC algorithm found a cluster".
+It also explains why `LazyUse` is subtle: lazy reads should not be
+treated as init-order SCC edges, but they still affect importability
+and therefore proposal validity. A factorizer that simply drops
+`LazyUse` and then emits singleton lazy consumers as peelable is
+incorrect. A factorizer that drops `LazyUse` from the init-order SCC
+closure relation, records the resulting private-residual emit blocker,
+grows the frontier item to include the provider, and validates the
+closed set before emitting can be correct.
+
+### Planned factorization complexity
+
+Let:
+
+- `N` be the number of owners in the chunk.
+- `M` be the number of owner-level dependency edges.
+- `B` be the number of binding/provider/use facts.
+- `U` be the number of atomic units, with `U <= N`.
+- `S` be the number of frontier starts.
+- `K` be the maximum owners/atomic units reached by a frontier before
+  it is emitted or abandoned by the size cap.
+- `E_K` be the number of owner edges incident to those `K` owners.
+- `Q` and `E_Q` be the owner/destination quotient nodes and edges
+  touched by a certification pass.
+- `P` be the number of emitted proposals.
+
+The one-time preprocessing target is:
+
+- build edge, binding, destination, and provenance indexes:
+  `O(N + M + B)`;
+- compute atomic units with Tarjan over constraining owner edges:
+  `O(N + M_constraining)`, bounded by `O(N + M)`;
+- build initial quotient adjacency and reverse indexes:
+  `O(N + M)`.
+
+Each frontier should be monotone: an owner or atomic unit is added at
+most once, and each incident edge is inspected only when it becomes
+relevant. The target per-frontier cost is therefore:
+
+- closure: `O(K + E_K)` plus binding lookups for touched reads;
+- certification: `O(E_K + E_reachable)` when the quotient check can be
+  limited to affected quotient components, with a full fallback of
+  `O(Q + E_Q)`;
+- exact repairs: no asymptotic multiplier beyond closure, because each
+  repair adds new owners/units or terminates that frontier.
+
+The total target cost is:
+
+```text
+O(N + M + B)
+  + O(S * (K + E_K + E_reachable))
+  + O(P log P)
+```
+
+with `O(S * (Q + E_Q))` as the conservative bound if every frontier
+falls back to a full quotient certification pass. The implementation
+must avoid the naive shape `O(S * K * (N + M))`, where every growth step
+reruns whole-graph analysis. If production graphs make full quotient
+certification too common, the fix is incremental component invalidation
+or narrower exact-repair indexing, not weakening proposal soundness.
+
+Implementation status: this section is the target contract. The
+current code has the raw materials (`atomic_units`,
+`evaluate_peel_candidate`, owner-edge provenance, and CLI-side
+proposal status), but `factorize` should be audited against this
+contract before large-factor output is treated as authoritative.
 
 ### Graph operations for peel tooling
 
@@ -1101,25 +1277,25 @@ and only then projected to modules:
 
 - **Quotient:** `G / dest` produces the module graph the validator
   already understands.
-- **Dependency closure:** starting from candidate owners, follow
+- **Dependency closure:** starting from frontier owners, follow
   owner-level read edges that cannot be satisfied by imports. This
   yields the smallest "must move together" set for private residual
   dependencies.
-- **SCC:** run on either the owner graph or the candidate quotient.
+- **SCC:** run on either the owner graph or the hypothetical quotient.
   Owner-level SCCs identify mutually-recursive or mutually-dependent
   clusters; quotient SCCs identify ESM realizability hazards.
 - **Cut:** for an unrealizable quotient SCC, compute a small set of
   owner-level `at_init` or side-effect-order edges whose removal or
   colocation would make the split valid. The existing module-level
   feedback-arc cut should be reported with owner-edge provenance.
-- **Ranking:** once validity is known, rank safe candidates by
+- **Ranking:** once validity is known, rank safe proposals by
   emitted-size reduction, number of owners, name quality, and whether
   the target path matches an existing human module namespace. Ranking
   is heuristic; validity is not.
 
 These operations are pure graph transforms over immutable analysis
 data. That property matters operationally: two tools reading the same
-owner graph and candidate assignments should produce the same
+owner graph and destination assignments should produce the same
 peelability status without building emitted JS.
 
 ## Selector vocabulary and matching
@@ -2239,7 +2415,15 @@ exploration before crossing the relevant phase.
    property and reintroduces narrowing, so the model would need
    to either bipartite-force across pattern selectors or ban
    ambiguity. Deferred until a real Tana spec demands it.
-6. **Constraining-graph-sink refinement.** Some anonymous
+6. **Factorize soundness audit.** `factorize` must be brought fully
+   into line with [Factorization proposals](#factorization-proposals).
+   The audit should pin tests for the invariant: every emitted
+   proposal is accepted by the same owner-graph quotient predicate as
+   a handwritten spec, without relying on production-scale browser
+   loads to discover invalid splits. Internal frontier states may be
+   numerous and rejected, but generated proposals must all be
+   certified.
+7. **Constraining-graph-sink refinement.** Some anonymous
    statements (Sentry debug-id IIFE, Vite modulepreload polyfill)
    are sinks in the constraining edge graph: they have side
    effects but no observable cross-binding deps. An s-edge from
@@ -2251,7 +2435,7 @@ exploration before crossing the relevant phase.
    selectors because their companions (decorator applications,
    semantic init bridges) are not sinks. Worth tracking but
    not blocking.
-7. **`chunk_renames` cross-module rename propagation.**
+8. **`chunk_renames` cross-module rename propagation.**
    `chunk_renames` members rename a binding's local-alias
    references in entry's body via the lowerer's body-rename
    pipeline. When a binding referenced by the chunk_rename is
@@ -2297,6 +2481,10 @@ Primary:
 - <validation.rs> — realizability checks.
 - <schedule.rs> — schedule construction and linker-order reasoning.
 - <peelability.rs> — residual peelability horizon.
+- <atomic_units.rs> — owner-level hard colocation units.
+- <factor_assembly.rs> — spec claims projected onto atomic units.
+- <factorize.rs> and <peel_factorize.rs> — advisory factorization
+  proposal construction and reporting.
 - <logical_modules.rs> — main splitting transform.
 - <pipeline.rs> — fixed transform composition.
 - <program_analysis.rs> — chunk metadata + side-effect

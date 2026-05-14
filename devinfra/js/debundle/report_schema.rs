@@ -207,31 +207,35 @@ pub enum PeelCandidateStatus {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FactorizeOptions {
     /// Hard ceiling (in summed source-line counts) per emitted
-    /// factorizer cell. Cells exceeding the cap are emitted whole
-    /// with `oversize: true`; the algorithm never manufactures
-    /// structural splits.
+    /// factorizer proposal. Frontiers exceeding the cap become
+    /// diagnostics instead of proposals.
     pub size_cap_lines: usize,
 }
 
 impl Default for FactorizeOptions {
     fn default() -> Self {
         Self {
-            size_cap_lines: 2000,
+            size_cap_lines: 10_000,
         }
     }
 }
 
 /// Side-channel output of `crate::factorize::build_factorize_report`,
 /// embedded in [`OwnerGraphReport::factorize`]. Carries proposed
-/// module partitions over the residual owner surface, each
-/// evaluated by the same predicate `materialize_logical_modules`
-/// uses (SSOT via `peelability::evaluate_peel_candidate`).
+/// module partitions over the residual owner surface. `cells`
+/// contains certified proposals only; `diagnostics` contains
+/// internal frontier states that were not valid module assignments.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FactorizeReport {
     pub size_cap_lines: usize,
     pub residual_owner_count: usize,
     #[serde(default)]
     pub cells: Vec<FactorizeCell>,
+    /// Internal frontier states that could not be certified as
+    /// proposals. These are diagnostics, not module assignments the
+    /// author can land as-is.
+    #[serde(default)]
+    pub diagnostics: Vec<FactorizeDiagnostic>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -251,23 +255,19 @@ pub struct FactorizeCell {
     pub source_line_range: Option<[usize; 2]>,
     pub ordinal_span: usize,
     /// Verdict from `peelability::evaluate_peel_candidate`
-    /// applied to the cell's final owner set (after auto-grow).
+    /// applied to the cell's final owner set. Certified proposals
+    /// should be `PeelableNow`.
     pub status: PeelCandidateStatus,
     /// `true` iff `status == PeelableNow`. Mirrors the materializer's
     /// accept-this-spec predicate; a `true` cell can be promoted to
     /// an active `.yaml` right now.
     pub landable_today: bool,
-    /// `true` when the cell's total source-line count exceeds
-    /// `size_cap_lines` (structurally indivisible at this snapshot).
-    pub oversize: bool,
-    /// Bindings referenced by the cell's bodies that aren't on
-    /// entry's export set and the auto-grow loop couldn't absorb.
-    /// Populated only when `status == BlockedEmitResolvability`.
+    /// Should be empty for certified proposals. Kept for report
+    /// compatibility.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emit_blocked_residual_bindings: Vec<BindingName>,
-    /// Other residual owners (by owner-graph id) the cycle gate
-    /// pointed at as blockers. Populated only when
-    /// `status == BlockedCycle` or `BlockedResidualDependency`.
+    /// Should be empty for certified proposals. Kept for report
+    /// compatibility.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cycle_blocker_owner_ids: Vec<String>,
     /// Active-module ids (as in [`ModuleReportRef::id`]) the cell's
@@ -277,8 +277,7 @@ pub struct FactorizeCell {
     pub active_modules_referenced: Vec<String>,
     /// Set when this cell is an **extension proposal**: an existing
     /// YAML-claimed module's id (as in [`ModuleReportRef::id`]) that
-    /// the closure graph showed must absorb the loose owners in
-    /// `extension_owner_ids` for the partition to stay valid.
+    /// the certified proposal would extend.
     /// `None` for fresh-module proposals (where the cell contains
     /// only loose / residual owners).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -288,6 +287,37 @@ pub struct FactorizeCell {
     /// `extends_module_id`. Empty for fresh-module proposals (where
     /// every owner in `owner_ids` is part of the proposal itself).
     pub extension_owner_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum FactorizeDiagnosticReason {
+    ExceedsSizeCap,
+    NoExactRepair,
+    ActiveModuleConflict,
+    RepeatedFrontier,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FactorizeDiagnostic {
+    pub diagnostic_id: String,
+    pub owner_ids: Vec<String>,
+    pub binding_ids: Vec<BindingName>,
+    pub size_lines_estimate: usize,
+    pub size_members: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_line_range: Option<[usize; 2]>,
+    pub ordinal_span: usize,
+    pub status: PeelCandidateStatus,
+    pub reason: FactorizeDiagnosticReason,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emit_blocked_residual_bindings: Vec<BindingName>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycle_blocker_owner_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active_modules_referenced: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends_module_id: Option<String>,
 }
 
 /// Stable value of [`ModuleReportRef::id`] for the implicit

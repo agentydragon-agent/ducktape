@@ -1,78 +1,30 @@
-//! Supernode-aware factorize proposal emitter. Reads the in-memory
-//! [`Schedule`] (whose partition reflects
-//! every YAML claim) and emits cells that represent advisory
-//! proposals to the spec author.
+//! Certifying factorize proposal emitter. Reads the in-memory
+//! [`Schedule`] and emits only owner sets that have already passed
+//! the same peel predicate the materializer uses.
 //!
-//! # The factorize graph H
+//! The algorithm is a monotone closure over residual frontier starts:
+//! begin with residual atomic units, grow through exact repair
+//! obligations reported by [`evaluate_peel_candidate`] (split atomic
+//! units, same-source residual blockers, private residual emit
+//! blockers, and constraining cycle evidence), then emit a proposal
+//! only after the closed owner set certifies as `PeelableNow`.
+//! Unrepaired or size-capped frontiers are diagnostics, not proposals.
 //!
-//! H is a digraph over factorize nodes, where:
-//!
-//! * Every YAML-claimed [`ModuleId::Logical(idx)`] becomes a single
-//!   **supernode** — its internal structure is hidden from H.
-//!   Residual placeholder modules (those whose `LogicalModule.residual`
-//!   flag is set) are not supernodes; their owners stay loose.
-//! * Every owner whose partition destination is residual (either
-//!   [`ModuleId::ResidualEntry`] or a residual placeholder logical
-//!   module) is a **loose node**.
-//!
-//! Every owner-graph edge `u → v` projects onto a pair of nodes
-//! `proj(u), proj(v)`. Edges whose projection is the same node (i.e.
-//! both endpoints sit inside one supernode) disappear; everything else
-//! contributes forced edges to H using the same closure rules the
-//! earlier residual-only pass used:
-//!
-//! * `Sequenced` (anonymous source-order edge, no binding):
-//!   adds `proj(v) → proj(u)` (promoting v alone would invert the
-//!   original `u then v` source order; force the absorption).
-//! * `EagerUse` / `LazyUse` with binding `b`:
-//!   if `b ∈ entry_exported_binding_names` no edge — entry mediates
-//!   the cross-cell read. Otherwise add `proj(u) → proj(v)`
-//!   (consumer absorbs declarer to satisfy emit-resolvability).
-//! * `EagerRebind` / `LazyRebind`:
-//!   bidirectional in H — declarer and assigner of a mutable binding
-//!   must co-locate.
-//!
-//! Tarjan-SCC on H produces **proposal cells**. Each cell's contents
-//! decode to a proposal:
-//!
-//! * Cell contains a supernode `S_M` plus `N ≥ 1` loose nodes:
-//!   "extend module M with those N loose owners". The cell's
-//!   `proposed_module_id` is M's stable key (see [`module_key`]);
-//!   `extension_owner_ids` lists the loose owners.
-//! * Cell contains only loose nodes: today's "fresh module proposal"
-//!   path.
-//! * Cell contains a supernode and no loose nodes: stable module —
-//!   no proposal is emitted.
-//! * Cell with ≥2 supernodes: still emitted (status reflects whatever
-//!   the predicate says about the loose subset, which may be empty);
-//!   surfaces a structural conflict to the author. Today this would
-//!   already be flagged by `factor_assembly::AtomicUnitConflict` for
-//!   any cell that contains members of the same atomic unit; the
-//!   proposal here is a higher-level cross-module conflict view.
-//!
-//! # Per-cell verdict
-//!
-//! Each cell's verdict comes from the SSOT
-//! [`evaluate_peel_candidate`] predicate. The "moved owners" passed
-//! to the predicate are the cell's **loose** owners — they're the
-//! ones whose destination would change if the proposal landed. For a
-//! supernode-only cell there are no loose owners and no proposal.
-//! For mixed cells the destination context comes from the loose
-//! owners (residual today), matching the materializer's mental model
-//! of "move these residual owners into the supernode's module".
+//! Lazy reads are intentionally not atomic/init-order colocation
+//! edges, but they still participate in emit-resolvability. A private
+//! residual lazy provider is added to the frontier before emission;
+//! an importable/exported lazy provider is not.
 //!
 //! See `FACTORIZE.md` for the broader architecture.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
-use petgraph::algo::tarjan_scc;
-use petgraph::graphmap::DiGraphMap;
-
+use crate::atomic_units::compute_atomic_units;
 use crate::peelability::{PeelCandidateEvaluation, PeelabilityContext, evaluate_peel_candidate};
 use crate::reports::{build_quotient_edge_reports, is_residual_destination, module_key, owner_key};
 use crate::{
-    BindingName, DepKind, FactorizeCell, FactorizeOptions, FactorizeReport, ModuleId, OwnerId,
-    PeelCandidateStatus, Schedule,
+    BindingName, FactorizeCell, FactorizeDiagnostic, FactorizeDiagnosticReason, FactorizeOptions,
+    FactorizeReport, ModuleId, OwnerId, PeelCandidateStatus, Schedule,
 };
 
 /// One node of the projected factorize graph H.
@@ -89,6 +41,7 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
     let owner_edges = &schedule.owner_graph.edges;
     let quotient_edges = build_quotient_edge_reports(schedule, owner_edges);
     let context = PeelabilityContext::new(schedule, owner_edges, &quotient_edges);
+    let index = FactorizeIndex::new(schedule);
 
     let node_by_owner: Vec<FactorizeNode> = schedule
         .owner_graph
@@ -117,108 +70,66 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
         .filter(|n| matches!(n, FactorizeNode::Loose(_)))
         .count();
 
-    let bindings_by_owner: HashMap<OwnerId, Vec<BindingName>> = schedule
-        .owner_graph
-        .iter_nodes()
-        .map(|node| {
-            let names: Vec<BindingName> = node
-                .declared
-                .iter()
-                .map(|bid| schedule.binding_name(*bid).clone())
-                .collect();
-            (node.id, names)
+    let mut proposals = Vec::<CertifiedProposal>::new();
+    let mut diagnostics = Vec::<FactorizeDiagnostic>::new();
+    let starts = build_frontier_starts(schedule, &index);
+    for start in starts {
+        match close_frontier(schedule, &context, &index, start, options.size_cap_lines) {
+            FrontierOutcome::Certified(proposal) => proposals.push(proposal),
+            FrontierOutcome::Diagnostic(diagnostic) => diagnostics.push(make_diagnostic(
+                diagnostics.len(),
+                diagnostic.owners,
+                diagnostic.extension_target,
+                &node_by_owner,
+                &diagnostic.verdict,
+                diagnostic.reason,
+                &index.bindings_by_owner,
+                schedule,
+            )),
+            FrontierOutcome::Empty => {}
+        }
+    }
+
+    coalesce_certified_proposals(
+        schedule,
+        &context,
+        &index,
+        &mut proposals,
+        options.size_cap_lines,
+    );
+
+    let mut emitted: Vec<FactorizeCell> = proposals
+        .into_iter()
+        .enumerate()
+        .map(|(idx, proposal)| {
+            let extension_target = proposal.extension_target;
+            let mut cell_owners: HashSet<OwnerId> = proposal.owners.iter().copied().collect();
+            if let Some(module) = extension_target {
+                if let Some(existing) = owners_by_supernode.get(&module) {
+                    cell_owners.extend(existing.iter().copied());
+                }
+            }
+            let proposal_id = match extension_target {
+                Some(module) => format!("extend:{}", module_key(module)),
+                None => format!("auto_partition_{idx:04}"),
+            };
+            let extension_owners: HashSet<OwnerId> = if extension_target.is_some() {
+                proposal.owners.iter().copied().collect()
+            } else {
+                HashSet::new()
+            };
+            make_cell(
+                proposal_id,
+                cell_owners,
+                extension_owners,
+                extension_target,
+                &node_by_owner,
+                &proposal.verdict,
+                &index.bindings_by_owner,
+                schedule,
+            )
         })
         .collect();
-
-    let empty_exports = HashSet::<BindingName>::new();
-    let entry_exports = schedule
-        .entry_exported_binding_names()
-        .unwrap_or(&empty_exports);
-
-    let closure_graph = build_closure_graph(schedule, &node_by_owner, entry_exports);
-    let sccs: Vec<Vec<FactorizeNode>> = tarjan_scc(&closure_graph);
-
-    let mut emitted: Vec<FactorizeCell> = Vec::with_capacity(sccs.len());
-    for (idx, scc) in sccs.into_iter().enumerate() {
-        let mut supernodes: Vec<ModuleId> = Vec::new();
-        let mut loose: Vec<OwnerId> = Vec::new();
-        for node in &scc {
-            match node {
-                FactorizeNode::Supernode(m) => supernodes.push(*m),
-                FactorizeNode::Loose(o) => loose.push(*o),
-            }
-        }
-        supernodes.sort();
-        loose.sort();
-        if supernodes.len() == 1 && loose.is_empty() {
-            // Stable module: no proposal. Skip.
-            continue;
-        }
-        let extension_target = supernodes.first().copied();
-        // For predicate evaluation pick the residual subset (loose
-        // owners). When the cell is supernode-only with no loose
-        // owners we already skipped above; for an extension proposal
-        // (one supernode + ≥1 loose owners) the moved set is the
-        // loose owners. For a fresh-module proposal (loose only) it's
-        // again the loose set. For pathological multi-supernode
-        // cells the loose subset may be empty — fall back to the
-        // first supernode's owners so the predicate has something
-        // to report on.
-        let moved_owners: Vec<OwnerId> = if !loose.is_empty() {
-            loose.clone()
-        } else {
-            owners_by_supernode
-                .get(&supernodes[0])
-                .cloned()
-                .unwrap_or_default()
-        };
-        if moved_owners.is_empty() {
-            continue;
-        }
-        let declared: Vec<BindingName> = moved_owners
-            .iter()
-            .flat_map(|o| bindings_by_owner.get(o).cloned().unwrap_or_default())
-            .collect();
-        let verdict = evaluate_peel_candidate(schedule, &context, &moved_owners, declared);
-        // Cell owners enumerate the proposal members visible to
-        // downstream tooling. For a fresh-module proposal that's the
-        // loose owners. For an extension proposal we surface the
-        // supernode's existing owners alongside the loose owners so
-        // consumers can see the full post-extension owner set in
-        // `owner_ids`; the `extension_owner_ids` field separately
-        // pinpoints what would be NEW.
-        let mut cell_owners: HashSet<OwnerId> = loose.iter().copied().collect();
-        if let Some(module) = extension_target {
-            if let Some(existing) = owners_by_supernode.get(&module) {
-                cell_owners.extend(existing.iter().copied());
-            }
-        }
-        let proposal_id = match extension_target {
-            Some(module) => format!("extend:{}", module_key(module)),
-            None => format!("auto_partition_{idx:04}"),
-        };
-        // Only extension proposals carry the loose subset as
-        // `extension_owner_ids`. Fresh-module proposals have no
-        // existing module to extend, so the field stays empty —
-        // every owner in the cell is part of the proposal itself
-        // (already in `owner_ids`).
-        let extension_owners: HashSet<OwnerId> = if extension_target.is_some() {
-            loose.iter().copied().collect()
-        } else {
-            HashSet::new()
-        };
-        emitted.push(make_cell(
-            proposal_id,
-            cell_owners,
-            extension_owners,
-            extension_target,
-            &node_by_owner,
-            &verdict,
-            &bindings_by_owner,
-            schedule,
-            options.size_cap_lines,
-        ));
-    }
 
     emitted.sort_by(|a, b| {
         b.landable_today.cmp(&a.landable_today).then_with(|| {
@@ -243,53 +154,430 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
         size_cap_lines: options.size_cap_lines,
         residual_owner_count,
         cells: emitted,
+        diagnostics,
     }
 }
 
-/// Build the must-co-locate digraph H over factorize nodes. An edge
-/// `a → b` means "if a is in a cell, b must be in that same cell."
-/// Edges whose endpoints project to the same node (e.g. both inside
-/// one supernode) are dropped.
-fn build_closure_graph(
-    schedule: &Schedule,
-    node_by_owner: &[FactorizeNode],
-    entry_exports: &HashSet<BindingName>,
-) -> DiGraphMap<FactorizeNode, ()> {
-    let mut h = DiGraphMap::<FactorizeNode, ()>::new();
-    // Seed every projected node so cells without any incident edges
-    // still show up as singleton SCCs.
-    for node in node_by_owner {
-        h.add_node(*node);
+struct FactorizeIndex {
+    unit_by_owner: Vec<usize>,
+    owners_by_unit: Vec<Vec<OwnerId>>,
+    bindings_by_owner: HashMap<OwnerId, Vec<BindingName>>,
+    provider_by_binding: HashMap<BindingName, OwnerId>,
+}
+
+impl FactorizeIndex {
+    fn new(schedule: &Schedule) -> Self {
+        let atomic_units = compute_atomic_units(&schedule.owner_graph);
+        let mut unit_by_owner = vec![0usize; schedule.owner_graph.nodes.len()];
+        let owners_by_unit: Vec<Vec<OwnerId>> = atomic_units
+            .into_iter()
+            .enumerate()
+            .map(|(unit_idx, unit)| {
+                let members: Vec<OwnerId> = unit.members.into_iter().collect();
+                for owner in &members {
+                    unit_by_owner[owner.0] = unit_idx;
+                }
+                members
+            })
+            .collect();
+        let mut provider_by_binding = HashMap::<BindingName, OwnerId>::new();
+        let bindings_by_owner: HashMap<OwnerId, Vec<BindingName>> = schedule
+            .owner_graph
+            .iter_nodes()
+            .map(|node| {
+                let names: Vec<BindingName> = node
+                    .declared
+                    .iter()
+                    .map(|bid| schedule.binding_name(*bid).clone())
+                    .collect();
+                for name in &names {
+                    provider_by_binding.entry(name.clone()).or_insert(node.id);
+                }
+                (node.id, names)
+            })
+            .collect();
+        Self {
+            unit_by_owner,
+            owners_by_unit,
+            bindings_by_owner,
+            provider_by_binding,
+        }
     }
-    for edge in &schedule.owner_graph.edges {
-        if edge.from == edge.to {
-            continue;
-        }
-        let from = node_by_owner[edge.from.0];
-        let to = node_by_owner[edge.to.0];
-        if from == to {
-            // Internal supernode edge: hidden by collapse.
-            continue;
-        }
-        match edge.reason.kind {
-            DepKind::Sequenced => {
-                h.add_edge(to, from, ());
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct FrontierStart {
+    owners: BTreeSet<OwnerId>,
+    extension_target: Option<ModuleId>,
+}
+
+#[derive(Debug, Clone)]
+struct CertifiedProposal {
+    owners: BTreeSet<OwnerId>,
+    extension_target: Option<ModuleId>,
+    verdict: PeelCandidateEvaluation,
+}
+
+struct FrontierDiagnostic {
+    owners: BTreeSet<OwnerId>,
+    extension_target: Option<ModuleId>,
+    verdict: PeelCandidateEvaluation,
+    reason: FactorizeDiagnosticReason,
+}
+
+enum FrontierOutcome {
+    Certified(CertifiedProposal),
+    Diagnostic(FrontierDiagnostic),
+    Empty,
+}
+
+fn build_frontier_starts(schedule: &Schedule, index: &FactorizeIndex) -> Vec<FrontierStart> {
+    let mut starts = BTreeSet::<FrontierStart>::new();
+    for owners in &index.owners_by_unit {
+        let mut residual = BTreeSet::<OwnerId>::new();
+        let mut active_targets = BTreeSet::<ModuleId>::new();
+        for &owner in owners {
+            let dest = schedule.partition.of(owner);
+            if is_residual_destination(schedule, dest) {
+                residual.insert(owner);
+            } else {
+                active_targets.insert(dest);
             }
-            DepKind::EagerUse | DepKind::LazyUse => {
-                if let Some(bid) = edge.reason.binding {
-                    let bname = schedule.binding_name(bid);
-                    if !entry_exports.contains(bname) {
-                        h.add_edge(from, to, ());
+        }
+        if residual.is_empty() {
+            continue;
+        }
+        starts.insert(FrontierStart {
+            owners: residual,
+            extension_target: if active_targets.len() == 1 {
+                active_targets.first().copied()
+            } else {
+                None
+            },
+        });
+    }
+    starts.into_iter().collect()
+}
+
+fn close_frontier(
+    schedule: &Schedule,
+    context: &PeelabilityContext<'_>,
+    index: &FactorizeIndex,
+    start: FrontierStart,
+    size_cap_lines: usize,
+) -> FrontierOutcome {
+    if start.owners.is_empty() {
+        return FrontierOutcome::Empty;
+    }
+    let mut owners = start.owners;
+    let mut extension_target = start.extension_target;
+    let mut seen = BTreeSet::<(Option<ModuleId>, Vec<OwnerId>)>::new();
+
+    loop {
+        match close_atomic_units(schedule, index, &mut owners, &mut extension_target) {
+            Ok(()) => {}
+            Err(verdict) => {
+                return FrontierOutcome::Diagnostic(FrontierDiagnostic {
+                    owners,
+                    extension_target,
+                    verdict,
+                    reason: FactorizeDiagnosticReason::ActiveModuleConflict,
+                });
+            }
+        }
+
+        let key = (extension_target, owners.iter().copied().collect::<Vec<_>>());
+        if !seen.insert(key) {
+            let verdict = evaluate_current(schedule, context, index, &owners);
+            return FrontierOutcome::Diagnostic(FrontierDiagnostic {
+                owners,
+                extension_target,
+                verdict,
+                reason: FactorizeDiagnosticReason::RepeatedFrontier,
+            });
+        }
+
+        let verdict = evaluate_current(schedule, context, index, &owners);
+        let size_lines = owners
+            .iter()
+            .map(|owner| owner_line_count(schedule, *owner))
+            .sum::<usize>();
+        if size_lines > size_cap_lines {
+            return FrontierOutcome::Diagnostic(FrontierDiagnostic {
+                owners,
+                extension_target,
+                verdict,
+                reason: FactorizeDiagnosticReason::ExceedsSizeCap,
+            });
+        }
+
+        if verdict.status == PeelCandidateStatus::PeelableNow
+            || extension_cycle_is_internal_to_target(schedule, &owners, extension_target, &verdict)
+        {
+            return FrontierOutcome::Certified(CertifiedProposal {
+                owners,
+                extension_target,
+                verdict: certified_verdict(verdict),
+            });
+        }
+
+        let before = owners.clone();
+        let mut conflict = false;
+        match verdict.status {
+            PeelCandidateStatus::PeelableNow => {}
+            PeelCandidateStatus::BlockedResidualDependency => {
+                for owner in &verdict.residual_dependency_blocker_owner_ids {
+                    if !add_repair_owner(schedule, *owner, &mut owners, &mut extension_target) {
+                        conflict = true;
                     }
                 }
             }
-            DepKind::EagerRebind | DepKind::LazyRebind => {
-                h.add_edge(from, to, ());
-                h.add_edge(to, from, ());
+            PeelCandidateStatus::BlockedEmitResolvability => {
+                for binding in &verdict.emit_blocked_residual_bindings {
+                    let Some(&provider) = index.provider_by_binding.get(binding) else {
+                        conflict = true;
+                        continue;
+                    };
+                    if !add_repair_owner(schedule, provider, &mut owners, &mut extension_target) {
+                        conflict = true;
+                    }
+                }
+            }
+            PeelCandidateStatus::BlockedCycle => {
+                for &edge_idx in &verdict.constraining_owner_edge_indices {
+                    let Some(edge) = schedule.owner_graph.edges.get(edge_idx) else {
+                        continue;
+                    };
+                    for endpoint in [edge.from, edge.to] {
+                        if owners.contains(&endpoint) {
+                            continue;
+                        }
+                        if !add_repair_owner(schedule, endpoint, &mut owners, &mut extension_target)
+                        {
+                            conflict = true;
+                        }
+                    }
+                }
+            }
+        }
+        if conflict {
+            return FrontierOutcome::Diagnostic(FrontierDiagnostic {
+                owners,
+                extension_target,
+                verdict,
+                reason: FactorizeDiagnosticReason::ActiveModuleConflict,
+            });
+        }
+        if owners == before
+            && !extension_cycle_is_internal_to_target(schedule, &owners, extension_target, &verdict)
+        {
+            return FrontierOutcome::Diagnostic(FrontierDiagnostic {
+                owners,
+                extension_target,
+                verdict,
+                reason: FactorizeDiagnosticReason::NoExactRepair,
+            });
+        }
+    }
+}
+
+fn close_atomic_units(
+    schedule: &Schedule,
+    index: &FactorizeIndex,
+    owners: &mut BTreeSet<OwnerId>,
+    extension_target: &mut Option<ModuleId>,
+) -> Result<(), PeelCandidateEvaluation> {
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let snapshot: Vec<OwnerId> = owners.iter().copied().collect();
+        for owner in snapshot {
+            let Some(unit_idx) = index.unit_by_owner.get(owner.0).copied() else {
+                continue;
+            };
+            for &member in &index.owners_by_unit[unit_idx] {
+                let dest = schedule.partition.of(member);
+                if is_residual_destination(schedule, dest) {
+                    changed |= owners.insert(member);
+                } else if let Some(target) = extension_target {
+                    if *target != dest {
+                        return Err(empty_blocked_cycle(owners));
+                    }
+                } else {
+                    *extension_target = Some(dest);
+                }
             }
         }
     }
-    h
+    Ok(())
+}
+
+fn add_repair_owner(
+    schedule: &Schedule,
+    owner: OwnerId,
+    owners: &mut BTreeSet<OwnerId>,
+    extension_target: &mut Option<ModuleId>,
+) -> bool {
+    let dest = schedule.partition.of(owner);
+    if is_residual_destination(schedule, dest) {
+        owners.insert(owner);
+        true
+    } else if let Some(target) = extension_target {
+        *target == dest
+    } else {
+        *extension_target = Some(dest);
+        true
+    }
+}
+
+fn evaluate_current(
+    schedule: &Schedule,
+    context: &PeelabilityContext<'_>,
+    index: &FactorizeIndex,
+    owners: &BTreeSet<OwnerId>,
+) -> PeelCandidateEvaluation {
+    let owner_vec: Vec<OwnerId> = owners.iter().copied().collect();
+    let mut declared: Vec<BindingName> = owner_vec
+        .iter()
+        .flat_map(|o| index.bindings_by_owner.get(o).cloned().unwrap_or_default())
+        .collect();
+    declared.sort();
+    declared.dedup();
+    evaluate_peel_candidate(schedule, context, &owner_vec, declared)
+}
+
+fn empty_blocked_cycle(owners: &BTreeSet<OwnerId>) -> PeelCandidateEvaluation {
+    PeelCandidateEvaluation {
+        id: "factorize_conflict".to_string(),
+        status: PeelCandidateStatus::BlockedCycle,
+        owner_ids: owners.iter().copied().collect(),
+        members: Vec::new(),
+        constraining_owner_edge_indices: BTreeSet::new(),
+        residual_dependency_blocker_owner_ids: Vec::new(),
+        emit_blocked_residual_bindings: Vec::new(),
+    }
+}
+
+fn certified_verdict(mut verdict: PeelCandidateEvaluation) -> PeelCandidateEvaluation {
+    verdict.status = PeelCandidateStatus::PeelableNow;
+    verdict.constraining_owner_edge_indices.clear();
+    verdict.residual_dependency_blocker_owner_ids.clear();
+    verdict.emit_blocked_residual_bindings.clear();
+    verdict
+}
+
+fn extension_cycle_is_internal_to_target(
+    schedule: &Schedule,
+    owners: &BTreeSet<OwnerId>,
+    extension_target: Option<ModuleId>,
+    verdict: &PeelCandidateEvaluation,
+) -> bool {
+    if verdict.status != PeelCandidateStatus::BlockedCycle {
+        return false;
+    }
+    let Some(target) = extension_target else {
+        return false;
+    };
+    if verdict.constraining_owner_edge_indices.is_empty() {
+        return false;
+    }
+    verdict.constraining_owner_edge_indices.iter().all(|&idx| {
+        let Some(edge) = schedule.owner_graph.edges.get(idx) else {
+            return true;
+        };
+        [edge.from, edge.to].into_iter().all(|owner| {
+            owners.contains(&owner)
+                || schedule
+                    .owner_graph
+                    .node(owner)
+                    .is_some_and(|_| schedule.partition.of(owner) == target)
+        })
+    })
+}
+
+fn coalesce_certified_proposals(
+    schedule: &Schedule,
+    context: &PeelabilityContext<'_>,
+    index: &FactorizeIndex,
+    proposals: &mut Vec<CertifiedProposal>,
+    size_cap_lines: usize,
+) {
+    loop {
+        let mut merged = false;
+        'outer: for left in 0..proposals.len() {
+            for right in (left + 1)..proposals.len() {
+                if proposals[left].extension_target != proposals[right].extension_target {
+                    continue;
+                }
+                if proposals[left].owners.is_disjoint(&proposals[right].owners) {
+                    continue;
+                }
+                let union: BTreeSet<OwnerId> = proposals[left]
+                    .owners
+                    .union(&proposals[right].owners)
+                    .copied()
+                    .collect();
+                let size_lines = union
+                    .iter()
+                    .map(|owner| owner_line_count(schedule, *owner))
+                    .sum::<usize>();
+                if size_lines > size_cap_lines {
+                    continue;
+                }
+                let verdict = evaluate_current(schedule, context, index, &union);
+                if verdict.status != PeelCandidateStatus::PeelableNow
+                    && !extension_cycle_is_internal_to_target(
+                        schedule,
+                        &union,
+                        proposals[left].extension_target,
+                        &verdict,
+                    )
+                {
+                    continue;
+                }
+                proposals[left] = CertifiedProposal {
+                    owners: union,
+                    extension_target: proposals[left].extension_target,
+                    verdict: certified_verdict(verdict),
+                };
+                proposals.remove(right);
+                merged = true;
+                break 'outer;
+            }
+        }
+        if !merged {
+            break;
+        }
+    }
+
+    proposals.sort_by(|a, b| {
+        let a_start = a
+            .owners
+            .iter()
+            .filter_map(|owner| schedule.owner_graph.node(*owner))
+            .filter_map(|node| node.source_location.as_ref().map(|loc| loc.start_line))
+            .min()
+            .unwrap_or(usize::MAX);
+        let b_start = b
+            .owners
+            .iter()
+            .filter_map(|owner| schedule.owner_graph.node(*owner))
+            .filter_map(|node| node.source_location.as_ref().map(|loc| loc.start_line))
+            .min()
+            .unwrap_or(usize::MAX);
+        a_start
+            .cmp(&b_start)
+            .then_with(|| a.owners.len().cmp(&b.owners.len()))
+    });
+}
+
+fn owner_line_count(schedule: &Schedule, owner: OwnerId) -> usize {
+    schedule
+        .owner_graph
+        .node(owner)
+        .and_then(|node| node.source_location.as_ref())
+        .map(|loc| loc.end_line + 1 - loc.start_line)
+        .unwrap_or(1)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -302,7 +590,6 @@ fn make_cell(
     verdict: &PeelCandidateEvaluation,
     bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
     schedule: &Schedule,
-    size_cap_lines: usize,
 ) -> FactorizeCell {
     let mut owner_ids: Vec<String> = owners.iter().copied().map(owner_key).collect();
     owner_ids.sort();
@@ -337,6 +624,8 @@ fn make_cell(
             start_line = start_line.min(loc.start_line);
             end_line = end_line.max(loc.end_line);
             size_lines = size_lines.saturating_add(loc.end_line + 1 - loc.start_line);
+        } else {
+            size_lines = size_lines.saturating_add(1);
         }
         min_ordinal = min_ordinal.min(node.statement_ordinal.0);
         max_ordinal = max_ordinal.max(node.statement_ordinal.0);
@@ -409,11 +698,118 @@ fn make_cell(
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         status: verdict.status,
         landable_today,
-        oversize: size_lines > size_cap_lines,
         emit_blocked_residual_bindings: verdict.emit_blocked_residual_bindings.clone(),
         cycle_blocker_owner_ids,
         active_modules_referenced,
         extends_module_id,
         extension_owner_ids,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn make_diagnostic(
+    idx: usize,
+    owners: BTreeSet<OwnerId>,
+    extension_target: Option<ModuleId>,
+    node_by_owner: &[FactorizeNode],
+    verdict: &PeelCandidateEvaluation,
+    reason: FactorizeDiagnosticReason,
+    bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
+    schedule: &Schedule,
+) -> FactorizeDiagnostic {
+    let mut owner_ids: Vec<String> = owners.iter().copied().map(owner_key).collect();
+    owner_ids.sort();
+
+    let mut binding_ids_set: HashSet<BindingName> = HashSet::new();
+    let mut start_line = usize::MAX;
+    let mut end_line = 0usize;
+    let mut have_loc = false;
+    let mut min_ordinal = usize::MAX;
+    let mut max_ordinal = 0usize;
+    let mut size_lines = 0usize;
+    for owner in &owners {
+        if let Some(bindings) = bindings_by_owner.get(owner) {
+            binding_ids_set.extend(bindings.iter().cloned());
+        }
+        let Some(node) = schedule.owner_graph.node(*owner) else {
+            continue;
+        };
+        if let Some(loc) = &node.source_location {
+            have_loc = true;
+            start_line = start_line.min(loc.start_line);
+            end_line = end_line.max(loc.end_line);
+            size_lines = size_lines.saturating_add(loc.end_line + 1 - loc.start_line);
+        } else {
+            size_lines = size_lines.saturating_add(1);
+        }
+        min_ordinal = min_ordinal.min(node.statement_ordinal.0);
+        max_ordinal = max_ordinal.max(node.statement_ordinal.0);
+    }
+
+    let mut cycle_blocker_owner_ids: Vec<String> = verdict
+        .constraining_owner_edge_indices
+        .iter()
+        .flat_map(|&edge_idx| {
+            let edge = &schedule.owner_graph.edges[edge_idx];
+            [edge.from, edge.to]
+        })
+        .filter(|owner| !owners.contains(owner))
+        .map(owner_key)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    cycle_blocker_owner_ids.extend(
+        verdict
+            .residual_dependency_blocker_owner_ids
+            .iter()
+            .copied()
+            .filter(|owner| !owners.contains(owner))
+            .map(owner_key),
+    );
+    cycle_blocker_owner_ids.sort();
+    cycle_blocker_owner_ids.dedup();
+
+    let mut active_modules_referenced: HashSet<String> = HashSet::new();
+    for &owner in &owners {
+        for edge in schedule.owner_graph.edges.iter() {
+            if edge.from != owner || owners.contains(&edge.to) {
+                continue;
+            }
+            if !edge.reason.constrains_init_order() {
+                continue;
+            }
+            let target_node = node_by_owner[edge.to.0];
+            if let FactorizeNode::Supernode(module) = target_node {
+                if extension_target == Some(module) {
+                    continue;
+                }
+                active_modules_referenced.insert(module_key(module));
+            }
+        }
+    }
+
+    let mut binding_ids: Vec<BindingName> = binding_ids_set.into_iter().collect();
+    binding_ids.sort();
+    let mut active_modules_referenced: Vec<String> =
+        active_modules_referenced.into_iter().collect();
+    active_modules_referenced.sort();
+    FactorizeDiagnostic {
+        diagnostic_id: format!("factorize_diagnostic_{idx:04}"),
+        owner_ids,
+        binding_ids,
+        size_lines_estimate: size_lines,
+        size_members: owners.len(),
+        source_line_range: if have_loc {
+            Some([start_line, end_line])
+        } else {
+            None
+        },
+        ordinal_span: max_ordinal.saturating_sub(min_ordinal),
+        status: verdict.status,
+        reason,
+        emit_blocked_residual_bindings: verdict.emit_blocked_residual_bindings.clone(),
+        cycle_blocker_owner_ids,
+        active_modules_referenced,
+        extends_module_id: extension_target.map(module_key),
     }
 }

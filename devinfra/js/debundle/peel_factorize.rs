@@ -2,11 +2,11 @@
 //! SSOT factorize cells with spec-tree context (active claims,
 //! deferred-module attribution) and cell-graph metrics.
 //!
-//! The cell algorithm itself (SCC condensation, rebind union,
-//! agglomeration, auto-grow, SSOT predicate verdicts) lives in
+//! The certifying proposal algorithm itself lives in
 //! `analysis::factorize` and runs at owner-graph build time. The
-//! resulting `FactorizeReport` rides inside `OwnerGraphReport.factorize`.
-//! This crate reads those precomputed cells and adds:
+//! resulting `FactorizeReport` rides inside
+//! `OwnerGraphReport.factorize`. This crate reads those precomputed
+//! certified cells and adds:
 //!
 //! - `seeded_from_deferred`: which `*.yaml.deferred` module paths
 //!   contributed members to each cell. Empty means a brand-new
@@ -21,10 +21,8 @@
 //!   `other_residual_cells_referenced`: cell-graph relationship
 //!   counts derived from the partition the analyzer chose.
 //!
-//! The `status`, `landable_today`, blocker lists, and `oversize`
-//! verdicts come straight from the analyzer's SSOT cell (matching
-//! the materializer's gate predicates exactly); we don't recompute
-//! them.
+//! Diagnostics come through separately. A diagnostic is not a module
+//! assignment the author can land as-is.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -33,30 +31,34 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::{FactorizeCell, OwnerGraphReport, PeelCandidateStatus, RESIDUAL_ENTRY_MODULE_ID};
+use analysis::{
+    FactorizeCell, FactorizeDiagnosticReason, OwnerGraphReport, PeelCandidateStatus,
+    RESIDUAL_ENTRY_MODULE_ID,
+};
 use spec_modules::{load_active_claims, load_deferred_groups};
 
 #[derive(Debug, Clone)]
 pub struct PeelFactorizeOptions {
     pub owner_graph_path: PathBuf,
     pub modules_root: PathBuf,
-    /// Hard ceiling (in summed source-line counts) per emitted cell.
-    /// Cells that exceed the cap because their underlying SCC or
-    /// single owner is itself larger get flagged `oversize: true`
-    /// and emitted whole — the algorithm doesn't manufacture
-    /// splits.
+    /// Hard ceiling (in summed source-line counts) per emitted
+    /// proposal. Frontiers exceeding the cap appear as diagnostics.
     pub size_cap_lines: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PeelFactorizeReport {
     pub proposals: Vec<FactorizeProposal>,
+    pub diagnostics: Vec<FactorizeDiagnosticReport>,
     pub size_cap_lines: usize,
     pub residual_owner_count: usize,
     pub active_claimed_binding_count: usize,
-    /// Counts by analyzer verdict status after CLI agglomeration.
+    /// Counts by analyzer verdict status for certified proposals.
     /// Keys use the report's stable snake_case status spelling.
     pub status_counts: BTreeMap<String, usize>,
+    /// Counts by diagnostic reason. Diagnostics are not module
+    /// assignments that can be landed as-is.
+    pub diagnostic_counts: BTreeMap<String, usize>,
     /// Proposal size histograms. Each bucket includes total count
     /// plus how many proposals in the bucket are landable today.
     pub size_distributions: FactorizeSizeDistributions,
@@ -115,47 +117,20 @@ pub struct FactorizeProposal {
     /// Active module paths this cell's outgoing constraining edges
     /// target (deduplicated).
     pub active_modules_referenced: Vec<String>,
-    /// Residual binding names this cell's bodies reference that
-    /// **aren't** on entry's export list — neither in
-    /// `pre_existing_entry_exports` from the upstream source nor
-    /// auto-added because some currently-active module owns them.
-    /// Promoting the cell to active without first arranging for
-    /// these bindings to be exported by entry (e.g. by moving
-    /// each binding's owner into this cell, or by separately
-    /// promoting its current home) will be rejected by
-    /// `materialize_logical_modules`'s emit-resolvability gate.
+    /// Should be empty for certified proposals. Kept for defensive
+    /// compatibility with older reports.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emit_blocked_residual_bindings: Vec<String>,
-    /// Owner ids that block this proposal on the materializer's
-    /// cycle / residual-dependency gate. Populated when
-    /// `status` is `blocked_cycle` or `blocked_residual_dependency`.
+    /// Should be empty for certified proposals. Kept for defensive
+    /// compatibility with older reports.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cycle_blocker_owner_ids: Vec<String>,
-    /// Analyzer verdict for this proposal's final owner set. This
-    /// is the most direct explanation for non-landable proposals:
-    /// `blocked_emit_resolvability` pairs with
-    /// `emit_blocked_residual_bindings`; `blocked_cycle` and
-    /// `blocked_residual_dependency` pair with
-    /// `cycle_blocker_owner_ids`.
+    /// Analyzer verdict for this proposal's final owner set.
+    /// Certified proposals should be `PeelableNow`.
     pub status: PeelCandidateStatus,
-    /// `true` iff both gates would pass:
-    /// * `edges_to_other_residual_cells == 0` (cycle gate).
-    /// * `emit_blocked_residual_bindings.is_empty()`
-    ///   (emit-resolvability gate).
-    ///
-    /// Mirrors the predicates `materialize_logical_modules`
-    /// applies; a `true` cell can be promoted to an active YAML
-    /// right now without spec-level surgery. `false` cells need
-    /// either their referenced residual cells / bindings landed
-    /// first, or remain `.yaml.deferred` until the prerequisites
-    /// move.
+    /// Mirrors the materializer predicate; certified proposals are
+    /// `true`.
     pub landable_today: bool,
-    /// `true` when the cell's `size_lines_estimate` exceeds
-    /// `size_cap_lines`. Caused by either a single owner whose
-    /// body is itself >cap lines, or a constraining SCC whose
-    /// collective body is >cap lines. Treated as "structurally
-    /// indivisible at this snapshot."
-    pub oversize: bool,
     /// Deferred module paths whose bindings ended up in this
     /// cell:
     /// * Empty → a brand-new cell composed purely of residual
@@ -179,6 +154,30 @@ pub struct FactorizeProposal {
     /// the existing module. Empty for fresh-module proposals. Pass-
     /// through from `FactorizeCell::extension_owner_ids`.
     pub extension_owner_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FactorizeDiagnosticReport {
+    pub diagnostic_id: String,
+    pub owner_ids: Vec<String>,
+    pub binding_ids: Vec<String>,
+    pub size_lines_estimate: usize,
+    pub size_members: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_line_range: Option<[usize; 2]>,
+    pub ordinal_span: usize,
+    pub status: PeelCandidateStatus,
+    pub reason: FactorizeDiagnosticReason,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emit_blocked_residual_bindings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycle_blocker_owner_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active_modules_referenced: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seeded_from_deferred: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends_module_id: Option<String>,
 }
 
 pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFactorizeReport> {
@@ -238,20 +237,15 @@ pub fn factorize(
         })
         .collect();
 
-    // Cell partition is the analyzer's SSOT verdict: each
-    // `FactorizeCell` carries its owner_ids (graph node ids) along
-    // with the materializer's gate verdict (landable, oversize,
-    // emit-blocked bindings). Translate to internal `Cell` form
-    // (owner indices into `graph.nodes`) and pair each with a small
-    // `Verdict` capturing the analyzer's gate result. After
-    // agglomeration this verdict gets replaced with a synthesized
-    // one on merged cells.
-    let mut cells: Vec<(Cell, Verdict)> = graph
-        .factorize
-        .cells
-        .iter()
-        .map(|cell| {
-            (
+    // Analyzer cells are certified proposals. Defensively move any
+    // legacy non-landable cell into diagnostics instead of surfacing
+    // it as a proposal.
+    let mut diagnostics: Vec<FactorizeDiagnosticReport> =
+        diagnostics_from_analyzer(graph, deferred_groups);
+    let mut cells: Vec<(Cell, Verdict)> = Vec::new();
+    for cell in &graph.factorize.cells {
+        if cell.landable_today && cell.status == PeelCandidateStatus::PeelableNow {
+            cells.push((
                 cell_from_factorize_cell(cell, graph, &owner_index),
                 Verdict {
                     status: cell.status,
@@ -259,10 +253,15 @@ pub fn factorize(
                     emit_blocked_residual_bindings: cell.emit_blocked_residual_bindings.clone(),
                     cycle_blocker_owner_ids: cell.cycle_blocker_owner_ids.clone(),
                 },
-            )
-        })
-        .collect();
-
+            ));
+        } else {
+            diagnostics.push(diagnostic_from_legacy_cell(
+                diagnostics.len(),
+                cell,
+                deferred_groups,
+            ));
+        }
+    }
     // Per-cell edge accounting. We walk every constraining edge
     // once, classifying the source-cell / target-cell pair into:
     // - internal (same cell, residual)            → cell.internal_edges
@@ -290,35 +289,24 @@ pub fn factorize(
         }
     }
 
-    // Agglomeration pass: first greedily merge already-landable
-    // neighbors into useful module-sized factors, then merge a
-    // blocked cell with its full residual prerequisite closure when
-    // that closure fits under `size_cap_lines`. The latter lets the
-    // proposer surface "peel A+B+C together" when A and B are
-    // individually landable prerequisites but C is not.
-    agglomerate_landable_cells(
-        &mut cells,
-        &residual_constraining_edges,
-        graph,
-        size_cap_lines,
-    );
-
     let proposals = emit_proposals(
         &cells,
         &residual_constraining_edges,
         &edges_to_active,
         graph,
         deferred_groups,
-        size_cap_lines,
     );
     let status_counts = status_counts(&proposals);
+    let diagnostic_counts = diagnostic_counts(&diagnostics);
     let size_distributions = size_distributions(&proposals);
     PeelFactorizeReport {
         proposals,
+        diagnostics,
         size_cap_lines,
         residual_owner_count: residual.len(),
         active_claimed_binding_count: active_claims.len(),
         status_counts,
+        diagnostic_counts,
         size_distributions,
     }
 }
@@ -356,358 +344,92 @@ fn cell_from_factorize_cell(
     }
 }
 
+fn diagnostics_from_analyzer(
+    graph: &OwnerGraphReport,
+    deferred_groups: &BTreeMap<String, String>,
+) -> Vec<FactorizeDiagnosticReport> {
+    graph
+        .factorize
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            let mut seeded_from_deferred: Vec<String> = diagnostic
+                .binding_ids
+                .iter()
+                .filter_map(|binding| deferred_groups.get(binding.as_str()).cloned())
+                .collect();
+            seeded_from_deferred.sort();
+            seeded_from_deferred.dedup();
+            FactorizeDiagnosticReport {
+                diagnostic_id: diagnostic.diagnostic_id.clone(),
+                owner_ids: diagnostic.owner_ids.clone(),
+                binding_ids: diagnostic.binding_ids.clone(),
+                size_lines_estimate: diagnostic.size_lines_estimate,
+                size_members: diagnostic.size_members,
+                source_line_range: diagnostic.source_line_range,
+                ordinal_span: diagnostic.ordinal_span,
+                status: diagnostic.status,
+                reason: diagnostic.reason,
+                emit_blocked_residual_bindings: diagnostic.emit_blocked_residual_bindings.clone(),
+                cycle_blocker_owner_ids: diagnostic.cycle_blocker_owner_ids.clone(),
+                active_modules_referenced: diagnostic.active_modules_referenced.clone(),
+                seeded_from_deferred,
+                extends_module_id: diagnostic.extends_module_id.clone(),
+            }
+        })
+        .collect()
+}
+
+fn diagnostic_from_legacy_cell(
+    idx: usize,
+    cell: &FactorizeCell,
+    deferred_groups: &BTreeMap<String, String>,
+) -> FactorizeDiagnosticReport {
+    let mut seeded_from_deferred: Vec<String> = cell
+        .binding_ids
+        .iter()
+        .filter_map(|binding| deferred_groups.get(binding.as_str()).cloned())
+        .collect();
+    seeded_from_deferred.sort();
+    seeded_from_deferred.dedup();
+    FactorizeDiagnosticReport {
+        diagnostic_id: format!("legacy_factorize_cell_{idx:04}"),
+        owner_ids: cell.owner_ids.clone(),
+        binding_ids: cell.binding_ids.clone(),
+        size_lines_estimate: cell.size_lines_estimate,
+        size_members: cell.size_members,
+        source_line_range: cell.source_line_range,
+        ordinal_span: cell.ordinal_span,
+        status: cell.status,
+        reason: FactorizeDiagnosticReason::NoExactRepair,
+        emit_blocked_residual_bindings: cell.emit_blocked_residual_bindings.clone(),
+        cycle_blocker_owner_ids: cell.cycle_blocker_owner_ids.clone(),
+        active_modules_referenced: cell.active_modules_referenced.clone(),
+        seeded_from_deferred,
+        extends_module_id: cell.extends_module_id.clone(),
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Cell {
     owners: BTreeSet<usize>,
     lines: usize,
     /// Pass-through from `FactorizeCell::extends_module_id` — the
-    /// analyzer-side cell's supernode target, if any. Preserved
-    /// across agglomeration only when every merged cell points at
-    /// the same module.
+    /// analyzer-side cell's supernode target, if any.
     extends_module_id: Option<String>,
     /// Pass-through from `FactorizeCell::extension_owner_ids`,
     /// translated to owner indices.
     extension_owner_idxs: BTreeSet<usize>,
 }
 
-/// Per-cell gate result. For original closure cells, this mirrors
-/// the analyzer's `FactorizeCell`. For agglomerated cells produced
-/// by `agglomerate_landable_cells`, this is synthesized: merging
-/// landable neighbors or a blocked cell's full prerequisite closure
-/// produces a landable cell with empty
-/// `emit_blocked_residual_bindings`.
+/// Per-cell gate result from the analyzer's certified
+/// `FactorizeCell`.
 #[derive(Debug, Clone)]
 struct Verdict {
     status: PeelCandidateStatus,
     landable_today: bool,
     emit_blocked_residual_bindings: Vec<String>,
     cycle_blocker_owner_ids: Vec<String>,
-}
-
-/// Greedy agglomeration of landable closure cells along inter-cell
-/// constraining edges. Modifies `cells` in place: merged cells are
-/// rolled into earlier indices, dropped cells are removed.
-///
-/// A merge of two landable cells A, B is safe iff `A ∪ B` is itself
-/// landable. Since A and B are individually landable (cycle gate
-/// passes), each has external residual edges flowing in one
-/// direction only. The merge stays landable iff the combined cell
-/// still has external edges in only one direction. Equivalently:
-/// `(out[A] ∪ out[B]) \ {A, B}` is empty OR
-/// `(in[A] ∪ in[B]) \ {A, B}` is empty.
-///
-/// Bounded by `size_cap_lines`: the merged cell's line count must
-/// not exceed the cap. Non-landable cells are never merged.
-fn agglomerate_landable_cells(
-    cells: &mut Vec<(Cell, Verdict)>,
-    residual_constraining_edges: &[(usize, usize)],
-    graph: &OwnerGraphReport,
-    size_cap_lines: usize,
-) {
-    if cells.is_empty() {
-        return;
-    }
-    let n = cells.len();
-
-    // Owner-idx → closure cell idx.
-    let mut owner_to_cell: HashMap<usize, usize> = HashMap::new();
-    for (idx, (cell, _)) in cells.iter().enumerate() {
-        for &o in &cell.owners {
-            owner_to_cell.insert(o, idx);
-        }
-    }
-
-    // Cell-level edges (closure cell idx). Maintained per root via
-    // the union-find below.
-    let mut out_neighbors: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); n];
-    let mut in_neighbors: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); n];
-    for &(s, t) in residual_constraining_edges {
-        let (Some(&cs), Some(&ct)) = (owner_to_cell.get(&s), owner_to_cell.get(&t)) else {
-            continue;
-        };
-        if cs != ct {
-            out_neighbors[cs].insert(ct);
-            in_neighbors[ct].insert(cs);
-        }
-    }
-
-    let mut parent: Vec<usize> = (0..n).collect();
-
-    fn find(parent: &mut [usize], i: usize) -> usize {
-        let mut r = i;
-        while parent[r] != r {
-            r = parent[r];
-        }
-        let mut x = i;
-        while parent[x] != r {
-            let next = parent[x];
-            parent[x] = r;
-            x = next;
-        }
-        r
-    }
-
-    // Greedy merge. Iterate edges; for each pair of cells joined by
-    // an edge, attempt a merge. Repeat until a pass yields no
-    // merges. Each merge reduces the cell count by 1, so the loop
-    // is bounded by `n - 1` iterations across all passes.
-    loop {
-        let mut merged_any = false;
-        for &(s, t) in residual_constraining_edges {
-            let (Some(&cs), Some(&ct)) = (owner_to_cell.get(&s), owner_to_cell.get(&t)) else {
-                continue;
-            };
-            let ra = find(&mut parent, cs);
-            let rb = find(&mut parent, ct);
-            if ra == rb {
-                continue;
-            }
-            if !cells[ra].1.landable_today || !cells[rb].1.landable_today {
-                continue;
-            }
-            if cells[ra].0.lines + cells[rb].0.lines > size_cap_lines {
-                continue;
-            }
-            // Check that the merged cell stays landable. Resolve
-            // each neighbor through find() so stale roots from
-            // earlier merges don't show up as phantom externals.
-            let mut merged_out: BTreeSet<usize> = BTreeSet::new();
-            for &n in out_neighbors[ra].iter().chain(out_neighbors[rb].iter()) {
-                let rn = find(&mut parent, n);
-                if rn != ra && rn != rb {
-                    merged_out.insert(rn);
-                }
-            }
-            let mut merged_in: BTreeSet<usize> = BTreeSet::new();
-            for &n in in_neighbors[ra].iter().chain(in_neighbors[rb].iter()) {
-                let rn = find(&mut parent, n);
-                if rn != ra && rn != rb {
-                    merged_in.insert(rn);
-                }
-            }
-            if !merged_out.is_empty() && !merged_in.is_empty() {
-                continue;
-            }
-            // Merge: smaller index becomes the root.
-            let (keep, drop) = if ra < rb { (ra, rb) } else { (rb, ra) };
-            parent[drop] = keep;
-            let drop_owners = std::mem::take(&mut cells[drop].0.owners);
-            cells[keep].0.owners.extend(drop_owners);
-            let drop_lines = cells[drop].0.lines;
-            cells[keep].0.lines += drop_lines;
-            cells[drop].0.lines = 0;
-            // Extension info survives only if both sides point at
-            // the same supernode; otherwise the merged cell is no
-            // longer a clean "extend module X" proposal.
-            let drop_extends = cells[drop].0.extends_module_id.take();
-            let drop_extension_owners = std::mem::take(&mut cells[drop].0.extension_owner_idxs);
-            if cells[keep].0.extends_module_id == drop_extends {
-                cells[keep]
-                    .0
-                    .extension_owner_idxs
-                    .extend(drop_extension_owners);
-            } else {
-                cells[keep].0.extends_module_id = None;
-                cells[keep].0.extension_owner_idxs.clear();
-            }
-            // Drop's emit-blocked is empty (landable) so no merge needed there.
-            cells[keep].1.status = PeelCandidateStatus::PeelableNow;
-            cells[keep].1.landable_today = true;
-            cells[keep].1.emit_blocked_residual_bindings.clear();
-            cells[keep].1.cycle_blocker_owner_ids.clear();
-            out_neighbors[keep] = merged_out;
-            in_neighbors[keep] = merged_in;
-            out_neighbors[drop].clear();
-            in_neighbors[drop].clear();
-            merged_any = true;
-        }
-        if !merged_any {
-            break;
-        }
-    }
-
-    // Collapse: keep only root cells.
-    let roots: Vec<usize> = (0..n).map(|i| find(&mut parent, i)).collect();
-    let mut kept = Vec::with_capacity(n);
-    for (i, entry) in cells.drain(..).enumerate() {
-        if roots[i] == i {
-            kept.push(entry);
-        }
-    }
-    *cells = kept;
-
-    agglomerate_prerequisite_closures(cells, residual_constraining_edges, graph, size_cap_lines);
-}
-
-/// Merge a non-landable cell with every residual cell it depends on,
-/// recursively, when the resulting closure is small enough to review.
-/// Dependencies include both init-order residual edges and
-/// emit-resolvability blockers reported by the analyzer.
-fn agglomerate_prerequisite_closures(
-    cells: &mut Vec<(Cell, Verdict)>,
-    residual_constraining_edges: &[(usize, usize)],
-    graph: &OwnerGraphReport,
-    size_cap_lines: usize,
-) {
-    loop {
-        let owner_to_cell = owner_to_cell(cells);
-        let binding_to_cell = binding_to_cell(cells, graph);
-        let mut out_neighbors =
-            cell_out_neighbors(cells.len(), residual_constraining_edges, &owner_to_cell);
-        add_emit_blocker_neighbors(cells, &binding_to_cell, &mut out_neighbors);
-
-        let mut merged_any = false;
-        for root in 0..cells.len() {
-            if cells[root].1.landable_today {
-                continue;
-            }
-
-            let closure = outgoing_closure(root, &out_neighbors);
-            if closure.len() <= 1 {
-                continue;
-            }
-
-            let total_lines: usize = closure.iter().map(|&idx| cells[idx].0.lines).sum();
-            if total_lines > size_cap_lines {
-                continue;
-            }
-
-            let blockers_are_internal = closure.iter().all(|&idx| {
-                cells[idx]
-                    .1
-                    .emit_blocked_residual_bindings
-                    .iter()
-                    .all(|binding| {
-                        binding_to_cell
-                            .get(binding.as_str())
-                            .is_some_and(|cell_idx| closure.contains(cell_idx))
-                    })
-            });
-            if !blockers_are_internal {
-                continue;
-            }
-
-            merge_cell_closure(cells, &closure, total_lines);
-            merged_any = true;
-            break;
-        }
-
-        if !merged_any {
-            break;
-        }
-    }
-}
-
-fn owner_to_cell(cells: &[(Cell, Verdict)]) -> HashMap<usize, usize> {
-    let mut owner_to_cell = HashMap::new();
-    for (idx, (cell, _)) in cells.iter().enumerate() {
-        for &owner in &cell.owners {
-            owner_to_cell.insert(owner, idx);
-        }
-    }
-    owner_to_cell
-}
-
-fn cell_out_neighbors(
-    cell_count: usize,
-    residual_constraining_edges: &[(usize, usize)],
-    owner_to_cell: &HashMap<usize, usize>,
-) -> Vec<BTreeSet<usize>> {
-    let mut out_neighbors: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); cell_count];
-    for &(source, target) in residual_constraining_edges {
-        let (Some(&source_cell), Some(&target_cell)) =
-            (owner_to_cell.get(&source), owner_to_cell.get(&target))
-        else {
-            continue;
-        };
-        if source_cell != target_cell {
-            out_neighbors[source_cell].insert(target_cell);
-        }
-    }
-    out_neighbors
-}
-
-fn binding_to_cell<'a>(
-    cells: &[(Cell, Verdict)],
-    graph: &'a OwnerGraphReport,
-) -> HashMap<&'a str, usize> {
-    let mut out = HashMap::new();
-    for (cell_idx, (cell, _)) in cells.iter().enumerate() {
-        for &owner_idx in &cell.owners {
-            for binding in &graph.nodes[owner_idx].declared_bindings {
-                out.insert(binding.binding.as_str(), cell_idx);
-            }
-        }
-    }
-    out
-}
-
-fn add_emit_blocker_neighbors(
-    cells: &[(Cell, Verdict)],
-    binding_to_cell: &HashMap<&str, usize>,
-    out_neighbors: &mut [BTreeSet<usize>],
-) {
-    for (source_idx, (_, verdict)) in cells.iter().enumerate() {
-        for binding in &verdict.emit_blocked_residual_bindings {
-            let Some(&target_idx) = binding_to_cell.get(binding.as_str()) else {
-                continue;
-            };
-            if source_idx != target_idx {
-                out_neighbors[source_idx].insert(target_idx);
-            }
-        }
-    }
-}
-
-fn outgoing_closure(root: usize, out_neighbors: &[BTreeSet<usize>]) -> BTreeSet<usize> {
-    let mut closure = BTreeSet::from([root]);
-    let mut stack: Vec<usize> = out_neighbors[root].iter().copied().collect();
-    while let Some(next) = stack.pop() {
-        if !closure.insert(next) {
-            continue;
-        }
-        stack.extend(out_neighbors[next].iter().copied());
-    }
-    closure
-}
-
-fn merge_cell_closure(
-    cells: &mut Vec<(Cell, Verdict)>,
-    closure: &BTreeSet<usize>,
-    total_lines: usize,
-) {
-    let keep = *closure
-        .iter()
-        .next()
-        .expect("merge_cell_closure requires a non-empty closure");
-
-    let mut merged_owners = BTreeSet::new();
-    let mut merged_extension_owner_idxs = BTreeSet::new();
-    let mut common_extends = cells[keep].0.extends_module_id.clone();
-    for &idx in closure {
-        merged_owners.extend(cells[idx].0.owners.iter().copied());
-        if cells[idx].0.extends_module_id == common_extends {
-            merged_extension_owner_idxs.extend(cells[idx].0.extension_owner_idxs.iter().copied());
-        } else {
-            common_extends = None;
-            merged_extension_owner_idxs.clear();
-        }
-    }
-
-    cells[keep].0.owners = merged_owners;
-    cells[keep].0.lines = total_lines;
-    cells[keep].0.extends_module_id = common_extends;
-    cells[keep].0.extension_owner_idxs = merged_extension_owner_idxs;
-    cells[keep].1.status = PeelCandidateStatus::PeelableNow;
-    cells[keep].1.landable_today = true;
-    cells[keep].1.emit_blocked_residual_bindings.clear();
-    cells[keep].1.cycle_blocker_owner_ids.clear();
-
-    for &idx in closure.iter().rev() {
-        if idx != keep {
-            cells.remove(idx);
-        }
-    }
 }
 
 fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
@@ -727,7 +449,6 @@ struct ProposalContext<'a> {
     active_edges: &'a [(usize, String)],
     deferred_groups: &'a BTreeMap<String, String>,
     owner_to_cell: HashMap<usize, usize>,
-    size_cap_lines: usize,
 }
 
 fn emit_proposals(
@@ -736,7 +457,6 @@ fn emit_proposals(
     active_edges: &[(usize, String)],
     graph: &OwnerGraphReport,
     deferred_groups: &BTreeMap<String, String>,
-    size_cap_lines: usize,
 ) -> Vec<FactorizeProposal> {
     let mut owner_to_cell: HashMap<usize, usize> = HashMap::new();
     for (cell_idx, (cell, _)) in cells.iter().enumerate() {
@@ -751,7 +471,6 @@ fn emit_proposals(
         active_edges,
         deferred_groups,
         owner_to_cell,
-        size_cap_lines,
     };
 
     let mut proposals: Vec<FactorizeProposal> = cells
@@ -760,14 +479,10 @@ fn emit_proposals(
         .map(|(cell_idx, (cell, verdict))| build_proposal(cell_idx, cell, verdict, &ctx))
         .collect();
 
-    // Topological-by-residual-dependency sort with source-line
-    // tie-break. Each cell's depth = 1 + max(depth(c) for c in cells
-    // it references via inter-residual edges). Cells with
-    // `landable_today` (no inter-residual outgoing edges) get
-    // depth 0 and emit first. Cycles between cells are impossible
-    // at this stage — the SCC condensation pass collapsed every
-    // residual-edge cycle into a single cell — so the recursion
-    // bottoms out.
+    // Residual-dependency depth sort with source-line tie-break.
+    // Certified analyzer output normally has no outgoing residual
+    // constraining edges; this still keeps legacy/synthetic reports
+    // deterministic.
     let depths = compute_topo_depths(cells.len(), residual_edges, &ctx.owner_to_cell);
     let mut indexed: Vec<(usize, FactorizeProposal)> = proposals.drain(..).enumerate().collect();
     indexed.sort_by(|(li, left), (ri, right)| {
@@ -833,9 +548,9 @@ fn compute_topo_depths(
         if let Some(d) = depths[node] {
             return d;
         }
-        // Mark as in-progress with depth 0; SCC condensation guarantees
-        // the inter-cell graph is acyclic, so we never re-enter the
-        // same node mid-DFS in a meaningful cycle.
+        // Mark as in-progress with depth 0. If a legacy/synthetic
+        // report contains an inter-cell cycle, the sort remains
+        // deterministic instead of recursing forever.
         depths[node] = Some(0);
         let max_child = adj[node]
             .iter()
@@ -919,8 +634,8 @@ fn build_proposal(
     }
     let active_modules_referenced: Vec<String> = active_targets.into_iter().collect();
 
-    // `status`, `landable_today`, blocker lists, and `oversize`
-    // come straight from the analyzer's SSOT verdict on this cell
+    // `status`, `landable_today`, and blocker lists come straight
+    // from the analyzer's SSOT verdict on this cell
     // (computed once via
     // `peelability::evaluate_peel_candidate` at owner-graph
     // build time). The CLI used to recompute them from the JSON
@@ -965,7 +680,6 @@ fn build_proposal(
         cycle_blocker_owner_ids,
         status: verdict.status,
         landable_today: verdict.landable_today,
-        oversize: cell.lines > ctx.size_cap_lines,
         seeded_from_deferred: seeded.into_iter().collect(),
         extends_module_id: cell.extends_module_id.clone(),
         extension_owner_ids,
@@ -977,6 +691,16 @@ fn status_counts(proposals: &[FactorizeProposal]) -> BTreeMap<String, usize> {
     for proposal in proposals {
         *counts
             .entry(status_key(proposal.status).to_string())
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn diagnostic_counts(diagnostics: &[FactorizeDiagnosticReport]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for diagnostic in diagnostics {
+        *counts
+            .entry(diagnostic_reason_key(diagnostic.reason).to_string())
             .or_insert(0) += 1;
     }
     counts
@@ -1064,6 +788,15 @@ fn status_key(status: PeelCandidateStatus) -> &'static str {
         PeelCandidateStatus::BlockedCycle => "blocked_cycle",
         PeelCandidateStatus::BlockedResidualDependency => "blocked_residual_dependency",
         PeelCandidateStatus::BlockedEmitResolvability => "blocked_emit_resolvability",
+    }
+}
+
+fn diagnostic_reason_key(reason: FactorizeDiagnosticReason) -> &'static str {
+    match reason {
+        FactorizeDiagnosticReason::ExceedsSizeCap => "exceeds_size_cap",
+        FactorizeDiagnosticReason::NoExactRepair => "no_exact_repair",
+        FactorizeDiagnosticReason::ActiveModuleConflict => "active_module_conflict",
+        FactorizeDiagnosticReason::RepeatedFrontier => "repeated_frontier",
     }
 }
 
@@ -1202,9 +935,10 @@ mod tests {
             },
             pre_existing_entry_exports: vec![],
             factorize: FactorizeReport {
-                size_cap_lines: 2000,
+                size_cap_lines: 10_000,
                 residual_owner_count: nodes_residual_count(&[]),
                 cells,
+                diagnostics: Vec::new(),
             },
         }
     }
@@ -1283,7 +1017,6 @@ mod tests {
             ordinal_span: max_ord.saturating_sub(min_ord),
             status,
             landable_today: landable,
-            oversize: false,
             emit_blocked_residual_bindings: emit_blocked.iter().map(|s| s.to_string()).collect(),
             cycle_blocker_owner_ids: cycle_blockers.iter().map(|s| s.to_string()).collect(),
             active_modules_referenced: Vec::new(),
@@ -1303,7 +1036,7 @@ mod tests {
             vec![],
             vec![],
         );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 10_000);
         assert_eq!(report.residual_owner_count, 2);
         assert!(report.proposals.is_empty());
     }
@@ -1328,7 +1061,7 @@ mod tests {
             ),
         ];
         let graph = graph_with_cells(nodes, vec![], cells);
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 10_000);
         assert_eq!(report.proposals.len(), 2);
         assert!(report.proposals.iter().all(|p| p.size_members == 1));
         assert!(report.proposals.iter().all(|p| p.landable_today));
@@ -1379,7 +1112,7 @@ mod tests {
         ];
         let graph = graph_with_cells(nodes, vec![], cells);
         let deferred = BTreeMap::from([("a".to_string(), "mod/x".to_string())]);
-        let report = factorize(&graph, &no_claims(), &deferred, 2000);
+        let report = factorize(&graph, &no_claims(), &deferred, 10_000);
         let cell_a = report
             .proposals
             .iter()
@@ -1415,7 +1148,7 @@ mod tests {
             ("a".to_string(), "mod/x".to_string()),
             ("b".to_string(), "mod/y".to_string()),
         ]);
-        let report = factorize(&graph, &no_claims(), &deferred, 2000);
+        let report = factorize(&graph, &no_claims(), &deferred, 10_000);
         assert_eq!(report.proposals.len(), 1);
         assert_eq!(
             report.proposals[0].seeded_from_deferred,
@@ -1437,7 +1170,7 @@ mod tests {
                 "auto_partition_0000",
                 &["a"],
                 &nodes,
-                PeelCandidateStatus::BlockedResidualDependency,
+                PeelCandidateStatus::PeelableNow,
                 &[],
             ),
             cell(
@@ -1485,7 +1218,7 @@ mod tests {
         )];
         let graph = graph_with_cells(nodes, edges, cells);
         let claims = BTreeMap::from([("a".to_string(), "ui/x".to_string())]);
-        let report = factorize(&graph, &claims, &no_claims(), 2000);
+        let report = factorize(&graph, &claims, &no_claims(), 10_000);
         assert_eq!(report.proposals.len(), 1);
         assert_eq!(report.proposals[0].edges_to_active_modules, 1);
         assert_eq!(
@@ -1495,11 +1228,10 @@ mod tests {
     }
 
     #[test]
-    fn analyzer_emit_blocked_verdict_passes_through_to_proposal() {
+    fn legacy_analyzer_emit_blocked_cell_is_reported_as_diagnostic() {
         // Analyzer-side cell carries emit_blocked_residual_bindings.
-        // The CLI proposal should surface the same list and report
-        // landable_today=false when the blocker closure is too large
-        // to auto-merge under the requested cap.
+        // The CLI must not surface the blocked row as a proposal.
+        // It is a diagnostic because proposals are certified-only.
         let nodes = vec![
             owner("consumer", 1, &["consumer"], 10),
             owner("dep", 2, &["dep"], 5),
@@ -1530,11 +1262,18 @@ mod tests {
         ];
         let graph = graph_with_cells(nodes, edges, cells);
         let report = factorize(&graph, &no_claims(), &no_claims(), 12);
+        assert!(
+            !report
+                .proposals
+                .iter()
+                .any(|p| p.binding_ids.contains(&"consumer".to_string())),
+            "blocked legacy cell must not be a proposal: {report:#?}",
+        );
         let consumer = report
-            .proposals
+            .diagnostics
             .iter()
             .find(|p| p.binding_ids.contains(&"consumer".to_string()))
-            .expect("consumer cell");
+            .expect("consumer diagnostic");
         assert_eq!(
             consumer.emit_blocked_residual_bindings,
             vec!["dep".to_string()],
@@ -1543,11 +1282,11 @@ mod tests {
             consumer.status,
             PeelCandidateStatus::BlockedEmitResolvability
         );
-        assert!(!consumer.landable_today);
+        assert_eq!(consumer.reason, FactorizeDiagnosticReason::NoExactRepair);
     }
 
     #[test]
-    fn analyzer_cycle_blocker_verdict_passes_through_to_proposal() {
+    fn legacy_analyzer_cycle_blocked_cell_is_reported_as_diagnostic() {
         let nodes = vec![
             owner("consumer", 1, &["consumer"], 10),
             owner("blocker", 2, &["blocker"], 5),
@@ -1570,24 +1309,32 @@ mod tests {
             ),
         ];
         let graph = graph_with_cells(nodes, vec![], cells);
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 10_000);
+        assert!(
+            !report
+                .proposals
+                .iter()
+                .any(|p| p.binding_ids.contains(&"consumer".to_string())),
+            "blocked legacy cell must not be a proposal: {report:#?}",
+        );
         let consumer = report
-            .proposals
+            .diagnostics
             .iter()
             .find(|p| p.binding_ids.contains(&"consumer".to_string()))
-            .expect("consumer cell");
+            .expect("consumer diagnostic");
         assert_eq!(consumer.status, PeelCandidateStatus::BlockedCycle);
         assert_eq!(
             consumer.cycle_blocker_owner_ids,
             vec!["blocker".to_string()]
         );
-        assert!(!consumer.landable_today);
+        assert_eq!(consumer.reason, FactorizeDiagnosticReason::NoExactRepair);
         assert_eq!(
             report.status_counts,
-            BTreeMap::from([
-                ("blocked_cycle".to_string(), 1),
-                ("peelable_now".to_string(), 1),
-            ]),
+            BTreeMap::from([("peelable_now".to_string(), 1)]),
+        );
+        assert_eq!(
+            report.diagnostic_counts,
+            BTreeMap::from([("no_exact_repair".to_string(), 1)]),
         );
     }
 }

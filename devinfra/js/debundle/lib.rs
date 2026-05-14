@@ -50,8 +50,9 @@ pub use ids::{
 pub use partition::Partition;
 pub use purity::{Purity, PurityReason, PurityRule, RedundantPurityHint, RedundantPurityReason};
 pub use report_schema::{
-    BindingReport, EvaluatedPeelCandidateReport, FactorizeCell, FactorizeOptions, FactorizeReport,
-    ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphPeelSetReport,
+    BindingReport, EvaluatedPeelCandidateReport, FactorizeCell, FactorizeDiagnostic,
+    FactorizeDiagnosticReason, FactorizeOptions, FactorizeReport, ModuleReportRef,
+    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphPeelSetReport,
     OwnerGraphPeelabilityReport, OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus,
     QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,
     ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,

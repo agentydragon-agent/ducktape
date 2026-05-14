@@ -1,13 +1,12 @@
 //! End-to-end pinning of the factorize report's correctness against
 //! the materializer's actual gates.
 //!
-//! The closure-based factorizer (`analysis::factorize`) emits a cell
-//! per SCC of the residual must-co-locate graph. Each cell carries a
-//! verdict from the SSOT `evaluate_peel_candidate` predicate;
-//! cells are valid by construction in the emit-resolvability and
-//! LazyRebind senses, with cycle/dep blockers reported per cell.
+//! The certifying factorizer (`analysis::factorize`) emits only
+//! owner sets that already pass the SSOT `evaluate_peel_candidate`
+//! predicate. Blocked or size-capped frontier states are diagnostics,
+//! not proposals.
 //!
-//! Three paired fixtures:
+//! Paired fixtures:
 //!
 //! 1. **Init-order chain** — a blocked residual cell absorbs its
 //!    small at-init prerequisite when the combined closure is
@@ -41,6 +40,205 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> T {
     .unwrap_or_else(|err| panic!("parse JSON report {}: {err}", path.display()))
 }
 
+fn cell_has_bindings(cell: &analysis::FactorizeCell, bindings: &[&str]) -> bool {
+    bindings
+        .iter()
+        .all(|binding| cell.binding_ids.contains(&(*binding).to_string()))
+}
+
+fn proposal_has_bindings(proposal: &peel_factorize::FactorizeProposal, bindings: &[&str]) -> bool {
+    bindings
+        .iter()
+        .all(|binding| proposal.binding_ids.contains(&(*binding).to_string()))
+}
+
+#[test]
+fn analyzer_factorizer_emits_only_certified_private_lazy_prerequisite_closure() {
+    let chunk_source = r#"const anchor = "anchor";
+const dep = "secret";
+function consumer() { return dep; }
+export { anchor, consumer };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+
+    assert!(
+        graph
+            .factorize
+            .cells
+            .iter()
+            .all(|cell| cell.landable_today
+                && cell.status == analysis::PeelCandidateStatus::PeelableNow),
+        "factorize cells must be certified-only: {:#?}",
+        graph.factorize,
+    );
+    assert!(
+        graph
+            .factorize
+            .cells
+            .iter()
+            .any(|cell| cell_has_bindings(cell, &["dep", "consumer"])),
+        "private lazy prerequisite should be internalized before emitting: {:#?}",
+        graph.factorize,
+    );
+    assert!(
+        !graph.factorize.cells.iter().any(|cell| {
+            cell.binding_ids == vec!["consumer".to_string()] && !cell.landable_today
+        }),
+        "invalid singleton consumer must be diagnostic-only, not a proposal: {:#?}",
+        graph.factorize,
+    );
+}
+
+#[test]
+fn analyzer_factorizer_coalesces_shared_prerequisite_closure_under_cap() {
+    let chunk_source = r#"const anchor = "anchor";
+const shared = "shared";
+const consumer_a = shared + "/a";
+const consumer_b = shared + "/b";
+export { anchor, consumer_a, consumer_b };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+
+    assert!(
+        graph.factorize.cells.iter().any(|cell| cell_has_bindings(
+            cell,
+            &["shared", "consumer_a", "consumer_b"]
+        ) && cell.landable_today),
+        "shared prerequisite should be emitted as one certified factor: {:#?}",
+        graph.factorize,
+    );
+
+    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    assert!(
+        report
+            .proposals
+            .iter()
+            .any(|proposal| proposal_has_bindings(
+                proposal,
+                &["shared", "consumer_a", "consumer_b"]
+            ) && proposal.landable_today),
+        "CLI should preserve the analyzer's shared-prerequisite proposal: {report:#?}",
+    );
+}
+
+#[test]
+fn analyzer_factorizer_keeps_importable_lazy_consumers_as_singletons() {
+    let chunk_source = r#"const anchor = "anchor";
+function dep() { return "dep"; }
+function consumer() { return dep(); }
+export { anchor, dep, consumer };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+
+    assert!(
+        graph.factorize.cells.iter().any(|cell| {
+            cell.binding_ids == vec!["consumer".to_string()]
+                && cell.landable_today
+                && cell.status == analysis::PeelCandidateStatus::PeelableNow
+        }),
+        "entry-exported lazy provider should not be forced into consumer's proposal: {:#?}",
+        graph.factorize,
+    );
+    assert!(
+        !graph
+            .factorize
+            .cells
+            .iter()
+            .any(|cell| cell_has_bindings(cell, &["dep", "consumer"])),
+        "importable lazy edge should not create a must-colocate factor: {:#?}",
+        graph.factorize,
+    );
+}
+
+#[test]
+fn analyzer_factorizer_emits_three_owner_constraining_cycle_closure() {
+    let chunk_source = r#"const anchor = "anchor";
+const A = C + 1;
+const B = A + 1;
+const C = B + 1;
+export { anchor, A, B, C };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+
+    assert!(
+        graph
+            .factorize
+            .cells
+            .iter()
+            .any(|cell| cell_has_bindings(cell, &["A", "B", "C"]) && cell.landable_today),
+        "true constraining SCC should be emitted as the full certified closure: {:#?}",
+        graph.factorize,
+    );
+}
+
+#[test]
+fn analyzer_factorizer_does_not_extend_active_module_for_sequenced_eager_read() {
+    let chunk_source = r#"const A = Date.now();
+const C = console.log(A);
+export { A, C };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/a", &[Member::new("A")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+
+    assert!(
+        graph.factorize.cells.iter().any(|cell| {
+            cell.binding_ids == vec!["C".to_string()]
+                && cell.extends_module_id.is_none()
+                && cell.landable_today
+        }),
+        "residual C can import active A; sequenced+eager evidence should not force extension: {:#?}",
+        graph.factorize,
+    );
+    assert!(
+        !graph
+            .factorize
+            .cells
+            .iter()
+            .any(|cell| cell.extends_module_id.as_deref() == Some("logical:0")),
+        "active module extension would recreate the old sequenced over-merge: {:#?}",
+        graph.factorize,
+    );
+}
+
 #[test]
 fn factorizer_orders_chain_cells_by_dependency_and_materializer_accepts_promotion() {
     // Source: three `const` initializers chained by at-init reads
@@ -65,7 +263,7 @@ export { a, b, c };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 2000);
+    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
 
     let chain_cell = report
         .proposals
@@ -117,7 +315,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 2000);
+    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
 
     let combined = report
         .proposals
@@ -162,7 +360,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 2000);
+    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
 
     let combined = report
         .proposals
@@ -220,7 +418,7 @@ export { anchor, consumer_a, consumer_b };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 2000);
+    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
 
     let combined = report
         .proposals
