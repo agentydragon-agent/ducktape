@@ -1,6 +1,0 @@
-load("//skills:defs.bzl", "skill_package")
-
-skill_package(
-    name = "debundle-mint-names",
-    srcs = ["SKILL.md"],
-)
