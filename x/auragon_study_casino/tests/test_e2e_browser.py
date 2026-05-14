@@ -8,12 +8,15 @@ Scenarios:
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import threading
 import time
+import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 import pytest_bazel
@@ -89,6 +92,31 @@ def _attach_logs(page: Page) -> list[str]:
     return logs
 
 
+def _post_json(base_url: str, path: str, payload: dict[str, object]) -> dict[str, object]:
+    req = urllib.request.Request(
+        f"{base_url}{path}",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        assert resp.status == 200
+        decoded = json.loads(resp.read().decode())
+        assert isinstance(decoded, dict)
+        return cast(dict[str, object], decoded)
+
+
+def _seed_credits(base_url: str, credits: int) -> None:
+    _post_json(
+        base_url,
+        "/actions/import",
+        {
+            "client_action_id": f"test.import:{time.time_ns()}",
+            "data": {"credits": credits, "tokens": 0, "sessions": [], "prizes": [], "prizeLog": []},
+        },
+    )
+
+
 def test_initial_state_fetch_completes(page: Page, casino_server: str) -> None:
     """App loads, /state succeeds, banner reaches 'ok'."""
     logs = _attach_logs(page)
@@ -127,6 +155,45 @@ def test_state_5xx_shows_offline_not_stuck_syncing(page: Page, casino_server: st
     assert page.locator("[data-testid='sync-banner-syncing']").count() == 0, (
         f"syncing banner still present\nlogs={logs}"
     )
+
+
+def test_roulette_spin_sets_finite_wheel_transform(page: Page, casino_server: str) -> None:
+    """Roulette consumes the nested action result and animates toward a real pocket."""
+    _seed_credits(casino_server, 100)
+    logs = _attach_logs(page)
+
+    page.goto(casino_server)
+    page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
+    page.get_by_role("button", name="casino").click()
+    page.get_by_role("button", name=re.compile(r"^Spin . 10 cr$")).click()
+
+    page.wait_for_function(
+        """
+        () => {
+          const wheel = document.querySelector('svg[viewBox="-150 -150 300 300"]');
+          const transform = wheel?.style.transform || "";
+          return transform.startsWith("rotate(") && transform !== "rotate(0deg)" && !transform.includes("NaN");
+        }
+        """,
+        timeout=5_000,
+    )
+
+    assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during roulette spin\n{logs}"
+
+
+def test_slots_spin_does_not_throw_on_server_action_response(page: Page, casino_server: str) -> None:
+    """Slots consumes the nested action result before mapping returned symbols."""
+    _seed_credits(casino_server, 100)
+    logs = _attach_logs(page)
+
+    page.goto(casino_server)
+    page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
+    page.get_by_role("button", name="casino").click()
+    page.get_by_role("button", name="slots").click()
+    page.get_by_role("button", name=re.compile(r"^Spin . 5 cr$")).click()
+    page.wait_for_timeout(500)
+
+    assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during slots spin\n{logs}"
 
 
 if __name__ == "__main__":

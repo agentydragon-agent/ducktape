@@ -60,6 +60,11 @@ const newActionId = (prefix) =>
     ? `${prefix}:${crypto.randomUUID()}`
     : `${prefix}:${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
+const postActionResult = async (path, body) => {
+  const response = await casinoSync.postAction(path, body);
+  return response.result;
+};
+
 export function useCasino() {
   const state = useCasinoState();
   const activeSession = useActiveSession();
@@ -206,13 +211,13 @@ export function useCasino() {
   };
 
   const spinSlots = (wagerCredits) =>
-    casinoSync.postAction("/casino/slots/spin", {
+    postActionResult("/casino/slots/spin", {
       client_action_id: newActionId("slots.spin"),
       wager_credits: Math.floor(wagerCredits),
     });
 
   const spinRoulette = ({ wagerCredits, betType, betNumber }) =>
-    casinoSync.postAction("/casino/roulette/spin", {
+    postActionResult("/casino/roulette/spin", {
       client_action_id: newActionId("roulette.spin"),
       wager_credits: Math.floor(wagerCredits),
       bet_type: betType,
@@ -220,25 +225,25 @@ export function useCasino() {
     });
 
   const blackjackDeal = (wagerCredits) =>
-    casinoSync.postAction("/casino/blackjack/deal", {
+    postActionResult("/casino/blackjack/deal", {
       client_action_id: newActionId("blackjack.deal"),
       wager_credits: Math.floor(wagerCredits),
     });
 
   const blackjackHit = (handId) =>
-    casinoSync.postAction("/casino/blackjack/hit", {
+    postActionResult("/casino/blackjack/hit", {
       client_action_id: newActionId("blackjack.hit"),
       hand_id: handId,
     });
 
   const blackjackStand = (handId) =>
-    casinoSync.postAction("/casino/blackjack/stand", {
+    postActionResult("/casino/blackjack/stand", {
       client_action_id: newActionId("blackjack.stand"),
       hand_id: handId,
     });
 
   const blackjackDouble = (handId) =>
-    casinoSync.postAction("/casino/blackjack/double", {
+    postActionResult("/casino/blackjack/double", {
       client_action_id: newActionId("blackjack.double"),
       hand_id: handId,
     });
