@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use spec::{AnonymousStatement, BindingSourceKind, Member};
@@ -45,12 +45,6 @@ pub fn is_module_yaml(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.ends_with(".yaml"))
-}
-
-fn is_retired_deferred_yaml(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".yaml.deferred"))
 }
 
 pub fn module_path_from_file(path: &Path, root: &Path) -> String {
@@ -86,11 +80,6 @@ fn collect_module_files_into(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> 
             .path();
         if path.is_dir() {
             collect_module_files_into(&path, out)?;
-        } else if is_retired_deferred_yaml(&path) {
-            bail!(
-                "{} uses retired .yaml.deferred authoring; move non-emitting binding edits into binding_patches.yaml",
-                path.display()
-            );
         } else if is_module_yaml(&path) {
             out.push(path);
         }
@@ -200,17 +189,6 @@ mod tests {
             .map(|p| p.strip_prefix(root).unwrap().to_string_lossy().to_string())
             .collect();
         assert_eq!(names, vec!["ui/a.yaml"]);
-    }
-
-    #[test]
-    fn collect_module_files_rejects_retired_deferred_yaml() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(root, "ui/b.yaml.deferred", "members: []\n");
-
-        let error = collect_module_files(root).unwrap_err();
-
-        assert!(error.to_string().contains(".yaml.deferred"), "{error:#}");
     }
 
     #[test]
