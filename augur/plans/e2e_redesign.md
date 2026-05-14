@@ -618,34 +618,46 @@ should preserve the public `simulate_set()` shape.
 
 ### Step 1: Add Runtime Types Without Changing Behavior
 
-Introduce internal runtime dataclasses/protocols:
+**DONE (first slice)**: Introduced internal runtime dataclasses/protocols:
+
+- `ActorPolicyProgram`: enabled policy rules grouped by actor in scenario actor
+  order, preserving per-actor rule order.
+- `PolicyContext`: month and actor context placeholder for policy evaluation.
+- `SellAssetInstructionBatch`: columnar intended asset-sale operation.
+- `GenericSp500SaleApplication`: realized sale result after accounting applies
+  a sell instruction.
+- `LedgerEntryBatch`: placeholder for realized accounting entries.
+
+Still to add as the runtime expands:
 
 - `SimulationState`: vectorized state for accounts, holdings, liabilities,
   basis, ownership, property use, tax state, and per-policy memory.
-- `PolicyContext`: month, actor, scenario refs, market observation, scheduled
-  events, and available market opportunities.
-- `InstructionBatch`: typed columnar intended operations over rollout masks.
-- `LedgerEntryBatch`: realized accounting entries after application.
 - `PolicyRuntime`: compiles Pydantic `PolicyConfig` objects into ordered
   runtime rules.
 
-This first step can run alongside the existing arrays and should be covered by
-a small focused test proving policy order is preserved and disabled policies
-are excluded.
+Covered by `//augur/core:policy_runtime_test`, including policy order and
+disabled-policy exclusion.
 
 ### Step 2: Move Checking-Floor Selling First
 
-Checking-floor is the best first migration because it is already ordered and
-simple. Refactor it so:
+**DONE**: Checking-floor is the first migrated policy path.
 
 - `CheckingFloorSellPublicStockPolicy` evaluates current cash and SP500 state.
 - It emits `SellAssetInstruction(asset_type=generic_sp500_stock, amount_usd=...)`.
 - The instruction applier updates cash, units/value, remaining basis, realized
-  gain, shortfall/rejection state, ledger entries, and `SellSp500Action`.
+  gain, and shortfall state.
 - Existing checking-floor e2e tests assert arrays and actions still match.
 
-Acceptance: the policy no longer mutates `current_cash`, `remaining_sp500_units`,
-or result arrays directly inside the monthly loop.
+Acceptance met: checking-floor policy evaluation no longer directly mutates
+`current_cash`, `remaining_sp500_units`, remaining basis, or result arrays
+inside the monthly loop.
+
+Remaining before this slice is fully ledger-backed:
+
+- Add ledger entries from the SP500 sale applier and reconcile sale arrays to
+  ledger totals.
+- Generalize `SellAssetInstructionBatch` beyond SP500 so PE sales can reuse the
+  same instruction family.
 
 ### Step 3: Move Monthly Spend to Debit Instructions
 

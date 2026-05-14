@@ -102,11 +102,21 @@ py_library(
 )
 
 py_library(
+    name = "policy_runtime_py",
+    srcs = ["policy_runtime.py"],
+    deps = [
+        ":scenario_set_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
     name = "scenario_engine_py",
     srcs = ["scenario_engine.py"],
     deps = [
         ":local_regulation_py",
         ":market_bundle_py",
+        ":policy_runtime_py",
         ":property_depreciation_py",
         ":property_sale_py",
         ":property_tax_py",
@@ -351,6 +361,17 @@ py_test(
         ":schemas_py",
         "@pypi//numpy",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "policy_runtime_test",
+    srcs = ["policy_runtime_test.py"],
+    deps = [
+        ":policy_runtime_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],
 )

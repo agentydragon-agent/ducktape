@@ -12,6 +12,12 @@ from augur.core.market_bundle import (
     SimpleMarketBundleProvider,
     sample_market_bundle_for_request,
 )
+from augur.core.policy_runtime import (
+    actor_policy_programs,
+    apply_generic_sp500_sale_instruction,
+    checking_floor_sell_public_stock_instruction,
+    enabled_rules_of_type,
+)
 from augur.core.property_depreciation import rental_active_mask
 from augur.core.property_sale import empty_property_disposition_arrays, property_disposition_arrays
 from augur.core.property_tax import monthly_property_tax_usd
@@ -419,11 +425,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     private_equity_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     cash = np.zeros((rollout_count, month_count), dtype="float64")
     monthly_spend_arr = np.zeros((rollout_count, month_count), dtype="float64")
+    policy_programs = actor_policy_programs(scenario)
     spend_policies = _enabled_policies_of(scenario, MonthlySpendPolicy)
     private_equity_sale_requests = _private_equity_sale_requests_by_month(scenario)
     private_equity_liquidity_event = market_bundle.private_equity_liquidity_event_mask.copy()
     private_equity_sale_policy = _enabled_policy_of(scenario, PrivateEquitySalePolicy)
-    checking_policies = _enabled_policies_of(scenario, CheckingFloorSellPublicStockPolicy)
+    checking_policies = enabled_rules_of_type(policy_programs, CheckingFloorSellPublicStockPolicy)
     remaining_private_equity_fraction = np.ones(rollout_count, dtype="float64")
     remaining_sp500_units = np.divide(
         initial_sp500,
@@ -523,35 +530,29 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         sp500_basis = np.zeros(rollout_count, dtype="float64")
         sp500_shortfall = np.zeros(rollout_count, dtype="float64")
         for checking_policy in checking_policies:
-            sp500_value_before_sale = remaining_sp500_units * sp500_multiplier
-            policy_sp500_sale, policy_sp500_basis, policy_sp500_shortfall = _checking_floor_stock_sale(
-                checking_policy,
+            sale_instruction = checking_floor_sell_public_stock_instruction(
+                checking_policy, current_cash_usd=current_cash
+            )
+            sale_application = apply_generic_sp500_sale_instruction(
+                sale_instruction,
                 current_cash_usd=current_cash,
-                sp500_value_usd=sp500_value_before_sale,
-                remaining_sp500_basis_usd=remaining_sp500_basis,
+                remaining_units=remaining_sp500_units,
+                remaining_basis_usd=remaining_sp500_basis,
+                sp500_unit_price_usd=sp500_multiplier,
             )
-            current_cash = current_cash + policy_sp500_sale
-            remaining_sp500_units = np.maximum(
-                0.0,
-                remaining_sp500_units
-                - np.divide(
-                    policy_sp500_sale,
-                    sp500_multiplier,
-                    out=np.zeros_like(policy_sp500_sale),
-                    where=sp500_multiplier > 0,
-                ),
-            )
-            remaining_sp500_basis = np.maximum(0.0, remaining_sp500_basis - policy_sp500_basis)
-            sp500_sale = sp500_sale + policy_sp500_sale
-            sp500_basis = sp500_basis + policy_sp500_basis
-            sp500_shortfall = np.maximum(sp500_shortfall, policy_sp500_shortfall)
+            current_cash = sale_application.current_cash_usd
+            remaining_sp500_units = sale_application.remaining_units
+            remaining_sp500_basis = sale_application.remaining_basis_usd
+            sp500_sale = sp500_sale + sale_application.sale_usd
+            sp500_basis = sp500_basis + sale_application.basis_usd
+            sp500_shortfall = np.maximum(sp500_shortfall, sale_application.shortfall_usd)
             _record_sp500_sale_actions(
                 actions,
                 month_index=int(month_index[month]),
                 policy=checking_policy,
-                amount_usd=policy_sp500_sale,
-                basis_usd=policy_sp500_basis,
-                shortfall_usd=policy_sp500_shortfall,
+                amount_usd=sale_application.sale_usd,
+                basis_usd=sale_application.basis_usd,
+                shortfall_usd=sale_application.shortfall_usd,
             )
         sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
 
@@ -646,24 +647,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         monthly_spend_usd=monthly_spend_arr,
         actions=_sorted_actions(actions),
     )
-
-
-def _checking_floor_stock_sale(
-    policy: CheckingFloorSellPublicStockPolicy,
-    *,
-    current_cash_usd: np.ndarray,
-    sp500_value_usd: np.ndarray,
-    remaining_sp500_basis_usd: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    floor_usd = policy.floor_usd
-    sale_amount_usd = policy.sale_amount_usd
-    should_sell = current_cash_usd < floor_usd
-    sale = np.where(should_sell, np.minimum(sale_amount_usd, sp500_value_usd), 0.0)
-    basis = np.divide(
-        remaining_sp500_basis_usd * sale, sp500_value_usd, out=np.zeros_like(sale), where=sp500_value_usd > 0
-    )
-    shortfall = np.maximum(0.0, floor_usd - (current_cash_usd + sale))
-    return sale, basis, shortfall
 
 
 def _empty_private_equity_sale_effect(rollout_count: int) -> PrivateEquitySaleEffect:
