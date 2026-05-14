@@ -13,12 +13,14 @@ from augur.core.market_bundle import (
     sample_market_bundle_for_request,
 )
 from augur.core.policy_runtime import (
+    MortgagePaymentApplication,
     PrivateEquitySaleApplication,
     PrivateEquitySaleInstructionBatch,
     PrivateEquitySaleRequestObservation,
     actor_policy_programs,
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
+    apply_mortgage_payment,
     apply_private_equity_sale_instruction,
     checking_floor_sell_public_stock_instruction,
     enabled_rules_of_type,
@@ -62,6 +64,7 @@ from augur.core.scenario_set import (
 from augur.core.schemas import ColumnarTable
 
 MONTHS_PER_YEAR = 12
+MORTGAGE_SERVICING_POLICY_ID = "mortgage_servicing"
 
 
 @dataclass(frozen=True)
@@ -586,6 +589,16 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         partner_equity=partner_equity,
         mortgage_balance_usd=mortgage_balance,
     )
+    if not _has_partner(scenario):
+        mortgage_application = apply_mortgage_payment(
+            actor_id=_primary_owner_actor_id(scenario),
+            policy_id=MORTGAGE_SERVICING_POLICY_ID,
+            mortgage_payment_usd=property_cash_flow.mortgage_payment_usd * property_live_mask,
+            mortgage_interest_usd=mortgage_interest,
+            mortgage_principal_usd=mortgage_principal,
+            mortgage_balance_after_usd=mortgage_balance,
+        )
+        _record_mortgage_payment_actions(actions, month_index=month_index, mortgage_application=mortgage_application)
     return ScenarioRunArrays(
         scenario_id=scenario.scenario_id,
         scenario_label=scenario.label,
@@ -719,6 +732,29 @@ def _record_monthly_spend_actions(
         )
         for rollout_index in np.nonzero(amount_usd > 0)[0].tolist()
     )
+
+
+def _record_mortgage_payment_actions(
+    actions: list[SimulationAction], *, month_index: np.ndarray, mortgage_application: MortgagePaymentApplication
+) -> None:
+    rollout_indexes, month_positions = np.nonzero(mortgage_application.mortgage_payment_usd > 0)
+    for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
+        actions.append(
+            PayMortgageAction(
+                rollout_index=rollout_index,
+                month_index=int(month_index[month_position]),
+                actor_id=mortgage_application.actor_id,
+                policy_id=mortgage_application.policy_id,
+                mortgage_payment_usd=float(mortgage_application.mortgage_payment_usd[rollout_index, month_position]),
+                mortgage_interest_usd=float(mortgage_application.mortgage_interest_usd[rollout_index, month_position]),
+                mortgage_principal_usd=float(
+                    mortgage_application.mortgage_principal_usd[rollout_index, month_position]
+                ),
+                mortgage_balance_after_usd=float(
+                    mortgage_application.mortgage_balance_after_usd[rollout_index, month_position]
+                ),
+            )
+        )
 
 
 def _record_partner_agreement_actions(

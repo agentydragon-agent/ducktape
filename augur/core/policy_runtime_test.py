@@ -7,6 +7,7 @@ from augur.core.policy_runtime import (
     actor_policy_programs,
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
+    apply_mortgage_payment,
     apply_private_equity_sale_instruction,
     checking_floor_sell_public_stock_instruction,
     enabled_rules_of_type,
@@ -104,6 +105,32 @@ def test_monthly_spend_instruction_applier_debits_cash_and_records_ledger() -> N
     assert spend_ledger.domain == "cash"
     assert spend_ledger.category == "monthly_spend"
     np.testing.assert_allclose(spend_ledger.amount_usd, [-100.0, -120.0, -150.0])
+
+
+def test_mortgage_payment_application_records_cash_and_liability_ledger() -> None:
+    result = apply_mortgage_payment(
+        actor_id="alpha",
+        policy_id="mortgage_servicing",
+        mortgage_payment_usd=np.array([0.0, 2_500.0]),
+        mortgage_interest_usd=np.array([0.0, 2_000.0]),
+        mortgage_principal_usd=np.array([0.0, 500.0]),
+        mortgage_balance_after_usd=np.array([400_000.0, 399_500.0]),
+    )
+
+    assert result.actor_id == "alpha"
+    assert result.policy_id == "mortgage_servicing"
+    np.testing.assert_allclose(result.mortgage_payment_usd, [0.0, 2_500.0])
+    np.testing.assert_allclose(result.mortgage_interest_usd, [0.0, 2_000.0])
+    np.testing.assert_allclose(result.mortgage_principal_usd, [0.0, 500.0])
+    np.testing.assert_allclose(result.mortgage_balance_after_usd, [400_000.0, 399_500.0])
+    assert [(entry.domain, entry.category) for entry in result.ledger_entries] == [
+        ("cash", "mortgage_interest"),
+        ("cash", "mortgage_principal"),
+        ("liability", "mortgage_principal"),
+    ]
+    np.testing.assert_allclose(result.ledger_entries[0].amount_usd, [-0.0, -2_000.0])
+    np.testing.assert_allclose(result.ledger_entries[1].amount_usd, [-0.0, -500.0])
+    np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [-0.0, -500.0])
 
 
 def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None:

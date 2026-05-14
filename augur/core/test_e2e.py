@@ -320,6 +320,17 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
     np.testing.assert_allclose(rollout.series("mortgage_principal_usd")[1], expected_month_1_principal)
     np.testing.assert_allclose(rollout.series("mortgage_payment_usd")[1], payment)
     np.testing.assert_allclose(rollout.series("mortgage_balance_usd")[1], loan_amount - expected_month_1_principal)
+    mortgage_payments = result.actions(PayMortgageAction)
+    assert len(mortgage_payments) == 12
+    assert mortgage_payments[0].month_index == 1
+    assert mortgage_payments[0].actor_id == "alpha"
+    assert mortgage_payments[0].policy_id == "mortgage_servicing"
+    np.testing.assert_allclose(mortgage_payments[0].mortgage_payment_usd, payment)
+    np.testing.assert_allclose(mortgage_payments[0].mortgage_interest_usd, expected_month_1_interest)
+    np.testing.assert_allclose(mortgage_payments[0].mortgage_principal_usd, expected_month_1_principal)
+    np.testing.assert_allclose(
+        mortgage_payments[0].mortgage_balance_after_usd, loan_amount - expected_month_1_principal
+    )
 
 
 def test_partner_equity_accrual_records_contributions_and_claims() -> None:

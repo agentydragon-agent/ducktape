@@ -603,10 +603,10 @@ Remaining cleanup:
 - Partner equity still uses a single first-enabled policy because the engine is
   not yet policy-runtime shaped. Do not add more singleton validation as the
   main fix; migrate partner equity to instructions plus per-partner ledgers.
-- `PayMortgageAction` still appears only through partner-equity action
-  recording even though owner mortgage payments occur in ordinary property
-  scenarios. The ledger cleanup should make mortgage payment an ordinary
-  liability-payment entry.
+- Ordinary owner mortgage payments now emit `PayMortgageAction` through the
+  policy-runtime mortgage applier. Partner-equity still has its own legacy
+  mortgage action path and should be folded into the same liability-servicing
+  ledger during the partner-contract migration.
 - Split `TransferPartnerContributionAction` into actual cash movement and
   applied-to-house-cost accounting. The model now records unallocated excess,
   but a ledger needs to say where that excess lives.
@@ -706,16 +706,23 @@ Remaining before this is a complete PE/account model:
 
 ### Step 5: Move Liability Servicing and Property Cash Flows
 
+**DONE (first slice)**: Ordinary owner mortgage payments now flow through a
+`MortgagePaymentApplication` with cash and liability ledger entries, and normal
+mortgage scenarios emit `PayMortgageAction` for each payment month. This makes
+the recurring owner mortgage visible in result actions instead of only in
+arrays.
+
 Make recurring property economics explicit accounting entries:
 
-- Mortgage interest accrual and principal payment.
 - Property tax, insurance, maintenance, HOA.
 - Rental income, vacancy, management fee, leasing fee.
 - Optional liability-servicing policy that decides which account pays due
   liabilities if there is more than one plausible source.
+- Partner-equity mortgage payments should reuse the same liability-servicing
+  applier once partner contracts move to instructions.
 
-Acceptance: ordinary mortgage scenarios produce mortgage payment ledger/action
-truth, not only partner-equity scenarios.
+Acceptance met for ordinary single-owner mortgages: ordinary mortgage scenarios
+produce mortgage payment ledger/action truth, not only partner-equity scenarios.
 
 ### Step 6: Move Partner Equity to Contract Instructions
 

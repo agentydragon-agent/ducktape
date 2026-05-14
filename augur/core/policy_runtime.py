@@ -107,6 +107,17 @@ class DebitAccountApplication:
 
 
 @dataclass(frozen=True)
+class MortgagePaymentApplication:
+    actor_id: str
+    policy_id: str
+    mortgage_payment_usd: np.ndarray
+    mortgage_interest_usd: np.ndarray
+    mortgage_principal_usd: np.ndarray
+    mortgage_balance_after_usd: np.ndarray
+    ledger_entries: tuple[LedgerEntryBatch, ...]
+
+
+@dataclass(frozen=True)
 class PrivateEquitySaleApplication:
     sale_usd: np.ndarray
     basis_usd: np.ndarray
@@ -183,6 +194,49 @@ def apply_debit_account_instruction(
         current_cash_usd=current_cash_usd - instruction.amount_usd,
         debit_usd=instruction.amount_usd,
         ledger_entries=(ledger_entry,),
+    )
+
+
+def apply_mortgage_payment(
+    *,
+    actor_id: str,
+    policy_id: str,
+    mortgage_payment_usd: np.ndarray,
+    mortgage_interest_usd: np.ndarray,
+    mortgage_principal_usd: np.ndarray,
+    mortgage_balance_after_usd: np.ndarray,
+) -> MortgagePaymentApplication:
+    ledger_entries = (
+        LedgerEntryBatch(
+            actor_id=actor_id,
+            policy_id=policy_id,
+            domain="cash",
+            amount_usd=-mortgage_interest_usd,
+            category="mortgage_interest",
+        ),
+        LedgerEntryBatch(
+            actor_id=actor_id,
+            policy_id=policy_id,
+            domain="cash",
+            amount_usd=-mortgage_principal_usd,
+            category="mortgage_principal",
+        ),
+        LedgerEntryBatch(
+            actor_id=actor_id,
+            policy_id=policy_id,
+            domain="liability",
+            amount_usd=-mortgage_principal_usd,
+            category="mortgage_principal",
+        ),
+    )
+    return MortgagePaymentApplication(
+        actor_id=actor_id,
+        policy_id=policy_id,
+        mortgage_payment_usd=mortgage_payment_usd,
+        mortgage_interest_usd=mortgage_interest_usd,
+        mortgage_principal_usd=mortgage_principal_usd,
+        mortgage_balance_after_usd=mortgage_balance_after_usd,
+        ledger_entries=ledger_entries,
     )
 
 
