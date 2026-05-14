@@ -22,6 +22,7 @@ from augur.core.policy_runtime import (
     apply_generic_sp500_sale_instruction,
     apply_mortgage_payment,
     apply_private_equity_sale_instruction,
+    apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
     enabled_rules_of_type,
     monthly_spend_debit_instruction,
@@ -65,6 +66,7 @@ from augur.core.schemas import ColumnarTable
 
 MONTHS_PER_YEAR = 12
 MORTGAGE_SERVICING_POLICY_ID = "mortgage_servicing"
+PROPERTY_OPERATING_CASH_FLOW_POLICY_ID = "property_operating_cash_flow"
 
 
 @dataclass(frozen=True)
@@ -866,10 +868,9 @@ def _property_cash_flow_arrays(
     (rental_gross_income, rental_vacancy_loss, rental_income, rental_management_fee, rental_leasing_fee) = (
         _rental_cash_flow_arrays(scenario, market_bundle, location_id=location_id)
     )
-    property_carrying_cost = property_tax + hoa + insurance + maintenance + rental_management_fee + rental_leasing_fee
-    net_property_cash_flow = rental_income - property_carrying_cost - mortgage_payment
-    return PropertyCashFlowArrays(
-        mortgage_payment_usd=mortgage_payment,
+    operating_cash_flow = apply_property_operating_cash_flows(
+        actor_id=_primary_owner_actor_id(scenario),
+        policy_id=PROPERTY_OPERATING_CASH_FLOW_POLICY_ID,
         property_tax_usd=property_tax,
         hoa_usd=hoa,
         insurance_usd=insurance,
@@ -879,7 +880,20 @@ def _property_cash_flow_arrays(
         rental_income_usd=rental_income,
         rental_management_fee_usd=rental_management_fee,
         rental_leasing_fee_usd=rental_leasing_fee,
-        property_carrying_cost_usd=property_carrying_cost,
+    )
+    net_property_cash_flow = operating_cash_flow.net_operating_cash_flow_usd - mortgage_payment
+    return PropertyCashFlowArrays(
+        mortgage_payment_usd=mortgage_payment,
+        property_tax_usd=operating_cash_flow.property_tax_usd,
+        hoa_usd=operating_cash_flow.hoa_usd,
+        insurance_usd=operating_cash_flow.insurance_usd,
+        maintenance_usd=operating_cash_flow.maintenance_usd,
+        rental_gross_income_usd=operating_cash_flow.rental_gross_income_usd,
+        rental_vacancy_loss_usd=operating_cash_flow.rental_vacancy_loss_usd,
+        rental_income_usd=operating_cash_flow.rental_income_usd,
+        rental_management_fee_usd=operating_cash_flow.rental_management_fee_usd,
+        rental_leasing_fee_usd=operating_cash_flow.rental_leasing_fee_usd,
+        property_carrying_cost_usd=operating_cash_flow.property_carrying_cost_usd,
         net_property_cash_flow_usd=net_property_cash_flow,
     )
 

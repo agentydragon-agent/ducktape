@@ -118,6 +118,24 @@ class MortgagePaymentApplication:
 
 
 @dataclass(frozen=True)
+class PropertyOperatingCashFlowApplication:
+    actor_id: str
+    policy_id: str
+    property_tax_usd: np.ndarray
+    hoa_usd: np.ndarray
+    insurance_usd: np.ndarray
+    maintenance_usd: np.ndarray
+    rental_gross_income_usd: np.ndarray
+    rental_vacancy_loss_usd: np.ndarray
+    rental_income_usd: np.ndarray
+    rental_management_fee_usd: np.ndarray
+    rental_leasing_fee_usd: np.ndarray
+    property_carrying_cost_usd: np.ndarray
+    net_operating_cash_flow_usd: np.ndarray
+    ledger_entries: tuple[LedgerEntryBatch, ...]
+
+
+@dataclass(frozen=True)
 class PrivateEquitySaleApplication:
     sale_usd: np.ndarray
     basis_usd: np.ndarray
@@ -236,6 +254,94 @@ def apply_mortgage_payment(
         mortgage_interest_usd=mortgage_interest_usd,
         mortgage_principal_usd=mortgage_principal_usd,
         mortgage_balance_after_usd=mortgage_balance_after_usd,
+        ledger_entries=ledger_entries,
+    )
+
+
+def apply_property_operating_cash_flows(
+    *,
+    actor_id: str,
+    policy_id: str,
+    property_tax_usd: np.ndarray,
+    hoa_usd: np.ndarray,
+    insurance_usd: np.ndarray,
+    maintenance_usd: np.ndarray,
+    rental_gross_income_usd: np.ndarray,
+    rental_vacancy_loss_usd: np.ndarray,
+    rental_income_usd: np.ndarray,
+    rental_management_fee_usd: np.ndarray,
+    rental_leasing_fee_usd: np.ndarray,
+) -> PropertyOperatingCashFlowApplication:
+    property_carrying_cost_usd = (
+        property_tax_usd
+        + hoa_usd
+        + insurance_usd
+        + maintenance_usd
+        + rental_management_fee_usd
+        + rental_leasing_fee_usd
+    )
+    net_operating_cash_flow_usd = rental_income_usd - property_carrying_cost_usd
+    ledger_entries = (
+        LedgerEntryBatch(
+            actor_id=actor_id,
+            policy_id=policy_id,
+            domain="rental",
+            amount_usd=rental_gross_income_usd,
+            category="rental_gross_income",
+        ),
+        LedgerEntryBatch(
+            actor_id=actor_id,
+            policy_id=policy_id,
+            domain="rental",
+            amount_usd=-rental_vacancy_loss_usd,
+            category="rental_vacancy_loss",
+        ),
+        LedgerEntryBatch(
+            actor_id=actor_id,
+            policy_id=policy_id,
+            domain="cash",
+            amount_usd=rental_income_usd,
+            category="rental_income",
+        ),
+        LedgerEntryBatch(
+            actor_id=actor_id, policy_id=policy_id, domain="cash", amount_usd=-property_tax_usd, category="property_tax"
+        ),
+        LedgerEntryBatch(actor_id=actor_id, policy_id=policy_id, domain="cash", amount_usd=-hoa_usd, category="hoa"),
+        LedgerEntryBatch(
+            actor_id=actor_id, policy_id=policy_id, domain="cash", amount_usd=-insurance_usd, category="insurance"
+        ),
+        LedgerEntryBatch(
+            actor_id=actor_id, policy_id=policy_id, domain="cash", amount_usd=-maintenance_usd, category="maintenance"
+        ),
+        LedgerEntryBatch(
+            actor_id=actor_id,
+            policy_id=policy_id,
+            domain="cash",
+            amount_usd=-rental_management_fee_usd,
+            category="rental_management_fee",
+        ),
+        LedgerEntryBatch(
+            actor_id=actor_id,
+            policy_id=policy_id,
+            domain="cash",
+            amount_usd=-rental_leasing_fee_usd,
+            category="rental_leasing_fee",
+        ),
+    )
+    return PropertyOperatingCashFlowApplication(
+        actor_id=actor_id,
+        policy_id=policy_id,
+        property_tax_usd=property_tax_usd,
+        hoa_usd=hoa_usd,
+        insurance_usd=insurance_usd,
+        maintenance_usd=maintenance_usd,
+        rental_gross_income_usd=rental_gross_income_usd,
+        rental_vacancy_loss_usd=rental_vacancy_loss_usd,
+        rental_income_usd=rental_income_usd,
+        rental_management_fee_usd=rental_management_fee_usd,
+        rental_leasing_fee_usd=rental_leasing_fee_usd,
+        property_carrying_cost_usd=property_carrying_cost_usd,
+        net_operating_cash_flow_usd=net_operating_cash_flow_usd,
         ledger_entries=ledger_entries,
     )
 

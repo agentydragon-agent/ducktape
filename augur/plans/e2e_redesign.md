@@ -712,10 +712,15 @@ mortgage scenarios emit `PayMortgageAction` for each payment month. This makes
 the recurring owner mortgage visible in result actions instead of only in
 arrays.
 
+**DONE (second slice)**: Property operating cash flow now flows through a
+`PropertyOperatingCashFlowApplication`. The applier records rental gross,
+vacancy, collected rent, property tax, HOA, insurance, maintenance, management
+fee, and leasing fee ledger entries, and the existing result arrays are derived
+from that application. The ledger is still internal until the result API grows
+a first-class ledger view.
+
 Make recurring property economics explicit accounting entries:
 
-- Property tax, insurance, maintenance, HOA.
-- Rental income, vacancy, management fee, leasing fee.
 - Optional liability-servicing policy that decides which account pays due
   liabilities if there is more than one plausible source.
 - Partner-equity mortgage payments should reuse the same liability-servicing
@@ -723,6 +728,8 @@ Make recurring property economics explicit accounting entries:
 
 Acceptance met for ordinary single-owner mortgages: ordinary mortgage scenarios
 produce mortgage payment ledger/action truth, not only partner-equity scenarios.
+Acceptance met for internal property operating accounting: recurring rental and
+carrying-cost arrays are produced by an applier with ledger entries.
 
 ### Step 6: Move Partner Equity to Contract Instructions
 

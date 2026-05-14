@@ -9,6 +9,7 @@ from augur.core.policy_runtime import (
     apply_generic_sp500_sale_instruction,
     apply_mortgage_payment,
     apply_private_equity_sale_instruction,
+    apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
     enabled_rules_of_type,
     monthly_spend_debit_instruction,
@@ -131,6 +132,41 @@ def test_mortgage_payment_application_records_cash_and_liability_ledger() -> Non
     np.testing.assert_allclose(result.ledger_entries[0].amount_usd, [-0.0, -2_000.0])
     np.testing.assert_allclose(result.ledger_entries[1].amount_usd, [-0.0, -500.0])
     np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [-0.0, -500.0])
+
+
+def test_property_operating_cash_flow_application_records_cash_ledger() -> None:
+    result = apply_property_operating_cash_flows(
+        actor_id="alpha",
+        policy_id="property_operating_cash_flow",
+        property_tax_usd=np.array([0.0, 100.0]),
+        hoa_usd=np.array([0.0, 25.0]),
+        insurance_usd=np.array([0.0, 50.0]),
+        maintenance_usd=np.array([0.0, 75.0]),
+        rental_gross_income_usd=np.array([0.0, 2_000.0]),
+        rental_vacancy_loss_usd=np.array([0.0, 100.0]),
+        rental_income_usd=np.array([0.0, 1_900.0]),
+        rental_management_fee_usd=np.array([0.0, 152.0]),
+        rental_leasing_fee_usd=np.array([0.0, 40.0]),
+    )
+
+    assert result.actor_id == "alpha"
+    assert result.policy_id == "property_operating_cash_flow"
+    np.testing.assert_allclose(result.property_carrying_cost_usd, [0.0, 442.0])
+    np.testing.assert_allclose(result.net_operating_cash_flow_usd, [0.0, 1_458.0])
+    assert [(entry.domain, entry.category) for entry in result.ledger_entries] == [
+        ("rental", "rental_gross_income"),
+        ("rental", "rental_vacancy_loss"),
+        ("cash", "rental_income"),
+        ("cash", "property_tax"),
+        ("cash", "hoa"),
+        ("cash", "insurance"),
+        ("cash", "maintenance"),
+        ("cash", "rental_management_fee"),
+        ("cash", "rental_leasing_fee"),
+    ]
+    np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [0.0, 1_900.0])
+    np.testing.assert_allclose(result.ledger_entries[3].amount_usd, [-0.0, -100.0])
+    np.testing.assert_allclose(result.ledger_entries[8].amount_usd, [-0.0, -40.0])
 
 
 def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None:
