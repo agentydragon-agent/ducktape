@@ -471,6 +471,130 @@ export { anchor, consumer_a, consumer_b };
 }
 
 #[test]
+fn factorizer_splits_pure_symbol_declarator_from_impure_sibling() {
+    let chunk_source = r#"const anchor = "anchor";
+class Something {}
+const impure = new Something(), pureBrand = Symbol("Brand");
+export { anchor, impure, pureBrand };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+
+    let brand_cell = graph
+        .factorize
+        .cells
+        .iter()
+        .find(|cell| cell.binding_ids == vec!["pureBrand".to_string()])
+        .expect("pureBrand should be emitted as its own certified factorize cell");
+    assert!(
+        brand_cell.landable_today
+            && brand_cell.owner_ids.len() == 1
+            && brand_cell.anonymous_statement_owner_ids.is_empty(),
+        "pureBrand should split away as a singleton owner: {brand_cell:#?}",
+    );
+    assert!(
+        !graph.factorize.cells.iter().any(|cell| {
+            cell.binding_ids.contains(&"pureBrand".to_string())
+                && cell.binding_ids.contains(&"impure".to_string())
+        }),
+        "impure sibling must not poison pureBrand's factorize cell: {:#?}",
+        graph.factorize,
+    );
+
+    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    assert!(
+        report.proposals.iter().any(|proposal| {
+            proposal.binding_ids == vec!["pureBrand".to_string()]
+                && proposal.owner_ids.len() == 1
+                && proposal.anonymous_statement_owner_ids.is_empty()
+                && proposal.landable_today
+        }),
+        "CLI factorizer should preserve the analyzer's singleton pureBrand proposal: {report:#?}",
+    );
+
+    let promoted = run_fixture(FixtureOpts::new(
+        chunk_source,
+        vec![
+            logical_module("anchors/anchor", &[Member::new("anchor")]),
+            logical_module("brands/pure_brand", &[Member::new("pureBrand")]),
+        ],
+    ));
+    assert_module_source(
+        &promoted.out_root,
+        "static/app/modules/brands/pure_brand.js",
+        &["const pureBrand = Symbol(", "export {", "pureBrand"],
+        &["new Something", "impure"],
+    );
+}
+
+#[test]
+fn factorizer_does_not_emit_binding_only_proposal_for_rebound_split_let() {
+    let chunk_source = r#"const anchor = "anchor";
+let mutable = 1, peer = Symbol("Peer");
+mutable = mutable + 1;
+export { anchor, mutable, peer };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+
+    assert!(
+        graph.factorize.cells.iter().any(|cell| {
+            cell.binding_ids == vec!["mutable".to_string()]
+                && !cell.anonymous_statement_owner_ids.is_empty()
+                && cell.landable_today
+        }),
+        "mutable can only be proposed together with its rebinding statement: {:#?}",
+        graph.factorize,
+    );
+    assert!(
+        !graph.factorize.cells.iter().any(|cell| {
+            cell.binding_ids == vec!["mutable".to_string()]
+                && cell.anonymous_statement_owner_ids.is_empty()
+                && cell.landable_today
+        }),
+        "factorizer must not advertise a binding-only mutable peel: {:#?}",
+        graph.factorize,
+    );
+
+    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    assert!(
+        !report.proposals.iter().any(|proposal| {
+            proposal.binding_ids == vec!["mutable".to_string()]
+                && proposal.anonymous_statement_owner_ids.is_empty()
+                && proposal.landable_today
+        }),
+        "CLI factorizer must not surface a binding-only mutable proposal: {report:#?}",
+    );
+
+    let mut rejected_opts = FixtureOpts::new(
+        chunk_source,
+        vec![
+            logical_module("anchors/anchor", &[Member::new("anchor")]),
+            logical_module("state/mutable", &[Member::new("mutable")]),
+        ],
+    );
+    rejected_opts.unassigned_mode = unassigned_mode_inline();
+    expect_rejection_containing_all(
+        rejected_opts,
+        &["assignment", "mutable", "cross-destination"],
+    );
+}
+
+#[test]
 fn annotated_decorate_helper_breaks_class_plus_decorator_from_side_effect_chain() {
     // Tana-shaped case: the class itself is small and peelable only
     // with its post-class decorator application. The unrelated

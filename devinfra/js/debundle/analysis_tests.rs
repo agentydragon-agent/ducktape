@@ -2578,6 +2578,18 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
             .collect()
     }
 
+    fn owner_for_binding(graph: &OwnerGraph, name: &str) -> OwnerId {
+        let binding_id = graph
+            .binding_table
+            .get(name)
+            .unwrap_or_else(|| panic!("binding {name} should be interned"));
+        graph
+            .iter_nodes()
+            .find(|node| node.declared.contains(&binding_id))
+            .map(|node| node.id)
+            .unwrap_or_else(|| panic!("binding {name} should have an owner"))
+    }
+
     #[test]
     fn split_two_declarator_const() {
         assert_eq!(
@@ -2591,6 +2603,38 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     }
 
     #[test]
+    fn split_mixed_purity_const_gives_each_declarator_its_own_owner() {
+        let source = r#"class Something {}
+const impure = new Something(), pureBrand = Symbol("Brand");"#;
+        assert_eq!(
+            declared_per_statement(source),
+            vec![
+                vec!["Something".to_string()],
+                vec!["impure".to_string()],
+                vec!["pureBrand".to_string()],
+            ],
+        );
+
+        let module = parse(source);
+        let facts = analyze_facts(&module);
+        let graph = build_owner_graph(&facts);
+        let impure_owner = owner_for_binding(&graph, "impure");
+        let brand_owner = owner_for_binding(&graph, "pureBrand");
+        assert_ne!(
+            impure_owner, brand_owner,
+            "comma-list declarators must become distinct owners",
+        );
+        assert!(
+            !graph.node(impure_owner).unwrap().purity.is_pure(),
+            "`new Something()` should remain impure after splitting",
+        );
+        assert!(
+            graph.node(brand_owner).unwrap().purity.is_pure(),
+            "`Symbol(\"Brand\")` should classify pure after splitting",
+        );
+    }
+
+    #[test]
     fn split_three_declarator_let() {
         assert_eq!(
             declared_per_statement("let A = 1, B = 2, C = 3;"),
@@ -2599,6 +2643,68 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
                 vec!["B".to_string()],
                 vec!["C".to_string()],
             ]
+        );
+    }
+
+    #[test]
+    fn split_comma_list_attributes_later_declarator_read_to_later_owner() {
+        let module = parse(r#"const first = Symbol("First"), second = first;"#);
+        let facts = analyze_facts(&module);
+        let graph = build_owner_graph(&facts);
+        let first_owner = owner_for_binding(&graph, "first");
+        let second_owner = owner_for_binding(&graph, "second");
+        let first_binding = graph.binding_table.get("first").unwrap();
+        let edge = graph
+            .iter_edges()
+            .find(|edge| {
+                edge.from == second_owner
+                    && edge.to == first_owner
+                    && edge.reason.kind == DepKind::EagerUse
+                    && edge.reason.binding == Some(first_binding)
+            })
+            .expect("second's initializer should eagerly read first");
+        assert_eq!(
+            edge.reason.statement_ordinal,
+            graph.node(second_owner).unwrap().statement_ordinal,
+            "the read edge must be attributed to the later declarator's owner",
+        );
+    }
+
+    #[test]
+    fn split_comma_list_rebind_unit_sticks_to_mutable_declarator_only() {
+        let module = parse(
+            r#"let mutable = 1, peer = Symbol("Peer");
+mutable = mutable + 1;"#,
+        );
+        let facts = analyze_facts(&module);
+        let graph = build_owner_graph(&facts);
+        let mutable_owner = owner_for_binding(&graph, "mutable");
+        let peer_owner = owner_for_binding(&graph, "peer");
+        let assign_owner = OwnerId(2);
+        let units = compute_atomic_units(&graph);
+        assert_partitions_all_owners(&units, 3);
+
+        let mutable_unit = units
+            .iter()
+            .find(|unit| unit.members.contains(&mutable_owner))
+            .expect("mutable owner should appear in an atomic unit");
+        assert!(
+            mutable_unit.members.contains(&assign_owner),
+            "mutable declarator must co-locate with its rebinding assignment: {units:?}",
+        );
+        assert!(
+            !mutable_unit.members.contains(&peer_owner),
+            "independent split sibling must not be pulled into the mutable rebind unit: {units:?}",
+        );
+
+        let peer_unit = units
+            .iter()
+            .find(|unit| unit.members.contains(&peer_owner))
+            .expect("peer owner should appear in an atomic unit");
+        assert_eq!(
+            peer_unit.members.len(),
+            1,
+            "pure split sibling should remain independently peelable",
         );
     }
 
