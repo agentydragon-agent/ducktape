@@ -1078,10 +1078,16 @@ struct ImportedReexport {
     public_name: String,
 }
 
+#[derive(Debug, Clone)]
+struct EntryExport {
+    local_name: String,
+    exported_name: String,
+}
+
 #[derive(Default)]
 struct ModuleReferenceNeeds<'a> {
     cross_module_imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
-    residual_entry_imports: BTreeMap<String, String>,
+    residual_entry_imports: BTreeMap<String, EntryExport>,
     missing_residual_exports: BTreeSet<String>,
     runtime_reimports: BTreeMap<String, &'a RuntimeImportInfo>,
 }
@@ -2520,7 +2526,7 @@ fn plan_module_reference_needs<'a>(
     schedule: &Schedule,
     declaration_by_name: &BTreeMap<String, usize>,
     binding_assignment: &BTreeMap<String, usize>,
-    entry_exports_by_original_local: &BTreeMap<String, String>,
+    entry_exports_by_original_local: &BTreeMap<String, EntryExport>,
     runtime_import_facts: &'a RuntimeImportFacts,
 ) -> ModuleReferenceNeeds<'a> {
     let mut needs = ModuleReferenceNeeds::default();
@@ -2544,10 +2550,10 @@ fn plan_module_reference_needs<'a>(
             && !binding_assignment.contains_key(name)
             && declaration_by_name.contains_key(name)
         {
-            if let Some(exported_name) = entry_exports_by_original_local.get(name) {
+            if let Some(entry_export) = entry_exports_by_original_local.get(name) {
                 needs
                     .residual_entry_imports
-                    .insert(name.clone(), exported_name.clone());
+                    .insert(name.clone(), entry_export.clone());
             } else {
                 needs.missing_residual_exports.insert(name.clone());
             }
@@ -2603,7 +2609,7 @@ fn residual_entry_imports_for_moved_body(
     module_id: &str,
     entry_file: &str,
     from_file: &str,
-    imports: BTreeMap<String, String>,
+    imports: BTreeMap<String, EntryExport>,
     missing_exports: BTreeSet<String>,
     occupied: &mut BTreeSet<String>,
     renames: &mut BTreeMap<String, String>,
@@ -2617,19 +2623,19 @@ fn residual_entry_imports_for_moved_body(
     if imports.is_empty() {
         return Ok(Vec::new());
     }
-    let resolved = disambiguate_import_locals(&imports, occupied, renames);
+    let resolved = disambiguate_residual_entry_import_locals(&imports, occupied, renames);
     Ok(vec![import_decl_for_plan(from_file, entry_file, &resolved)])
 }
 
 fn collect_entry_exports_by_original_local(
     entry_body: &[ModuleItem],
     entry_renames: &BTreeMap<String, String>,
-) -> BTreeMap<String, String> {
+) -> BTreeMap<String, EntryExport> {
     let final_to_original = entry_renames
         .iter()
         .map(|(original, final_name)| (final_name.clone(), original.clone()))
         .collect::<BTreeMap<_, _>>();
-    let mut exports = BTreeMap::<String, String>::new();
+    let mut exports = BTreeMap::<String, EntryExport>::new();
     for item in entry_body {
         match item {
             ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none() => {
@@ -2648,8 +2654,11 @@ fn collect_entry_exports_by_original_local(
                     let original = final_to_original
                         .get(&final_local)
                         .cloned()
-                        .unwrap_or(final_local);
-                    exports.entry(original).or_insert(exported_name);
+                        .unwrap_or_else(|| final_local.clone());
+                    exports.entry(original).or_insert(EntryExport {
+                        local_name: final_local,
+                        exported_name,
+                    });
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
@@ -2658,7 +2667,10 @@ fn collect_entry_exports_by_original_local(
                         .get(&final_local)
                         .cloned()
                         .unwrap_or_else(|| final_local.clone());
-                    exports.entry(original).or_insert(final_local);
+                    exports.entry(original).or_insert(EntryExport {
+                        local_name: final_local.clone(),
+                        exported_name: final_local,
+                    });
                 }
             }
             _ => {}
@@ -3450,6 +3462,38 @@ fn disambiguate_import_locals(
                 renames.insert(original.clone(), actual.clone());
             }
             (actual, exported.clone())
+        })
+        .collect()
+}
+
+/// Map residual-entry imports from `original -> entry export` to
+/// `actual_local -> exported`.
+///
+/// Unlike logical-module imports, the readable local is not the entry's
+/// public export name. Entry exports can be minified aliases that collide with
+/// unrelated source locals (`export { DialogButtonRow as B }` while source
+/// local `B` is a vendor import). Prefer the entry's actual local name so the
+/// moved body keeps referring to the same residual binding it referenced in
+/// the original chunk.
+fn disambiguate_residual_entry_import_locals(
+    bindings: &BTreeMap<String, EntryExport>,
+    occupied: &mut BTreeSet<String>,
+    renames: &mut BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    bindings
+        .iter()
+        .map(|(original, entry_export)| {
+            let preferred = entry_export.local_name.as_str();
+            let actual = if occupied.contains(preferred) {
+                mint_fresh_local_name(preferred, occupied)
+            } else {
+                preferred.to_string()
+            };
+            occupied.insert(actual.clone());
+            if actual != *original {
+                renames.insert(original.clone(), actual.clone());
+            }
+            (actual, entry_export.exported_name.clone())
         })
         .collect()
 }

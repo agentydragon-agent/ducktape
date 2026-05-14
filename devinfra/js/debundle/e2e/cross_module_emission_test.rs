@@ -555,6 +555,86 @@ export { bridge };
     assert_entry_output(&fixture, "42\n");
 }
 
+#[test]
+fn residual_public_export_name_does_not_capture_unrelated_chunk_renamed_import() {
+    // Tana-shaped collision:
+    //
+    //   import { o as B } from "./vendor.js";  // source local B = observer()
+    //   const St = ...;                        // residual entry helper
+    //   export { St as B };                    // public entry export B
+    //
+    // The two `B`s live in different namespaces. The moved body needs
+    // `St` from entry and the vendor import local `B`; chunk_renames
+    // then naturalizes them to `DialogButtonRow` and `mobxObserver`.
+    // The entry import must therefore be `B as DialogButtonRow`, not
+    // `B as mobxObserver`.
+    let opts = FixtureOpts {
+        source: r#"import { o as B } from "./vendor.js";
+const St = value => "row:" + value;
+function Ite() {
+  return St(B("ok"));
+}
+export { St as B, Ite };
+"#,
+        logical_modules: vec![logical_module(
+            "commands/navigation/where_is",
+            &[Member::renamed("whereIsCommand", "Ite")],
+        )],
+        chunk_renames: Some(json!({
+            "id": "chunk_renames__static_app",
+            "members": [
+                {
+                    "name": "mobxObserver",
+                    "selector": { "binding": { "name": "B", "kind": "import_specifier" } },
+                },
+                {
+                    "name": "DialogButtonRow",
+                    "selector": { "binding": { "name": "St" } },
+                },
+            ],
+        })),
+        chunk_id: "static/app",
+        unassigned_mode: unassigned_mode_inline(),
+        extra_files: &[(
+            "static/app/vendor.js",
+            r#"export function o(value) {
+  return "observed:" + value;
+}
+"#,
+        )],
+    };
+    let fixture = run_fixture(opts);
+
+    let moved = fs::read_to_string(
+        fixture
+            .out_root
+            .join("static/app/modules/commands/navigation/where_is.js"),
+    )
+    .expect("read moved where_is module");
+    parse_module(&moved);
+    assert_unique_import_locals(&moved);
+
+    assert!(
+        moved.contains("B as DialogButtonRow"),
+        "entry's public export B must be imported under its entry-local name; got:\n{moved}",
+    );
+    assert!(
+        moved.contains("o as mobxObserver"),
+        "vendor import local B must keep the mobxObserver readable name; got:\n{moved}",
+    );
+    assert!(
+        !moved.contains("B as mobxObserver"),
+        "entry export B must not be mistaken for the vendor observer binding; got:\n{moved}",
+    );
+    assert_generated_module_after_entry_script(
+        &fixture.out_root,
+        r#"const { whereIsCommand } = await import("./static/app/modules/commands/navigation/where_is.js");
+console.log(whereIsCommand());
+"#,
+        "row:observed:ok\n",
+    );
+}
+
 // --- Dead source-chunk specifier trim ------------------------------------
 
 #[test]
