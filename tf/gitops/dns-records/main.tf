@@ -1,7 +1,7 @@
 # Route 53 DNS for allegedly.works — zone records and domain delegation.
 #
 # All DNS is served by AWS Route 53. No in-cluster DNS authority.
-# Update vps_ips when adding/removing VPS nodes.
+# Update public_gateway_ips when adding/removing public Gateway nodes.
 
 terraform {
   required_version = ">= 1.0"
@@ -17,12 +17,13 @@ terraform {
 locals {
   domain = "allegedly.works"
 
-  # VPS node ExternalIPs (region=hil). Update when nodes change.
-  vps_ips = [
-    "5.78.142.158", # talos-vps-cp-0
-    "5.78.144.197", # talos-vps-cp-1
-    "5.78.106.249", # talos-vps-worker-0
-    "5.78.43.147",  # talos-vps-worker-1
+  # Public Gateway node IPs. Update when public Gateway-capable nodes change.
+  public_gateway_ips = [
+    "5.78.142.158",   # talos-vps-cp-0
+    "5.78.144.197",   # talos-vps-cp-1
+    "5.78.106.249",   # talos-vps-worker-0
+    "5.78.43.147",    # talos-vps-worker-1
+    "147.135.39.162", # talos-kimsufi-worker-0
   ]
 }
 
@@ -37,23 +38,23 @@ data "aws_route53_zone" "zone" {
 
 # Wildcard A record — all subdomains resolve to VPS nodes
 resource "aws_route53_record" "wildcard" {
-  #checkov:skip=CKV2_AWS_23:A records point to external Hetzner VPS servers, not AWS resources
+  #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
   zone_id         = var.route53_zone_id
   name            = "*.${local.domain}"
   type            = "A"
   ttl             = 300
-  records         = local.vps_ips
+  records         = local.public_gateway_ips
   allow_overwrite = true
 }
 
 # Apex A record
 resource "aws_route53_record" "apex" {
-  #checkov:skip=CKV2_AWS_23:A records point to external Hetzner VPS servers, not AWS resources
+  #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
   zone_id         = var.route53_zone_id
   name            = local.domain
   type            = "A"
   ttl             = 300
-  records         = local.vps_ips
+  records         = local.public_gateway_ips
   allow_overwrite = true
 }
 
