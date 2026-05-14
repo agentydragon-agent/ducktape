@@ -22,6 +22,12 @@
 #   recover                      Attempt non-reboot modem firmware recovery sequence
 #                                (MHI rebind → PCI remove/rescan → module reload).
 #                                Prints suspend-resume suggestion if all fail.
+#   dump                         Snapshot all forensic state to
+#                                debug/rugged/hw/suspend_research/snapshots/<TS>/:
+#                                full dmesg, full MM + kernel journal since boot,
+#                                modem dumps (mmcli, mbimcli), sysfs state,
+#                                ACPI wakeup table, lspci, /sys/power caps.
+#                                Read-only, safe with WiFi up, works on wedged modem.
 #
 # Requires: lpac, mbimcli, FoxFlss, mmcli, nmcli, zbarimg (for QR decode); root.
 #
@@ -124,7 +130,84 @@ wait_for_state() {
 }
 
 # ─────────────────────────── status ────────────────────────────────────────
+# Print MHI/PCI bus state for the modem. This is the layer BELOW ModemManager:
+# if MHI channels haven't enumerated, MM cannot detect the modem and nothing
+# else in cmd_status will be meaningful. Distinguishes "PCI device gone"
+# (whole device missing, e.g. failed link train after suspend) from "MHI
+# wedged" (PCI device present, driver bound, but no mhi0_* channels — modem
+# firmware never completed handshake; classic suspend/resume wedge symptom).
+mhi_status() {
+  hdr "MHI / PCI ($PCI_ADDR)"
+  if [ ! -e "/sys/bus/pci/devices/$PCI_ADDR" ]; then
+    step "PCI device MISSING — link train failed or device removed"
+    return
+  fi
+  local drv rt ctrl chans
+  drv=$(basename "$(readlink "/sys/bus/pci/devices/$PCI_ADDR/driver" 2>/dev/null)" 2>/dev/null || echo none)
+  rt=$(cat "/sys/bus/pci/devices/$PCI_ADDR/power/runtime_status" 2>/dev/null || echo ?)
+  ctrl=$(cat "/sys/bus/pci/devices/$PCI_ADDR/power/control" 2>/dev/null || echo ?)
+  step "driver=$drv runtime_status=$rt power/control=$ctrl"
+  if [ -d "/sys/bus/pci/devices/$PCI_ADDR/mhi0" ]; then
+    chans=$(find "/sys/bus/pci/devices/$PCI_ADDR/mhi0" -maxdepth 1 -name 'mhi0_*' -printf '%f ' 2>/dev/null)
+    if [ -n "$chans" ]; then
+      step "mhi0 channels: $chans"
+    else
+      step "mhi0 channels: NONE — firmware handshake never completed (modem wedged)"
+    fi
+  else
+    step "no mhi0 sysfs node — MHI controller not probed"
+  fi
+  local wwan_devs
+  wwan_devs=$(ls /dev/wwan0* 2>/dev/null | tr '\n' ' ')
+  step "/dev/wwan0*: ${wwan_devs:-<none>}"
+}
+
+# Show foxflss-watchdog state. If the watchdog is hot-respawning (mmcli -w
+# exiting in a tight loop), the modem is gone from MM's view entirely and the
+# watchdog is stuck — that's a secondary symptom of an MHI wedge, not a cause.
+foxflss_watchdog_status() {
+  hdr "foxflss-watchdog"
+  if ! systemctl list-unit-files foxflss-watchdog.service >/dev/null 2>&1; then
+    step "unit not present"
+    return
+  fi
+  step "active: $(systemctl is-active foxflss-watchdog.service 2>&1)"
+  local respawns
+  respawns=$(journalctl -u foxflss-watchdog --since '1 min ago' --no-pager 2>/dev/null \
+    | grep -c 'respawn' || true)
+  if [ "$respawns" -gt 10 ]; then
+    step "HOT-SPINNING: $respawns respawns in last 60s (mmcli -w exiting; no modem to wait on)"
+  else
+    step "respawns in last 60s: $respawns"
+  fi
+  journalctl -u foxflss-watchdog --since '30 sec ago' --no-pager 2>/dev/null \
+    | tail -3 | sed 's/^/    /'
+}
+
+# Filtered kernel + MM log slice anchored to the most recent suspend/resume.
+# This is what tells you WHY the modem is in its current state — typically
+# `mhi_pci_suspend ... ret -16` (EBUSY) or `MHI: Forcibly moving from M3 to M0`.
+# Excludes foxflss-watchdog respawn spam (covered in its own section above).
+recent_kernel_modem_log() {
+  local last_resume since
+  last_resume=$(journalctl --no-pager -o short-iso 2>/dev/null \
+    | grep -E 'systemd-sleep.*(Entering|Woke up)|kernel.*PM: (suspend exit|resume)' \
+    | tail -1)
+  if [ -n "$last_resume" ]; then
+    hdr "last suspend/resume marker"
+    echo "  $last_resume"
+    since=$(echo "$last_resume" | awk '{print $1}')
+  fi
+  hdr "kernel + MM events since last resume (excl. watchdog spam)"
+  journalctl --since "${since:-30 min ago}" --no-pager 2>/dev/null \
+    | grep -iE 'mhi|wwan|cdc_mbim|fcc-unlock|0000:71:00|modemmanager' \
+    | grep -vE 'foxflss-watchdog.*respawn' \
+    | tail -30 || true
+}
+
 cmd_status() {
+  mhi_status
+  foxflss_watchdog_status
   hdr "modem"
   local m
   m=$(modem_id)
@@ -140,15 +223,20 @@ cmd_status() {
     step "no modem detected by ModemManager"
   fi
   hdr "slot mapping (mbim)"
-  mbimcli -d "$MBIM_DEV" -p --ms-query-device-slot-mappings 2>&1 || true
-  for slot in 0 1; do
-    mbimcli -d "$MBIM_DEV" -p --ms-query-slot-info-status="$slot" 2>&1 || true
-  done
+  if [ -e "$MBIM_DEV" ]; then
+    mbimcli -d "$MBIM_DEV" -p --ms-query-device-slot-mappings 2>&1 || true
+    for slot in 0 1; do
+      mbimcli -d "$MBIM_DEV" -p --ms-query-slot-info-status="$slot" 2>&1 || true
+    done
+  else
+    step "$MBIM_DEV missing — skipping MBIM probes (see MHI / PCI above)"
+  fi
   hdr "wwan0 IP"
   ip -4 -o addr show wwan0 2>/dev/null || step "no wwan0 device"
   hdr "Google Fi NM connection"
   nmcli -t -f GENERAL.STATE,IP4.ADDRESS connection show "$GSM_CONN" 2>&1 \
     | head -5 || true
+  recent_kernel_modem_log
 }
 
 # ─────────────────────────── slot switch ───────────────────────────────────
@@ -531,6 +619,251 @@ MSG
   return 1
 }
 
+# ─────────────────────────── forensic dump ────────────────────────────────
+# Snapshot every observable bit of state into a timestamped dir under
+# debug/rugged/hw/suspend_research/snapshots/<TS>/. Designed for the
+# suspend/resume root-cause investigation (see modem_suspend_research.md).
+# Read-only, safe with WiFi up, works on a wedged modem.
+cmd_dump() {
+  local ts out
+  ts=$(date +%Y%m%d-%H%M%S)
+  out="$REPO/debug/rugged/hw/suspend_research/snapshots/$ts"
+  mkdir -p "$out"
+  exec > >(tee "$out/00_dump.log") 2>&1
+  hdr "forensic dump → $out"
+
+  hdr "kernel"
+  uname -a
+  cat /proc/cmdline
+  echo
+  echo "boot time: $(uptime -s)   uptime: $(uptime -p)"
+
+  hdr "/sys/power capabilities"
+  for f in /sys/power/mem_sleep /sys/power/state /sys/power/disk \
+    /sys/power/wakeup_count /sys/power/pm_test; do
+    echo -n "$f: "
+    cat "$f" 2>&1
+  done
+
+  hdr "loaded modem-related modules"
+  lsmod | head -1
+  lsmod | grep -iE 'mhi|wwan|cdc_mbim|cdc_ncm|cdc_wdm'
+
+  hdr "rfkill list"
+  rfkill list
+
+  hdr "/proc/acpi/wakeup"
+  cat /proc/acpi/wakeup 2>&1
+
+  hdr "lspci modem ($PCI_ADDR)"
+  lspci -vvv -s "$PCI_ADDR" 2>&1
+
+  hdr "lspci parent (00:1c.0)"
+  lspci -vvv -s 0000:00:1c.0 2>&1
+
+  hdr "PCI device sysfs (modem)"
+  for f in power_state d3cold_allowed enable revision class vendor device \
+    subsystem_vendor subsystem_device current_link_speed \
+    current_link_width max_link_speed max_link_width; do
+    [ -r "/sys/bus/pci/devices/$PCI_ADDR/$f" ] || continue
+    echo -n "  $f: "
+    cat "/sys/bus/pci/devices/$PCI_ADDR/$f"
+  done
+  echo "  power/:"
+  for f in /sys/bus/pci/devices/$PCI_ADDR/power/*; do
+    [ -f "$f" ] || continue
+    echo -n "    $(basename "$f"): "
+    cat "$f" 2>&1
+  done
+  echo "  link/:"
+  for f in /sys/bus/pci/devices/$PCI_ADDR/link/*; do
+    [ -f "$f" ] || continue
+    echo -n "    $(basename "$f"): "
+    cat "$f" 2>&1
+  done
+
+  hdr "ACPI firmware_node (modem)"
+  echo -n "  path: "
+  cat "/sys/bus/pci/devices/$PCI_ADDR/firmware_node/path" 2>&1
+  echo -n "  power_state: "
+  cat "/sys/bus/pci/devices/$PCI_ADDR/firmware_node/power_state" 2>&1
+  echo "  power/:"
+  for f in /sys/bus/pci/devices/$PCI_ADDR/firmware_node/power/*; do
+    [ -f "$f" ] || continue
+    echo -n "    $(basename "$f"): "
+    cat "$f" 2>&1
+  done
+
+  hdr "MHI sysfs tree"
+  if [ -d "/sys/bus/pci/devices/$PCI_ADDR/mhi0" ]; then
+    find "/sys/bus/pci/devices/$PCI_ADDR/mhi0" -maxdepth 2 -printf '%p\n' 2>&1
+  else
+    echo "  no mhi0 node (driver not bound or modem wedged pre-channel-enum)"
+  fi
+
+  hdr "wwan class"
+  ls -la /sys/class/wwan/ 2>&1
+
+  hdr "modem.sh status output"
+  cmd_status 2>&1
+
+  hdr "mmcli -L"
+  mmcli -L 2>&1
+  local mid
+  mid=$(modem_id)
+  if [ -n "$mid" ]; then
+    hdr "mmcli -m $mid (human)"
+    mmcli -m "$mid" 2>&1
+    hdr "mmcli -m $mid -K (key=value)"
+    mmcli -m "$mid" -K 2>&1
+    local sim
+    sim=$(sim_id "$mid")
+    if [ -n "$sim" ]; then
+      hdr "mmcli -i $sim (active SIM)"
+      mmcli -i "$sim" 2>&1
+      hdr "mmcli -i $sim -K"
+      mmcli -i "$sim" -K 2>&1
+    fi
+    hdr "mmcli -m $mid --signal-get"
+    mmcli -m "$mid" --signal-setup=5 2>&1 || true
+    sleep 6
+    mmcli -m "$mid" --signal-get 2>&1 || true
+    hdr "mmcli -m $mid --location-status"
+    mmcli -m "$mid" --location-status 2>&1 || true
+  else
+    step "no modem detected — skipping mmcli per-modem dumps"
+  fi
+
+  if [ -e "$MBIM_DEV" ]; then
+    hdr "mbimcli queries"
+    for q in --query-device-caps --query-device-services \
+      --query-subscriber-ready-status --query-radio-state \
+      --query-pin-state --query-home-provider \
+      --query-register-state --query-signal-state \
+      --query-packet-service-state '--query-connection-state=0' \
+      --ms-query-device-slot-mappings \
+      '--ms-query-slot-info-status=0' '--ms-query-slot-info-status=1' \
+      --ms-query-uicc-application-list; do
+      echo "=== mbimcli $q ==="
+      eval mbimcli -d "$MBIM_DEV" -p $q 2>&1
+      echo
+    done
+  else
+    step "no $MBIM_DEV — skipping mbimcli queries"
+  fi
+
+  hdr "networking"
+  ip -d link show 2>&1
+  echo
+  ip addr 2>&1
+  echo
+  ip -4 route 2>&1
+  echo
+  ip -6 route 2>&1
+  echo
+  ip rule 2>&1
+
+  # Wrap nmcli calls in `time` to surface whichever step is slow. The
+  # bare `nmcli connection show "$GSM_CONN"` has been observed to take
+  # multiple seconds in past dumps despite normally being sub-second —
+  # explicit timings will point at whether it's the listing, the per-
+  # connection fetch, or something queued behind a busy NM/MM.
+  hdr "NM state (each command timed)"
+  time nmcli device status 2>&1
+  echo
+  time nmcli connection show 2>&1
+  echo
+  time nmcli connection show "$GSM_CONN" 2>&1 || true
+
+  hdr "ModemManager unit"
+  systemctl status ModemManager.service --no-pager 2>&1 | head -30
+  echo
+  systemctl cat ModemManager.service --no-pager 2>&1
+
+  hdr "foxflss-watchdog unit"
+  systemctl status foxflss-watchdog.service --no-pager 2>&1 | head -20
+
+  say "writing log files (this can take a moment)"
+  dmesg >"$out/dmesg_full.txt" 2>&1
+  step "dmesg_full.txt: $(wc -l <"$out/dmesg_full.txt") lines"
+
+  journalctl -k -b 0 --no-pager >"$out/journal_kernel_thisboot.txt" 2>&1
+  step "journal_kernel_thisboot.txt: $(wc -l <"$out/journal_kernel_thisboot.txt") lines"
+
+  journalctl -u ModemManager.service -b 0 --no-pager >"$out/journal_mm_thisboot.txt" 2>&1
+  step "journal_mm_thisboot.txt: $(wc -l <"$out/journal_mm_thisboot.txt") lines"
+
+  journalctl -u NetworkManager.service -b 0 --no-pager >"$out/journal_nm_thisboot.txt" 2>&1
+  step "journal_nm_thisboot.txt: $(wc -l <"$out/journal_nm_thisboot.txt") lines"
+
+  journalctl -u foxflss-watchdog.service -b 0 --no-pager >"$out/journal_watchdog_thisboot.txt" 2>&1 || true
+  step "journal_watchdog_thisboot.txt: $(wc -l <"$out/journal_watchdog_thisboot.txt") lines"
+
+  journalctl -b 0 -g 'suspend|resume|sleep|s2idle|systemd-sleep' --no-pager \
+    >"$out/journal_sleep_events.txt" 2>&1
+  step "journal_sleep_events.txt: $(wc -l <"$out/journal_sleep_events.txt") lines"
+
+  if [ -r /sys/firmware/acpi/tables/DSDT ]; then
+    cp /sys/firmware/acpi/tables/DSDT "$out/DSDT.aml" 2>&1
+    step "DSDT.aml: $(stat -c%s "$out/DSDT.aml") bytes (decompile with: iasl -d $out/DSDT.aml)"
+  fi
+
+  hdr "PCIe AER counters (modem + parent)"
+  for slot in 0000:71:00.0 0000:00:1c.0; do
+    echo "--- $slot ---"
+    # AER Correctable + Uncorrectable status registers in ECAP_AER+10.l/+0x14.l.
+    if [ -r "/sys/bus/pci/devices/$slot/aer_dev_correctable" ]; then
+      echo "correctable:"
+      cat "/sys/bus/pci/devices/$slot/aer_dev_correctable" 2>&1
+      echo "fatal:"
+      cat "/sys/bus/pci/devices/$slot/aer_dev_fatal" 2>&1
+      echo "nonfatal:"
+      cat "/sys/bus/pci/devices/$slot/aer_dev_nonfatal" 2>&1
+    else
+      echo "(no AER sysfs counters for $slot)"
+    fi
+  done
+
+  # PCI reset_method shows which reset hooks the kernel discovered. Presence
+  # of `acpi` here means the DSDT's `_RST` method on \_SB.PC00.RP02.PXSX is
+  # exposed — which on this platform requires BIOS variable WWEN >= 1. If
+  # only `flr bus` appears, the WWAN slot power-cycle (FHRF/SHRF in DSDT)
+  # is gated off and `pci_try_reset_function` in the kernel's recovery_work
+  # can't reach the real platform reset. See modem_suspend_research.md
+  # §DSDT decompile findings for the full mechanism.
+  hdr "PCI reset_method (presence of 'acpi' indicates BIOS WWEN >= 1)"
+  for slot in 0000:71:00.0 0000:00:1c.0; do
+    echo -n "$slot: "
+    cat "/sys/bus/pci/devices/$slot/reset_method" 2>&1
+  done
+
+  # Dell BIOS attributes via dell-wmi-sysman. WWAN-related entries; the
+  # current_value is what (if anything) flips the DSDT-side WWEN variable
+  # that gates the platform reset path. Capture every WWAN/sleep attr so
+  # diffing across BIOS toggles is easy.
+  hdr "Dell BIOS attributes (WWAN/sleep — root-only current_value)"
+  local fwattr=/sys/class/firmware-attributes/dell-wmi-sysman/attributes
+  if [ -d "$fwattr" ]; then
+    for attr in $(ls "$fwattr" | grep -iE 'wwan|cellular|gnss|gps|sleep|standby|wake|s0|powerm|wireless'); do
+      local cur poss disp
+      cur=$(cat "$fwattr/$attr/current_value" 2>&1)
+      poss=$(cat "$fwattr/$attr/possible_values" 2>/dev/null)
+      disp=$(cat "$fwattr/$attr/display_name" 2>/dev/null)
+      printf '  %-22s = %-14s  [%s]  %s\n' "$attr" "$cur" "${poss:-?}" "${disp:-?}"
+    done
+  else
+    step "no dell-wmi-sysman — different platform or driver not loaded"
+  fi
+
+  # Make the snapshot readable to the unprivileged user that owns the repo.
+  # Root-only outputs (DSDT.aml at mode 0400, etc.) otherwise block iasl.
+  chmod -R u+rwX,go+rX "$out" 2>/dev/null || true
+  chown -R --reference="$REPO" "$out" 2>/dev/null || true
+
+  say "done — outputs at $out"
+  ls -la "$out"
+}
+
 # ─────────────────────────── diagnose ──────────────────────────────────────
 cmd_diagnose() {
   local kill_wifi=0
@@ -808,6 +1141,10 @@ case "$sub" in
   recover)
     require_root
     cmd_recover
+    ;;
+  dump)
+    require_root
+    cmd_dump
     ;;
   *) die "unknown subcommand: $sub  (try $0 --help)" ;;
 esac

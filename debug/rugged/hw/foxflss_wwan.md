@@ -146,10 +146,36 @@ modem as `Unassigned class [ff00]` (rather than the healthy
 wedge: there the firmware was running and only ISD-R/MBIM was wedged;
 here the firmware itself is dead.
 
-Trigger so far observed once: rapid MM-stop/start cycling (caused by
-the buggy old foxflss wrapper failing FCC unlock → watchdog kept
-restarting MM → modem suspended/resumed too many times → SYS ERROR).
-Should be much rarer now that fcc-unlock.d works first-time.
+Triggers observed:
+
+1. **2026-04-30**: rapid MM-stop/start cycling (buggy old foxflss
+   wrapper failing FCC unlock → watchdog kept restarting MM → modem
+   suspended/resumed too many times → SYS ERROR). Dmesg precursor:
+   `Resuming from non M3 state (SYS ERROR)` + `failed to resume
+device: -22` + `Recovery failed: -25`.
+
+2. **2026-05-14**: plain suspend/resume during normal use, no MM
+   cycling, no FCC failures. No SYS ERROR precursor at all — last
+   resume marker was clean (`PM: suspend exit`) and MM logged only
+   `system is resuming` with no follow-up MHI events. Modem entered
+   SBL wait-for-firmware state silently; only the probe attempt
+   triggered by `modem.sh recover` step 1 (MHI rebind) surfaced the
+   actual error in dmesg. Diagnostic signature (visible in
+   `modem.sh status` after the 2026-05-14 extension): MHI section
+   shows driver bound + runtime active + `mhi0 channels: NONE`,
+   `/dev/wwan0*` empty, `foxflss-watchdog` hot-spinning. So the
+   "rapid cycling" framing in the original write-up undersold the
+   risk surface — ordinary suspend/resume is enough to reach this
+   wedge.
+
+**Deep mechanism trace + fix plan**: see <modem_suspend_research.md>.
+Key code citations there pin the wedge to the
+`mhi_pci_recovery_work` → `pci_try_reset_function` (FLR) → modem-in-PBL
+chain, plus a DSDT-side discovery that the platform DOES have a real
+WWAN slot power-cycle (`FHRF`/`SHRF`/`_RST`) but it's gated by a BIOS
+variable (`WWEN`) — flipping the right Dell BIOS attribute may unlock
+the kernel's existing reset-method machinery and turn this from
+"reboot only" into "kernel reset works." Validation pending.
 
 **Nothing the kernel can do clears this. Confirmed exhaustively
 2026-05-01:**

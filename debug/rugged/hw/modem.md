@@ -6,6 +6,9 @@
 enable, and Google Fi connection all happen automatically via the NixOS
 module <nix/nixos/hosts/rugged/foxconn-wwan.nix>. Works alongside WiFi
 (IPv6 `never-default` prevents cellular from hijacking IPv6 traffic).
+**Caveat (2026-05-14)**: Ordinary suspend/resume can wedge the modem
+into the SBL firmware-wait state (see TODO + `foxflss_wwan.md`).
+Reboot is currently the only reliable recovery on this hardware.
 **Throttle appears lifted**: `curl --interface wwan0
 http://speedtest.tele2.net/1MB.zip` measured **~158 KB/s (~1.27 Mbps)**
 on LTE on 2026-05-02 with WiFi off — ~20× over the previously
@@ -36,6 +39,7 @@ make the down-and-back look alarming. See "Harden try-5g" TODO.
 | FCC unlock root cause + history      | <foxflss_wwan.md> §What Works, §Watchdog      |
 | eSIM provisioning & wedge debugging  | <foxflss_wwan.md> §Modem Reset Methods etc.   |
 | Throughput / throttle investigations | <foxflss_wwan.md> §Physical SIM throughput    |
+| Suspend/resume root cause + fix plan | <modem_suspend_research.md>                   |
 
 ## Tools
 
@@ -43,6 +47,14 @@ make the down-and-back look alarming. See "Harden try-5g" TODO.
 SIM operations: `status`, `diagnose [--kill-wifi]`, `slot <0|1>`,
 `esim {status|wipe|activate}`, `unlock`, `try-5g`, `recover`. Run with
 no args (or `--help`) for the full subcommand list.
+
+`status` opens with an MHI / PCI section that identifies the SBL
+firmware-wait wedge at first glance (mhi0 channels NONE, runtime_status
+active, `/dev/wwan0*` empty), followed by a `foxflss-watchdog`
+section that flags hot-spinning when MM has no modem to watch. The
+final section shows a filtered kernel + MM event log anchored to the
+last suspend/resume marker — that's where MHI-side errors land if
+there are any to see.
 
 **TODO**:
 
@@ -72,10 +84,22 @@ http://speedtest.tele2.net/10MB.zip`), and confirm the device is
   to have been the actual unlock path; it's defense-in-depth against
   MM giving up on a future transient FoxFlss failure (per upstream
   contract, MM doesn't retry the script after one failure).
-- Investigate suspend/resume behavior (`mhi_pci_suspend` returns
-  EBUSY, error -16). FoxFlss repo includes
-  `mm-suspend-resume-options.conf` and `--test-quick-suspend-resume`
-  MM flag.
+- **Suspend/resume wedge — investigation in progress**: full mechanism
+  trace + plan in <modem_suspend_research.md>. Two fixes in flight at
+  end of 2026-05-14 session:
+  - **MM `--test-low-power-suspend-resume` flag** applied via
+    `foxconn-wwan.nix` drop-in (Foxconn-recommended workaround;
+    has MM put the modem in firmware-level low-power state before
+    s2idle, avoiding the broken MHI M3 path).
+  - **`WwanAutoSense=Enabled` flipped via dell-wmi-sysman** (BIOS
+    side, pending reboot). Hypothesis: this populates the DSDT's
+    `WWEN` byte that gates the WWAN slot's ACPI `_RST` / `_PRR` /
+    power-cycle methods. Validated by post-reboot
+    `modem.sh dump` — look for `acpi` in
+    `/sys/bus/pci/devices/0000:71:00.0/reset_method`. Script:
+    `debug/rugged/hw/suspend_research/flip_wwan_autosense.sh`.
+  - Suspend/resume experiment matrix (E1/E2/E3 in research doc) is
+    the next concrete validation step once the reboot has landed.
 - ~~Investigate weak signal (9% vs 92% observed manually)~~ — root
   cause confirmed 2026-05-02: at this location LTE coverage is
   essentially absent (RSRP -156 dBm), so the auto-connect path locked

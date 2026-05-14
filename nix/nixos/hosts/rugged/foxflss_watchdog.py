@@ -21,6 +21,14 @@ import time
 STUCK_THRESHOLD_S = 12
 COOLDOWN_S = 120
 RESPAWN_DELAY_S = 2
+# When the modem disappears entirely (e.g. MHI wedge after suspend/resume),
+# `mmcli -m any -w` returns immediately with no modem to watch, and the
+# respawn loop floods the journal with one line every RESPAWN_DELAY_S. Apply
+# exponential backoff when mmcli -w exits before MIN_HEALTHY_RUN_S, capped
+# at MAX_RESPAWN_DELAY_S. A long-lived mmcli -w resets the delay so we react
+# fast to a real modem-down event.
+MIN_HEALTHY_RUN_S = 5
+MAX_RESPAWN_DELAY_S = 60
 # Backstop polling interval — re-check state if mmcli -w stays silent this long.
 # When the modem is wedged in disabled/low without retrying, no state-change
 # events arrive, so the elapsed-time check would never run on event arrival
@@ -65,9 +73,11 @@ def fire_unlock() -> None:
 def watch() -> None:
     stuck_since: float | None = None
     last_fire = 0.0
+    respawn_delay = RESPAWN_DELAY_S
     sel = selectors.DefaultSelector()
 
     while True:
+        mmcli_started = time.time()
         proc = subprocess.Popen(
             ["mmcli", "-m", "any", "-w"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
@@ -105,8 +115,10 @@ def watch() -> None:
                 proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        log.info("mmcli -w exited; respawn in %ds", RESPAWN_DELAY_S)
-        time.sleep(RESPAWN_DELAY_S)
+        ran = time.time() - mmcli_started
+        respawn_delay = min(respawn_delay * 2, MAX_RESPAWN_DELAY_S) if ran < MIN_HEALTHY_RUN_S else RESPAWN_DELAY_S
+        log.info("mmcli -w exited after %.1fs; respawn in %ds", ran, respawn_delay)
+        time.sleep(respawn_delay)
 
 
 def main() -> None:

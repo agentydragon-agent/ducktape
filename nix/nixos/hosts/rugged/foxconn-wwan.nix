@@ -47,8 +47,13 @@ let
   # fcc-unlock.d (bare FoxFlss) before FoxFlss.service, which flushes stale
   # MBIM CIDs and makes Check_RF_SSKU reliable. Here fcc-unlock.d never fires
   # (modem boots with power state: on), so we replicate that warm-up explicitly.
+  # Absolute path for `sleep` — `pkgs.writeShellScript` does NOT put coreutils
+  # on PATH, so a bare `sleep` exits with "command not found" and the &&-chain
+  # fails silently before RF cal runs. Confirmed 2026-05-14 in
+  # journal_kernel_thisboot from `modem.sh dump`: every recent boot has been
+  # silently skipping RF cal.
   foxflssRfCalRun = pkgs.writeShellScript "foxflss-rf-cal-run" ''
-    ${foxflss}/bin/FoxFlss && sleep 5 && ${foxflss}/bin/FoxFlss -f Check_RF_SSKU
+    ${foxflss}/bin/FoxFlss && ${pkgs.coreutils}/bin/sleep 5 && ${foxflss}/bin/FoxFlss -f Check_RF_SSKU
   '';
 
   # FCC unlock + RF calibration for ModemManager fcc-unlock.d.
@@ -191,6 +196,23 @@ in
       "d /opt/foxconn/data 0755 root root - -"
       "L+ /opt/foxconn/data/DW5932e_RF.dat - - - - ${foxflss}/share/foxflss/DW5932e_RF.dat"
       "L+ /opt/foxconn/data/DW5934e_RF.dat - - - - ${foxflss}/share/foxflss/DW5934e_RF.dat"
+    ];
+
+    # Apply Foxconn's recommended ModemManager suspend handling. Per
+    # foxconn-pc/fii_linux Application/FoxFlss/data/mm-suspend-resume-options.conf,
+    # MM ≥ 1.24.2 should run with `--test-low-power-suspend-resume`. With this
+    # flag, MM's sleep signal handler transitions the modem to
+    # MM_MODEM_POWER_STATE_LOW (via QMI DMS Set Operating Mode = LOW_POWER)
+    # BEFORE the kernel's MHI suspend path runs — so the modem leaves AMSS
+    # ahead of time and `mhi_pci_suspend` takes its early-exit path
+    # (drivers/bus/mhi/host/pci_generic.c:1598-1600) instead of attempting the
+    # M3 transition that's been wedging this device on resume.
+    # See debug/rugged/hw/modem_suspend_research.md §P0 for the full mechanism.
+    # CLEANUP: once MM upstream promotes this to a per-plugin default or
+    # renames the flag without `--test-` prefix, update the ExecStart here.
+    systemd.services.ModemManager.serviceConfig.ExecStart = [
+      "" # clear systemd's list-merge so our value replaces the unit's default
+      "${pkgs.modemmanager}/sbin/ModemManager --test-low-power-suspend-resume"
     ];
 
     # CLEANUP(2026-04-30): Try retiring this service after ~1 month of
