@@ -1,5 +1,17 @@
 # claude_hooks TODO
 
+## Statusline: deduplicate usage display with GNOME extension
+
+The statusline's subscription quota display (`7d:8%`) duplicates a GNOME
+extension that already shows the same data. Options:
+
+- **Config option** via XDG config file (`~/.config/claude-hooks/statusline.toml`
+  or similar) to toggle individual sections (quota, daemon health, cost, etc.)
+- **tmux statusline widget** — the statusline output is already plain text;
+  a tmux `status-right` integration would be useful on remote/SSH sessions where
+  GNOME isn't available. Consider if the GNOME extension + tmux widget cover
+  the same ground, making the Claude Code statusline itself redundant.
+
 ## Consider reviving PostToolUse lint integration
 
 Removed in <https://github.com/agentydragon/ducktape/pull/...> after
