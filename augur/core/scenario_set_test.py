@@ -14,8 +14,13 @@ from augur.core.scenario_set import (
     ActorRole,
     AssetType,
     FinancingMode,
+    FixedAmountPrivateEquitySaleRule,
+    LiquidityReservePolicy,
     OccupancyMode,
     PolicyType,
+    PrivateEquitySalePolicy,
+    PrivateEquitySaleProceedsDestination,
+    ProjectedDeficitsLiquidityReserveRule,
     RentalMode,
     ScenarioAcceptedSummary,
     ScenarioResult,
@@ -185,6 +190,44 @@ def test_scenario_set_accepts_typed_scenario_economic_assumptions() -> None:
     assert scenario.property_assumptions.insurance_annual_usd == 1800
 
 
+def test_policy_config_uses_discriminated_rules_and_enums() -> None:
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["policies"] = [
+        {
+            "policy_id": "private_equity_sale",
+            "policy_type": "private_equity_sale",
+            "actor_id": "owner",
+            "proceeds_destination": "generic_sp500_stock",
+            "sale_rule": {"sale_rule_type": "fixed_amount_on_opportunity", "amount_usd": 50_000},
+        },
+        {
+            "policy_id": "liquidity_reserve",
+            "policy_type": "liquidity_reserve",
+            "actor_id": "owner",
+            "reserve_rule": {
+                "reserve_rule_type": "projected_deficits",
+                "min_reserve_usd": 10_000,
+                "forward_months": 12,
+            },
+        },
+    ]
+
+    scenario = ScenarioSet.model_validate(body).scenarios[0]
+
+    private_equity_policy = scenario.policies[0]
+    assert isinstance(private_equity_policy, PrivateEquitySalePolicy)
+    assert private_equity_policy.policy_type is PolicyType.PRIVATE_EQUITY_SALE
+    assert private_equity_policy.proceeds_destination is PrivateEquitySaleProceedsDestination.GENERIC_SP500_STOCK
+    assert isinstance(private_equity_policy.sale_rule, FixedAmountPrivateEquitySaleRule)
+    assert private_equity_policy.sale_rule.amount_usd == 50_000
+    liquidity_policy = scenario.policies[1]
+    assert isinstance(liquidity_policy, LiquidityReservePolicy)
+    assert liquidity_policy.policy_type is PolicyType.LIQUIDITY_RESERVE
+    assert isinstance(liquidity_policy.reserve_rule, ProjectedDeficitsLiquidityReserveRule)
+    assert liquidity_policy.reserve_rule.min_reserve_usd == 10_000
+    assert liquidity_policy.reserve_rule.forward_months == 12
+
+
 def test_scenario_set_model_dump_keeps_backend_keys_snake_case() -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body("sf_house"))
 
@@ -242,6 +285,21 @@ def test_scenario_set_rejects_legacy_enum_values() -> None:
 
     body = _scenario_set_body("sf_house")
     body["scenarios"][0]["policies"][0]["policy_type"] = "checking_floor_sp500"
+
+    with pytest.raises(ValidationError):
+        ScenarioSet.model_validate(body)
+
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["policies"] = [
+        {
+            "policy_id": "liquidity_reserve",
+            "policy_type": "liquidity_reserve",
+            "actor_id": "owner",
+            "mode": "projected_deficits",
+            "min_reserve_usd": 10_000,
+            "forward_months": 12,
+        }
+    ]
 
     with pytest.raises(ValidationError):
         ScenarioSet.model_validate(body)

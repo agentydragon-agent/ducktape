@@ -21,7 +21,7 @@ from augur.app.config import (
     load_augur_config,
 )
 from augur.core.local_regulation import LocationId
-from augur.core.scenario_set import ActorRole
+from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType
 
 
 def _minimal_config(**overrides: object) -> AugurConfig:
@@ -42,7 +42,7 @@ def test_minimal_config_validates_with_defaults() -> None:
 
     assert config.agents[0].actor_id == "alpha"
     assert config.location_selection is None
-    assert config.minimum_reserve_mode == "projected_deficits"
+    assert config.minimum_reserve_mode is LiquidityReserveRuleType.PROJECTED_DEFICITS
     assert config.reserve_forward_months == 12
     assert config.default_rollout_samples == 128
 

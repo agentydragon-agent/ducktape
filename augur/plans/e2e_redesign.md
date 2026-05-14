@@ -293,6 +293,9 @@ spirals to pull these changes forward when the current surface gets in the way.
    with curves, actions, asset details, liabilities, taxes, and ledger entries.
    This is for UI inspection of a selected sample; it is not a separate
    deterministic simulation mode.
+   TODO: add a UI-oriented one-rollout evidence/detail API that returns the
+   selected rollout's market observations, policy decisions/actions, ledger
+   entries, balance snapshots, and curve values in one typed view.
 9. **Introduce a ledger for economic truth**: arrays are good for charts, but
    correctness needs auditable cash-flow entries. Taxes, mortgage payments,
    property tax, rental income, sale proceeds, PE sale proceeds, and policy
@@ -623,12 +626,23 @@ should preserve the public `simulate_set()` shape.
   a sell instruction.
 - `LedgerEntryBatch`: placeholder for realized accounting entries.
 
+**DONE (schema cleanup slice)**: Policy configuration is now consistently
+shaped as explicit typed config. Core policies remain a Pydantic
+discriminated union on `policy_type`; private-equity sale rules and liquidity
+reserve rules are nested discriminated unions; private-equity sale proceeds use
+a typed destination enum instead of a raw literal; rental modes remain a
+`RentalMode` enum plus a `RentalPlan` discriminated union.
+
 Still to add as the runtime expands:
 
 - `SimulationState`: vectorized state for accounts, holdings, liabilities,
   basis, ownership, property use, tax state, and per-policy memory.
 - `PolicyRuntime`: compiles Pydantic `PolicyConfig` objects into ordered
   runtime rules.
+- Legacy `ScenarioKnobs` string literals live on the older scalar/vectorized
+  path and should disappear with the remaining `simulate_arrangement()` /
+  `simulate_property_vectorized()` cleanup rather than being promoted as the
+  public scenario API.
 
 Covered by `//augur/core:policy_runtime_test`, including policy order and
 disabled-policy exclusion.

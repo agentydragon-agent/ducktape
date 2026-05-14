@@ -14,6 +14,7 @@ from augur.core.scenario_set import (
     PartnerEquityAccrualPolicy,
     Policy,
     PrivateEquitySalePolicy,
+    PrivateEquitySaleProceedsDestination,
     Scenario,
     _PolicyBase,
 )
@@ -600,7 +601,7 @@ def private_equity_sale_instruction(
 
 
 def private_equity_sale_proceeds_destination(policy: PrivateEquitySalePolicy) -> AccountType | AssetType:
-    if policy.proceeds_destination == "generic_sp500_stock":
+    if policy.proceeds_destination is PrivateEquitySaleProceedsDestination.GENERIC_SP500_STOCK:
         return AssetType.GENERIC_SP500_STOCK
     return AccountType.CHECKING
 

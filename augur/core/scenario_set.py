@@ -37,6 +37,16 @@ class PrivateEquitySaleRuleType(StrEnum):
     FIXED_AMOUNT_ON_OPPORTUNITY = "fixed_amount_on_opportunity"
 
 
+class PrivateEquitySaleProceedsDestination(StrEnum):
+    CASH = "cash"
+    GENERIC_SP500_STOCK = "generic_sp500_stock"
+
+
+class LiquidityReserveRuleType(StrEnum):
+    FIXED = "fixed"
+    PROJECTED_DEFICITS = "projected_deficits"
+
+
 class ActionType(StrEnum):
     SELL_SP500 = "sell_sp500"
     SELL_PRIVATE_EQUITY = "sell_private_equity"
@@ -241,20 +251,33 @@ class PrivateEquitySalePolicy(_PolicyBase):
     """Sell private equity on explicit sale requests or market liquidity opportunities."""
 
     policy_type: Literal[PolicyType.PRIVATE_EQUITY_SALE] = PolicyType.PRIVATE_EQUITY_SALE
-    proceeds_destination: Literal["cash", "generic_sp500_stock"] = "cash"
+    proceeds_destination: PrivateEquitySaleProceedsDestination = PrivateEquitySaleProceedsDestination.CASH
     sale_rule: PrivateEquitySaleRule = Field(default_factory=ManualPrivateEquitySaleRule)
 
 
+class FixedLiquidityReserveRule(ApiModel):
+    reserve_rule_type: Literal[LiquidityReserveRuleType.FIXED] = LiquidityReserveRuleType.FIXED
+    min_reserve_usd: NonNegativeFloat = 0.0
+
+
+class ProjectedDeficitsLiquidityReserveRule(ApiModel):
+    reserve_rule_type: Literal[LiquidityReserveRuleType.PROJECTED_DEFICITS] = (
+        LiquidityReserveRuleType.PROJECTED_DEFICITS
+    )
+    min_reserve_usd: NonNegativeFloat = 0.0
+    forward_months: NonNegativeInt = 0
+
+
+LiquidityReserveRule = Annotated[
+    FixedLiquidityReserveRule | ProjectedDeficitsLiquidityReserveRule, Field(discriminator="reserve_rule_type")
+]
+
+
 class LiquidityReservePolicy(_PolicyBase):
-    """Defines an agent's minimum-liquid-reserve target. `mode=fixed` uses the
-    explicit `min_reserve_usd` directly. `mode=projected_deficits` instead
-    sums the next `forward_months` of projected cash-flow deficits and takes
-    the max of that with `min_reserve_usd`."""
+    """Defines an agent's minimum-liquid-reserve target."""
 
     policy_type: Literal[PolicyType.LIQUIDITY_RESERVE] = PolicyType.LIQUIDITY_RESERVE
-    mode: Literal["projected_deficits", "fixed"] = "fixed"
-    forward_months: NonNegativeInt = 0
-    min_reserve_usd: NonNegativeFloat = 0.0
+    reserve_rule: LiquidityReserveRule = Field(default_factory=FixedLiquidityReserveRule)
 
 
 class PortfolioTargetRebalancePolicy(_PolicyBase):

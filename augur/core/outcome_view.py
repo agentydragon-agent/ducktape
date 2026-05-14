@@ -9,7 +9,12 @@ import numpy as np
 from augur.core._num import require_finite as required_number
 from augur.core.augur_accounting import MONTHS_PER_YEAR
 from augur.core.personal_wealth import build_private_equity_liquidity_path
-from augur.core.scenario_set import LiquidityReservePolicy, PrivateEquitySalePolicy
+from augur.core.scenario_set import (
+    FixedLiquidityReserveRule,
+    LiquidityReservePolicy,
+    PrivateEquitySalePolicy,
+    ProjectedDeficitsLiquidityReserveRule,
+)
 from augur.core.schemas import (
     ColumnarTable,
     HistogramBucket,
@@ -230,10 +235,11 @@ def ledger_net_cash_by_month(simulation: SimulationResult) -> dict[int, float]:
 
 
 def policy_minimum_liquid_reserve(simulation: SimulationResult, reserve_policy: LiquidityReservePolicy) -> float:
-    explicit_reserve = reserve_policy.min_reserve_usd
-    if reserve_policy.mode == "fixed":
+    reserve_rule = reserve_policy.reserve_rule
+    explicit_reserve = reserve_rule.min_reserve_usd
+    if isinstance(reserve_rule, FixedLiquidityReserveRule):
         return explicit_reserve
-    months = max(0, int(reserve_policy.forward_months))
+    months = max(0, int(reserve_rule.forward_months))
     if months <= 0:
         return explicit_reserve
     cash_by_month = ledger_net_cash_by_month(simulation)
@@ -328,12 +334,14 @@ def build_stochastic_outcome_view(
     scenario_knobs = ScenarioKnobs.from_knobs(knobs)
     housing = simulate_property_vectorized(property_, scenario_knobs, market_paths)
 
-    if reserve_policy.mode == "fixed":
-        minimum_reserves = np.full(rollout_count, reserve_policy.min_reserve_usd, dtype="float64")
+    reserve_rule = reserve_policy.reserve_rule
+    if isinstance(reserve_rule, FixedLiquidityReserveRule):
+        minimum_reserves = np.full(rollout_count, reserve_rule.min_reserve_usd, dtype="float64")
     else:
-        months = min(max(0, int(reserve_policy.forward_months)), hold_months)
+        assert isinstance(reserve_rule, ProjectedDeficitsLiquidityReserveRule)
+        months = min(max(0, int(reserve_rule.forward_months)), hold_months)
         deficits = np.maximum(0.0, -housing.owner_cash_flow_usd[:, 1 : months + 1])
-        minimum_reserves = np.maximum(reserve_policy.min_reserve_usd, deficits.sum(axis=1))
+        minimum_reserves = np.maximum(reserve_rule.min_reserve_usd, deficits.sum(axis=1))
 
     private_equity_liquid = np.zeros((rollout_count, hold_months + 1), dtype="float64")
     private_equity_mark = np.zeros((rollout_count, hold_months + 1), dtype="float64")

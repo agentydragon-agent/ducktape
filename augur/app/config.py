@@ -17,14 +17,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
 
 import yaml
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
 
 from augur.core.bootstrap import DefaultScenario
 from augur.core.local_regulation import LocationId
-from augur.core.scenario_set import ActorRole
+from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType
 from augur.core.schemas import ApiModel
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
@@ -107,7 +106,7 @@ class AugurConfig(ApiModel):
     property_catalog: PropertyCatalogConfig
     snapshot: FinanceSnapshot
     location_selection: tuple[LocationId, ...] | None = None
-    minimum_reserve_mode: Literal["fixed", "projected_deficits"] = "projected_deficits"
+    minimum_reserve_mode: LiquidityReserveRuleType = LiquidityReserveRuleType.PROJECTED_DEFICITS
     reserve_forward_months: NonNegativeInt = 12
     starting_portfolio_usd: NonNegativeFloat = 0.0
     pmms_survey_date: str | None = None
