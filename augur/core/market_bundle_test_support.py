@@ -62,7 +62,6 @@ def constant_market_bundle(
             random_seed=random_seed,
             rollout_count=rollout_count,
             horizon_months=horizon_months,
-            factor_ids=(),
             event_stream_ids=(),
         ),
     )

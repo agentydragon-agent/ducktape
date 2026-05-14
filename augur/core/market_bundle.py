@@ -15,7 +15,6 @@ class MarketBundleMetadata:
     random_seed: int | None
     rollout_count: int
     horizon_months: int
-    factor_ids: tuple[str, ...]
     event_stream_ids: tuple[str, ...]
     notes: tuple[str, ...] = ()
     source_metadata: dict[str, Any] = field(default_factory=dict)
@@ -26,7 +25,6 @@ class MarketBundleMetadata:
             "random_seed": self.random_seed,
             "rollout_count": self.rollout_count,
             "horizon_months": self.horizon_months,
-            "factor_ids": list(self.factor_ids),
             "event_stream_ids": list(self.event_stream_ids),
             "notes": list(self.notes),
             "source_metadata": self.source_metadata,
@@ -186,14 +184,6 @@ class FlatMarketBundleProvider:
                 private_equity_events[:, month] = True
         home_by_location = {"default": flat, **{location.value: flat for location in LocationId}}
         rent_by_location = {"default": flat, **{location.value: flat for location in LocationId}}
-        factor_ids = (
-            "inflation",
-            "generic_sp500",
-            "private_equity_value",
-            "mortgage_30y_rate",
-            "home_value:default",
-            "rent:default",
-        )
         return MarketBundle(
             month_index=np.arange(horizon_months + 1, dtype="int64"),
             inflation_multipliers=flat,
@@ -208,7 +198,6 @@ class FlatMarketBundleProvider:
                 random_seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
-                factor_ids=factor_ids,
                 event_stream_ids=("private_equity_liquidity_event",),
                 notes=("deterministic flat provider for fixture-backed app/e2e runs",),
             ),
@@ -281,22 +270,11 @@ class SimpleMarketBundleProvider:
                 LocationId.MARE_ISLAND_VALLEJO_CA.value: 0.0,
             },
         )
-        factor_ids = (
-            "inflation",
-            "generic_sp500",
-            "private_equity_value",
-            "mortgage_30y_rate",
-            "home_value:default",
-            "rent:default",
-            *(f"home_value:{location.value}" for location in LocationId),
-            *(f"rent:{location.value}" for location in LocationId),
-        )
         metadata = MarketBundleMetadata(
             market_model_id=market_request.market_model_id,
             random_seed=seed,
             rollout_count=rollout_count,
             horizon_months=horizon_months,
-            factor_ids=factor_ids,
             event_stream_ids=("private_equity_liquidity_event",),
             notes=("simple core stochastic provider; replaceable via MarketBundleProvider",),
         )

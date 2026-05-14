@@ -348,8 +348,6 @@ function PropertyLocationPanel({ property, scenario, scenarioResult }) {
               ["Interior", `${fmtNumber(property.sqft)} sf`],
               ["Year built", fmtNumber(property.yearBuilt)],
               ["HOA", `${fmtUsd(property.hoaMonthlyUsd)} / mo`],
-              ["Home factor", property.location.homeValueFactorId],
-              ["Rent factor", property.location.rentFactorId],
               ["Location property tax", fmtPct((localRegulation.propertyTaxAnnualPct ?? NaN) / 100)],
               ["Local transfer tax", fmtPct((localRegulation.localTransferTaxPct ?? NaN) / 100)],
               ["Special assessment", `${fmtUsd(localRegulation.specialAssessmentAnnualUsd ?? 0)} / yr`],
@@ -1486,23 +1484,7 @@ function MarketMetadataPanel({ result }) {
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <div className="augur-eyebrow">Market model metadata</div>
       </div>
-      <div className="grid gap-4 p-4 lg:grid-cols-3">
-        <div className="min-w-0">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-            Factor IDs
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(metadata.factorIds ?? []).map((factorId) => (
-              <span
-                key={factorId}
-                className="rounded border border-slate-200 px-2 py-1 text-xs mono dark:border-slate-700"
-              >
-                {factorId}
-              </span>
-            ))}
-            {(metadata.factorIds ?? []).length === 0 && <span className="text-sm augur-muted">none</span>}
-          </div>
-        </div>
+      <div className="grid gap-4 p-4 lg:grid-cols-2">
         <div className="min-w-0">
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
             Event stream IDs
@@ -1934,7 +1916,6 @@ export default function AugurApp() {
             <div className="border-b border-slate-300 pb-5 dark:border-slate-700">
               <div className="augur-eyebrow">
                 {selectedProperty?.location.label ?? "No property selected"} ·{" "}
-                {selectedProperty?.location.homeValueFactorId ?? "no home factor"} ·{" "}
                 {selectedProperty?.location.localRegulation
                   ? `${selectedProperty.location.localRegulation.propertyTaxAnnualPct}% property tax`
                   : "no local regulation"}

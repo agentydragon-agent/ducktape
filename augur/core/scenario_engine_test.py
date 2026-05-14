@@ -43,7 +43,6 @@ def _bundle(
         random_seed=7,
         rollout_count=rollout_count,
         horizon_months=horizon_months,
-        factor_ids=("generic_sp500", "private_equity_value", "home_value:default"),
         event_stream_ids=("private_equity_liquidity_event",),
     )
     return MarketBundle(

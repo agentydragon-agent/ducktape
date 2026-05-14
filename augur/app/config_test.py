@@ -84,8 +84,6 @@ def test_config_can_define_deployment_owned_locations() -> None:
                 label="Location A",
                 city="Location A",
                 state="Fixture",
-                home_value_factor_id="location_a_home",
-                rent_factor_id="location_a_rent",
                 local_regulation=LocalRegulation(
                     property_tax_annual_pct=1.0, notes="Synthetic public fixture location."
                 ),

@@ -18,8 +18,6 @@ locations:
     label: Location A
     city: Location A
     state: Fixture
-    home_value_factor_id: location_a_home
-    rent_factor_id: location_a_rent
     local_regulation:
       property_tax_annual_pct: 1.0
       local_transfer_tax_pct: 0.0
@@ -31,8 +29,6 @@ locations:
     label: Location B
     city: Location B
     state: Fixture
-    home_value_factor_id: location_b_home
-    rent_factor_id: location_b_rent
     local_regulation:
       property_tax_annual_pct: 1.0
       local_transfer_tax_pct: 0.0

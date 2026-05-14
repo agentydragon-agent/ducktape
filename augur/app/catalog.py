@@ -15,17 +15,14 @@ from augur.core.bootstrap import (
     ActorPolicyOption,
     AgentOption,
     BootstrapResponse,
-    HomeValueFactorId,
     LiquidReservePolicyId,
     LiquidReservePolicyOption,
     Location,
     OwnerResidenceModeId,
     OwnerResidenceModeOption,
     Property,
-    PropertyRecord,
     RentalUsePolicyId,
     RentalUsePolicyOption,
-    RentFactorId,
 )
 from augur.core.local_regulation import LOCAL_REGULATION_BY_LOCATION, LocationId
 from augur.core.scenario_set import ActorRole
@@ -36,8 +33,6 @@ SF_LOCATION = Location(
     label="San Francisco, CA",
     city="San Francisco",
     state="CA",
-    home_value_factor_id=HomeValueFactorId.SF_HOME,
-    rent_factor_id=RentFactorId.SF_RENT,
     local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.SAN_FRANCISCO_CA],
     notes=("Home-value and rent trajectories should use SF-specific fitted real-estate factors.",),
 )
@@ -47,8 +42,6 @@ VALLEJO_MAINLAND_LOCATION = Location(
     label="Vallejo, CA",
     city="Vallejo",
     state="CA",
-    home_value_factor_id=HomeValueFactorId.VALLEJO_HOME,
-    rent_factor_id=RentFactorId.VALLEJO_RENT,
     local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.VALLEJO_CA],
     notes=("Home-value and rent trajectories should use Vallejo-specific fitted real-estate factors.",),
 )
@@ -58,8 +51,6 @@ VALLEJO_MARE_ISLAND_LOCATION = Location(
     label="Mare Island, Vallejo, CA",
     city="Vallejo",
     state="CA",
-    home_value_factor_id=HomeValueFactorId.VALLEJO_HOME,
-    rent_factor_id=RentFactorId.VALLEJO_RENT,
     local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.MARE_ISLAND_VALLEJO_CA],
     notes=(
         "Mare Island properties share the Vallejo market factor for now.",
@@ -123,8 +114,6 @@ def _location_from_config(config: LocationConfig) -> Location:
         label=config.label,
         city=config.city,
         state=config.state,
-        home_value_factor_id=config.home_value_factor_id,
-        rent_factor_id=config.rent_factor_id,
         local_regulation=config.local_regulation,
         notes=config.notes,
     )
@@ -132,19 +121,26 @@ def _location_from_config(config: LocationConfig) -> Location:
 
 def _locations_for_config(config: AugurConfig) -> tuple[Location, ...]:
     locations = tuple(_location_from_config(location) for location in config.locations) + LOCATIONS
-    location_ids = [location.id for location in locations]
-    duplicate_ids = sorted({location_id for location_id in location_ids if location_ids.count(location_id) > 1})
+    location_id_counts = Counter(location.id for location in locations)
+    duplicate_ids = sorted(location_id for location_id, count in location_id_counts.items() if count > 1)
     if duplicate_ids:
         raise ValueError(f"Augur location catalog has duplicate location ids: {duplicate_ids}")
     return locations
 
 
-def _property(record: PropertyRecord, *, location_by_id: dict[str, Location]) -> Property:
+def _property(record: object, *, location_by_id: dict[str, Location]) -> Property:
+    if not isinstance(record, dict):
+        raise ValueError("property records must be JSON objects")
+    location_id = record.get("location_id")
+    if not isinstance(location_id, str):
+        raise ValueError("property records must include string location_id")
     try:
-        location = location_by_id[record.location_id]
+        location = location_by_id[location_id]
     except KeyError as error:
-        raise ValueError(f"property {record.id!r} references unknown location {record.location_id!r}") from error
-    return Property(**record.model_dump(), location=location)
+        raise ValueError(
+            f"property {record.get('id', '<unknown>')!r} references unknown location {location_id!r}"
+        ) from error
+    return Property.model_validate({**record, "location": location})
 
 
 def _agents_by_role(config: AugurConfig) -> tuple[str, str | None]:
@@ -225,9 +221,7 @@ def _load_properties(config: AugurConfig, *, location_by_id: dict[str, Location]
     records = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(records, list):
         raise ValueError(f"{path} must contain a JSON array")
-    properties = tuple(
-        _property(PropertyRecord.model_validate(record), location_by_id=location_by_id) for record in records
-    )
+    properties = tuple(_property(record, location_by_id=location_by_id) for record in records)
     property_id_counts = Counter(property_.id for property_ in properties)
     duplicate_ids = sorted(property_id for property_id, count in property_id_counts.items() if count > 1)
     if duplicate_ids:

@@ -36,7 +36,7 @@ def test_simple_market_bundle_shapes_and_reproducibility() -> None:
 
 def test_market_bundle_rejects_bad_shapes() -> None:
     metadata = MarketBundleMetadata(
-        market_model_id="bad", random_seed=1, rollout_count=2, horizon_months=3, factor_ids=(), event_stream_ids=()
+        market_model_id="bad", random_seed=1, rollout_count=2, horizon_months=3, event_stream_ids=()
     )
     valid = np.ones((2, 4), dtype="float64")
 

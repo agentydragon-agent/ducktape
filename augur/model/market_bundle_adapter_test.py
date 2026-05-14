@@ -114,16 +114,6 @@ def test_rollout_provider_market_bundle_adapter_maps_shapes_factors_and_metadata
     assert bundle.private_equity_liquidity_event_mask[0, 5]
     assert not bundle.private_equity_liquidity_event_mask[0, 6]
 
-    factor_ids = set(bundle.metadata.factor_ids)
-    assert "inflation" in factor_ids
-    assert "expense_inflation" in factor_ids
-    assert "generic_sp500" in factor_ids
-    assert "mortgage30_rate" in factor_ids
-    assert "private_equity_value" in factor_ids
-    assert "home_value:sf_home" in factor_ids
-    assert "home_value:vallejo_home" in factor_ids
-    assert "rent:sf_rent" in factor_ids
-    assert "rent:vallejo_rent" in factor_ids
     assert bundle.metadata.source_metadata["rollout_provider_label"] == "fake_joint"
     assert bundle.metadata.source_metadata["rollout_provider_horizon_start"] == "2026-05-01"
     assert bundle.metadata.source_metadata["latest_observation_ids"] == ["mortgage30_latest", "sp500_latest"]

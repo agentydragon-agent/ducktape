@@ -213,7 +213,6 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert result["scenario_id"] == "location_a"
     assert "status" not in result
     assert result["metric_fan_columns"]["net_worth_usd"]["row_count"] == 13
-    assert "generic_sp500" in scenario_run["market_metadata"]["factor_ids"]
     assert "private_equity_liquidity_event" in scenario_run["market_metadata"]["event_stream_ids"]
 
     page_errors: list[str] = []
@@ -249,7 +248,6 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=15_000)
     page.get_by_text("Financial futures explorer").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Market model metadata").wait_for(state="visible", timeout=30_000)
-    page.get_by_text("generic_sp500").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A baseline").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location B shared").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A Property").first.wait_for(state="visible", timeout=30_000)

@@ -62,7 +62,6 @@ class RolloutProviderMarketBundleProvider:
             random_seed=effective_seed,
             rollout_count=rollout_count,
             horizon_months=horizon_months,
-            factor_ids=_factor_ids(rollouts),
             event_stream_ids=("private_equity_liquidity_event",),
             notes=("adapted from existing RolloutProvider.sample_rollouts JointRolloutPath output",),
             source_metadata=_source_metadata(self.rollout_provider),
@@ -184,26 +183,6 @@ def _private_equity_liquidity_arrays(rollouts: tuple[JointRolloutPath, ...], *, 
                 continue
             event_mask[rollout_index, event.month_index] = True
     return event_mask
-
-
-def _factor_ids(rollouts: tuple[JointRolloutPath, ...]) -> tuple[str, ...]:
-    first = rollouts[0]
-    values = [
-        "inflation",
-        "expense_inflation",
-        "generic_sp500",
-        "mortgage30_rate",
-        "private_equity_value",
-        "home_value:default",
-        "rent:default",
-    ]
-    for factor_id in _ordered_factor_ids(first.home_value_factor_multipliers.keys()):
-        values.append(f"home_value:{factor_id}")
-        values.extend(f"home_value:{location_key}" for location_key in _HOME_FACTOR_LOCATION_KEYS.get(factor_id, ()))
-    for factor_id in _ordered_factor_ids(first.rent_factor_multipliers.keys()):
-        values.append(f"rent:{factor_id}")
-        values.extend(f"rent:{location_key}" for location_key in _RENT_FACTOR_LOCATION_KEYS.get(factor_id, ()))
-    return tuple(dict.fromkeys(values))
 
 
 def _ordered_factor_ids(values: Iterable[str]) -> tuple[str, ...]:

@@ -84,8 +84,6 @@ class LocationConfig(ApiModel):
     label: str
     city: str
     state: str
-    home_value_factor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
-    rent_factor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     local_regulation: LocalRegulation
     notes: tuple[str, ...] = ()
 
