@@ -25,5 +25,5 @@ Read-only diagnostics service account token in k8s `claude-sandbox/claude-authen
 TOKEN=$(kubectl get secret -n claude-sandbox claude-authentik-api-token -o jsonpath='{.data.token}' | base64 -d)
 curl -sH "Authorization: Bearer $TOKEN" https://auth.allegedly.works/api/v3/<endpoint>/
 ```
-Permissions: audit log, apps, proxy providers, users, groups, sessions, outposts, flows, policies, system tasks, blueprints. Not available: OAuth2 client secrets, access/refresh tokens, certificate keys. Key endpoints: `/api/v3/events/events/` (audit log), `/api/v3/core/applications/`, `/api/v3/core/users/`, `/api/v3/outposts/instances/`, `/api/v3/admin/system_tasks/`, `/api/v3/flows/instances/`.
+Permissions: audit log, apps, proxy providers, users, groups, sessions, outposts, flows, policies, system tasks, blueprints. Not available: OAuth2 client secrets, access/refresh tokens, certificate keys. Key endpoints under `/api/v3/`: `events/events/` (audit log), `core/{applications,users}/`, `outposts/instances/`, `admin/system_tasks/`, `flows/instances/`.
 EOF
