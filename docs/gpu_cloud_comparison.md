@@ -25,7 +25,7 @@ For serious multi-GPU training: you want SXM 8× nodes.
 | **Hyperstack**         | $1.90    | ~$1,390  | on-demand | 1×           | —                                                    |
 | **RunPod** (community) | $2.69    | ~$1,965  | on-demand | 1×           | SXM; community hardware, less SLA                    |
 | **RunPod** (secure)    | $2.99    | ~$2,185  | on-demand | 1×           | SXM; dedicated hosts, better reliability             |
-| **OVHcloud**           | $2.99    | ~$2,185  | on-demand | unknown      | —                                                    |
+| **OVHcloud** (Public)  | ~$3.00   | ~$2,190  | on-demand | 1×           | EU/CA primary; US region availability unclear; PCIe  |
 | **Vultr**              | $2.99    | ~$17,500 | on-demand | 8× only      | Per-node (8 GPUs); multi-GPU only                    |
 | **Lambda Labs**        | $3.29    | ~$2,400  | on-demand | 1×           | PCIe; most reliable availability of mid-tier         |
 | **DigitalOcean**       | $3.39    | ~$2,475  | on-demand | 1×           | —                                                    |
@@ -107,11 +107,65 @@ or need enterprise SLAs without vendor risk. For raw compute they are a bad deal
 One GPU per server. Good value for RTX-class inference workloads, but not in
 the A100/H100 tier. Not relevant for serious training.
 
-### OVH Eco / Kimsufi (GPU)
+### OVHcloud (Bare Metal + Public Cloud)
 
-OVH lists H100 at ~$2.99/GPU/hr but availability and exact configuration are
-unclear from public docs. Their GPU servers are likely EU-only (same as dedicated
-server auction situation). Worth checking if EU latency is acceptable.
+**West US (HIL — Hillsboro, OR) availability is poor.** OVH has two US datacenters
+— HIL (west, where our cluster lives) and VIN (Vint Hill, VA, east). As of May 2026:
+
+- **No GPU bare metal is orderable in HIL.** None. The only GPU SKU available in
+  any US DC right now is HGR-AI-1 in **VIN only** (V100s, $4,446/mo + $3,299 setup).
+- **HGR-AI-2 (L40S) and SCALE-GPU-\* (L4)** show "Soon available" globally — no
+  firm HIL date.
+- **Public Cloud GPU VMs** (L4, L40S, V100S, H100) are sold globally but OVH's
+  US Public Cloud pricing page doesn't break out which DC actually has stock;
+  historically H100/H200 launches lag EU/Canada by months.
+
+**Bare metal GPU lineup (May 2026):**
+
+| SKU         | GPU                                                              | CPU / RAM / Storage                                            | $/mo USD    | $/GPU/mo | West US (HIL) | East US (VIN)      | Notes                            |
+| ----------- | ---------------------------------------------------------------- | -------------------------------------------------------------- | ----------- | -------- | ------------- | ------------------ | -------------------------------- |
+| HGR-AI-1    | 4× V100S 32GB                                                    | 2× Xeon Gold 6226R, 1.5TB DDR4, 15.94TB SSD                    | $4,446      | $1,112   | ❌            | ✅ (+$3,299 setup) | Old V100; PCIe                   |
+| HGR-AI-2    | NVIDIA L40S (PCIe; count not in catalog, sold as multi-GPU node) | 2× EPYC 9354 (64c), 384GB–2.25TB, 2× to 4× NVMe, 100 Gbps priv | from $3,505 | —        | ❌ ("soon")   | ❌ ("soon")        | L40S is H100-class FP8 inference |
+| SCALE-GPU-1 | 2× L4 24GB                                                       | EPYC Genoa 32c, 192GB+, NVMe, 50 Gbps priv                     | from $1,145 | $573     | ❌ ("soon")   | ❌ ("soon")        | Entry tier, inference/VDI        |
+| SCALE-GPU-2 | L4                                                               | EPYC Genoa, larger config                                      | from $1,180 | —        | ❌ ("soon")   | ❌ ("soon")        | —                                |
+| SCALE-GPU-3 | L4                                                               | EPYC Genoa, larger config                                      | from $1,216 | —        | ❌ ("soon")   | ❌ ("soon")        | —                                |
+
+**No H100 SXM or PCIe in OVH's bare metal catalog as of May 2026.** The $2.99/GPU/hr
+figure in our prior entry referred to OVH's Public Cloud H100 VMs, not bare metal.
+L40S (HGR-AI-2) is the closest bare-metal substitute — strong FP8/INT8 inference
+performance, 48GB VRAM, no NVLink. Not a real H100 alternative for >30B training.
+
+**Public Cloud GPU (VM instances)** — confirmed US-available pricing:
+
+| Flavor   | GPU           | vCPU/RAM    | $/hr  | $/GPU/mo |
+| -------- | ------------- | ----------- | ----- | -------- |
+| t2-45    | 1× V100S 32GB | 15c / 45GB  | $0.88 | ~$642    |
+| l4-90    | 1× L4 24GB    | 22c / 90GB  | $1.00 | ~$730    |
+| l40s-90  | 1× L40S 48GB  | 15c / 90GB  | $1.80 | ~$1,314  |
+| l40s-360 | 4× L40S       | 60c / 360GB | $7.20 | ~$1,314  |
+
+OVH's published H100 Public Cloud rate is €2.80/hr (~$3.00/hr) for 1× H100 80GB
+PCIe — comparable to RunPod Secure and cheaper than Lambda Labs. **US Public Cloud
+GPU region availability isn't broken out by datacenter on the public pricing page**;
+H100/H200 instances historically launch in EU/Canada first.
+
+**US datacenters recap:** HIL (Hillsboro, OR) and VIN (Vint Hill, VA). HIL is where
+our cluster lives (Talos VPS workers + Kimsufi worker). For a GPU node co-located
+with the rest of the cluster (Nebula latency, cross-AZ bandwidth), HIL is the
+constraint — and **OVH has zero orderable GPU SKUs in HIL today**. Verify on
+`pricelist.ovh` before assuming HGR-AI-2 / SCALE-GPU-\* are bookable in HIL.
+
+**Terraform:** `ovh/ovh` provider supports `ovh_dedicated_server`,
+`ovh_dedicated_server_update`, `ovh_dedicated_server_boots`, `ovh_me_ipxe_script` —
+same surface we use for Kimsufi. Public Cloud GPU instances provision via
+`ovh_cloud_project_instance`. Ordering bare-metal HGR-AI via API has historically
+required a manual quote step; reorders are scriptable.
+
+**Verdict for our use case (west US / HIL):** Nothing available. The only US bare-metal
+OVH GPU is HGR-AI-1 in VIN (east coast, ~70ms RTT from HIL), at V100-generation
+hardware. HGR-AI-2 (L40S) hasn't shipped anywhere yet. Public Cloud H100 at ~$3/hr
+might land in HIL eventually but no current confirmation. Pass for now — keep
+wyrm2 / Lambda Labs / RunPod as the GPU paths until OVH ships an HGR-AI in HIL.
 
 ---
 
