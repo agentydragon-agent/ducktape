@@ -103,6 +103,8 @@ let
     (mkPrefix "id")
     (mkPrefix "groups")
     (mkPrefix "lpstat")
+    # Radio/device kill switch status
+    (mkExactArgs "rfkill" "list")
   ]
   ++ (mkPrefixMulti "gsettings" [
     "get"
