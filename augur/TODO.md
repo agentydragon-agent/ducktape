@@ -4,7 +4,7 @@ Last design scan: 2026-05-14.
 
 ## Next
 
-- [ ] Continue `plans/e2e_redesign.md` Step 7 by adding typed accounting detail for the remaining explanatory calculations, starting with tax assessment/payment timing and sale basis/gain components.
+- [ ] Continue `plans/e2e_redesign.md` Step 7 by replacing `allocated_to_source_month` tax timing with realistic annual/estimated-payment liability timing.
 
 ## Step 7 Scope
 
@@ -14,6 +14,7 @@ Last design scan: 2026-05-14.
 - [x] Derive sale transaction arrays from ledger rows: SP500 sale/basis/gain/tax, checking-floor sale action, private-equity sale/basis/tax, property sale gross/closing cost/debt payoff/tax/net proceeds, and net property sale cash flow.
 - [x] Derive partner contribution transaction arrays from actor-keyed ledger rows: contribution transfer, contribution used for house costs, unallocated contribution excess, and partner principal credit.
 - [x] Classify current monthly result arrays in `plans/e2e_redesign.md` as state snapshots, transaction flows, explanatory calculations, or compatibility aliases.
+- [x] Add typed accounting-detail rows for property-sale basis/gain calculations and sale-tax payment allocation. Federal/California/total tax arrays and property-sale basis/gain arrays now derive from those rows.
 - [ ] Make arrays derive from state/ledger where practical. Where an array remains bespoke for performance or UI compatibility, assert that it reconciles to the ledger total and document any intentional difference.
 - [x] Expand one-rollout detail beyond curves/actions/ledger/snapshots to include market observations and explicit policy decisions.
 

@@ -26,6 +26,7 @@ from augur.core.scenario_set import (
     ScenarioResultStatus,
     ScenarioSet,
     ScenarioSetRunResponse,
+    SimulationAccountingDetail,
     SimulationAction,
     SimulationBalanceSnapshot,
     SimulationLedgerEntry,
@@ -34,6 +35,7 @@ from augur.core.scenario_set import (
 )
 
 ActionT = TypeVar("ActionT")
+AccountingDetailT = TypeVar("AccountingDetailT")
 DecisionT = TypeVar("DecisionT")
 ObservationT = TypeVar("ObservationT")
 
@@ -89,6 +91,15 @@ class RolloutDetail:
         self, *, domain: str | None = None, category: str | None = None
     ) -> tuple[SimulationBalanceSnapshot, ...]:
         return self.scenario_run.balance_snapshots(domain=domain, category=category, rollout=self.rollout_index)
+
+    @overload
+    def accounting_details(self, detail_type: type[AccountingDetailT]) -> tuple[AccountingDetailT, ...]: ...
+
+    @overload
+    def accounting_details(self, detail_type: None = None) -> tuple[SimulationAccountingDetail, ...]: ...
+
+    def accounting_details(self, detail_type: type[Any] | None = None) -> tuple[Any, ...]:
+        return self.scenario_run.accounting_details(detail_type, rollout=self.rollout_index)
 
 
 @dataclass(frozen=True)
@@ -226,6 +237,29 @@ class ScenarioRun:
             snapshots = tuple(snapshot for snapshot in snapshots if snapshot.rollout_index == rollout)
         return snapshots
 
+    @overload
+    def accounting_details(
+        self, detail_type: type[AccountingDetailT], *, rollout: int | None = None
+    ) -> tuple[AccountingDetailT, ...]: ...
+
+    @overload
+    def accounting_details(
+        self, detail_type: None = None, *, rollout: int | None = None
+    ) -> tuple[SimulationAccountingDetail, ...]: ...
+
+    def accounting_details(
+        self, detail_type: type[Any] | None = None, *, rollout: int | None = None
+    ) -> tuple[Any, ...]:
+        if self.arrays is None:
+            return ()
+        details: tuple[Any, ...] = self.arrays.accounting_details
+        if detail_type is not None:
+            details = tuple(detail for detail in details if isinstance(detail, detail_type))
+        if rollout is not None:
+            self._validate_rollout_index(rollout)
+            details = tuple(detail for detail in details if detail.rollout_index == rollout)
+        return details
+
     def to_response_result(self) -> ScenarioResult:
         if self.arrays is None:
             return ScenarioResult(
@@ -248,6 +282,7 @@ class ScenarioRun:
             market_observations=self.arrays.market_observations,
             ledger_entries=self.arrays.ledger_entries,
             balance_snapshots=self.arrays.balance_snapshots,
+            accounting_details=self.arrays.accounting_details,
             warnings=self.warnings,
         )
 

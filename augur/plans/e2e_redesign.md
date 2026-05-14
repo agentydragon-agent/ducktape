@@ -145,14 +145,17 @@ Done for Step 7:
 - Partner contribution transfer, contribution used for house costs,
   unallocated contribution excess, and partner principal credit derive from
   actor-keyed ledger rows before being exposed as monthly result arrays.
+- Federal/California/total income-tax allocation columns and property-sale
+  basis/gain explanatory columns derive from typed accounting-detail rows before
+  being exposed as monthly result arrays.
 - E2E tests reconstruct matrices from ledger/snapshot rows for monthly spend,
   SP500 sales/taxes, PE sales/taxes, mortgage payments, rental/property
   operating cash flows, property sale settlement/taxes, and partner-equity
   ledgers/claims.
 - Selected-rollout detail includes market paths, PE liquidity opportunities,
   monthly-spend decisions, checking-floor sell decisions, PE sale decisions,
-  partner contribution decisions, actions, ledger entries, snapshots, and curve
-  values.
+  partner contribution decisions, actions, ledger entries, snapshots,
+  accounting details, and curve values.
 
 ### Step 7 Array Inventory
 
@@ -186,15 +189,17 @@ them, but their source should be another state/ledger-backed metric.
 - Ledger-backed rollups and aliases: `generic_sp500_sale_gain_usd`,
   `checking_floor_action_usd`, `property_carrying_cost_usd`,
   `net_property_cash_flow_usd`, `net_property_sale_cash_flow_usd`.
-- Explanatory calculations that still need typed accounting detail:
+- Accounting-detail-backed explanatory calculations:
   `federal_income_tax_usd`, `california_income_tax_usd`,
-  `total_income_tax_usd`, `purchase_closing_cost_usd`,
-  `property_depreciation_usd`, `cumulative_property_depreciation_usd`,
+  `total_income_tax_usd`,
   `property_sale_adjusted_basis_usd`, `realized_property_gain_usd`,
   `property_sale_capital_gain_usd`,
   `property_sale_capital_gain_exclusion_usd`,
   `taxable_property_capital_gain_usd`, `taxable_property_gain_usd`,
-  `depreciation_recapture_usd`, `partner_house_costs_usd`,
+  `depreciation_recapture_usd`.
+- Explanatory calculations that still need typed accounting detail:
+  `purchase_closing_cost_usd`, `property_depreciation_usd`,
+  `cumulative_property_depreciation_usd`, `partner_house_costs_usd`,
   `owner_principal_credit_usd`, `partner_house_cost_share`.
 - Policy/result compatibility fields: `checking_floor_shortfall_usd`. Keep
   policy-decision rows as the detailed source for why a shortfall occurred.

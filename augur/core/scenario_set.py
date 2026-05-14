@@ -69,6 +69,15 @@ class MarketObservationType(StrEnum):
     PRIVATE_EQUITY_LIQUIDITY_OPPORTUNITY = "private_equity_liquidity_opportunity"
 
 
+class AccountingDetailType(StrEnum):
+    PROPERTY_SALE_BASIS_GAIN = "property_sale_basis_gain"
+    TAX_PAYMENT_ALLOCATION = "tax_payment_allocation"
+
+
+class TaxPaymentTiming(StrEnum):
+    ALLOCATED_TO_SOURCE_MONTH = "allocated_to_source_month"
+
+
 class ActorRole(StrEnum):
     PRIMARY_OWNER = "primary_owner"
     EQUITY_BUILDING_OCCUPANT = "equity_building_occupant"
@@ -540,6 +549,51 @@ class SimulationBalanceSnapshot(_SimulationLedgerBase):
     """A point-in-time state value for one rollout/month."""
 
 
+class _SimulationAccountingDetailBase(ApiModel):
+    rollout_index: NonNegativeInt
+    month_index: NonNegativeInt
+    actor_id: str
+    policy_id: str | None = None
+    event_id: str | None = None
+    property_id: PropertyId | None = None
+
+
+class PropertySaleBasisGainDetail(_SimulationAccountingDetailBase):
+    detail_type: Literal[AccountingDetailType.PROPERTY_SALE_BASIS_GAIN] = AccountingDetailType.PROPERTY_SALE_BASIS_GAIN
+    gross_sale_usd: float
+    selling_cost_usd: float
+    debt_payoff_usd: float
+    adjusted_basis_usd: float
+    realized_gain_usd: float
+    depreciation_recapture_usd: float
+    capital_gain_usd: float
+    capital_gain_exclusion_usd: float
+    taxable_capital_gain_usd: float
+    taxable_gain_usd: float
+
+
+class TaxPaymentAllocationDetail(_SimulationAccountingDetailBase):
+    detail_type: Literal[AccountingDetailType.TAX_PAYMENT_ALLOCATION] = AccountingDetailType.TAX_PAYMENT_ALLOCATION
+    tax_year_index: NonNegativeInt
+    payment_timing: TaxPaymentTiming = TaxPaymentTiming.ALLOCATED_TO_SOURCE_MONTH
+    federal_income_tax_usd: float
+    california_income_tax_usd: float
+    total_income_tax_usd: float
+    property_sale_tax_usd: float
+    generic_sp500_sale_tax_usd: float
+    private_equity_sale_tax_usd: float
+    property_depreciation_recapture_usd: float
+    taxable_property_capital_gain_usd: float
+    generic_sp500_taxable_gain_usd: float
+    private_equity_taxable_gain_usd: float
+    total_taxable_income_usd: float
+
+
+SimulationAccountingDetail = Annotated[
+    PropertySaleBasisGainDetail | TaxPaymentAllocationDetail, Field(discriminator="detail_type")
+]
+
+
 class ReportSpec(ApiModel):
     metrics: tuple[ReportMetric, ...] = (
         ReportMetric.NET_WORTH,
@@ -802,6 +856,7 @@ class ScenarioResult(ApiModel):
     market_observations: tuple[SimulationMarketObservation, ...] = ()
     ledger_entries: tuple[SimulationLedgerEntry, ...] = ()
     balance_snapshots: tuple[SimulationBalanceSnapshot, ...] = ()
+    accounting_details: tuple[SimulationAccountingDetail, ...] = ()
     warnings: tuple[str, ...] = ()
 
 

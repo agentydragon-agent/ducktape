@@ -9,6 +9,8 @@ produce.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pytest
 import pytest_bazel
@@ -44,6 +46,7 @@ from augur.core.scenario_set import (
     PrivateEquitySalePolicy,
     PrivateEquitySaleRequestEvent,
     PropertyAssumptions,
+    PropertySaleBasisGainDetail,
     PropertySaleEvent,
     PropertySelection,
     RentalMode,
@@ -53,6 +56,8 @@ from augur.core.scenario_set import (
     SellPublicStockDecision,
     SellSp500Action,
     SettlePropertySaleAction,
+    TaxPaymentAllocationDetail,
+    TaxPaymentTiming,
     TaxProfile,
     TransactionCosts,
     TransferPartnerContributionAction,
@@ -113,6 +118,13 @@ def _snapshot_matrix(result: ScenarioRun, *, domain: str, category: str) -> np.n
     matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
     for snapshot in result.balance_snapshots(domain=domain, category=category):
         matrix[snapshot.rollout_index, snapshot.month_index] += snapshot.amount_usd
+    return matrix
+
+
+def _accounting_detail_matrix(result: ScenarioRun, detail_type: type[Any], amount_field: str) -> np.ndarray:
+    matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
+    for detail in result.accounting_details(detail_type):
+        matrix[detail.rollout_index, detail.month_index] += getattr(detail, amount_field)
     return matrix
 
 
@@ -598,6 +610,34 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
         _ledger_matrix(result, domain="cash", category="property_sale_net_proceeds"),
         result.matrix("property_sale_net_proceeds_usd"),
     )
+    np.testing.assert_allclose(
+        _accounting_detail_matrix(result, PropertySaleBasisGainDetail, "adjusted_basis_usd"),
+        result.matrix("property_sale_adjusted_basis_usd"),
+    )
+    np.testing.assert_allclose(
+        _accounting_detail_matrix(result, PropertySaleBasisGainDetail, "realized_gain_usd"),
+        result.matrix("realized_property_gain_usd"),
+    )
+    np.testing.assert_allclose(
+        _accounting_detail_matrix(result, PropertySaleBasisGainDetail, "taxable_gain_usd"),
+        result.matrix("taxable_property_gain_usd"),
+    )
+    np.testing.assert_allclose(
+        _accounting_detail_matrix(result, TaxPaymentAllocationDetail, "federal_income_tax_usd"),
+        result.matrix("federal_income_tax_usd"),
+    )
+    np.testing.assert_allclose(
+        _accounting_detail_matrix(result, TaxPaymentAllocationDetail, "california_income_tax_usd"),
+        result.matrix("california_income_tax_usd"),
+    )
+    tax_details = rollout.accounting_details(TaxPaymentAllocationDetail)
+    assert len(tax_details) == 1
+    assert tax_details[0].payment_timing == TaxPaymentTiming.ALLOCATED_TO_SOURCE_MONTH
+    np.testing.assert_allclose(tax_details[0].property_sale_tax_usd, sale_tax)
+    sale_accounting_details = rollout.accounting_details(PropertySaleBasisGainDetail)
+    assert len(sale_accounting_details) == 1
+    np.testing.assert_allclose(sale_accounting_details[0].adjusted_basis_usd, 500_000)
+    np.testing.assert_allclose(sale_accounting_details[0].taxable_gain_usd, taxable_gain)
     actions = rollout.actions(SettlePropertySaleAction)
     assert len(actions) == 1
     action = actions[0]
@@ -765,6 +805,9 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     }
     assert {"market_path", "private_equity_liquidity_opportunity"} <= {
         observation["observation_type"] for observation in result["market_observations"]
+    }
+    assert {"property_sale_basis_gain", "tax_payment_allocation"} <= {
+        detail["detail_type"] for detail in result["accounting_details"]
     }
 
     sp500_action = actions["sell_sp500"]
