@@ -257,14 +257,18 @@ pub fn factorize(
         }
     }
 
-    // Agglomeration pass: greedy merging of landable cells along
-    // inter-cell constraining edges, up to `size_cap_lines`. The
-    // analyzer's closure cells are minimal (one SCC per cell);
-    // landable singletons that share constraining edges get
-    // combined into useful module-sized factors here. Validity is
-    // preserved by only merging cells whose union remains landable
-    // (no cycle gate trigger) — see `agglomerate_landable_cells`.
-    agglomerate_landable_cells(&mut cells, &residual_constraining_edges, size_cap_lines);
+    // Agglomeration pass: first greedily merge already-landable
+    // neighbors into useful module-sized factors, then merge a
+    // blocked cell with its full residual prerequisite closure when
+    // that closure fits under `size_cap_lines`. The latter lets the
+    // proposer surface "peel A+B+C together" when A and B are
+    // individually landable prerequisites but C is not.
+    agglomerate_landable_cells(
+        &mut cells,
+        &residual_constraining_edges,
+        graph,
+        size_cap_lines,
+    );
 
     let proposals = emit_proposals(
         &cells,
@@ -331,10 +335,10 @@ struct Cell {
 
 /// Per-cell gate result. For original closure cells, this mirrors
 /// the analyzer's `FactorizeCell`. For agglomerated cells produced
-/// by `agglomerate_landable_cells`, this is synthesized: only
-/// landable cells get merged, and merging two landable cells whose
-/// union is still landable produces another landable cell with
-/// empty `emit_blocked_residual_bindings`.
+/// by `agglomerate_landable_cells`, this is synthesized: merging
+/// landable neighbors or a blocked cell's full prerequisite closure
+/// produces a landable cell with empty
+/// `emit_blocked_residual_bindings`.
 #[derive(Debug, Clone)]
 struct Verdict {
     landable_today: bool,
@@ -358,6 +362,7 @@ struct Verdict {
 fn agglomerate_landable_cells(
     cells: &mut Vec<(Cell, Verdict)>,
     residual_constraining_edges: &[(usize, usize)],
+    graph: &OwnerGraphReport,
     size_cap_lines: usize,
 ) {
     if cells.is_empty() {
@@ -487,6 +492,177 @@ fn agglomerate_landable_cells(
         }
     }
     *cells = kept;
+
+    agglomerate_prerequisite_closures(cells, residual_constraining_edges, graph, size_cap_lines);
+}
+
+/// Merge a non-landable cell with every residual cell it depends on,
+/// recursively, when the resulting closure is small enough to review.
+/// Dependencies include both init-order residual edges and
+/// emit-resolvability blockers reported by the analyzer.
+fn agglomerate_prerequisite_closures(
+    cells: &mut Vec<(Cell, Verdict)>,
+    residual_constraining_edges: &[(usize, usize)],
+    graph: &OwnerGraphReport,
+    size_cap_lines: usize,
+) {
+    loop {
+        let owner_to_cell = owner_to_cell(cells);
+        let binding_to_cell = binding_to_cell(cells, graph);
+        let mut out_neighbors =
+            cell_out_neighbors(cells.len(), residual_constraining_edges, &owner_to_cell);
+        add_emit_blocker_neighbors(cells, &binding_to_cell, &mut out_neighbors);
+
+        let mut merged_any = false;
+        for root in 0..cells.len() {
+            if cells[root].1.landable_today {
+                continue;
+            }
+
+            let closure = outgoing_closure(root, &out_neighbors);
+            if closure.len() <= 1 {
+                continue;
+            }
+
+            let total_lines: usize = closure.iter().map(|&idx| cells[idx].0.lines).sum();
+            if total_lines > size_cap_lines {
+                continue;
+            }
+
+            let blockers_are_internal = closure.iter().all(|&idx| {
+                cells[idx]
+                    .1
+                    .emit_blocked_residual_bindings
+                    .iter()
+                    .all(|binding| {
+                        binding_to_cell
+                            .get(binding.as_str())
+                            .is_some_and(|cell_idx| closure.contains(cell_idx))
+                    })
+            });
+            if !blockers_are_internal {
+                continue;
+            }
+
+            merge_cell_closure(cells, &closure, total_lines);
+            merged_any = true;
+            break;
+        }
+
+        if !merged_any {
+            break;
+        }
+    }
+}
+
+fn owner_to_cell(cells: &[(Cell, Verdict)]) -> HashMap<usize, usize> {
+    let mut owner_to_cell = HashMap::new();
+    for (idx, (cell, _)) in cells.iter().enumerate() {
+        for &owner in &cell.owners {
+            owner_to_cell.insert(owner, idx);
+        }
+    }
+    owner_to_cell
+}
+
+fn cell_out_neighbors(
+    cell_count: usize,
+    residual_constraining_edges: &[(usize, usize)],
+    owner_to_cell: &HashMap<usize, usize>,
+) -> Vec<BTreeSet<usize>> {
+    let mut out_neighbors: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); cell_count];
+    for &(source, target) in residual_constraining_edges {
+        let (Some(&source_cell), Some(&target_cell)) =
+            (owner_to_cell.get(&source), owner_to_cell.get(&target))
+        else {
+            continue;
+        };
+        if source_cell != target_cell {
+            out_neighbors[source_cell].insert(target_cell);
+        }
+    }
+    out_neighbors
+}
+
+fn binding_to_cell<'a>(
+    cells: &[(Cell, Verdict)],
+    graph: &'a OwnerGraphReport,
+) -> HashMap<&'a str, usize> {
+    let mut out = HashMap::new();
+    for (cell_idx, (cell, _)) in cells.iter().enumerate() {
+        for &owner_idx in &cell.owners {
+            for binding in &graph.nodes[owner_idx].declared_bindings {
+                out.insert(binding.binding.as_str(), cell_idx);
+            }
+        }
+    }
+    out
+}
+
+fn add_emit_blocker_neighbors(
+    cells: &[(Cell, Verdict)],
+    binding_to_cell: &HashMap<&str, usize>,
+    out_neighbors: &mut [BTreeSet<usize>],
+) {
+    for (source_idx, (_, verdict)) in cells.iter().enumerate() {
+        for binding in &verdict.emit_blocked_residual_bindings {
+            let Some(&target_idx) = binding_to_cell.get(binding.as_str()) else {
+                continue;
+            };
+            if source_idx != target_idx {
+                out_neighbors[source_idx].insert(target_idx);
+            }
+        }
+    }
+}
+
+fn outgoing_closure(root: usize, out_neighbors: &[BTreeSet<usize>]) -> BTreeSet<usize> {
+    let mut closure = BTreeSet::from([root]);
+    let mut stack: Vec<usize> = out_neighbors[root].iter().copied().collect();
+    while let Some(next) = stack.pop() {
+        if !closure.insert(next) {
+            continue;
+        }
+        stack.extend(out_neighbors[next].iter().copied());
+    }
+    closure
+}
+
+fn merge_cell_closure(
+    cells: &mut Vec<(Cell, Verdict)>,
+    closure: &BTreeSet<usize>,
+    total_lines: usize,
+) {
+    let keep = *closure
+        .iter()
+        .next()
+        .expect("merge_cell_closure requires a non-empty closure");
+
+    let mut merged_owners = BTreeSet::new();
+    let mut merged_extension_owner_idxs = BTreeSet::new();
+    let mut common_extends = cells[keep].0.extends_module_id.clone();
+    for &idx in closure {
+        merged_owners.extend(cells[idx].0.owners.iter().copied());
+        if cells[idx].0.extends_module_id == common_extends {
+            merged_extension_owner_idxs.extend(cells[idx].0.extension_owner_idxs.iter().copied());
+        } else {
+            common_extends = None;
+            merged_extension_owner_idxs.clear();
+        }
+    }
+
+    cells[keep].0.owners = merged_owners;
+    cells[keep].0.lines = total_lines;
+    cells[keep].0.extends_module_id = common_extends;
+    cells[keep].0.extension_owner_idxs = merged_extension_owner_idxs;
+    cells[keep].1.landable_today = true;
+    cells[keep].1.emit_blocked_residual_bindings.clear();
+
+    for &idx in closure.iter().rev() {
+        if idx != keep {
+            cells.remove(idx);
+        }
+    }
 }
 
 fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
@@ -1077,7 +1253,9 @@ mod tests {
     fn inter_cell_constraining_edges_are_counted_per_proposal() {
         // Two cells (a, b) with a single constraining edge a → b.
         // Cell 0 (a) reports edges_to_other_residual_cells=1
-        // pointing at cell 1 (b). Cell 1 reports 0.
+        // pointing at cell 1 (b). Cell 1 reports 0. The combined
+        // closure would be landable, so use a low size cap to keep
+        // the cells separate for this metric test.
         let nodes = vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)];
         let edges = vec![edge("e1", "a", "b", DepKind::EagerUse, true)];
         let cells = vec![
@@ -1097,7 +1275,7 @@ mod tests {
             ),
         ];
         let graph = graph_with_cells(nodes, edges, cells);
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 15);
         let by_binding = |b: &str| -> &FactorizeProposal {
             report
                 .proposals
@@ -1146,10 +1324,8 @@ mod tests {
     fn analyzer_emit_blocked_verdict_passes_through_to_proposal() {
         // Analyzer-side cell carries emit_blocked_residual_bindings.
         // The CLI proposal should surface the same list and report
-        // landable_today=false. The CLI computes its own emit-block
-        // check (post-promotion exports), but for a cell with no
-        // active claims and only residual owners, both checks land
-        // on the same set.
+        // landable_today=false when the blocker closure is too large
+        // to auto-merge under the requested cap.
         let nodes = vec![
             owner("consumer", 1, &["consumer"], 10),
             owner("dep", 2, &["dep"], 5),
@@ -1179,7 +1355,7 @@ mod tests {
             ),
         ];
         let graph = graph_with_cells(nodes, edges, cells);
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 12);
         let consumer = report
             .proposals
             .iter()
