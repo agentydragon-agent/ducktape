@@ -472,6 +472,10 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
         result.matrix("partner_principal_credit_usd"),
     )
     np.testing.assert_allclose(
+        _ledger_matrix(result, domain="ownership", category="owner_principal_credit"),
+        result.matrix("owner_principal_credit_usd"),
+    )
+    np.testing.assert_allclose(
         _snapshot_matrix(result, domain="ownership", category="partner_equity_ledger"),
         result.matrix("partner_equity_ledger_usd"),
     )

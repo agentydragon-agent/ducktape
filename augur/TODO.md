@@ -4,7 +4,7 @@ Last design scan: 2026-05-14.
 
 ## Next
 
-- [ ] Continue `plans/e2e_redesign.md` Step 7 by separating remaining state snapshot arrays from transaction-flow arrays, then derive the practical transaction-flow arrays from ledger/state detail.
+- [ ] Continue `plans/e2e_redesign.md` Step 7 by adding typed accounting detail for the remaining explanatory calculations, starting with tax assessment/payment timing and sale basis/gain components.
 
 ## Step 7 Scope
 
@@ -12,6 +12,8 @@ Last design scan: 2026-05-14.
 - [x] Add reconciliation e2e tests for current policy arrays: monthly spend, SP500 sales and taxes, private-equity sales and taxes, mortgage payments, rental/property operating cash flows, property sale settlement/taxes, and partner-equity ledgers/claims.
 - [x] Derive recurring cash-flow arrays from ledger rows: monthly spend, mortgage interest/principal/payment, rental income/fees, property carrying costs, and net property cash flow.
 - [x] Derive sale transaction arrays from ledger rows: SP500 sale/basis/gain/tax, checking-floor sale action, private-equity sale/basis/tax, property sale gross/closing cost/debt payoff/tax/net proceeds, and net property sale cash flow.
+- [x] Derive partner contribution transaction arrays from actor-keyed ledger rows: contribution transfer, contribution used for house costs, unallocated contribution excess, and partner principal credit.
+- [x] Classify current monthly result arrays in `plans/e2e_redesign.md` as state snapshots, transaction flows, explanatory calculations, or compatibility aliases.
 - [ ] Make arrays derive from state/ledger where practical. Where an array remains bespoke for performance or UI compatibility, assert that it reconciles to the ledger total and document any intentional difference.
 - [x] Expand one-rollout detail beyond curves/actions/ledger/snapshots to include market observations and explicit policy decisions.
 

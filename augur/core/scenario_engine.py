@@ -997,6 +997,34 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         domain="cash",
         category="property_sale_net_proceeds",
     )
+    partner_contribution_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="cash",
+        category="partner_contribution_transfer",
+    )
+    partner_contribution_used_from_ledger = _ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="cash",
+        category="partner_contribution_used_for_house_costs",
+    )
+    partner_unallocated_excess_from_ledger = _ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="escrow",
+        category="partner_contribution_unallocated",
+    )
+    partner_principal_credit_from_ledger = _ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="ownership",
+        category="partner_principal_credit",
+    )
     return ScenarioRunArrays(
         scenario_id=scenario.scenario_id,
         scenario_label=scenario.label,
@@ -1053,11 +1081,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         home_equity_usd=home_equity,
         owner_home_equity_claim_usd=owner_home_equity_claim,
         partner_home_equity_claim_usd=partner_home_equity_claim,
-        partner_contribution_usd=partner_equity.contribution_usd,
-        partner_contribution_used_usd=partner_equity.contribution_used_usd,
-        partner_unallocated_excess_usd=partner_equity.unallocated_excess_usd,
+        partner_contribution_usd=partner_contribution_from_ledger,
+        partner_contribution_used_usd=partner_contribution_used_from_ledger,
+        partner_unallocated_excess_usd=partner_unallocated_excess_from_ledger,
         partner_house_costs_usd=partner_equity.house_costs_usd,
-        partner_principal_credit_usd=partner_equity.principal_credit_usd,
+        partner_principal_credit_usd=partner_principal_credit_from_ledger,
         owner_principal_credit_usd=partner_equity.owner_principal_usd,
         partner_house_cost_share=partner_equity.house_cost_share,
         partner_equity_ledger_usd=partner_equity.partner_equity_ledger_usd,

@@ -111,18 +111,26 @@ bespoke array math without changing monthly-column semantics.
 
 Next slices:
 
-1. Generalize the ledger-derived matrix helper if the next array families need
+1. Inventory every remaining monthly result array and classify it as a state
+   snapshot, transaction flow, explanatory calculation, or compatibility alias.
+2. Keep true state snapshots, such as cash, asset value, PE liquidity value,
+   property value, mortgage balance, home-equity claims, ownership percentage,
+   and net-worth metrics, sourced from state snapshots rather than transaction
+   ledger rows.
+3. Derive remaining transaction-flow arrays from ledger rows where practical.
+   The likely next targets are purchase-closing costs, partner contribution
+   flow columns, partner house-cost/principal-credit flow columns, and aggregate
+   tax-payment columns once the tax ledger/liability shape exists.
+4. Move remaining sale explanatory arrays toward typed accounting detail once
+   tax timing, basis, exclusion, and depreciation-recapture semantics are
+   explicit enough. These arrays explain calculations; they should not pretend
+   to be cash movement unless there is a corresponding ledger row.
+5. Generalize the ledger-derived matrix helper only when the next family needs
    multiple categories, actor filters, property filters, or balance snapshots.
-2. Move remaining sale explanatory arrays toward accounting detail once tax
-   timing, basis, exclusion, and depreciation-recapture semantics are explicit
-   enough.
-3. Keep the existing monthly columns stable, and keep reconciliation tests in
-   place as guardrails.
-4. Add any missing causes/IDs needed by derivation. Do not add ad hoc string
+6. Keep existing monthly columns stable and keep reconciliation tests as
+   guardrails while the implementation source changes.
+7. Add any missing causes/IDs needed by derivation. Do not add ad hoc string
    parsing to recover meaning from categories.
-5. Separate arrays that are true state snapshots, such as asset value and
-   remaining liability balance, from transaction-flow arrays that should derive
-   from ledger entries.
 
 Done for Step 7:
 
@@ -134,6 +142,9 @@ Done for Step 7:
   sale/basis/tax, property sale gross/closing cost/debt payoff/tax/net
   proceeds, and net property sale cash flow derive from ledger rows before
   being exposed as monthly result arrays.
+- Partner contribution transfer, contribution used for house costs,
+  unallocated contribution excess, and partner principal credit derive from
+  actor-keyed ledger rows before being exposed as monthly result arrays.
 - E2E tests reconstruct matrices from ledger/snapshot rows for monthly spend,
   SP500 sales/taxes, PE sales/taxes, mortgage payments, rental/property
   operating cash flows, property sale settlement/taxes, and partner-equity
@@ -142,6 +153,51 @@ Done for Step 7:
   monthly-spend decisions, checking-floor sell decisions, PE sale decisions,
   partner contribution decisions, actions, ledger entries, snapshots, and curve
   values.
+
+### Step 7 Array Inventory
+
+This inventory records the intended source of truth for existing monthly result
+arrays. Compatibility aliases can remain while app/UI callers still expect
+them, but their source should be another state/ledger-backed metric.
+
+- State snapshots: `cash_usd`, `generic_sp500_value_usd`,
+  `private_equity_value_usd`, `private_equity_liquidity_available_value_usd`,
+  `property_value_usd`, `mortgage_balance_usd`, `home_equity_usd`,
+  `owner_home_equity_claim_usd`, `partner_home_equity_claim_usd`,
+  `partner_equity_ledger_usd`, `owner_equity_ledger_usd`,
+  `partner_ownership_pct`, `liquid_net_worth_usd`, `net_worth_usd`,
+  `partner_present`.
+- Market-observation compatibility fields: `private_equity_liquidity_event`.
+  Prefer row-level market observations for detailed inspection.
+- Ledger-backed transaction flows: `monthly_spend_usd`,
+  `generic_sp500_sale_usd`, `generic_sp500_sale_basis_usd`,
+  `generic_sp500_sale_tax_usd`, `private_equity_sale_usd`,
+  `private_equity_sale_basis_usd`, `private_equity_sale_tax_usd`,
+  `mortgage_interest_usd`, `mortgage_principal_usd`,
+  `mortgage_payment_usd`, `property_tax_usd`, `hoa_usd`, `insurance_usd`,
+  `maintenance_usd`, `rental_gross_income_usd`,
+  `rental_vacancy_loss_usd`, `rental_income_usd`,
+  `rental_management_fee_usd`, `rental_leasing_fee_usd`,
+  `sale_closing_cost_usd`, `property_sale_gross_usd`,
+  `property_sale_net_proceeds_usd`, `property_sale_tax_usd`,
+  `property_sale_debt_payoff_usd`, `partner_contribution_usd`,
+  `partner_contribution_used_usd`, `partner_unallocated_excess_usd`,
+  `partner_principal_credit_usd`.
+- Ledger-backed rollups and aliases: `generic_sp500_sale_gain_usd`,
+  `checking_floor_action_usd`, `property_carrying_cost_usd`,
+  `net_property_cash_flow_usd`, `net_property_sale_cash_flow_usd`.
+- Explanatory calculations that still need typed accounting detail:
+  `federal_income_tax_usd`, `california_income_tax_usd`,
+  `total_income_tax_usd`, `purchase_closing_cost_usd`,
+  `property_depreciation_usd`, `cumulative_property_depreciation_usd`,
+  `property_sale_adjusted_basis_usd`, `realized_property_gain_usd`,
+  `property_sale_capital_gain_usd`,
+  `property_sale_capital_gain_exclusion_usd`,
+  `taxable_property_capital_gain_usd`, `taxable_property_gain_usd`,
+  `depreciation_recapture_usd`, `partner_house_costs_usd`,
+  `owner_principal_credit_usd`, `partner_house_cost_share`.
+- Policy/result compatibility fields: `checking_floor_shortfall_usd`. Keep
+  policy-decision rows as the detailed source for why a shortfall occurred.
 
 ## Open Design Follow-Ups
 
@@ -174,28 +230,38 @@ These are tracked more granularly in `augur/TODO.md`.
 - Refresh `augur/SPEC.md` once policy execution, sale taxes, and one-rollout
   detail stabilize.
 
-## Next 7 Days
+## Next 7 Workdays
 
-Day 1: Finish the first direct array-from-ledger derivation for low-risk
-recurring cash-flow arrays.
+Day 1: Finish the Step 7 array inventory. Classify every `ScenarioRunArrays`
+field as state snapshot, transaction flow, explanatory calculation, or
+compatibility alias, then update TODOs with the exact source-of-truth choice for
+each family.
 
-Day 2: Extend derivation to mortgage/property operating cash-flow arrays and
-remove duplicated bespoke assignments where possible.
+Day 2: Derive the remaining partner-contribution transaction-flow columns from
+actor-keyed ownership/cash ledger rows or document why an aggregate compatibility
+column must remain state-backed.
 
-Day 3: Tighten policy-decision/opportunity cause IDs, especially around
-private-equity sale requests and market liquidity opportunities.
+Day 3: Introduce the tax ledger/liability shape: annual assessment, source
+allocation, liability recognition, and payment timing as separate concepts.
+Then move aggregate federal/California/total tax columns to that accounting
+detail.
 
-Day 4: Start tax ledger/liability shape: annual assessment, source allocation,
-and payment timing as separate concepts.
+Day 4: Add typed accounting detail for sale explanatory values that are not
+cash movement: adjusted basis, realized gain, capital-gain exclusion, taxable
+gain, and depreciation recapture. Keep the existing arrays stable while making
+their source explicit.
 
-Day 5: Clarify initial state vs event transitions and add validation for
-duplicated/conflicting purchase, financing, rental, and sale sources of truth.
+Day 5: Start replacing class-filtered policy execution with an ordered actor
+policy-program interpreter for one narrow policy family. Preserve the current
+behavior with e2e tests before broadening it.
 
-Day 6: Prune or implement schema-only policy types and remove stale legacy
-schema paths that no current caller should use.
+Day 6: Tighten private-equity sale cause IDs across liquidity observation, user
+sale request, policy decision, accounting application, and public action. Remove
+any remaining coupling that treats an opportunity as the decision.
 
-Day 7: Update `augur/SPEC.md` and app-facing detail expectations once the new
-core result contract is stable enough to promise.
+Day 7: Prune or implement schema-only policy types, then refresh `augur/SPEC.md`
+and app-facing detail expectations once the core result contract is stable
+enough to promise.
 
 ## Verification
 
