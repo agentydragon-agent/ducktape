@@ -1194,7 +1194,7 @@ obligations. Heuristics are allowed only after certification, for
 ranking or display.
 
 1. Enumerate deterministic frontier starts from the input surface:
-   deferred YAML groups, residual owners, known extension targets, and
+   binding patch streams, residual owners, known extension targets, and
    other explicitly configured surfaces. These starts are not
    candidates and are never emitted directly.
 2. Close each frontier item under hard local requirements:

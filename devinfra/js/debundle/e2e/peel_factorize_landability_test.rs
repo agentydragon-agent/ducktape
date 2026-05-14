@@ -143,7 +143,7 @@ export { anchor, consumer_a, consumer_b };
         graph.factorize,
     );
 
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
     assert!(
         report
             .proposals
@@ -282,7 +282,7 @@ export { a, b, c };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     let chain_cell = report
         .proposals
@@ -334,7 +334,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     let combined = report
         .proposals
@@ -379,7 +379,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     let combined = report
         .proposals
@@ -437,7 +437,7 @@ export { anchor, consumer_a, consumer_b };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     let combined = report
         .proposals
@@ -508,7 +508,7 @@ export { anchor, impure, pureBrand };
         graph.factorize,
     );
 
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["pureBrand".to_string()]
@@ -570,7 +570,7 @@ export { anchor, mutable, peer };
         graph.factorize,
     );
 
-    let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
     assert!(
         !report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["mutable".to_string()]

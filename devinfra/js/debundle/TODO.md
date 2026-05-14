@@ -187,8 +187,8 @@ shapes):
   but not a re-export from elsewhere).
 
 Today only one residual cluster in gaffer-private's `78d928dca7`
-spec sits cross-chunk (mobx wrappers in `infra/mobx/*.yaml.deferred`)
-and that cluster is the legitimate user of the spec-side
+spec sits cross-chunk (MobX wrapper bindings tracked by the non-emitting
+binding-patch stream) and that cluster is the legitimate user of the spec-side
 `purity: pure` override — genuinely-impure-but-init-safe vendor
 shape, not a pure-by-derivation chain. So Part 3 isn't load-bearing
 yet. Land if a future snapshot grows a cross-chunk pure-helper
