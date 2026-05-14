@@ -43,6 +43,15 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **OVH API token: add `/services/*` scopes, drop kimsufi display_name workaround**.
+      Current OVH token only has `/dedicated/server/*`. The `ovh_dedicated_server`
+      resource auto-syncs `iam.displayName` into `display_name` state on every Read,
+      so any Update tries to PUT `/services/{id}` → 403. Workaround in
+      `cluster/terraform/main/ovh-nodes.tf`: `display_name = var.kimsufi_service_name`
+      so plan matches state. Proper fix: regenerate OVH API token at
+      <https://api.us.ovhcloud.com/createToken/> adding `GET,PUT /services/*`, then
+      drop the `display_name` line. See
+      <cluster/docs/lessons_learned/2026_05_13_provisioning_ovh_kimsufi.md> §2.
 - [ ] **Re-key admin-only SOPS files to include user keys** — admin age key currently
       lives only on wyrm2, which is offline in a SF storage unit. `.sops.yaml` rules say
       `secrets/nebula/ca.sops.key` and `k8s/tofu-state/db/credentials.sops.yaml` (among

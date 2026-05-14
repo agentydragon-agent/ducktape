@@ -31,9 +31,14 @@ spec:
       - name: hcloud-volumes
         defaultStorageClass: false
         reclaimPolicy: Retain
+    # Filter on zone (`hil-dc1`), not region (`hil`). Both Hetzner VPS and
+    # OVH Kimsufi bare metal nodes share region=`hil`, but only Hetzner Cloud
+    # nodes are reachable by the Hetzner CSI driver (it talks to hcloud API
+    # with node IDs that don't exist for OVH). Hetzner VPS get zone=`hil-dc1`
+    # from Talos CCM; kimsufi gets zone=`hil-ovh` (explicit node label).
     controller:
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-dc1
     node:
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-dc1
