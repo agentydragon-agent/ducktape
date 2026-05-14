@@ -37,6 +37,21 @@
     };
   };
 
+  # Place decrypted z.ai API key where the claude-quota GNOME extension reads it.
+  # sopsEnv exports ZAI_API_KEY as a shell env var, but GNOME Shell (systemd --user)
+  # never inherits shell-init exports. The extension reads zai-api-key-path from
+  # its own GSettings schema and loads the key from the sops-decrypted file.
+  sops.secrets.zai_api_key_file = {
+    sopsFile = ../../../secrets/home/wyrm2/zai.yaml;
+    key = "zai_api_key";
+  };
+
+  dconf.settings = {
+    "org/gnome/shell/extensions/claude-quota" = {
+      zai-api-key-path = config.sops.secrets.zai_api_key_file.path;
+    };
+  };
+
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray

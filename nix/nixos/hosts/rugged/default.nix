@@ -107,11 +107,8 @@ in
     thermald.enable = true; # Intel thermal management
     upower.enable = true; # Battery status (dual battery support)
     logind = {
-      # Keep user processes (tmux, etc.) alive across GNOME logout/login
-      extraConfig = ''
-        KillUserProcesses=no
-      '';
       settings.Login = {
+        KillUserProcesses = false; # Keep tmux alive across GNOME logout/login
         HandleLidSwitch = "suspend";
         HandleLidSwitchExternalPower = "lock";
         HandlePowerKey = "suspend";

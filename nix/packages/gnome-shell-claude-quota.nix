@@ -4,13 +4,17 @@ pkgs.stdenv.mkDerivation {
   version = "1";
   src = ../../gnome-extensions/claude-quota;
 
-  nativeBuildInputs = [ pkgs.jq ];
+  nativeBuildInputs = [
+    pkgs.jq
+    pkgs.glib
+  ];
 
   installPhase = ''
     runHook preInstall
     uuid=$(jq -r '.uuid' metadata.json)
     mkdir -p "$out/share/gnome-shell/extensions/$uuid"
     cp -r . "$out/share/gnome-shell/extensions/$uuid"
+    glib-compile-schemas "$out/share/gnome-shell/extensions/$uuid/schemas"
     runHook postInstall
   '';
 

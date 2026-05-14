@@ -31,42 +31,59 @@
   };
 
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
-  sops.secrets = builtins.listToAttrs (
-    map
-      (
-        {
-          name,
-          sopsFile,
-          filename,
-        }:
-        {
-          inherit name;
-          value = {
-            sopsFile = ../../../ssh_keys/${sopsFile};
-            format = "binary";
-            path = "${config.home.homeDirectory}/.ssh/${filename}";
-            mode = "0600";
-          };
-        }
-      )
-      [
-        {
-          name = "wyrm_ssh_key";
-          sopsFile = "rugged-wyrm.sops.key";
-          filename = "wyrm_agentydragon_user_id_ed25519";
-        }
-        {
-          name = "vps_root_ssh_key";
-          sopsFile = "rugged-vps-root.sops.key";
-          filename = "vps_root_id_ed25519";
-        }
-        {
-          name = "vps_user_ssh_key";
-          sopsFile = "rugged-vps-user.sops.key";
-          filename = "vps_agentydragon_user_id_ed25519";
-        }
-      ]
-  );
+  sops.secrets =
+    builtins.listToAttrs (
+      map
+        (
+          {
+            name,
+            sopsFile,
+            filename,
+          }:
+          {
+            inherit name;
+            value = {
+              sopsFile = ../../../ssh_keys/${sopsFile};
+              format = "binary";
+              path = "${config.home.homeDirectory}/.ssh/${filename}";
+              mode = "0600";
+            };
+          }
+        )
+        [
+          {
+            name = "wyrm_ssh_key";
+            sopsFile = "rugged-wyrm.sops.key";
+            filename = "wyrm_agentydragon_user_id_ed25519";
+          }
+          {
+            name = "vps_root_ssh_key";
+            sopsFile = "rugged-vps-root.sops.key";
+            filename = "vps_root_id_ed25519";
+          }
+          {
+            name = "vps_user_ssh_key";
+            sopsFile = "rugged-vps-user.sops.key";
+            filename = "vps_agentydragon_user_id_ed25519";
+          }
+        ]
+    )
+    // {
+      zai_api_key_file = {
+        sopsFile = ../../../secrets/home/rugged/zai.yaml;
+        key = "zai_api_key";
+      };
+    };
+
+  # Wire z.ai API key into the claude-quota GNOME extension via GSettings.
+  # sopsEnv exports ZAI_API_KEY as a shell env var, but GNOME Shell (systemd --user)
+  # never inherits shell-init exports. The extension reads zai-api-key-path from
+  # its own GSettings schema and loads the key from the sops-decrypted file.
+  dconf.settings = {
+    "org/gnome/shell/extensions/claude-quota" = {
+      zai-api-key-path = config.sops.secrets.zai_api_key_file.path;
+    };
+  };
 
   home.packages = [
     ducktapePackages.bebas-neue-font
@@ -81,6 +98,7 @@
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   programs.gnome-shell.extensions = [
     { package = pkgs.gnomeExtensions.appindicator; }
+    { package = ducktapePackages.gnome-shell-claude-quota; }
   ];
 
   # gaffer-private disabled — see nix/docs/private_flake_inputs.md
