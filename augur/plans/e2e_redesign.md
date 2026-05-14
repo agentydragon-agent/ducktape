@@ -71,6 +71,100 @@ Direction:
 - Reusable app presets are fine as presets that fill knobs. They should compile
   into explicit policy configuration before reaching core.
 
+## Policy Runtime Design
+
+The current engine is not truly policy-driven. It has hardcoded array
+calculation blocks that reach into policies as configuration bags, parse random
+chunks of their fields, and then synthesize actions after the fact. That shape
+should be replaced by a runtime where policies are executable rules over
+simulation state, and arrays are reporting output rather than the primary
+execution mechanism.
+
+Target architecture:
+
+1. **Scenario configuration**
+   Pydantic models remain the external schema. A scenario declares actors,
+   initial assets/liabilities/accounts, scheduled events, market request, and
+   each actor's ordered policy program. Policy models are configuration only:
+   discriminated unions with explicit knobs, no opaque `parameters` bags.
+2. **Runtime state**
+   The engine initializes a per-rollout mutable state view from the scenario:
+   cash/accounts, asset units/value/basis, liabilities, ownership ledgers,
+   tax ledgers, property use, and any per-policy memory. It may remain
+   vectorized internally, but the abstraction is "state of rollout(s)", not
+   "arrays that policies patch indirectly."
+3. **Policy context**
+   For each month, policy rules receive a typed context: actor ID, month index,
+   sampled market observation, scheduled events relevant to the actor/assets,
+   available liquidity opportunities, and read access to current state.
+4. **Policy evaluation**
+   Each enabled policy rule evaluates in deterministic order and emits
+   typed instructions. A policy should not mutate cash, holdings, basis,
+   mortgage balance, ownership, or result arrays directly.
+5. **Instruction application**
+   A separate accounting/state-transition layer validates and applies
+   instructions. It clips impossible sales, rejects unsupported transfers,
+   computes taxes/basis effects, updates state, and records realized ledger
+   entries with `rollout_index`, `month_index`, actor/account/asset/liability
+   IDs, amount, category, and cause (`policy_id`, `event_id`, or market
+   opportunity ID).
+6. **Reporting**
+   Monthly arrays and response columns are recorded from state and ledger after
+   instruction application. They are derived/reporting surfaces, not the source
+   of truth for economic effects.
+
+Conceptual type split:
+
+- `PolicyConfig`: external Pydantic config such as
+  `CheckingFloorSellPublicStockPolicy`, `PrivateEquitySalePolicy`, or a future
+  partner-equity agreement policy.
+- `PolicyRule`: runtime adapter for one config object. It implements
+  `evaluate(context, state) -> InstructionBatch`.
+- `Instruction`: intended operation, e.g. `SellAssetInstruction`,
+  `TransferCashInstruction`, `PayLiabilityInstruction`,
+  `AccrueOwnershipInstruction`, `SetPropertyUseInstruction`, or
+  `RequestPrivateEquitySaleInstruction`.
+- `LedgerEntry`: realized accounting effect after validation/application.
+- `SimulationAction`: user-visible audit/event view. It may be built from
+  ledger entries and decisions, but should not be the only accounting truth.
+
+Ordering and responsibility:
+
+- Market paths and exogenous opportunities are observations, not policy
+  decisions. A private-equity liquidity opportunity can exist without a sale;
+  a policy decides whether to request one.
+- Scheduled user events are explicit scenario transitions. A property sale is
+  a scheduled event; the horizon itself is not a sale decision.
+- System accruals such as mark-to-market value, mortgage interest accrual,
+  property tax accrual, insurance, maintenance, depreciation, and taxable
+  gain calculations are accounting processes. They can create ledger entries
+  but should not masquerade as agent choice.
+- Agent policies are decision programs: spend monthly cash, sell a fixed
+  public-stock tranche to maintain liquidity, request a PE sale on an
+  opportunity, transfer partner contributions, or service liabilities from a
+  chosen account.
+
+Vectorization requirement:
+
+- The runtime can still be vectorized. `InstructionBatch` can be columnar over
+  rollouts with masks and amount arrays, and the applier can update vectorized
+  state. The design goal is not one Python object per rollout/month; it is
+  making the execution boundary honest: policy evaluation emits instructions,
+  accounting applies them, and reporting records the result.
+
+Policy-runtime invariants:
+
+- No `_enabled_policy_of()`-style singleton lookup for behavior execution.
+  A policy program is an ordered sequence. If a domain only supports one
+  agreement today, that should be represented by the runtime model or by
+  explicit validation while we build the real ledgers, not by silently taking
+  the first policy.
+- No policy implementation writes result arrays directly.
+- Every cash/asset/liability/ownership/tax state change has a ledger cause.
+- Rejections and shortfalls are recorded explicitly instead of disappearing
+  into clipped arrays.
+- Public result arrays reconcile to ledger totals in e2e tests.
+
 ## E2e Spiral Rules
 
 - Start each spiral with a small core e2e test in `augur/core/test_e2e.py`.
@@ -132,11 +226,11 @@ needs them.
    initial acquisition is static scenario state and events are future
    transitions. The API should not require callers to provide duplicated,
    conflicting sources of truth.
-8. **Policy programs, not singleton archetypes**: `_enabled_policy_of()`
-   silently uses the first enabled policy of a type. Replace that with an
-   explicit policy evaluation pass that can run multiple enabled policy rules
-   for an agent in stable order. Only add uniqueness validation for cases where
-   two configured rules would be semantically ambiguous.
+8. **Policy runtime, not singleton archetypes**: replace hardcoded engine
+   branches that parse policy config with the policy runtime described above.
+   `_enabled_policy_of()` is a symptom: it silently uses the first enabled
+   policy of a type because the engine is shaped around bespoke arrays instead
+   of an ordered policy program and instruction applier.
 9. **Multi-agent accounting**: current scalar helpers aggregate checking,
    SP500, and PE holdings across all owners. Before the partner spiral, decide
    which result arrays are scenario-level aggregates and which are per-agent,
@@ -207,15 +301,15 @@ spirals to pull these changes forward when the current surface gets in the way.
    derivable from that truth or reconciled against it in tests.
 10. **Separate policy decisions from accounting effects**: `SimulationAction`
     currently mixes "a policy decided to do something" with "money moved."
-    Long-term, distinguish `PolicyDecision` or `Instruction` from ledger
-    entries / state transitions. A policy program emits intended actions; the
-    accounting engine applies them, records realized effects, and records any
-    shortfall or rejection.
-11. **Use a policy-program shape, not first-enabled lookup**: replace
-    `_enabled_policy_of()` with ordered rule execution by actor. A reasonable
-    shape is an agent policy program containing enabled rules with explicit
-    knobs. Multiple monthly-spend or sell-down rules should be legal when their
-    order and target accounts are unambiguous.
+    Long-term, distinguish policy instructions from ledger entries/state
+    transitions. A policy program emits intended operations; the accounting
+    engine applies them, records realized effects, and records any shortfall or
+    rejection.
+11. **Use actor policy programs**: each actor should have an ordered sequence
+    of enabled rules with explicit knobs. Multiple monthly-spend or sell-down
+    rules should be legal when their order and target accounts are unambiguous.
+    Ambiguity should be modeled directly in the instruction applier, not hidden
+    behind first-enabled lookup.
 12. **Give validation errors stable paths**: Pydantic should handle type/shape
     validation; core should add domain validation with errors like
     `scenarios[0].events[2].property_id references unknown property`. Do not
@@ -506,10 +600,9 @@ Cleanup completed:
 
 Remaining cleanup:
 
-- Partner equity still uses a single first-enabled policy because current
-  result arrays are aggregate, not keyed by partner actor. Either validate this
-  as an intentional single-agreement limitation or introduce per-partner
-  ledgers before allowing multiple concurrent partner-equity policies.
+- Partner equity still uses a single first-enabled policy because the engine is
+  not yet policy-runtime shaped. Do not add more singleton validation as the
+  main fix; migrate partner equity to instructions plus per-partner ledgers.
 - `PayMortgageAction` still appears only through partner-equity action
   recording even though owner mortgage payments occur in ordinary property
   scenarios. The ledger cleanup should make mortgage payment an ordinary
@@ -517,6 +610,98 @@ Remaining cleanup:
 - Split `TransferPartnerContributionAction` into actual cash movement and
   applied-to-house-cost accounting. The model now records unallocated excess,
   but a ledger needs to say where that excess lives.
+
+## Policy Runtime Migration Plan
+
+Do this incrementally. Each step should leave `bbr test //augur/...` green and
+should preserve the public `simulate_set()` shape.
+
+### Step 1: Add Runtime Types Without Changing Behavior
+
+Introduce internal runtime dataclasses/protocols:
+
+- `SimulationState`: vectorized state for accounts, holdings, liabilities,
+  basis, ownership, property use, tax state, and per-policy memory.
+- `PolicyContext`: month, actor, scenario refs, market observation, scheduled
+  events, and available market opportunities.
+- `InstructionBatch`: typed columnar intended operations over rollout masks.
+- `LedgerEntryBatch`: realized accounting entries after application.
+- `PolicyRuntime`: compiles Pydantic `PolicyConfig` objects into ordered
+  runtime rules.
+
+This first step can run alongside the existing arrays and should be covered by
+a small focused test proving policy order is preserved and disabled policies
+are excluded.
+
+### Step 2: Move Checking-Floor Selling First
+
+Checking-floor is the best first migration because it is already ordered and
+simple. Refactor it so:
+
+- `CheckingFloorSellPublicStockPolicy` evaluates current cash and SP500 state.
+- It emits `SellAssetInstruction(asset_type=generic_sp500_stock, amount_usd=...)`.
+- The instruction applier updates cash, units/value, remaining basis, realized
+  gain, shortfall/rejection state, ledger entries, and `SellSp500Action`.
+- Existing checking-floor e2e tests assert arrays and actions still match.
+
+Acceptance: the policy no longer mutates `current_cash`, `remaining_sp500_units`,
+or result arrays directly inside the monthly loop.
+
+### Step 3: Move Monthly Spend to Debit Instructions
+
+Refactor `MonthlySpendPolicy` into a policy rule that emits
+`TransferCashInstruction` or `DebitAccountInstruction` from the actor's chosen
+cash account. The applier records spend ledger entries and updates cash.
+
+Acceptance: multiple monthly-spend policies remain legal and run in program
+order; spend arrays are derived from ledger totals.
+
+### Step 4: Move Private-Equity Sales to Opportunity + Instruction
+
+Keep market liquidity as an exogenous observation. Refactor PE sale handling so:
+
+- Scheduled `PrivateEquitySaleRequestEvent` creates a request observation.
+- `PrivateEquitySalePolicy` decides whether to emit a
+  `SellAssetInstruction` for a given opportunity/request.
+- The applier enforces liquidity availability, computes sold units, basis,
+  taxable gain, estimated tax, destination account/asset, remaining holdings,
+  ledger entries, and `SellPrivateEquityAction`.
+
+Acceptance: no PE sale code treats market opportunity as sale decision, and
+action logs reconcile to PE sale ledger entries.
+
+### Step 5: Move Liability Servicing and Property Cash Flows
+
+Make recurring property economics explicit accounting entries:
+
+- Mortgage interest accrual and principal payment.
+- Property tax, insurance, maintenance, HOA.
+- Rental income, vacancy, management fee, leasing fee.
+- Optional liability-servicing policy that decides which account pays due
+  liabilities if there is more than one plausible source.
+
+Acceptance: ordinary mortgage scenarios produce mortgage payment ledger/action
+truth, not only partner-equity scenarios.
+
+### Step 6: Move Partner Equity to Contract Instructions
+
+Refactor partner equity as a policy/contract rule:
+
+- The partner contribution rule emits a cash-transfer instruction.
+- The house-cost applier allocates the transfer against current eligible costs.
+- The ownership applier credits principal share into a per-partner ledger.
+- Unallocated contribution excess is recorded as cash, escrow, refund, or an
+  explicit liability according to the modeled agreement.
+
+Acceptance: partner-equity outputs are keyed by partner actor or derivable from
+ledger entries; multiple partner agreements are no longer silently collapsed.
+
+### Step 7: Make Arrays Reconcile to Ledger
+
+For every public metric array touched by these policies, add reconciliation
+tests that compare array totals to ledger totals. The arrays can stay for chart
+performance and API compatibility, but their meaning should be derived from
+state/ledger, not bespoke policy-specific math.
 
 ## Spiral N+: Structural Cleanup
 
