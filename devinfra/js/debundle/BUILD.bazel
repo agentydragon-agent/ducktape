@@ -282,27 +282,37 @@ rust_test(
 )
 
 rust_library(
-    name = "peel_cli_lib",
-    srcs = ["peel_cli.rs"],
-    crate_name = "peel_cli",
-    crate_root = "peel_cli.rs",
+    name = "debundle_agent_cli_lib",
+    srcs = ["debundle_agent_cli.rs"],
+    crate_name = "debundle_agent_cli",
+    crate_root = "debundle_agent_cli.rs",
     edition = "2024",
     deps = [
+        ":analysis",
         ":peel_factorize",
         ":peel_horizon",
         ":peel_inventory",
+        ":spec_modules",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:serde",
         "@crates//:serde_json",
     ],
 )
 
-rust_binary(
-    name = "peel_cli",
-    srcs = ["peel_cli_main.rs"],
-    crate_root = "peel_cli_main.rs",
+rust_test(
+    name = "debundle_agent_cli_test",
+    crate = ":debundle_agent_cli_lib",
     edition = "2024",
-    deps = [":peel_cli_lib"],
+    deps = ["@crates//:tempfile"],
+)
+
+rust_binary(
+    name = "debundle_agent_cli",
+    srcs = ["debundle_agent_cli_main.rs"],
+    crate_root = "debundle_agent_cli_main.rs",
+    edition = "2024",
+    deps = [":debundle_agent_cli_lib"],
 )
 
 rust_library(

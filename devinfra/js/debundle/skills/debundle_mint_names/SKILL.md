@@ -1,6 +1,6 @@
 ---
 name: debundle_mint_names
-description: Assign descriptive names to unrenamed symbols in any debundle spec. Reads the emitted JS, understands each symbol's implementation and call sites, and updates the YAML spec `name:` field. Does NOT move modules or edit taxonomy. Trigger: user wants to name/rename minified symbols in a debundle RE spec.
+description: "Assign descriptive names to unrenamed symbols in any debundle spec. Reads the emitted JS, understands each symbol's implementation and call sites, and updates the YAML spec `name:` field. Does NOT move modules or edit taxonomy. Trigger: user wants to name/rename minified symbols in a debundle RE spec."
 ---
 
 # Debundle Mint Names
@@ -121,7 +121,7 @@ out of your way to explore those areas, but **don't avoid them either** if
 following a natural reference leads there. Reading that code to understand
 the current symbol's context is legitimate, and if the meaning becomes
 clear, note it for a future pass — just don't author new YAML entries for
-it here (that's the peel skill's job).
+it here (that's a module-planning or extraction pass).
 
 ## Traversal strategy: walk the code, don't jump randomly
 

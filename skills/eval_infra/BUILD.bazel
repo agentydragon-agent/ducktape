@@ -19,7 +19,10 @@ py_library(
     name = "skill_staging",
     srcs = ["skill_staging.py"],
     visibility = ["//skills:__subpackages__"],
-    deps = ["//util/bazel:runfiles"],
+    deps = [
+        "//skills:skill_spec",
+        "//util/bazel:runfiles",
+    ],
 )
 
 _AGENT_FRAMEWORK_DEPS = [

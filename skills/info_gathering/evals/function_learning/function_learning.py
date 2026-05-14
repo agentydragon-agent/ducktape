@@ -39,7 +39,8 @@ from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERI
 
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.eval_sandbox import eval_sandbox
-from skills.eval_infra.skill_staging import SkillSpec, stage_skill
+from skills.eval_infra.skill_staging import stage_skill
+from skills.skill_spec import SkillSpec
 from skills.eval_infra.termination import terminate_when
 from skills.eval_infra.transcript import JsonlTranscriptProvider
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction

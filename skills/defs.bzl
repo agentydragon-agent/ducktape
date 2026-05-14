@@ -7,7 +7,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 _FRONTMATTER_TEST_LIB = "//skills:skill_frontmatter_test_lib"
-_SKILL_STAGING_LIB = "//skills/eval_infra:skill_staging"
+_SKILL_SPEC_LIB = "//skills:skill_spec"
 
 def skill_spec_library(name, tar_basename, package_name, visibility = None):
     """Generate a py_library exporting `SPEC = SkillSpec(...)` for a skill tar.
@@ -30,7 +30,7 @@ def skill_spec_library(name, tar_basename, package_name, visibility = None):
         content = [
             '"""Auto-generated SkillSpec for {} (do not edit)."""'.format(package_name),
             "",
-            "from skills.eval_infra.skill_staging import SkillSpec",
+            "from skills.skill_spec import SkillSpec",
             "",
             "SPEC = SkillSpec(",
             '    tar_rlocation="_main/{}/{}.tar",'.format(native.package_name(), tar_basename),
@@ -44,7 +44,7 @@ def skill_spec_library(name, tar_basename, package_name, visibility = None):
         srcs = [spec_src],
         data = [":" + tar_basename],
         visibility = visibility or ["//visibility:public"],
-        deps = [_SKILL_STAGING_LIB],
+        deps = [_SKILL_SPEC_LIB],
     )
 
 def skill_mapping(srcs, prefix = "", preserve_paths = False):

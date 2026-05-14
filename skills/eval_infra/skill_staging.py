@@ -1,36 +1,18 @@
 """Skill staging for skill-eval rollouts.
 
-A `SkillSpec` names a packaged skill: the runfiles location of its
-`pkg_tar` and the directory the tar prefixes its files with. The
-`skill_package` Bazel macro auto-generates a ``<name>_skill_spec`` py
-module exporting a ``SPEC: SkillSpec`` constant; eval rollouts pick a
-SPEC and call `stage_skill` to extract the tar into a host directory ready
-to bind into the agent's scratch container (see `eval_sandbox.SKILL_PATH`).
-
-Extraction lives in this module — there is no per-skill staging code.
+Eval rollouts pick a generated ``SPEC: SkillSpec`` and call
+`stage_skill` to extract the packaged skill tar into a host directory
+ready to bind into the agent's scratch container (see
+`eval_sandbox.SKILL_PATH`). Extraction lives in this module — there is
+no per-skill staging code.
 """
 
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from skills.skill_spec import SkillSpec
 from util.bazel.runfiles import get_required_path
-
-
-@dataclass(frozen=True)
-class SkillSpec:
-    """Bazel runfiles + package layout for one packaged skill.
-
-    Attributes:
-        tar_rlocation: Runfiles path of the skill's `<name>_tar` tar
-            artifact (e.g. ``"_main/skills/info_gathering/info_gathering_tar.tar"``).
-        package_name: The directory the tar prefixes its files with
-            (e.g. ``"info_gathering"``). Both the `pkg_tar`'s
-            ``package_dir`` and the inner SKILL.md's parent dir.
-    """
-
-    tar_rlocation: str
-    package_name: str
 
 
 @dataclass(frozen=True)

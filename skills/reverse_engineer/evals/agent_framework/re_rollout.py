@@ -43,7 +43,8 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.eval_prompt import compose_system_prompt
 from skills.eval_infra.eval_sandbox import INPUT_PATH, WORK_PATH, eval_sandbox
-from skills.eval_infra.skill_staging import SkillSpec, stage_skill
+from skills.eval_infra.skill_staging import stage_skill
+from skills.skill_spec import SkillSpec
 from skills.eval_infra.termination import terminate_when
 from skills.eval_infra.transcript import JsonlTranscriptProvider
 from util.bazel.runfiles import get_required_path
