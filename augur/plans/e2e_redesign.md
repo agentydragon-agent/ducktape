@@ -678,17 +678,31 @@ Remaining before this is a complete account model:
 
 ### Step 4: Move Private-Equity Sales to Opportunity + Instruction
 
-Keep market liquidity as an exogenous observation. Refactor PE sale handling so:
+**DONE (first slice)**: Market liquidity is now represented as a
+`PrivateEquitySaleOpportunityBatch`, and `PrivateEquitySalePolicy` emits a
+`PrivateEquitySaleInstructionBatch` before accounting applies the sale.
 
 - Scheduled `PrivateEquitySaleRequestEvent` creates a request observation.
 - `PrivateEquitySalePolicy` decides whether to emit a
   `SellAssetInstruction` for a given opportunity/request.
 - The applier enforces liquidity availability, computes sold units, basis,
   taxable gain, estimated tax, destination account/asset, remaining holdings,
-  ledger entries, and `SellPrivateEquityAction`.
+  and ledger entries.
 
-Acceptance: no PE sale code treats market opportunity as sale decision, and
-action logs reconcile to PE sale ledger entries.
+Acceptance met for the current PE sale shape: market opportunity, explicit sale
+request, policy decision, and sale application are distinct runtime objects;
+the engine no longer uses first-enabled PE policy lookup for sale execution;
+`SellPrivateEquityAction` is recorded from the realized instruction
+application.
+
+Remaining before this is a complete PE/account model:
+
+- Reconcile public PE sale arrays directly to persisted ledger entries once the
+  result API exposes ledger detail.
+- Decide whether `PrivateEquitySalePolicy.sale_rule` should become an ordered
+  list of rules once there is a second real automatic PE behavior.
+- Thread per-holding tax/basis semantics into the scenario API instead of
+  relying on aggregate PE holdings.
 
 ### Step 5: Move Liability Servicing and Property Cash Flows
 

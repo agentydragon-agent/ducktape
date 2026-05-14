@@ -8,8 +8,11 @@ from augur.core.scenario_set import (
     AccountType,
     AssetType,
     CheckingFloorSellPublicStockPolicy,
+    EventType,
+    FixedAmountPrivateEquitySaleRule,
     MonthlySpendPolicy,
     Policy,
+    PrivateEquitySalePolicy,
     Scenario,
     _PolicyBase,
 )
@@ -52,6 +55,31 @@ class MonthlySpendDecisionBatch:
 
 
 @dataclass(frozen=True)
+class PrivateEquitySaleRequestObservation:
+    event_id: str
+    event_type: EventType
+    actor_id: str | None
+    amount_usd: float
+
+
+@dataclass(frozen=True)
+class PrivateEquitySaleOpportunityBatch:
+    liquidity_event_mask: np.ndarray
+    liquidity_available_value_usd: np.ndarray
+    private_equity_value_before_sale_usd: np.ndarray
+
+
+@dataclass(frozen=True)
+class PrivateEquitySaleInstructionBatch:
+    actor_id: str
+    policy_id: str
+    requested_amount_usd: np.ndarray
+    proceeds_destination: AccountType | AssetType
+    request_event_id: str | None = None
+    request_event_type: EventType | None = None
+
+
+@dataclass(frozen=True)
 class GenericSp500SaleApplication:
     current_cash_usd: np.ndarray
     remaining_units: np.ndarray
@@ -75,6 +103,21 @@ class LedgerEntryBatch:
 class DebitAccountApplication:
     current_cash_usd: np.ndarray
     debit_usd: np.ndarray
+    ledger_entries: tuple[LedgerEntryBatch, ...]
+
+
+@dataclass(frozen=True)
+class PrivateEquitySaleApplication:
+    sale_usd: np.ndarray
+    basis_usd: np.ndarray
+    taxable_gain_usd: np.ndarray
+    estimated_tax_usd: np.ndarray
+    after_tax_proceeds_usd: np.ndarray
+    sold_units: np.ndarray
+    sold_fraction: np.ndarray
+    remaining_units: np.ndarray
+    remaining_basis_usd: np.ndarray
+    remaining_fraction: np.ndarray
     ledger_entries: tuple[LedgerEntryBatch, ...]
 
 
@@ -140,6 +183,111 @@ def apply_debit_account_instruction(
         current_cash_usd=current_cash_usd - instruction.amount_usd,
         debit_usd=instruction.amount_usd,
         ledger_entries=(ledger_entry,),
+    )
+
+
+def private_equity_sale_opportunity(
+    *, liquidity_event_mask: np.ndarray, private_equity_value_before_sale_usd: np.ndarray
+) -> PrivateEquitySaleOpportunityBatch:
+    return PrivateEquitySaleOpportunityBatch(
+        liquidity_event_mask=liquidity_event_mask,
+        liquidity_available_value_usd=np.where(liquidity_event_mask, private_equity_value_before_sale_usd, 0.0),
+        private_equity_value_before_sale_usd=private_equity_value_before_sale_usd,
+    )
+
+
+def private_equity_sale_instruction(
+    policy: PrivateEquitySalePolicy,
+    *,
+    request: PrivateEquitySaleRequestObservation | None,
+    opportunity: PrivateEquitySaleOpportunityBatch,
+) -> PrivateEquitySaleInstructionBatch:
+    if request is not None:
+        requested_amount = np.full(opportunity.liquidity_event_mask.shape, request.amount_usd, dtype="float64")
+        request_event_id = request.event_id
+        request_event_type = request.event_type
+    elif isinstance(policy.sale_rule, FixedAmountPrivateEquitySaleRule):
+        requested_amount = np.where(opportunity.liquidity_event_mask, float(policy.sale_rule.amount_usd), 0.0)
+        request_event_id = None
+        request_event_type = None
+    else:
+        requested_amount = np.zeros(opportunity.liquidity_event_mask.shape, dtype="float64")
+        request_event_id = None
+        request_event_type = None
+
+    return PrivateEquitySaleInstructionBatch(
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        requested_amount_usd=requested_amount,
+        proceeds_destination=private_equity_sale_proceeds_destination(policy),
+        request_event_id=request_event_id,
+        request_event_type=request_event_type,
+    )
+
+
+def private_equity_sale_proceeds_destination(policy: PrivateEquitySalePolicy) -> AccountType | AssetType:
+    if policy.proceeds_destination == "generic_sp500_stock":
+        return AssetType.GENERIC_SP500_STOCK
+    return AccountType.CHECKING
+
+
+def apply_private_equity_sale_instruction(
+    instruction: PrivateEquitySaleInstructionBatch,
+    *,
+    opportunity: PrivateEquitySaleOpportunityBatch,
+    remaining_basis_usd: np.ndarray,
+    remaining_units: np.ndarray,
+    remaining_fraction: np.ndarray,
+    cap_gains_rate_pct: float,
+) -> PrivateEquitySaleApplication:
+    sale_usd = np.minimum(instruction.requested_amount_usd, opportunity.liquidity_available_value_usd)
+    sold_fraction = np.divide(
+        sale_usd,
+        opportunity.private_equity_value_before_sale_usd,
+        out=np.zeros_like(sale_usd),
+        where=opportunity.private_equity_value_before_sale_usd > 0,
+    )
+    basis_usd = remaining_basis_usd * sold_fraction
+    taxable_gain_usd = np.maximum(0.0, sale_usd - basis_usd)
+    estimated_tax_usd = taxable_gain_usd * cap_gains_rate_pct / 100
+    after_tax_proceeds_usd = np.maximum(0.0, sale_usd - estimated_tax_usd)
+    sold_units = remaining_units * sold_fraction
+    destination_domain = "asset" if instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK else "cash"
+    ledger_entries = (
+        LedgerEntryBatch(
+            actor_id=instruction.actor_id,
+            policy_id=instruction.policy_id,
+            domain="asset",
+            amount_usd=-sale_usd,
+            category="private_equity_sale",
+        ),
+        LedgerEntryBatch(
+            actor_id=instruction.actor_id,
+            policy_id=instruction.policy_id,
+            domain="tax",
+            amount_usd=-estimated_tax_usd,
+            category="private_equity_capital_gains_tax",
+        ),
+        LedgerEntryBatch(
+            actor_id=instruction.actor_id,
+            policy_id=instruction.policy_id,
+            domain=destination_domain,
+            amount_usd=after_tax_proceeds_usd,
+            category="private_equity_after_tax_proceeds",
+        ),
+    )
+    return PrivateEquitySaleApplication(
+        sale_usd=sale_usd,
+        basis_usd=basis_usd,
+        taxable_gain_usd=taxable_gain_usd,
+        estimated_tax_usd=estimated_tax_usd,
+        after_tax_proceeds_usd=after_tax_proceeds_usd,
+        sold_units=sold_units,
+        sold_fraction=sold_fraction,
+        remaining_units=np.maximum(0.0, remaining_units - sold_units),
+        remaining_basis_usd=np.maximum(0.0, remaining_basis_usd - basis_usd),
+        remaining_fraction=np.maximum(0.0, remaining_fraction * (1 - sold_fraction)),
+        ledger_entries=ledger_entries,
     )
 
 
