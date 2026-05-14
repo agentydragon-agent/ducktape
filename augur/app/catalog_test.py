@@ -5,11 +5,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from augur.app.catalog import build_bootstrap_payload
-from augur.app.config import AgentDefinition, AugurConfig, FinanceSnapshot, PersonalFinanceConfig, PropertyCatalogConfig
-from augur.core.local_regulation import LocationId
+from augur.app.config import (
+    AgentDefinition,
+    AugurConfig,
+    FinanceSnapshot,
+    LocationConfig,
+    PersonalFinanceConfig,
+    PropertyCatalogConfig,
+)
+from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole
 
 
@@ -53,12 +61,39 @@ def _write_properties(path: Path) -> None:
     )
 
 
-def _config(properties_path: Path, *, location_selection: tuple[LocationId, ...] | None = None) -> AugurConfig:
+def _fixture_locations() -> tuple[LocationConfig, ...]:
+    regulation = LocalRegulation(property_tax_annual_pct=1.0, notes="Synthetic public fixture location.")
+    return (
+        LocationConfig(
+            location_id="location_a",
+            label="Location A",
+            city="Location A",
+            state="Fixture",
+            home_value_factor_id="location_a_home",
+            rent_factor_id="location_a_rent",
+            local_regulation=regulation,
+            notes=("Synthetic public fixture location.",),
+        ),
+        LocationConfig(
+            location_id="location_b",
+            label="Location B",
+            city="Location B",
+            state="Fixture",
+            home_value_factor_id="location_b_home",
+            rent_factor_id="location_b_rent",
+            local_regulation=regulation,
+            notes=("Synthetic public fixture location.",),
+        ),
+    )
+
+
+def _config(properties_path: Path, *, location_selection: tuple[str, ...] | None = None) -> AugurConfig:
     return AugurConfig(
         agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
         personal_finance=PersonalFinanceConfig(cash_usd=0),
         property_catalog=PropertyCatalogConfig(properties_path=properties_path),
         snapshot=FinanceSnapshot(as_of_date="2026-05-14"),
+        locations=_fixture_locations(),
         location_selection=location_selection,
     )
 
@@ -69,7 +104,7 @@ def test_bootstrap_locations_default_to_loaded_property_catalog(tmp_path: Path) 
 
     bootstrap = build_bootstrap_payload(_config(properties_path))
 
-    assert [location.id for location in bootstrap.locations] == [LocationId.LOCATION_A, LocationId.LOCATION_B]
+    assert [location.id for location in bootstrap.locations] == ["location_a", "location_b"]
     assert [property_.id for property_ in bootstrap.properties] == ["location_a_property", "location_b_property"]
 
 
@@ -77,10 +112,42 @@ def test_bootstrap_location_selection_filters_properties_and_locations(tmp_path:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
-    bootstrap = build_bootstrap_payload(_config(properties_path, location_selection=(LocationId.LOCATION_A,)))
+    bootstrap = build_bootstrap_payload(_config(properties_path, location_selection=("location_a",)))
 
-    assert [location.id for location in bootstrap.locations] == [LocationId.LOCATION_A]
+    assert [location.id for location in bootstrap.locations] == ["location_a"]
     assert [property_.id for property_ in bootstrap.properties] == ["location_a_property"]
+
+
+def test_bootstrap_rejects_unknown_property_location(tmp_path: Path) -> None:
+    properties_path = tmp_path / "properties.json"
+    _write_properties(properties_path)
+    records = json.loads(properties_path.read_text(encoding="utf-8"))
+    records[0]["location_id"] = "missing_location"
+    properties_path.write_text(json.dumps(records), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError, match="property 'location_a_property' references unknown location 'missing_location'"
+    ):
+        build_bootstrap_payload(_config(properties_path))
+
+
+def test_bootstrap_rejects_unknown_location_selection(tmp_path: Path) -> None:
+    properties_path = tmp_path / "properties.json"
+    _write_properties(properties_path)
+
+    with pytest.raises(ValueError, match="location_selection references unknown location ids"):
+        build_bootstrap_payload(_config(properties_path, location_selection=("missing_location",)))
+
+
+def test_bootstrap_rejects_duplicate_config_location_ids(tmp_path: Path) -> None:
+    properties_path = tmp_path / "properties.json"
+    _write_properties(properties_path)
+    config = _config(properties_path).model_copy(
+        update={"locations": (_fixture_locations()[0], _fixture_locations()[0])}
+    )
+
+    with pytest.raises(ValueError, match="duplicate location ids"):
+        build_bootstrap_payload(config)
 
 
 if __name__ == "__main__":

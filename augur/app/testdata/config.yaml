@@ -13,6 +13,33 @@ bootstrap_default_scenarios:
     label: Location B shared
     property_id: location_b_property
 default_rollout_samples: 8
+locations:
+  - location_id: location_a
+    label: Location A
+    city: Location A
+    state: Fixture
+    home_value_factor_id: location_a_home
+    rent_factor_id: location_a_rent
+    local_regulation:
+      property_tax_annual_pct: 1.0
+      local_transfer_tax_pct: 0.0
+      special_assessment_annual_usd: 0.0
+      notes: Synthetic public fixture location.
+    notes:
+      - Synthetic public fixture location.
+  - location_id: location_b
+    label: Location B
+    city: Location B
+    state: Fixture
+    home_value_factor_id: location_b_home
+    rent_factor_id: location_b_rent
+    local_regulation:
+      property_tax_annual_pct: 1.0
+      local_transfer_tax_pct: 0.0
+      special_assessment_annual_usd: 0.0
+      notes: Synthetic public fixture location.
+    notes:
+      - Synthetic public fixture location.
 location_selection:
   - location_a
   - location_b

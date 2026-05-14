@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 
 from augur.core.annual_tax import AnnualSaleTaxAllocation, annual_sale_tax_allocation
-from augur.core.local_regulation import LocalRegulation, LocationId, local_regulation_for_location
+from augur.core.local_regulation import LocalRegulation, local_regulation_for_location
 from augur.core.market_bundle import (
     MarketBundle,
     MarketBundleProvider,
@@ -2176,7 +2176,7 @@ def _property_cash_flow_arrays(
     scenario: Scenario,
     market_bundle: MarketBundle,
     *,
-    location_id: LocationId | None,
+    location_id: str | None,
     property_value_usd: np.ndarray,
     mortgage_interest_usd: np.ndarray,
     mortgage_principal_usd: np.ndarray,
@@ -2247,7 +2247,7 @@ def _property_cash_flow_arrays(
 
 
 def _rental_cash_flow_arrays(
-    scenario: Scenario, market_bundle: MarketBundle, *, location_id: LocationId | None
+    scenario: Scenario, market_bundle: MarketBundle, *, location_id: str | None
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     shape = (market_bundle.rollout_count, market_bundle.horizon_months + 1)
     gross = np.zeros(shape, dtype="float64")
@@ -2524,7 +2524,7 @@ def _partner_freeze_after_month(
 
 
 def _property_and_mortgage_arrays(
-    scenario: Scenario, market_bundle: MarketBundle, *, location_id: LocationId | None
+    scenario: Scenario, market_bundle: MarketBundle, *, location_id: str | None
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     rollout_count = market_bundle.rollout_count
     month_count = market_bundle.horizon_months + 1
@@ -2727,6 +2727,8 @@ def _scenario_hoa_monthly_usd(scenario: Scenario) -> float:
 
 
 def _required_local_regulation(scenario: Scenario) -> LocalRegulation:
+    if scenario.property_selection.local_regulation is not None:
+        return scenario.property_selection.local_regulation
     location_id = scenario.location_id
     if location_id is None:
         raise ValueError(f"scenario {scenario.scenario_id!r} has real estate but no location_id")

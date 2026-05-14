@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
-from augur.core.local_regulation import LocationId
+from augur.core.local_regulation import LocalRegulation
 from augur.core.schemas import ApiModel, ColumnarTable, Percentage
 
 
@@ -496,7 +496,7 @@ class _SimulationMarketObservationBase(ApiModel):
 
 class MarketPathObservation(_SimulationMarketObservationBase):
     observation_type: Literal[MarketObservationType.MARKET_PATH] = MarketObservationType.MARKET_PATH
-    location_id: LocationId | None = None
+    location_id: str | None = None
     inflation_multiplier: float
     sp500_multiplier: float
     private_equity_value_multiplier: float
@@ -630,9 +630,10 @@ class PropertyAssumptions(ApiModel):
 
 class PropertySelection(ApiModel):
     property_id: PropertyId | None = None
-    location_id: LocationId | None = None
+    location_id: str | None = None
     purchase_price_usd: NonNegativeFloat | None = None
     tax_regime: TaxRegime | None = None
+    local_regulation: LocalRegulation | None = None
 
 
 class Financing(ApiModel):
@@ -808,7 +809,7 @@ class Scenario(ApiModel):
     tax_regimes: tuple[TaxRegime, ...] = ()
 
     @property
-    def location_id(self) -> LocationId | None:
+    def location_id(self) -> str | None:
         return self.property_selection.location_id
 
 
@@ -831,7 +832,7 @@ class ScenarioSet(ApiModel):
 class ScenarioAcceptedSummary(ApiModel):
     enabled: bool
     property_id: PropertyId | None = None
-    location_id: LocationId | None = None
+    location_id: str | None = None
     actor_count: NonNegativeInt
     event_count: NonNegativeInt
     policy_count: NonNegativeInt

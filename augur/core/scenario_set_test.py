@@ -158,7 +158,7 @@ def test_scenario_set_accepts_one_and_two_scenarios_with_typed_enums() -> None:
     assert first.initial_balance_sheet.accounts[0].account_type is AccountType.CHECKING
     assert first.initial_balance_sheet.assets[0].asset_type is AssetType.GENERIC_SP500_STOCK
     assert first.property_selection.property_id == "sf_ashton"
-    assert first.property_selection.location_id is LocationId.SAN_FRANCISCO_CA
+    assert first.property_selection.location_id == "san_francisco_ca"
     assert first.financing.financing_mode is FinancingMode.FIXED_30
     assert first.occupancy_plan.occupancy_mode is OccupancyMode.OWNER_LIVES_IN_PROPERTY
     assert first.rental_plan.rental_mode is RentalMode.RENT_ROOMS_WHILE_OWNER_LIVES_THERE

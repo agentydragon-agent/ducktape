@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 
-from augur.app.config import AugurConfig
+from augur.app.config import AugurConfig, LocationConfig
 from augur.core.bootstrap import (
     ActorPolicyId,
     ActorPolicyOption,
@@ -30,28 +30,6 @@ from augur.core.bootstrap import (
 from augur.core.local_regulation import LOCAL_REGULATION_BY_LOCATION, LocationId
 from augur.core.scenario_set import ActorRole
 from augur.core.schemas import ScenarioKnobs
-
-LOCATION_A = Location(
-    id=LocationId.LOCATION_A,
-    label="Location A",
-    city="Location A",
-    state="Fixture",
-    home_value_factor_id=HomeValueFactorId.LOCATION_A_HOME,
-    rent_factor_id=RentFactorId.LOCATION_A_RENT,
-    local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.LOCATION_A],
-    notes=("Synthetic public fixture location.",),
-)
-
-LOCATION_B = Location(
-    id=LocationId.LOCATION_B,
-    label="Location B",
-    city="Location B",
-    state="Fixture",
-    home_value_factor_id=HomeValueFactorId.LOCATION_B_HOME,
-    rent_factor_id=RentFactorId.LOCATION_B_RENT,
-    local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.LOCATION_B],
-    notes=("Synthetic public fixture location.",),
-)
 
 SF_LOCATION = Location(
     id=LocationId.SAN_FRANCISCO_CA,
@@ -89,9 +67,7 @@ VALLEJO_MARE_ISLAND_LOCATION = Location(
     ),
 )
 
-LOCATIONS = (LOCATION_A, LOCATION_B, SF_LOCATION, VALLEJO_MAINLAND_LOCATION, VALLEJO_MARE_ISLAND_LOCATION)
-
-LOCATION_BY_ID = {location.id: location for location in LOCATIONS}
+LOCATIONS = (SF_LOCATION, VALLEJO_MAINLAND_LOCATION, VALLEJO_MARE_ISLAND_LOCATION)
 
 DEFAULT_KNOBS = ScenarioKnobs(
     down_payment_pct=25,
@@ -141,8 +117,34 @@ LIQUID_RESERVE_POLICY_OPTIONS = [
 ]
 
 
-def _property(record: PropertyRecord) -> Property:
-    return Property(**record.model_dump(), location=LOCATION_BY_ID[record.location_id])
+def _location_from_config(config: LocationConfig) -> Location:
+    return Location(
+        id=config.location_id,
+        label=config.label,
+        city=config.city,
+        state=config.state,
+        home_value_factor_id=config.home_value_factor_id,
+        rent_factor_id=config.rent_factor_id,
+        local_regulation=config.local_regulation,
+        notes=config.notes,
+    )
+
+
+def _locations_for_config(config: AugurConfig) -> tuple[Location, ...]:
+    locations = tuple(_location_from_config(location) for location in config.locations) + LOCATIONS
+    location_ids = [location.id for location in locations]
+    duplicate_ids = sorted({location_id for location_id in location_ids if location_ids.count(location_id) > 1})
+    if duplicate_ids:
+        raise ValueError(f"Augur location catalog has duplicate location ids: {duplicate_ids}")
+    return locations
+
+
+def _property(record: PropertyRecord, *, location_by_id: dict[str, Location]) -> Property:
+    try:
+        location = location_by_id[record.location_id]
+    except KeyError as error:
+        raise ValueError(f"property {record.id!r} references unknown location {record.location_id!r}") from error
+    return Property(**record.model_dump(), location=location)
 
 
 def _agents_by_role(config: AugurConfig) -> tuple[str, str | None]:
@@ -218,12 +220,14 @@ def _rental_use_policy_options(primary: str, partner: str | None) -> list[Rental
     ]
 
 
-def load_properties(config: AugurConfig) -> tuple[Property, ...]:
+def _load_properties(config: AugurConfig, *, location_by_id: dict[str, Location]) -> tuple[Property, ...]:
     path = config.property_catalog.properties_path
     records = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(records, list):
         raise ValueError(f"{path} must contain a JSON array")
-    properties = tuple(_property(PropertyRecord.model_validate(record)) for record in records)
+    properties = tuple(
+        _property(PropertyRecord.model_validate(record), location_by_id=location_by_id) for record in records
+    )
     property_id_counts = Counter(property_.id for property_ in properties)
     duplicate_ids = sorted(property_id for property_id, count in property_id_counts.items() if count > 1)
     if duplicate_ids:
@@ -231,14 +235,24 @@ def load_properties(config: AugurConfig) -> tuple[Property, ...]:
     return properties
 
 
+def load_properties(config: AugurConfig) -> tuple[Property, ...]:
+    locations = _locations_for_config(config)
+    return _load_properties(config, location_by_id={location.id: location for location in locations})
+
+
 def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
-    loaded_properties = load_properties(config)
+    available_locations = _locations_for_config(config)
+    location_by_id = {location.id: location for location in available_locations}
+    loaded_properties = _load_properties(config, location_by_id=location_by_id)
     selected_location_ids = (
         set(config.location_selection)
         if config.location_selection is not None
         else {property_.location_id for property_ in loaded_properties}
     )
-    locations = [location for location in LOCATIONS if location.id in selected_location_ids]
+    unknown_selected_locations = sorted(selected_location_ids - set(location_by_id))
+    if unknown_selected_locations:
+        raise ValueError(f"location_selection references unknown location ids: {unknown_selected_locations}")
+    locations = [location for location in available_locations if location.id in selected_location_ids]
     properties = sorted(
         (property_ for property_ in loaded_properties if property_.location_id in selected_location_ids),
         key=lambda property_: (property_.location.city, property_.price_usd, property_.id),

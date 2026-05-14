@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from augur.core.local_regulation import LocalRegulation, LocationId
+from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, PropertyId
 from augur.core.schemas import ApiModel, ScenarioKnobs
 
@@ -30,15 +30,11 @@ class LiquidReservePolicyId(StrEnum):
 
 
 class HomeValueFactorId(StrEnum):
-    LOCATION_A_HOME = "location_a_home"
-    LOCATION_B_HOME = "location_b_home"
     SF_HOME = "sf_home"
     VALLEJO_HOME = "vallejo_home"
 
 
 class RentFactorId(StrEnum):
-    LOCATION_A_RENT = "location_a_rent"
-    LOCATION_B_RENT = "location_b_rent"
     SF_RENT = "sf_rent"
     VALLEJO_RENT = "vallejo_rent"
 
@@ -78,12 +74,12 @@ class DefaultScenario(ApiModel):
 
 
 class Location(ApiModel):
-    id: LocationId
+    id: str
     label: str
     city: str
     state: str
-    home_value_factor_id: HomeValueFactorId
-    rent_factor_id: RentFactorId
+    home_value_factor_id: str
+    rent_factor_id: str
     local_regulation: LocalRegulation
     notes: tuple[str, ...] = ()
 
@@ -92,7 +88,7 @@ class PropertyRecord(ApiModel):
     id: str
     source_catalog_id: str
     source_property_id: str
-    location_id: LocationId
+    location_id: str
     address: str
     neighborhood: str
     type: str

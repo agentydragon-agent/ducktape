@@ -15,12 +15,13 @@ from augur.app.config import (
     ConcentratedHoldingConfig,
     ConcentratedHoldingSnapshot,
     FinanceSnapshot,
+    LocationConfig,
     PersonalFinanceConfig,
     PropertyCatalogConfig,
     dump_augur_config_yaml,
     load_augur_config,
 )
-from augur.core.local_regulation import LocationId
+from augur.core.local_regulation import LocalRegulation, LocationId
 from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType
 
 
@@ -69,10 +70,32 @@ def test_concentrated_holdings_round_trip_through_json() -> None:
     assert holding.basis_per_unit_usd == 0
 
 
-def test_location_selection_accepts_known_ids() -> None:
+def test_location_selection_accepts_location_strings() -> None:
     config = _minimal_config(location_selection=(LocationId.SAN_FRANCISCO_CA, LocationId.VALLEJO_CA))
 
-    assert config.location_selection == (LocationId.SAN_FRANCISCO_CA, LocationId.VALLEJO_CA)
+    assert config.location_selection == ("san_francisco_ca", "vallejo_ca")
+
+
+def test_config_can_define_deployment_owned_locations() -> None:
+    config = _minimal_config(
+        locations=(
+            LocationConfig(
+                location_id="location_a",
+                label="Location A",
+                city="Location A",
+                state="Fixture",
+                home_value_factor_id="location_a_home",
+                rent_factor_id="location_a_rent",
+                local_regulation=LocalRegulation(
+                    property_tax_annual_pct=1.0, notes="Synthetic public fixture location."
+                ),
+            ),
+        ),
+        location_selection=("location_a",),
+    )
+
+    assert config.locations[0].location_id == "location_a"
+    assert config.location_selection == ("location_a",)
 
 
 def test_at_least_one_agent_required() -> None:

@@ -22,7 +22,7 @@ import yaml
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
 
 from augur.core.bootstrap import DefaultScenario
-from augur.core.local_regulation import LocationId
+from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType
 from augur.core.schemas import ApiModel
 
@@ -72,6 +72,24 @@ class PropertyCatalogConfig(ApiModel):
     asset_dir: Path | None = None
 
 
+class LocationConfig(ApiModel):
+    """A deployment-owned location identity and its local modeling inputs.
+
+    Built-in locations are available from the public catalog, but fixtures and
+    private deployments should define their own IDs here instead of extending
+    core enums.
+    """
+
+    location_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    label: str
+    city: str
+    state: str
+    home_value_factor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    rent_factor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    local_regulation: LocalRegulation
+    notes: tuple[str, ...] = ()
+
+
 class ConcentratedHoldingSnapshot(ApiModel):
     holding_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     units: NonNegativeInt
@@ -105,7 +123,8 @@ class AugurConfig(ApiModel):
     personal_finance: PersonalFinanceConfig
     property_catalog: PropertyCatalogConfig
     snapshot: FinanceSnapshot
-    location_selection: tuple[LocationId, ...] | None = None
+    locations: tuple[LocationConfig, ...] = ()
+    location_selection: tuple[str, ...] | None = None
     minimum_reserve_mode: LiquidityReserveRuleType = LiquidityReserveRuleType.PROJECTED_DEFICITS
     reserve_forward_months: NonNegativeInt = 12
     starting_portfolio_usd: NonNegativeFloat = 0.0

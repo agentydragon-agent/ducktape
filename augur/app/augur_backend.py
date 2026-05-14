@@ -11,7 +11,7 @@ from augur.app.config import AugurConfig
 from augur.core.api import simulate_set
 from augur.core.augur_accounting import MONTHS_PER_YEAR
 from augur.core.bootstrap import ActorPolicyId, Property
-from augur.core.local_regulation import LocationId
+from augur.core.local_regulation import LocationId, known_location_id
 from augur.core.market_bundle import MarketBundleProvider, SimpleMarketBundleProvider
 from augur.core.rollout_provider import RolloutProvider
 from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario, ScenarioSet, ScenarioSetRunResponse, TaxRegime
@@ -76,10 +76,10 @@ class AugurBackend:
                 continue
             property_ = self._property_by_id[property_id]
             requested_location = scenario.property_selection.location_id
-            if requested_location is not None and requested_location.value != property_.location_id.value:
+            if requested_location is not None and str(requested_location) != property_.location_id:
                 raise ValueError(
                     "scenario property/location mismatch: "
-                    f"{scenario.scenario_id} uses {property_id!r} with {requested_location.value!r}"
+                    f"{scenario.scenario_id} uses {property_id!r} with {requested_location!r}"
                 )
 
     def _scenario_set_with_catalog_defaults(self, scenario_set: ScenarioSet) -> ScenarioSet:
@@ -93,6 +93,8 @@ class AugurBackend:
             selection = scenario.property_selection.model_copy(
                 update={
                     "location_id": scenario.property_selection.location_id or property_.location_id,
+                    "local_regulation": scenario.property_selection.local_regulation
+                    or property_.location.local_regulation,
                     "purchase_price_usd": scenario.property_selection.purchase_price_usd
                     if scenario.property_selection.purchase_price_usd is not None
                     else property_.price_usd,
@@ -111,17 +113,19 @@ class AugurBackend:
         return scenario_set.model_copy(update={"scenarios": tuple(scenarios)})
 
 
-def tax_regime_for_location(location_id: LocationId) -> TaxRegime:
-    if location_id is LocationId.MARE_ISLAND_VALLEJO_CA:
+def tax_regime_for_location(location_id: LocationId | str) -> TaxRegime:
+    known_id = known_location_id(location_id)
+    if known_id is LocationId.MARE_ISLAND_VALLEJO_CA:
         return TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS
-    if location_id is LocationId.VALLEJO_CA:
+    if known_id is LocationId.VALLEJO_CA:
         return TaxRegime.VALLEJO_PROPERTY_TAX
-    if location_id is LocationId.SAN_FRANCISCO_CA:
+    if known_id is LocationId.SAN_FRANCISCO_CA:
         return TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
     return TaxRegime.CALIFORNIA_PROP13
 
 
-def _tax_regimes_with_catalog_defaults(scenario: Scenario, location_id: LocationId) -> tuple[TaxRegime, ...]:
+def _tax_regimes_with_catalog_defaults(scenario: Scenario, location_id: LocationId | str) -> tuple[TaxRegime, ...]:
+    known_id = known_location_id(location_id)
     regimes = [
         *scenario.tax_regimes,
         TaxRegime.CALIFORNIA_PROP13,
@@ -131,7 +135,7 @@ def _tax_regimes_with_catalog_defaults(scenario: Scenario, location_id: Location
         TaxRegime.CALIFORNIA_INCOME_TAX,
         tax_regime_for_location(location_id),
     ]
-    if location_id is LocationId.SAN_FRANCISCO_CA:
+    if known_id is LocationId.SAN_FRANCISCO_CA:
         regimes.append(TaxRegime.SAN_FRANCISCO_TRANSFER_TAX)
     if (
         scenario.occupancy_plan.occupancy_mode is OccupancyMode.OWNER_LIVES_IN_PROPERTY

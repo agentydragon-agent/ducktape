@@ -118,6 +118,8 @@ class MarketBundle:
         try:
             return paths[key]
         except KeyError as error:
+            if "default" in paths:
+                return paths["default"]
             available = sorted(paths)
             raise ValueError(f"missing {label} market path for location {key!r}; available={available}") from error
 
@@ -266,8 +268,6 @@ class SimpleMarketBundleProvider:
         home_by_location = _location_factor_map(
             home_base,
             annual_adjustment_pct={
-                LocationId.LOCATION_A.value: 0.0,
-                LocationId.LOCATION_B.value: 0.0,
                 LocationId.SAN_FRANCISCO_CA.value: 0.3,
                 LocationId.VALLEJO_CA.value: -0.2,
                 LocationId.MARE_ISLAND_VALLEJO_CA.value: -0.1,
@@ -276,8 +276,6 @@ class SimpleMarketBundleProvider:
         rent_by_location = _location_factor_map(
             rent_base,
             annual_adjustment_pct={
-                LocationId.LOCATION_A.value: 0.0,
-                LocationId.LOCATION_B.value: 0.0,
                 LocationId.SAN_FRANCISCO_CA.value: 0.4,
                 LocationId.VALLEJO_CA.value: -0.1,
                 LocationId.MARE_ISLAND_VALLEJO_CA.value: 0.0,

@@ -8,8 +8,6 @@ from augur.core.schemas import ApiModel, Percentage
 
 
 class LocationId(StrEnum):
-    LOCATION_A = "location_a"
-    LOCATION_B = "location_b"
     SAN_FRANCISCO_CA = "san_francisco_ca"
     VALLEJO_CA = "vallejo_ca"
     MARE_ISLAND_VALLEJO_CA = "mare_island_vallejo_ca"
@@ -29,14 +27,6 @@ class LocalRegulation(ApiModel):
 
 
 LOCAL_REGULATION_BY_LOCATION: dict[LocationId, LocalRegulation] = {
-    LocationId.LOCATION_A: LocalRegulation(
-        property_tax_annual_pct=1.0,
-        notes="Synthetic public fixture location; deployments should supply a real local regulation source.",
-    ),
-    LocationId.LOCATION_B: LocalRegulation(
-        property_tax_annual_pct=1.0,
-        notes="Synthetic public fixture location; deployments should supply a real local regulation source.",
-    ),
     LocationId.SAN_FRANCISCO_CA: LocalRegulation(
         property_tax_annual_pct=1.18,
         notes="San Francisco secured property-tax default used by the consolidated house model.",
@@ -51,5 +41,17 @@ LOCAL_REGULATION_BY_LOCATION: dict[LocationId, LocalRegulation] = {
 }
 
 
-def local_regulation_for_location(location_id: LocationId) -> LocalRegulation:
-    return LOCAL_REGULATION_BY_LOCATION[location_id]
+def known_location_id(location_id: LocationId | str) -> LocationId | None:
+    if isinstance(location_id, LocationId):
+        return location_id
+    try:
+        return LocationId(str(location_id))
+    except ValueError:
+        return None
+
+
+def local_regulation_for_location(location_id: LocationId | str) -> LocalRegulation:
+    known_id = known_location_id(location_id)
+    if known_id is None:
+        raise ValueError(f"unknown built-in local regulation for location {location_id!r}")
+    return LOCAL_REGULATION_BY_LOCATION[known_id]
