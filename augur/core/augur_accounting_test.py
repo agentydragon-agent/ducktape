@@ -86,5 +86,22 @@ def test_cash_mode_zeroes_loan_even_with_lower_down_payment_value() -> None:
     assert financing.rate_pct == 0
 
 
+def test_vallejo_investment_loan_default_uses_jumbo_adjustment() -> None:
+    financing = resolve_financing(
+        base_knobs(
+            down_payment_pct=25,
+            credit_score=776,
+            custom_mortgage_rate=6.5,
+            custom_mortgage_term_years=20,
+            financing_mode="fixed_30",
+            occupancy_type="investment",
+        )
+    )
+
+    assert financing.term_years == 30
+    assert financing.rate_pct == pytest.approx(6.83)
+    assert financing.loan_to_value_pct == 75
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

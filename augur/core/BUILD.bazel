@@ -174,27 +174,6 @@ py_library(
 )
 
 py_library(
-    name = "ownership_py",
-    srcs = ["ownership.py"],
-    deps = [
-        ":augur_accounting_py",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "real_estate_py",
-    srcs = ["real_estate.py"],
-    deps = [
-        ":augur_accounting_py",
-        ":ownership_py",
-        ":schemas_py",
-        ":vectorized_py",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "vectorized_py",
     srcs = ["vectorized.py"],
     deps = [
@@ -353,38 +332,12 @@ py_test(
 )
 
 py_test(
-    name = "ownership_test",
-    srcs = ["ownership_test.py"],
-    deps = [
-        ":augur_accounting_py",
-        ":ownership_py",
-        ":schemas_py",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "policy_runtime_test",
     srcs = ["policy_runtime_test.py"],
     deps = [
         ":policy_runtime_py",
         ":scenario_set_py",
         "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "real_estate_test",
-    srcs = ["real_estate_test.py"],
-    deps = [
-        ":real_estate_py",
-        ":schemas_py",
-        ":vectorized_py",
-        "@pypi//numpy",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

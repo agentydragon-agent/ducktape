@@ -63,7 +63,6 @@ from augur.core.scenario_set import (
     SellSp500Action,
     SimulationAction,
     TransferPartnerContributionAction,
-    _PolicyBase,
 )
 from augur.core.schemas import ColumnarTable
 
@@ -320,6 +319,28 @@ class PropertyCashFlowArrays:
 
 
 @dataclass(frozen=True)
+class PartnerEquityAgreementArrays:
+    policy: PartnerEquityAccrualPolicy
+    property_id: str
+    recipient_actor_id: str
+    contribution_usd: np.ndarray
+    contribution_used_usd: np.ndarray
+    unallocated_excess_usd: np.ndarray
+    house_costs_usd: np.ndarray
+    mortgage_payment_usd: np.ndarray
+    mortgage_interest_usd: np.ndarray
+    mortgage_principal_usd: np.ndarray
+    principal_credit_usd: np.ndarray
+    owner_principal_usd: np.ndarray
+    house_cost_share: np.ndarray
+    partner_equity_ledger_usd: np.ndarray
+    owner_equity_ledger_usd: np.ndarray
+    ownership_pct: np.ndarray
+    home_equity_claim_usd: np.ndarray
+    owner_home_equity_claim_usd: np.ndarray
+
+
+@dataclass(frozen=True)
 class PartnerEquityArrays:
     contribution_usd: np.ndarray
     contribution_used_usd: np.ndarray
@@ -336,6 +357,7 @@ class PartnerEquityArrays:
     ownership_pct: np.ndarray
     home_equity_claim_usd: np.ndarray
     owner_home_equity_claim_usd: np.ndarray
+    agreements: tuple[PartnerEquityAgreementArrays, ...]
 
 
 def run_scenario_set_vectorized(
@@ -610,23 +632,16 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         owner_home_equity_claim_for_net_worth = owner_home_equity_claim * unsold_mask
     liquid_net_worth = cash + generic_sp500_value + private_equity_liquidity_available_value
     net_worth = cash + generic_sp500_value + private_equity_value + owner_home_equity_claim_for_net_worth
-    _record_partner_agreement_actions(
-        actions,
-        scenario=scenario,
-        month_index=month_index,
-        partner_equity=partner_equity,
-        mortgage_balance_usd=mortgage_balance,
+    _record_partner_agreement_actions(actions, month_index=month_index, partner_equity=partner_equity)
+    mortgage_application = apply_mortgage_payment(
+        actor_id=_primary_owner_actor_id(scenario),
+        policy_id=MORTGAGE_SERVICING_POLICY_ID,
+        mortgage_payment_usd=property_cash_flow.mortgage_payment_usd * property_live_mask,
+        mortgage_interest_usd=mortgage_interest,
+        mortgage_principal_usd=mortgage_principal,
+        mortgage_balance_after_usd=mortgage_balance,
     )
-    if not _has_partner(scenario):
-        mortgage_application = apply_mortgage_payment(
-            actor_id=_primary_owner_actor_id(scenario),
-            policy_id=MORTGAGE_SERVICING_POLICY_ID,
-            mortgage_payment_usd=property_cash_flow.mortgage_payment_usd * property_live_mask,
-            mortgage_interest_usd=mortgage_interest,
-            mortgage_principal_usd=mortgage_principal,
-            mortgage_balance_after_usd=mortgage_balance,
-        )
-        _record_mortgage_payment_actions(actions, month_index=month_index, mortgage_application=mortgage_application)
+    _record_mortgage_payment_actions(actions, month_index=month_index, mortgage_application=mortgage_application)
     return ScenarioRunArrays(
         scenario_id=scenario.scenario_id,
         scenario_label=scenario.label,
@@ -792,66 +807,46 @@ def _record_mortgage_payment_actions(
 
 
 def _record_partner_agreement_actions(
-    actions: list[SimulationAction],
-    *,
-    scenario: Scenario,
-    month_index: np.ndarray,
-    partner_equity: PartnerEquityArrays,
-    mortgage_balance_usd: np.ndarray,
+    actions: list[SimulationAction], *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
 ) -> None:
-    policy = _enabled_policy_of(scenario, PartnerEquityAccrualPolicy)
-    property_id = _partner_equity_property_id(scenario, policy)
-    if policy is None or property_id is None:
-        return
-    owner_actor_id = _primary_owner_actor_id(scenario)
-    active = (partner_equity.contribution_usd > 0) | (partner_equity.unallocated_excess_usd > 0)
-    rollout_indexes, month_positions = np.nonzero(active)
-    for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
-        month = int(month_index[month_position])
-        contribution = float(partner_equity.contribution_usd[rollout_index, month_position])
-        contribution_used = float(partner_equity.contribution_used_usd[rollout_index, month_position])
-        mortgage_principal = float(partner_equity.mortgage_principal_usd[rollout_index, month_position])
-        actions.append(
-            TransferPartnerContributionAction(
-                rollout_index=rollout_index,
-                month_index=month,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                recipient_actor_id=owner_actor_id,
-                amount_usd=contribution,
-                applied_to_house_costs_usd=contribution_used,
-                unallocated_amount_usd=float(partner_equity.unallocated_excess_usd[rollout_index, month_position]),
+    for agreement in partner_equity.agreements:
+        policy = agreement.policy
+        active = (agreement.contribution_usd > 0) | (agreement.unallocated_excess_usd > 0)
+        rollout_indexes, month_positions = np.nonzero(active)
+        for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
+            month = int(month_index[month_position])
+            contribution = float(agreement.contribution_usd[rollout_index, month_position])
+            contribution_used = float(agreement.contribution_used_usd[rollout_index, month_position])
+            mortgage_principal = float(agreement.mortgage_principal_usd[rollout_index, month_position])
+            actions.append(
+                TransferPartnerContributionAction(
+                    rollout_index=rollout_index,
+                    month_index=month,
+                    actor_id=policy.actor_id,
+                    policy_id=policy.policy_id,
+                    recipient_actor_id=agreement.recipient_actor_id,
+                    amount_usd=contribution,
+                    applied_to_house_costs_usd=contribution_used,
+                    unallocated_amount_usd=float(agreement.unallocated_excess_usd[rollout_index, month_position]),
+                )
             )
-        )
-        actions.append(
-            PayMortgageAction(
-                rollout_index=rollout_index,
-                month_index=month,
-                actor_id=owner_actor_id,
-                policy_id=policy.policy_id,
-                mortgage_payment_usd=float(partner_equity.mortgage_payment_usd[rollout_index, month_position]),
-                mortgage_interest_usd=float(partner_equity.mortgage_interest_usd[rollout_index, month_position]),
-                mortgage_principal_usd=mortgage_principal,
-                mortgage_balance_after_usd=float(mortgage_balance_usd[rollout_index, month_position]),
+            actions.append(
+                AccruePartnerEquityAction(
+                    rollout_index=rollout_index,
+                    month_index=month,
+                    actor_id=policy.actor_id,
+                    policy_id=policy.policy_id,
+                    beneficiary_actor_id=policy.actor_id,
+                    property_id=agreement.property_id,
+                    house_costs_usd=float(agreement.house_costs_usd[rollout_index, month_position]),
+                    cash_transfer_used_for_house_costs_usd=contribution_used,
+                    mortgage_principal_usd=mortgage_principal,
+                    principal_credit_usd=float(agreement.principal_credit_usd[rollout_index, month_position]),
+                    house_cost_share=float(agreement.house_cost_share[rollout_index, month_position]),
+                    ownership_pct_after=float(agreement.ownership_pct[rollout_index, month_position]),
+                    home_equity_claim_usd_after=float(agreement.home_equity_claim_usd[rollout_index, month_position]),
+                )
             )
-        )
-        actions.append(
-            AccruePartnerEquityAction(
-                rollout_index=rollout_index,
-                month_index=month,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                beneficiary_actor_id=policy.actor_id,
-                property_id=property_id,
-                house_costs_usd=float(partner_equity.house_costs_usd[rollout_index, month_position]),
-                cash_transfer_used_for_house_costs_usd=contribution_used,
-                mortgage_principal_usd=mortgage_principal,
-                principal_credit_usd=float(partner_equity.principal_credit_usd[rollout_index, month_position]),
-                house_cost_share=float(partner_equity.house_cost_share[rollout_index, month_position]),
-                ownership_pct_after=float(partner_equity.ownership_pct[rollout_index, month_position]),
-                home_equity_claim_usd_after=float(partner_equity.home_equity_claim_usd[rollout_index, month_position]),
-            )
-        )
 
 
 def _sorted_actions(actions: list[SimulationAction]) -> tuple[SimulationAction, ...]:
@@ -977,62 +972,134 @@ def _partner_equity_arrays(
     maintenance_usd: np.ndarray,
 ) -> PartnerEquityArrays:
     zeros = np.zeros_like(home_equity_usd, dtype="float64")
-    policy = _enabled_policy_of(scenario, PartnerEquityAccrualPolicy)
-    property_id = _partner_equity_property_id(scenario, policy)
-    if policy is None or not _has_partner(scenario) or property_id is None:
-        owner_equity_ledger = float(owner_initial_equity_usd) + np.cumsum(mortgage_principal_usd, axis=1)
-        return PartnerEquityArrays(
-            contribution_usd=zeros,
-            contribution_used_usd=zeros,
-            unallocated_excess_usd=zeros,
-            house_costs_usd=zeros,
-            mortgage_payment_usd=zeros,
-            mortgage_interest_usd=zeros,
-            mortgage_principal_usd=zeros,
-            principal_credit_usd=zeros,
-            owner_principal_usd=mortgage_principal_usd,
-            house_cost_share=zeros,
-            partner_equity_ledger_usd=zeros,
-            owner_equity_ledger_usd=owner_equity_ledger,
-            ownership_pct=zeros,
-            home_equity_claim_usd=zeros,
-            owner_home_equity_claim_usd=home_equity_usd,
-        )
+    owner_equity_without_partners = float(owner_initial_equity_usd) + np.cumsum(mortgage_principal_usd, axis=1)
+    empty = PartnerEquityArrays(
+        contribution_usd=zeros,
+        contribution_used_usd=zeros,
+        unallocated_excess_usd=zeros,
+        house_costs_usd=zeros,
+        mortgage_payment_usd=zeros,
+        mortgage_interest_usd=zeros,
+        mortgage_principal_usd=zeros,
+        principal_credit_usd=zeros,
+        owner_principal_usd=mortgage_principal_usd,
+        house_cost_share=zeros,
+        partner_equity_ledger_usd=zeros,
+        owner_equity_ledger_usd=owner_equity_without_partners,
+        ownership_pct=zeros,
+        home_equity_claim_usd=zeros,
+        owner_home_equity_claim_usd=home_equity_usd,
+        agreements=(),
+    )
+    partner_policies = enabled_rules_of_type(actor_policy_programs(scenario), PartnerEquityAccrualPolicy)
+    if not partner_policies or not _has_partner(scenario):
+        return empty
 
-    base_payment = policy.base_monthly_payment_usd
-    occupied_months = _partner_occupied_months(scenario, policy, market_bundle.horizon_months)
     month_matrix = np.broadcast_to(market_bundle.month_index[None, :], home_equity_usd.shape)
-    active = (month_matrix > 0) & (month_matrix <= occupied_months)
-    payment_growth = _partner_payment_growth(policy, market_bundle)
-    configured_payment = np.where(active, base_payment * payment_growth, 0.0)
-
     mortgage_payment = mortgage_interest_usd + mortgage_principal_usd
     house_uses = (
         mortgage_interest_usd + mortgage_principal_usd + property_tax_usd + hoa_usd + insurance_usd + maintenance_usd
     )
-    contribution_instruction = partner_contribution_instruction(
-        policy, recipient_actor_id=_primary_owner_actor_id(scenario), contribution_usd=configured_payment
+    owner_actor_id = _primary_owner_actor_id(scenario)
+    contribution_inputs = []
+    remaining_house_uses = house_uses.copy()
+    remaining_principal = mortgage_principal_usd.copy()
+    for policy in partner_policies:
+        property_id = _partner_equity_property_id(scenario, policy)
+        if property_id is None:
+            continue
+        occupied_months = _partner_occupied_months(scenario, policy, market_bundle.horizon_months)
+        active = (month_matrix > 0) & (month_matrix <= occupied_months)
+        configured_payment = np.where(
+            active, float(policy.base_monthly_payment_usd) * _partner_payment_growth(policy, market_bundle), 0.0
+        )
+        contribution_instruction = partner_contribution_instruction(
+            policy, recipient_actor_id=owner_actor_id, contribution_usd=configured_payment
+        )
+        principal_available = remaining_principal.copy()
+        contribution_application = apply_partner_house_cost_contribution(
+            contribution_instruction, house_costs_usd=remaining_house_uses, mortgage_principal_usd=principal_available
+        )
+        freeze_after_month = _partner_freeze_after_month(
+            scenario, policy, occupied_months, market_bundle.horizon_months
+        )
+        contribution_inputs.append(
+            (
+                policy,
+                property_id,
+                contribution_instruction,
+                contribution_application,
+                principal_available,
+                freeze_after_month,
+            )
+        )
+        remaining_house_uses = np.maximum(0.0, remaining_house_uses - contribution_application.contribution_used_usd)
+        remaining_principal = np.maximum(0.0, remaining_principal - contribution_application.principal_credit_usd)
+    if not contribution_inputs:
+        return empty
+
+    principal_credit = sum(
+        (application.principal_credit_usd for _, _, _, application, _, _ in contribution_inputs), start=zeros.copy()
     )
-    contribution_application = apply_partner_house_cost_contribution(
-        contribution_instruction, house_costs_usd=house_uses, mortgage_principal_usd=mortgage_principal_usd
+    owner_principal = np.maximum(0.0, mortgage_principal_usd - principal_credit)
+    owner_equity_ledger = float(owner_initial_equity_usd) + np.cumsum(owner_principal, axis=1)
+    total_partner_equity_ledger = sum(
+        (np.cumsum(application.principal_credit_usd, axis=1) for _, _, _, application, _, _ in contribution_inputs),
+        start=zeros.copy(),
     )
-    contribution_used = contribution_application.contribution_used_usd
-    unallocated_excess = contribution_application.unallocated_excess_usd
-    contribution_share = contribution_application.house_cost_share
-    principal_credit = contribution_application.principal_credit_usd
-    owner_principal = contribution_application.owner_principal_usd
-    freeze_after_month = _partner_freeze_after_month(scenario, policy, occupied_months, market_bundle.horizon_months)
-    ownership_application = apply_partner_ownership_accrual(
+    agreements = []
+    for (
+        policy,
+        property_id,
         contribution_instruction,
-        owner_initial_equity_usd=owner_initial_equity_usd,
-        home_equity_usd=home_equity_usd,
-        owner_principal_usd=owner_principal,
-        partner_principal_credit_usd=principal_credit,
-        month_index=market_bundle.month_index,
-        freeze_after_month=freeze_after_month,
+        contribution_application,
+        principal_available,
+        freeze_after_month,
+    ) in contribution_inputs:
+        ownership_application = apply_partner_ownership_accrual(
+            contribution_instruction,
+            owner_initial_equity_usd=owner_initial_equity_usd,
+            home_equity_usd=home_equity_usd,
+            owner_principal_usd=owner_principal,
+            partner_principal_credit_usd=contribution_application.principal_credit_usd,
+            month_index=market_bundle.month_index,
+            freeze_after_month=freeze_after_month,
+            owner_equity_ledger_usd=owner_equity_ledger,
+            total_partner_equity_ledger_usd=total_partner_equity_ledger,
+        )
+        agreements.append(
+            PartnerEquityAgreementArrays(
+                policy=policy,
+                property_id=property_id,
+                recipient_actor_id=owner_actor_id,
+                contribution_usd=contribution_instruction.amount_usd,
+                contribution_used_usd=contribution_application.contribution_used_usd,
+                unallocated_excess_usd=contribution_application.unallocated_excess_usd,
+                house_costs_usd=contribution_application.house_costs_usd,
+                mortgage_payment_usd=mortgage_payment,
+                mortgage_interest_usd=mortgage_interest_usd,
+                mortgage_principal_usd=principal_available,
+                principal_credit_usd=contribution_application.principal_credit_usd,
+                owner_principal_usd=owner_principal,
+                house_cost_share=contribution_application.house_cost_share,
+                partner_equity_ledger_usd=ownership_application.partner_equity_ledger_usd,
+                owner_equity_ledger_usd=owner_equity_ledger,
+                ownership_pct=ownership_application.ownership_pct,
+                home_equity_claim_usd=ownership_application.home_equity_claim_usd,
+                owner_home_equity_claim_usd=ownership_application.owner_home_equity_claim_usd,
+            )
+        )
+
+    contribution_usd = sum((agreement.contribution_usd for agreement in agreements), start=zeros.copy())
+    contribution_used = sum((agreement.contribution_used_usd for agreement in agreements), start=zeros.copy())
+    unallocated_excess = sum((agreement.unallocated_excess_usd for agreement in agreements), start=zeros.copy())
+    home_equity_claim = sum((agreement.home_equity_claim_usd for agreement in agreements), start=zeros.copy())
+    positive_home_equity = np.maximum(home_equity_usd, 0.0)
+    ownership_pct = np.divide(
+        home_equity_claim, positive_home_equity, out=np.zeros_like(home_equity_claim), where=positive_home_equity > 0
     )
     return PartnerEquityArrays(
-        contribution_usd=configured_payment,
+        contribution_usd=contribution_usd,
         contribution_used_usd=contribution_used,
         unallocated_excess_usd=unallocated_excess,
         house_costs_usd=house_uses,
@@ -1041,12 +1108,15 @@ def _partner_equity_arrays(
         mortgage_principal_usd=mortgage_principal_usd,
         principal_credit_usd=principal_credit,
         owner_principal_usd=owner_principal,
-        house_cost_share=contribution_share,
-        partner_equity_ledger_usd=ownership_application.partner_equity_ledger_usd,
-        owner_equity_ledger_usd=ownership_application.owner_equity_ledger_usd,
-        ownership_pct=ownership_application.ownership_pct,
-        home_equity_claim_usd=ownership_application.home_equity_claim_usd,
-        owner_home_equity_claim_usd=ownership_application.owner_home_equity_claim_usd,
+        house_cost_share=np.divide(
+            contribution_used, house_uses, out=np.zeros_like(contribution_used), where=house_uses > 0
+        ),
+        partner_equity_ledger_usd=total_partner_equity_ledger,
+        owner_equity_ledger_usd=owner_equity_ledger,
+        ownership_pct=ownership_pct,
+        home_equity_claim_usd=home_equity_claim,
+        owner_home_equity_claim_usd=home_equity_usd - home_equity_claim,
+        agreements=tuple(agreements),
     )
 
 
@@ -1283,17 +1353,6 @@ def _primary_owner_actor_id(scenario: Scenario) -> str:
         if actor.role is ActorRole.PRIMARY_OWNER:
             return actor.actor_id
     return "owner"
-
-
-def _enabled_policy_of[PolicyT: _PolicyBase](scenario: Scenario, cls: type[PolicyT]) -> PolicyT | None:
-    for policy in scenario.policies:
-        if isinstance(policy, cls) and policy.enabled:
-            return policy
-    return None
-
-
-def _enabled_policies_of[PolicyT: _PolicyBase](scenario: Scenario, cls: type[PolicyT]) -> tuple[PolicyT, ...]:
-    return tuple(policy for policy in scenario.policies if isinstance(policy, cls) and policy.enabled)
 
 
 def _scenario_hoa_monthly_usd(scenario: Scenario) -> float:

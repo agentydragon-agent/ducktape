@@ -522,9 +522,6 @@ Remaining cleanup:
 
 - Replace `FINANCING_MODE_*` constants in `augur_accounting.py` with
   `FinancingMode`.
-- Continue replacing `_enabled_policy_of()` call sites with explicit ordered
-  policy-rule evaluation. Private-equity sale and partner-equity policies still
-  use first-enabled lookup.
 
 **Learned / follow-up**:
 
@@ -597,16 +594,14 @@ Cleanup completed:
   other than the selected scenario property.
 - Property disposition no longer treats absence of a sale event as an implicit
   horizon sale. Sale cash flow now requires `PropertySaleEvent`.
+- Partner equity no longer uses first-enabled singleton lookup. Multiple
+  partner policies execute through actor policy programs, and public arrays
+  aggregate agreement results.
+- Partner-equity mortgage actions now use the ordinary mortgage servicing
+  applier instead of a partner-specific action path.
 
 Remaining cleanup:
 
-- Partner equity still uses a single first-enabled policy because the engine is
-  not yet policy-runtime shaped. Do not add more singleton validation as the
-  main fix; migrate partner equity to instructions plus per-partner ledgers.
-- Ordinary owner mortgage payments now emit `PayMortgageAction` through the
-  policy-runtime mortgage applier. Partner-equity still has its own legacy
-  mortgage action path and should be folded into the same liability-servicing
-  ledger during the partner-contract migration.
 - Split `TransferPartnerContributionAction` into actual cash movement and
   applied-to-house-cost accounting. The model now records unallocated excess,
   but a ledger needs to say where that excess lives.
@@ -750,15 +745,38 @@ results now expose the first ledger-shaped reconciliation metrics:
 `partner_equity_ledger_usd`, `owner_equity_ledger_usd`,
 `partner_house_costs_usd`, and `partner_house_cost_share`.
 
+**DONE (third slice)**: Partner policies now run through actor policy
+programs instead of `_enabled_policy_of()` singleton lookup. Multiple
+partner-equity policies execute in actor order, each records its own transfer
+and equity accrual actions, and scenario-level partner arrays aggregate the
+agreements. Mortgage payment actions now come from the shared mortgage
+servicing applier even in partner-equity scenarios.
+
+**DONE (fourth slice)**: Runtime ownership output now separates realized
+transaction ledger entries from balance snapshots. Principal credits remain
+ledger entries; cumulative equity ledgers and owner/partner home-equity claims
+are balance snapshots.
+
+**DONE (legacy cleanup)**: Deleted the old `ownership.py` / `real_estate.py`
+side path and its tests. The current scenario-set simulator is the only
+partner-equity path under `augur/core`.
+
 Refactor partner equity as a policy/contract rule:
 
 - Unallocated contribution excess is recorded as cash, escrow, refund, or an
   explicit liability according to the modeled agreement.
+- Reconsider whether to reintroduce per-component partner contribution
+  reporting for interest, tax, insurance, HOA, and maintenance. The deleted
+  side path reported those slices; the current core exposes total house costs,
+  contribution used, house-cost share, and principal credit.
+- Reimplement partner sale-claim allocation against actual net sale proceeds
+  after transaction costs, debt payoff, and taxes if agreements should settle
+  from sale proceeds rather than mark-to-market home equity.
 
 Remaining acceptance: persist actor-keyed ledger entries into result detail
 instead of exposing only scenario-level arrays; partner-equity outputs should
 be keyed by partner actor or derivable from those ledger entries; multiple
-partner agreements are no longer silently collapsed.
+partner agreements are no longer silently collapsed in reporting.
 
 ### Step 7: Make Arrays Reconcile to Ledger
 
@@ -774,9 +792,10 @@ Once the spirals validate the surface:
 1. Split `schemas.py` into focused modules:
    `http_types.py`, `scenario_types.py`, `simulation_types.py`, and model-side
    evidence/source-data modules.
-2. Consolidate legacy + vectorized paths. Wrap `simulate_arrangement()` over a
-   one-rollout vectorized run if callers still need the old API, or delete it
-   once all callers move.
+2. Consolidate legacy + vectorized paths. The dedicated ownership/real-estate
+   side path is gone; remaining cleanup should focus on deleting or wrapping
+   `simulate_arrangement()` and `simulate_property_vectorized()` once all
+   callers move to `simulate_set()`.
 3. Move `ManifoldMarketSnapshot` and related source fetch shapes to the
    model/evidence layer, then have fitting code consume them to produce
    calibrated priors or provider inputs.

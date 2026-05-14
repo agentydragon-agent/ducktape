@@ -715,10 +715,10 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
     mortgage_actions = [action for action in result.actions if isinstance(action, PayMortgageAction)]
     equity_actions = [action for action in result.actions if isinstance(action, AccruePartnerEquityAction)]
     assert len(payment_actions) == 4
-    assert len(mortgage_actions) == 4
+    assert len(mortgage_actions) == 8
     assert len(equity_actions) == 4
     assert {action.month_index for action in payment_actions} == {1, 2}
-    assert {action.month_index for action in mortgage_actions} == {1, 2}
+    assert {action.month_index for action in mortgage_actions} == {1, 2, 3, 4}
     assert {action.month_index for action in equity_actions} == {1, 2}
     for payment in payment_actions:
         assert payment.actor_id == "occupant"
@@ -728,7 +728,7 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
         assert payment.applied_to_house_costs_usd > 0
     for mortgage in mortgage_actions:
         assert mortgage.actor_id == "owner"
-        assert mortgage.policy_id == "partner_equity"
+        assert mortgage.policy_id == "mortgage_servicing"
         assert mortgage.mortgage_payment_usd > 0
         assert mortgage.mortgage_interest_usd == 0
         assert mortgage.mortgage_principal_usd > 0
@@ -742,6 +742,73 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
         assert equity.cash_transfer_used_for_house_costs_usd > equity.principal_credit_usd
         assert equity.principal_credit_usd == equity.mortgage_principal_usd
         assert equity.ownership_pct_after > 0
+
+
+def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "two_occupants",
+                cash_usd=40_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                actors=[
+                    {"actor_id": "owner", "label": "Owner", "role": "primary_owner"},
+                    {"actor_id": "partner_a", "label": "Partner A", "role": "equity_building_occupant"},
+                    {"actor_id": "partner_b", "label": "Partner B", "role": "equity_building_occupant"},
+                ],
+                property_selection={
+                    "property_id": "vallejo_calhoun",
+                    "location_id": "vallejo_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "fixed_30", "down_payment_pct": 20, "mortgage_rate_pct": 0},
+                property_assumptions={"insurance_annual_usd": 0, "maintenance_pct": 0},
+                policies=[
+                    {
+                        "policy_id": "partner_b_equity",
+                        "policy_type": "partner_equity_accrual",
+                        "actor_id": "partner_b",
+                        "base_monthly_payment_usd": 50,
+                        "occupied_months": 2,
+                        "grow_with_inflation": False,
+                    },
+                    {
+                        "policy_id": "partner_a_equity",
+                        "policy_type": "partner_equity_accrual",
+                        "actor_id": "partner_a",
+                        "base_monthly_payment_usd": 50,
+                        "occupied_months": 2,
+                        "grow_with_inflation": False,
+                    },
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(
+        scenario_set.scenarios[0],
+        _bundle(
+            rollout_count=1,
+            horizon_months=2,
+            inflation_path=(1.0, 1.0, 1.0),
+            sp500_path=(1.0, 1.0, 1.0),
+            private_equity_path=(1.0, 1.0, 1.0),
+            home_path=(1.0, 1.0, 1.0),
+            rent_path=(1.0, 1.0, 1.0),
+        ),
+    )
+
+    np.testing.assert_allclose(result.partner_contribution_usd[:, 1:], 100)
+    assert np.all(result.partner_principal_credit_usd[:, 1:] > 0)
+    assert np.all(result.partner_equity_ledger_usd[:, 2] > result.partner_equity_ledger_usd[:, 1])
+    transfers = [action for action in result.actions if isinstance(action, TransferPartnerContributionAction)]
+    assert [(action.month_index, action.actor_id, action.amount_usd) for action in transfers] == [
+        (1, "partner_a", 50),
+        (1, "partner_b", 50),
+        (2, "partner_a", 50),
+        (2, "partner_b", 50),
+    ]
 
 
 def test_rental_income_and_carrying_costs_feed_cash_flow() -> None:

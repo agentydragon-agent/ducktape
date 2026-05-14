@@ -265,7 +265,6 @@
       "EventType.property_sale",
       "ReportMetric.actor_equity"
     ],
-    "live_source_refs": ["x/augur/core/ownership.py"],
     "historical_source_refs": [
       "d0a581643750b47e3537fe8128c03e61ff808bcd:x/augur/legacy/vallejo/PLAN.md",
       "d0a581643750b47e3537fe8128c03e61ff808bcd:x/augur/legacy/vallejo/sections/WealthDistribution.jsx"

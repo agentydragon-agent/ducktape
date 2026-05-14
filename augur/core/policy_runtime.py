@@ -111,6 +111,16 @@ class LedgerEntryBatch:
 
 
 @dataclass(frozen=True)
+class BalanceSnapshotBatch:
+    actor_id: str
+    policy_id: str | None
+    domain: str
+    amount_usd: np.ndarray
+    category: str
+    counterparty_actor_id: str | None = None
+
+
+@dataclass(frozen=True)
 class DebitAccountApplication:
     current_cash_usd: np.ndarray
     debit_usd: np.ndarray
@@ -172,6 +182,7 @@ class PartnerOwnershipAccrualApplication:
     home_equity_claim_usd: np.ndarray
     owner_home_equity_claim_usd: np.ndarray
     ledger_entries: tuple[LedgerEntryBatch, ...]
+    balance_snapshots: tuple[BalanceSnapshotBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -331,10 +342,15 @@ def apply_partner_ownership_accrual(
     partner_principal_credit_usd: np.ndarray,
     month_index: np.ndarray,
     freeze_after_month: int | None,
+    owner_equity_ledger_usd: np.ndarray | None = None,
+    total_partner_equity_ledger_usd: np.ndarray | None = None,
 ) -> PartnerOwnershipAccrualApplication:
     partner_equity_ledger_usd = np.cumsum(partner_principal_credit_usd, axis=1)
-    owner_equity_ledger_usd = float(owner_initial_equity_usd) + np.cumsum(owner_principal_usd, axis=1)
-    total_equity_ledger_usd = partner_equity_ledger_usd + owner_equity_ledger_usd
+    if owner_equity_ledger_usd is None:
+        owner_equity_ledger_usd = float(owner_initial_equity_usd) + np.cumsum(owner_principal_usd, axis=1)
+    if total_partner_equity_ledger_usd is None:
+        total_partner_equity_ledger_usd = partner_equity_ledger_usd
+    total_equity_ledger_usd = total_partner_equity_ledger_usd + owner_equity_ledger_usd
     live_ownership_pct = np.divide(
         partner_equity_ledger_usd,
         total_equity_ledger_usd,
@@ -361,7 +377,9 @@ def apply_partner_ownership_accrual(
             category="owner_principal_credit",
             counterparty_actor_id=transfer.actor_id,
         ),
-        LedgerEntryBatch(
+    )
+    balance_snapshots = (
+        BalanceSnapshotBatch(
             actor_id=transfer.actor_id,
             policy_id=transfer.policy_id,
             domain="ownership",
@@ -369,7 +387,7 @@ def apply_partner_ownership_accrual(
             category="partner_equity_ledger",
             counterparty_actor_id=transfer.recipient_actor_id,
         ),
-        LedgerEntryBatch(
+        BalanceSnapshotBatch(
             actor_id=transfer.recipient_actor_id,
             policy_id=transfer.policy_id,
             domain="ownership",
@@ -377,7 +395,7 @@ def apply_partner_ownership_accrual(
             category="owner_equity_ledger",
             counterparty_actor_id=transfer.actor_id,
         ),
-        LedgerEntryBatch(
+        BalanceSnapshotBatch(
             actor_id=transfer.actor_id,
             policy_id=transfer.policy_id,
             domain="ownership",
@@ -385,7 +403,7 @@ def apply_partner_ownership_accrual(
             category="partner_home_equity_claim",
             counterparty_actor_id=transfer.recipient_actor_id,
         ),
-        LedgerEntryBatch(
+        BalanceSnapshotBatch(
             actor_id=transfer.recipient_actor_id,
             policy_id=transfer.policy_id,
             domain="ownership",
@@ -407,6 +425,7 @@ def apply_partner_ownership_accrual(
         home_equity_claim_usd=home_equity_claim_usd,
         owner_home_equity_claim_usd=owner_home_equity_claim_usd,
         ledger_entries=ledger_entries,
+        balance_snapshots=balance_snapshots,
     )
 
 

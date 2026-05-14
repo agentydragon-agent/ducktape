@@ -205,11 +205,19 @@ def test_partner_ownership_accrual_applies_freeze_and_records_ledgers() -> None:
     assert ledger_shape == [
         ("beta", "ownership", "partner_principal_credit", "alpha"),
         ("alpha", "ownership", "owner_principal_credit", "beta"),
+    ]
+    snapshot_shape = [
+        (snapshot.actor_id, snapshot.domain, snapshot.category, snapshot.counterparty_actor_id)
+        for snapshot in result.balance_snapshots
+    ]
+    assert snapshot_shape == [
         ("beta", "ownership", "partner_equity_ledger", "alpha"),
         ("alpha", "ownership", "owner_equity_ledger", "beta"),
         ("beta", "ownership", "partner_home_equity_claim", "alpha"),
         ("alpha", "ownership", "owner_home_equity_claim", "beta"),
     ]
+    np.testing.assert_allclose(result.balance_snapshots[0].amount_usd, expected_partner_ledger)
+    np.testing.assert_allclose(result.balance_snapshots[1].amount_usd, expected_owner_ledger)
 
 
 def test_property_operating_cash_flow_application_records_cash_ledger() -> None:
