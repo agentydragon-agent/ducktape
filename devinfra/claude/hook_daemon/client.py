@@ -100,8 +100,8 @@ def send_shim_exec(report: ShimExecRequest, paths: SessionPaths) -> ShimBlocked 
             return None
         result: ShimBlocked | ShimExecve = _SHIM_RESPONSE_ADAPTER.validate_json(r.content)
         return result
-    except (httpx.ConnectError, httpx.TimeoutException, OSError):
-        logger.exception("shim-exec RPC failed (daemon unreachable)")
+    except (httpx.ConnectError, httpx.TimeoutException, OSError) as e:
+        logger.warning("shim-exec RPC failed: %s [%s]", e, paths.hook_daemon_sock)
         return None
     finally:
         conn.close()
