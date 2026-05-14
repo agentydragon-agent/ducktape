@@ -119,6 +119,13 @@ class TaxRegime(StrEnum):
     PRIMARY_RESIDENCE_EXCLUSION = "primary_residence_exclusion"
 
 
+class TaxFilingStatus(StrEnum):
+    SINGLE = "single"
+    MARRIED_FILING_JOINTLY = "married_filing_jointly"
+    MARRIED_FILING_SEPARATELY = "married_filing_separately"
+    HEAD_OF_HOUSEHOLD = "head_of_household"
+
+
 class FinancingMode(StrEnum):
     CASH = "cash"
     FIXED_30 = "fixed_30"
@@ -335,8 +342,10 @@ class _SimulationActionBase(ApiModel):
 class SellSp500Action(_SimulationActionBase):
     action_type: Literal[ActionType.SELL_SP500] = ActionType.SELL_SP500
     amount_usd: float
+    after_tax_proceeds_usd: float
     basis_usd: float
     gain_usd: float
+    tax_usd: float
     shortfall_usd: float
 
 
@@ -441,6 +450,10 @@ class ReportSpec(ApiModel):
 
 
 class TaxProfile(ApiModel):
+    filing_status: TaxFilingStatus = TaxFilingStatus.SINGLE
+    annual_ordinary_income_usd: NonNegativeFloat = 0
+    federal_standard_deduction_usd: NonNegativeFloat | None = None
+    california_standard_deduction_usd: NonNegativeFloat | None = None
     marginal_tax_rate: Percentage = 40
     cap_gains_rate: Percentage = 30
     cap_gains_exclusion_usd: NonNegativeFloat = 250_000

@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 
+from augur.core.annual_tax import annual_sale_tax_allocation
 from augur.core.local_regulation import LocalRegulation, LocationId, local_regulation_for_location
 from augur.core.market_bundle import (
     MarketBundle,
@@ -87,6 +88,7 @@ class ScenarioRunArrays:
     generic_sp500_sale_usd: np.ndarray
     generic_sp500_sale_basis_usd: np.ndarray
     generic_sp500_sale_gain_usd: np.ndarray
+    generic_sp500_sale_tax_usd: np.ndarray
     checking_floor_action_usd: np.ndarray
     checking_floor_shortfall_usd: np.ndarray
     private_equity_value_usd: np.ndarray
@@ -94,6 +96,9 @@ class ScenarioRunArrays:
     private_equity_sale_usd: np.ndarray
     private_equity_sale_basis_usd: np.ndarray
     private_equity_sale_tax_usd: np.ndarray
+    federal_income_tax_usd: np.ndarray
+    california_income_tax_usd: np.ndarray
+    total_income_tax_usd: np.ndarray
     private_equity_liquidity_event: np.ndarray
     property_value_usd: np.ndarray
     mortgage_balance_usd: np.ndarray
@@ -172,6 +177,7 @@ class ScenarioRunArrays:
                 "generic_sp500_sale_usd": _flat(self.generic_sp500_sale_usd),
                 "generic_sp500_sale_basis_usd": _flat(self.generic_sp500_sale_basis_usd),
                 "generic_sp500_sale_gain_usd": _flat(self.generic_sp500_sale_gain_usd),
+                "generic_sp500_sale_tax_usd": _flat(self.generic_sp500_sale_tax_usd),
                 "checking_floor_action_usd": _flat(self.checking_floor_action_usd),
                 "checking_floor_shortfall_usd": _flat(self.checking_floor_shortfall_usd),
                 "private_equity_value_usd": _flat(self.private_equity_value_usd),
@@ -181,6 +187,9 @@ class ScenarioRunArrays:
                 "private_equity_sale_usd": _flat(self.private_equity_sale_usd),
                 "private_equity_sale_basis_usd": _flat(self.private_equity_sale_basis_usd),
                 "private_equity_sale_tax_usd": _flat(self.private_equity_sale_tax_usd),
+                "federal_income_tax_usd": _flat(self.federal_income_tax_usd),
+                "california_income_tax_usd": _flat(self.california_income_tax_usd),
+                "total_income_tax_usd": _flat(self.total_income_tax_usd),
                 "private_equity_liquidity_event": _flat_bool(self.private_equity_liquidity_event),
                 "property_value_usd": _flat(self.property_value_usd),
                 "mortgage_balance_usd": _flat(self.mortgage_balance_usd),
@@ -248,6 +257,7 @@ class ScenarioRunArrays:
                 "total_generic_sp500_sale_usd": np.sum(self.generic_sp500_sale_usd, axis=1).tolist(),
                 "total_generic_sp500_sale_basis_usd": np.sum(self.generic_sp500_sale_basis_usd, axis=1).tolist(),
                 "total_generic_sp500_sale_gain_usd": np.sum(self.generic_sp500_sale_gain_usd, axis=1).tolist(),
+                "total_generic_sp500_sale_tax_usd": np.sum(self.generic_sp500_sale_tax_usd, axis=1).tolist(),
                 "final_checking_floor_shortfall_usd": self.checking_floor_shortfall_usd[:, final].tolist(),
                 "final_private_equity_value_usd": self.private_equity_value_usd[:, final].tolist(),
                 "final_private_equity_liquidity_available_value_usd": (
@@ -256,6 +266,9 @@ class ScenarioRunArrays:
                 "total_private_equity_sale_usd": np.sum(self.private_equity_sale_usd, axis=1).tolist(),
                 "total_private_equity_sale_basis_usd": np.sum(self.private_equity_sale_basis_usd, axis=1).tolist(),
                 "total_private_equity_sale_tax_usd": np.sum(self.private_equity_sale_tax_usd, axis=1).tolist(),
+                "total_federal_income_tax_usd": np.sum(self.federal_income_tax_usd, axis=1).tolist(),
+                "total_california_income_tax_usd": np.sum(self.california_income_tax_usd, axis=1).tolist(),
+                "total_income_tax_usd": np.sum(self.total_income_tax_usd, axis=1).tolist(),
                 "final_property_value_usd": self.property_value_usd[:, final].tolist(),
                 "final_mortgage_balance_usd": self.mortgage_balance_usd[:, final].tolist(),
                 "final_home_equity_usd": self.home_equity_usd[:, final].tolist(),
@@ -384,6 +397,24 @@ class PartnerEquityArrays:
     agreements: tuple[PartnerEquityAgreementArrays, ...]
 
 
+@dataclass(frozen=True)
+class Sp500SaleActionRecord:
+    month_position: int
+    month_index: int
+    policy: Policy
+    amount_usd: np.ndarray
+    basis_usd: np.ndarray
+    shortfall_usd: np.ndarray
+
+
+@dataclass(frozen=True)
+class PrivateEquitySaleActionRecord:
+    month_position: int
+    month_index: int
+    instruction: PrivateEquitySaleInstructionBatch
+    sale_application: PrivateEquitySaleApplication
+
+
 def run_scenario_set_vectorized(
     scenario_set: ScenarioSet,
     *,
@@ -482,12 +513,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     generic_sp500_sale = np.zeros((rollout_count, month_count), dtype="float64")
     generic_sp500_sale_basis = np.zeros((rollout_count, month_count), dtype="float64")
     generic_sp500_sale_gain = np.zeros((rollout_count, month_count), dtype="float64")
+    generic_sp500_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     checking_floor_action = np.zeros((rollout_count, month_count), dtype="float64")
     checking_floor_shortfall = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_value = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_liquidity_available_value = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_basis = np.zeros((rollout_count, month_count), dtype="float64")
+    private_equity_sale_taxable_gain = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     cash = np.zeros((rollout_count, month_count), dtype="float64")
     monthly_spend_arr = np.zeros((rollout_count, month_count), dtype="float64")
@@ -512,7 +545,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         - disposition.purchase_closing_cost_usd[:, 0]
     )
     actions: list[SimulationAction] = []
-    _record_property_sale_actions(actions, scenario=scenario, disposition=disposition)
+    sp500_sale_action_records: list[Sp500SaleActionRecord] = []
+    private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
 
     for month in range(month_count):
         current_cash = current_cash + disposition.net_property_sale_cash_flow_usd[:, month]
@@ -550,6 +584,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         market_liquidity_available_value = market_opportunity.liquidity_available_value_usd
         private_equity_sale_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_basis_month = np.zeros(rollout_count, dtype="float64")
+        private_equity_sale_taxable_gain_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_tax_month = np.zeros(rollout_count, dtype="float64")
         for private_equity_sale_policy in private_equity_sale_policies:
             current_private_equity_value = (
@@ -574,7 +609,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 remaining_basis_usd=remaining_private_equity_basis,
                 remaining_units=remaining_private_equity_units,
                 remaining_fraction=remaining_private_equity_fraction,
-                cap_gains_rate_pct=float(scenario.tax_profile.cap_gains_rate),
+                cap_gains_rate_pct=0.0,
             )
             if sale_instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK:
                 sp500_multiplier = market_bundle.generic_sp500_multipliers[:, month]
@@ -587,17 +622,22 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 remaining_sp500_basis = remaining_sp500_basis + sale_application.after_tax_proceeds_usd
             else:
                 current_cash = current_cash + sale_application.after_tax_proceeds_usd
-            _record_private_equity_sale_actions(
-                actions,
-                month_index=int(month_index[month]),
-                instruction=sale_instruction,
-                sale_application=sale_application,
+            private_equity_sale_action_records.append(
+                PrivateEquitySaleActionRecord(
+                    month_position=month,
+                    month_index=int(month_index[month]),
+                    instruction=sale_instruction,
+                    sale_application=sale_application,
+                )
             )
             remaining_private_equity_fraction = sale_application.remaining_fraction
             remaining_private_equity_basis = sale_application.remaining_basis_usd
             remaining_private_equity_units = sale_application.remaining_units
             private_equity_sale_month = private_equity_sale_month + sale_application.sale_usd
             private_equity_sale_basis_month = private_equity_sale_basis_month + sale_application.basis_usd
+            private_equity_sale_taxable_gain_month = (
+                private_equity_sale_taxable_gain_month + sale_application.taxable_gain_usd
+            )
             private_equity_sale_tax_month = private_equity_sale_tax_month + sale_application.estimated_tax_usd
 
         sp500_multiplier = market_bundle.generic_sp500_multipliers[:, month]
@@ -621,13 +661,15 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             sp500_sale = sp500_sale + sp500_sale_application.sale_usd
             sp500_basis = sp500_basis + sp500_sale_application.basis_usd
             sp500_shortfall = np.maximum(sp500_shortfall, sp500_sale_application.shortfall_usd)
-            _record_sp500_sale_actions(
-                actions,
-                month_index=int(month_index[month]),
-                policy=checking_policy,
-                amount_usd=sp500_sale_application.sale_usd,
-                basis_usd=sp500_sale_application.basis_usd,
-                shortfall_usd=sp500_sale_application.shortfall_usd,
+            sp500_sale_action_records.append(
+                Sp500SaleActionRecord(
+                    month_position=month,
+                    month_index=int(month_index[month]),
+                    policy=checking_policy,
+                    amount_usd=sp500_sale_application.sale_usd,
+                    basis_usd=sp500_sale_application.basis_usd,
+                    shortfall_usd=sp500_sale_application.shortfall_usd,
+                )
             )
         sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
 
@@ -640,11 +682,39 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         checking_floor_shortfall[:, month] = sp500_shortfall
         private_equity_sale[:, month] = private_equity_sale_month
         private_equity_sale_basis[:, month] = private_equity_sale_basis_month
+        private_equity_sale_taxable_gain[:, month] = private_equity_sale_taxable_gain_month
         private_equity_sale_tax[:, month] = private_equity_sale_tax_month
         private_equity_liquidity_available_value[:, month] = np.maximum(
             0.0, market_liquidity_available_value - private_equity_sale_month
         )
         private_equity_value[:, month] = private_equity_value_before_sale - private_equity_sale_month
+
+    annual_tax = annual_sale_tax_allocation(
+        scenario.tax_profile,
+        month_index=month_index,
+        property_depreciation_recapture_usd=disposition.depreciation_recapture_usd,
+        taxable_property_capital_gain_usd=disposition.taxable_property_capital_gain_usd,
+        generic_sp500_sale_gain_usd=generic_sp500_sale_gain,
+        private_equity_sale_taxable_gain_usd=private_equity_sale_taxable_gain,
+    )
+    generic_sp500_sale_tax = annual_tax.generic_sp500_sale_tax_usd
+    adjusted_private_equity_sale_tax = annual_tax.private_equity_sale_tax_usd
+    property_sale_tax = annual_tax.property_sale_tax_usd
+    property_sale_net_proceeds = (
+        disposition.property_sale_gross_usd
+        - disposition.sale_closing_cost_usd
+        - disposition.property_sale_debt_payoff_usd
+        - property_sale_tax
+    )
+    net_property_sale_cash_flow = property_sale_net_proceeds
+    tax_cash_adjustment = np.cumsum(
+        (disposition.property_sale_tax_usd - property_sale_tax)
+        + (private_equity_sale_tax - adjusted_private_equity_sale_tax)
+        - generic_sp500_sale_tax,
+        axis=1,
+    )
+    cash = cash + tax_cash_adjustment
+    private_equity_sale_tax = adjusted_private_equity_sale_tax
 
     partner_present = np.full((rollout_count, month_count), _has_partner(scenario), dtype=np.bool_)
     partner_home_equity_claim = partner_equity.home_equity_claim_usd
@@ -657,6 +727,47 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         owner_home_equity_claim_for_net_worth = owner_home_equity_claim * unsold_mask
     liquid_net_worth = cash + generic_sp500_value + private_equity_liquidity_available_value
     net_worth = cash + generic_sp500_value + private_equity_value + owner_home_equity_claim_for_net_worth
+    _record_property_sale_actions(
+        actions,
+        scenario=scenario,
+        disposition=disposition,
+        tax_usd=property_sale_tax,
+        net_proceeds_usd=property_sale_net_proceeds,
+    )
+    for sp500_sale_action_record in sp500_sale_action_records:
+        source_tax = _tax_share_for_sale_action(
+            source_tax_usd=generic_sp500_sale_tax[:, sp500_sale_action_record.month_position],
+            action_taxable_income_usd=np.maximum(
+                0.0, sp500_sale_action_record.amount_usd - sp500_sale_action_record.basis_usd
+            ),
+            source_taxable_income_usd=np.maximum(
+                0.0, generic_sp500_sale_gain[:, sp500_sale_action_record.month_position]
+            ),
+        )
+        _record_sp500_sale_actions(
+            actions,
+            month_index=sp500_sale_action_record.month_index,
+            policy=sp500_sale_action_record.policy,
+            amount_usd=sp500_sale_action_record.amount_usd,
+            basis_usd=sp500_sale_action_record.basis_usd,
+            tax_usd=source_tax,
+            shortfall_usd=sp500_sale_action_record.shortfall_usd,
+        )
+    for private_equity_sale_action_record in private_equity_sale_action_records:
+        source_tax = _tax_share_for_sale_action(
+            source_tax_usd=private_equity_sale_tax[:, private_equity_sale_action_record.month_position],
+            action_taxable_income_usd=private_equity_sale_action_record.sale_application.taxable_gain_usd,
+            source_taxable_income_usd=private_equity_sale_taxable_gain[
+                :, private_equity_sale_action_record.month_position
+            ],
+        )
+        _record_private_equity_sale_actions(
+            actions,
+            month_index=private_equity_sale_action_record.month_index,
+            instruction=private_equity_sale_action_record.instruction,
+            sale_application=private_equity_sale_action_record.sale_application,
+            estimated_tax_usd=source_tax,
+        )
     _record_partner_agreement_actions(actions, month_index=month_index, partner_equity=partner_equity)
     mortgage_application = apply_mortgage_payment(
         actor_id=_primary_owner_actor_id(scenario),
@@ -676,6 +787,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         generic_sp500_sale_usd=generic_sp500_sale,
         generic_sp500_sale_basis_usd=generic_sp500_sale_basis,
         generic_sp500_sale_gain_usd=generic_sp500_sale_gain,
+        generic_sp500_sale_tax_usd=generic_sp500_sale_tax,
         checking_floor_action_usd=checking_floor_action,
         checking_floor_shortfall_usd=checking_floor_shortfall,
         private_equity_value_usd=private_equity_value,
@@ -683,6 +795,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         private_equity_sale_usd=private_equity_sale,
         private_equity_sale_basis_usd=private_equity_sale_basis,
         private_equity_sale_tax_usd=private_equity_sale_tax,
+        federal_income_tax_usd=annual_tax.federal_income_tax_usd,
+        california_income_tax_usd=annual_tax.california_income_tax_usd,
+        total_income_tax_usd=annual_tax.total_income_tax_usd,
         private_equity_liquidity_event=private_equity_liquidity_event,
         property_value_usd=property_value,
         mortgage_balance_usd=mortgage_balance,
@@ -705,8 +820,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         property_depreciation_usd=disposition.property_depreciation_usd,
         cumulative_property_depreciation_usd=disposition.cumulative_property_depreciation_usd,
         property_sale_gross_usd=disposition.property_sale_gross_usd,
-        property_sale_net_proceeds_usd=disposition.property_sale_net_proceeds_usd,
-        property_sale_tax_usd=disposition.property_sale_tax_usd,
+        property_sale_net_proceeds_usd=property_sale_net_proceeds,
+        property_sale_tax_usd=property_sale_tax,
         property_sale_debt_payoff_usd=disposition.property_sale_debt_payoff_usd,
         property_sale_adjusted_basis_usd=disposition.property_sale_adjusted_basis_usd,
         realized_property_gain_usd=disposition.realized_property_gain_usd,
@@ -715,7 +830,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         taxable_property_capital_gain_usd=disposition.taxable_property_capital_gain_usd,
         taxable_property_gain_usd=disposition.taxable_property_gain_usd,
         depreciation_recapture_usd=disposition.depreciation_recapture_usd,
-        net_property_sale_cash_flow_usd=disposition.net_property_sale_cash_flow_usd,
+        net_property_sale_cash_flow_usd=net_property_sale_cash_flow,
         home_equity_usd=home_equity,
         owner_home_equity_claim_usd=owner_home_equity_claim,
         partner_home_equity_claim_usd=partner_home_equity_claim,
@@ -738,7 +853,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
 
 
 def _record_property_sale_actions(
-    actions: list[SimulationAction], *, scenario: Scenario, disposition: PropertyDispositionArrays
+    actions: list[SimulationAction],
+    *,
+    scenario: Scenario,
+    disposition: PropertyDispositionArrays,
+    tax_usd: np.ndarray | None = None,
+    net_proceeds_usd: np.ndarray | None = None,
 ) -> None:
     if disposition.sale_event is None or disposition.sale_month is None:
         return
@@ -748,12 +868,14 @@ def _record_property_sale_actions(
         return
     month = disposition.sale_month
     settlement = disposition.sale_settlement
+    sale_tax = tax_usd if tax_usd is not None else settlement.tax_usd
+    net_proceeds = net_proceeds_usd if net_proceeds_usd is not None else settlement.net_proceeds_usd
     active = (
         (settlement.gross_usd[:, month] != 0)
         | (settlement.selling_cost_usd[:, month] != 0)
         | (settlement.debt_payoff_usd[:, month] != 0)
-        | (settlement.tax_usd[:, month] != 0)
-        | (settlement.net_proceeds_usd[:, month] != 0)
+        | (sale_tax[:, month] != 0)
+        | (net_proceeds[:, month] != 0)
     )
     actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
     actions.extend(
@@ -774,8 +896,8 @@ def _record_property_sale_actions(
             capital_gain_exclusion_usd=float(settlement.property_sale_capital_gain_exclusion_usd[rollout_index, month]),
             taxable_capital_gain_usd=float(settlement.taxable_property_capital_gain_usd[rollout_index, month]),
             taxable_gain_usd=float(settlement.taxable_property_gain_usd[rollout_index, month]),
-            tax_usd=float(settlement.tax_usd[rollout_index, month]),
-            net_proceeds_usd=float(settlement.net_proceeds_usd[rollout_index, month]),
+            tax_usd=float(sale_tax[rollout_index, month]),
+            net_proceeds_usd=float(net_proceeds[rollout_index, month]),
         )
         for rollout_index in np.nonzero(active)[0].tolist()
     )
@@ -788,11 +910,13 @@ def _record_sp500_sale_actions(
     policy: Policy,
     amount_usd: np.ndarray,
     basis_usd: np.ndarray,
+    tax_usd: np.ndarray,
     shortfall_usd: np.ndarray,
 ) -> None:
     for rollout_index in np.nonzero((amount_usd > 0) | (shortfall_usd > 0))[0].tolist():
         amount = float(amount_usd[rollout_index])
         basis = float(basis_usd[rollout_index])
+        tax = float(tax_usd[rollout_index])
         actions.append(
             SellSp500Action(
                 rollout_index=rollout_index,
@@ -800,8 +924,10 @@ def _record_sp500_sale_actions(
                 actor_id=policy.actor_id,
                 policy_id=policy.policy_id,
                 amount_usd=amount,
+                after_tax_proceeds_usd=max(0.0, amount - tax),
                 basis_usd=basis,
                 gain_usd=amount - basis,
+                tax_usd=tax,
                 shortfall_usd=float(shortfall_usd[rollout_index]),
             )
         )
@@ -813,7 +939,9 @@ def _record_private_equity_sale_actions(
     month_index: int,
     instruction: PrivateEquitySaleInstructionBatch,
     sale_application: PrivateEquitySaleApplication,
+    estimated_tax_usd: np.ndarray | None = None,
 ) -> None:
+    sale_tax = estimated_tax_usd if estimated_tax_usd is not None else sale_application.estimated_tax_usd
     actions.extend(
         SellPrivateEquityAction(
             rollout_index=rollout_index,
@@ -823,16 +951,29 @@ def _record_private_equity_sale_actions(
             event_id=instruction.request_event_id,
             event_type=instruction.request_event_type,
             amount_usd=float(sale_application.sale_usd[rollout_index]),
-            after_tax_proceeds_usd=float(sale_application.after_tax_proceeds_usd[rollout_index]),
+            after_tax_proceeds_usd=float(np.maximum(0.0, sale_application.sale_usd - sale_tax)[rollout_index]),
             basis_usd=float(sale_application.basis_usd[rollout_index]),
             taxable_gain_usd=float(sale_application.taxable_gain_usd[rollout_index]),
-            estimated_tax_usd=float(sale_application.estimated_tax_usd[rollout_index]),
+            estimated_tax_usd=float(sale_tax[rollout_index]),
             units_sold=float(sale_application.sold_units[rollout_index]),
             sold_fraction=float(sale_application.sold_fraction[rollout_index]),
             proceeds_destination=instruction.proceeds_destination,
         )
         for rollout_index in np.nonzero(sale_application.sale_usd > 0)[0].tolist()
     )
+
+
+def _tax_share_for_sale_action(
+    *, source_tax_usd: np.ndarray, action_taxable_income_usd: np.ndarray, source_taxable_income_usd: np.ndarray
+) -> np.ndarray:
+    tax_share = np.zeros_like(source_tax_usd, dtype="float64")
+    np.divide(
+        source_tax_usd * action_taxable_income_usd,
+        source_taxable_income_usd,
+        out=tax_share,
+        where=source_taxable_income_usd > 0,
+    )
+    return tax_share
 
 
 def _record_monthly_spend_actions(

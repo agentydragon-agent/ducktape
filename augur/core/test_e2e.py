@@ -473,7 +473,11 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     sale_closing_cost = sale_value * 0.065
     realized_gain = sale_value - sale_closing_cost - 500_000
     taxable_gain = realized_gain - 250_000
-    sale_tax = taxable_gain * 0.20
+    federal_taxable_gain = taxable_gain - 16_100
+    federal_sale_tax = (federal_taxable_gain - 49_450) * 0.15
+    california_taxable_gain = taxable_gain - 5_706
+    california_sale_tax = 3_201.97 + (california_taxable_gain - 72_724) * 0.093
+    sale_tax = federal_sale_tax + california_sale_tax
     rollout = result.rollout(0)
     np.testing.assert_allclose(rollout.series("property_sale_gross_usd")[60], sale_value)
     np.testing.assert_allclose(rollout.series("sale_closing_cost_usd")[60], sale_closing_cost)
@@ -483,6 +487,8 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     np.testing.assert_allclose(rollout.series("taxable_property_capital_gain_usd")[60], taxable_gain)
     np.testing.assert_allclose(rollout.series("taxable_property_gain_usd")[60], taxable_gain)
     np.testing.assert_allclose(rollout.series("property_sale_tax_usd")[60], sale_tax)
+    np.testing.assert_allclose(rollout.series("federal_income_tax_usd")[60], federal_sale_tax)
+    np.testing.assert_allclose(rollout.series("california_income_tax_usd")[60], california_sale_tax)
     np.testing.assert_allclose(
         rollout.series("property_sale_net_proceeds_usd")[60], sale_value - sale_closing_cost - sale_tax
     )
@@ -616,13 +622,18 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
     result = _run_scenario(scenario, horizon_months=6)
 
     rollout = result.rollout(0)
-    np.testing.assert_allclose(rollout.series("cash_usd"), [30_000, 25_000, 20_000, 15_000, 10_000, 25_000, 20_000])
+    expected_stock_sale_tax = 42.94
+    np.testing.assert_allclose(
+        rollout.series("cash_usd"),
+        [30_000, 25_000, 20_000, 15_000, 10_000, 25_000 - expected_stock_sale_tax, 20_000 - expected_stock_sale_tax],
+    )
     np.testing.assert_allclose(
         rollout.series("generic_sp500_value_usd"), [50_000, 50_000, 50_000, 50_000, 50_000, 30_000, 30_000]
     )
     np.testing.assert_allclose(rollout.series("generic_sp500_sale_usd"), [0, 0, 0, 0, 0, 20_000, 0])
     np.testing.assert_allclose(rollout.series("generic_sp500_sale_basis_usd")[5], 10_000)
     np.testing.assert_allclose(rollout.series("generic_sp500_sale_gain_usd")[5], 10_000)
+    np.testing.assert_allclose(rollout.series("generic_sp500_sale_tax_usd")[5], expected_stock_sale_tax)
     np.testing.assert_allclose(rollout.series("checking_floor_shortfall_usd"), 0)
 
     actions = result.actions(SellSp500Action)
@@ -630,8 +641,10 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
     assert actions[0].month_index == 5
     assert actions[0].policy_id == "checking_floor"
     assert actions[0].amount_usd == 20_000
+    np.testing.assert_allclose(actions[0].after_tax_proceeds_usd, 20_000 - expected_stock_sale_tax)
     assert actions[0].basis_usd == 10_000
     assert actions[0].gain_usd == 10_000
+    np.testing.assert_allclose(actions[0].tax_usd, expected_stock_sale_tax)
     assert actions[0].shortfall_usd == 0
 
 
@@ -730,8 +743,8 @@ def test_private_equity_sale_request_uses_market_liquidity_opportunity() -> None
     expected_sale = 100_000
     expected_basis = 40_000
     expected_taxable_gain = 60_000
-    expected_tax = 12_000
-    expected_after_tax_proceeds = 88_000
+    expected_tax = 1_792.53
+    expected_after_tax_proceeds = expected_sale - expected_tax
     rollout = result.rollout(0)
     np.testing.assert_allclose(rollout.series("private_equity_value_usd")[11], 200_000)
     np.testing.assert_allclose(rollout.series("private_equity_sale_usd")[12], expected_sale)
@@ -751,8 +764,8 @@ def test_private_equity_sale_request_uses_market_liquidity_opportunity() -> None
     assert actions[0].amount_usd == expected_sale
     assert actions[0].basis_usd == expected_basis
     assert actions[0].taxable_gain_usd == expected_taxable_gain
-    assert actions[0].estimated_tax_usd == expected_tax
-    assert actions[0].after_tax_proceeds_usd == expected_after_tax_proceeds
+    np.testing.assert_allclose(actions[0].estimated_tax_usd, expected_tax)
+    np.testing.assert_allclose(actions[0].after_tax_proceeds_usd, expected_after_tax_proceeds)
     assert actions[0].units_sold == 50
     assert actions[0].sold_fraction == 0.5
     assert actions[0].proceeds_destination is AccountType.CHECKING
@@ -798,15 +811,16 @@ def test_fixed_amount_private_equity_sale_rule_sells_on_market_opportunity() -> 
     rollout = result.rollout(0)
     np.testing.assert_allclose(rollout.series("private_equity_sale_usd")[6], 50_000)
     np.testing.assert_allclose(rollout.series("private_equity_sale_basis_usd")[6], 20_000)
-    np.testing.assert_allclose(rollout.series("private_equity_sale_tax_usd")[6], 6_000)
+    expected_tax = 375.09
+    np.testing.assert_allclose(rollout.series("private_equity_sale_tax_usd")[6], expected_tax)
     np.testing.assert_allclose(rollout.series("private_equity_value_usd")[6], 150_000)
-    np.testing.assert_allclose(rollout.series("cash_usd")[6], 54_000)
+    np.testing.assert_allclose(rollout.series("cash_usd")[6], 60_000 - expected_tax)
     actions = result.actions(SellPrivateEquityAction)
     assert len(actions) == 1
     assert actions[0].event_id is None
     assert actions[0].event_type is None
     assert actions[0].amount_usd == 50_000
-    assert actions[0].after_tax_proceeds_usd == 44_000
+    np.testing.assert_allclose(actions[0].after_tax_proceeds_usd, 50_000 - expected_tax)
 
 
 def test_pydantic_rejects_private_equity_sale_request_without_amount() -> None:

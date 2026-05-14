@@ -491,7 +491,12 @@ def test_rental_depreciation_recaptures_on_sale() -> None:
                 financing={"financing_mode": "cash"},
                 transaction_costs={"closing_cost_buy_pct": 0, "closing_cost_sell_pct": 0},
                 property_assumptions={"depreciable_basis_pct": 100},
-                tax_profile={"marginal_tax_rate": 25, "cap_gains_rate": 15, "cap_gains_exclusion_usd": 250_000},
+                tax_profile={
+                    "annual_ordinary_income_usd": 100_000,
+                    "marginal_tax_rate": 25,
+                    "cap_gains_rate": 15,
+                    "cap_gains_exclusion_usd": 250_000,
+                },
                 rental_plan={
                     "rental_mode": "rent_whole_property",
                     "start_month": 1,
@@ -514,7 +519,7 @@ def test_rental_depreciation_recaptures_on_sale() -> None:
 
     expected_monthly_depreciation = 100_000 / (27.5 * 12)
     expected_cumulative_depreciation = expected_monthly_depreciation * 3
-    expected_recapture_tax = expected_cumulative_depreciation * 0.25
+    expected_recapture_tax = expected_cumulative_depreciation * (0.22 + 0.093)
     np.testing.assert_allclose(result.property_depreciation_usd[:, 1:4], expected_monthly_depreciation)
     np.testing.assert_allclose(result.cumulative_property_depreciation_usd[:, 3], expected_cumulative_depreciation)
     np.testing.assert_allclose(result.realized_property_gain_usd[:, 3], expected_cumulative_depreciation)
@@ -573,9 +578,10 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
     np.testing.assert_allclose(result.generic_sp500_sale_usd[:, 0], 20_000)
     np.testing.assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 10_000)
     np.testing.assert_allclose(result.generic_sp500_sale_gain_usd[:, 0], 10_000)
+    np.testing.assert_allclose(result.generic_sp500_sale_tax_usd[:, 0], 42.94)
     np.testing.assert_allclose(result.checking_floor_action_usd[:, 0], 20_000)
     np.testing.assert_allclose(result.checking_floor_shortfall_usd[:, 0], 0)
-    np.testing.assert_allclose(result.cash_usd[:, 0], 25_000)
+    np.testing.assert_allclose(result.cash_usd[:, 0], 25_000 - 42.94)
     np.testing.assert_allclose(result.generic_sp500_value_usd[:, 0], 30_000)
     np.testing.assert_allclose(result.generic_sp500_sale_usd[:, 1:], 0)
     assert np.all(result.generic_sp500_value_usd[:, 1] > result.generic_sp500_value_usd[:, 0])
@@ -587,8 +593,10 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
         assert action.actor_id == "owner"
         assert action.policy_id == "checking_floor"
         assert action.amount_usd == 20_000
+        np.testing.assert_allclose(action.after_tax_proceeds_usd, 20_000 - 42.94)
         assert action.basis_usd == 10_000
         assert action.gain_usd == 10_000
+        np.testing.assert_allclose(action.tax_usd, 42.94)
         assert action.shortfall_usd == 0
 
 
@@ -1006,8 +1014,9 @@ def test_private_equity_sale_requires_explicit_request_opportunity_and_policy() 
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 2], 0)
     np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 1], 30_000)
     np.testing.assert_allclose(result.private_equity_sale_basis_usd[:, 1], 0)
-    np.testing.assert_allclose(result.private_equity_sale_tax_usd[:, 1], 6_000)
-    np.testing.assert_allclose(result.cash_usd[:, 1], 24_000)
+    expected_tax = 175.09
+    np.testing.assert_allclose(result.private_equity_sale_tax_usd[:, 1], expected_tax)
+    np.testing.assert_allclose(result.cash_usd[:, 1], 30_000 - expected_tax)
     actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
     assert len(actions) == 2
     for action in actions:
@@ -1016,9 +1025,9 @@ def test_private_equity_sale_requires_explicit_request_opportunity_and_policy() 
         assert action.actor_id == "owner"
         assert action.policy_id == "private_equity_sale"
         assert action.amount_usd == 20_000
-        assert action.after_tax_proceeds_usd == 14_000
+        np.testing.assert_allclose(action.after_tax_proceeds_usd, 20_000 - expected_tax)
         assert action.basis_usd == 0
-        assert action.estimated_tax_usd == 6_000
+        np.testing.assert_allclose(action.estimated_tax_usd, expected_tax)
         assert action.units_sold == 40
         assert action.sold_fraction == 0.4
         assert action.proceeds_destination is AccountType.CHECKING

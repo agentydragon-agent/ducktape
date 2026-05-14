@@ -102,6 +102,15 @@ py_library(
 )
 
 py_library(
+    name = "annual_tax_py",
+    srcs = ["annual_tax.py"],
+    deps = [
+        ":scenario_set_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
     name = "policy_runtime_py",
     srcs = ["policy_runtime.py"],
     deps = [
@@ -114,6 +123,7 @@ py_library(
     name = "scenario_engine_py",
     srcs = ["scenario_engine.py"],
     deps = [
+        ":annual_tax_py",
         ":local_regulation_py",
         ":market_bundle_py",
         ":policy_runtime_py",
@@ -300,6 +310,17 @@ py_test(
         ":local_regulation_py",
         ":market_bundle_test_support_py",
         ":property_sale_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "annual_tax_test",
+    srcs = ["annual_tax_test.py"],
+    deps = [
+        ":annual_tax_py",
         ":scenario_set_py",
         "@pypi//numpy",
         "@pypi//pytest_bazel",

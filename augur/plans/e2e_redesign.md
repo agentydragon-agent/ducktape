@@ -782,19 +782,29 @@ basis, realized gain, depreciation recapture, capital gain/exclusion, taxable
 gain, tax, and net proceeds. Public arrays still exist for chart compatibility,
 but the one-rollout detail API can now show a truthful sale settlement object.
 
+**DONE (annual sale-tax slice)**: The scenario engine now computes simulated
+sale taxes with an annual federal + California pass instead of relying on
+point-in-time `cap_gains_rate` shortcuts. The first implementation uses 2026
+federal ordinary brackets, standard deductions, long-term capital-gains
+thresholds, unrecaptured Section 1250 treatment, 2025 California brackets and
+standard deductions, and California Behavioral Health Services Tax over $1M.
+It aggregates property depreciation recapture, taxable property capital gains,
+public-stock sale gains, and private-equity sale gains by tax year, then
+allocates the incremental federal/CA tax back to the sale months and sale
+sources. Monthly and terminal result columns now expose federal, California,
+total income tax, SP500 sale tax, PE sale tax, and property-sale tax.
+
 Refactor partner equity as a policy/contract rule:
 
 - Unallocated contribution excess is recorded as cash, escrow, refund, or an
   explicit liability according to the modeled agreement.
-- Replace point-in-time tax-rate shortcuts with a yearly federal + California
-  tax settlement model. The annual tax pass should aggregate wages/ordinary
-  income, qualified dividends, long/short capital gains, rental income,
-  deductible expenses, depreciation, depreciation recapture, property sale
-  gains, public-stock sale gains/losses, private-equity sale gains/losses,
-  SALT/property-tax treatment, and CA conformity/non-conformity before posting
-  actual tax cash-flow actions. Property, stock, and PE sale taxes should then
-  reconcile to that yearly tax result instead of being computed only from
-  `tax_profile.cap_gains_rate`.
+- Continue the tax settlement model beyond the first sale-tax slice. TODO:
+  aggregate qualified dividends, short-term gains, capital losses, rental
+  income, deductible expenses, passive-loss release, SALT/property-tax
+  treatment, California conformity/non-conformity, and ordinary income
+  schedules beyond a single annual `TaxProfile` input. TODO: make taxes a
+  ledger/liability workflow with estimated-payment timing instead of only
+  allocating the annual incremental tax back to source sale months.
 - Reconsider whether to reintroduce per-component partner contribution
   reporting for interest, tax, insurance, HOA, and maintenance. The deleted
   side path reported those slices; the current core exposes total house costs,
@@ -803,6 +813,14 @@ Refactor partner equity as a policy/contract rule:
   / property sale settlement net proceeds instead of mark-to-market home
   equity. This should allocate from proceeds after transaction costs, debt
   payoff, depreciation recapture tax, and capital-gains tax.
+- Add a serialization/e2e assertion for the `settle_property_sale` action in
+  the public `simulate_set()` response payload, not only the in-memory action
+  model.
+- Refresh `augur/SPEC.md` once the scenario-set simulator's public promises
+  around policies, sale taxes, and one-rollout action detail stabilize.
+- Clean up private-equity event vocabulary. TODO: make liquidity opportunities,
+  IPO/acquisition events, and user sale requests distinct domain concepts with
+  names that do not imply the market opportunity is the agent decision.
 
 Remaining acceptance: persist actor-keyed ledger entries into result detail
 instead of exposing only scenario-level arrays; partner-equity outputs should
