@@ -4,18 +4,21 @@
     "short": null,
     "long": null,
     "lastFetch": null,
-    "error": null
+    "error": null,
+    "extraUsage": null
   },
   "codex": {
     "short": null,
     "long": null,
     "lastFetch": null,
-    "error": null
+    "error": null,
+    "extraUsage": null
   },
   "zai": {
     "short": null,
     "long": null,
     "lastFetch": null,
-    "error": null
+    "error": null,
+    "extraUsage": null
   }
 }

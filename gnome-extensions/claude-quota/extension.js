@@ -144,9 +144,9 @@ function formatDuration(seconds) {
 }
 
 function parseClaudeResetAtMs(timestamp, label) {
-  if (typeof timestamp !== "string") throw new Error(`${label} window missing resets_at`);
+  if (typeof timestamp !== "string") return null;
   const ms = new Date(timestamp).getTime();
-  if (!Number.isFinite(ms)) throw new Error(`${label} window invalid resets_at`);
+  if (!Number.isFinite(ms)) return null;
   return ms;
 }
 
@@ -237,6 +237,14 @@ function formatForecast(pace, resetSeconds) {
   return "on pace";
 }
 
+function formatExtraUsage(extra) {
+  if (!extra || !extra.is_enabled) return null;
+  const used = extra.used_credits / 100;
+  const limit = extra.monthly_limit / 100;
+  const pct = Math.round(extra.utilization);
+  return `extra $${Math.round(used)}/$${Math.round(limit)} (${pct}%)`;
+}
+
 function clamp01(value) {
   if (value == null || !Number.isFinite(value)) return null;
   return Math.max(0, Math.min(1, value));
@@ -286,7 +294,7 @@ function windowFromZai(node, windowSeconds) {
 }
 
 function emptyProviderState() {
-  return { short: null, long: null, lastFetch: null, error: null };
+  return { short: null, long: null, lastFetch: null, error: null, extraUsage: null };
 }
 
 // Descriptor for each provider. All runtime state (UI elements, fetch state)
@@ -303,6 +311,7 @@ const QuotaIndicator = GObject.registerClass(
       super._init(0.0, "AI Quota Tracker", false);
 
       this._iconsDir = `${extension.path}/icons`;
+      this._settings = extension.getSettings();
       this._httpSession = new Soup.Session();
       this._popupTickId = null;
 
@@ -362,6 +371,7 @@ const QuotaIndicator = GObject.registerClass(
         long: node?.long ?? null,
         lastFetch: node?.lastFetch ?? null,
         error: node?.error ?? null,
+        extraUsage: node?.extraUsage ?? null,
       });
       for (const p of this._providers) p.state = provider(data[p.id]);
       this._renderPanel();
@@ -559,7 +569,8 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _readZaiAuth() {
-      const path = `${GLib.get_home_dir()}/.config/z.ai/api_key`;
+      const path = this._settings.get_string("zai-api-key-path");
+      if (!path) return { error: "zai-api-key-path not configured" };
       try {
         const [ok, bytes] = GLib.file_get_contents(path);
         if (!ok) return { error: `${path}: not readable` };
@@ -670,6 +681,7 @@ const QuotaIndicator = GObject.registerClass(
           }
           p.state.short = windowFromClaude(data.five_hour, "5h", CLAUDE_SHORT_W);
           p.state.long = windowFromClaude(data.seven_day, "7d", CLAUDE_LONG_W);
+          p.state.extraUsage = data.extra_usage ?? null;
           p.state.lastFetch = Date.now();
           p.state.error = null;
         },
@@ -768,7 +780,10 @@ const QuotaIndicator = GObject.registerClass(
         : "unknown";
       const tint = stale ? "stale" : bindingTint(shortTint, longTint);
       this._setTint(icon, paceLabel, tint);
-      paceLabel.set_text(formatPace(longPace) ?? "");
+      const paceText = formatPace(longPace) ?? "";
+      const extraActive =
+        state.extraUsage?.is_enabled && longState?.usedPercent != null && longState.usedPercent >= 100;
+      paceLabel.set_text(extraActive ? (paceText ? `${paceText} ⚡` : "⚡") : paceText);
     }
 
     _renderPopup() {
@@ -791,6 +806,8 @@ const QuotaIndicator = GObject.registerClass(
       } else if (isStaleFetch(state.lastFetch)) {
         item.label.add_style_class_name("quota-popup-header-stale");
       }
+      const extraStr = formatExtraUsage(state.extraUsage);
+      if (extraStr) parts.push(extraStr);
       parts.push(formatFreshness(state.lastFetch));
       item.label.set_text(parts.join(" · "));
     }

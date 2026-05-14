@@ -19,6 +19,17 @@ class UsageBucket(BaseModel):
     resets_at: datetime | None = None
 
 
+class ExtraUsage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    is_enabled: bool
+    monthly_limit: float
+    used_credits: float
+    utilization: float
+    currency: str
+    disabled_reason: str | None = None
+
+
 class UsageResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -26,6 +37,7 @@ class UsageResponse(BaseModel):
     seven_day: UsageBucket | None = None
     seven_day_opus: UsageBucket | None = None
     seven_day_sonnet: UsageBucket | None = None
+    extra_usage: ExtraUsage | None = None
 
 
 def fetch_usage(token: str) -> UsageResponse:
