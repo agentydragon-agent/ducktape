@@ -11,7 +11,8 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::purity::{
     ChunkCodeGraph, Purity, PurityReason, PurityRule, RedundantPurityHint, WHITELIST_RECEIVERS,
-    class_has_static_observable, classify_expr_purity, detect_redundant_purity_hints,
+    class_has_static_observable, classify_expr_purity, classify_var_decl_purity,
+    detect_redundant_purity_hints,
 };
 use crate::{BindingName, SourceLocation, StatementOrdinal};
 
@@ -49,6 +50,7 @@ pub enum KnownEffect {
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisHints {
     pub declared_pure: BTreeSet<String>,
+    pub declared_pure_new: BTreeSet<String>,
     pub known_effects: BTreeMap<String, KnownEffect>,
 }
 
@@ -56,6 +58,7 @@ impl AnalysisHints {
     pub fn from_declared_pure(declared_pure: &BTreeSet<String>) -> Self {
         Self {
             declared_pure: declared_pure.clone(),
+            declared_pure_new: BTreeSet::new(),
             known_effects: BTreeMap::new(),
         }
     }
@@ -162,7 +165,12 @@ where
 {
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &hints.declared_pure);
+    let graph = ChunkCodeGraph::build_with_declared_pure_new(
+        &body,
+        &shadowed,
+        &hints.declared_pure,
+        &hints.declared_pure_new,
+    );
     let redundant_purity_hints =
         detect_redundant_purity_hints(&body, &shadowed, &hints.declared_pure);
     let mut top_level_await = None;
@@ -362,11 +370,8 @@ fn item_purity(
     match kind {
         StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => Purity::Pure,
         StatementKind::VarDecl => var_decl_of_item(item)
-            .into_iter()
-            .flat_map(|var| var.decls.iter())
-            .filter_map(|decl| decl.init.as_deref())
-            .map(|init| classify_expr_purity(init, shadowed, &hints.declared_pure, graph))
-            .fold(Purity::Pure, Purity::worst),
+            .map(|var| classify_var_decl_purity(var, shadowed, &hints.declared_pure, graph))
+            .unwrap_or(Purity::Pure),
         StatementKind::ClassDecl => match class_of_item(item) {
             Some(c) if class_has_static_observable(c, shadowed, &hints.declared_pure, graph) => {
                 Purity::NotPure {

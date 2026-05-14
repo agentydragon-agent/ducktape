@@ -405,6 +405,11 @@ pub enum MemberPurity {
     /// side effects. Validator drops `S` edges for `<binding>(...)` call
     /// sites. See AGENTS.md "Declared purity" + DESIGN.md A9.
     Pure,
+    /// Author asserts that `new <binding>(...)` has no observable side
+    /// effects beyond evaluating its constructor arguments. The analyzer
+    /// still requires every argument expression to classify pure; this
+    /// annotation does not affect ordinary `<binding>(...)` calls.
+    PureNew,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]

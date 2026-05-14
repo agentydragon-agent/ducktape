@@ -331,13 +331,15 @@ treat that as the queue for safe whitelist growth.
 
 ### Declared purity
 
-The spec format admits an optional per-member `purity: "pure"`
-annotation. When present, the validator treats calls to the bound
-Ident as `Pure` regardless of the function body's contents. This
-is an **author trust contract**: the validator does not re-verify
-the body. An incorrect annotation can produce a buggy debundle the
-same way an incorrect spec selector can — soundness shifts to the
-spec author.
+The spec format admits optional per-member `purity:` annotations.
+When `purity: "pure"` is present, the validator treats calls to
+the bound Ident as `Pure` regardless of the function body's
+contents. When `purity: "pure_new"` is present, the validator
+treats `new BoundIdent(...)` as `Pure` if every constructor
+argument is pure. These are **author trust contracts**: the
+validator does not re-verify the body or constructor. An incorrect
+annotation can produce a buggy debundle the same way an incorrect
+spec selector can — soundness shifts to the spec author.
 
 Use the annotation when:
 
@@ -349,12 +351,16 @@ Use the annotation when:
   an FFI shim) but is known by the author to have no observable
   side effects.
 
-The annotation overrides A8's shadowing fallback: a chunk that
+The `pure` annotation overrides A8's shadowing fallback: a chunk that
 imports `Boolean` from userland AND declares the local `Boolean`
 binding pure in the spec uses the declared-pure path (the author
 asserts THIS bound value is pure, regardless of where it came
 from). Args to the call are still evaluated normally — declared
 purity covers the function value, not its arguments.
+
+`pure_new` is separate from `pure`: it covers only `new X(...)`,
+does not make `X(...)` pure, and still evaluates constructor
+arguments normally.
 
 The annotation is **per-member**: a sibling member without the
 annotation stays subject to inferred classification. There is no

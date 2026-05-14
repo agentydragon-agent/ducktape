@@ -675,6 +675,9 @@ fn materialize_logical_chunk(
                     if m.purity == MemberPurity::Pure {
                         hints.declared_pure.insert(m.binding.clone());
                     }
+                    if m.purity == MemberPurity::PureNew {
+                        hints.declared_pure_new.insert(m.binding.clone());
+                    }
                     if let Some(effect) = known_effect_from_member_effect(m.effect) {
                         hints.known_effects.insert(m.binding.clone(), effect);
                     }
@@ -684,6 +687,11 @@ fn materialize_logical_chunk(
                 for m in &cr.members {
                     if m.purity == MemberPurity::Pure {
                         hints.declared_pure.insert(m.selector.binding.name.clone());
+                    }
+                    if m.purity == MemberPurity::PureNew {
+                        hints
+                            .declared_pure_new
+                            .insert(m.selector.binding.name.clone());
                     }
                     if let Some(effect) = known_effect_from_member_effect(m.effect) {
                         hints

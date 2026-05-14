@@ -43,7 +43,9 @@
 //!    annotation: it is an author trust contract. Used when
 //!    the function body is too dynamic, too large, or
 //!    imported from outside the chunk for static analysis to
-//!    handle.
+//!    handle. `purity: "pure_new"` is the same kind of trust
+//!    contract for `new BoundClass(...)`, while still evaluating
+//!    constructor arguments normally.
 //!
 //! # Out of scope
 //!
@@ -65,7 +67,7 @@
 //! }
 //! ```
 //!
-//! Only `"pure"` is defined here. Future extensions could
+//! `"pure"` and `"pure_new"` are defined here. Future extensions could
 //! include `"commutative"` (the function has side effects but
 //! they're observably commutative across calls — useful for
 //! registry-add patterns where last-write-wins or set-union
@@ -210,18 +212,15 @@ export { define, freeze, values, keys };
 }
 
 #[test]
-#[ignore = "blocked on local-mutation / escape analysis (track that an assignment \
-            mutates only a fresh parameter that doesn't escape — Step F in the \
-            purity-desiderata follow-up plan; deferred until a real chunk needs it)"]
 fn inferred_pure_iife_enum_builder_emits_no_s_cycle() {
     // The minified enum-builder pattern: an IIFE whose body
-    // mutates its own parameter (a fresh object) and returns
-    // it. All writes are local to the parameter; no globals
-    // are touched. The whole expression is pure.
+    // mutates its own parameter and returns it. All writes are local
+    // to the enum object for the binding being initialized; no
+    // globals are touched. The whole var initializer is pure.
     let fixture = run_fixture(FixtureOpts::new(
-        r#"var Status = ((n) => ((n.OK = 0), (n.WARN = 1), (n.ERROR = 2), n))({});
-var Color = ((n) => ((n.RED = "r"), (n.GREEN = "g"), (n.BLUE = "b"), n))({});
-var Tag = ((n) => ((n[(n.SMALL = 0)] = "small"), (n[(n.LARGE = 1)] = "large"), n))({});
+        r#"var Status = ((n) => ((n.OK = 0), (n.WARN = 1), (n.ERROR = 2), n))(Status || {});
+var Color = ((n) => ((n.RED = "r"), (n.GREEN = "g"), (n.BLUE = "b"), n))(Color || {});
+var Tag = ((n) => ((n[(n.SMALL = 0)] = "small"), (n[(n.LARGE = 1)] = "large"), n))(Tag || {});
 console.log(Status.OK, Color.RED, Tag.SMALL, Tag[1]);
 export { Status, Color, Tag };
 "#,
@@ -231,6 +230,29 @@ export { Status, Color, Tag };
         ],
     ));
     assert_entry_output(&fixture, "0 r 0 large\n");
+}
+
+#[test]
+fn unsafe_iife_enum_builder_still_emits_s_cycle() {
+    // A call inside the IIFE body is outside the narrow enum-init
+    // model. These statements stay side-effecting and the
+    // interleaved modules still reject on the S-cycle.
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"function value(x) { return x; }
+var A = ((n) => (n.OK = value(0), n))(A || {});
+var B = ((n) => (n.OK = value(1), n))(B || {});
+var C = ((n) => (n.OK = value(2), n))(C || {});
+console.log(A.OK, B.OK, C.OK);
+export { A, B, C };
+"#,
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        ),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
 }
 
 #[test]
@@ -546,6 +568,96 @@ export { A, B, C, pureWrap, impureWrap };
                                 "name": "impureWrap",
                                 "selector": { "binding": { "name": "impureWrap" } },
                                 // Deliberately unannotated.
+                            },
+                        ],
+                    }),
+                ),
+                (
+                    "mod_b".to_string(),
+                    json!({
+                        "members": [
+                            { "name": "B", "selector": { "binding": { "name": "B" } } },
+                        ],
+                    }),
+                ),
+            ],
+        ),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
+}
+
+#[test]
+fn declared_pure_new_member_suppresses_s_edges_for_constructor_calls() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class PureBox {
+  constructor(value) {
+    this.value = value;
+  }
+}
+const A = new PureBox("a");
+const B = new PureBox("b");
+const C = new PureBox("c");
+console.log(A.value, B.value, C.value);
+export { A, B, C, PureBox };
+"#,
+        vec![
+            (
+                "mod_a".to_string(),
+                json!({
+                    "members": [
+                        { "name": "A", "selector": { "binding": { "name": "A" } } },
+                        { "name": "C", "selector": { "binding": { "name": "C" } } },
+                        {
+                            "name": "PureBox",
+                            "selector": { "binding": { "name": "PureBox" } },
+                            "purity": "pure_new",
+                        },
+                    ],
+                }),
+            ),
+            (
+                "mod_b".to_string(),
+                json!({
+                    "members": [
+                        { "name": "B", "selector": { "binding": { "name": "B" } } },
+                    ],
+                }),
+            ),
+        ],
+    ));
+    assert_entry_output(&fixture, "a b c\n");
+}
+
+#[test]
+fn declared_pure_new_member_still_evaluates_constructor_args() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"class PureBox {
+  constructor(value) {
+    this.value = value;
+  }
+}
+function value(label) {
+  globalThis.last = label;
+  return label;
+}
+const A = new PureBox(value("a"));
+const B = new PureBox(value("b"));
+const C = new PureBox(value("c"));
+console.log(A.value, B.value, C.value, globalThis.last);
+export { A, B, C, PureBox };
+"#,
+            vec![
+                (
+                    "mod_a".to_string(),
+                    json!({
+                        "members": [
+                            { "name": "A", "selector": { "binding": { "name": "A" } } },
+                            { "name": "C", "selector": { "binding": { "name": "C" } } },
+                            {
+                                "name": "PureBox",
+                                "selector": { "binding": { "name": "PureBox" } },
+                                "purity": "pure_new",
                             },
                         ],
                     }),

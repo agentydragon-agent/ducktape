@@ -503,17 +503,28 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   contract is preserved.
 
 - **A9. Spec-declared purity annotations are author-trusted.** The
-  spec format admits an optional per-member `purity: "pure"` field
-  that asserts: calls to the bound function value have no
-  observable side effects. The validator does not re-verify the
-  function body — the annotation is an explicit author override
+  spec format admits optional per-member `purity:` values that
+  assert a named binding has a specific side-effect contract the
+  static classifier will not re-derive.
+
+  `purity: "pure"` asserts that calls to the bound function value
+  have no observable side effects. The validator does not re-verify
+  the function body — the annotation is an explicit author override
   that wins over both the inferred classification and A8's
   shadowing fallback. Used when the function body is too dynamic
   for static analysis (dynamic dispatch, dynamic property access)
   but the author knows by construction that the binding is pure.
-  An incorrect annotation can produce a buggy debundle the same
-  way an incorrect spec selector can — soundness shifts to the
-  spec author. See AGENTS.md "Declared purity".
+
+  `purity: "pure_new"` asserts the analogous constructor contract:
+  `new BoundClass(...)` has no observable side effects beyond
+  evaluating its constructor arguments. The analyzer still classifies
+  every argument expression normally; impure arguments keep the
+  surrounding `new` expression side-effecting. The annotation does
+  not make plain `BoundClass(...)` calls pure.
+
+  An incorrect annotation can produce a buggy debundle the same way
+  an incorrect spec selector can — soundness shifts to the spec
+  author. See AGENTS.md "Declared purity".
 
 - **A10. Spec-declared local-effect annotations are
   author-trusted.** The spec format also admits an optional

@@ -23,6 +23,7 @@ use crate::facts::TopLevelItemView;
 #[derive(Debug, Default, Clone)]
 pub struct ChunkCodeGraph {
     bindings: BTreeMap<String, ChunkBinding>,
+    pure_new_constructors: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,10 +39,10 @@ enum ChunkBinding {
     /// mutation). For `var`, multiple chunk-top `var X = init_n`
     /// declarations are also admitted as long as every init is
     /// plain-literal. Inits can additionally take the TS-enum-IIFE
-    /// shape `((p) => (p.A = "a", p.B = "b", p))(X || {})` where
+    /// shape `var X = ((p) => (p.A = "a", p.B = "b", p))(X || {})` where
     /// the IIFE produces a plain object by parameter mutation; see
-    /// `is_ts_enum_iife_init` for the syntactic shape and soundness
-    /// argument. Property reads `X.k` / `X[k]` (k pure) on such a
+    /// `is_ts_enum_iife_init_for_binding` for the syntactic shape
+    /// and soundness argument. Property reads `X.k` / `X[k]` (k pure) on such a
     /// binding are pure regardless of when they fire:
     ///
     /// * **No accessor channels at any program point.** The initial
@@ -109,6 +110,15 @@ impl ChunkCodeGraph {
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
     ) -> Self {
+        Self::build_with_declared_pure_new(body, shadowed, declared_pure, &BTreeSet::new())
+    }
+
+    pub(crate) fn build_with_declared_pure_new(
+        body: &[TopLevelItemView<'_>],
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        declared_pure_new: &BTreeSet<String>,
+    ) -> Self {
         let functions = collect_chunk_functions(body);
         let name_to_idx: BTreeMap<&str, usize> = functions
             .iter()
@@ -156,7 +166,10 @@ impl ChunkCodeGraph {
             // reading its `.length` etc.).
             bindings.entry(name).or_insert(ChunkBinding::PlainData);
         }
-        let mut graph = ChunkCodeGraph { bindings };
+        let mut graph = ChunkCodeGraph {
+            bindings,
+            pure_new_constructors: declared_pure_new.clone(),
+        };
         // tarjan_scc emits SCCs in reverse topological order: leaves
         // (sinks — functions that don't call any chunk-top
         // function) come first, callers come later.
@@ -230,6 +243,10 @@ impl ChunkCodeGraph {
     /// `ChunkBinding::PlainData`).
     pub(crate) fn is_plain_data(&self, name: &str) -> bool {
         matches!(self.bindings.get(name), Some(ChunkBinding::PlainData))
+    }
+
+    pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {
+        self.pure_new_constructors.contains(name)
     }
 }
 
@@ -478,15 +495,19 @@ fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
     // The same name can have multiple inits for `var`-bound bindings
     // (`var X = a; var X = b;`); every init must independently pass
     // the plain-literal shape check or the name disqualifies.
-    let mut inits_by_name: BTreeMap<String, Vec<&Expr>> = BTreeMap::new();
+    let mut inits_by_name: BTreeMap<String, Vec<(&Expr, VarDeclKind)>> = BTreeMap::new();
     for item in body {
-        for (name, init) in plain_data_var_candidates(item.as_module_item()) {
-            inits_by_name.entry(name).or_default().push(init);
+        for (name, init, kind) in plain_data_var_candidates(item.as_module_item()) {
+            inits_by_name.entry(name).or_default().push((init, kind));
         }
     }
     let candidates: BTreeSet<String> = inits_by_name
         .into_iter()
-        .filter(|(_, inits)| inits.iter().all(|init| is_plain_data_init(init)))
+        .filter(|(name, inits)| {
+            inits
+                .iter()
+                .all(|(init, kind)| is_plain_data_init(init, name, *kind))
+        })
         .map(|(name, _)| name)
         .collect();
     if candidates.is_empty() {
@@ -542,7 +563,7 @@ fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
 ///   spec-mandated TypeError — sound for the read-purity claim ("no
 ///   user code fires") because the throw is engine-emitted, not a
 ///   user getter.
-fn plain_data_var_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
+fn plain_data_var_candidates(item: &ModuleItem) -> Vec<(String, &Expr, VarDeclKind)> {
     let var = match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
@@ -562,7 +583,7 @@ fn plain_data_var_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
         if matches!(init, Expr::Fn(_) | Expr::Arrow(_)) {
             continue;
         }
-        out.push((binding.id.sym.to_string(), init));
+        out.push((binding.id.sym.to_string(), init, var.kind));
     }
     out
 }
@@ -591,19 +612,52 @@ fn plain_data_var_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
 /// depends only on the receiver's shape (no accessors at init + no
 /// post-init accessor installation, the latter enforced by
 /// `PlainDataWriteScanner`).
-fn is_plain_data_init(expr: &Expr) -> bool {
+fn is_plain_data_init(expr: &Expr, binding: &str, kind: VarDeclKind) -> bool {
     match expr {
-        Expr::Paren(p) => is_plain_data_init(&p.expr),
+        Expr::Paren(p) => is_plain_data_init(&p.expr, binding, kind),
         Expr::Object(obj) => obj.props.iter().all(is_plain_data_prop),
         Expr::Array(_) => true,
         // TS-enum-style IIFE: `((p) => (p.A = "a", p.B = "b", p))(X || {})`
         // produces a plain object at runtime by mutating the parameter
         // through data-property writes only and returning it. See
-        // `is_ts_enum_iife_init` for the syntactic shape and soundness
-        // argument.
-        Expr::Call(_) => is_ts_enum_iife_init(expr),
+        // `is_ts_enum_iife_init_for_binding` for the syntactic shape
+        // and soundness argument.
+        Expr::Call(_) if kind == VarDeclKind::Var => {
+            is_ts_enum_iife_init_for_binding(expr, binding)
+        }
         _ => false,
     }
+}
+
+/// Classify a var-declaration initializer with binding context. Most
+/// initializers use ordinary expression purity; the TypeScript enum
+/// IIFE exception needs to know which binding is being initialized so
+/// it can require the `X || {}` / `X || (X = {})` argument to refer to
+/// that same `X`.
+pub(crate) fn classify_var_decl_purity(
+    var: &VarDecl,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
+    var.decls
+        .iter()
+        .filter_map(|decl| {
+            let init = decl.init.as_deref()?;
+            let Pat::Ident(binding) = &decl.name else {
+                return Some(classify_expr_purity(init, shadowed, declared_pure, graph));
+            };
+            let name = binding.id.sym.as_ref();
+            if var.kind == VarDeclKind::Var
+                && graph.is_plain_data(name)
+                && is_ts_enum_iife_init_for_binding(init, name)
+            {
+                Some(Purity::Pure)
+            } else {
+                Some(classify_expr_purity(init, shadowed, declared_pure, graph))
+            }
+        })
+        .fold(Purity::Pure, Purity::worst)
 }
 
 /// Recognize the TypeScript-emit "enum" IIFE shape that initializes a
@@ -626,25 +680,25 @@ fn is_plain_data_init(expr: &Expr) -> bool {
 /// At runtime, the binding holds the object returned by the IIFE.
 /// We require that object to have only data properties:
 ///
-/// 1. **Arrow IIFE callable, inline.** The callee is a syntactic
-///    `Expr::Arrow` (function expressions could work the same way but
-///    are out of scope for this rule). Excludes any case where the
-///    callable could be replaced at runtime with a different function.
+/// 1. **Inline IIFE callable.** The callee is a syntactic `Expr::Arrow`
+///    or `Expr::Fn`. Excludes any case where the callable could be
+///    replaced at runtime with a different function.
 /// 2. **Single Ident parameter.** Pattern parameters (destructuring,
 ///    rest, default) are out of scope — the parameter is the alias for
 ///    the mutating writes, and treating non-Ident patterns would
 ///    require deeper escape analysis.
-/// 3. **Single non-spread positional argument.** Either a plain
-///    object literal (no spreads, no accessors, no `__proto__`), or a
-///    `X || (plain-shape)` short-circuit, or `X || X = (plain-shape)`
-///    self-assigning short-circuit (the canonical TS shape).
-/// 4. **Concise-arrow comma-expression body.** Body is either:
+/// 3. **Single non-spread positional argument.** Either an empty object
+///    literal, `X || {}`, or `X || (X = {})` where `X` is the binding
+///    being initialized. This excludes passing arbitrary existing
+///    objects into the mutating body.
+/// 4. **Body mutates only the parameter and returns it.** Body is either:
 ///    * `Expr::Ident(p)` alone — degenerate "return param unchanged"
 ///      shape; the IIFE returns the arg as-is, which is plain by (3).
 ///    * `Expr::Seq` whose last element is `Expr::Ident(p)` and every
 ///      preceding element is `p.K = primLit` or `p[strLit] = primLit`
 ///      or `p[numLit] = primLit` — a parameter-mutation followed by
-///      return.
+///      return. Function-expression IIFEs may use expression
+///      statements for the writes followed by `return p`.
 ///
 /// **Why the result is plain:**
 ///
@@ -659,10 +713,6 @@ fn is_plain_data_init(expr: &Expr) -> bool {
 ///
 /// **What is NOT admitted (and why):**
 ///
-/// * **Block-bodied function** `function (p) { p.A = …; return p; }` —
-///   same logical structure; can be added as a separate match arm.
-///   This rule starts with the arrow-comma-body shape (esbuild /
-///   Vite default emit).
 /// * **Multi-statement bodies** that do anything other than parameter
 ///   mutation — `console.log(p)`, `Object.defineProperty(p, …)`,
 ///   nested IIFEs, etc.
@@ -673,7 +723,7 @@ fn is_plain_data_init(expr: &Expr) -> bool {
 /// a `param.X = primLit` data-property write, the outer is a
 /// data-property write keyed by the primitive that inner evaluates
 /// to. Both writes are sound.
-fn is_ts_enum_iife_init(expr: &Expr) -> bool {
+fn is_ts_enum_iife_init_for_binding(expr: &Expr, binding: &str) -> bool {
     let mut cur = expr;
     while let Expr::Paren(p) = cur {
         cur = &p.expr;
@@ -688,42 +738,62 @@ fn is_ts_enum_iife_init(expr: &Expr) -> bool {
     while let Expr::Paren(p) = callee {
         callee = &p.expr;
     }
-    let Expr::Arrow(arrow) = callee else {
-        return false;
-    };
-    if arrow.params.len() != 1 {
-        return false;
-    }
-    let Pat::Ident(param_ident) = &arrow.params[0] else {
-        return false;
-    };
-    let param_name = param_ident.id.sym.as_ref();
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return false;
     }
-    if !is_ts_enum_iife_arg(&call.args[0].expr) {
+    if !is_ts_enum_iife_arg(&call.args[0].expr, binding) {
         return false;
     }
-    let BlockStmtOrExpr::Expr(body_expr) = arrow.body.as_ref() else {
-        return false;
-    };
-    let mut body = body_expr.as_ref();
-    while let Expr::Paren(p) = body {
-        body = &p.expr;
+    match callee {
+        Expr::Arrow(arrow) => {
+            if arrow.params.len() != 1 {
+                return false;
+            }
+            let Pat::Ident(param_ident) = &arrow.params[0] else {
+                return false;
+            };
+            let param_name = param_ident.id.sym.as_ref();
+            match arrow.body.as_ref() {
+                BlockStmtOrExpr::Expr(body_expr) => {
+                    is_ts_enum_iife_body_expr(strip_parens(body_expr.as_ref()), param_name)
+                }
+                BlockStmtOrExpr::BlockStmt(block) => is_ts_enum_iife_body_block(block, param_name),
+            }
+        }
+        Expr::Fn(function) => {
+            if function.function.params.len() != 1 {
+                return false;
+            }
+            let Pat::Ident(param_ident) = &function.function.params[0].pat else {
+                return false;
+            };
+            let Some(body) = &function.function.body else {
+                return false;
+            };
+            is_ts_enum_iife_body_block(body, param_ident.id.sym.as_ref())
+        }
+        _ => false,
     }
-    is_ts_enum_iife_body(body, param_name)
 }
 
 /// IIFE argument must be a plain object literal, a self-assigning
 /// short-circuit (`X || (X = {})`), or a plain short-circuit
 /// (`X || {}`). Walks through `Paren` wrappers and accepts the
 /// short-circuit form recursively on the right side.
-fn is_ts_enum_iife_arg(expr: &Expr) -> bool {
+fn is_ts_enum_iife_arg(expr: &Expr, binding: &str) -> bool {
     match expr {
-        Expr::Paren(p) => is_ts_enum_iife_arg(&p.expr),
-        Expr::Object(obj) => obj.props.iter().all(is_plain_data_prop),
-        Expr::Bin(b) if b.op == BinaryOp::LogicalOr => is_ts_enum_iife_arg(&b.right),
-        Expr::Assign(a) if a.op == AssignOp::Assign => is_ts_enum_iife_arg(&a.right),
+        Expr::Paren(p) => is_ts_enum_iife_arg(&p.expr, binding),
+        Expr::Object(obj) => obj.props.is_empty(),
+        Expr::Bin(b) if b.op == BinaryOp::LogicalOr => {
+            matches!(strip_parens(b.left.as_ref()), Expr::Ident(id) if id.sym.as_ref() == binding)
+                && is_ts_enum_iife_arg(&b.right, binding)
+        }
+        Expr::Assign(a) if a.op == AssignOp::Assign => {
+            matches!(
+                &a.left,
+                AssignTarget::Simple(SimpleAssignTarget::Ident(id)) if id.id.sym.as_ref() == binding
+            ) && matches!(strip_parens(a.right.as_ref()), Expr::Object(obj) if obj.props.is_empty())
+        }
         _ => false,
     }
 }
@@ -731,7 +801,7 @@ fn is_ts_enum_iife_arg(expr: &Expr) -> bool {
 /// Arrow body must be either `p` (return param unchanged) or a
 /// sequence expression `(p.K1 = lit, p.K2 = lit, …, p)` with the
 /// trailing `p` as the return value.
-fn is_ts_enum_iife_body(expr: &Expr, param: &str) -> bool {
+fn is_ts_enum_iife_body_expr(expr: &Expr, param: &str) -> bool {
     if matches!(expr, Expr::Ident(id) if id.sym.as_ref() == param) {
         return true;
     }
@@ -748,6 +818,25 @@ fn is_ts_enum_iife_body(expr: &Expr, param: &str) -> bool {
     }
     rest.iter()
         .all(|e| is_ts_enum_iife_property_write(strip_parens(e.as_ref()), param))
+}
+
+fn is_ts_enum_iife_body_block(block: &BlockStmt, param: &str) -> bool {
+    let Some((last, rest)) = block.stmts.split_last() else {
+        return false;
+    };
+    if !rest.iter().all(|stmt| match stmt {
+        Stmt::Expr(expr) => is_ts_enum_iife_property_write(strip_parens(expr.expr.as_ref()), param),
+        _ => false,
+    }) {
+        return false;
+    }
+    let Stmt::Return(ret) = last else {
+        return false;
+    };
+    let Some(arg) = ret.arg.as_deref() else {
+        return false;
+    };
+    is_ts_enum_iife_body_expr(strip_parens(arg), param)
 }
 
 fn strip_parens(expr: &Expr) -> &Expr {
@@ -791,10 +880,11 @@ fn is_ts_enum_iife_property_write(expr: &Expr, param: &str) -> bool {
         return false;
     }
     let key_ok = match &member.prop {
-        MemberProp::Ident(_) => true,
+        MemberProp::Ident(ident) => ident.sym.as_ref() != "__proto__",
         MemberProp::Computed(c) => {
             let key = strip_parens(c.expr.as_ref());
-            matches!(key, Expr::Lit(Lit::Str(_)) | Expr::Lit(Lit::Num(_)))
+            matches!(key, Expr::Lit(Lit::Str(s)) if s.value.to_string_lossy() != "__proto__")
+                || matches!(key, Expr::Lit(Lit::Num(_)))
                 // TS numeric-enum reverse-mapping: the computed key
                 // is itself a `param.X = primLit` data-property write
                 // that evaluates to a primitive used as the outer
@@ -892,23 +982,54 @@ impl PlainDataWriteScanner<'_> {
         self.shadowing_scopes.pop();
     }
 
-    /// Collect the subset of `candidates` shadowed by `params`. Only
-    /// `Pat::Ident` parameters are recognized; destructuring /
-    /// rest / default parameters are out of scope.
+    /// Collect the subset of `candidates` shadowed by `params`.
+    /// Parameter defaults/rest/destructuring all introduce bindings
+    /// for the whole parameter scope. That matters for emitted helper
+    /// shapes like `(i, m = helper, d = m.f || (m.f = [])) => ...`:
+    /// the `m.f = []` write targets the parameter `m`, not a
+    /// chunk-top plain-data object also named `m`.
     fn shadowed_by_params<'a, I>(&self, params: I) -> BTreeSet<String>
     where
         I: IntoIterator<Item = &'a Pat>,
     {
-        params
-            .into_iter()
-            .filter_map(|p| match p {
-                Pat::Ident(ident) => {
-                    let name = ident.id.sym.as_ref();
-                    self.candidates.contains(name).then(|| name.to_string())
+        let mut out = BTreeSet::new();
+        for param in params {
+            self.collect_shadowed_by_pat(param, &mut out);
+        }
+        out
+    }
+
+    fn collect_shadowed_by_pat(&self, pat: &Pat, out: &mut BTreeSet<String>) {
+        match pat {
+            Pat::Ident(ident) => {
+                let name = ident.id.sym.as_ref();
+                if self.candidates.contains(name) {
+                    out.insert(name.to_string());
                 }
-                _ => None,
-            })
-            .collect()
+            }
+            Pat::Rest(rest) => self.collect_shadowed_by_pat(&rest.arg, out),
+            Pat::Assign(assign) => self.collect_shadowed_by_pat(&assign.left, out),
+            Pat::Array(array) => {
+                for elem in array.elems.iter().flatten() {
+                    self.collect_shadowed_by_pat(elem, out);
+                }
+            }
+            Pat::Object(object) => {
+                for prop in &object.props {
+                    match prop {
+                        ObjectPatProp::KeyValue(kv) => self.collect_shadowed_by_pat(&kv.value, out),
+                        ObjectPatProp::Assign(assign) => {
+                            let name = assign.key.id.sym.as_ref();
+                            if self.candidates.contains(name) {
+                                out.insert(name.to_string());
+                            }
+                        }
+                        ObjectPatProp::Rest(rest) => self.collect_shadowed_by_pat(&rest.arg, out),
+                    }
+                }
+            }
+            Pat::Invalid(_) | Pat::Expr(_) => {}
+        }
     }
 }
 
@@ -1025,7 +1146,7 @@ impl Visit for PlainDataWriteScanner<'_> {
             // requires.
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
                 if self.candidates.contains(binding.sym.as_ref())
-                    && !is_plain_data_init(&node.right)
+                    && !is_plain_data_init(&node.right, binding.sym.as_ref(), VarDeclKind::Let)
                 {
                     self.disqualify_if_candidate(binding.sym.as_ref());
                 }
@@ -1042,7 +1163,7 @@ impl Visit for PlainDataWriteScanner<'_> {
                 };
                 node.left.visit_with(&mut idents);
                 for name in idents.hit {
-                    self.disqualified.insert(name);
+                    self.disqualify_if_candidate(&name);
                 }
             }
         }
@@ -1359,8 +1480,9 @@ const PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS: &[&str] = &["Symbol"];
 const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &["Map", "Set", "WeakMap", "WeakSet", "Array"];
 
 /// Built-in container constructors whose 1-arg form is pure when
-/// the argument is an Array literal with all-Pure elements (no
-/// spreads, no holes):
+/// the argument is an Array literal with all-Pure elements (no holes;
+/// spreads only when the source is itself a fresh Array literal or a
+/// pure conditional between fresh Array literals):
 ///
 /// * `Set`: `new Set([elt, ...])` — ECMA-262 §24.2.1.1 iterates
 ///   the iterable via the built-in Array iterator (no user code
@@ -1373,7 +1495,8 @@ const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &["Map", "Set", "WeakMap", "WeakSet", 
 ///   `Get(entry, "1")` (own data properties on a fresh entry
 ///   array, no getter), then `Map.prototype.set`. Pure when
 ///   every entry is itself a 2-element Array literal with Pure
-///   key + value.
+///   key + value. Fresh-array spreads are flattened under the same
+///   entry rule.
 /// * `WeakSet` / `WeakMap`: NOT covered — they additionally
 ///   require object keys; primitives throw. Allowing them would
 ///   require verifying every element/key has object value class,
@@ -1531,18 +1654,7 @@ pub(crate) fn classify_expr_purity(
             .iter()
             .map(|e| classify_expr_purity(e, shadowed, declared_pure, graph))
             .fold(Purity::Pure, Purity::worst),
-        Expr::Array(arr) => arr
-            .elems
-            .iter()
-            .flatten()
-            .map(|elem| {
-                let spread = elem
-                    .spread
-                    .map(|sp| Purity::from_reason(PurityRule::ArraySpread, sp));
-                let body = classify_expr_purity(&elem.expr, shadowed, declared_pure, graph);
-                spread.unwrap_or(Purity::Pure).worst(body)
-            })
-            .fold(Purity::Pure, Purity::worst),
+        Expr::Array(arr) => classify_array_literal_purity(arr, shadowed, declared_pure, graph),
         Expr::Object(obj) => obj
             .props
             .iter()
@@ -1584,6 +1696,77 @@ pub(crate) fn classify_expr_purity(
     }
 }
 
+fn classify_array_literal_purity(
+    arr: &ArrayLit,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
+    arr.elems
+        .iter()
+        .flatten()
+        .map(|elem| classify_array_literal_element_purity(elem, shadowed, declared_pure, graph))
+        .fold(Purity::Pure, Purity::worst)
+}
+
+fn classify_array_literal_element_purity(
+    elem: &ExprOrSpread,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
+    if let Some(sp) = elem.spread {
+        return classify_fresh_array_spread_source_purity(
+            &elem.expr,
+            shadowed,
+            declared_pure,
+            graph,
+        )
+        .unwrap_or_else(|| Purity::from_reason(PurityRule::ArraySpread, sp));
+    }
+    classify_expr_purity(&elem.expr, shadowed, declared_pure, graph)
+}
+
+/// Array spread is only side-effect-free when the source is known to
+/// evaluate to a fresh ordinary Array whose own element expressions
+/// are pure. This admits literal and conditional-literal shapes like
+/// `...[1, 2]` and `...(flag ? ["a"] : [])` while preserving the
+/// conservative `array_spread` verdict for arbitrary iterables.
+fn classify_fresh_array_spread_source_purity(
+    expr: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Option<Purity> {
+    match expr {
+        Expr::Paren(p) => {
+            classify_fresh_array_spread_source_purity(&p.expr, shadowed, declared_pure, graph)
+        }
+        Expr::Array(arr) => Some(classify_array_literal_purity(
+            arr,
+            shadowed,
+            declared_pure,
+            graph,
+        )),
+        Expr::Cond(cond) => Some(
+            classify_expr_purity(&cond.test, shadowed, declared_pure, graph)
+                .worst(classify_fresh_array_spread_source_purity(
+                    &cond.cons,
+                    shadowed,
+                    declared_pure,
+                    graph,
+                )?)
+                .worst(classify_fresh_array_spread_source_purity(
+                    &cond.alt,
+                    shadowed,
+                    declared_pure,
+                    graph,
+                )?),
+        ),
+        _ => None,
+    }
+}
+
 /// `(receiver_ident, prop_name)` for `Receiver.prop` where
 /// `Receiver` is a plain `Ident` and `prop` is a static name.
 /// Returns `None` for computed access (`obj[k]`), private fields,
@@ -1616,6 +1799,7 @@ fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str
 ///   * No-arg form against `PURE_BUILTIN_NEW_NO_ARGS`.
 ///   * 1-arg Array-literal-iterable form against
 ///     `PURE_BUILTIN_NEW_ARRAY_ITERABLE` (`Set` / `Map`).
+///   * Spec-declared `purity: pure_new` bindings, with all args pure.
 ///
 /// Everything else (non-Ident callees, shadowed names, tagged
 /// templates, other arg shapes) falls through to `Unknown`.
@@ -1674,6 +1858,22 @@ fn classify_new_expr_purity(
         )
         .worst(inner);
     }
+    if graph.is_declared_pure_new(callee.sym.as_ref()) {
+        let args = new_expr.args.as_deref().unwrap_or(&[]);
+        let arg_purity = all_args_pure(args, shadowed, declared_pure, graph);
+        if arg_purity.is_pure() {
+            return Purity::Pure;
+        }
+        return Purity::from_reason_with_detail(
+            PurityRule::UnknownNew,
+            new_expr.span,
+            format!(
+                "new {}(...) has impure argument(s) despite pure_new annotation",
+                callee.sym
+            ),
+        )
+        .worst(arg_purity);
+    }
     Purity::from_reason_with_detail(
         PurityRule::UnknownNew,
         new_expr.span,
@@ -1683,11 +1883,13 @@ fn classify_new_expr_purity(
 
 /// Classify the iterable arg of `new Set([...])` / `new Map([[k,v],...])`.
 /// Returns `Purity::Pure` only when the arg is an Array literal with
-/// every element a Pure expression (no spreads, no holes; for `Map`,
-/// every element a 2-element Array literal of Pure entries). Map's
-/// iterator path Get's [0]/[1] on each entry — fresh literal entries
-/// guarantee those reads are own-data-property hits, not user-getter
-/// hits on a 2-tuple-shaped object.
+/// every element a Pure expression (no holes; spreads only when the
+/// source is a fresh Array literal, optionally behind a pure
+/// conditional; for `Map`, every expanded element is a 2-element
+/// Array literal of Pure entries). Map's iterator path Get's [0]/[1]
+/// on each entry — fresh literal entries guarantee those reads are
+/// own-data-property hits, not user-getter hits on a 2-tuple-shaped
+/// object.
 ///
 /// On failure returns a `NotPure` carrying the offending sub-expression's
 /// reason(s) so the caller can attach them to the surrounding
@@ -1739,7 +1941,14 @@ fn classify_iterable_element(
         );
     };
     if let Some(sp) = elem.spread {
-        return Purity::from_reason(PurityRule::ArraySpread, sp);
+        return classify_fresh_array_spread_source_for_iterable(
+            &elem.expr,
+            callee,
+            shadowed,
+            declared_pure,
+            graph,
+        )
+        .unwrap_or_else(|| Purity::from_reason(PurityRule::ArraySpread, sp));
     }
     match callee {
         "Set" => classify_expr_purity(&elem.expr, shadowed, declared_pure, graph),
@@ -1749,6 +1958,57 @@ fn classify_iterable_element(
             elem.expr.span(),
             format!("unsupported callee {callee} for array-iterable rule"),
         ),
+    }
+}
+
+fn classify_fresh_array_spread_source_for_iterable(
+    expr: &Expr,
+    callee: &str,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Option<Purity> {
+    match expr {
+        Expr::Paren(p) => classify_fresh_array_spread_source_for_iterable(
+            &p.expr,
+            callee,
+            shadowed,
+            declared_pure,
+            graph,
+        ),
+        Expr::Array(arr) => Some(
+            arr.elems
+                .iter()
+                .map(|elem| {
+                    classify_iterable_element(
+                        elem.as_ref(),
+                        arr.span,
+                        callee,
+                        shadowed,
+                        declared_pure,
+                        graph,
+                    )
+                })
+                .fold(Purity::Pure, Purity::worst),
+        ),
+        Expr::Cond(cond) => Some(
+            classify_expr_purity(&cond.test, shadowed, declared_pure, graph)
+                .worst(classify_fresh_array_spread_source_for_iterable(
+                    &cond.cons,
+                    callee,
+                    shadowed,
+                    declared_pure,
+                    graph,
+                )?)
+                .worst(classify_fresh_array_spread_source_for_iterable(
+                    &cond.alt,
+                    callee,
+                    shadowed,
+                    declared_pure,
+                    graph,
+                )?),
+        ),
+        _ => None,
     }
 }
 

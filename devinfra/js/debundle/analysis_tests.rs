@@ -26,6 +26,7 @@ mod tests {
     fn hints_with_decorate_helper(name: &str) -> AnalysisHints {
         AnalysisHints {
             declared_pure: BTreeSet::new(),
+            declared_pure_new: BTreeSet::new(),
             known_effects: BTreeMap::from([(
                 name.to_string(),
                 KnownEffect::TypescriptDecorateHelper,
@@ -715,6 +716,26 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         classify_expr_purity(init, &shadowed, &declared_pure, &ChunkCodeGraph::default())
     }
 
+    fn classify_with_declared_pure_new(prefix: &str, expr_src: &str, declared: &[&str]) -> Purity {
+        let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let declared_pure_new: BTreeSet<String> =
+            declared.iter().map(|s| (*s).to_string()).collect();
+        let graph = ChunkCodeGraph::build_with_declared_pure_new(
+            &body,
+            &shadowed,
+            &BTreeSet::new(),
+            &declared_pure_new,
+        );
+        let var = match module.body.last().expect("non-empty body") {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+            other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
+        };
+        let init = var.decls[0].init.as_deref().expect("init expected");
+        classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)
+    }
+
     #[test]
     fn classify_literal_kinds_are_pure() {
         assert!((classify("42")).is_pure());
@@ -782,8 +803,27 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         assert!((classify("[1, 2, 'x']")).is_pure());
         assert!((classify("[A, B]")).is_pure());
         assert!(!(classify("[1, foo()]")).is_pure());
-        // Spread is `Unknown` even on an array literal.
+        // Arbitrary iterable spread stays Unknown: it can call a
+        // user-defined `[Symbol.iterator]`.
         assert!(!(classify("[...other]")).is_pure());
+    }
+
+    #[test]
+    fn classify_fresh_array_spread_sources_are_pure() {
+        assert!((classify("[...[1, 2, 'x']]")).is_pure());
+        assert!((classify("[...(flag ? ['a'] : [])]")).is_pure());
+        assert!((classify("[...[() => io(), function () { globalThis.x = 1; }]]")).is_pure());
+        assert!(!(classify("[...[io()]]")).is_pure());
+        assert!(!(classify("[...(flag ? ['a'] : other)]")).is_pure());
+    }
+
+    #[test]
+    fn classify_callbacks_inside_literals_are_values_not_init_calls() {
+        assert!(
+            (classify("({ cb: () => io(), nested: [function () { console.log('x'); }] })"))
+                .is_pure()
+        );
+        assert!((classify("[() => io(), function () { globalThis.touched = true; }]")).is_pure());
     }
 
     #[test]
@@ -1086,6 +1126,42 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
     }
 
+    #[test]
+    fn declared_pure_new_ident_new_classifies_pure_with_pure_args() {
+        assert!(
+            (classify_with_declared_pure_new(
+                "class PureBox { constructor(value) { globalThis.notAnalyzed = value; } }",
+                "new PureBox({ value: 1, later() { globalThis.later = true; } })",
+                &["PureBox"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_new_requires_pure_args() {
+        assert!(
+            !(classify_with_declared_pure_new(
+                "class PureBox { constructor(value) { this.value = value; } }",
+                "new PureBox(makeValue())",
+                &["PureBox"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_new_does_not_apply_to_plain_call() {
+        assert!(
+            !(classify_with_declared_pure_new(
+                "function PureBox(value) { globalThis.value = value; return { value }; }",
+                "PureBox(1)",
+                &["PureBox"]
+            ))
+            .is_pure()
+        );
+    }
+
     // --- ChunkCodeGraph: function-body purity inference --------------------
 
     /// Build a `ChunkCodeGraph` for `src` and return whether the
@@ -1190,6 +1266,52 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         };
         let init = var.decls[0].init.as_deref().expect("init");
         assert!((classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)).is_pure());
+    }
+
+    #[test]
+    fn new_map_fresh_spread_registry_entries_with_plain_data_members_is_pure() {
+        let src = r#"
+            const m = {
+                systemToolWebSearchId: "SYS_FN16",
+                dataTypeUrlId: "SYS_D10",
+            };
+            const includeUrl = true;
+            const registry = new Map([
+                ...[[m.systemToolWebSearchId, () => io()]],
+                ...(includeUrl ? [[m.dataTypeUrlId, function () { globalThis.touched = true; }]] : []),
+            ]);
+        "#;
+        let module = parse(src);
+        let facts = analyze_facts(&module);
+        let registry_fact = facts
+            .iter()
+            .find(|f| f.declared.contains("registry"))
+            .expect("registry fact missing");
+        assert!(
+            registry_fact.purity.is_pure(),
+            "fresh-spread registry literal should classify pure: {:?}",
+            registry_fact.purity
+        );
+    }
+
+    #[test]
+    fn new_map_fresh_spread_registry_does_not_bless_unknown_members() {
+        let src = r#"
+            const registry = new Map([
+                ...[[m.systemToolWebSearchId, () => 1]],
+            ]);
+        "#;
+        let module = parse(src);
+        let facts = analyze_facts(&module);
+        let registry_fact = facts
+            .iter()
+            .find(|f| f.declared.contains("registry"))
+            .expect("registry fact missing");
+        assert!(
+            !registry_fact.purity.is_pure(),
+            "unknown member read must still block: {:?}",
+            registry_fact.purity
+        );
     }
 
     #[test]
@@ -1413,6 +1535,21 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     }
 
     #[test]
+    fn plain_data_ts_enum_iife_function_expression_body_is_tracked() {
+        let src = r#"var Color = (function (p) { p.RED = "red"; p.GREEN = "green"; return p; })(Color || {});"#;
+        assert!(is_plain_data(src, "Color"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_self_binding_short_circuit_must_match_decl() {
+        // `Other || {}` could pass an arbitrary existing object into
+        // the IIFE. The enum-init rule is only for the binding being
+        // initialized, whose writes remain local to that binding.
+        let src = r#"var X = ((p) => (p.A = "a", p))(Other || {});"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
     fn plain_data_ts_enum_iife_member_reads_classify_pure() {
         // End-to-end: a downstream accessor reading the enum's
         // members classifies pure because the binding admits as
@@ -1460,6 +1597,40 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         // rule rejects to keep the soundness story uniform with
         // `is_plain_data_prop`.
         let src = r#"var X = ((p) => (p.A = io(), p))({});"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_call_in_body_is_not_tracked() {
+        let src = r#"var X = ((p) => (p.A = "a", observe(p), p))(X || {});"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_global_or_other_object_write_is_not_tracked() {
+        assert!(!is_plain_data(
+            r#"var X = ((p) => (globalThis.A = "a", p))(X || {});"#,
+            "X"
+        ));
+        assert!(!is_plain_data(
+            r#"var X = ((p) => (other.A = "a", p))(X || {});"#,
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_computed_unsafe_key_is_not_tracked() {
+        let src = r#"var X = ((p) => (p[key] = "a", p))(X || {});"#;
+        assert!(!is_plain_data(src, "X"));
+        let src = r#"var X = ((p) => (p["__proto__"] = "a", p))(X || {});"#;
+        assert!(!is_plain_data(src, "X"));
+        let src = r#"var X = ((p) => (p.__proto__ = "a", p))(X || {});"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_param_escape_is_not_tracked() {
+        let src = r#"var X = ((p) => (leaked = p, p.A = "a", p))(X || {});"#;
         assert!(!is_plain_data(src, "X"));
     }
 
@@ -1602,6 +1773,75 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         // inner anonymous IIFE's writes target the param-bound
         // inner X, not the outer.
         assert!(is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_default_param_write_to_shadowed_m_keeps_system_ids_plain() {
+        // Tana/Vite shape: the chunk also has a top-level `const m`
+        // plain-data systemIds table, while Vite emits a helper with
+        // a default parameter named `m` and a later default param
+        // writes `m.f = [...]`. That write targets the parameter
+        // binding, not the top-level systemIds object, so it must
+        // not disqualify top-level `m` from PlainData.
+        let src = r#"
+            const m = {
+                systemToolWebSearchId: "SYS_FN16",
+                dataTypeUrlId: "SYS_D10",
+            };
+            const __vite__mapDeps = (i, m = __vite__mapDeps, d = m.f || (m.f = [0, 1])) => d;
+            const readSystemToolId = () => m.systemToolWebSearchId;
+            const readDataTypeUrlId = () => m.dataTypeUrlId;
+        "#;
+        assert!(is_plain_data(src, "m"));
+        assert_eq!(fn_purity(src, "readSystemToolId"), Some(true));
+        assert_eq!(fn_purity(src, "readDataTypeUrlId"), Some(true));
+    }
+
+    #[test]
+    fn plain_data_rest_and_destructuring_param_writes_shadow_top_level_candidate() {
+        let src = r#"
+            const m = { systemToolWebSearchId: "SYS_FN16" };
+            function viaRest(...m) { m.f = [0]; }
+            function viaObject({ m }) { m.f = [1]; }
+            function viaArray([m]) { m.f = [2]; }
+            const readSystemToolId = () => m.systemToolWebSearchId;
+        "#;
+        assert!(is_plain_data(src, "m"));
+        assert_eq!(fn_purity(src, "readSystemToolId"), Some(true));
+    }
+
+    #[test]
+    fn plain_data_real_top_level_m_write_still_disqualifies_after_vite_helper() {
+        let src = r#"
+            const m = { systemToolWebSearchId: "SYS_FN16" };
+            const __vite__mapDeps = (i, m = __vite__mapDeps, d = m.f || (m.f = [0, 1])) => d;
+            function mutateRealM() { m.f = [2]; }
+            const readSystemToolId = () => m.systemToolWebSearchId;
+        "#;
+        assert!(!is_plain_data(src, "m"));
+        assert_eq!(fn_purity(src, "readSystemToolId"), Some(false));
+    }
+
+    #[test]
+    fn plain_data_unshadowed_default_param_write_disqualifies_top_level_candidate() {
+        let src = r#"
+            const m = { systemToolWebSearchId: "SYS_FN16" };
+            const helper = (d = (m.f = [0, 1])) => d;
+            const readSystemToolId = () => m.systemToolWebSearchId;
+        "#;
+        assert!(!is_plain_data(src, "m"));
+        assert_eq!(fn_purity(src, "readSystemToolId"), Some(false));
+    }
+
+    #[test]
+    fn plain_data_object_define_property_on_real_top_level_m_still_disqualifies() {
+        let src = r#"
+            const m = { systemToolWebSearchId: "SYS_FN16" };
+            Object.defineProperty(m, "systemToolWebSearchId", { get: () => io() });
+            const readSystemToolId = () => m.systemToolWebSearchId;
+        "#;
+        assert!(!is_plain_data(src, "m"));
+        assert_eq!(fn_purity(src, "readSystemToolId"), Some(false));
     }
 
     #[test]
@@ -2243,6 +2483,35 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         assert_eq!(has_side_effect_for("const X = compute();"), vec![true]);
         assert_eq!(has_side_effect_for("const X = new Foo();"), vec![true]);
         assert_eq!(has_side_effect_for("const X = (y = 1, y);"), vec![true]);
+    }
+
+    #[test]
+    fn ts_enum_iife_var_decl_is_not_side_effecting_for_matching_binding() {
+        assert_eq!(
+            has_side_effect_for(
+                r#"var WL = ((n) => (n.NO_SOUND = "no-sound", n.YES = "yes", n))(WL || {});"#
+            ),
+            vec![false]
+        );
+        assert_eq!(
+            has_side_effect_for(r#"var E = ((n) => (n[(n.A = 0)] = "A", n))(E || {});"#),
+            vec![false]
+        );
+    }
+
+    #[test]
+    fn ts_enum_iife_var_decl_rejects_unsafe_shapes_as_side_effecting() {
+        for source in [
+            r#"var X = ((p) => (p.A = io(), p))(X || {});"#,
+            r#"var X = ((p) => (globalThis.A = "a", p))(X || {});"#,
+            r#"var X = ((p) => (other.A = "a", p))(X || {});"#,
+            r#"var X = ((p) => (p[key] = "a", p))(X || {});"#,
+            r#"var X = ((p) => (p.A = value, p))(X || {});"#,
+            r#"var X = ((p) => (leaked = p, p))(X || {});"#,
+            r#"var X = ((p) => (p.A = "a", p))(Other || {});"#,
+        ] {
+            assert_eq!(has_side_effect_for(source), vec![true], "{source}");
+        }
     }
 
     #[test]
