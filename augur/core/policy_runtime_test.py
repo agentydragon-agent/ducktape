@@ -9,6 +9,7 @@ from augur.core.policy_runtime import (
     apply_generic_sp500_sale_instruction,
     apply_mortgage_payment,
     apply_partner_house_cost_contribution,
+    apply_partner_ownership_accrual,
     apply_private_equity_sale_instruction,
     apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
@@ -168,6 +169,47 @@ def test_partner_contribution_instruction_applies_house_costs_and_principal_cred
     np.testing.assert_allclose(result.ledger_entries[1].amount_usd, [0.0, 1_000.0, 2_000.0])
     np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [0.0, 0.0, 1_000.0])
     np.testing.assert_allclose(result.ledger_entries[3].amount_usd, [0.0, 200.0, 500.0])
+
+
+def test_partner_ownership_accrual_applies_freeze_and_records_ledgers() -> None:
+    policy = PartnerEquityAccrualPolicy(policy_id="partner_equity", actor_id="beta", base_monthly_payment_usd=1_000)
+    transfer = partner_contribution_instruction(
+        policy,
+        recipient_actor_id="alpha",
+        contribution_usd=np.array([[0.0, 1_000.0, 1_000.0, 1_000.0]], dtype="float64"),
+    )
+
+    result = apply_partner_ownership_accrual(
+        transfer,
+        owner_initial_equity_usd=20_000,
+        home_equity_usd=np.array([[20_000.0, 20_600.0, 21_200.0, 24_000.0]], dtype="float64"),
+        owner_principal_usd=np.array([[0.0, 300.0, 300.0, 300.0]], dtype="float64"),
+        partner_principal_credit_usd=np.array([[0.0, 100.0, 100.0, 100.0]], dtype="float64"),
+        month_index=np.array([0, 1, 2, 3]),
+        freeze_after_month=2,
+    )
+
+    expected_partner_ledger = np.array([[0.0, 100.0, 200.0, 300.0]], dtype="float64")
+    expected_owner_ledger = np.array([[20_000.0, 20_300.0, 20_600.0, 20_900.0]], dtype="float64")
+    expected_frozen_pct = 200 / 20_800
+    np.testing.assert_allclose(result.partner_equity_ledger_usd, expected_partner_ledger)
+    np.testing.assert_allclose(result.owner_equity_ledger_usd, expected_owner_ledger)
+    np.testing.assert_allclose(result.ownership_pct[0, 2:], expected_frozen_pct)
+    np.testing.assert_allclose(result.home_equity_claim_usd[0, 3], 24_000 * expected_frozen_pct)
+    np.testing.assert_allclose(
+        result.owner_home_equity_claim_usd + result.home_equity_claim_usd, [[20_000.0, 20_600.0, 21_200.0, 24_000.0]]
+    )
+    ledger_shape = [
+        (entry.actor_id, entry.domain, entry.category, entry.counterparty_actor_id) for entry in result.ledger_entries
+    ]
+    assert ledger_shape == [
+        ("beta", "ownership", "partner_principal_credit", "alpha"),
+        ("alpha", "ownership", "owner_principal_credit", "beta"),
+        ("beta", "ownership", "partner_equity_ledger", "alpha"),
+        ("alpha", "ownership", "owner_equity_ledger", "beta"),
+        ("beta", "ownership", "partner_home_equity_claim", "alpha"),
+        ("alpha", "ownership", "owner_home_equity_claim", "beta"),
+    ]
 
 
 def test_property_operating_cash_flow_application_records_cash_ledger() -> None:

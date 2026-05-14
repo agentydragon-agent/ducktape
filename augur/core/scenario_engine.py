@@ -22,6 +22,7 @@ from augur.core.policy_runtime import (
     apply_generic_sp500_sale_instruction,
     apply_mortgage_payment,
     apply_partner_house_cost_contribution,
+    apply_partner_ownership_accrual,
     apply_private_equity_sale_instruction,
     apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
@@ -123,6 +124,12 @@ class ScenarioRunArrays:
     partner_contribution_usd: np.ndarray
     partner_contribution_used_usd: np.ndarray
     partner_unallocated_excess_usd: np.ndarray
+    partner_house_costs_usd: np.ndarray
+    partner_principal_credit_usd: np.ndarray
+    owner_principal_credit_usd: np.ndarray
+    partner_house_cost_share: np.ndarray
+    partner_equity_ledger_usd: np.ndarray
+    owner_equity_ledger_usd: np.ndarray
     partner_ownership_pct: np.ndarray
     liquid_net_worth_usd: np.ndarray
     net_worth_usd: np.ndarray
@@ -200,6 +207,12 @@ class ScenarioRunArrays:
                 "partner_contribution_usd": _flat(self.partner_contribution_usd),
                 "partner_contribution_used_usd": _flat(self.partner_contribution_used_usd),
                 "partner_unallocated_excess_usd": _flat(self.partner_unallocated_excess_usd),
+                "partner_house_costs_usd": _flat(self.partner_house_costs_usd),
+                "partner_principal_credit_usd": _flat(self.partner_principal_credit_usd),
+                "owner_principal_credit_usd": _flat(self.owner_principal_credit_usd),
+                "partner_house_cost_share": _flat(self.partner_house_cost_share),
+                "partner_equity_ledger_usd": _flat(self.partner_equity_ledger_usd),
+                "owner_equity_ledger_usd": _flat(self.owner_equity_ledger_usd),
                 "partner_ownership_pct": _flat(self.partner_ownership_pct),
                 "liquid_net_worth_usd": _flat(self.liquid_net_worth_usd),
                 "net_worth_usd": _flat(self.net_worth_usd),
@@ -237,6 +250,10 @@ class ScenarioRunArrays:
                 "final_partner_home_equity_claim_usd": self.partner_home_equity_claim_usd[:, final].tolist(),
                 "final_partner_ownership_pct": self.partner_ownership_pct[:, final].tolist(),
                 "total_partner_contribution_used_usd": np.sum(self.partner_contribution_used_usd, axis=1).tolist(),
+                "total_partner_principal_credit_usd": np.sum(self.partner_principal_credit_usd, axis=1).tolist(),
+                "total_owner_principal_credit_usd": np.sum(self.owner_principal_credit_usd, axis=1).tolist(),
+                "final_partner_equity_ledger_usd": self.partner_equity_ledger_usd[:, final].tolist(),
+                "final_owner_equity_ledger_usd": self.owner_equity_ledger_usd[:, final].tolist(),
                 "total_rental_income_usd": np.sum(self.rental_income_usd, axis=1).tolist(),
                 "total_property_carrying_cost_usd": np.sum(self.property_carrying_cost_usd, axis=1).tolist(),
                 "total_net_property_cash_flow_usd": np.sum(self.net_property_cash_flow_usd, axis=1).tolist(),
@@ -270,6 +287,9 @@ class ScenarioRunArrays:
             "home_equity_usd": _fan_columns(self.home_equity_usd),
             "owner_home_equity_claim_usd": _fan_columns(self.owner_home_equity_claim_usd),
             "partner_home_equity_claim_usd": _fan_columns(self.partner_home_equity_claim_usd),
+            "partner_principal_credit_usd": _fan_columns(self.partner_principal_credit_usd),
+            "partner_equity_ledger_usd": _fan_columns(self.partner_equity_ledger_usd),
+            "owner_equity_ledger_usd": _fan_columns(self.owner_equity_ledger_usd),
             "partner_ownership_pct": _fan_columns(self.partner_ownership_pct),
             "mortgage_balance_usd": _fan_columns(self.mortgage_balance_usd),
             "rental_income_usd": _fan_columns(self.rental_income_usd),
@@ -309,9 +329,13 @@ class PartnerEquityArrays:
     mortgage_interest_usd: np.ndarray
     mortgage_principal_usd: np.ndarray
     principal_credit_usd: np.ndarray
+    owner_principal_usd: np.ndarray
     house_cost_share: np.ndarray
+    partner_equity_ledger_usd: np.ndarray
+    owner_equity_ledger_usd: np.ndarray
     ownership_pct: np.ndarray
     home_equity_claim_usd: np.ndarray
+    owner_home_equity_claim_usd: np.ndarray
 
 
 def run_scenario_set_vectorized(
@@ -577,7 +601,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
 
     partner_present = np.full((rollout_count, month_count), _has_partner(scenario), dtype=np.bool_)
     partner_home_equity_claim = partner_equity.home_equity_claim_usd
-    owner_home_equity_claim = home_equity - partner_home_equity_claim
+    owner_home_equity_claim = partner_equity.owner_home_equity_claim_usd
     if disposition.sale_month is None:
         owner_home_equity_claim_for_net_worth = owner_home_equity_claim
     else:
@@ -654,6 +678,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         partner_contribution_usd=partner_equity.contribution_usd,
         partner_contribution_used_usd=partner_equity.contribution_used_usd,
         partner_unallocated_excess_usd=partner_equity.unallocated_excess_usd,
+        partner_house_costs_usd=partner_equity.house_costs_usd,
+        partner_principal_credit_usd=partner_equity.principal_credit_usd,
+        owner_principal_credit_usd=partner_equity.owner_principal_usd,
+        partner_house_cost_share=partner_equity.house_cost_share,
+        partner_equity_ledger_usd=partner_equity.partner_equity_ledger_usd,
+        owner_equity_ledger_usd=partner_equity.owner_equity_ledger_usd,
         partner_ownership_pct=partner_equity.ownership_pct,
         liquid_net_worth_usd=liquid_net_worth,
         net_worth_usd=net_worth,
@@ -950,6 +980,7 @@ def _partner_equity_arrays(
     policy = _enabled_policy_of(scenario, PartnerEquityAccrualPolicy)
     property_id = _partner_equity_property_id(scenario, policy)
     if policy is None or not _has_partner(scenario) or property_id is None:
+        owner_equity_ledger = float(owner_initial_equity_usd) + np.cumsum(mortgage_principal_usd, axis=1)
         return PartnerEquityArrays(
             contribution_usd=zeros,
             contribution_used_usd=zeros,
@@ -959,9 +990,13 @@ def _partner_equity_arrays(
             mortgage_interest_usd=zeros,
             mortgage_principal_usd=zeros,
             principal_credit_usd=zeros,
+            owner_principal_usd=mortgage_principal_usd,
             house_cost_share=zeros,
+            partner_equity_ledger_usd=zeros,
+            owner_equity_ledger_usd=owner_equity_ledger,
             ownership_pct=zeros,
             home_equity_claim_usd=zeros,
+            owner_home_equity_claim_usd=home_equity_usd,
         )
 
     base_payment = policy.base_monthly_payment_usd
@@ -986,18 +1021,16 @@ def _partner_equity_arrays(
     contribution_share = contribution_application.house_cost_share
     principal_credit = contribution_application.principal_credit_usd
     owner_principal = contribution_application.owner_principal_usd
-    partner_equity_ledger = np.cumsum(principal_credit, axis=1)
-    owner_equity_ledger = owner_initial_equity_usd + np.cumsum(owner_principal, axis=1)
-    total_equity_ledger = partner_equity_ledger + owner_equity_ledger
-    live_ownership_pct = np.divide(
-        partner_equity_ledger,
-        total_equity_ledger,
-        out=np.zeros_like(partner_equity_ledger),
-        where=total_equity_ledger > 0,
-    )
     freeze_after_month = _partner_freeze_after_month(scenario, policy, occupied_months, market_bundle.horizon_months)
-    ownership_pct = _ownership_with_optional_freeze(live_ownership_pct, month_matrix, freeze_after_month)
-    claim = np.maximum(home_equity_usd, 0.0) * ownership_pct
+    ownership_application = apply_partner_ownership_accrual(
+        contribution_instruction,
+        owner_initial_equity_usd=owner_initial_equity_usd,
+        home_equity_usd=home_equity_usd,
+        owner_principal_usd=owner_principal,
+        partner_principal_credit_usd=principal_credit,
+        month_index=market_bundle.month_index,
+        freeze_after_month=freeze_after_month,
+    )
     return PartnerEquityArrays(
         contribution_usd=configured_payment,
         contribution_used_usd=contribution_used,
@@ -1007,9 +1040,13 @@ def _partner_equity_arrays(
         mortgage_interest_usd=mortgage_interest_usd,
         mortgage_principal_usd=mortgage_principal_usd,
         principal_credit_usd=principal_credit,
+        owner_principal_usd=owner_principal,
         house_cost_share=contribution_share,
-        ownership_pct=ownership_pct,
-        home_equity_claim_usd=claim,
+        partner_equity_ledger_usd=ownership_application.partner_equity_ledger_usd,
+        owner_equity_ledger_usd=ownership_application.owner_equity_ledger_usd,
+        ownership_pct=ownership_application.ownership_pct,
+        home_equity_claim_usd=ownership_application.home_equity_claim_usd,
+        owner_home_equity_claim_usd=ownership_application.owner_home_equity_claim_usd,
     )
 
 
@@ -1050,19 +1087,6 @@ def _partner_freeze_after_month(
     if scenario.rental_plan.rental_mode is RentalMode.TRANSITION_TO_WHOLE_PROPERTY_RENTAL:
         return occupied_months
     return None
-
-
-def _ownership_with_optional_freeze(
-    live_ownership_pct: np.ndarray, month_index: np.ndarray, freeze_after_month: int | None
-) -> np.ndarray:
-    if freeze_after_month is None:
-        return live_ownership_pct
-    freeze_mask = month_index == freeze_after_month
-    found = np.any(freeze_mask, axis=1, keepdims=True)
-    freeze_positions = np.argmax(freeze_mask, axis=1)
-    frozen = np.take_along_axis(live_ownership_pct, freeze_positions[:, None], axis=1)
-    should_freeze = (month_index >= freeze_after_month) & found
-    return np.where(should_freeze, frozen, live_ownership_pct)
 
 
 def _property_and_mortgage_arrays(

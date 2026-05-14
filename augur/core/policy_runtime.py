@@ -107,6 +107,7 @@ class LedgerEntryBatch:
     domain: str
     amount_usd: np.ndarray
     category: str
+    counterparty_actor_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -154,6 +155,22 @@ class PartnerHouseCostContributionApplication:
     house_cost_share: np.ndarray
     principal_credit_usd: np.ndarray
     owner_principal_usd: np.ndarray
+    ledger_entries: tuple[LedgerEntryBatch, ...]
+
+
+@dataclass(frozen=True)
+class PartnerOwnershipAccrualApplication:
+    transfer: TransferCashInstructionBatch
+    owner_initial_equity_usd: float
+    owner_principal_usd: np.ndarray
+    partner_principal_credit_usd: np.ndarray
+    partner_equity_ledger_usd: np.ndarray
+    owner_equity_ledger_usd: np.ndarray
+    total_equity_ledger_usd: np.ndarray
+    live_ownership_pct: np.ndarray
+    ownership_pct: np.ndarray
+    home_equity_claim_usd: np.ndarray
+    owner_home_equity_claim_usd: np.ndarray
     ledger_entries: tuple[LedgerEntryBatch, ...]
 
 
@@ -266,6 +283,7 @@ def apply_partner_house_cost_contribution(
             domain="cash",
             amount_usd=-instruction.amount_usd,
             category="partner_contribution_transfer",
+            counterparty_actor_id=instruction.recipient_actor_id,
         ),
         LedgerEntryBatch(
             actor_id=instruction.recipient_actor_id,
@@ -273,6 +291,7 @@ def apply_partner_house_cost_contribution(
             domain="cash",
             amount_usd=contribution_used_usd,
             category="partner_contribution_used_for_house_costs",
+            counterparty_actor_id=instruction.actor_id,
         ),
         LedgerEntryBatch(
             actor_id=instruction.recipient_actor_id,
@@ -280,6 +299,7 @@ def apply_partner_house_cost_contribution(
             domain="escrow",
             amount_usd=unallocated_excess_usd,
             category="partner_contribution_unallocated",
+            counterparty_actor_id=instruction.actor_id,
         ),
         LedgerEntryBatch(
             actor_id=instruction.actor_id,
@@ -287,6 +307,7 @@ def apply_partner_house_cost_contribution(
             domain="ownership",
             amount_usd=principal_credit_usd,
             category="partner_principal_credit",
+            counterparty_actor_id=instruction.recipient_actor_id,
         ),
     )
     return PartnerHouseCostContributionApplication(
@@ -297,6 +318,94 @@ def apply_partner_house_cost_contribution(
         house_cost_share=house_cost_share,
         principal_credit_usd=principal_credit_usd,
         owner_principal_usd=owner_principal_usd,
+        ledger_entries=ledger_entries,
+    )
+
+
+def apply_partner_ownership_accrual(
+    transfer: TransferCashInstructionBatch,
+    *,
+    owner_initial_equity_usd: float,
+    home_equity_usd: np.ndarray,
+    owner_principal_usd: np.ndarray,
+    partner_principal_credit_usd: np.ndarray,
+    month_index: np.ndarray,
+    freeze_after_month: int | None,
+) -> PartnerOwnershipAccrualApplication:
+    partner_equity_ledger_usd = np.cumsum(partner_principal_credit_usd, axis=1)
+    owner_equity_ledger_usd = float(owner_initial_equity_usd) + np.cumsum(owner_principal_usd, axis=1)
+    total_equity_ledger_usd = partner_equity_ledger_usd + owner_equity_ledger_usd
+    live_ownership_pct = np.divide(
+        partner_equity_ledger_usd,
+        total_equity_ledger_usd,
+        out=np.zeros_like(partner_equity_ledger_usd),
+        where=total_equity_ledger_usd > 0,
+    )
+    ownership_pct = _freeze_ownership_pct(live_ownership_pct, month_index, freeze_after_month)
+    home_equity_claim_usd = np.maximum(home_equity_usd, 0.0) * ownership_pct
+    owner_home_equity_claim_usd = home_equity_usd - home_equity_claim_usd
+    ledger_entries = (
+        LedgerEntryBatch(
+            actor_id=transfer.actor_id,
+            policy_id=transfer.policy_id,
+            domain="ownership",
+            amount_usd=partner_principal_credit_usd,
+            category="partner_principal_credit",
+            counterparty_actor_id=transfer.recipient_actor_id,
+        ),
+        LedgerEntryBatch(
+            actor_id=transfer.recipient_actor_id,
+            policy_id=transfer.policy_id,
+            domain="ownership",
+            amount_usd=owner_principal_usd,
+            category="owner_principal_credit",
+            counterparty_actor_id=transfer.actor_id,
+        ),
+        LedgerEntryBatch(
+            actor_id=transfer.actor_id,
+            policy_id=transfer.policy_id,
+            domain="ownership",
+            amount_usd=partner_equity_ledger_usd,
+            category="partner_equity_ledger",
+            counterparty_actor_id=transfer.recipient_actor_id,
+        ),
+        LedgerEntryBatch(
+            actor_id=transfer.recipient_actor_id,
+            policy_id=transfer.policy_id,
+            domain="ownership",
+            amount_usd=owner_equity_ledger_usd,
+            category="owner_equity_ledger",
+            counterparty_actor_id=transfer.actor_id,
+        ),
+        LedgerEntryBatch(
+            actor_id=transfer.actor_id,
+            policy_id=transfer.policy_id,
+            domain="ownership",
+            amount_usd=home_equity_claim_usd,
+            category="partner_home_equity_claim",
+            counterparty_actor_id=transfer.recipient_actor_id,
+        ),
+        LedgerEntryBatch(
+            actor_id=transfer.recipient_actor_id,
+            policy_id=transfer.policy_id,
+            domain="ownership",
+            amount_usd=owner_home_equity_claim_usd,
+            category="owner_home_equity_claim",
+            counterparty_actor_id=transfer.actor_id,
+        ),
+    )
+    return PartnerOwnershipAccrualApplication(
+        transfer=transfer,
+        owner_initial_equity_usd=float(owner_initial_equity_usd),
+        owner_principal_usd=owner_principal_usd,
+        partner_principal_credit_usd=partner_principal_credit_usd,
+        partner_equity_ledger_usd=partner_equity_ledger_usd,
+        owner_equity_ledger_usd=owner_equity_ledger_usd,
+        total_equity_ledger_usd=total_equity_ledger_usd,
+        live_ownership_pct=live_ownership_pct,
+        ownership_pct=ownership_pct,
+        home_equity_claim_usd=home_equity_claim_usd,
+        owner_home_equity_claim_usd=owner_home_equity_claim_usd,
         ledger_entries=ledger_entries,
     )
 
@@ -566,3 +675,19 @@ def apply_generic_sp500_sale_instruction(
         gain_usd=sale_usd - basis_usd,
         shortfall_usd=shortfall_usd,
     )
+
+
+def _freeze_ownership_pct(
+    live_ownership_pct: np.ndarray, month_index: np.ndarray, freeze_after_month: int | None
+) -> np.ndarray:
+    if freeze_after_month is None:
+        return live_ownership_pct
+    month_matrix = (
+        np.broadcast_to(month_index[None, :], live_ownership_pct.shape) if month_index.ndim == 1 else month_index
+    )
+    freeze_mask = month_matrix == freeze_after_month
+    has_freeze_month = np.any(freeze_mask, axis=1, keepdims=True)
+    freeze_positions = np.argmax(freeze_mask, axis=1)
+    frozen_pct = np.take_along_axis(live_ownership_pct, freeze_positions[:, None], axis=1)
+    should_freeze = (month_matrix >= freeze_after_month) & has_freeze_month
+    return np.where(should_freeze, frozen_pct, live_ownership_pct)

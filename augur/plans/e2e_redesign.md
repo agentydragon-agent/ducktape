@@ -740,15 +740,25 @@ transfer, used house-cost funding, unallocated escrow, and partner principal
 credit ledger entries while preserving the existing aggregate result arrays and
 actions.
 
+**DONE (second slice)**: Partner ownership accrual now runs through
+`apply_partner_ownership_accrual()` instead of bespoke scenario-engine math.
+The applier credits partner and owner principal into separate equity ledgers,
+applies the optional ownership freeze, computes owner/partner home-equity
+claims, and records ownership ledger entries. Public monthly/terminal/fan
+results now expose the first ledger-shaped reconciliation metrics:
+`partner_principal_credit_usd`, `owner_principal_credit_usd`,
+`partner_equity_ledger_usd`, `owner_equity_ledger_usd`,
+`partner_house_costs_usd`, and `partner_house_cost_share`.
+
 Refactor partner equity as a policy/contract rule:
 
-- The ownership applier credits principal share into a per-partner ledger.
 - Unallocated contribution excess is recorded as cash, escrow, refund, or an
   explicit liability according to the modeled agreement.
 
-Remaining acceptance: partner-equity outputs are keyed by partner actor or
-derivable from ledger entries; multiple partner agreements are no longer
-silently collapsed.
+Remaining acceptance: persist actor-keyed ledger entries into result detail
+instead of exposing only scenario-level arrays; partner-equity outputs should
+be keyed by partner actor or derivable from those ledger entries; multiple
+partner agreements are no longer silently collapsed.
 
 ### Step 7: Make Arrays Reconcile to Ledger
 
