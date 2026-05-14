@@ -27,9 +27,15 @@ from augur.core.scenario_set import (
     ScenarioSet,
     ScenarioSetRunResponse,
     SimulationAction,
+    SimulationBalanceSnapshot,
+    SimulationLedgerEntry,
+    SimulationMarketObservation,
+    SimulationPolicyDecision,
 )
 
 ActionT = TypeVar("ActionT")
+DecisionT = TypeVar("DecisionT")
+ObservationT = TypeVar("ObservationT")
 
 
 class SimulationValidationError(ValueError):
@@ -55,6 +61,34 @@ class RolloutDetail:
 
     def actions(self, action_type: type[Any] | None = None) -> tuple[Any, ...]:
         return self.scenario_run.actions(action_type, rollout=self.rollout_index)
+
+    @overload
+    def policy_decisions(self, decision_type: type[DecisionT]) -> tuple[DecisionT, ...]: ...
+
+    @overload
+    def policy_decisions(self, decision_type: None = None) -> tuple[SimulationPolicyDecision, ...]: ...
+
+    def policy_decisions(self, decision_type: type[Any] | None = None) -> tuple[Any, ...]:
+        return self.scenario_run.policy_decisions(decision_type, rollout=self.rollout_index)
+
+    @overload
+    def market_observations(self, observation_type: type[ObservationT]) -> tuple[ObservationT, ...]: ...
+
+    @overload
+    def market_observations(self, observation_type: None = None) -> tuple[SimulationMarketObservation, ...]: ...
+
+    def market_observations(self, observation_type: type[Any] | None = None) -> tuple[Any, ...]:
+        return self.scenario_run.market_observations(observation_type, rollout=self.rollout_index)
+
+    def ledger_entries(
+        self, *, domain: str | None = None, category: str | None = None
+    ) -> tuple[SimulationLedgerEntry, ...]:
+        return self.scenario_run.ledger_entries(domain=domain, category=category, rollout=self.rollout_index)
+
+    def balance_snapshots(
+        self, *, domain: str | None = None, category: str | None = None
+    ) -> tuple[SimulationBalanceSnapshot, ...]:
+        return self.scenario_run.balance_snapshots(domain=domain, category=category, rollout=self.rollout_index)
 
 
 @dataclass(frozen=True)
@@ -114,6 +148,84 @@ class ScenarioRun:
             actions = tuple(action for action in actions if action.rollout_index == rollout)
         return actions
 
+    @overload
+    def policy_decisions(
+        self, decision_type: type[DecisionT], *, rollout: int | None = None
+    ) -> tuple[DecisionT, ...]: ...
+
+    @overload
+    def policy_decisions(
+        self, decision_type: None = None, *, rollout: int | None = None
+    ) -> tuple[SimulationPolicyDecision, ...]: ...
+
+    def policy_decisions(
+        self, decision_type: type[Any] | None = None, *, rollout: int | None = None
+    ) -> tuple[Any, ...]:
+        if self.arrays is None:
+            return ()
+        decisions: tuple[Any, ...] = self.arrays.policy_decisions
+        if decision_type is not None:
+            decisions = tuple(decision for decision in decisions if isinstance(decision, decision_type))
+        if rollout is not None:
+            self._validate_rollout_index(rollout)
+            decisions = tuple(decision for decision in decisions if decision.rollout_index == rollout)
+        return decisions
+
+    @overload
+    def market_observations(
+        self, observation_type: type[ObservationT], *, rollout: int | None = None
+    ) -> tuple[ObservationT, ...]: ...
+
+    @overload
+    def market_observations(
+        self, observation_type: None = None, *, rollout: int | None = None
+    ) -> tuple[SimulationMarketObservation, ...]: ...
+
+    def market_observations(
+        self, observation_type: type[Any] | None = None, *, rollout: int | None = None
+    ) -> tuple[Any, ...]:
+        if self.arrays is None:
+            return ()
+        observations: tuple[Any, ...] = self.arrays.market_observations
+        if observation_type is not None:
+            observations = tuple(
+                observation for observation in observations if isinstance(observation, observation_type)
+            )
+        if rollout is not None:
+            self._validate_rollout_index(rollout)
+            observations = tuple(observation for observation in observations if observation.rollout_index == rollout)
+        return observations
+
+    def ledger_entries(
+        self, *, domain: str | None = None, category: str | None = None, rollout: int | None = None
+    ) -> tuple[SimulationLedgerEntry, ...]:
+        if self.arrays is None:
+            return ()
+        entries = self.arrays.ledger_entries
+        if domain is not None:
+            entries = tuple(entry for entry in entries if entry.domain == domain)
+        if category is not None:
+            entries = tuple(entry for entry in entries if entry.category == category)
+        if rollout is not None:
+            self._validate_rollout_index(rollout)
+            entries = tuple(entry for entry in entries if entry.rollout_index == rollout)
+        return entries
+
+    def balance_snapshots(
+        self, *, domain: str | None = None, category: str | None = None, rollout: int | None = None
+    ) -> tuple[SimulationBalanceSnapshot, ...]:
+        if self.arrays is None:
+            return ()
+        snapshots = self.arrays.balance_snapshots
+        if domain is not None:
+            snapshots = tuple(snapshot for snapshot in snapshots if snapshot.domain == domain)
+        if category is not None:
+            snapshots = tuple(snapshot for snapshot in snapshots if snapshot.category == category)
+        if rollout is not None:
+            self._validate_rollout_index(rollout)
+            snapshots = tuple(snapshot for snapshot in snapshots if snapshot.rollout_index == rollout)
+        return snapshots
+
     def to_response_result(self) -> ScenarioResult:
         if self.arrays is None:
             return ScenarioResult(
@@ -132,6 +244,10 @@ class ScenarioRun:
             monthly_columns=self.arrays.monthly_columns(),
             terminal_columns=self.arrays.terminal_columns(),
             actions=self.arrays.actions,
+            policy_decisions=self.arrays.policy_decisions,
+            market_observations=self.arrays.market_observations,
+            ledger_entries=self.arrays.ledger_entries,
+            balance_snapshots=self.arrays.balance_snapshots,
             warnings=self.warnings,
         )
 
@@ -376,5 +492,14 @@ def _available_metric_names() -> tuple[str, ...]:
     return tuple(
         field.name
         for field in fields(ScenarioRunArrays)
-        if field.name not in {"actions", "scenario_id", "scenario_label"}
+        if field.name
+        not in {
+            "actions",
+            "balance_snapshots",
+            "ledger_entries",
+            "market_observations",
+            "policy_decisions",
+            "scenario_id",
+            "scenario_label",
+        }
     )

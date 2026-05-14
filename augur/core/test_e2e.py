@@ -30,12 +30,17 @@ from augur.core.scenario_set import (
     FixedAmountPrivateEquitySaleRule,
     GenericSp500StockPosition,
     InitialBalanceSheet,
+    MarketPathObservation,
     MarketRequest,
     MonthlySpendAction,
+    MonthlySpendDecision,
     MonthlySpendPolicy,
+    PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
     PayMortgageAction,
+    PrivateEquityLiquidityObservation,
     PrivateEquityPosition,
+    PrivateEquitySaleDecision,
     PrivateEquitySalePolicy,
     PrivateEquitySaleRequestEvent,
     PropertyAssumptions,
@@ -45,6 +50,7 @@ from augur.core.scenario_set import (
     Scenario,
     ScenarioSet,
     SellPrivateEquityAction,
+    SellPublicStockDecision,
     SellSp500Action,
     SettlePropertySaleAction,
     TaxProfile,
@@ -96,6 +102,20 @@ def _cash_only_scenario(*, cash_usd: float, scenario_id: str = "e2e") -> Scenari
     )
 
 
+def _ledger_matrix(result: ScenarioRun, *, domain: str, category: str) -> np.ndarray:
+    matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
+    for entry in result.ledger_entries(domain=domain, category=category):
+        matrix[entry.rollout_index, entry.month_index] += entry.amount_usd
+    return matrix
+
+
+def _snapshot_matrix(result: ScenarioRun, *, domain: str, category: str) -> np.ndarray:
+    matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
+    for snapshot in result.balance_snapshots(domain=domain, category=category):
+        matrix[snapshot.rollout_index, snapshot.month_index] += snapshot.amount_usd
+    return matrix
+
+
 def test_cash_only_no_activity_preserves_balance() -> None:
     """Agent holds $100k in checking, no property, no investments, no spending.
     Flat market. Cash should remain exactly $100k at every month."""
@@ -109,6 +129,13 @@ def test_cash_only_no_activity_preserves_balance() -> None:
     np.testing.assert_allclose(result.matrix("private_equity_value_usd"), 0)
     np.testing.assert_allclose(result.matrix("property_value_usd"), 0)
     np.testing.assert_allclose(result.series("net_worth_usd"), 100_000)
+    assert result.ledger_entries() == ()
+    assert result.balance_snapshots() == ()
+    market_path = result.rollout(0).market_observations(MarketPathObservation)
+    assert len(market_path) == 13
+    assert market_path[0].month_index == 0
+    assert market_path[0].sp500_multiplier == 1.0
+    assert result.rollout(0).market_observations(PrivateEquityLiquidityObservation) == ()
 
 
 def test_simulate_set_rejects_policy_with_unknown_actor_path() -> None:
@@ -245,11 +272,18 @@ def test_monthly_spend_drains_cash() -> None:
     np.testing.assert_allclose(result.series("monthly_spend_usd")[0], 0)
     np.testing.assert_allclose(result.series("monthly_spend_usd")[1], 5_000)
     np.testing.assert_allclose(result.series("monthly_spend_usd")[12], 5_000)
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="cash", category="monthly_spend"), result.matrix("monthly_spend_usd")
+    )
     # Verify actions recorded for each month 1..12
     spend_actions = result.actions(MonthlySpendAction)
     assert len(spend_actions) == 12
     assert spend_actions[0].amount_usd == 5_000
     assert spend_actions[0].month_index == 1
+    spend_decisions = result.policy_decisions(MonthlySpendDecision)
+    assert len(spend_decisions) == 12
+    assert spend_decisions[0].amount_usd == 5_000
+    assert spend_decisions[0].month_index == 1
 
 
 def test_monthly_spend_records_each_rollout_and_month() -> None:
@@ -276,6 +310,9 @@ def test_monthly_spend_records_each_rollout_and_month() -> None:
     np.testing.assert_allclose(result.matrix("cash_usd")[:, 1], 95_000)
     np.testing.assert_allclose(result.matrix("cash_usd")[:, 2], 90_000)
     np.testing.assert_allclose(result.matrix("monthly_spend_usd")[:, 1:], 5_000)
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="cash", category="monthly_spend"), result.matrix("monthly_spend_usd")
+    )
     assert [
         (action.rollout_index, action.month_index, action.amount_usd) for action in result.actions(MonthlySpendAction)
     ] == [(0, 1, 5_000), (1, 1, 5_000), (0, 2, 5_000), (1, 2, 5_000)]
@@ -321,6 +358,16 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
     np.testing.assert_allclose(rollout.series("mortgage_principal_usd")[1], expected_month_1_principal)
     np.testing.assert_allclose(rollout.series("mortgage_payment_usd")[1], payment)
     np.testing.assert_allclose(rollout.series("mortgage_balance_usd")[1], loan_amount - expected_month_1_principal)
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="cash", category="mortgage_interest"), result.matrix("mortgage_interest_usd")
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="cash", category="mortgage_principal"), result.matrix("mortgage_principal_usd")
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="liability", category="mortgage_principal"),
+        result.matrix("mortgage_principal_usd"),
+    )
     mortgage_payments = result.actions(PayMortgageAction)
     assert len(mortgage_payments) == 12
     assert mortgage_payments[0].month_index == 1
@@ -408,6 +455,38 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
     )
     np.testing.assert_allclose(rollout.series("cash_usd")[0], 20_000)
     np.testing.assert_allclose(rollout.series("cash_usd")[60], 20_000)
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="cash", category="partner_contribution_transfer"),
+        result.matrix("partner_contribution_usd"),
+    )
+    np.testing.assert_allclose(
+        _ledger_matrix(result, domain="cash", category="partner_contribution_used_for_house_costs"),
+        result.matrix("partner_contribution_used_usd"),
+    )
+    np.testing.assert_allclose(
+        _ledger_matrix(result, domain="escrow", category="partner_contribution_unallocated"),
+        result.matrix("partner_unallocated_excess_usd"),
+    )
+    np.testing.assert_allclose(
+        _ledger_matrix(result, domain="ownership", category="partner_principal_credit"),
+        result.matrix("partner_principal_credit_usd"),
+    )
+    np.testing.assert_allclose(
+        _snapshot_matrix(result, domain="ownership", category="partner_equity_ledger"),
+        result.matrix("partner_equity_ledger_usd"),
+    )
+    np.testing.assert_allclose(
+        _snapshot_matrix(result, domain="ownership", category="owner_equity_ledger"),
+        result.matrix("owner_equity_ledger_usd"),
+    )
+    np.testing.assert_allclose(
+        _snapshot_matrix(result, domain="ownership", category="partner_home_equity_claim"),
+        result.matrix("partner_home_equity_claim_usd"),
+    )
+    np.testing.assert_allclose(
+        _snapshot_matrix(result, domain="ownership", category="owner_home_equity_claim"),
+        result.matrix("owner_home_equity_claim_usd"),
+    )
 
     transfers = result.actions(TransferPartnerContributionAction)
     assert len(transfers) == horizon_months
@@ -420,6 +499,11 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
         [action.applied_to_house_costs_usd for action in transfers], rollout.series("partner_contribution_used_usd")[1:]
     )
     assert all(action.unallocated_amount_usd > 0 for action in transfers)
+    contribution_decisions = result.policy_decisions(PartnerContributionDecision)
+    assert len(contribution_decisions) == horizon_months
+    assert contribution_decisions[0].actor_id == "beta"
+    assert contribution_decisions[0].recipient_actor_id == "alpha"
+    assert contribution_decisions[0].requested_amount_usd == 1_000
 
     mortgage_payments = result.actions(PayMortgageAction)
     assert len(mortgage_payments) == horizon_months
@@ -494,6 +578,21 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     )
     np.testing.assert_allclose(
         result.matrix("net_property_sale_cash_flow_usd"), result.matrix("property_sale_net_proceeds_usd")
+    )
+    np.testing.assert_allclose(
+        _ledger_matrix(result, domain="property_sale", category="property_sale_gross"),
+        result.matrix("property_sale_gross_usd"),
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="property_sale", category="sale_closing_cost"),
+        result.matrix("sale_closing_cost_usd"),
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="tax", category="property_sale_tax"), result.matrix("property_sale_tax_usd")
+    )
+    np.testing.assert_allclose(
+        _ledger_matrix(result, domain="cash", category="property_sale_net_proceeds"),
+        result.matrix("property_sale_net_proceeds_usd"),
     )
     actions = rollout.actions(SettlePropertySaleAction)
     assert len(actions) == 1
@@ -646,6 +745,18 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     )
     actions = {action["action_type"]: action for action in result["actions"]}
     assert set(actions) == {"sell_sp500", "sell_private_equity", "settle_property_sale"}
+    assert {
+        ("asset", "generic_sp500_sale"),
+        ("asset", "private_equity_sale"),
+        ("cash", "property_sale_net_proceeds"),
+        ("tax", "property_sale_tax"),
+    } <= {(entry["domain"], entry["category"]) for entry in result["ledger_entries"]}
+    assert {"sell_public_stock", "private_equity_sale"} <= {
+        decision["decision_type"] for decision in result["policy_decisions"]
+    }
+    assert {"market_path", "private_equity_liquidity_opportunity"} <= {
+        observation["observation_type"] for observation in result["market_observations"]
+    }
 
     sp500_action = actions["sell_sp500"]
     assert sp500_action["amount_usd"] == 20_000
@@ -738,6 +849,24 @@ def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
     np.testing.assert_allclose(rollout.series("net_property_cash_flow_usd")[1], expected_net_property_cash_flow)
     np.testing.assert_allclose(rollout.series("cash_usd")[0], 130_000)
     np.testing.assert_allclose(rollout.series("cash_usd")[1], 130_000 + expected_net_property_cash_flow)
+    np.testing.assert_allclose(
+        _ledger_matrix(result, domain="rental", category="rental_gross_income"),
+        result.matrix("rental_gross_income_usd"),
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="rental", category="rental_vacancy_loss"),
+        result.matrix("rental_vacancy_loss_usd"),
+    )
+    np.testing.assert_allclose(
+        _ledger_matrix(result, domain="cash", category="rental_income"), result.matrix("rental_income_usd")
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="cash", category="property_tax"), result.matrix("property_tax_usd")
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="cash", category="rental_management_fee"),
+        result.matrix("rental_management_fee_usd"),
+    )
 
 
 def test_pydantic_rejects_rental_mode_without_required_rent() -> None:
@@ -808,6 +937,21 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
     np.testing.assert_allclose(rollout.series("generic_sp500_sale_gain_usd")[5], 10_000)
     np.testing.assert_allclose(rollout.series("generic_sp500_sale_tax_usd")[5], expected_stock_sale_tax)
     np.testing.assert_allclose(rollout.series("checking_floor_shortfall_usd"), 0)
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="asset", category="generic_sp500_sale"), result.matrix("generic_sp500_sale_usd")
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="basis", category="generic_sp500_sale_basis"),
+        result.matrix("generic_sp500_sale_basis_usd"),
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="tax", category="generic_sp500_sale_tax"),
+        result.matrix("generic_sp500_sale_tax_usd"),
+    )
+    np.testing.assert_allclose(
+        _ledger_matrix(result, domain="cash", category="generic_sp500_after_tax_proceeds"),
+        result.matrix("generic_sp500_sale_usd") - result.matrix("generic_sp500_sale_tax_usd"),
+    )
 
     actions = result.actions(SellSp500Action)
     assert len(actions) == 1
@@ -819,6 +963,13 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
     assert actions[0].gain_usd == 10_000
     np.testing.assert_allclose(actions[0].tax_usd, expected_stock_sale_tax)
     assert actions[0].shortfall_usd == 0
+    decisions = result.policy_decisions(SellPublicStockDecision)
+    assert len(decisions) == 1
+    assert decisions[0].month_index == 5
+    assert decisions[0].policy_id == "checking_floor"
+    assert decisions[0].requested_amount_usd == 20_000
+    assert decisions[0].current_cash_usd == 5_000
+    assert decisions[0].target_cash_floor_usd == 10_000
 
 
 def test_multiple_checking_floor_rules_execute_in_policy_order() -> None:
@@ -906,6 +1057,11 @@ def test_private_equity_sale_request_uses_market_liquidity_opportunity() -> None
     np.testing.assert_allclose(no_opportunity.rollout(0).series("private_equity_sale_usd"), 0)
     np.testing.assert_allclose(no_opportunity.rollout(0).series("cash_usd")[12], 10_000)
     assert no_opportunity.actions(SellPrivateEquityAction) == ()
+    no_opportunity_decisions = no_opportunity.policy_decisions(PrivateEquitySaleDecision)
+    assert len(no_opportunity_decisions) == 1
+    assert no_opportunity_decisions[0].requested_amount_usd == 100_000
+    assert no_opportunity_decisions[0].liquidity_available_value_usd == 0
+    assert no_opportunity.rollout(0).market_observations(PrivateEquityLiquidityObservation) == ()
 
     result = _run_scenario(
         scenario,
@@ -927,6 +1083,31 @@ def test_private_equity_sale_request_uses_market_liquidity_opportunity() -> None
     np.testing.assert_allclose(rollout.series("private_equity_liquidity_available_value_usd")[12], 100_000)
     np.testing.assert_allclose(rollout.series("cash_usd")[12], 10_000 + expected_after_tax_proceeds)
     np.testing.assert_allclose(rollout.series("net_worth_usd")[12], 10_000 + expected_after_tax_proceeds + 100_000)
+    liquidity_observations = rollout.market_observations(PrivateEquityLiquidityObservation)
+    assert len(liquidity_observations) == 1
+    assert liquidity_observations[0].month_index == 12
+    assert liquidity_observations[0].liquidity_available_value_usd == 200_000
+    pe_decisions = result.policy_decisions(PrivateEquitySaleDecision)
+    assert len(pe_decisions) == 1
+    assert pe_decisions[0].month_index == 12
+    assert pe_decisions[0].requested_amount_usd == 100_000
+    assert pe_decisions[0].liquidity_available_value_usd == 200_000
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="asset", category="private_equity_sale"),
+        result.matrix("private_equity_sale_usd"),
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="basis", category="private_equity_sale_basis"),
+        result.matrix("private_equity_sale_basis_usd"),
+    )
+    np.testing.assert_allclose(
+        -_ledger_matrix(result, domain="tax", category="private_equity_sale_tax"),
+        result.matrix("private_equity_sale_tax_usd"),
+    )
+    np.testing.assert_allclose(
+        _ledger_matrix(result, domain="cash", category="private_equity_after_tax_proceeds"),
+        result.matrix("private_equity_sale_usd") - result.matrix("private_equity_sale_tax_usd"),
+    )
 
     actions = result.actions(SellPrivateEquityAction)
     assert len(actions) == 1

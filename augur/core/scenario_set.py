@@ -57,6 +57,18 @@ class ActionType(StrEnum):
     MONTHLY_SPEND = "monthly_spend"
 
 
+class PolicyDecisionType(StrEnum):
+    MONTHLY_SPEND = "monthly_spend"
+    SELL_PUBLIC_STOCK = "sell_public_stock"
+    PRIVATE_EQUITY_SALE = "private_equity_sale"
+    PARTNER_CONTRIBUTION = "partner_contribution"
+
+
+class MarketObservationType(StrEnum):
+    MARKET_PATH = "market_path"
+    PRIVATE_EQUITY_LIQUIDITY_OPPORTUNITY = "private_equity_liquidity_opportunity"
+
+
 class ActorRole(StrEnum):
     PRIMARY_OWNER = "primary_owner"
     EQUITY_BUILDING_OCCUPANT = "equity_building_occupant"
@@ -430,6 +442,104 @@ SimulationAction = Annotated[
 ]
 
 
+class _SimulationPolicyDecisionBase(ApiModel):
+    rollout_index: NonNegativeInt
+    month_index: NonNegativeInt
+    actor_id: str
+    policy_id: str
+
+
+class MonthlySpendDecision(_SimulationPolicyDecisionBase):
+    decision_type: Literal[PolicyDecisionType.MONTHLY_SPEND] = PolicyDecisionType.MONTHLY_SPEND
+    amount_usd: float
+    inflation_multiplier: float = 1.0
+
+
+class SellPublicStockDecision(_SimulationPolicyDecisionBase):
+    decision_type: Literal[PolicyDecisionType.SELL_PUBLIC_STOCK] = PolicyDecisionType.SELL_PUBLIC_STOCK
+    asset_type: Literal[AssetType.GENERIC_SP500_STOCK] = AssetType.GENERIC_SP500_STOCK
+    requested_amount_usd: float
+    current_cash_usd: float
+    target_cash_floor_usd: float | None = None
+
+
+class PrivateEquitySaleDecision(_SimulationPolicyDecisionBase):
+    decision_type: Literal[PolicyDecisionType.PRIVATE_EQUITY_SALE] = PolicyDecisionType.PRIVATE_EQUITY_SALE
+    requested_amount_usd: float
+    liquidity_available_value_usd: float
+    private_equity_value_before_sale_usd: float
+    proceeds_destination: AccountType | AssetType
+    request_event_id: str | None = None
+    request_event_type: EventType | None = None
+
+
+class PartnerContributionDecision(_SimulationPolicyDecisionBase):
+    decision_type: Literal[PolicyDecisionType.PARTNER_CONTRIBUTION] = PolicyDecisionType.PARTNER_CONTRIBUTION
+    recipient_actor_id: str
+    requested_amount_usd: float
+    property_id: PropertyId
+
+
+SimulationPolicyDecision = Annotated[
+    MonthlySpendDecision | SellPublicStockDecision | PrivateEquitySaleDecision | PartnerContributionDecision,
+    Field(discriminator="decision_type"),
+]
+
+
+class _SimulationMarketObservationBase(ApiModel):
+    rollout_index: NonNegativeInt
+    month_index: NonNegativeInt
+
+
+class MarketPathObservation(_SimulationMarketObservationBase):
+    observation_type: Literal[MarketObservationType.MARKET_PATH] = MarketObservationType.MARKET_PATH
+    location_id: LocationId | None = None
+    inflation_multiplier: float
+    sp500_multiplier: float
+    private_equity_value_multiplier: float
+    home_value_multiplier: float
+    rent_multiplier: float
+    mortgage_30y_rate_pct: float
+    private_equity_liquidity_event: bool
+
+
+class PrivateEquityLiquidityObservation(_SimulationMarketObservationBase):
+    observation_type: Literal[MarketObservationType.PRIVATE_EQUITY_LIQUIDITY_OPPORTUNITY] = (
+        MarketObservationType.PRIVATE_EQUITY_LIQUIDITY_OPPORTUNITY
+    )
+    liquidity_available_value_usd: float
+    private_equity_value_before_sale_usd: float
+
+
+SimulationMarketObservation = Annotated[
+    MarketPathObservation | PrivateEquityLiquidityObservation, Field(discriminator="observation_type")
+]
+
+
+class _SimulationLedgerBase(ApiModel):
+    rollout_index: NonNegativeInt
+    month_index: NonNegativeInt
+    actor_id: str
+    policy_id: str | None = None
+    event_id: str | None = None
+    account_id: str | None = None
+    asset_id: str | None = None
+    liability_id: str | None = None
+    property_id: PropertyId | None = None
+    domain: str
+    category: str
+    amount_usd: float
+    counterparty_actor_id: str | None = None
+
+
+class SimulationLedgerEntry(_SimulationLedgerBase):
+    """A realized economic movement for one rollout/month."""
+
+
+class SimulationBalanceSnapshot(_SimulationLedgerBase):
+    """A point-in-time state value for one rollout/month."""
+
+
 class ReportSpec(ApiModel):
     metrics: tuple[ReportMetric, ...] = (
         ReportMetric.NET_WORTH,
@@ -688,6 +798,10 @@ class ScenarioResult(ApiModel):
     monthly_columns: ColumnarTable | None = None
     terminal_columns: ColumnarTable | None = None
     actions: tuple[SimulationAction, ...] = ()
+    policy_decisions: tuple[SimulationPolicyDecision, ...] = ()
+    market_observations: tuple[SimulationMarketObservation, ...] = ()
+    ledger_entries: tuple[SimulationLedgerEntry, ...] = ()
+    balance_snapshots: tuple[SimulationBalanceSnapshot, ...] = ()
     warnings: tuple[str, ...] = ()
 
 

@@ -14,9 +14,11 @@ from augur.core.market_bundle import (
     sample_market_bundle_for_request,
 )
 from augur.core.policy_runtime import (
+    LedgerEntryBatch,
     MortgagePaymentApplication,
     PrivateEquitySaleApplication,
     PrivateEquitySaleInstructionBatch,
+    PrivateEquitySaleOpportunityBatch,
     PrivateEquitySaleRequestObservation,
     actor_policy_programs,
     apply_debit_account_instruction,
@@ -48,13 +50,18 @@ from augur.core.scenario_set import (
     EventType,
     FinancingMode,
     GenericSp500StockPosition,
+    MarketPathObservation,
     MonthlySpendAction,
+    MonthlySpendDecision,
     MonthlySpendPolicy,
     OccupancyMode,
+    PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
     PayMortgageAction,
     Policy,
+    PrivateEquityLiquidityObservation,
     PrivateEquityPosition,
+    PrivateEquitySaleDecision,
     PrivateEquitySalePolicy,
     PropertyPurchaseEvent,
     RentalMode,
@@ -65,9 +72,14 @@ from augur.core.scenario_set import (
     ScenarioSet,
     ScenarioSetRunResponse,
     SellPrivateEquityAction,
+    SellPublicStockDecision,
     SellSp500Action,
     SettlePropertySaleAction,
     SimulationAction,
+    SimulationBalanceSnapshot,
+    SimulationLedgerEntry,
+    SimulationMarketObservation,
+    SimulationPolicyDecision,
     TransferPartnerContributionAction,
 )
 from augur.core.schemas import ColumnarTable
@@ -150,6 +162,10 @@ class ScenarioRunArrays:
     partner_present: np.ndarray
     monthly_spend_usd: np.ndarray
     actions: tuple[SimulationAction, ...]
+    policy_decisions: tuple[SimulationPolicyDecision, ...]
+    market_observations: tuple[SimulationMarketObservation, ...]
+    ledger_entries: tuple[SimulationLedgerEntry, ...]
+    balance_snapshots: tuple[SimulationBalanceSnapshot, ...]
 
     @property
     def rollout_count(self) -> int:
@@ -353,6 +369,7 @@ class PropertyCashFlowArrays:
     rental_leasing_fee_usd: np.ndarray
     property_carrying_cost_usd: np.ndarray
     net_property_cash_flow_usd: np.ndarray
+    ledger_entries: tuple[LedgerEntryBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -440,6 +457,10 @@ def run_scenario_set_vectorized(
                 monthly_columns=arrays.monthly_columns(),
                 terminal_columns=arrays.terminal_columns(),
                 actions=arrays.actions,
+                policy_decisions=arrays.policy_decisions,
+                market_observations=arrays.market_observations,
+                ledger_entries=arrays.ledger_entries,
+                balance_snapshots=arrays.balance_snapshots,
             )
         )
     return ScenarioSetRunResponse(
@@ -523,7 +544,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     private_equity_sale_taxable_gain = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     cash = np.zeros((rollout_count, month_count), dtype="float64")
-    monthly_spend_arr = np.zeros((rollout_count, month_count), dtype="float64")
     policy_programs = actor_policy_programs(scenario)
     private_equity_sale_requests = _private_equity_sale_requests_by_month(scenario)
     private_equity_liquidity_event = market_bundle.private_equity_liquidity_event_mask.copy()
@@ -545,6 +565,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         - disposition.purchase_closing_cost_usd[:, 0]
     )
     actions: list[SimulationAction] = []
+    policy_decisions: list[SimulationPolicyDecision] = []
+    market_observations: list[SimulationMarketObservation] = list(_market_path_observations(scenario, market_bundle))
+    ledger_entries: list[SimulationLedgerEntry] = []
+    balance_snapshots: list[SimulationBalanceSnapshot] = []
     sp500_sale_action_records: list[Sp500SaleActionRecord] = []
     private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
 
@@ -563,7 +587,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 spend_application = apply_debit_account_instruction(spend_decision.debit, current_cash_usd=current_cash)
                 current_cash = spend_application.current_cash_usd
                 spend_ledger = spend_application.ledger_entries[0]
-                monthly_spend_arr[:, month] = monthly_spend_arr[:, month] - spend_ledger.amount_usd
+                _record_ledger_entry_month(ledger_entries, month_index=int(month_index[month]), entry=spend_ledger)
+                _record_monthly_spend_decisions(
+                    policy_decisions,
+                    month_index=int(month_index[month]),
+                    policy=spend_policy,
+                    amount_usd=spend_decision.debit.amount_usd,
+                    inflation_multiplier=spend_decision.inflation_multiplier,
+                )
                 _record_monthly_spend_actions(
                     actions,
                     month_index=int(month_index[month]),
@@ -580,6 +611,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         market_opportunity = private_equity_sale_opportunity(
             liquidity_event_mask=market_bundle.private_equity_liquidity_event_mask[:, month],
             private_equity_value_before_sale_usd=private_equity_value_before_sale,
+        )
+        _record_private_equity_liquidity_observations(
+            market_observations, month_index=int(month_index[month]), opportunity=market_opportunity
         )
         market_liquidity_available_value = market_opportunity.liquidity_available_value_usd
         private_equity_sale_month = np.zeros(rollout_count, dtype="float64")
@@ -601,6 +635,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 request=_private_equity_sale_request_for_policy(
                     private_equity_sale_requests, month=month, policy=private_equity_sale_policy
                 ),
+                opportunity=current_opportunity,
+            )
+            _record_private_equity_sale_decisions(
+                policy_decisions,
+                month_index=int(month_index[month]),
+                instruction=sale_instruction,
                 opportunity=current_opportunity,
             )
             sale_application = apply_private_equity_sale_instruction(
@@ -647,6 +687,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         for checking_policy in checking_policies:
             sp500_sale_instruction = checking_floor_sell_public_stock_instruction(
                 checking_policy, current_cash_usd=current_cash
+            )
+            _record_sell_public_stock_decisions(
+                policy_decisions,
+                month_index=int(month_index[month]),
+                policy=checking_policy,
+                current_cash_usd=current_cash,
+                requested_amount_usd=sp500_sale_instruction.requested_amount_usd,
             )
             sp500_sale_application = apply_generic_sp500_sale_instruction(
                 sp500_sale_instruction,
@@ -737,6 +784,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         tax_usd=property_sale_tax,
         net_proceeds_usd=property_sale_net_proceeds,
     )
+    _record_property_sale_ledger_entries(
+        ledger_entries,
+        scenario=scenario,
+        disposition=disposition,
+        tax_usd=property_sale_tax,
+        net_proceeds_usd=property_sale_net_proceeds,
+    )
     for sp500_sale_action_record in sp500_sale_action_records:
         source_tax = _tax_share_for_sale_action(
             source_tax_usd=generic_sp500_sale_tax[:, sp500_sale_action_record.month_position],
@@ -746,6 +800,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             source_taxable_income_usd=np.maximum(
                 0.0, generic_sp500_sale_gain[:, sp500_sale_action_record.month_position]
             ),
+        )
+        _record_sp500_sale_ledger_entries(
+            ledger_entries,
+            month_index=sp500_sale_action_record.month_index,
+            policy=sp500_sale_action_record.policy,
+            amount_usd=sp500_sale_action_record.amount_usd,
+            basis_usd=sp500_sale_action_record.basis_usd,
+            tax_usd=source_tax,
         )
         _record_sp500_sale_actions(
             actions,
@@ -764,6 +826,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 :, private_equity_sale_action_record.month_position
             ],
         )
+        _record_private_equity_sale_ledger_entries(
+            ledger_entries,
+            month_index=private_equity_sale_action_record.month_index,
+            instruction=private_equity_sale_action_record.instruction,
+            sale_application=private_equity_sale_action_record.sale_application,
+            tax_usd=source_tax,
+        )
         _record_private_equity_sale_actions(
             actions,
             month_index=private_equity_sale_action_record.month_index,
@@ -772,6 +841,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             estimated_tax_usd=source_tax,
         )
     _record_partner_agreement_actions(actions, month_index=month_index, partner_equity=partner_equity)
+    _record_partner_contribution_decisions(policy_decisions, month_index=month_index, partner_equity=partner_equity)
+    _record_partner_agreement_ledger_detail(
+        ledger_entries,
+        balance_snapshots,
+        month_index=month_index,
+        partner_equity=partner_equity,
+        owner_actor_id=_primary_owner_actor_id(scenario),
+    )
     mortgage_application = apply_mortgage_payment(
         actor_id=_primary_owner_actor_id(scenario),
         policy_id=MORTGAGE_SERVICING_POLICY_ID,
@@ -781,6 +858,85 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         mortgage_balance_after_usd=mortgage_balance,
     )
     _record_mortgage_payment_actions(actions, month_index=month_index, mortgage_application=mortgage_application)
+    _record_ledger_entry_batches(ledger_entries, month_index=month_index, entries=mortgage_application.ledger_entries)
+    _record_ledger_entry_batches(
+        ledger_entries,
+        month_index=month_index,
+        entries=property_cash_flow.ledger_entries,
+        amount_multiplier=property_live_mask,
+    )
+    monthly_spend_from_ledger = -_ledger_amount_matrix(
+        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="monthly_spend"
+    )
+    mortgage_interest_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="cash",
+        category="mortgage_interest",
+    )
+    mortgage_principal_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="cash",
+        category="mortgage_principal",
+    )
+    mortgage_payment_from_ledger = mortgage_interest_from_ledger + mortgage_principal_from_ledger
+    property_tax_from_ledger = -_ledger_amount_matrix(
+        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="property_tax"
+    )
+    hoa_from_ledger = -_ledger_amount_matrix(
+        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="hoa"
+    )
+    insurance_from_ledger = -_ledger_amount_matrix(
+        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="insurance"
+    )
+    maintenance_from_ledger = -_ledger_amount_matrix(
+        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="maintenance"
+    )
+    rental_gross_income_from_ledger = _ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="rental",
+        category="rental_gross_income",
+    )
+    rental_vacancy_loss_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="rental",
+        category="rental_vacancy_loss",
+    )
+    rental_income_from_ledger = _ledger_amount_matrix(
+        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="rental_income"
+    )
+    rental_management_fee_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="cash",
+        category="rental_management_fee",
+    )
+    rental_leasing_fee_from_ledger = -_ledger_amount_matrix(
+        ledger_entries,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        domain="cash",
+        category="rental_leasing_fee",
+    )
+    property_carrying_cost_from_ledger = (
+        property_tax_from_ledger
+        + hoa_from_ledger
+        + insurance_from_ledger
+        + maintenance_from_ledger
+        + rental_management_fee_from_ledger
+        + rental_leasing_fee_from_ledger
+    )
+    net_property_cash_flow_from_ledger = (
+        rental_income_from_ledger - property_carrying_cost_from_ledger - mortgage_payment_from_ledger
+    )
     return ScenarioRunArrays(
         scenario_id=scenario.scenario_id,
         scenario_label=scenario.label,
@@ -804,20 +960,20 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         private_equity_liquidity_event=private_equity_liquidity_event,
         property_value_usd=property_value,
         mortgage_balance_usd=mortgage_balance,
-        mortgage_interest_usd=mortgage_interest,
-        mortgage_principal_usd=mortgage_principal,
-        mortgage_payment_usd=property_cash_flow.mortgage_payment_usd * property_live_mask,
-        property_tax_usd=property_cash_flow.property_tax_usd * property_live_mask,
-        hoa_usd=property_cash_flow.hoa_usd * property_live_mask,
-        insurance_usd=property_cash_flow.insurance_usd * property_live_mask,
-        maintenance_usd=property_cash_flow.maintenance_usd * property_live_mask,
-        rental_gross_income_usd=property_cash_flow.rental_gross_income_usd * property_live_mask,
-        rental_vacancy_loss_usd=property_cash_flow.rental_vacancy_loss_usd * property_live_mask,
-        rental_income_usd=property_cash_flow.rental_income_usd * property_live_mask,
-        rental_management_fee_usd=property_cash_flow.rental_management_fee_usd * property_live_mask,
-        rental_leasing_fee_usd=property_cash_flow.rental_leasing_fee_usd * property_live_mask,
-        property_carrying_cost_usd=property_cash_flow.property_carrying_cost_usd * property_live_mask,
-        net_property_cash_flow_usd=net_property_cash_flow,
+        mortgage_interest_usd=mortgage_interest_from_ledger,
+        mortgage_principal_usd=mortgage_principal_from_ledger,
+        mortgage_payment_usd=mortgage_payment_from_ledger,
+        property_tax_usd=property_tax_from_ledger,
+        hoa_usd=hoa_from_ledger,
+        insurance_usd=insurance_from_ledger,
+        maintenance_usd=maintenance_from_ledger,
+        rental_gross_income_usd=rental_gross_income_from_ledger,
+        rental_vacancy_loss_usd=rental_vacancy_loss_from_ledger,
+        rental_income_usd=rental_income_from_ledger,
+        rental_management_fee_usd=rental_management_fee_from_ledger,
+        rental_leasing_fee_usd=rental_leasing_fee_from_ledger,
+        property_carrying_cost_usd=property_carrying_cost_from_ledger,
+        net_property_cash_flow_usd=net_property_cash_flow_from_ledger,
         purchase_closing_cost_usd=disposition.purchase_closing_cost_usd,
         sale_closing_cost_usd=disposition.sale_closing_cost_usd,
         property_depreciation_usd=disposition.property_depreciation_usd,
@@ -850,8 +1006,650 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         liquid_net_worth_usd=liquid_net_worth,
         net_worth_usd=net_worth,
         partner_present=partner_present,
-        monthly_spend_usd=monthly_spend_arr,
+        monthly_spend_usd=monthly_spend_from_ledger,
         actions=_sorted_actions(actions),
+        policy_decisions=_sorted_policy_decisions(policy_decisions),
+        market_observations=_sorted_market_observations(market_observations),
+        ledger_entries=_sorted_ledger_entries(ledger_entries),
+        balance_snapshots=_sorted_balance_snapshots(balance_snapshots),
+    )
+
+
+def _market_path_observations(
+    scenario: Scenario, market_bundle: MarketBundle
+) -> tuple[SimulationMarketObservation, ...]:
+    home_multiplier = market_bundle.home_value_multipliers(scenario.location_id)
+    rent_multiplier = market_bundle.rent_multipliers(scenario.location_id)
+    observations: list[SimulationMarketObservation] = []
+    rollout_indexes, month_positions = np.indices(
+        (market_bundle.rollout_count, market_bundle.horizon_months + 1), sparse=False
+    )
+    for rollout_index, month_position in zip(
+        rollout_indexes.ravel().tolist(), month_positions.ravel().tolist(), strict=True
+    ):
+        observations.append(
+            MarketPathObservation(
+                rollout_index=rollout_index,
+                month_index=int(market_bundle.month_index[month_position]),
+                location_id=scenario.location_id,
+                inflation_multiplier=float(market_bundle.inflation_multipliers[rollout_index, month_position]),
+                sp500_multiplier=float(market_bundle.generic_sp500_multipliers[rollout_index, month_position]),
+                private_equity_value_multiplier=float(
+                    market_bundle.private_equity_value_multipliers[rollout_index, month_position]
+                ),
+                home_value_multiplier=float(home_multiplier[rollout_index, month_position]),
+                rent_multiplier=float(rent_multiplier[rollout_index, month_position]),
+                mortgage_30y_rate_pct=float(market_bundle.mortgage_30y_rate_pct[rollout_index, month_position]),
+                private_equity_liquidity_event=bool(
+                    market_bundle.private_equity_liquidity_event_mask[rollout_index, month_position]
+                ),
+            )
+        )
+    return tuple(observations)
+
+
+def _record_private_equity_liquidity_observations(
+    records: list[SimulationMarketObservation], *, month_index: int, opportunity: PrivateEquitySaleOpportunityBatch
+) -> None:
+    active_rollouts = np.nonzero(opportunity.liquidity_event_mask)[0].tolist()
+    records.extend(
+        (
+            PrivateEquityLiquidityObservation(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                liquidity_available_value_usd=float(opportunity.liquidity_available_value_usd[rollout_index]),
+                private_equity_value_before_sale_usd=float(
+                    opportunity.private_equity_value_before_sale_usd[rollout_index]
+                ),
+            )
+        )
+        for rollout_index in active_rollouts
+    )
+
+
+def _record_monthly_spend_decisions(
+    records: list[SimulationPolicyDecision],
+    *,
+    month_index: int,
+    policy: MonthlySpendPolicy,
+    amount_usd: np.ndarray,
+    inflation_multiplier: np.ndarray,
+) -> None:
+    active_rollouts = np.nonzero(amount_usd > 0)[0].tolist()
+    records.extend(
+        (
+            MonthlySpendDecision(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                actor_id=policy.actor_id,
+                policy_id=policy.policy_id,
+                amount_usd=float(amount_usd[rollout_index]),
+                inflation_multiplier=float(inflation_multiplier[rollout_index]),
+            )
+        )
+        for rollout_index in active_rollouts
+    )
+
+
+def _record_sell_public_stock_decisions(
+    records: list[SimulationPolicyDecision],
+    *,
+    month_index: int,
+    policy: CheckingFloorSellPublicStockPolicy,
+    current_cash_usd: np.ndarray,
+    requested_amount_usd: np.ndarray,
+) -> None:
+    active_rollouts = np.nonzero(requested_amount_usd > 0)[0].tolist()
+    records.extend(
+        (
+            SellPublicStockDecision(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                actor_id=policy.actor_id,
+                policy_id=policy.policy_id,
+                requested_amount_usd=float(requested_amount_usd[rollout_index]),
+                current_cash_usd=float(current_cash_usd[rollout_index]),
+                target_cash_floor_usd=float(policy.floor_usd),
+            )
+        )
+        for rollout_index in active_rollouts
+    )
+
+
+def _record_private_equity_sale_decisions(
+    records: list[SimulationPolicyDecision],
+    *,
+    month_index: int,
+    instruction: PrivateEquitySaleInstructionBatch,
+    opportunity: PrivateEquitySaleOpportunityBatch,
+) -> None:
+    active_rollouts = np.nonzero(
+        (instruction.requested_amount_usd > 0) | (opportunity.liquidity_available_value_usd > 0)
+    )[0].tolist()
+    records.extend(
+        (
+            PrivateEquitySaleDecision(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                actor_id=instruction.actor_id,
+                policy_id=instruction.policy_id,
+                requested_amount_usd=float(instruction.requested_amount_usd[rollout_index]),
+                liquidity_available_value_usd=float(opportunity.liquidity_available_value_usd[rollout_index]),
+                private_equity_value_before_sale_usd=float(
+                    opportunity.private_equity_value_before_sale_usd[rollout_index]
+                ),
+                proceeds_destination=instruction.proceeds_destination,
+                request_event_id=instruction.request_event_id,
+                request_event_type=instruction.request_event_type,
+            )
+        )
+        for rollout_index in active_rollouts
+    )
+
+
+def _record_partner_contribution_decisions(
+    records: list[SimulationPolicyDecision], *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
+) -> None:
+    for agreement in partner_equity.agreements:
+        policy = agreement.policy
+        rollout_indexes, month_positions = np.nonzero(agreement.contribution_usd > 0)
+        for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
+            records.append(
+                PartnerContributionDecision(
+                    rollout_index=rollout_index,
+                    month_index=int(month_index[month_position]),
+                    actor_id=policy.actor_id,
+                    policy_id=policy.policy_id,
+                    recipient_actor_id=agreement.recipient_actor_id,
+                    requested_amount_usd=float(agreement.contribution_usd[rollout_index, month_position]),
+                    property_id=agreement.property_id,
+                )
+            )
+
+
+def _record_ledger_entry_month(
+    records: list[SimulationLedgerEntry], *, month_index: int, entry: LedgerEntryBatch
+) -> None:
+    active_rollouts = np.nonzero(entry.amount_usd != 0)[0].tolist()
+    records.extend(
+        (
+            SimulationLedgerEntry(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                actor_id=entry.actor_id,
+                policy_id=entry.policy_id,
+                domain=entry.domain,
+                category=entry.category,
+                amount_usd=float(entry.amount_usd[rollout_index]),
+                counterparty_actor_id=entry.counterparty_actor_id,
+            )
+        )
+        for rollout_index in active_rollouts
+    )
+
+
+def _record_ledger_entry_batches(
+    records: list[SimulationLedgerEntry],
+    *,
+    month_index: np.ndarray,
+    entries: tuple[LedgerEntryBatch, ...],
+    amount_multiplier: np.ndarray | None = None,
+) -> None:
+    for entry in entries:
+        amount_usd = entry.amount_usd if amount_multiplier is None else entry.amount_usd * amount_multiplier
+        _record_ledger_matrix(
+            records,
+            month_index=month_index,
+            actor_id=entry.actor_id,
+            policy_id=entry.policy_id,
+            domain=entry.domain,
+            category=entry.category,
+            amount_usd=amount_usd,
+            counterparty_actor_id=entry.counterparty_actor_id,
+        )
+
+
+def _ledger_amount_matrix(
+    records: list[SimulationLedgerEntry], *, rollout_count: int, month_index: np.ndarray, domain: str, category: str
+) -> np.ndarray:
+    matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
+    month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
+    for entry in records:
+        if entry.domain != domain or entry.category != category:
+            continue
+        try:
+            month_position = month_position_by_index[entry.month_index]
+        except KeyError as exc:
+            raise ValueError(f"ledger entry has month outside result horizon: {entry.month_index}") from exc
+        matrix[entry.rollout_index, month_position] += entry.amount_usd
+    return matrix
+
+
+def _record_ledger_matrix(
+    records: list[SimulationLedgerEntry],
+    *,
+    month_index: np.ndarray,
+    actor_id: str,
+    policy_id: str | None,
+    domain: str,
+    category: str,
+    amount_usd: np.ndarray,
+    counterparty_actor_id: str | None = None,
+    event_id: str | None = None,
+    property_id: str | None = None,
+) -> None:
+    rollout_indexes, month_positions = np.nonzero(amount_usd != 0)
+    for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
+        records.append(
+            SimulationLedgerEntry(
+                rollout_index=rollout_index,
+                month_index=int(month_index[month_position]),
+                actor_id=actor_id,
+                policy_id=policy_id,
+                event_id=event_id,
+                property_id=property_id,
+                domain=domain,
+                category=category,
+                amount_usd=float(amount_usd[rollout_index, month_position]),
+                counterparty_actor_id=counterparty_actor_id,
+            )
+        )
+
+
+def _record_ledger_month_vector(
+    records: list[SimulationLedgerEntry],
+    *,
+    month_index: int,
+    actor_id: str,
+    policy_id: str | None,
+    domain: str,
+    category: str,
+    amount_usd: np.ndarray,
+    counterparty_actor_id: str | None = None,
+    event_id: str | None = None,
+    property_id: str | None = None,
+) -> None:
+    active_rollouts = np.nonzero(amount_usd != 0)[0].tolist()
+    records.extend(
+        (
+            SimulationLedgerEntry(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                actor_id=actor_id,
+                policy_id=policy_id,
+                event_id=event_id,
+                property_id=property_id,
+                domain=domain,
+                category=category,
+                amount_usd=float(amount_usd[rollout_index]),
+                counterparty_actor_id=counterparty_actor_id,
+            )
+        )
+        for rollout_index in active_rollouts
+    )
+
+
+def _record_balance_snapshot_matrix(
+    records: list[SimulationBalanceSnapshot],
+    *,
+    month_index: np.ndarray,
+    actor_id: str,
+    policy_id: str | None,
+    domain: str,
+    category: str,
+    amount_usd: np.ndarray,
+    counterparty_actor_id: str | None = None,
+    property_id: str | None = None,
+) -> None:
+    rollout_indexes, month_positions = np.nonzero(amount_usd != 0)
+    for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
+        records.append(
+            SimulationBalanceSnapshot(
+                rollout_index=rollout_index,
+                month_index=int(month_index[month_position]),
+                actor_id=actor_id,
+                policy_id=policy_id,
+                property_id=property_id,
+                domain=domain,
+                category=category,
+                amount_usd=float(amount_usd[rollout_index, month_position]),
+                counterparty_actor_id=counterparty_actor_id,
+            )
+        )
+
+
+def _record_property_sale_ledger_entries(
+    records: list[SimulationLedgerEntry],
+    *,
+    scenario: Scenario,
+    disposition: PropertyDispositionArrays,
+    tax_usd: np.ndarray,
+    net_proceeds_usd: np.ndarray,
+) -> None:
+    if disposition.sale_event is None or disposition.sale_month is None:
+        return
+    sale_event = disposition.sale_event
+    property_id = sale_event.property_id or scenario.property_selection.property_id
+    if property_id is None:
+        return
+    actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
+    month_index = disposition.sale_month
+    settlement = disposition.sale_settlement
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=actor_id,
+        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
+        event_id=sale_event.event_id,
+        property_id=property_id,
+        domain="property_sale",
+        category="property_sale_gross",
+        amount_usd=settlement.gross_usd[:, month_index],
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=actor_id,
+        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
+        event_id=sale_event.event_id,
+        property_id=property_id,
+        domain="property_sale",
+        category="sale_closing_cost",
+        amount_usd=-settlement.selling_cost_usd[:, month_index],
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=actor_id,
+        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
+        event_id=sale_event.event_id,
+        property_id=property_id,
+        domain="property_sale",
+        category="property_sale_debt_payoff",
+        amount_usd=-settlement.debt_payoff_usd[:, month_index],
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=actor_id,
+        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
+        event_id=sale_event.event_id,
+        property_id=property_id,
+        domain="tax",
+        category="property_sale_tax",
+        amount_usd=-tax_usd[:, month_index],
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=actor_id,
+        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
+        event_id=sale_event.event_id,
+        property_id=property_id,
+        domain="cash",
+        category="property_sale_net_proceeds",
+        amount_usd=net_proceeds_usd[:, month_index],
+    )
+
+
+def _record_sp500_sale_ledger_entries(
+    records: list[SimulationLedgerEntry],
+    *,
+    month_index: int,
+    policy: Policy,
+    amount_usd: np.ndarray,
+    basis_usd: np.ndarray,
+    tax_usd: np.ndarray,
+) -> None:
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        domain="asset",
+        category="generic_sp500_sale",
+        amount_usd=-amount_usd,
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        domain="basis",
+        category="generic_sp500_sale_basis",
+        amount_usd=-basis_usd,
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        domain="tax",
+        category="generic_sp500_sale_tax",
+        amount_usd=-tax_usd,
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        domain="cash",
+        category="generic_sp500_after_tax_proceeds",
+        amount_usd=np.maximum(0.0, amount_usd - tax_usd),
+    )
+
+
+def _record_private_equity_sale_ledger_entries(
+    records: list[SimulationLedgerEntry],
+    *,
+    month_index: int,
+    instruction: PrivateEquitySaleInstructionBatch,
+    sale_application: PrivateEquitySaleApplication,
+    tax_usd: np.ndarray,
+) -> None:
+    destination_domain = "asset" if instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK else "cash"
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=instruction.actor_id,
+        policy_id=instruction.policy_id,
+        event_id=instruction.request_event_id,
+        domain="asset",
+        category="private_equity_sale",
+        amount_usd=-sale_application.sale_usd,
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=instruction.actor_id,
+        policy_id=instruction.policy_id,
+        event_id=instruction.request_event_id,
+        domain="basis",
+        category="private_equity_sale_basis",
+        amount_usd=-sale_application.basis_usd,
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=instruction.actor_id,
+        policy_id=instruction.policy_id,
+        event_id=instruction.request_event_id,
+        domain="tax",
+        category="private_equity_sale_tax",
+        amount_usd=-tax_usd,
+    )
+    _record_ledger_month_vector(
+        records,
+        month_index=month_index,
+        actor_id=instruction.actor_id,
+        policy_id=instruction.policy_id,
+        event_id=instruction.request_event_id,
+        domain=destination_domain,
+        category="private_equity_after_tax_proceeds",
+        amount_usd=np.maximum(0.0, sale_application.sale_usd - tax_usd),
+    )
+
+
+def _record_partner_agreement_ledger_detail(
+    ledger_records: list[SimulationLedgerEntry],
+    snapshot_records: list[SimulationBalanceSnapshot],
+    *,
+    month_index: np.ndarray,
+    partner_equity: PartnerEquityArrays,
+    owner_actor_id: str,
+) -> None:
+    if not partner_equity.agreements:
+        return
+    _record_ledger_matrix(
+        ledger_records,
+        month_index=month_index,
+        actor_id=owner_actor_id,
+        policy_id=None,
+        domain="ownership",
+        category="owner_principal_credit",
+        amount_usd=partner_equity.owner_principal_usd,
+    )
+    _record_balance_snapshot_matrix(
+        snapshot_records,
+        month_index=month_index,
+        actor_id=owner_actor_id,
+        policy_id=None,
+        domain="ownership",
+        category="owner_equity_ledger",
+        amount_usd=partner_equity.owner_equity_ledger_usd,
+    )
+    _record_balance_snapshot_matrix(
+        snapshot_records,
+        month_index=month_index,
+        actor_id=owner_actor_id,
+        policy_id=None,
+        domain="ownership",
+        category="owner_home_equity_claim",
+        amount_usd=partner_equity.owner_home_equity_claim_usd,
+    )
+    for agreement in partner_equity.agreements:
+        policy = agreement.policy
+        _record_ledger_matrix(
+            ledger_records,
+            month_index=month_index,
+            actor_id=policy.actor_id,
+            policy_id=policy.policy_id,
+            domain="cash",
+            category="partner_contribution_transfer",
+            amount_usd=-agreement.contribution_usd,
+            counterparty_actor_id=agreement.recipient_actor_id,
+            property_id=agreement.property_id,
+        )
+        _record_ledger_matrix(
+            ledger_records,
+            month_index=month_index,
+            actor_id=agreement.recipient_actor_id,
+            policy_id=policy.policy_id,
+            domain="cash",
+            category="partner_contribution_used_for_house_costs",
+            amount_usd=agreement.contribution_used_usd,
+            counterparty_actor_id=policy.actor_id,
+            property_id=agreement.property_id,
+        )
+        _record_ledger_matrix(
+            ledger_records,
+            month_index=month_index,
+            actor_id=agreement.recipient_actor_id,
+            policy_id=policy.policy_id,
+            domain="escrow",
+            category="partner_contribution_unallocated",
+            amount_usd=agreement.unallocated_excess_usd,
+            counterparty_actor_id=policy.actor_id,
+            property_id=agreement.property_id,
+        )
+        _record_ledger_matrix(
+            ledger_records,
+            month_index=month_index,
+            actor_id=policy.actor_id,
+            policy_id=policy.policy_id,
+            domain="ownership",
+            category="partner_principal_credit",
+            amount_usd=agreement.principal_credit_usd,
+            counterparty_actor_id=agreement.recipient_actor_id,
+            property_id=agreement.property_id,
+        )
+        _record_balance_snapshot_matrix(
+            snapshot_records,
+            month_index=month_index,
+            actor_id=policy.actor_id,
+            policy_id=policy.policy_id,
+            domain="ownership",
+            category="partner_equity_ledger",
+            amount_usd=agreement.partner_equity_ledger_usd,
+            counterparty_actor_id=agreement.recipient_actor_id,
+            property_id=agreement.property_id,
+        )
+        _record_balance_snapshot_matrix(
+            snapshot_records,
+            month_index=month_index,
+            actor_id=policy.actor_id,
+            policy_id=policy.policy_id,
+            domain="ownership",
+            category="partner_home_equity_claim",
+            amount_usd=agreement.home_equity_claim_usd,
+            counterparty_actor_id=agreement.recipient_actor_id,
+            property_id=agreement.property_id,
+        )
+
+
+def _sorted_policy_decisions(records: list[SimulationPolicyDecision]) -> tuple[SimulationPolicyDecision, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda decision: (
+                decision.month_index,
+                decision.rollout_index,
+                decision.decision_type,
+                decision.actor_id,
+                decision.policy_id,
+            ),
+        )
+    )
+
+
+def _sorted_market_observations(records: list[SimulationMarketObservation]) -> tuple[SimulationMarketObservation, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda observation: (observation.month_index, observation.rollout_index, observation.observation_type),
+        )
+    )
+
+
+def _sorted_ledger_entries(records: list[SimulationLedgerEntry]) -> tuple[SimulationLedgerEntry, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda entry: (
+                entry.month_index,
+                entry.rollout_index,
+                entry.domain,
+                entry.category,
+                entry.actor_id,
+                entry.policy_id or "",
+            ),
+        )
+    )
+
+
+def _sorted_balance_snapshots(records: list[SimulationBalanceSnapshot]) -> tuple[SimulationBalanceSnapshot, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda entry: (
+                entry.month_index,
+                entry.rollout_index,
+                entry.domain,
+                entry.category,
+                entry.actor_id,
+                entry.policy_id or "",
+            ),
+        )
     )
 
 
@@ -1095,6 +1893,7 @@ def _property_cash_flow_arrays(
             rental_leasing_fee_usd=zeros,
             property_carrying_cost_usd=zeros,
             net_property_cash_flow_usd=-mortgage_payment,
+            ledger_entries=(),
         )
 
     property_tax = monthly_property_tax_usd(
@@ -1139,6 +1938,7 @@ def _property_cash_flow_arrays(
         rental_leasing_fee_usd=operating_cash_flow.rental_leasing_fee_usd,
         property_carrying_cost_usd=operating_cash_flow.property_carrying_cost_usd,
         net_property_cash_flow_usd=net_property_cash_flow,
+        ledger_entries=operating_cash_flow.ledger_entries,
     )
 
 
