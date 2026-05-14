@@ -50,6 +50,7 @@ class LiquidityReserveRuleType(StrEnum):
 class ActionType(StrEnum):
     SELL_SP500 = "sell_sp500"
     SELL_PRIVATE_EQUITY = "sell_private_equity"
+    SETTLE_PROPERTY_SALE = "settle_property_sale"
     TRANSFER_PARTNER_CONTRIBUTION = "transfer_partner_contribution"
     PAY_MORTGAGE = "pay_mortgage"
     ACCRUE_PARTNER_EQUITY = "accrue_partner_equity"
@@ -353,6 +354,26 @@ class SellPrivateEquityAction(_SimulationActionBase):
     proceeds_destination: AccountType | AssetType
 
 
+class SettlePropertySaleAction(_SimulationActionBase):
+    action_type: Literal[ActionType.SETTLE_PROPERTY_SALE] = ActionType.SETTLE_PROPERTY_SALE
+    event_id: str
+    event_type: Literal[EventType.PROPERTY_SALE] = EventType.PROPERTY_SALE
+    property_id: PropertyId
+    gross_sale_usd: float
+    selling_cost_usd: float
+    debt_payoff_usd: float
+    adjusted_basis_usd: float
+    realized_gain_usd: float
+    depreciation_recapture_usd: float
+    capital_gain_usd: float
+    capital_gain_exclusion_usd: float
+    taxable_capital_gain_usd: float
+    taxable_gain_usd: float
+    tax_usd: float
+    net_proceeds_usd: float
+    proceeds_destination: AccountType = AccountType.CHECKING
+
+
 class TransferPartnerContributionAction(_SimulationActionBase):
     action_type: Literal[ActionType.TRANSFER_PARTNER_CONTRIBUTION] = ActionType.TRANSFER_PARTNER_CONTRIBUTION
     recipient_actor_id: str
@@ -391,6 +412,7 @@ class MonthlySpendAction(_SimulationActionBase):
 SimulationAction = Annotated[
     SellSp500Action
     | SellPrivateEquityAction
+    | SettlePropertySaleAction
     | TransferPartnerContributionAction
     | PayMortgageAction
     | AccruePartnerEquityAction

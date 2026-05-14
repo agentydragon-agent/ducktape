@@ -33,7 +33,11 @@ from augur.core.policy_runtime import (
     private_equity_sale_opportunity,
 )
 from augur.core.property_depreciation import rental_active_mask
-from augur.core.property_sale import empty_property_disposition_arrays, property_disposition_arrays
+from augur.core.property_sale import (
+    PropertyDispositionArrays,
+    empty_property_disposition_arrays,
+    property_disposition_arrays,
+)
 from augur.core.property_tax import monthly_property_tax_usd
 from augur.core.scenario_set import (
     AccruePartnerEquityAction,
@@ -61,6 +65,7 @@ from augur.core.scenario_set import (
     ScenarioSetRunResponse,
     SellPrivateEquityAction,
     SellSp500Action,
+    SettlePropertySaleAction,
     SimulationAction,
     TransferPartnerContributionAction,
 )
@@ -69,6 +74,7 @@ from augur.core.schemas import ColumnarTable
 MONTHS_PER_YEAR = 12
 MORTGAGE_SERVICING_POLICY_ID = "mortgage_servicing"
 PROPERTY_OPERATING_CASH_FLOW_POLICY_ID = "property_operating_cash_flow"
+PROPERTY_SALE_SETTLEMENT_POLICY_ID = "property_sale_settlement"
 
 
 @dataclass(frozen=True)
@@ -113,7 +119,11 @@ class ScenarioRunArrays:
     property_sale_net_proceeds_usd: np.ndarray
     property_sale_tax_usd: np.ndarray
     property_sale_debt_payoff_usd: np.ndarray
+    property_sale_adjusted_basis_usd: np.ndarray
     realized_property_gain_usd: np.ndarray
+    property_sale_capital_gain_usd: np.ndarray
+    property_sale_capital_gain_exclusion_usd: np.ndarray
+    taxable_property_capital_gain_usd: np.ndarray
     taxable_property_gain_usd: np.ndarray
     depreciation_recapture_usd: np.ndarray
     net_property_sale_cash_flow_usd: np.ndarray
@@ -196,7 +206,11 @@ class ScenarioRunArrays:
                 "property_sale_net_proceeds_usd": _flat(self.property_sale_net_proceeds_usd),
                 "property_sale_tax_usd": _flat(self.property_sale_tax_usd),
                 "property_sale_debt_payoff_usd": _flat(self.property_sale_debt_payoff_usd),
+                "property_sale_adjusted_basis_usd": _flat(self.property_sale_adjusted_basis_usd),
                 "realized_property_gain_usd": _flat(self.realized_property_gain_usd),
+                "property_sale_capital_gain_usd": _flat(self.property_sale_capital_gain_usd),
+                "property_sale_capital_gain_exclusion_usd": _flat(self.property_sale_capital_gain_exclusion_usd),
+                "taxable_property_capital_gain_usd": _flat(self.taxable_property_capital_gain_usd),
                 "taxable_property_gain_usd": _flat(self.taxable_property_gain_usd),
                 "depreciation_recapture_usd": _flat(self.depreciation_recapture_usd),
                 "net_property_sale_cash_flow_usd": _flat(self.net_property_sale_cash_flow_usd),
@@ -266,7 +280,17 @@ class ScenarioRunArrays:
                 "total_property_sale_net_proceeds_usd": np.sum(self.property_sale_net_proceeds_usd, axis=1).tolist(),
                 "total_property_sale_tax_usd": np.sum(self.property_sale_tax_usd, axis=1).tolist(),
                 "total_property_sale_debt_payoff_usd": np.sum(self.property_sale_debt_payoff_usd, axis=1).tolist(),
+                "total_property_sale_adjusted_basis_usd": np.sum(
+                    self.property_sale_adjusted_basis_usd, axis=1
+                ).tolist(),
                 "total_realized_property_gain_usd": np.sum(self.realized_property_gain_usd, axis=1).tolist(),
+                "total_property_sale_capital_gain_usd": np.sum(self.property_sale_capital_gain_usd, axis=1).tolist(),
+                "total_property_sale_capital_gain_exclusion_usd": np.sum(
+                    self.property_sale_capital_gain_exclusion_usd, axis=1
+                ).tolist(),
+                "total_taxable_property_capital_gain_usd": np.sum(
+                    self.taxable_property_capital_gain_usd, axis=1
+                ).tolist(),
                 "total_taxable_property_gain_usd": np.sum(self.taxable_property_gain_usd, axis=1).tolist(),
                 "total_depreciation_recapture_usd": np.sum(self.depreciation_recapture_usd, axis=1).tolist(),
                 "total_net_property_sale_cash_flow_usd": np.sum(self.net_property_sale_cash_flow_usd, axis=1).tolist(),
@@ -488,6 +512,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         - disposition.purchase_closing_cost_usd[:, 0]
     )
     actions: list[SimulationAction] = []
+    _record_property_sale_actions(actions, scenario=scenario, disposition=disposition)
 
     for month in range(month_count):
         current_cash = current_cash + disposition.net_property_sale_cash_flow_usd[:, month]
@@ -683,7 +708,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         property_sale_net_proceeds_usd=disposition.property_sale_net_proceeds_usd,
         property_sale_tax_usd=disposition.property_sale_tax_usd,
         property_sale_debt_payoff_usd=disposition.property_sale_debt_payoff_usd,
+        property_sale_adjusted_basis_usd=disposition.property_sale_adjusted_basis_usd,
         realized_property_gain_usd=disposition.realized_property_gain_usd,
+        property_sale_capital_gain_usd=disposition.property_sale_capital_gain_usd,
+        property_sale_capital_gain_exclusion_usd=disposition.property_sale_capital_gain_exclusion_usd,
+        taxable_property_capital_gain_usd=disposition.taxable_property_capital_gain_usd,
         taxable_property_gain_usd=disposition.taxable_property_gain_usd,
         depreciation_recapture_usd=disposition.depreciation_recapture_usd,
         net_property_sale_cash_flow_usd=disposition.net_property_sale_cash_flow_usd,
@@ -705,6 +734,50 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         partner_present=partner_present,
         monthly_spend_usd=monthly_spend_arr,
         actions=_sorted_actions(actions),
+    )
+
+
+def _record_property_sale_actions(
+    actions: list[SimulationAction], *, scenario: Scenario, disposition: PropertyDispositionArrays
+) -> None:
+    if disposition.sale_event is None or disposition.sale_month is None:
+        return
+    sale_event = disposition.sale_event
+    property_id = sale_event.property_id or scenario.property_selection.property_id
+    if property_id is None:
+        return
+    month = disposition.sale_month
+    settlement = disposition.sale_settlement
+    active = (
+        (settlement.gross_usd[:, month] != 0)
+        | (settlement.selling_cost_usd[:, month] != 0)
+        | (settlement.debt_payoff_usd[:, month] != 0)
+        | (settlement.tax_usd[:, month] != 0)
+        | (settlement.net_proceeds_usd[:, month] != 0)
+    )
+    actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
+    actions.extend(
+        SettlePropertySaleAction(
+            rollout_index=rollout_index,
+            month_index=month,
+            actor_id=actor_id,
+            policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
+            event_id=sale_event.event_id,
+            property_id=property_id,
+            gross_sale_usd=float(settlement.gross_usd[rollout_index, month]),
+            selling_cost_usd=float(settlement.selling_cost_usd[rollout_index, month]),
+            debt_payoff_usd=float(settlement.debt_payoff_usd[rollout_index, month]),
+            adjusted_basis_usd=float(settlement.adjusted_basis_usd[rollout_index, month]),
+            realized_gain_usd=float(settlement.realized_property_gain_usd[rollout_index, month]),
+            depreciation_recapture_usd=float(settlement.depreciation_recapture_usd[rollout_index, month]),
+            capital_gain_usd=float(settlement.property_sale_capital_gain_usd[rollout_index, month]),
+            capital_gain_exclusion_usd=float(settlement.property_sale_capital_gain_exclusion_usd[rollout_index, month]),
+            taxable_capital_gain_usd=float(settlement.taxable_property_capital_gain_usd[rollout_index, month]),
+            taxable_gain_usd=float(settlement.taxable_property_gain_usd[rollout_index, month]),
+            tax_usd=float(settlement.tax_usd[rollout_index, month]),
+            net_proceeds_usd=float(settlement.net_proceeds_usd[rollout_index, month]),
+        )
+        for rollout_index in np.nonzero(active)[0].tolist()
     )
 
 

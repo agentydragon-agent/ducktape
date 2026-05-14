@@ -775,17 +775,34 @@ are balance snapshots.
 side path and its tests. The current scenario-set simulator is the only
 partner-equity path under `augur/core`.
 
+**DONE (sale-settlement slice)**: Property sales now produce an explicit
+settlement shape and a typed `settle_property_sale` action per rollout. The
+settlement records gross sale value, selling costs, debt payoff, adjusted
+basis, realized gain, depreciation recapture, capital gain/exclusion, taxable
+gain, tax, and net proceeds. Public arrays still exist for chart compatibility,
+but the one-rollout detail API can now show a truthful sale settlement object.
+
 Refactor partner equity as a policy/contract rule:
 
 - Unallocated contribution excess is recorded as cash, escrow, refund, or an
   explicit liability according to the modeled agreement.
+- Replace point-in-time tax-rate shortcuts with a yearly federal + California
+  tax settlement model. The annual tax pass should aggregate wages/ordinary
+  income, qualified dividends, long/short capital gains, rental income,
+  deductible expenses, depreciation, depreciation recapture, property sale
+  gains, public-stock sale gains/losses, private-equity sale gains/losses,
+  SALT/property-tax treatment, and CA conformity/non-conformity before posting
+  actual tax cash-flow actions. Property, stock, and PE sale taxes should then
+  reconcile to that yearly tax result instead of being computed only from
+  `tax_profile.cap_gains_rate`.
 - Reconsider whether to reintroduce per-component partner contribution
   reporting for interest, tax, insurance, HOA, and maintenance. The deleted
   side path reported those slices; the current core exposes total house costs,
   contribution used, house-cost share, and principal credit.
-- Reimplement partner sale-claim allocation against actual net sale proceeds
-  after transaction costs, debt payoff, and taxes if agreements should settle
-  from sale proceeds rather than mark-to-market home equity.
+- Reimplement partner sale-claim allocation against `SettlePropertySaleAction`
+  / property sale settlement net proceeds instead of mark-to-market home
+  equity. This should allocate from proceeds after transaction costs, debt
+  payoff, depreciation recapture tax, and capital-gains tax.
 
 Remaining acceptance: persist actor-keyed ledger entries into result detail
 instead of exposing only scenario-level arrays; partner-equity outputs should

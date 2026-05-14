@@ -14,6 +14,7 @@ from augur.core.scenario_set import (
     PayMortgageAction,
     ScenarioResultStatus,
     ScenarioSet,
+    SettlePropertySaleAction,
     TransferPartnerContributionAction,
 )
 
@@ -318,15 +319,36 @@ def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
     expected_gross = 120_000
     expected_sale_cost = 6_000
     expected_debt_payoff = result.mortgage_balance_usd[:, 3]
+    expected_adjusted_basis = 102_500
+    expected_realized_gain = expected_gross - expected_sale_cost - expected_adjusted_basis
     np.testing.assert_allclose(result.property_sale_gross_usd[:, 3], expected_gross)
     np.testing.assert_allclose(result.sale_closing_cost_usd[:, 3], expected_sale_cost)
     np.testing.assert_allclose(result.property_sale_debt_payoff_usd[:, 3], expected_debt_payoff)
+    np.testing.assert_allclose(result.property_sale_adjusted_basis_usd[:, 3], expected_adjusted_basis)
+    np.testing.assert_allclose(result.property_sale_capital_gain_usd[:, 3], expected_realized_gain)
+    np.testing.assert_allclose(result.property_sale_capital_gain_exclusion_usd[:, 3], expected_realized_gain)
+    np.testing.assert_allclose(result.taxable_property_capital_gain_usd[:, 3], 0)
     np.testing.assert_allclose(
         result.property_sale_net_proceeds_usd[:, 3], expected_gross - expected_sale_cost - expected_debt_payoff
     )
     np.testing.assert_allclose(
         result.net_property_sale_cash_flow_usd[:, 3], result.property_sale_net_proceeds_usd[:, 3]
     )
+    sale_actions = [action for action in result.actions if isinstance(action, SettlePropertySaleAction)]
+    assert len(sale_actions) == 2
+    assert {action.rollout_index for action in sale_actions} == {0, 1}
+    for action in sale_actions:
+        assert action.event_id == "sale"
+        assert action.property_id == "vallejo_calhoun"
+        assert action.gross_sale_usd == expected_gross
+        assert action.selling_cost_usd == expected_sale_cost
+        assert action.adjusted_basis_usd == expected_adjusted_basis
+        np.testing.assert_allclose(action.debt_payoff_usd, expected_debt_payoff[action.rollout_index])
+        assert action.capital_gain_exclusion_usd == expected_realized_gain
+        assert action.taxable_capital_gain_usd == 0
+        np.testing.assert_allclose(
+            action.net_proceeds_usd, result.property_sale_net_proceeds_usd[action.rollout_index, 3]
+        )
 
 
 def test_location_local_regulation_drives_property_tax() -> None:

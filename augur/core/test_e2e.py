@@ -46,6 +46,7 @@ from augur.core.scenario_set import (
     ScenarioSet,
     SellPrivateEquityAction,
     SellSp500Action,
+    SettlePropertySaleAction,
     TaxProfile,
     TransactionCosts,
     TransferPartnerContributionAction,
@@ -477,6 +478,9 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     np.testing.assert_allclose(rollout.series("property_sale_gross_usd")[60], sale_value)
     np.testing.assert_allclose(rollout.series("sale_closing_cost_usd")[60], sale_closing_cost)
     np.testing.assert_allclose(rollout.series("realized_property_gain_usd")[60], realized_gain)
+    np.testing.assert_allclose(rollout.series("property_sale_capital_gain_usd")[60], realized_gain)
+    np.testing.assert_allclose(rollout.series("property_sale_capital_gain_exclusion_usd")[60], 250_000)
+    np.testing.assert_allclose(rollout.series("taxable_property_capital_gain_usd")[60], taxable_gain)
     np.testing.assert_allclose(rollout.series("taxable_property_gain_usd")[60], taxable_gain)
     np.testing.assert_allclose(rollout.series("property_sale_tax_usd")[60], sale_tax)
     np.testing.assert_allclose(
@@ -485,6 +489,21 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     np.testing.assert_allclose(
         result.matrix("net_property_sale_cash_flow_usd"), result.matrix("property_sale_net_proceeds_usd")
     )
+    actions = rollout.actions(SettlePropertySaleAction)
+    assert len(actions) == 1
+    action = actions[0]
+    assert action.event_id == "sale"
+    assert action.property_id == "test_property"
+    assert action.policy_id == "property_sale_settlement"
+    np.testing.assert_allclose(action.gross_sale_usd, sale_value)
+    np.testing.assert_allclose(action.selling_cost_usd, sale_closing_cost)
+    np.testing.assert_allclose(action.debt_payoff_usd, 0)
+    np.testing.assert_allclose(action.adjusted_basis_usd, 500_000)
+    np.testing.assert_allclose(action.realized_gain_usd, realized_gain)
+    np.testing.assert_allclose(action.capital_gain_exclusion_usd, 250_000)
+    np.testing.assert_allclose(action.taxable_gain_usd, taxable_gain)
+    np.testing.assert_allclose(action.tax_usd, sale_tax)
+    np.testing.assert_allclose(action.net_proceeds_usd, sale_value - sale_closing_cost - sale_tax)
 
 
 def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
