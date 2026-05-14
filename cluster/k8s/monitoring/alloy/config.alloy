@@ -2,13 +2,17 @@
 
 // Discover and scrape all ServiceMonitor targets cluster-wide.
 prometheus.operator.servicemonitors "cluster" {
-  scrape_interval = "60s"
+  scrape {
+    default_scrape_interval = "60s"
+  }
   forward_to = [prometheus.remote_write.mimir.receiver]
 }
 
 // Discover and scrape all PodMonitor targets cluster-wide.
 prometheus.operator.podmonitors "cluster" {
-  scrape_interval = "60s"
+  scrape {
+    default_scrape_interval = "60s"
+  }
   forward_to = [prometheus.remote_write.mimir.receiver]
 }
 
