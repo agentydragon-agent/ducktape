@@ -31,6 +31,23 @@ const PRIVATE_EQUITY_EVENT_OPTIONS = [
   { id: "private_equity_acquisition", label: "Acquisition" },
 ];
 
+const CHECKING_FLOOR_POLICY_ID = "checking_floor_sp500";
+const CHECKING_FLOOR_METRICS = new Set([
+  "checkingFloorShortfallUsd",
+  "finalCheckingFloorShortfallUsd",
+  "totalGenericSp500SaleUsd",
+  "genericSp500SaleUsd",
+]);
+const CONTROL_GRID_CLASS = "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-3";
+
+function scenarioUsesCheckingFloorPolicy(scenario) {
+  return scenario?.liquidReservePolicy === CHECKING_FLOOR_POLICY_ID;
+}
+
+function scenarioSetUsesCheckingFloorPolicy(scenarioSetInput) {
+  return (scenarioSetInput?.scenarios ?? []).some(scenarioUsesCheckingFloorPolicy);
+}
+
 function fmtUsd(value) {
   if (!Number.isFinite(value)) return "n/a";
   return value.toLocaleString("en-US", {
@@ -121,12 +138,15 @@ function metricFanTerminal(scenarioResult, metricName) {
   return lastRow(scenarioResult?.metricFanColumns?.[metricName]);
 }
 
-function metricOptionsFromResult(result) {
+function metricOptionsFromResult(result, scenarioSetInput) {
   const metricNames = new Set();
   for (const scenarioResult of result?.scenarioResults ?? []) {
     for (const metricName of Object.keys(scenarioResult.metricFanColumns ?? {})) {
       metricNames.add(metricName);
     }
+  }
+  if (!scenarioSetUsesCheckingFloorPolicy(scenarioSetInput)) {
+    metricNames.delete("checkingFloorShortfallUsd");
   }
   const preferred = [
     "netWorthUsd",
@@ -192,15 +212,24 @@ function OptionButtons({ label, options, value, onChange }) {
   );
 }
 
-function NumberField({ label, value, onChange, min = 0, step = 1000, suffix = null }) {
+function ControlGrid({ children, className = "" }) {
+  return <div className={`${CONTROL_GRID_CLASS} ${className}`}>{children}</div>;
+}
+
+function NumberField({ label, value, onChange, min = 0, step = 1000, prefix = null, suffix = null }) {
   return (
     <label className="block">
       <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
         {label}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center">
+        {prefix && (
+          <span className="flex h-9 shrink-0 items-center rounded-l-md border border-r-0 border-slate-200 bg-slate-50 px-2 text-sm augur-muted dark:border-slate-700 dark:bg-slate-800">
+            {prefix}
+          </span>
+        )}
         <input
-          className="augur-input min-w-0 flex-1"
+          className={`augur-input min-w-0 flex-1 ${prefix ? "rounded-l-none" : ""} ${suffix ? "rounded-r-none" : ""}`}
           type="number"
           aria-label={label}
           min={min}
@@ -208,10 +237,18 @@ function NumberField({ label, value, onChange, min = 0, step = 1000, suffix = nu
           value={value ?? ""}
           onChange={(event) => onChange(Number(event.target.value))}
         />
-        {suffix && <span className="shrink-0 text-xs augur-muted">{suffix}</span>}
+        {suffix && (
+          <span className="flex h-9 shrink-0 items-center rounded-r-md border border-l-0 border-slate-200 bg-slate-50 px-2 text-xs augur-muted dark:border-slate-700 dark:bg-slate-800">
+            {suffix}
+          </span>
+        )}
       </div>
     </label>
   );
+}
+
+function MoneyField(props) {
+  return <NumberField prefix="$" {...props} />;
 }
 
 function SelectField({ label, value, onChange, options }) {
@@ -269,13 +306,13 @@ function ScenarioValueSummary({ scenarioResult }) {
 
 function DetailTable({ rows }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full">
+    <div className="max-w-full overflow-x-auto">
+      <table className="w-full table-fixed">
         <tbody>
           {rows.map(([label, value]) => (
             <tr key={label}>
-              <td className="label">{label}</td>
-              <td>{value}</td>
+              <td className="label w-[42%] max-w-[12rem] align-top">{label}</td>
+              <td className="break-words text-right align-top [overflow-wrap:anywhere]">{value}</td>
             </tr>
           ))}
         </tbody>
@@ -292,35 +329,36 @@ function PropertyLocationPanel({ property, scenario, scenarioResult }) {
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <div className="augur-eyebrow">Property and location</div>
       </div>
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
+      <div className="grid min-w-0 gap-4 p-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
           {property.imageUrl ? (
-            <img className="aspect-[4/3] h-full w-full object-cover" src={property.imageUrl} alt="" />
+            <img className="block aspect-[4/3] h-auto max-w-full w-full object-cover" src={property.imageUrl} alt="" />
           ) : (
             <div className="flex aspect-[4/3] items-center justify-center px-4 text-center text-sm augur-muted">
               No image
             </div>
           )}
         </div>
-        <DetailTable
-          rows={[
-            ["Price", fmtUsd(property.priceUsd)],
-            ["Rent estimate", fmtUsd(property.rentEstimateUsd)],
-            ["Beds / baths", `${property.beds} / ${property.baths}`],
-            ["Interior", `${fmtNumber(property.sqft)} sf`],
-            ["Year built", fmtNumber(property.yearBuilt)],
-            ["HOA", `${fmtUsd(property.hoaMonthlyUsd)} / mo`],
-            ["Home factor", property.location.homeValueFactorId],
-            ["Rent factor", property.location.rentFactorId],
-            ["Location property tax", fmtPct((localRegulation.propertyTaxAnnualPct ?? NaN) / 100)],
-            ["Local transfer tax", fmtPct((localRegulation.localTransferTaxPct ?? NaN) / 100)],
-            ["Special assessment", `${fmtUsd(localRegulation.specialAssessmentAnnualUsd ?? 0)} / yr`],
-            ["Scenario status", scenarioResult?.status ?? "pending"],
-            ["Location id", scenarioResult?.summary?.locationId ?? property.location.id ?? "n/a"],
-            ["Hold period", scenario ? `${fmtNumber(scenario.holdYears)} yr` : "n/a"],
-            ["Marginal tax rate", scenario ? fmtPct(scenario.marginalTaxRate / 100) : "n/a"],
-          ]}
-        />
+        <div className="min-w-0">
+          <DetailTable
+            rows={[
+              ["Price", fmtUsd(property.priceUsd)],
+              ["Rent estimate", fmtUsd(property.rentEstimateUsd)],
+              ["Beds / baths", `${property.beds} / ${property.baths}`],
+              ["Interior", `${fmtNumber(property.sqft)} sf`],
+              ["Year built", fmtNumber(property.yearBuilt)],
+              ["HOA", `${fmtUsd(property.hoaMonthlyUsd)} / mo`],
+              ["Home factor", property.location.homeValueFactorId],
+              ["Rent factor", property.location.rentFactorId],
+              ["Location property tax", fmtPct((localRegulation.propertyTaxAnnualPct ?? NaN) / 100)],
+              ["Local transfer tax", fmtPct((localRegulation.localTransferTaxPct ?? NaN) / 100)],
+              ["Special assessment", `${fmtUsd(localRegulation.specialAssessmentAnnualUsd ?? 0)} / yr`],
+              ["Location id", scenarioResult?.summary?.locationId ?? property.location.id ?? "n/a"],
+              ["Hold period", scenario ? `${fmtNumber(scenario.holdYears)} yr` : "n/a"],
+              ["Marginal tax rate", scenario ? fmtPct(scenario.marginalTaxRate / 100) : "n/a"],
+            ]}
+          />
+        </div>
       </div>
     </section>
   );
@@ -701,12 +739,12 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
             <div className="augur-eyebrow">Scenarios</div>
             <div className="text-sm augur-muted">Compare property, actor, occupancy, and liquidity choices.</div>
           </div>
-          <div className="flex shrink-0 gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button type="button" className="augur-tone-button augur-tone-neutral" onClick={addScenario}>
               Add
             </button>
@@ -731,13 +769,13 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
           return (
             <div
               key={scenario.scenarioId}
-              className={`rounded-lg border p-3 ${
+              className={`min-w-0 rounded-lg border p-3 ${
                 selected
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/30"
                   : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
               }`}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex min-w-0 items-start gap-3">
                 <button
                   type="button"
                   className="mt-1 h-4 w-4 shrink-0 rounded-full border border-slate-400"
@@ -762,7 +800,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                   Run
                 </label>
               </div>
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
                 <label className="flex min-w-0 flex-1 items-center gap-2 text-xs augur-muted">
                   Color
                   <input
@@ -773,7 +811,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                     onChange={(event) => updateScenario(scenario.scenarioId, { color: event.target.value })}
                   />
                 </label>
-                <span className="shrink-0 rounded border border-slate-200 px-2 py-1 text-xs augur-muted dark:border-slate-700">
+                <span className="min-w-0 max-w-full shrink-0 truncate rounded border border-slate-200 px-2 py-1 text-xs augur-muted dark:border-slate-700">
                   {scenario.actorPolicy === "owner_plus_partner" ? partnerLabel : primaryLabel}
                 </span>
               </div>
@@ -792,6 +830,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const primaryLabel = primary?.label ?? "Owner";
   const partnerLabel = partner?.label ?? "Partner";
   const privateEquityEvents = scenario.privateEquityEvents ?? [];
+  const usesCheckingFloorPolicy = scenarioUsesCheckingFloorPolicy(scenario);
 
   function updateScenario(patch) {
     onChange({
@@ -917,7 +956,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
       </ControlSection>
 
       <ControlSection title="Financing">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <ControlGrid>
           <SelectField
             label="Financing mode"
             value={scenario.financingMode}
@@ -962,11 +1001,11 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             onChange={(holdYears) => updateScenario({ holdYears })}
             suffix="yr"
           />
-        </div>
+        </ControlGrid>
       </ControlSection>
 
       <ControlSection title="Rental and rent counterfactual">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <ControlGrid>
           <NumberField
             label="Vacancy"
             step={1}
@@ -994,7 +1033,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             value={scenario.roomsRentedWhileLiving}
             onChange={(roomsRentedWhileLiving) => updateScenario({ roomsRentedWhileLiving })}
           />
-          <NumberField
+          <MoneyField
             label="Room rent"
             step={50}
             value={scenario.roomRentMonthlyUsd}
@@ -1008,7 +1047,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             onChange={(roomVacancyPct) => updateScenario({ roomVacancyPct })}
             suffix="%"
           />
-          <NumberField
+          <MoneyField
             label="Counterfactual rent"
             step={100}
             value={scenario.customCounterfactualRentMonthlyUsd}
@@ -1022,11 +1061,11 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             onChange={(counterfactualRentGrowth) => updateScenario({ counterfactualRentGrowth })}
             suffix="% / yr"
           />
-        </div>
+        </ControlGrid>
       </ControlSection>
 
       <ControlSection title="Taxes and transaction costs">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <ControlGrid>
           <NumberField
             label="Maintenance"
             step={0.1}
@@ -1034,7 +1073,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             onChange={(maintenancePct) => updateScenario({ maintenancePct })}
             suffix="%"
           />
-          <NumberField
+          <MoneyField
             label="Insurance"
             step={100}
             value={scenario.insuranceAnnualUsd}
@@ -1055,7 +1094,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             onChange={(closingCostSellPct) => updateScenario({ closingCostSellPct })}
             suffix="%"
           />
-          <NumberField
+          <MoneyField
             label="Capital gains exclusion"
             step={50_000}
             value={scenario.capGainsExclusionUsd}
@@ -1082,7 +1121,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             onChange={(capGainsRate) => updateScenario({ capGainsRate })}
             suffix="%"
           />
-        </div>
+        </ControlGrid>
       </ControlSection>
 
       <ControlSection title="Portfolio, liquidity, and actors">
@@ -1093,29 +1132,33 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             value={scenario.liquidReservePolicy}
             onChange={(liquidReservePolicy) => updateScenario({ liquidReservePolicy })}
           />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <NumberField
-              label="Checking floor"
-              value={scenario.checkingFloorUsd}
-              onChange={(checkingFloorUsd) => updateScenario({ checkingFloorUsd })}
-            />
-            <NumberField
-              label="Sale amount"
-              min={1_000}
-              value={scenario.checkingSaleAmountUsd}
-              onChange={(checkingSaleAmountUsd) => updateScenario({ checkingSaleAmountUsd })}
-            />
-            <NumberField
+          <ControlGrid>
+            {usesCheckingFloorPolicy && (
+              <>
+                <MoneyField
+                  label="Checking floor"
+                  value={scenario.checkingFloorUsd}
+                  onChange={(checkingFloorUsd) => updateScenario({ checkingFloorUsd })}
+                />
+                <MoneyField
+                  label="Sale amount"
+                  min={1_000}
+                  value={scenario.checkingSaleAmountUsd}
+                  onChange={(checkingSaleAmountUsd) => updateScenario({ checkingSaleAmountUsd })}
+                />
+              </>
+            )}
+            <MoneyField
               label="Initial checking"
               value={scenario.initialCheckingUsd}
               onChange={(initialCheckingUsd) => updateScenario({ initialCheckingUsd })}
             />
-            <NumberField
+            <MoneyField
               label="SP500-like portfolio"
               value={scenario.startingPortfolioUsd}
               onChange={(startingPortfolioUsd) => updateScenario({ startingPortfolioUsd })}
             />
-            <NumberField
+            <MoneyField
               label="Private equity value"
               value={scenario.privateEquityValueUsd}
               onChange={(privateEquityValueUsd) => updateScenario({ privateEquityValueUsd })}
@@ -1126,7 +1169,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               value={scenario.privateEquityUnits}
               onChange={(privateEquityUnits) => updateScenario({ privateEquityUnits })}
             />
-            <NumberField
+            <MoneyField
               label="Sale request"
               value={scenario.privateEquitySaleRequestAmountUsd}
               onChange={(privateEquitySaleRequestAmountUsd) => updateScenario({ privateEquitySaleRequestAmountUsd })}
@@ -1146,14 +1189,14 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               }
               options={PRIVATE_EQUITY_SALE_PROCEEDS_OPTIONS}
             />
-            <NumberField
+            <MoneyField
               label={`${partnerLabel} payment`}
               step={50}
               value={scenario.partnerPaymentMonthlyUsd}
               onChange={(partnerPaymentMonthlyUsd) => updateScenario({ partnerPaymentMonthlyUsd })}
               suffix="/ mo"
             />
-          </div>
+          </ControlGrid>
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="augur-eyebrow">Private equity event schedule</div>
@@ -1166,7 +1209,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
                 {privateEquityEvents.map((event, index) => (
                   <div
                     key={event.eventId}
-                    className="grid gap-3 border-t border-slate-200 pt-3 dark:border-slate-700 sm:grid-cols-[minmax(0,1fr)_7rem_9rem_auto]"
+                    className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-3 border-t border-slate-200 pt-3 dark:border-slate-700"
                   >
                     <SelectField
                       label={`Event ${index + 1} type`}
@@ -1181,7 +1224,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
                       value={event.monthIndex}
                       onChange={(monthIndex) => updatePrivateEquityEvent(index, { monthIndex })}
                     />
-                    <NumberField
+                    <MoneyField
                       label={`Event ${index + 1} amount`}
                       value={event.amountUsd}
                       onChange={(amountUsd) => updatePrivateEquityEvent(index, { amountUsd })}
@@ -1226,15 +1269,15 @@ function ScenarioSetSummary({ scenarioSetRequest, result, runError }) {
         </div>
       </div>
       <div className="augur-card px-4 py-3">
-        <div className="augur-eyebrow">Backend status</div>
-        <div className="mt-1 text-sm font-semibold augur-strong">{result ? "Scenario set accepted" : "Running..."}</div>
+        <div className="augur-eyebrow">Run</div>
+        <div className="mt-1 text-sm font-semibold augur-strong">{result ? "Updated" : "Running..."}</div>
       </div>
     </section>
   );
 }
 
 function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSelectedMetricChange }) {
-  const metricOptions = metricOptionsFromResult(result);
+  const metricOptions = metricOptionsFromResult(result, scenarioSetInput);
   const metricName = metricOptions.includes(selectedMetric) ? selectedMetric : (metricOptions[0] ?? "netWorthUsd");
   const series = scenarioSetInput.scenarios
     .map((scenario) => {
@@ -1352,6 +1395,7 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
 
 function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
   const scenarioResults = result?.scenarioResults ?? [];
+  const showCheckingFloorColumns = scenarioSetUsesCheckingFloorPolicy(scenarioSetInput);
   const terminalMetricColumns = [
     ["finalNetWorthUsd", "P50 net worth"],
     ["finalLiquidNetWorthUsd", "Liquid worth"],
@@ -1374,7 +1418,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
     ["totalPartnerContributionUsedUsd", "Partner contrib."],
     ["finalPartnerHomeEquityClaimUsd", "Partner equity"],
     ["finalPartnerOwnershipPct", "Partner own."],
-  ];
+  ].filter(([column]) => showCheckingFloorColumns || !CHECKING_FLOOR_METRICS.has(column));
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -1390,7 +1434,6 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
           <thead>
             <tr>
               <th className="text-left">Scenario</th>
-              <th>Status</th>
               <th>Property</th>
               <th>Actors</th>
               <th>Policies</th>
@@ -1414,7 +1457,6 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
                       <span className="truncate">{scenario.label}</span>
                     </span>
                   </td>
-                  <td>{scenarioResult?.status ?? "pending"}</td>
                   <td>{property ? property.address : scenario.propertyId}</td>
                   <td>
                     {scenarioResult?.summary?.actorCount ?? (scenario.actorPolicy === "owner_plus_partner" ? 2 : 1)}
@@ -1438,13 +1480,14 @@ function MarketMetadataPanel({ result }) {
   const metadata = result?.marketMetadata;
   if (!metadata) return null;
   const sourceEntries = Object.entries(metadata.sourceMetadata ?? {});
+  const metadataValue = (value) => (typeof value === "object" ? JSON.stringify(value) : String(value));
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <div className="augur-eyebrow">Market model metadata</div>
       </div>
       <div className="grid gap-4 p-4 lg:grid-cols-3">
-        <div>
+        <div className="min-w-0">
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
             Factor IDs
           </div>
@@ -1460,7 +1503,7 @@ function MarketMetadataPanel({ result }) {
             {(metadata.factorIds ?? []).length === 0 && <span className="text-sm augur-muted">none</span>}
           </div>
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
             Event stream IDs
           </div>
@@ -1476,23 +1519,21 @@ function MarketMetadataPanel({ result }) {
             {(metadata.eventStreamIds ?? []).length === 0 && <span className="text-sm augur-muted">none</span>}
           </div>
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
             Source metadata
           </div>
           {sourceEntries.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <tbody>
-                  {sourceEntries.map(([key, value]) => (
-                    <tr key={key}>
-                      <td className="label">{labelFromCamel(key)}</td>
-                      <td>{typeof value === "object" ? JSON.stringify(value) : String(value)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <dl className="grid gap-2">
+              {sourceEntries.map(([key, value]) => (
+                <div key={key} className="min-w-0 rounded-md border border-slate-200 p-2 dark:border-slate-700">
+                  <dt className="text-xs font-semibold uppercase tracking-wide augur-muted">{labelFromCamel(key)}</dt>
+                  <dd className="mt-1 max-h-20 overflow-auto break-all text-xs mono augur-strong">
+                    {metadataValue(value)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           ) : (
             <div className="text-sm augur-muted">none</div>
           )}
@@ -1502,50 +1543,197 @@ function MarketMetadataPanel({ result }) {
   );
 }
 
+function LedgerTable({ rows, columns, className = "" }) {
+  if (columns.length === 0) return null;
+  return (
+    <div className={`max-w-full overflow-auto ${className}`}>
+      <table className="min-w-max">
+        <thead className="sticky top-0 bg-white dark:bg-slate-900">
+          <tr>
+            <th>Month</th>
+            {columns.map(([, label]) => (
+              <th key={label}>{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.rolloutIndex}-${row.monthIndex}`}>
+              <td>{fmtInteger(row.monthIndex)}</td>
+              {columns.map(([column, , formatter]) => (
+                <td key={column}>{formatter(row[column])}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ledgerColumnExists(rows, column) {
+  return rows.some((row) => row[column] !== undefined);
+}
+
+function filterLedgerColumns(rows, columns, showCheckingFloorColumns) {
+  return columns.filter(
+    ([column]) => ledgerColumnExists(rows, column) && (showCheckingFloorColumns || !CHECKING_FLOOR_METRICS.has(column))
+  );
+}
+
+function LedgerDetailToggles({ groups, expandedGroups, onToggle }) {
+  if (groups.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+      {groups.map((group) => {
+        const expanded = !!expandedGroups[group.id];
+        return (
+          <button
+            key={group.id}
+            type="button"
+            className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold transition ${
+              expanded
+                ? "border-blue-500 bg-blue-50 text-blue-950 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-100"
+                : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+            }`}
+            aria-pressed={expanded}
+            onClick={() => onToggle(group.id)}
+          >
+            {group.label}
+            <span className="ml-1 font-normal augur-muted">{expanded ? "details" : "total"}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex, onSelectedRolloutIndexChange }) {
+  const [expandedLedgerGroups, setExpandedLedgerGroups] = useState({});
   const monthlyRows = rowsFromTable(scenarioResult?.monthlyColumns);
   if (!scenario || monthlyRows.length === 0) return null;
+  const showCheckingFloorColumns = scenarioUsesCheckingFloorPolicy(scenario);
   const rolloutIndexes = [...new Set(monthlyRows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
     (left, right) => left - right
   );
   const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
   const rows = monthlyRows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
+  const rawGroups = [
+    {
+      id: "portfolio_sales",
+      label: "SP500 sales",
+      summary: ["genericSp500SaleUsd", "SP500 sales", fmtUsd],
+      details: [
+        ["genericSp500SaleUsd", "SP500 sales", fmtUsd],
+        ["genericSp500SaleBasisUsd", "Basis sold", fmtUsd],
+        ["genericSp500SaleGainUsd", "Gain", fmtUsd],
+        ["genericSp500SaleTaxUsd", "Tax", fmtUsd],
+        ["checkingFloorShortfallUsd", "Shortfall", fmtUsd],
+      ],
+    },
+    {
+      id: "private_equity_sale",
+      label: "Private equity sale",
+      summary: ["privateEquitySaleUsd", "PE sale", fmtUsd],
+      details: [
+        ["privateEquityLiquidityAvailableValueUsd", "Liquidity available", fmtUsd],
+        ["privateEquitySaleUsd", "Private equity sale", fmtUsd],
+        ["privateEquitySaleBasisUsd", "Basis", fmtUsd],
+        ["privateEquitySaleTaxUsd", "Tax", fmtUsd],
+        ["privateEquityLiquidityEvent", "Liquidity event", (value) => (value ? "yes" : "no")],
+      ],
+    },
+    {
+      id: "house_costs",
+      label: "House costs",
+      summary: ["propertyCarryingCostUsd", "House costs", fmtUsd],
+      details: [
+        ["propertyTaxUsd", "Property tax", fmtUsd],
+        ["hoaUsd", "HOA", fmtUsd],
+        ["insuranceUsd", "Insurance", fmtUsd],
+        ["maintenanceUsd", "Maintenance", fmtUsd],
+        ["propertyCarryingCostUsd", "House costs", fmtUsd],
+      ],
+    },
+    {
+      id: "rental_flow",
+      label: "Rental flow",
+      summary: ["netPropertyCashFlowUsd", "Property cash flow", fmtUsd],
+      details: [
+        ["rentalGrossIncomeUsd", "Rent gross", fmtUsd],
+        ["rentalVacancyLossUsd", "Vacancy", fmtUsd],
+        ["rentalIncomeUsd", "Rent income", fmtUsd],
+        ["rentalManagementFeeUsd", "Mgmt fee", fmtUsd],
+        ["rentalLeasingFeeUsd", "Leasing fee", fmtUsd],
+        ["mortgagePaymentUsd", "Mortgage pmt", fmtUsd],
+        ["netPropertyCashFlowUsd", "Property cash flow", fmtUsd],
+      ],
+    },
+    {
+      id: "transaction_taxes",
+      label: "Sale and taxes",
+      summary: ["netPropertySaleCashFlowUsd", "Sale net", fmtUsd],
+      details: [
+        ["purchaseClosingCostUsd", "Buy costs", fmtUsd],
+        ["propertyDepreciationUsd", "Depreciation", fmtUsd],
+        ["cumulativePropertyDepreciationUsd", "Cum. depreciation", fmtUsd],
+        ["propertySaleGrossUsd", "Sale gross", fmtUsd],
+        ["propertySaleNetProceedsUsd", "Sale proceeds", fmtUsd],
+        ["saleClosingCostUsd", "Sale costs", fmtUsd],
+        ["propertySaleTaxUsd", "Sale tax", fmtUsd],
+        ["propertySaleDebtPayoffUsd", "Debt payoff", fmtUsd],
+        ["netPropertySaleCashFlowUsd", "Sale cash flow", fmtUsd],
+        ["taxablePropertyGainUsd", "Taxable gain", fmtUsd],
+      ],
+    },
+    {
+      id: "partner_equity",
+      label: "Partner equity",
+      summary: ["partnerHomeEquityClaimUsd", "Partner equity", fmtUsd],
+      details: [
+        ["partnerContributionUsd", "Partner contrib.", fmtUsd],
+        ["partnerContributionUsedUsd", "Partner used", fmtUsd],
+        ["partnerUnallocatedExcessUsd", "Partner excess", fmtUsd],
+        ["partnerHouseCostsUsd", "Partner costs", fmtUsd],
+        ["partnerPrincipalCreditUsd", "Partner principal", fmtUsd],
+        ["partnerHomeEquityClaimUsd", "Partner equity", fmtUsd],
+        ["partnerOwnershipPct", "Partner own.", fmtPct],
+      ],
+    },
+  ]
+    .map((group) => ({
+      ...group,
+      summary: filterLedgerColumns(rows, [group.summary], showCheckingFloorColumns)[0],
+      details: filterLedgerColumns(rows, group.details, showCheckingFloorColumns),
+    }))
+    .filter((group) => group.summary && group.details.length > 1);
+  const groupById = new Map(rawGroups.map((group) => [group.id, group]));
+  const columnsForGroup = (id) => {
+    const group = groupById.get(id);
+    if (!group) return [];
+    return expandedLedgerGroups[id] ? group.details : [group.summary];
+  };
   const ledgerColumns = [
     ["cashUsd", "Cash", fmtUsd],
     ["genericSp500ValueUsd", "SP500 value", fmtUsd],
-    ["genericSp500SaleUsd", "SP500 sales", fmtUsd],
-    ["checkingFloorShortfallUsd", "Shortfall", fmtUsd],
+    ...columnsForGroup("portfolio_sales"),
     ["privateEquityValueUsd", "Private equity", fmtUsd],
-    ["privateEquityLiquidityAvailableValueUsd", "Liquidity available", fmtUsd],
-    ["privateEquitySaleUsd", "Sale", fmtUsd],
+    ...columnsForGroup("private_equity_sale"),
     ["propertyValueUsd", "Property value", fmtUsd],
-    ["propertyTaxUsd", "Property tax", fmtUsd],
-    ["hoaUsd", "HOA", fmtUsd],
-    ["insuranceUsd", "Insurance", fmtUsd],
-    ["maintenanceUsd", "Maintenance", fmtUsd],
-    ["rentalGrossIncomeUsd", "Rent gross", fmtUsd],
-    ["rentalVacancyLossUsd", "Vacancy", fmtUsd],
-    ["rentalIncomeUsd", "Rent income", fmtUsd],
-    ["rentalManagementFeeUsd", "Mgmt fee", fmtUsd],
-    ["rentalLeasingFeeUsd", "Leasing fee", fmtUsd],
+    ...columnsForGroup("house_costs"),
+    ...columnsForGroup("rental_flow"),
     ["mortgageBalanceUsd", "Mortgage balance", fmtUsd],
-    ["mortgagePaymentUsd", "Mortgage pmt", fmtUsd],
-    ["netPropertyCashFlowUsd", "Net property cash flow", fmtUsd],
-    ["purchaseClosingCostUsd", "Buy costs", fmtUsd],
-    ["propertyDepreciationUsd", "Depreciation", fmtUsd],
-    ["cumulativePropertyDepreciationUsd", "Cum. depreciation", fmtUsd],
-    ["propertySaleGrossUsd", "Sale gross", fmtUsd],
-    ["saleClosingCostUsd", "Sale costs", fmtUsd],
-    ["propertySaleTaxUsd", "Sale tax", fmtUsd],
-    ["propertySaleDebtPayoffUsd", "Debt payoff", fmtUsd],
-    ["netPropertySaleCashFlowUsd", "Sale cash flow", fmtUsd],
-    ["partnerContributionUsd", "Partner contrib.", fmtUsd],
-    ["partnerContributionUsedUsd", "Partner used", fmtUsd],
-    ["partnerHomeEquityClaimUsd", "Partner equity", fmtUsd],
-    ["partnerOwnershipPct", "Partner own.", fmtPct],
     ["homeEquityUsd", "Home equity", fmtUsd],
+    ...columnsForGroup("transaction_taxes"),
+    ...columnsForGroup("partner_equity"),
     ["netWorthUsd", "Net worth", fmtUsd],
-  ].filter(([column]) => monthlyRows.some((row) => row[column] !== undefined));
+  ].filter(
+    ([column], index, columns) =>
+      ledgerColumnExists(rows, column) && columns.findIndex(([item]) => item === column) === index
+  );
+  const toggleLedgerGroup = (groupId) => {
+    setExpandedLedgerGroups((previous) => ({ ...previous, [groupId]: !previous[groupId] }));
+  };
 
   return (
     <section className="augur-card overflow-hidden">
@@ -1572,28 +1760,8 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
           </label>
         </div>
       </div>
-      <div className="max-h-[28rem] overflow-auto">
-        <table className="w-full">
-          <thead className="sticky top-0 bg-white dark:bg-slate-900">
-            <tr>
-              <th>Month</th>
-              {ledgerColumns.map(([, label]) => (
-                <th key={label}>{label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${row.rolloutIndex}-${row.monthIndex}`}>
-                <td>{fmtInteger(row.monthIndex)}</td>
-                {ledgerColumns.map(([column, , formatter]) => (
-                  <td key={column}>{formatter(row[column])}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <LedgerDetailToggles groups={rawGroups} expandedGroups={expandedLedgerGroups} onToggle={toggleLedgerGroup} />
+      <LedgerTable rows={rows} columns={ledgerColumns} className="max-h-[28rem]" />
     </section>
   );
 }
@@ -1608,7 +1776,6 @@ function ScenarioAcceptedPanel({ scenario, scenarioResult }) {
       <DetailTable
         rows={[
           ["Scenario id", scenarioResult.scenarioId],
-          ["Status", scenarioResult.status],
           ["Enabled", scenarioResult.summary?.enabled ? "yes" : "no"],
           ["Property id", scenarioResult.summary?.propertyId ?? scenario.propertyId],
           ["Location", scenarioResult.summary?.locationId ?? "n/a"],
@@ -1746,8 +1913,8 @@ export default function AugurApp() {
             URL state could not be loaded; defaults are shown: {urlStateError}
           </div>
         )}
-        <section className="grid gap-5 xl:grid-cols-[26rem_minmax(0,1fr)]">
-          <aside className="space-y-5">
+        <section className="grid min-w-0 gap-5 xl:grid-cols-[26rem_minmax(0,1fr)]">
+          <aside className="min-w-0 space-y-5">
             <ScenarioList
               scenarioSetInput={normalizedScenarioSetInput}
               selectedScenarioId={selectedScenarioId}
@@ -1763,7 +1930,7 @@ export default function AugurApp() {
             />
           </aside>
 
-          <div className="space-y-5">
+          <div className="min-w-0 space-y-5">
             <div className="border-b border-slate-300 pb-5 dark:border-slate-700">
               <div className="augur-eyebrow">
                 {selectedProperty?.location.label ?? "No property selected"} ·{" "}

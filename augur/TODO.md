@@ -5,6 +5,9 @@ Last design scan: 2026-05-14.
 ## Next
 
 - [ ] Continue `plans/e2e_redesign.md` Step 7 by replacing `allocated_to_source_month` tax timing with realistic annual/estimated-payment liability timing.
+- [ ] Add public Augur app/server e2e tests backed by non-private fixtures: generated fixture `AugurConfig`, deterministic/noop market provider path, representative property fixtures, and Playwright coverage for the generic UI.
+- [ ] Add a public Bazel-runnable Augur server binary that accepts `--config`, `--dist-dir`, and `--rollout-config` so private deployments do not need their own `serve.py` wrapper.
+- [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 
 ## Step 7 Scope
 
@@ -25,6 +28,7 @@ Last design scan: 2026-05-14.
 - [ ] Remove or implement schema-only policy types: `LiquidityReservePolicy`, `PortfolioTargetRebalancePolicy`, and `ManualEventSchedulePolicy`.
 - [ ] Make result inspection typed and local. String metric names via `series("cash_usd")` are acceptable as a compatibility layer, but primary callers should get discoverable typed metric/rollout/detail helpers.
 - [ ] Honor or remove `ReportSpec.include_monthly_columns`, `include_sample_paths`, and unsupported `MarketRequest.shared_market_paths=false`.
+- [ ] Decide whether counterfactual rent belongs in the scenario-set backend API. The app currently persists the counterfactual rent controls in URL state, but the public scenario-set schema does not consume them.
 - [ ] Collapse the old and new schema surfaces. `augur/core/scenario_set.py` is the scenario-set simulator schema; legacy shapes in `augur/core/schemas.py` should be deleted, moved, or wrapped at an explicit compatibility boundary.
 - [ ] Clarify initial state vs scheduled transitions. Property purchase, financing, ownership, future sale, rental transition, and PE liquidity should not be split across fields/events that can contradict each other.
 - [ ] Reduce single-property/global assumptions. Scenario-level `property_selection`, `financing`, `rental_plan`, and `tax_profile` should eventually become initial positions, per-property settings, or per-actor/accounting inputs as the simulator grows.
@@ -40,4 +44,5 @@ Last design scan: 2026-05-14.
 
 - [ ] Key partner-equity reporting by partner actor or make it derivable from actor-keyed ledger entries. Aggregate scenario arrays are fine for charts but should not be the only public detail.
 - [ ] Reconsider whether to reintroduce per-component partner contribution reporting for interest, property tax, insurance, HOA, and maintenance.
+- [ ] Replace deployment-private app e2e tests as the main confidence signal. Gaffer should mostly generate YAML/provide private assets; public Augur behavior should be covered in ducktape with fixtures that are not real personal data.
 - [ ] Refresh `augur/SPEC.md` once policy execution, sale taxes, and one-rollout detail have stabilized.

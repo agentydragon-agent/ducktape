@@ -70,7 +70,6 @@ from augur.core.scenario_set import (
     Scenario,
     ScenarioAcceptedSummary,
     ScenarioResult,
-    ScenarioResultStatus,
     ScenarioSet,
     ScenarioSetRunResponse,
     SellPrivateEquityAction,
@@ -457,7 +456,6 @@ def run_scenario_set_vectorized(
             ScenarioResult(
                 scenario_id=scenario.scenario_id,
                 scenario_label=scenario.label,
-                status=ScenarioResultStatus.SIMULATED,
                 summary=_accepted_summary(scenario),
                 metric_fan_columns=arrays.metric_fan_columns(),
                 monthly_columns=arrays.monthly_columns(),
@@ -2756,7 +2754,6 @@ def _disabled_result(scenario: Scenario) -> ScenarioResult:
     return ScenarioResult(
         scenario_id=scenario.scenario_id,
         scenario_label=scenario.label,
-        status=ScenarioResultStatus.DISABLED,
         summary=_accepted_summary(scenario),
         warnings=("scenario disabled",),
     )

@@ -23,7 +23,6 @@ from augur.core.scenario_set import (
     Scenario,
     ScenarioAcceptedSummary,
     ScenarioResult,
-    ScenarioResultStatus,
     ScenarioSet,
     ScenarioSetRunResponse,
     SimulationAccountingDetail,
@@ -111,10 +110,6 @@ class ScenarioRun:
     @property
     def scenario_id(self) -> str:
         return self.scenario.scenario_id
-
-    @property
-    def status(self) -> ScenarioResultStatus:
-        return ScenarioResultStatus.SIMULATED if self.arrays is not None else ScenarioResultStatus.DISABLED
 
     def matrix(self, metric: str) -> np.ndarray:
         value = self._metric_array(metric)
@@ -265,14 +260,12 @@ class ScenarioRun:
             return ScenarioResult(
                 scenario_id=self.scenario.scenario_id,
                 scenario_label=self.scenario.label,
-                status=ScenarioResultStatus.DISABLED,
                 summary=_accepted_summary(self.scenario),
                 warnings=self.warnings,
             )
         return ScenarioResult(
             scenario_id=self.scenario.scenario_id,
             scenario_label=self.scenario.label,
-            status=ScenarioResultStatus.SIMULATED,
             summary=_accepted_summary(self.scenario),
             metric_fan_columns=self.arrays.metric_fan_columns(),
             monthly_columns=self.arrays.monthly_columns(),

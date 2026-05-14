@@ -25,7 +25,7 @@ def test_scenario_set_route_is_registered_and_invokes_handler() -> None:
         seen_body = body
         return {
             "scenario_set_id": body["scenario_set_id"],
-            "scenario_results": [{"scenario_id": body["scenarios"][0]["scenario_id"], "status": "not_yet_simulated"}],
+            "scenario_results": [{"scenario_id": body["scenarios"][0]["scenario_id"]}],
         }
 
     app = create_augur_backend_app(title="test", bootstrap=lambda: {"ok": True}, scenario_set_run=scenario_set_run)

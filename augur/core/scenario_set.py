@@ -166,12 +166,6 @@ class ReportMetric(StrEnum):
     PRIVATE_EQUITY_LIQUIDITY = "private_equity_liquidity"
 
 
-class ScenarioResultStatus(StrEnum):
-    SIMULATED = "simulated"
-    NOT_YET_SIMULATED = "not_yet_simulated"
-    DISABLED = "disabled"
-
-
 class Actor(ApiModel):
     actor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
@@ -846,7 +840,6 @@ class ScenarioAcceptedSummary(ApiModel):
 class ScenarioResult(ApiModel):
     scenario_id: str
     scenario_label: str
-    status: ScenarioResultStatus
     summary: ScenarioAcceptedSummary
     metric_fan_columns: dict[str, ColumnarTable] = Field(default_factory=dict)
     monthly_columns: ColumnarTable | None = None

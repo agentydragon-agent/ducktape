@@ -12,7 +12,6 @@ from augur.core.scenario_set import (
     EventType,
     MarketRequest,
     PayMortgageAction,
-    ScenarioResultStatus,
     ScenarioSet,
     SettlePropertySaleAction,
     TransferPartnerContributionAction,
@@ -180,10 +179,6 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
     response = run_scenario_set_vectorized(scenario_set, market_provider=provider)
 
     assert provider.calls == 1
-    assert [result.status for result in response.scenario_results] == [
-        ScenarioResultStatus.SIMULATED,
-        ScenarioResultStatus.SIMULATED,
-    ]
     assert response.scenario_results[0].monthly_columns is not None
     assert response.scenario_results[1].monthly_columns is not None
     assert response.market_metadata is not None

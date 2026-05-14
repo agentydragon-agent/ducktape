@@ -24,7 +24,6 @@ from augur.core.scenario_set import (
     RentalMode,
     ScenarioAcceptedSummary,
     ScenarioResult,
-    ScenarioResultStatus,
     ScenarioSet,
     TaxRegime,
 )
@@ -241,7 +240,6 @@ def test_scenario_result_serialization_has_no_projection_compatibility_field() -
     result = ScenarioResult(
         scenario_id="sf_house",
         scenario_label="Sf House",
-        status=ScenarioResultStatus.SIMULATED,
         summary=ScenarioAcceptedSummary(
             enabled=True,
             property_id="sf_ashton",
