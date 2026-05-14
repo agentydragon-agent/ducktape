@@ -191,6 +191,10 @@ fn is_default_member_purity(purity: &MemberPurity) -> bool {
     matches!(purity, MemberPurity::Default)
 }
 
+fn is_default_member_effect(effect: &MemberEffect) -> bool {
+    matches!(effect, MemberEffect::Default)
+}
+
 fn is_default_vendor_role(role: &VendorRole) -> bool {
     matches!(role, VendorRole::Module)
 }
@@ -356,6 +360,9 @@ pub struct Member {
     #[serde(skip_serializing_if = "is_default_member_purity")]
     #[serde(default)]
     pub purity: MemberPurity,
+    #[serde(skip_serializing_if = "is_default_member_effect")]
+    #[serde(default)]
+    pub effect: MemberEffect,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -398,4 +405,17 @@ pub enum MemberPurity {
     /// side effects. Validator drops `S` edges for `<binding>(...)` call
     /// sites. See AGENTS.md "Declared purity" + DESIGN.md A9.
     Pure,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MemberEffect {
+    #[default]
+    Default,
+    /// Author asserts that recognized calls to the bound helper have a
+    /// TypeScript `__decorate`-style target-local mutation effect.
+    /// The analyzer shape-checks the call and models it as a local
+    /// effect on the target class/prototype instead of as a global
+    /// side-effect-order edge. See DESIGN.md A10.
+    TypescriptDecorateHelper,
 }

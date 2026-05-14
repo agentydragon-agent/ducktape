@@ -1437,7 +1437,7 @@ const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
 
 /// Receiver / global-callable names whose whitelist firing depends
 /// on the chunk not having shadowed them at top level.
-/// `analyze_chunk_facts` populates the shadowed-globals set, and
+/// `analyze_chunk` populates the shadowed-globals set, and
 /// the classifier suppresses whitelist hits for any name in it —
 /// e.g. `const Math = …` makes `Math.PI` fall back to `Unknown`.
 pub(crate) const WHITELIST_RECEIVERS: &[&str] =

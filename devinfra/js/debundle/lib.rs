@@ -35,8 +35,7 @@ pub use factor_assembly::{
 };
 pub use factorize::build_factorize_report;
 pub use facts::{
-    ChunkFactAnalysis, StatementFacts, StatementKind, analyze_chunk_facts,
-    analyze_chunk_facts_with_source_locations, analyze_chunk_with_source_locations,
+    AnalysisHints, ChunkFactAnalysis, KnownEffect, StatementFacts, StatementKind, analyze_chunk,
     find_top_level_await,
 };
 pub use graph::{

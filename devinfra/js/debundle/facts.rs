@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use binding_targets::{
     TargetAccessRecorder, binding_names, record_assign_target, record_pat_write,
@@ -33,8 +33,32 @@ pub struct StatementFacts {
     /// excluded: mutating an imported object is legal, but rebinding
     /// the imported binding cell is not.
     pub lazy_rebinds: BTreeSet<BindingName>,
+    /// Target-local mutations produced by recognized trusted helper
+    /// calls. Each binding is the class/prototype owner that must
+    /// co-locate with the mutating statement.
+    pub local_effects: BTreeSet<BindingName>,
     pub purity: Purity,
     pub kind: StatementKind,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum KnownEffect {
+    TypescriptDecorateHelper,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AnalysisHints {
+    pub declared_pure: BTreeSet<String>,
+    pub known_effects: BTreeMap<String, KnownEffect>,
+}
+
+impl AnalysisHints {
+    pub fn from_declared_pure(declared_pure: &BTreeSet<String>) -> Self {
+        Self {
+            declared_pure: declared_pure.clone(),
+            known_effects: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -85,8 +109,8 @@ pub enum StatementKind {
 /// Locate the first top-level `await` expression in `module`'s
 /// body, if any. Returns the source-order ordinal of the offending
 /// statement (in the post-comma-list-split view that
-/// `analyze_chunk_facts` uses, so reports align with statement
-/// indices in `<chunk_id>/schedule.json`).
+/// `analyze_chunk` uses, so reports align with statement indices
+/// in `<chunk_id>/schedule.json`).
 ///
 /// "Top-level" excludes function/method/arrow/getter/setter
 /// bodies and class instance-field initializers — those are lazy
@@ -127,29 +151,9 @@ impl Visit for TopLevelAwaitFinder {
     }
 }
 
-pub fn analyze_chunk_facts(
+pub fn analyze_chunk<F>(
     module: &Module,
-    declared_pure: &BTreeSet<String>,
-) -> Vec<StatementFacts> {
-    analyze_chunk_with_source_locations(module, declared_pure, None, |_| None).facts
-}
-
-pub fn analyze_chunk_facts_with_source_locations<F>(
-    module: &Module,
-    declared_pure: &BTreeSet<String>,
-    source_path: Option<&str>,
-    line_range_for_span: F,
-) -> Vec<StatementFacts>
-where
-    F: FnMut(Span) -> Option<(usize, usize)>,
-{
-    analyze_chunk_with_source_locations(module, declared_pure, source_path, line_range_for_span)
-        .facts
-}
-
-pub fn analyze_chunk_with_source_locations<F>(
-    module: &Module,
-    declared_pure: &BTreeSet<String>,
+    hints: &AnalysisHints,
     source_path: Option<&str>,
     mut line_range_for_span: F,
 ) -> ChunkFactAnalysis
@@ -158,8 +162,9 @@ where
 {
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, declared_pure);
-    let redundant_purity_hints = detect_redundant_purity_hints(&body, &shadowed, declared_pure);
+    let graph = ChunkCodeGraph::build(&body, &shadowed, &hints.declared_pure);
+    let redundant_purity_hints =
+        detect_redundant_purity_hints(&body, &shadowed, &hints.declared_pure);
     let mut top_level_await = None;
     let facts = body
         .iter()
@@ -173,13 +178,7 @@ where
                     top_level_await = Some(StatementOrdinal(ordinal));
                 }
             }
-            let mut fact = analyze_item(
-                StatementOrdinal(ordinal),
-                item,
-                &shadowed,
-                declared_pure,
-                &graph,
-            );
+            let mut fact = analyze_item(StatementOrdinal(ordinal), item, &shadowed, hints, &graph);
             fact.source_location = source_path.and_then(|source_path| {
                 line_range_for_span(item.span()).map(|(start_line, end_line)| SourceLocation {
                     source_path: source_path.to_string(),
@@ -318,7 +317,7 @@ fn analyze_item(
     ordinal: StatementOrdinal,
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
-    declared_pure: &BTreeSet<String>,
+    hints: &AnalysisHints,
     graph: &ChunkCodeGraph,
 ) -> StatementFacts {
     let kind = classify_item(item);
@@ -329,7 +328,15 @@ fn analyze_item(
     item.visit_with(&mut lazy);
     let mut writes = BindingWriteCollector::default();
     item.visit_with(&mut writes);
-    let purity = item_purity(item, kind, shadowed, declared_pure, graph);
+    let local_effects = collect_local_effects(item, &hints.known_effects);
+    let purity = item_purity(
+        item,
+        kind,
+        shadowed,
+        hints,
+        graph,
+        !local_effects.is_empty(),
+    );
     StatementFacts {
         ordinal,
         source_location: None,
@@ -338,6 +345,7 @@ fn analyze_item(
         eager_rebinds: writes.at_init,
         lazy_reads: lazy.names,
         lazy_rebinds: writes.lazy,
+        local_effects,
         purity,
         kind,
     }
@@ -347,8 +355,9 @@ fn item_purity(
     item: &ModuleItem,
     kind: StatementKind,
     shadowed: &BTreeSet<&'static str>,
-    declared_pure: &BTreeSet<String>,
+    hints: &AnalysisHints,
     graph: &ChunkCodeGraph,
+    has_local_effect: bool,
 ) -> Purity {
     match kind {
         StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => Purity::Pure,
@@ -356,10 +365,10 @@ fn item_purity(
             .into_iter()
             .flat_map(|var| var.decls.iter())
             .filter_map(|decl| decl.init.as_deref())
-            .map(|init| classify_expr_purity(init, shadowed, declared_pure, graph))
+            .map(|init| classify_expr_purity(init, shadowed, &hints.declared_pure, graph))
             .fold(Purity::Pure, Purity::worst),
         StatementKind::ClassDecl => match class_of_item(item) {
-            Some(c) if class_has_static_observable(c, shadowed, declared_pure, graph) => {
+            Some(c) if class_has_static_observable(c, shadowed, &hints.declared_pure, graph) => {
                 Purity::NotPure {
                     reasons: vec![PurityReason {
                         rule: PurityRule::ClassStaticObservable,
@@ -371,9 +380,10 @@ fn item_purity(
             }
             _ => Purity::Pure,
         },
+        StatementKind::SideEffect if has_local_effect => Purity::Pure,
         StatementKind::SideEffect => match item {
             ModuleItem::Stmt(Stmt::Expr(expr)) => {
-                classify_expr_purity(&expr.expr, shadowed, declared_pure, graph)
+                classify_expr_purity(&expr.expr, shadowed, &hints.declared_pure, graph)
             }
             // Bare blocks, control flow, loops, etc. — soundness-first.
             _ => Purity::NotPure {
@@ -386,6 +396,129 @@ fn item_purity(
             },
         },
     }
+}
+
+fn collect_local_effects(
+    item: &ModuleItem,
+    known_effects: &BTreeMap<String, KnownEffect>,
+) -> BTreeSet<BindingName> {
+    let mut out = BTreeSet::new();
+    if let Some(target) = recognized_local_effect_target(item, known_effects) {
+        out.insert(target);
+    }
+    out
+}
+
+fn recognized_local_effect_target(
+    item: &ModuleItem,
+    known_effects: &BTreeMap<String, KnownEffect>,
+) -> Option<BindingName> {
+    let ModuleItem::Stmt(Stmt::Expr(expr_stmt)) = item else {
+        return None;
+    };
+    let Expr::Call(call) = strip_parens(&expr_stmt.expr) else {
+        return None;
+    };
+    let callee = call_callee_ident(call)?;
+    if known_effects.get(callee) != Some(&KnownEffect::TypescriptDecorateHelper) {
+        return None;
+    }
+    typescript_decorate_helper_target(call)
+}
+
+fn call_callee_ident(call: &CallExpr) -> Option<&str> {
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    match strip_parens(callee) {
+        Expr::Ident(ident) => Some(ident.sym.as_ref()),
+        _ => None,
+    }
+}
+
+fn typescript_decorate_helper_target(call: &CallExpr) -> Option<BindingName> {
+    if call.args.iter().any(|arg| arg.spread.is_some()) {
+        return None;
+    }
+    match call.args.len() {
+        2 => {
+            if !decorator_array_is_static_reference_list(&call.args[0].expr) {
+                return None;
+            }
+            class_or_prototype_target_binding(&call.args[1].expr)
+        }
+        4 => {
+            if !decorator_array_is_static_reference_list(&call.args[0].expr)
+                || !decorate_property_key_is_static(&call.args[2].expr)
+                || !decorate_flags_are_static(&call.args[3].expr)
+            {
+                return None;
+            }
+            class_or_prototype_target_binding(&call.args[1].expr)
+        }
+        _ => None,
+    }
+}
+
+fn decorator_array_is_static_reference_list(expr: &Expr) -> bool {
+    let Expr::Array(array) = strip_parens(expr) else {
+        return false;
+    };
+    array.elems.iter().all(|elem| {
+        let Some(elem) = elem else {
+            return false;
+        };
+        elem.spread.is_none() && static_reference_expr(&elem.expr)
+    })
+}
+
+fn static_reference_expr(expr: &Expr) -> bool {
+    match strip_parens(expr) {
+        Expr::Ident(_) => true,
+        Expr::Member(member) => {
+            matches!(&member.prop, MemberProp::Ident(_))
+                && static_reference_expr(member.obj.as_ref())
+        }
+        _ => false,
+    }
+}
+
+fn class_or_prototype_target_binding(expr: &Expr) -> Option<BindingName> {
+    match strip_parens(expr) {
+        Expr::Ident(ident) => Some(ident.sym.to_string()),
+        Expr::Member(member) => {
+            let MemberProp::Ident(prop) = &member.prop else {
+                return None;
+            };
+            if prop.sym.as_ref() != "prototype" {
+                return None;
+            }
+            match strip_parens(member.obj.as_ref()) {
+                Expr::Ident(ident) => Some(ident.sym.to_string()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn decorate_property_key_is_static(expr: &Expr) -> bool {
+    matches!(
+        strip_parens(expr),
+        Expr::Lit(Lit::Str(_)) | Expr::Lit(Lit::Num(_))
+    )
+}
+
+fn decorate_flags_are_static(expr: &Expr) -> bool {
+    matches!(strip_parens(expr), Expr::Lit(Lit::Num(_)))
+}
+
+fn strip_parens(expr: &Expr) -> &Expr {
+    let mut cur = expr;
+    while let Expr::Paren(paren) = cur {
+        cur = &paren.expr;
+    }
+    cur
 }
 
 fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {

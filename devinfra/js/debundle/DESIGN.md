@@ -515,6 +515,38 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   way an incorrect spec selector can — soundness shifts to the
   spec author. See AGENTS.md "Declared purity".
 
+- **A10. Spec-declared local-effect annotations are
+  author-trusted.** The spec format also admits an optional
+  per-member `effect:` field for named helper bindings whose
+  top-level calls have a known, narrow mutation shape that ordinary
+  expression purity cannot infer. The first admitted value is
+  `effect: typescript_decorate_helper`, for esbuild/TypeScript
+  `__decorate`-style helpers:
+
+  ```js
+  Ro([Z], C.prototype, "visible", 2);
+  Ro([ClassDecorator], C);
+  ```
+
+  This annotation does **not** assert that the call is pure. It
+  asserts a more precise effect: for recognized call shapes, the
+  call's only modeled mutation is local to the target class/prototype
+  owner. The analyzer therefore emits a target-local owner edge from
+  the decorator-application statement to the class owner and suppresses
+  the otherwise-global side-effect-order edge for that statement. The
+  target-local edge is an atomic colocation constraint: the helper
+  application and the target owner must move together, and source order
+  still keeps the application after the class declaration inside the
+  same emitted module.
+
+  The annotation is intentionally shape-checked. If the callee is not
+  the annotated binding, if the target class/prototype binding cannot
+  be resolved, or if the call uses an unsupported shape, the analyzer
+  falls back to ordinary conservative side-effect classification. An
+  incorrect annotation can produce a buggy debundle, so it carries the
+  same review burden as `purity: "pure"`; the difference is that the
+  trusted claim is local target mutation, not absence of effects.
+
 A1–A5 are statically checkable on each chunk: grep for top-level
 `await`, dynamic `import()` of internal paths, `eval`, and `with`.
 A2 in particular is enforced by `find_top_level_await` —
@@ -528,7 +560,9 @@ chunk-top declared-name set claims one of the whitelist receivers,
 so chunks that violate A8 still validate soundly. A9 (declared
 purity is author-trusted) is satisfied by spec review — every
 `purity: "pure"` annotation is an explicit, reviewable trust
-claim.
+claim. A10 (declared local effects) is likewise satisfied by spec
+review, with analyzer shape checks limiting the trusted surface to
+the admitted helper-call forms.
 
 ### Lemmas
 
@@ -1096,6 +1130,13 @@ Other relations are not equivalence constraints:
 - A side-effect-order edge is an ordering constraint, not a value
   dependency. It may be satisfiable by the chosen module evaluation
   order, or it may participate in an unrealizable quotient SCC.
+- A target-local effect edge, such as a recognized TypeScript
+  `__decorate` helper call mutating `C.prototype`, is not a global
+  side-effect-order relation. It is a local mutation relation between
+  the anonymous application statement and the target owner. It must
+  force colocation with that target, but it must not glue the target
+  to every unrelated side-effecting owner that happens to appear
+  before or after it in source order.
 
 So "factorize the graph" is not the problem statement. The problem is:
 construct owner sets whose induced destination assignment is valid under
@@ -1149,6 +1190,9 @@ ranking or display.
    - include all owners in any atomic unit split by the frontier item;
    - include owners needed to eliminate cross-destination rebinding
      writes;
+   - include owners needed by target-local effect edges, because a
+     target-local mutation is only realizable when the mutating
+     statement and target owner are in the same destination;
    - include provider owners for private residual bindings that the
      frontier item reads, including lazy reads, unless the export
      policy makes those bindings importable.
@@ -1212,6 +1256,14 @@ incorrect. A factorizer that drops `LazyUse` from the init-order SCC
 closure relation, records the resulting private-residual emit blocker,
 grows the frontier item to include the provider, and validates the
 closed set before emitting can be correct.
+
+It also explains why local-effect annotations belong in the shared
+analysis layer, not in factorize-specific code. Once the analyzer
+turns a recognized decorator helper call into a target-local owner
+edge, the materializer rejects a handwritten split of class and
+decorator statement, peelability reports the exact companion set, and
+factorize can grow the frontier through the same atomic-unit repair
+path. No consumer gets to reinterpret `effect:` independently.
 
 ### Planned factorization complexity
 
@@ -1696,6 +1748,15 @@ workspace/invite/state:
     - match: |
         Ww([Z], $g.prototype, "isChecking", 2);
 ```
+
+When a decorator application matches an annotated
+`effect: typescript_decorate_helper`, the owner graph records it as a
+target-local effect on the class/prototype binding. That makes the
+anonymous statement a required companion of the class owner for
+materialization, peelability, and factorize. The author still
+materializes it with `anonymous_statements:` because it has no binding
+name, but factorize's proposal already includes the anonymous owner id
+and will not propose the class alone.
 
 ### Different from binding selectors
 
@@ -2379,7 +2440,16 @@ detected, not silent acceptance.
 These are unresolved precision issues. Each is worth its own
 exploration before crossing the relevant phase.
 
-1. **Lazy-position completeness.** `reads_at_init` is implemented
+1. **Local-effect annotation coverage.** The
+   `effect: typescript_decorate_helper` annotation is deliberately
+   narrow. It covers the
+   TypeScript helper shapes currently seen in bundled Tana output:
+   property/method decorators on `C.prototype` and class decorators on
+   `C`. Calls with spread arguments, computed/optional targets, or
+   unresolved targets must remain ordinary conservative side effects.
+   Future helper forms need one test per admitted shape before they are
+   added.
+2. **Lazy-position completeness.** `reads_at_init` is implemented
    as a visitor that descends into eager positions and stops at
    lazy positions. The current implementation handles function
    bodies, method bodies, instance class fields, getters, setters.
@@ -2388,23 +2458,23 @@ exploration before crossing the relevant phase.
    evaluation timing (ECMAScript spec says default params evaluate
    on call, which is lazy); dynamic `import()` arguments. The
    visitor's gaps should be exhaustively pinned in unit tests.
-2. **Side-effect classification precision.** Without alias analysis
+3. **Side-effect classification precision.** Without alias analysis
    we have to assume `const X = f()` is side-effecting if `f` is
    any function call. This over-imposes side-effect edges, which
    may block more candidate peel sets than strictly necessary.
    Pure-call inference is future work.
-3. **Vendor chunk modeling.** Vendor chunks are pre-existing module
+4. **Vendor chunk modeling.** Vendor chunks are pre-existing module
    boundaries that we don't control. They appear in the dep graph
    as nodes with no at-init reads from our chunk (the vendor
    doesn't import from us). The validator should sanity-check
    this; a vendor that imports back into the user-chunk is a
    pathological case worth detecting.
-4. **Validator UX.** The cycle report should be actionable. A
+5. **Validator UX.** The cycle report should be actionable. A
    shape like "Cycle modules [M_a, M_b]; evidence: stmt#42 in
    M_a reads `X` (owned by M_b); stmt#107 in M_b reads `Y`
    (owned by M_a). Resolution: colocate X and Y in one module"
    is the goal.
-5. **Pattern selectors for `anonymous_statements`.** Today the
+6. **Pattern selectors for `anonymous_statements`.** Today the
    `match` is exact AST equality. Wildcard placeholders
    (`Ww([?], $g.prototype, ?, ?);` to match every decorator
    application on `$g.prototype` regardless of the decorator
@@ -2415,7 +2485,7 @@ exploration before crossing the relevant phase.
    property and reintroduces narrowing, so the model would need
    to either bipartite-force across pattern selectors or ban
    ambiguity. Deferred until a real Tana spec demands it.
-6. **Factorize soundness audit.** `factorize` must be brought fully
+7. **Factorize soundness audit.** `factorize` must be brought fully
    into line with [Factorization proposals](#factorization-proposals).
    The audit should pin tests for the invariant: every emitted
    proposal is accepted by the same owner-graph quotient predicate as
@@ -2423,7 +2493,7 @@ exploration before crossing the relevant phase.
    loads to discover invalid splits. Internal frontier states may be
    numerous and rejected, but generated proposals must all be
    certified.
-7. **Constraining-graph-sink refinement.** Some anonymous
+8. **Constraining-graph-sink refinement.** Some anonymous
    statements (Sentry debug-id IIFE, Vite modulepreload polyfill)
    are sinks in the constraining edge graph: they have side
    effects but no observable cross-binding deps. An s-edge from
@@ -2435,7 +2505,7 @@ exploration before crossing the relevant phase.
    selectors because their companions (decorator applications,
    semantic init bridges) are not sinks. Worth tracking but
    not blocking.
-8. **`chunk_renames` cross-module rename propagation.**
+9. **`chunk_renames` cross-module rename propagation.**
    `chunk_renames` members rename a binding's local-alias
    references in entry's body via the lowerer's body-rename
    pipeline. When a binding referenced by the chunk_rename is

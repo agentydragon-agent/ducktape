@@ -12,9 +12,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
-    AtomicUnitConflict, BindingKind, BindingName, DepKind, LogicalModule as ScheduleLogicalModule,
-    LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerId, RedundantPurityHint,
-    RedundantPurityReason, Schedule, analyze_chunk_with_source_locations,
+    AnalysisHints, AtomicUnitConflict, BindingKind, BindingName, DepKind, KnownEffect,
+    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
+    OwnerId, RedundantPurityHint, RedundantPurityReason, Schedule, analyze_chunk,
     compute_owner_graph_and_units, render_atomic_unit_conflict_summary, render_cycle_summary,
 };
 use artifact::{
@@ -26,7 +26,9 @@ use artifact::{
     relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
-use spec::{BindingSourceKind, ChunkRenames, LogicalModule, MemberPurity, UnassignedMode};
+use spec::{
+    BindingSourceKind, ChunkRenames, LogicalModule, MemberEffect, MemberPurity, UnassignedMode,
+};
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -165,6 +167,11 @@ struct MemberRequest {
     /// inferred classification". An author-trust contract; see
     /// AGENTS.md "Declared purity" and DESIGN.md A9.
     purity: MemberPurity,
+    /// Spec-level local-effect annotation. `TypescriptDecorateHelper`
+    /// asserts that recognized calls to the bound helper mutate only
+    /// their target class/prototype, so the analyzer can model a local
+    /// effect edge instead of a global side-effect-order edge.
+    effect: MemberEffect,
 }
 
 #[derive(Debug, Clone)]
@@ -655,38 +662,45 @@ fn materialize_logical_chunk(
     .unwrap_or_default();
 
     let (schedule, redundant_purity_hints) = {
-        // `purity: pure` hints carried on any spec entry form
-        // (logical-module member, chunk_renames member) propagate
-        // the same way: add the binding's local name to
-        // `declared_pure` so `classify_callee_call` returns `Pure`
-        // for matching call sites. The author-trust contract is the
-        // same regardless of where the entry lives. See AGENTS.md
-        // "Declared purity".
-        let declared_pure: BTreeSet<String> = time_phase!(timings, "collect_declared_pure", {
-            let mut set = BTreeSet::new();
+        // Spec annotations carried on any member form (logical-module
+        // member, chunk_renames member) propagate the same way:
+        // collect them by local binding name and feed them into fact
+        // analysis. They are semantic trust assertions, not ownership
+        // claims; deferred YAMLs routed through chunk_renames still
+        // do not force factorizer grouping.
+        let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
+            let mut hints = AnalysisHints::default();
             for req in &explicit_requests {
                 for m in &req.members {
                     if m.purity == MemberPurity::Pure {
-                        set.insert(m.binding.clone());
+                        hints.declared_pure.insert(m.binding.clone());
+                    }
+                    if let Some(effect) = known_effect_from_member_effect(m.effect) {
+                        hints.known_effects.insert(m.binding.clone(), effect);
                     }
                 }
             }
             if let Some(cr) = chunk_renames.get(chunk_id) {
                 for m in &cr.members {
                     if m.purity == MemberPurity::Pure {
-                        set.insert(m.selector.binding.name.clone());
+                        hints.declared_pure.insert(m.selector.binding.name.clone());
+                    }
+                    if let Some(effect) = known_effect_from_member_effect(m.effect) {
+                        hints
+                            .known_effects
+                            .insert(m.selector.binding.name.clone(), effect);
                     }
                 }
             }
-            set
+            hints
         });
         let line_index = time_phase!(timings, "build_source_line_index", {
             runtime_ast.line_index()
         });
-        let analysis = time_phase!(timings, "analyze_chunk_facts", {
-            analyze_chunk_with_source_locations(
+        let analysis = time_phase!(timings, "analyze_chunk", {
+            analyze_chunk(
                 &runtime_ast.module,
-                &declared_pure,
+                &analysis_hints,
                 Some(&source_path),
                 |span| line_index.line_range_for_span(span),
             )
@@ -2072,9 +2086,17 @@ fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {
                 binding,
                 export_name,
                 purity: m.purity,
+                effect: m.effect,
             }
         })
         .collect()
+}
+
+fn known_effect_from_member_effect(effect: MemberEffect) -> Option<KnownEffect> {
+    match effect {
+        MemberEffect::Default => None,
+        MemberEffect::TypescriptDecorateHelper => Some(KnownEffect::TypescriptDecorateHelper),
+    }
 }
 
 struct ChunkAstAnalysis {
@@ -4027,6 +4049,11 @@ fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflict]) -> String
                 "Sequenced side-effect chain: two top-level side-effect statements are \
                  forced into a fixed source order; splitting them across modules \
                  inverts the run order. "
+            }
+            DepKind::LocalEffect => {
+                "Local effect: a trusted helper call mutates a target binding \
+                 (for example a TypeScript decorator application on a class prototype); \
+                 the mutating statement and target binding must materialize together. "
             }
             DepKind::LazyUse => continue,
         });

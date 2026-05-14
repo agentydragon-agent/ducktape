@@ -28,6 +28,7 @@ use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
 use peel_factorize::factorize;
 use serde::de::DeserializeOwned;
+use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -50,6 +51,24 @@ fn proposal_has_bindings(proposal: &peel_factorize::FactorizeProposal, bindings:
     bindings
         .iter()
         .all(|binding| proposal.binding_ids.contains(&(*binding).to_string()))
+}
+
+fn annotated_effect_module(
+    path: &str,
+    binding: &str,
+    effect: &str,
+) -> debundle_e2e_support::LogicalModuleEntry {
+    (
+        path.to_string(),
+        json!({
+            "members": [
+                {
+                    "selector": { "binding": { "name": binding } },
+                    "effect": effect
+                }
+            ]
+        }),
+    )
 }
 
 #[test]
@@ -449,4 +468,113 @@ export { anchor, consumer_a, consumer_b };
         ],
     );
     let _ = run_fixture(promoted_opts);
+}
+
+#[test]
+fn annotated_decorate_helper_breaks_class_plus_decorator_from_side_effect_chain() {
+    // Tana-shaped case: the class itself is small and peelable only
+    // with its post-class decorator application. The unrelated
+    // source-order side effects before/after the decorator should
+    // not force a mega-closure once the TypeScript decorate helper is
+    // annotated as a target-local effect.
+    let chunk_source = r#"const anchor = "anchor";
+console.log("boot");
+function Ro(decorators, target, key, flags) {
+  for (let i = decorators.length - 1; i >= 0; i--) decorators[i](target, key);
+}
+const Z = () => {};
+class SearchPopoverState {
+  constructor() { this.visible = false; }
+}
+Ro([Z], SearchPopoverState.prototype, "visible", 2);
+console.log("tail");
+export { anchor, SearchPopoverState };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![
+            logical_module("anchors/anchor", &[Member::new("anchor")]),
+            annotated_effect_module(
+                "infra/decorators/ts_decorate",
+                "Ro",
+                "typescript_decorate_helper",
+            ),
+            logical_module("infra/decorators/observable", &[Member::new("Z")]),
+        ],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+
+    assert!(
+        graph.factorize.cells.iter().any(|cell| {
+            cell.binding_ids == vec!["SearchPopoverState".to_string()]
+                && cell.anonymous_statement_owner_ids.len() == 1
+                && cell.size_members == 2
+                && cell.landable_today
+        }),
+        "decorated class should be proposed with exactly its decorator statement, not the unrelated side-effect chain: {:#?}",
+        graph.factorize,
+    );
+    assert!(
+        !graph.factorize.cells.iter().any(|cell| {
+            cell.binding_ids == vec!["SearchPopoverState".to_string()]
+                && cell.anonymous_statement_owner_ids.is_empty()
+        }),
+        "class-only proposal would split the target-local decorator effect: {:#?}",
+        graph.factorize,
+    );
+
+    let promoted_opts = FixtureOpts::new(
+        chunk_source,
+        vec![
+            logical_module("anchors/anchor", &[Member::new("anchor")]),
+            annotated_effect_module(
+                "infra/decorators/ts_decorate",
+                "Ro",
+                "typescript_decorate_helper",
+            ),
+            logical_module("infra/decorators/observable", &[Member::new("Z")]),
+            logical_module_with_anon(
+                "features/search/popover_state",
+                &[Member::new("SearchPopoverState")],
+                &["Ro([Z], SearchPopoverState.prototype, \"visible\", 2);"],
+            ),
+        ],
+    );
+    let _ = run_fixture(promoted_opts);
+}
+
+#[test]
+fn materializer_rejects_splitting_annotated_decorator_effect_from_target_class() {
+    let chunk_source = r#"const anchor = "anchor";
+function Ro(decorators, target, key, flags) {
+  for (let i = decorators.length - 1; i >= 0; i--) decorators[i](target, key);
+}
+const Z = () => {};
+class SearchPopoverState {}
+Ro([Z], SearchPopoverState.prototype, "visible", 2);
+export { anchor, SearchPopoverState };
+"#;
+
+    let opts = FixtureOpts::new(
+        chunk_source,
+        vec![
+            logical_module("anchors/anchor", &[Member::new("anchor")]),
+            annotated_effect_module(
+                "infra/decorators/ts_decorate",
+                "Ro",
+                "typescript_decorate_helper",
+            ),
+            logical_module("infra/decorators/observable", &[Member::new("Z")]),
+            logical_module(
+                "features/search/popover_state",
+                &[Member::new("SearchPopoverState")],
+            ),
+        ],
+    );
+
+    expect_rejection_containing_all(opts, &["atomic-factor-unit", "local effect"]);
 }

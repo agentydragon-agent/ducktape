@@ -274,16 +274,15 @@ fn close_frontier(
     let mut seen = BTreeSet::<(Option<ModuleId>, Vec<OwnerId>)>::new();
 
     loop {
-        match close_atomic_units(schedule, index, &mut owners, &mut extension_target) {
-            Ok(()) => {}
-            Err(verdict) => {
-                return FrontierOutcome::Diagnostic(FrontierDiagnostic {
-                    owners,
-                    extension_target,
-                    verdict,
-                    reason: FactorizeDiagnosticReason::ActiveModuleConflict,
-                });
-            }
+        if let Some(verdict) =
+            close_atomic_units(schedule, index, &mut owners, &mut extension_target)
+        {
+            return FrontierOutcome::Diagnostic(FrontierDiagnostic {
+                owners,
+                extension_target,
+                verdict,
+                reason: FactorizeDiagnosticReason::ActiveModuleConflict,
+            });
         }
 
         let key = (extension_target, owners.iter().copied().collect::<Vec<_>>());
@@ -386,7 +385,7 @@ fn close_atomic_units(
     index: &FactorizeIndex,
     owners: &mut BTreeSet<OwnerId>,
     extension_target: &mut Option<ModuleId>,
-) -> Result<(), PeelCandidateEvaluation> {
+) -> Option<PeelCandidateEvaluation> {
     let mut changed = true;
     while changed {
         changed = false;
@@ -401,7 +400,7 @@ fn close_atomic_units(
                     changed |= owners.insert(member);
                 } else if let Some(target) = extension_target {
                     if *target != dest {
-                        return Err(empty_blocked_cycle(owners));
+                        return Some(empty_blocked_cycle(owners));
                     }
                 } else {
                     *extension_target = Some(dest);
@@ -409,7 +408,7 @@ fn close_atomic_units(
             }
         }
     }
-    Ok(())
+    None
 }
 
 fn add_repair_owner(

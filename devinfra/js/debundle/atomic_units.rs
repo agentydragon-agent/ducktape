@@ -13,6 +13,8 @@
 //! * `LazyUse`: skip (call-time read).
 //! * `EagerRebind` / `LazyRebind`: add both directions (declarer
 //!   and assigner of a mutable binding must co-locate).
+//! * `LocalEffect`: add both directions (target-local mutation must
+//!   co-locate with its target owner).
 //! * `Sequenced`: add `u → v`. Co-location is only forced when
 //!   another constraining edge runs the reverse direction —
 //!   Tarjan's SCC handles that automatically.
@@ -77,7 +79,7 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
                 g_atomic.add_edge(edge.from, edge.to, ());
             }
             DepKind::LazyUse => {}
-            DepKind::EagerRebind | DepKind::LazyRebind => {
+            DepKind::EagerRebind | DepKind::LazyRebind | DepKind::LocalEffect => {
                 g_atomic.add_edge(edge.from, edge.to, ());
                 g_atomic.add_edge(edge.to, edge.from, ());
             }

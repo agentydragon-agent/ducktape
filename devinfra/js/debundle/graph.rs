@@ -27,6 +27,10 @@ use crate::{
 /// - `Sequenced` contributes to `S` and constrains
 ///   realizability because source-order side effects require a
 ///   topological order.
+/// - `LocalEffect` is a trusted target-local mutation (for example
+///   a TypeScript `__decorate` helper application) that must
+///   co-locate with the target owner but should not impose global
+///   side-effect ordering on unrelated owners.
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
     pub(crate) kind: DepKind,
@@ -70,6 +74,13 @@ impl EdgeReason {
             binding: None,
         }
     }
+    pub(crate) fn local_effect(so: StatementOrdinal, b: BindingId) -> Self {
+        Self {
+            kind: DepKind::LocalEffect,
+            statement_ordinal: so,
+            binding: Some(b),
+        }
+    }
 
     pub(crate) fn is_eager_use(&self) -> bool {
         self.kind == DepKind::EagerUse
@@ -96,6 +107,7 @@ pub enum DepKind {
     EagerRebind,
     LazyRebind,
     Sequenced,
+    LocalEffect,
 }
 
 /// Stable-in-run identity of an owner graph vertex. V1 owner
@@ -359,6 +371,15 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
                 from,
                 binding,
                 EdgeReason::lazy_rebind,
+                stmt.ordinal,
+            );
+        }
+        for binding in &stmt.local_effects {
+            push_binding_edge(
+                &mut raw_edges,
+                from,
+                binding,
+                EdgeReason::local_effect,
                 stmt.ordinal,
             );
         }

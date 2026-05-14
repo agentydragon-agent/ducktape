@@ -1,5 +1,5 @@
 mod tests {
-    use std::collections::{BTreeSet, HashMap};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
 
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
     use crate::purity::{ChunkCodeGraph, Purity, RedundantPurityReason, classify_expr_purity};
@@ -23,10 +23,28 @@ mod tests {
         Parser::new_from(lexer).parse_module().unwrap()
     }
 
+    fn hints_with_decorate_helper(name: &str) -> AnalysisHints {
+        AnalysisHints {
+            declared_pure: BTreeSet::new(),
+            known_effects: BTreeMap::from([(
+                name.to_string(),
+                KnownEffect::TypescriptDecorateHelper,
+            )]),
+        }
+    }
+
+    fn analyze_facts_with_hints(module: &Module, hints: &AnalysisHints) -> Vec<StatementFacts> {
+        analyze_chunk(module, hints, None, |_| None).facts
+    }
+
+    fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
+        analyze_facts_with_hints(module, &AnalysisHints::default())
+    }
+
     #[test]
     fn function_body_reads_are_lazy() {
         let module = parse("function f() { return X; } const Y = 1;");
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         assert_eq!(facts.len(), 2);
         // f() declares "f"; its body reference to X is lazy.
         assert_eq!(
@@ -46,7 +64,7 @@ mod tests {
     #[test]
     fn class_extends_clause_eager_read() {
         let module = parse("class B extends A { run() { return X; } }");
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         assert_eq!(facts.len(), 1);
         // extends A is eager; method body reference to X is lazy.
         assert!(facts[0].eager_reads.contains("A"));
@@ -56,7 +74,7 @@ mod tests {
     #[test]
     fn computed_key_eager_read() {
         let module = parse("const M = { [k.foo]: 1 };");
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         // The key expression `k.foo` reads `k` at-init.
         assert!(facts[0].eager_reads.contains("k"));
     }
@@ -64,17 +82,113 @@ mod tests {
     #[test]
     fn class_static_init_eager_read() {
         let module = parse("class C { static x = Y; }");
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         assert!(facts[0].eager_reads.contains("Y"));
     }
 
     #[test]
     fn class_instance_init_is_lazy() {
         let module = parse("class C { x = Y; }");
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         // Instance field initializer evaluates per-instance, not at
         // class-decl time.
         assert!(!facts[0].eager_reads.contains("Y"));
+    }
+
+    #[test]
+    fn annotated_decorate_helper_call_records_target_local_effect_not_global_sequence() {
+        let module = parse(
+            r#"console.log("boot");
+function Ro(decorators, target, key, flags) {}
+const Z = {};
+class C {}
+Ro([Z.shallow], C.prototype, "x", 2);
+console.log("tail");"#,
+        );
+        let facts = analyze_facts_with_hints(&module, &hints_with_decorate_helper("Ro"));
+        assert_eq!(facts[4].local_effects, BTreeSet::from(["C".to_string()]));
+        assert!(facts[4].purity.is_pure());
+
+        let graph = build_owner_graph(&facts);
+        let local_effects: Vec<_> = graph
+            .iter_edges()
+            .filter(|edge| edge.reason.kind == DepKind::LocalEffect)
+            .collect();
+        assert_eq!(local_effects.len(), 1);
+        assert_eq!(local_effects[0].from, OwnerId(4));
+        assert_eq!(local_effects[0].to, OwnerId(3));
+        assert_eq!(
+            local_effects[0]
+                .reason
+                .binding
+                .map(|id| graph.binding_table.required_name(id).as_str()),
+            Some("C"),
+        );
+        assert!(
+            graph.iter_edges().all(|edge| {
+                edge.reason.kind != DepKind::Sequenced
+                    || (edge.from != OwnerId(4) && edge.to != OwnerId(4))
+            }),
+            "recognized decorate helper must not participate in unrelated global S edges: {:#?}",
+            graph.edges,
+        );
+    }
+
+    #[test]
+    fn annotated_decorate_helper_supports_class_decorator_shape() {
+        let module = parse(
+            r#"function Ro(decorators, target) {}
+const Z = {};
+class C {}
+Ro([Z], C);"#,
+        );
+        let facts = analyze_facts_with_hints(&module, &hints_with_decorate_helper("Ro"));
+        assert_eq!(facts[3].local_effects, BTreeSet::from(["C".to_string()]));
+        assert!(facts[3].purity.is_pure());
+    }
+
+    #[test]
+    fn unannotated_decorate_helper_call_remains_conservative_side_effect() {
+        let module = parse(
+            r#"function Ro(decorators, target, key, flags) {}
+const Z = {};
+class C {}
+Ro([Z], C.prototype, "x", 2);"#,
+        );
+        let facts = analyze_facts(&module);
+        assert!(facts[3].local_effects.is_empty());
+        assert!(!facts[3].purity.is_pure());
+    }
+
+    #[test]
+    fn annotated_decorate_helper_rejects_dynamic_shapes() {
+        let hints = hints_with_decorate_helper("Ro");
+        for source in [
+            r#"function Ro() {}
+const Z = {};
+class C {}
+Ro([makeDecorator()], C.prototype, "x", 2);"#,
+            r#"function Ro() {}
+const Z = {};
+class C {}
+Ro([Z], C["prototype"], "x", 2);"#,
+            r#"function Ro() {}
+const Z = {};
+class C {}
+Ro([Z], C.prototype, dynamicKey, 2);"#,
+        ] {
+            let module = parse(source);
+            let facts = analyze_facts_with_hints(&module, &hints);
+            let last = facts.last().expect("fixture has a call statement");
+            assert!(
+                last.local_effects.is_empty(),
+                "dynamic decorate helper shape should fall back: {source}"
+            );
+            assert!(
+                !last.purity.is_pure(),
+                "dynamic decorate helper shape should retain conservative side-effect purity: {source}"
+            );
+        }
     }
 
     fn logical(idx: usize) -> ModuleId {
@@ -114,7 +228,7 @@ mod tests {
         // mod_a owns A; A's init reads B (owned by mod_b).
         // mod_b owns B; B's init reads A (owned by mod_a).
         let module = parse("const A = B + 1; const B = A + 1;");
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
@@ -129,7 +243,7 @@ mod tests {
     #[test]
     fn dag_has_no_cycles() {
         let module = parse("const A = 1; const B = A + 1; const C = B + A;");
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
@@ -157,7 +271,7 @@ mod tests {
         // R-edge: mod_1 → mod_0 (kind = at-init, binding = A).
         // L-edge: mod_0 → mod_1 (kind = lazy, binding = B).
         let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("readB".to_string(), logical(0));
@@ -207,7 +321,7 @@ mod tests {
         let module = parse(
             r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
         );
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
         binding_assignment.insert("a1".to_string(), logical(0));
         binding_assignment.insert("a2".to_string(), logical(0));
@@ -240,7 +354,7 @@ mod tests {
         let module = parse(
             "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
         );
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
         binding_assignment.insert("helperA".to_string(), logical(0));
         binding_assignment.insert("A".to_string(), logical(0));
@@ -314,7 +428,7 @@ mod tests {
 
     fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> Schedule {
         let module = parse(source);
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let mut bindings = HashMap::new();
         let mut max_idx = 0usize;
         for (name, id) in ownership {
@@ -347,7 +461,7 @@ mod tests {
         logical_bindings: &[&str],
     ) -> Schedule {
         let module = parse(source);
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let residual = logical(0);
         let logical = logical(1);
         let mut bindings = HashMap::new();
@@ -1787,7 +1901,7 @@ mod tests {
         "#
         );
         let module = parse(&full);
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let gf_fact = facts
             .iter()
             .find(|f| f.declared.contains("gF"))
@@ -1810,7 +1924,7 @@ mod tests {
             const v = TA[io()];
         "#;
         let module = parse(src);
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let v_fact = facts
             .iter()
             .find(|f| f.declared.contains("v"))
@@ -1840,7 +1954,7 @@ mod tests {
 
     // --- Redundant `purity: pure` hint detection ---------------------------
 
-    /// Run `analyze_chunk_facts` with the given hints applied, then
+    /// Run `analyze_chunk` with the given hints applied, then
     /// return the list of `(binding_name, reason)` pairs the analyzer
     /// reports as redundant. Used by the test cases below to pin the
     /// "the analyzer would have figured this out on its own" verdict
@@ -1848,20 +1962,25 @@ mod tests {
     fn redundant_hints(src: &str, hints: &[&str]) -> Vec<(String, RedundantPurityReason)> {
         let module = parse(src);
         let declared_pure: BTreeSet<String> = hints.iter().map(|s| (*s).to_string()).collect();
-        analyze_chunk_facts_with_redundant_hints(&module, &declared_pure)
+        analyze_redundant_hints(&module, &declared_pure)
     }
 
     /// Wrapper that constructs a `ChunkFactAnalysis` and returns its
     /// `redundant_purity_hints` list as `(name, reason)` pairs.
-    fn analyze_chunk_facts_with_redundant_hints(
+    fn analyze_redundant_hints(
         module: &Module,
         declared_pure: &BTreeSet<String>,
     ) -> Vec<(String, RedundantPurityReason)> {
-        analyze_chunk_with_source_locations(module, declared_pure, None, |_| None)
-            .redundant_purity_hints
-            .into_iter()
-            .map(|h| (h.binding_name, h.reason))
-            .collect()
+        analyze_chunk(
+            module,
+            &AnalysisHints::from_declared_pure(declared_pure),
+            None,
+            |_| None,
+        )
+        .redundant_purity_hints
+        .into_iter()
+        .map(|h| (h.binding_name, h.reason))
+        .collect()
     }
 
     #[test]
@@ -2104,7 +2223,7 @@ mod tests {
 
     fn has_side_effect_for(src: &str) -> Vec<bool> {
         let module = parse(src);
-        analyze_chunk_facts(&module, &BTreeSet::new())
+        analyze_facts(&module)
             .into_iter()
             .map(|f| !f.purity.is_pure())
             .collect()
@@ -2179,15 +2298,12 @@ mod tests {
 
     fn statement_kinds(source: &str) -> Vec<StatementKind> {
         let module = parse(source);
-        analyze_chunk_facts(&module, &BTreeSet::new())
-            .into_iter()
-            .map(|f| f.kind)
-            .collect()
+        analyze_facts(&module).into_iter().map(|f| f.kind).collect()
     }
 
     fn declared_per_statement(source: &str) -> Vec<Vec<String>> {
         let module = parse(source);
-        analyze_chunk_facts(&module, &BTreeSet::new())
+        analyze_facts(&module)
             .into_iter()
             .map(|f| f.declared.into_iter().collect::<Vec<_>>())
             .collect()
@@ -2319,9 +2435,9 @@ mod tests {
             let hi = cm_clone.lookup_char_pos(span.hi()).line;
             Some((lo, hi))
         };
-        let analysis = analyze_chunk_with_source_locations(
+        let analysis = analyze_chunk(
             &module,
-            &BTreeSet::new(),
+            &AnalysisHints::default(),
             Some("test.js"),
             line_range_for_span,
         );
@@ -2371,9 +2487,9 @@ mod tests {
             let hi = cm_clone.lookup_char_pos(span.hi()).line;
             Some((lo, hi))
         };
-        let analysis = analyze_chunk_with_source_locations(
+        let analysis = analyze_chunk(
             &module,
-            &BTreeSet::new(),
+            &AnalysisHints::default(),
             Some("test.js"),
             line_range_for_span,
         );
@@ -2474,7 +2590,7 @@ mod tests {
 
     fn atomic_units_for(source: &str) -> Vec<AtomicUnit> {
         let module = parse(source);
-        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let facts = analyze_facts(&module);
         let owner_graph = build_owner_graph(&facts);
         compute_atomic_units(&owner_graph)
     }
