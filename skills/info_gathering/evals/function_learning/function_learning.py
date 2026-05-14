@@ -40,7 +40,6 @@ from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERI
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.eval_sandbox import eval_sandbox
 from skills.eval_infra.skill_staging import stage_skill
-from skills.skill_spec import SkillSpec
 from skills.eval_infra.termination import terminate_when
 from skills.eval_infra.transcript import JsonlTranscriptProvider
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction
@@ -53,6 +52,7 @@ from skills.info_gathering.evals.function_learning.result_types import (
 )
 from skills.info_gathering.evals.function_learning.scoring import EVAL_TIMEOUT_S, evaluate_program
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths
+from skills.skill_spec import SkillSpec
 
 logger = logging.getLogger(__name__)
 
