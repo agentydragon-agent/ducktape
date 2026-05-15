@@ -23,4 +23,5 @@ spec:
   dependsOn:
     - name: harbor
     - name: tofu-controller
+    - name: tofu-state-db
     - name: props-namespace
