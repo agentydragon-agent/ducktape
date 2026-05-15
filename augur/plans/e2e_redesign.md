@@ -62,10 +62,10 @@ bespoke explanatory array math without changing monthly-column semantics.
 
 Next slices:
 
-1. Keep true state snapshots, such as cash, asset value, PE liquidity value,
-   property value, mortgage balance, home-equity claims, ownership percentage,
-   and net-worth metrics, sourced from state snapshots rather than transaction
-   ledger rows.
+1. Keep true state snapshots, such as cash, public asset value, private-equity
+   mark value, tender-eligible private-equity value, property value, mortgage
+   balance, home-equity claims, ownership percentage, and net-worth metrics,
+   sourced from state snapshots rather than transaction ledger rows.
 2. Derive remaining transaction-flow arrays from ledger rows where practical.
    The likely next targets are purchase-closing costs, property depreciation,
    partner house-cost/share explanation columns, and tax payment timing once the
@@ -92,7 +92,10 @@ them, but their source should be another state/ledger-backed metric.
   `owner_home_equity_claim_usd`, `partner_home_equity_claim_usd`,
   `partner_equity_ledger_usd`, `owner_equity_ledger_usd`,
   `partner_ownership_pct`, `liquid_net_worth_usd`, `net_worth_usd`,
-  `partner_present`.
+  `partner_present`. `private_equity_liquidity_available_value_usd` is a
+  tender-eligibility/opportunity snapshot, not a liquid asset; current
+  `liquid_net_worth_usd` is cash plus public-liquid securities and must not
+  include tender-eligible private marks.
 - Market-observation compatibility fields: `private_equity_liquidity_event`.
   Prefer row-level market observations for detailed inspection.
 - Ledger-backed transaction flows: `monthly_spend_usd`,

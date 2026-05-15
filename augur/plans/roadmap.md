@@ -121,37 +121,41 @@ Acceptance criteria:
   another unrelated field on a giant scenario object.
 - The app state names the same domain layers the backend schema names.
 
-## Priority 3: Redesign Private-Equity Liquidity And Policy
+## Priority 3: Redesign Private-Equity Tender Opportunities And Policy
 
-Private-equity liquidity should be modeled as exogenous opportunity plus actor
-policy, not as "user chooses to sell USD X in month Y."
+Private-equity sale availability should be modeled as an exogenous opportunity
+plus actor policy, not as "user chooses to sell USD X in month Y." A
+tender-eligible mark is not liquid wealth; `liquid_net_worth` should include
+only actually liquid assets such as cash and public stock.
 
 Target shape:
 
-- Market/model layer emits private-equity opportunities: tender, acquisition,
-  IPO/regime change, lockup expiry, public-market availability.
+- Market/model layer emits private-equity sale opportunities: tender,
+  acquisition, IPO/regime change, lockup expiry, public-market availability.
 - Policy layer decides participation: never sell, sell fixed fraction, sell
   fixed units, sell enough to reach concentration/liquid-reserve target, or
   custom downstream rule.
 - Accounting layer applies sale, basis, tax estimate/liability, proceeds
   destination, and cause IDs.
-- Result layer separates private-equity mark value, tender-eligible amount,
-  actually sold amount, and post-tax proceeds.
+- Result layer separates private-equity mark value, tender-eligible value,
+  actually sold amount, post-tax proceeds, and actual liquid net worth.
 
 Implementation notes:
 
-- Split liquidity opportunity, user preference, policy decision, accounting
+- Split sale opportunity, user preference, policy decision, accounting
   application, and public action into separate typed concepts with explicit
   cause IDs.
-- Keep arbitrary sale request USD/month out of the browser state. The first UI
-  controls have been removed; replace the remaining core/manual-request concept
+- Keep arbitrary sale request USD/month out of the browser state and do not
+  count tender-eligible private marks in `liquid_net_worth`; both are now
+  covered by app/core tests. Replace the remaining core/manual-request concept
   with opportunity-model settings and participation-policy controls.
 - Clarify sale-proceeds destination scope: per policy, per event, or per
   accounting action. Do not leave it as an ambiguous global cell.
 
 Acceptance criteria:
 
-- A private-equity tender appears as an opportunity in a trajectory view.
+- A private-equity tender appears as an opportunity in a trajectory view, not
+  as generally available liquidity.
 - The reason for a sale or non-sale is inspectable as a policy decision.
 - Distribution summaries can report expected tender proceeds without implying
   the asset is generally liquid.
@@ -247,8 +251,8 @@ Work:
   current hand-built Tailwind widgets. Prefix/suffix input adornments,
   disclosures, tabs, tables, buttons, and form groups should come from a
   tested component surface unless there is a documented reason not to.
-- Collapse or rename private-equity value/liquidity columns once the new
-  liquidity model exists.
+- Continue renaming private-equity result columns/panels away from generic
+  liquidity language where they mean tender eligibility or sale opportunities.
 - Rework mortgage controls around standard mortgage products and explicit
   custom override mode.
 - Keep market metadata in a collapsed disclosure by default.
@@ -261,8 +265,8 @@ Work:
    accidentally.
 2. Replace the flat browser scenario state with nested domain state. Break URL
    compatibility if needed.
-3. Redesign private-equity liquidity around exogenous opportunities plus actor
-   policy.
+3. Redesign private-equity sale opportunities around exogenous events plus
+   actor policy.
 4. Continue Step 7 tax/accounting reconciliation once the result views and
    state shape stop obscuring accounting semantics.
 

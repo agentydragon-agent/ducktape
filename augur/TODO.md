@@ -23,7 +23,10 @@ second ordered roadmap.
 ## API / Runtime Design Debt
 
 - [ ] Replace class-filtered policy execution with ordered actor policy programs. `actor_policy_programs()` exists, but the engine still flattens policies with `enabled_rules_of_type()` and runs hardcoded branches in `run_scenario_vectorized()`.
-- [ ] Split private-equity liquidity opportunity, user sale request, policy decision, accounting application, and public action into separate concepts with explicit cause IDs.
+- [ ] Split private-equity sale opportunity, user participation preference,
+      policy decision, accounting application, and public action into separate
+      concepts with explicit cause IDs. Tender-eligible private marks are not
+      liquid assets and must stay out of `liquid_net_worth`.
 - [ ] Extend policy schema/programs enough for downstream deployments to express concentrated-holding limits, liquidity-sale preferences, tender/acquisition/IPO preferences, and tax preferences without ad-hoc `AugurConfig` fields.
 - [ ] Replace `scenario.actorPolicy`-style enums with explicit actor
       agreements/contracts. For example, "agent X pays agent Y this amount over
@@ -33,7 +36,10 @@ second ordered roadmap.
 - [ ] Remove or implement schema-only policy types: `LiquidityReservePolicy`, `PortfolioTargetRebalancePolicy`, and `ManualEventSchedulePolicy`.
 - [ ] Make result inspection typed and local. String metric names via `series("cash_usd")` are acceptable as a compatibility layer, but primary callers should get discoverable typed metric/rollout/detail helpers.
 - [ ] Honor or remove `ReportSpec.include_monthly_columns`, `include_sample_paths`, and unsupported `MarketRequest.shared_market_paths=false`.
-- [ ] Clarify initial state vs scheduled transitions. Property purchase, financing, ownership, future sale, rental transition, and PE liquidity should not be split across fields/events that can contradict each other.
+- [ ] Clarify initial state vs scheduled transitions. Property purchase,
+      financing, ownership, future sale, rental transition, and private-stock
+      sale opportunities should not be split across fields/events that can
+      contradict each other.
 - [ ] Reduce single-property/global assumptions. Scenario-level `property_selection`, `financing`, `rental_plan`, and `tax_profile` should eventually become initial positions, per-property settings, or per-actor/accounting inputs as the simulator grows.
 - [ ] Replace built-in `LocationId` enum with database-like location entities, parallel to properties. A location should carry regulation/tax/modeling knobs that downstream regulation and tax code interprets, not require hardcoded enum extension.
 - [ ] Move evidence/model-fetching shapes out of core simulator API when touched. Core should consume calibrated market/provider inputs, not source-specific evidence objects.
@@ -87,12 +93,13 @@ second ordered roadmap.
 - [ ] Reorganize tax controls so capital-gains rates, exclusions, and other tax
       constants live together and apply consistently to stock, private-equity, and
       property-sale gains. Verify the current math before moving controls.
-- [ ] Finish the private-equity liquidity redesign. The browser no longer exposes
-      arbitrary USD sale-request/month controls, but the model still needs
-      exogenous tender/acquisition/IPO opportunities plus explicit participation
-      policies deciding whether and how much to sell. Clarify sale-proceeds
-      destination scope as part of that policy/accounting design rather than as an
-      ambiguous scenario-wide cell.
+- [ ] Finish the private-equity tender/opportunity redesign. The browser no
+      longer exposes arbitrary USD sale-request/month controls and
+      `liquid_net_worth` no longer counts tender-eligible private marks, but the
+      model still needs exogenous tender/acquisition/IPO opportunities plus
+      explicit participation policies deciding whether and how much to sell.
+      Clarify sale-proceeds destination scope as part of that policy/accounting
+      design rather than as an ambiguous scenario-wide cell.
 - [ ] Add UI for private-stock sale participation policy. There currently does
       not appear to be any user-facing way to say whether to sell into tenders,
       how much to sell, whether to cap concentration, or where proceeds should go
