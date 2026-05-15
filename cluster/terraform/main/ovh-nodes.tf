@@ -1,18 +1,41 @@
-# OVH Eco Kimsufi KS-1 bare metal worker node (HIL, Hillsboro OR)
-# Xeon-D 1520 (4c/8t), 32GB RAM, 2×480GB SSD, ~$20/mo
+# OVH Eco Kimsufi KS-1 bare metal worker nodes (HIL, Hillsboro OR)
+# Xeon-D 1520 (4c/8t), 32GB RAM, 2×480GB SSD, ~$20/mo each
 #
 # Talos is installed via OVH rescue mode (netboot → dd image to disk).
 # No Packer/snapshot mechanism available for OVH bare metal.
 #
-# Provisioning flow:
+# Provisioning flow (per server):
 #   1. Set rescue boot + reboot → rescue env (SSH with cluster SSH key)
 #   2. dd Talos metal image to /dev/sda
 #   3. Set harddisk boot + reboot → Talos boots
 #   4. Apply Talos machine config (includes Nebula extension)
 #
 # Prerequisites:
-#   - Server purchased via OVH web UI; set TF_VAR_kimsufi_service_name
+#   - Server purchased via OVH web UI; set TF_VAR_kimsufi_service_name[_1]
 #   - OVH API credentials in secrets/ovh-credentials.sops.yaml
+
+# ============================================================================
+# SERVER MAP
+# ============================================================================
+
+locals {
+  kimsufi_servers = {
+    kimsufi_worker0 = {
+      service_name = var.kimsufi_service_name
+      hostname     = "talos-kimsufi-worker-0"
+      nebula_ip    = "10.42.0.13"
+    }
+    kimsufi_worker1 = {
+      service_name = var.kimsufi_service_name_1
+      hostname     = "talos-kimsufi-worker-1"
+      nebula_ip    = "10.42.0.14"
+    }
+  }
+  # Filter out unpurchased servers (empty service name)
+  active_kimsufi_servers = {
+    for k, v in local.kimsufi_servers : k => v if v.service_name != ""
+  }
+}
 
 # ============================================================================
 # TALOS IMAGE FACTORY - Metal platform with Nebula extension
@@ -49,7 +72,8 @@ data "talos_image_factory_urls" "kimsufi" {
 # ============================================================================
 
 data "ovh_dedicated_server" "kimsufi" {
-  service_name = var.kimsufi_service_name
+  for_each     = local.active_kimsufi_servers
+  service_name = each.value.service_name
 }
 
 # Boot IDs are hardcoded because data.ovh_dedicated_server_boots returns BOTH
@@ -75,16 +99,18 @@ data "sops_file" "ovh_rescue_ssh" {
 }
 
 # ============================================================================
-# OVH SERVER RESOURCE — sets rescue SSH key
+# OVH SERVER RESOURCES — sets rescue SSH key + EFI bootloader
 # ============================================================================
 
 resource "ovh_dedicated_server" "kimsufi" {
-  service_name   = var.kimsufi_service_name
+  for_each = local.active_kimsufi_servers
+
+  service_name   = each.value.service_name
   rescue_ssh_key = data.sops_file.ovh_rescue_ssh.data["public_key"]
   # Match iam.displayName so the resource's Read→Update cycle doesn't try to
   # PUT /services/{id} (requires API perms we don't have, and is a no-op anyway).
   # See cluster/docs/lessons_learned/2026_05_13_provisioning_ovh_kimsufi.md.
-  display_name = var.kimsufi_service_name
+  display_name = each.value.service_name
   # Without this, OVH's iPXE falls back to rEFInd which "starts" the Talos UKI
   # but doesn't actually run it — control returns to firmware, BIOS reboots,
   # forever. systemd-boot (dropped at this path by the Talos metal image) IS
@@ -101,7 +127,8 @@ resource "ovh_dedicated_server" "kimsufi" {
 # Step 4 (kimsufi_harddisk) overwrites it to harddisk. Without ignore_changes,
 # subsequent plans would see drift and try to revert to rescue.
 resource "ovh_dedicated_server_update" "kimsufi_rescue" {
-  service_name = var.kimsufi_service_name
+  for_each     = local.active_kimsufi_servers
+  service_name = each.value.service_name
   boot_id      = local.kimsufi_rescue_boot_id
   depends_on   = [ovh_dedicated_server.kimsufi]
 
@@ -112,16 +139,19 @@ resource "ovh_dedicated_server_update" "kimsufi_rescue" {
 
 # Step 2: Reboot into rescue.
 resource "ovh_dedicated_server_reboot_task" "kimsufi_to_rescue" {
-  service_name = var.kimsufi_service_name
+  for_each     = local.active_kimsufi_servers
+  service_name = each.value.service_name
   keepers      = [tostring(local.kimsufi_rescue_boot_id)]
   depends_on   = [ovh_dedicated_server_update.kimsufi_rescue]
 }
 
 # Step 3: SSH into rescue, dd Talos image.
 # connection.timeout covers the window waiting for rescue to boot over SSH.
-# triggers = { once = "initial" } means this only runs on first apply.
-# To re-provision: tofu taint null_resource.install_talos_kimsufi
+# triggers on schematic_id so a kernel/extension change triggers re-provisioning.
+# To re-provision: tofu taint null_resource.install_talos_kimsufi["kimsufi_worker0"]
 resource "null_resource" "install_talos_kimsufi" {
+  for_each = local.active_kimsufi_servers
+
   # Re-run when the schematic changes (which changes the install image URL).
   # Schematic changes mean kernel-args/extensions changed — we want a fresh dd.
   triggers = {
@@ -130,7 +160,7 @@ resource "null_resource" "install_talos_kimsufi" {
 
   connection {
     type        = "ssh"
-    host        = data.ovh_dedicated_server.kimsufi.ip
+    host        = data.ovh_dedicated_server.kimsufi[each.key].ip
     user        = "root"
     private_key = data.sops_file.ovh_rescue_ssh.data["private_key"]
     timeout     = "15m"
@@ -162,14 +192,16 @@ resource "null_resource" "install_talos_kimsufi" {
 
 # Step 4: Switch to harddisk boot.
 resource "ovh_dedicated_server_update" "kimsufi_harddisk" {
-  service_name = var.kimsufi_service_name
+  for_each     = local.active_kimsufi_servers
+  service_name = each.value.service_name
   boot_id      = local.kimsufi_harddisk_boot_id
   depends_on   = [null_resource.install_talos_kimsufi]
 }
 
 # Step 5: Reboot into Talos.
 resource "ovh_dedicated_server_reboot_task" "kimsufi_to_talos" {
-  service_name = var.kimsufi_service_name
+  for_each     = local.active_kimsufi_servers
+  service_name = each.value.service_name
   keepers      = [tostring(local.kimsufi_harddisk_boot_id)]
   depends_on   = [ovh_dedicated_server_update.kimsufi_harddisk]
 }
@@ -195,6 +227,8 @@ locals {
 }
 
 data "talos_machine_configuration" "kimsufi" {
+  for_each = local.active_kimsufi_servers
+
   cluster_name       = var.cluster_name
   cluster_endpoint   = local.cluster_endpoint
   machine_secrets    = local.machine_secrets
@@ -211,17 +245,19 @@ data "talos_machine_configuration" "kimsufi" {
         apiVersion = "v1alpha1"
         kind       = "HostnameConfig"
         auto       = "off"
-        hostname   = "talos-kimsufi-worker-0"
+        hostname   = each.value.hostname
       }),
     ],
-    local.nebula_machine_patches["kimsufi_worker0"],
+    local.nebula_machine_patches[each.key],
   )
 }
 
 resource "talos_machine_configuration_apply" "kimsufi" {
+  for_each = local.active_kimsufi_servers
+
   client_configuration        = local.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.kimsufi.machine_configuration
-  node                        = data.ovh_dedicated_server.kimsufi.ip
+  machine_configuration_input = data.talos_machine_configuration.kimsufi[each.key].machine_configuration
+  node                        = data.ovh_dedicated_server.kimsufi[each.key].ip
 
   depends_on = [ovh_dedicated_server_reboot_task.kimsufi_to_talos]
 }

@@ -19,6 +19,7 @@ locals {
     vps_worker0     = "talos-vps-worker-0.nebula.allegedly.works"
     vps_worker1     = "talos-vps-worker-1.nebula.allegedly.works"
     kimsufi_worker0 = "talos-kimsufi-worker-0.nebula.allegedly.works"
+    kimsufi_worker1 = "talos-kimsufi-worker-1.nebula.allegedly.works"
   }
 
   nebula_certs = {
@@ -29,14 +30,20 @@ locals {
     }
   }
 
-  # VPS public IPs for the static host map — lighthouses must be reachable by IP
-  nebula_static_host_map = {
-    "10.42.0.1"  = ["${hcloud_server.vps["vps0"].ipv4_address}:4242"]
-    "10.42.0.2"  = ["${hcloud_server.vps["vps1"].ipv4_address}:4242"]
-    "10.42.0.11" = ["${hcloud_server.vps["vps_worker0"].ipv4_address}:4242"]
-    "10.42.0.12" = ["${hcloud_server.vps["vps_worker1"].ipv4_address}:4242"]
-    "10.42.0.13" = ["${data.ovh_dedicated_server.kimsufi.ip}:4242"]
-  }
+  # VPS public IPs for the static host map — lighthouses must be reachable by IP.
+  # OVH entries are dynamic: only active Kimsufi servers have data sources.
+  nebula_static_host_map = merge(
+    {
+      "10.42.0.1"  = ["${hcloud_server.vps["vps0"].ipv4_address}:4242"]
+      "10.42.0.2"  = ["${hcloud_server.vps["vps1"].ipv4_address}:4242"]
+      "10.42.0.11" = ["${hcloud_server.vps["vps_worker0"].ipv4_address}:4242"]
+      "10.42.0.12" = ["${hcloud_server.vps["vps_worker1"].ipv4_address}:4242"]
+    },
+    {
+      for key, node in data.ovh_dedicated_server.kimsufi :
+      local.active_kimsufi_servers[key].nebula_ip => ["${node.ip}:4242"]
+    },
+  )
 
   # PKI paths — must match mountPath values in extensionServiceConfigs below
   nebula_pki = {
@@ -128,6 +135,16 @@ locals {
         serve_dns        = true
         interval         = 10
         dns              = { host = "10.42.0.13", port = 53 }
+        local_allow_list = local.nebula_local_allow_list
+      }
+      relay = { am_relay = true }
+    })
+    kimsufi_worker1 = merge(local.nebula_common, {
+      lighthouse = {
+        am_lighthouse    = true
+        serve_dns        = true
+        interval         = 10
+        dns              = { host = "10.42.0.14", port = 53 }
         local_allow_list = local.nebula_local_allow_list
       }
       relay = { am_relay = true }

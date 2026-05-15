@@ -78,7 +78,7 @@ INFRA_TARGETS = [
     "kubernetes_namespace.flux_system",
     "kubernetes_secret.sops_age_cluster_secrets",
     "kubernetes_config_map.cluster_info",
-    # OVH Kimsufi worker node (bare metal, rescue→dd→harddisk provisioning)
+    # OVH Kimsufi worker nodes (bare metal, rescue→dd→harddisk provisioning)
     "ovh_dedicated_server.kimsufi",
     "ovh_dedicated_server_update.kimsufi_rescue",
     "ovh_dedicated_server_reboot_task.kimsufi_to_rescue",

@@ -78,7 +78,13 @@ variable "nixos_rebuild" {
 }
 
 variable "kimsufi_service_name" {
-  description = "OVH service name of the Kimsufi KS-1 server"
+  description = "OVH service name of the first Kimsufi KS-1 server"
   type        = string
   default     = "ns103656.ip-147-135-39.us"
+}
+
+variable "kimsufi_service_name_1" {
+  description = "OVH service name of the second Kimsufi KS-1 server (empty = not yet provisioned)"
+  type        = string
+  default     = ""
 }
