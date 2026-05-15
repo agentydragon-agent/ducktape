@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActionIcon,
   Button,
   Checkbox,
+  CloseButton,
   Collapse,
+  ColorInput,
   Group,
   MantineProvider,
   NativeSelect,
@@ -64,12 +65,6 @@ const CONTROL_GRID_CLASS = "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(1
 const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 const RESULT_VIEW_MODES = new Set(["distribution", "trajectory"]);
 const RESULT_PANEL_KINDS = new Set(["distribution", "trajectory", "accounting_detail"]);
-
-const RESULT_KIND_LABELS = {
-  distribution: "Distribution",
-  trajectory: "Trajectory",
-  accounting_detail: "Accounting detail",
-};
 
 function viewModeFromPathname(pathname) {
   const segment = String(pathname ?? "")
@@ -403,13 +398,13 @@ function scenarioFanRows(result, scenarioId, metricName) {
 function OptionButtons({ label, options, value, onChange }) {
   return (
     <Radio.Group value={value} onChange={onChange} label={label} classNames={{ label: "augur-field-label mb-2 block" }}>
-      <Stack gap="xs">
+      <Stack gap={6}>
         {options.map((option) => {
           return (
-            <Radio.Card key={option.id} value={option.id} radius="md" p="sm" withBorder>
-              <Group wrap="nowrap" align="flex-start" gap="sm">
-                <Radio.Indicator mt={2} />
-                <Stack gap={2} className="min-w-0">
+            <Radio.Card key={option.id} value={option.id} radius="sm" p="xs" withBorder>
+              <Group wrap="nowrap" align="flex-start" gap="xs">
+                <Radio.Indicator mt={3} />
+                <Stack gap={1} className="min-w-0 py-0.5">
                   <Text size="sm" fw={650} lh={1.2}>
                     {option.label}
                   </Text>
@@ -433,6 +428,7 @@ function ControlGrid({ children, className = "" }) {
 }
 
 function NumberField({ label, value, onChange, min = 0, step = 1000, prefix = null, suffix = null }) {
+  const formattedSuffix = suffix ? (suffix === "%" ? suffix : ` ${String(suffix).trimStart()}`) : undefined;
   return (
     <NumberInput
       label={label}
@@ -440,11 +436,10 @@ function NumberField({ label, value, onChange, min = 0, step = 1000, prefix = nu
       min={min}
       step={step}
       value={value ?? ""}
-      leftSection={prefix}
-      rightSection={suffix}
-      rightSectionWidth={suffix ? Math.max(42, String(suffix).length * 8 + 18) : undefined}
+      prefix={prefix ?? undefined}
+      suffix={formattedSuffix}
       thousandSeparator=","
-      classNames={{ label: "augur-field-label mb-2 block" }}
+      classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
       onChange={(nextValue) => {
         const number = typeof nextValue === "number" ? nextValue : Number(nextValue);
         onChange(Number.isFinite(number) ? number : null);
@@ -497,26 +492,13 @@ function assertResultPanelKind(kind) {
   }
 }
 
-function ResultKindBadge({ kind }) {
-  assertResultPanelKind(kind);
-  return (
-    <span
-      className="inline-flex shrink-0 items-center rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-      data-result-panel-kind-badge={kind}
-    >
-      {RESULT_KIND_LABELS[kind]}
-    </span>
-  );
-}
-
-function ResultPanelHeader({ kind, title, subtitle = null, actions = null, showKindBadge = false }) {
+function ResultPanelHeader({ title, subtitle = null, actions = null }) {
   return (
     <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <div className="augur-eyebrow">{title}</div>
-            {showKindBadge && <ResultKindBadge kind={kind} />}
           </div>
           {subtitle && <div className="mt-1 text-sm augur-muted">{subtitle}</div>}
         </div>
@@ -526,39 +508,17 @@ function ResultPanelHeader({ kind, title, subtitle = null, actions = null, showK
   );
 }
 
-function ResultPanel({
-  kind,
-  title,
-  subtitle = null,
-  actions = null,
-  children,
-  className = "",
-  showKindBadge = false,
-}) {
+function ResultPanel({ kind, title, subtitle = null, actions = null, children, className = "" }) {
   assertResultPanelKind(kind);
   return (
     <section className={`augur-card overflow-hidden ${className}`} data-result-panel-kind={kind}>
-      <ResultPanelHeader
-        kind={kind}
-        title={title}
-        subtitle={subtitle}
-        actions={actions}
-        showKindBadge={showKindBadge}
-      />
+      <ResultPanelHeader title={title} subtitle={subtitle} actions={actions} />
       {children}
     </section>
   );
 }
 
-function ResultDisclosurePanel({
-  kind,
-  title,
-  subtitle = null,
-  summary = null,
-  children,
-  defaultOpen = false,
-  showKindBadge = false,
-}) {
+function ResultDisclosurePanel({ kind, title, subtitle = null, summary = null, children, defaultOpen = false }) {
   assertResultPanelKind(kind);
   const [opened, setOpened] = useState(defaultOpen);
   return (
@@ -573,7 +533,6 @@ function ResultDisclosurePanel({
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="text-xs augur-muted">{opened ? "▼" : "▶"}</span>
             <span className="augur-eyebrow">{title}</span>
-            {showKindBadge && <ResultKindBadge kind={kind} />}
             {summary && <span className="text-xs augur-muted">{summary}</span>}
           </div>
           {subtitle && <div className="mt-1 text-sm augur-muted">{subtitle}</div>}
@@ -742,7 +701,7 @@ function ScenarioPathPreview({ trajectory }) {
   const annualRows = trajectory.rolloutRows.filter((row) => row.monthIndex % 12 === 0).slice(0, 8);
   if (annualRows.length === 0) return null;
   return (
-    <ResultPanel kind="trajectory" title="Trajectory annual snapshot" showKindBadge={false}>
+    <ResultPanel kind="trajectory" title="Trajectory annual snapshot">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -835,7 +794,7 @@ function PartnerOwnershipPanel({ trajectory, bootstrap }) {
     0
   );
   return (
-    <ResultPanel kind="trajectory" title={`Trajectory ${partnerLabel} contribution and equity`} showKindBadge={false}>
+    <ResultPanel kind="trajectory" title={`Trajectory ${partnerLabel} contribution and equity`}>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           ["Path contribution", fmtUsd(firstPathContribution)],
@@ -889,7 +848,7 @@ function LiquidityPolicyPanel({ trajectory }) {
   const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
   const terminalRow = rolloutRows.at(-1) ?? null;
   return (
-    <ResultPanel kind="trajectory" title="Trajectory liquidity and stock sales" showKindBadge={false}>
+    <ResultPanel kind="trajectory" title="Trajectory liquidity and stock sales">
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           [
@@ -957,7 +916,7 @@ function PrivateEquitySaleOpportunityPanel({ trajectory }) {
     8
   );
   return (
-    <ResultPanel kind="trajectory" title="Trajectory private equity tender opportunities" showKindBadge={false}>
+    <ResultPanel kind="trajectory" title="Trajectory private equity tender opportunities">
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2">
         {[
           ["Private equity value", fmtUsd(terminalRow?.privateEquityValueUsd)],
@@ -1106,16 +1065,15 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                     >
                       Duplicate
                     </Button>
-                    <ActionIcon
+                    <CloseButton
                       type="button"
+                      size="sm"
                       variant="subtle"
                       color="red"
                       aria-label={`Delete ${view.label}`}
                       onClick={() => deleteScenario(view.scenarioId)}
                       disabled={scenarios.length <= 1}
-                    >
-                      x
-                    </ActionIcon>
+                    />
                   </div>
                 </div>
               </div>
@@ -1169,24 +1127,21 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
     <section className="augur-card space-y-5 px-4 py-4">
       <ControlSection title="Identity and property">
         <div className="augur-eyebrow">Selected scenario</div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_6rem]">
+        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
           <TextInput
             label="Label"
             value={view.label}
             classNames={{ label: "augur-field-label mb-2 block" }}
             onChange={(event) => updateScenario({ label: event.target.value })}
           />
-          <label className="block">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-              Color
-            </div>
-            <input
-              className="h-9 w-full rounded border border-slate-300 bg-white p-0 dark:border-slate-600"
-              type="color"
-              value={view.color}
-              onChange={(event) => updateScenario({ color: event.target.value })}
-            />
-          </label>
+          <ColorInput
+            label="Color"
+            value={view.color}
+            format="hex"
+            swatches={SCENARIO_COLORS}
+            classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+            onChange={(color) => updateScenario({ color })}
+          />
         </div>
 
         <div className="mt-3">
@@ -1512,7 +1467,6 @@ function ResultModeHeader({ viewMode, scenarioSetRequest, selection, selectedRol
     <ResultPanel
       kind={kind}
       title={isTrajectory ? "Trajectory view" : "Distribution view"}
-      showKindBadge
       subtitle={
         isTrajectory
           ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · seed ${seed ?? "not set"}`
@@ -1955,7 +1909,6 @@ function ScenarioMonthlyLedger({ scenario, accountingDetail, onSelectedRolloutIn
       kind="accounting_detail"
       title="Selected path monthly ledger"
       subtitle={`${scenarioView.label} · rollout ${fmtInteger(rolloutIndex)}`}
-      showKindBadge={false}
       actions={
         <NativeSelect
           aria-label="Ledger path"
@@ -1977,7 +1930,7 @@ function ScenarioAcceptedPanel({ selection }) {
   if (!scenario || !scenarioResult) return null;
   const scenarioView = scenarioInputView(scenario);
   return (
-    <ResultPanel kind="accounting_detail" title="Scenario contract" showKindBadge={false}>
+    <ResultPanel kind="accounting_detail" title="Scenario contract">
       <DetailTable
         rows={[
           ["Scenario id", scenarioResult.scenarioId],
