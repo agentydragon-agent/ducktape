@@ -159,9 +159,8 @@ gh release list --repo $REPO --limit 20 2>/dev/null \
 ```
 
 Cross-reference: after the most recent successful `ci.yml` run, there should be
-GitHub releases for all 6 release artifacts (`claude-hooks`, `ducktape-util`,
-`ducktape`, `gterm-theme`, `skills`, `bbapi`). If any are absent or older than
-the CI run, the release job may have failed silently.
+GitHub releases for every artifact listed in `devinfra/ci/artifacts.py`. If any
+are absent or older than the CI run, the release job may have failed silently.
 
 ### 2e. Container Image Currency
 

@@ -52,6 +52,10 @@ jobs:
             target: //:wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
             tests: //difftree/... //git_commit_ai/... //gmail_archiver/... //mcp_infra/... //mcp_utils/... //openai_utils/...
+          - pkg: gnome-shell-claude-quota
+            target: //gnome/claude_quota:claude-quota_zip
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gnome/claude_quota/claude-quota.zip
+            tests: //gnome/claude_quota/...
           - pkg: gterm-theme
             target: //gnome/gterm_theme:wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl

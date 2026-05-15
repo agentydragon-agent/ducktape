@@ -9,7 +9,7 @@ into per-host home-manager config.
 Each extension exposes a `pkg_zip` target producing the standard
 GNOME-extension distribution zip (extension files at the archive root, no
 UUID-prefixed subdir). Same artifact the test container, the local
-devkit launcher, and (eventually) the Nix release pipeline all consume:
+devkit launcher, and the Nix release pipeline consume:
 
 ```bash
 bazelisk build //gnome/claude_quota:claude-quota_zip

@@ -31,8 +31,8 @@ pkg_files(
 # GNOME extension zip distribution. Layout is the standard convention used by
 # `gnome-extensions pack` and `gnome-extensions install --from-file`: the
 # extension's files live at the root of the archive (no UUID-prefixed
-# subdirectory). This is what gets shipped to users (eventually wired into
-# the Nix package) and what the render tests + devkit launcher consume.
+# subdirectory). This is what gets shipped to users via the CI release pin
+# and what the render tests + devkit launcher consume.
 pkg_zip(
     name = "claude-quota_zip",
     srcs = [":extension_files"],

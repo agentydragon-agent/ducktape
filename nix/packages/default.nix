@@ -219,7 +219,7 @@ in
 
   # Standalone packages (not wheels)
 
-  gnome-shell-claude-quota = pkgs.callPackage ./gnome-shell-claude-quota.nix { };
+  gnome-shell-claude-quota = pkgs.callPackage ./gnome-shell-claude-quota.nix { inherit artifacts; };
   tana = pkgs.callPackage ./tana.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };
