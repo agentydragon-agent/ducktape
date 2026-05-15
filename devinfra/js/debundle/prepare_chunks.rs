@@ -341,6 +341,7 @@ fn build_artifact_manifest(manifests: &[ChunkManifest]) -> ArtifactManifest {
         selected_module_lowerings: None,
         identifier_rename_queue: None,
         output_metrics: None,
+        decomposition_metrics: None,
     }
 }
 
