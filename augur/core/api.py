@@ -20,6 +20,7 @@ from augur.core.scenario_set import (
     PartnerEquityAccrualPolicy,
     RealEstateAssetPosition,
     RentalMode,
+    ReportSpec,
     Scenario,
     ScenarioAcceptedSummary,
     ScenarioResult,
@@ -255,7 +256,8 @@ class ScenarioRun:
             details = tuple(detail for detail in details if detail.rollout_index == rollout)
         return details
 
-    def to_response_result(self) -> ScenarioResult:
+    def to_response_result(self, report_spec: ReportSpec | None = None) -> ScenarioResult:
+        report_spec = report_spec or ReportSpec()
         if self.arrays is None:
             return ScenarioResult(
                 scenario_id=self.scenario.scenario_id,
@@ -268,7 +270,7 @@ class ScenarioRun:
             scenario_label=self.scenario.label,
             summary=_accepted_summary(self.scenario),
             metric_fan_columns=self.arrays.metric_fan_columns(),
-            monthly_columns=self.arrays.monthly_columns(),
+            monthly_columns=self.arrays.monthly_columns() if report_spec.include_monthly_columns else None,
             terminal_columns=self.arrays.terminal_columns(),
             actions=self.arrays.actions,
             policy_decisions=self.arrays.policy_decisions,
@@ -319,7 +321,9 @@ class SimulationRun:
             market_request=self.scenario_set.market_request,
             report_spec=self.scenario_set.report_spec,
             market_metadata=self.market_bundle.metadata.to_json_dict(),
-            scenario_results=tuple(scenario_run.to_response_result() for scenario_run in self.scenario_runs),
+            scenario_results=tuple(
+                scenario_run.to_response_result(self.scenario_set.report_spec) for scenario_run in self.scenario_runs
+            ),
             warnings=self.warnings,
         )
 

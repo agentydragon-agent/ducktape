@@ -16,7 +16,7 @@ const DEFAULT_REPORT_SPEC = {
   metrics: ["net_worth", "liquid_net_worth", "home_equity", "actor_equity", "property_value"],
   percentiles: [5, 25, 50, 75, 95],
   includeMonthlyColumns: true,
-  includeSamplePaths: true,
+  includeSamplePaths: false,
 };
 
 const FINANCING_MODE_IDS = new Set(["cash", "fixed_30", "fixed_15", "custom"]);
@@ -478,13 +478,20 @@ export function normalizeScenarioSetInput(input, bootstrap) {
       horizonMonths,
       rolloutCount: positiveNumber(input?.marketRequest?.rolloutCount, fallback.marketRequest.rolloutCount),
       randomSeed: nullableInteger(input?.marketRequest?.randomSeed, fallback.marketRequest.randomSeed),
-      sharedMarketPaths: Boolean(input?.marketRequest?.sharedMarketPaths ?? fallback.marketRequest.sharedMarketPaths),
+      sharedMarketPaths: true,
     },
-    reportSpec: {
-      ...fallback.reportSpec,
-      ...(input?.reportSpec && typeof input.reportSpec === "object" ? input.reportSpec : {}),
-    },
+    reportSpec: normalizeReportSpec(input?.reportSpec, fallback.reportSpec),
     scenarios,
+  };
+}
+
+function normalizeReportSpec(reportSpec, fallback) {
+  const source = reportSpec && typeof reportSpec === "object" ? reportSpec : {};
+  return {
+    ...fallback,
+    ...source,
+    includeMonthlyColumns: Boolean(source.includeMonthlyColumns ?? fallback.includeMonthlyColumns),
+    includeSamplePaths: false,
   };
 }
 

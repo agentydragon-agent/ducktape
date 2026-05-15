@@ -596,7 +596,7 @@ class ReportSpec(ApiModel):
     )
     percentiles: tuple[float, ...] = (5, 25, 50, 75, 95)
     include_monthly_columns: bool = True
-    include_sample_paths: bool = False
+    include_sample_paths: Literal[False] = False
 
     @model_validator(mode="after")
     def _percentiles_in_range(self) -> ReportSpec:
@@ -786,7 +786,7 @@ class MarketRequest(ApiModel):
     rollout_count: PositiveInt = 128
     horizon_months: PositiveInt = 360
     random_seed: int | None = None
-    shared_market_paths: bool = True
+    shared_market_paths: Literal[True] = True
 
 
 class Scenario(ApiModel):

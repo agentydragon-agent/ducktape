@@ -50,6 +50,7 @@ from augur.core.scenario_set import (
     PropertySaleEvent,
     PropertySelection,
     RentalMode,
+    ReportSpec,
     Scenario,
     ScenarioSet,
     SellPrivateEquityAction,
@@ -126,6 +127,26 @@ def _accounting_detail_matrix(result: ScenarioRun, detail_type: type[Any], amoun
     for detail in result.accounting_details(detail_type):
         matrix[detail.rollout_index, detail.month_index] += getattr(detail, amount_field)
     return matrix
+
+
+def test_report_spec_can_omit_monthly_columns_from_response() -> None:
+    scenario = _cash_only_scenario(cash_usd=10_000, scenario_id="compact_report")
+    scenario_set = ScenarioSet(
+        scenario_set_id="compact_report_set",
+        title="Compact Report Set",
+        market_request=MarketRequest(market_model_id="e2e_noop", rollout_count=2, horizon_months=2, random_seed=0),
+        report_spec=ReportSpec(include_monthly_columns=False),
+        scenarios=(scenario,),
+    )
+
+    response = simulate_set(scenario_set, market_provider=NoopMarketBundleProvider()).to_response()
+    result = response.scenario_results[0]
+
+    assert response.report_spec.include_monthly_columns is False
+    assert result.monthly_columns is None
+    assert result.terminal_columns is not None
+    assert result.terminal_columns.row_count == 2
+    assert result.metric_fan_columns["net_worth_usd"].row_count == 3
 
 
 def test_cash_only_no_activity_preserves_balance() -> None:

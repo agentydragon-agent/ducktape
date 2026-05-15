@@ -136,6 +136,9 @@ test("default input creates comparable generic location scenarios", () => {
   assert.equal(secondScenario.propertyId, "location_b_property");
   assert.equal(secondScenario.actorPolicy, "owner_plus_partner");
   assert.equal(input.marketRequest.randomSeed, 0);
+  assert.equal(input.marketRequest.sharedMarketPaths, true);
+  assert.equal(input.reportSpec.includeMonthlyColumns, true);
+  assert.equal(input.reportSpec.includeSamplePaths, false);
 });
 
 test("scenario set request is canonical backend input after decamelizing", () => {
@@ -175,6 +178,9 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   const mortgageEvent = firstScenario.events.find((event) => event.event_type === "mortgage_origination");
 
   assert.equal(backendRequest.scenario_set_id, "augur_futures_explorer");
+  assert.equal(backendRequest.market_request.shared_market_paths, true);
+  assert.equal(backendRequest.report_spec.include_monthly_columns, true);
+  assert.equal(backendRequest.report_spec.include_sample_paths, false);
   assert.deepEqual(firstScenario.property_selection, { property_id: "location_a_property" });
   assert.equal(firstScenario.tax_regimes, undefined);
   assert.equal(firstScenario.financing.financing_mode, "custom");
@@ -241,6 +247,20 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(backendRequest.scenarios[1].policies[0].policy_type, "partner_equity_accrual");
   assert.equal(backendRequest.scenarios[1].policies[0].actor_id, "beta");
   assert.equal(backendRequest.scenarios[1].policies[0].base_monthly_payment_usd, 2_435);
+});
+
+test("request normalization does not send unsupported report or market knobs", () => {
+  const input = createDefaultScenarioSetInput(bootstrap);
+  input.marketRequest.sharedMarketPaths = false;
+  input.reportSpec.includeSamplePaths = true;
+  input.reportSpec.includeMonthlyColumns = false;
+
+  const request = scenarioSetInputToRequest(input, bootstrap);
+  const backendRequest = decamelizeObjectKeys(request);
+
+  assert.equal(backendRequest.market_request.shared_market_paths, true);
+  assert.equal(backendRequest.report_spec.include_sample_paths, false);
+  assert.equal(backendRequest.report_spec.include_monthly_columns, false);
 });
 
 test("URL state round-trips only input state", () => {

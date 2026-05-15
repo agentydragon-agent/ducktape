@@ -17,12 +17,14 @@ from augur.core.scenario_set import (
     FixedAmountPrivateEquitySaleRule,
     LiquidityReservePolicy,
     LiquidNetWorthFloorPrivateEquitySaleRule,
+    MarketRequest,
     OccupancyMode,
     PolicyType,
     PrivateEquitySalePolicy,
     PrivateEquitySaleProceedsDestination,
     ProjectedDeficitsLiquidityReserveRule,
     RentalMode,
+    ReportSpec,
     ScenarioAcceptedSummary,
     ScenarioResult,
     ScenarioSet,
@@ -188,6 +190,24 @@ def test_scenario_set_accepts_typed_scenario_economic_assumptions() -> None:
     assert scenario.tax_profile.cap_gains_exclusion_usd == 500_000
     assert scenario.transaction_costs.closing_cost_sell_pct == 6.5
     assert scenario.property_assumptions.insurance_annual_usd == 1800
+
+
+def test_report_spec_rejects_unsupported_sample_paths() -> None:
+    report_spec = ReportSpec(include_sample_paths=False)
+
+    assert report_spec.include_sample_paths is False
+
+    with pytest.raises(ValidationError, match="include_sample_paths"):
+        ReportSpec(include_sample_paths=True)
+
+
+def test_market_request_requires_shared_market_paths() -> None:
+    market_request = MarketRequest(shared_market_paths=True)
+
+    assert market_request.shared_market_paths is True
+
+    with pytest.raises(ValidationError, match="shared_market_paths"):
+        MarketRequest(shared_market_paths=False)
 
 
 def test_policy_config_uses_discriminated_rules_and_enums() -> None:
