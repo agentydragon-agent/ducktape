@@ -197,6 +197,29 @@ Target shape:
 - Public tax model remains approximate, with disclaimers and test coverage
   around what is and is not decision-grade.
 
+Draft obligation/settlement shape:
+
+- The accounting layer emits first-class obligations, not policy hooks: actor,
+  period, due month/date, amount, creditor/jurisdiction, source ledger entries
+  or tax lots, and status. Taxes are one obligation type; mortgage principal,
+  interest, escrow, and other scheduled debt payments should eventually fit the
+  same modeling universe.
+- The obligation is mandatory model state. Actor policy can decide how to fund
+  it, but should not decide whether the liability exists.
+- Actor policy responds with a funding decision: use existing cash, sell public
+  stock, sell private equity if an opportunity exists, borrow, or explicitly
+  fail/skip if no available action can satisfy the obligation.
+- Actor policy emits instructions: `SELL_SP500`, `SELL_PRIVATE_EQUITY`,
+  `BORROW`, `PAY_TAX`, `PAY_MORTGAGE`, or similar. The simulator/accounting
+  layer validates those instructions and records resulting effects. Settlement
+  then marks the obligation paid, partially paid, unpaid, or failed and records
+  the cash and accounting effects.
+- This is analogous to the private-equity tender flow but with different
+  semantics: a tender is an optional opportunity, while a tax obligation is an
+  endogenous cash demand/liability. The common abstraction is not "hook" but a
+  typed event/obligation plus an inspectable actor decision, policy
+  instructions, and applied effects.
+
 Public work:
 
 - Continue Step 7 by replacing `allocated_to_source_month` timing with annual
@@ -229,6 +252,10 @@ Work:
 
 - Replace class-filtered policy execution with ordered actor policy programs.
 - Remove or implement schema-only policy types.
+- Rename or reframe the runtime vocabulary around `Instruction` plus `Effect`.
+  In the current accounting-oriented simulator, the actor's RL-like choice is
+  closer to a policy decision/instruction, while the existing `Action` concept
+  has drifted toward the realized state change after validation and accounting.
 - Make result inspection typed and local: distribution helpers, trajectory
   helpers, ledger/detail helpers, and compatibility aliases only where needed.
 - Keep market paths and exogenous opportunities as observations, not policy

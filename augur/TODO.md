@@ -78,6 +78,11 @@ second ordered roadmap.
       the moment income or a gain occurs. The settlement workflow should also
       model cash management: pay from cash when possible, otherwise invoke an
       explicit sale/financing policy to raise cash for the tax bill.
+- [ ] Draft taxes and mortgages as first-class obligations/cash demands rather
+      than arbitrary policy hooks. The accounting layer should emit obligations
+      with due dates and causes; actor policy should decide how to fund them;
+      simulator instructions should sell/borrow/use cash and resulting effects
+      should settle or fail the obligation.
 - [ ] Keep stock-sale, PE-sale, and property-sale tax reconciliation in the Step 7 test set.
 - [ ] Replace user-entered flat marginal tax rates with bracket-aware tax
       accounting. Asking for a single "marginal tax rate" is a symptom that the
