@@ -1,20 +1,20 @@
 """Shape-contract tests for the generic macro rollout provider.
 
 Parametrised across every label in the registry, so every shipped macro
-model is shape-checked against the JointRolloutPath contract automatically.
+model is shape-checked against the MarketBundle contract automatically.
 The model-internal correctness tests live next to each model in
 `markets/models/*_test.py`.
 """
 
 from __future__ import annotations
 
-import itertools
 from pathlib import Path
 
 import numpy as np
 import pytest
 import pytest_bazel
 
+from augur.core.scenario_set import MarketRequest
 from augur.model.macro_rollout_provider import MacroRolloutProvider
 from augur.model.markets.registry import LABELS
 
@@ -34,70 +34,73 @@ def test_metadata_populated(provider: MacroRolloutProvider) -> None:
     assert isinstance(provider.latest_observations, dict)
 
 
-def test_sample_rollouts_shape(provider: MacroRolloutProvider) -> None:
+def _request(provider: MacroRolloutProvider, *, rollout_count: int = 3, horizon_months: int = 24) -> MarketRequest:
+    return MarketRequest(
+        market_model_id=provider.label, rollout_count=rollout_count, horizon_months=horizon_months, random_seed=42
+    )
+
+
+def _sample(provider: MacroRolloutProvider, *, rollout_count: int = 3, horizon_months: int = 24):
+    request = _request(provider, rollout_count=rollout_count, horizon_months=horizon_months)
+    return provider.sample_market_bundle(
+        rollout_count=rollout_count, horizon_months=horizon_months, seed=request.random_seed, market_request=request
+    )
+
+
+def test_sample_market_bundle_shape(provider: MacroRolloutProvider) -> None:
     n_rollouts = 3
-    rollouts = provider.sample_rollouts(n_rollouts=n_rollouts, seed=42)
-    assert len(rollouts) == n_rollouts
-    expected_len = provider.horizon_months + 1
-    for rollout in rollouts:
-        for key in (
-            "home_value_multipliers",
-            "sale_home_value_multipliers",
-            "portfolio_multipliers",
-            "rent_multipliers",
-            "expense_inflation_multipliers",
-            "mortgage30_rate_path",
-        ):
-            values = getattr(rollout, key)
-            assert len(values) == expected_len, key
-            arr = np.asarray(values, dtype="float64")
-            assert np.all(np.isfinite(arr)), key
-        for key in (
-            "home_value_multipliers",
-            "portfolio_multipliers",
-            "rent_multipliers",
-            "expense_inflation_multipliers",
-        ):
-            arr = np.asarray(getattr(rollout, key), dtype="float64")
-            assert abs(arr[0] - 1.0) < 10**-10, key
-            assert np.all(arr > 0), key
-        expected_locations = {"san_francisco_ca", "vallejo_ca", "mare_island_vallejo_ca"}
-        assert set(rollout.home_value_multipliers_by_location) == expected_locations
-        assert set(rollout.rent_multipliers_by_location) == expected_locations
-        np.testing.assert_allclose(
-            rollout.home_value_multipliers_by_location["san_francisco_ca"], rollout.home_value_multipliers
-        )
-        np.testing.assert_allclose(rollout.rent_multipliers_by_location["san_francisco_ca"], rollout.rent_multipliers)
+    horizon_months = 24
+    bundle = _sample(provider, rollout_count=n_rollouts, horizon_months=horizon_months)
+    expected_shape = (n_rollouts, horizon_months + 1)
+
+    assert bundle.rollout_count == n_rollouts
+    assert bundle.horizon_months == horizon_months
+    np.testing.assert_array_equal(bundle.month_index, np.arange(horizon_months + 1, dtype="int64"))
+    for key in (
+        "inflation_multipliers",
+        "generic_sp500_multipliers",
+        "mortgage_30y_rate_pct",
+        "private_equity_value_multipliers",
+    ):
+        values = getattr(bundle, key)
+        assert values.shape == expected_shape, key
+        assert np.all(np.isfinite(values)), key
+    for key in ("inflation_multipliers", "generic_sp500_multipliers", "private_equity_value_multipliers"):
+        values = getattr(bundle, key)
+        np.testing.assert_allclose(values[:, 0], 1.0)
+        assert np.all(values > 0), key
+    expected_locations = {"default", "san_francisco_ca", "vallejo_ca", "mare_island_vallejo_ca"}
+    assert set(bundle.home_value_multipliers_by_location) == expected_locations
+    assert set(bundle.rent_multipliers_by_location) == expected_locations
+    np.testing.assert_allclose(
+        bundle.home_value_multipliers_by_location["san_francisco_ca"],
+        bundle.home_value_multipliers_by_location["default"],
+    )
+    np.testing.assert_allclose(
+        bundle.rent_multipliers_by_location["san_francisco_ca"], bundle.rent_multipliers_by_location["default"]
+    )
 
 
 def test_mortgage_path_constant(provider: MacroRolloutProvider) -> None:
-    rollout = provider.sample_rollouts(n_rollouts=1, seed=1)[0]
-    arr = np.asarray(rollout.mortgage30_rate_path, dtype="float64")
+    bundle = _sample(provider, rollout_count=1, horizon_months=24)
+    arr = bundle.mortgage_30y_rate_pct[0]
     np.testing.assert_allclose(arr, arr[0])
     assert arr[0] > 0.0
 
 
-def test_private_equity_path_flat_with_yearly_tenders(provider: MacroRolloutProvider) -> None:
-    rollout = provider.sample_rollouts(n_rollouts=1, seed=7)[0]
-    path = rollout.private_equity_path
-    assert path.current_price_usd > 0.0
-    prices = np.asarray(path.price_path, dtype="float64")
-    assert len(prices) == provider.horizon_months + 1
-    np.testing.assert_allclose(prices, prices[0])
-    tender_months = [event.month_index for event in path.events]
-    assert len(tender_months) > 0
-    for event in path.events:
-        assert event.event_type == "tender"
-    for first, second in itertools.pairwise(tender_months):
-        assert second - first == 12
-    assert tender_months[0] == 12
+def test_private_equity_paths_flat_with_yearly_tenders(provider: MacroRolloutProvider) -> None:
+    bundle = _sample(provider, rollout_count=1, horizon_months=24)
+    np.testing.assert_allclose(bundle.private_equity_value_multipliers, 1.0)
+    assert not bundle.private_equity_liquidity_event_mask[:, 0].any()
+    assert bundle.private_equity_liquidity_event_mask[:, 12].all()
+    assert bundle.private_equity_liquidity_event_mask[:, 24].all()
 
 
 def test_seed_determinism(provider: MacroRolloutProvider) -> None:
-    a = provider.sample_rollouts(n_rollouts=2, seed=11)
-    b = provider.sample_rollouts(n_rollouts=2, seed=11)
-    for ra, rb in zip(a, b, strict=False):
-        np.testing.assert_allclose(ra.portfolio_multipliers, rb.portfolio_multipliers)
+    request = _request(provider, rollout_count=2, horizon_months=24)
+    a = provider.sample_market_bundle(rollout_count=2, horizon_months=24, seed=11, market_request=request)
+    b = provider.sample_market_bundle(rollout_count=2, horizon_months=24, seed=11, market_request=request)
+    np.testing.assert_allclose(a.generic_sp500_multipliers, b.generic_sp500_multipliers)
 
 
 if __name__ == "__main__":

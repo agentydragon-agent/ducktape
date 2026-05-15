@@ -153,30 +153,9 @@ py_library(
 )
 
 py_library(
-    name = "num_py",
-    srcs = ["_num.py"],
-    deps = [
-        ":schemas_py",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "augur_accounting_py",
     srcs = ["augur_accounting.py"],
     deps = [
-        ":schemas_py",
-        "@pypi//numpy",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "personal_wealth_py",
-    srcs = ["personal_wealth.py"],
-    deps = [
-        ":num_py",
-        ":scenario_set_py",
         ":schemas_py",
         "@pypi//numpy",
         "@pypi//pydantic",
@@ -190,28 +169,6 @@ py_library(
         ":augur_accounting_py",
         ":schemas_py",
         "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "outcome_view_py",
-    srcs = ["outcome_view.py"],
-    deps = [
-        ":augur_accounting_py",
-        ":num_py",
-        ":personal_wealth_py",
-        ":schemas_py",
-        ":vectorized_py",
-        "@pypi//numpy",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "rollout_provider_py",
-    srcs = ["rollout_provider.py"],
-    deps = [
-        ":schemas_py",
     ],
 )
 

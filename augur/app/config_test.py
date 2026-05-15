@@ -17,7 +17,7 @@ from augur.app.config import (
     FinanceSnapshot,
     LocationConfig,
     PersonalFinanceConfig,
-    PropertyCatalogConfig,
+    PropertySourceConfig,
     dump_augur_config_yaml,
     load_augur_config,
 )
@@ -31,7 +31,7 @@ def _minimal_config(**overrides: object) -> AugurConfig:
     defaults: dict[str, object] = {
         "agents": (AgentDefinition(actor_id="alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER),),
         "personal_finance": PersonalFinanceConfig(cash_usd=1.0),
-        "property_catalog": PropertyCatalogConfig(properties_path="/tmp/properties.json"),
+        "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
     }
     defaults.update(overrides)
@@ -101,7 +101,7 @@ def test_at_least_one_agent_required() -> None:
         AugurConfig(
             agents=(),
             personal_finance=PersonalFinanceConfig(cash_usd=0),
-            property_catalog=PropertyCatalogConfig(properties_path="/tmp/x.json"),
+            property_source=PropertySourceConfig(properties_path="/tmp/x.json"),
             snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
         )
 
@@ -151,7 +151,7 @@ def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
     assert reloaded == config
 
 
-def test_relative_property_catalog_paths_anchor_against_yaml_dir(tmp_path) -> None:
+def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> None:
     """ConfigMap mounts put config.yaml + properties.json side-by-side, so the
     yaml stores `properties_path: properties.json` and the loader resolves
     against the yaml's directory."""
@@ -160,9 +160,7 @@ def test_relative_property_catalog_paths_anchor_against_yaml_dir(tmp_path) -> No
     (tmp_path / "config.yaml").write_text(
         dump_augur_config_yaml(
             _minimal_config(
-                property_catalog=PropertyCatalogConfig(
-                    properties_path=Path("properties.json"), asset_dir=Path("assets")
-                )
+                property_source=PropertySourceConfig(properties_path=Path("properties.json"), asset_dir=Path("assets"))
             )
         ),
         encoding="utf-8",
@@ -170,8 +168,8 @@ def test_relative_property_catalog_paths_anchor_against_yaml_dir(tmp_path) -> No
 
     reloaded = load_augur_config(tmp_path / "config.yaml")
 
-    assert reloaded.property_catalog.properties_path == (tmp_path / "properties.json").resolve()
-    assert reloaded.property_catalog.asset_dir == (tmp_path / "assets").resolve()
+    assert reloaded.property_source.properties_path == (tmp_path / "properties.json").resolve()
+    assert reloaded.property_source.asset_dir == (tmp_path / "assets").resolve()
 
 
 if __name__ == "__main__":

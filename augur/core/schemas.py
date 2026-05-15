@@ -29,14 +29,6 @@ class LenientSourceModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class OpenSchemaModel(BaseModel):
-    """Frozen, accepts unknown fields. Used for shapes where the keys are
-    dynamic or evolve faster than the schema (fan-row percentile keys,
-    percentile bags, etc.)."""
-
-    model_config = ConfigDict(extra="allow", frozen=True)
-
-
 Percentage = Annotated[NonNegativeFloat, Field(le=100)]
 
 
@@ -106,48 +98,6 @@ class ScenarioKnobs(KnobsConfig):
     @classmethod
     def from_knobs(cls, knobs: KnobsConfig) -> ScenarioKnobs:
         return cls.model_validate(knobs.model_dump())
-
-
-# ---------------------------------------------------------------------------
-# Private-equity liquidity / joint rollout shapes (round-trip with browser).
-# ---------------------------------------------------------------------------
-
-
-class PrivateEquityEvent(InternalModel):
-    month_index: int
-    # TODO: only "tender" is currently emitted by rollouts. "acquisition"
-    # remains in the literal as a placeholder for the eventual acquisition
-    # regime; "ipo" / "public_mark" were dropped when IPO modeling was
-    # removed and should come back together with a real public-equity
-    # regime.
-    event_type: Literal["tender", "acquisition"]
-    price_usd_per_unit: float
-
-
-class PrivateEquityPath(InternalModel):
-    current_price_usd: float
-    price_path: list[float]
-    events: list[PrivateEquityEvent]
-
-
-class MarketMultipliers(InternalModel):
-    """The base multiplier paths every macro rollout produces.
-    Reused by `JointRolloutPath` (rollout input) and `MarketPath`
-    (post-simulation output with derived CAGRs). Location-specific
-    home/rent paths ride in the location-keyed maps below."""
-
-    home_value_multipliers: list[float]
-    sale_home_value_multipliers: list[float]
-    portfolio_multipliers: list[float]
-    rent_multipliers: list[float]
-    expense_inflation_multipliers: list[float]
-    home_value_multipliers_by_location: dict[str, list[float]] = Field(default_factory=dict)
-    rent_multipliers_by_location: dict[str, list[float]] = Field(default_factory=dict)
-    mortgage30_rate_path: list[float] = Field(default_factory=list)
-
-
-class JointRolloutPath(MarketMultipliers):
-    private_equity_path: PrivateEquityPath
 
 
 # ---------------------------------------------------------------------------
@@ -317,87 +267,7 @@ class MonthlySalePathRow(InternalModel):
 
 
 # ---------------------------------------------------------------------------
-# Personal-wealth / private-equity policy outputs.
-# ---------------------------------------------------------------------------
-
-
-class PrivateEquitySale(InternalModel):
-    month_index: int
-    event_type: str
-    units: float
-    price_usd_per_unit: float
-    after_tax_proceeds_usd: float
-
-
-class PrivateEquityLiquidityRow(InternalModel):
-    month_index: int
-    base_liquid_usd: float
-    liquid_private_equity_proceeds_usd: float
-    liquid_net_worth_contribution_usd: float
-    private_equity_after_tax_mark_value_usd: float
-    private_equity_units_remaining: float
-    private_equity_units_sold: float
-    liquidity_shortfall: bool
-    sales: list[PrivateEquitySale]
-
-
-class PrivateEquityLiquidityPath(InternalModel):
-    rows: list[PrivateEquityLiquidityRow]
-    sales: list[PrivateEquitySale]
-    terminal: PrivateEquityLiquidityRow
-    had_liquidity_shortfall: bool
-    had_eligible_sale: bool
-
-
-class NetWorthRow(MonthlySalePathRow):
-    """Adds personal-wealth columns on top of the per-month sale path:
-    aggregated net-worth views, the private-equity mark-to-market value, and
-    the liquidity-shortfall flag."""
-
-    liquid_net_worth_usd: float
-    economic_net_worth_usd: float
-    private_equity_liquid_value_usd: float
-    private_equity_event_pv_usd: float
-    private_equity_units_remaining: float
-    liquidity_shortfall: bool
-
-
-class _PolicyActionBase(InternalModel):
-    month_index: int
-
-
-class PolicyActionTrade(_PolicyActionBase):
-    """SP500 trade triggered by housing cash-flow shortfall / surplus."""
-
-    action_type: Literal["sold_sp500", "bought_sp500"]
-    amount_usd: int
-    reason: str
-
-
-class PolicyActionRental(_PolicyActionBase):
-    """Property switches from owner-occupied to rented (or starts rented)."""
-
-    action_type: Literal["moved_out_and_rented_property", "rented_property_out_from_start"]
-
-
-class PolicyActionPrivateEquity(_PolicyActionBase):
-    """Private-equity tender / acquisition / IPO sale through the guardrail policy."""
-
-    action_type: Literal["sold_privateEquity"]
-    event_type: str
-    units: float
-    price_usd_per_unit: float
-    after_tax_proceeds_usd: int
-    reason: str
-
-
-PolicyAction = Annotated[
-    PolicyActionTrade | PolicyActionRental | PolicyActionPrivateEquity, Field(discriminator="action_type")
-]
-
-
-# ---------------------------------------------------------------------------
-# Stochastic outcome view (what the browser actually renders).
+# Columnar response tables.
 # ---------------------------------------------------------------------------
 
 
@@ -421,111 +291,6 @@ class ColumnarTable(InternalModel):
         if mismatched:
             raise ValueError(f"column lengths must equal row_count={self.row_count}: {mismatched}")
         return self
-
-
-class Percentiles(OpenSchemaModel):
-    pass
-
-
-class HistogramBucket(InternalModel):
-    from_value: float
-    to_value: float
-    mid: float
-    count: int
-    share: float
-    percentile_low: float
-    percentile_high: float
-
-
-class SamplePathColumns(InternalModel):
-    delta_path_columns: ColumnarTable
-    economic_net_worth_path_columns: ColumnarTable
-    appreciation_path_columns: ColumnarTable
-    policy_actions: list[PolicyAction]
-
-
-class ModelRunMetadata(InternalModel):
-    fitted_with: str
-    policy: dict[str, Any]
-
-
-class MarketPath(MarketMultipliers):
-    terminal_home_annual_cagr_pct: float
-    terminal_sale_annual_cagr_pct: float
-    terminal_sp500_annual_cagr_pct: float
-    terminal_rent_annual_cagr_pct: float
-    terminal_inflation_annual_cagr_pct: float
-    terminal_appreciation_pct: float
-    cumulative_home_appreciation_pct: list[float]
-    terminal_home_log_growth: float
-
-
-class RolloutComputation(InternalModel):
-    """One sampled rollout evaluated through the deterministic + personal-wealth
-    pipeline. The aggregator over many runs uses these as typed records instead
-    of the older `dict[str, Any]` bag.
-    """
-
-    market_path: MarketPath
-    monthly_sale_path: list[MonthlySalePathRow]
-    net_worth_path: list[NetWorthRow]
-    private_equity_liquidity_path: PrivateEquityLiquidityPath
-    private_equity_path: PrivateEquityPath
-    policy_actions: list[PolicyAction]
-    summary: dict[str, Any]
-    sale_path: list[MonthlySalePathRow]
-
-
-class StochasticOutcomeView(InternalModel):
-    model_run: ModelRunMetadata
-    rollouts: int
-    probability_buy_wins: float
-    probability_liquidity_shortfall: float
-    probability_private_equity_sale: float
-    terminal_economic_net_worth: Percentiles
-    terminal_liquid_net_worth: Percentiles
-    terminal_private_equity_event_pv: Percentiles
-    terminal_private_equity_liquid_value: Percentiles
-    terminal_delta: Percentiles
-    terminal_annual_appreciation: Percentiles
-    terminal_appreciation: Percentiles
-    terminal_sp500_annual_return: Percentiles
-    terminal_rent_growth: Percentiles
-    rent_path_fan_columns: ColumnarTable
-    buy_liquid_fan_columns: ColumnarTable
-    buy_path_fan_columns: ColumnarTable
-    economic_net_worth_fan_columns: ColumnarTable
-    liquid_net_worth_fan_columns: ColumnarTable
-    private_equity_event_pv_fan_columns: ColumnarTable
-    delta_fan_columns: ColumnarTable
-    appreciation_fan_columns: ColumnarTable
-    delta_histogram: list[HistogramBucket]
-    sample_path_columns: list[SamplePathColumns]
-
-
-# ---------------------------------------------------------------------------
-# HTTP request / response shapes for the FastAPI endpoints.
-# ---------------------------------------------------------------------------
-
-
-class RunRequest(InternalModel):
-    """One combined backend call covering both the deterministic per-property
-    analysis sweep and the stochastic outcome view for the focused property.
-    Omit `rollout_samples` to take the backend default (also reported on
-    `BootstrapResponse.default_rollout_samples`)."""
-
-    property_id: str
-    knobs: KnobsConfig
-    rollout_samples: int | None = None
-
-
-class RunResponse(InternalModel):
-    horizon_start: str
-    horizon_months: int
-    evidence: dict[str, Any]
-    analysis_columns: ColumnarTable
-    analysis_financing: Financing
-    joint_view: StochasticOutcomeView
 
 
 # ---------------------------------------------------------------------------

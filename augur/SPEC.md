@@ -108,18 +108,16 @@ For one rollout, given a `Scenario`:
 
 ## Outputs
 
-A rollout produces a typed `RolloutComputation`:
+A scenario-set run produces a typed `ScenarioSetRunResponse`:
 
-- `MarketPath`: the sampled market paths + derived CAGRs.
-- `MonthlyRows`: per-month state per agent.
-- `Ledger`: every action and event, fully attributed.
-- `LiquidityEventLog`: every `LiquidityEvent` and any sales that occurred at it.
-- `Summary`: aggregates over the rollout.
-
-A scenario's distribution over many rollouts produces `StochasticOutcomeView`:
-percentile fans for net worth, cash, ownership, asset values, liquidity event
-proceeds, sale paths; histograms over terminal deltas; sample paths for
-inspection.
+- `MarketBundleMetadata`: the sampled market model, seed, rollout count,
+  horizon, event streams, and source metadata.
+- `ScenarioResult`: one result per scenario, each with accepted input summary,
+  report tables, metric summaries, actions, policy decisions, market
+  observations, accounting details, ledger entries, and balance snapshots.
+- `ReportTable`: columnar per-month arrays for fan charts, sample paths, and
+  terminal distributions.
+- `warnings`: validation or modeling notes that did not prevent the run.
 
 ## What augur does not do (non-goals)
 

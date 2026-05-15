@@ -5,7 +5,7 @@ import pytest
 import pytest_bazel
 
 from augur.core.augur_accounting import project_monthly_sale_path, simulate_arrangement
-from augur.core.schemas import JointRolloutPath, PrivateEquityPath, PropertyRequest, ScenarioKnobs
+from augur.core.schemas import PropertyRequest, ScenarioKnobs
 from augur.core.vectorized import (
     CheckingFloorPolicy,
     apply_checking_floor_policy,
@@ -13,7 +13,6 @@ from augur.core.vectorized import (
     array_table,
     columnar_table_from_rows,
     deterministic_market_paths,
-    market_paths_from_joint_rollouts,
     simulate_property_vectorized,
 )
 
@@ -135,45 +134,6 @@ def test_columnar_table_from_rows_preserves_columns_and_rejects_ragged_rows() ->
     assert table.columns == {"year": [0, 1], "label": ["Purchase", "Year 1"], "delta_usd": [0.0, 12.5]}
     with pytest.raises(ValueError, match="row 1 keys"):
         columnar_table_from_rows([{"year": 0, "label": "Purchase"}, {"year": 1}])
-
-
-def test_market_paths_from_joint_rollouts_uses_requested_real_estate_locations() -> None:
-    rollout = JointRolloutPath(
-        home_value_multipliers=[1, 2, 3],
-        sale_home_value_multipliers=[1, 2, 3],
-        portfolio_multipliers=[1, 1.1, 1.2],
-        rent_multipliers=[1, 1.03, 1.06],
-        expense_inflation_multipliers=[1, 1.02, 1.04],
-        home_value_multipliers_by_location={"san_francisco_ca": [1, 1.1, 1.2], "vallejo_ca": [1, 0.9, 0.8]},
-        rent_multipliers_by_location={"san_francisco_ca": [1, 1.03, 1.06], "vallejo_ca": [1, 1.01, 1.02]},
-        private_equity_path=PrivateEquityPath(current_price_usd=1, price_path=[1, 1, 1], events=[]),
-    )
-
-    paths = market_paths_from_joint_rollouts(
-        [rollout], hold_months=2, home_value_location_id="vallejo_ca", rent_location_id="vallejo_ca"
-    )
-
-    np.testing.assert_allclose(paths.home_value_multipliers[0], [1, 0.9, 0.8])
-    np.testing.assert_allclose(paths.sale_home_value_multipliers[0], [1, 0.9, 0.8])
-    np.testing.assert_allclose(paths.rent_multipliers[0], [1, 1.01, 1.02])
-
-
-def test_market_paths_from_joint_rollouts_rejects_missing_requested_location() -> None:
-    rollout = JointRolloutPath(
-        home_value_multipliers=[1, 2],
-        sale_home_value_multipliers=[1, 2],
-        portfolio_multipliers=[1, 1],
-        rent_multipliers=[1, 1],
-        expense_inflation_multipliers=[1, 1],
-        home_value_multipliers_by_location={"san_francisco_ca": [1, 2]},
-        rent_multipliers_by_location={"san_francisco_ca": [1, 1]},
-        private_equity_path=PrivateEquityPath(current_price_usd=1, price_path=[1, 1], events=[]),
-    )
-
-    with pytest.raises(ValueError, match="vallejo_ca"):
-        market_paths_from_joint_rollouts(
-            [rollout], hold_months=1, home_value_location_id="vallejo_ca", rent_location_id="san_francisco_ca"
-        )
 
 
 def test_checking_floor_policy_sells_sp500_when_cash_drops_below_floor() -> None:

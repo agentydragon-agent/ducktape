@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from augur.core.schemas import SourceDataConfig
+from augur.model.location_market_sources import LocationMarketSources
 from augur.model.market_data import (
     MarketEvidence,
     PeriodReturns,
@@ -29,7 +30,6 @@ from augur.model.market_data import (
     resolve_path,
 )
 from augur.model.markets.scenarios import HistoricalSeries
-from augur.model.projection_factor_sources import ProjectionFactorSources
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "joint_config.example.json"
 
@@ -94,8 +94,8 @@ def _evidence_fred_only(config: dict[str, Any], base_dir: Path) -> tuple[Histori
     can construct: SP500 from FRED price-level (no dividends), Case-Shiller
     SF for housing, FRED rent CPI, FRED US CPI, FRED 30-year mortgage."""
     source = SourceDataConfig.model_validate(config.get("source_data"))
-    factor_sources = ProjectionFactorSources.from_config(config)
-    home_factor_names = tuple(dict.fromkeys(factor_sources.home_value.values()))
+    market_sources = LocationMarketSources.from_config(config)
+    home_factor_names = tuple(dict.fromkeys(market_sources.home_value.values()))
     market_factors = ("sp500", *home_factor_names, "rent", "inflation")
     sp500_path = resolve_path(source.fred_sp500_csv, base_dir)
     home_path = resolve_path(source.fred_sfxrsa_csv, base_dir)

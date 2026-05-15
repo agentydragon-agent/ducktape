@@ -12,11 +12,9 @@ from augur.core.api import simulate_set
 from augur.core.augur_accounting import MONTHS_PER_YEAR
 from augur.core.bootstrap import ActorPolicyId, Property
 from augur.core.local_regulation import LocationId, known_location_id
-from augur.core.market_bundle import MarketBundleProvider, SimpleMarketBundleProvider
-from augur.core.rollout_provider import RolloutProvider
+from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider, SimpleMarketBundleProvider
 from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario, ScenarioSet, ScenarioSetRunResponse, TaxRegime
 from augur.core.schemas import ScenarioKnobs
-from augur.model.market_bundle_adapter import RolloutProviderMarketBundleProvider
 
 
 class AugurBackend:
@@ -24,19 +22,13 @@ class AugurBackend:
         self,
         *,
         augur_config: AugurConfig,
-        rollout_provider: RolloutProvider | None = None,
         default_rollout_samples: int | None = None,
         max_rollout_samples: int = 2048,
         default_property_id: str | None = None,
         default_actor_policy: ActorPolicyId | None = None,
         market_bundle_provider: MarketBundleProvider | None = None,
     ) -> None:
-        self.rollout_provider = rollout_provider
-        self.market_bundle_provider = market_bundle_provider or (
-            RolloutProviderMarketBundleProvider(rollout_provider)
-            if rollout_provider is not None
-            else SimpleMarketBundleProvider()
-        )
+        self.market_bundle_provider = market_bundle_provider or SimpleMarketBundleProvider()
         self._bootstrap = build_bootstrap_payload(augur_config)
         self._property_by_id: dict[str, Property] = {
             property_.id: property_ for property_ in self._bootstrap.properties
@@ -65,9 +57,9 @@ class AugurBackend:
         return simulate_set(scenario_set, market_provider=self.market_bundle_provider).to_response()
 
     def _default_knobs_for_provider(self, knobs: ScenarioKnobs) -> ScenarioKnobs:
-        if self.rollout_provider is None:
+        if not isinstance(self.market_bundle_provider, HorizonBoundMarketBundleProvider):
             return knobs
-        max_hold_years = max(1, self.rollout_provider.horizon_months // MONTHS_PER_YEAR)
+        max_hold_years = max(1, self.market_bundle_provider.horizon_months // MONTHS_PER_YEAR)
         return knobs.model_copy(update={"hold_years": min(knobs.hold_years, max_hold_years)})
 
     def _validate_scenario_set_property_references(self, scenario_set: ScenarioSet) -> None:

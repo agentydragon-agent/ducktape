@@ -1,11 +1,10 @@
-"""Generic macro-factor rollout provider.
+"""Generic macro market-bundle provider.
 
 Wraps any `MarketModel` implementation from `augur.model.markets.models.*`
-into a `RolloutProvider` the FastAPI server consumes. Composition (provider
-holds a market model) instead of inheritance (model implements provider) so
-each macro model class stays focused on the macro process and doesn't need to
-know about JointRolloutPath / private equity / mortgage. Backend selects a model via
-`MacroRolloutProvider.for_label(...)`.
+as a `MarketBundleProvider` for the scenario-set runtime. Composition keeps
+each macro model focused on the macro process; private-equity liquidity,
+mortgage rates, and location-specific path selection are runtime bundle
+concerns.
 """
 
 from __future__ import annotations
@@ -14,11 +13,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from augur.core.schemas import JointRolloutPath, PrivateEquityEvent, PrivateEquityPath
+import numpy as np
+
+from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
+from augur.core.scenario_set import MarketRequest
+from augur.model.location_market_sources import LocationMarketSources, build_location_market_maps
 from augur.model.markets.data import load_evidence
 from augur.model.markets.market_model import MarketModel
 from augur.model.markets.registry import BY_LABEL
-from augur.model.projection_factor_sources import ProjectionFactorSources, build_projection_factor_maps
 
 _TENDER_INTERVAL_MONTHS = 12
 
@@ -40,8 +42,7 @@ class MacroRolloutProvider:
         self._current_mortgage30_rate_pct = float(evidence.current_mortgage30_rate_pct)
         self._current_private_equity_price_usd = float(current_private_equity_price_usd)
         self._factor_index = {name: idx for idx, name in enumerate(historical.factor_names)}
-        self._factor_names = historical.factor_names
-        self._projection_factor_sources = ProjectionFactorSources.from_config(config)
+        self._location_market_sources = LocationMarketSources.from_config(config)
 
         market_model.fit(historical)
         self._market_model = market_model
@@ -54,49 +55,48 @@ class MacroRolloutProvider:
             BY_LABEL[label].build(), config_path, current_private_equity_price_usd=current_private_equity_price_usd
         )
 
-    def sample_rollouts(self, *, n_rollouts: int, seed: int) -> list[JointRolloutPath]:
-        scenarios = self._market_model.simulate(n_paths=n_rollouts, n_months=self.horizon_months, seed=seed)
-        sp500_idx = self._factor_index["sp500"]
-        home_idx = self._factor_index["home"]
-        rent_idx = self._factor_index["rent"]
-        inflation_idx = self._factor_index["inflation"]
+    def sample_market_bundle(
+        self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
+    ) -> MarketBundle:
+        effective_seed = seed if seed is not None else self.random_seed
+        scenarios = self._market_model.simulate(n_paths=rollout_count, n_months=horizon_months, seed=effective_seed)
+        shape = (rollout_count, horizon_months + 1)
+        path_by_factor: dict[str, np.ndarray] = {
+            factor_name: scenarios.multipliers[:, :, factor_index]
+            for factor_name, factor_index in self._factor_index.items()
+        }
+        home_value_paths_by_location, rent_paths_by_location = build_location_market_maps(
+            path_by_factor=path_by_factor, sources=self._location_market_sources
+        )
+        home_value_paths_by_location = {"default": path_by_factor["home"], **home_value_paths_by_location}
+        rent_paths_by_location = {"default": path_by_factor["rent"], **rent_paths_by_location}
 
-        flat_price_path = [self._current_private_equity_price_usd] * (self.horizon_months + 1)
-        # Synthetic tender events at fixed yearly intervals. Tender events are
-        # binary; sale sizing belongs to policy, not the market event.
-        events = [
-            PrivateEquityEvent(
-                month_index=month, event_type="tender", price_usd_per_unit=self._current_private_equity_price_usd
-            )
-            for month in range(_TENDER_INTERVAL_MONTHS, self.horizon_months + 1, _TENDER_INTERVAL_MONTHS)
-        ]
-        mortgage_path = [self._current_mortgage30_rate_pct] * (self.horizon_months + 1)
+        private_equity_events = np.zeros(shape, dtype=np.bool_)
+        private_equity_events[:, _TENDER_INTERVAL_MONTHS : horizon_months + 1 : _TENDER_INTERVAL_MONTHS] = True
 
-        rollouts: list[JointRolloutPath] = []
-        for path_idx in range(n_rollouts):
-            path = scenarios.multipliers[path_idx]
-            path_by_factor = {
-                factor_name: [float(v) for v in path[:, factor_index]]
-                for factor_name, factor_index in self._factor_index.items()
-            }
-            home_value_paths_by_location, rent_paths_by_location = build_projection_factor_maps(
-                path_by_factor=path_by_factor, sources=self._projection_factor_sources
-            )
-            rollouts.append(
-                JointRolloutPath(
-                    home_value_multipliers=path_by_factor[self._factor_names[home_idx]],
-                    sale_home_value_multipliers=path_by_factor[self._factor_names[home_idx]],
-                    portfolio_multipliers=path_by_factor[self._factor_names[sp500_idx]],
-                    rent_multipliers=path_by_factor[self._factor_names[rent_idx]],
-                    expense_inflation_multipliers=path_by_factor[self._factor_names[inflation_idx]],
-                    home_value_multipliers_by_location=home_value_paths_by_location,
-                    rent_multipliers_by_location=rent_paths_by_location,
-                    mortgage30_rate_path=mortgage_path,
-                    private_equity_path=PrivateEquityPath(
-                        current_price_usd=self._current_private_equity_price_usd,
-                        price_path=flat_price_path,
-                        events=events,
-                    ),
-                )
-            )
-        return rollouts
+        return MarketBundle(
+            month_index=np.arange(horizon_months + 1, dtype="int64"),
+            inflation_multipliers=path_by_factor["inflation"],
+            generic_sp500_multipliers=path_by_factor["sp500"],
+            home_value_multipliers_by_location=home_value_paths_by_location,
+            rent_multipliers_by_location=rent_paths_by_location,
+            mortgage_30y_rate_pct=np.full(shape, self._current_mortgage30_rate_pct, dtype="float64"),
+            private_equity_value_multipliers=np.ones(shape, dtype="float64"),
+            private_equity_liquidity_event_mask=private_equity_events,
+            metadata=MarketBundleMetadata(
+                market_model_id=market_request.market_model_id,
+                random_seed=effective_seed,
+                rollout_count=rollout_count,
+                horizon_months=horizon_months,
+                event_stream_ids=("private_equity_liquidity_event",),
+                notes=("sampled by MacroRolloutProvider",),
+                source_metadata={
+                    "market_provider_label": self.label,
+                    "market_provider_horizon_start": self.horizon_start,
+                    "market_provider_horizon_months": self.horizon_months,
+                    "market_provider_random_seed": self.random_seed,
+                    "current_private_equity_price_usd": self._current_private_equity_price_usd,
+                    "latest_observation_ids": sorted(str(key) for key in self.latest_observations),
+                },
+            ),
+        )

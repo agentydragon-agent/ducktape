@@ -50,7 +50,7 @@ personal_finance:
   default_partner_monthly_payment_usd: 2000.0
   minimum_liquid_reserve_usd: 10000.0
 pmms_survey_date: "2026-05-14"
-property_catalog:
+property_source:
   properties_path: properties.json
 reserve_forward_months: 12
 snapshot:

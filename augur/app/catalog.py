@@ -1,6 +1,6 @@
 """Builds the bootstrap payload the augur frontend reads at startup.
 
-Loads the user's property shortlist from `config.property_catalog.properties_path`
+Loads the user's property shortlist from `config.property_source.properties_path`
 and derives display labels (actor policy, residence mode, rental use) from
 `config.agents` so the same generic code serves any deployment's agents."""
 
@@ -210,7 +210,7 @@ def _rental_use_policy_options(primary: str, partner: str | None) -> list[Rental
 
 
 def _load_properties(config: AugurConfig, *, location_by_id: dict[str, Location]) -> tuple[Property, ...]:
-    path = config.property_catalog.properties_path
+    path = config.property_source.properties_path
     properties = PROPERTY_ROWS_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
     for property_ in properties:
         _validate_property_location(property_, location_by_id=location_by_id)

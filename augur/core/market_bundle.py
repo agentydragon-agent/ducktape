@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -154,6 +154,11 @@ class MarketBundleProvider(Protocol):
     def sample_market_bundle(
         self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
     ) -> MarketBundle: ...
+
+
+@runtime_checkable
+class HorizonBoundMarketBundleProvider(MarketBundleProvider, Protocol):
+    horizon_months: int
 
 
 def sample_market_bundle_for_request(provider: MarketBundleProvider, market_request: MarketRequest) -> MarketBundle:

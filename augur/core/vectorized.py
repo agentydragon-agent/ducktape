@@ -17,7 +17,7 @@ from augur.core.augur_accounting import (
     room_rental_count,
     room_rental_share,
 )
-from augur.core.schemas import ColumnarTable, Financing, JointRolloutPath, PropertyRequest, ScenarioKnobs
+from augur.core.schemas import ColumnarTable, Financing, PropertyRequest, ScenarioKnobs
 
 
 @dataclass(frozen=True)
@@ -227,63 +227,6 @@ def deterministic_market_paths(knobs: ScenarioKnobs, *, hold_months: int, rollou
         portfolio_multipliers=portfolio,
         rent_multipliers=rent,
         expense_inflation_multipliers=expenses,
-    )
-
-
-def market_paths_from_joint_rollouts(
-    joint_rollout_paths: list[Any],
-    *,
-    hold_months: int,
-    rollout_count: int | None = None,
-    home_value_location_id: str | None = None,
-    rent_location_id: str | None = None,
-) -> MarketPathMatrix:
-    if not joint_rollout_paths:
-        raise ValueError("joint rollout paths are required")
-    count = int(rollout_count or len(joint_rollout_paths))
-    selected = [
-        JointRolloutPath.model_validate(joint_rollout_paths[index % len(joint_rollout_paths)]) for index in range(count)
-    ]
-
-    def stack_values(paths: list[list[float]], *, label: str) -> np.ndarray:
-        rows = []
-        for index, path in enumerate(paths):
-            values = np.asarray(path, dtype="float64")
-            if values.shape[0] < hold_months + 1:
-                raise ValueError(f"joint_rollout_paths[{index}].{label} length {values.shape[0]} < {hold_months + 1}")
-            rows.append(values[: hold_months + 1])
-        return np.vstack(rows)
-
-    def stack(field: str) -> np.ndarray:
-        return stack_values([getattr(path, field) for path in selected], label=field)
-
-    def stack_location(mapping_field: str, location_id: str) -> np.ndarray:
-        paths: list[list[float]] = []
-        for index, path in enumerate(selected):
-            mapping = getattr(path, mapping_field)
-            try:
-                paths.append(mapping[location_id])
-            except KeyError as error:
-                raise ValueError(f"joint_rollout_paths[{index}].{mapping_field} is missing {location_id!r}") from error
-        return stack_values(paths, label=f"{mapping_field}[{location_id!r}]")
-
-    home = (
-        stack("home_value_multipliers")
-        if home_value_location_id is None
-        else stack_location("home_value_multipliers_by_location", home_value_location_id)
-    )
-    sale_home = stack("sale_home_value_multipliers") if home_value_location_id is None else home
-    rent = (
-        stack("rent_multipliers")
-        if rent_location_id is None
-        else stack_location("rent_multipliers_by_location", rent_location_id)
-    )
-    return MarketPathMatrix(
-        home_value_multipliers=home,
-        sale_home_value_multipliers=sale_home,
-        portfolio_multipliers=stack("portfolio_multipliers"),
-        rent_multipliers=rent,
-        expense_inflation_multipliers=stack("expense_inflation_multipliers"),
     )
 
 

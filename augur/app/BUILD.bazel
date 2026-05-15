@@ -67,10 +67,8 @@ py_library(
         "//augur/core:bootstrap_py",
         "//augur/core:local_regulation_py",
         "//augur/core:market_bundle_py",
-        "//augur/core:rollout_provider_py",
         "//augur/core:scenario_set_py",
         "//augur/core:schemas_py",
-        "//augur/model:market_bundle_adapter_py",
     ],
 )
 
@@ -82,7 +80,6 @@ py_library(
         ":config_py",
         "//augur/core:backend_py",
         "//augur/core:market_bundle_py",
-        "//augur/core:rollout_provider_py",
         "//augur/core:static_py",
         "//augur/model:macro_rollout_provider_py",
         "//augur/model/markets:registry_py",

@@ -22,7 +22,7 @@
     },
     "minimum_aligned_months": 36
   },
-  "projection_factor_sources": {
+  "location_market_sources": {
     "home_value": {
       "san_francisco_ca": "home",
       "vallejo_ca": "vallejo_home",

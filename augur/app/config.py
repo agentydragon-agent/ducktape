@@ -65,7 +65,7 @@ class PersonalFinanceConfig(ApiModel):
     default_partner_monthly_payment_usd: NonNegativeFloat = 0.0
 
 
-class PropertyCatalogConfig(ApiModel):
+class PropertySourceConfig(ApiModel):
     """Where to find the user's property shortlist + photos."""
 
     properties_path: Path
@@ -113,13 +113,13 @@ class AugurConfig(ApiModel):
     at startup. Everything user-specific lives here.
 
     `location_selection = None` (the default) means surface the locations
-    represented by the loaded property catalog. A non-None tuple restricts
+    represented by the loaded property source. A non-None tuple restricts
     the UI / scenarios to that subset.
     """
 
     agents: tuple[AgentDefinition, ...] = Field(min_length=1)
     personal_finance: PersonalFinanceConfig
-    property_catalog: PropertyCatalogConfig
+    property_source: PropertySourceConfig
     snapshot: FinanceSnapshot
     locations: tuple[LocationConfig, ...] = ()
     location_selection: tuple[str, ...] | None = None
@@ -134,27 +134,27 @@ class AugurConfig(ApiModel):
 def load_augur_config(path: Path) -> AugurConfig:
     """Parse + validate an AugurConfig from a YAML file.
 
-    Relative `property_catalog.properties_path` and `property_catalog.asset_dir`
+    Relative `property_source.properties_path` and `property_source.asset_dir`
     are anchored against the yaml's parent directory — useful for ConfigMap
     mounts where the yaml and the property data live side-by-side (e.g.
     `/etc/augur/{config.yaml,properties.json}`)."""
     config = AugurConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
-    return _anchor_property_catalog_paths(config, base_dir=path.parent)
+    return _anchor_property_source_paths(config, base_dir=path.parent)
 
 
-def _anchor_property_catalog_paths(config: AugurConfig, *, base_dir: Path) -> AugurConfig:
-    catalog = config.property_catalog
-    properties_path = catalog.properties_path
+def _anchor_property_source_paths(config: AugurConfig, *, base_dir: Path) -> AugurConfig:
+    source = config.property_source
+    properties_path = source.properties_path
     if not properties_path.is_absolute():
         properties_path = (base_dir / properties_path).resolve()
-    asset_dir = catalog.asset_dir
+    asset_dir = source.asset_dir
     if asset_dir is not None and not asset_dir.is_absolute():
         asset_dir = (base_dir / asset_dir).resolve()
-    if properties_path == catalog.properties_path and asset_dir == catalog.asset_dir:
+    if properties_path == source.properties_path and asset_dir == source.asset_dir:
         return config
     return config.model_copy(
         update={
-            "property_catalog": catalog.model_copy(update={"properties_path": properties_path, "asset_dir": asset_dir})
+            "property_source": source.model_copy(update={"properties_path": properties_path, "asset_dir": asset_dir})
         }
     )
 

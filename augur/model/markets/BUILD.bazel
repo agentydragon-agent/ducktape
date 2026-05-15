@@ -42,8 +42,8 @@ py_library(
     deps = [
         ":scenarios_py",
         "//augur/core:schemas_py",
+        "//augur/model:location_market_sources_py",
         "//augur/model:market_data_py",
-        "//augur/model:projection_factor_sources_py",
         "@pypi//numpy",
         "@pypi//pandas",
     ],

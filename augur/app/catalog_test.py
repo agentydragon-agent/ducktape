@@ -15,7 +15,7 @@ from augur.app.config import (
     FinanceSnapshot,
     LocationConfig,
     PersonalFinanceConfig,
-    PropertyCatalogConfig,
+    PropertySourceConfig,
 )
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole
@@ -87,14 +87,14 @@ def _config(properties_path: Path, *, location_selection: tuple[str, ...] | None
     return AugurConfig(
         agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
         personal_finance=PersonalFinanceConfig(cash_usd=0),
-        property_catalog=PropertyCatalogConfig(properties_path=properties_path),
+        property_source=PropertySourceConfig(properties_path=properties_path),
         snapshot=FinanceSnapshot(as_of_date="2026-05-14"),
         locations=_fixture_locations(),
         location_selection=location_selection,
     )
 
 
-def test_bootstrap_locations_default_to_loaded_property_catalog(tmp_path: Path) -> None:
+def test_bootstrap_locations_default_to_loaded_property_source(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
