@@ -5,14 +5,14 @@ know whether a fitted PyMC posterior, a frequentist VECM, a stationary
 bootstrap, or anything else produced them. Each implementation handles
 its own data loading / fitting at construction time and emits the
 standard `JointRolloutPath` shape on demand.
-Projection backends select real-estate trajectories by location factor IDs, so
-active providers should populate `home_value_factor_multipliers` and
-`rent_factor_multipliers` on each returned rollout. The base
+Projection backends select real-estate trajectories by location IDs, so
+active providers should populate `home_value_multipliers_by_location` and
+`rent_multipliers_by_location` on each returned rollout. The base
 `home_value_multipliers` and `rent_multipliers` fields remain the model's
-generic factor paths for consumers that do not have a property/location
+generic real-estate paths for consumers that do not have a property/location
 context.
 
-Concrete implementations (e.g. macro-rollout factor models, PyMC
+Concrete implementations (e.g. macro-market models, PyMC
 joint posteriors) live in user-side packages that bind market data
 and fit configurations.
 """

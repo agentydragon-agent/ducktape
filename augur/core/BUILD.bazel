@@ -331,6 +331,7 @@ py_test(
     name = "scenario_engine_test",
     srcs = ["scenario_engine_test.py"],
     deps = [
+        ":api_py",
         ":market_bundle_py",
         ":scenario_engine_py",
         ":scenario_set_py",

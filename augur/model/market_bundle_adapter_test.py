@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest_bazel
 
-from augur.core.scenario_engine import run_scenario_set_vectorized
+from augur.core.api import simulate_set
 from augur.core.scenario_set import MarketRequest, ScenarioSet
 from augur.core.schemas import JointRolloutPath, PrivateEquityEvent, PrivateEquityPath
 from augur.model.market_bundle_adapter import RolloutProviderMarketBundleProvider
@@ -42,8 +42,16 @@ class _FakeRolloutProvider:
                     portfolio_multipliers=sp500.tolist(),
                     rent_multipliers=sf_rent.tolist(),
                     expense_inflation_multipliers=inflation.tolist(),
-                    home_value_factor_multipliers={"sf_home": sf_home.tolist(), "vallejo_home": vallejo_home.tolist()},
-                    rent_factor_multipliers={"sf_rent": sf_rent.tolist(), "vallejo_rent": vallejo_rent.tolist()},
+                    home_value_multipliers_by_location={
+                        "san_francisco_ca": sf_home.tolist(),
+                        "vallejo_ca": vallejo_home.tolist(),
+                        "mare_island_vallejo_ca": vallejo_home.tolist(),
+                    },
+                    rent_multipliers_by_location={
+                        "san_francisco_ca": sf_rent.tolist(),
+                        "vallejo_ca": vallejo_rent.tolist(),
+                        "mare_island_vallejo_ca": vallejo_rent.tolist(),
+                    },
                     mortgage30_rate_path=(6.5 + 0.01 * months).tolist(),
                     private_equity_path=PrivateEquityPath(
                         current_price_usd=10,
@@ -67,7 +75,7 @@ class _FakeRolloutProvider:
         return rollouts
 
 
-def test_rollout_provider_market_bundle_adapter_maps_shapes_factors_and_metadata() -> None:
+def test_rollout_provider_market_bundle_adapter_maps_shapes_locations_and_metadata() -> None:
     provider = _FakeRolloutProvider()
     adapter = RolloutProviderMarketBundleProvider(provider)
     request = MarketRequest(market_model_id="current_joint_model", rollout_count=2, horizon_months=6, random_seed=99)
@@ -89,22 +97,20 @@ def test_rollout_provider_market_bundle_adapter_maps_shapes_factors_and_metadata
         bundle.home_value_multipliers_by_location["default"][0], [1, 1.01, 1.02, 1.03, 1.04, 1.05, 1.06]
     )
     np.testing.assert_allclose(
-        bundle.home_value_multipliers_by_location["sf_home"],
-        bundle.home_value_multipliers_by_location["san_francisco_ca"],
+        bundle.home_value_multipliers_by_location["san_francisco_ca"][0], [1, 1.01, 1.02, 1.03, 1.04, 1.05, 1.06]
     )
     np.testing.assert_allclose(
-        bundle.home_value_multipliers_by_location["vallejo_home"],
+        bundle.home_value_multipliers_by_location["vallejo_ca"][0], [1, 1.02, 1.04, 1.06, 1.08, 1.10, 1.12]
+    )
+    np.testing.assert_allclose(
         bundle.home_value_multipliers_by_location["vallejo_ca"],
-    )
-    np.testing.assert_allclose(
-        bundle.home_value_multipliers_by_location["vallejo_home"],
         bundle.home_value_multipliers_by_location["mare_island_vallejo_ca"],
     )
     np.testing.assert_allclose(
-        bundle.rent_multipliers_by_location["sf_rent"], bundle.rent_multipliers_by_location["san_francisco_ca"]
+        bundle.rent_multipliers_by_location["san_francisco_ca"][0], [1, 1.003, 1.006, 1.009, 1.012, 1.015, 1.018]
     )
     np.testing.assert_allclose(
-        bundle.rent_multipliers_by_location["vallejo_rent"], bundle.rent_multipliers_by_location["vallejo_ca"]
+        bundle.rent_multipliers_by_location["vallejo_ca"], bundle.rent_multipliers_by_location["mare_island_vallejo_ca"]
     )
 
     np.testing.assert_allclose(bundle.private_equity_value_multipliers[0], [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6])
@@ -142,7 +148,7 @@ def test_scenario_set_runner_shares_one_adapter_sample_across_scenarios() -> Non
         }
     )
 
-    response = run_scenario_set_vectorized(scenario_set, market_provider=adapter)
+    response = simulate_set(scenario_set, market_provider=adapter).to_response()
 
     assert provider.calls == [(2, 77)]
     assert response.scenario_results[0].monthly_columns is not None

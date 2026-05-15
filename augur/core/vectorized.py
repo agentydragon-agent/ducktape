@@ -235,8 +235,8 @@ def market_paths_from_joint_rollouts(
     *,
     hold_months: int,
     rollout_count: int | None = None,
-    home_value_factor_id: str | None = None,
-    rent_factor_id: str | None = None,
+    home_value_location_id: str | None = None,
+    rent_location_id: str | None = None,
 ) -> MarketPathMatrix:
     if not joint_rollout_paths:
         raise ValueError("joint rollout paths are required")
@@ -257,24 +257,26 @@ def market_paths_from_joint_rollouts(
     def stack(field: str) -> np.ndarray:
         return stack_values([getattr(path, field) for path in selected], label=field)
 
-    def stack_factor(mapping_field: str, factor_id: str) -> np.ndarray:
+    def stack_location(mapping_field: str, location_id: str) -> np.ndarray:
         paths: list[list[float]] = []
         for index, path in enumerate(selected):
             mapping = getattr(path, mapping_field)
             try:
-                paths.append(mapping[factor_id])
+                paths.append(mapping[location_id])
             except KeyError as error:
-                raise ValueError(f"joint_rollout_paths[{index}].{mapping_field} is missing {factor_id!r}") from error
-        return stack_values(paths, label=f"{mapping_field}[{factor_id!r}]")
+                raise ValueError(f"joint_rollout_paths[{index}].{mapping_field} is missing {location_id!r}") from error
+        return stack_values(paths, label=f"{mapping_field}[{location_id!r}]")
 
     home = (
         stack("home_value_multipliers")
-        if home_value_factor_id is None
-        else stack_factor("home_value_factor_multipliers", home_value_factor_id)
+        if home_value_location_id is None
+        else stack_location("home_value_multipliers_by_location", home_value_location_id)
     )
-    sale_home = stack("sale_home_value_multipliers") if home_value_factor_id is None else home
+    sale_home = stack("sale_home_value_multipliers") if home_value_location_id is None else home
     rent = (
-        stack("rent_multipliers") if rent_factor_id is None else stack_factor("rent_factor_multipliers", rent_factor_id)
+        stack("rent_multipliers")
+        if rent_location_id is None
+        else stack_location("rent_multipliers_by_location", rent_location_id)
     )
     return MarketPathMatrix(
         home_value_multipliers=home,

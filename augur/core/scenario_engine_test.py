@@ -3,8 +3,9 @@ from __future__ import annotations
 import numpy as np
 import pytest_bazel
 
+from augur.core.api import simulate_set
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
-from augur.core.scenario_engine import run_scenario_set_vectorized, run_scenario_vectorized
+from augur.core.scenario_engine import run_scenario_vectorized
 from augur.core.scenario_set import (
     AccountType,
     AccruePartnerEquityAction,
@@ -175,7 +176,7 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
         )
     )
 
-    response = run_scenario_set_vectorized(scenario_set, market_provider=provider)
+    response = simulate_set(scenario_set, market_provider=provider).to_response()
 
     assert provider.calls == 1
     assert response.scenario_results[0].monthly_columns is not None
@@ -614,7 +615,7 @@ def test_scenario_set_response_serializes_discriminated_actions() -> None:
         )
     )
 
-    response = run_scenario_set_vectorized(scenario_set, market_bundle=_bundle())
+    response = simulate_set(scenario_set, market_bundle=_bundle()).to_response()
     payload = response.model_dump(mode="json")
 
     action = payload["scenario_results"][0]["actions"][0]

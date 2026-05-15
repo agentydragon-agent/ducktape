@@ -6,21 +6,10 @@ from typing import Any
 
 import numpy as np
 
-from augur.core.local_regulation import LocationId
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
 from augur.core.rollout_provider import RolloutProvider
 from augur.core.scenario_set import MarketRequest
 from augur.core.schemas import JointRolloutPath
-
-_HOME_FACTOR_LOCATION_KEYS: dict[str, tuple[str, ...]] = {
-    "sf_home": (LocationId.SAN_FRANCISCO_CA.value,),
-    "vallejo_home": (LocationId.VALLEJO_CA.value, LocationId.MARE_ISLAND_VALLEJO_CA.value),
-}
-
-_RENT_FACTOR_LOCATION_KEYS: dict[str, tuple[str, ...]] = {
-    "sf_rent": (LocationId.SAN_FRANCISCO_CA.value,),
-    "vallejo_rent": (LocationId.VALLEJO_CA.value, LocationId.MARE_ISLAND_VALLEJO_CA.value),
-}
 
 
 class RolloutProviderMarketBundleProvider:
@@ -42,18 +31,16 @@ class RolloutProviderMarketBundleProvider:
         expected_months = horizon_months + 1
         month_index = np.arange(expected_months, dtype="int64")
 
-        home_by_location = _factor_paths_by_location(
+        home_by_location = _paths_by_location(
             rollouts=rollouts,
             base_field="home_value_multipliers",
-            factor_map_field="home_value_factor_multipliers",
-            factor_location_keys=_HOME_FACTOR_LOCATION_KEYS,
+            location_map_field="home_value_multipliers_by_location",
             horizon_months=horizon_months,
         )
-        rent_by_location = _factor_paths_by_location(
+        rent_by_location = _paths_by_location(
             rollouts=rollouts,
             base_field="rent_multipliers",
-            factor_map_field="rent_factor_multipliers",
-            factor_location_keys=_RENT_FACTOR_LOCATION_KEYS,
+            location_map_field="rent_multipliers_by_location",
             horizon_months=horizon_months,
         )
         private_equity_events = _private_equity_liquidity_arrays(rollouts, horizon_months=horizon_months)
@@ -110,49 +97,47 @@ def _stack_rollout_series(
     return np.vstack(rows).astype("float64", copy=False)
 
 
-def _stack_factor_series(
-    rollouts: tuple[JointRolloutPath, ...], factor_map_field: str, factor_id: str, *, horizon_months: int
+def _stack_location_series(
+    rollouts: tuple[JointRolloutPath, ...], location_map_field: str, location_id: str, *, horizon_months: int
 ) -> np.ndarray:
     rows = []
     expected_months = horizon_months + 1
     for rollout_index, rollout in enumerate(rollouts):
-        factor_map = getattr(rollout, factor_map_field)
+        location_map = getattr(rollout, location_map_field)
         try:
-            raw_values = factor_map[factor_id]
+            raw_values = location_map[location_id]
         except KeyError as error:
-            raise ValueError(f"rollouts[{rollout_index}].{factor_map_field} is missing {factor_id!r}") from error
+            raise ValueError(f"rollouts[{rollout_index}].{location_map_field} is missing {location_id!r}") from error
         values = np.asarray(raw_values, dtype="float64")
         if values.shape[0] < expected_months:
             raise ValueError(
-                f"rollouts[{rollout_index}].{factor_map_field}[{factor_id!r}] "
+                f"rollouts[{rollout_index}].{location_map_field}[{location_id!r}] "
                 f"length {values.shape[0]} < {expected_months}"
             )
         values = values[:expected_months]
         if not np.all(np.isfinite(values)):
-            raise ValueError(f"rollouts[{rollout_index}].{factor_map_field}[{factor_id!r}] contains non-finite values")
+            raise ValueError(
+                f"rollouts[{rollout_index}].{location_map_field}[{location_id!r}] contains non-finite values"
+            )
         if np.any(values <= 0):
-            raise ValueError(f"rollouts[{rollout_index}].{factor_map_field}[{factor_id!r}] must be positive")
+            raise ValueError(f"rollouts[{rollout_index}].{location_map_field}[{location_id!r}] must be positive")
         if not math.isclose(float(values[0]), 1.0):
-            raise ValueError(f"rollouts[{rollout_index}].{factor_map_field}[{factor_id!r}] must start at 1.0")
+            raise ValueError(f"rollouts[{rollout_index}].{location_map_field}[{location_id!r}] must start at 1.0")
         rows.append(values)
     return np.vstack(rows).astype("float64", copy=False)
 
 
-def _factor_paths_by_location(
-    *,
-    rollouts: tuple[JointRolloutPath, ...],
-    base_field: str,
-    factor_map_field: str,
-    factor_location_keys: dict[str, tuple[str, ...]],
-    horizon_months: int,
+def _paths_by_location(
+    *, rollouts: tuple[JointRolloutPath, ...], base_field: str, location_map_field: str, horizon_months: int
 ) -> dict[str, np.ndarray]:
     paths = {"default": _stack_rollout_series(rollouts, base_field, horizon_months=horizon_months)}
-    factor_ids = _ordered_factor_ids(getattr(rollouts[0], factor_map_field).keys())
-    for factor_id in factor_ids:
-        values = _stack_factor_series(rollouts, factor_map_field, factor_id, horizon_months=horizon_months)
-        paths[factor_id] = values
-        for location_key in factor_location_keys.get(factor_id, ()):
-            paths[location_key] = values
+    location_ids = _ordered_location_ids(getattr(rollouts[0], location_map_field).keys())
+    for location_id in location_ids:
+        if location_id == "default":
+            continue
+        paths[location_id] = _stack_location_series(
+            rollouts, location_map_field, location_id, horizon_months=horizon_months
+        )
     return paths
 
 
@@ -185,7 +170,7 @@ def _private_equity_liquidity_arrays(rollouts: tuple[JointRolloutPath, ...], *, 
     return event_mask
 
 
-def _ordered_factor_ids(values: Iterable[str]) -> tuple[str, ...]:
+def _ordered_location_ids(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(sorted(str(value) for value in values))
 
 

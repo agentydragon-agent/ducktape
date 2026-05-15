@@ -6,8 +6,9 @@ and derives display labels (actor policy, residence mode, rental use) from
 
 from __future__ import annotations
 
-import json
 from collections import Counter
+
+from pydantic import TypeAdapter
 
 from augur.app.config import AugurConfig, LocationConfig
 from augur.core.bootstrap import (
@@ -28,13 +29,15 @@ from augur.core.local_regulation import LOCAL_REGULATION_BY_LOCATION, LocationId
 from augur.core.scenario_set import ActorRole
 from augur.core.schemas import ScenarioKnobs
 
+PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
+
 SF_LOCATION = Location(
     id=LocationId.SAN_FRANCISCO_CA,
     label="San Francisco, CA",
     city="San Francisco",
     state="CA",
     local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.SAN_FRANCISCO_CA],
-    notes=("Home-value and rent trajectories should use SF-specific fitted real-estate factors.",),
+    notes=("Home-value and rent trajectories should use SF-specific fitted real-estate paths.",),
 )
 
 VALLEJO_MAINLAND_LOCATION = Location(
@@ -43,7 +46,7 @@ VALLEJO_MAINLAND_LOCATION = Location(
     city="Vallejo",
     state="CA",
     local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.VALLEJO_CA],
-    notes=("Home-value and rent trajectories should use Vallejo-specific fitted real-estate factors.",),
+    notes=("Home-value and rent trajectories should use Vallejo-specific fitted real-estate paths.",),
 )
 
 VALLEJO_MARE_ISLAND_LOCATION = Location(
@@ -53,7 +56,7 @@ VALLEJO_MARE_ISLAND_LOCATION = Location(
     state="CA",
     local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.MARE_ISLAND_VALLEJO_CA],
     notes=(
-        "Mare Island properties share the Vallejo market factor for now.",
+        "Mare Island properties share the Vallejo real-estate market model for now.",
         "Special assessments and CFDs should be refined before bidding.",
     ),
 )
@@ -128,13 +131,9 @@ def _locations_for_config(config: AugurConfig) -> tuple[Location, ...]:
     return locations
 
 
-def _property(raw_property: object, *, location_by_id: dict[str, Location]) -> Property:
-    property_ = Property.model_validate(raw_property)
-    try:
-        location_by_id[property_.location_id]
-    except KeyError as error:
-        raise ValueError(f"property {property_.id!r} references unknown location {property_.location_id!r}") from error
-    return property_
+def _validate_property_location(property_: Property, *, location_by_id: dict[str, Location]) -> None:
+    if property_.location_id not in location_by_id:
+        raise ValueError(f"property {property_.id!r} references unknown location {property_.location_id!r}")
 
 
 def _agents_by_role(config: AugurConfig) -> tuple[str, str | None]:
@@ -212,10 +211,9 @@ def _rental_use_policy_options(primary: str, partner: str | None) -> list[Rental
 
 def _load_properties(config: AugurConfig, *, location_by_id: dict[str, Location]) -> tuple[Property, ...]:
     path = config.property_catalog.properties_path
-    records = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(records, list):
-        raise ValueError(f"{path} must contain a JSON array")
-    properties = tuple(_property(record, location_by_id=location_by_id) for record in records)
+    properties = PROPERTY_ROWS_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
+    for property_ in properties:
+        _validate_property_location(property_, location_by_id=location_by_id)
     property_id_counts = Counter(property_.id for property_ in properties)
     duplicate_ids = sorted(property_id for property_id, count in property_id_counts.items() if count > 1)
     if duplicate_ids:

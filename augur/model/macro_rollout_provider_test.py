@@ -61,10 +61,13 @@ def test_sample_rollouts_shape(provider: MacroRolloutProvider) -> None:
             arr = np.asarray(getattr(rollout, key), dtype="float64")
             assert abs(arr[0] - 1.0) < 10**-10, key
             assert np.all(arr > 0), key
-        assert set(rollout.home_value_factor_multipliers) == {"sf_home", "vallejo_home"}
-        assert set(rollout.rent_factor_multipliers) == {"sf_rent", "vallejo_rent"}
-        np.testing.assert_allclose(rollout.home_value_factor_multipliers["sf_home"], rollout.home_value_multipliers)
-        np.testing.assert_allclose(rollout.rent_factor_multipliers["sf_rent"], rollout.rent_multipliers)
+        expected_locations = {"san_francisco_ca", "vallejo_ca", "mare_island_vallejo_ca"}
+        assert set(rollout.home_value_multipliers_by_location) == expected_locations
+        assert set(rollout.rent_multipliers_by_location) == expected_locations
+        np.testing.assert_allclose(
+            rollout.home_value_multipliers_by_location["san_francisco_ca"], rollout.home_value_multipliers
+        )
+        np.testing.assert_allclose(rollout.rent_multipliers_by_location["san_francisco_ca"], rollout.rent_multipliers)
 
 
 def test_mortgage_path_constant(provider: MacroRolloutProvider) -> None:

@@ -13,24 +13,24 @@ records what an outside observer can rely on.
 
 ### Entities
 
-| Entity      | What it is                                                                                                           | Examples                                                                                                                                 |
-| ----------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `Agent`     | An economic actor with state (cash, holdings, liabilities, ownership shares) and a set of policies.                  | a primary owner, an equity-building occupant                                                                                             |
-| `Asset`     | Something an agent owns that has value. Discriminated subtype determines valuation and liquidity model.              | a `LiquidSecurity` tracking SP500, a `PrivateEquity` holding, a `RealEstate` property                                                    |
-| `Liability` | A debt an agent owes, with an amortization schedule.                                                                 | a mortgage on a property                                                                                                                 |
-| `Market`    | A stochastic factor producing per-rollout paths.                                                                     | SP500 total return, a local home-price index, a local rent index, CPI, mortgage rate, per-`PrivateEquity` price + liquidity-event stream |
-| `Policy`    | A typed rule attached to an agent: `(state, market, time) → list[Action]`. Composable; an agent can hold any number. | liquidity-reserve maintenance, max-concentration rebalancing, partner-equity agreement, mortgage payment, rental management              |
-| `Action`    | An atomic mutation applied to state.                                                                                 | `SellAsset`, `BuyAsset`, `Transfer(from, to, amount)`, `PayLiability`, `AccrueOwnership`, `OccupyProperty`, `RentProperty`               |
-| `Scenario`  | A bundle: agents + assets + liabilities + initial state + policies + which markets to sample from + horizon.         | "primary buys property X with partner contributing"                                                                                      |
+| Entity      | What it is                                                                                                           | Examples                                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `Agent`     | An economic actor with state (cash, holdings, liabilities, ownership shares) and a set of policies.                  | a primary owner, an equity-building occupant                                                                                         |
+| `Asset`     | Something an agent owns that has value. Discriminated subtype determines valuation and liquidity model.              | a `LiquidSecurity` tracking SP500, a `PrivateEquity` holding, a `RealEstate` property                                                |
+| `Liability` | A debt an agent owes, with an amortization schedule.                                                                 | a mortgage on a property                                                                                                             |
+| `Market`    | A stochastic input source producing per-rollout paths.                                                               | SP500 total return, local home-price paths, local rent paths, CPI, mortgage rate, per-`PrivateEquity` price + liquidity-event stream |
+| `Policy`    | A typed rule attached to an agent: `(state, market, time) → list[Action]`. Composable; an agent can hold any number. | liquidity-reserve maintenance, max-concentration rebalancing, partner-equity agreement, mortgage payment, rental management          |
+| `Action`    | An atomic mutation applied to state.                                                                                 | `SellAsset`, `BuyAsset`, `Transfer(from, to, amount)`, `PayLiability`, `AccrueOwnership`, `OccupyProperty`, `RentProperty`           |
+| `Scenario`  | A bundle: agents + assets + liabilities + initial state + policies + which markets to sample from + horizon.         | "primary buys property X with partner contributing"                                                                                  |
 
 ### Asset subtypes
 
-| Subtype          | Valuation                                                                                                                                                | Liquidity                                                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `Cash`           | Face value.                                                                                                                                              | Always liquid.                                                                            |
-| `LiquidSecurity` | Tracks a market factor multiplier (e.g. SP500 total-return proxy).                                                                                       | Always sellable.                                                                          |
-| `RealEstate`     | Tracks a location-bound home-value factor; generates rent (location-bound rent factor); has property tax / insurance / HOA / maintenance / depreciation. | Sellable on demand; sale incurs closing costs, capital-gains tax, depreciation recapture. |
-| `PrivateEquity`  | Tracks an idiosyncratic price process (per-asset sampled path).                                                                                          | Determined by a `LiquidityRegime` variant attached to the asset. See below.               |
+| Subtype          | Valuation                                                                                                         | Liquidity                                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `Cash`           | Face value.                                                                                                       | Always liquid.                                                                            |
+| `LiquidSecurity` | Tracks a market-provided multiplier (e.g. SP500 total-return proxy).                                              | Always sellable.                                                                          |
+| `RealEstate`     | Tracks location-bound home-value and rent paths; has property tax / insurance / HOA / maintenance / depreciation. | Sellable on demand; sale incurs closing costs, capital-gains tax, depreciation recapture. |
+| `PrivateEquity`  | Tracks an idiosyncratic price process (per-asset sampled path).                                                   | Determined by a `LiquidityRegime` variant attached to the asset. See below.               |
 
 ### LiquidityRegime (variant on `PrivateEquity`)
 
@@ -89,14 +89,14 @@ by markets / scenario configuration):
 
 For one rollout, given a `Scenario`:
 
-1. Markets sample one path per market factor + per `PrivateEquity`
-   (price path + liquidity event stream).
+1. Markets sample shared macro paths plus per-`PrivateEquity` price paths and
+   liquidity event streams.
 2. State is initialized from the scenario: each agent's cash, holdings,
    liabilities, ownership shares.
 3. For each month `t` in `[0, horizon_months]`:
    a. Apply scheduled events for the month (regime changes, lockup expiry,
    liquidity events open).
-   b. Mark-to-market: update asset values using factor paths.
+   b. Mark-to-market: update asset values using market paths.
    c. Accrue: rent income, expenses, depreciation, mortgage interest,
    property tax, insurance.
    d. Each agent's policies produce actions in deterministic order.
@@ -110,7 +110,7 @@ For one rollout, given a `Scenario`:
 
 A rollout produces a typed `RolloutComputation`:
 
-- `MarketPath`: the sampled factor paths + derived CAGRs.
+- `MarketPath`: the sampled market paths + derived CAGRs.
 - `MonthlyRows`: per-month state per agent.
 - `Ledger`: every action and event, fully attributed.
 - `LiquidityEventLog`: every `LiquidityEvent` and any sales that occurred at it.
@@ -126,7 +126,7 @@ inspection.
 - It is not a tax compliance engine. Tax computations are approximations
   parameterized at the scenario level (marginal rates, cap-gains rates,
   depreciation rules). They are not authoritative.
-- It is not a real-time pricing engine. Market factors are stochastic processes
+- It is not a real-time pricing engine. Market paths are stochastic processes
   fit offline; intra-month dynamics are not modeled.
 - It is not a portfolio optimizer. Policies are user-specified rules; augur
   reports their consequences, not what optimal policies would be.

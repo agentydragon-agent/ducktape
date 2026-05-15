@@ -77,7 +77,7 @@ json.dump(trimmed, open(sys.argv[2], 'w'), separators=(',', ':'))
 
 Zillow's city-level Home Value Index for the mid-tier SFR + condo bucket,
 smoothed and seasonally adjusted, monthly. Used as the home-price ground
-truth for SF and Vallejo location factors.
+truth for SF and Vallejo location paths.
 
 Source: [Zillow Research](https://www.zillow.com/research/data/) — pick
 **Home values → ZHVI All Homes (SFR, Condo/Co-op) Time Series, Smoothed,

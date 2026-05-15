@@ -24,12 +24,14 @@
   },
   "projection_factor_sources": {
     "home_value": {
-      "sf_home": "home",
-      "vallejo_home": "vallejo_home"
+      "san_francisco_ca": "home",
+      "vallejo_ca": "vallejo_home",
+      "mare_island_vallejo_ca": "vallejo_home"
     },
     "rent": {
-      "sf_rent": "rent",
-      "vallejo_rent": "rent"
+      "san_francisco_ca": "rent",
+      "vallejo_ca": "rent",
+      "mare_island_vallejo_ca": "rent"
     }
   },
   "random_seed": 20260429,

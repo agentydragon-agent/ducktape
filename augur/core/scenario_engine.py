@@ -7,12 +7,7 @@ import numpy as np
 
 from augur.core.annual_tax import AnnualSaleTaxAllocation, annual_sale_tax_allocation
 from augur.core.local_regulation import LocalRegulation, local_regulation_for_location
-from augur.core.market_bundle import (
-    MarketBundle,
-    MarketBundleProvider,
-    SimpleMarketBundleProvider,
-    sample_market_bundle_for_request,
-)
+from augur.core.market_bundle import MarketBundle
 from augur.core.policy_runtime import (
     LedgerEntryBatch,
     MortgagePaymentApplication,
@@ -68,10 +63,6 @@ from augur.core.scenario_set import (
     PropertySaleBasisGainDetail,
     RentalMode,
     Scenario,
-    ScenarioAcceptedSummary,
-    ScenarioResult,
-    ScenarioSet,
-    ScenarioSetRunResponse,
     SellPrivateEquityAction,
     SellPublicStockDecision,
     SellSp500Action,
@@ -435,47 +426,6 @@ class PrivateEquitySaleActionRecord:
     month_index: int
     instruction: PrivateEquitySaleInstructionBatch
     sale_application: PrivateEquitySaleApplication
-
-
-def run_scenario_set_vectorized(
-    scenario_set: ScenarioSet,
-    *,
-    market_bundle: MarketBundle | None = None,
-    market_provider: MarketBundleProvider | None = None,
-) -> ScenarioSetRunResponse:
-    if market_bundle is None:
-        provider = market_provider or SimpleMarketBundleProvider()
-        market_bundle = sample_market_bundle_for_request(provider, scenario_set.market_request)
-    enabled_results: list[ScenarioResult] = []
-    for scenario in scenario_set.scenarios:
-        if not scenario.enabled:
-            enabled_results.append(_disabled_result(scenario))
-            continue
-        arrays = run_scenario_vectorized(scenario, market_bundle)
-        enabled_results.append(
-            ScenarioResult(
-                scenario_id=scenario.scenario_id,
-                scenario_label=scenario.label,
-                summary=_accepted_summary(scenario),
-                metric_fan_columns=arrays.metric_fan_columns(),
-                monthly_columns=arrays.monthly_columns(),
-                terminal_columns=arrays.terminal_columns(),
-                actions=arrays.actions,
-                policy_decisions=arrays.policy_decisions,
-                market_observations=arrays.market_observations,
-                ledger_entries=arrays.ledger_entries,
-                balance_snapshots=arrays.balance_snapshots,
-                accounting_details=arrays.accounting_details,
-            )
-        )
-    return ScenarioSetRunResponse(
-        scenario_set_id=scenario_set.scenario_set_id,
-        request=scenario_set,
-        market_request=scenario_set.market_request,
-        report_spec=scenario_set.report_spec,
-        market_metadata=market_bundle.metadata.to_json_dict(),
-        scenario_results=tuple(enabled_results),
-    )
 
 
 def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> ScenarioRunArrays:
@@ -2741,26 +2691,6 @@ def _pct_fraction(value: float, name: str) -> float:
     return value / 100
 
 
-def _accepted_summary(scenario: Scenario) -> ScenarioAcceptedSummary:
-    return ScenarioAcceptedSummary(
-        enabled=scenario.enabled,
-        property_id=scenario.property_selection.property_id,
-        location_id=scenario.location_id,
-        actor_count=len(scenario.actors),
-        event_count=len(scenario.events),
-        policy_count=len(scenario.policies),
-    )
-
-
-def _disabled_result(scenario: Scenario) -> ScenarioResult:
-    return ScenarioResult(
-        scenario_id=scenario.scenario_id,
-        scenario_label=scenario.label,
-        summary=_accepted_summary(scenario),
-        warnings=("scenario disabled",),
-    )
-
-
 def _flat(values: np.ndarray) -> list[float]:
     return values.reshape(-1).tolist()
 
@@ -2783,7 +2713,3 @@ def _fan_columns(values: np.ndarray) -> ColumnarTable:
     for index, percentile in enumerate(percentiles):
         columns[f"p{percentile:02d}"] = percentile_values[index].tolist()
     return ColumnarTable(row_count=int(matrix.shape[1]), columns=columns)
-
-
-def scenario_set_from_body(body: dict[str, Any]) -> ScenarioSet:
-    return ScenarioSet.model_validate(body)

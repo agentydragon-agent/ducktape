@@ -24,7 +24,7 @@ def _factor_sources(raw: dict[str, Any], key: str) -> dict[str, str]:
     value = raw.get(key)
     if not isinstance(value, dict) or not value:
         raise ValueError(f"projection_factor_sources.{key} must be a non-empty object")
-    return {str(factor_id): str(source_factor) for factor_id, source_factor in value.items()}
+    return {str(location_id): str(source_factor) for location_id, source_factor in value.items()}
 
 
 def build_projection_factor_maps(
@@ -37,14 +37,14 @@ def build_projection_factor_maps(
 
 
 def _build_factor_map(
-    path_by_factor: dict[str, list[float]], source_by_factor_id: dict[str, str], kind: str
+    path_by_factor: dict[str, list[float]], source_by_location_id: dict[str, str], kind: str
 ) -> dict[str, list[float]]:
     mapped: dict[str, list[float]] = {}
-    for factor_id, source_factor in source_by_factor_id.items():
+    for location_id, source_factor in source_by_location_id.items():
         try:
-            mapped[factor_id] = path_by_factor[source_factor]
+            mapped[location_id] = path_by_factor[source_factor]
         except KeyError as error:
             raise ValueError(
-                f"projection_factor_sources.{kind}.{factor_id} references unknown source factor {source_factor!r}"
+                f"projection_factor_sources.{kind}.{location_id} references unknown source factor {source_factor!r}"
             ) from error
     return mapped

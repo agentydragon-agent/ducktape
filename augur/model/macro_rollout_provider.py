@@ -79,7 +79,7 @@ class MacroRolloutProvider:
                 factor_name: [float(v) for v in path[:, factor_index]]
                 for factor_name, factor_index in self._factor_index.items()
             }
-            home_value_factor_multipliers, rent_factor_multipliers = build_projection_factor_maps(
+            home_value_paths_by_location, rent_paths_by_location = build_projection_factor_maps(
                 path_by_factor=path_by_factor, sources=self._projection_factor_sources
             )
             rollouts.append(
@@ -89,8 +89,8 @@ class MacroRolloutProvider:
                     portfolio_multipliers=path_by_factor[self._factor_names[sp500_idx]],
                     rent_multipliers=path_by_factor[self._factor_names[rent_idx]],
                     expense_inflation_multipliers=path_by_factor[self._factor_names[inflation_idx]],
-                    home_value_factor_multipliers=home_value_factor_multipliers,
-                    rent_factor_multipliers=rent_factor_multipliers,
+                    home_value_multipliers_by_location=home_value_paths_by_location,
+                    rent_multipliers_by_location=rent_paths_by_location,
                     mortgage30_rate_path=mortgage_path,
                     private_equity_path=PrivateEquityPath(
                         current_price_usd=self._current_private_equity_price_usd,

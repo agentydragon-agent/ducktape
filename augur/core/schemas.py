@@ -54,43 +54,6 @@ class PropertyRequest(InternalModel):
     tax_rate_override: float | None = None
 
 
-class Property(InternalModel):
-    """Full listing record. The frontend renders all of these fields; the
-    simulator only needs the subset on `PropertyRequest`."""
-
-    id: str
-    address: str
-    neighborhood: str
-    type: str
-    price_usd: float
-    zestimate_usd: float | None = None
-    rent_zestimate_usd: float | None = None
-    rent_source: str | None = None
-    beds: float
-    baths: float
-    sqft: float
-    year_built: int
-    hoa_monthly_usd: float = 0
-    annual_tax_on_list_usd: float | None = None
-    days_on_market: int | None = None
-    listing_status: str | None = None
-    source_url: str
-    image_url: str
-    notes: list[str] = Field(default_factory=list)
-    flags: list[str] = Field(default_factory=list)
-    tax_rate_override: float | None = None
-
-    def to_request(self) -> PropertyRequest:
-        return PropertyRequest(
-            id=self.id,
-            price_usd=self.price_usd,
-            beds=self.beds,
-            hoa_monthly_usd=self.hoa_monthly_usd,
-            rent_zestimate_usd=self.rent_zestimate_usd,
-            tax_rate_override=self.tax_rate_override,
-        )
-
-
 class KnobsConfig(ApiModel):
     down_payment_pct: float
     credit_score: float
@@ -171,15 +134,15 @@ class MarketMultipliers(InternalModel):
     """The base multiplier paths every macro rollout produces.
     Reused by `JointRolloutPath` (rollout input) and `MarketPath`
     (post-simulation output with derived CAGRs). Location-specific
-    home/rent factors ride in the factor maps below."""
+    home/rent paths ride in the location-keyed maps below."""
 
     home_value_multipliers: list[float]
     sale_home_value_multipliers: list[float]
     portfolio_multipliers: list[float]
     rent_multipliers: list[float]
     expense_inflation_multipliers: list[float]
-    home_value_factor_multipliers: dict[str, list[float]] = Field(default_factory=dict)
-    rent_factor_multipliers: dict[str, list[float]] = Field(default_factory=dict)
+    home_value_multipliers_by_location: dict[str, list[float]] = Field(default_factory=dict)
+    rent_multipliers_by_location: dict[str, list[float]] = Field(default_factory=dict)
     mortgage30_rate_path: list[float] = Field(default_factory=list)
 
 
