@@ -125,16 +125,6 @@ data "authentik_property_mapping_provider_scope" "profile" {
 # tofu-controller must adopt it into state before it can update
 # jwt_federation_providers declaratively.
 
-import {
-  to = authentik_provider_proxy.alloy_otlp
-  id = "19"
-}
-
-import {
-  to = authentik_application.alloy_otlp
-  id = "alloy-otlp"
-}
-
 resource "authentik_provider_proxy" "alloy_otlp" {
   name                = "alloy-otlp"
   external_host       = "https://alloy-otlp.allegedly.works"
