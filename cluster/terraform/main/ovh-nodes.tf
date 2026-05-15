@@ -1,5 +1,4 @@
-# OVH Eco Kimsufi KS-1 bare metal worker nodes (HIL, Hillsboro OR)
-# Xeon-D 1520 (4c/8t), 32GB RAM, 2×480GB SSD, ~$20/mo each
+# OVH Eco Kimsufi KS-5 bare metal worker nodes (HIL, Hillsboro OR)
 #
 # Talos is installed via OVH rescue mode (netboot → dd image to disk).
 # No Packer/snapshot mechanism available for OVH bare metal.
@@ -44,7 +43,7 @@ locals {
 resource "talos_image_factory_schematic" "kimsufi" {
   schematic = yamlencode({
     customization = {
-      # KS-1 has no physical display; we only see boot output via OVH IPMI SOL.
+      # KS-5 has no physical display; we only see boot output via OVH IPMI SOL.
       # Without console=ttyS0 every Talos boot log is invisible — silent reboot
       # loops mask whether the kernel even started.
       extraKernelArgs = [
@@ -172,8 +171,8 @@ resource "null_resource" "install_talos_kimsufi" {
     # feed dd zero bytes. `test -s` makes sure we actually got a raw image.
     # The Image Factory currently ships `metal-amd64.raw.zst`; older releases
     # used .xz, hence the URL-suffix switch.
-    # KS-1 has 32 GB RAM; /tmp on tmpfs has room for the ~1.5 GB raw image.
-    # /dev/sda is the KS-1 SATA SSD (verify with `lsblk` if cloning to other HW).
+    # KS-5 has 32 GB RAM; /tmp on tmpfs has room for the ~1.5 GB raw image.
+    # /dev/sda is the KS-5 SATA SSD (verify with `lsblk` if cloning to other HW).
     inline = [
       "set -ex",
       # OVH Debian rescue doesn't have zstd pre-installed; xz-utils is there.
