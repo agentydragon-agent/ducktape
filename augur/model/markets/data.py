@@ -31,7 +31,7 @@ from augur.model.market_data import (
 )
 from augur.model.markets.scenarios import HistoricalSeries
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "joint_config.example.json"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "market_config.example.json"
 
 
 def load_evidence(config_path: Path | None = None) -> tuple[HistoricalSeries, MarketEvidence]:

@@ -73,8 +73,8 @@ py_library(
 )
 
 py_library(
-    name = "rollout_server_py",
-    srcs = ["rollout_server.py"],
+    name = "http_server_py",
+    srcs = ["http_server.py"],
     deps = [
         ":augur_backend_py",
         ":config_py",
@@ -96,7 +96,7 @@ py_binary(
     ],
     deps = [
         ":config_py",
-        ":rollout_server_py",
+        ":http_server_py",
         "//util/bazel:runfiles",
     ],
 )

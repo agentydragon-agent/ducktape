@@ -21,7 +21,7 @@ See <SPEC.md> for the entity taxonomy + per-rollout evaluation loop.
 | `core/`         | Engine, typed entity / asset / policy / action / event model, real-estate math, scenario serialization, location regulation registry.                         |
 | `model/`        | Market models (Wilkie, VAR, VECM, DCC-GARCH, bootstrap) + macro market-bundle provider + loaders for FRED/Yahoo/Zillow public-data CSVs.                      |
 | `model/config/` | Public market-source CSVs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI) and market model config templates. Acquisition recipes in `source/SOURCES.md`. |
-| `app/`          | `AugurConfig` schema, `AugurBackend`, `rollout_server`, catalog/bootstrap-payload assembly, React app + Tailwind bundle build.                                |
+| `app/`          | `AugurConfig` schema, `AugurBackend`, HTTP server, catalog/bootstrap-payload assembly, React app + Tailwind bundle build.                                     |
 | `app/lib/`      | Frontend helpers: casing conversion, columnar table marshaling, scenario-set state, backend client.                                                           |
 
 ## Deployment integration

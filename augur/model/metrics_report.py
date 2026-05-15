@@ -63,7 +63,7 @@ def evaluate_all(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Augur: score every registered macro model on the metric battery.")
     parser.add_argument(
-        "--config", type=Path, default=None, help="path to joint_config.example.json (default: bundled)"
+        "--config", type=Path, default=None, help="path to market_config.example.json (default: bundled)"
     )
     parser.add_argument("--train-fraction", type=float, default=0.8)
     parser.add_argument("--rolling-min-train", type=int, default=60)

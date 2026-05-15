@@ -21,7 +21,7 @@ from augur.model.markets.registry import LABELS
 
 @pytest.fixture(params=LABELS)
 def provider(request: pytest.FixtureRequest) -> MacroMarketBundleProvider:
-    config_path = Path(__file__).resolve().parent / "config" / "joint_config.example.json"
+    config_path = Path(__file__).resolve().parent / "config" / "market_config.example.json"
     return MacroMarketBundleProvider.for_label(
         request.param, config_path=config_path, current_private_equity_price_usd=100.0
     )

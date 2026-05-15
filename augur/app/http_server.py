@@ -53,7 +53,7 @@ def create_app(
         max_rollout_samples=max_rollout_samples,
     )
     return create_augur_backend_app(
-        title="Augur rollout API",
+        title="Augur scenario API",
         static_path=lambda full_path: static_path_for_dist(dist_dir, full_path),
         bootstrap=augur_backend.bootstrap_payload,
         scenario_set_run=augur_backend.run_scenario_set_for_request_body,
