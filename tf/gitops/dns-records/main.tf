@@ -36,6 +36,16 @@ data "aws_route53_zone" "zone" {
   zone_id = var.route53_zone_id
 }
 
+import {
+  to = aws_route53_record.wildcard
+  id = "Z02901943N8ZFQFOD9P5I_*.allegedly.works_A"
+}
+
+import {
+  to = aws_route53_record.apex
+  id = "Z02901943N8ZFQFOD9P5I_allegedly.works_A"
+}
+
 # Wildcard A record — all subdomains resolve to VPS nodes
 resource "aws_route53_record" "wildcard" {
   #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
