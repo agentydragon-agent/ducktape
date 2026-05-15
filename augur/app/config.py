@@ -22,10 +22,22 @@ import yaml
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
 
 from augur.core.bootstrap import DefaultScenario
-from augur.core.finance import FinanceSnapshot
+from augur.core.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType
 from augur.core.schemas import ApiModel
+
+__all__ = [
+    "AgentDefinition",
+    "AugurConfig",
+    "ConcentratedHoldingSnapshot",
+    "FinanceSnapshot",
+    "LocationConfig",
+    "PersonalFinanceConfig",
+    "PropertySourceConfig",
+    "dump_augur_config_yaml",
+    "load_augur_config",
+]
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
