@@ -7,10 +7,11 @@ and derives display labels (actor policy, residence mode, rental use) from
 from __future__ import annotations
 
 from collections import Counter
+from urllib.parse import quote
 
 from pydantic import TypeAdapter
 
-from augur.app.config import AugurConfig, LocationConfig
+from augur.app.config import AugurConfig, LocationConfig, PropertyAssetConfig
 from augur.core.bootstrap import (
     ActorPolicyId,
     ActorPolicyOption,
@@ -133,6 +134,34 @@ def _validate_property_location(property_: Property, *, location_by_id: dict[str
         raise ValueError(f"property {property_.id!r} references unknown location {property_.location_id!r}")
 
 
+def _public_image_url(asset: PropertyAssetConfig, *, config: AugurConfig) -> str:
+    if asset.image_url is not None:
+        return str(asset.image_url)
+    asset_base_url = config.property_source.asset_base_url
+    if asset_base_url is None:
+        raise ValueError(f"property asset {asset.asset_id!r} has no image_url or asset_base_url")
+    return f"{str(asset_base_url).rstrip('/')}/{quote(asset.asset_id, safe='')}"
+
+
+def _apply_property_assets(config: AugurConfig, properties: tuple[Property, ...]) -> tuple[Property, ...]:
+    property_assets = config.property_source.property_assets
+    if not property_assets:
+        return properties
+
+    property_ids = {property_.id for property_ in properties}
+    unknown_property_ids = sorted(
+        asset.property_id for asset in property_assets if asset.property_id not in property_ids
+    )
+    if unknown_property_ids:
+        raise ValueError(f"property_assets reference unknown property ids: {unknown_property_ids}")
+
+    image_url_by_property_id = {asset.property_id: _public_image_url(asset, config=config) for asset in property_assets}
+    return tuple(
+        property_.model_copy(update={"image_url": image_url_by_property_id.get(property_.id, property_.image_url)})
+        for property_ in properties
+    )
+
+
 def _default_knobs_for_config(config: AugurConfig) -> ScenarioKnobs:
     starting_portfolio_usd = config.starting_portfolio_usd or config.snapshot.sp500_proxy_portfolio_usd
     return DEFAULT_KNOBS.model_copy(update={"starting_portfolio_usd": starting_portfolio_usd})
@@ -220,7 +249,7 @@ def _load_properties(config: AugurConfig, *, location_by_id: dict[str, Location]
     duplicate_ids = sorted(property_id for property_id, count in property_id_counts.items() if count > 1)
     if duplicate_ids:
         raise ValueError(f"{path} has duplicate property ids: {duplicate_ids}")
-    return properties
+    return _apply_property_assets(config, properties)
 
 
 def load_properties(config: AugurConfig) -> tuple[Property, ...]:

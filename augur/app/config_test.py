@@ -16,6 +16,7 @@ from augur.app.config import (
     FinanceSnapshot,
     LocationConfig,
     PersonalFinanceConfig,
+    PropertyAssetConfig,
     PropertySourceConfig,
     dump_augur_config_yaml,
     load_augur_config,
@@ -45,6 +46,45 @@ def test_minimal_config_validates_with_defaults() -> None:
     assert config.minimum_reserve_mode is LiquidityReserveRuleType.PROJECTED_DEFICITS
     assert config.reserve_forward_months == 12
     assert config.default_rollout_samples == 128
+
+
+def test_property_source_declares_stable_public_asset_urls() -> None:
+    source = PropertySourceConfig(
+        properties_path="/tmp/properties.json",
+        asset_base_url="https://assets.example.com/augur/property-images",
+        property_assets=(
+            PropertyAssetConfig(property_id="location_a_property", asset_id="location_a_hero"),
+            PropertyAssetConfig(
+                property_id="location_b_property",
+                asset_id="location_b_hero",
+                image_url="https://cdn.example.com/augur/location-b-hero.jpg",
+            ),
+        ),
+    )
+
+    assert str(source.asset_base_url).rstrip("/") == "https://assets.example.com/augur/property-images"
+    assert source.property_assets[0].asset_id == "location_a_hero"
+    assert str(source.property_assets[1].image_url) == "https://cdn.example.com/augur/location-b-hero.jpg"
+
+
+def test_property_asset_without_url_requires_asset_base_url() -> None:
+    with pytest.raises(ValidationError, match="asset_base_url"):
+        PropertySourceConfig(
+            properties_path="/tmp/properties.json",
+            property_assets=(PropertyAssetConfig(property_id="location_a_property", asset_id="location_a_hero"),),
+        )
+
+
+def test_property_asset_ids_must_be_unique() -> None:
+    with pytest.raises(ValidationError, match="duplicate property asset ids"):
+        PropertySourceConfig(
+            properties_path="/tmp/properties.json",
+            asset_base_url="https://assets.example.com/augur/property-images",
+            property_assets=(
+                PropertyAssetConfig(property_id="location_a_property", asset_id="shared_hero"),
+                PropertyAssetConfig(property_id="location_b_property", asset_id="shared_hero"),
+            ),
+        )
 
 
 def test_finance_snapshot_holdings_round_trip_through_json() -> None:
@@ -170,7 +210,14 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> Non
     (tmp_path / "config.yaml").write_text(
         dump_augur_config_yaml(
             _minimal_config(
-                property_source=PropertySourceConfig(properties_path=Path("properties.json"), asset_dir=Path("assets"))
+                property_source=PropertySourceConfig(
+                    properties_path=Path("properties.json"),
+                    asset_dir=Path("assets"),
+                    asset_base_url="https://assets.example.com/augur/property-images",
+                    property_assets=(
+                        PropertyAssetConfig(property_id="location_a_property", asset_id="location_a_hero"),
+                    ),
+                )
             )
         ),
         encoding="utf-8",
@@ -180,6 +227,9 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> Non
 
     assert reloaded.property_source.properties_path == (tmp_path / "properties.json").resolve()
     assert reloaded.property_source.asset_dir == (tmp_path / "assets").resolve()
+    assert (
+        str(reloaded.property_source.asset_base_url).rstrip("/") == "https://assets.example.com/augur/property-images"
+    )
 
 
 if __name__ == "__main__":

@@ -16,10 +16,11 @@ container reads).
 from __future__ import annotations
 
 import os
+from collections import Counter
 from pathlib import Path
 
 import yaml
-from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
+from pydantic import Field, HttpUrl, NonNegativeFloat, NonNegativeInt, PositiveInt, model_validator
 
 from augur.core.bootstrap import DefaultScenario
 from augur.core.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
@@ -34,6 +35,7 @@ __all__ = [
     "FinanceSnapshot",
     "LocationConfig",
     "PersonalFinanceConfig",
+    "PropertyAssetConfig",
     "PropertySourceConfig",
     "dump_augur_config_yaml",
     "load_augur_config",
@@ -41,6 +43,11 @@ __all__ = [
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
+
+
+def _duplicates(values) -> list[str]:
+    counts = Counter(values)
+    return sorted(value for value, count in counts.items() if count > 1)
 
 
 class AgentDefinition(ApiModel):
@@ -61,11 +68,48 @@ class PersonalFinanceConfig(ApiModel):
     default_partner_monthly_payment_usd: NonNegativeFloat = 0.0
 
 
+class PropertyAssetConfig(ApiModel):
+    """Deployment-owned public image address for one property.
+
+    `asset_id` is a stable identity, not a local file path. Deployments may map
+    it to any storage backend; the generic app only needs the resulting URL.
+    """
+
+    property_id: str = Field(min_length=1)
+    asset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    image_url: HttpUrl | None = None
+
+
 class PropertySourceConfig(ApiModel):
-    """Where to find the user's property shortlist + photos."""
+    """Where to find the user's property shortlist + public image URLs.
+
+    `asset_dir` is reserved for deployment-side composers that need local files.
+    The generic app does not serve it. Frontend-visible images come from
+    `property_assets`: either an explicit `image_url` per asset, or
+    `asset_base_url/{asset_id}` when `image_url` is omitted.
+    """
 
     properties_path: Path
     asset_dir: Path | None = None
+    asset_base_url: HttpUrl | None = None
+    property_assets: tuple[PropertyAssetConfig, ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_property_assets(self) -> PropertySourceConfig:
+        duplicate_property_ids = _duplicates(asset.property_id for asset in self.property_assets)
+        if duplicate_property_ids:
+            raise ValueError(f"duplicate property asset property_ids: {duplicate_property_ids}")
+
+        duplicate_asset_ids = _duplicates(asset.asset_id for asset in self.property_assets)
+        if duplicate_asset_ids:
+            raise ValueError(f"duplicate property asset ids: {duplicate_asset_ids}")
+
+        assets_missing_url = [asset.asset_id for asset in self.property_assets if asset.image_url is None]
+        if assets_missing_url and self.asset_base_url is None:
+            raise ValueError(
+                f"property_assets without image_url require property_source.asset_base_url: {assets_missing_url}"
+            )
+        return self
 
 
 class LocationConfig(ApiModel):
