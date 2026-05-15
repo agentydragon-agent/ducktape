@@ -27,12 +27,12 @@ class ActorPolicyProgram:
 
 
 @dataclass(frozen=True)
-class ActorPolicyStep:
+class ActorPolicyStep[PolicyT: _PolicyBase]:
     actor_index: int
     rule_index: int
     sequence_index: int
     actor_id: str
-    policy: Policy
+    policy: PolicyT
 
 
 @dataclass(frozen=True)
@@ -210,8 +210,8 @@ def actor_policy_programs(scenario: Scenario) -> tuple[ActorPolicyProgram, ...]:
     )
 
 
-def actor_policy_steps(programs: tuple[ActorPolicyProgram, ...]) -> tuple[ActorPolicyStep, ...]:
-    steps: list[ActorPolicyStep] = []
+def actor_policy_steps(programs: tuple[ActorPolicyProgram, ...]) -> tuple[ActorPolicyStep[Policy], ...]:
+    steps: list[ActorPolicyStep[Policy]] = []
     sequence_index = 0
     for actor_index, program in enumerate(programs):
         for rule_index, policy in enumerate(program.rules):
@@ -235,9 +235,19 @@ def enabled_rules_of_type[PolicyT: _PolicyBase](
 
 
 def policy_steps_of_type[PolicyT: _PolicyBase](
-    steps: tuple[ActorPolicyStep, ...], cls: type[PolicyT]
-) -> tuple[ActorPolicyStep, ...]:
-    return tuple(step for step in steps if isinstance(step.policy, cls))
+    steps: tuple[ActorPolicyStep[Policy], ...], cls: type[PolicyT]
+) -> tuple[ActorPolicyStep[PolicyT], ...]:
+    return tuple(
+        ActorPolicyStep(
+            actor_index=step.actor_index,
+            rule_index=step.rule_index,
+            sequence_index=step.sequence_index,
+            actor_id=step.actor_id,
+            policy=step.policy,
+        )
+        for step in steps
+        if isinstance(step.policy, cls)
+    )
 
 
 def checking_floor_sell_public_stock_instruction(

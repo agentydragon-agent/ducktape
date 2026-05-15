@@ -2247,7 +2247,7 @@ def _partner_equity_arrays(
     scenario: Scenario,
     market_bundle: MarketBundle,
     *,
-    partner_equity_steps: tuple[ActorPolicyStep, ...],
+    partner_equity_steps: tuple[ActorPolicyStep[PartnerEquityAccrualPolicy], ...],
     owner_initial_equity_usd: float,
     home_equity_usd: np.ndarray,
     mortgage_interest_usd: np.ndarray,
