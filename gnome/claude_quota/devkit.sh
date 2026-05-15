@@ -8,12 +8,12 @@
 # iteration only).
 #
 # Usage:
-#   bazelisk run //gnome-extensions/claude-quota:devkit
+#   bazelisk run //gnome/claude_quota:devkit
 #
 # Optional env:
 #   CLAUDE_QUOTA_FIXTURE=/path/to/fixture.json
 #       Skip real auth/HTTP and load the indicator from a fixture JSON
-#       (same hook used by //gnome-extensions/claude-quota:test_render).
+#       (same hook used by //gnome/claude_quota:test_render).
 set -euo pipefail
 
 # --- begin runfiles.bash initialization v3 ---
@@ -37,7 +37,7 @@ if ! command -v gnome-shell >/dev/null 2>&1; then
 fi
 
 # --- locate inputs ---------------------------------------------------------
-zip_path="$(rlocation "_main/gnome-extensions/claude-quota/claude-quota.zip")"
+zip_path="$(rlocation "_main/gnome/claude_quota/claude-quota.zip")"
 if [[ ! -f "$zip_path" ]]; then
   echo "ERROR: claude-quota.zip not found in runfiles at $zip_path" >&2
   exit 1

@@ -2,7 +2,7 @@
 pkgs.stdenv.mkDerivation {
   pname = "gnome-shell-extension-claude-quota";
   version = "1";
-  src = ../../gnome-extensions/claude-quota;
+  src = ../../gnome/claude_quota;
 
   nativeBuildInputs = [
     pkgs.jq

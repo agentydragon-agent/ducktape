@@ -41,7 +41,7 @@ _INFRA_GLOBS = ("devinfra/bazel*",)
 # so they don't require rebuilding the Nix package, and/or auto-detect packages
 # whose repo rules fail at fetch time and skip them gracefully.
 _EXCLUDED_PACKAGES = {
-    "gterm_theme"  # pycairo — requires dbus-1 system library not available everywhere
+    "gnome/gterm_theme"  # pycairo — requires dbus-1 system library not available everywhere
 }
 
 _PREFIX = "enforce-bazel-tests"

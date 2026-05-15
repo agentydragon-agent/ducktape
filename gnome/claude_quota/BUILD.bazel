@@ -63,7 +63,7 @@ py_test(
         ":claude-quota_zip",
         ":fixtures",
         ":snapshots",
-        "//gnome-extensions/test_image:gnome_shell_test",
+        "//gnome/test_image:gnome_shell_test",
     ],
     requires_docker = True,
     deps = [

@@ -1,7 +1,8 @@
-# gnome-extensions
+# gnome
 
-Custom GNOME Shell extensions for ducktape hosts. Extensions are packaged via
-`nix/packages/gnome-shell-<name>.nix` and wired into per-host home-manager config.
+Custom GNOME desktop utilities and Shell extensions for ducktape hosts.
+Extensions are packaged via `nix/packages/gnome-shell-<name>.nix` and wired
+into per-host home-manager config.
 
 ## Bazel-built distribution zip
 
@@ -11,13 +12,13 @@ UUID-prefixed subdir). Same artifact the test container, the local
 devkit launcher, and (eventually) the Nix release pipeline all consume:
 
 ```bash
-bazelisk build //gnome-extensions/claude-quota:claude-quota_zip
-# bazel-bin/gnome-extensions/claude-quota/claude-quota.zip
+bazelisk build //gnome/claude_quota:claude-quota_zip
+# bazel-bin/gnome/claude_quota/claude-quota.zip
 ```
 
 ## Local iteration: nested devkit shell
 
-`bazelisk run //gnome-extensions/claude-quota:devkit` builds the zip,
+`bazelisk run //gnome/claude_quota:devkit` builds the zip,
 unpacks it into `~/.local/share/gnome-shell/extensions/<uuid>/`,
 pre-enables the extension in dconf, and launches `gnome-shell --devkit
 --wayland`. Requires `gnome-shell` on the host PATH.
@@ -26,8 +27,8 @@ To preview a specific render state (same fixture format as the golden
 tests) without real auth/HTTP:
 
 ```bash
-CLAUDE_QUOTA_FIXTURE=$PWD/gnome-extensions/claude-quota/test_fixtures/both_warn.json \
-  bazelisk run //gnome-extensions/claude-quota:devkit
+CLAUDE_QUOTA_FIXTURE=$PWD/gnome/claude_quota/test_fixtures/both_warn.json \
+  bazelisk run //gnome/claude_quota:devkit
 ```
 
 ## Watch for errors
@@ -45,9 +46,9 @@ busctl --user call org.gnome.Shell /org/gnome/Shell \
 
 ## Golden render tests
 
-`//gnome-extensions/claude-quota:test_render` boots a real `gnome-shell`
+`//gnome/claude_quota:test_render` boots a real `gnome-shell`
 inside a Bazel-built test container
-(`//gnome-extensions/test_image:gnome_shell_test_image`; gnome-shell +
+(`//gnome/test_image:gnome_shell_test_image`; gnome-shell +
 Xvfb + dbus + scrot pulled hermetically via `rules_distroless` apt),
 unzips the distribution zip into the extension dir, launches one
 gnome-shell for the whole module, and uses the extension's test DBus
@@ -101,7 +102,7 @@ Format:
 ```bash
 # 1. Re-render every (fixture, view) with UPDATE_GOLDEN=1; PNGs land in
 #    undeclared outputs as <view>_<fixture>.png.
-bbr test //gnome-extensions/claude-quota:test_render \
+bbr test //gnome/claude_quota:test_render \
   --test_env=UPDATE_GOLDEN=1 \
   --remote_download_outputs=toplevel --nocache_test_results
 
@@ -111,12 +112,12 @@ for view in panel menu; do
   for f in both_ok both_cool both_warn both_hot \
            short_hot mixed error no_data; do
     bbapi artifact "$INV" "${view}_${f}.png" \
-      > gnome-extensions/claude-quota/__snapshots__/${view}_${f}.png
+      > gnome/claude_quota/__snapshots__/${view}_${f}.png
   done
 done
 
 # 3. Eyeball, commit, then re-run without UPDATE_GOLDEN to confirm green.
-bbr test //gnome-extensions/claude-quota:test_render
+bbr test //gnome/claude_quota:test_render
 ```
 
 On comparison failure the test writes

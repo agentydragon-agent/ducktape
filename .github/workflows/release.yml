@@ -53,8 +53,8 @@ jobs:
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
             tests: //difftree/... //git_commit_ai/... //gmail_archiver/... //mcp_infra/... //mcp_utils/... //openai_utils/...
           - pkg: gterm-theme
-            target: //gterm_theme:wheel
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
+            target: //gnome/gterm_theme:wheel
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
             tests: ""
           - pkg: skills
             target: //skills:all_skills_tar

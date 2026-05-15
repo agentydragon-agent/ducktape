@@ -27,7 +27,7 @@ py_binary(
 
 py_package(
     name = "gterm_theme_pkg",
-    packages = ["gterm_theme"],
+    packages = ["gnome.gterm_theme"],
     tags = ["manual"],
     deps = [":main"],
 )
@@ -36,7 +36,7 @@ py_wheel(
     name = "wheel",
     distribution = "gterm_theme",
     entry_points = {
-        "console_scripts": ["gterm-theme = gterm_theme.main:main"],
+        "console_scripts": ["gterm-theme = gnome.gterm_theme.main:main"],
     },
     python_requires = ">=3.11",
     requires = [

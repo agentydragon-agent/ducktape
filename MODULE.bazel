@@ -307,8 +307,8 @@ apt.install(
 # extension golden-render tests.
 apt.install(
     name = "gnome_shell_test",
-    lock = "//gnome-extensions/test_image:apt.lock.json",
-    manifest = "//gnome-extensions/test_image:apt.yaml",
+    lock = "//gnome/test_image:apt.lock.json",
+    manifest = "//gnome/test_image:apt.yaml",
 )
 use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_e2e", "trixie_jwt_rotation")
 
