@@ -3,6 +3,8 @@ kind: Kustomization
 metadata:
   name: claude-rbac
   namespace: flux-system
+  annotations:
+    description: Lightweight base for Claude agent sandbox. Sandbox namespace + ClusterRoles. Must not depend on service or database kustomizations.
 spec:
   interval: 10m
   path: ./cluster/k8s/agents/claude-rbac
@@ -13,7 +15,6 @@ spec:
   timeout: 2m
   dependsOn:
     - name: kyverno-policies
-    - name: langfuse-namespace
   healthChecks:
     - apiVersion: v1
       kind: Namespace
