@@ -53,7 +53,9 @@ py_library(
     deps = [
         ":local_regulation_py",
         ":scenario_set_py",
+        ":schemas_py",
         "@pypi//numpy",
+        "@pypi//pydantic",
     ],
 )
 
@@ -145,11 +147,6 @@ py_library(
         ":scenario_set_py",
         "@pypi//numpy",
     ],
-)
-
-py_library(
-    name = "static_py",
-    srcs = ["static.py"],
 )
 
 py_library(

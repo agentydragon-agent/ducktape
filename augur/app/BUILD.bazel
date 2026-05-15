@@ -78,13 +78,18 @@ py_library(
     deps = [
         ":augur_backend_py",
         ":config_py",
+        ":static_py",
         "//augur/core:backend_py",
         "//augur/core:market_bundle_py",
-        "//augur/core:static_py",
         "//augur/model:macro_market_bundle_provider_py",
         "//augur/model/markets:registry_py",
         "@pypi//uvicorn",
     ],
+)
+
+py_library(
+    name = "static_py",
+    srcs = ["static.py"],
 )
 
 py_binary(

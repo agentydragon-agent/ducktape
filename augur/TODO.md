@@ -51,12 +51,33 @@ second ordered roadmap.
       contradict each other.
 - [ ] Reduce single-property/global assumptions. Scenario-level `property_selection`, `financing`, `rental_plan`, and `tax_profile` should eventually become initial positions, per-property settings, or per-actor/accounting inputs as the simulator grows.
 - [ ] Replace built-in `LocationId` enum with database-like location entities, parallel to properties. A location should carry regulation/tax/modeling knobs that downstream regulation and tax code interprets, not require hardcoded enum extension.
+- [ ] Move local-regulation definitions toward config-driven data, likely YAML
+      or another reviewed structured format. The config should cover generic
+      knobs where possible while still being able to select location-specific
+      code paths for tax, regulation, or other behaviors that cannot be modeled
+      cleanly as data alone.
+- [ ] Move pure-data model inputs out of Python modules and into dumb parsed
+      configuration resources, such as Pydantic-parsed YAML loaded via runfiles
+      or `importlib.resources`. Tables/constants like those currently embedded
+      in `annual_tax.py` should be data unless the Python code is doing real
+      behavior.
+- [ ] Prefer Pydantic for serde and validation at API/config boundaries. Avoid
+      custom `to_json_dict()`-style conversion helpers except at narrow
+      compatibility seams.
 - [ ] Move evidence/model-fetching shapes out of core simulator API when touched. Core should consume calibrated market/provider inputs, not source-specific evidence objects.
+- [ ] Remove redundant `augur_` prefixes from internal module names such as
+      `augur.core.augur_accounting`; inside the `augur` package they add noise
+      without clarifying ownership.
 
 ## Tax Follow-Ups
 
 - [ ] Continue the annual federal + California tax model beyond sale taxes: qualified dividends, short-term gains, capital losses, rental income, deductible expenses, passive-loss release, SALT/property-tax treatment, California conformity/non-conformity, and ordinary income schedules beyond one annual `TaxProfile` value.
 - [ ] Convert taxes into a ledger/liability workflow with payment timing instead of only allocating annual incremental tax back to sale months.
+- [ ] Prefer yearly income/tax-lot ledgers with explicit tax settlement near
+      realistic payment dates over trying to account for every tax effect at
+      the moment income or a gain occurs. The settlement workflow should also
+      model cash management: pay from cash when possible, otherwise invoke an
+      explicit sale/financing policy to raise cash for the tax bill.
 - [ ] Keep stock-sale, PE-sale, and property-sale tax reconciliation in the Step 7 test set.
 - [ ] Replace user-entered flat marginal tax rates with bracket-aware tax
       accounting. Asking for a single "marginal tax rate" is a symptom that the

@@ -1,34 +1,27 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
+from pydantic import Field
 
 from augur.core.local_regulation import LocationId
 from augur.core.scenario_set import MarketRequest
+from augur.core.schemas import ApiModel
 
 
-@dataclass(frozen=True)
-class MarketBundleMetadata:
+class MarketBundleMetadata(ApiModel):
     market_model_id: str
     random_seed: int | None
     rollout_count: int
     horizon_months: int
     event_stream_ids: tuple[str, ...]
     notes: tuple[str, ...] = ()
-    source_metadata: dict[str, Any] = field(default_factory=dict)
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_json_dict(self) -> dict[str, object]:
-        return {
-            "market_model_id": self.market_model_id,
-            "random_seed": self.random_seed,
-            "rollout_count": self.rollout_count,
-            "horizon_months": self.horizon_months,
-            "event_stream_ids": list(self.event_stream_ids),
-            "notes": list(self.notes),
-            "source_metadata": self.source_metadata,
-        }
+        return self.model_dump(mode="json")
 
 
 @dataclass(frozen=True)

@@ -11,9 +11,9 @@ import uvicorn
 
 from augur.app.augur_backend import AugurBackend
 from augur.app.config import AugurConfig
+from augur.app.static import static_path_for_dist
 from augur.core.backend import create_augur_backend_app
 from augur.core.market_bundle import FlatMarketBundleProvider, MarketBundleProvider, SimpleMarketBundleProvider
-from augur.core.static import static_path_for_dist
 from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets.registry import LABELS
 
