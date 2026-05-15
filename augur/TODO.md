@@ -126,6 +126,19 @@ second ordered roadmap.
       percentile, and "liquid worth" is unclear wording. Prefer explicit,
       consistent labels such as `P50 liquid net worth` or whatever term the model
       settles on.
+- [ ] Add hover-driven trajectory inspection to distribution charts. The fan
+      chart should keep showing distribution envelopes and the central
+      median/mean line by default, but hovering should reveal the selected
+      rollout trajectory line without permanently rendering every rollout. While
+      hovered, distribution-page summary numbers should switch where meaningful
+      from aggregate values to that rollout's values, and time-sensitive values
+      should use the hovered x-coordinate/month. The hover detail should also
+      show the hovered trajectory's percentile at that point and, if practical,
+      lightly highlight the complementary percentile trajectory/range.
+- [ ] Restore richer distribution fan rendering. The current chart shows one
+      envelope range plus one middle line, but the earlier private prototype had
+      a fuller continuous-color fan showing more of the distribution. Consider
+      bringing that back after the distribution/trajectory structure settles.
 - [ ] Rework selected-path ledger detail toggles. The current chips above the
       ledger table are clunky UI sugar; a better shape would make aggregate
       columns expandable in place, similar to hidden columns in a spreadsheet:
