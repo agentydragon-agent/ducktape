@@ -71,6 +71,11 @@ second ordered roadmap.
       first split moved the liquidity/stock-sales panel into the trajectory view so
       "Final SP500" is sourced from the selected rollout instead of a terminal P50
       next to a path table; keep applying that rule as result helpers become typed.
+- [ ] Move property/location details out of result views. The property and
+      location card describes scenario input, not a distribution or a selected
+      trajectory. It should become part of shared scenario context, the left input
+      pane, or a dedicated property/details view rather than living under
+      distribution/trajectory results.
 - [ ] Add explicit comparison views for deltas between two scenario
       distributions. The simulator should not bake a baseline/counterfactual
       into each rollout; a delta view should compare two real scenarios, either
@@ -102,6 +107,19 @@ second ordered roadmap.
 - [ ] Make charts choose human-sensible axis ticks. Use a smart step heuristic
       so labels land on natural values like `$1,000`, `$2,000`, `$3,000` instead of
       awkward computed values such as `$1,247.20` or `$9,231.10`.
+- [ ] Add a top-level reporting toggle for nominal vs inflation-adjusted USD.
+      Amounts, charts, tables, and summary metrics should make clear whether
+      they are shown in nominal future dollars or real/inflation-adjusted
+      dollars.
+- [ ] Rework selected-path ledger detail toggles. The current chips above the
+      ledger table are clunky UI sugar; a better shape would make aggregate
+      columns expandable in place, similar to hidden columns in a spreadsheet:
+      e.g. `House costs total` expands in place into tax, insurance, HOA, and
+      maintenance subcolumns under the same table header.
+- [ ] Improve numeric table typography so digits align vertically under
+      corresponding digits. Use tabular numbers, monospace, or another
+      deliberate CSS treatment for numeric cells, especially in dense result
+      tables.
 - [ ] Key partner-equity reporting by partner actor or make it derivable from actor-keyed ledger entries. Aggregate scenario arrays are fine for charts but should not be the only public detail.
 - [ ] Reconsider whether to reintroduce per-component partner contribution reporting for interest, property tax, insurance, HOA, and maintenance.
 - [ ] Refresh `augur/SPEC.md` once policy execution, sale taxes, and one-rollout detail have stabilized.

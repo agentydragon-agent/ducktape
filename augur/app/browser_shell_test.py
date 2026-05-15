@@ -147,7 +147,7 @@ def _decode_url_state(page: Page) -> dict[str, Any] | None:
         return None
     padded_state = state + "=" * (-len(state) % 4)
     payload = json.loads(urlsafe_b64decode(padded_state.encode()).decode())
-    assert payload["version"] == 1
+    assert payload["version"] == 2
     return cast(dict[str, Any], payload["scenario_set_input"])
 
 
@@ -277,11 +277,11 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('rollout')") == "0"
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('scenario')") == "scenario_1"
 
-    page.get_by_role("button", name=re.compile("Sell SP500 at checking floor")).click()
+    page.get_by_role("radio", name=re.compile("Sell SP500 at checking floor")).click()
     page.get_by_label("SP500-like portfolio").fill("200000")
     page.get_by_text("SP500 sales").first.wait_for(state="visible", timeout=30_000)
 
-    page.get_by_role("button", name=re.compile("Agent A \\+ Agent B")).click()
+    page.get_by_role("radio", name=re.compile("Agent A \\+ Agent B")).click()
     page.get_by_text("Agent B contribution and equity").wait_for(state="visible", timeout=30_000)
     page.get_by_label("Scenario property").select_option("location_b_property")
     page.get_by_role("heading", name="Location B Property").wait_for(state="visible", timeout=30_000)
@@ -291,7 +291,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("Vacancy", exact=True).fill("9")
     page.get_by_label("Marginal tax rate").fill("37")
     page.get_by_label(re.compile("Private .* units")).fill("1000")
-    page.get_by_role("button", name=re.compile("Sell at liquid-worth floor")).click()
+    page.get_by_role("radio", name=re.compile("Sell at liquid-worth floor")).click()
     page.get_by_label("Liquid worth floor").fill("250000")
     page.get_by_label("Tender sale amount").fill("50000")
 
@@ -300,13 +300,13 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
         lambda state: bool(
             state.get("scenarios")
             and any(
-                scenario["property_id"] == "location_b_property"
-                and scenario["financing_mode"] == "custom"
-                and scenario["vacancy_pct"] == 9
-                and scenario["private_equity_units"] == 1000
-                and scenario["private_equity_sale_policy"] == "liquid_net_worth_floor"
-                and scenario["private_equity_liquid_net_worth_floor_usd"] == 250000
-                and scenario["private_equity_tender_sale_amount_usd"] == 50000
+                scenario["property_and_location"]["property_id"] == "location_b_property"
+                and scenario["financing"]["financing_mode"] == "custom"
+                and scenario["occupancy_and_rental"]["vacancy_pct"] == 9
+                and scenario["initial_balance_sheet"]["private_equity_units"] == 1000
+                and scenario["policies"]["private_equity_sale_policy"] == "liquid_net_worth_floor"
+                and scenario["policies"]["private_equity_liquid_net_worth_floor_usd"] == 250000
+                and scenario["policies"]["private_equity_tender_sale_amount_usd"] == 50000
                 for scenario in state["scenarios"]
             )
         ),
@@ -314,18 +314,19 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     rich_scenario = next(
         scenario
         for scenario in rich_state["scenarios"]
-        if scenario["property_id"] == "location_b_property" and scenario["financing_mode"] == "custom"
+        if scenario["property_and_location"]["property_id"] == "location_b_property"
+        and scenario["financing"]["financing_mode"] == "custom"
     )
-    assert rich_scenario["property_id"] == "location_b_property"
-    assert rich_scenario["financing_mode"] == "custom"
-    assert rich_scenario["down_payment_pct"] == 40
-    assert rich_scenario["custom_mortgage_rate"] == 7.35
-    assert rich_scenario["vacancy_pct"] == 9
-    assert rich_scenario["marginal_tax_rate"] == 37
-    assert rich_scenario["private_equity_units"] == 1000
-    assert rich_scenario["private_equity_sale_policy"] == "liquid_net_worth_floor"
-    assert rich_scenario["private_equity_liquid_net_worth_floor_usd"] == 250000
-    assert rich_scenario["private_equity_tender_sale_amount_usd"] == 50000
+    assert rich_scenario["property_and_location"]["property_id"] == "location_b_property"
+    assert rich_scenario["financing"]["financing_mode"] == "custom"
+    assert rich_scenario["financing"]["down_payment_pct"] == 40
+    assert rich_scenario["financing"]["custom_mortgage_rate"] == 7.35
+    assert rich_scenario["occupancy_and_rental"]["vacancy_pct"] == 9
+    assert rich_scenario["tax_accounting"]["marginal_tax_rate"] == 37
+    assert rich_scenario["initial_balance_sheet"]["private_equity_units"] == 1000
+    assert rich_scenario["policies"]["private_equity_sale_policy"] == "liquid_net_worth_floor"
+    assert rich_scenario["policies"]["private_equity_liquid_net_worth_floor_usd"] == 250000
+    assert rich_scenario["policies"]["private_equity_tender_sale_amount_usd"] == 50000
 
     assert page.get_by_text("Rai").count() == 0
     assert page.get_by_text("Auragon").count() == 0

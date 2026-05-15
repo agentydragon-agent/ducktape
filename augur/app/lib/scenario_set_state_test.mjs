@@ -6,6 +6,8 @@ import {
   decodeScenarioSetUrlState,
   encodeScenarioSetUrlState,
   normalizeScenarioSetInput,
+  patchScenarioInput,
+  scenarioInputView,
   scenarioSetInputToRequest,
 } from "./scenario_set_state.js";
 import { decamelizeObjectKeys } from "./casing.js";
@@ -121,23 +123,24 @@ const bootstrap = {
 
 test("default input creates comparable generic location scenarios", () => {
   const input = createDefaultScenarioSetInput(bootstrap);
+  const firstScenario = scenarioInputView(input.scenarios[0]);
+  const secondScenario = scenarioInputView(input.scenarios[1]);
 
   assert.equal(input.scenarios.length, 2);
-  assert.equal(input.scenarios[0].propertyId, "location_a_property");
-  assert.equal(input.scenarios[0].initialCheckingUsd, 25_000);
-  assert.equal(input.scenarios[0].startingPortfolioUsd, 100_000);
-  assert.equal(input.scenarios[0].privateEquityValueUsd, 10_000);
-  assert.equal(input.scenarios[0].privateEquityUnits, 500);
-  assert.equal(input.scenarios[0].privateEquitySalePolicy, "none");
-  assert.equal(input.scenarios[1].propertyId, "location_b_property");
-  assert.equal(input.scenarios[1].actorPolicy, "owner_plus_partner");
+  assert.equal(firstScenario.propertyId, "location_a_property");
+  assert.equal(firstScenario.initialCheckingUsd, 25_000);
+  assert.equal(firstScenario.startingPortfolioUsd, 100_000);
+  assert.equal(firstScenario.privateEquityValueUsd, 10_000);
+  assert.equal(firstScenario.privateEquityUnits, 500);
+  assert.equal(firstScenario.privateEquitySalePolicy, "none");
+  assert.equal(secondScenario.propertyId, "location_b_property");
+  assert.equal(secondScenario.actorPolicy, "owner_plus_partner");
   assert.equal(input.marketRequest.randomSeed, 0);
 });
 
 test("scenario set request is canonical backend input after decamelizing", () => {
   const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
-  input.scenarios[0] = {
-    ...input.scenarios[0],
+  input.scenarios[0] = patchScenarioInput(input.scenarios[0], {
     liquidReservePolicy: "checking_floor_sp500",
     rentalUsePolicy: "rent_rooms_while_owner_lives_there",
     financingMode: "custom",
@@ -164,7 +167,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     privateEquitySalePolicy: "liquid_net_worth_floor",
     privateEquityLiquidNetWorthFloorUsd: 300_000,
     privateEquityTenderSaleAmountUsd: 75_000,
-  };
+  });
   const request = scenarioSetInputToRequest(input, bootstrap);
   const backendRequest = decamelizeObjectKeys(request);
   const firstScenario = backendRequest.scenarios[0];
@@ -252,15 +255,14 @@ test("URL state round-trips only input state", () => {
 
   assert.deepEqual(decoded.scenarioResults, undefined);
   assert.deepEqual(decoded.scenarios[0].backendResult, undefined);
-  assert.equal(decoded.scenarios[0].propertyId, "location_a_property");
-  assert.equal(decoded.scenarios[0].customMortgageRate, undefined);
-  assert.equal(decoded.scenarios[0].customMortgageTermYears, undefined);
+  assert.equal(decoded.scenarios[0].propertyAndLocation.propertyId, "location_a_property");
+  assert.equal(decoded.scenarios[0].financing.customMortgageRate, undefined);
+  assert.equal(decoded.scenarios[0].financing.customMortgageTermYears, undefined);
 });
 
 test("URL state round-trips rich scenario controls in camelCase", () => {
   const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
-  input.scenarios[0] = {
-    ...input.scenarios[0],
+  input.scenarios[0] = patchScenarioInput(input.scenarios[0], {
     financingMode: "custom",
     downPaymentPct: 35,
     customMortgageRate: 7.125,
@@ -272,22 +274,25 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
     privateEquitySalePolicy: "liquid_net_worth_floor",
     privateEquityLiquidNetWorthFloorUsd: 250_000,
     privateEquityTenderSaleAmountUsd: 60_000,
-  };
+  });
 
   const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
 
-  assert.equal(decoded.scenarios[0].financingMode, "custom");
-  assert.equal(decoded.scenarios[0].downPaymentPct, 35);
-  assert.equal(decoded.scenarios[0].customMortgageRate, 7.125);
-  assert.equal(decoded.scenarios[0].customMortgageTermYears, 20);
-  assert.equal(decoded.scenarios[0].marginalTaxRate, 39);
-  assert.equal(decoded.scenarios[0].vacancyPct, 7);
-  assert.equal(decoded.scenarios[0].privateEquityValueUsd, undefined);
-  assert.equal(decoded.scenarios[0].privateEquityUnits, 1_234);
-  assert.equal(decoded.scenarios[0].privateEquitySalePolicy, "liquid_net_worth_floor");
-  assert.equal(decoded.scenarios[0].privateEquityLiquidNetWorthFloorUsd, 250_000);
-  assert.equal(decoded.scenarios[0].privateEquityTenderSaleAmountUsd, 60_000);
-  assert.equal(normalizeScenarioSetInput(decoded, bootstrap).scenarios[0].privateEquityValueUsd, 24_680);
+  assert.equal(decoded.scenarios[0].financing.financingMode, "custom");
+  assert.equal(decoded.scenarios[0].financing.downPaymentPct, 35);
+  assert.equal(decoded.scenarios[0].financing.customMortgageRate, 7.125);
+  assert.equal(decoded.scenarios[0].financing.customMortgageTermYears, 20);
+  assert.equal(decoded.scenarios[0].taxAccounting.marginalTaxRate, 39);
+  assert.equal(decoded.scenarios[0].occupancyAndRental.vacancyPct, 7);
+  assert.equal(decoded.scenarios[0].initialBalanceSheet.privateEquityValueUsd, undefined);
+  assert.equal(decoded.scenarios[0].initialBalanceSheet.privateEquityUnits, 1_234);
+  assert.equal(decoded.scenarios[0].policies.privateEquitySalePolicy, "liquid_net_worth_floor");
+  assert.equal(decoded.scenarios[0].policies.privateEquityLiquidNetWorthFloorUsd, 250_000);
+  assert.equal(decoded.scenarios[0].policies.privateEquityTenderSaleAmountUsd, 60_000);
+  assert.equal(
+    scenarioInputView(normalizeScenarioSetInput(decoded, bootstrap).scenarios[0]).privateEquityValueUsd,
+    24_680
+  );
 });
 
 test("URL state normalizes missing trajectory seed to deterministic default", () => {

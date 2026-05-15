@@ -1,5 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Collapse, MantineProvider, Tabs } from "@mantine/core";
+import {
+  ActionIcon,
+  Button,
+  Checkbox,
+  Collapse,
+  Group,
+  MantineProvider,
+  NativeSelect,
+  NumberInput,
+  Radio,
+  Stack,
+  Tabs,
+  Text,
+  TextInput,
+} from "@mantine/core";
 
 import { rowsFromCamelColumnar } from "./lib/columnar.js";
 import {
@@ -7,8 +21,10 @@ import {
   createDefaultScenarioSetInput,
   createScenarioInput,
   normalizeScenarioSetInput,
+  patchScenarioInput,
   privateEquityCurrentUnitPriceUsd,
   privateEquityValueUsdForUnits,
+  scenarioInputView,
   scenarioSetInputFromUrlSearch,
   scenarioSetInputToRequest,
   searchWithScenarioSetInput,
@@ -89,12 +105,81 @@ function searchWithAppState(search, input, selectedScenarioId, selectedRolloutIn
   return encoded ? `?${encoded}` : "";
 }
 
+function scenarioIdOf(scenario) {
+  return scenarioInputView(scenario).scenarioId;
+}
+
+function scenarioPatch(scenarioSetInput, scenarioId, patch) {
+  return {
+    ...scenarioSetInput,
+    scenarios: scenarioSetInput.scenarios.map((scenario) =>
+      scenarioIdOf(scenario) === scenarioId ? patchScenarioInput(scenario, patch) : scenario
+    ),
+  };
+}
+
 function scenarioUsesCheckingFloorPolicy(scenario) {
-  return scenario?.liquidReservePolicy === CHECKING_FLOOR_POLICY_ID;
+  return scenarioInputView(scenario).liquidReservePolicy === CHECKING_FLOOR_POLICY_ID;
 }
 
 function scenarioSetUsesCheckingFloorPolicy(scenarioSetInput) {
   return (scenarioSetInput?.scenarios ?? []).some(scenarioUsesCheckingFloorPolicy);
+}
+
+function assertResultViewKind(view, kind) {
+  if (view?.kind !== kind) {
+    throw new Error(`Expected ${kind} Augur result view, got ${view?.kind ?? "<missing>"}`);
+  }
+}
+
+function rolloutIndexesFromRows(rows) {
+  return [...new Set(rows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
+    (left, right) => left - right
+  );
+}
+
+function selectedRolloutFromRows(rows, requestedRolloutIndex) {
+  const rolloutIndexes = rolloutIndexesFromRows(rows);
+  const rolloutIndex = rolloutIndexes.includes(requestedRolloutIndex)
+    ? requestedRolloutIndex
+    : (rolloutIndexes[0] ?? 0);
+  return {
+    rolloutIndexes,
+    rolloutIndex,
+    rows: rows.filter((row) => Number(row.rolloutIndex) === rolloutIndex),
+  };
+}
+
+function distributionResultView(scenarioResult) {
+  return {
+    kind: "distribution",
+    scenarioResult,
+    metricFanRows: (metricName) => metricFanRows(scenarioResult, metricName),
+    metricFanTerminal: (metricName) => metricFanTerminal(scenarioResult, metricName),
+    terminalRows: () => terminalRows(scenarioResult),
+    terminalP50: (column) => terminalP50(scenarioResult, column),
+  };
+}
+
+function trajectoryResultView(scenarioResult, selectedRolloutIndex) {
+  const monthlyRows = rowsFromTable(scenarioResult?.monthlyColumns);
+  const selected = selectedRolloutFromRows(monthlyRows, selectedRolloutIndex);
+  return {
+    kind: "trajectory",
+    scenarioResult,
+    monthlyRows,
+    rolloutIndexes: selected.rolloutIndexes,
+    rolloutIndex: selected.rolloutIndex,
+    rolloutRows: selected.rows,
+  };
+}
+
+function accountingDetailResultView(scenarioResult, selectedRolloutIndex) {
+  const trajectory = trajectoryResultView(scenarioResult, selectedRolloutIndex);
+  return {
+    ...trajectory,
+    kind: "accounting_detail",
+  };
 }
 
 function fmtUsd(value) {
@@ -250,32 +335,29 @@ function scenarioFanRows(result, scenarioId, metricName) {
 
 function OptionButtons({ label, options, value, onChange }) {
   return (
-    <div>
-      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-        {label}
-      </div>
-      <div className="grid gap-2">
+    <Radio.Group value={value} onChange={onChange} label={label} classNames={{ label: "augur-field-label mb-2 block" }}>
+      <Stack gap="xs">
         {options.map((option) => {
-          const selected = option.id === value;
           return (
-            <button
-              key={option.id}
-              type="button"
-              className={`rounded-lg border px-3 py-2 text-left transition ${
-                selected
-                  ? "border-blue-500 bg-blue-50 text-blue-950 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-100"
-                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500"
-              }`}
-              aria-pressed={selected}
-              onClick={() => onChange(option.id)}
-            >
-              <div className="text-sm font-semibold">{option.label}</div>
-              <div className="mt-1 text-xs leading-snug text-slate-500 dark:text-slate-400">{option.description}</div>
-            </button>
+            <Radio.Card key={option.id} value={option.id} radius="md" p="sm" withBorder>
+              <Group wrap="nowrap" align="flex-start" gap="sm">
+                <Radio.Indicator mt={2} />
+                <Stack gap={2} className="min-w-0">
+                  <Text size="sm" fw={650} lh={1.2}>
+                    {option.label}
+                  </Text>
+                  {option.description && (
+                    <Text size="xs" c="dimmed" lh={1.25}>
+                      {option.description}
+                    </Text>
+                  )}
+                </Stack>
+              </Group>
+            </Radio.Card>
           );
         })}
-      </div>
-    </div>
+      </Stack>
+    </Radio.Group>
   );
 }
 
@@ -285,32 +367,22 @@ function ControlGrid({ children, className = "" }) {
 
 function NumberField({ label, value, onChange, min = 0, step = 1000, prefix = null, suffix = null }) {
   return (
-    <label className="block">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-        {label}
-      </div>
-      <div className="flex min-w-0 items-center">
-        {prefix && (
-          <span className="flex h-9 shrink-0 items-center rounded-l-md border border-r-0 border-slate-200 bg-slate-50 px-2 text-sm augur-muted dark:border-slate-700 dark:bg-slate-800">
-            {prefix}
-          </span>
-        )}
-        <input
-          className={`augur-input min-w-0 flex-1 ${prefix ? "rounded-l-none" : ""} ${suffix ? "rounded-r-none" : ""}`}
-          type="number"
-          aria-label={label}
-          min={min}
-          step={step}
-          value={value ?? ""}
-          onChange={(event) => onChange(Number(event.target.value))}
-        />
-        {suffix && (
-          <span className="flex h-9 shrink-0 items-center rounded-r-md border border-l-0 border-slate-200 bg-slate-50 px-2 text-xs augur-muted dark:border-slate-700 dark:bg-slate-800">
-            {suffix}
-          </span>
-        )}
-      </div>
-    </label>
+    <NumberInput
+      label={label}
+      aria-label={label}
+      min={min}
+      step={step}
+      value={value ?? ""}
+      leftSection={prefix}
+      rightSection={suffix}
+      rightSectionWidth={suffix ? Math.max(42, String(suffix).length * 8 + 18) : undefined}
+      thousandSeparator=","
+      classNames={{ label: "augur-field-label mb-2 block" }}
+      onChange={(nextValue) => {
+        const number = typeof nextValue === "number" ? nextValue : Number(nextValue);
+        onChange(Number.isFinite(number) ? number : null);
+      }}
+    />
   );
 }
 
@@ -332,23 +404,14 @@ function ReadOnlyMetricField({ label, value, detail = null }) {
 
 function SelectField({ label, value, onChange, options }) {
   return (
-    <label className="block">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-        {label}
-      </div>
-      <select
-        className="augur-select w-full text-sm"
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <NativeSelect
+      label={label}
+      aria-label={label}
+      value={value}
+      data={options.map((option) => ({ value: option.id, label: option.label }))}
+      classNames={{ label: "augur-field-label mb-2 block" }}
+      onChange={(event) => onChange(event.target.value)}
+    />
   );
 }
 
@@ -379,14 +442,14 @@ function ResultKindBadge({ kind }) {
   );
 }
 
-function ResultPanelHeader({ kind, title, subtitle = null, actions = null }) {
+function ResultPanelHeader({ kind, title, subtitle = null, actions = null, showKindBadge = true }) {
   return (
     <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <div className="augur-eyebrow">{title}</div>
-            <ResultKindBadge kind={kind} />
+            {showKindBadge && <ResultKindBadge kind={kind} />}
           </div>
           {subtitle && <div className="mt-1 text-sm augur-muted">{subtitle}</div>}
         </div>
@@ -396,11 +459,17 @@ function ResultPanelHeader({ kind, title, subtitle = null, actions = null }) {
   );
 }
 
-function ResultPanel({ kind, title, subtitle = null, actions = null, children, className = "" }) {
+function ResultPanel({ kind, title, subtitle = null, actions = null, children, className = "", showKindBadge = true }) {
   assertResultPanelKind(kind);
   return (
     <section className={`augur-card overflow-hidden ${className}`} data-result-panel-kind={kind}>
-      <ResultPanelHeader kind={kind} title={title} subtitle={subtitle} actions={actions} />
+      <ResultPanelHeader
+        kind={kind}
+        title={title}
+        subtitle={subtitle}
+        actions={actions}
+        showKindBadge={showKindBadge}
+      />
       {children}
     </section>
   );
@@ -434,15 +503,16 @@ function ResultDisclosurePanel({ kind, title, subtitle = null, summary = null, c
   );
 }
 
-function ScenarioValueSummary({ scenarioResult }) {
-  if (!scenarioResult?.terminalColumns) {
+function ScenarioValueSummary({ distribution }) {
+  assertResultViewKind(distribution, "distribution");
+  if (!distribution.scenarioResult?.terminalColumns) {
     return <div className="augur-note">Scenario details are waiting for central scenario-engine results.</div>;
   }
   const rows = [
-    ["Net worth P50", fmtUsd(metricFanTerminal(scenarioResult, "netWorthUsd")?.p50)],
-    ["Cash P50", fmtUsd(metricFanTerminal(scenarioResult, "cashUsd")?.p50)],
-    ["Liquid worth P50", fmtUsd(metricFanTerminal(scenarioResult, "liquidNetWorthUsd")?.p50)],
-    ["Home equity P50", fmtUsd(metricFanTerminal(scenarioResult, "homeEquityUsd")?.p50)],
+    ["Net worth P50", fmtUsd(distribution.metricFanTerminal("netWorthUsd")?.p50)],
+    ["Cash P50", fmtUsd(distribution.metricFanTerminal("cashUsd")?.p50)],
+    ["Liquid worth P50", fmtUsd(distribution.metricFanTerminal("liquidNetWorthUsd")?.p50)],
+    ["Home equity P50", fmtUsd(distribution.metricFanTerminal("homeEquityUsd")?.p50)],
   ];
   return (
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-result-panel-kind="distribution">
@@ -500,10 +570,11 @@ function PortfolioSnapshotPanel({ bootstrap }) {
 
 function PropertyLocationPanel({ selection, kind = "distribution" }) {
   const { property, location, scenario, scenarioResult } = selection;
+  const scenarioView = scenarioInputView(scenario);
   if (!property) return null;
   const localRegulation = location?.localRegulation ?? {};
   return (
-    <ResultPanel kind={kind} title="Property and location">
+    <ResultPanel kind={kind} title="Property and location" showKindBadge={kind === "distribution"}>
       <div className="grid min-w-0 gap-4 p-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
           {property.imageUrl ? (
@@ -527,8 +598,8 @@ function PropertyLocationPanel({ selection, kind = "distribution" }) {
               ["Local transfer tax", fmtPct((localRegulation.localTransferTaxPct ?? NaN) / 100)],
               ["Special assessment", `${fmtUsd(localRegulation.specialAssessmentAnnualUsd ?? 0)} / yr`],
               ["Location id", scenarioResult?.summary?.locationId ?? property.locationId ?? "n/a"],
-              ["Hold period", scenario ? `${fmtNumber(scenario.holdYears)} yr` : "n/a"],
-              ["Marginal tax rate", scenario ? fmtPct(scenario.marginalTaxRate / 100) : "n/a"],
+              ["Hold period", scenario ? `${fmtNumber(scenarioView.holdYears)} yr` : "n/a"],
+              ["Marginal tax rate", scenario ? fmtPct(scenarioView.marginalTaxRate / 100) : "n/a"],
             ]}
           />
         </div>
@@ -537,8 +608,9 @@ function PropertyLocationPanel({ selection, kind = "distribution" }) {
   );
 }
 
-function TerminalPercentileSnapshot({ scenarioResult }) {
-  if (!scenarioResult?.metricFanColumns) return null;
+function TerminalPercentileSnapshot({ distribution }) {
+  assertResultViewKind(distribution, "distribution");
+  if (!distribution.scenarioResult?.metricFanColumns) return null;
   const rows = [
     ["Net worth", "netWorthUsd", fmtUsd],
     ["Liquid net worth", "liquidNetWorthUsd", fmtUsd],
@@ -553,7 +625,7 @@ function TerminalPercentileSnapshot({ scenarioResult }) {
     ["Partner equity", "partnerHomeEquityClaimUsd", fmtUsd],
     ["Partner ownership", "partnerOwnershipPct", fmtPct],
   ]
-    .map(([label, metricName, formatter]) => [label, metricFanTerminal(scenarioResult, metricName), formatter])
+    .map(([label, metricName, formatter]) => [label, distribution.metricFanTerminal(metricName), formatter])
     .filter(([, row]) => row);
   return (
     <ResultPanel kind="distribution" title="Terminal rollout percentiles">
@@ -583,17 +655,12 @@ function TerminalPercentileSnapshot({ scenarioResult }) {
   );
 }
 
-function ScenarioPathPreview({ scenarioResult, selectedRolloutIndex }) {
-  const monthlyRows = rowsFromTable(scenarioResult?.monthlyColumns);
-  const rolloutIndexes = [...new Set(monthlyRows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
-    (left, right) => left - right
-  );
-  const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
-  const rows = monthlyRows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
-  const annualRows = rows.filter((row) => row.monthIndex % 12 === 0).slice(0, 8);
+function ScenarioPathPreview({ trajectory }) {
+  assertResultViewKind(trajectory, "trajectory");
+  const annualRows = trajectory.rolloutRows.filter((row) => row.monthIndex % 12 === 0).slice(0, 8);
   if (annualRows.length === 0) return null;
   return (
-    <ResultPanel kind="trajectory" title="Trajectory annual snapshot">
+    <ResultPanel kind="trajectory" title="Trajectory annual snapshot" showKindBadge={false}>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -630,12 +697,14 @@ function ScenarioPathPreview({ scenarioResult, selectedRolloutIndex }) {
   );
 }
 
-function SaleTaxLoanPanel({ selection }) {
-  const { property, scenario, scenarioResult } = selection;
-  const rows = terminalRows(scenarioResult);
+function SaleTaxLoanPanel({ selection, distribution }) {
+  const { property, scenario } = selection;
+  const scenarioView = scenarioInputView(scenario);
+  assertResultViewKind(distribution, "distribution");
+  const rows = distribution.terminalRows();
   if (rows.length === 0) return null;
-  const purchasePrice = Number(property?.priceUsd ?? property?.purchasePriceUsd ?? scenario?.purchasePriceUsd);
-  const downPaymentPct = Number(scenario?.downPaymentPct);
+  const purchasePrice = Number(property?.priceUsd ?? property?.purchasePriceUsd);
+  const downPaymentPct = Number(scenarioView.downPaymentPct);
   const downPayment =
     Number.isFinite(purchasePrice) && Number.isFinite(downPaymentPct) ? purchasePrice * (downPaymentPct / 100) : NaN;
   const loanAmount =
@@ -646,36 +715,33 @@ function SaleTaxLoanPanel({ selection }) {
         rows={[
           ["Purchase price", fmtUsd(purchasePrice)],
           ["Down payment", fmtUsd(downPayment)],
-          ["Purchase closing costs", fmtUsd(terminalP50(scenarioResult, "totalPurchaseClosingCostUsd"))],
+          ["Purchase closing costs", fmtUsd(distribution.terminalP50("totalPurchaseClosingCostUsd"))],
           ["Loan amount", fmtUsd(loanAmount)],
-          ["Final loan balance", fmtUsd(terminalP50(scenarioResult, "finalMortgageBalanceUsd"))],
-          ["Terminal home value", fmtUsd(terminalP50(scenarioResult, "finalPropertyValueUsd"))],
-          ["Sale gross", fmtUsd(terminalP50(scenarioResult, "totalPropertySaleGrossUsd"))],
-          ["Selling costs", fmtUsd(terminalP50(scenarioResult, "totalSaleClosingCostUsd"))],
-          ["Debt payoff", fmtUsd(terminalP50(scenarioResult, "totalPropertySaleDebtPayoffUsd"))],
-          ["Sale tax", fmtUsd(terminalP50(scenarioResult, "totalPropertySaleTaxUsd"))],
-          ["Realized gain", fmtUsd(terminalP50(scenarioResult, "totalRealizedPropertyGainUsd"))],
-          ["Taxable gain", fmtUsd(terminalP50(scenarioResult, "totalTaxablePropertyGainUsd"))],
-          ["Depreciation recapture", fmtUsd(terminalP50(scenarioResult, "totalDepreciationRecaptureUsd"))],
-          ["Cumulative depreciation", fmtUsd(terminalP50(scenarioResult, "finalCumulativePropertyDepreciationUsd"))],
-          ["Net sale proceeds", fmtUsd(terminalP50(scenarioResult, "totalPropertySaleNetProceedsUsd"))],
-          ["Net sale cash flow", fmtUsd(terminalP50(scenarioResult, "totalNetPropertySaleCashFlowUsd"))],
+          ["Final loan balance", fmtUsd(distribution.terminalP50("finalMortgageBalanceUsd"))],
+          ["Terminal home value", fmtUsd(distribution.terminalP50("finalPropertyValueUsd"))],
+          ["Sale gross", fmtUsd(distribution.terminalP50("totalPropertySaleGrossUsd"))],
+          ["Selling costs", fmtUsd(distribution.terminalP50("totalSaleClosingCostUsd"))],
+          ["Debt payoff", fmtUsd(distribution.terminalP50("totalPropertySaleDebtPayoffUsd"))],
+          ["Sale tax", fmtUsd(distribution.terminalP50("totalPropertySaleTaxUsd"))],
+          ["Realized gain", fmtUsd(distribution.terminalP50("totalRealizedPropertyGainUsd"))],
+          ["Taxable gain", fmtUsd(distribution.terminalP50("totalTaxablePropertyGainUsd"))],
+          ["Depreciation recapture", fmtUsd(distribution.terminalP50("totalDepreciationRecaptureUsd"))],
+          ["Cumulative depreciation", fmtUsd(distribution.terminalP50("finalCumulativePropertyDepreciationUsd"))],
+          ["Net sale proceeds", fmtUsd(distribution.terminalP50("totalPropertySaleNetProceedsUsd"))],
+          ["Net sale cash flow", fmtUsd(distribution.terminalP50("totalNetPropertySaleCashFlowUsd"))],
         ]}
       />
     </ResultPanel>
   );
 }
 
-function PartnerOwnershipPanel({ scenarioResult, bootstrap, selectedRolloutIndex }) {
+function PartnerOwnershipPanel({ trajectory, bootstrap }) {
+  assertResultViewKind(trajectory, "trajectory");
   const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
   const partnerLabel = partner?.label ?? "Partner";
-  const rows = rowsFromTable(scenarioResult?.monthlyColumns);
+  const rows = trajectory.monthlyRows;
   if (rows.length === 0) return null;
-  const rolloutIndexes = [...new Set(rows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
-    (left, right) => left - right
-  );
-  const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
-  const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
+  const rolloutRows = trajectory.rolloutRows;
   const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
   const terminalRow = rolloutRows.at(-1) ?? null;
   const hasAuragon = rows.some(
@@ -687,7 +753,7 @@ function PartnerOwnershipPanel({ scenarioResult, bootstrap, selectedRolloutIndex
     0
   );
   return (
-    <ResultPanel kind="trajectory" title={`Trajectory ${partnerLabel} contribution and equity`}>
+    <ResultPanel kind="trajectory" title={`Trajectory ${partnerLabel} contribution and equity`} showKindBadge={false}>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           ["Path contribution", fmtUsd(firstPathContribution)],
@@ -734,18 +800,14 @@ function PartnerOwnershipPanel({ scenarioResult, bootstrap, selectedRolloutIndex
   );
 }
 
-function LiquidityPolicyPanel({ scenarioResult, selectedRolloutIndex }) {
-  const rows = rowsFromTable(scenarioResult?.monthlyColumns);
-  if (rows.length === 0) return null;
-  const rolloutIndexes = [...new Set(rows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
-    (left, right) => left - right
-  );
-  const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
-  const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
+function LiquidityPolicyPanel({ trajectory }) {
+  assertResultViewKind(trajectory, "trajectory");
+  const rolloutRows = trajectory.rolloutRows;
+  if (rolloutRows.length === 0) return null;
   const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
   const terminalRow = rolloutRows.at(-1) ?? null;
   return (
-    <ResultPanel kind="trajectory" title="Trajectory liquidity and stock sales">
+    <ResultPanel kind="trajectory" title="Trajectory liquidity and stock sales" showKindBadge={false}>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           [
@@ -797,18 +859,15 @@ function LiquidityPolicyPanel({ scenarioResult, selectedRolloutIndex }) {
   );
 }
 
-function PrivateEquitySaleOpportunityPanel({ scenarioResult, selectedRolloutIndex }) {
-  const rows = rowsFromTable(scenarioResult?.monthlyColumns);
+function PrivateEquitySaleOpportunityPanel({ trajectory }) {
+  assertResultViewKind(trajectory, "trajectory");
+  const rows = trajectory.monthlyRows;
   if (rows.length === 0) return null;
   const hasPrivateEquity = rows.some(
     (row) => row.privateEquityValueUsd || row.privateEquitySaleOpportunityValueUsd || row.privateEquitySaleUsd
   );
   if (!hasPrivateEquity) return null;
-  const rolloutIndexes = [...new Set(rows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
-    (left, right) => left - right
-  );
-  const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
-  const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
+  const rolloutRows = trajectory.rolloutRows;
   const terminalRow = rolloutRows.at(-1) ?? null;
   const eventRows = rolloutRows.filter((row) => row.privateEquitySaleOpportunityEvent || row.privateEquitySaleUsd > 0);
   const displayRows = (eventRows.length > 0 ? eventRows : rolloutRows.filter((row) => row.monthIndex % 12 === 0)).slice(
@@ -816,7 +875,7 @@ function PrivateEquitySaleOpportunityPanel({ scenarioResult, selectedRolloutInde
     8
   );
   return (
-    <ResultPanel kind="trajectory" title="Trajectory private equity tender opportunities">
+    <ResultPanel kind="trajectory" title="Trajectory private equity tender opportunities" showKindBadge={false}>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2">
         {[
           ["Private equity value", fmtUsd(terminalRow?.privateEquityValueUsd)],
@@ -870,19 +929,11 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
   );
 
   function updateScenario(scenarioId, patch) {
-    onChange({
-      ...scenarioSetInput,
-      scenarios: scenarios.map((scenario) =>
-        scenario.scenarioId === scenarioId ? { ...scenario, ...patch } : scenario
-      ),
-    });
+    onChange(scenarioPatch(scenarioSetInput, scenarioId, patch));
   }
 
   function addScenario() {
-    const scenarioId = uniqueScenarioId(
-      scenarios.map((scenario) => scenario.scenarioId),
-      "scenario"
-    );
+    const scenarioId = uniqueScenarioId(scenarios.map(scenarioIdOf), "scenario");
     const nextScenario = createScenarioInput(bootstrap, {
       index: scenarios.length,
       scenarioId,
@@ -893,30 +944,27 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
   }
 
   function duplicateScenario(scenarioIdToCopy) {
-    const selected = scenarios.find((scenario) => scenario.scenarioId === scenarioIdToCopy) ?? scenarios[0];
+    const selected = scenarios.find((scenario) => scenarioIdOf(scenario) === scenarioIdToCopy) ?? scenarios[0];
     if (!selected) return;
-    const scenarioId = uniqueScenarioId(
-      scenarios.map((scenario) => scenario.scenarioId),
-      `${selected.scenarioId}_copy`
-    );
-    const copy = {
-      ...selected,
+    const selectedView = scenarioInputView(selected);
+    const scenarioId = uniqueScenarioId(scenarios.map(scenarioIdOf), `${selectedView.scenarioId}_copy`);
+    const copy = patchScenarioInput(selected, {
       scenarioId,
-      label: `${selected.label} copy`,
+      label: `${selectedView.label} copy`,
       color: SCENARIO_COLORS[scenarios.length % SCENARIO_COLORS.length],
-    };
+    });
     onChange({ ...scenarioSetInput, scenarios: [...scenarios, copy] });
     onSelect(scenarioId);
   }
 
   function deleteScenario(scenarioIdToDelete) {
     if (scenarios.length <= 1) return;
-    const selected = scenarios.find((scenario) => scenario.scenarioId === scenarioIdToDelete);
-    const label = selected?.label ?? "this scenario";
+    const selected = scenarios.find((scenario) => scenarioIdOf(scenario) === scenarioIdToDelete);
+    const label = scenarioInputView(selected).label ?? "this scenario";
     if (!window.confirm(`Delete ${label}?`)) return;
-    const nextScenarios = scenarios.filter((scenario) => scenario.scenarioId !== scenarioIdToDelete);
+    const nextScenarios = scenarios.filter((scenario) => scenarioIdOf(scenario) !== scenarioIdToDelete);
     onChange({ ...scenarioSetInput, scenarios: nextScenarios });
-    onSelect(selectedScenarioId === scenarioIdToDelete ? (nextScenarios[0]?.scenarioId ?? null) : selectedScenarioId);
+    onSelect(selectedScenarioId === scenarioIdToDelete ? (scenarioIdOf(nextScenarios[0]) ?? null) : selectedScenarioId);
   }
 
   return (
@@ -928,19 +976,20 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
             <div className="text-sm augur-muted">Compare property, actor, occupancy, and policy choices.</div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            <button type="button" className="augur-tone-button augur-tone-neutral" onClick={addScenario}>
+            <Button type="button" size="xs" variant="default" onClick={addScenario}>
               Add
-            </button>
+            </Button>
           </div>
         </div>
       </div>
       <div className="grid gap-2 p-3">
         {scenarios.map((scenario) => {
-          const selected = scenario.scenarioId === selectedScenarioId;
-          const property = propertiesById.get(scenario.propertyId);
+          const view = scenarioInputView(scenario);
+          const selected = view.scenarioId === selectedScenarioId;
+          const property = propertiesById.get(view.propertyId);
           return (
             <div
-              key={scenario.scenarioId}
+              key={view.scenarioId}
               className={`min-w-0 rounded-lg border p-3 ${
                 selected
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/30"
@@ -951,44 +1000,40 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                 <button
                   type="button"
                   className="mt-1 h-4 w-4 shrink-0 rounded-full border border-slate-400"
-                  style={{ backgroundColor: scenario.color }}
-                  aria-label={`Select ${scenario.label}`}
-                  onClick={() => onSelect(scenario.scenarioId)}
+                  style={{ backgroundColor: view.color }}
+                  aria-label={`Select ${view.label}`}
+                  onClick={() => onSelect(view.scenarioId)}
                 />
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 text-left"
-                  onClick={() => onSelect(scenario.scenarioId)}
-                >
-                  <div className="truncate text-sm font-semibold augur-strong">{scenario.label}</div>
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelect(view.scenarioId)}>
+                  <div className="truncate text-sm font-semibold augur-strong">{view.label}</div>
                   <div className="mt-1 truncate text-xs augur-muted">{propertyLabel(property, locationsById)}</div>
                 </button>
                 <div className="flex shrink-0 flex-col items-end gap-2">
-                  <label className="flex items-center gap-1 text-xs augur-muted">
-                    <input
-                      type="checkbox"
-                      checked={scenario.enabled}
-                      onChange={(event) => updateScenario(scenario.scenarioId, { enabled: event.target.checked })}
-                    />
-                    Include
-                  </label>
+                  <Checkbox
+                    size="xs"
+                    label="Include"
+                    checked={view.enabled}
+                    onChange={(event) => updateScenario(view.scenarioId, { enabled: event.target.checked })}
+                  />
                   <div className="flex items-center gap-1">
-                    <button
+                    <Button
                       type="button"
-                      className="rounded border border-slate-200 px-2 py-1 text-xs augur-muted hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                      onClick={() => duplicateScenario(scenario.scenarioId)}
+                      size="xs"
+                      variant="default"
+                      onClick={() => duplicateScenario(view.scenarioId)}
                     >
                       Duplicate
-                    </button>
-                    <button
+                    </Button>
+                    <ActionIcon
                       type="button"
-                      className="h-7 w-7 rounded border border-rose-200 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-rose-900/70 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                      aria-label={`Delete ${scenario.label}`}
-                      onClick={() => deleteScenario(scenario.scenarioId)}
+                      variant="subtle"
+                      color="red"
+                      aria-label={`Delete ${view.label}`}
+                      onClick={() => deleteScenario(view.scenarioId)}
                       disabled={scenarios.length <= 1}
                     >
                       x
-                    </button>
+                    </ActionIcon>
                   </div>
                 </div>
               </div>
@@ -996,15 +1041,15 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                 <label className="flex min-w-0 flex-1 items-center gap-2 text-xs augur-muted">
                   Color
                   <input
-                    aria-label={`${scenario.label} color`}
+                    aria-label={`${view.label} color`}
                     className="h-8 w-12 rounded border border-slate-300 bg-white p-0 dark:border-slate-600"
                     type="color"
-                    value={scenario.color}
-                    onChange={(event) => updateScenario(scenario.scenarioId, { color: event.target.value })}
+                    value={view.color}
+                    onChange={(event) => updateScenario(view.scenarioId, { color: event.target.value })}
                   />
                 </label>
                 <span className="min-w-0 max-w-full shrink-0 truncate rounded border border-slate-200 px-2 py-1 text-xs augur-muted dark:border-slate-700">
-                  {scenario.actorPolicy === "owner_plus_partner" ? `${partnerLabel} active` : `${primaryLabel} only`}
+                  {view.actorPolicy === "owner_plus_partner" ? `${partnerLabel} active` : `${primaryLabel} only`}
                 </span>
               </div>
             </div>
@@ -1017,6 +1062,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
 
 function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootstrap }) {
   if (!scenario) return null;
+  const view = scenarioInputView(scenario);
   const primary = bootstrap?.agents?.find((a) => a.role === "primary_owner");
   const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
   const primaryLabel = primary?.label ?? "Owner";
@@ -1024,22 +1070,17 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const usesCheckingFloorPolicy = scenarioUsesCheckingFloorPolicy(scenario);
   const concentratedHolding = primaryConcentratedHolding(bootstrap);
   const privateEquityLabel = concentratedHolding?.label ?? "Private equity";
-  const privateEquityCurrentValueUsd = privateEquityValueUsdForUnits(bootstrap, scenario.privateEquityUnits);
+  const privateEquityCurrentValueUsd = privateEquityValueUsdForUnits(bootstrap, view.privateEquityUnits);
   const privateEquityUnitPriceUsd = privateEquityCurrentUnitPriceUsd(bootstrap);
-  const isCustomFinancing = scenario.financingMode === "custom";
-  const usesPrivateEquityLiquidFloorPolicy = scenario.privateEquitySalePolicy === PRIVATE_EQUITY_LIQUID_FLOOR_POLICY_ID;
+  const isCustomFinancing = view.financingMode === "custom";
+  const usesPrivateEquityLiquidFloorPolicy = view.privateEquitySalePolicy === PRIVATE_EQUITY_LIQUID_FLOOR_POLICY_ID;
   const locationsById = useMemo(
     () => new Map(bootstrap.locations.map((location) => [location.id, location])),
     [bootstrap]
   );
 
   function updateScenario(patch) {
-    onChange({
-      ...scenarioSetInput,
-      scenarios: scenarioSetInput.scenarios.map((item) =>
-        item.scenarioId === scenario.scenarioId ? { ...item, ...patch } : item
-      ),
-    });
+    onChange(scenarioPatch(scenarioSetInput, view.scenarioId, patch));
   }
 
   return (
@@ -1047,16 +1088,12 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
       <ControlSection title="Identity and property">
         <div className="augur-eyebrow">Selected scenario</div>
         <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_6rem]">
-          <label className="block">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-              Label
-            </div>
-            <input
-              className="augur-input w-full"
-              value={scenario.label}
-              onChange={(event) => updateScenario({ label: event.target.value })}
-            />
-          </label>
+          <TextInput
+            label="Label"
+            value={view.label}
+            classNames={{ label: "augur-field-label mb-2 block" }}
+            onChange={(event) => updateScenario({ label: event.target.value })}
+          />
           <label className="block">
             <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
               Color
@@ -1064,29 +1101,23 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             <input
               className="h-9 w-full rounded border border-slate-300 bg-white p-0 dark:border-slate-600"
               type="color"
-              value={scenario.color}
+              value={view.color}
               onChange={(event) => updateScenario({ color: event.target.value })}
             />
           </label>
         </div>
 
-        <label className="mt-3 block">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-            Property
-          </div>
-          <select
-            aria-label="Scenario property"
-            className="augur-select w-full text-sm"
-            value={scenario.propertyId}
-            onChange={(event) => updateScenario({ propertyId: event.target.value })}
-          >
-            {bootstrap.properties.map((property) => (
-              <option key={property.id} value={property.id}>
-                {property.address} · {propertyLocation(property, locationsById)?.label ?? property.locationId}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mt-3">
+          <SelectField
+            label="Scenario property"
+            value={view.propertyId}
+            onChange={(propertyId) => updateScenario({ propertyId })}
+            options={bootstrap.properties.map((property) => ({
+              id: property.id,
+              label: `${property.address} · ${propertyLocation(property, locationsById)?.label ?? property.locationId}`,
+            }))}
+          />
+        </div>
       </ControlSection>
 
       <ControlSection title="Ownership and occupancy">
@@ -1094,19 +1125,19 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
           <OptionButtons
             label="Actors"
             options={bootstrap.actorPolicyOptions}
-            value={scenario.actorPolicy}
+            value={view.actorPolicy}
             onChange={(actorPolicy) => updateScenario({ actorPolicy })}
           />
           <OptionButtons
             label={`Where ${primaryLabel} lives`}
             options={bootstrap.ownerResidenceModeOptions}
-            value={scenario.ownerResidenceMode}
+            value={view.ownerResidenceMode}
             onChange={(ownerResidenceMode) => updateScenario({ ownerResidenceMode })}
           />
           <OptionButtons
             label="Rental use"
             options={bootstrap.rentalUsePolicyOptions}
-            value={scenario.rentalUsePolicy}
+            value={view.rentalUsePolicy}
             onChange={(rentalUsePolicy) => updateScenario({ rentalUsePolicy })}
           />
         </div>
@@ -1116,7 +1147,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
         <ControlGrid>
           <SelectField
             label="Financing mode"
-            value={scenario.financingMode}
+            value={view.financingMode}
             onChange={(financingMode) => updateScenario({ financingMode })}
             options={FINANCING_OPTIONS}
           />
@@ -1124,7 +1155,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             label="Down payment"
             min={0}
             step={5}
-            value={scenario.downPaymentPct}
+            value={view.downPaymentPct}
             onChange={(downPaymentPct) => updateScenario({ downPaymentPct })}
             suffix="%"
           />
@@ -1133,7 +1164,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               <NumberField
                 label="Custom mortgage rate"
                 step={0.05}
-                value={scenario.customMortgageRate}
+                value={view.customMortgageRate}
                 onChange={(customMortgageRate) => updateScenario({ customMortgageRate })}
                 suffix="%"
               />
@@ -1141,7 +1172,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
                 label="Custom mortgage term"
                 min={1}
                 step={1}
-                value={scenario.customMortgageTermYears}
+                value={view.customMortgageTermYears}
                 onChange={(customMortgageTermYears) => updateScenario({ customMortgageTermYears })}
                 suffix="yr"
               />
@@ -1151,14 +1182,14 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             label="Credit score"
             min={300}
             step={1}
-            value={scenario.creditScore}
+            value={view.creditScore}
             onChange={(creditScore) => updateScenario({ creditScore })}
           />
           <NumberField
             label="Hold period"
             min={1}
             step={1}
-            value={scenario.holdYears}
+            value={view.holdYears}
             onChange={(holdYears) => updateScenario({ holdYears })}
             suffix="yr"
           />
@@ -1170,41 +1201,41 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
           <NumberField
             label="Vacancy"
             step={1}
-            value={scenario.vacancyPct}
+            value={view.vacancyPct}
             onChange={(vacancyPct) => updateScenario({ vacancyPct })}
             suffix="%"
           />
           <NumberField
             label="Management fee"
             step={0.5}
-            value={scenario.managementFeePct}
+            value={view.managementFeePct}
             onChange={(managementFeePct) => updateScenario({ managementFeePct })}
             suffix="%"
           />
           <NumberField
             label="Leasing fee"
             step={5}
-            value={scenario.leasingFeePct}
+            value={view.leasingFeePct}
             onChange={(leasingFeePct) => updateScenario({ leasingFeePct })}
             suffix="%"
           />
           <NumberField
             label="Rooms rented while living"
             step={1}
-            value={scenario.roomsRentedWhileLiving}
+            value={view.roomsRentedWhileLiving}
             onChange={(roomsRentedWhileLiving) => updateScenario({ roomsRentedWhileLiving })}
           />
           <MoneyField
             label="Room rent"
             step={50}
-            value={scenario.roomRentMonthlyUsd}
+            value={view.roomRentMonthlyUsd}
             onChange={(roomRentMonthlyUsd) => updateScenario({ roomRentMonthlyUsd })}
             suffix="/ mo"
           />
           <NumberField
             label="Room vacancy"
             step={1}
-            value={scenario.roomVacancyPct}
+            value={view.roomVacancyPct}
             onChange={(roomVacancyPct) => updateScenario({ roomVacancyPct })}
             suffix="%"
           />
@@ -1216,55 +1247,55 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
           <NumberField
             label="Maintenance"
             step={0.1}
-            value={scenario.maintenancePct}
+            value={view.maintenancePct}
             onChange={(maintenancePct) => updateScenario({ maintenancePct })}
             suffix="%"
           />
           <MoneyField
             label="Insurance"
             step={100}
-            value={scenario.insuranceAnnualUsd}
+            value={view.insuranceAnnualUsd}
             onChange={(insuranceAnnualUsd) => updateScenario({ insuranceAnnualUsd })}
             suffix="/ yr"
           />
           <NumberField
             label="Buy closing cost"
             step={0.1}
-            value={scenario.closingCostBuyPct}
+            value={view.closingCostBuyPct}
             onChange={(closingCostBuyPct) => updateScenario({ closingCostBuyPct })}
             suffix="%"
           />
           <NumberField
             label="Sell closing cost"
             step={0.1}
-            value={scenario.closingCostSellPct}
+            value={view.closingCostSellPct}
             onChange={(closingCostSellPct) => updateScenario({ closingCostSellPct })}
             suffix="%"
           />
           <MoneyField
             label="Capital gains exclusion"
             step={50_000}
-            value={scenario.capGainsExclusionUsd}
+            value={view.capGainsExclusionUsd}
             onChange={(capGainsExclusionUsd) => updateScenario({ capGainsExclusionUsd })}
           />
           <NumberField
             label="Depreciable basis"
             step={1}
-            value={scenario.depreciableBasisPct}
+            value={view.depreciableBasisPct}
             onChange={(depreciableBasisPct) => updateScenario({ depreciableBasisPct })}
             suffix="%"
           />
           <NumberField
             label="Marginal tax rate"
             step={1}
-            value={scenario.marginalTaxRate}
+            value={view.marginalTaxRate}
             onChange={(marginalTaxRate) => updateScenario({ marginalTaxRate })}
             suffix="%"
           />
           <NumberField
             label="Capital gains rate"
             step={1}
-            value={scenario.capGainsRate}
+            value={view.capGainsRate}
             onChange={(capGainsRate) => updateScenario({ capGainsRate })}
             suffix="%"
           />
@@ -1277,7 +1308,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
           <OptionButtons
             label="Reserve sales rule"
             options={bootstrap.liquidReservePolicyOptions}
-            value={scenario.liquidReservePolicy}
+            value={view.liquidReservePolicy}
             onChange={(liquidReservePolicy) => updateScenario({ liquidReservePolicy })}
           />
           <ControlGrid>
@@ -1285,25 +1316,25 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               <>
                 <MoneyField
                   label="Checking floor"
-                  value={scenario.checkingFloorUsd}
+                  value={view.checkingFloorUsd}
                   onChange={(checkingFloorUsd) => updateScenario({ checkingFloorUsd })}
                 />
                 <MoneyField
                   label="Sale amount"
                   min={1_000}
-                  value={scenario.checkingSaleAmountUsd}
+                  value={view.checkingSaleAmountUsd}
                   onChange={(checkingSaleAmountUsd) => updateScenario({ checkingSaleAmountUsd })}
                 />
               </>
             )}
             <MoneyField
               label="Initial checking"
-              value={scenario.initialCheckingUsd}
+              value={view.initialCheckingUsd}
               onChange={(initialCheckingUsd) => updateScenario({ initialCheckingUsd })}
             />
             <MoneyField
               label="SP500-like portfolio"
-              value={scenario.startingPortfolioUsd}
+              value={view.startingPortfolioUsd}
               onChange={(startingPortfolioUsd) => updateScenario({ startingPortfolioUsd })}
             />
             <ReadOnlyMetricField
@@ -1314,21 +1345,21 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             <NumberField
               label={`${privateEquityLabel} units`}
               step={1}
-              value={scenario.privateEquityUnits}
+              value={view.privateEquityUnits}
               onChange={(privateEquityUnits) => updateScenario({ privateEquityUnits })}
             />
           </ControlGrid>
           <OptionButtons
             label={`${privateEquityLabel} tender policy`}
             options={PRIVATE_EQUITY_SALE_POLICY_OPTIONS}
-            value={scenario.privateEquitySalePolicy}
+            value={view.privateEquitySalePolicy}
             onChange={(privateEquitySalePolicy) => updateScenario({ privateEquitySalePolicy })}
           />
           {usesPrivateEquityLiquidFloorPolicy && (
             <ControlGrid>
               <MoneyField
                 label="Liquid worth floor"
-                value={scenario.privateEquityLiquidNetWorthFloorUsd}
+                value={view.privateEquityLiquidNetWorthFloorUsd}
                 onChange={(privateEquityLiquidNetWorthFloorUsd) =>
                   updateScenario({ privateEquityLiquidNetWorthFloorUsd })
                 }
@@ -1336,7 +1367,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               <MoneyField
                 label="Tender sale amount"
                 min={1_000}
-                value={scenario.privateEquityTenderSaleAmountUsd}
+                value={view.privateEquityTenderSaleAmountUsd}
                 onChange={(privateEquityTenderSaleAmountUsd) => updateScenario({ privateEquityTenderSaleAmountUsd })}
               />
             </ControlGrid>
@@ -1345,7 +1376,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             <MoneyField
               label={`${partnerLabel} payment`}
               step={50}
-              value={scenario.partnerPaymentMonthlyUsd}
+              value={view.partnerPaymentMonthlyUsd}
               onChange={(partnerPaymentMonthlyUsd) => updateScenario({ partnerPaymentMonthlyUsd })}
               suffix="/ mo"
             />
@@ -1420,9 +1451,10 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
   const metricName = metricOptions.includes(selectedMetric) ? selectedMetric : (metricOptions[0] ?? "netWorthUsd");
   const series = scenarioSetInput.scenarios
     .map((scenario) => {
-      const rows = scenarioFanRows(result, scenario.scenarioId, metricName);
+      const view = scenarioInputView(scenario);
+      const rows = scenarioFanRows(result, view.scenarioId, metricName);
       if (rows.length === 0) return null;
-      return { scenario, rows };
+      return { scenario: view, rows };
     })
     .filter(Boolean);
   if (series.length === 0) return null;
@@ -1460,21 +1492,13 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
       title="Scenario probability fans"
       subtitle={labelFromCamel(metricName)}
       actions={
-        <label className="min-w-[14rem]">
-          <span className="sr-only">Fan metric</span>
-          <select
-            className="augur-select w-full text-sm"
-            aria-label="Fan metric"
-            value={metricName}
-            onChange={(event) => onSelectedMetricChange(event.target.value)}
-          >
-            {metricOptions.map((option) => (
-              <option key={option} value={option}>
-                {labelFromCamel(option)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <NativeSelect
+          aria-label="Fan metric"
+          value={metricName}
+          data={metricOptions.map((option) => ({ value: option, label: labelFromCamel(option) }))}
+          className="min-w-[14rem]"
+          onChange={(event) => onSelectedMetricChange(event.target.value)}
+        />
       }
     >
       <div className="overflow-x-auto p-4">
@@ -1575,24 +1599,25 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
           </thead>
           <tbody>
             {scenarioSetInput.scenarios.map((scenario) => {
-              const scenarioResult = scenarioResults.find((item) => item.scenarioId === scenario.scenarioId);
-              const fanRows = metricFanRows(scenarioResult, "netWorthUsd");
+              const view = scenarioInputView(scenario);
+              const scenarioResult = scenarioResults.find((item) => item.scenarioId === view.scenarioId);
+              const distribution = distributionResultView(scenarioResult);
+              const fanRows = distribution.metricFanRows("netWorthUsd");
               const terminal = fanRows.length > 0 ? fanRows[fanRows.length - 1] : null;
-              const terminalRows = rowsFromTable(scenarioResult?.terminalColumns);
-              const property = propertiesById.get(scenario.propertyId);
+              const property = propertiesById.get(view.propertyId);
               return (
-                <tr key={scenario.scenarioId}>
+                <tr key={view.scenarioId}>
                   <td className="label">
                     <span className="inline-flex min-w-0 items-center gap-2">
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: scenario.color }} />
-                      <span className="truncate">{scenario.label}</span>
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: view.color }} />
+                      <span className="truncate">{view.label}</span>
                     </span>
                   </td>
                   <td className="min-w-[11rem] whitespace-nowrap text-left">
-                    {property ? property.address : scenario.propertyId}
+                    {property ? property.address : view.propertyId}
                   </td>
                   {terminalMetricColumns.map(([column]) => {
-                    const value = column === "finalNetWorthUsd" ? terminal?.p50 : p50Column(terminalRows, column);
+                    const value = column === "finalNetWorthUsd" ? terminal?.p50 : distribution.terminalP50(column);
                     return <td key={column}>{fmtMetricValue(column, value)}</td>;
                   })}
                 </tr>
@@ -1718,16 +1743,16 @@ function LedgerDetailToggles({ groups, expandedGroups, onToggle }) {
   );
 }
 
-function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex, onSelectedRolloutIndexChange }) {
+function ScenarioMonthlyLedger({ scenario, accountingDetail, onSelectedRolloutIndexChange }) {
   const [expandedLedgerGroups, setExpandedLedgerGroups] = useState({});
-  const monthlyRows = rowsFromTable(scenarioResult?.monthlyColumns);
+  const scenarioView = scenarioInputView(scenario);
+  assertResultViewKind(accountingDetail, "accounting_detail");
+  const monthlyRows = accountingDetail.monthlyRows;
   if (!scenario || monthlyRows.length === 0) return null;
   const showCheckingFloorColumns = scenarioUsesCheckingFloorPolicy(scenario);
-  const rolloutIndexes = [...new Set(monthlyRows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
-    (left, right) => left - right
-  );
-  const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
-  const rows = monthlyRows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
+  const rolloutIndexes = accountingDetail.rolloutIndexes;
+  const rolloutIndex = accountingDetail.rolloutIndex;
+  const rows = accountingDetail.rolloutRows;
   const rawGroups = [
     {
       id: "portfolio_sales",
@@ -1849,23 +1874,16 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
     <ResultPanel
       kind="accounting_detail"
       title="Selected path monthly ledger"
-      subtitle={`${scenario.label} · rollout ${fmtInteger(rolloutIndex)}`}
+      subtitle={`${scenarioView.label} · rollout ${fmtInteger(rolloutIndex)}`}
+      showKindBadge={false}
       actions={
-        <label className="min-w-[10rem]">
-          <span className="sr-only">Ledger path</span>
-          <select
-            className="augur-select w-full text-sm"
-            aria-label="Ledger path"
-            value={rolloutIndex}
-            onChange={(event) => onSelectedRolloutIndexChange(Number(event.target.value))}
-          >
-            {rolloutIndexes.map((index) => (
-              <option key={index} value={index}>
-                Path {index}
-              </option>
-            ))}
-          </select>
-        </label>
+        <NativeSelect
+          aria-label="Ledger path"
+          value={String(rolloutIndex)}
+          data={rolloutIndexes.map((index) => ({ value: String(index), label: `Path ${index}` }))}
+          className="min-w-[10rem]"
+          onChange={(event) => onSelectedRolloutIndexChange(Number(event.target.value))}
+        />
       }
     >
       <LedgerDetailToggles groups={rawGroups} expandedGroups={expandedLedgerGroups} onToggle={toggleLedgerGroup} />
@@ -1877,15 +1895,16 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
 function ScenarioAcceptedPanel({ selection }) {
   const { scenario, scenarioResult } = selection;
   if (!scenario || !scenarioResult) return null;
+  const scenarioView = scenarioInputView(scenario);
   return (
-    <ResultPanel kind="accounting_detail" title="Scenario contract">
+    <ResultPanel kind="accounting_detail" title="Scenario contract" showKindBadge={false}>
       <DetailTable
         rows={[
           ["Scenario id", scenarioResult.scenarioId],
           ["Enabled", scenarioResult.summary?.enabled ? "yes" : "no"],
-          ["Property id", scenarioResult.summary?.propertyId ?? scenario.propertyId],
+          ["Property id", scenarioResult.summary?.propertyId ?? scenarioView.propertyId],
           ["Location", scenarioResult.summary?.locationId ?? "n/a"],
-          ["Participants", scenario.actorPolicy === "owner_plus_partner" ? "Owner + partner" : "Owner only"],
+          ["Participants", scenarioView.actorPolicy === "owner_plus_partner" ? "Owner + partner" : "Owner only"],
           ["Events", fmtNumber(scenarioResult.summary?.eventCount)],
           ["Warnings", scenarioResult.warnings?.join("; ") || "none"],
         ]}
@@ -1905,6 +1924,7 @@ function DistributionResults({
   onSelectedFanMetricChange,
 }) {
   const { scenarioResult } = selection;
+  const distribution = distributionResultView(scenarioResult);
   return (
     <>
       <RunStatusNotice runError={runError} />
@@ -1921,9 +1941,9 @@ function DistributionResults({
         onSelectedMetricChange={onSelectedFanMetricChange}
       />
       <PropertyLocationPanel selection={selection} kind="distribution" />
-      <ScenarioValueSummary scenarioResult={scenarioResult} />
-      <SaleTaxLoanPanel selection={selection} />
-      <TerminalPercentileSnapshot scenarioResult={scenarioResult} />
+      <ScenarioValueSummary distribution={distribution} />
+      <SaleTaxLoanPanel selection={selection} distribution={distribution} />
+      <TerminalPercentileSnapshot distribution={distribution} />
     </>
   );
 }
@@ -1938,24 +1958,20 @@ function TrajectoryResults({
   bootstrap,
 }) {
   const { scenario, scenarioResult } = selection;
+  const trajectory = trajectoryResultView(scenarioResult, selectedRolloutIndex);
+  const accountingDetail = accountingDetailResultView(scenarioResult, selectedRolloutIndex);
   return (
     <>
       <RunStatusNotice runError={runError} />
-      <PropertyLocationPanel selection={selection} kind="trajectory" />
-      <ScenarioPathPreview scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
+      <ScenarioPathPreview trajectory={trajectory} />
       <ScenarioMonthlyLedger
         scenario={scenario}
-        scenarioResult={scenarioResult}
-        selectedRolloutIndex={selectedRolloutIndex}
+        accountingDetail={accountingDetail}
         onSelectedRolloutIndexChange={onSelectedRolloutIndexChange}
       />
-      <PartnerOwnershipPanel
-        scenarioResult={scenarioResult}
-        bootstrap={bootstrap}
-        selectedRolloutIndex={selectedRolloutIndex}
-      />
-      <LiquidityPolicyPanel scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
-      <PrivateEquitySaleOpportunityPanel scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
+      <PartnerOwnershipPanel trajectory={trajectory} bootstrap={bootstrap} />
+      <LiquidityPolicyPanel trajectory={trajectory} />
+      <PrivateEquitySaleOpportunityPanel trajectory={trajectory} />
       <ScenarioAcceptedPanel selection={selection} />
     </>
   );
@@ -1990,9 +2006,9 @@ function AugurAppShell() {
         }
         const normalized = normalizeScenarioSetInput(initialInput ?? createDefaultScenarioSetInput(payload), payload);
         const requestedScenarioId = typeof window === "undefined" ? null : searchScenarioId(window.location.search);
-        const selectedScenario = normalized.scenarios.some((scenario) => scenario.scenarioId === requestedScenarioId)
+        const selectedScenario = normalized.scenarios.some((scenario) => scenarioIdOf(scenario) === requestedScenarioId)
           ? requestedScenarioId
-          : (normalized.scenarios[0]?.scenarioId ?? null);
+          : (scenarioIdOf(normalized.scenarios[0]) ?? null);
         setScenarioSetInput(normalized);
         setSelectedScenarioId(selectedScenario);
         setSelectedRolloutIndex(typeof window === "undefined" ? 0 : rolloutIndexFromSearch(window.location.search));
@@ -2026,8 +2042,9 @@ function AugurAppShell() {
 
   const selectedContext = useMemo(() => {
     const scenario =
-      normalizedScenarioSetInput?.scenarios.find((item) => item.scenarioId === selectedScenarioId) ?? null;
-    const property = scenario ? (propertiesById.get(scenario.propertyId) ?? null) : null;
+      normalizedScenarioSetInput?.scenarios.find((item) => scenarioIdOf(item) === selectedScenarioId) ?? null;
+    const scenarioView = scenarioInputView(scenario);
+    const property = scenario ? (propertiesById.get(scenarioView.propertyId) ?? null) : null;
     return {
       scenario,
       property,
@@ -2038,8 +2055,8 @@ function AugurAppShell() {
 
   useEffect(() => {
     if (!normalizedScenarioSetInput) return;
-    if (normalizedScenarioSetInput.scenarios.some((scenario) => scenario.scenarioId === selectedScenarioId)) return;
-    setSelectedScenarioId(normalizedScenarioSetInput.scenarios[0]?.scenarioId ?? null);
+    if (normalizedScenarioSetInput.scenarios.some((scenario) => scenarioIdOf(scenario) === selectedScenarioId)) return;
+    setSelectedScenarioId(scenarioIdOf(normalizedScenarioSetInput.scenarios[0]) ?? null);
   }, [normalizedScenarioSetInput, selectedScenarioId]);
 
   useEffect(() => {

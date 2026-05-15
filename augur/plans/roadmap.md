@@ -46,13 +46,18 @@ Target shape:
   initial balance sheet, actors/ownership, property/location, financing,
   occupancy/rental plan, tax/accounting assumptions, market assumptions, and
   policy programs.
+- Property/location details belong to scenario context, not to either result
+  mode. Move the current property/location card into shared scenario context,
+  the left input pane, a dedicated property/details tab, or another non-result
+  surface.
 
 Implementation notes:
 
 - Keep result panels declared through the shared frontend result-panel contract:
-  `distribution`, `trajectory`, or `accounting_detail`. This is now visible in
-  panel headers and encoded in `data-result-panel-kind`; keep new result panels
-  on that path instead of adding bare cards.
+  `distribution`, `trajectory`, or `accounting_detail`. The contract is encoded
+  in `data-result-panel-kind`; view-level headers provide the visible
+  distribution/trajectory context so child trajectory panels do not need
+  repetitive chips.
 - Trajectory URLs are reproducible only when the encoded market request has a
   deterministic seed. The locator is effectively scenario-set input plus
   market model/version plus seed plus `scenario_id` plus `rollout_index`; seed
@@ -65,11 +70,15 @@ Implementation notes:
 
 Acceptance criteria:
 
-- Every result panel has a visible mode: distribution, trajectory, or
+- Every result panel has a machine-readable mode: distribution, trajectory, or
   accounting detail. The current React app has the panel contract in place; keep
-  extending it as panels split or move.
+  extending it as panels split or move while keeping visible mode labels at the
+  page/view boundary rather than repeating them on every child card.
 - No panel combines percentile summaries with one-rollout path rows unless the
   split is explicit and visually separated.
+- Property/location details are not rendered as distribution or trajectory
+  output; they are scenario metadata shown in shared context or a dedicated
+  details surface.
 - Deltas are result-view comparisons between two real scenarios, not a
   simulator-level baseline inside each rollout. Prefer paired differences when
   `shared_market_paths=true`; otherwise expose the choice as a distribution of
