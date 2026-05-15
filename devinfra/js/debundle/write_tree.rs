@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -5,94 +6,64 @@ use anyhow::{Result, bail};
 use serde::Serialize;
 
 use artifact::{
-    DecompositionMetrics, JsPipelineArtifact, SelectedModuleLowering, list_chunk_file_paths,
+    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkBundle, ChunkDecompositionOutput,
+    ChunkId, DecompositionMetrics, RootLogicalModulesSummary, SelectedModuleLowering,
     manifest_relative_path, materialize_artifact_scripts,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 
-#[derive(Debug, Clone)]
-pub struct WriteJsTreeManifest {
-    /// Always `"."` — the manifest sits at `<out_dir>/manifest.json`, so
-    /// `out_dir` is the manifest's own directory. Recorded explicitly so
-    /// downstream readers can confirm the manifest's role.
-    pub out_dir: String,
-    pub counts: WriteJsTreeCounts,
-    pub files: Vec<String>,
+pub struct WriteTreeInput<'a> {
+    pub artifact: &'a ChunkBundle,
+    pub out_dir: &'a Path,
+    pub force: bool,
+    pub lowerings: &'a [SelectedModuleLowering],
+    pub counts: &'a ArtifactCounts,
+    pub chunk_records: &'a [ArtifactChunkRecord],
+    pub module_count: usize,
+    pub decomposition_by_chunk: &'a HashMap<ChunkId, ChunkDecompositionOutput>,
 }
 
-#[derive(Debug, Clone)]
-pub struct WriteJsTreeCounts {
-    pub chunks: usize,
-    pub files: usize,
-}
-
-pub fn write_js_tree(
-    artifact: &JsPipelineArtifact,
-    out_dir: &Path,
-    force: bool,
-    lowerings: &[SelectedModuleLowering],
-) -> Result<WriteJsTreeManifest> {
-    if out_dir.as_os_str().is_empty() {
+pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
+    if input.out_dir.as_os_str().is_empty() {
         bail!("write_js_tree requires out_dir");
     }
-    prepare_output_dir(out_dir, force)?;
+    prepare_output_dir(input.out_dir, input.force)?;
 
-    let chunk_ids = artifact.list_chunk_ids();
-    let files = chunk_ids
-        .iter()
-        .map(|&chunk_id| {
-            let chunk_name = artifact.chunk_table.name(chunk_id);
-            let chunk = artifact.js_chunk(chunk_id)?;
-            Ok(list_chunk_file_paths(chunk)
-                .into_iter()
-                .map(|file_path| format!("{chunk_name}/{file_path}"))
-                .collect::<Vec<_>>())
-        })
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let materialized = materialize_artifact_scripts(artifact, out_dir)?;
+    let materialized =
+        materialize_artifact_scripts(input.artifact, input.out_dir, input.decomposition_by_chunk)?;
 
-    let decomposition_metrics = if lowerings.is_empty() {
+    let decomposition_metrics = if input.lowerings.is_empty() {
         None
     } else {
         Some(DecompositionMetrics::compute(
-            lowerings,
+            input.lowerings,
             &materialized.file_metrics,
         ))
     };
 
-    // The identifier rename priority queue is a side output of every
-    // pipeline run that writes a tree manifest. Emit it now and record
-    // its manifest-relative path on the root manifest.
-    let queue = compute_identifier_rename_queue(artifact)?;
-    let queue_path = write_queue(out_dir, &queue)?;
-    let manifest_path = out_dir.join("manifest.json");
-    let mut root_manifest = artifact.root_manifest.clone();
-    root_manifest.identifier_rename_queue =
-        Some(manifest_relative_path(&manifest_path, &queue_path));
-    root_manifest.output_metrics = Some(materialized.output_metrics);
-    root_manifest.decomposition_metrics = decomposition_metrics;
-    fs::write(
-        &manifest_path,
-        serde_json::to_string_pretty(&root_manifest)? + "\n",
-    )?;
-    fs::write(
-        out_dir.join("package.json"),
-        serde_json::to_string_pretty(&PackageManifest {
+    let queue = compute_identifier_rename_queue(input.artifact, input.decomposition_by_chunk)?;
+    let queue_path = write_queue(input.out_dir, &queue)?;
+    let manifest_path = input.out_dir.join("manifest.json");
+    let manifest = ArtifactManifest {
+        counts: input.counts.clone(),
+        chunks: input.chunk_records.to_vec(),
+        logical_modules: RootLogicalModulesSummary {
+            module_count: input.module_count,
+        },
+        selected_module_lowerings: input.lowerings.to_vec(),
+        identifier_rename_queue: manifest_relative_path(&manifest_path, &queue_path),
+        output_metrics: materialized.output_metrics,
+        decomposition_metrics,
+    };
+    serde_json::to_writer_pretty(&fs::File::create(&manifest_path)?, &manifest)?;
+    serde_json::to_writer_pretty(
+        &fs::File::create(input.out_dir.join("package.json"))?,
+        &PackageManifest {
             module_type: "module",
-        })? + "\n",
+        },
     )?;
 
-    Ok(WriteJsTreeManifest {
-        out_dir: ".".to_string(),
-        counts: WriteJsTreeCounts {
-            chunks: chunk_ids.len(),
-            files: files.len(),
-        },
-        files,
-    })
+    Ok(())
 }
 
 #[derive(Serialize)]

@@ -19,26 +19,15 @@ pub struct LoadedJsChunks {
     pub chunk_table: ChunkTable,
 }
 
-pub struct JsPipelineArtifact {
+pub struct ChunkBundle {
     pub chunks: Vec<ChunkArtifact>,
-    pub root_manifest: ArtifactManifest,
     pub chunk_table: ChunkTable,
-}
-
-impl Default for JsPipelineArtifact {
-    fn default() -> Self {
-        Self {
-            chunks: Vec::new(),
-            root_manifest: ArtifactManifest::empty(),
-            chunk_table: ChunkTable::default(),
-        }
-    }
 }
 
 pub struct ChunkArtifact {
     pub chunk_id: ChunkId,
     pub js: JsChunk,
-    pub manifest: ChunkManifest,
+    pub analysis: ChunkAnalysis,
 }
 
 pub struct JsChunk {
@@ -137,6 +126,20 @@ impl JsFile {
         }
     }
 
+    /// Consume self, replacing an AST body with its rendered source text.
+    /// Returns None if the body was already source text.
+    pub fn into_rendered_source(self) -> Option<Self> {
+        let JsFileBody::Ast(parsed) = self.body else {
+            return None;
+        };
+        Some(Self {
+            body: JsFileBody::Source(parsed.source_text()),
+            path: self.path,
+            header_lines: self.header_lines,
+            metadata: self.metadata,
+        })
+    }
+
     pub fn is_ast(&self) -> bool {
         matches!(self.body, JsFileBody::Ast(_))
     }
@@ -149,27 +152,18 @@ impl JsFile {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub struct ChunkMetadata {
     pub source_path: Option<String>,
-    pub module_extraction_state: Option<ModuleExtractionState>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleExtractionState {
-    pub runtime_file: String,
-    pub target_dir: String,
-}
-
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FileMetadata {
-    pub chunk_id: Option<String>,
-    pub chunk_file: Option<String>,
-    pub role: Option<FileRole>,
-    pub source_path: Option<String>,
-    pub output_path: Option<String>,
-    pub generated_stage: Option<String>,
+    pub chunk_id: String,
+    pub chunk_file: String,
+    pub role: FileRole,
+    pub source_path: String,
+    pub generated_by_selected_module_lowering: bool,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -213,19 +207,10 @@ pub struct ParsedJsFileRecord {
 pub struct ArtifactManifest {
     pub counts: ArtifactCounts,
     pub chunks: Vec<ArtifactChunkRecord>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub logical_modules: Option<RootLogicalModulesSummary>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub selected_module_lowerings: Option<Vec<SelectedModuleLowering>>,
-    /// Path (manifest-relative) to the identifier rename priority queue
-    /// side output, when this manifest was produced by a stage that
-    /// emits to a writable directory (e.g. `write_js_tree`).
-    /// `None` for early-pipeline manifests that never see a final
-    /// output directory.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub identifier_rename_queue: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_metrics: Option<OutputMetrics>,
+    pub logical_modules: RootLogicalModulesSummary,
+    pub selected_module_lowerings: Vec<SelectedModuleLowering>,
+    pub identifier_rename_queue: String,
+    pub output_metrics: OutputMetrics,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decomposition_metrics: Option<DecompositionMetrics>,
 }
@@ -237,8 +222,6 @@ pub struct ArtifactCounts {
     pub top_level_side_effects: usize,
     pub export_aliases: usize,
     pub unresolved_exports: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub selected_module_lowerings: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -273,6 +256,27 @@ pub struct ArtifactChunkRecord {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ChunkAnalysis {
+    pub chunk_id: String,
+    pub source_path: String,
+    pub parser: ParserOptionsRecord,
+    pub entry_file: String,
+    pub counts: ChunkCounts,
+    pub files: Vec<ChunkFileRecord>,
+    pub imports: Vec<ImportRecord>,
+    pub export_aliases: Vec<ExportAliasRecord>,
+    pub unresolved_exports: Vec<ExportAliasRecord>,
+    pub kept_top_level_declarations: Vec<KeptTopLevelDeclarationRecord>,
+}
+
+/// Decomposition result for a single chunk — set during `materialize_logical_modules`.
+pub struct ChunkDecompositionOutput {
+    pub logical_modules: ChunkLogicalModulesSummary,
+    pub selected_module_lowerings: Vec<SelectedModuleLowering>,
+}
+
+/// Per-chunk manifest serialized to `<chunk>/manifest.json` at write time.
+#[derive(Debug, Clone, Serialize)]
 pub struct ChunkManifest {
     pub chunk_id: String,
     pub source_path: String,
@@ -286,10 +290,34 @@ pub struct ChunkManifest {
     pub kept_top_level_declarations: Vec<KeptTopLevelDeclarationRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logical_modules: Option<ChunkLogicalModulesSummary>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub selected_module_lowerings: Option<Vec<SelectedModuleLowering>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_metrics: Option<OutputMetrics>,
+    pub selected_module_lowerings: Vec<SelectedModuleLowering>,
+    pub output_metrics: OutputMetrics,
+}
+
+impl ChunkManifest {
+    pub fn from_analysis(
+        analysis: &ChunkAnalysis,
+        decomposition: Option<&ChunkDecompositionOutput>,
+        output_metrics: OutputMetrics,
+    ) -> Self {
+        Self {
+            chunk_id: analysis.chunk_id.clone(),
+            source_path: analysis.source_path.clone(),
+            parser: analysis.parser.clone(),
+            entry_file: analysis.entry_file.clone(),
+            counts: analysis.counts.clone(),
+            files: analysis.files.clone(),
+            imports: analysis.imports.clone(),
+            export_aliases: analysis.export_aliases.clone(),
+            unresolved_exports: analysis.unresolved_exports.clone(),
+            kept_top_level_declarations: analysis.kept_top_level_declarations.clone(),
+            logical_modules: decomposition.map(|d| d.logical_modules.clone()),
+            selected_module_lowerings: decomposition
+                .map(|d| d.selected_module_lowerings.clone())
+                .unwrap_or_default(),
+            output_metrics,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -305,7 +333,7 @@ pub struct OutputMetrics {
     pub largest_files_by_bytes: Vec<OutputFileMetric>,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OutputSize {
     pub files: usize,
     pub bytes: usize,
@@ -485,14 +513,18 @@ impl OutputSize {
     }
 
     fn sum<'a>(files: impl IntoIterator<Item = &'a OutputFileMetric>) -> Self {
-        files
-            .into_iter()
-            .map(Self::from_file)
-            .fold(Self::default(), |left, right| Self {
+        files.into_iter().map(Self::from_file).fold(
+            Self {
+                files: 0,
+                bytes: 0,
+                lines: 0,
+            },
+            |left, right| Self {
                 files: left.files + right.files,
                 bytes: left.bytes + right.bytes,
                 lines: left.lines + right.lines,
-            })
+            },
+        )
     }
 }
 
@@ -632,28 +664,7 @@ impl LoadedJsChunks {
     }
 }
 
-impl ArtifactManifest {
-    pub fn empty() -> Self {
-        Self {
-            counts: ArtifactCounts {
-                chunks: 0,
-                kept_top_level_declaration_owners: 0,
-                top_level_side_effects: 0,
-                export_aliases: 0,
-                unresolved_exports: 0,
-                selected_module_lowerings: None,
-            },
-            chunks: Vec::new(),
-            logical_modules: None,
-            selected_module_lowerings: None,
-            identifier_rename_queue: None,
-            output_metrics: None,
-            decomposition_metrics: None,
-        }
-    }
-}
-
-impl JsPipelineArtifact {
+impl ChunkBundle {
     pub fn list_chunk_ids(&self) -> Vec<ChunkId> {
         self.chunks.iter().map(|chunk| chunk.chunk_id).collect()
     }
@@ -720,7 +731,7 @@ impl JsPipelineArtifact {
 
     pub fn chunk_source_path(&self, chunk_id: ChunkId) -> Option<String> {
         self.find_chunk(chunk_id)
-            .map(|chunk| chunk.manifest.source_path.clone())
+            .map(|chunk| chunk.analysis.source_path.clone())
             .or_else(|| {
                 self.find_js_chunk(chunk_id)
                     .and_then(|chunk| chunk.metadata.source_path.clone())
@@ -740,7 +751,7 @@ impl JsPipelineArtifact {
 }
 
 pub struct ArtifactSourceImportResolver<'a> {
-    artifact: &'a JsPipelineArtifact,
+    artifact: &'a ChunkBundle,
     indexes: &'a ArtifactIndexes,
 }
 
@@ -771,8 +782,7 @@ impl ArtifactSourceImportResolver<'_> {
         let Some(target_entry_file) = get_chunk_entry_path(self.artifact, target_chunk_id) else {
             return Ok(None);
         };
-        let path = artifact_file_output_path(self.artifact, target_chunk_id, &target_entry_file)
-            .unwrap_or_else(|| join_module_path(&[target_chunk_name, target_entry_file.as_str()]));
+        let path = join_module_path(&[target_chunk_name, target_entry_file.as_str()]);
         Ok(Some((
             target_chunk_name.to_string(),
             target_entry_file,
@@ -793,7 +803,7 @@ pub struct ArtifactIndexes {
 }
 
 impl ArtifactIndexes {
-    pub fn build(artifact: &JsPipelineArtifact) -> Result<Self> {
+    pub fn build(artifact: &ChunkBundle) -> Result<Self> {
         let mut seen_chunk_ids = HashSet::new();
         let mut output_path_index = HashMap::new();
         let mut source_chunk_index = HashMap::new();
@@ -825,30 +835,18 @@ impl ArtifactIndexes {
                     continue;
                 };
                 let key = (chunk_id, file_path.clone());
-                if let Some(source_path) = file
-                    .metadata
-                    .source_path
-                    .clone()
-                    .or_else(|| chunk_source_paths.get(&chunk_id).cloned())
-                {
-                    file_source_paths.insert(key.clone(), source_path);
+                file_source_paths.insert(key.clone(), file.metadata.source_path.clone());
+                let output_path = join_module_path(&[chunk_name, &file_path]);
+                if let Some(existing) = output_path_index.insert(output_path.clone(), key.clone()) {
+                    bail!(
+                        "Duplicate artifact output path {output_path}: {}/{} and {}/{}",
+                        artifact.chunk_table.name(existing.0),
+                        existing.1,
+                        chunk_name,
+                        key.1
+                    );
                 }
-                if let Some(output_path) =
-                    artifact_file_output_path_from_parts(chunk_name, &file_path, file)
-                {
-                    if let Some(existing) =
-                        output_path_index.insert(output_path.clone(), key.clone())
-                    {
-                        bail!(
-                            "Duplicate artifact output path {output_path}: {}/{} and {}/{}",
-                            artifact.chunk_table.name(existing.0),
-                            existing.1,
-                            chunk_name,
-                            key.1
-                        );
-                    }
-                    file_output_paths.insert(key, output_path);
-                }
+                file_output_paths.insert(key, output_path);
             }
         }
 
@@ -953,11 +951,11 @@ impl ArtifactIndexes {
             .flat_map(|imports| imports.iter())
     }
 
-    fn index_manifest_imports(&mut self, artifact: &JsPipelineArtifact) {
+    fn index_manifest_imports(&mut self, artifact: &ChunkBundle) {
         for chunk in &artifact.chunks {
             let caller_chunk_id = chunk.chunk_id;
-            let caller_file = chunk.manifest.entry_file.clone();
-            for import in &chunk.manifest.imports {
+            let caller_file = chunk.analysis.entry_file.clone();
+            for import in &chunk.analysis.imports {
                 let Some(target) = self.resolve_runtime_import_reference(
                     &import.source,
                     caller_chunk_id,
@@ -1017,11 +1015,11 @@ pub fn load_js_chunks(
             body: JsFileBody::Source(content),
             header_lines: Vec::new(),
             metadata: FileMetadata {
-                chunk_id: Some(chunk_name),
-                chunk_file: Some(entry_file.clone()),
-                role: Some(FileRole::Entry),
-                source_path: Some(source_path.clone()),
-                ..Default::default()
+                chunk_id: chunk_name,
+                chunk_file: entry_file.clone(),
+                role: FileRole::Entry,
+                source_path: source_path.clone(),
+                generated_by_selected_module_lowering: false,
             },
         }];
         chunks.chunk_order.push(chunk_id);
@@ -1034,7 +1032,6 @@ pub fn load_js_chunks(
             files,
             metadata: ChunkMetadata {
                 source_path: Some(source_path.clone()),
-                module_extraction_state: None,
             },
         });
     }
@@ -1068,15 +1065,22 @@ pub struct MaterializedScripts {
 }
 
 pub fn materialize_artifact_scripts(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
     out_dir: &Path,
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<MaterializedScripts> {
-    let selected_module_by_chunk_file = selected_module_by_chunk_file(artifact);
+    let selected_module_by_chunk_file = selected_module_by_chunk_file(decomposition_by_chunk);
     let file_metrics: Vec<OutputFileMetric> = artifact
         .list_chunk_ids()
         .into_iter()
         .map(|chunk_id| {
-            materialize_chunk_scripts(artifact, out_dir, &selected_module_by_chunk_file, chunk_id)
+            materialize_chunk_scripts(
+                artifact,
+                out_dir,
+                &selected_module_by_chunk_file,
+                decomposition_by_chunk,
+                chunk_id,
+            )
         })
         .collect::<Result<Vec<_>>>()?
         .into_iter()
@@ -1089,9 +1093,10 @@ pub fn materialize_artifact_scripts(
 }
 
 fn materialize_chunk_scripts(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
     out_dir: &Path,
     selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     chunk_id: ChunkId,
 ) -> Result<Vec<OutputFileMetric>> {
     let chunk_name = artifact.chunk_table.name(chunk_id).to_string();
@@ -1105,22 +1110,23 @@ fn materialize_chunk_scripts(
             materialize_chunk_file(
                 chunk,
                 &chunk_name,
-                out_dir,
                 &chunk_out_dir,
                 selected_module_by_chunk_file,
                 file,
             )
         })
         .collect::<Result<Vec<_>>>()?;
-    let mut manifest = chunk_artifact.manifest.clone();
-    manifest.output_metrics = Some(OutputMetrics::from_file_metrics(
+    let metrics_output = OutputMetrics::from_file_metrics(
         metrics
             .iter()
             .map(|metric| chunk_relative_metric(&chunk_name, metric)),
-    ));
-    fs::write(
-        chunk_out_dir.join("manifest.json"),
-        serde_json::to_string_pretty(&manifest)? + "\n",
+    );
+    let decomposition = decomposition_by_chunk.get(&chunk_id);
+    let written =
+        ChunkManifest::from_analysis(&chunk_artifact.analysis, decomposition, metrics_output);
+    serde_json::to_writer_pretty(
+        &fs::File::create(chunk_out_dir.join("manifest.json"))?,
+        &written,
     )?;
     Ok(metrics)
 }
@@ -1128,7 +1134,6 @@ fn materialize_chunk_scripts(
 fn materialize_chunk_file(
     chunk: &JsChunk,
     chunk_id: &str,
-    out_dir: &Path,
     chunk_out_dir: &Path,
     selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
     file: String,
@@ -1137,13 +1142,8 @@ fn materialize_chunk_file(
         .get_file(&file)
         .with_context(|| format!("missing artifact file {chunk_id}/{file}"))?;
     let rendered = file_artifact.render_source()?;
-    let output_path = artifact_file_output_path_from_parts(chunk_id, &file, file_artifact)
-        .unwrap_or_else(|| join_module_path(&[chunk_id, &file]));
-    let target_path = if file_artifact.metadata.output_path.is_some() {
-        out_dir.join(path_from_module_path(&output_path))
-    } else {
-        chunk_out_dir.join(path_from_module_path(&file))
-    };
+    let output_path = join_module_path(&[chunk_id, &file]);
+    let target_path = chunk_out_dir.join(path_from_module_path(&file));
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -1172,12 +1172,11 @@ fn chunk_relative_metric(chunk_id: &str, metric: &OutputFileMetric) -> OutputFil
 }
 
 fn selected_module_by_chunk_file(
-    artifact: &JsPipelineArtifact,
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> HashMap<(String, String), &SelectedModuleLowering> {
-    artifact
-        .chunks
-        .iter()
-        .flat_map(|chunk| chunk.manifest.selected_module_lowerings.iter().flatten())
+    decomposition_by_chunk
+        .values()
+        .flat_map(|d| d.selected_module_lowerings.iter())
         .map(|lowering| {
             (
                 (lowering.chunk_id.clone(), lowering.target_file.clone()),
@@ -1193,7 +1192,7 @@ fn output_file_metric(
     artifact_file_path: &str,
     rendered: &str,
     selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
-    role: Option<FileRole>,
+    role: FileRole,
 ) -> Result<OutputFileMetric> {
     let lowering = selected_module_by_chunk_file
         .get(&(chunk_id.to_string(), artifact_file_path.to_string()))
@@ -1206,9 +1205,9 @@ fn output_file_metric(
         }
     } else {
         match role {
-            Some(FileRole::Entry) => OutputRole::TopLevelEntry,
-            Some(FileRole::Module) => OutputRole::NamedModule,
-            Some(FileRole::Runtime) | None => OutputRole::Other,
+            FileRole::Entry => OutputRole::TopLevelEntry,
+            FileRole::Module => OutputRole::NamedModule,
+            FileRole::Runtime => OutputRole::Other,
         }
     };
     Ok(OutputFileMetric {
@@ -1251,13 +1250,13 @@ fn fraction(part: usize, total: usize) -> f64 {
     }
 }
 
-pub fn get_chunk_entry_path(artifact: &JsPipelineArtifact, chunk_id: ChunkId) -> Option<String> {
+pub fn get_chunk_entry_path(artifact: &ChunkBundle, chunk_id: ChunkId) -> Option<String> {
     let chunk_artifact = artifact.find_chunk(chunk_id)?;
     let chunk = &chunk_artifact.js;
     if !chunk.entry_file.is_empty() && chunk.get_file(&chunk.entry_file).is_some() {
         return Some(chunk.entry_file.clone());
     }
-    Some(&chunk_artifact.manifest)
+    Some(&chunk_artifact.analysis)
         .and_then(|manifest| {
             chunk
                 .get_file(&manifest.entry_file)
@@ -1266,37 +1265,11 @@ pub fn get_chunk_entry_path(artifact: &JsPipelineArtifact, chunk_id: ChunkId) ->
         })
         .or_else(|| {
             chunk.files.iter().find_map(|file| {
-                matches!(
-                    file.metadata.role,
-                    Some(FileRole::Entry | FileRole::Runtime)
-                )
-                .then(|| file.path.clone())
+                matches!(file.metadata.role, FileRole::Entry | FileRole::Runtime)
+                    .then(|| file.path.clone())
             })
         })
         .or_else(|| chunk.files.first().map(|f| f.path.clone()))
-}
-
-pub fn artifact_file_output_path(
-    artifact: &JsPipelineArtifact,
-    chunk_id: ChunkId,
-    file: &str,
-) -> Option<String> {
-    let chunk_name = artifact.chunk_table.name(chunk_id);
-    let chunk = artifact.find_js_chunk(chunk_id)?;
-    let file_artifact = chunk.get_file(file)?;
-    artifact_file_output_path_from_parts(chunk_name, file, file_artifact)
-}
-
-fn artifact_file_output_path_from_parts(
-    chunk_id: &str,
-    file: &str,
-    file_artifact: &JsFile,
-) -> Option<String> {
-    file_artifact
-        .metadata
-        .output_path
-        .clone()
-        .or_else(|| Some(join_module_path(&[chunk_id, file])))
 }
 
 pub fn relative_module_specifier(from_dir: &Path, target_path: &Path) -> String {
@@ -1429,18 +1402,15 @@ pub fn module_path_dirname(path: &str) -> String {
 }
 
 fn source_path_for_artifact_file(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
     chunk_id: ChunkId,
     file: &str,
 ) -> Result<Option<String>> {
     let Some(chunk) = artifact.find_js_chunk(chunk_id) else {
         return Ok(None);
     };
-    if let Some(source_path) = chunk
-        .get_file(file)
-        .and_then(|artifact_file| artifact_file.metadata.source_path.clone())
-    {
-        return Ok(Some(source_path));
+    if let Some(artifact_file) = chunk.get_file(file) {
+        return Ok(Some(artifact_file.metadata.source_path.clone()));
     }
     Ok(artifact.chunk_source_path(chunk_id))
 }

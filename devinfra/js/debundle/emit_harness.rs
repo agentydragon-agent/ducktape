@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
@@ -8,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use artifact::{
-    ArtifactChunkRecord, JsPipelineArtifact, OutputMetrics, chunk_id_for_js_path,
-    manifest_relative_path, materialize_artifact_scripts, module_path_from_path,
-    normalize_module_path, path_from_module_path,
+    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, OutputMetrics,
+    chunk_id_for_js_path, manifest_relative_path, materialize_artifact_scripts,
+    module_path_from_path, normalize_module_path, path_from_module_path,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 use rewrite_specifiers::runtime_js_href;
@@ -45,8 +46,10 @@ struct HtmlEntries {
 }
 
 pub fn emit_browser_harness(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
     options: &EmitBrowserHarnessOptions,
+    chunk_records: &[ArtifactChunkRecord],
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<()> {
     let asset_summary: AssetSummary = serde_json::from_str(
         &fs::read_to_string(&options.asset_summary_path)
@@ -95,7 +98,8 @@ pub fn emit_browser_harness(
     }
 
     prepare_harness_output_dir(&options.out_dir, options.force)?;
-    let materialized = materialize_artifact_scripts(artifact, &options.out_dir)?;
+    let materialized =
+        materialize_artifact_scripts(artifact, &options.out_dir, decomposition_by_chunk)?;
     let copied_assets = copy_snapshot_assets(&options.snapshot_root, &options.out_dir)?;
     let bootstrap = build_bootstrap(artifact, &entry_scripts, &options.out_dir, &options.out_dir)?;
     let index_html =
@@ -103,11 +107,11 @@ pub fn emit_browser_harness(
 
     fs::write(options.out_dir.join("index.html"), index_html)?;
     fs::write(options.out_dir.join("bootstrap.js"), bootstrap)?;
-    fs::write(
-        options.out_dir.join("chunks.manifest.json"),
-        serde_json::to_string_pretty(&ChunksManifest {
-            chunks: &artifact.root_manifest.chunks,
-        })? + "\n",
+    serde_json::to_writer_pretty(
+        &fs::File::create(options.out_dir.join("chunks.manifest.json"))?,
+        &ChunksManifest {
+            chunks: chunk_records,
+        },
     )?;
     // Make the harness tree self-contained: copy the upstream source HTML
     // and asset-summary into the output dir so the live proxy (and any
@@ -127,7 +131,7 @@ pub fn emit_browser_harness(
     // The identifier rename priority queue is a side output of every
     // harness emit; write it now so its path can be recorded in the
     // manifest.
-    let queue = compute_identifier_rename_queue(artifact)?;
+    let queue = compute_identifier_rename_queue(artifact, decomposition_by_chunk)?;
     let queue_path = write_queue(&options.out_dir, &queue)?;
     let manifest = HarnessManifest {
         source_html: rel(&source_html_in_tree),
@@ -149,15 +153,12 @@ pub fn emit_browser_harness(
             index_html: rel(&options.out_dir.join("index.html")),
         },
     };
-    fs::write(
-        &manifest_path,
-        serde_json::to_string_pretty(&manifest)? + "\n",
-    )?;
-    fs::write(
-        options.out_dir.join("package.json"),
-        serde_json::to_string_pretty(&PackageManifest {
+    serde_json::to_writer_pretty(&fs::File::create(&manifest_path)?, &manifest)?;
+    serde_json::to_writer_pretty(
+        &fs::File::create(options.out_dir.join("package.json"))?,
+        &PackageManifest {
             package_type: "module",
-        })? + "\n",
+        },
     )?;
     Ok(())
 }
@@ -198,7 +199,7 @@ struct HarnessGeneratedManifest {
 }
 
 fn build_bootstrap(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
     entry_scripts: &[String],
     out_dir: &Path,
     runtime_root: &Path,
@@ -217,7 +218,7 @@ fn build_bootstrap(
 }
 
 fn rewrite_index_html(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
     source_html: &str,
     out_dir: &Path,
     runtime_root: &Path,

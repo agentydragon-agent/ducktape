@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use artifact::ArtifactIndexes;
 use artifact::load_js_chunks;
+use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
 use prepare_chunks::prepare_js_chunks;
@@ -19,7 +20,7 @@ use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use vendor::{
     SwapVendorOptions, apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
 };
-use write_tree::write_js_tree;
+use write_tree::{WriteTreeInput, write_js_tree};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformCli {
@@ -286,6 +287,8 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         || rewrite_chunk_entry_specifiers(prepare_result.artifact, &artifact_indexes),
     )?;
     let mut artifact = rewrite_result.artifact;
+    let mut counts = prepare_result.counts;
+    let mut chunk_records = prepare_result.chunk_records;
 
     // Vendor stages: each is internally filtered by `level`, so it's
     // safe to always invoke them when `vendor` carries any entries.
@@ -332,10 +335,14 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                     )
                 })?;
             artifact = swap_result.artifact;
+            counts.chunks -= swap_result.removed_chunk_ids.len();
+            chunk_records.retain(|chunk| !swap_result.removed_chunk_ids.contains(&chunk.chunk_id));
         }
     }
 
+    let mut module_count: usize = 0;
     let mut selected_lowerings: Vec<artifact::SelectedModuleLowering> = Vec::new();
+    let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
     if !materialise_chunk_ids.is_empty() {
         let MaterializeLogicalModulesConfig {
             file,
@@ -365,18 +372,25 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 )
             })?;
         artifact = materialize_result.artifact;
-        selected_lowerings = artifact
-            .root_manifest
-            .selected_module_lowerings
-            .clone()
-            .unwrap_or_default();
+        module_count = materialize_result.module_count;
+        selected_lowerings = materialize_result.selected_lowerings;
+        decomposition_by_chunk = materialize_result.decomposition_by_chunk;
     }
 
     if let Some(cfg) = &spec.write_js_tree {
         let out_dir = cfg.out_dir.clone();
         let force = cfg.force || cli.force;
         run_step(&mut steps, PipelineStage::WriteJsTree, || {
-            write_js_tree(&artifact, &out_dir, force, &selected_lowerings).map(|_| ())
+            write_js_tree(&WriteTreeInput {
+                artifact: &artifact,
+                out_dir: &out_dir,
+                force,
+                lowerings: &selected_lowerings,
+                counts: &counts,
+                chunk_records: &chunk_records,
+                module_count,
+                decomposition_by_chunk: &decomposition_by_chunk,
+            })
         })?;
     }
 
@@ -389,7 +403,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             snapshot_root: cfg.snapshot_root.clone(),
         };
         run_step(&mut steps, PipelineStage::EmitBrowserHarness, || {
-            emit_browser_harness(&artifact, &opts)?;
+            emit_browser_harness(&artifact, &opts, &chunk_records, &decomposition_by_chunk)?;
             Ok(())
         })?;
     }

@@ -6,8 +6,8 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use artifact::{
-    ArtifactIndexes, ChunkId, ChunkTable, FileRole, ImportReferenceKind, JsFile, JsFileAstParts,
-    JsPipelineArtifact, get_chunk_entry_path, join_module_path, module_path_dirname,
+    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, FileRole, ImportReferenceKind, JsFile,
+    JsFileAstParts, get_chunk_entry_path, join_module_path, module_path_dirname,
     relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
@@ -18,7 +18,7 @@ pub struct RewriteChunkEntrySpecifiersManifest {
 }
 
 pub struct RewriteChunkEntrySpecifiersResult {
-    pub artifact: JsPipelineArtifact,
+    pub artifact: ChunkBundle,
     pub manifest: RewriteChunkEntrySpecifiersManifest,
 }
 
@@ -30,7 +30,7 @@ pub struct RewriteCounts {
 }
 
 pub fn rewrite_chunk_entry_specifiers(
-    mut artifact: JsPipelineArtifact,
+    mut artifact: ChunkBundle,
     references: &ArtifactIndexes,
 ) -> Result<RewriteChunkEntrySpecifiersResult> {
     let mut jobs = Vec::new();
@@ -134,7 +134,7 @@ fn rewrite_file(
 }
 
 pub fn runtime_js_href(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
     js_path: &str,
     out_dir: &Path,
     runtime_root: &Path,
@@ -158,9 +158,9 @@ fn should_rewrite_file(file: &JsFile) -> bool {
     if !file.is_ast() {
         return false;
     }
-    if file.metadata.role == Some(FileRole::Module)
-        && file.metadata.generated_stage.as_deref() == Some("selected_module_lowering")
-    {
+    let is_lowered_module = file.metadata.role == FileRole::Module
+        && file.metadata.generated_by_selected_module_lowering;
+    if is_lowered_module {
         return false;
     }
     true

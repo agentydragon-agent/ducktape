@@ -5,7 +5,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{
-    ChunkCounts, ChunkFileRecord, ChunkManifest, ExportAliasRecord, FileRole, ImportRecord,
+    ChunkAnalysis, ChunkCounts, ChunkFileRecord, ExportAliasRecord, FileRole, ImportRecord,
     ImportSpecifierKind, ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ParserOptionsRecord,
     TopLevelDeclarationKind,
 };
@@ -189,7 +189,7 @@ pub fn build_chunk_manifest_from_analysis(
     entry_file: &str,
     source_path: &str,
     analysis: &ProgramAnalysis,
-) -> ChunkManifest {
+) -> ChunkAnalysis {
     let unresolved_exports = analysis
         .export_aliases
         .iter()
@@ -216,7 +216,7 @@ pub fn build_chunk_manifest_from_analysis(
         })
         .collect::<Vec<_>>();
 
-    ChunkManifest {
+    ChunkAnalysis {
         chunk_id: chunk_id.to_string(),
         source_path: source_path.to_string(),
         parser: ParserOptionsRecord::default(),
@@ -239,9 +239,6 @@ pub fn build_chunk_manifest_from_analysis(
         export_aliases: analysis.export_aliases.clone(),
         unresolved_exports,
         kept_top_level_declarations,
-        logical_modules: None,
-        selected_module_lowerings: None,
-        output_metrics: None,
     }
 }
 

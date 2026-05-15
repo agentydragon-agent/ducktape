@@ -18,12 +18,11 @@ use analysis::{
     compute_owner_graph_and_units, render_atomic_unit_conflict_summary, render_cycle_summary,
 };
 use artifact::{
-    ArtifactIndexes, ArtifactSourceImportResolver, ChunkArtifact, ChunkFileRecord, ChunkId,
-    ChunkLogicalModulesSummary, ChunkManifest, ChunkMetadata, ChunkTable, FileMetadata, FileRole,
-    JsChunk, JsFile, JsFileBody, JsPipelineArtifact, ModuleExtractionState,
-    RootLogicalModulesSummary, SelectedModuleLowering, get_chunk_entry_path, join_module_path,
-    manifest_relative_path, module_path_dirname, module_path_from_path, normalize_module_path,
-    relative_module_path,
+    ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysis, ChunkArtifact, ChunkBundle,
+    ChunkDecompositionOutput, ChunkFileRecord, ChunkId, ChunkLogicalModulesSummary, ChunkMetadata,
+    ChunkTable, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody, SelectedModuleLowering,
+    get_chunk_entry_path, join_module_path, manifest_relative_path, module_path_dirname,
+    module_path_from_path, normalize_module_path, relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use spec::{
@@ -75,8 +74,11 @@ pub struct LogicalModuleManifest {
 }
 
 pub struct MaterializeLogicalModulesResult {
-    pub artifact: JsPipelineArtifact,
+    pub artifact: ChunkBundle,
     pub manifest: LogicalModuleManifest,
+    pub selected_lowerings: Vec<SelectedModuleLowering>,
+    pub module_count: usize,
+    pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -209,7 +211,7 @@ struct ModulePlan {
 }
 
 pub fn materialize_logical_modules(
-    mut artifact: JsPipelineArtifact,
+    mut artifact: ChunkBundle,
     logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
     chunk_renames: &BTreeMap<String, ChunkRenames>,
     unassigned_mode: &BTreeMap<String, UnassignedMode>,
@@ -242,7 +244,7 @@ pub fn materialize_logical_modules(
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
     let index_duration = index_started.elapsed();
 
-    let artifact_ref: &JsPipelineArtifact = &artifact;
+    let artifact_ref: &ChunkBundle = &artifact;
     let chunk_results = selected_chunk_ids
         .par_iter()
         .map(|chunk_id| {
@@ -274,9 +276,11 @@ pub fn materialize_logical_modules(
         applied.extend(chunk_result.applied.iter().cloned());
         reports.push(chunk_result.report.clone());
     }
-    artifact = apply_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
+    let apply_result = apply_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
+    artifact = apply_result.artifact;
+    let decomposition_by_chunk = apply_result.decomposition_by_chunk;
 
-    update_root_manifest(&mut artifact, &reports, &applied);
+    let module_count: usize = reports.iter().map(|r| r.counts.final_modules).sum();
     let duration = started.elapsed();
     let mut aggregate_timings = aggregate_logical_timings(&reports);
     aggregate_timings.insert("build_artifact_indexes".to_string(), index_duration);
@@ -312,12 +316,15 @@ pub fn materialize_logical_modules(
         if let Some(parent) = summary_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(
-            summary_path,
-            serde_json::to_string_pretty(&manifest)? + "\n",
-        )?;
+        serde_json::to_writer_pretty(&fs::File::create(summary_path)?, &manifest)?;
     }
-    Ok(MaterializeLogicalModulesResult { artifact, manifest })
+    Ok(MaterializeLogicalModulesResult {
+        artifact,
+        manifest,
+        selected_lowerings: applied,
+        module_count,
+        decomposition_by_chunk,
+    })
 }
 
 fn aggregate_logical_timings(reports: &[LogicalChunkReport]) -> BTreeMap<String, Duration> {
@@ -331,7 +338,7 @@ fn aggregate_logical_timings(reports: &[LogicalChunkReport]) -> BTreeMap<String,
 }
 
 struct MaterializeLogicalChunkInputs<'a> {
-    artifact: &'a JsPipelineArtifact,
+    artifact: &'a ChunkBundle,
     artifact_indexes: &'a ArtifactIndexes,
     logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     chunk_renames: &'a BTreeMap<String, ChunkRenames>,
@@ -399,12 +406,7 @@ fn materialize_logical_chunk(
         format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
     })?;
     let header_lines = runtime_file.header_lines.clone();
-    let source_path = runtime_file
-        .metadata
-        .source_path
-        .clone()
-        .or_else(|| artifact.chunk_source_path(chunk_id_interned))
-        .unwrap_or_else(|| format!("{chunk_id}.js"));
+    let source_path = runtime_file.metadata.source_path.clone();
     let chunk_ast_analysis = time_phase!(timings, "analyze_chunk_ast", {
         analyze_chunk_ast(&runtime_ast.module)
     });
@@ -932,11 +934,16 @@ fn materialize_logical_chunk(
     })
 }
 
+struct ApplyChunksResult {
+    artifact: ChunkBundle,
+    decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
+}
+
 fn apply_materialized_logical_chunks(
-    mut artifact: JsPipelineArtifact,
+    artifact: ChunkBundle,
     target_dir: &str,
     chunks: Vec<MaterializedLogicalChunk>,
-) -> Result<JsPipelineArtifact> {
+) -> Result<ApplyChunksResult> {
     let chunk_table = artifact.chunk_table.clone();
     let mut replacements = BTreeMap::<ChunkId, MaterializedLogicalChunk>::new();
     for chunk in chunks {
@@ -949,38 +956,44 @@ fn apply_materialized_logical_chunks(
         }
     }
 
-    let source_chunks = std::mem::take(&mut artifact.chunks);
+    let source_chunks = artifact.chunks;
     let mut output_chunks = Vec::with_capacity(source_chunks.len() + replacements.len());
+    let mut decomposition_by_chunk = HashMap::new();
     for chunk_artifact in source_chunks {
         if let Some(replacement) = replacements.remove(&chunk_artifact.chunk_id) {
-            output_chunks.push(materialized_chunk_artifact(
+            let (new_artifact, decomposition) = materialized_chunk_artifact(
                 target_dir,
                 &chunk_table,
-                Some(chunk_artifact.manifest),
+                Some(chunk_artifact.analysis),
                 replacement,
-            ));
+            );
+            decomposition_by_chunk.insert(new_artifact.chunk_id, decomposition);
+            output_chunks.push(new_artifact);
         } else {
             output_chunks.push(chunk_artifact);
         }
     }
     for replacement in replacements.into_values() {
-        output_chunks.push(materialized_chunk_artifact(
-            target_dir,
-            &chunk_table,
-            None,
-            replacement,
-        ));
+        let (new_artifact, decomposition) =
+            materialized_chunk_artifact(target_dir, &chunk_table, None, replacement);
+        decomposition_by_chunk.insert(new_artifact.chunk_id, decomposition);
+        output_chunks.push(new_artifact);
     }
-    artifact.chunks = output_chunks;
-    Ok(artifact)
+    Ok(ApplyChunksResult {
+        artifact: ChunkBundle {
+            chunks: output_chunks,
+            chunk_table: artifact.chunk_table,
+        },
+        decomposition_by_chunk,
+    })
 }
 
 fn materialized_chunk_artifact(
     target_dir: &str,
     chunk_table: &ChunkTable,
-    base_manifest: Option<ChunkManifest>,
+    base_analysis: Option<ChunkAnalysis>,
     chunk: MaterializedLogicalChunk,
-) -> ChunkArtifact {
+) -> (ChunkArtifact, ChunkDecompositionOutput) {
     let MaterializedLogicalChunk {
         chunk_id,
         target_file,
@@ -991,10 +1004,6 @@ fn materialized_chunk_artifact(
         report,
     } = chunk;
     let chunk_name = chunk_table.name(chunk_id).to_string();
-    let module_extraction_state = ModuleExtractionState {
-        runtime_file: target_file.clone(),
-        target_dir: target_dir.to_string(),
-    };
     let manifest_files = file_records
         .iter()
         .map(|(file, role)| ChunkFileRecord {
@@ -1002,7 +1011,7 @@ fn materialized_chunk_artifact(
             role: *role,
         })
         .collect();
-    let logical_modules = Some(ChunkLogicalModulesSummary {
+    let logical_modules = ChunkLogicalModulesSummary {
         count: report.counts.final_modules,
         module_ids: report
             .final_module_contents
@@ -1010,40 +1019,43 @@ fn materialized_chunk_artifact(
             .map(|module| module.id.clone())
             .collect(),
         target_dir: target_dir.to_string(),
-    });
+    };
     let js = JsChunk {
         entry_file: target_file.clone(),
         files,
         metadata: ChunkMetadata {
             source_path: Some(source_path.clone()),
-            module_extraction_state: Some(module_extraction_state),
         },
     };
-    let mut manifest = base_manifest.unwrap_or_else(|| ChunkManifest {
-        chunk_id: chunk_name,
-        source_path,
-        parser: Default::default(),
-        entry_file: target_file.clone(),
-        counts: Default::default(),
-        files: Vec::new(),
-        imports: Vec::new(),
-        export_aliases: Vec::new(),
-        unresolved_exports: Vec::new(),
-        kept_top_level_declarations: Vec::new(),
-        logical_modules: None,
-        selected_module_lowerings: None,
-        output_metrics: None,
-    });
-    manifest.entry_file = target_file;
-    manifest.files = manifest_files;
-    manifest.logical_modules = logical_modules;
-    manifest.selected_module_lowerings = Some(applied);
+    let analysis = ChunkAnalysis {
+        entry_file: target_file,
+        files: manifest_files,
+        ..base_analysis.unwrap_or_else(|| ChunkAnalysis {
+            chunk_id: chunk_name,
+            source_path,
+            parser: Default::default(),
+            entry_file: String::new(),
+            counts: Default::default(),
+            files: Vec::new(),
+            imports: Vec::new(),
+            export_aliases: Vec::new(),
+            unresolved_exports: Vec::new(),
+            kept_top_level_declarations: Vec::new(),
+        })
+    };
 
-    ChunkArtifact {
-        chunk_id,
-        js,
-        manifest,
-    }
+    let decomposition = ChunkDecompositionOutput {
+        logical_modules,
+        selected_module_lowerings: applied,
+    };
+    (
+        ChunkArtifact {
+            chunk_id,
+            js,
+            analysis,
+        },
+        decomposition,
+    )
 }
 
 struct LoweredChunk {
@@ -1054,7 +1066,7 @@ struct LoweredChunk {
 }
 
 struct LowerChunkInputs<'a> {
-    artifact: &'a JsPipelineArtifact,
+    artifact: &'a ChunkBundle,
     artifact_indexes: &'a ArtifactIndexes,
     runtime_ast: &'a ParsedJsModule,
     header_lines: &'a [String],
@@ -1118,14 +1130,14 @@ type SourceImportResolutionKey = (String, String, String);
 type SourceImportResolution = Option<(String, String, String)>;
 
 struct ArtifactSourceImportResolutionCache<'a> {
-    artifact: &'a JsPipelineArtifact,
+    artifact: &'a ChunkBundle,
     indexes: &'a ArtifactIndexes,
     resolutions: BTreeMap<SourceImportResolutionKey, SourceImportResolution>,
     resolver: Option<ArtifactSourceImportResolver<'a>>,
 }
 
 impl<'a> ArtifactSourceImportResolutionCache<'a> {
-    fn new(artifact: &'a JsPipelineArtifact, indexes: &'a ArtifactIndexes) -> Self {
+    fn new(artifact: &'a ChunkBundle, indexes: &'a ArtifactIndexes) -> Self {
         Self {
             artifact,
             indexes,
@@ -1446,11 +1458,11 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         }),
         header_lines: header_lines.to_vec(),
         metadata: FileMetadata {
-            chunk_id: Some(chunk_id.to_string()),
-            chunk_file: Some(entry_file.to_string()),
-            role: Some(FileRole::Entry),
-            source_path: Some(source_path.to_string()),
-            ..Default::default()
+            chunk_id: chunk_id.to_string(),
+            chunk_file: entry_file.to_string(),
+            role: FileRole::Entry,
+            source_path: source_path.to_string(),
+            generated_by_selected_module_lowering: false,
         },
     }];
     let mut file_records = vec![(entry_file.to_string(), FileRole::Entry)];
@@ -1672,12 +1684,11 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 }),
                 header_lines: header,
                 metadata: FileMetadata {
-                    chunk_id: Some(chunk_id.to_string()),
-                    chunk_file: Some(plan.target_file.clone()),
-                    role: Some(FileRole::Module),
-                    source_path: Some(source_path.to_string()),
-                    output_path: None,
-                    generated_stage: Some("selected_module_lowering".to_string()),
+                    chunk_id: chunk_id.to_string(),
+                    chunk_file: plan.target_file.clone(),
+                    role: FileRole::Module,
+                    source_path: source_path.to_string(),
+                    generated_by_selected_module_lowering: true,
                 },
             });
             file_records.push((plan.target_file.clone(), FileRole::Module));
@@ -3955,30 +3966,12 @@ fn entry_exports_for_moved_bindings(
     }
 }
 
-fn prune_artifact_to_chunk_ids(artifact: &mut JsPipelineArtifact, selected: &[String]) {
-    let selected_names: BTreeSet<String> = selected.iter().cloned().collect();
+fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: &[String]) {
     let selected_ids: std::collections::HashSet<ChunkId> = selected
         .iter()
         .filter_map(|name| artifact.chunk_table.get(name))
         .collect();
     artifact.retain_chunks(|chunk_id| selected_ids.contains(&chunk_id));
-    artifact
-        .root_manifest
-        .chunks
-        .retain(|chunk| selected_names.contains(&chunk.chunk_id));
-    artifact.root_manifest.counts.chunks = artifact.root_manifest.chunks.len();
-}
-
-fn update_root_manifest(
-    artifact: &mut JsPipelineArtifact,
-    reports: &[LogicalChunkReport],
-    applied: &[SelectedModuleLowering],
-) {
-    artifact.root_manifest.counts.selected_module_lowerings = Some(applied.len());
-    artifact.root_manifest.logical_modules = Some(RootLogicalModulesSummary {
-        module_count: reports.iter().map(|r| r.counts.final_modules).sum(),
-    });
-    artifact.root_manifest.selected_module_lowerings = Some(applied.to_vec());
 }
 
 fn write_chunk_report_json<T: Serialize>(
