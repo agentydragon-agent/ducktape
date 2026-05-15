@@ -95,7 +95,7 @@ pub fn emit_browser_harness(
     }
 
     prepare_harness_output_dir(&options.out_dir, options.force)?;
-    let output_metrics = materialize_artifact_scripts(artifact, &options.out_dir)?;
+    let materialized = materialize_artifact_scripts(artifact, &options.out_dir)?;
     let copied_assets = copy_snapshot_assets(&options.snapshot_root, &options.out_dir)?;
     let bootstrap = build_bootstrap(artifact, &entry_scripts, &options.out_dir, &options.out_dir)?;
     let index_html =
@@ -142,7 +142,7 @@ pub fn emit_browser_harness(
             .map(|entry| entry.path.clone())
             .collect(),
         identifier_rename_queue: rel(&queue_path),
-        output_metrics,
+        output_metrics: materialized.output_metrics,
         generated: HarnessGeneratedManifest {
             bootstrap: rel(&options.out_dir.join("bootstrap.js")),
             chunks_manifest: rel(&options.out_dir.join("chunks.manifest.json")),

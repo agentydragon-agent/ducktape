@@ -226,6 +226,8 @@ pub struct ArtifactManifest {
     pub identifier_rename_queue: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_metrics: Option<OutputMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decomposition_metrics: Option<DecompositionMetrics>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -357,6 +359,120 @@ impl OutputMetrics {
             largest_files_by_bytes: largest_files_by_bytes(metrics),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DecompositionMetrics {
+    pub module_count: usize,
+    pub total_symbols_defined: usize,
+    pub total_exported_symbols: usize,
+    pub export_ratio: f64,
+    pub loc_distribution: LocDistribution,
+    pub entropy: f64,
+    pub per_module: Vec<ModuleDecompositionMetrics>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDecompositionMetrics {
+    pub module_id: String,
+    pub loc: usize,
+    pub exported_symbol_count: usize,
+    pub is_residual: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LocDistribution {
+    pub p50: usize,
+    pub p90: usize,
+    pub max: usize,
+    pub min: usize,
+}
+
+impl DecompositionMetrics {
+    pub fn compute(
+        lowerings: &[SelectedModuleLowering],
+        file_metrics: &[OutputFileMetric],
+    ) -> Self {
+        let mut per_module: Vec<ModuleDecompositionMetrics> = Vec::new();
+        let mut total_exported = 0usize;
+        let mut total_defined = 0usize;
+
+        for lowering in lowerings {
+            let loc: usize = file_metrics
+                .iter()
+                .filter(|f| f.module_id.as_deref() == Some(&lowering.id))
+                .map(|f| f.lines)
+                .sum();
+            total_exported += lowering.exported_names.len();
+            total_defined += lowering.binding_names.len();
+            per_module.push(ModuleDecompositionMetrics {
+                module_id: lowering.id.clone(),
+                loc,
+                exported_symbol_count: lowering.exported_names.len(),
+                is_residual: lowering.residual,
+            });
+        }
+
+        let module_count = per_module.len();
+        let export_ratio = if total_defined > 0 {
+            total_exported as f64 / total_defined as f64
+        } else {
+            0.0
+        };
+
+        let loc_distribution = compute_loc_distribution(&per_module);
+        let entropy = compute_normalized_entropy(&per_module);
+
+        Self {
+            module_count,
+            total_symbols_defined: total_defined,
+            total_exported_symbols: total_exported,
+            export_ratio,
+            loc_distribution,
+            entropy,
+            per_module,
+        }
+    }
+}
+
+fn compute_loc_distribution(modules: &[ModuleDecompositionMetrics]) -> LocDistribution {
+    let mut locs: Vec<usize> = modules.iter().map(|m| m.loc).collect();
+    if locs.is_empty() {
+        return LocDistribution {
+            p50: 0,
+            p90: 0,
+            max: 0,
+            min: 0,
+        };
+    }
+    locs.sort_unstable();
+    let len = locs.len();
+    LocDistribution {
+        p50: locs[len / 2],
+        p90: locs[len * 9 / 10],
+        max: locs[len - 1],
+        min: locs[0],
+    }
+}
+
+fn compute_normalized_entropy(modules: &[ModuleDecompositionMetrics]) -> f64 {
+    if modules.len() <= 1 {
+        return 0.0;
+    }
+    let total_loc: usize = modules.iter().map(|m| m.loc).sum();
+    if total_loc == 0 {
+        return 0.0;
+    }
+    let entropy: f64 = modules
+        .iter()
+        .filter(|m| m.loc > 0)
+        .map(|m| {
+            let p = m.loc as f64 / total_loc as f64;
+            -p * p.ln()
+        })
+        .sum();
+    let n = modules.len() as f64;
+    entropy / n.ln()
 }
 
 impl OutputSize {
@@ -945,21 +1061,30 @@ pub fn load_js_chunks(
     Ok((chunks, manifest))
 }
 
+pub struct MaterializedScripts {
+    pub output_metrics: OutputMetrics,
+    pub file_metrics: Vec<OutputFileMetric>,
+}
+
 pub fn materialize_artifact_scripts(
     artifact: &JsPipelineArtifact,
     out_dir: &Path,
-) -> Result<OutputMetrics> {
+) -> Result<MaterializedScripts> {
     let selected_module_by_chunk_file = selected_module_by_chunk_file(artifact);
-    let metrics = artifact
+    let file_metrics: Vec<OutputFileMetric> = artifact
         .list_chunk_ids()
         .into_iter()
         .map(|chunk_id| {
             materialize_chunk_scripts(artifact, out_dir, &selected_module_by_chunk_file, chunk_id)
         })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(OutputMetrics::from_file_metrics(
-        metrics.into_iter().flatten(),
-    ))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    Ok(MaterializedScripts {
+        output_metrics: OutputMetrics::from_file_metrics(file_metrics.clone()),
+        file_metrics,
+    })
 }
 
 fn materialize_chunk_scripts(

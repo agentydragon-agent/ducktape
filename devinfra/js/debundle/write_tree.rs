@@ -5,7 +5,8 @@ use anyhow::{Result, bail};
 use serde::Serialize;
 
 use artifact::{
-    JsPipelineArtifact, list_chunk_file_paths, manifest_relative_path, materialize_artifact_scripts,
+    DecompositionMetrics, JsPipelineArtifact, SelectedModuleLowering, list_chunk_file_paths,
+    manifest_relative_path, materialize_artifact_scripts,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 
@@ -29,6 +30,7 @@ pub fn write_js_tree(
     artifact: &JsPipelineArtifact,
     out_dir: &Path,
     force: bool,
+    lowerings: &[SelectedModuleLowering],
 ) -> Result<WriteJsTreeManifest> {
     if out_dir.as_os_str().is_empty() {
         bail!("write_js_tree requires out_dir");
@@ -50,7 +52,16 @@ pub fn write_js_tree(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    let output_metrics = materialize_artifact_scripts(artifact, out_dir)?;
+    let materialized = materialize_artifact_scripts(artifact, out_dir)?;
+
+    let decomposition_metrics = if lowerings.is_empty() {
+        None
+    } else {
+        Some(DecompositionMetrics::compute(
+            lowerings,
+            &materialized.file_metrics,
+        ))
+    };
 
     // The identifier rename priority queue is a side output of every
     // pipeline run that writes a tree manifest. Emit it now and record
@@ -61,7 +72,8 @@ pub fn write_js_tree(
     let mut root_manifest = artifact.root_manifest.clone();
     root_manifest.identifier_rename_queue =
         Some(manifest_relative_path(&manifest_path, &queue_path));
-    root_manifest.output_metrics = Some(output_metrics.clone());
+    root_manifest.output_metrics = Some(materialized.output_metrics);
+    root_manifest.decomposition_metrics = decomposition_metrics;
     fs::write(
         &manifest_path,
         serde_json::to_string_pretty(&root_manifest)? + "\n",

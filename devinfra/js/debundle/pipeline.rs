@@ -335,6 +335,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         }
     }
 
+    let mut selected_lowerings: Vec<artifact::SelectedModuleLowering> = Vec::new();
     if !materialise_chunk_ids.is_empty() {
         let MaterializeLogicalModulesConfig {
             file,
@@ -364,13 +365,18 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 )
             })?;
         artifact = materialize_result.artifact;
+        selected_lowerings = artifact
+            .root_manifest
+            .selected_module_lowerings
+            .clone()
+            .unwrap_or_default();
     }
 
     if let Some(cfg) = &spec.write_js_tree {
         let out_dir = cfg.out_dir.clone();
         let force = cfg.force || cli.force;
         run_step(&mut steps, PipelineStage::WriteJsTree, || {
-            write_js_tree(&artifact, &out_dir, force).map(|_| ())
+            write_js_tree(&artifact, &out_dir, force, &selected_lowerings).map(|_| ())
         })?;
     }
 
