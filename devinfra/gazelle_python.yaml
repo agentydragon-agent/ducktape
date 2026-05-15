@@ -132,6 +132,8 @@ manifest:
     genai_prices: genai_prices
     gepa: gepa
     github: pygithub
+    glide: valkey_glide
+    glide_shared: valkey_glide
     google.api.annotations_pb2: googleapis_common_protos
     google.api.auth_pb2: googleapis_common_protos
     google.api.backend_pb2: googleapis_common_protos
@@ -517,7 +519,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -621,4 +623,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: ca8e46f62f1545228ece0650e7a1a2069d90e48d0ec801fb2c4bfc2d402cf6f0
+integrity: 6fdb862002850e2ca1d858ac4fe2c8030901f608edc23d67ccd5945058b6cb72

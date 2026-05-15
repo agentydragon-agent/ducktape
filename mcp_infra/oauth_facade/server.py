@@ -7,20 +7,34 @@ import sys
 from typing import Any
 
 import uvicorn
+from key_value.aio.stores.valkey import ValkeyStore
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
 from mcp_infra.authentik_auth.auth import build_authentik_auth
-from mcp_infra.oauth_facade.config import FacadeSettings
+from mcp_infra.oauth_facade.config import FacadeSettings, ValkeyPersistence
 from mcp_infra.oauth_facade.proxy import build_proxy_server
 
 logger = logging.getLogger(__name__)
 
 
+def _build_client_storage(settings: FacadeSettings) -> Any:
+    match settings.persistence:
+        case ValkeyPersistence(host=h, port=p, db=d):
+            return ValkeyStore(host=h, port=p, db=d)
+        case _:
+            return None
+
+
 def build_server(settings: FacadeSettings, *, auth_provider: Any | None = None):
     """Build the facade FastMCP server. `auth_provider` is injectable for tests."""
-    auth = auth_provider if auth_provider is not None else build_authentik_auth(settings.auth)
+    client_storage = _build_client_storage(settings)
+    auth = (
+        auth_provider
+        if auth_provider is not None
+        else build_authentik_auth(settings.auth, client_storage=client_storage)
+    )
     return build_proxy_server(settings, auth=auth)
 
 

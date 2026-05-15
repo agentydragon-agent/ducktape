@@ -9,4 +9,6 @@ data:
   MCP_FACADE_FACADE_NAME: "Tana MCP Facade"
   MCP_FACADE_UPSTREAM__KIND: "http"
   MCP_FACADE_UPSTREAM__URL: "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
-  FASTMCP_HOME: "/var/lib/fastmcp"
+  MCP_FACADE_PERSISTENCE__KIND: "valkey"
+  MCP_FACADE_PERSISTENCE__HOST: "mcp-valkey-master.mcp-infra.svc.cluster.local"
+  MCP_FACADE_PERSISTENCE__DB: "0"

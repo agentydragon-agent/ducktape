@@ -1,4 +1,4 @@
-"""FileTreeStore factory for Authentik auth state persistence."""
+"""Store factories for Authentik auth state persistence."""
 
 from __future__ import annotations
 

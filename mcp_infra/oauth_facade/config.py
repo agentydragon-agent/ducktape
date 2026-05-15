@@ -46,6 +46,20 @@ class StdioUpstream(BaseModel):
 Upstream = Annotated[HttpUpstream | StdioUpstream, Field(discriminator="kind")]
 
 
+class FilePersistence(BaseModel):
+    kind: Literal["file"] = "file"
+
+
+class ValkeyPersistence(BaseModel):
+    kind: Literal["valkey"]
+    host: str
+    port: int = 6379
+    db: int = 0
+
+
+PersistenceConfig = Annotated[FilePersistence | ValkeyPersistence, Field(discriminator="kind")]
+
+
 class FacadeSettings(BaseSettings):
     """Config for the MCP OAuth facade."""
 
@@ -57,3 +71,4 @@ class FacadeSettings(BaseSettings):
     instructions: str | None = None
     host: str = "0.0.0.0"
     port: int = 8765
+    persistence: PersistenceConfig = FilePersistence()

@@ -30,8 +30,10 @@ py_library(
         ":proxy",
         "//mcp_infra/authentik_auth:auth",
         "@pypi//fastmcp",
+        "@pypi//py_key_value_aio",
         "@pypi//starlette",
         "@pypi//uvicorn",
+        "@pypi//valkey_glide",
     ],
 )
 

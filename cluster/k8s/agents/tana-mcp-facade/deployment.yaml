@@ -54,9 +54,6 @@ spec:
                 secretKeyRef:
                   name: tana-agentydragon-gmail-com-account-pat
                   key: token
-          volumeMounts:
-            - name: fastmcp-state
-              mountPath: /var/lib/fastmcp
           resources:
             requests:
               memory: "128Mi"
@@ -80,7 +77,3 @@ spec:
               path: /healthz
               port: 8765
             periodSeconds: 20
-      volumes:
-        - name: fastmcp-state
-          persistentVolumeClaim:
-            claimName: tana-mcp-facade-fastmcp-state
