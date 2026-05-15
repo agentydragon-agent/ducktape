@@ -35,7 +35,16 @@ second ordered roadmap.
       hardcoded partner-ownership hack. The exact representation still needs design.
 - [ ] Remove or implement schema-only policy types: `LiquidityReservePolicy`, `PortfolioTargetRebalancePolicy`, and `ManualEventSchedulePolicy`.
 - [ ] Make result inspection typed and local. String metric names via `series("cash_usd")` are acceptable as a compatibility layer, but primary callers should get discoverable typed metric/rollout/detail helpers.
-- [ ] Honor or remove `ReportSpec.include_monthly_columns`, `include_sample_paths`, and unsupported `MarketRequest.shared_market_paths=false`.
+- [ ] Separate rollout stochastic inputs in the API/data model. Today a rollout
+      is effectively a sampled market environment plus deterministic policy. Make
+      that explicit, and consider separate structures/identifiers for market
+      nondeterminism, policy nondeterminism, and any future non-market random
+      events so trajectory IDs do not conflate different sources of randomness.
+- [ ] Decide how failed or insolvent rollouts should be represented. Consider a
+      programmatic guard that treats `cash_usd <= 0` as a failure unless an
+      enabled sale/financing policy can cover the shortfall, and define whether
+      actual cash is ever allowed to go below zero or instead produces a
+      first-class failed-rollout state.
 - [ ] Clarify initial state vs scheduled transitions. Property purchase,
       financing, ownership, future sale, rental transition, and private-stock
       sale opportunities should not be split across fields/events that can
@@ -104,22 +113,24 @@ second ordered roadmap.
       explicit sale/non-sale reasons. The model still needs richer exogenous
       tender/acquisition/IPO opportunity settings, participation policies beyond
       the first floor rule, and clearer private-stock sale/tax vocabulary.
-- [ ] Make charts choose human-sensible axis ticks. Use a smart step heuristic
-      so labels land on natural values like `$1,000`, `$2,000`, `$3,000` instead of
-      awkward computed values such as `$1,247.20` or `$9,231.10`.
 - [ ] Add a top-level reporting toggle for nominal vs inflation-adjusted USD.
       Amounts, charts, tables, and summary metrics should make clear whether
       they are shown in nominal future dollars or real/inflation-adjusted
       dollars.
+- [ ] Clean up redundant result-mode chips. Once a page-level header clearly
+      says the user is looking at a distribution or a trajectory, individual
+      child cards should not keep repeating `DISTRIBUTION`/`TRAJECTORY` badges
+      unless the badge disambiguates mixed content.
+- [ ] Normalize result table labels. Headers like `P50 net worth` next to
+      `liquid worth` are inconsistent because the second value is also a
+      percentile, and "liquid worth" is unclear wording. Prefer explicit,
+      consistent labels such as `P50 liquid net worth` or whatever term the model
+      settles on.
 - [ ] Rework selected-path ledger detail toggles. The current chips above the
       ledger table are clunky UI sugar; a better shape would make aggregate
       columns expandable in place, similar to hidden columns in a spreadsheet:
       e.g. `House costs total` expands in place into tax, insurance, HOA, and
       maintenance subcolumns under the same table header.
-- [ ] Improve numeric table typography so digits align vertically under
-      corresponding digits. Use tabular numbers, monospace, or another
-      deliberate CSS treatment for numeric cells, especially in dense result
-      tables.
 - [ ] Key partner-equity reporting by partner actor or make it derivable from actor-keyed ledger entries. Aggregate scenario arrays are fine for charts but should not be the only public detail.
 - [ ] Reconsider whether to reintroduce per-component partner contribution reporting for interest, property tax, insurance, HOA, and maintenance.
 - [ ] Refresh `augur/SPEC.md` once policy execution, sale taxes, and one-rollout detail have stabilized.
