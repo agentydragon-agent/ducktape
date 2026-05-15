@@ -5,7 +5,7 @@ export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c
 const URL_STATE_VERSION = 1;
 
 const DEFAULT_MARKET_REQUEST = {
-  marketModelId: "current_joint_model",
+  marketModelId: "current_market_model",
   rolloutCount: 128,
   horizonMonths: 360,
   randomSeed: null,

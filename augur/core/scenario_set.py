@@ -783,7 +783,7 @@ class InitialBalanceSheet(ApiModel):
 
 
 class MarketRequest(ApiModel):
-    market_model_id: str = "current_joint_model"
+    market_model_id: str = "current_market_model"
     rollout_count: PositiveInt = 128
     horizon_months: PositiveInt = 360
     random_seed: int | None = None

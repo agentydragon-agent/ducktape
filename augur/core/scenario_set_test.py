@@ -36,7 +36,7 @@ def _scenario_set_body(*scenario_ids: str) -> dict[str, Any]:
         "scenario_set_id": "compare_sf_and_vallejo",
         "title": "Compare SF and Vallejo",
         "market_request": {
-            "market_model_id": "current_joint_model",
+            "market_model_id": "current_market_model",
             "rollout_count": 32,
             "horizon_months": 120,
             "random_seed": 7,

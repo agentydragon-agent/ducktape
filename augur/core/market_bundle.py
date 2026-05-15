@@ -110,7 +110,7 @@ class MarketBundle:
         if location_id is None:
             key = "default"
         elif isinstance(location_id, LocationId):
-            key = location_id.value
+            key = location_id
         else:
             key = str(location_id)
         try:
@@ -187,8 +187,8 @@ class FlatMarketBundleProvider:
         for month in self.private_equity_liquidity_event_months:
             if 0 <= month <= horizon_months:
                 private_equity_events[:, month] = True
-        home_by_location = {"default": flat, **{location.value: flat for location in LocationId}}
-        rent_by_location = {"default": flat, **{location.value: flat for location in LocationId}}
+        home_by_location = {"default": flat, **dict.fromkeys(LocationId, flat)}
+        rent_by_location = {"default": flat, **dict.fromkeys(LocationId, flat)}
         return MarketBundle(
             month_index=np.arange(horizon_months + 1, dtype="int64"),
             inflation_multipliers=flat,
@@ -262,17 +262,17 @@ class SimpleMarketBundleProvider:
         home_by_location = _location_factor_map(
             home_base,
             annual_adjustment_pct={
-                LocationId.SAN_FRANCISCO_CA.value: 0.3,
-                LocationId.VALLEJO_CA.value: -0.2,
-                LocationId.MARE_ISLAND_VALLEJO_CA.value: -0.1,
+                LocationId.SAN_FRANCISCO_CA: 0.3,
+                LocationId.VALLEJO_CA: -0.2,
+                LocationId.MARE_ISLAND_VALLEJO_CA: -0.1,
             },
         )
         rent_by_location = _location_factor_map(
             rent_base,
             annual_adjustment_pct={
-                LocationId.SAN_FRANCISCO_CA.value: 0.4,
-                LocationId.VALLEJO_CA.value: -0.1,
-                LocationId.MARE_ISLAND_VALLEJO_CA.value: 0.0,
+                LocationId.SAN_FRANCISCO_CA: 0.4,
+                LocationId.VALLEJO_CA: -0.1,
+                LocationId.MARE_ISLAND_VALLEJO_CA: 0.0,
             },
         )
         metadata = MarketBundleMetadata(

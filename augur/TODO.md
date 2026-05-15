@@ -32,6 +32,7 @@ Last design scan: 2026-05-14.
 - [x] Collapse the old and new schema surfaces. `augur/core/scenario_set.py` is the scenario-set simulator schema; the legacy joint-rollout and stochastic-outcome schemas have been deleted instead of kept behind compatibility wrappers.
 - [ ] Clarify initial state vs scheduled transitions. Property purchase, financing, ownership, future sale, rental transition, and PE liquidity should not be split across fields/events that can contradict each other.
 - [ ] Reduce single-property/global assumptions. Scenario-level `property_selection`, `financing`, `rental_plan`, and `tax_profile` should eventually become initial positions, per-property settings, or per-actor/accounting inputs as the simulator grows.
+- [ ] Replace built-in `LocationId` enum with database-like location entities, parallel to properties. A location should carry regulation/tax/modeling knobs that downstream regulation and tax code interprets, not require hardcoded enum extension.
 - [ ] Move evidence/model-fetching shapes out of core simulator API when touched. Core should consume calibrated market/provider inputs, not source-specific evidence objects.
 
 ## Tax Follow-Ups
