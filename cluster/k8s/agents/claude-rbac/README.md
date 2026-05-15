@@ -78,7 +78,7 @@ Flux kustomization that depends only on the target namespace + `claude-rbac`.
 **Namespace diagnostics** (`namespace-diagnostics-reader` ClusterRole bound per-namespace):
 harbor, gatus, authentik-mcp-poc, csi-proxmox, openebs, proxmox-proxy, cnpg-system,
 nvidia-device-plugin, node-feature-discovery, local-path-storage, cert-manager, litellm,
-docker-ci, matrix, grocy-sf, grocy-vallejo, study-casino, props, ollama, langfuse
+docker-ci, matrix, grocy-sf, grocy-vallejo, study-casino, props, tana-mcp
 
 **Extended read**: ollama (`rolebinding-ollama-reader.yaml` in `ollama/agent-rbac/`),
 langfuse (in `langfuse/agent-rbac/`), openclaw (in `openclaw/gateway-namespace/`),
