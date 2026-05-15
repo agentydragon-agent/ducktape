@@ -1,3 +1,39 @@
+import {
+  to = authentik_application.mcp_poc
+  id = "authentik-mcp-poc"
+}
+
+import {
+  to = authentik_application.mcp_poc_backend
+  id = "authentik-mcp-poc-backend"
+}
+
+import {
+  to = authentik_policy_binding.mcp_poc_admins
+  id = "6acb2a5e-864a-42fe-aa80-ec391d31b178"
+}
+
+import {
+  to = authentik_policy_binding.mcp_poc_backend_admins
+  id = "6b2190d0-fb98-4b18-81eb-87e7f0147674"
+}
+
+import {
+  to = authentik_provider_oauth2.mcp_poc
+  id = "54"
+}
+
+import {
+  to = authentik_provider_proxy.mcp_poc_backend
+  id = "55"
+}
+
+import {
+  to = kubernetes_secret.mcp_poc_oidc
+  id = "authentik-mcp-poc-oidc:authentik-mcp-poc"
+}
+
+
 # Authentik wiring for the Authentik MCP POC.
 #
 # Creates two providers bound together by JWT federation:

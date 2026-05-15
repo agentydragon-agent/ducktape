@@ -1,3 +1,59 @@
+import {
+  to = authentik_application.alloy_otlp
+  id = "alloy-otlp"
+}
+
+import {
+  to = authentik_application.alloy_otlp_client_credentials
+  id = "alloy-otlp-client-credentials"
+}
+
+import {
+  to = authentik_policy_binding.alloy_otlp_cc_auto_user
+  id = "e1a7104f-90d4-4d5a-b9c1-7b5af0d6245c"
+}
+
+import {
+  to = authentik_policy_binding.alloy_otlp_client_credentials
+  id = "458270bc-f4c8-41ce-a931-2640be2de45c"
+}
+
+import {
+  to = authentik_policy_binding.alloy_otlp_proxy_auto_user
+  id = "e0993f0d-5817-4ea9-8329-2c759f8697f3"
+}
+
+import {
+  to = authentik_policy_binding.alloy_otlp_proxy_user
+  id = "557797a2-0cbc-44a3-84a6-8679a50275e0"
+}
+
+import {
+  to = authentik_provider_oauth2.alloy_otlp_client_credentials
+  id = "112"
+}
+
+import {
+  to = authentik_provider_proxy.alloy_otlp
+  id = "19"
+}
+
+import {
+  to = authentik_user.alloy_otlp_cc_auto
+  id = "56"
+}
+
+import {
+  to = authentik_user.alloy_otlp_client_credentials
+  id = "55"
+}
+
+import {
+  to = kubernetes_secret.alloy_otlp_client_credentials
+  id = "alloy-otlp-client-credentials:agents-infra"
+}
+
+
 terraform {
   required_version = ">= 1.0"
 
