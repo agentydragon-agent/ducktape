@@ -120,5 +120,5 @@ When refreshing one or more series:
 3. Replace the file in place. Don't rename — paths are referenced from
    `augur/model/config/joint_config.example.json` and equivalents.
 4. Re-fit downstream models that depend on the changed series:
-   the macro rollout provider's factor calibration, plus any PyMC posterior
-   stored downstream of this package.
+   the macro market-bundle provider's factor calibration, plus any PyMC
+   posterior stored downstream of this package.

@@ -81,7 +81,7 @@ py_library(
         "//augur/core:backend_py",
         "//augur/core:market_bundle_py",
         "//augur/core:static_py",
-        "//augur/model:macro_rollout_provider_py",
+        "//augur/model:macro_market_bundle_provider_py",
         "//augur/model/markets:registry_py",
         "@pypi//uvicorn",
     ],

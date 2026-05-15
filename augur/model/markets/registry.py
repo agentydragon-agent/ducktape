@@ -2,7 +2,7 @@
 
 A single source of truth for both:
 
-- the backend's ``--provider <label>`` flag (`MacroRolloutProvider.for_label(...)`),
+- the backend's ``--provider <label>`` flag (`MacroMarketBundleProvider.for_label(...)`),
 - the metric battery driver (`augur.model.metrics_report`).
 
 Each entry is a `MacroModelSpec` carrying the model class, its config, and a

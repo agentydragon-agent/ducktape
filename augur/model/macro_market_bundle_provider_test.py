@@ -1,4 +1,4 @@
-"""Shape-contract tests for the generic macro rollout provider.
+"""Shape-contract tests for the generic macro market-bundle provider.
 
 Parametrised across every label in the registry, so every shipped macro
 model is shape-checked against the MarketBundle contract automatically.
@@ -15,39 +15,39 @@ import pytest
 import pytest_bazel
 
 from augur.core.scenario_set import MarketRequest
-from augur.model.macro_rollout_provider import MacroRolloutProvider
+from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets.registry import LABELS
 
 
 @pytest.fixture(params=LABELS)
-def provider(request: pytest.FixtureRequest) -> MacroRolloutProvider:
+def provider(request: pytest.FixtureRequest) -> MacroMarketBundleProvider:
     config_path = Path(__file__).resolve().parent / "config" / "joint_config.example.json"
-    return MacroRolloutProvider.for_label(
+    return MacroMarketBundleProvider.for_label(
         request.param, config_path=config_path, current_private_equity_price_usd=100.0
     )
 
 
-def test_metadata_populated(provider: MacroRolloutProvider) -> None:
+def test_metadata_populated(provider: MacroMarketBundleProvider) -> None:
     assert provider.label in LABELS
     assert provider.horizon_months > 0
     assert isinstance(provider.horizon_start, str)
     assert isinstance(provider.latest_observations, dict)
 
 
-def _request(provider: MacroRolloutProvider, *, rollout_count: int = 3, horizon_months: int = 24) -> MarketRequest:
+def _request(provider: MacroMarketBundleProvider, *, rollout_count: int = 3, horizon_months: int = 24) -> MarketRequest:
     return MarketRequest(
         market_model_id=provider.label, rollout_count=rollout_count, horizon_months=horizon_months, random_seed=42
     )
 
 
-def _sample(provider: MacroRolloutProvider, *, rollout_count: int = 3, horizon_months: int = 24):
+def _sample(provider: MacroMarketBundleProvider, *, rollout_count: int = 3, horizon_months: int = 24):
     request = _request(provider, rollout_count=rollout_count, horizon_months=horizon_months)
     return provider.sample_market_bundle(
         rollout_count=rollout_count, horizon_months=horizon_months, seed=request.random_seed, market_request=request
     )
 
 
-def test_sample_market_bundle_shape(provider: MacroRolloutProvider) -> None:
+def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None:
     n_rollouts = 3
     horizon_months = 24
     bundle = _sample(provider, rollout_count=n_rollouts, horizon_months=horizon_months)
@@ -81,14 +81,14 @@ def test_sample_market_bundle_shape(provider: MacroRolloutProvider) -> None:
     )
 
 
-def test_mortgage_path_constant(provider: MacroRolloutProvider) -> None:
+def test_mortgage_path_constant(provider: MacroMarketBundleProvider) -> None:
     bundle = _sample(provider, rollout_count=1, horizon_months=24)
     arr = bundle.mortgage_30y_rate_pct[0]
     np.testing.assert_allclose(arr, arr[0])
     assert arr[0] > 0.0
 
 
-def test_private_equity_paths_flat_with_yearly_tenders(provider: MacroRolloutProvider) -> None:
+def test_private_equity_paths_flat_with_yearly_tenders(provider: MacroMarketBundleProvider) -> None:
     bundle = _sample(provider, rollout_count=1, horizon_months=24)
     np.testing.assert_allclose(bundle.private_equity_value_multipliers, 1.0)
     assert not bundle.private_equity_liquidity_event_mask[:, 0].any()
@@ -96,7 +96,7 @@ def test_private_equity_paths_flat_with_yearly_tenders(provider: MacroRolloutPro
     assert bundle.private_equity_liquidity_event_mask[:, 24].all()
 
 
-def test_seed_determinism(provider: MacroRolloutProvider) -> None:
+def test_seed_determinism(provider: MacroMarketBundleProvider) -> None:
     request = _request(provider, rollout_count=2, horizon_months=24)
     a = provider.sample_market_bundle(rollout_count=2, horizon_months=24, seed=11, market_request=request)
     b = provider.sample_market_bundle(rollout_count=2, horizon_months=24, seed=11, market_request=request)

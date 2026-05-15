@@ -317,7 +317,7 @@
       "MarketRequest.rollout_count",
       "MarketRequest.horizon_months"
     ],
-    "live_source_refs": ["x/augur/model/markets", "x/augur/model/macro_rollout_provider.py"],
+    "live_source_refs": ["x/augur/model/markets", "x/augur/model/macro_market_bundle_provider.py"],
     "historical_source_refs": ["d0a581643750b47e3537fe8128c03e61ff808bcd:x/augur/legacy/sf/README.md"],
     "notes": "Current per-factor rollouts become a pluggable MarketRequest/MarketBundle contract in later C work."
   }

@@ -25,7 +25,7 @@ from augur.model.markets.registry import BY_LABEL
 _TENDER_INTERVAL_MONTHS = 12
 
 
-class MacroRolloutProvider:
+class MacroMarketBundleProvider:
     def __init__(
         self, market_model: MarketModel, config_path: Path, *, current_private_equity_price_usd: float
     ) -> None:
@@ -50,7 +50,7 @@ class MacroRolloutProvider:
     @classmethod
     def for_label(
         cls, label: str, *, config_path: Path, current_private_equity_price_usd: float
-    ) -> MacroRolloutProvider:
+    ) -> MacroMarketBundleProvider:
         return cls(
             BY_LABEL[label].build(), config_path, current_private_equity_price_usd=current_private_equity_price_usd
         )
@@ -89,7 +89,7 @@ class MacroRolloutProvider:
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
                 event_stream_ids=("private_equity_liquidity_event",),
-                notes=("sampled by MacroRolloutProvider",),
+                notes=("sampled by MacroMarketBundleProvider",),
                 source_metadata={
                     "market_provider_label": self.label,
                     "market_provider_horizon_start": self.horizon_start,

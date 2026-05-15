@@ -22,11 +22,11 @@ def _split_config_arg(argv: list[str] | None) -> tuple[Path, list[str]]:
 def main(argv: list[str] | None = None) -> int:
     config_path, remaining = _split_config_arg(argv)
     dist_dir = get_required_path("_main/augur/app/dist/index.html").parent
-    rollout_config_path = get_required_path("_main/augur/model/config/joint_config.example.json")
+    market_config_path = get_required_path("_main/augur/model/config/joint_config.example.json")
     return run_server(
         augur_config=load_augur_config(config_path),
         dist_dir=dist_dir,
-        default_rollout_config_path=rollout_config_path,
+        default_market_config_path=market_config_path,
         argv=remaining,
     )
 
