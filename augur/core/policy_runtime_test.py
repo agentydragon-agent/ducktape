@@ -5,6 +5,7 @@ import pytest_bazel
 
 from augur.core.policy_runtime import (
     actor_policy_programs,
+    actor_policy_steps,
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
     apply_mortgage_payment,
@@ -16,6 +17,7 @@ from augur.core.policy_runtime import (
     enabled_rules_of_type,
     monthly_spend_debit_instruction,
     partner_contribution_instruction,
+    policy_steps_of_type,
     private_equity_sale_instruction,
     private_equity_sale_opportunity,
 )
@@ -63,6 +65,51 @@ def test_actor_policy_programs_preserve_actor_order_and_enabled_rule_order() -> 
     assert [rule.policy_id for rule in enabled_rules_of_type(programs, CheckingFloorSellPublicStockPolicy)] == [
         "alpha_floor"
     ]
+
+
+def test_actor_policy_steps_make_actor_rule_and_global_order_explicit() -> None:
+    scenario = Scenario(
+        scenario_id="policy_steps",
+        label="Policy Steps",
+        actors=(
+            Actor(actor_id="alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER),
+            Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT),
+        ),
+        policies=(
+            MonthlySpendPolicy(policy_id="beta_spend", actor_id="beta", monthly_spend_usd=100),
+            MonthlySpendPolicy(
+                policy_id="disabled_alpha_spend", actor_id="alpha", monthly_spend_usd=100, enabled=False
+            ),
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="alpha_floor", actor_id="alpha", floor_usd=1_000, sale_amount_usd=500
+            ),
+            MonthlySpendPolicy(policy_id="alpha_spend", actor_id="alpha", monthly_spend_usd=200),
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="disabled_beta_floor", actor_id="beta", floor_usd=1_000, sale_amount_usd=500, enabled=False
+            ),
+            PrivateEquitySalePolicy(
+                policy_id="beta_private_equity_sale",
+                actor_id="beta",
+                sale_rule=FixedAmountPrivateEquitySaleRule(amount_usd=50_000),
+            ),
+        ),
+    )
+
+    steps = actor_policy_steps(actor_policy_programs(scenario))
+
+    assert [
+        (step.actor_index, step.rule_index, step.sequence_index, step.actor_id, step.policy.policy_id) for step in steps
+    ] == [
+        (0, 0, 0, "alpha", "alpha_floor"),
+        (0, 1, 1, "alpha", "alpha_spend"),
+        (1, 0, 2, "beta", "beta_spend"),
+        (1, 1, 3, "beta", "beta_private_equity_sale"),
+    ]
+    assert [step.policy.policy_id for step in policy_steps_of_type(steps, MonthlySpendPolicy)] == [
+        "alpha_spend",
+        "beta_spend",
+    ]
+    assert [step.sequence_index for step in policy_steps_of_type(steps, PrivateEquitySalePolicy)] == [3]
 
 
 def test_checking_floor_instruction_applier_clips_sale_and_records_shortfall() -> None:

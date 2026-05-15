@@ -27,6 +27,15 @@ class ActorPolicyProgram:
 
 
 @dataclass(frozen=True)
+class ActorPolicyStep:
+    actor_index: int
+    rule_index: int
+    sequence_index: int
+    actor_id: str
+    policy: Policy
+
+
+@dataclass(frozen=True)
 class PolicyContext:
     actor_id: str
     month_index: int
@@ -201,10 +210,34 @@ def actor_policy_programs(scenario: Scenario) -> tuple[ActorPolicyProgram, ...]:
     )
 
 
+def actor_policy_steps(programs: tuple[ActorPolicyProgram, ...]) -> tuple[ActorPolicyStep, ...]:
+    steps: list[ActorPolicyStep] = []
+    sequence_index = 0
+    for actor_index, program in enumerate(programs):
+        for rule_index, policy in enumerate(program.rules):
+            steps.append(
+                ActorPolicyStep(
+                    actor_index=actor_index,
+                    rule_index=rule_index,
+                    sequence_index=sequence_index,
+                    actor_id=program.actor_id,
+                    policy=policy,
+                )
+            )
+            sequence_index += 1
+    return tuple(steps)
+
+
 def enabled_rules_of_type[PolicyT: _PolicyBase](
     programs: tuple[ActorPolicyProgram, ...], cls: type[PolicyT]
 ) -> tuple[PolicyT, ...]:
     return tuple(rule for program in programs for rule in program.rules if isinstance(rule, cls))
+
+
+def policy_steps_of_type[PolicyT: _PolicyBase](
+    steps: tuple[ActorPolicyStep, ...], cls: type[PolicyT]
+) -> tuple[ActorPolicyStep, ...]:
+    return tuple(step for step in steps if isinstance(step.policy, cls))
 
 
 def checking_floor_sell_public_stock_instruction(

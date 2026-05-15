@@ -9,12 +9,14 @@ from augur.core.annual_tax import AnnualSaleTaxAllocation, annual_sale_tax_alloc
 from augur.core.local_regulation import LocalRegulation, local_regulation_for_location
 from augur.core.market_bundle import MarketBundle
 from augur.core.policy_runtime import (
+    ActorPolicyStep,
     LedgerEntryBatch,
     MortgagePaymentApplication,
     PrivateEquitySaleApplication,
     PrivateEquitySaleInstructionBatch,
     PrivateEquitySaleOpportunityBatch,
     actor_policy_programs,
+    actor_policy_steps,
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
     apply_mortgage_payment,
@@ -23,9 +25,9 @@ from augur.core.policy_runtime import (
     apply_private_equity_sale_instruction,
     apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
-    enabled_rules_of_type,
     monthly_spend_debit_instruction,
     partner_contribution_instruction,
+    policy_steps_of_type,
     private_equity_sale_instruction,
     private_equity_sale_opportunity,
 )
@@ -436,6 +438,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     initial_private_equity_basis = _initial_private_equity_cost_basis_usd(scenario)
     initial_private_equity_units = _initial_private_equity_units(scenario)
     purchase_price = _purchase_price_usd(scenario)
+    policy_programs = actor_policy_programs(scenario)
+    policy_steps = actor_policy_steps(policy_programs)
+    partner_equity_steps = policy_steps_of_type(policy_steps, PartnerEquityAccrualPolicy)
+    spend_steps = policy_steps_of_type(policy_steps, MonthlySpendPolicy)
+    checking_steps = policy_steps_of_type(policy_steps, CheckingFloorSellPublicStockPolicy)
+    private_equity_sale_steps = policy_steps_of_type(policy_steps, PrivateEquitySalePolicy)
 
     property_value, mortgage_balance, mortgage_interest, mortgage_principal = _property_and_mortgage_arrays(
         scenario, market_bundle, location_id=location_id
@@ -472,6 +480,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     partner_equity = _partner_equity_arrays(
         scenario,
         market_bundle,
+        partner_equity_steps=partner_equity_steps,
         owner_initial_equity_usd=down_payment,
         home_equity_usd=home_equity,
         mortgage_interest_usd=mortgage_interest,
@@ -490,11 +499,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     private_equity_sale_taxable_gain = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     cash = np.zeros((rollout_count, month_count), dtype="float64")
-    policy_programs = actor_policy_programs(scenario)
     private_equity_sale_opportunity_event = market_bundle.private_equity_sale_opportunity_mask.copy()
-    spend_policies = enabled_rules_of_type(policy_programs, MonthlySpendPolicy)
-    checking_policies = enabled_rules_of_type(policy_programs, CheckingFloorSellPublicStockPolicy)
-    private_equity_sale_policies = enabled_rules_of_type(policy_programs, PrivateEquitySalePolicy)
     remaining_private_equity_fraction = np.ones(rollout_count, dtype="float64")
     remaining_sp500_units = np.divide(
         initial_sp500,
@@ -526,7 +531,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             )
 
         if month > 0:
-            for spend_policy in spend_policies:
+            for spend_step in spend_steps:
+                spend_policy = spend_step.policy
                 spend_decision = monthly_spend_debit_instruction(
                     spend_policy, inflation_multiplier=market_bundle.inflation_multipliers[:, month]
                 )
@@ -565,7 +571,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         private_equity_sale_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_taxable_gain_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_tax_month = np.zeros(rollout_count, dtype="float64")
-        for private_equity_sale_policy in private_equity_sale_policies:
+        for private_equity_sale_step in private_equity_sale_steps:
+            private_equity_sale_policy = private_equity_sale_step.policy
             current_private_equity_value = (
                 initial_private_equity
                 * remaining_private_equity_fraction
@@ -627,7 +634,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         sp500_sale = np.zeros(rollout_count, dtype="float64")
         sp500_basis = np.zeros(rollout_count, dtype="float64")
         sp500_shortfall = np.zeros(rollout_count, dtype="float64")
-        for checking_policy in checking_policies:
+        for checking_step in checking_steps:
+            checking_policy = checking_step.policy
             sp500_sale_instruction = checking_floor_sell_public_stock_instruction(
                 checking_policy, current_cash_usd=current_cash
             )
@@ -2239,6 +2247,7 @@ def _partner_equity_arrays(
     scenario: Scenario,
     market_bundle: MarketBundle,
     *,
+    partner_equity_steps: tuple[ActorPolicyStep, ...],
     owner_initial_equity_usd: float,
     home_equity_usd: np.ndarray,
     mortgage_interest_usd: np.ndarray,
@@ -2268,8 +2277,7 @@ def _partner_equity_arrays(
         owner_home_equity_claim_usd=home_equity_usd,
         agreements=(),
     )
-    partner_policies = enabled_rules_of_type(actor_policy_programs(scenario), PartnerEquityAccrualPolicy)
-    if not partner_policies or not _has_partner(scenario):
+    if not partner_equity_steps or not _has_partner(scenario):
         return empty
 
     month_matrix = np.broadcast_to(market_bundle.month_index[None, :], home_equity_usd.shape)
@@ -2281,7 +2289,8 @@ def _partner_equity_arrays(
     contribution_inputs = []
     remaining_house_uses = house_uses.copy()
     remaining_principal = mortgage_principal_usd.copy()
-    for policy in partner_policies:
+    for partner_equity_step in partner_equity_steps:
+        policy = partner_equity_step.policy
         property_id = _partner_equity_property_id(scenario, policy)
         if property_id is None:
             continue
