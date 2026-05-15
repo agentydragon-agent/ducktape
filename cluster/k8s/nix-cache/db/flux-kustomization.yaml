@@ -16,4 +16,3 @@ spec:
   dependsOn:
     - name: nix-cache-namespace
     - name: cnpg
-    - name: longhorn
