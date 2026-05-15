@@ -143,8 +143,9 @@ Implementation notes:
 - Split liquidity opportunity, user preference, policy decision, accounting
   application, and public action into separate typed concepts with explicit
   cause IDs.
-- Remove UI controls for arbitrary sale request USD/month. Replace them with
-  opportunity-model settings and participation-policy controls.
+- Keep arbitrary sale request USD/month out of the browser state. The first UI
+  controls have been removed; replace the remaining core/manual-request concept
+  with opportunity-model settings and participation-policy controls.
 - Clarify sale-proceeds destination scope: per policy, per event, or per
   accounting action. Do not leave it as an ambiguous global cell.
 

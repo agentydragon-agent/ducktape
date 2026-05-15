@@ -86,13 +86,16 @@ second ordered roadmap.
 - [ ] Reorganize tax controls so capital-gains rates, exclusions, and other tax
       constants live together and apply consistently to stock, private-equity, and
       property-sale gains. Verify the current math before moving controls.
-- [ ] Redesign private-equity sale controls. A user should not pick an arbitrary
-      USD sale request and month for a tender-only asset; liquidity events should be
-      exogenous market/model events, with policy controls deciding whether and how
-      much to participate when a tender/acquisition/IPO opportunity exists. Also
-      clarify whether the "sale proceeds" destination applies to one request, every
-      scheduled event, every future tender participation, or a scenario-wide
-      reinvestment policy; the current control does not make that scope legible.
+- [ ] Finish the private-equity liquidity redesign. The browser no longer exposes
+      arbitrary USD sale-request/month controls, but the model still needs
+      exogenous tender/acquisition/IPO opportunities plus explicit participation
+      policies deciding whether and how much to sell. Clarify sale-proceeds
+      destination scope as part of that policy/accounting design rather than as an
+      ambiguous scenario-wide cell.
+- [ ] Add UI for private-stock sale participation policy. There currently does
+      not appear to be any user-facing way to say whether to sell into tenders,
+      how much to sell, whether to cap concentration, or where proceeds should go
+      once an exogenous sale opportunity exists.
 - [ ] Make charts choose human-sensible axis ticks. Use a smart step heuristic
       so labels land on natural values like `$1,000`, `$2,000`, `$3,000` instead of
       awkward computed values such as `$1,247.20` or `$9,231.10`.

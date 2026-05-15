@@ -160,27 +160,12 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     capGainsRate: 28,
     privateEquityValueUsd: 123_000,
     privateEquityUnits: 456,
-    privateEquitySaleRequestAmountUsd: 25_000,
-    privateEquitySaleRequestMonth: 18,
-    privateEquitySaleProceedsDestination: "generic_sp500_stock",
-    privateEquityEvents: [
-      {
-        eventId: "private_equity_followup_sale",
-        eventType: "private_equity_sale_request",
-        monthIndex: 30,
-        amountUsd: 40_000,
-      },
-      { eventId: "private_equity_ipo_request", eventType: "private_equity_ipo", monthIndex: 60, amountUsd: 125_000 },
-    ],
   };
   const request = scenarioSetInputToRequest(input, bootstrap);
   const backendRequest = decamelizeObjectKeys(request);
   const firstScenario = backendRequest.scenarios[0];
   const purchaseEvent = firstScenario.events.find((event) => event.event_type === "property_purchase");
   const mortgageEvent = firstScenario.events.find((event) => event.event_type === "mortgage_origination");
-  const saleRequestEvent = firstScenario.events.find((event) => event.event_type === "private_equity_sale_request");
-  const ipoEvent = firstScenario.events.find((event) => event.event_id === "private_equity_ipo_request");
-  const salePolicy = firstScenario.policies.find((policy) => policy.policy_type === "private_equity_sale");
 
   assert.equal(backendRequest.scenario_set_id, "augur_futures_explorer");
   assert.deepEqual(firstScenario.property_selection, { property_id: "location_a_property" });
@@ -193,10 +178,10 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(firstScenario.policies[0].policy_type, "checking_floor_sell_public_stock");
   assert.equal(firstScenario.policies[0].floor_usd, 10_000);
   assert.equal(firstScenario.policies[0].sale_amount_usd, 20_000);
-  assert.equal(salePolicy.policy_id, "private_equity_sale");
-  assert.equal(salePolicy.actor_id, "alpha");
-  assert.equal(salePolicy.proceeds_destination, "generic_sp500_stock");
-  assert.deepEqual(salePolicy.sale_rule, { sale_rule_type: "manual_requests_only" });
+  assert.equal(
+    firstScenario.policies.find((policy) => policy.policy_type === "private_equity_sale"),
+    undefined
+  );
   assert.equal(firstScenario.rental_plan.rental_mode, "rent_rooms_while_owner_lives_there");
   assert.equal(firstScenario.rental_plan.rooms_rented, 2);
   assert.equal(firstScenario.rental_plan.room_rent_monthly_usd, 1_650);
@@ -220,12 +205,10 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     depreciable_basis_pct: 75,
   });
   assert.ok(Math.abs(mortgageEvent.amount_usd - 578_840) < 1e-6);
-  assert.equal(saleRequestEvent.event_id, "private_equity_sale_request");
-  assert.equal(saleRequestEvent.month_index, 18);
-  assert.equal(saleRequestEvent.amount_usd, 25_000);
-  assert.equal(ipoEvent.event_type, "private_equity_ipo");
-  assert.equal(ipoEvent.month_index, 60);
-  assert.equal(ipoEvent.amount_usd, 125_000);
+  assert.equal(
+    firstScenario.events.find((event) => event.event_type.startsWith("private_equity_")),
+    undefined
+  );
   assert.deepEqual(
     firstScenario.initial_balance_sheet.assets.find((asset) => asset.asset_type === "private_equity"),
     {
@@ -267,7 +250,34 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
     vacancyPct: 7,
     privateEquityValueUsd: 987_000,
     privateEquityUnits: 1_234,
-    privateEquitySaleRequestAmountUsd: 250_000,
+  };
+
+  const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
+
+  assert.equal(decoded.scenarios[0].financingMode, "custom");
+  assert.equal(decoded.scenarios[0].downPaymentPct, 35);
+  assert.equal(decoded.scenarios[0].marginalTaxRate, 39);
+  assert.equal(decoded.scenarios[0].vacancyPct, 7);
+  assert.equal(decoded.scenarios[0].privateEquityValueUsd, undefined);
+  assert.equal(decoded.scenarios[0].privateEquityUnits, 1_234);
+  assert.equal(normalizeScenarioSetInput(decoded, bootstrap).scenarios[0].privateEquityValueUsd, 24_680);
+});
+
+test("URL state normalizes missing trajectory seed to deterministic default", () => {
+  const input = createDefaultScenarioSetInput(bootstrap);
+  const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
+  decoded.marketRequest.randomSeed = null;
+
+  const normalized = normalizeScenarioSetInput(decoded, bootstrap);
+
+  assert.equal(normalized.marketRequest.randomSeed, 0);
+});
+
+test("browser scenario state does not emit manual private equity sale requests", () => {
+  const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
+  input.scenarios[0] = {
+    ...input.scenarios[0],
+    privateEquitySaleRequestAmountUsd: 75_000,
     privateEquitySaleRequestMonth: 24,
     privateEquitySaleProceedsDestination: "generic_sp500_stock",
     privateEquityEvents: [
@@ -281,60 +291,18 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   };
 
   const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
-
-  assert.equal(decoded.scenarios[0].financingMode, "custom");
-  assert.equal(decoded.scenarios[0].downPaymentPct, 35);
-  assert.equal(decoded.scenarios[0].marginalTaxRate, 39);
-  assert.equal(decoded.scenarios[0].vacancyPct, 7);
-  assert.equal(decoded.scenarios[0].privateEquityValueUsd, undefined);
-  assert.equal(decoded.scenarios[0].privateEquityUnits, 1_234);
-  assert.equal(normalizeScenarioSetInput(decoded, bootstrap).scenarios[0].privateEquityValueUsd, 24_680);
-  assert.equal(decoded.scenarios[0].privateEquitySaleRequestAmountUsd, 250_000);
-  assert.equal(decoded.scenarios[0].privateEquitySaleRequestMonth, 24);
-  assert.equal(decoded.scenarios[0].privateEquitySaleProceedsDestination, "generic_sp500_stock");
-  assert.deepEqual(decoded.scenarios[0].privateEquityEvents, [
-    {
-      eventId: "private_equity_followup_sale",
-      eventType: "private_equity_sale_request",
-      monthIndex: 48,
-      amountUsd: 75_000,
-    },
-  ]);
-});
-
-test("URL state normalizes missing trajectory seed to deterministic default", () => {
-  const input = createDefaultScenarioSetInput(bootstrap);
-  const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
-  decoded.marketRequest.randomSeed = null;
-
-  const normalized = normalizeScenarioSetInput(decoded, bootstrap);
-
-  assert.equal(normalized.marketRequest.randomSeed, 0);
-});
-
-test("scheduled private equity sale requests normalize into backend events", () => {
-  const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
-  input.scenarios[0] = {
-    ...input.scenarios[0],
-    privateEquitySaleRequestAmountUsd: 75_000,
-    privateEquityEvents: [
-      { eventId: "bad id", eventType: "bad_event_type", monthIndex: "24", amountUsd: 25_000 },
-      { eventId: "bad id", eventType: "private_equity_acquisition", monthIndex: 36, amountUsd: 50_000 },
-      { eventId: "zero_sale", eventType: "private_equity_sale_request", monthIndex: 48, amountUsd: 0 },
-    ],
-  };
-
   const backendRequest = decamelizeObjectKeys(scenarioSetInputToRequest(input, bootstrap));
-  const privateEquityEvents = backendRequest.scenarios[0].events.filter((event) =>
-    event.event_type.startsWith("private_equity_")
-  );
 
+  assert.equal(decoded.scenarios[0].privateEquitySaleRequestAmountUsd, undefined);
+  assert.equal(decoded.scenarios[0].privateEquitySaleRequestMonth, undefined);
+  assert.equal(decoded.scenarios[0].privateEquitySaleProceedsDestination, undefined);
+  assert.equal(decoded.scenarios[0].privateEquityEvents, undefined);
   assert.deepEqual(
-    privateEquityEvents.map((event) => [event.event_id, event.event_type, event.month_index, event.amount_usd]),
-    [
-      ["private_equity_sale_request", "private_equity_sale_request", 12, 75_000],
-      ["private_equity_event_1", "private_equity_sale_request", 24, 25_000],
-      ["private_equity_event_2", "private_equity_acquisition", 36, 50_000],
-    ]
+    backendRequest.scenarios[0].events.filter((event) => event.event_type.startsWith("private_equity_")),
+    []
+  );
+  assert.equal(
+    backendRequest.scenarios[0].policies.find((policy) => policy.policy_type === "private_equity_sale"),
+    undefined
   );
 });

@@ -20,13 +20,6 @@ const DEFAULT_REPORT_SPEC = {
 };
 
 const FINANCING_MODE_IDS = new Set(["cash", "fixed_30", "fixed_15", "custom"]);
-const PRIVATE_EQUITY_SALE_PROCEEDS_IDS = new Set(["cash", "generic_sp500_stock"]);
-const PRIVATE_EQUITY_EVENT_TYPE_IDS = new Set([
-  "private_equity_sale_request",
-  "private_equity_ipo",
-  "private_equity_acquisition",
-]);
-const DEFAULT_PRIVATE_EQUITY_SALE_REQUEST_MONTH = 12;
 
 function finiteNumber(value, fallback) {
   const number = Number(value);
@@ -87,33 +80,6 @@ export function privateEquityValueUsdForUnits(bootstrap, units) {
 
 function scenarioIdFromIndex(index) {
   return `scenario_${index + 1}`;
-}
-
-function normalizePrivateEquityEvents(events, fallback = []) {
-  const source = Array.isArray(events) ? events : fallback;
-  const usedIds = new Set();
-  return source
-    .map((event, index) => {
-      const fallbackId = `private_equity_event_${index + 1}`;
-      const rawId =
-        typeof event?.eventId === "string" && /^[a-z0-9][a-z0-9_-]*$/.test(event.eventId) ? event.eventId : fallbackId;
-      let eventId = rawId;
-      let suffix = 2;
-      while (usedIds.has(eventId)) {
-        eventId = `${rawId}_${suffix}`;
-        suffix += 1;
-      }
-      usedIds.add(eventId);
-      return {
-        eventId,
-        eventType: PRIVATE_EQUITY_EVENT_TYPE_IDS.has(event?.eventType)
-          ? event.eventType
-          : "private_equity_sale_request",
-        monthIndex: Math.max(0, Math.floor(finiteNumber(event?.monthIndex, DEFAULT_PRIVATE_EQUITY_SALE_REQUEST_MONTH))),
-        amountUsd: finiteNumber(event?.amountUsd, 0),
-      };
-    })
-    .filter((event) => event.amountUsd > 0);
 }
 
 export function uniqueScenarioId(existingScenarioIds, base = "scenario") {
@@ -198,17 +164,6 @@ export function createScenarioInput(bootstrap, overrides = {}) {
     capGainsRate: finiteNumber(overrides.capGainsRate, defaultKnobs.capGainsRate ?? 0),
     privateEquityValueUsd: privateEquityValueUsdForUnits(bootstrap, privateEquityUnits),
     privateEquityUnits,
-    privateEquitySaleRequestAmountUsd: finiteNumber(overrides.privateEquitySaleRequestAmountUsd, 0),
-    privateEquitySaleRequestMonth: nullableNumber(
-      overrides.privateEquitySaleRequestMonth,
-      DEFAULT_PRIVATE_EQUITY_SALE_REQUEST_MONTH
-    ),
-    privateEquitySaleProceedsDestination: PRIVATE_EQUITY_SALE_PROCEEDS_IDS.has(
-      overrides.privateEquitySaleProceedsDestination
-    )
-      ? overrides.privateEquitySaleProceedsDestination
-      : "cash",
-    privateEquityEvents: normalizePrivateEquityEvents(overrides.privateEquityEvents),
   };
 }
 
@@ -299,23 +254,6 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
     capGainsRate: finiteNumber(scenario?.capGainsRate, defaultScenario.capGainsRate),
     privateEquityValueUsd,
     privateEquityUnits,
-    privateEquitySaleRequestAmountUsd: finiteNumber(
-      scenario?.privateEquitySaleRequestAmountUsd,
-      defaultScenario.privateEquitySaleRequestAmountUsd
-    ),
-    privateEquitySaleRequestMonth: nullableNumber(
-      scenario?.privateEquitySaleRequestMonth,
-      defaultScenario.privateEquitySaleRequestMonth
-    ),
-    privateEquitySaleProceedsDestination: PRIVATE_EQUITY_SALE_PROCEEDS_IDS.has(
-      scenario?.privateEquitySaleProceedsDestination
-    )
-      ? scenario.privateEquitySaleProceedsDestination
-      : defaultScenario.privateEquitySaleProceedsDestination,
-    privateEquityEvents: normalizePrivateEquityEvents(
-      scenario?.privateEquityEvents,
-      defaultScenario.privateEquityEvents
-    ),
   };
 }
 
@@ -398,21 +336,6 @@ function scenarioPolicies(scenario, bootstrap) {
       saleAmountUsd: scenario.checkingSaleAmountUsd,
     });
   }
-  if (
-    scenario.privateEquitySaleRequestAmountUsd > 0 ||
-    (scenario.privateEquityEvents ?? []).some((event) => event.amountUsd > 0)
-  ) {
-    policies.push({
-      policyId: "private_equity_sale",
-      policyType: "private_equity_sale",
-      actorId: primary.actorId,
-      enabled: true,
-      proceedsDestination: scenario.privateEquitySaleProceedsDestination,
-      saleRule: {
-        saleRuleType: "manual_requests_only",
-      },
-    });
-  }
   return policies;
 }
 
@@ -460,30 +383,6 @@ function scenarioEvents(scenario, property, bootstrap) {
       description: "Mortgage originated at scenario start.",
     },
   ];
-  if (scenario.privateEquitySaleRequestAmountUsd > 0) {
-    events.push({
-      eventId: "private_equity_sale_request",
-      eventType: "private_equity_sale_request",
-      monthIndex: Math.max(
-        0,
-        Math.floor(nullableNumber(scenario.privateEquitySaleRequestMonth, DEFAULT_PRIVATE_EQUITY_SALE_REQUEST_MONTH))
-      ),
-      actorId: primary.actorId,
-      amountUsd: scenario.privateEquitySaleRequestAmountUsd,
-      description: "Requested private-equity sale.",
-    });
-  }
-  for (const privateEquityEvent of scenario.privateEquityEvents ?? []) {
-    if (privateEquityEvent.amountUsd <= 0) continue;
-    events.push({
-      eventId: privateEquityEvent.eventId,
-      eventType: privateEquityEvent.eventType,
-      monthIndex: Math.max(0, Math.floor(privateEquityEvent.monthIndex)),
-      actorId: primary.actorId,
-      amountUsd: privateEquityEvent.amountUsd,
-      description: "Scheduled liquidity sale request.",
-    });
-  }
   return events;
 }
 
@@ -635,10 +534,6 @@ function serializableScenario(scenario) {
     marginalTaxRate: scenario.marginalTaxRate,
     capGainsRate: scenario.capGainsRate,
     privateEquityUnits: scenario.privateEquityUnits,
-    privateEquitySaleRequestAmountUsd: scenario.privateEquitySaleRequestAmountUsd,
-    privateEquitySaleRequestMonth: scenario.privateEquitySaleRequestMonth,
-    privateEquitySaleProceedsDestination: scenario.privateEquitySaleProceedsDestination,
-    privateEquityEvents: scenario.privateEquityEvents,
   };
 }
 

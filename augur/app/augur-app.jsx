@@ -22,17 +22,6 @@ const FINANCING_OPTIONS = [
   { id: "cash", label: "Cash" },
 ];
 
-const PRIVATE_EQUITY_SALE_PROCEEDS_OPTIONS = [
-  { id: "cash", label: "Keep as cash" },
-  { id: "generic_sp500_stock", label: "Reinvest in SP500" },
-];
-
-const PRIVATE_EQUITY_EVENT_OPTIONS = [
-  { id: "private_equity_sale_request", label: "Sale request" },
-  { id: "private_equity_ipo", label: "IPO" },
-  { id: "private_equity_acquisition", label: "Acquisition" },
-];
-
 const CHECKING_FLOOR_POLICY_ID = "checking_floor_sp500";
 const CHECKING_FLOOR_METRICS = new Set([
   "checkingFloorShortfallUsd",
@@ -955,7 +944,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
   const primaryLabel = primary?.label ?? "Owner";
   const partnerLabel = partner?.label ?? "Partner";
-  const privateEquityEvents = scenario.privateEquityEvents ?? [];
   const usesCheckingFloorPolicy = scenarioUsesCheckingFloorPolicy(scenario);
   const concentratedHolding = primaryConcentratedHolding(bootstrap);
   const privateEquityLabel = concentratedHolding?.label ?? "Private equity";
@@ -972,50 +960,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
       scenarios: scenarioSetInput.scenarios.map((item) =>
         item.scenarioId === scenario.scenarioId ? { ...item, ...patch } : item
       ),
-    });
-  }
-
-  function nextPrivateEquityEventId() {
-    const existingIds = new Set(privateEquityEvents.map((event) => event.eventId));
-    let index = privateEquityEvents.length + 1;
-    let eventId = `private_equity_event_${index}`;
-    while (existingIds.has(eventId)) {
-      index += 1;
-      eventId = `private_equity_event_${index}`;
-    }
-    return eventId;
-  }
-
-  function addPrivateEquityEvent() {
-    updateScenario({
-      privateEquityEvents: [
-        ...privateEquityEvents,
-        {
-          eventId: nextPrivateEquityEventId(),
-          eventType: "private_equity_sale_request",
-          monthIndex: Math.max(0, Math.floor(Number(scenario.privateEquitySaleRequestMonth) || 12)),
-          amountUsd: Math.max(50_000, Number(scenario.privateEquitySaleRequestAmountUsd) || 0),
-        },
-      ],
-    });
-  }
-
-  function updatePrivateEquityEvent(index, patch) {
-    updateScenario({
-      privateEquityEvents: privateEquityEvents.map((event, eventIndex) =>
-        eventIndex === index
-          ? {
-              ...event,
-              ...patch,
-            }
-          : event
-      ),
-    });
-  }
-
-  function removePrivateEquityEvent(index) {
-    updateScenario({
-      privateEquityEvents: privateEquityEvents.filter((_, eventIndex) => eventIndex !== index),
     });
   }
 
@@ -1244,7 +1188,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
         </ControlGrid>
       </ControlSection>
 
-      <ControlSection title="Portfolio, liquidity, and actors">
+      <ControlSection title="Portfolio and actors">
         <div className="grid gap-4">
           <PortfolioSnapshotPanel bootstrap={bootstrap} />
           <OptionButtons
@@ -1291,26 +1235,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               onChange={(privateEquityUnits) => updateScenario({ privateEquityUnits })}
             />
             <MoneyField
-              label="Sale request"
-              value={scenario.privateEquitySaleRequestAmountUsd}
-              onChange={(privateEquitySaleRequestAmountUsd) => updateScenario({ privateEquitySaleRequestAmountUsd })}
-            />
-            <NumberField
-              label="Request month"
-              min={0}
-              step={1}
-              value={scenario.privateEquitySaleRequestMonth}
-              onChange={(privateEquitySaleRequestMonth) => updateScenario({ privateEquitySaleRequestMonth })}
-            />
-            <SelectField
-              label="Sale proceeds"
-              value={scenario.privateEquitySaleProceedsDestination}
-              onChange={(privateEquitySaleProceedsDestination) =>
-                updateScenario({ privateEquitySaleProceedsDestination })
-              }
-              options={PRIVATE_EQUITY_SALE_PROCEEDS_OPTIONS}
-            />
-            <MoneyField
               label={`${partnerLabel} payment`}
               step={50}
               value={scenario.partnerPaymentMonthlyUsd}
@@ -1318,52 +1242,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               suffix="/ mo"
             />
           </ControlGrid>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="augur-eyebrow">Private equity event schedule</div>
-              <button type="button" className="augur-tone-button augur-tone-neutral" onClick={addPrivateEquityEvent}>
-                Add event
-              </button>
-            </div>
-            {privateEquityEvents.length > 0 && (
-              <div className="grid gap-3">
-                {privateEquityEvents.map((event, index) => (
-                  <div
-                    key={event.eventId}
-                    className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-3 border-t border-slate-200 pt-3 dark:border-slate-700"
-                  >
-                    <SelectField
-                      label={`Event ${index + 1} type`}
-                      value={event.eventType}
-                      onChange={(eventType) => updatePrivateEquityEvent(index, { eventType })}
-                      options={PRIVATE_EQUITY_EVENT_OPTIONS}
-                    />
-                    <NumberField
-                      label={`Event ${index + 1} month`}
-                      min={0}
-                      step={1}
-                      value={event.monthIndex}
-                      onChange={(monthIndex) => updatePrivateEquityEvent(index, { monthIndex })}
-                    />
-                    <MoneyField
-                      label={`Event ${index + 1} amount`}
-                      value={event.amountUsd}
-                      onChange={(amountUsd) => updatePrivateEquityEvent(index, { amountUsd })}
-                    />
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        className="augur-tone-button augur-tone-rose w-full"
-                        onClick={() => removePrivateEquityEvent(index)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </ControlSection>
     </section>

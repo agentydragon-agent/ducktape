@@ -285,11 +285,6 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("Vacancy", exact=True).fill("9")
     page.get_by_label("Marginal tax rate").fill("37")
     page.get_by_label(re.compile("Private .* units")).fill("1000")
-    page.get_by_label("Sale request").fill("50000")
-    page.get_by_role("button", name="Add event").click()
-    page.get_by_label("Event 1 type").select_option("private_equity_acquisition")
-    page.get_by_label("Event 1 month").fill("24")
-    page.get_by_label("Event 1 amount").fill("75000")
 
     rich_state = _wait_for_url_state(
         page,
@@ -299,7 +294,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
                 scenario["property_id"] == "location_b_property"
                 and scenario["financing_mode"] == "custom"
                 and scenario["vacancy_pct"] == 9
-                and scenario["private_equity_events"]
+                and scenario["private_equity_units"] == 1000
                 for scenario in state["scenarios"]
             )
         ),
@@ -315,10 +310,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert rich_scenario["custom_mortgage_rate"] == 7.35
     assert rich_scenario["vacancy_pct"] == 9
     assert rich_scenario["marginal_tax_rate"] == 37
-    assert any(
-        event["event_type"] == "private_equity_acquisition" and event["month_index"] == 24
-        for event in rich_scenario["private_equity_events"]
-    )
+    assert rich_scenario["private_equity_units"] == 1000
+    assert "private_equity_events" not in rich_scenario
+    assert "private_equity_sale_request_amount_usd" not in rich_scenario
 
     assert page.get_by_text("Rai").count() == 0
     assert page.get_by_text("Auragon").count() == 0
