@@ -13,4 +13,3 @@ resources:
   - clusterrole-namespace-diagnostics-reader.yaml
   - rolebinding-ollama-reader.yaml
   - rolebinding-langfuse-reader.yaml
-  - rolebinding-openclaw-reader.yaml
