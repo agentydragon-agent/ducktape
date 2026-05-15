@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import Field, NonNegativeFloat, NonNegativeInt
 
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, PropertyId
@@ -57,6 +57,25 @@ class AgentOption(ApiModel):
     actor_id: str
     label: str
     role: ActorRole
+
+
+class BootstrapConcentratedHoldingSnapshot(ApiModel):
+    holding_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    label: str
+    units: NonNegativeInt
+    fmv_usd_per_unit: NonNegativeFloat
+    value_usd: NonNegativeFloat
+    valuation_source: str = ""
+
+
+class BootstrapFinanceSnapshot(ApiModel):
+    as_of_date: str
+    cash_usd: float = 0.0
+    wealthfront_sp500_usd: float = 0.0
+    ibkr_vt_usd: float = 0.0
+    sp500_proxy_portfolio_usd: float = 0.0
+    concentrated_holdings: tuple[BootstrapConcentratedHoldingSnapshot, ...] = ()
+    notes: tuple[str, ...] = ()
 
 
 class DefaultScenario(ApiModel):
@@ -118,4 +137,5 @@ class BootstrapResponse(ApiModel):
     rental_use_policy_options: list[RentalUsePolicyOption]
     liquid_reserve_policy_options: list[LiquidReservePolicyOption]
     agents: list[AgentOption]
+    finance_snapshot: BootstrapFinanceSnapshot
     default_partner_monthly_payment_usd: float = 0

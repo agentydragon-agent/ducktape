@@ -21,6 +21,23 @@ const bootstrap = {
   defaultCheckingSaleAmountUsd: 20_000,
   defaultPartnerMonthlyPaymentUsd: 2_435,
   defaultRolloutSamples: 16,
+  financeSnapshot: {
+    asOfDate: "2026-05-14",
+    cashUsd: 26_000,
+    wealthfrontSp500Usd: 61_000,
+    ibkrVtUsd: 39_000,
+    sp500ProxyPortfolioUsd: 100_000,
+    concentratedHoldings: [
+      {
+        holdingId: "private_holding_a",
+        label: "Private Holding A",
+        units: 500,
+        fmvUsdPerUnit: 20,
+        valueUsd: 10_000,
+        valuationSource: "fixture mark",
+      },
+    ],
+  },
   defaultScenarios: [
     { propertyId: "location_a_property", actorPolicy: "owner_only" },
     { propertyId: "location_b_property", actorPolicy: "owner_plus_partner", label: "Location B shared" },
@@ -109,6 +126,10 @@ test("default input creates comparable generic location scenarios", () => {
 
   assert.equal(input.scenarios.length, 2);
   assert.equal(input.scenarios[0].propertyId, "location_a_property");
+  assert.equal(input.scenarios[0].initialCheckingUsd, 25_000);
+  assert.equal(input.scenarios[0].startingPortfolioUsd, 100_000);
+  assert.equal(input.scenarios[0].privateEquityValueUsd, 10_000);
+  assert.equal(input.scenarios[0].privateEquityUnits, 500);
   assert.equal(input.scenarios[1].propertyId, "location_b_property");
   assert.equal(input.scenarios[1].actorPolicy, "owner_plus_partner");
 });

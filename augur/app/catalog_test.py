@@ -12,6 +12,8 @@ from augur.app.catalog import build_bootstrap_payload
 from augur.app.config import (
     AgentDefinition,
     AugurConfig,
+    ConcentratedHoldingConfig,
+    ConcentratedHoldingSnapshot,
     FinanceSnapshot,
     LocationConfig,
     PersonalFinanceConfig,
@@ -86,9 +88,28 @@ def _fixture_locations() -> tuple[LocationConfig, ...]:
 def _config(properties_path: Path, *, location_selection: tuple[str, ...] | None = None) -> AugurConfig:
     return AugurConfig(
         agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
-        personal_finance=PersonalFinanceConfig(cash_usd=0),
+        personal_finance=PersonalFinanceConfig(
+            cash_usd=12_345,
+            concentrated_holdings=(
+                ConcentratedHoldingConfig(
+                    holding_id="private_holding_a", label="Private Holding A", units=500, basis_per_unit_usd=5
+                ),
+            ),
+        ),
         property_source=PropertySourceConfig(properties_path=properties_path),
-        snapshot=FinanceSnapshot(as_of_date="2026-05-14"),
+        snapshot=FinanceSnapshot(
+            as_of_date="2026-05-14",
+            cash_usd=12_345,
+            wealthfront_sp500_usd=61_000,
+            ibkr_vt_usd=39_000,
+            sp500_proxy_portfolio_usd=100_000,
+            concentrated_holdings=(
+                ConcentratedHoldingSnapshot(
+                    holding_id="private_holding_a", units=500, fmv_usd_per_unit=20, valuation_source="fixture mark"
+                ),
+            ),
+        ),
+        starting_portfolio_usd=100_000,
         locations=_fixture_locations(),
         location_selection=location_selection,
     )
@@ -112,6 +133,23 @@ def test_bootstrap_location_selection_filters_properties_and_locations(tmp_path:
 
     assert [location.id for location in bootstrap.locations] == ["location_a"]
     assert [property_.id for property_ in bootstrap.properties] == ["location_a_property"]
+
+
+def test_bootstrap_carries_configured_finance_snapshot_and_defaults(tmp_path: Path) -> None:
+    properties_path = tmp_path / "properties.json"
+    _write_properties(properties_path)
+
+    bootstrap = build_bootstrap_payload(_config(properties_path))
+
+    assert bootstrap.default_initial_checking_usd == 12_345
+    assert bootstrap.default_knobs.starting_portfolio_usd == 100_000
+    assert bootstrap.finance_snapshot.cash_usd == 12_345
+    assert bootstrap.finance_snapshot.wealthfront_sp500_usd == 61_000
+    assert bootstrap.finance_snapshot.ibkr_vt_usd == 39_000
+    assert bootstrap.finance_snapshot.sp500_proxy_portfolio_usd == 100_000
+    assert bootstrap.finance_snapshot.concentrated_holdings[0].label == "Private Holding A"
+    assert bootstrap.finance_snapshot.concentrated_holdings[0].units == 500
+    assert bootstrap.finance_snapshot.concentrated_holdings[0].value_usd == 10_000
 
 
 def test_bootstrap_rejects_unknown_property_location(tmp_path: Path) -> None:

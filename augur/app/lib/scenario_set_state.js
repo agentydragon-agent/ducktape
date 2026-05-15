@@ -59,6 +59,14 @@ function defaultPropertyId(bootstrap) {
   return bootstrap?.defaultPropertyId ?? bootstrap?.properties?.[0]?.id ?? null;
 }
 
+function defaultConcentratedHolding(bootstrap) {
+  return bootstrap?.financeSnapshot?.concentratedHoldings?.[0] ?? null;
+}
+
+function holdingValueUsd(holding) {
+  return finiteNumber(holding?.valueUsd, finiteNumber(holding?.units, 0) * finiteNumber(holding?.fmvUsdPerUnit, 0));
+}
+
 function scenarioIdFromIndex(index) {
   return `scenario_${index + 1}`;
 }
@@ -107,6 +115,7 @@ export function createScenarioInput(bootstrap, overrides = {}) {
   const propertyId = overrides.propertyId ?? fallbackPropertyId;
   const property = propertyById(bootstrap, propertyId);
   const defaultKnobs = bootstrap?.defaultKnobs ?? {};
+  const holding = defaultConcentratedHolding(bootstrap);
   return {
     scenarioId: overrides.scenarioId ?? scenarioIdFromIndex(index),
     label: overrides.label ?? (property?.address ? `${property.address}` : `Scenario ${index + 1}`),
@@ -135,7 +144,10 @@ export function createScenarioInput(bootstrap, overrides = {}) {
       overrides.checkingSaleAmountUsd,
       bootstrap?.defaultCheckingSaleAmountUsd ?? 20_000
     ),
-    startingPortfolioUsd: finiteNumber(overrides.startingPortfolioUsd, defaultKnobs.startingPortfolioUsd ?? 0),
+    startingPortfolioUsd: finiteNumber(
+      overrides.startingPortfolioUsd,
+      defaultKnobs.startingPortfolioUsd ?? bootstrap?.financeSnapshot?.sp500ProxyPortfolioUsd ?? 0
+    ),
     partnerPaymentMonthlyUsd: finiteNumber(
       overrides.partnerPaymentMonthlyUsd,
       bootstrap?.defaultPartnerMonthlyPaymentUsd ?? 0
@@ -173,8 +185,8 @@ export function createScenarioInput(bootstrap, overrides = {}) {
       overrides.counterfactualRentGrowth,
       defaultKnobs.counterfactualRentGrowth ?? 0
     ),
-    privateEquityValueUsd: finiteNumber(overrides.privateEquityValueUsd, 0),
-    privateEquityUnits: finiteNumber(overrides.privateEquityUnits, 0),
+    privateEquityValueUsd: finiteNumber(overrides.privateEquityValueUsd, holdingValueUsd(holding)),
+    privateEquityUnits: finiteNumber(overrides.privateEquityUnits, holding?.units ?? 0),
     privateEquitySaleRequestAmountUsd: finiteNumber(overrides.privateEquitySaleRequestAmountUsd, 0),
     privateEquitySaleRequestMonth: nullableNumber(
       overrides.privateEquitySaleRequestMonth,

@@ -124,6 +124,18 @@ function propertyLabel(property, locationsById) {
   return `${property.address} · ${location?.label ?? property.locationId ?? "Unknown location"}`;
 }
 
+function primaryConcentratedHolding(bootstrap) {
+  return bootstrap?.financeSnapshot?.concentratedHoldings?.[0] ?? null;
+}
+
+function concentratedHoldingValueUsd(holding) {
+  const explicitValue = Number(holding?.valueUsd);
+  if (Number.isFinite(explicitValue)) return explicitValue;
+  const units = Number(holding?.units);
+  const fmv = Number(holding?.fmvUsdPerUnit);
+  return Number.isFinite(units) && Number.isFinite(fmv) ? units * fmv : NaN;
+}
+
 function scenarioResultById(result, scenarioId) {
   return result?.scenarioResults?.find((item) => item.scenarioId === scenarioId) ?? null;
 }
@@ -323,6 +335,28 @@ function DetailTable({ rows }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function PortfolioSnapshotPanel({ bootstrap }) {
+  const snapshot = bootstrap?.financeSnapshot;
+  if (!snapshot) return null;
+  const holding = primaryConcentratedHolding(bootstrap);
+  const rows = [
+    ["As of", snapshot.asOfDate ?? "n/a"],
+    ["Cash", fmtUsd(Number(snapshot.cashUsd))],
+    ["Wealthfront SP500", fmtUsd(Number(snapshot.wealthfrontSp500Usd))],
+    ["IBKR VT", fmtUsd(Number(snapshot.ibkrVtUsd))],
+    ["SP500-like total", fmtUsd(Number(snapshot.sp500ProxyPortfolioUsd))],
+  ];
+  if (holding) {
+    rows.push([`${holding.label} units`, fmtNumber(Number(holding.units))]);
+    rows.push([`${holding.label} value`, fmtUsd(concentratedHoldingValueUsd(holding))]);
+  }
+  return (
+    <div className="max-w-2xl">
+      <DetailTable rows={rows} />
     </div>
   );
 }
@@ -839,6 +873,8 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const partnerLabel = partner?.label ?? "Partner";
   const privateEquityEvents = scenario.privateEquityEvents ?? [];
   const usesCheckingFloorPolicy = scenarioUsesCheckingFloorPolicy(scenario);
+  const concentratedHolding = primaryConcentratedHolding(bootstrap);
+  const privateEquityLabel = concentratedHolding?.label ?? "Private equity";
   const locationsById = useMemo(
     () => new Map(bootstrap.locations.map((location) => [location.id, location])),
     [bootstrap]
@@ -1138,6 +1174,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
 
       <ControlSection title="Portfolio, liquidity, and actors">
         <div className="grid gap-4">
+          <PortfolioSnapshotPanel bootstrap={bootstrap} />
           <OptionButtons
             label="Reserve sales rule"
             options={bootstrap.liquidReservePolicyOptions}
@@ -1171,12 +1208,12 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               onChange={(startingPortfolioUsd) => updateScenario({ startingPortfolioUsd })}
             />
             <MoneyField
-              label="Private equity value"
+              label={`${privateEquityLabel} value`}
               value={scenario.privateEquityValueUsd}
               onChange={(privateEquityValueUsd) => updateScenario({ privateEquityValueUsd })}
             />
             <NumberField
-              label="Private equity units"
+              label={`${privateEquityLabel} units`}
               step={1}
               value={scenario.privateEquityUnits}
               onChange={(privateEquityUnits) => updateScenario({ privateEquityUnits })}

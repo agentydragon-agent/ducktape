@@ -175,6 +175,10 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert "San Francisco" not in bootstrap_json
     assert "Vallejo" not in bootstrap_json
     assert any(option["id"] == "owner_plus_partner" for option in bootstrap["actor_policy_options"])
+    assert bootstrap["default_initial_checking_usd"] == 50000
+    assert bootstrap["default_knobs"]["starting_portfolio_usd"] == 150000
+    assert bootstrap["finance_snapshot"]["sp500_proxy_portfolio_usd"] == 150000
+    assert bootstrap["finance_snapshot"]["concentrated_holdings"][0]["units"] == 1000
 
     scenario_run = _post_json(
         augur_server,
