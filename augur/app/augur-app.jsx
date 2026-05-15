@@ -738,7 +738,7 @@ function PrivateEquityLiquidityPanel({ scenarioResult, selectedRolloutIndex }) {
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Trajectory private equity liquidity</div>
+        <div className="augur-eyebrow">Trajectory private equity tender opportunities</div>
       </div>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2">
         {[
@@ -848,7 +848,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="augur-eyebrow">Scenarios</div>
-            <div className="text-sm augur-muted">Compare property, actor, occupancy, and liquidity choices.</div>
+            <div className="text-sm augur-muted">Compare property, actor, occupancy, and policy choices.</div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <button type="button" className="augur-tone-button augur-tone-neutral" onClick={addScenario}>
@@ -1653,11 +1653,11 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
       label: "Private equity sale",
       summary: ["privateEquitySaleUsd", "PE sale", fmtUsd],
       details: [
-        ["privateEquityLiquidityAvailableValueUsd", "Tender-window value", fmtUsd],
+        ["privateEquityLiquidityAvailableValueUsd", "Tender-eligible value", fmtUsd],
         ["privateEquitySaleUsd", "Private equity sale", fmtUsd],
         ["privateEquitySaleBasisUsd", "Basis", fmtUsd],
         ["privateEquitySaleTaxUsd", "Tax", fmtUsd],
-        ["privateEquityLiquidityEvent", "Liquidity event", (value) => (value ? "yes" : "no")],
+        ["privateEquityLiquidityEvent", "Tender event", (value) => (value ? "yes" : "no")],
       ],
     },
     {

@@ -1071,8 +1071,8 @@ def test_multiple_checking_floor_rules_execute_in_policy_order() -> None:
     ]
 
 
-def test_private_equity_sale_request_uses_market_liquidity_opportunity() -> None:
-    """A PE sale request needs both a policy decision and a market opportunity."""
+def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_assets() -> None:
+    """A tender sale into cash changes liquidity only by the after-tax sale proceeds."""
     scenario = Scenario(
         scenario_id="private_equity_sale_request",
         label="Private Equity Sale Request",
@@ -1108,6 +1108,7 @@ def test_private_equity_sale_request_uses_market_liquidity_opportunity() -> None
     no_opportunity = _run_scenario(scenario, horizon_months=12)
     np.testing.assert_allclose(no_opportunity.rollout(0).series("private_equity_sale_usd"), 0)
     np.testing.assert_allclose(no_opportunity.rollout(0).series("cash_usd")[12], 10_000)
+    np.testing.assert_allclose(no_opportunity.rollout(0).series("liquid_net_worth_usd")[12], 10_000)
     assert no_opportunity.actions(SellPrivateEquityAction) == ()
     no_opportunity_decisions = no_opportunity.policy_decisions(PrivateEquitySaleDecision)
     assert len(no_opportunity_decisions) == 1
@@ -1134,6 +1135,7 @@ def test_private_equity_sale_request_uses_market_liquidity_opportunity() -> None
     np.testing.assert_allclose(rollout.series("private_equity_value_usd")[12], 100_000)
     np.testing.assert_allclose(rollout.series("private_equity_liquidity_available_value_usd")[12], 100_000)
     np.testing.assert_allclose(rollout.series("cash_usd")[12], 10_000 + expected_after_tax_proceeds)
+    np.testing.assert_allclose(rollout.series("liquid_net_worth_usd")[12], 10_000 + expected_after_tax_proceeds)
     np.testing.assert_allclose(rollout.series("net_worth_usd")[12], 10_000 + expected_after_tax_proceeds + 100_000)
     liquidity_observations = rollout.market_observations(PrivateEquityLiquidityObservation)
     assert len(liquidity_observations) == 1

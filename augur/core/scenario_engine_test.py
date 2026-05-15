@@ -946,6 +946,9 @@ def test_private_equity_stock_is_not_sold_without_explicit_event() -> None:
     np.testing.assert_allclose(result.private_equity_sale_usd, 0)
     np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 1], 50_000)
     np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
+    np.testing.assert_allclose(
+        result.liquid_net_worth_usd[:, 1], result.cash_usd[:, 1] + result.generic_sp500_value_usd[:, 1]
+    )
 
 
 def test_private_equity_sale_request_without_policy_does_not_sell() -> None:
@@ -970,11 +973,14 @@ def test_private_equity_sale_request_without_policy_does_not_sell() -> None:
     np.testing.assert_allclose(result.private_equity_sale_usd, 0)
     np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 1], 50_000)
     np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
+    np.testing.assert_allclose(
+        result.liquid_net_worth_usd[:, 1], result.cash_usd[:, 1] + result.generic_sp500_value_usd[:, 1]
+    )
     assert np.all(result.private_equity_liquidity_event[:, 1])
     assert result.actions == ()
 
 
-def test_private_equity_sale_requires_explicit_request_opportunity_and_policy() -> None:
+def test_private_equity_sale_into_cash_requires_explicit_request_opportunity_and_policy() -> None:
     scenario_set = ScenarioSet.model_validate(
         _scenario_set_body(
             _scenario_body(
@@ -1012,6 +1018,9 @@ def test_private_equity_sale_requires_explicit_request_opportunity_and_policy() 
     expected_tax = 175.09
     np.testing.assert_allclose(result.private_equity_sale_tax_usd[:, 1], expected_tax)
     np.testing.assert_allclose(result.cash_usd[:, 1], 30_000 - expected_tax)
+    np.testing.assert_allclose(
+        result.liquid_net_worth_usd[:, 1], result.cash_usd[:, 1] + result.generic_sp500_value_usd[:, 1]
+    )
     actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
     assert len(actions) == 2
     for action in actions:

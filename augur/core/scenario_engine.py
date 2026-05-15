@@ -718,7 +718,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         unsold_mask = (month_index < disposition.sale_month).astype("float64")
         unsold_mask = np.broadcast_to(unsold_mask[None, :], (rollout_count, month_count))
         owner_home_equity_claim_for_net_worth = owner_home_equity_claim * unsold_mask
-    liquid_net_worth = cash + generic_sp500_value + private_equity_liquidity_available_value
+    liquid_net_worth = cash + generic_sp500_value
     net_worth = cash + generic_sp500_value + private_equity_value + owner_home_equity_claim_for_net_worth
     _record_property_sale_actions(
         actions,
