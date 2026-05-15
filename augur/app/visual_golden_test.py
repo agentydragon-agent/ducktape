@@ -12,6 +12,8 @@ With BuildBuddy/RBE, use the invocation id printed by Bazel:
 
     bbapi artifact "$INV" test.outputs/distribution_default.png \
         > augur/app/__screenshots__/distribution_default.png
+    bbapi artifact "$INV" test.outputs/distribution_long_fan.png \
+        > augur/app/__screenshots__/distribution_long_fan.png
     bbapi artifact "$INV" test.outputs/trajectory_scenario_2_rollout_3.png \
         > augur/app/__screenshots__/trajectory_scenario_2_rollout_3.png
 """
@@ -19,11 +21,13 @@ With BuildBuddy/RBE, use the invocation id printed by Bazel:
 from __future__ import annotations
 
 import base64
+import json
 import os
 import shutil
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -50,6 +54,97 @@ class VisualCase:
     path: str
     visible_text: str
     hidden_text: str
+    min_fan_band_height: float | None = None
+
+
+def _encode_visual_state(scenario_set_input: dict[str, object]) -> str:
+    payload = {"version": 2, "scenario_set_input": scenario_set_input}
+    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    return base64.urlsafe_b64encode(payload_json).decode().rstrip("=")
+
+
+def _visual_path(path: str, scenario_set_input: dict[str, object], *, scenario: str, rollout: int = 0) -> str:
+    query = urllib.parse.urlencode(
+        {"state": _encode_visual_state(scenario_set_input), "scenario": scenario, "rollout": str(rollout)}
+    )
+    return f"{path}?{query}"
+
+
+LONG_FAN_STATE: dict[str, object] = {
+    "title": "Augur long-run distribution fan fixture",
+    "market_request": {
+        "market_model_id": "visual_long_fan",
+        "rollout_count": 32,
+        "horizon_months": 360,
+        "random_seed": 23,
+        "shared_market_paths": True,
+    },
+    "report_spec": {
+        "metrics": ["net_worth", "liquid_net_worth", "home_equity", "actor_equity", "property_value"],
+        "percentiles": [5, 25, 50, 75, 95],
+        "include_monthly_columns": True,
+        "include_sample_paths": False,
+    },
+    "scenarios": [
+        {
+            "identity": {
+                "scenario_id": "location_a_long_fan",
+                "label": "Location A 30-year fan",
+                "enabled": True,
+                "color": "#2563eb",
+            },
+            "property_and_location": {"property_id": "location_a_property"},
+            "actors_and_ownership": {"actor_policy": "owner_only", "partner_payment_monthly_usd": 2000},
+            "timeline": {"hold_years": 30},
+            "financing": {"financing_mode": "fixed_30", "down_payment_pct": 25, "credit_score": 776},
+            "initial_balance_sheet": {
+                "initial_checking_usd": 75000,
+                "starting_portfolio_usd": 350000,
+                "private_equity_units": 2500,
+            },
+            "policies": {
+                "liquid_reserve_policy": "checking_floor_sp500",
+                "checking_floor_usd": 100000,
+                "checking_sale_amount_usd": 50000,
+            },
+        },
+        {
+            "identity": {
+                "scenario_id": "location_b_long_fan",
+                "label": "Location B shared 30-year fan",
+                "enabled": True,
+                "color": "#dc2626",
+            },
+            "property_and_location": {"property_id": "location_b_property"},
+            "actors_and_ownership": {"actor_policy": "owner_plus_partner", "partner_payment_monthly_usd": 2750},
+            "timeline": {"hold_years": 30},
+            "financing": {"financing_mode": "fixed_30", "down_payment_pct": 20, "credit_score": 776},
+            "occupancy_and_rental": {
+                "owner_residence_mode": "selected_property",
+                "rental_use_policy": "rent_rooms_while_owner_lives_there",
+                "rooms_rented_while_living": 1,
+                "room_rent_monthly_usd": 1400,
+                "room_vacancy_pct": 8,
+                "vacancy_pct": 8,
+                "management_fee_pct": 8,
+                "leasing_fee_pct": 0,
+            },
+            "initial_balance_sheet": {
+                "initial_checking_usd": 75000,
+                "starting_portfolio_usd": 350000,
+                "private_equity_units": 2500,
+            },
+            "policies": {
+                "liquid_reserve_policy": "checking_floor_sp500",
+                "checking_floor_usd": 100000,
+                "checking_sale_amount_usd": 50000,
+                "private_equity_sale_policy": "liquid_net_worth_floor",
+                "private_equity_liquid_net_worth_floor_usd": 150000,
+                "private_equity_tender_sale_amount_usd": 50000,
+            },
+        },
+    ],
+}
 
 
 VISUAL_CASES = (
@@ -58,6 +153,13 @@ VISUAL_CASES = (
         path="/distribution?scenario=scenario_1&rollout=0",
         visible_text="Distribution terminal scenario comparison",
         hidden_text="Selected path monthly ledger",
+    ),
+    VisualCase(
+        name="distribution_long_fan",
+        path=_visual_path("/distribution", LONG_FAN_STATE, scenario="location_a_long_fan"),
+        visible_text="Scenario probability fans",
+        hidden_text="Selected path monthly ledger",
+        min_fan_band_height=80,
     ),
     VisualCase(
         name="trajectory_scenario_2_rollout_3",
@@ -134,7 +236,7 @@ def augur_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
             "--rollout-samples",
             "8",
             "--max-rollout-samples",
-            "8",
+            "32",
         ],
         env={
             **os.environ,
@@ -250,6 +352,29 @@ def _wait_for_augur_page(page: Page, case: VisualCase) -> None:
         "() => new URL(window.location.href).searchParams.has('state') "
         "&& !document.body.innerText.includes('Running...')"
     )
+    if case.min_fan_band_height is not None:
+        page.wait_for_function(
+            """
+            (minFanBandHeight) => {
+              const chart = Array.from(document.querySelectorAll('svg[role="img"]')).find((svg) =>
+                (svg.getAttribute("aria-label") || "").includes("probability fan chart")
+              );
+              if (!chart) return false;
+              const heights = Array.from(chart.querySelectorAll("polygon")).map((polygon) => {
+                const points = (polygon.getAttribute("points") || "")
+                  .trim()
+                  .split(/\\s+/)
+                  .map((point) => Number(point.split(",")[1]))
+                  .filter(Number.isFinite);
+                if (points.length === 0) return 0;
+                return Math.max(...points) - Math.min(...points);
+              });
+              return Math.max(0, ...heights) >= minFanBandHeight;
+            }
+            """,
+            arg=case.min_fan_band_height,
+            timeout=30_000,
+        )
     assert page.get_by_text(case.hidden_text).count() == 0
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
