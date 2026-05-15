@@ -155,24 +155,66 @@ If that fails, suspend all Terraform resources first, restart, then resume.
 
 See <lessons_learned/2025_11_19_tofu_controller_tls_cache_desync.md>.
 
-### Stale State Locks After Restart
+### Stale State Locks (Runner Pod Death)
 
-**Symptoms**: `error acquiring the state lock`; lock holder references dead pod;
-runner pods cycle every 15s.
+**Symptoms**: `error acquiring the state lock`; lock holder UUID matches the `holderIdentity`
+of a `lock-tfstate-default-<name>` Lease in `flux-system`; lock-holding pod no longer exists;
+runner pods churn every ~15s (ContainerCreating → Error → Terminating).
 
-**Cause**: `rollout restart` kills controller while runners hold locks. Orphaned runners
-can't release locks due to TLS cache desync.
+**Cause**: Anything that abruptly terminates a runner pod mid-plan leaves the K8s Lease's
+`holderIdentity` set forever. The `kubernetes` terraform backend's locks have no TTL — the
+controller never force-unlocks. Known triggers:
 
-**Fix**:
+- `kubectl rollout restart` of the controller (combined with TLS cache desync — the new
+  controller can't gRPC the orphaned runners to release locks)
+- A node going `NotReady`/unreachable while runners were scheduled on it (e.g., wyrm2 outage
+  on 2026-05-10 stranded ~14 locks; recovered 2026-05-14)
+- Node drain / eviction / OOM-kill of a runner
+
+**Diagnosis**:
 
 ```bash
+# List Terraform CRs currently failing on a state lock
+kubectl get terraform -n flux-system -o json | \
+  jq -r '.items[] | select(.status.conditions[]? | .message | test("acquiring the state lock"; "i")) | .metadata.name'
+
+# Confirm the Lease holder matches the lock UUID in the error and the pod is gone
+kubectl get lease -n flux-system lock-tfstate-default-<name> -o yaml
+kubectl get pod -n flux-system <name>-tf-runner  # should not exist or be a fresh Error pod
+```
+
+**Fix** — delete the stuck Lease(s) and trigger reconcile:
+
+```bash
+# Targeted (preferred — only the stuck ones)
+stuck=$(kubectl get terraform -n flux-system -o json | \
+  jq -r '.items[] | select(.status.conditions[]? | .message | test("acquiring the state lock"; "i")) | .metadata.name')
+for name in $stuck; do
+  kubectl delete lease -n flux-system "lock-tfstate-default-$name" --ignore-not-found
+done
+kubectl annotate terraform -n flux-system $stuck \
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
+
+# Nuclear (clears every tfstate lock — all leases have label tfstate=true; safe because
+# Leases are recreated on next acquisition and state is in tfstate-* secrets, not the Lease)
 kubectl delete leases -n flux-system -l tfstate=true
 kubectl annotate terraform -n flux-system --all \
   reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
 ```
 
-**Prevention**: Never `rollout restart` tofu-controller without first suspending all
-Terraform resources and deleting runner pods.
+After clearing, watch CRs flip from `False (acquiring the state lock)` to `True (Plan no
+changes)`; a few may surface unrelated errors (`exit status 1`) that were masked by the
+lock — diagnose those individually.
+
+**Prevention**:
+
+- Never `rollout restart` tofu-controller without first suspending all Terraform resources
+  and deleting runner pods (see procedure in
+  <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>).
+- Avoid scheduling tf-runners on flaky nodes. Runner pods inherit no nodeSelector by default
+  — the controller schedules them wherever capacity exists, which can be a roaming/GPU
+  worker. If a node frequently goes NotReady (e.g. wyrm2), expect periodic stranded locks
+  until the upstream gains stale-lock detection.
 
 See <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>.
 
