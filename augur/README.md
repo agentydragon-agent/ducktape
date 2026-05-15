@@ -14,6 +14,17 @@ composed in downstream user repos via the `AugurConfig` schema in
 
 See <SPEC.md> for the entity taxonomy + per-rollout evaluation loop.
 
+## Planning boundary
+
+Public, generic Augur work is tracked in this repo: simulator contracts,
+policy/runtime/schema shape, tax/accounting behavior, market-provider
+interfaces, public app framework, and generic catalog/storage contracts for
+properties, locations, and property assets.
+
+Downstream user repos track private composition: specific agent identities,
+holdings, property shortlists, media, deployment manifests, and
+company-/person-specific modeling assumptions.
+
 ## Layout
 
 | Directory       | Purpose                                                                                                                                                       |
