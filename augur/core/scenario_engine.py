@@ -64,6 +64,8 @@ from augur.core.scenario_set import (
     PropertyPurchaseEvent,
     PropertySaleBasisGainDetail,
     RentalMode,
+    RolloutStatus,
+    RolloutStatusType,
     Scenario,
     SellPrivateEquityAction,
     SellPublicStockDecision,
@@ -172,6 +174,30 @@ class ScenarioRunArrays:
     @property
     def horizon_months(self) -> int:
         return int(self.cash_usd.shape[1] - 1)
+
+    def rollout_statuses(self) -> tuple[RolloutStatus, ...]:
+        statuses: list[RolloutStatus] = []
+        for rollout_index in range(self.rollout_count):
+            cash_path = self.cash_usd[rollout_index, :]
+            negative_positions = np.nonzero(cash_path < 0)[0]
+            min_cash_usd = float(np.min(cash_path))
+            if negative_positions.size == 0:
+                statuses.append(
+                    RolloutStatus(
+                        rollout_index=rollout_index, status=RolloutStatusType.ACTIVE, min_cash_usd=min_cash_usd
+                    )
+                )
+                continue
+            first_negative_position = int(negative_positions[0])
+            statuses.append(
+                RolloutStatus(
+                    rollout_index=rollout_index,
+                    status=RolloutStatusType.CASH_NEGATIVE,
+                    min_cash_usd=min_cash_usd,
+                    first_negative_cash_month_index=int(self.month_index[first_negative_position]),
+                )
+            )
+        return tuple(statuses)
 
     def monthly_columns(self) -> ColumnarTable:
         row_count = self.rollout_count * (self.horizon_months + 1)

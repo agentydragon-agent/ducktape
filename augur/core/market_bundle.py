@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from augur.core.local_regulation import LocationId
 from augur.core.scenario_set import MarketRequest
@@ -13,12 +13,25 @@ from augur.core.schemas import ApiModel
 
 class MarketBundleMetadata(ApiModel):
     market_model_id: str
-    random_seed: int | None
+    seed: int
     rollout_count: int
     horizon_months: int
     event_stream_ids: tuple[str, ...]
     notes: tuple[str, ...] = ()
     source_metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def path_set_id(self) -> str:
+        return (
+            f"path_set:{self.market_model_id}:seed:{self.seed}:"
+            f"rollouts:{self.rollout_count}:horizon_months:{self.horizon_months}"
+        )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def exogenous_path_ids(self) -> tuple[str, ...]:
+        return tuple(f"{self.path_set_id}:path:{rollout_index}" for rollout_index in range(self.rollout_count))
 
     def to_json_dict(self) -> dict[str, object]:
         return self.model_dump(mode="json")
@@ -145,7 +158,7 @@ class MarketBundle:
 
 class MarketBundleProvider(Protocol):
     def sample_market_bundle(
-        self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
+        self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
     ) -> MarketBundle: ...
 
 
@@ -158,7 +171,7 @@ def sample_market_bundle_for_request(provider: MarketBundleProvider, market_requ
     return provider.sample_market_bundle(
         rollout_count=int(market_request.rollout_count),
         horizon_months=int(market_request.horizon_months),
-        seed=market_request.random_seed,
+        seed=market_request.seed,
         market_request=market_request,
     )
 
@@ -171,7 +184,7 @@ class FlatMarketBundleProvider:
     private_equity_sale_opportunity_months: tuple[int, ...] = (12,)
 
     def sample_market_bundle(
-        self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
+        self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
     ) -> MarketBundle:
         shape = (rollout_count, horizon_months + 1)
         flat = np.ones(shape, dtype="float64")
@@ -196,7 +209,7 @@ class FlatMarketBundleProvider:
             private_equity_sale_opportunity_mask=private_equity_events,
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
-                random_seed=seed,
+                seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
                 event_stream_ids=("private_equity_sale_opportunity_event",),
@@ -209,7 +222,7 @@ class SimpleMarketBundleProvider:
     """Small stochastic provider used until richer market models plug in."""
 
     def sample_market_bundle(
-        self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
+        self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
     ) -> MarketBundle:
         rng = np.random.default_rng(seed)
         month_index = np.arange(horizon_months + 1, dtype="int64")
@@ -273,7 +286,7 @@ class SimpleMarketBundleProvider:
         )
         metadata = MarketBundleMetadata(
             market_model_id=market_request.market_model_id,
-            random_seed=seed,
+            seed=seed,
             rollout_count=rollout_count,
             horizon_months=horizon_months,
             event_stream_ids=("private_equity_sale_opportunity_event",),

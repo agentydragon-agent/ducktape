@@ -42,8 +42,7 @@ def _scenario_set_body(*scenario_ids: str) -> dict[str, Any]:
             "market_model_id": "current_market_model",
             "rollout_count": 32,
             "horizon_months": 120,
-            "random_seed": 7,
-            "shared_market_paths": True,
+            "seed": 7,
         },
         "report_spec": {
             "metrics": ["net_worth", "liquid_net_worth", "home_equity"],
@@ -201,13 +200,13 @@ def test_report_spec_rejects_unsupported_sample_paths() -> None:
         ReportSpec(include_sample_paths=True)
 
 
-def test_market_request_requires_shared_market_paths() -> None:
-    market_request = MarketRequest(shared_market_paths=True)
+def test_market_request_requires_seed() -> None:
+    market_request = MarketRequest(seed=7)
 
-    assert market_request.shared_market_paths is True
+    assert market_request.seed == 7
 
-    with pytest.raises(ValidationError, match="shared_market_paths"):
-        MarketRequest(shared_market_paths=False)
+    with pytest.raises(ValidationError, match="seed"):
+        MarketRequest.model_validate({})
 
 
 def test_policy_config_uses_discriminated_rules_and_enums() -> None:

@@ -34,7 +34,7 @@
       "mare_island_vallejo_ca": "rent"
     }
   },
-  "random_seed": 20260429,
+  "seed": 20260429,
   "simulation": {
     "rollout_samples": 512
   },

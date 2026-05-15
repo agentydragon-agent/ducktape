@@ -1461,7 +1461,7 @@ function ResultViewTabs({ viewMode, onViewModeChange }) {
 
 function ResultModeHeader({ viewMode, scenarioSetRequest, selection, selectedRolloutIndex }) {
   const isTrajectory = viewMode === "trajectory";
-  const seed = scenarioSetRequest.marketRequest.randomSeed;
+  const seed = scenarioSetRequest.marketRequest.seed;
   const kind = isTrajectory ? "trajectory" : "distribution";
   return (
     <ResultPanel
@@ -1469,15 +1469,8 @@ function ResultModeHeader({ viewMode, scenarioSetRequest, selection, selectedRol
       title={isTrajectory ? "Trajectory view" : "Distribution view"}
       subtitle={
         isTrajectory
-          ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · seed ${seed ?? "not set"}`
+          ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · seed ${seed}`
           : "Terminal percentiles and probability fans"
-      }
-      actions={
-        isTrajectory && seed === null ? (
-          <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-            Unseeded trajectories are not stable across reloads.
-          </div>
-        ) : null
       }
     />
   );

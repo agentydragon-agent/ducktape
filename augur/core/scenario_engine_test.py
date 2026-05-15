@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest_bazel
+from numpy.testing import assert_allclose
 
 from augur.core.api import simulate_set
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
@@ -14,6 +15,7 @@ from augur.core.scenario_set import (
     PayMortgageAction,
     PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
+    RolloutStatusType,
     ScenarioSet,
     SettlePropertySaleAction,
     TransferPartnerContributionAction,
@@ -42,7 +44,7 @@ def _bundle(
         events[:, private_equity_sale_opportunity_month] = True
     metadata = MarketBundleMetadata(
         market_model_id="test",
-        random_seed=7,
+        seed=7,
         rollout_count=rollout_count,
         horizon_months=horizon_months,
         event_stream_ids=("private_equity_sale_opportunity_event",),
@@ -74,7 +76,7 @@ def _scenario_set_body(*scenarios: dict) -> dict:
     return {
         "scenario_set_id": "engine_test",
         "title": "Engine test",
-        "market_request": {"rollout_count": 2, "horizon_months": 3, "random_seed": 7},
+        "market_request": {"rollout_count": 2, "horizon_months": 3, "seed": 7},
         "scenarios": list(scenarios),
     }
 
@@ -145,7 +147,7 @@ def _scenario_body(
 
 
 def _assert_liquid_net_worth_matches_cash_and_public_stock(result) -> None:
-    np.testing.assert_allclose(result.liquid_net_worth_usd, result.cash_usd + result.generic_sp500_value_usd)
+    assert_allclose(result.liquid_net_worth_usd, result.cash_usd + result.generic_sp500_value_usd)
 
 
 def test_portfolio_only_baseline_uses_numpy_paths() -> None:
@@ -156,11 +158,11 @@ def test_portfolio_only_baseline_uses_numpy_paths() -> None:
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert result.cash_usd.shape == (2, 4)
-    np.testing.assert_allclose(result.property_value_usd, 0)
-    np.testing.assert_allclose(result.cash_usd[:, 0], 10_000)
-    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 120_000)
-    np.testing.assert_allclose(result.private_equity_value_usd[:, 2], 100_000)
-    np.testing.assert_allclose(result.net_worth_usd[:, 2], 230_000)
+    assert_allclose(result.property_value_usd, 0)
+    assert_allclose(result.cash_usd[:, 0], 10_000)
+    assert_allclose(result.generic_sp500_value_usd[:, 2], 120_000)
+    assert_allclose(result.private_equity_value_usd[:, 2], 100_000)
+    assert_allclose(result.net_worth_usd[:, 2], 230_000)
     assert result.monthly_columns().row_count == 8
 
 
@@ -170,7 +172,7 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
             self.calls = 0
 
         def sample_market_bundle(
-            self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
+            self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
         ) -> MarketBundle:
             self.calls += 1
             return _bundle(rollout_count=rollout_count, horizon_months=horizon_months)
@@ -192,7 +194,28 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
     second_sp500 = response.scenario_results[1].monthly_columns.columns["generic_sp500_value_usd"]
     assert first_sp500 == second_sp500
     assert response.scenario_results[0].metric_fan_columns["net_worth_usd"].row_count == 4
-    assert response.market_metadata["random_seed"] == 7
+    assert response.market_metadata["seed"] == 7
+    assert response.market_metadata["path_set_id"] == "path_set:test:seed:7:rollouts:2:horizon_months:3"
+    assert response.market_metadata["exogenous_path_ids"] == [
+        "path_set:test:seed:7:rollouts:2:horizon_months:3:path:0",
+        "path_set:test:seed:7:rollouts:2:horizon_months:3:path:1",
+    ]
+    assert [path.exogenous_path_id for path in response.exogenous_paths] == response.market_metadata[
+        "exogenous_path_ids"
+    ]
+    assert (
+        response.scenario_results[0].projection_trajectories[0].exogenous_path_id
+        == response.scenario_results[1].projection_trajectories[0].exogenous_path_id
+    )
+    assert (
+        response.scenario_results[0].projection_trajectories[0].projection_trajectory_id
+        == "trajectory:first:path_set:test:seed:7:rollouts:2:horizon_months:3:path:0"
+    )
+    assert (
+        response.scenario_results[1].projection_trajectories[0].projection_trajectory_id
+        == "trajectory:second:path_set:test:seed:7:rollouts:2:horizon_months:3:path:0"
+    )
+    assert response.scenario_results[0].rollout_statuses[0].status == RolloutStatusType.ACTIVE
 
 
 def test_property_purchase_with_mortgage_tracks_debt_and_equity() -> None:
@@ -218,21 +241,21 @@ def test_property_purchase_with_mortgage_tracks_debt_and_equity() -> None:
     )
 
     no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
-    np.testing.assert_allclose(no_opportunity.private_equity_sale_usd, 0)
-    np.testing.assert_allclose(no_opportunity.private_equity_sale_opportunity_value_usd, 0)
+    assert_allclose(no_opportunity.private_equity_sale_usd, 0)
+    assert_allclose(no_opportunity.private_equity_sale_opportunity_value_usd, 0)
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=2))
 
-    np.testing.assert_allclose(result.purchase_closing_cost_usd[:, 0], 25_000)
-    np.testing.assert_allclose(result.cash_usd[:, 0], 75_000)
-    np.testing.assert_allclose(result.property_value_usd[:, 0], 1_000_000)
-    np.testing.assert_allclose(result.mortgage_balance_usd[:, 0], 800_000)
-    np.testing.assert_allclose(result.home_equity_usd[:, 0], 200_000)
+    assert_allclose(result.purchase_closing_cost_usd[:, 0], 25_000)
+    assert_allclose(result.cash_usd[:, 0], 75_000)
+    assert_allclose(result.property_value_usd[:, 0], 1_000_000)
+    assert_allclose(result.mortgage_balance_usd[:, 0], 800_000)
+    assert_allclose(result.home_equity_usd[:, 0], 200_000)
     assert np.all(result.mortgage_interest_usd[:, 1] > 0)
     assert np.all(result.mortgage_principal_usd[:, 1] > 0)
     assert np.all(result.mortgage_balance_usd[:, 1] < 800_000)
     assert np.all(result.partner_present)
-    np.testing.assert_allclose(result.partner_home_equity_claim_usd, 0)
+    assert_allclose(result.partner_home_equity_claim_usd, 0)
 
 
 def test_property_purchase_with_cash_financing_has_no_mortgage() -> None:
@@ -255,11 +278,11 @@ def test_property_purchase_with_cash_financing_has_no_mortgage() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
 
-    np.testing.assert_allclose(result.purchase_closing_cost_usd[:, 0], 18_750)
-    np.testing.assert_allclose(result.cash_usd[:, 0], 481_250)
-    np.testing.assert_allclose(result.mortgage_balance_usd, 0)
-    np.testing.assert_allclose(result.mortgage_interest_usd, 0)
-    np.testing.assert_allclose(result.home_equity_usd[:, 0], 750_000)
+    assert_allclose(result.purchase_closing_cost_usd[:, 0], 18_750)
+    assert_allclose(result.cash_usd[:, 0], 481_250)
+    assert_allclose(result.mortgage_balance_usd, 0)
+    assert_allclose(result.mortgage_interest_usd, 0)
+    assert_allclose(result.home_equity_usd[:, 0], 750_000)
 
 
 def test_purchase_closing_cost_reduces_month_zero_cash() -> None:
@@ -283,9 +306,9 @@ def test_purchase_closing_cost_reduces_month_zero_cash() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
 
-    np.testing.assert_allclose(result.purchase_closing_cost_usd[:, 0], 2_000)
-    np.testing.assert_allclose(result.purchase_closing_cost_usd[:, 1:], 0)
-    np.testing.assert_allclose(result.cash_usd[:, 0], 28_000)
+    assert_allclose(result.purchase_closing_cost_usd[:, 0], 2_000)
+    assert_allclose(result.purchase_closing_cost_usd[:, 1:], 0)
+    assert_allclose(result.cash_usd[:, 0], 28_000)
 
 
 def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
@@ -322,19 +345,17 @@ def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
     expected_debt_payoff = result.mortgage_balance_usd[:, 3]
     expected_adjusted_basis = 102_500
     expected_realized_gain = expected_gross - expected_sale_cost - expected_adjusted_basis
-    np.testing.assert_allclose(result.property_sale_gross_usd[:, 3], expected_gross)
-    np.testing.assert_allclose(result.sale_closing_cost_usd[:, 3], expected_sale_cost)
-    np.testing.assert_allclose(result.property_sale_debt_payoff_usd[:, 3], expected_debt_payoff)
-    np.testing.assert_allclose(result.property_sale_adjusted_basis_usd[:, 3], expected_adjusted_basis)
-    np.testing.assert_allclose(result.property_sale_capital_gain_usd[:, 3], expected_realized_gain)
-    np.testing.assert_allclose(result.property_sale_capital_gain_exclusion_usd[:, 3], expected_realized_gain)
-    np.testing.assert_allclose(result.taxable_property_capital_gain_usd[:, 3], 0)
-    np.testing.assert_allclose(
+    assert_allclose(result.property_sale_gross_usd[:, 3], expected_gross)
+    assert_allclose(result.sale_closing_cost_usd[:, 3], expected_sale_cost)
+    assert_allclose(result.property_sale_debt_payoff_usd[:, 3], expected_debt_payoff)
+    assert_allclose(result.property_sale_adjusted_basis_usd[:, 3], expected_adjusted_basis)
+    assert_allclose(result.property_sale_capital_gain_usd[:, 3], expected_realized_gain)
+    assert_allclose(result.property_sale_capital_gain_exclusion_usd[:, 3], expected_realized_gain)
+    assert_allclose(result.taxable_property_capital_gain_usd[:, 3], 0)
+    assert_allclose(
         result.property_sale_net_proceeds_usd[:, 3], expected_gross - expected_sale_cost - expected_debt_payoff
     )
-    np.testing.assert_allclose(
-        result.net_property_sale_cash_flow_usd[:, 3], result.property_sale_net_proceeds_usd[:, 3]
-    )
+    assert_allclose(result.net_property_sale_cash_flow_usd[:, 3], result.property_sale_net_proceeds_usd[:, 3])
     sale_actions = [action for action in result.actions if isinstance(action, SettlePropertySaleAction)]
     assert len(sale_actions) == 2
     assert {action.rollout_index for action in sale_actions} == {0, 1}
@@ -344,12 +365,10 @@ def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
         assert action.gross_sale_usd == expected_gross
         assert action.selling_cost_usd == expected_sale_cost
         assert action.adjusted_basis_usd == expected_adjusted_basis
-        np.testing.assert_allclose(action.debt_payoff_usd, expected_debt_payoff[action.rollout_index])
+        assert_allclose(action.debt_payoff_usd, expected_debt_payoff[action.rollout_index])
         assert action.capital_gain_exclusion_usd == expected_realized_gain
         assert action.taxable_capital_gain_usd == 0
-        np.testing.assert_allclose(
-            action.net_proceeds_usd, result.property_sale_net_proceeds_usd[action.rollout_index, 3]
-        )
+        assert_allclose(action.net_proceeds_usd, result.property_sale_net_proceeds_usd[action.rollout_index, 3])
 
 
 def test_location_local_regulation_drives_property_tax() -> None:
@@ -401,8 +420,8 @@ def test_location_local_regulation_drives_property_tax() -> None:
     mainland = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
     mare_island = run_scenario_vectorized(scenario_set.scenarios[1], _bundle())
 
-    np.testing.assert_allclose(mainland.property_tax_usd[:, 1], 100_000 * 0.011 / 12)
-    np.testing.assert_allclose(mare_island.property_tax_usd[:, 1], 100_000 * 0.024 / 12)
+    assert_allclose(mainland.property_tax_usd[:, 1], 100_000 * 0.011 / 12)
+    assert_allclose(mare_island.property_tax_usd[:, 1], 100_000 * 0.024 / 12)
 
 
 def test_property_sale_stops_operating_cash_flows_after_sale_month() -> None:
@@ -437,12 +456,12 @@ def test_property_sale_stops_operating_cash_flows_after_sale_month() -> None:
 
     assert np.all(result.rental_income_usd[:, 1] > 0)
     assert np.all(result.property_carrying_cost_usd[:, 1] > 0)
-    np.testing.assert_allclose(result.rental_income_usd[:, 2:], 0)
-    np.testing.assert_allclose(result.property_tax_usd[:, 2:], 0)
-    np.testing.assert_allclose(result.hoa_usd[:, 2:], 0)
-    np.testing.assert_allclose(result.insurance_usd[:, 2:], 0)
-    np.testing.assert_allclose(result.maintenance_usd[:, 2:], 0)
-    np.testing.assert_allclose(result.net_property_cash_flow_usd[:, 2:], 0)
+    assert_allclose(result.rental_income_usd[:, 2:], 0)
+    assert_allclose(result.property_tax_usd[:, 2:], 0)
+    assert_allclose(result.hoa_usd[:, 2:], 0)
+    assert_allclose(result.insurance_usd[:, 2:], 0)
+    assert_allclose(result.maintenance_usd[:, 2:], 0)
+    assert_allclose(result.net_property_cash_flow_usd[:, 2:], 0)
 
 
 def test_capital_gains_exclusion_offsets_property_sale_gain() -> None:
@@ -470,10 +489,10 @@ def test_capital_gains_exclusion_offsets_property_sale_gain() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(home_path=(1.0, 1.0, 1.5, 2.0)))
 
-    np.testing.assert_allclose(result.realized_property_gain_usd[:, 3], 100_000)
-    np.testing.assert_allclose(result.depreciation_recapture_usd[:, 3], 0)
-    np.testing.assert_allclose(result.taxable_property_gain_usd[:, 3], 0)
-    np.testing.assert_allclose(result.property_sale_tax_usd[:, 3], 0)
+    assert_allclose(result.realized_property_gain_usd[:, 3], 100_000)
+    assert_allclose(result.depreciation_recapture_usd[:, 3], 0)
+    assert_allclose(result.taxable_property_gain_usd[:, 3], 0)
+    assert_allclose(result.property_sale_tax_usd[:, 3], 0)
 
 
 def test_rental_depreciation_recaptures_on_sale() -> None:
@@ -521,12 +540,12 @@ def test_rental_depreciation_recaptures_on_sale() -> None:
     expected_monthly_depreciation = 100_000 / (27.5 * 12)
     expected_cumulative_depreciation = expected_monthly_depreciation * 3
     expected_recapture_tax = expected_cumulative_depreciation * (0.22 + 0.093)
-    np.testing.assert_allclose(result.property_depreciation_usd[:, 1:4], expected_monthly_depreciation)
-    np.testing.assert_allclose(result.cumulative_property_depreciation_usd[:, 3], expected_cumulative_depreciation)
-    np.testing.assert_allclose(result.realized_property_gain_usd[:, 3], expected_cumulative_depreciation)
-    np.testing.assert_allclose(result.depreciation_recapture_usd[:, 3], expected_cumulative_depreciation)
-    np.testing.assert_allclose(result.taxable_property_gain_usd[:, 3], expected_cumulative_depreciation)
-    np.testing.assert_allclose(result.property_sale_tax_usd[:, 3], expected_recapture_tax)
+    assert_allclose(result.property_depreciation_usd[:, 1:4], expected_monthly_depreciation)
+    assert_allclose(result.cumulative_property_depreciation_usd[:, 3], expected_cumulative_depreciation)
+    assert_allclose(result.realized_property_gain_usd[:, 3], expected_cumulative_depreciation)
+    assert_allclose(result.depreciation_recapture_usd[:, 3], expected_cumulative_depreciation)
+    assert_allclose(result.taxable_property_gain_usd[:, 3], expected_cumulative_depreciation)
+    assert_allclose(result.property_sale_tax_usd[:, 3], expected_recapture_tax)
 
 
 def test_no_property_scenario_ignores_real_estate_tax_accounting_parameters() -> None:
@@ -541,15 +560,15 @@ def test_no_property_scenario_ignores_real_estate_tax_accounting_parameters() ->
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(home_path=(1.0, 2.0, 3.0, 4.0)))
 
-    np.testing.assert_allclose(result.purchase_closing_cost_usd, 0)
-    np.testing.assert_allclose(result.sale_closing_cost_usd, 0)
-    np.testing.assert_allclose(result.property_depreciation_usd, 0)
-    np.testing.assert_allclose(result.property_sale_gross_usd, 0)
-    np.testing.assert_allclose(result.property_sale_net_proceeds_usd, 0)
-    np.testing.assert_allclose(result.property_sale_tax_usd, 0)
-    np.testing.assert_allclose(result.net_property_sale_cash_flow_usd, 0)
-    np.testing.assert_allclose(result.cash_usd[:, 0], 10_000)
-    np.testing.assert_allclose(result.cash_usd[:, 3], 10_000)
+    assert_allclose(result.purchase_closing_cost_usd, 0)
+    assert_allclose(result.sale_closing_cost_usd, 0)
+    assert_allclose(result.property_depreciation_usd, 0)
+    assert_allclose(result.property_sale_gross_usd, 0)
+    assert_allclose(result.property_sale_net_proceeds_usd, 0)
+    assert_allclose(result.property_sale_tax_usd, 0)
+    assert_allclose(result.net_property_sale_cash_flow_usd, 0)
+    assert_allclose(result.cash_usd[:, 0], 10_000)
+    assert_allclose(result.cash_usd[:, 3], 10_000)
 
 
 def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> None:
@@ -576,15 +595,15 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
 
-    np.testing.assert_allclose(result.generic_sp500_sale_usd[:, 0], 20_000)
-    np.testing.assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 10_000)
-    np.testing.assert_allclose(result.generic_sp500_sale_gain_usd[:, 0], 10_000)
-    np.testing.assert_allclose(result.generic_sp500_sale_tax_usd[:, 0], 42.94)
-    np.testing.assert_allclose(result.checking_floor_action_usd[:, 0], 20_000)
-    np.testing.assert_allclose(result.checking_floor_shortfall_usd[:, 0], 0)
-    np.testing.assert_allclose(result.cash_usd[:, 0], 25_000 - 42.94)
-    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 0], 30_000)
-    np.testing.assert_allclose(result.generic_sp500_sale_usd[:, 1:], 0)
+    assert_allclose(result.generic_sp500_sale_usd[:, 0], 20_000)
+    assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 10_000)
+    assert_allclose(result.generic_sp500_sale_gain_usd[:, 0], 10_000)
+    assert_allclose(result.generic_sp500_sale_tax_usd[:, 0], 42.94)
+    assert_allclose(result.checking_floor_action_usd[:, 0], 20_000)
+    assert_allclose(result.checking_floor_shortfall_usd[:, 0], 0)
+    assert_allclose(result.cash_usd[:, 0], 25_000 - 42.94)
+    assert_allclose(result.generic_sp500_value_usd[:, 0], 30_000)
+    assert_allclose(result.generic_sp500_sale_usd[:, 1:], 0)
     assert np.all(result.generic_sp500_value_usd[:, 1] > result.generic_sp500_value_usd[:, 0])
     assert len(result.actions) == 2
     assert {action.rollout_index for action in result.actions} == {0, 1}
@@ -594,10 +613,10 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
         assert action.actor_id == "owner"
         assert action.policy_id == "checking_floor"
         assert action.amount_usd == 20_000
-        np.testing.assert_allclose(action.after_tax_proceeds_usd, 20_000 - 42.94)
+        assert_allclose(action.after_tax_proceeds_usd, 20_000 - 42.94)
         assert action.basis_usd == 10_000
         assert action.gain_usd == 10_000
-        np.testing.assert_allclose(action.tax_usd, 42.94)
+        assert_allclose(action.tax_usd, 42.94)
         assert action.shortfall_usd == 0
 
 
@@ -652,10 +671,10 @@ def test_checking_floor_policy_does_not_sell_when_cash_is_above_floor() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
 
-    np.testing.assert_allclose(result.generic_sp500_sale_usd, 0)
-    np.testing.assert_allclose(result.checking_floor_shortfall_usd, 0)
-    np.testing.assert_allclose(result.cash_usd, 12_000)
-    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 60_000)
+    assert_allclose(result.generic_sp500_sale_usd, 0)
+    assert_allclose(result.checking_floor_shortfall_usd, 0)
+    assert_allclose(result.cash_usd, 12_000)
+    assert_allclose(result.generic_sp500_value_usd[:, 2], 60_000)
 
 
 def test_checking_floor_policy_reports_shortfall_when_public_stock_is_exhausted() -> None:
@@ -682,11 +701,11 @@ def test_checking_floor_policy_reports_shortfall_when_public_stock_is_exhausted(
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
 
-    np.testing.assert_allclose(result.generic_sp500_sale_usd[:, 0], 5_000)
-    np.testing.assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 1_000)
-    np.testing.assert_allclose(result.cash_usd[:, 0], 5_000)
-    np.testing.assert_allclose(result.generic_sp500_value_usd, 0)
-    np.testing.assert_allclose(result.checking_floor_shortfall_usd[:, 0], 5_000)
+    assert_allclose(result.generic_sp500_sale_usd[:, 0], 5_000)
+    assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 1_000)
+    assert_allclose(result.cash_usd[:, 0], 5_000)
+    assert_allclose(result.generic_sp500_value_usd, 0)
+    assert_allclose(result.checking_floor_shortfall_usd[:, 0], 5_000)
 
 
 def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_appreciation() -> None:
@@ -734,14 +753,12 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
     )
 
     assert np.all(result.partner_contribution_used_usd[:, 1:3] > result.mortgage_principal_usd[:, 1:3])
-    np.testing.assert_allclose(result.partner_contribution_usd[:, 3:], 0)
+    assert_allclose(result.partner_contribution_usd[:, 3:], 0)
     assert np.all(result.partner_ownership_pct[:, 2] > 0)
-    np.testing.assert_allclose(result.partner_ownership_pct[:, 3], result.partner_ownership_pct[:, 2])
-    np.testing.assert_allclose(result.partner_ownership_pct[:, 4], result.partner_ownership_pct[:, 2])
+    assert_allclose(result.partner_ownership_pct[:, 3], result.partner_ownership_pct[:, 2])
+    assert_allclose(result.partner_ownership_pct[:, 4], result.partner_ownership_pct[:, 2])
     assert np.all(result.partner_home_equity_claim_usd[:, 4] > result.partner_home_equity_claim_usd[:, 2])
-    np.testing.assert_allclose(
-        result.owner_home_equity_claim_usd + result.partner_home_equity_claim_usd, result.home_equity_usd
-    )
+    assert_allclose(result.owner_home_equity_claim_usd + result.partner_home_equity_claim_usd, result.home_equity_usd)
     payment_actions = [action for action in result.actions if isinstance(action, TransferPartnerContributionAction)]
     mortgage_actions = [action for action in result.actions if isinstance(action, PayMortgageAction)]
     equity_actions = [action for action in result.actions if isinstance(action, AccruePartnerEquityAction)]
@@ -830,7 +847,7 @@ def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> No
         ),
     )
 
-    np.testing.assert_allclose(result.partner_contribution_usd[:, 1:], 100)
+    assert_allclose(result.partner_contribution_usd[:, 1:], 100)
     assert np.all(result.partner_principal_credit_usd[:, 1:] > 0)
     assert np.all(result.partner_equity_ledger_usd[:, 2] > result.partner_equity_ledger_usd[:, 1])
     transfers = [action for action in result.actions if isinstance(action, TransferPartnerContributionAction)]
@@ -885,24 +902,24 @@ def test_rental_income_and_carrying_costs_feed_cash_flow() -> None:
     expected_month_1_income = expected_month_1_gross * 0.9
     expected_month_1_management = expected_month_1_income * 0.05
     expected_month_1_leasing = expected_month_1_gross * 0.12 / 12
-    np.testing.assert_allclose(result.rental_gross_income_usd[:, 1], expected_month_1_gross)
-    np.testing.assert_allclose(result.rental_vacancy_loss_usd[:, 1], 200)
-    np.testing.assert_allclose(result.rental_income_usd[:, 1], expected_month_1_income)
-    np.testing.assert_allclose(result.rental_management_fee_usd[:, 1], expected_month_1_management)
-    np.testing.assert_allclose(result.rental_leasing_fee_usd[:, 1], expected_month_1_leasing)
-    np.testing.assert_allclose(result.property_tax_usd[:, 1], 275)
-    np.testing.assert_allclose(result.hoa_usd[:, 1], 100)
-    np.testing.assert_allclose(result.insurance_usd[:, 1], 100)
-    np.testing.assert_allclose(result.maintenance_usd[:, 1], 300)
-    np.testing.assert_allclose(
+    assert_allclose(result.rental_gross_income_usd[:, 1], expected_month_1_gross)
+    assert_allclose(result.rental_vacancy_loss_usd[:, 1], 200)
+    assert_allclose(result.rental_income_usd[:, 1], expected_month_1_income)
+    assert_allclose(result.rental_management_fee_usd[:, 1], expected_month_1_management)
+    assert_allclose(result.rental_leasing_fee_usd[:, 1], expected_month_1_leasing)
+    assert_allclose(result.property_tax_usd[:, 1], 275)
+    assert_allclose(result.hoa_usd[:, 1], 100)
+    assert_allclose(result.insurance_usd[:, 1], 100)
+    assert_allclose(result.maintenance_usd[:, 1], 300)
+    assert_allclose(
         result.property_carrying_cost_usd[:, 1],
         275 + 100 + 100 + 300 + expected_month_1_management + expected_month_1_leasing,
     )
-    np.testing.assert_allclose(
+    assert_allclose(
         result.net_property_cash_flow_usd,
         result.rental_income_usd - result.property_carrying_cost_usd - result.mortgage_payment_usd,
     )
-    np.testing.assert_allclose(result.cash_usd[:, 1], result.cash_usd[:, 0] + result.net_property_cash_flow_usd[:, 1])
+    assert_allclose(result.cash_usd[:, 1], result.cash_usd[:, 0] + result.net_property_cash_flow_usd[:, 1])
 
 
 def test_purchase_event_parameters_drive_property_costs() -> None:
@@ -937,11 +954,11 @@ def test_purchase_event_parameters_drive_property_costs() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
 
-    np.testing.assert_allclose(result.property_tax_usd[:, 1], 118)
-    np.testing.assert_allclose(result.hoa_usd[:, 1], 250)
-    np.testing.assert_allclose(result.insurance_usd[:, 1], 50)
-    np.testing.assert_allclose(result.maintenance_usd[:, 1], 100)
-    np.testing.assert_allclose(result.cash_usd[:, 1], result.cash_usd[:, 0] - 518)
+    assert_allclose(result.property_tax_usd[:, 1], 118)
+    assert_allclose(result.hoa_usd[:, 1], 250)
+    assert_allclose(result.insurance_usd[:, 1], 50)
+    assert_allclose(result.maintenance_usd[:, 1], 100)
+    assert_allclose(result.cash_usd[:, 1], result.cash_usd[:, 0] - 518)
 
 
 def test_private_equity_stock_is_not_sold_without_policy() -> None:
@@ -950,9 +967,9 @@ def test_private_equity_stock_is_not_sold_without_policy() -> None:
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
-    np.testing.assert_allclose(result.private_equity_sale_usd, 0)
-    np.testing.assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 50_000)
-    np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
+    assert_allclose(result.private_equity_sale_usd, 0)
+    assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 50_000)
+    assert_allclose(result.cash_usd[:, 1], 10_000)
 
 
 def test_private_equity_sale_opportunity_without_policy_does_not_sell() -> None:
@@ -961,9 +978,9 @@ def test_private_equity_sale_opportunity_without_policy_does_not_sell() -> None:
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
-    np.testing.assert_allclose(result.private_equity_sale_usd, 0)
-    np.testing.assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 50_000)
-    np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
+    assert_allclose(result.private_equity_sale_usd, 0)
+    assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 50_000)
+    assert_allclose(result.cash_usd[:, 1], 10_000)
     assert np.all(result.private_equity_sale_opportunity_event[:, 1])
     assert result.actions == ()
 
@@ -989,7 +1006,7 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     )
 
     no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
-    np.testing.assert_allclose(no_opportunity.private_equity_sale_usd, 0)
+    assert_allclose(no_opportunity.private_equity_sale_usd, 0)
     assert no_opportunity.actions == ()
     no_opportunity_decisions = [
         decision
@@ -1002,14 +1019,14 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
-    np.testing.assert_allclose(result.private_equity_sale_usd[:, 0], 0)
-    np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
-    np.testing.assert_allclose(result.private_equity_sale_usd[:, 2], 0)
-    np.testing.assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 30_000)
-    np.testing.assert_allclose(result.private_equity_sale_basis_usd[:, 1], 0)
+    assert_allclose(result.private_equity_sale_usd[:, 0], 0)
+    assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
+    assert_allclose(result.private_equity_sale_usd[:, 2], 0)
+    assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 30_000)
+    assert_allclose(result.private_equity_sale_basis_usd[:, 1], 0)
     expected_tax = 175.09
-    np.testing.assert_allclose(result.private_equity_sale_tax_usd[:, 1], expected_tax)
-    np.testing.assert_allclose(result.cash_usd[:, 1], 30_000 - expected_tax)
+    assert_allclose(result.private_equity_sale_tax_usd[:, 1], expected_tax)
+    assert_allclose(result.cash_usd[:, 1], 30_000 - expected_tax)
     actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
     assert len(actions) == 2
     for action in actions:
@@ -1018,9 +1035,9 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
         assert action.actor_id == "owner"
         assert action.policy_id == "private_equity_sale"
         assert action.amount_usd == 20_000
-        np.testing.assert_allclose(action.after_tax_proceeds_usd, 20_000 - expected_tax)
+        assert_allclose(action.after_tax_proceeds_usd, 20_000 - expected_tax)
         assert action.basis_usd == 0
-        np.testing.assert_allclose(action.estimated_tax_usd, expected_tax)
+        assert_allclose(action.estimated_tax_usd, expected_tax)
         assert action.units_sold == 40
         assert action.sold_fraction == 0.4
         assert action.proceeds_destination is AccountType.CHECKING
@@ -1055,10 +1072,10 @@ def test_private_equity_sale_policy_reinvests_sale_proceeds_in_sp500() -> None:
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
-    np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
-    np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
-    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 1], 130_000)
-    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 141_818.18181818)
+    assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
+    assert_allclose(result.cash_usd[:, 1], 10_000)
+    assert_allclose(result.generic_sp500_value_usd[:, 1], 130_000)
+    assert_allclose(result.generic_sp500_value_usd[:, 2], 141_818.18181818)
 
 
 def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportunity() -> None:
@@ -1086,15 +1103,15 @@ def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportun
 
     no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
     _assert_liquid_net_worth_matches_cash_and_public_stock(no_opportunity)
-    np.testing.assert_allclose(no_opportunity.private_equity_sale_usd, 0)
+    assert_allclose(no_opportunity.private_equity_sale_usd, 0)
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
 
-    np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
-    np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
-    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 1], 130_000)
-    np.testing.assert_allclose(result.liquid_net_worth_usd[:, 1], 140_000)
+    assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
+    assert_allclose(result.cash_usd[:, 1], 10_000)
+    assert_allclose(result.generic_sp500_value_usd[:, 1], 130_000)
+    assert_allclose(result.liquid_net_worth_usd[:, 1], 140_000)
     sale_decisions = [
         decision
         for decision in result.policy_decisions
@@ -1104,7 +1121,7 @@ def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportun
     ]
     assert len(sale_decisions) == 2
     assert {decision.target_liquid_net_worth_floor_usd for decision in sale_decisions} == {125_000}
-    np.testing.assert_allclose([decision.liquid_net_worth_usd for decision in sale_decisions], [120_000, 120_000])
+    assert_allclose([decision.liquid_net_worth_usd for decision in sale_decisions], [120_000, 120_000])
 
 
 def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() -> None:
@@ -1131,7 +1148,7 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
-    np.testing.assert_allclose(result.private_equity_sale_usd, 0)
+    assert_allclose(result.private_equity_sale_usd, 0)
     decisions = [
         decision
         for decision in result.policy_decisions
@@ -1141,7 +1158,7 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
     ]
     assert len(decisions) == 2
     assert {decision.target_liquid_net_worth_floor_usd for decision in decisions} == {100_000}
-    np.testing.assert_allclose([decision.liquid_net_worth_usd for decision in decisions], [120_000, 120_000])
+    assert_allclose([decision.liquid_net_worth_usd for decision in decisions], [120_000, 120_000])
 
 
 if __name__ == "__main__":

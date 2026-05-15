@@ -74,6 +74,11 @@ class MarketObservationType(StrEnum):
     PRIVATE_EQUITY_SALE_OPPORTUNITY = "private_equity_sale_opportunity"
 
 
+class RolloutStatusType(StrEnum):
+    ACTIVE = "active"
+    CASH_NEGATIVE = "cash_negative"
+
+
 class AccountingDetailType(StrEnum):
     PROPERTY_SALE_BASIS_GAIN = "property_sale_basis_gain"
     TAX_PAYMENT_ALLOCATION = "tax_payment_allocation"
@@ -785,8 +790,7 @@ class MarketRequest(ApiModel):
     market_model_id: str = "current_market_model"
     rollout_count: PositiveInt = 128
     horizon_months: PositiveInt = 360
-    random_seed: int | None = None
-    shared_market_paths: Literal[True] = True
+    seed: int
 
 
 class Scenario(ApiModel):
@@ -815,7 +819,7 @@ class Scenario(ApiModel):
 class ScenarioSet(ApiModel):
     scenario_set_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     title: str
-    market_request: MarketRequest = Field(default_factory=MarketRequest)
+    market_request: MarketRequest
     report_spec: ReportSpec = Field(default_factory=ReportSpec)
     scenarios: tuple[Scenario, ...] = Field(min_length=1)
 
@@ -837,10 +841,36 @@ class ScenarioAcceptedSummary(ApiModel):
     policy_count: NonNegativeInt
 
 
+class ExogenousPathIdentity(ApiModel):
+    rollout_index: NonNegativeInt
+    path_set_id: str
+    exogenous_path_id: str
+    market_model_id: str
+    seed: int
+    event_stream_ids: tuple[str, ...] = ()
+
+
+class ProjectionTrajectoryIdentity(ApiModel):
+    scenario_id: str
+    rollout_index: NonNegativeInt
+    path_set_id: str
+    exogenous_path_id: str
+    projection_trajectory_id: str
+
+
+class RolloutStatus(ApiModel):
+    rollout_index: NonNegativeInt
+    status: RolloutStatusType
+    min_cash_usd: float
+    first_negative_cash_month_index: NonNegativeInt | None = None
+
+
 class ScenarioResult(ApiModel):
     scenario_id: str
     scenario_label: str
     summary: ScenarioAcceptedSummary
+    projection_trajectories: tuple[ProjectionTrajectoryIdentity, ...] = ()
+    rollout_statuses: tuple[RolloutStatus, ...] = ()
     metric_fan_columns: dict[str, ColumnarTable] = Field(default_factory=dict)
     monthly_columns: ColumnarTable | None = None
     terminal_columns: ColumnarTable | None = None
@@ -859,5 +889,6 @@ class ScenarioSetRunResponse(ApiModel):
     market_request: MarketRequest
     report_spec: ReportSpec
     market_metadata: dict[str, Any] | None = None
+    exogenous_paths: tuple[ExogenousPathIdentity, ...] = ()
     scenario_results: tuple[ScenarioResult, ...]
     warnings: tuple[str, ...] = ()

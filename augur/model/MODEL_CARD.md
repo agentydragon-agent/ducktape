@@ -69,7 +69,7 @@ Today that means:
   shapes.
 
 Current persisted provenance is partial. `MarketBundleMetadata` carries model
-id, random seed, rollout count, horizon, event stream ids, notes, and source
+id, seed, rollout count, horizon, event stream ids, notes, and source
 metadata such as provider label and latest-observation ids. It does not yet
 carry a stable `EvidenceSetId`, `CalibrationArtifactId`, or full
 `RunProvenance`.

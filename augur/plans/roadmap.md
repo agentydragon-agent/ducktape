@@ -62,9 +62,8 @@ Implementation notes:
   deterministic seed. The locator is effectively scenario-set input plus
   market model/version plus seed plus `scenario_id` plus `rollout_index`; seed
   and rollout alone are not enough.
-- When `shared_market_paths=true`, the same `rollout_index` should identify the
-  same exogenous market path across scenarios so trajectory comparison is
-  meaningful.
+- The same `rollout_index` should identify the same exogenous market path
+  across scenarios in a scenario-set run so trajectory comparison is meaningful.
 - Make `ReportSpec.include_monthly_columns`, `include_sample_paths`, and
   related response fields match the view contract or remove unsupported knobs.
 
@@ -81,8 +80,8 @@ Acceptance criteria:
   details surface.
 - Deltas are result-view comparisons between two real scenarios, not a
   simulator-level baseline inside each rollout. Prefer paired differences when
-  `shared_market_paths=true`; otherwise expose the choice as a distribution of
-  sampled differences between scenario distributions.
+  both scenarios share exogenous paths; otherwise expose the choice as a
+  distribution of sampled differences between scenario distributions.
 - Full-page visual goldens cover representative distribution and trajectory
   routes so UI structure changes are reviewable in git.
 

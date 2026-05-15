@@ -58,7 +58,7 @@ class VisualCase:
 
 
 def _encode_visual_state(scenario_set_input: dict[str, object]) -> str:
-    payload = {"version": 2, "scenario_set_input": scenario_set_input}
+    payload = {"version": 3, "scenario_set_input": scenario_set_input}
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     return base64.urlsafe_b64encode(payload_json).decode().rstrip("=")
 
@@ -72,13 +72,7 @@ def _visual_path(path: str, scenario_set_input: dict[str, object], *, scenario: 
 
 LONG_FAN_STATE: dict[str, object] = {
     "title": "Augur long-run distribution fan fixture",
-    "market_request": {
-        "market_model_id": "visual_long_fan",
-        "rollout_count": 32,
-        "horizon_months": 360,
-        "random_seed": 23,
-        "shared_market_paths": True,
-    },
+    "market_request": {"market_model_id": "visual_long_fan", "rollout_count": 32, "horizon_months": 360, "seed": 23},
     "report_spec": {
         "metrics": ["net_worth", "liquid_net_worth", "home_equity", "actor_equity", "property_value"],
         "percentiles": [5, 25, 50, 75, 95],

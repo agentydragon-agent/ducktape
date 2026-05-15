@@ -115,8 +115,8 @@ second ordered roadmap.
       distributions. The simulator should not bake a baseline/counterfactual
       into each rollout; a delta view should compare two real scenarios, either
       as the distribution of differences between samples from both
-      distributions or, when `shared_market_paths=true`, as paired differences
-      conditioned on the same underlying market rollout.
+      distributions or as paired differences conditioned on the same underlying
+      exogenous path.
 - [ ] Continue migrating Augur UI controls to Mantine. Mantine is the chosen
       boring React component kit and now backs the app provider, result tabs, and
       result disclosure behavior. Migrate form controls, tables, buttons, input

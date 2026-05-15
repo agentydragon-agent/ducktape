@@ -34,7 +34,7 @@ class MacroMarketBundleProvider:
         self.horizon_start: str = config["horizon_start"]
         horizon_years = int(config.get("horizon_years", 30))
         self.horizon_months: int = horizon_years * 12
-        self.random_seed: int = int(config.get("random_seed", 0))
+        self.seed: int = int(config.get("seed", 0))
 
         historical, evidence = load_evidence(self.config_path)
         self.latest_observations: dict[str, Any] = dict(evidence.latest_observations)
@@ -55,10 +55,9 @@ class MacroMarketBundleProvider:
         )
 
     def sample_market_bundle(
-        self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
+        self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
     ) -> MarketBundle:
-        effective_seed = seed if seed is not None else self.random_seed
-        scenarios = self._market_model.simulate(n_paths=rollout_count, n_months=horizon_months, seed=effective_seed)
+        scenarios = self._market_model.simulate(n_paths=rollout_count, n_months=horizon_months, seed=seed)
         shape = (rollout_count, horizon_months + 1)
         path_by_factor: dict[str, np.ndarray] = {
             factor_name: scenarios.multipliers[:, :, factor_index]
@@ -84,7 +83,7 @@ class MacroMarketBundleProvider:
             private_equity_sale_opportunity_mask=private_equity_events,
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
-                random_seed=effective_seed,
+                seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
                 event_stream_ids=("private_equity_sale_opportunity_event",),
@@ -93,7 +92,7 @@ class MacroMarketBundleProvider:
                     "market_provider_label": self.label,
                     "market_provider_horizon_start": self.horizon_start,
                     "market_provider_horizon_months": self.horizon_months,
-                    "market_provider_random_seed": self.random_seed,
+                    "market_provider_seed": self.seed,
                     "current_private_equity_price_usd": self._current_private_equity_price_usd,
                     "latest_observation_ids": sorted(str(key) for key in self.latest_observations),
                 },

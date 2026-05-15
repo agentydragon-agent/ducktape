@@ -3,25 +3,26 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import pytest_bazel
+from numpy.testing import assert_allclose
 
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata, SimpleMarketBundleProvider
 from augur.core.scenario_set import MarketRequest
 
 
 def test_simple_market_bundle_shapes_and_reproducibility() -> None:
-    request = MarketRequest(market_model_id="simple_test", rollout_count=4, horizon_months=18, random_seed=123)
+    request = MarketRequest(market_model_id="simple_test", rollout_count=4, horizon_months=18, seed=123)
     provider = SimpleMarketBundleProvider()
 
     first = provider.sample_market_bundle(
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
-        seed=request.random_seed,
+        seed=request.seed,
         market_request=request,
     )
     second = provider.sample_market_bundle(
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
-        seed=request.random_seed,
+        seed=request.seed,
         market_request=request,
     )
 
@@ -29,14 +30,14 @@ def test_simple_market_bundle_shapes_and_reproducibility() -> None:
     assert first.private_equity_sale_opportunity_mask.shape == (4, 19)
     assert first.private_equity_sale_opportunity_mask.dtype == np.bool_
     np.testing.assert_array_equal(first.month_index, np.arange(19, dtype="int64"))
-    np.testing.assert_allclose(first.generic_sp500_multipliers, second.generic_sp500_multipliers)
-    np.testing.assert_allclose(first.inflation_multipliers[:, 0], 1.0)
-    np.testing.assert_allclose(first.private_equity_value_multipliers[:, 0], 1.0)
+    assert_allclose(first.generic_sp500_multipliers, second.generic_sp500_multipliers)
+    assert_allclose(first.inflation_multipliers[:, 0], 1.0)
+    assert_allclose(first.private_equity_value_multipliers[:, 0], 1.0)
 
 
 def test_market_bundle_rejects_bad_shapes() -> None:
     metadata = MarketBundleMetadata(
-        market_model_id="bad", random_seed=1, rollout_count=2, horizon_months=3, event_stream_ids=()
+        market_model_id="bad", seed=1, rollout_count=2, horizon_months=3, event_stream_ids=()
     )
     valid = np.ones((2, 4), dtype="float64")
 

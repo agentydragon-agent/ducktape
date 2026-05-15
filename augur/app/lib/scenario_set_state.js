@@ -2,14 +2,13 @@ import { camelizeObjectKeys, decamelizeObjectKeys } from "./casing.js";
 
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
 
-const URL_STATE_VERSION = 2;
+const URL_STATE_VERSION = 3;
 
 const DEFAULT_MARKET_REQUEST = {
   marketModelId: "current_market_model",
   rolloutCount: 128,
   horizonMonths: 360,
-  randomSeed: 0,
-  sharedMarketPaths: true,
+  seed: 0,
 };
 
 const DEFAULT_REPORT_SPEC = {
@@ -414,8 +413,7 @@ export function normalizeScenarioSetInput(input, bootstrap) {
       ...(input?.marketRequest && typeof input.marketRequest === "object" ? input.marketRequest : {}),
       horizonMonths,
       rolloutCount: positiveNumber(input?.marketRequest?.rolloutCount, fallback.marketRequest.rolloutCount),
-      randomSeed: nullableInteger(input?.marketRequest?.randomSeed, fallback.marketRequest.randomSeed),
-      sharedMarketPaths: true,
+      seed: nullableInteger(input?.marketRequest?.seed, fallback.marketRequest.seed),
     },
     reportSpec: normalizeReportSpec(input?.reportSpec, fallback.reportSpec),
     scenarios,

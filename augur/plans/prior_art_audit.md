@@ -13,10 +13,10 @@ household scenario variants, `rollout_index` selects one sampled path, and the
 policy runtime is the pathwise deterministic projector.
 
 The current architecture is directionally aligned with good practice. It already
-has `ScenarioSet`, `MarketRequest`, `MarketBundle`, `random_seed`,
-`shared_market_paths`, actor policies, row-level actions, policy decisions,
-market observations, ledger entries, balance snapshots, accounting details, and
-distribution-vs-trajectory result panels. That is the right raw vocabulary.
+has `ScenarioSet`, `MarketRequest`, `MarketBundle`, seeded path generation,
+actor policies, row-level actions, policy decisions, market observations, ledger
+entries, balance snapshots, accounting details, and distribution-vs-trajectory
+result panels. That is the right raw vocabulary.
 
 The important gaps are sharper than the code currently names:
 
@@ -238,8 +238,7 @@ projection evaluates policies and accounting on those paths.
 
 Current Augur alignment:
 
-- `MarketRequest` requests model id, rollout count, horizon, random seed, and
-  shared market paths.
+- `MarketRequest` requests model id, rollout count, horizon, and seed.
 - `MarketBundleProvider` samples a `MarketBundle`.
 - `simulate_set()` validates the `ScenarioSet`, samples or accepts a
   `MarketBundle`, then runs each `Scenario` through `run_scenario_vectorized()`.
@@ -265,18 +264,18 @@ trajectory.
 
 Current Augur alignment:
 
-- `MarketBundleMetadata` carries market model id, random seed, rollout count,
+- `MarketBundleMetadata` carries market model id, seed, rollout count,
   horizon, event stream ids, notes, and source metadata.
 - `rollout_index` is used in actions, policy decisions, observations, ledger
   entries, balance snapshots, accounting details, monthly columns, and selected
   trajectory UI.
-- `shared_market_paths=true` makes paired scenario comparisons meaningful.
+- Shared exogenous paths make paired scenario comparisons meaningful.
 
 Gap:
 
 - `rollout_index` is only an array coordinate. It is not a globally meaningful
   path identity.
-- `random_seed` plus `rollout_index` is not enough without generator version,
+- Seed plus `rollout_index` is not enough without generator version,
   factor definitions, evidence/calibration identity, and path-set id.
 - Future non-market randomness could collide with market-path randomness unless
   Augur separates random streams.
@@ -477,12 +476,12 @@ Recommended vocabulary:
 
 - Distribution-first unit: `ScenarioSet` across sampled paths is the public
   unit, with one rollout treated as an inspection detail.
-- Shared path semantics: `shared_market_paths=true` correctly makes the same
-  `rollout_index` comparable across scenario variants.
+- Shared path semantics: the same `rollout_index` is comparable across scenario
+  variants within a scenario-set run.
 - Scenario generation boundary: `MarketBundleProvider` and `MarketBundle` keep
   market sampling separate from projection.
-- Seeded reproducibility: `MarketRequest.random_seed` and
-  `MarketBundleMetadata.random_seed` exist.
+- Seeded reproducibility: `MarketRequest.seed` and `MarketBundleMetadata.seed`
+  exist.
 - Typed trace surfaces: actions, policy decisions, market observations, ledger
   entries, balance snapshots, and accounting details are present.
 - Model layer boundary: `augur/model/` handles evidence, fitting, market
@@ -496,9 +495,6 @@ Recommended vocabulary:
 
 - `rollout_index` is doing too much. It is a UI selector, array coordinate,
   paired-comparison key, and pseudo trajectory id.
-- `MarketRequest.shared_market_paths` is typed as always true. That is fine as
-  an implementation limit, but the vocabulary should distinguish unsupported
-  mode from a universal domain fact.
 - `MarketBundleMetadata.event_stream_ids` names streams but not event instances,
   event source versions, or opportunity ids.
 - `PrivateEquitySaleOpportunityObservation` has no stable opportunity id.
@@ -581,7 +577,7 @@ Standardize these names before the next large redesign:
    - Keep `rollout_index`, but add `PathSetId`, `ExogenousPathId`, and
      `ProjectionTrajectoryId` to metadata and trace rows.
    - Include market model id, generator version, evidence id, calibration id,
-     random seed, path index, risk-factor set, event-stream ids, and code
+     seed, path index, risk-factor set, event-stream ids, and code
      version where available.
 
 3. Execute policies through one ordered actor program loop.
@@ -674,7 +670,7 @@ Add tests that assert:
 - changing seed changes path ids and usually results;
 - changing evidence/calibration/model version changes provenance even if some
   values happen to match;
-- `shared_market_paths=true` preserves `ExogenousPathId` across scenarios.
+- `ExogenousPathId` is preserved across scenarios in one scenario-set run.
 
 ### Invariant Tests
 

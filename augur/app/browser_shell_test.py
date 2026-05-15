@@ -147,7 +147,7 @@ def _decode_url_state(page: Page) -> dict[str, Any] | None:
         return None
     padded_state = state + "=" * (-len(state) % 4)
     payload = json.loads(urlsafe_b64decode(padded_state.encode()).decode())
-    assert payload["version"] == 2
+    assert payload["version"] == 3
     return cast(dict[str, Any], payload["scenario_set_input"])
 
 
@@ -186,12 +186,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
         {
             "scenario_set_id": "public_browser_contract",
             "title": "Public browser contract",
-            "market_request": {
-                "rollout_count": 4,
-                "horizon_months": 12,
-                "random_seed": 11,
-                "shared_market_paths": True,
-            },
+            "market_request": {"rollout_count": 4, "horizon_months": 12, "seed": 11},
             "scenarios": [
                 {
                     "scenario_id": "location_a",

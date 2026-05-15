@@ -16,11 +16,14 @@ from augur.core.scenario_set import (
     ActorEquityClaimLiability,
     ActorRole,
     EventType,
+    ExogenousPathIdentity,
     MortgageLiability,
     PartnerEquityAccrualPolicy,
+    ProjectionTrajectoryIdentity,
     RealEstateAssetPosition,
     RentalMode,
     ReportSpec,
+    RolloutStatus,
     Scenario,
     ScenarioAcceptedSummary,
     ScenarioResult,
@@ -100,6 +103,9 @@ class RolloutDetail:
 
     def accounting_details(self, detail_type: type[Any] | None = None) -> tuple[Any, ...]:
         return self.scenario_run.accounting_details(detail_type, rollout=self.rollout_index)
+
+    def status(self) -> RolloutStatus:
+        return self.scenario_run.rollout_status(self.rollout_index)
 
 
 @dataclass(frozen=True)
@@ -256,7 +262,18 @@ class ScenarioRun:
             details = tuple(detail for detail in details if detail.rollout_index == rollout)
         return details
 
-    def to_response_result(self, report_spec: ReportSpec | None = None) -> ScenarioResult:
+    def rollout_statuses(self) -> tuple[RolloutStatus, ...]:
+        if self.arrays is None:
+            return ()
+        return self.arrays.rollout_statuses()
+
+    def rollout_status(self, rollout: int) -> RolloutStatus:
+        self._validate_rollout_index(rollout)
+        return self.rollout_statuses()[rollout]
+
+    def to_response_result(
+        self, report_spec: ReportSpec | None = None, *, exogenous_paths: tuple[ExogenousPathIdentity, ...] = ()
+    ) -> ScenarioResult:
         report_spec = report_spec or ReportSpec()
         if self.arrays is None:
             return ScenarioResult(
@@ -269,6 +286,10 @@ class ScenarioRun:
             scenario_id=self.scenario.scenario_id,
             scenario_label=self.scenario.label,
             summary=_accepted_summary(self.scenario),
+            projection_trajectories=_projection_trajectory_identities(
+                scenario_id=self.scenario.scenario_id, exogenous_paths=exogenous_paths
+            ),
+            rollout_statuses=self.rollout_statuses(),
             metric_fan_columns=self.arrays.metric_fan_columns(),
             monthly_columns=self.arrays.monthly_columns() if report_spec.include_monthly_columns else None,
             terminal_columns=self.arrays.terminal_columns(),
@@ -315,14 +336,17 @@ class SimulationRun:
         raise KeyError(f"unknown scenario {scenario_id!r}; available scenarios: {available}")
 
     def to_response(self) -> ScenarioSetRunResponse:
+        exogenous_paths = _exogenous_path_identities(self.market_bundle.metadata)
         return ScenarioSetRunResponse(
             scenario_set_id=self.scenario_set.scenario_set_id,
             request=self.scenario_set,
             market_request=self.scenario_set.market_request,
             report_spec=self.scenario_set.report_spec,
             market_metadata=self.market_bundle.metadata.to_json_dict(),
+            exogenous_paths=exogenous_paths,
             scenario_results=tuple(
-                scenario_run.to_response_result(self.scenario_set.report_spec) for scenario_run in self.scenario_runs
+                scenario_run.to_response_result(self.scenario_set.report_spec, exogenous_paths=exogenous_paths)
+                for scenario_run in self.scenario_runs
             ),
             warnings=self.warnings,
         )
@@ -339,8 +363,6 @@ def simulate_set(
     if market_provider is not None and market_bundle is not None:
         raise ValueError("pass either market_provider or market_bundle, not both")
     validate_scenario_set(scenario_set)
-    if not scenario_set.market_request.shared_market_paths:
-        raise SimulationValidationError("market_request.shared_market_paths=false is not yet supported")
     if market_bundle is None:
         provider = market_provider or SimpleMarketBundleProvider()
         market_bundle = sample_market_bundle_for_request(provider, scenario_set.market_request)
@@ -353,6 +375,35 @@ def simulate_set(
             continue
         scenario_runs.append(ScenarioRun(scenario=scenario, arrays=run_scenario_vectorized(scenario, market_bundle)))
     return SimulationRun(scenario_set=scenario_set, market_bundle=market_bundle, scenario_runs=tuple(scenario_runs))
+
+
+def _exogenous_path_identities(metadata: Any) -> tuple[ExogenousPathIdentity, ...]:
+    return tuple(
+        ExogenousPathIdentity(
+            rollout_index=rollout_index,
+            path_set_id=metadata.path_set_id,
+            exogenous_path_id=exogenous_path_id,
+            market_model_id=metadata.market_model_id,
+            seed=metadata.seed,
+            event_stream_ids=metadata.event_stream_ids,
+        )
+        for rollout_index, exogenous_path_id in enumerate(metadata.exogenous_path_ids)
+    )
+
+
+def _projection_trajectory_identities(
+    *, scenario_id: str, exogenous_paths: tuple[ExogenousPathIdentity, ...]
+) -> tuple[ProjectionTrajectoryIdentity, ...]:
+    return tuple(
+        ProjectionTrajectoryIdentity(
+            scenario_id=scenario_id,
+            rollout_index=path.rollout_index,
+            path_set_id=path.path_set_id,
+            exogenous_path_id=path.exogenous_path_id,
+            projection_trajectory_id=f"trajectory:{scenario_id}:{path.exogenous_path_id}",
+        )
+        for path in exogenous_paths
+    )
 
 
 def validate_scenario_set(scenario_set: ScenarioSet) -> None:

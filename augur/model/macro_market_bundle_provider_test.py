@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import pytest_bazel
+from numpy.testing import assert_allclose
 
 from augur.core.scenario_set import MarketRequest
 from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
@@ -36,14 +37,14 @@ def test_metadata_populated(provider: MacroMarketBundleProvider) -> None:
 
 def _request(provider: MacroMarketBundleProvider, *, rollout_count: int = 3, horizon_months: int = 24) -> MarketRequest:
     return MarketRequest(
-        market_model_id=provider.label, rollout_count=rollout_count, horizon_months=horizon_months, random_seed=42
+        market_model_id=provider.label, rollout_count=rollout_count, horizon_months=horizon_months, seed=42
     )
 
 
 def _sample(provider: MacroMarketBundleProvider, *, rollout_count: int = 3, horizon_months: int = 24):
     request = _request(provider, rollout_count=rollout_count, horizon_months=horizon_months)
     return provider.sample_market_bundle(
-        rollout_count=rollout_count, horizon_months=horizon_months, seed=request.random_seed, market_request=request
+        rollout_count=rollout_count, horizon_months=horizon_months, seed=request.seed, market_request=request
     )
 
 
@@ -67,16 +68,16 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
         assert np.all(np.isfinite(values)), key
     for key in ("inflation_multipliers", "generic_sp500_multipliers", "private_equity_value_multipliers"):
         values = getattr(bundle, key)
-        np.testing.assert_allclose(values[:, 0], 1.0)
+        assert_allclose(values[:, 0], 1.0)
         assert np.all(values > 0), key
     expected_locations = {"default", "san_francisco_ca", "vallejo_ca", "mare_island_vallejo_ca"}
     assert set(bundle.home_value_multipliers_by_location) == expected_locations
     assert set(bundle.rent_multipliers_by_location) == expected_locations
-    np.testing.assert_allclose(
+    assert_allclose(
         bundle.home_value_multipliers_by_location["san_francisco_ca"],
         bundle.home_value_multipliers_by_location["default"],
     )
-    np.testing.assert_allclose(
+    assert_allclose(
         bundle.rent_multipliers_by_location["san_francisco_ca"], bundle.rent_multipliers_by_location["default"]
     )
 
@@ -84,13 +85,13 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
 def test_mortgage_path_constant(provider: MacroMarketBundleProvider) -> None:
     bundle = _sample(provider, rollout_count=1, horizon_months=24)
     arr = bundle.mortgage_30y_rate_pct[0]
-    np.testing.assert_allclose(arr, arr[0])
+    assert_allclose(arr, arr[0])
     assert arr[0] > 0.0
 
 
 def test_private_equity_paths_flat_with_yearly_tenders(provider: MacroMarketBundleProvider) -> None:
     bundle = _sample(provider, rollout_count=1, horizon_months=24)
-    np.testing.assert_allclose(bundle.private_equity_value_multipliers, 1.0)
+    assert_allclose(bundle.private_equity_value_multipliers, 1.0)
     assert not bundle.private_equity_sale_opportunity_mask[:, 0].any()
     assert bundle.private_equity_sale_opportunity_mask[:, 12].all()
     assert bundle.private_equity_sale_opportunity_mask[:, 24].all()
@@ -100,7 +101,7 @@ def test_seed_determinism(provider: MacroMarketBundleProvider) -> None:
     request = _request(provider, rollout_count=2, horizon_months=24)
     a = provider.sample_market_bundle(rollout_count=2, horizon_months=24, seed=11, market_request=request)
     b = provider.sample_market_bundle(rollout_count=2, horizon_months=24, seed=11, market_request=request)
-    np.testing.assert_allclose(a.generic_sp500_multipliers, b.generic_sp500_multipliers)
+    assert_allclose(a.generic_sp500_multipliers, b.generic_sp500_multipliers)
 
 
 if __name__ == "__main__":
