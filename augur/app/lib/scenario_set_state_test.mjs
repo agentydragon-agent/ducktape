@@ -10,6 +10,14 @@ import {
 } from "./scenario_set_state.js";
 import { decamelizeObjectKeys } from "./casing.js";
 
+function encodeRawUrlState(payload) {
+  return Buffer.from(JSON.stringify(payload), "utf8")
+    .toString("base64")
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+}
+
 const bootstrap = {
   defaultPropertyId: "location_a_property",
   defaultActorPolicy: "owner_only",
@@ -258,6 +266,41 @@ test("URL state round-trips only input state", () => {
   assert.deepEqual(decoded.scenarioResults, undefined);
   assert.deepEqual(decoded.scenarios[0].backendResult, undefined);
   assert.equal(decoded.scenarios[0].propertyId, "location_a_property");
+});
+
+test("legacy URL state zero private equity rehydrates from bootstrap defaults", () => {
+  const legacyInput = createDefaultScenarioSetInput(bootstrap);
+  legacyInput.scenarios = legacyInput.scenarios.map((scenario) => ({
+    ...scenario,
+    privateEquityValueUsd: 0,
+    privateEquityUnits: 0,
+  }));
+
+  const decoded = decodeScenarioSetUrlState(
+    encodeRawUrlState({
+      version: 1,
+      scenario_set_input: decamelizeObjectKeys(legacyInput),
+    })
+  );
+  const normalized = normalizeScenarioSetInput(decoded, bootstrap);
+
+  assert.equal(normalized.scenarios[0].privateEquityValueUsd, 10_000);
+  assert.equal(normalized.scenarios[0].privateEquityUnits, 500);
+});
+
+test("current URL state preserves explicit zero private equity", () => {
+  const input = createDefaultScenarioSetInput(bootstrap);
+  input.scenarios[0] = {
+    ...input.scenarios[0],
+    privateEquityValueUsd: 0,
+    privateEquityUnits: 0,
+  };
+
+  const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
+  const normalized = normalizeScenarioSetInput(decoded, bootstrap);
+
+  assert.equal(normalized.scenarios[0].privateEquityValueUsd, 0);
+  assert.equal(normalized.scenarios[0].privateEquityUnits, 0);
 });
 
 test("URL state round-trips rich scenario controls in camelCase", () => {

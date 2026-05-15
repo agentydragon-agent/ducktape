@@ -2,7 +2,8 @@ import { camelizeObjectKeys, decamelizeObjectKeys } from "./casing.js";
 
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
 
-const URL_STATE_VERSION = 1;
+const URL_STATE_VERSION = 2;
+const LEGACY_URL_STATE_VERSION = 1;
 
 const DEFAULT_MARKET_REQUEST = {
   marketModelId: "current_market_model",
@@ -680,13 +681,28 @@ export function encodeScenarioSetUrlState(input) {
 export function decodeScenarioSetUrlState(value) {
   if (!value) return null;
   const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(value)));
-  if (payload?.version !== URL_STATE_VERSION) {
+  if (payload?.version !== URL_STATE_VERSION && payload?.version !== LEGACY_URL_STATE_VERSION) {
     throw new Error(`Unsupported augur scenario URL state version: ${payload?.version ?? "<missing>"}`);
   }
   if (!payload.scenario_set_input || typeof payload.scenario_set_input !== "object") {
     throw new Error("Augur scenario URL state is missing scenario_set_input");
   }
-  return camelizeObjectKeys(payload.scenario_set_input);
+  return migrateScenarioSetUrlState(camelizeObjectKeys(payload.scenario_set_input), payload.version);
+}
+
+function migrateScenarioSetUrlState(input, version) {
+  if (version >= URL_STATE_VERSION) return input;
+  if (version !== LEGACY_URL_STATE_VERSION) return input;
+  return {
+    ...input,
+    scenarios: (input?.scenarios ?? []).map((scenario) => {
+      const privateEquityValueUsd = finiteNumber(scenario?.privateEquityValueUsd, 0);
+      const privateEquityUnits = finiteNumber(scenario?.privateEquityUnits, 0);
+      if (privateEquityValueUsd !== 0 || privateEquityUnits !== 0) return scenario;
+      const { privateEquityValueUsd: _value, privateEquityUnits: _units, ...rest } = scenario;
+      return rest;
+    }),
+  };
 }
 
 export function scenarioSetInputFromUrlSearch(search) {
