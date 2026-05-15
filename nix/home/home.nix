@@ -1006,10 +1006,11 @@ in
   # oh-my-posh config is in shell/oh-my-posh.nix
   home.file.".p10k.zsh".source = ./p10k.zsh;
 
-  # Cargo configuration - use sccache for compilation caching
-  home.file.".cargo/config.toml".source = toTOML "cargo-config.toml" {
-    build.rustc-wrapper = "sccache";
-  };
+  # Cargo configuration — intentionally empty (no sccache).
+  # sccache fails with EPERM inside Claude Code's sandbox, which blocks
+  # rust-analyzer's sysroot discovery (cargo metadata). Bazel-managed Rust
+  # builds use their own toolchain and never read this file.
+  home.file.".cargo/config.toml".source = toTOML "cargo-config.toml" { };
 
   # Ansible configuration
   home.file.".ansible.cfg".source = (pkgs.formats.ini { }).generate "ansible.cfg" {

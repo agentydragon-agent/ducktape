@@ -12,6 +12,7 @@
 **/.aspect/
 # Cargo/rust-analyzer target dirs (Bazel is the build system, not cargo)
 **/target/
+/rust-project.json
 
 # Python
 **/__pycache__/
