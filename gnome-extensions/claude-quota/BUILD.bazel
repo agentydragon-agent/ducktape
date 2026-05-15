@@ -3,21 +3,27 @@ load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//devinfra/python:defs.bzl", "py_test")
 
-# Source files that GNOME Shell loads at runtime. Single source of truth —
-# the zip target, the local devkit launcher's runfiles, and the test data
-# all derive from this list.
-_EXTENSION_SRCS = [
-    "extension.js",
-    "metadata.json",
-    "stylesheet.css",
-    "icons/claude-symbolic.svg",
-    "icons/openai-symbolic.svg",
-    "icons/zai-symbolic.svg",
-]
+genrule(
+    name = "compiled_schemas",
+    srcs = ["schemas/org.gnome.shell.extensions.claude-quota.gschema.xml"],
+    outs = ["schemas/gschemas.compiled"],
+    cmd = "cp $(location schemas/org.gnome.shell.extensions.claude-quota.gschema.xml) $(@D)/ && glib-compile-schemas $(@D)",
+)
 
 pkg_files(
     name = "extension_files",
-    srcs = _EXTENSION_SRCS,
+    # Source files that GNOME Shell loads at runtime. Single source of
+    # truth: the zip target, local devkit launcher, and render tests all
+    # consume this package mapping.
+    srcs = [
+        "extension.js",
+        "icons/claude-symbolic.svg",
+        "icons/openai-symbolic.svg",
+        "icons/zai-symbolic.svg",
+        "metadata.json",
+        "stylesheet.css",
+        ":compiled_schemas",
+    ],
     strip_prefix = strip_prefix.from_pkg(),
     visibility = ["//visibility:public"],
 )
