@@ -528,6 +528,18 @@ in
       gcc # Matches Nix glibc for native extension builds
       # jscpd, madge not in nixpkgs - install with: pnpm add -g jscpd madge
 
+      # Claude Code routed through Z.ai's Anthropic-compatible endpoint (GLM Coding Plan).
+      # Requires ZAI_API_KEY (set by ducktape.sopsEnv on wyrm2 + rugged).
+      # z.ai does not support WebFetch/WebSearch tools.
+      (writeShellScriptBin "z-claude" ''
+        exec env \
+          ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic \
+          ANTHROPIC_AUTH_TOKEN="$ZAI_API_KEY" \
+          ANTHROPIC_MODEL=glm-5.1 \
+          claude --disallowed-tools "WebFetch WebSearch" \
+          "$@"
+      '')
+
       # Development languages/compilers
       go
       # python312 moved to python3.withPackages in solarized.nix to avoid collision
@@ -751,7 +763,6 @@ in
     vimdiff = "nvim -d";
     # Claude Code routed through Z.ai's Anthropic-compatible endpoint (GLM Coding Plan).
     # Requires ZAI_API_KEY (set by ducktape.sopsEnv on wyrm2 + rugged).
-    z-claude = "ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic ANTHROPIC_AUTH_TOKEN=$ZAI_API_KEY ANTHROPIC_MODEL=glm-5.1 claude";
     alert = ''notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"'';
 
     # Custom eza aliases (beyond what programs.eza provides)
