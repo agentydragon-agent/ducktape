@@ -39,11 +39,6 @@ import {
 }
 
 import {
-  to = authentik_application.study_casino
-  id = "study-casino"
-}
-
-import {
   to = authentik_brand.allegedly_works
   id = "436580f9-b7c7-4ed6-a692-4377862248d6"
 }
@@ -190,52 +185,52 @@ import {
 
 import {
   to = kubernetes_secret.airlock_secrets
-  id = "airlock-secrets:authentik"
+  id = "authentik/airlock-secrets"
 }
 
 import {
   to = kubernetes_secret.claude_authentik_token
-  id = "claude-authentik-api-token:authentik"
+  id = "authentik/claude-authentik-api-token"
 }
 
 import {
   to = kubernetes_secret.gitea_oauth
-  id = "gitea-oauth-client-secret:authentik"
+  id = "authentik/gitea-oauth-client-secret"
 }
 
 import {
   to = kubernetes_secret.grafana_oidc
-  id = "grafana-oidc-config:authentik"
+  id = "authentik/grafana-oidc-config"
 }
 
 import {
   to = kubernetes_secret.harbor_oidc
-  id = "harbor-oauth-client-secret:authentik"
+  id = "authentik/harbor-oauth-client-secret"
 }
 
 import {
   to = kubernetes_secret.headlamp_oidc
-  id = "headlamp-oidc-secret:authentik"
+  id = "authentik/headlamp-oidc-secret"
 }
 
 import {
   to = kubernetes_secret.inventree_sso_providers
-  id = "inventree-sso-providers:authentik"
+  id = "authentik/inventree-sso-providers"
 }
 
 import {
   to = kubernetes_secret.kagent_oauth2_proxy
-  id = "kagent-oauth2-proxy:authentik"
+  id = "authentik/kagent-oauth2-proxy"
 }
 
 import {
   to = kubernetes_secret.matrix_oidc
-  id = "matrix-oidc-config:authentik"
+  id = "authentik/matrix-oidc-config"
 }
 
 import {
   to = kubernetes_secret.study_casino_oidc
-  id = "study-casino-oidc:study-casino"
+  id = "study-casino/study-casino-oidc"
 }
 
 

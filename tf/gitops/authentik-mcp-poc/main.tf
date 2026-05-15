@@ -30,7 +30,7 @@ import {
 
 import {
   to = kubernetes_secret.mcp_poc_oidc
-  id = "authentik-mcp-poc-oidc:authentik-mcp-poc"
+  id = "authentik-mcp-poc/authentik-mcp-poc-oidc"
 }
 
 

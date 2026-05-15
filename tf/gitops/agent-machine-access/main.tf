@@ -185,32 +185,32 @@ import {
 
 import {
   to = kubernetes_secret.agent_bearer_token
-  id = "agent-bearer-token:claude-sandbox"
+  id = "claude-sandbox/agent-bearer-token"
 }
 
 import {
   to = kubernetes_secret.grocy_mcp_oidc_sf
-  id = "grocy-mcp-oidc-sf:grocy-sf"
+  id = "grocy-sf/grocy-mcp-oidc-sf"
 }
 
 import {
   to = kubernetes_secret.grocy_mcp_oidc_vallejo
-  id = "grocy-mcp-oidc-vallejo:grocy-vallejo"
+  id = "grocy-vallejo/grocy-mcp-oidc-vallejo"
 }
 
 import {
   to = kubernetes_secret.kubectl_sandbox_client_credentials
-  id = "kubectl-sandbox-client-credentials:agents-infra"
+  id = "agents-infra/kubectl-sandbox-client-credentials"
 }
 
 import {
   to = kubernetes_secret.manifold_mcp_oidc
-  id = "manifold-mcp-oidc:manifold-mcp"
+  id = "manifold-mcp/manifold-mcp-oidc"
 }
 
 import {
   to = kubernetes_secret.tana_mcp_facade_oidc
-  id = "tana-mcp-facade-oidc:tana-mcp"
+  id = "tana-mcp/tana-mcp-facade-oidc"
 }
 
 

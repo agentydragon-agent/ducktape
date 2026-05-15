@@ -15,7 +15,7 @@ import {
 
 import {
   to = kubernetes_secret.gatus_oidc
-  id = "gatus-oidc-secret:gatus"
+  id = "gatus/gatus-oidc-secret"
 }
 
 

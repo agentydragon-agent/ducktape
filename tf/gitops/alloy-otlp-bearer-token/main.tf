@@ -50,7 +50,7 @@ import {
 
 import {
   to = kubernetes_secret.alloy_otlp_client_credentials
-  id = "alloy-otlp-client-credentials:agents-infra"
+  id = "agents-infra/alloy-otlp-client-credentials"
 }
 
 

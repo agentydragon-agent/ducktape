@@ -15,7 +15,7 @@ import {
 
 import {
   to = kubernetes_secret.airlock_oidc_proxy
-  id = "airlock-oidc-proxy-credentials:airlock"
+  id = "airlock/airlock-oidc-proxy-credentials"
 }
 
 
