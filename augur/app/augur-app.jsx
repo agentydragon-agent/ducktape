@@ -466,7 +466,6 @@ function TerminalPercentileSnapshot({ scenarioResult }) {
     ["Property sale proceeds", "propertySaleNetProceedsUsd", fmtUsd],
     ["Sale cash flow", "netPropertySaleCashFlowUsd", fmtUsd],
     ["Private equity value", "privateEquityValueUsd", fmtUsd],
-    ["Liquidity available", "privateEquityLiquidityAvailableValueUsd", fmtUsd],
     ["Partner equity", "partnerHomeEquityClaimUsd", fmtUsd],
     ["Partner ownership", "partnerOwnershipPct", fmtPct],
   ]
@@ -752,10 +751,9 @@ function PrivateEquityLiquidityPanel({ scenarioResult, selectedRolloutIndex }) {
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <div className="augur-eyebrow">Trajectory private equity liquidity</div>
       </div>
-      <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-3">
+      <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2">
         {[
           ["Private equity value", fmtUsd(terminalRow?.privateEquityValueUsd)],
-          ["Tender-window value", fmtUsd(terminalRow?.privateEquityLiquidityAvailableValueUsd)],
           ["Sales", fmtUsd(rolloutRows.reduce((total, row) => total + (Number(row.privateEquitySaleUsd) || 0), 0))],
         ].map(([label, value]) => (
           <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
@@ -770,9 +768,8 @@ function PrivateEquityLiquidityPanel({ scenarioResult, selectedRolloutIndex }) {
             <tr>
               <th>Month</th>
               <th>Private value</th>
-              <th>Liquidity available</th>
               <th>Sale</th>
-              <th>Liquidity event</th>
+              <th>Tender event</th>
             </tr>
           </thead>
           <tbody>
@@ -780,7 +777,6 @@ function PrivateEquityLiquidityPanel({ scenarioResult, selectedRolloutIndex }) {
               <tr key={row.monthIndex}>
                 <td>{fmtInteger(row.monthIndex)}</td>
                 <td>{fmtUsd(row.privateEquityValueUsd)}</td>
-                <td>{fmtUsd(row.privateEquityLiquidityAvailableValueUsd)}</td>
                 <td>{fmtUsd(row.privateEquitySaleUsd)}</td>
                 <td>{row.privateEquityLiquidityEvent ? "yes" : "no"}</td>
               </tr>
@@ -830,8 +826,8 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
     onSelect(scenarioId);
   }
 
-  function duplicateScenario() {
-    const selected = scenarios.find((scenario) => scenario.scenarioId === selectedScenarioId) ?? scenarios[0];
+  function duplicateScenario(scenarioIdToCopy) {
+    const selected = scenarios.find((scenario) => scenario.scenarioId === scenarioIdToCopy) ?? scenarios[0];
     if (!selected) return;
     const scenarioId = uniqueScenarioId(
       scenarios.map((scenario) => scenario.scenarioId),
@@ -847,11 +843,14 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
     onSelect(scenarioId);
   }
 
-  function deleteScenario() {
+  function deleteScenario(scenarioIdToDelete) {
     if (scenarios.length <= 1) return;
-    const nextScenarios = scenarios.filter((scenario) => scenario.scenarioId !== selectedScenarioId);
+    const selected = scenarios.find((scenario) => scenario.scenarioId === scenarioIdToDelete);
+    const label = selected?.label ?? "this scenario";
+    if (!window.confirm(`Delete ${label}?`)) return;
+    const nextScenarios = scenarios.filter((scenario) => scenario.scenarioId !== scenarioIdToDelete);
     onChange({ ...scenarioSetInput, scenarios: nextScenarios });
-    onSelect(nextScenarios[0]?.scenarioId ?? null);
+    onSelect(selectedScenarioId === scenarioIdToDelete ? (nextScenarios[0]?.scenarioId ?? null) : selectedScenarioId);
   }
 
   return (
@@ -865,17 +864,6 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
           <div className="flex flex-wrap justify-end gap-2">
             <button type="button" className="augur-tone-button augur-tone-neutral" onClick={addScenario}>
               Add
-            </button>
-            <button type="button" className="augur-tone-button augur-tone-neutral" onClick={duplicateScenario}>
-              Duplicate
-            </button>
-            <button
-              type="button"
-              className="augur-tone-button augur-tone-rose disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={deleteScenario}
-              disabled={scenarios.length <= 1}
-            >
-              Delete
             </button>
           </div>
         </div>
@@ -909,14 +897,34 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                   <div className="truncate text-sm font-semibold augur-strong">{scenario.label}</div>
                   <div className="mt-1 truncate text-xs augur-muted">{propertyLabel(property, locationsById)}</div>
                 </button>
-                <label className="flex shrink-0 items-center gap-1 text-xs augur-muted">
-                  <input
-                    type="checkbox"
-                    checked={scenario.enabled}
-                    onChange={(event) => updateScenario(scenario.scenarioId, { enabled: event.target.checked })}
-                  />
-                  Run
-                </label>
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <label className="flex items-center gap-1 text-xs augur-muted">
+                    <input
+                      type="checkbox"
+                      checked={scenario.enabled}
+                      onChange={(event) => updateScenario(scenario.scenarioId, { enabled: event.target.checked })}
+                    />
+                    Include
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="rounded border border-slate-200 px-2 py-1 text-xs augur-muted hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                      onClick={() => duplicateScenario(scenario.scenarioId)}
+                    >
+                      Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      className="h-7 w-7 rounded border border-rose-200 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-rose-900/70 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                      aria-label={`Delete ${scenario.label}`}
+                      onClick={() => deleteScenario(scenario.scenarioId)}
+                      disabled={scenarios.length <= 1}
+                    >
+                      x
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
                 <label className="flex min-w-0 flex-1 items-center gap-2 text-xs augur-muted">
@@ -930,7 +938,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                   />
                 </label>
                 <span className="min-w-0 max-w-full shrink-0 truncate rounded border border-slate-200 px-2 py-1 text-xs augur-muted dark:border-slate-700">
-                  {scenario.actorPolicy === "owner_plus_partner" ? partnerLabel : primaryLabel}
+                  {scenario.actorPolicy === "owner_plus_partner" ? `${partnerLabel} active` : `${primaryLabel} only`}
                 </span>
               </div>
             </div>
@@ -1376,31 +1384,11 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   );
 }
 
-function ScenarioSetSummary({ scenarioSetRequest, result, runError }) {
+function RunStatusNotice({ runError }) {
   if (runError) {
     return <div className="augur-note-danger">Scenario-set run failed: {runError}</div>;
   }
-  const enabledCount = scenarioSetRequest.scenarios.filter((scenario) => scenario.enabled).length;
-  return (
-    <section className="grid gap-3 sm:grid-cols-3">
-      <div className="augur-card px-4 py-3">
-        <div className="augur-eyebrow">Scenarios</div>
-        <div className="mt-1 mono text-lg font-semibold augur-strong">
-          {enabledCount} / {scenarioSetRequest.scenarios.length}
-        </div>
-      </div>
-      <div className="augur-card px-4 py-3">
-        <div className="augur-eyebrow">Rollouts</div>
-        <div className="mt-1 mono text-lg font-semibold augur-strong">
-          {fmtNumber(scenarioSetRequest.marketRequest.rolloutCount)}
-        </div>
-      </div>
-      <div className="augur-card px-4 py-3">
-        <div className="augur-eyebrow">Run</div>
-        <div className="mt-1 text-sm font-semibold augur-strong">{result ? "Updated" : "Running..."}</div>
-      </div>
-    </section>
-  );
+  return null;
 }
 
 function ResultViewTabs({ viewMode, onViewModeChange }) {
@@ -1443,7 +1431,7 @@ function ResultModeHeader({ viewMode, scenarioSetRequest, selection, selectedRol
           <div className="mt-1 truncate text-sm augur-muted">
             {isTrajectory
               ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · seed ${seed ?? "not set"}`
-              : `${fmtInteger(scenarioSetRequest.marketRequest.rolloutCount)} rollouts · terminal percentiles and probability fans`}
+              : "Terminal percentiles and probability fans"}
           </div>
         </div>
         {isTrajectory && seed === null && (
@@ -1583,7 +1571,6 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
     ["totalGenericSp500SaleUsd", "SP500 sales"],
     ["finalCheckingFloorShortfallUsd", "SP500 shortfall"],
     ["finalPrivateEquityValueUsd", "Private equity"],
-    ["finalPrivateEquityLiquidityAvailableValueUsd", "Liquidity available"],
     ["totalPrivateEquitySaleUsd", "Sales"],
     ["finalHomeEquityUsd", "Home equity"],
     ["finalMortgageBalanceUsd", "Mortgage"],
@@ -1614,9 +1601,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
           <thead>
             <tr>
               <th className="text-left">Scenario</th>
-              <th>Property</th>
-              <th>Actors</th>
-              <th>Policies</th>
+              <th className="min-w-[11rem] text-left">Property</th>
               {terminalMetricColumns.map(([, label]) => (
                 <th key={label}>{label}</th>
               ))}
@@ -1637,11 +1622,9 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
                       <span className="truncate">{scenario.label}</span>
                     </span>
                   </td>
-                  <td>{property ? property.address : scenario.propertyId}</td>
-                  <td>
-                    {scenarioResult?.summary?.actorCount ?? (scenario.actorPolicy === "owner_plus_partner" ? 2 : 1)}
+                  <td className="min-w-[11rem] whitespace-nowrap text-left">
+                    {property ? property.address : scenario.propertyId}
                   </td>
-                  <td>{scenarioResult?.summary?.policyCount ?? "n/a"}</td>
                   {terminalMetricColumns.map(([column]) => {
                     const value = column === "finalNetWorthUsd" ? terminal?.p50 : p50Column(terminalRows, column);
                     return <td key={column}>{fmtMetricValue(column, value)}</td>;
@@ -1665,9 +1648,7 @@ function MarketMetadataPanel({ result }) {
     <details className="augur-card overflow-hidden">
       <summary className="cursor-pointer border-b border-slate-200 px-4 py-3 marker:text-slate-500 dark:border-slate-700 dark:marker:text-slate-400">
         <span className="augur-eyebrow">Market model metadata</span>
-        <span className="ml-3 text-xs augur-muted">
-          {metadata.marketModelId ?? "unknown model"} · {fmtInteger(metadata.rolloutCount)} rollouts
-        </span>
+        <span className="ml-3 text-xs augur-muted">{metadata.marketModelId ?? "unknown model"}</span>
       </summary>
       <div className="grid gap-4 p-4 lg:grid-cols-2">
         <div className="min-w-0">
@@ -1803,7 +1784,7 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
       label: "Private equity sale",
       summary: ["privateEquitySaleUsd", "PE sale", fmtUsd],
       details: [
-        ["privateEquityLiquidityAvailableValueUsd", "Liquidity available", fmtUsd],
+        ["privateEquityLiquidityAvailableValueUsd", "Tender-window value", fmtUsd],
         ["privateEquitySaleUsd", "Private equity sale", fmtUsd],
         ["privateEquitySaleBasisUsd", "Basis", fmtUsd],
         ["privateEquitySaleTaxUsd", "Tax", fmtUsd],
@@ -1949,9 +1930,8 @@ function ScenarioAcceptedPanel({ selection }) {
           ["Enabled", scenarioResult.summary?.enabled ? "yes" : "no"],
           ["Property id", scenarioResult.summary?.propertyId ?? scenario.propertyId],
           ["Location", scenarioResult.summary?.locationId ?? "n/a"],
-          ["Actors", fmtNumber(scenarioResult.summary?.actorCount)],
+          ["Participants", scenario.actorPolicy === "owner_plus_partner" ? "Owner + partner" : "Owner only"],
           ["Events", fmtNumber(scenarioResult.summary?.eventCount)],
-          ["Policies", fmtNumber(scenarioResult.summary?.policyCount)],
           ["Warnings", scenarioResult.warnings?.join("; ") || "none"],
         ]}
       />
@@ -1972,7 +1952,7 @@ function DistributionResults({
   const { scenarioResult } = selection;
   return (
     <>
-      <ScenarioSetSummary scenarioSetRequest={scenarioSetRequest} result={result} runError={runError} />
+      <RunStatusNotice runError={runError} />
       <MarketMetadataPanel result={result} />
       <ScenarioComparisonPanel
         scenarioSetInput={normalizedScenarioSetInput}
@@ -2005,7 +1985,7 @@ function TrajectoryResults({
   const { scenario, scenarioResult } = selection;
   return (
     <>
-      <ScenarioSetSummary scenarioSetRequest={scenarioSetRequest} result={result} runError={runError} />
+      <RunStatusNotice runError={runError} />
       <PropertyLocationPanel selection={selection} />
       <ScenarioPathPreview scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
       <ScenarioMonthlyLedger
@@ -2181,9 +2161,7 @@ export default function AugurApp() {
             </div>
           </div>
           <div className="flex min-w-[min(100%,24rem)] flex-1 flex-wrap items-center justify-end gap-3 text-xs augur-muted sm:flex-none">
-            <span>{scenarioSetRequest.scenarios.length} scenarios</span>
-            <span>{fmtNumber(scenarioSetRequest.marketRequest.horizonMonths)} months</span>
-            <span>{fmtNumber(scenarioSetRequest.marketRequest.rolloutCount)} rollouts</span>
+            <span>{fmtNumber(scenarioSetRequest.marketRequest.horizonMonths)} month horizon</span>
           </div>
         </div>
       </header>

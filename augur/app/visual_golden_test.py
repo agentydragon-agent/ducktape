@@ -246,7 +246,6 @@ def _wait_for_augur_page(page: Page, case: VisualCase) -> None:
     page.add_style_tag(content=_deterministic_style())
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     page.get_by_text(case.visible_text).wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Updated").first.wait_for(state="visible", timeout=30_000)
     page.wait_for_function(
         "() => new URL(window.location.href).searchParams.has('state') "
         "&& !document.body.innerText.includes('Running...')"

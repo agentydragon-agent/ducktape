@@ -103,6 +103,11 @@ Implementation notes:
 - Remove bespoke counterfactual-rent state. In a top-level multi-scenario
   simulator, "rent instead" is just another scenario with its own inputs, not a
   side-channel field attached to a purchase scenario.
+- Replace `scenario.actorPolicy` enums with modeled agreements between agents.
+  A partner contribution should look like a contract: agent X pays agent Y some
+  amount over a period and receives a specified equity/share/claim in return.
+  The exact object model is still open, but it should live in actor/ownership
+  state rather than as a scenario-wide enum that triggers bespoke runtime code.
 - `scenarioSetInputToRequest` should mostly map structured UI state into the
   backend schema. It should stop hiding domain decisions behind unrelated flat
   fields such as sale-request amount/month or actor-policy ids.
@@ -240,10 +245,6 @@ Work:
   current hand-built Tailwind widgets. Prefix/suffix input adornments,
   disclosures, tabs, tables, buttons, and form groups should come from a
   tested component surface unless there is a documented reason not to.
-- Replace actor count and policy count with user-facing ownership/participant
-  descriptions.
-- Clarify private deployment actor badges: the primary owner is always present;
-  secondary badges indicate active secondary actor policies.
 - Collapse or rename private-equity value/liquidity columns once the new
   liquidity model exists.
 - Rework mortgage controls around standard mortgage products and explicit

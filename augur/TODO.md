@@ -25,6 +25,11 @@ second ordered roadmap.
 - [ ] Replace class-filtered policy execution with ordered actor policy programs. `actor_policy_programs()` exists, but the engine still flattens policies with `enabled_rules_of_type()` and runs hardcoded branches in `run_scenario_vectorized()`.
 - [ ] Split private-equity liquidity opportunity, user sale request, policy decision, accounting application, and public action into separate concepts with explicit cause IDs.
 - [ ] Extend policy schema/programs enough for downstream deployments to express concentrated-holding limits, liquidity-sale preferences, tender/acquisition/IPO preferences, and tax preferences without ad-hoc `AugurConfig` fields.
+- [ ] Replace `scenario.actorPolicy`-style enums with explicit actor
+      agreements/contracts. For example, "agent X pays agent Y this amount over
+      this period and receives this equity/share/claim in return" should be a
+      modeled agreement between agents, not a scenario-level enum that activates a
+      hardcoded partner-ownership hack. The exact representation still needs design.
 - [ ] Remove or implement schema-only policy types: `LiquidityReservePolicy`, `PortfolioTargetRebalancePolicy`, and `ManualEventSchedulePolicy`.
 - [ ] Make result inspection typed and local. String metric names via `series("cash_usd")` are acceptable as a compatibility layer, but primary callers should get discoverable typed metric/rollout/detail helpers.
 - [ ] Honor or remove `ReportSpec.include_monthly_columns`, `include_sample_paths`, and unsupported `MarketRequest.shared_market_paths=false`.
@@ -64,23 +69,6 @@ second ordered roadmap.
       first split moved the liquidity/stock-sales panel into the trajectory view so
       "Final SP500" is sourced from the selected rollout instead of a terminal P50
       next to a path table; keep applying that rule as result helpers become typed.
-- [ ] Replace "actor count" in scenario summaries with a meaningful ownership /
-      participant description. The current count is not a useful user-facing
-      metric.
-- [ ] Clarify actor badges in scenario cards. The primary owner should be
-      modeled as present in every scenario; badges should communicate which
-      non-primary actors or actor-specific policies are active, not imply that the
-      owner disappears from other scenarios.
-- [ ] Move scenario duplicate/delete actions onto each scenario row/card.
-      Duplicate should be a per-scenario action, and delete should be a small `x`
-      action with a confirmation prompt. The current global buttons are too
-      detached from the scenario they operate on.
-- [ ] Rework or remove the high-level distribution summary strip. The scenario
-      count is redundant with the visible scenario list, `2 / 2 scenarios` is not
-      self-explanatory, and the `Run` card is unclear when it only says the run is
-      updated. Similarly, rollout count should be low-salience execution metadata,
-      not repeated as primary UI copy; once Augur uses many rollouts, the exact
-      count should usually not matter to the main workflow.
 - [ ] Adopt a boring standard React UI component framework, or explicitly
       document why Augur is not doing so. The current app uses Tailwind utilities
       without a component kit, and details like input prefixes/suffixes/adornments
@@ -106,9 +94,6 @@ second ordered roadmap.
 - [ ] Make charts choose human-sensible axis ticks. Use a smart step heuristic
       so labels land on natural values like `$1,000`, `$2,000`, `$3,000` instead of
       awkward computed values such as `$1,247.20` or `$9,231.10`.
-- [ ] Fix awkward table cell wrapping in result tables. Property labels should
-      not wrap as stacked one-word lines like `Location / A / Property`; use better
-      column sizing, abbreviations, or nowrap rules where appropriate.
 - [ ] Key partner-equity reporting by partner actor or make it derivable from actor-keyed ledger entries. Aggregate scenario arrays are fine for charts but should not be the only public detail.
 - [ ] Reconsider whether to reintroduce per-component partner contribution reporting for interest, property tax, insurance, HOA, and maintenance.
 - [ ] Refresh `augur/SPEC.md` once policy execution, sale taxes, and one-rollout detail have stabilized.
