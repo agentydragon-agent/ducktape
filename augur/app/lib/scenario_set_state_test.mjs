@@ -132,6 +132,7 @@ test("default input creates comparable generic location scenarios", () => {
   assert.equal(input.scenarios[0].privateEquityUnits, 500);
   assert.equal(input.scenarios[1].propertyId, "location_b_property");
   assert.equal(input.scenarios[1].actorPolicy, "owner_plus_partner");
+  assert.equal(input.marketRequest.randomSeed, 0);
 });
 
 test("scenario set request is canonical backend input after decamelizing", () => {
@@ -305,6 +306,16 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
       amountUsd: 75_000,
     },
   ]);
+});
+
+test("URL state normalizes missing trajectory seed to deterministic default", () => {
+  const input = createDefaultScenarioSetInput(bootstrap);
+  const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
+  decoded.marketRequest.randomSeed = null;
+
+  const normalized = normalizeScenarioSetInput(decoded, bootstrap);
+
+  assert.equal(normalized.marketRequest.randomSeed, 0);
 });
 
 test("scheduled private equity sale requests normalize into backend events", () => {

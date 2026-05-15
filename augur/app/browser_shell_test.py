@@ -251,6 +251,10 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.goto(augur_server, wait_until="domcontentloaded")
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=15_000)
     page.get_by_text("Financial futures explorer").wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Distribution view").wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Distribution terminal scenario comparison").wait_for(state="visible", timeout=30_000)
+    assert page.evaluate("() => window.location.pathname") == "/distribution"
+    assert page.get_by_text("Selected path monthly ledger").count() == 0
     page.get_by_text("Market model metadata").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Event stream IDs").wait_for(state="hidden", timeout=30_000)
     page.get_by_text("Market model metadata").click()
@@ -259,7 +263,13 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_text("Location B shared").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A Property").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("No image").first.wait_for(state="visible", timeout=30_000)
+    page.get_by_role("button", name="Trajectory").click()
+    page.get_by_text("Trajectory view").wait_for(state="visible", timeout=30_000)
+    page.wait_for_function("() => window.location.pathname === '/trajectory'")
     page.get_by_text("Selected path monthly ledger").wait_for(state="visible", timeout=30_000)
+    assert page.get_by_text("Distribution terminal scenario comparison").count() == 0
+    assert page.evaluate("() => new URL(window.location.href).searchParams.get('rollout')") == "0"
+    assert page.evaluate("() => new URL(window.location.href).searchParams.get('scenario')") == "scenario_1"
 
     page.get_by_role("button", name=re.compile("Sell SP500 at checking floor")).click()
     page.get_by_label("SP500-like portfolio").fill("200000")
@@ -274,7 +284,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("Custom mortgage rate").fill("7.35")
     page.get_by_label("Vacancy", exact=True).fill("9")
     page.get_by_label("Marginal tax rate").fill("37")
-    page.get_by_label("Private equity units").fill("1000")
+    page.get_by_label(re.compile("Private .* units")).fill("1000")
     page.get_by_label("Sale request").fill("50000")
     page.get_by_role("button", name="Add event").click()
     page.get_by_label("Event 1 type").select_option("private_equity_acquisition")

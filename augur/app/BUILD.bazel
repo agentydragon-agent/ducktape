@@ -222,6 +222,15 @@ filegroup(
     srcs = ["testdata/properties.json"],
 )
 
+filegroup(
+    name = "visual_golden_snapshots",
+    testonly = True,
+    srcs = glob(
+        ["__screenshots__/*.png"],
+        allow_empty = True,
+    ),
+)
+
 py_test(
     name = "browser_shell_test",
     size = "large",
@@ -239,6 +248,36 @@ py_test(
         "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "visual_golden_test",
+    size = "large",
+    srcs = ["visual_golden_test.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+        ":server",
+        ":visual_golden_snapshots",
+        "//util/testing/frontend_visual:fonts",
+        "//util/testing/frontend_visual:fonts_conf",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+    },
+    deps = [
+        "//util:net",
+        "//util:playwright",
+        "//util/bazel:runfiles",
+        "//util/testing:png_diff",
         "//util/testing:undeclared_outputs",
         "@pypi//playwright",
         "@pypi//pytest",

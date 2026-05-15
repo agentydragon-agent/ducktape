@@ -8,7 +8,7 @@ const DEFAULT_MARKET_REQUEST = {
   marketModelId: "current_market_model",
   rolloutCount: 128,
   horizonMonths: 360,
-  randomSeed: null,
+  randomSeed: 0,
   sharedMarketPaths: true,
 };
 
@@ -41,6 +41,12 @@ function nullableNumber(value, fallback = null) {
 function positiveNumber(value, fallback) {
   const number = finiteNumber(value, fallback);
   return number > 0 ? number : fallback;
+}
+
+function nullableInteger(value, fallback = null) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const number = Number(value);
+  return Number.isInteger(number) ? number : fallback;
 }
 
 function optionIds(options) {
@@ -345,6 +351,7 @@ export function normalizeScenarioSetInput(input, bootstrap) {
       ...(input?.marketRequest && typeof input.marketRequest === "object" ? input.marketRequest : {}),
       horizonMonths,
       rolloutCount: positiveNumber(input?.marketRequest?.rolloutCount, fallback.marketRequest.rolloutCount),
+      randomSeed: nullableInteger(input?.marketRequest?.randomSeed, fallback.marketRequest.randomSeed),
       sharedMarketPaths: Boolean(input?.marketRequest?.sharedMarketPaths ?? fallback.marketRequest.sharedMarketPaths),
     },
     reportSpec: {

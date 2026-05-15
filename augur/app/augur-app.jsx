@@ -41,6 +41,42 @@ const CHECKING_FLOOR_METRICS = new Set([
   "genericSp500SaleUsd",
 ]);
 const CONTROL_GRID_CLASS = "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-3";
+const RESULT_VIEW_MODES = new Set(["distribution", "trajectory"]);
+
+function viewModeFromPathname(pathname) {
+  const segment = String(pathname ?? "")
+    .replace(/\/+$/u, "")
+    .split("/")
+    .filter(Boolean)
+    .at(-1);
+  return RESULT_VIEW_MODES.has(segment) ? segment : "distribution";
+}
+
+function pathForViewMode(viewMode) {
+  return viewMode === "trajectory" ? "/trajectory" : "/distribution";
+}
+
+function rolloutIndexFromSearch(search) {
+  const value = Number(new URLSearchParams(search).get("rollout"));
+  return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+function searchScenarioId(search) {
+  return new URLSearchParams(search).get("scenario");
+}
+
+function searchWithAppState(search, input, selectedScenarioId, selectedRolloutIndex) {
+  const nextSearch = searchWithScenarioSetInput(search, input);
+  const params = new URLSearchParams(nextSearch.startsWith("?") ? nextSearch.slice(1) : nextSearch);
+  if (selectedScenarioId) {
+    params.set("scenario", selectedScenarioId);
+  } else {
+    params.delete("scenario");
+  }
+  params.set("rollout", String(Math.max(0, Math.floor(Number(selectedRolloutIndex) || 0))));
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : "";
+}
 
 function scenarioUsesCheckingFloorPolicy(scenario) {
   return scenario?.liquidReservePolicy === CHECKING_FLOOR_POLICY_ID;
@@ -375,7 +411,8 @@ function PortfolioSnapshotPanel({ bootstrap }) {
   );
 }
 
-function PropertyLocationPanel({ property, location, scenario, scenarioResult }) {
+function PropertyLocationPanel({ selection }) {
+  const { property, location, scenario, scenarioResult } = selection;
   if (!property) return null;
   const localRegulation = location?.localRegulation ?? {};
   return (
@@ -478,7 +515,7 @@ function ScenarioPathPreview({ scenarioResult, selectedRolloutIndex }) {
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Selected path annual snapshot</div>
+        <div className="augur-eyebrow">Trajectory annual snapshot</div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full">
@@ -516,7 +553,8 @@ function ScenarioPathPreview({ scenarioResult, selectedRolloutIndex }) {
   );
 }
 
-function SaleTaxLoanPanel({ property, scenario, scenarioResult }) {
+function SaleTaxLoanPanel({ selection }) {
+  const { property, scenario, scenarioResult } = selection;
   const rows = terminalRows(scenarioResult);
   if (rows.length === 0) return null;
   const purchasePrice = Number(property?.priceUsd ?? property?.purchasePriceUsd ?? scenario?.purchasePriceUsd);
@@ -554,13 +592,18 @@ function SaleTaxLoanPanel({ property, scenario, scenarioResult }) {
   );
 }
 
-function PartnerOwnershipPanel({ scenarioResult, bootstrap }) {
+function PartnerOwnershipPanel({ scenarioResult, bootstrap, selectedRolloutIndex }) {
   const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
   const partnerLabel = partner?.label ?? "Partner";
   const rows = rowsFromTable(scenarioResult?.monthlyColumns);
   if (rows.length === 0) return null;
-  const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === 0);
+  const rolloutIndexes = [...new Set(rows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
+    (left, right) => left - right
+  );
+  const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
+  const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
   const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
+  const terminalRow = rolloutRows.at(-1) ?? null;
   const hasAuragon = rows.some(
     (row) => row.partnerPresent || row.partnerContributionUsd || row.partnerHomeEquityClaimUsd
   );
@@ -572,14 +615,17 @@ function PartnerOwnershipPanel({ scenarioResult, bootstrap }) {
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">{partnerLabel} contribution and equity</div>
+        <div className="augur-eyebrow">Trajectory {partnerLabel} contribution and equity</div>
       </div>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           ["Path contribution", fmtUsd(firstPathContribution)],
-          ["Contribution used", fmtUsd(terminalP50(scenarioResult, "totalPartnerContributionUsedUsd"))],
-          ["Equity claim", fmtUsd(terminalP50(scenarioResult, "finalPartnerHomeEquityClaimUsd"))],
-          ["Final ownership", fmtPct(terminalP50(scenarioResult, "finalPartnerOwnershipPct"))],
+          [
+            "Contribution used",
+            fmtUsd(rolloutRows.reduce((total, row) => total + (Number(row.partnerContributionUsedUsd) || 0), 0)),
+          ],
+          ["Equity claim", fmtUsd(terminalRow?.partnerHomeEquityClaimUsd)],
+          ["Final ownership", fmtPct(terminalRow?.partnerOwnershipPct)],
         ].map(([label, value]) => (
           <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
             <div className="augur-eyebrow">{label}</div>
@@ -617,22 +663,33 @@ function PartnerOwnershipPanel({ scenarioResult, bootstrap }) {
   );
 }
 
-function LiquidityPolicyPanel({ scenarioResult }) {
+function LiquidityPolicyPanel({ scenarioResult, selectedRolloutIndex }) {
   const rows = rowsFromTable(scenarioResult?.monthlyColumns);
   if (rows.length === 0) return null;
-  const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === 0);
+  const rolloutIndexes = [...new Set(rows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
+    (left, right) => left - right
+  );
+  const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
+  const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
   const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
+  const terminalRow = rolloutRows.at(-1) ?? null;
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Liquidity and stock sales</div>
+        <div className="augur-eyebrow">Trajectory liquidity and stock sales</div>
       </div>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
-          ["SP500 sales", fmtUsd(terminalP50(scenarioResult, "totalGenericSp500SaleUsd"))],
-          ["SP500 sale gain", fmtUsd(terminalP50(scenarioResult, "totalGenericSp500SaleGainUsd"))],
-          ["Final shortfall", fmtUsd(terminalP50(scenarioResult, "finalCheckingFloorShortfallUsd"))],
-          ["Final SP500", fmtUsd(terminalP50(scenarioResult, "finalGenericSp500ValueUsd"))],
+          [
+            "SP500 sales",
+            fmtUsd(rolloutRows.reduce((total, row) => total + (Number(row.genericSp500SaleUsd) || 0), 0)),
+          ],
+          [
+            "SP500 sale gain",
+            fmtUsd(rolloutRows.reduce((total, row) => total + (Number(row.genericSp500SaleGainUsd) || 0), 0)),
+          ],
+          ["Final shortfall", fmtUsd(terminalRow?.checkingFloorShortfallUsd)],
+          ["Final SP500", fmtUsd(terminalRow?.genericSp500ValueUsd)],
         ].map(([label, value]) => (
           <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
             <div className="augur-eyebrow">{label}</div>
@@ -672,14 +729,19 @@ function LiquidityPolicyPanel({ scenarioResult }) {
   );
 }
 
-function PrivateEquityLiquidityPanel({ scenarioResult }) {
+function PrivateEquityLiquidityPanel({ scenarioResult, selectedRolloutIndex }) {
   const rows = rowsFromTable(scenarioResult?.monthlyColumns);
   if (rows.length === 0) return null;
   const hasPrivateEquity = rows.some(
     (row) => row.privateEquityValueUsd || row.privateEquityLiquidityAvailableValueUsd || row.privateEquitySaleUsd
   );
   if (!hasPrivateEquity) return null;
-  const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === 0);
+  const rolloutIndexes = [...new Set(rows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
+    (left, right) => left - right
+  );
+  const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
+  const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
+  const terminalRow = rolloutRows.at(-1) ?? null;
   const eventRows = rolloutRows.filter((row) => row.privateEquityLiquidityEvent || row.privateEquitySaleUsd > 0);
   const displayRows = (eventRows.length > 0 ? eventRows : rolloutRows.filter((row) => row.monthIndex % 12 === 0)).slice(
     0,
@@ -688,13 +750,13 @@ function PrivateEquityLiquidityPanel({ scenarioResult }) {
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Private equity liquidity</div>
+        <div className="augur-eyebrow">Trajectory private equity liquidity</div>
       </div>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-3">
         {[
-          ["Private equity value", fmtUsd(terminalP50(scenarioResult, "finalPrivateEquityValueUsd"))],
-          ["Liquidity available", fmtUsd(terminalP50(scenarioResult, "finalPrivateEquityLiquidityAvailableValueUsd"))],
-          ["Sales", fmtUsd(terminalP50(scenarioResult, "totalPrivateEquitySaleUsd"))],
+          ["Private equity value", fmtUsd(terminalRow?.privateEquityValueUsd)],
+          ["Tender-window value", fmtUsd(terminalRow?.privateEquityLiquidityAvailableValueUsd)],
+          ["Sales", fmtUsd(rolloutRows.reduce((total, row) => total + (Number(row.privateEquitySaleUsd) || 0), 0))],
         ].map(([label, value]) => (
           <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
             <div className="augur-eyebrow">{label}</div>
@@ -1341,6 +1403,59 @@ function ScenarioSetSummary({ scenarioSetRequest, result, runError }) {
   );
 }
 
+function ResultViewTabs({ viewMode, onViewModeChange }) {
+  const options = [
+    ["distribution", "Distribution"],
+    ["trajectory", "Trajectory"],
+  ];
+  return (
+    <div className="inline-flex max-w-full rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      {options.map(([mode, label]) => {
+        const selected = viewMode === mode;
+        return (
+          <button
+            key={mode}
+            type="button"
+            className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+              selected
+                ? "bg-blue-600 text-white shadow-sm dark:bg-blue-500"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            }`}
+            aria-pressed={selected}
+            onClick={() => onViewModeChange(mode)}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ResultModeHeader({ viewMode, scenarioSetRequest, selection, selectedRolloutIndex }) {
+  const isTrajectory = viewMode === "trajectory";
+  const seed = scenarioSetRequest.marketRequest.randomSeed;
+  return (
+    <section className="augur-card px-4 py-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="augur-eyebrow">{isTrajectory ? "Trajectory view" : "Distribution view"}</div>
+          <div className="mt-1 truncate text-sm augur-muted">
+            {isTrajectory
+              ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · seed ${seed ?? "not set"}`
+              : `${fmtInteger(scenarioSetRequest.marketRequest.rolloutCount)} rollouts · terminal percentiles and probability fans`}
+          </div>
+        </div>
+        {isTrajectory && seed === null && (
+          <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+            Unseeded trajectories are not stable across reloads.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSelectedMetricChange }) {
   const metricOptions = metricOptionsFromResult(result, scenarioSetInput);
   const metricName = metricOptions.includes(selectedMetric) ? selectedMetric : (metricOptions[0] ?? "netWorthUsd");
@@ -1487,7 +1602,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Terminal scenario comparison</div>
+        <div className="augur-eyebrow">Distribution terminal scenario comparison</div>
       </div>
       {result?.warnings?.length > 0 && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
@@ -1793,7 +1908,9 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="augur-eyebrow">Selected path monthly ledger</div>
-            <div className="mt-1 text-sm augur-muted">{scenario.label}</div>
+            <div className="mt-1 text-sm augur-muted">
+              {scenario.label} · rollout {fmtInteger(rolloutIndex)}
+            </div>
           </div>
           <label className="min-w-[10rem]">
             <span className="sr-only">Ledger path</span>
@@ -1818,8 +1935,9 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
   );
 }
 
-function ScenarioAcceptedPanel({ scenario, scenarioResult }) {
-  if (!scenarioResult) return null;
+function ScenarioAcceptedPanel({ selection }) {
+  const { scenario, scenarioResult } = selection;
+  if (!scenario || !scenarioResult) return null;
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -1841,12 +1959,82 @@ function ScenarioAcceptedPanel({ scenario, scenarioResult }) {
   );
 }
 
+function DistributionResults({
+  scenarioSetRequest,
+  result,
+  runError,
+  normalizedScenarioSetInput,
+  propertiesById,
+  selection,
+  selectedFanMetric,
+  onSelectedFanMetricChange,
+}) {
+  const { scenarioResult } = selection;
+  return (
+    <>
+      <ScenarioSetSummary scenarioSetRequest={scenarioSetRequest} result={result} runError={runError} />
+      <MarketMetadataPanel result={result} />
+      <ScenarioComparisonPanel
+        scenarioSetInput={normalizedScenarioSetInput}
+        result={result}
+        propertiesById={propertiesById}
+      />
+      <MultiScenarioFanChart
+        scenarioSetInput={normalizedScenarioSetInput}
+        result={result}
+        selectedMetric={selectedFanMetric}
+        onSelectedMetricChange={onSelectedFanMetricChange}
+      />
+      <PropertyLocationPanel selection={selection} />
+      <ScenarioValueSummary scenarioResult={scenarioResult} />
+      <SaleTaxLoanPanel selection={selection} />
+      <TerminalPercentileSnapshot scenarioResult={scenarioResult} />
+    </>
+  );
+}
+
+function TrajectoryResults({
+  scenarioSetRequest,
+  result,
+  runError,
+  selection,
+  selectedRolloutIndex,
+  onSelectedRolloutIndexChange,
+  bootstrap,
+}) {
+  const { scenario, scenarioResult } = selection;
+  return (
+    <>
+      <ScenarioSetSummary scenarioSetRequest={scenarioSetRequest} result={result} runError={runError} />
+      <PropertyLocationPanel selection={selection} />
+      <ScenarioPathPreview scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
+      <ScenarioMonthlyLedger
+        scenario={scenario}
+        scenarioResult={scenarioResult}
+        selectedRolloutIndex={selectedRolloutIndex}
+        onSelectedRolloutIndexChange={onSelectedRolloutIndexChange}
+      />
+      <PartnerOwnershipPanel
+        scenarioResult={scenarioResult}
+        bootstrap={bootstrap}
+        selectedRolloutIndex={selectedRolloutIndex}
+      />
+      <LiquidityPolicyPanel scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
+      <PrivateEquityLiquidityPanel scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
+      <ScenarioAcceptedPanel selection={selection} />
+    </>
+  );
+}
+
 export default function AugurApp() {
   const [bootstrap, setBootstrap] = useState(null);
   const [bootstrapError, setBootstrapError] = useState(null);
   const [urlStateError, setUrlStateError] = useState(null);
   const [scenarioSetInput, setScenarioSetInput] = useState(null);
   const [selectedScenarioId, setSelectedScenarioId] = useState(null);
+  const [viewMode, setViewMode] = useState(() =>
+    typeof window === "undefined" ? "distribution" : viewModeFromPathname(window.location.pathname)
+  );
   const [selectedFanMetric, setSelectedFanMetric] = useState("netWorthUsd");
   const [selectedRolloutIndex, setSelectedRolloutIndex] = useState(0);
   const [result, setResult] = useState(null);
@@ -1866,8 +2054,14 @@ export default function AugurApp() {
           setUrlStateError(error?.message || String(error));
         }
         const normalized = normalizeScenarioSetInput(initialInput ?? createDefaultScenarioSetInput(payload), payload);
+        const requestedScenarioId = typeof window === "undefined" ? null : searchScenarioId(window.location.search);
+        const selectedScenario = normalized.scenarios.some((scenario) => scenario.scenarioId === requestedScenarioId)
+          ? requestedScenarioId
+          : (normalized.scenarios[0]?.scenarioId ?? null);
         setScenarioSetInput(normalized);
-        setSelectedScenarioId(normalized.scenarios[0]?.scenarioId ?? null);
+        setSelectedScenarioId(selectedScenario);
+        setSelectedRolloutIndex(typeof window === "undefined" ? 0 : rolloutIndexFromSearch(window.location.search));
+        setViewMode(typeof window === "undefined" ? "distribution" : viewModeFromPathname(window.location.pathname));
       })
       .catch((error) => {
         if (error?.name === "AbortError") return;
@@ -1895,23 +2089,53 @@ export default function AugurApp() {
     [bootstrap]
   );
 
-  const selectedScenario = useMemo(
-    () => normalizedScenarioSetInput?.scenarios.find((scenario) => scenario.scenarioId === selectedScenarioId) ?? null,
-    [normalizedScenarioSetInput, selectedScenarioId]
-  );
-  const selectedProperty = selectedScenario ? propertiesById.get(selectedScenario.propertyId) : null;
-  const selectedLocation = propertyLocation(selectedProperty, locationsById);
-  const selectedScenarioResult = scenarioResultById(result, selectedScenarioId);
+  const selectedContext = useMemo(() => {
+    const scenario =
+      normalizedScenarioSetInput?.scenarios.find((item) => item.scenarioId === selectedScenarioId) ?? null;
+    const property = scenario ? (propertiesById.get(scenario.propertyId) ?? null) : null;
+    return {
+      scenario,
+      property,
+      location: propertyLocation(property, locationsById),
+      scenarioResult: scenarioResultById(result, selectedScenarioId),
+    };
+  }, [normalizedScenarioSetInput, selectedScenarioId, propertiesById, locationsById, result]);
+
+  useEffect(() => {
+    if (!normalizedScenarioSetInput) return;
+    if (normalizedScenarioSetInput.scenarios.some((scenario) => scenario.scenarioId === selectedScenarioId)) return;
+    setSelectedScenarioId(normalizedScenarioSetInput.scenarios[0]?.scenarioId ?? null);
+  }, [normalizedScenarioSetInput, selectedScenarioId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const syncFromLocation = () => {
+      setViewMode(viewModeFromPathname(window.location.pathname));
+      const scenarioId = searchScenarioId(window.location.search);
+      if (scenarioId) setSelectedScenarioId(scenarioId);
+      setSelectedRolloutIndex(rolloutIndexFromSearch(window.location.search));
+    };
+    window.addEventListener("popstate", syncFromLocation);
+    return () => window.removeEventListener("popstate", syncFromLocation);
+  }, []);
 
   useEffect(() => {
     if (!normalizedScenarioSetInput || typeof window === "undefined") return;
     const handle = setTimeout(() => {
-      const nextSearch = searchWithScenarioSetInput(window.location.search, normalizedScenarioSetInput);
-      const nextUrl = `${window.location.pathname}${nextSearch}${window.location.hash}`;
-      window.history.replaceState(null, "", nextUrl);
+      const nextSearch = searchWithAppState(
+        window.location.search,
+        normalizedScenarioSetInput,
+        selectedScenarioId,
+        selectedRolloutIndex
+      );
+      const nextUrl = `${pathForViewMode(viewMode)}${nextSearch}${window.location.hash}`;
+      const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (nextUrl !== currentUrl) {
+        window.history.replaceState(null, "", nextUrl);
+      }
     }, 80);
     return () => clearTimeout(handle);
-  }, [normalizedScenarioSetInput]);
+  }, [normalizedScenarioSetInput, selectedScenarioId, selectedRolloutIndex, viewMode]);
 
   useEffect(() => {
     if (!scenarioSetRequest) return;
@@ -1980,7 +2204,7 @@ export default function AugurApp() {
               bootstrap={bootstrap}
             />
             <SelectedScenarioControls
-              scenario={selectedScenario}
+              scenario={selectedContext.scenario}
               scenarioSetInput={normalizedScenarioSetInput}
               onChange={setScenarioSetInput}
               bootstrap={bootstrap}
@@ -1990,58 +2214,52 @@ export default function AugurApp() {
           <div className="min-w-0 space-y-5">
             <div className="border-b border-slate-300 pb-5 dark:border-slate-700">
               <div className="augur-eyebrow">
-                {selectedLocation?.label ?? "No property selected"} ·{" "}
-                {selectedLocation?.localRegulation
-                  ? `${selectedLocation.localRegulation.propertyTaxAnnualPct}% property tax`
+                {selectedContext.location?.label ?? "No property selected"} ·{" "}
+                {selectedContext.location?.localRegulation
+                  ? `${selectedContext.location.localRegulation.propertyTaxAnnualPct}% property tax`
                   : "no local regulation"}
               </div>
               <h2 className="display mt-2 text-3xl text-slate-950 dark:text-slate-50">
-                {selectedProperty?.address ?? "Scenario set"}
+                {selectedContext.property?.address ?? "Scenario set"}
               </h2>
               <p className="mt-2 max-w-3xl augur-body">
-                {selectedProperty
-                  ? `${selectedProperty.neighborhood} · ${selectedProperty.beds}bd · ${selectedProperty.baths}ba · ${selectedProperty.sqft.toLocaleString()} sf · ${fmtUsd(selectedProperty.priceUsd)}`
+                {selectedContext.property
+                  ? `${selectedContext.property.neighborhood} · ${selectedContext.property.beds}bd · ${selectedContext.property.baths}ba · ${selectedContext.property.sqft.toLocaleString()} sf · ${fmtUsd(selectedContext.property.priceUsd)}`
                   : "Choose a property for the selected scenario."}
               </p>
             </div>
 
-            <ScenarioSetSummary scenarioSetRequest={scenarioSetRequest} result={result} runError={runError} />
-            <MarketMetadataPanel result={result} />
-            <ScenarioComparisonPanel
-              scenarioSetInput={normalizedScenarioSetInput}
-              result={result}
-              propertiesById={propertiesById}
-            />
-            <MultiScenarioFanChart
-              scenarioSetInput={normalizedScenarioSetInput}
-              result={result}
-              selectedMetric={selectedFanMetric}
-              onSelectedMetricChange={setSelectedFanMetric}
-            />
-            <PropertyLocationPanel
-              property={selectedProperty}
-              location={selectedLocation}
-              scenario={selectedScenario}
-              scenarioResult={selectedScenarioResult}
-            />
-            <ScenarioValueSummary scenarioResult={selectedScenarioResult} />
-            <SaleTaxLoanPanel
-              property={selectedProperty}
-              scenario={selectedScenario}
-              scenarioResult={selectedScenarioResult}
-            />
-            <TerminalPercentileSnapshot scenarioResult={selectedScenarioResult} />
-            <ScenarioPathPreview scenarioResult={selectedScenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
-            <ScenarioAcceptedPanel scenario={selectedScenario} scenarioResult={selectedScenarioResult} />
-            <ScenarioMonthlyLedger
-              scenario={selectedScenario}
-              scenarioResult={selectedScenarioResult}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <ResultViewTabs viewMode={viewMode} onViewModeChange={setViewMode} />
+            </div>
+            <ResultModeHeader
+              viewMode={viewMode}
+              scenarioSetRequest={scenarioSetRequest}
+              selection={selectedContext}
               selectedRolloutIndex={selectedRolloutIndex}
-              onSelectedRolloutIndexChange={setSelectedRolloutIndex}
             />
-            <PartnerOwnershipPanel scenarioResult={selectedScenarioResult} bootstrap={bootstrap} />
-            <LiquidityPolicyPanel scenarioResult={selectedScenarioResult} />
-            <PrivateEquityLiquidityPanel scenarioResult={selectedScenarioResult} />
+            {viewMode === "trajectory" ? (
+              <TrajectoryResults
+                scenarioSetRequest={scenarioSetRequest}
+                result={result}
+                runError={runError}
+                selection={selectedContext}
+                selectedRolloutIndex={selectedRolloutIndex}
+                onSelectedRolloutIndexChange={setSelectedRolloutIndex}
+                bootstrap={bootstrap}
+              />
+            ) : (
+              <DistributionResults
+                scenarioSetRequest={scenarioSetRequest}
+                result={result}
+                runError={runError}
+                normalizedScenarioSetInput={normalizedScenarioSetInput}
+                propertiesById={propertiesById}
+                selection={selectedContext}
+                selectedFanMetric={selectedFanMetric}
+                onSelectedFanMetricChange={setSelectedFanMetric}
+              />
+            )}
           </div>
         </section>
       </main>

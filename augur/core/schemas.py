@@ -100,7 +100,6 @@ class ScenarioKnobs(KnobsConfig):
         return cls.model_validate(knobs.model_dump())
 
 
-# ---------------------------------------------------------------------------
 # Financing + amortization (simulation outputs).
 # ---------------------------------------------------------------------------
 

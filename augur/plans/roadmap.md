@@ -1,0 +1,285 @@
+# Augur Unified Plan
+
+Last consolidated: 2026-05-15.
+
+This plan consolidates the active Augur work from the public framework docs and
+the private deployment notes. It is the priority ordering. `augur/TODO.md`
+remains the detailed public backlog; private values, holdings, property data,
+and deployment-specific composition stay in the downstream private repo.
+
+## Sources
+
+- `augur/SPEC.md`: product contract and simulator vocabulary.
+- `augur/plans/e2e_redesign.md`: distribution-first runtime redesign and
+  ledger/reconciliation work.
+- `augur/TODO.md`: public generic backlog.
+- `gaffer-private/TODO.md`: private personal-finance modeling follow-ups.
+- `gaffer-private/x/augur/SPEC.md`: private deployment boundary and image
+  privacy contract.
+- `gaffer-private/debug/augur-ui-structural-review-2026-05-15.md`: screenshot
+  review and UI/domain-boundary audit.
+- `gaffer-private/x/augur/model/legacy_pymc/PLAN.md`: archived only. Do not
+  revive this provider without a fresh model-design pass.
+
+## North Star
+
+Augur simulates a `ScenarioSet` across sampled market paths and returns a
+distribution over trajectories. A selected rollout is an inspection aid, not a
+separate deterministic product. The UI, app state, and result APIs should make
+that distinction impossible to miss.
+
+The core model should stay structured around actors, accounts, assets,
+liabilities, markets, policies, actions, ledgers, accounting detail, and
+balance snapshots. The app may provide friendly controls, but it should not use
+a flat browser-side "scenario row" as the source of truth and then expand it
+back into typed backend objects.
+
+## Priority 1: Type Result Views And Accounting Detail
+
+Distribution and trajectory have separate top-level views. The remaining
+product and correctness work is to make the result helpers and deeper
+accounting views enforce that boundary instead of relying on panel placement.
+
+Target shape:
+
+- `/inputs` or an equivalent persistent edit surface: scenario identity,
+  initial balance sheet, actors/ownership, property/location, financing,
+  occupancy/rental plan, tax/accounting assumptions, market assumptions, and
+  policy programs.
+
+Implementation notes:
+
+- Add typed frontend helpers that distinguish distribution tables from sample
+  trajectory tables and accounting-detail rows. Avoid generic `rowsFromTable`
+  flows that make P50 rows and rollout rows feel interchangeable.
+- Trajectory URLs are reproducible only when the encoded market request has a
+  deterministic seed. The locator is effectively scenario-set input plus
+  market model/version plus seed plus `scenario_id` plus `rollout_index`; seed
+  and rollout alone are not enough.
+- When `shared_market_paths=true`, the same `rollout_index` should identify the
+  same exogenous market path across scenarios so trajectory comparison is
+  meaningful.
+- Make `ReportSpec.include_monthly_columns`, `include_sample_paths`, and
+  related response fields match the view contract or remove unsupported knobs.
+
+Acceptance criteria:
+
+- Every result panel has a visible mode: distribution, trajectory, or
+  accounting detail.
+- No panel combines percentile summaries with one-rollout path rows unless the
+  split is explicit and visually separated.
+- Full-page visual goldens cover representative distribution and trajectory
+  routes so UI structure changes are reviewable in git.
+
+## Priority 2: Replace The Flat Browser Scenario Row
+
+The backend scenario shape is already partly structured; the risky layer is the
+browser state. It currently normalizes one wide object and expands fields into
+actors, events, policies, tax profile, transaction costs, and balance-sheet
+positions.
+
+Target browser state:
+
+- `identity`: scenario id, label, color, enabled state, comparison membership.
+- `actors_and_ownership`: primary owner, optional counterparties, ownership
+  agreements, actor-specific policy activation.
+- `initial_balance_sheet`: accounts, liquid positions, private positions,
+  property positions, liabilities, cost bases, units, and lot-level fields once
+  available.
+- `property_and_location`: selected property, location entity, local
+  regulation/tax knobs, property assumptions.
+- `financing`: standard mortgage products and explicit custom override mode if
+  retained.
+- `occupancy_and_rental`: residence and rental-use plan.
+- `tax_accounting`: tax rates, filing assumptions, basis assumptions, timing
+  assumptions, and approximation disclaimers.
+- `market_model`: selected market model, rollout count, horizon, seed, and
+  shared-path behavior.
+- `policies`: ordered actor policy programs.
+
+Implementation notes:
+
+- URL state does not need stale compatibility unless explicitly requested.
+- Remove bespoke counterfactual-rent state. In a top-level multi-scenario
+  simulator, "rent instead" is just another scenario with its own inputs, not a
+  side-channel field attached to a purchase scenario.
+- `scenarioSetInputToRequest` should mostly map structured UI state into the
+  backend schema. It should stop hiding domain decisions behind unrelated flat
+  fields such as sale-request amount/month or actor-policy ids.
+- Update app tests around the new state shape rather than preserving the
+  current wide-row browser contract.
+
+Acceptance criteria:
+
+- Adding a new tax assumption, asset type, policy, or actor does not require
+  another unrelated field on a giant scenario object.
+- The app state names the same domain layers the backend schema names.
+
+## Priority 3: Redesign Private-Equity Liquidity And Policy
+
+Private-equity liquidity should be modeled as exogenous opportunity plus actor
+policy, not as "user chooses to sell USD X in month Y."
+
+Target shape:
+
+- Market/model layer emits private-equity opportunities: tender, acquisition,
+  IPO/regime change, lockup expiry, public-market availability.
+- Policy layer decides participation: never sell, sell fixed fraction, sell
+  fixed units, sell enough to reach concentration/liquid-reserve target, or
+  custom downstream rule.
+- Accounting layer applies sale, basis, tax estimate/liability, proceeds
+  destination, and cause IDs.
+- Result layer separates private-equity mark value, tender-eligible amount,
+  actually sold amount, and post-tax proceeds.
+
+Implementation notes:
+
+- Split liquidity opportunity, user preference, policy decision, accounting
+  application, and public action into separate typed concepts with explicit
+  cause IDs.
+- Remove UI controls for arbitrary sale request USD/month. Replace them with
+  opportunity-model settings and participation-policy controls.
+- Clarify sale-proceeds destination scope: per policy, per event, or per
+  accounting action. Do not leave it as an ambiguous global cell.
+
+Acceptance criteria:
+
+- A private-equity tender appears as an opportunity in a trajectory view.
+- The reason for a sale or non-sale is inspectable as a policy decision.
+- Distribution summaries can report expected tender proceeds without implying
+  the asset is generally liquid.
+
+## Priority 4: Tax, Basis, And Accounting State
+
+Tax and accounting need to become a first-class layer rather than scattered
+controls under house, stock, and private-equity panels.
+
+Target shape:
+
+- Initial positions carry basis, units, lots, and owner/account identity.
+- Stock-sale, private-equity-sale, and property-sale taxes reconcile through
+  shared accounting detail.
+- Tax payments become liabilities/payment-timing flows rather than only
+  `allocated_to_source_month` adjustments.
+- Public tax model remains approximate, with disclaimers and test coverage
+  around what is and is not decision-grade.
+
+Public work:
+
+- Continue Step 7 by replacing `allocated_to_source_month` timing with annual
+  or estimated-payment liability timing.
+- Keep arrays derived from state/ledger where practical, or assert and document
+  reconciliation where arrays remain bespoke.
+- Extend federal and California tax approximations beyond sale taxes only when
+  the accounting shape can represent them.
+
+Private downstream work:
+
+- Populate real cost bases for private holdings and taxable brokerage
+  positions in the private repo.
+- Model managed direct-index/tax-loss-harvesting behavior as a private
+  deployment input once the generic position/tax hooks exist.
+
+Acceptance criteria:
+
+- A sale action can be traced to basis, realized gain, taxable gain, tax
+  liability, and cash/asset proceeds.
+- Tax controls live together and apply consistently across stock,
+  private-equity, and property-sale flows.
+
+## Priority 5: Policy Runtime And Result Typing
+
+The simulator should execute ordered actor policy programs and expose typed
+inspection surfaces.
+
+Work:
+
+- Replace class-filtered policy execution with ordered actor policy programs.
+- Remove or implement schema-only policy types.
+- Make result inspection typed and local: distribution helpers, trajectory
+  helpers, ledger/detail helpers, and compatibility aliases only where needed.
+- Keep market paths and exogenous opportunities as observations, not policy
+  decisions.
+
+Acceptance criteria:
+
+- Policy order is explicit and testable.
+- Policy decisions are visible in trajectory inspection.
+- Result arrays are not the only way to understand why something happened.
+
+## Priority 6: Property, Location, And Asset Storage
+
+This track keeps the generic framework public-safe and makes downstream
+deployment less ad hoc.
+
+Work:
+
+- Keep the generic Augur OCI image free of private config, property records, and
+  private media.
+- Add a durable property-asset storage contract with stable asset IDs/URLs,
+  backed by object storage or a database-like asset table.
+- Replace built-in `LocationId` with database-like location entities when the
+  location/regulation layer is next touched.
+- Keep large private media out of ConfigMaps. The current private nginx image
+  is an expedient until the generic asset contract exists.
+
+Acceptance criteria:
+
+- Public image layers contain only generic Augur code and public-safe inputs.
+- Private deployments can supply config, property records, and media through
+  runtime inputs without forking app logic.
+
+## Priority 7: UI Cleanup After The Structural Split
+
+These are visible but should follow the distribution/trajectory and state-shape
+work so they do not polish the wrong structure.
+
+Work:
+
+- Adopt a standard React component kit for boring controls before polishing the
+  current hand-built Tailwind widgets. Prefix/suffix input adornments,
+  disclosures, tabs, tables, buttons, and form groups should come from a
+  tested component surface unless there is a documented reason not to.
+- Replace actor count and policy count with user-facing ownership/participant
+  descriptions.
+- Clarify private deployment actor badges: the primary owner is always present;
+  secondary badges indicate active secondary actor policies.
+- Collapse or rename private-equity value/liquidity columns once the new
+  liquidity model exists.
+- Rework mortgage controls around standard mortgage products and explicit
+  custom override mode.
+- Keep market metadata in a collapsed disclosure by default.
+- Refresh `augur/SPEC.md` after policy execution, tax timing, and result-view
+  contracts stabilize.
+
+## Immediate Implementation Sequence
+
+1. Refactor result helpers so distribution and trajectory data cannot be mixed
+   accidentally.
+2. Replace the flat browser scenario state with nested domain state. Break URL
+   compatibility if needed.
+3. Redesign private-equity liquidity around exogenous opportunities plus actor
+   policy.
+4. Continue Step 7 tax/accounting reconciliation once the result views and
+   state shape stop obscuring accounting semantics.
+
+## Verification Loop
+
+For each public framework slice:
+
+```bash
+bbr test //augur/app:browser_shell_test
+bbr test //augur/app/lib:scenario_set_state_test
+bbr test //augur/core:test_e2e
+```
+
+Before handing off a broader spiral:
+
+```bash
+bbr test //augur/...
+bbr build //augur/...
+```
+
+For private deployment slices, also run the private Augur browser/backend tests
+and verify the live deployment only after the public framework commit is
+repinned downstream.
