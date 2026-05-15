@@ -44,11 +44,6 @@ locals {
   automation_app_id = 3590331
 }
 
-import {
-  to = github_repository_ruleset.ducktape_main
-  id = "ducktape:15894562"
-}
-
 resource "github_repository_ruleset" "ducktape_main" {
   name        = "main-protection"
   repository  = "ducktape"
