@@ -43,6 +43,11 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **Provision second Kimsufi KS-5 worker** (`talos-kimsufi-worker-1`, Nebula `10.42.0.14`).
+      OVH order placed 2026-05-15. Once ready: set `TF_VAR_kimsufi_service_name_1=<name>`,
+      run `tofu state mv` for 9 singleton→`for_each` resources, then `tofu apply`.
+      See `cluster/terraform/main/ovh-nodes.tf` and the plan at
+      `~/.claude/plans/let-s-add-another-kimsufi-steady-peach.md`.
 - [ ] **OVH API token: add `/services/*` scopes, drop kimsufi display_name workaround**.
       Current OVH token only has `/dedicated/server/*`. The `ovh_dedicated_server`
       resource auto-syncs `iam.displayName` into `display_name` state on every Read,
@@ -418,6 +423,19 @@ directly — no port-forward. From non-workers, fall back to `kubectl port-forwa
 - [ ] Eliminate port-forward for non-workers. Cilium Gateway API does not support TCPRoute
       ([cilium#21929](https://github.com/cilium/cilium/issues/21929)). Options when available:
       TCPRoute + NodePort, or TLS passthrough (like `kube-api-proxy` TLSRoute pattern).
+- [x] **Migrate tofu-controller `Terraform` CRs from `kubernetes` to `postgres` backend.**
+      16 of ~19 CRs migrated (2026-05-15). PG backend uses session-based advisory locks
+      that auto-release on runner pod death, eliminating the stale-Lease problem. Each CR
+      gets its own schema in the existing `tofu-state-db` CNPG cluster. Reflector mirrors
+      PG credentials from `tofu-state` → `flux-system` namespace.
+      **Remaining**: - `github-secrets-sync` — Flux kustomization blocked by dependency chain
+      (`claude-rbac` → missing `openclaw-gateway`/`docker-ci` namespaces). Will
+      self-migrate once chain unblocks. CR already has PG backend in git. - `harbor-oidc-config` — already switched in git, will migrate when Harbor comes
+      back up. - `dns-records` — import blocks committed, awaiting Flux reconciliation. Remove
+      import blocks from `tf/gitops/dns-records/main.tf` after successful apply.
+      **Cleanup** (after all CRs migrated): delete old `tfstate-default-*` and
+      `tfplan-default-*` secrets in `flux-system`, remove import blocks from TF sources,
+      simplify stale-lock section in `troubleshooting.md`.
 
 ### GitHub Webhook Reconciliation
 
