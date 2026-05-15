@@ -71,29 +71,35 @@ const bootstrap = {
     { id: "none", label: "None" },
     { id: "checking_floor_sp500", label: "Sell SP500" },
   ],
+  locations: [
+    {
+      id: "location_a",
+      label: "Location A",
+      localRegulation: { propertyTaxAnnualPct: 1, localTransferTaxPct: 0, specialAssessmentAnnualUsd: 0 },
+    },
+    {
+      id: "location_b",
+      label: "Location B",
+      localRegulation: { propertyTaxAnnualPct: 1, localTransferTaxPct: 0, specialAssessmentAnnualUsd: 0 },
+    },
+  ],
   properties: [
     {
       id: "location_a_property",
+      locationId: "location_a",
       address: "Location A Property",
       priceUsd: 998_000,
       hoaMonthlyUsd: 321,
       rentEstimateUsd: 4_200,
       beds: 3,
-      location: {
-        id: "location_a",
-        localRegulation: { propertyTaxAnnualPct: 1, localTransferTaxPct: 0, specialAssessmentAnnualUsd: 0 },
-      },
     },
     {
       id: "location_b_property",
+      locationId: "location_b",
       address: "Location B Property",
       priceUsd: 520_000,
       rentEstimateUsd: 3_100,
       beds: 4,
-      location: {
-        id: "location_b",
-        localRegulation: { propertyTaxAnnualPct: 1, localTransferTaxPct: 0, specialAssessmentAnnualUsd: 0 },
-      },
     },
   ],
 };

@@ -128,19 +128,13 @@ def _locations_for_config(config: AugurConfig) -> tuple[Location, ...]:
     return locations
 
 
-def _property(record: object, *, location_by_id: dict[str, Location]) -> Property:
-    if not isinstance(record, dict):
-        raise ValueError("property records must be JSON objects")
-    location_id = record.get("location_id")
-    if not isinstance(location_id, str):
-        raise ValueError("property records must include string location_id")
+def _property(raw_property: object, *, location_by_id: dict[str, Location]) -> Property:
+    property_ = Property.model_validate(raw_property)
     try:
-        location = location_by_id[location_id]
+        location_by_id[property_.location_id]
     except KeyError as error:
-        raise ValueError(
-            f"property {record.get('id', '<unknown>')!r} references unknown location {location_id!r}"
-        ) from error
-    return Property.model_validate({**record, "location": location})
+        raise ValueError(f"property {property_.id!r} references unknown location {property_.location_id!r}") from error
+    return property_
 
 
 def _agents_by_role(config: AugurConfig) -> tuple[str, str | None]:
@@ -249,7 +243,7 @@ def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
     locations = [location for location in available_locations if location.id in selected_location_ids]
     properties = sorted(
         (property_ for property_ in loaded_properties if property_.location_id in selected_location_ids),
-        key=lambda property_: (property_.location.city, property_.price_usd, property_.id),
+        key=lambda property_: (location_by_id[property_.location_id].city, property_.price_usd, property_.id),
     )
     if not properties:
         raise ValueError("Augur property catalog has no properties after applying location_selection")

@@ -41,6 +41,7 @@ class AugurBackend:
         self._property_by_id: dict[str, Property] = {
             property_.id: property_ for property_ in self._bootstrap.properties
         }
+        self._location_by_id = {location.id: location for location in self._bootstrap.locations}
         self.default_rollout_samples = default_rollout_samples or self._bootstrap.default_rollout_samples
         self.max_rollout_samples = max_rollout_samples
         self.default_knobs = self._default_knobs_for_provider(self._bootstrap.default_knobs)
@@ -94,7 +95,7 @@ class AugurBackend:
                 update={
                     "location_id": scenario.property_selection.location_id or property_.location_id,
                     "local_regulation": scenario.property_selection.local_regulation
-                    or property_.location.local_regulation,
+                    or self._location_by_id[property_.location_id].local_regulation,
                     "purchase_price_usd": scenario.property_selection.purchase_price_usd
                     if scenario.property_selection.purchase_price_usd is not None
                     else property_.price_usd,

@@ -113,9 +113,15 @@ function p50Column(rows, column) {
   return median(rows.map((row) => Number(row[column])));
 }
 
-function propertyLabel(property) {
+function propertyLocation(property, locationsById) {
+  if (!property) return null;
+  return locationsById.get(property.locationId) ?? null;
+}
+
+function propertyLabel(property, locationsById) {
   if (!property) return "Unknown property";
-  return `${property.address} · ${property.location.label}`;
+  const location = propertyLocation(property, locationsById);
+  return `${property.address} · ${location?.label ?? property.locationId ?? "Unknown location"}`;
 }
 
 function scenarioResultById(result, scenarioId) {
@@ -321,9 +327,9 @@ function DetailTable({ rows }) {
   );
 }
 
-function PropertyLocationPanel({ property, scenario, scenarioResult }) {
+function PropertyLocationPanel({ property, location, scenario, scenarioResult }) {
   if (!property) return null;
-  const localRegulation = property.location.localRegulation;
+  const localRegulation = location?.localRegulation ?? {};
   return (
     <section className="augur-card overflow-hidden">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -351,7 +357,7 @@ function PropertyLocationPanel({ property, scenario, scenarioResult }) {
               ["Location property tax", fmtPct((localRegulation.propertyTaxAnnualPct ?? NaN) / 100)],
               ["Local transfer tax", fmtPct((localRegulation.localTransferTaxPct ?? NaN) / 100)],
               ["Special assessment", `${fmtUsd(localRegulation.specialAssessmentAnnualUsd ?? 0)} / yr`],
-              ["Location id", scenarioResult?.summary?.locationId ?? property.location.id ?? "n/a"],
+              ["Location id", scenarioResult?.summary?.locationId ?? property.locationId ?? "n/a"],
               ["Hold period", scenario ? `${fmtNumber(scenario.holdYears)} yr` : "n/a"],
               ["Marginal tax rate", scenario ? fmtPct(scenario.marginalTaxRate / 100) : "n/a"],
             ]}
@@ -686,6 +692,10 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
     () => new Map(bootstrap.properties.map((property) => [property.id, property])),
     [bootstrap]
   );
+  const locationsById = useMemo(
+    () => new Map(bootstrap.locations.map((location) => [location.id, location])),
+    [bootstrap]
+  );
 
   function updateScenario(scenarioId, patch) {
     onChange({
@@ -787,7 +797,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                   onClick={() => onSelect(scenario.scenarioId)}
                 >
                   <div className="truncate text-sm font-semibold augur-strong">{scenario.label}</div>
-                  <div className="mt-1 truncate text-xs augur-muted">{propertyLabel(property)}</div>
+                  <div className="mt-1 truncate text-xs augur-muted">{propertyLabel(property, locationsById)}</div>
                 </button>
                 <label className="flex shrink-0 items-center gap-1 text-xs augur-muted">
                   <input
@@ -829,6 +839,10 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const partnerLabel = partner?.label ?? "Partner";
   const privateEquityEvents = scenario.privateEquityEvents ?? [];
   const usesCheckingFloorPolicy = scenarioUsesCheckingFloorPolicy(scenario);
+  const locationsById = useMemo(
+    () => new Map(bootstrap.locations.map((location) => [location.id, location])),
+    [bootstrap]
+  );
 
   function updateScenario(patch) {
     onChange({
@@ -923,7 +937,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
           >
             {bootstrap.properties.map((property) => (
               <option key={property.id} value={property.id}>
-                {property.address} · {property.location.label}
+                {property.address} · {propertyLocation(property, locationsById)?.label ?? property.locationId}
               </option>
             ))}
           </select>
@@ -1820,12 +1834,17 @@ export default function AugurApp() {
     () => new Map((bootstrap?.properties ?? []).map((property) => [property.id, property])),
     [bootstrap]
   );
+  const locationsById = useMemo(
+    () => new Map((bootstrap?.locations ?? []).map((location) => [location.id, location])),
+    [bootstrap]
+  );
 
   const selectedScenario = useMemo(
     () => normalizedScenarioSetInput?.scenarios.find((scenario) => scenario.scenarioId === selectedScenarioId) ?? null,
     [normalizedScenarioSetInput, selectedScenarioId]
   );
   const selectedProperty = selectedScenario ? propertiesById.get(selectedScenario.propertyId) : null;
+  const selectedLocation = propertyLocation(selectedProperty, locationsById);
   const selectedScenarioResult = scenarioResultById(result, selectedScenarioId);
 
   useEffect(() => {
@@ -1915,9 +1934,9 @@ export default function AugurApp() {
           <div className="min-w-0 space-y-5">
             <div className="border-b border-slate-300 pb-5 dark:border-slate-700">
               <div className="augur-eyebrow">
-                {selectedProperty?.location.label ?? "No property selected"} ·{" "}
-                {selectedProperty?.location.localRegulation
-                  ? `${selectedProperty.location.localRegulation.propertyTaxAnnualPct}% property tax`
+                {selectedLocation?.label ?? "No property selected"} ·{" "}
+                {selectedLocation?.localRegulation
+                  ? `${selectedLocation.localRegulation.propertyTaxAnnualPct}% property tax`
                   : "no local regulation"}
               </div>
               <h2 className="display mt-2 text-3xl text-slate-950 dark:text-slate-50">
@@ -1945,6 +1964,7 @@ export default function AugurApp() {
             />
             <PropertyLocationPanel
               property={selectedProperty}
+              location={selectedLocation}
               scenario={selectedScenario}
               scenarioResult={selectedScenarioResult}
             />

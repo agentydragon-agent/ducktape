@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from pydantic import Field
+
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, PropertyId
 from augur.core.schemas import ApiModel, ScenarioKnobs
@@ -64,7 +66,7 @@ class DefaultScenario(ApiModel):
 
 
 class Location(ApiModel):
-    id: str
+    id: str = Field(description="Stable relational location identity used by config, storage, and scenario joins.")
     label: str
     city: str
     state: str
@@ -73,10 +75,12 @@ class Location(ApiModel):
 
 
 class Property(ApiModel):
-    id: str
+    """Persistence-shaped property row; join to `BootstrapResponse.locations` by `location_id`."""
+
+    id: str = Field(description="Stable relational property identity used by selection, saved scenarios, and storage.")
     source_catalog_id: str
     source_property_id: str
-    location_id: str
+    location_id: str = Field(description="Foreign key for the property's canonical location row.")
     address: str
     neighborhood: str
     type: str
@@ -92,7 +96,6 @@ class Property(ApiModel):
     image_url: str | None = None
     notes: tuple[str, ...] = ()
     flags: tuple[str, ...] = ()
-    location: Location
 
 
 class BootstrapResponse(ApiModel):
