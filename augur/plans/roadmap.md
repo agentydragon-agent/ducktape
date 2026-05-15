@@ -68,6 +68,10 @@ Acceptance criteria:
   accounting detail.
 - No panel combines percentile summaries with one-rollout path rows unless the
   split is explicit and visually separated.
+- Deltas are result-view comparisons between two real scenarios, not a
+  simulator-level baseline inside each rollout. Prefer paired differences when
+  `shared_market_paths=true`; otherwise expose the choice as a distribution of
+  sampled differences between scenario distributions.
 - Full-page visual goldens cover representative distribution and trajectory
   routes so UI structure changes are reviewable in git.
 
@@ -100,9 +104,6 @@ Target browser state:
 Implementation notes:
 
 - URL state does not need stale compatibility unless explicitly requested.
-- Remove bespoke counterfactual-rent state. In a top-level multi-scenario
-  simulator, "rent instead" is just another scenario with its own inputs, not a
-  side-channel field attached to a purchase scenario.
 - Replace `scenario.actorPolicy` enums with modeled agreements between agents.
   A partner contribution should look like a contract: agent X pays agent Y some
   amount over a period and receives a specified equity/share/claim in return.

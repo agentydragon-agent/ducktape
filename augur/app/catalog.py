@@ -69,8 +69,6 @@ DEFAULT_KNOBS = ScenarioKnobs(
     custom_mortgage_rate=6.5,
     custom_mortgage_term_years=30,
     starting_portfolio_usd=0,
-    custom_counterfactual_rent_monthly_usd=0,
-    counterfactual_rent_growth=3,
     hold_years=5,
     appreciation_rate=2,
     sp500_rate=7,
@@ -93,7 +91,6 @@ DEFAULT_KNOBS = ScenarioKnobs(
     depreciable_basis_pct=80,
     financing_mode="fixed_30",
     occupancy_type="investment",
-    rent_counterfactual_mode="custom",
 )
 
 
@@ -186,7 +183,7 @@ def _owner_residence_mode_options(primary: str) -> list[OwnerResidenceModeOption
         OwnerResidenceModeOption(
             id=OwnerResidenceModeId.RENTAL_ELSEWHERE,
             label=f"{primary} rents elsewhere",
-            description=(f"{primary} does not live in a modeled owned property and pays the rent counterfactual."),
+            description=(f"{primary} does not live in a modeled owned property in this scenario."),
         ),
     ]
 

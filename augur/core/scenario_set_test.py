@@ -43,7 +43,7 @@ def _scenario_set_body(*scenario_ids: str) -> dict[str, Any]:
             "shared_market_paths": True,
         },
         "report_spec": {
-            "metrics": ["net_worth", "liquid_net_worth", "scenario_delta"],
+            "metrics": ["net_worth", "liquid_net_worth", "home_equity"],
             "percentiles": [5, 50, 95],
             "include_monthly_columns": True,
             "include_sample_paths": False,

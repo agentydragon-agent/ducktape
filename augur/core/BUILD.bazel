@@ -215,15 +215,6 @@ py_test(
 )
 
 py_test(
-    name = "legacy_economics_inventory_test",
-    srcs = ["legacy_economics_inventory_test.py"],
-    data = ["legacy_economics_inventory.json"],
-    deps = [
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "scenario_set_test",
     srcs = ["scenario_set_test.py"],
     deps = [

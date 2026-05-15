@@ -14,8 +14,6 @@ def base_knobs(**overrides: object) -> KnobsConfig:
         "custom_mortgage_rate": 6.5,
         "custom_mortgage_term_years": 20,
         "starting_portfolio_usd": 0,
-        "custom_counterfactual_rent_monthly_usd": 0,
-        "counterfactual_rent_growth": 3,
         "hold_years": 5,
         "appreciation_rate": 2,
         "sp500_rate": 7,
@@ -38,7 +36,6 @@ def base_knobs(**overrides: object) -> KnobsConfig:
         "depreciable_basis_pct": 80,
         "financing_mode": "fixed_30",
         "occupancy_type": "investment",
-        "rent_counterfactual_mode": "custom",
     }
     values.update(overrides)
     return KnobsConfig.model_validate(values)

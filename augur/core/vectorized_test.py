@@ -28,8 +28,6 @@ def base_knobs(**overrides) -> ScenarioKnobs:
         "custom_mortgage_rate": 6.5,
         "custom_mortgage_term_years": 20,
         "starting_portfolio_usd": 1_000_000,
-        "custom_counterfactual_rent_monthly_usd": 4_500,
-        "counterfactual_rent_growth": 3,
         "hold_years": 10,
         "appreciation_rate": 2.5,
         "sp500_rate": 7,
@@ -52,7 +50,6 @@ def base_knobs(**overrides) -> ScenarioKnobs:
         "depreciable_basis_pct": 80,
         "financing_mode": "fixed_30",
         "occupancy_type": "primary_residence",
-        "rent_counterfactual_mode": "custom",
     }
     values.update(overrides)
     return ScenarioKnobs.model_validate(values)
@@ -63,8 +60,6 @@ def test_non_snake_case_enum_values_are_rejected() -> None:
         base_knobs(financing_mode="fixed15")
     with pytest.raises(ValueError, match="occupancy_type"):
         base_knobs(occupancy_type="primaryResidence")
-    with pytest.raises(ValueError, match="rent_counterfactual_mode"):
-        base_knobs(rent_counterfactual_mode="selectedProperty")
 
 
 def test_single_rollout_matches_scalar_terminal_sale_path() -> None:
@@ -78,9 +73,8 @@ def test_single_rollout_matches_scalar_terminal_sale_path() -> None:
     terminal_scalar = scalar_sale_path[terminal_month]
 
     assert abs(vectorized.sale_net_proceeds_usd[0, terminal_month] - terminal_scalar.net_sale_proceeds_usd) < 1.0
-    assert abs(vectorized.rent_path_usd[0, terminal_month] - terminal_scalar.rent_path_usd) < 1.0
     assert abs(vectorized.buy_liquid_usd[0, terminal_month] - terminal_scalar.buy_liquid_usd) < 1.0
-    assert abs(vectorized.delta_usd[0, terminal_month] - terminal_scalar.delta_usd) < 1.0
+    assert abs(vectorized.buy_path_usd[0, terminal_month] - terminal_scalar.buy_path_usd) < 1.0
 
 
 def test_multi_rollout_outputs_are_array_shaped_and_finite() -> None:
@@ -92,9 +86,9 @@ def test_multi_rollout_outputs_are_array_shaped_and_finite() -> None:
     vectorized = simulate_property_vectorized(property_, knobs, paths)
 
     assert vectorized.home_value_usd.shape == (4, 121)
-    assert vectorized.delta_usd.shape == (4, 121)
-    assert np.all(np.isfinite(vectorized.delta_usd))
-    assert vectorized.delta_usd[0, -1] < vectorized.delta_usd[-1, -1]
+    assert vectorized.buy_path_usd.shape == (4, 121)
+    assert np.all(np.isfinite(vectorized.buy_path_usd))
+    assert vectorized.buy_path_usd[0, -1] < vectorized.buy_path_usd[-1, -1]
 
 
 def test_array_columns_exports_snake_case_columnar_arrays_for_js() -> None:
@@ -106,9 +100,9 @@ def test_array_columns_exports_snake_case_columnar_arrays_for_js() -> None:
     all_rollouts = array_columns(vectorized)
     one_rollout = array_columns(vectorized, rollout_index=1)
 
-    assert len(all_rollouts["delta_usd"]) == 2
-    assert len(all_rollouts["delta_usd"][0]) == 121
-    assert len(one_rollout["delta_usd"]) == 121
+    assert len(all_rollouts["buy_path_usd"]) == 2
+    assert len(all_rollouts["buy_path_usd"][0]) == 121
+    assert len(one_rollout["buy_path_usd"]) == 121
     assert "buy_liquid_usd" in one_rollout
 
 
@@ -121,17 +115,17 @@ def test_array_table_exports_first_class_columnar_payload() -> None:
     table = array_table(vectorized, rollout_index=1)
 
     assert table.row_count == 121
-    assert table.columns["delta_usd"][-1] == pytest.approx(vectorized.delta_usd[1, -1])
+    assert table.columns["buy_path_usd"][-1] == pytest.approx(vectorized.buy_path_usd[1, -1])
     assert table.columns["sale_net_proceeds_usd"][-1] == pytest.approx(vectorized.sale_net_proceeds_usd[1, -1])
 
 
 def test_columnar_table_from_rows_preserves_columns_and_rejects_ragged_rows() -> None:
     table = columnar_table_from_rows(
-        [{"year": 0, "label": "Purchase", "delta_usd": 0.0}, {"year": 1, "label": "Year 1", "delta_usd": 12.5}]
+        [{"year": 0, "label": "Purchase", "buy_path_usd": 0.0}, {"year": 1, "label": "Year 1", "buy_path_usd": 12.5}]
     )
 
     assert table.row_count == 2
-    assert table.columns == {"year": [0, 1], "label": ["Purchase", "Year 1"], "delta_usd": [0.0, 12.5]}
+    assert table.columns == {"year": [0, 1], "label": ["Purchase", "Year 1"], "buy_path_usd": [0.0, 12.5]}
     with pytest.raises(ValueError, match="row 1 keys"):
         columnar_table_from_rows([{"year": 0, "label": "Purchase"}, {"year": 1}])
 

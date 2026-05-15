@@ -10,7 +10,6 @@ from augur.core.augur_accounting import (
     DEPRECIATION_LIFE_YEARS,
     MONTHS_PER_YEAR,
     PROP_13_ANNUAL_CAP,
-    RENT_COUNTERFACTUAL_SELECTED_PROPERTY,
     amortization_schedule,
     occupied_month_count,
     resolve_financing,
@@ -125,13 +124,10 @@ class VectorizedSimulation:
     sale_net_proceeds_usd: np.ndarray
     sale_gross_equity_usd: np.ndarray
     sale_cg_tax_usd: np.ndarray
-    rent_path_usd: np.ndarray
     buy_liquid_usd: np.ndarray
     buy_path_usd: np.ndarray
-    delta_usd: np.ndarray
     project_buy_liquid_usd: np.ndarray
     project_own_usd: np.ndarray
-    project_delta_usd: np.ndarray
 
 
 def array_columns(record: Any, *, rollout_index: int | None = None) -> dict[str, Any]:
@@ -442,15 +438,6 @@ def simulate_property_vectorized(
     buy_liquid = portfolio * (knobs.starting_portfolio_usd + owner_cash_units)
     project_buy_liquid = portfolio * (knobs.starting_portfolio_usd + property_cash_units)
 
-    if knobs.rent_counterfactual_mode == RENT_COUNTERFACTUAL_SELECTED_PROPERTY:
-        base_rent = property_.rent_zestimate_usd or 0.0
-    else:
-        base_rent = knobs.custom_counterfactual_rent_monthly_usd
-    counterfactual_rent = np.zeros((n, hold_months + 1), dtype="float64")
-    counterfactual_rent[:, 1:] = base_rent * market_paths.rent_multipliers[:, :hold_months]
-    counterfactual_units = np.cumsum(counterfactual_rent / portfolio, axis=1)
-    rent_path = portfolio * (knobs.starting_portfolio_usd - counterfactual_units)
-
     buy_path = buy_liquid + sale.net_proceeds_usd
     project_own = project_buy_liquid + sale.net_proceeds_usd
     return VectorizedSimulation(
@@ -500,13 +487,10 @@ def simulate_property_vectorized(
         sale_net_proceeds_usd=sale.net_proceeds_usd,
         sale_gross_equity_usd=sale.gross_equity_usd,
         sale_cg_tax_usd=sale.cg_tax_usd,
-        rent_path_usd=rent_path,
         buy_liquid_usd=buy_liquid,
         buy_path_usd=buy_path,
-        delta_usd=buy_path - rent_path,
         project_buy_liquid_usd=project_buy_liquid,
         project_own_usd=project_own,
-        project_delta_usd=project_own - rent_path,
     )
 
 

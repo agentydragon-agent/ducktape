@@ -32,7 +32,6 @@ FINANCING_MODE_FIXED_30 = "fixed_30"
 FINANCING_MODE_FIXED_15 = "fixed_15"
 FINANCING_MODE_CUSTOM = "custom"
 FINANCING_MODE_CASH = "cash"
-RENT_COUNTERFACTUAL_SELECTED_PROPERTY = "selected_property"
 
 
 def year_index_for_month(month_index: int) -> int:
@@ -622,28 +621,6 @@ def portfolio_growth_factor(
     return to_value / from_value
 
 
-def counterfactual_rent_multiplier(knobs: ScenarioKnobs, month_index: int) -> float:
-    values = (
-        knobs.counterfactual_rent_multipliers
-        if knobs.counterfactual_rent_multipliers is not None
-        else knobs.rent_multipliers
-    )
-    return path_multiplier(
-        values,
-        month_index - 1,
-        (1 + knobs.counterfactual_rent_growth / 100) ** ((month_index - 1) / MONTHS_PER_YEAR),
-        "counterfactual_rent_multipliers",
-    )
-
-
-def counterfactual_rent_for_month(property_: PropertyRequest, knobs: ScenarioKnobs, month_index: int) -> float:
-    if knobs.rent_counterfactual_mode == RENT_COUNTERFACTUAL_SELECTED_PROPERTY:
-        base_rent = property_.rent_zestimate_usd or 0.0
-    else:
-        base_rent = knobs.custom_counterfactual_rent_monthly_usd
-    return base_rent * counterfactual_rent_multiplier(knobs, month_index)
-
-
 def future_value_of_signed_cash_rows(rows: list[LedgerRow], end_month_index: int, knobs: ScenarioKnobs) -> float:
     # `require_path=False`: the deterministic analysis path runs against bare
     # knobs (no `portfolio_multipliers` array), and the stochastic flow always
@@ -656,22 +633,6 @@ def future_value_of_starting_portfolio(knobs: ScenarioKnobs, end_month_index: in
     return knobs.starting_portfolio_usd * portfolio_multiplier(knobs, end_month_index, False)
 
 
-def future_value_of_counterfactual_rent(
-    property_: PropertyRequest, knobs: ScenarioKnobs, end_month_index: int
-) -> float:
-    total = 0.0
-    for month_index in range(1, end_month_index + 1):
-        growth = portfolio_growth_factor(knobs, month_index, end_month_index, False)
-        total += counterfactual_rent_for_month(property_, knobs, month_index) * growth
-    return total
-
-
-def counterfactual_rent_paid(property_: PropertyRequest, knobs: ScenarioKnobs, end_month_index: int) -> float:
-    return sum(
-        counterfactual_rent_for_month(property_, knobs, month_index) for month_index in range(1, end_month_index + 1)
-    )
-
-
 def scenario_portfolio_at_month(
     simulation: SimulationResult, month_index: int, cash_rows: list[LedgerRow], sale_claim: float = 0
 ) -> float:
@@ -681,12 +642,6 @@ def scenario_portfolio_at_month(
             [row for row in cash_rows if row.month_index <= month_index], month_index, simulation.knobs
         )
         + sale_claim
-    )
-
-
-def rent_portfolio_at_month(simulation: SimulationResult, month_index: int) -> float:
-    return future_value_of_starting_portfolio(simulation.knobs, month_index) - future_value_of_counterfactual_rent(
-        simulation.property, simulation.knobs, month_index
     )
 
 
@@ -736,7 +691,6 @@ def project_monthly_sale_path(simulation: SimulationResult) -> list[MonthlySaleP
             suspended_passive_losses=snapshot["suspended_passive_losses_usd"],
         )
         owner_sale_claim = sale.net_sale_proceeds_usd
-        rent_path = rent_portfolio_at_month(simulation, month_index)
         buy_liquid = scenario_portfolio_at_month(simulation, month_index, owner_cash_rows, 0)
         buy_path = buy_liquid + owner_sale_claim
         project_buy_liquid = scenario_portfolio_at_month(simulation, month_index, property_cash_rows, 0)
@@ -744,16 +698,11 @@ def project_monthly_sale_path(simulation: SimulationResult) -> list[MonthlySaleP
         data.append(
             MonthlySalePathRow(
                 month_index=month_index,
-                rent_path_usd=round(rent_path),
                 buy_liquid_usd=round(buy_liquid),
                 buy_locked_equity_usd=round(owner_sale_claim),
                 buy_path_usd=round(buy_path),
-                sp500_usd=round(rent_path),
-                own_usd=round(buy_path),
-                delta_usd=round(buy_path - rent_path),
                 project_buy_liquid_usd=round(project_buy_liquid),
                 project_own_usd=round(project_buy_path),
-                project_delta_usd=round(project_buy_path - rent_path),
                 net_sale_proceeds_usd=round(sale.net_sale_proceeds_usd),
                 gross_equity_usd=round(sale.gross_equity_usd),
                 owner_sale_claim_usd=round(owner_sale_claim),

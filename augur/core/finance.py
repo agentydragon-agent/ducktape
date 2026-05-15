@@ -13,7 +13,7 @@ class ConcentratedHoldingSnapshot(ApiModel):
     basis_per_unit_usd: NonNegativeFloat = 0.0
     valuation_source: str = ""
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def value_usd(self) -> float:
         return self.units * self.fmv_usd_per_unit

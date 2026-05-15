@@ -83,7 +83,6 @@ class ActorRole(StrEnum):
     EQUITY_BUILDING_OCCUPANT = "equity_building_occupant"
     TENANT = "tenant"
     LANDLORD = "landlord"
-    COUNTERFACTUAL_RENTER = "counterfactual_renter"
 
 
 class AccountType(StrEnum):
@@ -157,7 +156,6 @@ class FinancingMode(StrEnum):
 class ReportMetric(StrEnum):
     NET_WORTH = "net_worth"
     LIQUID_NET_WORTH = "liquid_net_worth"
-    SCENARIO_DELTA = "scenario_delta"
     HOME_EQUITY = "home_equity"
     ACTOR_EQUITY = "actor_equity"
     PROPERTY_VALUE = "property_value"
@@ -592,7 +590,6 @@ class ReportSpec(ApiModel):
     metrics: tuple[ReportMetric, ...] = (
         ReportMetric.NET_WORTH,
         ReportMetric.LIQUID_NET_WORTH,
-        ReportMetric.SCENARIO_DELTA,
         ReportMetric.HOME_EQUITY,
     )
     percentiles: tuple[float, ...] = (5, 25, 50, 75, 95)

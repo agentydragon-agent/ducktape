@@ -64,8 +64,6 @@ const bootstrap = {
     depreciableBasisPct: 80,
     marginalTaxRate: 40,
     capGainsRate: 30,
-    customCounterfactualRentMonthlyUsd: 4_800,
-    counterfactualRentGrowth: 3,
   },
   actorPolicyOptions: [
     { id: "owner_only", label: "Alpha only" },
@@ -160,8 +158,6 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     depreciableBasisPct: 75,
     marginalTaxRate: 37,
     capGainsRate: 28,
-    customCounterfactualRentMonthlyUsd: 5_100,
-    counterfactualRentGrowth: 4.2,
     privateEquityValueUsd: 123_000,
     privateEquityUnits: 456,
     privateEquitySaleRequestAmountUsd: 25_000,
@@ -269,7 +265,6 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
     downPaymentPct: 35,
     marginalTaxRate: 39,
     vacancyPct: 7,
-    customCounterfactualRentMonthlyUsd: 5_300,
     privateEquityValueUsd: 987_000,
     privateEquityUnits: 1_234,
     privateEquitySaleRequestAmountUsd: 250_000,
@@ -291,7 +286,6 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   assert.equal(decoded.scenarios[0].downPaymentPct, 35);
   assert.equal(decoded.scenarios[0].marginalTaxRate, 39);
   assert.equal(decoded.scenarios[0].vacancyPct, 7);
-  assert.equal(decoded.scenarios[0].customCounterfactualRentMonthlyUsd, 5_300);
   assert.equal(decoded.scenarios[0].privateEquityValueUsd, undefined);
   assert.equal(decoded.scenarios[0].privateEquityUnits, 1_234);
   assert.equal(normalizeScenarioSetInput(decoded, bootstrap).scenarios[0].privateEquityValueUsd, 24_680);

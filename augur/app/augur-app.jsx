@@ -1138,7 +1138,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
         </ControlGrid>
       </ControlSection>
 
-      <ControlSection title="Rental and rent counterfactual">
+      <ControlSection title="Rental assumptions">
         <ControlGrid>
           <NumberField
             label="Vacancy"
@@ -1180,20 +1180,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             value={scenario.roomVacancyPct}
             onChange={(roomVacancyPct) => updateScenario({ roomVacancyPct })}
             suffix="%"
-          />
-          <MoneyField
-            label="Counterfactual rent"
-            step={100}
-            value={scenario.customCounterfactualRentMonthlyUsd}
-            onChange={(customCounterfactualRentMonthlyUsd) => updateScenario({ customCounterfactualRentMonthlyUsd })}
-            suffix="/ mo"
-          />
-          <NumberField
-            label="Rent growth"
-            step={0.5}
-            value={scenario.counterfactualRentGrowth}
-            onChange={(counterfactualRentGrowth) => updateScenario({ counterfactualRentGrowth })}
-            suffix="% / yr"
           />
         </ControlGrid>
       </ControlSection>

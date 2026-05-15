@@ -13,7 +13,7 @@ const DEFAULT_MARKET_REQUEST = {
 };
 
 const DEFAULT_REPORT_SPEC = {
-  metrics: ["net_worth", "liquid_net_worth", "scenario_delta", "home_equity", "actor_equity", "property_value"],
+  metrics: ["net_worth", "liquid_net_worth", "home_equity", "actor_equity", "property_value"],
   percentiles: [5, 25, 50, 75, 95],
   includeMonthlyColumns: true,
   includeSamplePaths: true,
@@ -196,14 +196,6 @@ export function createScenarioInput(bootstrap, overrides = {}) {
     depreciableBasisPct: finiteNumber(overrides.depreciableBasisPct, defaultKnobs.depreciableBasisPct ?? 0),
     marginalTaxRate: finiteNumber(overrides.marginalTaxRate, defaultKnobs.marginalTaxRate ?? 0),
     capGainsRate: finiteNumber(overrides.capGainsRate, defaultKnobs.capGainsRate ?? 0),
-    customCounterfactualRentMonthlyUsd: finiteNumber(
-      overrides.customCounterfactualRentMonthlyUsd,
-      defaultKnobs.customCounterfactualRentMonthlyUsd ?? 0
-    ),
-    counterfactualRentGrowth: finiteNumber(
-      overrides.counterfactualRentGrowth,
-      defaultKnobs.counterfactualRentGrowth ?? 0
-    ),
     privateEquityValueUsd: privateEquityValueUsdForUnits(bootstrap, privateEquityUnits),
     privateEquityUnits,
     privateEquitySaleRequestAmountUsd: finiteNumber(overrides.privateEquitySaleRequestAmountUsd, 0),
@@ -305,14 +297,6 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
     depreciableBasisPct: finiteNumber(scenario?.depreciableBasisPct, defaultScenario.depreciableBasisPct),
     marginalTaxRate: finiteNumber(scenario?.marginalTaxRate, defaultScenario.marginalTaxRate),
     capGainsRate: finiteNumber(scenario?.capGainsRate, defaultScenario.capGainsRate),
-    customCounterfactualRentMonthlyUsd: finiteNumber(
-      scenario?.customCounterfactualRentMonthlyUsd,
-      defaultScenario.customCounterfactualRentMonthlyUsd
-    ),
-    counterfactualRentGrowth: finiteNumber(
-      scenario?.counterfactualRentGrowth,
-      defaultScenario.counterfactualRentGrowth
-    ),
     privateEquityValueUsd,
     privateEquityUnits,
     privateEquitySaleRequestAmountUsd: finiteNumber(
@@ -650,8 +634,6 @@ function serializableScenario(scenario) {
     depreciableBasisPct: scenario.depreciableBasisPct,
     marginalTaxRate: scenario.marginalTaxRate,
     capGainsRate: scenario.capGainsRate,
-    customCounterfactualRentMonthlyUsd: scenario.customCounterfactualRentMonthlyUsd,
-    counterfactualRentGrowth: scenario.counterfactualRentGrowth,
     privateEquityUnits: scenario.privateEquityUnits,
     privateEquitySaleRequestAmountUsd: scenario.privateEquitySaleRequestAmountUsd,
     privateEquitySaleRequestMonth: scenario.privateEquitySaleRequestMonth,

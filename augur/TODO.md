@@ -33,10 +33,6 @@ second ordered roadmap.
 - [ ] Remove or implement schema-only policy types: `LiquidityReservePolicy`, `PortfolioTargetRebalancePolicy`, and `ManualEventSchedulePolicy`.
 - [ ] Make result inspection typed and local. String metric names via `series("cash_usd")` are acceptable as a compatibility layer, but primary callers should get discoverable typed metric/rollout/detail helpers.
 - [ ] Honor or remove `ReportSpec.include_monthly_columns`, `include_sample_paths`, and unsupported `MarketRequest.shared_market_paths=false`.
-- [ ] Remove special counterfactual-rent state from the app. Augur is now a
-      top-level multi-scenario simulator, so a "rent instead" counterfactual should
-      be represented as another scenario rather than tracked as bespoke fields
-      alongside a purchase scenario.
 - [ ] Clarify initial state vs scheduled transitions. Property purchase, financing, ownership, future sale, rental transition, and PE liquidity should not be split across fields/events that can contradict each other.
 - [ ] Reduce single-property/global assumptions. Scenario-level `property_selection`, `financing`, `rental_plan`, and `tax_profile` should eventually become initial positions, per-property settings, or per-actor/accounting inputs as the simulator grows.
 - [ ] Replace built-in `LocationId` enum with database-like location entities, parallel to properties. A location should carry regulation/tax/modeling knobs that downstream regulation and tax code interprets, not require hardcoded enum extension.
@@ -69,6 +65,12 @@ second ordered roadmap.
       first split moved the liquidity/stock-sales panel into the trajectory view so
       "Final SP500" is sourced from the selected rollout instead of a terminal P50
       next to a path table; keep applying that rule as result helpers become typed.
+- [ ] Add explicit comparison views for deltas between two scenario
+      distributions. The simulator should not bake a baseline/counterfactual
+      into each rollout; a delta view should compare two real scenarios, either
+      as the distribution of differences between samples from both
+      distributions or, when `shared_market_paths=true`, as paired differences
+      conditioned on the same underlying market rollout.
 - [ ] Adopt a boring standard React UI component framework, or explicitly
       document why Augur is not doing so. The current app uses Tailwind utilities
       without a component kit, and details like input prefixes/suffixes/adornments

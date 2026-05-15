@@ -52,8 +52,6 @@ class KnobsConfig(ApiModel):
     custom_mortgage_rate: float
     custom_mortgage_term_years: float
     starting_portfolio_usd: float
-    custom_counterfactual_rent_monthly_usd: float
-    counterfactual_rent_growth: float
     hold_years: float
     appreciation_rate: float
     sp500_rate: float
@@ -76,7 +74,6 @@ class KnobsConfig(ApiModel):
     depreciable_basis_pct: float
     financing_mode: Literal["cash", "fixed_30", "fixed_15", "custom"]
     occupancy_type: Literal["primary_residence", "second_home", "investment"]
-    rent_counterfactual_mode: Literal["custom", "selected_property"]
 
 
 class ScenarioKnobs(KnobsConfig):
@@ -92,7 +89,6 @@ class ScenarioKnobs(KnobsConfig):
     sale_home_value_multipliers: list[float] | None = None
     portfolio_multipliers: list[float] | None = None
     rent_multipliers: list[float] | None = None
-    counterfactual_rent_multipliers: list[float] | None = None
     expense_inflation_multipliers: list[float] | None = None
 
     @classmethod
@@ -249,16 +245,11 @@ class SimulationResult(InternalModel):
 
 class MonthlySalePathRow(InternalModel):
     month_index: int
-    rent_path_usd: float
     buy_liquid_usd: float
     buy_locked_equity_usd: float
     buy_path_usd: float
-    sp500_usd: float
-    own_usd: float
-    delta_usd: float
     project_buy_liquid_usd: float
     project_own_usd: float
-    project_delta_usd: float
     net_sale_proceeds_usd: float
     gross_equity_usd: float
     owner_sale_claim_usd: float
