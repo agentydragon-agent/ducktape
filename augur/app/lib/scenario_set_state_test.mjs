@@ -235,7 +235,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
       asset_id: "private_equity_private",
       asset_type: "private_equity",
       owner_actor_id: "alpha",
-      value_usd: 123_000,
+      value_usd: 9_120,
       units: 456,
       cost_basis_usd: 0,
     }
@@ -291,8 +291,9 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   assert.equal(decoded.scenarios[0].marginalTaxRate, 39);
   assert.equal(decoded.scenarios[0].vacancyPct, 7);
   assert.equal(decoded.scenarios[0].customCounterfactualRentMonthlyUsd, 5_300);
-  assert.equal(decoded.scenarios[0].privateEquityValueUsd, 987_000);
+  assert.equal(decoded.scenarios[0].privateEquityValueUsd, undefined);
   assert.equal(decoded.scenarios[0].privateEquityUnits, 1_234);
+  assert.equal(normalizeScenarioSetInput(decoded, bootstrap).scenarios[0].privateEquityValueUsd, 24_680);
   assert.equal(decoded.scenarios[0].privateEquitySaleRequestAmountUsd, 250_000);
   assert.equal(decoded.scenarios[0].privateEquitySaleRequestMonth, 24);
   assert.equal(decoded.scenarios[0].privateEquitySaleProceedsDestination, "generic_sp500_stock");

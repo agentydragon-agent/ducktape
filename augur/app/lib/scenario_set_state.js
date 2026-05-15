@@ -67,6 +67,18 @@ function holdingValueUsd(holding) {
   return finiteNumber(holding?.valueUsd, finiteNumber(holding?.units, 0) * finiteNumber(holding?.fmvUsdPerUnit, 0));
 }
 
+export function privateEquityCurrentUnitPriceUsd(bootstrap) {
+  const holding = defaultConcentratedHolding(bootstrap);
+  const fmv = finiteNumber(holding?.fmvUsdPerUnit, NaN);
+  if (Number.isFinite(fmv)) return fmv;
+  const units = finiteNumber(holding?.units, 0);
+  return units > 0 ? holdingValueUsd(holding) / units : 0;
+}
+
+export function privateEquityValueUsdForUnits(bootstrap, units) {
+  return Math.max(0, finiteNumber(units, 0)) * privateEquityCurrentUnitPriceUsd(bootstrap);
+}
+
 function scenarioIdFromIndex(index) {
   return `scenario_${index + 1}`;
 }
@@ -116,6 +128,7 @@ export function createScenarioInput(bootstrap, overrides = {}) {
   const property = propertyById(bootstrap, propertyId);
   const defaultKnobs = bootstrap?.defaultKnobs ?? {};
   const holding = defaultConcentratedHolding(bootstrap);
+  const privateEquityUnits = finiteNumber(overrides.privateEquityUnits, holding?.units ?? 0);
   return {
     scenarioId: overrides.scenarioId ?? scenarioIdFromIndex(index),
     label: overrides.label ?? (property?.address ? `${property.address}` : `Scenario ${index + 1}`),
@@ -185,8 +198,8 @@ export function createScenarioInput(bootstrap, overrides = {}) {
       overrides.counterfactualRentGrowth,
       defaultKnobs.counterfactualRentGrowth ?? 0
     ),
-    privateEquityValueUsd: finiteNumber(overrides.privateEquityValueUsd, holdingValueUsd(holding)),
-    privateEquityUnits: finiteNumber(overrides.privateEquityUnits, holding?.units ?? 0),
+    privateEquityValueUsd: privateEquityValueUsdForUnits(bootstrap, privateEquityUnits),
+    privateEquityUnits,
     privateEquitySaleRequestAmountUsd: finiteNumber(overrides.privateEquitySaleRequestAmountUsd, 0),
     privateEquitySaleRequestMonth: nullableNumber(
       overrides.privateEquitySaleRequestMonth,
@@ -232,6 +245,8 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
   const rentalUsePolicyIds = optionIds(bootstrap?.rentalUsePolicyOptions);
   const liquidReservePolicyIds = optionIds(bootstrap?.liquidReservePolicyOptions);
   const defaultScenario = createScenarioInput(bootstrap, { index });
+  const privateEquityUnits = finiteNumber(scenario?.privateEquityUnits, defaultScenario.privateEquityUnits);
+  const privateEquityValueUsd = privateEquityValueUsdForUnits(bootstrap, privateEquityUnits);
   const scenarioId =
     typeof scenario?.scenarioId === "string" && /^[a-z0-9][a-z0-9_-]*$/.test(scenario.scenarioId)
       ? scenario.scenarioId
@@ -292,8 +307,8 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
       scenario?.counterfactualRentGrowth,
       defaultScenario.counterfactualRentGrowth
     ),
-    privateEquityValueUsd: finiteNumber(scenario?.privateEquityValueUsd, defaultScenario.privateEquityValueUsd),
-    privateEquityUnits: finiteNumber(scenario?.privateEquityUnits, defaultScenario.privateEquityUnits),
+    privateEquityValueUsd,
+    privateEquityUnits,
     privateEquitySaleRequestAmountUsd: finiteNumber(
       scenario?.privateEquitySaleRequestAmountUsd,
       defaultScenario.privateEquitySaleRequestAmountUsd
@@ -483,6 +498,8 @@ function scenarioEvents(scenario, property, bootstrap) {
 
 function scenarioBalanceSheet(scenario, bootstrap) {
   const { primary } = agentsByRole(bootstrap);
+  const privateEquityUnits = Math.max(0, finiteNumber(scenario.privateEquityUnits, 0));
+  const privateEquityValueUsd = privateEquityValueUsdForUnits(bootstrap, privateEquityUnits);
   const assets = [
     {
       assetId: "sp500",
@@ -492,13 +509,13 @@ function scenarioBalanceSheet(scenario, bootstrap) {
       costBasisUsd: scenario.startingPortfolioUsd,
     },
   ];
-  if (scenario.privateEquityValueUsd > 0 || scenario.privateEquityUnits > 0) {
+  if (privateEquityValueUsd > 0 || privateEquityUnits > 0) {
     assets.push({
       assetId: "private_equity_private",
       assetType: "private_equity",
       ownerActorId: primary.actorId,
-      valueUsd: scenario.privateEquityValueUsd,
-      units: Math.max(0, scenario.privateEquityUnits),
+      valueUsd: privateEquityValueUsd,
+      units: privateEquityUnits,
       costBasisUsd: 0,
     });
   }
@@ -628,7 +645,6 @@ function serializableScenario(scenario) {
     capGainsRate: scenario.capGainsRate,
     customCounterfactualRentMonthlyUsd: scenario.customCounterfactualRentMonthlyUsd,
     counterfactualRentGrowth: scenario.counterfactualRentGrowth,
-    privateEquityValueUsd: scenario.privateEquityValueUsd,
     privateEquityUnits: scenario.privateEquityUnits,
     privateEquitySaleRequestAmountUsd: scenario.privateEquitySaleRequestAmountUsd,
     privateEquitySaleRequestMonth: scenario.privateEquitySaleRequestMonth,

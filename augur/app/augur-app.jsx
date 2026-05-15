@@ -6,6 +6,8 @@ import {
   createDefaultScenarioSetInput,
   createScenarioInput,
   normalizeScenarioSetInput,
+  privateEquityCurrentUnitPriceUsd,
+  privateEquityValueUsdForUnits,
   scenarioSetInputFromUrlSearch,
   scenarioSetInputToRequest,
   searchWithScenarioSetInput,
@@ -267,6 +269,18 @@ function NumberField({ label, value, onChange, min = 0, step = 1000, prefix = nu
 
 function MoneyField(props) {
   return <NumberField prefix="$" {...props} />;
+}
+
+function ReadOnlyMetricField({ label, value, detail = null }) {
+  return (
+    <div className="min-w-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/70">
+      <div className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div className="mono truncate text-sm font-semibold augur-strong">{value}</div>
+      {detail && <div className="mt-1 truncate text-xs augur-muted">{detail}</div>}
+    </div>
+  );
 }
 
 function SelectField({ label, value, onChange, options }) {
@@ -875,6 +889,8 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const usesCheckingFloorPolicy = scenarioUsesCheckingFloorPolicy(scenario);
   const concentratedHolding = primaryConcentratedHolding(bootstrap);
   const privateEquityLabel = concentratedHolding?.label ?? "Private equity";
+  const privateEquityCurrentValueUsd = privateEquityValueUsdForUnits(bootstrap, scenario.privateEquityUnits);
+  const privateEquityUnitPriceUsd = privateEquityCurrentUnitPriceUsd(bootstrap);
   const locationsById = useMemo(
     () => new Map(bootstrap.locations.map((location) => [location.id, location])),
     [bootstrap]
@@ -1207,10 +1223,10 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               value={scenario.startingPortfolioUsd}
               onChange={(startingPortfolioUsd) => updateScenario({ startingPortfolioUsd })}
             />
-            <MoneyField
+            <ReadOnlyMetricField
               label={`${privateEquityLabel} value`}
-              value={scenario.privateEquityValueUsd}
-              onChange={(privateEquityValueUsd) => updateScenario({ privateEquityValueUsd })}
+              value={fmtUsd(privateEquityCurrentValueUsd)}
+              detail={Number.isFinite(privateEquityUnitPriceUsd) ? `${fmtUsd(privateEquityUnitPriceUsd)} / unit` : null}
             />
             <NumberField
               label={`${privateEquityLabel} units`}
