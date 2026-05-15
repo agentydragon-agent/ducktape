@@ -1547,10 +1547,13 @@ function MarketMetadataPanel({ result }) {
   const sourceEntries = Object.entries(metadata.sourceMetadata ?? {});
   const metadataValue = (value) => (typeof value === "object" ? JSON.stringify(value) : String(value));
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Market model metadata</div>
-      </div>
+    <details className="augur-card overflow-hidden">
+      <summary className="cursor-pointer border-b border-slate-200 px-4 py-3 marker:text-slate-500 dark:border-slate-700 dark:marker:text-slate-400">
+        <span className="augur-eyebrow">Market model metadata</span>
+        <span className="ml-3 text-xs augur-muted">
+          {metadata.marketModelId ?? "unknown model"} · {fmtInteger(metadata.rolloutCount)} rollouts
+        </span>
+      </summary>
       <div className="grid gap-4 p-4 lg:grid-cols-2">
         <div className="min-w-0">
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
@@ -1588,7 +1591,7 @@ function MarketMetadataPanel({ result }) {
           )}
         </div>
       </div>
-    </section>
+    </details>
   );
 }
 
