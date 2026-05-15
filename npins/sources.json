@@ -33,12 +33,16 @@
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
     "skills": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-50afe0c19d51/all_skills_tar.tar",
-      "sha256": "UK/gwZ1RSclsu1RJIOPYO9Z/EbNHkGCwDQIEZBG2kzQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-5927ccb99598/all_skills_tar.tar",
+      "sha256": "WSfMuZWY3q/PoSdYS9Wb8Y+s147Z9nDrxCckYQIUH5U="
     },
     "claude-hook-rs": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-814f6c289ab9/claude_hook",
       "sha256": "gU9sKJq56TlnpstcqHFa812KHWF3nsZlX9i2bk5WE+4="
+    },
+    "gnome-shell-claude-quota": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gnome-shell-claude-quota-181b8d766cab/claude-quota.zip",
+      "sha256": "GBuNdmyrdqC5nmhzIeLhCqskOD9o+OYP3AkOxADWq5M="
     }
   }
 }
