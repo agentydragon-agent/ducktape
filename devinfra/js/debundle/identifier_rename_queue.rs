@@ -53,7 +53,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::JsPipelineArtifact;
+use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId};
 use js_ast::ParsedJsModule;
 
 /// The schema version of the emitted JSON. Bump whenever the on-disk
@@ -98,21 +98,23 @@ pub struct IdentifierRenameQueue {
 /// post-materialize. Pure function over the artifact; does not touch
 /// the filesystem.
 pub fn compute_identifier_rename_queue(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<IdentifierRenameQueue> {
-    compute_with_clock(artifact, SystemTime::now())
+    compute_with_clock(artifact, decomposition_by_chunk, SystemTime::now())
 }
 
 /// Same as [`compute_identifier_rename_queue`] but with an
 /// injected wall clock for deterministic testing.
 pub fn compute_with_clock(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     now: SystemTime,
 ) -> Result<IdentifierRenameQueue> {
     // Per-chunk, per-file: walk the final AST to identify top-level
     // declarations whose names still match input-bundle names, then
     // tally references across the whole bundle.
-    let input_names_by_chunk = input_bundle_names_by_chunk(artifact);
+    let input_names_by_chunk = input_bundle_names_by_chunk(artifact, decomposition_by_chunk);
 
     // Map each current name -> list of declaration sites that bind it.
     // Most minified names are unique across the bundle, but in principle
@@ -253,15 +255,18 @@ pub fn compute_with_clock(
     })
 }
 
-fn input_bundle_names_by_chunk(artifact: &JsPipelineArtifact) -> HashMap<String, HashSet<String>> {
+fn input_bundle_names_by_chunk(
+    artifact: &ChunkBundle,
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+) -> HashMap<String, HashSet<String>> {
     let mut names_by_chunk = HashMap::<String, HashSet<String>>::new();
     for chunk in &artifact.chunks {
         let chunk_name = artifact.chunk_table.name(chunk.chunk_id).to_string();
         let names = names_by_chunk.entry(chunk_name).or_default();
-        for declaration in &chunk.manifest.kept_top_level_declarations {
+        for declaration in &chunk.analysis.kept_top_level_declarations {
             names.extend(declaration.names.iter().cloned());
         }
-        for import in &chunk.manifest.imports {
+        for import in &chunk.analysis.imports {
             names.extend(
                 import
                     .specifiers
@@ -269,8 +274,10 @@ fn input_bundle_names_by_chunk(artifact: &JsPipelineArtifact) -> HashMap<String,
                     .map(|specifier| specifier.local.clone()),
             );
         }
-        for lowering in chunk.manifest.selected_module_lowerings.iter().flatten() {
-            names.extend(lowering.binding_names.iter().cloned());
+        if let Some(decomp) = decomposition_by_chunk.get(&chunk.chunk_id) {
+            for lowering in &decomp.selected_module_lowerings {
+                names.extend(lowering.binding_names.iter().cloned());
+            }
         }
     }
     names_by_chunk
@@ -292,7 +299,7 @@ pub fn write_queue(dir: &Path, queue: &IdentifierRenameQueue) -> Result<std::pat
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&path, serde_json::to_string_pretty(queue)? + "\n")?;
+    serde_json::to_writer_pretty(&std::fs::File::create(&path)?, queue)?;
     Ok(path)
 }
 

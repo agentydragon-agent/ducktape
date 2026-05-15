@@ -11,7 +11,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    ArtifactIndexes, ChunkId, ChunkTable, JsFile, JsFileAstParts, JsPipelineArtifact,
+    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, JsFile, JsFileAstParts,
     get_chunk_entry_path, list_chunk_file_paths, manifest_relative_path, path_from_module_path,
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
@@ -62,7 +62,7 @@ pub struct RenameVendorExportsManifest {
 }
 
 pub struct RenameVendorExportsResult {
-    pub artifact: JsPipelineArtifact,
+    pub artifact: ChunkBundle,
     pub manifest: RenameVendorExportsManifest,
 }
 
@@ -95,8 +95,9 @@ pub struct VendorResolutionManifest {
 }
 
 pub struct SwapVendorChunksResult {
-    pub artifact: JsPipelineArtifact,
+    pub artifact: ChunkBundle,
     pub manifest: VendorResolutionManifest,
+    pub removed_chunk_ids: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -128,7 +129,7 @@ pub struct SwapVendorOptions<'a> {
 }
 
 pub fn apply_vendor_annotations(
-    artifact: &JsPipelineArtifact,
+    artifact: &ChunkBundle,
     vendor: &BTreeMap<String, VendorMark>,
 ) -> Result<VendorAnnotationsManifest> {
     let mut summaries = Vec::with_capacity(vendor.len());
@@ -173,7 +174,7 @@ pub fn apply_vendor_annotations(
 }
 
 pub fn rename_vendor_exports(
-    mut artifact: JsPipelineArtifact,
+    mut artifact: ChunkBundle,
     vendor: &BTreeMap<String, VendorMark>,
     references: &ArtifactIndexes,
 ) -> Result<RenameVendorExportsResult> {
@@ -546,7 +547,7 @@ fn resolve_vendor_swap(
 }
 
 pub fn swap_vendor_chunks(
-    mut artifact: JsPipelineArtifact,
+    mut artifact: ChunkBundle,
     vendor: &BTreeMap<String, VendorMark>,
     references: &ArtifactIndexes,
     options: SwapVendorOptions<'_>,
@@ -606,25 +607,21 @@ pub fn swap_vendor_chunks(
         .into_par_iter()
         .map(|job| resolve_vendor_swap(job, &import_alignment_index, &options))
         .collect::<Result<Vec<_>>>()?;
-    let mut resolutions = BTreeMap::<String, VendorResolution>::new();
-    for resolution in resolved {
-        let chunk_id = chunk_table
-            .get(&resolution.chunk_id)
-            .context("swap_vendor_chunks resolution references unknown chunk")?;
-        artifact.remove_chunk(chunk_id);
-        resolutions.insert(resolution.chunk_path.clone(), resolution);
-    }
+    let resolutions: BTreeMap<String, VendorResolution> = resolved
+        .into_iter()
+        .map(|resolution| {
+            let chunk_id = chunk_table
+                .get(&resolution.chunk_id)
+                .context("swap_vendor_chunks resolution references unknown chunk")?;
+            artifact.remove_chunk(chunk_id);
+            Ok((resolution.chunk_path.clone(), resolution))
+        })
+        .collect::<Result<_>>()?;
 
-    let chunk_count = artifact.list_chunk_ids().len();
-    let removed: BTreeSet<String> = resolutions
+    let removed_chunk_ids: BTreeSet<String> = resolutions
         .keys()
         .map(|chunk_path| chunk_id_from_chunk_path(chunk_path, "swap_vendor_chunks"))
         .collect::<Result<BTreeSet<_>>>()?;
-    artifact.root_manifest.counts.chunks = chunk_count;
-    artifact
-        .root_manifest
-        .chunks
-        .retain(|chunk| !removed.contains(&chunk.chunk_id));
 
     if options.write
         && let Some(output_manifest_path) = options.output_manifest_path
@@ -651,6 +648,7 @@ pub fn swap_vendor_chunks(
             resolutions,
             counts: VendorResolutionCounts { swapped },
         },
+        removed_chunk_ids,
     })
 }
 
@@ -1376,12 +1374,15 @@ fn is_valid_identifier(name: &str) -> bool {
 mod tests {
     use super::*;
     use artifact::{
-        ChunkArtifact, ChunkManifest, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
+        ChunkAnalysis, ChunkArtifact, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
     };
 
     #[test]
     fn rename_vendor_exports_rewrites_multiple_vendor_targets_in_one_call() {
-        let mut artifact = JsPipelineArtifact::default();
+        let mut artifact = ChunkBundle {
+            chunks: Vec::new(),
+            chunk_table: ChunkTable::default(),
+        };
         insert_chunk(
             &mut artifact,
             "app",
@@ -1464,7 +1465,7 @@ export { b as beta };
         );
     }
 
-    fn insert_chunk(artifact: &mut JsPipelineArtifact, chunk_id: &str, source: &str) {
+    fn insert_chunk(artifact: &mut ChunkBundle, chunk_id: &str, source: &str) {
         let chunk_id_interned = artifact.chunk_table.intern(chunk_id.to_string());
         let entry_file = "entry.js".to_string();
         artifact.chunks.push(ChunkArtifact {
@@ -1478,19 +1479,18 @@ export { b as beta };
                     ),
                     header_lines: Vec::new(),
                     metadata: FileMetadata {
-                        chunk_id: Some(chunk_id.to_string()),
-                        chunk_file: Some(entry_file.clone()),
-                        role: Some(FileRole::Entry),
-                        source_path: Some(format!("{chunk_id}.js")),
-                        ..Default::default()
+                        chunk_id: chunk_id.to_string(),
+                        chunk_file: entry_file.clone(),
+                        role: FileRole::Entry,
+                        source_path: format!("{chunk_id}.js"),
+                        generated_by_selected_module_lowering: false,
                     },
                 }],
                 metadata: ChunkMetadata {
                     source_path: Some(format!("{chunk_id}.js")),
-                    module_extraction_state: None,
                 },
             },
-            manifest: ChunkManifest {
+            analysis: ChunkAnalysis {
                 chunk_id: chunk_id.to_string(),
                 source_path: format!("{chunk_id}.js"),
                 parser: Default::default(),
@@ -1501,15 +1501,12 @@ export { b as beta };
                 export_aliases: Vec::new(),
                 unresolved_exports: Vec::new(),
                 kept_top_level_declarations: Vec::new(),
-                logical_modules: None,
-                selected_module_lowerings: None,
-                output_metrics: None,
             },
         });
     }
 
     fn named_imports(
-        artifact: &JsPipelineArtifact,
+        artifact: &ChunkBundle,
         chunk_id: &str,
         file: &str,
         source: &str,
