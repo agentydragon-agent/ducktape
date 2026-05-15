@@ -102,7 +102,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def run_server(
-    *, augur_config: AugurConfig, dist_dir: Path, default_market_config_path: Path, argv: list[str] | None = None
+    *, augur_config: AugurConfig, dist_dir: Path | None, default_market_config_path: Path, argv: list[str] | None = None
 ) -> int:
     """Run the Augur HTTP server with the supplied AugurConfig and bundle dir.
 
@@ -110,31 +110,31 @@ def run_server(
     runfile paths and pass them in; this module is module-agnostic and never
     references `_main/` directly. CLI args drive transport and market-provider
     choice; AugurConfig drives everything user-specific."""
-    args = _build_arg_parser().parse_args(argv)
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
     market_bundle_provider = _make_provider(args, augur_config, default_market_config_path)
     if args.dist_dir:
         dist_dir = Path(args.dist_dir).resolve()
+    if not args.api_only and dist_dir is None:
+        parser.error("--dist-dir or deployment-provided dist_dir is required unless --api-only is set")
+    app = (
+        create_api_app(
+            augur_config=augur_config,
+            market_bundle_provider=market_bundle_provider,
+            default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
+            max_rollout_samples=args.max_rollout_samples,
+        )
+        if args.api_only
+        else create_app(
+            augur_config=augur_config,
+            market_bundle_provider=market_bundle_provider,
+            default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
+            max_rollout_samples=args.max_rollout_samples,
+            dist_dir=dist_dir,
+        )
+    )
     print(f"serving Augur on http://{args.host}:{args.port}")
     print(f"market provider: {args.provider}")
-    print(f"static bundle: {dist_dir}")
-    uvicorn.run(
-        (
-            create_api_app(
-                augur_config=augur_config,
-                market_bundle_provider=market_bundle_provider,
-                default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
-                max_rollout_samples=args.max_rollout_samples,
-            )
-            if args.api_only
-            else create_app(
-                augur_config=augur_config,
-                market_bundle_provider=market_bundle_provider,
-                default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
-                max_rollout_samples=args.max_rollout_samples,
-                dist_dir=dist_dir,
-            )
-        ),
-        host=args.host,
-        port=args.port,
-    )
+    print(f"static bundle: {'disabled' if args.api_only else dist_dir}")
+    uvicorn.run(app, host=args.host, port=args.port)
     return 0
