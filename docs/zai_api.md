@@ -183,6 +183,11 @@ they are stubbed or require parameters not yet determined:
 
 ## Notes
 
+- **Reset times in error messages are likely CST (UTC+8)**. When the API returns
+  `"Your limit will reset at 2026-05-15 17:29:01"`, the timestamp is probably
+  China Standard Time (inferred from z.ai being Zhipu/China-based and the math
+  fitting a 5-hour window) — subtract 8 hours to convert to UTC. Not officially
+  documented.
 - `usageBoard` is a feature gated behind a label whitelist
   (`GET /api/biz/label/whitelist/check?labelValue=usageBoard`). When enabled,
   it likely exposes a richer usage dashboard. Currently not enabled for this
