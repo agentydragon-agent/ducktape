@@ -128,6 +128,7 @@ test("default input creates comparable generic location scenarios", () => {
   assert.equal(input.scenarios[0].startingPortfolioUsd, 100_000);
   assert.equal(input.scenarios[0].privateEquityValueUsd, 10_000);
   assert.equal(input.scenarios[0].privateEquityUnits, 500);
+  assert.equal(input.scenarios[0].privateEquitySalePolicy, "none");
   assert.equal(input.scenarios[1].propertyId, "location_b_property");
   assert.equal(input.scenarios[1].actorPolicy, "owner_plus_partner");
   assert.equal(input.marketRequest.randomSeed, 0);
@@ -160,6 +161,9 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     capGainsRate: 28,
     privateEquityValueUsd: 123_000,
     privateEquityUnits: 456,
+    privateEquitySalePolicy: "liquid_net_worth_floor",
+    privateEquityLiquidNetWorthFloorUsd: 300_000,
+    privateEquityTenderSaleAmountUsd: 75_000,
   };
   const request = scenarioSetInputToRequest(input, bootstrap);
   const backendRequest = decamelizeObjectKeys(request);
@@ -178,9 +182,20 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(firstScenario.policies[0].policy_type, "checking_floor_sell_public_stock");
   assert.equal(firstScenario.policies[0].floor_usd, 10_000);
   assert.equal(firstScenario.policies[0].sale_amount_usd, 20_000);
-  assert.equal(
+  assert.deepEqual(
     firstScenario.policies.find((policy) => policy.policy_type === "private_equity_sale"),
-    undefined
+    {
+      policy_id: "private_equity_liquid_floor_sale",
+      policy_type: "private_equity_sale",
+      actor_id: "alpha",
+      enabled: true,
+      proceeds_destination: "generic_sp500_stock",
+      sale_rule: {
+        sale_rule_type: "liquid_net_worth_floor",
+        min_liquid_net_worth_usd: 300_000,
+        sale_amount_usd: 75_000,
+      },
+    }
   );
   assert.equal(firstScenario.rental_plan.rental_mode, "rent_rooms_while_owner_lives_there");
   assert.equal(firstScenario.rental_plan.rooms_rented, 2);
@@ -254,6 +269,9 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
     vacancyPct: 7,
     privateEquityValueUsd: 987_000,
     privateEquityUnits: 1_234,
+    privateEquitySalePolicy: "liquid_net_worth_floor",
+    privateEquityLiquidNetWorthFloorUsd: 250_000,
+    privateEquityTenderSaleAmountUsd: 60_000,
   };
 
   const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
@@ -266,6 +284,9 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   assert.equal(decoded.scenarios[0].vacancyPct, 7);
   assert.equal(decoded.scenarios[0].privateEquityValueUsd, undefined);
   assert.equal(decoded.scenarios[0].privateEquityUnits, 1_234);
+  assert.equal(decoded.scenarios[0].privateEquitySalePolicy, "liquid_net_worth_floor");
+  assert.equal(decoded.scenarios[0].privateEquityLiquidNetWorthFloorUsd, 250_000);
+  assert.equal(decoded.scenarios[0].privateEquityTenderSaleAmountUsd, 60_000);
   assert.equal(normalizeScenarioSetInput(decoded, bootstrap).scenarios[0].privateEquityValueUsd, 24_680);
 });
 
@@ -303,6 +324,7 @@ test("browser scenario state does not emit manual private equity sale requests",
   assert.equal(decoded.scenarios[0].privateEquitySaleRequestMonth, undefined);
   assert.equal(decoded.scenarios[0].privateEquitySaleProceedsDestination, undefined);
   assert.equal(decoded.scenarios[0].privateEquityEvents, undefined);
+  assert.equal(decoded.scenarios[0].privateEquitySalePolicy, "none");
   assert.deepEqual(
     backendRequest.scenarios[0].events.filter((event) => event.event_type.startsWith("private_equity_")),
     []

@@ -143,12 +143,17 @@ def _scenario_body(
     }
 
 
+def _assert_liquid_net_worth_matches_cash_and_public_stock(result) -> None:
+    np.testing.assert_allclose(result.liquid_net_worth_usd, result.cash_usd + result.generic_sp500_value_usd)
+
+
 def test_portfolio_only_baseline_uses_numpy_paths() -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("portfolio_only")))
     scenario = scenario_set.scenarios[0]
 
     result = run_scenario_vectorized(scenario, _bundle(private_equity_path=(1.0, 1.5, 2.0, 2.5)))
 
+    _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert result.cash_usd.shape == (2, 4)
     np.testing.assert_allclose(result.property_value_usd, 0)
     np.testing.assert_allclose(result.cash_usd[:, 0], 10_000)
@@ -943,12 +948,10 @@ def test_private_equity_stock_is_not_sold_without_explicit_event() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
 
+    _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     np.testing.assert_allclose(result.private_equity_sale_usd, 0)
     np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 1], 50_000)
     np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
-    np.testing.assert_allclose(
-        result.liquid_net_worth_usd[:, 1], result.cash_usd[:, 1] + result.generic_sp500_value_usd[:, 1]
-    )
 
 
 def test_private_equity_sale_request_without_policy_does_not_sell() -> None:
@@ -970,12 +973,10 @@ def test_private_equity_sale_request_without_policy_does_not_sell() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
 
+    _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     np.testing.assert_allclose(result.private_equity_sale_usd, 0)
     np.testing.assert_allclose(result.private_equity_liquidity_available_value_usd[:, 1], 50_000)
     np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
-    np.testing.assert_allclose(
-        result.liquid_net_worth_usd[:, 1], result.cash_usd[:, 1] + result.generic_sp500_value_usd[:, 1]
-    )
     assert np.all(result.private_equity_liquidity_event[:, 1])
     assert result.actions == ()
 
@@ -1010,6 +1011,7 @@ def test_private_equity_sale_into_cash_requires_explicit_request_opportunity_and
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
 
+    _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 0], 0)
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 2], 0)
@@ -1018,9 +1020,6 @@ def test_private_equity_sale_into_cash_requires_explicit_request_opportunity_and
     expected_tax = 175.09
     np.testing.assert_allclose(result.private_equity_sale_tax_usd[:, 1], expected_tax)
     np.testing.assert_allclose(result.cash_usd[:, 1], 30_000 - expected_tax)
-    np.testing.assert_allclose(
-        result.liquid_net_worth_usd[:, 1], result.cash_usd[:, 1] + result.generic_sp500_value_usd[:, 1]
-    )
     actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
     assert len(actions) == 2
     for action in actions:
@@ -1065,10 +1064,47 @@ def test_private_equity_sale_policy_reinvests_sale_proceeds_in_sp500() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
 
+    _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
     np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
     np.testing.assert_allclose(result.generic_sp500_value_usd[:, 1], 130_000)
     np.testing.assert_allclose(result.generic_sp500_value_usd[:, 2], 141_818.18181818)
+
+
+def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportunity() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "liquid_floor_sale_request",
+                events=[],
+                policies=[
+                    {
+                        "policy_id": "private_equity_liquid_floor_sale",
+                        "policy_type": "private_equity_sale",
+                        "actor_id": "owner",
+                        "proceeds_destination": "generic_sp500_stock",
+                        "sale_rule": {
+                            "sale_rule_type": "liquid_net_worth_floor",
+                            "min_liquid_net_worth_usd": 125_000,
+                            "sale_amount_usd": 20_000,
+                        },
+                    }
+                ],
+            )
+        )
+    )
+
+    no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    _assert_liquid_net_worth_matches_cash_and_public_stock(no_opportunity)
+    np.testing.assert_allclose(no_opportunity.private_equity_sale_usd, 0)
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_event_month=1))
+    _assert_liquid_net_worth_matches_cash_and_public_stock(result)
+
+    np.testing.assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
+    np.testing.assert_allclose(result.cash_usd[:, 1], 10_000)
+    np.testing.assert_allclose(result.generic_sp500_value_usd[:, 1], 130_000)
+    np.testing.assert_allclose(result.liquid_net_worth_usd[:, 1], 140_000)
 
 
 def test_private_equity_sale_request_sells_only_when_market_opportunity_is_available() -> None:

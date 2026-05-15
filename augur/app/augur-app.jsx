@@ -22,7 +22,21 @@ const FINANCING_OPTIONS = [
   { id: "cash", label: "Cash" },
 ];
 
+const PRIVATE_EQUITY_SALE_POLICY_OPTIONS = [
+  {
+    id: "none",
+    label: "Do not sell",
+    description: "Tender opportunities do not trigger private-stock sales.",
+  },
+  {
+    id: "liquid_net_worth_floor",
+    label: "Sell at liquid-worth floor",
+    description: "When cash plus SP500 is below the floor and a tender exists, sell the configured amount into SP500.",
+  },
+];
+
 const CHECKING_FLOOR_POLICY_ID = "checking_floor_sp500";
+const PRIVATE_EQUITY_LIQUID_FLOOR_POLICY_ID = "liquid_net_worth_floor";
 const CHECKING_FLOOR_METRICS = new Set([
   "checkingFloorShortfallUsd",
   "finalCheckingFloorShortfallUsd",
@@ -950,6 +964,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const privateEquityCurrentValueUsd = privateEquityValueUsdForUnits(bootstrap, scenario.privateEquityUnits);
   const privateEquityUnitPriceUsd = privateEquityCurrentUnitPriceUsd(bootstrap);
   const isCustomFinancing = scenario.financingMode === "custom";
+  const usesPrivateEquityLiquidFloorPolicy = scenario.privateEquitySalePolicy === PRIVATE_EQUITY_LIQUID_FLOOR_POLICY_ID;
   const locationsById = useMemo(
     () => new Map(bootstrap.locations.map((location) => [location.id, location])),
     [bootstrap]
@@ -1239,6 +1254,31 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               value={scenario.privateEquityUnits}
               onChange={(privateEquityUnits) => updateScenario({ privateEquityUnits })}
             />
+          </ControlGrid>
+          <OptionButtons
+            label={`${privateEquityLabel} tender policy`}
+            options={PRIVATE_EQUITY_SALE_POLICY_OPTIONS}
+            value={scenario.privateEquitySalePolicy}
+            onChange={(privateEquitySalePolicy) => updateScenario({ privateEquitySalePolicy })}
+          />
+          {usesPrivateEquityLiquidFloorPolicy && (
+            <ControlGrid>
+              <MoneyField
+                label="Liquid worth floor"
+                value={scenario.privateEquityLiquidNetWorthFloorUsd}
+                onChange={(privateEquityLiquidNetWorthFloorUsd) =>
+                  updateScenario({ privateEquityLiquidNetWorthFloorUsd })
+                }
+              />
+              <MoneyField
+                label="Tender sale amount"
+                min={1_000}
+                value={scenario.privateEquityTenderSaleAmountUsd}
+                onChange={(privateEquityTenderSaleAmountUsd) => updateScenario({ privateEquityTenderSaleAmountUsd })}
+              />
+            </ControlGrid>
+          )}
+          <ControlGrid>
             <MoneyField
               label={`${partnerLabel} payment`}
               step={50}

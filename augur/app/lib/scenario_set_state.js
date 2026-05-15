@@ -20,6 +20,7 @@ const DEFAULT_REPORT_SPEC = {
 };
 
 const FINANCING_MODE_IDS = new Set(["cash", "fixed_30", "fixed_15", "custom"]);
+const PRIVATE_EQUITY_SALE_POLICY_IDS = new Set(["none", "liquid_net_worth_floor"]);
 
 function finiteNumber(value, fallback) {
   const number = Number(value);
@@ -164,6 +165,11 @@ export function createScenarioInput(bootstrap, overrides = {}) {
     capGainsRate: finiteNumber(overrides.capGainsRate, defaultKnobs.capGainsRate ?? 0),
     privateEquityValueUsd: privateEquityValueUsdForUnits(bootstrap, privateEquityUnits),
     privateEquityUnits,
+    privateEquitySalePolicy: PRIVATE_EQUITY_SALE_POLICY_IDS.has(overrides.privateEquitySalePolicy)
+      ? overrides.privateEquitySalePolicy
+      : "none",
+    privateEquityLiquidNetWorthFloorUsd: finiteNumber(overrides.privateEquityLiquidNetWorthFloorUsd, 0),
+    privateEquityTenderSaleAmountUsd: positiveNumber(overrides.privateEquityTenderSaleAmountUsd, 50_000),
   };
 }
 
@@ -254,6 +260,17 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
     capGainsRate: finiteNumber(scenario?.capGainsRate, defaultScenario.capGainsRate),
     privateEquityValueUsd,
     privateEquityUnits,
+    privateEquitySalePolicy: PRIVATE_EQUITY_SALE_POLICY_IDS.has(scenario?.privateEquitySalePolicy)
+      ? scenario.privateEquitySalePolicy
+      : defaultScenario.privateEquitySalePolicy,
+    privateEquityLiquidNetWorthFloorUsd: finiteNumber(
+      scenario?.privateEquityLiquidNetWorthFloorUsd,
+      defaultScenario.privateEquityLiquidNetWorthFloorUsd
+    ),
+    privateEquityTenderSaleAmountUsd: positiveNumber(
+      scenario?.privateEquityTenderSaleAmountUsd,
+      defaultScenario.privateEquityTenderSaleAmountUsd
+    ),
   };
 }
 
@@ -334,6 +351,20 @@ function scenarioPolicies(scenario, bootstrap) {
       enabled: true,
       floorUsd: scenario.checkingFloorUsd,
       saleAmountUsd: scenario.checkingSaleAmountUsd,
+    });
+  }
+  if (scenario.privateEquitySalePolicy === "liquid_net_worth_floor") {
+    policies.push({
+      policyId: "private_equity_liquid_floor_sale",
+      policyType: "private_equity_sale",
+      actorId: primary.actorId,
+      enabled: true,
+      proceedsDestination: "generic_sp500_stock",
+      saleRule: {
+        saleRuleType: "liquid_net_worth_floor",
+        minLiquidNetWorthUsd: scenario.privateEquityLiquidNetWorthFloorUsd,
+        saleAmountUsd: scenario.privateEquityTenderSaleAmountUsd,
+      },
     });
   }
   return policies;
@@ -538,6 +569,9 @@ function serializableScenario(scenario) {
     marginalTaxRate: scenario.marginalTaxRate,
     capGainsRate: scenario.capGainsRate,
     privateEquityUnits: scenario.privateEquityUnits,
+    privateEquitySalePolicy: scenario.privateEquitySalePolicy,
+    privateEquityLiquidNetWorthFloorUsd: scenario.privateEquityLiquidNetWorthFloorUsd,
+    privateEquityTenderSaleAmountUsd: scenario.privateEquityTenderSaleAmountUsd,
   };
 }
 

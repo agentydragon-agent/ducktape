@@ -586,6 +586,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     private_equity_sale_requests, month=month, policy=private_equity_sale_policy
                 ),
                 opportunity=current_opportunity,
+                liquid_net_worth_usd=current_cash
+                + remaining_sp500_units * market_bundle.generic_sp500_multipliers[:, month],
             )
             _record_private_equity_sale_decisions(
                 policy_decisions,

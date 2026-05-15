@@ -285,6 +285,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("Vacancy", exact=True).fill("9")
     page.get_by_label("Marginal tax rate").fill("37")
     page.get_by_label(re.compile("Private .* units")).fill("1000")
+    page.get_by_role("button", name=re.compile("Sell at liquid-worth floor")).click()
+    page.get_by_label("Liquid worth floor").fill("250000")
+    page.get_by_label("Tender sale amount").fill("50000")
 
     rich_state = _wait_for_url_state(
         page,
@@ -295,6 +298,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
                 and scenario["financing_mode"] == "custom"
                 and scenario["vacancy_pct"] == 9
                 and scenario["private_equity_units"] == 1000
+                and scenario["private_equity_sale_policy"] == "liquid_net_worth_floor"
+                and scenario["private_equity_liquid_net_worth_floor_usd"] == 250000
+                and scenario["private_equity_tender_sale_amount_usd"] == 50000
                 for scenario in state["scenarios"]
             )
         ),
@@ -311,6 +317,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert rich_scenario["vacancy_pct"] == 9
     assert rich_scenario["marginal_tax_rate"] == 37
     assert rich_scenario["private_equity_units"] == 1000
+    assert rich_scenario["private_equity_sale_policy"] == "liquid_net_worth_floor"
+    assert rich_scenario["private_equity_liquid_net_worth_floor_usd"] == 250000
+    assert rich_scenario["private_equity_tender_sale_amount_usd"] == 50000
     assert "private_equity_events" not in rich_scenario
     assert "private_equity_sale_request_amount_usd" not in rich_scenario
 

@@ -10,6 +10,7 @@ from augur.core.scenario_set import (
     CheckingFloorSellPublicStockPolicy,
     EventType,
     FixedAmountPrivateEquitySaleRule,
+    LiquidNetWorthFloorPrivateEquitySaleRule,
     MonthlySpendPolicy,
     PartnerEquityAccrualPolicy,
     Policy,
@@ -576,13 +577,25 @@ def private_equity_sale_instruction(
     *,
     request: PrivateEquitySaleRequestObservation | None,
     opportunity: PrivateEquitySaleOpportunityBatch,
+    liquid_net_worth_usd: np.ndarray,
 ) -> PrivateEquitySaleInstructionBatch:
+    if liquid_net_worth_usd.shape != opportunity.liquidity_event_mask.shape:
+        raise ValueError("liquid_net_worth_usd must match private equity opportunity rollout shape")
     if request is not None:
         requested_amount = np.full(opportunity.liquidity_event_mask.shape, request.amount_usd, dtype="float64")
         request_event_id = request.event_id
         request_event_type = request.event_type
     elif isinstance(policy.sale_rule, FixedAmountPrivateEquitySaleRule):
         requested_amount = np.where(opportunity.liquidity_event_mask, float(policy.sale_rule.amount_usd), 0.0)
+        request_event_id = None
+        request_event_type = None
+    elif isinstance(policy.sale_rule, LiquidNetWorthFloorPrivateEquitySaleRule):
+        requested_amount = np.where(
+            opportunity.liquidity_event_mask
+            & (liquid_net_worth_usd < float(policy.sale_rule.min_liquid_net_worth_usd)),
+            float(policy.sale_rule.sale_amount_usd),
+            0.0,
+        )
         request_event_id = None
         request_event_type = None
     else:

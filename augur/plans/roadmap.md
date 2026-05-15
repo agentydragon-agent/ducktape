@@ -134,7 +134,9 @@ Target shape:
   acquisition, IPO/regime change, lockup expiry, public-market availability.
 - Policy layer decides participation: never sell, sell fixed fraction, sell
   fixed units, sell enough to reach concentration/liquid-reserve target, or
-  custom downstream rule.
+  custom downstream rule. The first concrete browser/core rule sells a fixed
+  amount into SP500 when cash plus public stock falls below a configured floor
+  and a tender opportunity exists.
 - Accounting layer applies sale, basis, tax estimate/liability, proceeds
   destination, and cause IDs.
 - Result layer separates private-equity mark value, tender-eligible value,
@@ -147,10 +149,13 @@ Implementation notes:
   cause IDs.
 - Keep arbitrary sale request USD/month out of the browser state and do not
   count tender-eligible private marks in `liquid_net_worth`; both are now
-  covered by app/core tests. Replace the remaining core/manual-request concept
-  with opportunity-model settings and participation-policy controls.
-- Clarify sale-proceeds destination scope: per policy, per event, or per
-  accounting action. Do not leave it as an ambiguous global cell.
+  covered by app/core tests. A first liquid-net-worth-floor participation policy
+  exists; keep extending that policy surface instead of reviving manual sale
+  request controls.
+- Clarify sale-proceeds destination scope and vocabulary as the policy set
+  grows. The current liquid-net-worth-floor policy always reinvests proceeds in
+  SP500; future policies should make per-policy or per-action destination and
+  tax treatment explicit without returning to an ambiguous scenario-wide cell.
 
 Acceptance criteria:
 

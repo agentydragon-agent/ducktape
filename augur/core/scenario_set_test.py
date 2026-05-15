@@ -16,6 +16,7 @@ from augur.core.scenario_set import (
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
     LiquidityReservePolicy,
+    LiquidNetWorthFloorPrivateEquitySaleRule,
     OccupancyMode,
     PolicyType,
     PrivateEquitySalePolicy,
@@ -225,6 +226,30 @@ def test_policy_config_uses_discriminated_rules_and_enums() -> None:
     assert isinstance(liquidity_policy.reserve_rule, ProjectedDeficitsLiquidityReserveRule)
     assert liquidity_policy.reserve_rule.min_reserve_usd == 10_000
     assert liquidity_policy.reserve_rule.forward_months == 12
+
+
+def test_policy_config_accepts_private_equity_liquid_net_worth_floor_rule() -> None:
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["policies"] = [
+        {
+            "policy_id": "private_equity_liquid_floor_sale",
+            "policy_type": "private_equity_sale",
+            "actor_id": "owner",
+            "proceeds_destination": "generic_sp500_stock",
+            "sale_rule": {
+                "sale_rule_type": "liquid_net_worth_floor",
+                "min_liquid_net_worth_usd": 250_000,
+                "sale_amount_usd": 50_000,
+            },
+        }
+    ]
+
+    policy = ScenarioSet.model_validate(body).scenarios[0].policies[0]
+
+    assert isinstance(policy, PrivateEquitySalePolicy)
+    assert isinstance(policy.sale_rule, LiquidNetWorthFloorPrivateEquitySaleRule)
+    assert policy.sale_rule.min_liquid_net_worth_usd == 250_000
+    assert policy.sale_rule.sale_amount_usd == 50_000
 
 
 def test_scenario_set_model_dump_keeps_backend_keys_snake_case() -> None:

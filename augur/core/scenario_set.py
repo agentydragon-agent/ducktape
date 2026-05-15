@@ -35,6 +35,7 @@ class PolicyType(StrEnum):
 class PrivateEquitySaleRuleType(StrEnum):
     MANUAL_REQUESTS_ONLY = "manual_requests_only"
     FIXED_AMOUNT_ON_OPPORTUNITY = "fixed_amount_on_opportunity"
+    LIQUID_NET_WORTH_FLOOR = "liquid_net_worth_floor"
 
 
 class PrivateEquitySaleProceedsDestination(StrEnum):
@@ -263,8 +264,17 @@ class FixedAmountPrivateEquitySaleRule(ApiModel):
     amount_usd: PositiveFloat
 
 
+class LiquidNetWorthFloorPrivateEquitySaleRule(ApiModel):
+    sale_rule_type: Literal[PrivateEquitySaleRuleType.LIQUID_NET_WORTH_FLOOR] = (
+        PrivateEquitySaleRuleType.LIQUID_NET_WORTH_FLOOR
+    )
+    min_liquid_net_worth_usd: NonNegativeFloat
+    sale_amount_usd: PositiveFloat
+
+
 PrivateEquitySaleRule = Annotated[
-    ManualPrivateEquitySaleRule | FixedAmountPrivateEquitySaleRule, Field(discriminator="sale_rule_type")
+    ManualPrivateEquitySaleRule | FixedAmountPrivateEquitySaleRule | LiquidNetWorthFloorPrivateEquitySaleRule,
+    Field(discriminator="sale_rule_type"),
 ]
 
 

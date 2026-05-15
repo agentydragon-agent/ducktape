@@ -26,6 +26,7 @@ from augur.core.scenario_set import (
     AssetType,
     CheckingFloorSellPublicStockPolicy,
     FixedAmountPrivateEquitySaleRule,
+    LiquidNetWorthFloorPrivateEquitySaleRule,
     MonthlySpendPolicy,
     PartnerEquityAccrualPolicy,
     PrivateEquitySalePolicy,
@@ -263,7 +264,9 @@ def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None
         liquidity_event_mask=np.array([False, True]),
         private_equity_value_before_sale_usd=np.array([200_000.0, 200_000.0]),
     )
-    instruction = private_equity_sale_instruction(policy, request=None, opportunity=opportunity)
+    instruction = private_equity_sale_instruction(
+        policy, request=None, opportunity=opportunity, liquid_net_worth_usd=np.array([100_000.0, 100_000.0])
+    )
 
     result = apply_private_equity_sale_instruction(
         instruction,
@@ -294,6 +297,26 @@ def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None
     np.testing.assert_allclose(result.ledger_entries[0].amount_usd, [0.0, -50_000.0])
     np.testing.assert_allclose(result.ledger_entries[1].amount_usd, [-0.0, -6_000.0])
     np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [0.0, 44_000.0])
+
+
+def test_private_equity_liquid_net_worth_floor_rule_uses_opportunity_and_liquid_assets() -> None:
+    policy = PrivateEquitySalePolicy(
+        policy_id="pe_sale",
+        actor_id="alpha",
+        proceeds_destination="generic_sp500_stock",
+        sale_rule=LiquidNetWorthFloorPrivateEquitySaleRule(min_liquid_net_worth_usd=100_000, sale_amount_usd=50_000),
+    )
+    opportunity = private_equity_sale_opportunity(
+        liquidity_event_mask=np.array([False, True, True]),
+        private_equity_value_before_sale_usd=np.array([200_000.0, 200_000.0, 200_000.0]),
+    )
+
+    instruction = private_equity_sale_instruction(
+        policy, request=None, opportunity=opportunity, liquid_net_worth_usd=np.array([50_000.0, 90_000.0, 120_000.0])
+    )
+
+    assert instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK
+    np.testing.assert_allclose(instruction.requested_amount_usd, [0.0, 50_000.0, 0.0])
 
 
 if __name__ == "__main__":
