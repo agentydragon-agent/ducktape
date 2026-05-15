@@ -21,6 +21,7 @@ spec:
   dependsOn:
     # tofu-controller runs the Terraform CR.
     - name: tofu-controller
+    - name: tofu-state-db
     # Provides github-secrets-sync-pat (Administration:R/W on ducktape).
     - name: github-secrets-sync-secrets
     # Provides github-pat-gaffer-private-flux (Administration:R/W on

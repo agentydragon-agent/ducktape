@@ -19,4 +19,5 @@ spec:
   timeout: 10m
   dependsOn:
     - name: tofu-controller
+    - name: tofu-state-db
     - name: claude-jwt-rotation

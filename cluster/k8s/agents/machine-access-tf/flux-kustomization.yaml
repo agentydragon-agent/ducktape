@@ -19,6 +19,7 @@ spec:
   timeout: 10m
   dependsOn:
     - name: tofu-controller
+    - name: tofu-state-db
     - name: authentik
     # TF writes grocy-mcp-oidc secrets into per-household namespaces.
     - name: grocy-sf

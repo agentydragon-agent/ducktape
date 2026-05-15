@@ -1,24 +1,3 @@
-import {
-  to = authentik_application.airlock_oidc_proxy
-  id = "airlock-oidc-proxy"
-}
-
-import {
-  to = authentik_policy_binding.airlock_oidc_proxy_admins
-  id = "ebc5073b-61cd-4847-a760-82281f1fae2b"
-}
-
-import {
-  to = authentik_provider_oauth2.airlock_oidc_proxy
-  id = "52"
-}
-
-import {
-  to = kubernetes_secret.airlock_oidc_proxy
-  id = "airlock/airlock-oidc-proxy-credentials"
-}
-
-
 terraform {
   required_version = ">= 1.0"
 

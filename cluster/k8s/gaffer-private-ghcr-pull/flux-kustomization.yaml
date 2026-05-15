@@ -18,6 +18,7 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: tofu-controller
+    - name: tofu-state-db
     - name: gaffer-private
     - name: reflector
   healthChecks:

@@ -1,24 +1,3 @@
-import {
-  to = authentik_application.gatus
-  id = "gatus"
-}
-
-import {
-  to = authentik_policy_binding.gatus_admins
-  id = "cd48e7ae-3e6f-4728-8b66-ceaadc6ac91a"
-}
-
-import {
-  to = authentik_provider_oauth2.gatus
-  id = "49"
-}
-
-import {
-  to = kubernetes_secret.gatus_oidc
-  id = "gatus/gatus-oidc-secret"
-}
-
-
 terraform {
   required_version = ">= 1.0"
 
