@@ -169,6 +169,13 @@ CloudNativePG `local-path`.
       `proxmox-proxy`. Check `csi-proxmox` controller logs and `proxmox-proxy` logs.
 - [ ] Consider OpenEBS LVM on Talos nodes; Talos has `machine.disks` or `machine.volumes`.
       Would allow firecracker fast-clone on Hetzner.
+- [ ] Trial SeaweedFS with both the upstream operator and CSI driver. Deploy the
+      Seaweed cluster via `seaweedfs-operator`, then install the CSI driver as a
+      separate Flux `HelmRelease` pointed at the operator-created filer service.
+      Keep the StorageClass non-default, test with disposable PVCs first, and
+      evaluate S3/object usage separately from FUSE/PVC usage. Do not use it for
+      CNPG or core infra unless the trial proves recovery, upgrades, and node
+      restarts are boring.
 - [ ] Longhorn node tags: Kyverno mutate policy sets `node.longhorn.io/default-node-tags`
       annotation, but only fires at Node admission time — nodes created before Kyverno is
       deployed (i.e., bootstrap) never get tagged. Currently patched manually. Options:
