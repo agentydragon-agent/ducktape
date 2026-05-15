@@ -130,7 +130,7 @@ and toolchain as the pipeline:
 
 ```sh
 nix develop --command bazelisk \
-  --output_base=/tmp/wyrm2-scratch/$USER/bazel-output/ducktape-profile \
+  --output_base=/tmp/$USER/bazel-output/ducktape-profile \
   build //devinfra/js/debundle:debundle \
   --config=nolint \
   --compilation_mode=opt \
@@ -145,14 +145,14 @@ package roots, and working directory as the real build:
 
 ```sh
 nix develop --command bazelisk \
-  --output_base=/tmp/wyrm2-scratch/$USER/bazel-output/gaffer-profile-inputs \
-  build //tana/re/web/spec:debundle_78d928dca7 \
+  --output_base=/tmp/$USER/bazel-output/profile-inputs \
+  build //<spec-package>:<debundle-target> \
   --config=nolint \
   --remote_download_outputs=all
 
 nix develop --command bazelisk \
-  --output_base=/tmp/wyrm2-scratch/$USER/bazel-output/gaffer-profile-inputs \
-  aquery 'mnemonic("DebundlePipeline", //tana/re/web/spec:debundle_78d928dca7)' \
+  --output_base=/tmp/$USER/bazel-output/profile-inputs \
+  aquery 'mnemonic("DebundlePipeline", //<spec-package>:<debundle-target>)' \
   --include_commandline \
   --config=nolint
 ```
@@ -163,8 +163,8 @@ output base and keeping the action's `cd "${BAZEL_BINDIR}"` shape:
 
 ```sh
 perf record -F 99 -e cycles:u --call-graph dwarf,8192 \
-  -o /tmp/wyrm2-scratch/$USER/profile/tana-debundle/perf.data \
-  -- /tmp/wyrm2-scratch/$USER/bazel-output/ducktape-profile/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle \
+  -o /tmp/$USER/profile/debundle/perf.data \
+  -- /tmp/$USER/bazel-output/ducktape-profile/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle \
   ...same debundle args from the DebundlePipeline action...
 ```
 
@@ -173,11 +173,11 @@ Massif:
 
 ```sh
 valgrind --tool=massif \
-  --massif-out-file=/tmp/wyrm2-scratch/$USER/profile/tana-debundle/massif.out \
-  /tmp/wyrm2-scratch/$USER/bazel-output/ducktape-profile/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle \
+  --massif-out-file=/tmp/$USER/profile/debundle/massif.out \
+  /tmp/$USER/bazel-output/ducktape-profile/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle \
   ...same debundle args from the DebundlePipeline action...
-ms_print /tmp/wyrm2-scratch/$USER/profile/tana-debundle/massif.out \
-  >/tmp/wyrm2-scratch/$USER/profile/tana-debundle/ms_print.txt
+ms_print /tmp/$USER/profile/debundle/massif.out \
+  >/tmp/$USER/profile/debundle/ms_print.txt
 ```
 
 ## Test shape preferences

@@ -22,7 +22,7 @@
 //!   that prevent specific destinations. Empty for clean direct peels.
 //!
 //! This module is generic over `owner_graph.json` — it knows nothing
-//! about Tana or any other specific bundle, only the debundler's own
+//! about any specific bundle, only the debundler's own
 //! report schema and binding patch authoring convention.
 
 use std::cmp::Reverse;

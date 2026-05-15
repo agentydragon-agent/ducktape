@@ -114,11 +114,11 @@ Still to do:
 
 ## Materialize-stage hot-loop optimizations
 
-The 2026-05-10 Tana profile (Gaffer
-`tana/re/web/spec/profile_reports/2026-05-10-tana-debundle.md`) showed
+A 2026-05-10 profile (consumer
+`<spec>/profile_reports/2026-05-10-debundle.md`) showed
 `materialize_logical_modules` at 89% of total transform time. The
 per-candidate hot-loop wins (binding caches, `BTreeMap → HashMap`,
-typed edge IDs, IR cleanup) have landed; reprofile against Tana before
+typed edge IDs, IR cleanup) have landed; reprofile before
 picking the next item. Remaining priorities, ordered by leverage:
 
 1. **Compact / stream `owner_graph.json` writes.**
@@ -137,7 +137,7 @@ picking the next item. Remaining priorities, ordered by leverage:
 
 ## Graph pass performance and module boundaries
 
-Tighten before the next large Tana peel loop:
+Tighten before the next large peel loop:
 
 - Keep stage telemetry complete (index build/rebuild, fused AST analysis,
   purity, owner-graph construction, quotient construction, validation,
@@ -147,7 +147,7 @@ Tighten before the next large Tana peel loop:
   pass needs them outside the current local macro sites.
 - Add focused regression coverage for `ArtifactIndexes` rebuild boundaries
   as more structural artifact mutations are optimized.
-- Profile the Tana debundle action around `materialize_logical_modules`
+- Profile the debundle action around `materialize_logical_modules`
   and `rename_vendor_exports`; avoid whole-graph clone/rescan patterns
   where a graph pass or indexed lookup can answer the same question.
 - Consider changing per-chunk `file_records` from an ordered vector of
@@ -170,7 +170,7 @@ a single source chunk. Imported callees from a different source chunk
 (vendor chunks, vite chunk splits) fall through to `unknown_call`
 because the importer has no per-function purity for the exporter's
 bindings. The downstream cost is each cross-chunk pure-helper needing
-a `purity: pure` spec hint in gaffer-private even though its body
+a `purity: pure` spec hint in the consumer repo even though its body
 would classify pure if it were chunk-local.
 
 Sketch (deferred until residual hint set is dominated by cross-chunk
@@ -186,7 +186,7 @@ shapes):
   (e.g. `import { helper }` matches `export const helper = () => …`
   but not a re-export from elsewhere).
 
-Today only one residual cluster in gaffer-private's `78d928dca7`
+Today only one residual cluster in a representative bundle
 spec sits cross-chunk (MobX wrapper bindings tracked by the non-emitting
 binding-patch stream) and that cluster is the legitimate user of the spec-side
 `purity: pure` override — genuinely-impure-but-init-safe vendor
@@ -194,7 +194,7 @@ shape, not a pure-by-derivation chain. So Part 3 isn't load-bearing
 yet. Land if a future snapshot grows a cross-chunk pure-helper
 chain.
 
-Context: <gaffer-private/tana/x/research/ducktape_purity_recursive.md>
+Context: <consumer-repo notes on purity recursion>
 "Part 3 — cross-module purity" section.
 
 ## Corpus breadth

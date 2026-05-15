@@ -1818,9 +1818,9 @@ philosophy.
 
 ### Why exact source rather than line/column
 
-Tana's bundle is delivered minified and prettified for analysis;
+The target application's bundle is delivered minified and prettified for analysis;
 neither line nor column is stable across re-prettifies or
-upstream Tana releases. The shape selector survives both: the
+upstream releases. The shape selector survives both: the
 prettifier reformats whitespace but preserves AST structure, and
 upstream changes that touch the statement's content surface as a
 zero-match diagnostic the spec author can fix.
@@ -2454,7 +2454,7 @@ exploration before crossing the relevant phase.
 1. **Local-effect annotation coverage.** The
    `effect: typescript_decorate_helper` annotation is deliberately
    narrow. It covers the
-   TypeScript helper shapes currently seen in bundled Tana output:
+   TypeScript helper shapes currently seen in bundled output:
    property/method decorators on `C.prototype` and class decorators on
    `C`. Calls with spread arguments, computed/optional targets, or
    unresolved targets must remain ordinary conservative side effects.
@@ -2495,7 +2495,7 @@ exploration before crossing the relevant phase.
    selector. But this loses the strict-equality-or-loud-failure
    property and reintroduces narrowing, so the model would need
    to either bipartite-force across pattern selectors or ban
-   ambiguity. Deferred until a real Tana spec demands it.
+   ambiguity. Deferred until a real spec demands it.
 7. **Factorize soundness audit.** `factorize` must be brought fully
    into line with [Factorization proposals](#factorization-proposals).
    The audit should pin tests for the invariant: every emitted
@@ -2512,7 +2512,7 @@ exploration before crossing the relevant phase.
    non-constraining, letting the named owner peel without an
    `anonymous_statements` co-mover. Empirically this would
    cover ~91 of 4106 currently-blocked horizon bindings in
-   Tana — a small fraction. The other ~4015 still need anon
+   one representative bundle — a small fraction. The rest still need anon
    selectors because their companions (decorator applications,
    semantic init bridges) are not sinks. Worth tracking but
    not blocking.
@@ -2532,7 +2532,7 @@ exploration before crossing the relevant phase.
    rewrite. Out of scope for the purity-propagation change
    (`logical_modules.rs:528+` declared_pure collection now
    pulls from chunk_renames members) — those are separate
-   passes of the same map. Track when a real Tana case wants
+   passes of the same map. Track when a real spec wants
    the renamed name everywhere.
 
 ## What this design does not solve
