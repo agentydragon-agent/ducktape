@@ -154,7 +154,7 @@ import {
 }
 
 import {
-  to = authentik_source_oauth.google
+  to = authentik_source_oauth.google[0]
   id = "google"
 }
 
