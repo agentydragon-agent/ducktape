@@ -1,5 +1,16 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+py_library(
+    name = "persistence",
+    srcs = ["persistence.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+        "@pypi//valkey_glide",
+    ],
+)
+
 # Shared test utilities (non-Docker)
 py_library(
     name = "test_support",

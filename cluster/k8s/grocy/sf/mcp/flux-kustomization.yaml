@@ -21,4 +21,5 @@ spec:
   dependsOn:
     - name: gateway
     - name: grocy-sf
+    - name: valkey
     - name: agent-machine-access-tf

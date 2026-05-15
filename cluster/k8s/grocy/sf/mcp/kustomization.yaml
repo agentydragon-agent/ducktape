@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: grocy-sf
 resources:
   - ../../mcp-base
+  - valkey-instance.yaml
   - server-httproute.yaml
 patches:
   - target:
@@ -10,13 +11,13 @@ patches:
       name: grocy-mcp-server
     patch: |
       - op: replace
-        path: /spec/template/spec/containers/0/env/2/value
+        path: /spec/template/spec/containers/0/env/1/value
         value: "https://auth.allegedly.works/application/o/grocy-mcp-sf/"
       - op: replace
-        path: /spec/template/spec/containers/0/env/3/value
+        path: /spec/template/spec/containers/0/env/2/value
         value: "https://grocy-mcp-sf.allegedly.works"
       - op: replace
-        path: /spec/template/spec/containers/0/env/4/value
+        path: /spec/template/spec/containers/0/env/3/value
         value: "https://grocy-sf.allegedly.works"
   - target:
       kind: Deployment
@@ -47,3 +48,9 @@ patches:
                       secretKeyRef:
                         name: grocy-mcp-oidc-sf
                         key: grocy_proxy_client_id
+                  - name: GROCY_MCP_PERSISTENCE__KIND
+                    value: "valkey"
+                  - name: GROCY_MCP_PERSISTENCE__HOST
+                    value: "grocy-sf-valkey-master.grocy-sf.svc.cluster.local"
+                  - name: GROCY_MCP_PERSISTENCE__DB
+                    value: "0"

@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
+from mcp_infra.persistence import FilePersistence, PersistenceConfig
 
 
 class HttpUpstream(BaseModel):
@@ -44,20 +45,6 @@ class StdioUpstream(BaseModel):
 
 
 Upstream = Annotated[HttpUpstream | StdioUpstream, Field(discriminator="kind")]
-
-
-class FilePersistence(BaseModel):
-    kind: Literal["file"] = "file"
-
-
-class ValkeyPersistence(BaseModel):
-    kind: Literal["valkey"]
-    host: str
-    port: int = 6379
-    db: int = 0
-
-
-PersistenceConfig = Annotated[FilePersistence | ValkeyPersistence, Field(discriminator="kind")]
 
 
 class FacadeSettings(BaseSettings):

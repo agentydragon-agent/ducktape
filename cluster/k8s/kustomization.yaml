@@ -35,7 +35,6 @@ resources:
   - cnpg/flux-kustomization.yaml
   - cnpg/agent-rbac/flux-kustomization.yaml
   - valkey/flux-kustomization.yaml
-  - mcp-infra/flux-kustomization.yaml
   - reflector/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
   - node-feature-discovery/agent-rbac/flux-kustomization.yaml

@@ -9,4 +9,6 @@ data:
   MCP_FACADE_FACADE_NAME: "Manifold MCP Facade"
   MCP_FACADE_UPSTREAM__KIND: "http"
   MCP_FACADE_UPSTREAM__URL: "http://localhost:8080/mcp"
-  FASTMCP_HOME: "/var/lib/fastmcp"
+  MCP_FACADE_PERSISTENCE__KIND: "valkey"
+  MCP_FACADE_PERSISTENCE__HOST: "manifold-valkey-master.manifold-mcp.svc.cluster.local"
+  MCP_FACADE_PERSISTENCE__DB: "0"

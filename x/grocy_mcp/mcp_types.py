@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
+from mcp_infra.persistence import FilePersistence, PersistenceConfig
 from x.grocy_mcp.grocy_types import ReadableEntityType, WriteableEntityType
 
 MAX_BATCH_SIZE = 100
@@ -40,6 +41,7 @@ class ServerSettings(BaseSettings):
     max_concurrent_requests: int = Field(default=4, description="Maximum parallel Grocy API requests within a batch.")
     max_retries: int = Field(default=2, description="Retry count for transient errors (timeouts, 5xx).")
     retry_base_delay: float = Field(default=0.5, description="Initial retry delay in seconds; doubles each attempt.")
+    persistence: PersistenceConfig = Field(default=FilePersistence(), description="OAuth state storage backend.")
 
 
 # ── Shared field descriptions ───────────────────────────────────────────────

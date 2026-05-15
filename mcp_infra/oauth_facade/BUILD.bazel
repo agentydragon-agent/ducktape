@@ -5,6 +5,7 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:auth",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -28,12 +29,11 @@ py_library(
     deps = [
         ":config",
         ":proxy",
+        "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:auth",
         "@pypi//fastmcp",
-        "@pypi//py_key_value_aio",
         "@pypi//starlette",
         "@pypi//uvicorn",
-        "@pypi//valkey_glide",
     ],
 )
 

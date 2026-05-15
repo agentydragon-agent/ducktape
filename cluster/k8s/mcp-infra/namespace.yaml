@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: mcp-infra
-  annotations:
-    description: Shared infrastructure for MCP servers (Valkey state store)

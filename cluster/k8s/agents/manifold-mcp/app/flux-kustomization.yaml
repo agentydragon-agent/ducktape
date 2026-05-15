@@ -25,4 +25,5 @@ spec:
   dependsOn:
     - name: gateway
     - name: manifold-mcp-namespace
+    - name: valkey
     - name: agent-machine-access-tf

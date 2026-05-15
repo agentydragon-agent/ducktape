@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: tana-mcp
 resources:
   - configmap.yaml
+  - valkey-instance.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml

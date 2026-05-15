@@ -2,9 +2,9 @@ apiVersion: redis.redis.opstreelabs.in/v1beta2
 kind: RedisReplication
 metadata:
   name: mcp-valkey
-  namespace: mcp-infra
+  namespace: tana-mcp
   annotations:
-    description: Replicated Valkey instance for MCP OAuth state persistence
+    description: Replicated Valkey instance for Tana MCP Facade OAuth state persistence
 spec:
   clusterSize: 2
   kubernetesConfig:
@@ -17,9 +17,6 @@ spec:
       limits:
         cpu: 200m
         memory: 128Mi
-  sentinel:
-    size: 3
-    image: valkey/valkey:8-alpine
   storage:
     volumeClaimTemplate:
       spec:

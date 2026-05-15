@@ -69,9 +69,6 @@ spec:
                 secretKeyRef:
                   name: manifold-mcp-oidc
                   key: client_secret
-          volumeMounts:
-            - name: fastmcp-state
-              mountPath: /var/lib/fastmcp
           resources:
             requests:
               memory: "128Mi"
@@ -91,7 +88,3 @@ spec:
               port: 8765
             initialDelaySeconds: 20
             periodSeconds: 20
-      volumes:
-        - name: fastmcp-state
-          persistentVolumeClaim:
-            claimName: manifold-mcp-fastmcp-state
