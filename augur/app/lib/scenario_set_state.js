@@ -22,47 +22,51 @@ const DEFAULT_REPORT_SPEC = {
 const FINANCING_MODE_IDS = new Set(["cash", "fixed_30", "fixed_15", "custom"]);
 const PRIVATE_EQUITY_SALE_POLICY_IDS = new Set(["none", "liquid_net_worth_floor"]);
 
-const SCENARIO_PATCH_SECTIONS = {
-  scenarioId: "identity",
-  label: "identity",
-  enabled: "identity",
-  color: "identity",
-  propertyId: "propertyAndLocation",
-  actorPolicy: "actorsAndOwnership",
-  partnerPaymentMonthlyUsd: "actorsAndOwnership",
-  ownerResidenceMode: "occupancyAndRental",
-  rentalUsePolicy: "occupancyAndRental",
-  vacancyPct: "occupancyAndRental",
-  managementFeePct: "occupancyAndRental",
-  leasingFeePct: "occupancyAndRental",
-  roomsRentedWhileLiving: "occupancyAndRental",
-  roomRentMonthlyUsd: "occupancyAndRental",
-  roomVacancyPct: "occupancyAndRental",
-  liquidReservePolicy: "policies",
-  checkingFloorUsd: "policies",
-  checkingSaleAmountUsd: "policies",
-  privateEquitySalePolicy: "policies",
-  privateEquityLiquidNetWorthFloorUsd: "policies",
-  privateEquityTenderSaleAmountUsd: "policies",
-  initialCheckingUsd: "initialBalanceSheet",
-  startingPortfolioUsd: "initialBalanceSheet",
-  privateEquityValueUsd: "initialBalanceSheet",
-  privateEquityUnits: "initialBalanceSheet",
-  holdYears: "timeline",
-  financingMode: "financing",
-  downPaymentPct: "financing",
-  customMortgageRate: "financing",
-  customMortgageTermYears: "financing",
-  creditScore: "financing",
-  maintenancePct: "propertyAssumptions",
-  insuranceAnnualUsd: "propertyAssumptions",
-  depreciableBasisPct: "propertyAssumptions",
-  closingCostBuyPct: "taxAccounting",
-  closingCostSellPct: "taxAccounting",
-  capGainsExclusionUsd: "taxAccounting",
-  marginalTaxRate: "taxAccounting",
-  capGainsRate: "taxAccounting",
-};
+const SCENARIO_INPUT_SECTION_FIELDS = Object.freeze({
+  identity: Object.freeze(["scenarioId", "label", "enabled", "color"]),
+  propertyAndLocation: Object.freeze(["propertyId"]),
+  actorsAndOwnership: Object.freeze(["actorPolicy", "partnerPaymentMonthlyUsd"]),
+  timeline: Object.freeze(["holdYears"]),
+  financing: Object.freeze([
+    "financingMode",
+    "downPaymentPct",
+    "customMortgageRate",
+    "customMortgageTermYears",
+    "creditScore",
+  ]),
+  occupancyAndRental: Object.freeze([
+    "ownerResidenceMode",
+    "rentalUsePolicy",
+    "vacancyPct",
+    "managementFeePct",
+    "leasingFeePct",
+    "roomsRentedWhileLiving",
+    "roomRentMonthlyUsd",
+    "roomVacancyPct",
+  ]),
+  propertyAssumptions: Object.freeze(["maintenancePct", "insuranceAnnualUsd", "depreciableBasisPct"]),
+  taxAccounting: Object.freeze([
+    "closingCostBuyPct",
+    "closingCostSellPct",
+    "capGainsExclusionUsd",
+    "marginalTaxRate",
+    "capGainsRate",
+  ]),
+  initialBalanceSheet: Object.freeze([
+    "initialCheckingUsd",
+    "startingPortfolioUsd",
+    "privateEquityValueUsd",
+    "privateEquityUnits",
+  ]),
+  policies: Object.freeze([
+    "liquidReservePolicy",
+    "checkingFloorUsd",
+    "checkingSaleAmountUsd",
+    "privateEquitySalePolicy",
+    "privateEquityLiquidNetWorthFloorUsd",
+    "privateEquityTenderSaleAmountUsd",
+  ]),
+});
 
 function finiteNumber(value, fallback) {
   const number = Number(value);
@@ -109,6 +113,47 @@ function holdingValueUsd(holding) {
   return finiteNumber(holding?.valueUsd, finiteNumber(holding?.units, 0) * finiteNumber(holding?.fmvUsdPerUnit, 0));
 }
 
+function hasOwnField(value, field) {
+  return Object.prototype.hasOwnProperty.call(value ?? {}, field);
+}
+
+function scenarioInputSectionsFromFlatFields(fields, { includeMissing }) {
+  const source = fields ?? {};
+  return Object.fromEntries(
+    Object.entries(SCENARIO_INPUT_SECTION_FIELDS).map(([section, fieldNames]) => [
+      section,
+      Object.fromEntries(
+        fieldNames.flatMap((fieldName) =>
+          includeMissing || hasOwnField(source, fieldName) ? [[fieldName, source[fieldName]]] : []
+        )
+      ),
+    ])
+  );
+}
+
+export function scenarioInputFromFlatFields(fields) {
+  return scenarioInputSectionsFromFlatFields(fields, { includeMissing: true });
+}
+
+function nonEmptyObject(value) {
+  return Boolean(value && typeof value === "object" && Object.keys(value).length > 0);
+}
+
+export function scenarioResultDataModes(scenarioResult) {
+  const modes = [];
+  if (nonEmptyObject(scenarioResult?.metricFanColumns) || nonEmptyObject(scenarioResult?.terminalColumns)) {
+    modes.push("distribution");
+  }
+  if (nonEmptyObject(scenarioResult?.monthlyColumns)) {
+    modes.push("trajectory");
+  }
+  return modes;
+}
+
+export function scenarioResultSupportsMode(scenarioResult, mode) {
+  return scenarioResultDataModes(scenarioResult).includes(mode);
+}
+
 export function privateEquityCurrentUnitPriceUsd(bootstrap) {
   const holding = defaultConcentratedHolding(bootstrap);
   const fmv = finiteNumber(holding?.fmvUsdPerUnit, NaN);
@@ -126,135 +171,27 @@ function scenarioIdFromIndex(index) {
 }
 
 function scenarioFromFields(fields) {
-  return {
-    identity: {
-      scenarioId: fields.scenarioId,
-      label: fields.label,
-      enabled: fields.enabled,
-      color: fields.color,
-    },
-    propertyAndLocation: {
-      propertyId: fields.propertyId,
-    },
-    actorsAndOwnership: {
-      actorPolicy: fields.actorPolicy,
-      partnerPaymentMonthlyUsd: fields.partnerPaymentMonthlyUsd,
-    },
-    timeline: {
-      holdYears: fields.holdYears,
-    },
-    financing: {
-      financingMode: fields.financingMode,
-      downPaymentPct: fields.downPaymentPct,
-      customMortgageRate: fields.customMortgageRate,
-      customMortgageTermYears: fields.customMortgageTermYears,
-      creditScore: fields.creditScore,
-    },
-    occupancyAndRental: {
-      ownerResidenceMode: fields.ownerResidenceMode,
-      rentalUsePolicy: fields.rentalUsePolicy,
-      vacancyPct: fields.vacancyPct,
-      managementFeePct: fields.managementFeePct,
-      leasingFeePct: fields.leasingFeePct,
-      roomsRentedWhileLiving: fields.roomsRentedWhileLiving,
-      roomRentMonthlyUsd: fields.roomRentMonthlyUsd,
-      roomVacancyPct: fields.roomVacancyPct,
-    },
-    propertyAssumptions: {
-      maintenancePct: fields.maintenancePct,
-      insuranceAnnualUsd: fields.insuranceAnnualUsd,
-      depreciableBasisPct: fields.depreciableBasisPct,
-    },
-    taxAccounting: {
-      closingCostBuyPct: fields.closingCostBuyPct,
-      closingCostSellPct: fields.closingCostSellPct,
-      capGainsExclusionUsd: fields.capGainsExclusionUsd,
-      marginalTaxRate: fields.marginalTaxRate,
-      capGainsRate: fields.capGainsRate,
-    },
-    initialBalanceSheet: {
-      initialCheckingUsd: fields.initialCheckingUsd,
-      startingPortfolioUsd: fields.startingPortfolioUsd,
-      privateEquityValueUsd: fields.privateEquityValueUsd,
-      privateEquityUnits: fields.privateEquityUnits,
-    },
-    policies: {
-      liquidReservePolicy: fields.liquidReservePolicy,
-      checkingFloorUsd: fields.checkingFloorUsd,
-      checkingSaleAmountUsd: fields.checkingSaleAmountUsd,
-      privateEquitySalePolicy: fields.privateEquitySalePolicy,
-      privateEquityLiquidNetWorthFloorUsd: fields.privateEquityLiquidNetWorthFloorUsd,
-      privateEquityTenderSaleAmountUsd: fields.privateEquityTenderSaleAmountUsd,
-    },
-  };
+  return scenarioInputFromFlatFields(fields);
 }
 
 export function scenarioInputView(scenario) {
-  return {
-    scenarioId: scenario?.identity?.scenarioId ?? scenario?.scenarioId,
-    label: scenario?.identity?.label ?? scenario?.label,
-    enabled: scenario?.identity?.enabled ?? scenario?.enabled,
-    color: scenario?.identity?.color ?? scenario?.color,
-    propertyId: scenario?.propertyAndLocation?.propertyId ?? scenario?.propertyId,
-    actorPolicy: scenario?.actorsAndOwnership?.actorPolicy ?? scenario?.actorPolicy,
-    partnerPaymentMonthlyUsd:
-      scenario?.actorsAndOwnership?.partnerPaymentMonthlyUsd ?? scenario?.partnerPaymentMonthlyUsd,
-    holdYears: scenario?.timeline?.holdYears ?? scenario?.holdYears,
-    financingMode: scenario?.financing?.financingMode ?? scenario?.financingMode,
-    downPaymentPct: scenario?.financing?.downPaymentPct ?? scenario?.downPaymentPct,
-    customMortgageRate: scenario?.financing?.customMortgageRate ?? scenario?.customMortgageRate,
-    customMortgageTermYears: scenario?.financing?.customMortgageTermYears ?? scenario?.customMortgageTermYears,
-    creditScore: scenario?.financing?.creditScore ?? scenario?.creditScore,
-    ownerResidenceMode: scenario?.occupancyAndRental?.ownerResidenceMode ?? scenario?.ownerResidenceMode,
-    rentalUsePolicy: scenario?.occupancyAndRental?.rentalUsePolicy ?? scenario?.rentalUsePolicy,
-    vacancyPct: scenario?.occupancyAndRental?.vacancyPct ?? scenario?.vacancyPct,
-    managementFeePct: scenario?.occupancyAndRental?.managementFeePct ?? scenario?.managementFeePct,
-    leasingFeePct: scenario?.occupancyAndRental?.leasingFeePct ?? scenario?.leasingFeePct,
-    roomsRentedWhileLiving: scenario?.occupancyAndRental?.roomsRentedWhileLiving ?? scenario?.roomsRentedWhileLiving,
-    roomRentMonthlyUsd: scenario?.occupancyAndRental?.roomRentMonthlyUsd ?? scenario?.roomRentMonthlyUsd,
-    roomVacancyPct: scenario?.occupancyAndRental?.roomVacancyPct ?? scenario?.roomVacancyPct,
-    maintenancePct: scenario?.propertyAssumptions?.maintenancePct ?? scenario?.maintenancePct,
-    insuranceAnnualUsd: scenario?.propertyAssumptions?.insuranceAnnualUsd ?? scenario?.insuranceAnnualUsd,
-    depreciableBasisPct: scenario?.propertyAssumptions?.depreciableBasisPct ?? scenario?.depreciableBasisPct,
-    closingCostBuyPct: scenario?.taxAccounting?.closingCostBuyPct ?? scenario?.closingCostBuyPct,
-    closingCostSellPct: scenario?.taxAccounting?.closingCostSellPct ?? scenario?.closingCostSellPct,
-    capGainsExclusionUsd: scenario?.taxAccounting?.capGainsExclusionUsd ?? scenario?.capGainsExclusionUsd,
-    marginalTaxRate: scenario?.taxAccounting?.marginalTaxRate ?? scenario?.marginalTaxRate,
-    capGainsRate: scenario?.taxAccounting?.capGainsRate ?? scenario?.capGainsRate,
-    initialCheckingUsd: scenario?.initialBalanceSheet?.initialCheckingUsd ?? scenario?.initialCheckingUsd,
-    startingPortfolioUsd: scenario?.initialBalanceSheet?.startingPortfolioUsd ?? scenario?.startingPortfolioUsd,
-    privateEquityValueUsd: scenario?.initialBalanceSheet?.privateEquityValueUsd ?? scenario?.privateEquityValueUsd,
-    privateEquityUnits: scenario?.initialBalanceSheet?.privateEquityUnits ?? scenario?.privateEquityUnits,
-    liquidReservePolicy: scenario?.policies?.liquidReservePolicy ?? scenario?.liquidReservePolicy,
-    checkingFloorUsd: scenario?.policies?.checkingFloorUsd ?? scenario?.checkingFloorUsd,
-    checkingSaleAmountUsd: scenario?.policies?.checkingSaleAmountUsd ?? scenario?.checkingSaleAmountUsd,
-    privateEquitySalePolicy: scenario?.policies?.privateEquitySalePolicy ?? scenario?.privateEquitySalePolicy,
-    privateEquityLiquidNetWorthFloorUsd:
-      scenario?.policies?.privateEquityLiquidNetWorthFloorUsd ?? scenario?.privateEquityLiquidNetWorthFloorUsd,
-    privateEquityTenderSaleAmountUsd:
-      scenario?.policies?.privateEquityTenderSaleAmountUsd ?? scenario?.privateEquityTenderSaleAmountUsd,
-  };
+  return Object.fromEntries(
+    Object.entries(SCENARIO_INPUT_SECTION_FIELDS).flatMap(([section, fieldNames]) =>
+      fieldNames.map((fieldName) => [fieldName, scenario?.[section]?.[fieldName] ?? scenario?.[fieldName]])
+    )
+  );
 }
 
 export function patchScenarioInput(scenario, patch) {
   const next = {
     ...scenario,
-    identity: { ...(scenario?.identity ?? {}) },
-    propertyAndLocation: { ...(scenario?.propertyAndLocation ?? {}) },
-    actorsAndOwnership: { ...(scenario?.actorsAndOwnership ?? {}) },
-    timeline: { ...(scenario?.timeline ?? {}) },
-    financing: { ...(scenario?.financing ?? {}) },
-    occupancyAndRental: { ...(scenario?.occupancyAndRental ?? {}) },
-    propertyAssumptions: { ...(scenario?.propertyAssumptions ?? {}) },
-    taxAccounting: { ...(scenario?.taxAccounting ?? {}) },
-    initialBalanceSheet: { ...(scenario?.initialBalanceSheet ?? {}) },
-    policies: { ...(scenario?.policies ?? {}) },
   };
-  for (const [field, value] of Object.entries(patch)) {
-    const section = SCENARIO_PATCH_SECTIONS[field];
-    if (section) {
-      next[section][field] = value;
-    }
+  for (const section of Object.keys(SCENARIO_INPUT_SECTION_FIELDS)) {
+    next[section] = { ...(scenario?.[section] ?? {}) };
+  }
+  const sections = scenarioInputSectionsFromFlatFields(patch, { includeMissing: false });
+  for (const [section, values] of Object.entries(sections)) {
+    Object.assign(next[section], values);
   }
   return next;
 }

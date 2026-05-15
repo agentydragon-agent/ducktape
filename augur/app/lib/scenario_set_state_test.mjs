@@ -7,7 +7,10 @@ import {
   encodeScenarioSetUrlState,
   normalizeScenarioSetInput,
   patchScenarioInput,
+  scenarioInputFromFlatFields,
   scenarioInputView,
+  scenarioResultDataModes,
+  scenarioResultSupportsMode,
   scenarioSetInputToRequest,
 } from "./scenario_set_state.js";
 import { decamelizeObjectKeys } from "./casing.js";
@@ -139,6 +142,51 @@ test("default input creates comparable generic location scenarios", () => {
   assert.equal(input.marketRequest.sharedMarketPaths, true);
   assert.equal(input.reportSpec.includeMonthlyColumns, true);
   assert.equal(input.reportSpec.includeSamplePaths, false);
+});
+
+test("flat scenario fields group into nested domain sections without changing request payloads", () => {
+  const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
+  const flatScenario = scenarioInputView(input.scenarios[0]);
+  const groupedScenario = scenarioInputFromFlatFields(flatScenario);
+
+  assert.deepEqual(scenarioInputView(groupedScenario), flatScenario);
+  assert.equal(groupedScenario.identity.scenarioId, "scenario_1");
+  assert.equal(groupedScenario.propertyAndLocation.propertyId, "location_a_property");
+  assert.equal(groupedScenario.financing.financingMode, "fixed_30");
+  assert.equal(groupedScenario.taxAccounting.marginalTaxRate, 40);
+  assert.equal(groupedScenario.initialBalanceSheet.privateEquityUnits, 500);
+  assert.equal(groupedScenario.policies.privateEquitySalePolicy, "none");
+
+  const requestWithOriginalScenario = decamelizeObjectKeys(scenarioSetInputToRequest(input, bootstrap));
+  const requestWithGroupedScenario = decamelizeObjectKeys(
+    scenarioSetInputToRequest({ ...input, scenarios: [groupedScenario, input.scenarios[1]] }, bootstrap)
+  );
+
+  assert.deepEqual(requestWithGroupedScenario, requestWithOriginalScenario);
+});
+
+test("result mode helpers distinguish distribution summaries from trajectory rows", () => {
+  const metricFanTable = {
+    rowCount: 1,
+    columns: { monthIndex: [12], p50: [125_000] },
+  };
+  const monthlyTable = {
+    rowCount: 2,
+    columns: { monthIndex: [0, 1], rolloutIndex: [0, 0], cashUsd: [25_000, 24_500] },
+  };
+
+  assert.deepEqual(scenarioResultDataModes({ metricFanColumns: { netWorthUsd: metricFanTable } }), ["distribution"]);
+  assert.deepEqual(scenarioResultDataModes({ monthlyColumns: monthlyTable }), ["trajectory"]);
+  assert.deepEqual(
+    scenarioResultDataModes({
+      terminalColumns: metricFanTable,
+      monthlyColumns: monthlyTable,
+    }),
+    ["distribution", "trajectory"]
+  );
+  assert.equal(scenarioResultSupportsMode({ monthlyColumns: monthlyTable }, "trajectory"), true);
+  assert.equal(scenarioResultSupportsMode({ monthlyColumns: monthlyTable }, "distribution"), false);
+  assert.deepEqual(scenarioResultDataModes({ metricFanColumns: {}, monthlyColumns: null }), []);
 });
 
 test("scenario set request is canonical backend input after decamelizing", () => {
