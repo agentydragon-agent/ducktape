@@ -19,6 +19,7 @@ spec:
   dependsOn:
     - name: flux-image-automation-ghcr
     - name: tofu-controller
+    - name: tofu-state-db
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
