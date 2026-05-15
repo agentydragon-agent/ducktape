@@ -24,24 +24,40 @@ Build or run the agent CLI. In a consuming Bazel repo, use the external
 
 ```bash
 bazelisk run @ducktape//devinfra/js/debundle:debundle_agent_cli -- \
-  plan-work --graph "$GRAPH" --modules "$MODULES" > /tmp/debundle-plan.json
+  plan-work --graph "$GRAPH" --modules "$MODULES" --limit 25 \
+  >/tmp/debundle-plan.json
+```
+
+If `bazelisk run @ducktape//...` has Bazel server or output-download
+trouble in a consuming repo, build the CLI with an isolated output base
+and run the built binary directly:
+
+```bash
+bazelisk --output_base=/tmp/debundle-agent-cli-bazel \
+  build @ducktape//devinfra/js/debundle:debundle_agent_cli \
+  --remote_download_outputs=all
 ```
 
 ## Planning Loop
 
-1. Run `plan-work` first. Treat `proposals[]` with
+1. Run `plan-work --limit 25` first. Treat `proposals[]` with
    `landable_today: true` as the primary dispatch surface. Each proposal
    has owner IDs, binding IDs, line span, active-module references, and
-   residual-cell references.
+   residual-cell references. Limited output preserves planner order:
+   residual-edge topo-depth, then source start line.
 
 2. For binding-patch cleanup, run `patch-status`. Use `full[]` for patch
    sets that are currently assignable as a unit, `with_companions[]` when
    companion bindings must move together, and `near[]` for blocked patch
-   sets worth investigating.
+   sets worth investigating. An empty `patch-status` report only means no
+   current binding-patch set matches those sections; it does not mean
+   there are no peelable candidates.
 
 3. For symbol-level candidates, run `list-candidates`. Use
    `--readable-only` when you want already-named bindings, and
    `--by-destination` when grouping by the heuristic destination helps.
+   This is the best command for inspecting readable names that came from
+   sidecar binding patches.
 
 4. Before assigning a proposal, run `explain` on its proposal, owner, or
    binding ID. Check graph neighbors, current spec homes, peelability
@@ -56,22 +72,22 @@ bazelisk run @ducktape//devinfra/js/debundle:debundle_agent_cli -- \
 # Certified module-assignment proposals and diagnostics.
 bazelisk run @ducktape//devinfra/js/debundle:debundle_agent_cli -- \
   plan-work --graph "$GRAPH" --modules "$MODULES" \
-  --size-cap-lines 10000
+  --size-cap-lines 10000 --limit 25
 
 # Binding-patch coverage and near misses.
 bazelisk run @ducktape//devinfra/js/debundle:debundle_agent_cli -- \
   patch-status --graph "$GRAPH" --modules "$MODULES" \
-  --near-missing 2 --max-companions 16
+  --near-missing 2 --max-companions 16 --limit 50
 
 # Candidate catalog.
 bazelisk run @ducktape//devinfra/js/debundle:debundle_agent_cli -- \
   list-candidates --graph "$GRAPH" --modules "$MODULES" \
-  --readable-only --by-destination
+  --readable-only --by-destination --limit 100
 
 # Graph/spec explanation for one object.
 bazelisk run @ducktape//devinfra/js/debundle:debundle_agent_cli -- \
   explain --graph "$GRAPH" --modules "$MODULES" \
-  --proposal-id auto_partition_0000
+  --proposal-id auto_partition_0000 --limit 25
 
 # Source text for one object. Use --source-root when source_path is relative.
 bazelisk run @ducktape//devinfra/js/debundle:debundle_agent_cli -- \
@@ -83,7 +99,8 @@ bazelisk run @ducktape//devinfra/js/debundle:debundle_agent_cli -- \
 ## Reading Results
 
 - `plan-work` is the module-assignment proposal query.
-- `patch-status` is the binding-patch coverage query.
+- `patch-status` is the binding-patch coverage query, not the global
+  candidate queue.
 - `list-candidates` is the symbol-level candidate catalog.
 - `explain` is the graph walk primitive for owners, bindings, and
   proposals.

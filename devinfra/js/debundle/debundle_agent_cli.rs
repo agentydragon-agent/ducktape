@@ -76,6 +76,10 @@ struct PlanWorkArgs {
     /// Hard line ceiling per emitted proposal.
     #[arg(long = "size-cap-lines", default_value_t = 10_000)]
     size_cap_lines: usize,
+
+    /// Maximum number of proposals and diagnostics to emit. Zero means unlimited.
+    #[arg(long, default_value_t = 0)]
+    limit: usize,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -125,6 +129,10 @@ struct ExplainArgs {
     /// Hard line ceiling used when resolving `--proposal-id`.
     #[arg(long = "size-cap-lines", default_value_t = 10_000)]
     size_cap_lines: usize,
+
+    /// Maximum number of rows to emit per report section. Zero means unlimited.
+    #[arg(long, default_value_t = 0)]
+    limit: usize,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -189,6 +197,14 @@ struct CandidateGroup {
     candidates: Vec<PeelInventoryRecord>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct PlanWorkReport {
+    #[serde(flatten)]
+    report: PeelFactorizeReport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits: Option<LimitReport>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct ExplainReport {
     query: QueryReport,
@@ -205,6 +221,21 @@ struct ExplainReport {
     residual_horizon: Vec<ResidualOwnerPeelHorizonReport>,
     factorize_proposals: Vec<FactorizeProposal>,
     factorize_diagnostics: Vec<FactorizeDiagnosticReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits: Option<LimitReport>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct LimitReport {
+    limit: usize,
+    sections: BTreeMap<&'static str, LimitSectionReport>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct LimitSectionReport {
+    total: usize,
+    emitted: usize,
+    truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -269,11 +300,31 @@ fn print_json<T: Serialize>(value: &T) -> Result<()> {
     Ok(())
 }
 
-fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PeelFactorizeReport> {
-    analyze_peel_factorize(&PeelFactorizeOptions {
+fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
+    let mut report = analyze_peel_factorize(&PeelFactorizeOptions {
         owner_graph_path: args.common.owner_graph_path.clone(),
         modules_root: args.common.modules_root.clone(),
         size_cap_lines: args.size_cap_lines,
+    })?;
+    let mut sections = BTreeMap::new();
+    if args.limit > 0 {
+        sort_factorize_diagnostics(&mut report.diagnostics);
+    }
+    apply_limit_with_metadata(
+        &mut report.proposals,
+        args.limit,
+        &mut sections,
+        "proposals",
+    );
+    apply_limit_with_metadata(
+        &mut report.diagnostics,
+        args.limit,
+        &mut sections,
+        "diagnostics",
+    );
+    Ok(PlanWorkReport {
+        report,
+        limits: limit_report(args.limit, sections),
     })
 }
 
@@ -314,10 +365,10 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let query = query_report(&selection);
     let owner_ids = resolve_owner_ids(&selection, &graph, &args.common, args.size_cap_lines)?;
     let owner_set: BTreeSet<String> = owner_ids.iter().cloned().collect();
-    let owners = owners_for_ids(&graph, &owner_set);
+    let mut owners = owners_for_ids(&graph, &owner_set);
 
     let mut neighbor_ids = BTreeSet::new();
-    let incoming_edges: Vec<OwnerGraphEdgeReport> = graph
+    let mut incoming_edges: Vec<OwnerGraphEdgeReport> = graph
         .edges
         .iter()
         .filter(|edge| owner_set.contains(&edge.target))
@@ -328,7 +379,7 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         })
         .cloned()
         .collect();
-    let outgoing_edges: Vec<OwnerGraphEdgeReport> = graph
+    let mut outgoing_edges: Vec<OwnerGraphEdgeReport> = graph
         .edges
         .iter()
         .filter(|edge| owner_set.contains(&edge.source))
@@ -339,7 +390,7 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         })
         .cloned()
         .collect();
-    let neighbor_owners = owners_for_ids(&graph, &neighbor_ids);
+    let mut neighbor_owners = owners_for_ids(&graph, &neighbor_ids);
 
     let mut bindings: Vec<BindingReport> = owners
         .iter()
@@ -351,13 +402,13 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .iter()
         .map(|binding| binding.binding.clone())
         .collect();
-    let binding_homes = binding_homes(&args.common.modules_root, &binding_ids)?;
+    let mut binding_homes = binding_homes(&args.common.modules_root, &binding_ids)?;
 
     let selected_destinations: BTreeSet<String> = owners
         .iter()
         .map(|owner| owner.destination.id.clone())
         .collect();
-    let quotient_edges = graph
+    let mut quotient_edges = graph
         .quotient
         .edges
         .iter()
@@ -368,21 +419,21 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .cloned()
         .collect();
 
-    let peel_sets = graph
+    let mut peel_sets = graph
         .peelability
         .minimal_peel_sets
         .iter()
         .filter(|set| overlaps(&set.owner_ids, &owner_set))
         .cloned()
         .collect();
-    let evaluated_owner_sets = graph
+    let mut evaluated_owner_sets = graph
         .peelability
         .evaluated_owner_sets
         .iter()
         .filter(|set| overlaps(&set.owner_ids, &owner_set))
         .cloned()
         .collect();
-    let residual_horizon = graph
+    let mut residual_horizon = graph
         .peelability
         .residual_owner_horizon
         .iter()
@@ -395,20 +446,86 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         modules_root: args.common.modules_root.clone(),
         size_cap_lines: args.size_cap_lines,
     })?;
-    let factorize_proposals = factorize
+    let mut factorize_proposals = factorize
         .proposals
         .into_iter()
         .filter(|proposal| overlaps(&proposal.owner_ids, &owner_set))
         .collect();
-    let factorize_diagnostics = factorize
+    let mut factorize_diagnostics = factorize
         .diagnostics
         .into_iter()
         .filter(|diagnostic| overlaps(&diagnostic.owner_ids, &owner_set))
         .collect();
+    let mut limited_owner_ids = owner_ids;
+
+    let mut sections = BTreeMap::new();
+    apply_limit_with_metadata(
+        &mut limited_owner_ids,
+        args.limit,
+        &mut sections,
+        "owner_ids",
+    );
+    apply_limit_with_metadata(&mut owners, args.limit, &mut sections, "owners");
+    apply_limit_with_metadata(
+        &mut neighbor_owners,
+        args.limit,
+        &mut sections,
+        "neighbor_owners",
+    );
+    apply_limit_with_metadata(&mut bindings, args.limit, &mut sections, "bindings");
+    apply_limit_with_metadata(
+        &mut binding_homes,
+        args.limit,
+        &mut sections,
+        "binding_homes",
+    );
+    apply_limit_with_metadata(
+        &mut incoming_edges,
+        args.limit,
+        &mut sections,
+        "incoming_edges",
+    );
+    apply_limit_with_metadata(
+        &mut outgoing_edges,
+        args.limit,
+        &mut sections,
+        "outgoing_edges",
+    );
+    apply_limit_with_metadata(
+        &mut quotient_edges,
+        args.limit,
+        &mut sections,
+        "quotient_edges",
+    );
+    apply_limit_with_metadata(&mut peel_sets, args.limit, &mut sections, "peel_sets");
+    apply_limit_with_metadata(
+        &mut evaluated_owner_sets,
+        args.limit,
+        &mut sections,
+        "evaluated_owner_sets",
+    );
+    apply_limit_with_metadata(
+        &mut residual_horizon,
+        args.limit,
+        &mut sections,
+        "residual_horizon",
+    );
+    apply_limit_with_metadata(
+        &mut factorize_proposals,
+        args.limit,
+        &mut sections,
+        "factorize_proposals",
+    );
+    apply_limit_with_metadata(
+        &mut factorize_diagnostics,
+        args.limit,
+        &mut sections,
+        "factorize_diagnostics",
+    );
 
     Ok(ExplainReport {
         query,
-        owner_ids,
+        owner_ids: limited_owner_ids,
         owners,
         neighbor_owners,
         bindings,
@@ -421,6 +538,7 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         residual_horizon,
         factorize_proposals,
         factorize_diagnostics,
+        limits: limit_report(args.limit, sections),
     })
 }
 
@@ -486,6 +604,49 @@ fn apply_limit<T>(records: &mut Vec<T>, limit: usize) {
     if limit > 0 {
         records.truncate(limit);
     }
+}
+
+fn apply_limit_with_metadata<T>(
+    records: &mut Vec<T>,
+    limit: usize,
+    sections: &mut BTreeMap<&'static str, LimitSectionReport>,
+    section: &'static str,
+) {
+    if limit == 0 {
+        return;
+    }
+    let total = records.len();
+    apply_limit(records, limit);
+    let emitted = records.len();
+    sections.insert(
+        section,
+        LimitSectionReport {
+            total,
+            emitted,
+            truncated: emitted < total,
+        },
+    );
+}
+
+fn limit_report(
+    limit: usize,
+    sections: BTreeMap<&'static str, LimitSectionReport>,
+) -> Option<LimitReport> {
+    (limit > 0).then_some(LimitReport { limit, sections })
+}
+
+fn sort_factorize_diagnostics(diagnostics: &mut [FactorizeDiagnosticReport]) {
+    diagnostics.sort_by_key(|diagnostic| {
+        (
+            diagnostic.reason,
+            diagnostic
+                .source_line_range
+                .map(|range| range[0])
+                .unwrap_or(usize::MAX),
+            diagnostic.size_members,
+            diagnostic.diagnostic_id.clone(),
+        )
+    });
 }
 
 fn group_candidates_by_destination(candidates: &[PeelInventoryRecord]) -> Vec<CandidateGroup> {
@@ -751,10 +912,11 @@ mod tests {
     use std::path::Path;
 
     use analysis::{
-        DepKind, FactorizeCell, FactorizeReport, ModuleReportRef, OwnerGraphEdgeReport,
-        OwnerGraphNodeReport, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport,
-        OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus, Purity, QuotientSccReport,
-        SourceLocation, StatementKind, StatementOrdinal,
+        DepKind, FactorizeCell, FactorizeDiagnostic, FactorizeDiagnosticReason, FactorizeReport,
+        ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphPeelSetReport,
+        OwnerGraphPeelabilityReport, OwnerGraphQuotientReport, OwnerGraphReport,
+        PeelCandidateStatus, Purity, QuotientSccReport, SourceLocation, StatementKind,
+        StatementOrdinal,
     };
     use tempfile::TempDir;
 
@@ -858,14 +1020,38 @@ mod tests {
         }
     }
 
-    fn fixture() -> (TempDir, CommonArgs) {
+    fn diagnostic(
+        id: &str,
+        owner_ids: &[&str],
+        reason: FactorizeDiagnosticReason,
+        line: usize,
+        size_members: usize,
+    ) -> FactorizeDiagnostic {
+        FactorizeDiagnostic {
+            diagnostic_id: id.to_string(),
+            owner_ids: owner_ids
+                .iter()
+                .map(|owner_id| (*owner_id).to_string())
+                .collect(),
+            binding_ids: Vec::new(),
+            size_lines_estimate: 1,
+            size_members,
+            source_line_range: Some([line, line]),
+            ordinal_span: 0,
+            status: PeelCandidateStatus::BlockedCycle,
+            reason,
+            emit_blocked_residual_bindings: Vec::new(),
+            cycle_blocker_owner_ids: Vec::new(),
+            active_modules_referenced: Vec::new(),
+            extends_module_id: None,
+        }
+    }
+
+    fn fixture_with_graph(graph: OwnerGraphReport) -> (TempDir, CommonArgs) {
         let temp = tempfile::tempdir().unwrap();
         let graph_path = temp.path().join("owner_graph.json");
         let modules_root = temp.path().join("spec/modules");
-        write(
-            &graph_path,
-            &serde_json::to_string_pretty(&graph_fixture()).unwrap(),
-        );
+        write(&graph_path, &serde_json::to_string_pretty(&graph).unwrap());
         write(
             &temp.path().join("spec/binding_patches.yaml"),
             "members:\n  - name: PaymentError\n    selector:\n      binding:\n        name: ZZ\n",
@@ -882,6 +1068,79 @@ mod tests {
                 modules_root,
             },
         )
+    }
+
+    fn fixture() -> (TempDir, CommonArgs) {
+        fixture_with_graph(graph_fixture())
+    }
+
+    #[test]
+    fn plan_work_limit_keeps_sorted_prefix_and_reports_totals() {
+        let mut graph = graph_fixture();
+        graph.factorize.cells.push(FactorizeCell {
+            proposed_module_id: "factor_0001".to_string(),
+            owner_ids: vec!["owner:1".to_string()],
+            binding_ids: vec!["aa".to_string()],
+            anonymous_statement_owner_ids: Vec::new(),
+            size_lines_estimate: 1,
+            size_members: 1,
+            source_line_range: Some([3, 3]),
+            ordinal_span: 1,
+            status: PeelCandidateStatus::PeelableNow,
+            landable_today: true,
+            emit_blocked_residual_bindings: Vec::new(),
+            cycle_blocker_owner_ids: Vec::new(),
+            active_modules_referenced: Vec::new(),
+            extends_module_id: None,
+            extension_owner_ids: Vec::new(),
+        });
+        graph.factorize.diagnostics = vec![
+            diagnostic(
+                "diagnostic:no_exact_repair",
+                &["owner:0"],
+                FactorizeDiagnosticReason::NoExactRepair,
+                1,
+                1,
+            ),
+            diagnostic(
+                "diagnostic:late_size_cap",
+                &["owner:0"],
+                FactorizeDiagnosticReason::ExceedsSizeCap,
+                9,
+                1,
+            ),
+            diagnostic(
+                "diagnostic:early_size_cap",
+                &["owner:0"],
+                FactorizeDiagnosticReason::ExceedsSizeCap,
+                4,
+                1,
+            ),
+        ];
+
+        let (_temp, common) = fixture_with_graph(graph);
+        let report = run_plan_work_report(&PlanWorkArgs {
+            common,
+            size_cap_lines: 10_000,
+            limit: 1,
+        })
+        .unwrap();
+
+        assert_eq!(report.report.proposals.len(), 1);
+        assert_eq!(report.report.proposals[0].owner_ids, vec!["owner:0"]);
+        assert_eq!(report.report.diagnostics.len(), 1);
+        assert_eq!(
+            report.report.diagnostics[0].diagnostic_id,
+            "diagnostic:early_size_cap"
+        );
+        let limits = report.limits.unwrap();
+        assert_eq!(limits.limit, 1);
+        assert_eq!(limits.sections["proposals"].total, 2);
+        assert_eq!(limits.sections["proposals"].emitted, 1);
+        assert!(limits.sections["proposals"].truncated);
+        assert_eq!(limits.sections["diagnostics"].total, 3);
+        assert_eq!(limits.sections["diagnostics"].emitted, 1);
+        assert!(limits.sections["diagnostics"].truncated);
     }
 
     #[test]
@@ -910,6 +1169,7 @@ mod tests {
                 proposal_id: None,
             },
             size_cap_lines: 10_000,
+            limit: 0,
         })
         .unwrap();
         assert_eq!(report.owner_ids, vec!["owner:0"]);
@@ -920,6 +1180,56 @@ mod tests {
             report.factorize_proposals[0].proposed_module_id,
             "auto_partition_0000"
         );
+    }
+
+    #[test]
+    fn explain_limit_applies_per_section_and_reports_totals() {
+        let mut graph = graph_fixture();
+        graph.nodes.push(owner("owner:2", 3, "bb", "bb"));
+        graph.nodes.push(owner("owner:3", 4, "cc", "cc"));
+        graph.edges.push(OwnerGraphEdgeReport {
+            id: "edge:1".to_string(),
+            source: "owner:2".to_string(),
+            target: "owner:0".to_string(),
+            edge_kind: DepKind::EagerUse,
+            binding: Some("ZZ".to_string()),
+            statement_ordinal: StatementOrdinal(3),
+            constrains_init_order: true,
+        });
+        graph.edges.push(OwnerGraphEdgeReport {
+            id: "edge:2".to_string(),
+            source: "owner:3".to_string(),
+            target: "owner:0".to_string(),
+            edge_kind: DepKind::EagerUse,
+            binding: Some("ZZ".to_string()),
+            statement_ordinal: StatementOrdinal(4),
+            constrains_init_order: true,
+        });
+
+        let (_temp, common) = fixture_with_graph(graph);
+        let report = run_explain_report(&ExplainArgs {
+            common,
+            selection: SelectionArgs {
+                owner_id: None,
+                binding_id: Some("ZZ".to_string()),
+                proposal_id: None,
+            },
+            size_cap_lines: 10_000,
+            limit: 1,
+        })
+        .unwrap();
+
+        assert_eq!(report.incoming_edges.len(), 1);
+        assert_eq!(report.neighbor_owners.len(), 1);
+        let limits = report.limits.unwrap();
+        assert_eq!(limits.sections["incoming_edges"].total, 3);
+        assert_eq!(limits.sections["incoming_edges"].emitted, 1);
+        assert!(limits.sections["incoming_edges"].truncated);
+        assert_eq!(limits.sections["neighbor_owners"].total, 3);
+        assert_eq!(limits.sections["neighbor_owners"].emitted, 1);
+        assert!(limits.sections["neighbor_owners"].truncated);
+        assert_eq!(limits.sections["owner_ids"].total, 1);
+        assert!(!limits.sections["owner_ids"].truncated);
     }
 
     #[test]
