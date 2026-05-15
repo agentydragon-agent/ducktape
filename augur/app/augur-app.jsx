@@ -949,6 +949,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const privateEquityLabel = concentratedHolding?.label ?? "Private equity";
   const privateEquityCurrentValueUsd = privateEquityValueUsdForUnits(bootstrap, scenario.privateEquityUnits);
   const privateEquityUnitPriceUsd = privateEquityCurrentUnitPriceUsd(bootstrap);
+  const isCustomFinancing = scenario.financingMode === "custom";
   const locationsById = useMemo(
     () => new Map(bootstrap.locations.map((location) => [location.id, location])),
     [bootstrap]
@@ -1049,21 +1050,25 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             onChange={(downPaymentPct) => updateScenario({ downPaymentPct })}
             suffix="%"
           />
-          <NumberField
-            label="Custom mortgage rate"
-            step={0.05}
-            value={scenario.customMortgageRate}
-            onChange={(customMortgageRate) => updateScenario({ customMortgageRate })}
-            suffix="%"
-          />
-          <NumberField
-            label="Custom mortgage term"
-            min={1}
-            step={1}
-            value={scenario.customMortgageTermYears}
-            onChange={(customMortgageTermYears) => updateScenario({ customMortgageTermYears })}
-            suffix="yr"
-          />
+          {isCustomFinancing && (
+            <>
+              <NumberField
+                label="Custom mortgage rate"
+                step={0.05}
+                value={scenario.customMortgageRate}
+                onChange={(customMortgageRate) => updateScenario({ customMortgageRate })}
+                suffix="%"
+              />
+              <NumberField
+                label="Custom mortgage term"
+                min={1}
+                step={1}
+                value={scenario.customMortgageTermYears}
+                onChange={(customMortgageTermYears) => updateScenario({ customMortgageTermYears })}
+                suffix="yr"
+              />
+            </>
+          )}
           <NumberField
             label="Credit score"
             min={300}

@@ -238,6 +238,8 @@ test("URL state round-trips only input state", () => {
   assert.deepEqual(decoded.scenarioResults, undefined);
   assert.deepEqual(decoded.scenarios[0].backendResult, undefined);
   assert.equal(decoded.scenarios[0].propertyId, "location_a_property");
+  assert.equal(decoded.scenarios[0].customMortgageRate, undefined);
+  assert.equal(decoded.scenarios[0].customMortgageTermYears, undefined);
 });
 
 test("URL state round-trips rich scenario controls in camelCase", () => {
@@ -246,6 +248,8 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
     ...input.scenarios[0],
     financingMode: "custom",
     downPaymentPct: 35,
+    customMortgageRate: 7.125,
+    customMortgageTermYears: 20,
     marginalTaxRate: 39,
     vacancyPct: 7,
     privateEquityValueUsd: 987_000,
@@ -256,6 +260,8 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
 
   assert.equal(decoded.scenarios[0].financingMode, "custom");
   assert.equal(decoded.scenarios[0].downPaymentPct, 35);
+  assert.equal(decoded.scenarios[0].customMortgageRate, 7.125);
+  assert.equal(decoded.scenarios[0].customMortgageTermYears, 20);
   assert.equal(decoded.scenarios[0].marginalTaxRate, 39);
   assert.equal(decoded.scenarios[0].vacancyPct, 7);
   assert.equal(decoded.scenarios[0].privateEquityValueUsd, undefined);

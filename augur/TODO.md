@@ -77,9 +77,10 @@ second ordered roadmap.
       already do not visually mesh with the inputs. Basic form controls,
       disclosure widgets, tables, buttons, tabs, and input groups should come from
       a well-tested component surface instead of being locally reinvented.
-- [ ] Rework financing controls around mortgage terms. Standard modes should
-      expose standard products only; if a custom override remains, custom term/rate
-      fields should appear only in that mode.
+- [ ] Finish financing-control cleanup around mortgage terms. The browser now
+      hides custom term/rate fields outside custom override mode, but the broader
+      domain model still needs a pass over which mortgage products and override
+      fields should exist at all.
 - [ ] Give room-rental vacancy a realistic default in fixtures and deployment
       config. The visible/default value appears to be `0%`, which is not a
       credible modeling default.

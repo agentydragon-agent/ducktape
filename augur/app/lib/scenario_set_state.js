@@ -516,8 +516,12 @@ function serializableScenario(scenario) {
     holdYears: scenario.holdYears,
     financingMode: scenario.financingMode,
     downPaymentPct: scenario.downPaymentPct,
-    customMortgageRate: scenario.customMortgageRate,
-    customMortgageTermYears: scenario.customMortgageTermYears,
+    ...(scenario.financingMode === "custom"
+      ? {
+          customMortgageRate: scenario.customMortgageRate,
+          customMortgageTermYears: scenario.customMortgageTermYears,
+        }
+      : {}),
     creditScore: scenario.creditScore,
     vacancyPct: scenario.vacancyPct,
     managementFeePct: scenario.managementFeePct,
