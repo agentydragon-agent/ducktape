@@ -261,11 +261,11 @@ def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None
         policy_id="pe_sale", actor_id="alpha", sale_rule=FixedAmountPrivateEquitySaleRule(amount_usd=50_000)
     )
     opportunity = private_equity_sale_opportunity(
-        liquidity_event_mask=np.array([False, True]),
+        sale_opportunity_mask=np.array([False, True]),
         private_equity_value_before_sale_usd=np.array([200_000.0, 200_000.0]),
     )
     instruction = private_equity_sale_instruction(
-        policy, request=None, opportunity=opportunity, liquid_net_worth_usd=np.array([100_000.0, 100_000.0])
+        policy, opportunity=opportunity, liquid_net_worth_usd=np.array([100_000.0, 100_000.0])
     )
 
     result = apply_private_equity_sale_instruction(
@@ -307,12 +307,12 @@ def test_private_equity_liquid_net_worth_floor_rule_uses_opportunity_and_liquid_
         sale_rule=LiquidNetWorthFloorPrivateEquitySaleRule(min_liquid_net_worth_usd=100_000, sale_amount_usd=50_000),
     )
     opportunity = private_equity_sale_opportunity(
-        liquidity_event_mask=np.array([False, True, True]),
+        sale_opportunity_mask=np.array([False, True, True]),
         private_equity_value_before_sale_usd=np.array([200_000.0, 200_000.0, 200_000.0]),
     )
 
     instruction = private_equity_sale_instruction(
-        policy, request=None, opportunity=opportunity, liquid_net_worth_usd=np.array([50_000.0, 90_000.0, 120_000.0])
+        policy, opportunity=opportunity, liquid_net_worth_usd=np.array([50_000.0, 90_000.0, 120_000.0])
     )
 
     assert instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK

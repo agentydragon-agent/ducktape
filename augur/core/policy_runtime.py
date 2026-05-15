@@ -8,7 +8,6 @@ from augur.core.scenario_set import (
     AccountType,
     AssetType,
     CheckingFloorSellPublicStockPolicy,
-    EventType,
     FixedAmountPrivateEquitySaleRule,
     LiquidNetWorthFloorPrivateEquitySaleRule,
     MonthlySpendPolicy,
@@ -67,17 +66,9 @@ class MonthlySpendDecisionBatch:
 
 
 @dataclass(frozen=True)
-class PrivateEquitySaleRequestObservation:
-    event_id: str
-    event_type: EventType
-    actor_id: str | None
-    amount_usd: float
-
-
-@dataclass(frozen=True)
 class PrivateEquitySaleOpportunityBatch:
-    liquidity_event_mask: np.ndarray
-    liquidity_available_value_usd: np.ndarray
+    sale_opportunity_mask: np.ndarray
+    sale_opportunity_value_usd: np.ndarray
     private_equity_value_before_sale_usd: np.ndarray
 
 
@@ -87,8 +78,6 @@ class PrivateEquitySaleInstructionBatch:
     policy_id: str
     requested_amount_usd: np.ndarray
     proceeds_destination: AccountType | AssetType
-    request_event_id: str | None = None
-    request_event_type: EventType | None = None
 
 
 @dataclass(frozen=True)
@@ -563,53 +552,37 @@ def apply_property_operating_cash_flows(
 
 
 def private_equity_sale_opportunity(
-    *, liquidity_event_mask: np.ndarray, private_equity_value_before_sale_usd: np.ndarray
+    *, sale_opportunity_mask: np.ndarray, private_equity_value_before_sale_usd: np.ndarray
 ) -> PrivateEquitySaleOpportunityBatch:
     return PrivateEquitySaleOpportunityBatch(
-        liquidity_event_mask=liquidity_event_mask,
-        liquidity_available_value_usd=np.where(liquidity_event_mask, private_equity_value_before_sale_usd, 0.0),
+        sale_opportunity_mask=sale_opportunity_mask,
+        sale_opportunity_value_usd=np.where(sale_opportunity_mask, private_equity_value_before_sale_usd, 0.0),
         private_equity_value_before_sale_usd=private_equity_value_before_sale_usd,
     )
 
 
 def private_equity_sale_instruction(
-    policy: PrivateEquitySalePolicy,
-    *,
-    request: PrivateEquitySaleRequestObservation | None,
-    opportunity: PrivateEquitySaleOpportunityBatch,
-    liquid_net_worth_usd: np.ndarray,
+    policy: PrivateEquitySalePolicy, *, opportunity: PrivateEquitySaleOpportunityBatch, liquid_net_worth_usd: np.ndarray
 ) -> PrivateEquitySaleInstructionBatch:
-    if liquid_net_worth_usd.shape != opportunity.liquidity_event_mask.shape:
+    if liquid_net_worth_usd.shape != opportunity.sale_opportunity_mask.shape:
         raise ValueError("liquid_net_worth_usd must match private equity opportunity rollout shape")
-    if request is not None:
-        requested_amount = np.full(opportunity.liquidity_event_mask.shape, request.amount_usd, dtype="float64")
-        request_event_id = request.event_id
-        request_event_type = request.event_type
-    elif isinstance(policy.sale_rule, FixedAmountPrivateEquitySaleRule):
-        requested_amount = np.where(opportunity.liquidity_event_mask, float(policy.sale_rule.amount_usd), 0.0)
-        request_event_id = None
-        request_event_type = None
+    if isinstance(policy.sale_rule, FixedAmountPrivateEquitySaleRule):
+        requested_amount = np.where(opportunity.sale_opportunity_mask, float(policy.sale_rule.amount_usd), 0.0)
     elif isinstance(policy.sale_rule, LiquidNetWorthFloorPrivateEquitySaleRule):
         requested_amount = np.where(
-            opportunity.liquidity_event_mask
+            opportunity.sale_opportunity_mask
             & (liquid_net_worth_usd < float(policy.sale_rule.min_liquid_net_worth_usd)),
             float(policy.sale_rule.sale_amount_usd),
             0.0,
         )
-        request_event_id = None
-        request_event_type = None
     else:
-        requested_amount = np.zeros(opportunity.liquidity_event_mask.shape, dtype="float64")
-        request_event_id = None
-        request_event_type = None
+        raise TypeError(f"unsupported private equity sale rule: {policy.sale_rule!r}")
 
     return PrivateEquitySaleInstructionBatch(
         actor_id=policy.actor_id,
         policy_id=policy.policy_id,
         requested_amount_usd=requested_amount,
         proceeds_destination=private_equity_sale_proceeds_destination(policy),
-        request_event_id=request_event_id,
-        request_event_type=request_event_type,
     )
 
 
@@ -628,7 +601,7 @@ def apply_private_equity_sale_instruction(
     remaining_fraction: np.ndarray,
     cap_gains_rate_pct: float,
 ) -> PrivateEquitySaleApplication:
-    sale_usd = np.minimum(instruction.requested_amount_usd, opportunity.liquidity_available_value_usd)
+    sale_usd = np.minimum(instruction.requested_amount_usd, opportunity.sale_opportunity_value_usd)
     sold_fraction = np.divide(
         sale_usd,
         opportunity.private_equity_value_before_sale_usd,

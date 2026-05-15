@@ -217,7 +217,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert result["scenario_id"] == "location_a"
     assert "status" not in result
     assert result["metric_fan_columns"]["net_worth_usd"]["row_count"] == 13
-    assert "private_equity_liquidity_event" in scenario_run["market_metadata"]["event_stream_ids"]
+    assert "private_equity_sale_opportunity_event" in scenario_run["market_metadata"]["event_stream_ids"]
 
     page_errors: list[str] = []
     console_errors: list[str] = []
@@ -320,8 +320,6 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert rich_scenario["private_equity_sale_policy"] == "liquid_net_worth_floor"
     assert rich_scenario["private_equity_liquid_net_worth_floor_usd"] == 250000
     assert rich_scenario["private_equity_tender_sale_amount_usd"] == 50000
-    assert "private_equity_events" not in rich_scenario
-    assert "private_equity_sale_request_amount_usd" not in rich_scenario
 
     assert page.get_by_text("Rai").count() == 0
     assert page.get_by_text("Auragon").count() == 0

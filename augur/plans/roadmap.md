@@ -147,11 +147,11 @@ Implementation notes:
 - Split sale opportunity, user preference, policy decision, accounting
   application, and public action into separate typed concepts with explicit
   cause IDs.
-- Keep arbitrary sale request USD/month out of the browser state and do not
+- Keep arbitrary manual sale requests out of the browser and core, and do not
   count tender-eligible private marks in `liquid_net_worth`; both are now
   covered by app/core tests. A first liquid-net-worth-floor participation policy
-  exists; keep extending that policy surface instead of reviving manual sale
-  request controls.
+  exists and PE sale policy decisions now carry explicit sale/non-sale reasons;
+  keep extending that policy surface instead of reviving manual sale controls.
 - Clarify sale-proceeds destination scope and vocabulary as the policy set
   grows. The current liquid-net-worth-floor policy always reinvests proceeds in
   SP500; future policies should make per-policy or per-action destination and

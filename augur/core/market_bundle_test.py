@@ -26,8 +26,8 @@ def test_simple_market_bundle_shapes_and_reproducibility() -> None:
     )
 
     assert first.generic_sp500_multipliers.shape == (4, 19)
-    assert first.private_equity_liquidity_event_mask.shape == (4, 19)
-    assert first.private_equity_liquidity_event_mask.dtype == np.bool_
+    assert first.private_equity_sale_opportunity_mask.shape == (4, 19)
+    assert first.private_equity_sale_opportunity_mask.dtype == np.bool_
     np.testing.assert_array_equal(first.month_index, np.arange(19, dtype="int64"))
     np.testing.assert_allclose(first.generic_sp500_multipliers, second.generic_sp500_multipliers)
     np.testing.assert_allclose(first.inflation_multipliers[:, 0], 1.0)
@@ -49,7 +49,7 @@ def test_market_bundle_rejects_bad_shapes() -> None:
             rent_multipliers_by_location={"default": valid},
             mortgage_30y_rate_pct=np.full((2, 4), 6.5, dtype="float64"),
             private_equity_value_multipliers=valid,
-            private_equity_liquidity_event_mask=np.zeros((2, 4), dtype=np.bool_),
+            private_equity_sale_opportunity_mask=np.zeros((2, 4), dtype=np.bool_),
             metadata=metadata,
         )
 

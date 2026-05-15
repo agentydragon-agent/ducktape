@@ -40,11 +40,11 @@ from augur.core.scenario_set import (
     PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
     PayMortgageAction,
-    PrivateEquityLiquidityObservation,
     PrivateEquityPosition,
     PrivateEquitySaleDecision,
+    PrivateEquitySaleDecisionReason,
+    PrivateEquitySaleOpportunityObservation,
     PrivateEquitySalePolicy,
-    PrivateEquitySaleRequestEvent,
     PropertyAssumptions,
     PropertySaleBasisGainDetail,
     PropertySaleEvent,
@@ -147,7 +147,7 @@ def test_cash_only_no_activity_preserves_balance() -> None:
     assert len(market_path) == 13
     assert market_path[0].month_index == 0
     assert market_path[0].sp500_multiplier == 1.0
-    assert result.rollout(0).market_observations(PrivateEquityLiquidityObservation) == ()
+    assert result.rollout(0).market_observations(PrivateEquitySaleOpportunityObservation) == ()
 
 
 def test_simulate_set_rejects_policy_with_unknown_actor_path() -> None:
@@ -732,10 +732,7 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
         scenario_id="serialized_sale_actions",
         label="Serialized Sale Actions",
         actors=(_simple_actor(),),
-        events=(
-            PrivateEquitySaleRequestEvent(event_id="pe_sale", month_index=1, actor_id="alpha", amount_usd=50_000),
-            PropertySaleEvent(event_id="property_sale", month_index=2, property_id="test_property"),
-        ),
+        events=(PropertySaleEvent(event_id="property_sale", month_index=2, property_id="test_property"),),
         property_selection=PropertySelection(
             property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
         ),
@@ -772,7 +769,12 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
             CheckingFloorSellPublicStockPolicy(
                 policy_id="checking_floor", actor_id="alpha", floor_usd=60_000, sale_amount_usd=20_000
             ),
-            PrivateEquitySalePolicy(policy_id="private_equity_sale", actor_id="alpha", proceeds_destination="cash"),
+            PrivateEquitySalePolicy(
+                policy_id="private_equity_sale",
+                actor_id="alpha",
+                proceeds_destination="cash",
+                sale_rule=FixedAmountPrivateEquitySaleRule(amount_usd=50_000),
+            ),
         ),
     )
     scenario_set = ScenarioSet(
@@ -784,7 +786,9 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
 
     run = simulate_set(
         scenario_set,
-        market_provider=NoopMarketBundleProvider(home_path=(1.0, 1.0, 1.8), private_equity_liquidity_event_months=(1,)),
+        market_provider=NoopMarketBundleProvider(
+            home_path=(1.0, 1.0, 1.8), private_equity_sale_opportunity_months=(1,)
+        ),
     )
     payload = run.to_response().model_dump(mode="json")
 
@@ -803,7 +807,7 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     assert {"sell_public_stock", "private_equity_sale"} <= {
         decision["decision_type"] for decision in result["policy_decisions"]
     }
-    assert {"market_path", "private_equity_liquidity_opportunity"} <= {
+    assert {"market_path", "private_equity_sale_opportunity"} <= {
         observation["observation_type"] for observation in result["market_observations"]
     }
     assert {"property_sale_basis_gain", "tax_payment_allocation"} <= {
@@ -820,8 +824,8 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     )
 
     private_equity_action = actions["sell_private_equity"]
-    assert private_equity_action["event_id"] == "pe_sale"
-    assert private_equity_action["event_type"] == "private_equity_sale_request"
+    assert private_equity_action["event_id"] is None
+    assert private_equity_action["event_type"] is None
     assert private_equity_action["amount_usd"] == 50_000
     assert private_equity_action["basis_usd"] == 20_000
     assert private_equity_action["taxable_gain_usd"] == 30_000
@@ -1074,14 +1078,9 @@ def test_multiple_checking_floor_rules_execute_in_policy_order() -> None:
 def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_assets() -> None:
     """A tender sale into cash changes liquidity only by the after-tax sale proceeds."""
     scenario = Scenario(
-        scenario_id="private_equity_sale_request",
-        label="Private Equity Sale Request",
+        scenario_id="private_equity_tender_sale",
+        label="Private Equity Tender Sale",
         actors=(_simple_actor(),),
-        events=(
-            PrivateEquitySaleRequestEvent(
-                event_id="sale_request", month_index=12, actor_id="alpha", amount_usd=100_000
-            ),
-        ),
         tax_profile=TaxProfile(cap_gains_rate=20),
         initial_balance_sheet=InitialBalanceSheet(
             accounts=(
@@ -1101,7 +1100,12 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
             ),
         ),
         policies=(
-            PrivateEquitySalePolicy(policy_id="private_equity_sale", actor_id="alpha", proceeds_destination="cash"),
+            PrivateEquitySalePolicy(
+                policy_id="private_equity_sale",
+                actor_id="alpha",
+                proceeds_destination="cash",
+                sale_rule=FixedAmountPrivateEquitySaleRule(amount_usd=100_000),
+            ),
         ),
     )
 
@@ -1111,15 +1115,18 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     np.testing.assert_allclose(no_opportunity.rollout(0).series("liquid_net_worth_usd")[12], 10_000)
     assert no_opportunity.actions(SellPrivateEquityAction) == ()
     no_opportunity_decisions = no_opportunity.policy_decisions(PrivateEquitySaleDecision)
-    assert len(no_opportunity_decisions) == 1
-    assert no_opportunity_decisions[0].requested_amount_usd == 100_000
-    assert no_opportunity_decisions[0].liquidity_available_value_usd == 0
-    assert no_opportunity.rollout(0).market_observations(PrivateEquityLiquidityObservation) == ()
+    assert len(no_opportunity_decisions) == 13
+    assert {decision.decision_reason for decision in no_opportunity_decisions} == {
+        PrivateEquitySaleDecisionReason.NO_SALE_OPPORTUNITY
+    }
+    assert no_opportunity_decisions[-1].requested_amount_usd == 0
+    assert no_opportunity_decisions[-1].sale_opportunity_value_usd == 0
+    assert no_opportunity.rollout(0).market_observations(PrivateEquitySaleOpportunityObservation) == ()
 
     result = _run_scenario(
         scenario,
         horizon_months=12,
-        market_provider=NoopMarketBundleProvider(private_equity_liquidity_event_months=(12,)),
+        market_provider=NoopMarketBundleProvider(private_equity_sale_opportunity_months=(12,)),
     )
 
     expected_sale = 100_000
@@ -1133,19 +1140,20 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     np.testing.assert_allclose(rollout.series("private_equity_sale_basis_usd")[12], expected_basis)
     np.testing.assert_allclose(rollout.series("private_equity_sale_tax_usd")[12], expected_tax)
     np.testing.assert_allclose(rollout.series("private_equity_value_usd")[12], 100_000)
-    np.testing.assert_allclose(rollout.series("private_equity_liquidity_available_value_usd")[12], 100_000)
+    np.testing.assert_allclose(rollout.series("private_equity_sale_opportunity_value_usd")[12], 100_000)
     np.testing.assert_allclose(rollout.series("cash_usd")[12], 10_000 + expected_after_tax_proceeds)
     np.testing.assert_allclose(rollout.series("liquid_net_worth_usd")[12], 10_000 + expected_after_tax_proceeds)
     np.testing.assert_allclose(rollout.series("net_worth_usd")[12], 10_000 + expected_after_tax_proceeds + 100_000)
-    liquidity_observations = rollout.market_observations(PrivateEquityLiquidityObservation)
-    assert len(liquidity_observations) == 1
-    assert liquidity_observations[0].month_index == 12
-    assert liquidity_observations[0].liquidity_available_value_usd == 200_000
-    pe_decisions = result.policy_decisions(PrivateEquitySaleDecision)
-    assert len(pe_decisions) == 1
-    assert pe_decisions[0].month_index == 12
-    assert pe_decisions[0].requested_amount_usd == 100_000
-    assert pe_decisions[0].liquidity_available_value_usd == 200_000
+    opportunity_observations = rollout.market_observations(PrivateEquitySaleOpportunityObservation)
+    assert len(opportunity_observations) == 1
+    assert opportunity_observations[0].month_index == 12
+    assert opportunity_observations[0].sale_opportunity_value_usd == 200_000
+    pe_decision = next(
+        decision for decision in result.policy_decisions(PrivateEquitySaleDecision) if decision.month_index == 12
+    )
+    assert pe_decision.decision_reason is PrivateEquitySaleDecisionReason.SALE_REQUESTED
+    assert pe_decision.requested_amount_usd == 100_000
+    assert pe_decision.sale_opportunity_value_usd == 200_000
     np.testing.assert_allclose(
         -_ledger_matrix(result, domain="asset", category="private_equity_sale"),
         result.matrix("private_equity_sale_usd"),
@@ -1166,7 +1174,8 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     actions = result.actions(SellPrivateEquityAction)
     assert len(actions) == 1
     assert actions[0].month_index == 12
-    assert actions[0].event_id == "sale_request"
+    assert actions[0].event_id is None
+    assert actions[0].event_type is None
     assert actions[0].actor_id == "alpha"
     assert actions[0].policy_id == "private_equity_sale"
     assert actions[0].amount_usd == expected_sale
@@ -1180,7 +1189,7 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
 
 
 def test_fixed_amount_private_equity_sale_rule_sells_on_market_opportunity() -> None:
-    """A PE policy can sell a configured tranche when market liquidity appears."""
+    """A PE policy can sell a configured tranche when a market sale opportunity appears."""
     scenario = Scenario(
         scenario_id="automatic_private_equity_sale",
         label="Automatic Private Equity Sale",
@@ -1213,7 +1222,9 @@ def test_fixed_amount_private_equity_sale_rule_sells_on_market_opportunity() -> 
     )
 
     result = _run_scenario(
-        scenario, horizon_months=6, market_provider=NoopMarketBundleProvider(private_equity_liquidity_event_months=(6,))
+        scenario,
+        horizon_months=6,
+        market_provider=NoopMarketBundleProvider(private_equity_sale_opportunity_months=(6,)),
     )
 
     rollout = result.rollout(0)
@@ -1231,21 +1242,16 @@ def test_fixed_amount_private_equity_sale_rule_sells_on_market_opportunity() -> 
     np.testing.assert_allclose(actions[0].after_tax_proceeds_usd, 50_000 - expected_tax)
 
 
-def test_pydantic_rejects_private_equity_sale_request_without_amount() -> None:
-    """A manual PE sale request must state its amount."""
-    with pytest.raises(ValidationError, match=r"events\.0\.private_equity_sale_request\.amount_usd"):
+def test_pydantic_rejects_private_equity_sale_policy_without_rule() -> None:
+    """A private-equity sale policy must define an explicit opportunity participation rule."""
+    with pytest.raises(ValidationError, match="sale_rule"):
         Scenario.model_validate(
             {
-                "scenario_id": "missing_pe_sale_request_amount",
-                "label": "Missing PE Sale Request Amount",
+                "scenario_id": "missing_pe_sale_rule",
+                "label": "Missing PE Sale Rule",
                 "actors": [{"actor_id": "alpha", "label": "Alpha", "role": "primary_owner"}],
-                "events": [
-                    {
-                        "event_id": "sale_request",
-                        "event_type": "private_equity_sale_request",
-                        "month_index": 12,
-                        "actor_id": "alpha",
-                    }
+                "policies": [
+                    {"policy_id": "private_equity_sale", "policy_type": "private_equity_sale", "actor_id": "alpha"}
                 ],
             }
         )

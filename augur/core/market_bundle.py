@@ -47,7 +47,7 @@ class MarketBundle:
     rent_multipliers_by_location: dict[str, np.ndarray]
     mortgage_30y_rate_pct: np.ndarray
     private_equity_value_multipliers: np.ndarray
-    private_equity_liquidity_event_mask: np.ndarray
+    private_equity_sale_opportunity_mask: np.ndarray
     metadata: MarketBundleMetadata
 
     def __post_init__(self) -> None:
@@ -72,8 +72,8 @@ class MarketBundle:
             self.mortgage_30y_rate_pct, name="mortgage_30y_rate_pct", expected_shape=expected_shape
         )
         self._validate_bool_matrix(
-            self.private_equity_liquidity_event_mask,
-            name="private_equity_liquidity_event_mask",
+            self.private_equity_sale_opportunity_mask,
+            name="private_equity_sale_opportunity_mask",
             expected_shape=expected_shape,
         )
 
@@ -175,7 +175,7 @@ class FlatMarketBundleProvider:
     """Deterministic flat market provider for fixture-backed app/e2e runs."""
 
     mortgage_30y_rate_pct: float = 6.5
-    private_equity_liquidity_event_months: tuple[int, ...] = (12,)
+    private_equity_sale_opportunity_months: tuple[int, ...] = (12,)
 
     def sample_market_bundle(
         self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
@@ -184,7 +184,7 @@ class FlatMarketBundleProvider:
         flat = np.ones(shape, dtype="float64")
         mortgage_rate = np.full(shape, self.mortgage_30y_rate_pct, dtype="float64")
         private_equity_events = np.zeros(shape, dtype=np.bool_)
-        for month in self.private_equity_liquidity_event_months:
+        for month in self.private_equity_sale_opportunity_months:
             if 0 <= month <= horizon_months:
                 private_equity_events[:, month] = True
         home_by_location: dict[str, np.ndarray] = {"default": flat}
@@ -200,13 +200,13 @@ class FlatMarketBundleProvider:
             rent_multipliers_by_location=rent_by_location,
             mortgage_30y_rate_pct=mortgage_rate,
             private_equity_value_multipliers=flat,
-            private_equity_liquidity_event_mask=private_equity_events,
+            private_equity_sale_opportunity_mask=private_equity_events,
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
                 random_seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
-                event_stream_ids=("private_equity_liquidity_event",),
+                event_stream_ids=("private_equity_sale_opportunity_event",),
                 notes=("deterministic flat provider for fixture-backed app/e2e runs",),
             ),
         )
@@ -283,7 +283,7 @@ class SimpleMarketBundleProvider:
             random_seed=seed,
             rollout_count=rollout_count,
             horizon_months=horizon_months,
-            event_stream_ids=("private_equity_liquidity_event",),
+            event_stream_ids=("private_equity_sale_opportunity_event",),
             notes=("simple core stochastic provider; replaceable via MarketBundleProvider",),
         )
         return MarketBundle(
@@ -294,7 +294,7 @@ class SimpleMarketBundleProvider:
             rent_multipliers_by_location=rent_by_location,
             mortgage_30y_rate_pct=mortgage_rate,
             private_equity_value_multipliers=private_equity_value,
-            private_equity_liquidity_event_mask=private_equity_events,
+            private_equity_sale_opportunity_mask=private_equity_events,
             metadata=metadata,
         )
 

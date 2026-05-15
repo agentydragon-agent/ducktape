@@ -14,7 +14,6 @@ from augur.core.policy_runtime import (
     PrivateEquitySaleApplication,
     PrivateEquitySaleInstructionBatch,
     PrivateEquitySaleOpportunityBatch,
-    PrivateEquitySaleRequestObservation,
     actor_policy_programs,
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
@@ -43,9 +42,9 @@ from augur.core.scenario_set import (
     ActorRole,
     AssetType,
     CheckingFloorSellPublicStockPolicy,
-    EventType,
     FinancingMode,
     GenericSp500StockPosition,
+    LiquidNetWorthFloorPrivateEquitySaleRule,
     MarketPathObservation,
     MonthlySpendAction,
     MonthlySpendDecision,
@@ -55,9 +54,10 @@ from augur.core.scenario_set import (
     PartnerEquityAccrualPolicy,
     PayMortgageAction,
     Policy,
-    PrivateEquityLiquidityObservation,
     PrivateEquityPosition,
     PrivateEquitySaleDecision,
+    PrivateEquitySaleDecisionReason,
+    PrivateEquitySaleOpportunityObservation,
     PrivateEquitySalePolicy,
     PropertyPurchaseEvent,
     PropertySaleBasisGainDetail,
@@ -99,14 +99,14 @@ class ScenarioRunArrays:
     checking_floor_action_usd: np.ndarray
     checking_floor_shortfall_usd: np.ndarray
     private_equity_value_usd: np.ndarray
-    private_equity_liquidity_available_value_usd: np.ndarray
+    private_equity_sale_opportunity_value_usd: np.ndarray
     private_equity_sale_usd: np.ndarray
     private_equity_sale_basis_usd: np.ndarray
     private_equity_sale_tax_usd: np.ndarray
     federal_income_tax_usd: np.ndarray
     california_income_tax_usd: np.ndarray
     total_income_tax_usd: np.ndarray
-    private_equity_liquidity_event: np.ndarray
+    private_equity_sale_opportunity_event: np.ndarray
     property_value_usd: np.ndarray
     mortgage_balance_usd: np.ndarray
     mortgage_interest_usd: np.ndarray
@@ -193,16 +193,14 @@ class ScenarioRunArrays:
                 "checking_floor_action_usd": _flat(self.checking_floor_action_usd),
                 "checking_floor_shortfall_usd": _flat(self.checking_floor_shortfall_usd),
                 "private_equity_value_usd": _flat(self.private_equity_value_usd),
-                "private_equity_liquidity_available_value_usd": _flat(
-                    self.private_equity_liquidity_available_value_usd
-                ),
+                "private_equity_sale_opportunity_value_usd": _flat(self.private_equity_sale_opportunity_value_usd),
                 "private_equity_sale_usd": _flat(self.private_equity_sale_usd),
                 "private_equity_sale_basis_usd": _flat(self.private_equity_sale_basis_usd),
                 "private_equity_sale_tax_usd": _flat(self.private_equity_sale_tax_usd),
                 "federal_income_tax_usd": _flat(self.federal_income_tax_usd),
                 "california_income_tax_usd": _flat(self.california_income_tax_usd),
                 "total_income_tax_usd": _flat(self.total_income_tax_usd),
-                "private_equity_liquidity_event": _flat_bool(self.private_equity_liquidity_event),
+                "private_equity_sale_opportunity_event": _flat_bool(self.private_equity_sale_opportunity_event),
                 "property_value_usd": _flat(self.property_value_usd),
                 "mortgage_balance_usd": _flat(self.mortgage_balance_usd),
                 "mortgage_interest_usd": _flat(self.mortgage_interest_usd),
@@ -272,8 +270,8 @@ class ScenarioRunArrays:
                 "total_generic_sp500_sale_tax_usd": np.sum(self.generic_sp500_sale_tax_usd, axis=1).tolist(),
                 "final_checking_floor_shortfall_usd": self.checking_floor_shortfall_usd[:, final].tolist(),
                 "final_private_equity_value_usd": self.private_equity_value_usd[:, final].tolist(),
-                "final_private_equity_liquidity_available_value_usd": (
-                    self.private_equity_liquidity_available_value_usd[:, final].tolist()
+                "final_private_equity_sale_opportunity_value_usd": (
+                    self.private_equity_sale_opportunity_value_usd[:, final].tolist()
                 ),
                 "total_private_equity_sale_usd": np.sum(self.private_equity_sale_usd, axis=1).tolist(),
                 "total_private_equity_sale_basis_usd": np.sum(self.private_equity_sale_basis_usd, axis=1).tolist(),
@@ -345,9 +343,7 @@ class ScenarioRunArrays:
             "property_sale_net_proceeds_usd": _fan_columns(self.property_sale_net_proceeds_usd),
             "net_property_sale_cash_flow_usd": _fan_columns(self.net_property_sale_cash_flow_usd),
             "private_equity_value_usd": _fan_columns(self.private_equity_value_usd),
-            "private_equity_liquidity_available_value_usd": _fan_columns(
-                self.private_equity_liquidity_available_value_usd
-            ),
+            "private_equity_sale_opportunity_value_usd": _fan_columns(self.private_equity_sale_opportunity_value_usd),
         }
 
 
@@ -490,13 +486,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     generic_sp500_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     checking_floor_shortfall = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_value = np.zeros((rollout_count, month_count), dtype="float64")
-    private_equity_liquidity_available_value = np.zeros((rollout_count, month_count), dtype="float64")
+    private_equity_sale_opportunity_value = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_taxable_gain = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     cash = np.zeros((rollout_count, month_count), dtype="float64")
     policy_programs = actor_policy_programs(scenario)
-    private_equity_sale_requests = _private_equity_sale_requests_by_month(scenario)
-    private_equity_liquidity_event = market_bundle.private_equity_liquidity_event_mask.copy()
+    private_equity_sale_opportunity_event = market_bundle.private_equity_sale_opportunity_mask.copy()
     spend_policies = enabled_rules_of_type(policy_programs, MonthlySpendPolicy)
     checking_policies = enabled_rules_of_type(policy_programs, CheckingFloorSellPublicStockPolicy)
     private_equity_sale_policies = enabled_rules_of_type(policy_programs, PrivateEquitySalePolicy)
@@ -560,13 +555,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             * market_bundle.private_equity_value_multipliers[:, month]
         )
         market_opportunity = private_equity_sale_opportunity(
-            liquidity_event_mask=market_bundle.private_equity_liquidity_event_mask[:, month],
+            sale_opportunity_mask=market_bundle.private_equity_sale_opportunity_mask[:, month],
             private_equity_value_before_sale_usd=private_equity_value_before_sale,
         )
-        _record_private_equity_liquidity_observations(
+        _record_private_equity_sale_opportunity_observations(
             market_observations, month_index=int(month_index[month]), opportunity=market_opportunity
         )
-        market_liquidity_available_value = market_opportunity.liquidity_available_value_usd
+        market_sale_opportunity_value = market_opportunity.sale_opportunity_value_usd
         private_equity_sale_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_taxable_gain_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_tax_month = np.zeros(rollout_count, dtype="float64")
@@ -577,23 +572,20 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 * market_bundle.private_equity_value_multipliers[:, month]
             )
             current_opportunity = private_equity_sale_opportunity(
-                liquidity_event_mask=market_bundle.private_equity_liquidity_event_mask[:, month],
+                sale_opportunity_mask=market_bundle.private_equity_sale_opportunity_mask[:, month],
                 private_equity_value_before_sale_usd=current_private_equity_value,
             )
+            liquid_net_worth = current_cash + remaining_sp500_units * market_bundle.generic_sp500_multipliers[:, month]
             sale_instruction = private_equity_sale_instruction(
-                private_equity_sale_policy,
-                request=_private_equity_sale_request_for_policy(
-                    private_equity_sale_requests, month=month, policy=private_equity_sale_policy
-                ),
-                opportunity=current_opportunity,
-                liquid_net_worth_usd=current_cash
-                + remaining_sp500_units * market_bundle.generic_sp500_multipliers[:, month],
+                private_equity_sale_policy, opportunity=current_opportunity, liquid_net_worth_usd=liquid_net_worth
             )
             _record_private_equity_sale_decisions(
                 policy_decisions,
                 month_index=int(month_index[month]),
+                policy=private_equity_sale_policy,
                 instruction=sale_instruction,
                 opportunity=current_opportunity,
+                liquid_net_worth_usd=liquid_net_worth,
             )
             sale_application = apply_private_equity_sale_instruction(
                 sale_instruction,
@@ -677,8 +669,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         checking_floor_shortfall[:, month] = sp500_shortfall
         private_equity_sale_taxable_gain[:, month] = private_equity_sale_taxable_gain_month
         private_equity_sale_tax[:, month] = private_equity_sale_tax_month
-        private_equity_liquidity_available_value[:, month] = np.maximum(
-            0.0, market_liquidity_available_value - private_equity_sale_month
+        private_equity_sale_opportunity_value[:, month] = np.maximum(
+            0.0, market_sale_opportunity_value - private_equity_sale_month
         )
         private_equity_value[:, month] = private_equity_value_before_sale - private_equity_sale_month
 
@@ -1077,14 +1069,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         checking_floor_action_usd=generic_sp500_sale_from_ledger,
         checking_floor_shortfall_usd=checking_floor_shortfall,
         private_equity_value_usd=private_equity_value,
-        private_equity_liquidity_available_value_usd=private_equity_liquidity_available_value,
+        private_equity_sale_opportunity_value_usd=private_equity_sale_opportunity_value,
         private_equity_sale_usd=private_equity_sale_from_ledger,
         private_equity_sale_basis_usd=private_equity_sale_basis_from_ledger,
         private_equity_sale_tax_usd=private_equity_sale_tax_from_ledger,
         federal_income_tax_usd=federal_income_tax_from_accounting,
         california_income_tax_usd=california_income_tax_from_accounting,
         total_income_tax_usd=total_income_tax_from_accounting,
-        private_equity_liquidity_event=private_equity_liquidity_event,
+        private_equity_sale_opportunity_event=private_equity_sale_opportunity_event,
         property_value_usd=property_value,
         mortgage_balance_usd=mortgage_balance,
         mortgage_interest_usd=mortgage_interest_from_ledger,
@@ -1168,24 +1160,24 @@ def _market_path_observations(
                 home_value_multiplier=float(home_multiplier[rollout_index, month_position]),
                 rent_multiplier=float(rent_multiplier[rollout_index, month_position]),
                 mortgage_30y_rate_pct=float(market_bundle.mortgage_30y_rate_pct[rollout_index, month_position]),
-                private_equity_liquidity_event=bool(
-                    market_bundle.private_equity_liquidity_event_mask[rollout_index, month_position]
+                private_equity_sale_opportunity_event=bool(
+                    market_bundle.private_equity_sale_opportunity_mask[rollout_index, month_position]
                 ),
             )
         )
     return tuple(observations)
 
 
-def _record_private_equity_liquidity_observations(
+def _record_private_equity_sale_opportunity_observations(
     records: list[SimulationMarketObservation], *, month_index: int, opportunity: PrivateEquitySaleOpportunityBatch
 ) -> None:
-    active_rollouts = np.nonzero(opportunity.liquidity_event_mask)[0].tolist()
+    active_rollouts = np.nonzero(opportunity.sale_opportunity_mask)[0].tolist()
     records.extend(
         (
-            PrivateEquityLiquidityObservation(
+            PrivateEquitySaleOpportunityObservation(
                 rollout_index=rollout_index,
                 month_index=month_index,
-                liquidity_available_value_usd=float(opportunity.liquidity_available_value_usd[rollout_index]),
+                sale_opportunity_value_usd=float(opportunity.sale_opportunity_value_usd[rollout_index]),
                 private_equity_value_before_sale_usd=float(
                     opportunity.private_equity_value_before_sale_usd[rollout_index]
                 ),
@@ -1248,12 +1240,16 @@ def _record_private_equity_sale_decisions(
     records: list[SimulationPolicyDecision],
     *,
     month_index: int,
+    policy: PrivateEquitySalePolicy,
     instruction: PrivateEquitySaleInstructionBatch,
     opportunity: PrivateEquitySaleOpportunityBatch,
+    liquid_net_worth_usd: np.ndarray,
 ) -> None:
-    active_rollouts = np.nonzero(
-        (instruction.requested_amount_usd > 0) | (opportunity.liquidity_available_value_usd > 0)
-    )[0].tolist()
+    target_liquid_net_worth_floor_usd = (
+        float(policy.sale_rule.min_liquid_net_worth_usd)
+        if isinstance(policy.sale_rule, LiquidNetWorthFloorPrivateEquitySaleRule)
+        else None
+    )
     records.extend(
         (
             PrivateEquitySaleDecision(
@@ -1261,18 +1257,32 @@ def _record_private_equity_sale_decisions(
                 month_index=month_index,
                 actor_id=instruction.actor_id,
                 policy_id=instruction.policy_id,
+                decision_reason=_private_equity_sale_decision_reason(
+                    requested_amount_usd=instruction.requested_amount_usd[rollout_index],
+                    sale_opportunity_value_usd=opportunity.sale_opportunity_value_usd[rollout_index],
+                ),
                 requested_amount_usd=float(instruction.requested_amount_usd[rollout_index]),
-                liquidity_available_value_usd=float(opportunity.liquidity_available_value_usd[rollout_index]),
+                sale_opportunity_value_usd=float(opportunity.sale_opportunity_value_usd[rollout_index]),
                 private_equity_value_before_sale_usd=float(
                     opportunity.private_equity_value_before_sale_usd[rollout_index]
                 ),
+                liquid_net_worth_usd=float(liquid_net_worth_usd[rollout_index]),
+                target_liquid_net_worth_floor_usd=target_liquid_net_worth_floor_usd,
                 proceeds_destination=instruction.proceeds_destination,
-                request_event_id=instruction.request_event_id,
-                request_event_type=instruction.request_event_type,
             )
         )
-        for rollout_index in active_rollouts
+        for rollout_index in range(instruction.requested_amount_usd.shape[0])
     )
+
+
+def _private_equity_sale_decision_reason(
+    *, requested_amount_usd: float, sale_opportunity_value_usd: float
+) -> PrivateEquitySaleDecisionReason:
+    if requested_amount_usd > 0:
+        return PrivateEquitySaleDecisionReason.SALE_REQUESTED
+    if sale_opportunity_value_usd <= 0:
+        return PrivateEquitySaleDecisionReason.NO_SALE_OPPORTUNITY
+    return PrivateEquitySaleDecisionReason.POLICY_NOT_TRIGGERED
 
 
 def _record_partner_contribution_decisions(
@@ -1692,7 +1702,6 @@ def _record_private_equity_sale_ledger_entries(
         month_index=month_index,
         actor_id=instruction.actor_id,
         policy_id=instruction.policy_id,
-        event_id=instruction.request_event_id,
         domain="asset",
         category="private_equity_sale",
         amount_usd=-sale_application.sale_usd,
@@ -1702,7 +1711,6 @@ def _record_private_equity_sale_ledger_entries(
         month_index=month_index,
         actor_id=instruction.actor_id,
         policy_id=instruction.policy_id,
-        event_id=instruction.request_event_id,
         domain="basis",
         category="private_equity_sale_basis",
         amount_usd=-sale_application.basis_usd,
@@ -1712,7 +1720,6 @@ def _record_private_equity_sale_ledger_entries(
         month_index=month_index,
         actor_id=instruction.actor_id,
         policy_id=instruction.policy_id,
-        event_id=instruction.request_event_id,
         domain="tax",
         category="private_equity_sale_tax",
         amount_usd=-tax_usd,
@@ -1722,7 +1729,6 @@ def _record_private_equity_sale_ledger_entries(
         month_index=month_index,
         actor_id=instruction.actor_id,
         policy_id=instruction.policy_id,
-        event_id=instruction.request_event_id,
         domain=destination_domain,
         category="private_equity_after_tax_proceeds",
         amount_usd=np.maximum(0.0, sale_application.sale_usd - tax_usd),
@@ -2005,8 +2011,6 @@ def _record_private_equity_sale_actions(
             month_index=month_index,
             actor_id=instruction.actor_id,
             policy_id=instruction.policy_id,
-            event_id=instruction.request_event_id,
-            event_type=instruction.request_event_type,
             amount_usd=float(sale_application.sale_usd[rollout_index]),
             after_tax_proceeds_usd=float(np.maximum(0.0, sale_application.sale_usd - sale_tax)[rollout_index]),
             basis_usd=float(sale_application.basis_usd[rollout_index]),
@@ -2581,37 +2585,6 @@ def _purchase_price_usd(scenario: Scenario) -> float:
             return 0.0
         raise ValueError(f"scenario {scenario.scenario_id!r} selects {property_id} without purchase_price_usd")
     return float(purchase_price)
-
-
-def _private_equity_sale_requests_by_month(
-    scenario: Scenario,
-) -> dict[tuple[int, str | None], PrivateEquitySaleRequestObservation]:
-    requests: dict[tuple[int, str | None], PrivateEquitySaleRequestObservation] = {}
-    for event in scenario.events:
-        if event.event_type not in {
-            EventType.PRIVATE_EQUITY_SALE_REQUEST,
-            EventType.PRIVATE_EQUITY_IPO,
-            EventType.PRIVATE_EQUITY_ACQUISITION,
-        }:
-            continue
-        requested = float(event.amount_usd) if event.amount_usd is not None else float("inf")
-        key = (event.month_index, event.actor_id)
-        current = requests.get(key)
-        if current is not None and current.amount_usd >= requested:
-            continue
-        requests[key] = PrivateEquitySaleRequestObservation(
-            event_id=event.event_id, event_type=event.event_type, actor_id=event.actor_id, amount_usd=requested
-        )
-    return requests
-
-
-def _private_equity_sale_request_for_policy(
-    requests: dict[tuple[int, str | None], PrivateEquitySaleRequestObservation],
-    *,
-    month: int,
-    policy: PrivateEquitySalePolicy,
-) -> PrivateEquitySaleRequestObservation | None:
-    return requests.get((month, policy.actor_id)) or requests.get((month, None))
 
 
 def _initial_cash_usd(scenario: Scenario) -> float:

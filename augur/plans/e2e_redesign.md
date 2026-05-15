@@ -87,16 +87,16 @@ arrays. Compatibility aliases can remain while app/UI callers still expect
 them, but their source should be another state/ledger-backed metric.
 
 - State snapshots: `cash_usd`, `generic_sp500_value_usd`,
-  `private_equity_value_usd`, `private_equity_liquidity_available_value_usd`,
+  `private_equity_value_usd`, `private_equity_sale_opportunity_value_usd`,
   `property_value_usd`, `mortgage_balance_usd`, `home_equity_usd`,
   `owner_home_equity_claim_usd`, `partner_home_equity_claim_usd`,
   `partner_equity_ledger_usd`, `owner_equity_ledger_usd`,
   `partner_ownership_pct`, `liquid_net_worth_usd`, `net_worth_usd`,
-  `partner_present`. `private_equity_liquidity_available_value_usd` is a
+  `partner_present`. `private_equity_sale_opportunity_value_usd` is a
   tender-eligibility/opportunity snapshot, not a liquid asset; current
   `liquid_net_worth_usd` is cash plus public-liquid securities and must not
   include tender-eligible private marks.
-- Market-observation compatibility fields: `private_equity_liquidity_event`.
+- Market-observation compatibility fields: `private_equity_sale_opportunity_event`.
   Prefer row-level market observations for detailed inspection.
 - Ledger-backed transaction flows: `monthly_spend_usd`,
   `generic_sp500_sale_usd`, `generic_sp500_sale_basis_usd`,

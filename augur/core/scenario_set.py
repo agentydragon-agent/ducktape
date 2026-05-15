@@ -17,7 +17,6 @@ class EventType(StrEnum):
     START_RENTAL = "start_rental"
     STOP_RENTAL = "stop_rental"
     PORTFOLIO_TRADE = "portfolio_trade"
-    PRIVATE_EQUITY_SALE_REQUEST = "private_equity_sale_request"
     PRIVATE_EQUITY_IPO = "private_equity_ipo"
     PRIVATE_EQUITY_ACQUISITION = "private_equity_acquisition"
 
@@ -33,7 +32,6 @@ class PolicyType(StrEnum):
 
 
 class PrivateEquitySaleRuleType(StrEnum):
-    MANUAL_REQUESTS_ONLY = "manual_requests_only"
     FIXED_AMOUNT_ON_OPPORTUNITY = "fixed_amount_on_opportunity"
     LIQUID_NET_WORTH_FLOOR = "liquid_net_worth_floor"
 
@@ -65,9 +63,15 @@ class PolicyDecisionType(StrEnum):
     PARTNER_CONTRIBUTION = "partner_contribution"
 
 
+class PrivateEquitySaleDecisionReason(StrEnum):
+    NO_SALE_OPPORTUNITY = "no_sale_opportunity"
+    POLICY_NOT_TRIGGERED = "policy_not_triggered"
+    SALE_REQUESTED = "sale_requested"
+
+
 class MarketObservationType(StrEnum):
     MARKET_PATH = "market_path"
-    PRIVATE_EQUITY_LIQUIDITY_OPPORTUNITY = "private_equity_liquidity_opportunity"
+    PRIVATE_EQUITY_SALE_OPPORTUNITY = "private_equity_sale_opportunity"
 
 
 class AccountingDetailType(StrEnum):
@@ -162,7 +166,7 @@ class ReportMetric(StrEnum):
     PROPERTY_VALUE = "property_value"
     OWNER_CASH_FLOW = "owner_cash_flow"
     TAX_CASH_FLOW = "tax_cash_flow"
-    PRIVATE_EQUITY_LIQUIDITY = "private_equity_liquidity"
+    PRIVATE_EQUITY_SALE_OPPORTUNITY = "private_equity_sale_opportunity"
 
 
 class Actor(ApiModel):
@@ -209,11 +213,6 @@ class PortfolioTradeEvent(_EventBase):
     event_type: Literal[EventType.PORTFOLIO_TRADE] = EventType.PORTFOLIO_TRADE
 
 
-class PrivateEquitySaleRequestEvent(_EventBase):
-    event_type: Literal[EventType.PRIVATE_EQUITY_SALE_REQUEST] = EventType.PRIVATE_EQUITY_SALE_REQUEST
-    amount_usd: PositiveFloat
-
-
 class PrivateEquityIpoEvent(_EventBase):
     event_type: Literal[EventType.PRIVATE_EQUITY_IPO] = EventType.PRIVATE_EQUITY_IPO
 
@@ -230,7 +229,6 @@ Event = Annotated[
     | StartRentalEvent
     | StopRentalEvent
     | PortfolioTradeEvent
-    | PrivateEquitySaleRequestEvent
     | PrivateEquityIpoEvent
     | PrivateEquityAcquisitionEvent,
     Field(discriminator="event_type"),
@@ -251,12 +249,6 @@ class CheckingFloorSellPublicStockPolicy(_PolicyBase):
     sale_amount_usd: NonNegativeFloat = 0.0
 
 
-class ManualPrivateEquitySaleRule(ApiModel):
-    sale_rule_type: Literal[PrivateEquitySaleRuleType.MANUAL_REQUESTS_ONLY] = (
-        PrivateEquitySaleRuleType.MANUAL_REQUESTS_ONLY
-    )
-
-
 class FixedAmountPrivateEquitySaleRule(ApiModel):
     sale_rule_type: Literal[PrivateEquitySaleRuleType.FIXED_AMOUNT_ON_OPPORTUNITY] = (
         PrivateEquitySaleRuleType.FIXED_AMOUNT_ON_OPPORTUNITY
@@ -273,17 +265,16 @@ class LiquidNetWorthFloorPrivateEquitySaleRule(ApiModel):
 
 
 PrivateEquitySaleRule = Annotated[
-    ManualPrivateEquitySaleRule | FixedAmountPrivateEquitySaleRule | LiquidNetWorthFloorPrivateEquitySaleRule,
-    Field(discriminator="sale_rule_type"),
+    FixedAmountPrivateEquitySaleRule | LiquidNetWorthFloorPrivateEquitySaleRule, Field(discriminator="sale_rule_type")
 ]
 
 
 class PrivateEquitySalePolicy(_PolicyBase):
-    """Sell private equity on explicit sale requests or market liquidity opportunities."""
+    """Sell private equity when market sale opportunities satisfy the policy rule."""
 
     policy_type: Literal[PolicyType.PRIVATE_EQUITY_SALE] = PolicyType.PRIVATE_EQUITY_SALE
     proceeds_destination: PrivateEquitySaleProceedsDestination = PrivateEquitySaleProceedsDestination.CASH
-    sale_rule: PrivateEquitySaleRule = Field(default_factory=ManualPrivateEquitySaleRule)
+    sale_rule: PrivateEquitySaleRule
 
 
 class FixedLiquidityReserveRule(ApiModel):
@@ -476,12 +467,13 @@ class SellPublicStockDecision(_SimulationPolicyDecisionBase):
 
 class PrivateEquitySaleDecision(_SimulationPolicyDecisionBase):
     decision_type: Literal[PolicyDecisionType.PRIVATE_EQUITY_SALE] = PolicyDecisionType.PRIVATE_EQUITY_SALE
+    decision_reason: PrivateEquitySaleDecisionReason
     requested_amount_usd: float
-    liquidity_available_value_usd: float
+    sale_opportunity_value_usd: float
     private_equity_value_before_sale_usd: float
+    liquid_net_worth_usd: float
+    target_liquid_net_worth_floor_usd: float | None = None
     proceeds_destination: AccountType | AssetType
-    request_event_id: str | None = None
-    request_event_type: EventType | None = None
 
 
 class PartnerContributionDecision(_SimulationPolicyDecisionBase):
@@ -511,19 +503,19 @@ class MarketPathObservation(_SimulationMarketObservationBase):
     home_value_multiplier: float
     rent_multiplier: float
     mortgage_30y_rate_pct: float
-    private_equity_liquidity_event: bool
+    private_equity_sale_opportunity_event: bool
 
 
-class PrivateEquityLiquidityObservation(_SimulationMarketObservationBase):
-    observation_type: Literal[MarketObservationType.PRIVATE_EQUITY_LIQUIDITY_OPPORTUNITY] = (
-        MarketObservationType.PRIVATE_EQUITY_LIQUIDITY_OPPORTUNITY
+class PrivateEquitySaleOpportunityObservation(_SimulationMarketObservationBase):
+    observation_type: Literal[MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY] = (
+        MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY
     )
-    liquidity_available_value_usd: float
+    sale_opportunity_value_usd: float
     private_equity_value_before_sale_usd: float
 
 
 SimulationMarketObservation = Annotated[
-    MarketPathObservation | PrivateEquityLiquidityObservation, Field(discriminator="observation_type")
+    MarketPathObservation | PrivateEquitySaleOpportunityObservation, Field(discriminator="observation_type")
 ]
 
 

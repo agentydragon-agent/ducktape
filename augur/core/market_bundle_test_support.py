@@ -19,7 +19,7 @@ def constant_market_bundle(
     rent_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
     mortgage_30y_rate_pct_path: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0),
     private_equity_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
-    private_equity_liquidity_event_months: tuple[int, ...] = (),
+    private_equity_sale_opportunity_months: tuple[int, ...] = (),
     market_model_id: str = "test",
     random_seed: int | None = None,
 ) -> MarketBundle:
@@ -34,10 +34,10 @@ def constant_market_bundle(
 
     home = path(home_path)
     rent = path(rent_path)
-    private_equity_liquidity_event_mask = np.zeros(shape, dtype=np.bool_)
-    for month in private_equity_liquidity_event_months:
+    private_equity_sale_opportunity_mask = np.zeros(shape, dtype=np.bool_)
+    for month in private_equity_sale_opportunity_months:
         if 0 <= month <= horizon_months:
-            private_equity_liquidity_event_mask[:, month] = True
+            private_equity_sale_opportunity_mask[:, month] = True
     return MarketBundle(
         month_index=month_index,
         inflation_multipliers=path(inflation_path),
@@ -56,7 +56,7 @@ def constant_market_bundle(
         },
         mortgage_30y_rate_pct=path(mortgage_30y_rate_pct_path),
         private_equity_value_multipliers=path(private_equity_value_path),
-        private_equity_liquidity_event_mask=private_equity_liquidity_event_mask,
+        private_equity_sale_opportunity_mask=private_equity_sale_opportunity_mask,
         metadata=MarketBundleMetadata(
             market_model_id=market_model_id,
             random_seed=random_seed,
@@ -77,7 +77,7 @@ class NoopMarketBundleProvider:
     rent_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0)
     mortgage_30y_rate_pct_path: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0)
     private_equity_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0)
-    private_equity_liquidity_event_months: tuple[int, ...] = ()
+    private_equity_sale_opportunity_months: tuple[int, ...] = ()
 
     def sample_market_bundle(
         self, *, rollout_count: int, horizon_months: int, seed: int | None, market_request: MarketRequest
@@ -91,7 +91,7 @@ class NoopMarketBundleProvider:
             rent_path=self.rent_path,
             mortgage_30y_rate_pct_path=self.mortgage_30y_rate_pct_path,
             private_equity_value_path=self.private_equity_value_path,
-            private_equity_liquidity_event_months=self.private_equity_liquidity_event_months,
+            private_equity_sale_opportunity_months=self.private_equity_sale_opportunity_months,
             market_model_id=market_request.market_model_id,
             random_seed=seed,
         )

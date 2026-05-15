@@ -299,38 +299,3 @@ test("URL state normalizes missing trajectory seed to deterministic default", ()
 
   assert.equal(normalized.marketRequest.randomSeed, 0);
 });
-
-test("browser scenario state does not emit manual private equity sale requests", () => {
-  const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
-  input.scenarios[0] = {
-    ...input.scenarios[0],
-    privateEquitySaleRequestAmountUsd: 75_000,
-    privateEquitySaleRequestMonth: 24,
-    privateEquitySaleProceedsDestination: "generic_sp500_stock",
-    privateEquityEvents: [
-      {
-        eventId: "private_equity_followup_sale",
-        eventType: "private_equity_sale_request",
-        monthIndex: 48,
-        amountUsd: 75_000,
-      },
-    ],
-  };
-
-  const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
-  const backendRequest = decamelizeObjectKeys(scenarioSetInputToRequest(input, bootstrap));
-
-  assert.equal(decoded.scenarios[0].privateEquitySaleRequestAmountUsd, undefined);
-  assert.equal(decoded.scenarios[0].privateEquitySaleRequestMonth, undefined);
-  assert.equal(decoded.scenarios[0].privateEquitySaleProceedsDestination, undefined);
-  assert.equal(decoded.scenarios[0].privateEquityEvents, undefined);
-  assert.equal(decoded.scenarios[0].privateEquitySalePolicy, "none");
-  assert.deepEqual(
-    backendRequest.scenarios[0].events.filter((event) => event.event_type.startsWith("private_equity_")),
-    []
-  );
-  assert.equal(
-    backendRequest.scenarios[0].policies.find((policy) => policy.policy_type === "private_equity_sale"),
-    undefined
-  );
-});

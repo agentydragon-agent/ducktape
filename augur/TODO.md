@@ -94,12 +94,12 @@ second ordered roadmap.
       constants live together and apply consistently to stock, private-equity, and
       property-sale gains. Verify the current math before moving controls.
 - [ ] Finish the private-equity tender/opportunity redesign. The browser no
-      longer exposes arbitrary USD sale-request/month controls,
-      `liquid_net_worth` no longer counts tender-eligible private marks, and a
-      first liquid-net-worth-floor sale policy exists. The model still needs
-      richer exogenous tender/acquisition/IPO opportunity settings, participation
-      policies beyond the first floor rule, inspectable policy-decision causes,
-      and clearer private-stock sale/tax vocabulary.
+      longer exposes arbitrary USD sale controls, core no longer has a manual
+      sale-request path, `liquid_net_worth` no longer counts tender-eligible
+      private marks, and a first liquid-net-worth-floor sale policy records
+      explicit sale/non-sale reasons. The model still needs richer exogenous
+      tender/acquisition/IPO opportunity settings, participation policies beyond
+      the first floor rule, and clearer private-stock sale/tax vocabulary.
 - [ ] Make charts choose human-sensible axis ticks. Use a smart step heuristic
       so labels land on natural values like `$1,000`, `$2,000`, `$3,000` instead of
       awkward computed values such as `$1,247.20` or `$9,231.10`.

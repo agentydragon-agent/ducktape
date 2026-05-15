@@ -2,9 +2,8 @@
 
 Wraps any `MarketModel` implementation from `augur.model.markets.models.*`
 as a `MarketBundleProvider` for the scenario-set runtime. Composition keeps
-each macro model focused on the macro process; private-equity liquidity,
-mortgage rates, and location-specific path selection are runtime bundle
-concerns.
+each macro model focused on the macro process; private-equity sale opportunities,
+mortgage rates, and location-specific path selection are runtime bundle concerns.
 """
 
 from __future__ import annotations
@@ -82,13 +81,13 @@ class MacroMarketBundleProvider:
             rent_multipliers_by_location=rent_paths_by_location,
             mortgage_30y_rate_pct=np.full(shape, self._current_mortgage30_rate_pct, dtype="float64"),
             private_equity_value_multipliers=np.ones(shape, dtype="float64"),
-            private_equity_liquidity_event_mask=private_equity_events,
+            private_equity_sale_opportunity_mask=private_equity_events,
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
                 random_seed=effective_seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
-                event_stream_ids=("private_equity_liquidity_event",),
+                event_stream_ids=("private_equity_sale_opportunity_event",),
                 notes=("sampled by MacroMarketBundleProvider",),
                 source_metadata={
                     "market_provider_label": self.label,

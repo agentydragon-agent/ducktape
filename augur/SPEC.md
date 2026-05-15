@@ -51,13 +51,13 @@ event-type vocabulary as a TODO.
 
 Policies are first-class typed objects. The current policy vocabulary:
 
-| Policy                    | Inputs                                                                                      | Action(s) emitted                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `PrivateEquitySalePolicy` | Manual sale requests and/or sale-rule configuration for sampled PE liquidity opportunities. | Sell `PrivateEquity` when a sale request or automatic rule intersects with market liquidity. |
-| `PartnerEquityAgreement`  | Contributor agent, owner agent, property, monthly amount, share-accrual rule.               | `Transfer` + `AccrueOwnership`.                                                              |
-| `MortgagePaymentPolicy`   | Mortgage liability, payer agent, cash source.                                               | `PayLiability` from owner cash flow.                                                         |
-| `RentalUsePolicy`         | Property, mode (occupied / rented / partial), tenant pool.                                  | `OccupyProperty` / `RentProperty`.                                                           |
-| `OccupancyDecisionPolicy` | Property, move-out month, alternative housing config.                                       | Transitions occupation phase; potentially triggers `RentProperty`.                           |
+| Policy                    | Inputs                                                                        | Action(s) emitted                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `PrivateEquitySalePolicy` | Sale-rule configuration for sampled PE sale opportunities.                    | Sell `PrivateEquity` when an automatic rule intersects with a market sale opportunity. |
+| `PartnerEquityAgreement`  | Contributor agent, owner agent, property, monthly amount, share-accrual rule. | `Transfer` + `AccrueOwnership`.                                                        |
+| `MortgagePaymentPolicy`   | Mortgage liability, payer agent, cash source.                                 | `PayLiability` from owner cash flow.                                                   |
+| `RentalUsePolicy`         | Property, mode (occupied / rented / partial), tenant pool.                    | `OccupyProperty` / `RentProperty`.                                                     |
+| `OccupancyDecisionPolicy` | Property, move-out month, alternative housing config.                         | Transitions occupation phase; potentially triggers `RentProperty`.                     |
 
 Policies do not encode actor identities in their type names — actor IDs are
 data in scenario configuration, not type-system distinctions.

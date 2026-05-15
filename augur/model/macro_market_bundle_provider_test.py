@@ -91,9 +91,9 @@ def test_mortgage_path_constant(provider: MacroMarketBundleProvider) -> None:
 def test_private_equity_paths_flat_with_yearly_tenders(provider: MacroMarketBundleProvider) -> None:
     bundle = _sample(provider, rollout_count=1, horizon_months=24)
     np.testing.assert_allclose(bundle.private_equity_value_multipliers, 1.0)
-    assert not bundle.private_equity_liquidity_event_mask[:, 0].any()
-    assert bundle.private_equity_liquidity_event_mask[:, 12].all()
-    assert bundle.private_equity_liquidity_event_mask[:, 24].all()
+    assert not bundle.private_equity_sale_opportunity_mask[:, 0].any()
+    assert bundle.private_equity_sale_opportunity_mask[:, 12].all()
+    assert bundle.private_equity_sale_opportunity_mask[:, 24].all()
 
 
 def test_seed_determinism(provider: MacroMarketBundleProvider) -> None:

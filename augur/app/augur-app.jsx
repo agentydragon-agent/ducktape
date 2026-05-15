@@ -220,7 +220,7 @@ function metricOptionsFromResult(result, scenarioSetInput) {
     "propertySaleNetProceedsUsd",
     "netPropertySaleCashFlowUsd",
     "privateEquityValueUsd",
-    "privateEquityLiquidityAvailableValueUsd",
+    "privateEquitySaleOpportunityValueUsd",
     "partnerHomeEquityClaimUsd",
     "partnerOwnershipPct",
     "checkingFloorShortfallUsd",
@@ -731,11 +731,11 @@ function LiquidityPolicyPanel({ scenarioResult, selectedRolloutIndex }) {
   );
 }
 
-function PrivateEquityLiquidityPanel({ scenarioResult, selectedRolloutIndex }) {
+function PrivateEquitySaleOpportunityPanel({ scenarioResult, selectedRolloutIndex }) {
   const rows = rowsFromTable(scenarioResult?.monthlyColumns);
   if (rows.length === 0) return null;
   const hasPrivateEquity = rows.some(
-    (row) => row.privateEquityValueUsd || row.privateEquityLiquidityAvailableValueUsd || row.privateEquitySaleUsd
+    (row) => row.privateEquityValueUsd || row.privateEquitySaleOpportunityValueUsd || row.privateEquitySaleUsd
   );
   if (!hasPrivateEquity) return null;
   const rolloutIndexes = [...new Set(rows.map((row) => Number(row.rolloutIndex)).filter(Number.isFinite))].sort(
@@ -744,7 +744,7 @@ function PrivateEquityLiquidityPanel({ scenarioResult, selectedRolloutIndex }) {
   const rolloutIndex = rolloutIndexes.includes(selectedRolloutIndex) ? selectedRolloutIndex : (rolloutIndexes[0] ?? 0);
   const rolloutRows = rows.filter((row) => Number(row.rolloutIndex) === rolloutIndex);
   const terminalRow = rolloutRows.at(-1) ?? null;
-  const eventRows = rolloutRows.filter((row) => row.privateEquityLiquidityEvent || row.privateEquitySaleUsd > 0);
+  const eventRows = rolloutRows.filter((row) => row.privateEquitySaleOpportunityEvent || row.privateEquitySaleUsd > 0);
   const displayRows = (eventRows.length > 0 ? eventRows : rolloutRows.filter((row) => row.monthIndex % 12 === 0)).slice(
     0,
     8
@@ -781,7 +781,7 @@ function PrivateEquityLiquidityPanel({ scenarioResult, selectedRolloutIndex }) {
                 <td>{fmtInteger(row.monthIndex)}</td>
                 <td>{fmtUsd(row.privateEquityValueUsd)}</td>
                 <td>{fmtUsd(row.privateEquitySaleUsd)}</td>
-                <td>{row.privateEquityLiquidityEvent ? "yes" : "no"}</td>
+                <td>{row.privateEquitySaleOpportunityEvent ? "yes" : "no"}</td>
               </tr>
             ))}
           </tbody>
@@ -1693,11 +1693,11 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
       label: "Private equity sale",
       summary: ["privateEquitySaleUsd", "PE sale", fmtUsd],
       details: [
-        ["privateEquityLiquidityAvailableValueUsd", "Tender-eligible value", fmtUsd],
+        ["privateEquitySaleOpportunityValueUsd", "Sale opportunity value", fmtUsd],
         ["privateEquitySaleUsd", "Private equity sale", fmtUsd],
         ["privateEquitySaleBasisUsd", "Basis", fmtUsd],
         ["privateEquitySaleTaxUsd", "Tax", fmtUsd],
-        ["privateEquityLiquidityEvent", "Tender event", (value) => (value ? "yes" : "no")],
+        ["privateEquitySaleOpportunityEvent", "Tender event", (value) => (value ? "yes" : "no")],
       ],
     },
     {
@@ -1909,7 +1909,7 @@ function TrajectoryResults({
         selectedRolloutIndex={selectedRolloutIndex}
       />
       <LiquidityPolicyPanel scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
-      <PrivateEquityLiquidityPanel scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
+      <PrivateEquitySaleOpportunityPanel scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
       <ScenarioAcceptedPanel selection={selection} />
     </>
   );
