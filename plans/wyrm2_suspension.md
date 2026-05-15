@@ -15,11 +15,11 @@ Machine will be physically relocated and offline for ~2 weeks.
 
 - [ ] **ollama** — stays in k8s, just offline until wyrm2 comes back up.
 
-## Deliberately Do Nothing
+## Suspended (wyrm2 offline, no Proxmox nodes)
 
-These are node-level infra or don't need action:
-
-- proxmox-proxy, openebs, nvidia-device-plugin, node-feature-discovery, kube-system/cilium
+- [x] **proxmox-proxy** — suspended in git (`spec.suspend: true`). Re-enable once atlas is back up.
+- proxmox-proxy resources (deployment, service) deleted from cluster.
+- openebs, nvidia-device-plugin, node-feature-discovery, kube-system/cilium — node-level infra, no action needed
 
 ## No Action Needed (will reschedule to VPS automatically)
 
