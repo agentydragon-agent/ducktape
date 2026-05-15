@@ -1,7 +1,7 @@
 # Deb packages for the gnome-shell render-test container.
 #
 # The container runs gnome-shell headless under Xvfb, loads the
-# claude-quota extension with a fixture JSON, and grabs the Xvfb root
+# aiquota extension with a fixture JSON, and grabs the Xvfb root
 # window with `scrot` for golden-PNG comparison. (The GNOME
 # Shell.Screenshot D-Bus API is gated on unsafe_mode in modern GNOME and
 # rejects external callers, so screenshotting at the X layer is the

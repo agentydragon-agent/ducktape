@@ -1,5 +1,5 @@
 #!/bin/bash
-# Bazel-runnable launcher for local iteration on claude-quota.
+# Bazel-runnable launcher for local iteration on aiquota.
 #
 # Builds the extension zip via Bazel, installs it into the user's
 # gnome-shell extension dir (replacing any previous build), and launches
@@ -8,12 +8,12 @@
 # iteration only).
 #
 # Usage:
-#   bazelisk run //gnome/claude_quota:devkit
+#   bazelisk run //gnome/aiquota:devkit
 #
 # Optional env:
-#   CLAUDE_QUOTA_FIXTURE=/path/to/fixture.json
+#   AI_QUOTA_FIXTURE=/path/to/fixture.json
 #       Skip real auth/HTTP and load the indicator from a fixture JSON
-#       (same hook used by //gnome/claude_quota:test_render).
+#       (same hook used by //gnome/aiquota:test_render).
 set -euo pipefail
 
 # --- begin runfiles.bash initialization v3 ---
@@ -37,13 +37,13 @@ if ! command -v gnome-shell >/dev/null 2>&1; then
 fi
 
 # --- locate inputs ---------------------------------------------------------
-zip_path="$(rlocation "_main/gnome/claude_quota/claude-quota.zip")"
+zip_path="$(rlocation "_main/gnome/aiquota/aiquota.zip")"
 if [[ ! -f "$zip_path" ]]; then
-  echo "ERROR: claude-quota.zip not found in runfiles at $zip_path" >&2
+  echo "ERROR: aiquota.zip not found in runfiles at $zip_path" >&2
   exit 1
 fi
 
-uuid="claude-quota@allegedly.works"
+uuid="aiquota@allegedly.works"
 target_dir="${HOME}/.local/share/gnome-shell/extensions/${uuid}"
 
 # --- install fresh build ---------------------------------------------------

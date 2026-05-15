@@ -5,9 +5,9 @@ load("//devinfra/python:defs.bzl", "py_test")
 
 genrule(
     name = "compiled_schemas",
-    srcs = ["schemas/org.gnome.shell.extensions.claude-quota.gschema.xml"],
+    srcs = ["schemas/org.gnome.shell.extensions.aiquota.gschema.xml"],
     outs = ["schemas/gschemas.compiled"],
-    cmd = "cp $(location schemas/org.gnome.shell.extensions.claude-quota.gschema.xml) $(@D)/ && glib-compile-schemas $(@D)",
+    cmd = "cp $(location schemas/org.gnome.shell.extensions.aiquota.gschema.xml) $(@D)/ && glib-compile-schemas $(@D)",
 )
 
 pkg_files(
@@ -34,9 +34,9 @@ pkg_files(
 # subdirectory). This is what gets shipped to users via the CI release pin
 # and what the render tests + devkit launcher consume.
 pkg_zip(
-    name = "claude-quota_zip",
+    name = "aiquota_zip",
     srcs = [":extension_files"],
-    out = "claude-quota.zip",
+    out = "aiquota.zip",
     visibility = ["//visibility:public"],
 )
 
@@ -60,7 +60,7 @@ py_test(
     size = "medium",
     srcs = ["test_render.py"],
     data = [
-        ":claude-quota_zip",
+        ":aiquota_zip",
         ":fixtures",
         ":snapshots",
         "//gnome/test_image:gnome_shell_test",
@@ -84,6 +84,6 @@ py_test(
 sh_binary(
     name = "devkit",
     srcs = ["devkit.sh"],
-    data = [":claude-quota_zip"],
+    data = [":ai-quota_zip"],
     deps = ["@bazel_tools//tools/bash/runfiles"],
 )

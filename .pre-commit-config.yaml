@@ -254,7 +254,7 @@ repos:
             # kustomize config files (kustomize.config.k8s.io/v1beta1) — not K8s resources
             cluster/k8s/.*/kustomization\.yaml|
             # RedisReplication CRD schema in datreeio catalog is outdated (missing spec.sentinel)
-            cluster/k8s/mcp-infra/valkey-instance\.yaml|
+            cluster/k8s/.*/valkey-instance\.yaml|
             # Authentik blueprints are not K8s manifests, skip validation
             cluster/k8s/authentik/app/blueprints/.*|
             # Application config files, not K8s manifests

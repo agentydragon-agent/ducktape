@@ -37,7 +37,7 @@
     };
   };
 
-  # Place decrypted z.ai API key where the claude-quota GNOME extension reads it.
+  # Place decrypted z.ai API key where the aiquota GNOME extension reads it.
   # sopsEnv exports ZAI_API_KEY as a shell env var, but GNOME Shell (systemd --user)
   # never inherits shell-init exports. The extension reads zai-api-key-path from
   # its own GSettings schema and loads the key from the sops-decrypted file.
@@ -47,7 +47,7 @@
   };
 
   dconf.settings = {
-    "org/gnome/shell/extensions/claude-quota" = {
+    "org/gnome/shell/extensions/aiquota" = {
       zai-api-key-path = config.sops.secrets.zai_api_key_file.path;
     };
   };
@@ -71,7 +71,7 @@
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   programs.gnome-shell.extensions = [
     { package = pkgs.gnomeExtensions.appindicator; }
-    { package = ducktapePackages.gnome-shell-claude-quota; }
+    { package = ducktapePackages.gnome-shell-aiquota; }
   ];
 
   # drivefs is provided by gaffer-private CI via cache.allegedly.works/gaffer

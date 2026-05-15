@@ -1,11 +1,11 @@
-"""Golden render tests for the claude-quota GNOME extension.
+"""Golden render tests for the ai-quota GNOME extension.
 
 A single test container (//gnome/test_image:gnome_shell_test_image)
 is started once per module: boot.sh inside it brings up Xvfb, the
 postinst-equivalent caches, and a long-lived dbus session bus, then
 blocks. A single gnome-shell is started inside that container (also
 once per module) and the extension exports a session-bus interface
-(works.allegedly.ClaudeQuotaTest, gated on CLAUDE_QUOTA_FIXTURE) that
+(works.allegedly.AiQuotaTest, gated on AI_QUOTA_FIXTURE) that
 lets this driver swap fixture state, open/close the popup menu, and
 query the menu's screen geometry.
 
@@ -22,19 +22,19 @@ multiple tints simultaneously (providers can have different short vs long states
   empty   all providers null                                — unknown/no-data state
   tints   claude=error; codex=warn-short/cool-long;        — error, warn, cool, hot(absolute), ok
           zai=absolute-hot-short/ok-long
-  hot     claude=pace-hot-short/ok-long; codex=ok/ok;      — hot(pace), ok, warn, null short window
-          zai=null-short/warn-long
+  hot     claude=pace-hot-short/long-100%+extra-usage(⚡);  — hot(pace), extra usage header + ⚡ icon
+          codex=ok/ok; zai=null-short/warn-long
 
 Update flow when the rendering changes intentionally:
 
-    bazelisk test //gnome/claude_quota:test_render \\
+    bazelisk test //gnome/aiquota:test_render \\
         --test_env=UPDATE_GOLDEN=1 \\
         --remote_upload_local_results=false --nocache_test_results
 
     INV=<invocation-id from build output>
     for f in empty tints hot; do
       bbapi artifact "$INV" "test.outputs/$f.png" \\
-        > "gnome/claude_quota/__snapshots__/$f.png"
+        > "gnome/aiquota/__snapshots__/$f.png"
     done
 
     # Eyeball, commit, then re-run without UPDATE_GOLDEN=1 to confirm green.
@@ -66,8 +66,8 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 logger = logging.getLogger(__name__)
 
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
-_EXTENSION_ZIP = "_main/gnome/claude_quota/claude-quota.zip"
-_EXTENSION_UUID = "claude-quota@allegedly.works"
+_EXTENSION_ZIP = "_main/gnome/aiquota/aiquota.zip"
+_EXTENSION_UUID = "aiquota@allegedly.works"
 
 # Xvfb dims must match boot.sh — the combined panel+menu crop extends to
 # the right edge, so the test driver needs to know it.
@@ -76,8 +76,8 @@ _SCREEN_WIDTH = 1920
 # gnome-shell ExtensionState (see js/misc/extensionUtils.js).
 _EXTENSION_STATE_ENABLED = 1
 
-_TEST_DBUS_DEST = "works.allegedly.ClaudeQuotaTest"
-_TEST_DBUS_PATH = "/works/allegedly/ClaudeQuotaTest"
+_TEST_DBUS_DEST = "works.allegedly.AiQuotaTest"
+_TEST_DBUS_PATH = "/works/allegedly/AiQuotaTest"
 
 _FIXTURES = ["empty", "tints", "hot"]
 
@@ -109,8 +109,8 @@ def render_session(
     handle + host-side output directory. Each parametrized test calls
     Reload + screenshots, leaving the shell process alone.
     """
-    fixtures_dir = get_required_path(f"_main/gnome/claude_quota/test_fixtures/{_FIXTURES[0]}.json").parent
-    out_dir = tmp_path_factory.mktemp("claude-quota-renders")
+    fixtures_dir = get_required_path(f"_main/gnome/aiquota/test_fixtures/{_FIXTURES[0]}.json").parent
+    out_dir = tmp_path_factory.mktemp("ai-quota-renders")
     out_dir.chmod(0o777)  # gnome-shell writes the screenshot as a different uid
 
     container = DockerContainer(gnome_shell_test_image)
@@ -169,7 +169,7 @@ def _exec_in_session(
 def _start_gnome_shell(container: docker.models.containers.Container, fixture_path_in_container: str) -> None:
     """Launch gnome-shell in the background; subsequent polls confirm readiness."""
     cmd = (
-        f"export CLAUDE_QUOTA_FIXTURE={shlex.quote(fixture_path_in_container)}; "
+        f"export AI_QUOTA_FIXTURE={shlex.quote(fixture_path_in_container)}; "
         "gsettings set org.gnome.shell disable-user-extensions false; "
         f"gsettings set org.gnome.shell enabled-extensions '[\"{_EXTENSION_UUID}\"]'; "
         "nohup gnome-shell --x11 >/tmp/shell.log 2>&1 &"
@@ -354,13 +354,13 @@ def test_render(
         return
 
     try:
-        expected_path = get_required_path(f"_main/gnome/claude_quota/__snapshots__/{out_name}")
+        expected_path = get_required_path(f"_main/gnome/aiquota/__snapshots__/{out_name}")
     except RuntimeError:
         shutil.copy(actual_path, undeclared_dir / f"{fixture_name}.actual.png")
         pytest.fail(
             f"No golden checked in for {out_name}. Re-run with --test_env=UPDATE_GOLDEN=1, "
             f"then cp the produced {out_name} from undeclared outputs into "
-            f"gnome/claude_quota/__snapshots__/."
+            f"gnome/aiquota/__snapshots__/."
         )
 
     assert_png_matches_golden(actual_path, expected_path, name=fixture_name, out_dir=undeclared_dir)

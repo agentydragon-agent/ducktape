@@ -303,7 +303,7 @@ apt.install(
     manifest = "//cluster/k8s/agents/attic-jwt-rotation:trixie_attic_rotation.yaml",
 )
 
-# gnome-shell + Xvfb + dbus on debian:trixie-slim for the claude-quota
+# gnome-shell + Xvfb + dbus on debian:trixie-slim for the aiquota
 # extension golden-render tests.
 apt.install(
     name = "gnome_shell_test",

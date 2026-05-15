@@ -60,10 +60,10 @@ const TINT_CLASSES = [
 ];
 const TINT_RANK = { unknown: 0, stale: 0, ok: 1, cool: 1, warn: 2, hot: 3 };
 
-// Per-provider enable flags are read from ~/.config/claude-quota/config.json.
+// Per-provider enable flags are read from ~/.config/aiquota/config.json.
 // Missing file or missing key → provider is shown (default on).
 function readExtensionConfig() {
-  const path = `${GLib.get_home_dir()}/.config/claude-quota/config.json`;
+  const path = `${GLib.get_home_dir()}/.config/aiquota/config.json`;
   try {
     const [ok, bytes] = GLib.file_get_contents(path);
     if (!ok) return {};
@@ -315,7 +315,7 @@ const QuotaIndicator = GObject.registerClass(
       this._httpSession = new Soup.Session();
       this._popupTickId = null;
 
-      const fixturePath = GLib.getenv("CLAUDE_QUOTA_FIXTURE");
+      const fixturePath = GLib.getenv("AI_QUOTA_FIXTURE");
       if (fixturePath) {
         // Provider visibility derived from which keys are present in the fixture.
         const [ok, bytes] = GLib.file_get_contents(fixturePath);
@@ -380,7 +380,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _exportTestInterface() {
       // Session-bus interface used only by the golden render tests
-      // (CLAUDE_QUOTA_FIXTURE gates the entire path). The test driver
+      // (AI_QUOTA_FIXTURE gates the entire path). The test driver
       // launches gnome-shell once per session and then swaps fixtures /
       // toggles the menu via this surface, so renders get amortized
       // over a single shell process.
@@ -389,7 +389,7 @@ const QuotaIndicator = GObject.registerClass(
       //   GetMenuGeometry      — screen-space (x,y,w,h) bounding box of
       //                          the open menu, for precise screenshot crop.
       this._testIface = Gio.DBusExportedObject.wrapJSObject(
-        '<node><interface name="works.allegedly.ClaudeQuotaTest">' +
+        '<node><interface name="works.allegedly.AiQuotaTest">' +
           '<method name="Reload"><arg type="s" direction="in" name="path"/></method>' +
           '<method name="OpenMenu"/>' +
           '<method name="CloseMenu"/>' +
@@ -411,10 +411,10 @@ const QuotaIndicator = GObject.registerClass(
           },
         }
       );
-      this._testIface.export(Gio.DBus.session, "/works/allegedly/ClaudeQuotaTest");
+      this._testIface.export(Gio.DBus.session, "/works/allegedly/AiQuotaTest");
       this._testBusOwnerId = Gio.bus_own_name(
         Gio.BusType.SESSION,
-        "works.allegedly.ClaudeQuotaTest",
+        "works.allegedly.AiQuotaTest",
         Gio.BusNameOwnerFlags.NONE,
         null,
         null,
@@ -788,9 +788,18 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderPopup() {
       for (const p of this._providers) {
+        const inExtraRegime =
+          p.state.extraUsage?.is_enabled && p.state.long?.usedPercent != null && p.state.long.usedPercent >= 100;
         this._renderProviderHeader(p.header, p.label, p.state);
-        this._renderPopupRow(p.shortRow, "5h", p.state.short);
-        this._renderPopupRow(p.longRow, "7d", p.state.long);
+        if (inExtraRegime) {
+          p.shortRow.set_visible(false);
+          p.longRow.set_visible(false);
+        } else {
+          p.shortRow.set_visible(true);
+          p.longRow.set_visible(true);
+          this._renderPopupRow(p.shortRow, "5h", p.state.short);
+          this._renderPopupRow(p.longRow, "7d", p.state.long);
+        }
       }
     }
 

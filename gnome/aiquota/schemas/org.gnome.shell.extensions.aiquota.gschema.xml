@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="org.gnome.shell.extensions.claude-quota" path="/org/gnome/shell/extensions/claude-quota/">
+  <schema id="org.gnome.shell.extensions.aiquota" path="/org/gnome/shell/extensions/aiquota/">
     <key name="zai-api-key-path" type="s">
       <default>''</default>
       <summary>Path to the z.ai API key file</summary>

@@ -3,9 +3,9 @@
   pkgs,
 }:
 pkgs.stdenv.mkDerivation {
-  pname = "gnome-shell-extension-claude-quota";
+  pname = "gnome-shell-extension-aiquota";
   version = "1";
-  src = artifacts."gnome-shell-claude-quota";
+  src = artifacts."gnome-shell-aiquota";
 
   nativeBuildInputs = [
     pkgs.jq
@@ -28,5 +28,5 @@ pkgs.stdenv.mkDerivation {
     runHook postInstall
   '';
 
-  passthru.extensionUuid = "claude-quota@allegedly.works";
+  passthru.extensionUuid = "aiquota@allegedly.works";
 }

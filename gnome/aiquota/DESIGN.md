@@ -1,4 +1,4 @@
-# claude-quota: panel UX design
+# aiquota: panel UX design
 
 ## Problem
 
@@ -196,7 +196,7 @@ A second tier of cosmetic knobs (`show-claude` / `show-codex` to hide a provider
 
 ## Implementation notes (carry-overs to TODO.md)
 
-- Brand SVG marks: ship monochrome single-path SVGs in `gnome/claude_quota/icons/` (Anthropic press kit + OpenAI brand page; both publish a black/white mark suitable for monochrome use). Load via `Gio.FileIcon` from `extension.path`. Note: SVGs are owned by Anthropic/OpenAI and are not covered by the repo's AGPL license — they're vendored under fair use for personal use only.
+- Brand SVG marks: ship monochrome single-path SVGs in `gnome/aiquota/icons/` (Anthropic press kit + OpenAI brand page; both publish a black/white mark suitable for monochrome use). Load via `Gio.FileIcon` from `extension.path`. Note: SVGs are owned by Anthropic/OpenAI and are not covered by the repo's AGPL license — they're vendored under fair use for personal use only.
 - `St.Icon` supports CSS-based recoloring via `-st-icon-style: symbolic` + `color:` on the style class. Use `style_class` swaps (`quota-ok` / `quota-warn` / `quota-hot` / `quota-cool`) rather than inline color.
 - Window total lengths: hard-code the four (5h, 7d, ~1h, ~24h) initially. The Codex API returns `limit_window_seconds` so prefer that when present; the Claude API doesn't, so derive from `resets_at - now` floor-rounded to the next 5h or 7d boundary.
 - Move `POLL_INTERVAL_SECONDS` and the thresholds from `extension.js` constants to a `Gio.Settings` schema.
