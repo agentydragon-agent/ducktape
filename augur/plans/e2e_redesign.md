@@ -52,110 +52,33 @@ API.
   `policy_id`, `event_id`, market opportunity, or system accounting process.
 - Public result arrays reconcile to ledger/snapshot detail in e2e tests.
 
-## Completed Snapshot
-
-These are consolidated from the older spiral notes; detailed evidence lives in
-`augur/core/test_e2e.py` and the focused core tests.
-
-- Public API: `simulate_set(scenario_set, *, market_provider=None,
-market_bundle=None)` returns a typed `SimulationRun`; callers can inspect a
-  scenario, metric matrix/series/terminal value, and a selected rollout.
-- Controlled market support: tests can plug deterministic/noop market bundles
-  without creating a deterministic simulator API.
-- Scenario validation: the public runner validates actor/property references,
-  duplicate IDs, rental/property prerequisites, and market-bundle dimensions
-  before entering the engine.
-- Opaque property IDs: core scenarios use string property IDs with explicit
-  location/tax-regime inputs instead of private catalog enums.
-- Cash/SP500/monthly spend: e2e coverage verifies cash-only, SP500-only,
-  combined net worth, monthly spend, per-rollout spend actions, and monthly
-  spend ledger reconciliation.
-- Mortgage/property purchase: e2e coverage verifies fixed-rate amortization,
-  month-0 purchase cash outlay, ordinary owner mortgage actions, and mortgage
-  cash/liability ledger reconciliation.
-- Property sale/taxes: property sales are explicit `PropertySaleEvent`s, not
-  horizon liquidation. Sale settlement records gross proceeds, selling costs,
-  debt payoff, adjusted basis, gain/exclusion, depreciation recapture, tax, and
-  net proceeds. Sale taxes now run through an annual federal + California pass
-  for property, SP500, and PE sale gains.
-- Rental: `RentalPlan` is a discriminated union keyed by `rental_mode`;
-  whole-property and room-rental modes require their mode-specific rent fields.
-  Rental income, vacancy, property tax, fees, and carrying costs reconcile to
-  ledger detail.
-- Checking-floor SP500 sales: fixed-tranche public-stock sell policies run in
-  ordered policy-program order, can have multiple rules, emit policy-decision
-  rows, realize actions, and reconcile sale/basis/tax/proceeds arrays.
-- Private-equity sale requests: liquidity opportunities are market
-  observations, sale requests are scheduled events, and PE sale policies decide
-  requested sales. Tender-sale fractions and event-capacity helpers were
-  deleted. PE sale/basis/tax/proceeds arrays reconcile to ledger detail.
-- Partner equity: partner contribution policies can name property IDs, multiple
-  partner policies run in actor order, contributions/accruals are split into
-  transfer/action/ledger/snapshot detail, and property-sale partner claims
-  settle against tax-adjusted sale net proceeds.
-- Legacy cleanup: the old `ownership.py` / `real_estate.py` side path was
-  deleted; scenario-set simulation is the current partner-equity path.
-- Result detail: public scenario results now include actions, policy decisions,
-  market observations, ledger entries, and balance snapshots. Selected rollouts
-  can filter these details locally.
-- E2E serialization: response payload coverage includes SP500 sale, PE sale,
-  property sale settlement, tax fields, ledger rows, policy-decision rows, and
-  market-observation rows.
-
 ## Active Step 7: Arrays Reconcile To Ledger
 
 Current status: first-pass reconciliation coverage exists, public row-level
-detail is available, and the first recurring cash-flow plus sale transaction
-arrays now derive from ledger rows. The remaining work is to keep shrinking
-bespoke array math without changing monthly-column semantics.
+detail is available, and the main recurring cash-flow, sale transaction,
+partner-contribution, and sale-tax explanation arrays now derive from
+ledger/snapshot/accounting-detail rows. The remaining work is to keep shrinking
+bespoke explanatory array math without changing monthly-column semantics.
 
 Next slices:
 
-1. Inventory every remaining monthly result array and classify it as a state
-   snapshot, transaction flow, explanatory calculation, or compatibility alias.
-2. Keep true state snapshots, such as cash, asset value, PE liquidity value,
+1. Keep true state snapshots, such as cash, asset value, PE liquidity value,
    property value, mortgage balance, home-equity claims, ownership percentage,
    and net-worth metrics, sourced from state snapshots rather than transaction
    ledger rows.
-3. Derive remaining transaction-flow arrays from ledger rows where practical.
-   The likely next targets are purchase-closing costs, partner contribution
-   flow columns, partner house-cost/principal-credit flow columns, and aggregate
-   tax-payment columns once the tax ledger/liability shape exists.
-4. Move remaining sale explanatory arrays toward typed accounting detail once
-   tax timing, basis, exclusion, and depreciation-recapture semantics are
-   explicit enough. These arrays explain calculations; they should not pretend
-   to be cash movement unless there is a corresponding ledger row.
-5. Generalize the ledger-derived matrix helper only when the next family needs
+2. Derive remaining transaction-flow arrays from ledger rows where practical.
+   The likely next targets are purchase-closing costs, property depreciation,
+   partner house-cost/share explanation columns, and tax payment timing once the
+   tax ledger/liability shape exists.
+3. Move remaining explanatory arrays toward typed accounting detail once their
+   semantics are explicit enough. These arrays explain calculations; they should
+   not pretend to be cash movement unless there is a corresponding ledger row.
+4. Generalize the ledger-derived matrix helper only when the next family needs
    multiple categories, actor filters, property filters, or balance snapshots.
-6. Keep existing monthly columns stable and keep reconciliation tests as
+5. Keep existing monthly columns stable and keep reconciliation tests as
    guardrails while the implementation source changes.
-7. Add any missing causes/IDs needed by derivation. Do not add ad hoc string
+6. Add any missing causes/IDs needed by derivation. Do not add ad hoc string
    parsing to recover meaning from categories.
-
-Done for Step 7:
-
-- Actor-keyed ledger entries and balance snapshots are public result detail.
-- Monthly spend, mortgage interest/principal/payment, rental income/fees,
-  property carrying costs, and net property cash flow derive from ledger rows
-  before being exposed as monthly result arrays.
-- SP500 sale/basis/gain/tax, checking-floor sale action, private-equity
-  sale/basis/tax, property sale gross/closing cost/debt payoff/tax/net
-  proceeds, and net property sale cash flow derive from ledger rows before
-  being exposed as monthly result arrays.
-- Partner contribution transfer, contribution used for house costs,
-  unallocated contribution excess, and partner principal credit derive from
-  actor-keyed ledger rows before being exposed as monthly result arrays.
-- Federal/California/total income-tax allocation columns and property-sale
-  basis/gain explanatory columns derive from typed accounting-detail rows before
-  being exposed as monthly result arrays.
-- E2E tests reconstruct matrices from ledger/snapshot rows for monthly spend,
-  SP500 sales/taxes, PE sales/taxes, mortgage payments, rental/property
-  operating cash flows, property sale settlement/taxes, and partner-equity
-  ledgers/claims.
-- Selected-rollout detail includes market paths, PE liquidity opportunities,
-  monthly-spend decisions, checking-floor sell decisions, PE sale decisions,
-  partner contribution decisions, actions, ledger entries, snapshots,
-  accounting details, and curve values.
 
 ### Step 7 Array Inventory
 
@@ -206,67 +129,8 @@ them, but their source should be another state/ledger-backed metric.
 
 ## Open Design Follow-Ups
 
-These are tracked more granularly in `augur/TODO.md`.
-
-- Derive more arrays from ledger/state instead of only reconciling after the
-  fact.
-- Convert taxes into a ledger/liability workflow with estimated-payment timing.
-- Expand annual tax modeling: qualified dividends, short-term gains, losses,
-  rental income, deductible expenses, passive-loss release, SALT/property-tax
-  treatment, California conformity/non-conformity, and ordinary-income
-  schedules beyond a single `TaxProfile` value.
-- Replace remaining class-filtered policy execution with actual ordered actor
-  policy programs and runtime rules.
-- Split private-equity liquidity opportunity, user sale request, policy
-  decision, accounting application, and public action with explicit cause IDs.
-- Remove or implement schema-only policy types:
-  `LiquidityReservePolicy`, `PortfolioTargetRebalancePolicy`, and
-  `ManualEventSchedulePolicy`.
-- Clarify initial state vs scheduled transitions for purchase, financing,
-  ownership, sale, rental transition, and liquidity events.
-- Reduce single-property/global scenario assumptions. Over time,
-  `property_selection`, `financing`, `rental_plan`, and `tax_profile` should
-  become initial positions, per-property settings, or per-actor/accounting
-  inputs.
-- Collapse the old/new schema surfaces. `augur/core/scenario_set.py` is the
-  scenario-set simulator schema; legacy shapes in `augur/core/schemas.py`
-  should be deleted, moved, or wrapped at an explicit compatibility boundary.
-- Publish stable metric IDs and define aggregate vs per-agent result semantics.
-- Refresh `augur/SPEC.md` once policy execution, sale taxes, and one-rollout
-  detail stabilize.
-
-## Next 7 Workdays
-
-Day 1: Finish the Step 7 array inventory. Classify every `ScenarioRunArrays`
-field as state snapshot, transaction flow, explanatory calculation, or
-compatibility alias, then update TODOs with the exact source-of-truth choice for
-each family.
-
-Day 2: Derive the remaining partner-contribution transaction-flow columns from
-actor-keyed ownership/cash ledger rows or document why an aggregate compatibility
-column must remain state-backed.
-
-Day 3: Introduce the tax ledger/liability shape: annual assessment, source
-allocation, liability recognition, and payment timing as separate concepts.
-Then move aggregate federal/California/total tax columns to that accounting
-detail.
-
-Day 4: Add typed accounting detail for sale explanatory values that are not
-cash movement: adjusted basis, realized gain, capital-gain exclusion, taxable
-gain, and depreciation recapture. Keep the existing arrays stable while making
-their source explicit.
-
-Day 5: Start replacing class-filtered policy execution with an ordered actor
-policy-program interpreter for one narrow policy family. Preserve the current
-behavior with e2e tests before broadening it.
-
-Day 6: Tighten private-equity sale cause IDs across liquidity observation, user
-sale request, policy decision, accounting application, and public action. Remove
-any remaining coupling that treats an opportunity as the decision.
-
-Day 7: Prune or implement schema-only policy types, then refresh `augur/SPEC.md`
-and app-facing detail expectations once the core result contract is stable
-enough to promise.
+Current open follow-ups live in `augur/TODO.md`. Keep this plan focused on the
+Step 7 array-source inventory and the e2e verification loop.
 
 ## Verification
 
