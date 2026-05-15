@@ -81,7 +81,7 @@ nvidia-device-plugin, node-feature-discovery, local-path-storage, cert-manager, 
 docker-ci, matrix, grocy-sf, grocy-vallejo, study-casino, props, tana-mcp
 
 **Extended read**: ollama (`rolebinding-ollama-reader.yaml` in `ollama/agent-rbac/`),
-langfuse (in `langfuse/agent-rbac/`), openclaw (in `openclaw/gateway-namespace/`),
+langfuse (in `langfuse/agent-rbac/`), openclaw (in `openclaw/gateway-agent-rbac/`),
 props (Role + RoleBinding in `props/agent-rbac/`)
 
 **Logs/configmaps** (`logs-configmaps-reader` ClusterRole bound per-namespace):
