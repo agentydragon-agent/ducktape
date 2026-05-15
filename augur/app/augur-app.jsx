@@ -509,7 +509,7 @@ function ResultKindBadge({ kind }) {
   );
 }
 
-function ResultPanelHeader({ kind, title, subtitle = null, actions = null, showKindBadge = true }) {
+function ResultPanelHeader({ kind, title, subtitle = null, actions = null, showKindBadge = false }) {
   return (
     <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
@@ -526,7 +526,15 @@ function ResultPanelHeader({ kind, title, subtitle = null, actions = null, showK
   );
 }
 
-function ResultPanel({ kind, title, subtitle = null, actions = null, children, className = "", showKindBadge = true }) {
+function ResultPanel({
+  kind,
+  title,
+  subtitle = null,
+  actions = null,
+  children,
+  className = "",
+  showKindBadge = false,
+}) {
   assertResultPanelKind(kind);
   return (
     <section className={`augur-card overflow-hidden ${className}`} data-result-panel-kind={kind}>
@@ -542,7 +550,15 @@ function ResultPanel({ kind, title, subtitle = null, actions = null, children, c
   );
 }
 
-function ResultDisclosurePanel({ kind, title, subtitle = null, summary = null, children, defaultOpen = false }) {
+function ResultDisclosurePanel({
+  kind,
+  title,
+  subtitle = null,
+  summary = null,
+  children,
+  defaultOpen = false,
+  showKindBadge = false,
+}) {
   assertResultPanelKind(kind);
   const [opened, setOpened] = useState(defaultOpen);
   return (
@@ -557,7 +573,7 @@ function ResultDisclosurePanel({ kind, title, subtitle = null, summary = null, c
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="text-xs augur-muted">{opened ? "▼" : "▶"}</span>
             <span className="augur-eyebrow">{title}</span>
-            <ResultKindBadge kind={kind} />
+            {showKindBadge && <ResultKindBadge kind={kind} />}
             {summary && <span className="text-xs augur-muted">{summary}</span>}
           </div>
           {subtitle && <div className="mt-1 text-sm augur-muted">{subtitle}</div>}
@@ -576,10 +592,10 @@ function ScenarioValueSummary({ distribution }) {
     return <div className="augur-note">Scenario details are waiting for central scenario-engine results.</div>;
   }
   const rows = [
-    ["Net worth P50", fmtUsd(distribution.metricFanTerminal("netWorthUsd")?.p50)],
-    ["Cash P50", fmtUsd(distribution.metricFanTerminal("cashUsd")?.p50)],
-    ["Liquid worth P50", fmtUsd(distribution.metricFanTerminal("liquidNetWorthUsd")?.p50)],
-    ["Home equity P50", fmtUsd(distribution.metricFanTerminal("homeEquityUsd")?.p50)],
+    ["P50 net worth", fmtUsd(distribution.metricFanTerminal("netWorthUsd")?.p50)],
+    ["P50 cash", fmtUsd(distribution.metricFanTerminal("cashUsd")?.p50)],
+    ["P50 liquid net worth", fmtUsd(distribution.metricFanTerminal("liquidNetWorthUsd")?.p50)],
+    ["P50 home equity", fmtUsd(distribution.metricFanTerminal("homeEquityUsd")?.p50)],
   ];
   return (
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-result-panel-kind="distribution">
@@ -587,7 +603,6 @@ function ScenarioValueSummary({ distribution }) {
         <div key={label} className="augur-card px-4 py-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <div className="augur-eyebrow">{label}</div>
-            <ResultKindBadge kind="distribution" />
           </div>
           <div className="mt-1 mono text-lg font-semibold augur-strong">{value}</div>
         </div>
@@ -641,7 +656,7 @@ function PropertyLocationPanel({ selection, kind = "distribution" }) {
   if (!property) return null;
   const localRegulation = location?.localRegulation ?? {};
   return (
-    <ResultPanel kind={kind} title="Property and location" showKindBadge={kind === "distribution"}>
+    <ResultPanel kind={kind} title="Property and location">
       <div className="grid min-w-0 gap-4 p-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
           {property.imageUrl ? (
@@ -1497,6 +1512,7 @@ function ResultModeHeader({ viewMode, scenarioSetRequest, selection, selectedRol
     <ResultPanel
       kind={kind}
       title={isTrajectory ? "Trajectory view" : "Distribution view"}
+      showKindBadge
       subtitle={
         isTrajectory
           ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · seed ${seed ?? "not set"}`
@@ -1623,25 +1639,25 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
   const showCheckingFloorColumns = scenarioSetUsesCheckingFloorPolicy(scenarioSetInput);
   const terminalMetricColumns = [
     ["finalNetWorthUsd", "P50 net worth"],
-    ["finalLiquidNetWorthUsd", "Liquid worth"],
-    ["finalGenericSp500ValueUsd", "SP500 value"],
-    ["totalGenericSp500SaleUsd", "SP500 sales"],
-    ["finalCheckingFloorShortfallUsd", "SP500 shortfall"],
-    ["finalPrivateEquityValueUsd", "Private equity"],
-    ["totalPrivateEquitySaleUsd", "Sales"],
-    ["finalHomeEquityUsd", "Home equity"],
-    ["finalMortgageBalanceUsd", "Mortgage"],
-    ["totalRentalIncomeUsd", "Rent income"],
-    ["totalPropertyCarryingCostUsd", "Carry costs"],
-    ["totalNetPropertyCashFlowUsd", "Net property cash flow"],
-    ["totalPropertySaleNetProceedsUsd", "Sale net"],
-    ["totalNetPropertySaleCashFlowUsd", "Sale cash flow"],
-    ["totalPropertySaleTaxUsd", "Sale tax"],
-    ["totalSaleClosingCostUsd", "Sale costs"],
-    ["finalCumulativePropertyDepreciationUsd", "Cum. depreciation"],
-    ["totalPartnerContributionUsedUsd", "Partner contrib."],
-    ["finalPartnerHomeEquityClaimUsd", "Partner equity"],
-    ["finalPartnerOwnershipPct", "Partner own."],
+    ["finalLiquidNetWorthUsd", "P50 liquid net worth"],
+    ["finalGenericSp500ValueUsd", "P50 SP500 value"],
+    ["totalGenericSp500SaleUsd", "P50 SP500 sales"],
+    ["finalCheckingFloorShortfallUsd", "P50 SP500 shortfall"],
+    ["finalPrivateEquityValueUsd", "P50 private equity"],
+    ["totalPrivateEquitySaleUsd", "P50 private equity sales"],
+    ["finalHomeEquityUsd", "P50 home equity"],
+    ["finalMortgageBalanceUsd", "P50 mortgage"],
+    ["totalRentalIncomeUsd", "P50 rent income"],
+    ["totalPropertyCarryingCostUsd", "P50 carry costs"],
+    ["totalNetPropertyCashFlowUsd", "P50 net property cash flow"],
+    ["totalPropertySaleNetProceedsUsd", "P50 sale net"],
+    ["totalNetPropertySaleCashFlowUsd", "P50 sale cash flow"],
+    ["totalPropertySaleTaxUsd", "P50 sale tax"],
+    ["totalSaleClosingCostUsd", "P50 sale costs"],
+    ["finalCumulativePropertyDepreciationUsd", "P50 cum. depreciation"],
+    ["totalPartnerContributionUsedUsd", "P50 partner contrib."],
+    ["finalPartnerHomeEquityClaimUsd", "P50 partner equity"],
+    ["finalPartnerOwnershipPct", "P50 partner own."],
   ].filter(([column]) => showCheckingFloorColumns || !CHECKING_FLOOR_METRICS.has(column));
   return (
     <ResultPanel kind="distribution" title="Distribution terminal scenario comparison">
