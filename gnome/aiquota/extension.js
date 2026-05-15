@@ -792,11 +792,11 @@ const QuotaIndicator = GObject.registerClass(
           p.state.extraUsage?.is_enabled && p.state.long?.usedPercent != null && p.state.long.usedPercent >= 100;
         this._renderProviderHeader(p.header, p.label, p.state);
         if (inExtraRegime) {
-          p.shortRow.set_visible(false);
-          p.longRow.set_visible(false);
+          p.shortRow.visible = false;
+          p.longRow.visible = false;
         } else {
-          p.shortRow.set_visible(true);
-          p.longRow.set_visible(true);
+          p.shortRow.visible = true;
+          p.longRow.visible = true;
           this._renderPopupRow(p.shortRow, "5h", p.state.short);
           this._renderPopupRow(p.longRow, "7d", p.state.long);
         }
