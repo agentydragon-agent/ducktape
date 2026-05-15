@@ -1,5 +1,9 @@
 # Repository TODOs
 
+## LSP in Claude Code
+
+- [ ] Configure Python LSP (pyright) similarly to rust-analyzer — investigate whether pyright supports repo-local config files that Claude Code's LSP client would pick up, or if the marketplace plugin's default behavior already works with this Bazel repo. See <devinfra/rust/LSP_NOTES.md> for the approach used with rust-analyzer.
+
 ## Linting
 
 - [ ] Add a pre-commit linter to enforce the link style convention from STYLE.md: detect `[path](path)` duplicate-path links in markdown and suggest using `@path` transclusion or `<path>` angle bracket syntax instead
@@ -34,6 +38,7 @@
 ## Terraform
 
 - [ ] Unify manual `tofu` runs with Bazel-managed providers. Currently manual `tofu plan/apply` resolves providers independently from the `tf.download(mirror={...})` pins in `MODULE.bazel`. Create a wrapper (script or `bazel run` target) that sets `TF_CLI_CONFIG_FILE` pointing at the Bazel-fetched filesystem mirror (`<output_base>/external/@tf_toolchains/mirror/`), so manual runs use the exact same provider versions as `bazel test`.
+- [ ] Merge `ollama-bearer-token` and `litellm-api-key` into a single TF root/CR — both are simple `random_password` + `k8s secret` patterns for the ollama stack, already in the same `ollama-secrets` kustomization. Reduces CR count and state overhead.
 
 ## Renovate Coverage gaps
 
