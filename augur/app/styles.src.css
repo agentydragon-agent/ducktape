@@ -61,6 +61,10 @@
   td {
     padding: 6px 10px;
     text-align: right;
+    font-feature-settings:
+      "tnum" 1,
+      "lnum" 1;
+    font-variant-numeric: tabular-nums lining-nums;
   }
 
   th {
@@ -74,7 +78,6 @@
 
   td {
     border-bottom: 1px solid var(--augur-border-subtle);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     font-size: 14px;
     color: var(--augur-text);
   }
@@ -90,6 +93,8 @@
       "Segoe UI",
       sans-serif;
     font-weight: 650;
+    font-feature-settings: normal;
+    font-variant-numeric: normal;
     text-align: left;
   }
 }
@@ -97,6 +102,13 @@
 @layer utilities {
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  }
+
+  .augur-tabular {
+    font-feature-settings:
+      "tnum" 1,
+      "lnum" 1;
+    font-variant-numeric: tabular-nums lining-nums;
   }
 
   .display {

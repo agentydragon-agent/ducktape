@@ -61,6 +61,7 @@ const CHECKING_FLOOR_METRICS = new Set([
   "genericSp500SaleUsd",
 ]);
 const CONTROL_GRID_CLASS = "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-3";
+const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 const RESULT_VIEW_MODES = new Set(["distribution", "trajectory"]);
 const RESULT_PANEL_KINDS = new Set(["distribution", "trajectory", "accounting_detail"]);
 
@@ -206,14 +207,80 @@ function fmtInteger(value) {
   return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
+function metricIsCurrency(metricName) {
+  return metricName?.endsWith("Usd") || metricName?.includes("Value") || metricName?.includes("CashFlow");
+}
+
 function fmtMetricValue(metricName, value) {
   if (metricName?.endsWith("Pct") || metricName === "partnerOwnershipPct") {
     return fmtPct(value);
   }
-  if (metricName?.endsWith("Usd") || metricName?.includes("Value") || metricName?.includes("CashFlow")) {
+  if (metricIsCurrency(metricName)) {
     return fmtUsd(value);
   }
   return fmtNumber(value);
+}
+
+function fmtAxisMetricValue(metricName, value) {
+  if (!metricIsCurrency(metricName)) {
+    return fmtMetricValue(metricName, value);
+  }
+  if (!Number.isFinite(value)) return "n/a";
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: Math.abs(value) >= 1_000_000 ? 2 : 1,
+  });
+}
+
+function niceCurrencyTickStep(rawStep) {
+  if (!Number.isFinite(rawStep) || rawStep <= 0) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const normalized = rawStep / magnitude;
+  const niceNormalized = [1, 2, 2.5, 5, 10].find((candidate) => normalized <= candidate) ?? 10;
+  return Math.max(1, niceNormalized * magnitude);
+}
+
+function currencyFanChartAxis(values, targetTickCount = 5) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min;
+  const step = niceCurrencyTickStep(span === 0 ? Math.max(Math.abs(max), 1) / 2 : span / (targetTickCount - 1));
+  let axisMin = Math.floor(min / step) * step;
+  let axisMax = Math.ceil(max / step) * step;
+  if (axisMin === axisMax) {
+    axisMin -= step * 2;
+    axisMax += step * 2;
+  }
+  const ticks = [];
+  for (let value = axisMax, guard = 0; value >= axisMin - step / 2 && guard < 12; value -= step, guard += 1) {
+    ticks.push(Math.round(value / step) * step);
+  }
+  return { min: axisMin, max: axisMax, range: axisMax - axisMin, ticks };
+}
+
+function fanChartAxis(metricName, values) {
+  if (values.length === 0) {
+    return {
+      min: 0,
+      max: 1,
+      range: 1,
+      ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => 1 - tick),
+    };
+  }
+  if (metricIsCurrency(metricName)) {
+    return currencyFanChartAxis(values);
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max === min ? 1 : max - min;
+  return {
+    min,
+    max: min + range,
+    range,
+    ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => min + range * (1 - tick)),
+  };
 }
 
 function labelFromCamel(value) {
@@ -1462,9 +1529,7 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
   const allRows = series.flatMap((item) => item.rows);
   const maxYear = Math.max(...allRows.map((row) => Number(row.year) || 0), 1);
   const values = allRows.flatMap((row) => [row.p05, row.p50, row.p95]).filter(Number.isFinite);
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const range = maxValue === minValue ? 1 : maxValue - minValue;
+  const yAxis = fanChartAxis(metricName, values);
   const width = 760;
   const height = 260;
   const left = 72;
@@ -1474,7 +1539,7 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
   const x = (row) => left + ((Number(row.year) || 0) / maxYear) * plotWidth;
-  const y = (value) => top + (1 - (value - minValue) / range) * plotHeight;
+  const y = (value) => top + (1 - (value - yAxis.min) / yAxis.range) * plotHeight;
   const line = (rows, key) => rows.map((row) => `${x(row)},${y(row[key])}`).join(" ");
   const band = (rows) => {
     const upper = rows.map((row) => `${x(row)},${y(row.p95)}`).join(" ");
@@ -1509,19 +1574,18 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
           className="min-w-[42rem] w-full"
         >
           <rect x={left} y={top} width={plotWidth} height={plotHeight} fill="transparent" />
-          {[0, 0.25, 0.5, 0.75, 1].map((tick) => {
-            const yPos = top + tick * plotHeight;
-            const value = maxValue - tick * range;
+          {yAxis.ticks.map((value) => {
+            const yPos = y(value);
             return (
-              <g key={tick}>
+              <g key={value}>
                 <line x1={left} x2={left + plotWidth} y1={yPos} y2={yPos} stroke="var(--augur-chart-grid)" />
-                <text x={left - 8} y={yPos + 4} textAnchor="end" className="fill-slate-500 text-[11px]">
-                  {fmtMetricValue(metricName, value)}
+                <text x={left - 8} y={yPos + 4} textAnchor="end" className="fill-slate-500 text-[11px] augur-tabular">
+                  {fmtAxisMetricValue(metricName, value)}
                 </text>
               </g>
             );
           })}
-          {[0, 0.25, 0.5, 0.75, 1].map((tick) => {
+          {FAN_CHART_TICK_FRACTIONS.map((tick) => {
             const xPos = left + tick * plotWidth;
             return (
               <g key={tick}>
