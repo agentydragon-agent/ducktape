@@ -77,12 +77,11 @@ second ordered roadmap.
       as the distribution of differences between samples from both
       distributions or, when `shared_market_paths=true`, as paired differences
       conditioned on the same underlying market rollout.
-- [ ] Adopt a boring standard React UI component framework, or explicitly
-      document why Augur is not doing so. The current app uses Tailwind utilities
-      without a component kit, and details like input prefixes/suffixes/adornments
-      already do not visually mesh with the inputs. Basic form controls,
-      disclosure widgets, tables, buttons, tabs, and input groups should come from
-      a well-tested component surface instead of being locally reinvented.
+- [ ] Continue migrating Augur UI controls to Mantine. Mantine is the chosen
+      boring React component kit and now backs the app provider, result tabs, and
+      result disclosure behavior. Migrate form controls, tables, buttons, input
+      groups, and remaining disclosure widgets incrementally instead of adding
+      more one-off local primitives.
 - [ ] Finish financing-control cleanup around mortgage terms. The browser now
       hides custom term/rate fields outside custom override mode, but the broader
       domain model still needs a pass over which mortgage products and override

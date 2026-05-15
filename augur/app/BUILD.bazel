@@ -116,6 +116,7 @@ js_library(
         "augur_client.js",
     ],
     deps = REACT_DEPS + [
+        "//:node_modules/@mantine/core",
         "//augur/app/lib:backend_client",
         "//augur/app/lib:casing",
         "//augur/app/lib:columnar",
@@ -173,6 +174,7 @@ genrule(
 tailwindcss_bin.tailwindcss_binary(
     name = "tailwind_cli",
     data = [
+        "//:node_modules/@mantine/core",
         "//:node_modules/@tailwindcss/cli",
         # `@import "tailwindcss"` in styles.src.css resolves to this package.
         "//:node_modules/tailwindcss",

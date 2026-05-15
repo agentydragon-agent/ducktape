@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Collapse, MantineProvider, Tabs } from "@mantine/core";
 
 import { rowsFromCamelColumnar } from "./lib/columnar.js";
 import {
@@ -45,6 +46,13 @@ const CHECKING_FLOOR_METRICS = new Set([
 ]);
 const CONTROL_GRID_CLASS = "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-3";
 const RESULT_VIEW_MODES = new Set(["distribution", "trajectory"]);
+const RESULT_PANEL_KINDS = new Set(["distribution", "trajectory", "accounting_detail"]);
+
+const RESULT_KIND_LABELS = {
+  distribution: "Distribution",
+  trajectory: "Trajectory",
+  accounting_detail: "Accounting detail",
+};
 
 function viewModeFromPathname(pathname) {
   const segment = String(pathname ?? "")
@@ -353,6 +361,79 @@ function ControlSection({ title, children }) {
   );
 }
 
+function assertResultPanelKind(kind) {
+  if (!RESULT_PANEL_KINDS.has(kind)) {
+    throw new Error(`Unknown Augur result panel kind: ${kind}`);
+  }
+}
+
+function ResultKindBadge({ kind }) {
+  assertResultPanelKind(kind);
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+      data-result-panel-kind-badge={kind}
+    >
+      {RESULT_KIND_LABELS[kind]}
+    </span>
+  );
+}
+
+function ResultPanelHeader({ kind, title, subtitle = null, actions = null }) {
+  return (
+    <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="augur-eyebrow">{title}</div>
+            <ResultKindBadge kind={kind} />
+          </div>
+          {subtitle && <div className="mt-1 text-sm augur-muted">{subtitle}</div>}
+        </div>
+        {actions}
+      </div>
+    </div>
+  );
+}
+
+function ResultPanel({ kind, title, subtitle = null, actions = null, children, className = "" }) {
+  assertResultPanelKind(kind);
+  return (
+    <section className={`augur-card overflow-hidden ${className}`} data-result-panel-kind={kind}>
+      <ResultPanelHeader kind={kind} title={title} subtitle={subtitle} actions={actions} />
+      {children}
+    </section>
+  );
+}
+
+function ResultDisclosurePanel({ kind, title, subtitle = null, summary = null, children, defaultOpen = false }) {
+  assertResultPanelKind(kind);
+  const [opened, setOpened] = useState(defaultOpen);
+  return (
+    <section className="augur-card overflow-hidden" data-result-panel-kind={kind}>
+      <button
+        type="button"
+        className="flex w-full min-w-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 text-left dark:border-slate-700"
+        aria-expanded={opened}
+        onClick={() => setOpened((previous) => !previous)}
+      >
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="text-xs augur-muted">{opened ? "▼" : "▶"}</span>
+            <span className="augur-eyebrow">{title}</span>
+            <ResultKindBadge kind={kind} />
+            {summary && <span className="text-xs augur-muted">{summary}</span>}
+          </div>
+          {subtitle && <div className="mt-1 text-sm augur-muted">{subtitle}</div>}
+        </div>
+      </button>
+      <Collapse in={opened} transitionDuration={0}>
+        {children}
+      </Collapse>
+    </section>
+  );
+}
+
 function ScenarioValueSummary({ scenarioResult }) {
   if (!scenarioResult?.terminalColumns) {
     return <div className="augur-note">Scenario details are waiting for central scenario-engine results.</div>;
@@ -364,10 +445,13 @@ function ScenarioValueSummary({ scenarioResult }) {
     ["Home equity P50", fmtUsd(metricFanTerminal(scenarioResult, "homeEquityUsd")?.p50)],
   ];
   return (
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-result-panel-kind="distribution">
       {rows.map(([label, value]) => (
         <div key={label} className="augur-card px-4 py-3">
-          <div className="augur-eyebrow">{label}</div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="augur-eyebrow">{label}</div>
+            <ResultKindBadge kind="distribution" />
+          </div>
           <div className="mt-1 mono text-lg font-semibold augur-strong">{value}</div>
         </div>
       ))}
@@ -414,15 +498,12 @@ function PortfolioSnapshotPanel({ bootstrap }) {
   );
 }
 
-function PropertyLocationPanel({ selection }) {
+function PropertyLocationPanel({ selection, kind = "distribution" }) {
   const { property, location, scenario, scenarioResult } = selection;
   if (!property) return null;
   const localRegulation = location?.localRegulation ?? {};
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Property and location</div>
-      </div>
+    <ResultPanel kind={kind} title="Property and location">
       <div className="grid min-w-0 gap-4 p-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
           {property.imageUrl ? (
@@ -452,7 +533,7 @@ function PropertyLocationPanel({ selection }) {
           />
         </div>
       </div>
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -475,10 +556,7 @@ function TerminalPercentileSnapshot({ scenarioResult }) {
     .map(([label, metricName, formatter]) => [label, metricFanTerminal(scenarioResult, metricName), formatter])
     .filter(([, row]) => row);
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Terminal rollout percentiles</div>
-      </div>
+    <ResultPanel kind="distribution" title="Terminal rollout percentiles">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -501,7 +579,7 @@ function TerminalPercentileSnapshot({ scenarioResult }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -515,10 +593,7 @@ function ScenarioPathPreview({ scenarioResult, selectedRolloutIndex }) {
   const annualRows = rows.filter((row) => row.monthIndex % 12 === 0).slice(0, 8);
   if (annualRows.length === 0) return null;
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Trajectory annual snapshot</div>
-      </div>
+    <ResultPanel kind="trajectory" title="Trajectory annual snapshot">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -551,7 +626,7 @@ function ScenarioPathPreview({ scenarioResult, selectedRolloutIndex }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -566,10 +641,7 @@ function SaleTaxLoanPanel({ selection }) {
   const loanAmount =
     Number.isFinite(purchasePrice) && Number.isFinite(downPayment) ? Math.max(0, purchasePrice - downPayment) : NaN;
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Sale, tax, and loan</div>
-      </div>
+    <ResultPanel kind="distribution" title="Sale, tax, and loan">
       <DetailTable
         rows={[
           ["Purchase price", fmtUsd(purchasePrice)],
@@ -590,7 +662,7 @@ function SaleTaxLoanPanel({ selection }) {
           ["Net sale cash flow", fmtUsd(terminalP50(scenarioResult, "totalNetPropertySaleCashFlowUsd"))],
         ]}
       />
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -615,10 +687,7 @@ function PartnerOwnershipPanel({ scenarioResult, bootstrap, selectedRolloutIndex
     0
   );
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Trajectory {partnerLabel} contribution and equity</div>
-      </div>
+    <ResultPanel kind="trajectory" title={`Trajectory ${partnerLabel} contribution and equity`}>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           ["Path contribution", fmtUsd(firstPathContribution)],
@@ -661,7 +730,7 @@ function PartnerOwnershipPanel({ scenarioResult, bootstrap, selectedRolloutIndex
           </tbody>
         </table>
       </div>
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -676,10 +745,7 @@ function LiquidityPolicyPanel({ scenarioResult, selectedRolloutIndex }) {
   const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
   const terminalRow = rolloutRows.at(-1) ?? null;
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Trajectory liquidity and stock sales</div>
-      </div>
+    <ResultPanel kind="trajectory" title="Trajectory liquidity and stock sales">
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           [
@@ -727,7 +793,7 @@ function LiquidityPolicyPanel({ scenarioResult, selectedRolloutIndex }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -750,10 +816,7 @@ function PrivateEquitySaleOpportunityPanel({ scenarioResult, selectedRolloutInde
     8
   );
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Trajectory private equity tender opportunities</div>
-      </div>
+    <ResultPanel kind="trajectory" title="Trajectory private equity tender opportunities">
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2">
         {[
           ["Private equity value", fmtUsd(terminalRow?.privateEquityValueUsd)],
@@ -787,7 +850,7 @@ function PrivateEquitySaleOpportunityPanel({ scenarioResult, selectedRolloutInde
           </tbody>
         </table>
       </div>
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -1306,50 +1369,49 @@ function ResultViewTabs({ viewMode, onViewModeChange }) {
     ["trajectory", "Trajectory"],
   ];
   return (
-    <div className="inline-flex max-w-full rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      {options.map(([mode, label]) => {
-        const selected = viewMode === mode;
-        return (
-          <button
-            key={mode}
-            type="button"
-            className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
-              selected
-                ? "bg-blue-600 text-white shadow-sm dark:bg-blue-500"
-                : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-            }`}
-            aria-pressed={selected}
-            onClick={() => onViewModeChange(mode)}
-          >
+    <Tabs
+      value={viewMode}
+      onChange={(mode) => {
+        if (RESULT_VIEW_MODES.has(mode)) onViewModeChange(mode);
+      }}
+      classNames={{
+        root: "inline-block max-w-full",
+        list: "inline-flex max-w-full rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900",
+        tab: "augur-view-tab",
+      }}
+    >
+      <Tabs.List>
+        {options.map(([mode, label]) => (
+          <Tabs.Tab key={mode} value={mode}>
             {label}
-          </button>
-        );
-      })}
-    </div>
+          </Tabs.Tab>
+        ))}
+      </Tabs.List>
+    </Tabs>
   );
 }
 
 function ResultModeHeader({ viewMode, scenarioSetRequest, selection, selectedRolloutIndex }) {
   const isTrajectory = viewMode === "trajectory";
   const seed = scenarioSetRequest.marketRequest.randomSeed;
+  const kind = isTrajectory ? "trajectory" : "distribution";
   return (
-    <section className="augur-card px-4 py-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="augur-eyebrow">{isTrajectory ? "Trajectory view" : "Distribution view"}</div>
-          <div className="mt-1 truncate text-sm augur-muted">
-            {isTrajectory
-              ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · seed ${seed ?? "not set"}`
-              : "Terminal percentiles and probability fans"}
-          </div>
-        </div>
-        {isTrajectory && seed === null && (
+    <ResultPanel
+      kind={kind}
+      title={isTrajectory ? "Trajectory view" : "Distribution view"}
+      subtitle={
+        isTrajectory
+          ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · seed ${seed ?? "not set"}`
+          : "Terminal percentiles and probability fans"
+      }
+      actions={
+        isTrajectory && seed === null ? (
           <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
             Unseeded trajectories are not stable across reloads.
           </div>
-        )}
-      </div>
-    </section>
+        ) : null
+      }
+    />
   );
 }
 
@@ -1393,30 +1455,28 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
   };
 
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="augur-eyebrow">Scenario probability fans</div>
-            <div className="mt-1 text-sm augur-muted">{labelFromCamel(metricName)}</div>
-          </div>
-          <label className="min-w-[14rem]">
-            <span className="sr-only">Fan metric</span>
-            <select
-              className="augur-select w-full text-sm"
-              aria-label="Fan metric"
-              value={metricName}
-              onChange={(event) => onSelectedMetricChange(event.target.value)}
-            >
-              {metricOptions.map((option) => (
-                <option key={option} value={option}>
-                  {labelFromCamel(option)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </div>
+    <ResultPanel
+      kind="distribution"
+      title="Scenario probability fans"
+      subtitle={labelFromCamel(metricName)}
+      actions={
+        <label className="min-w-[14rem]">
+          <span className="sr-only">Fan metric</span>
+          <select
+            className="augur-select w-full text-sm"
+            aria-label="Fan metric"
+            value={metricName}
+            onChange={(event) => onSelectedMetricChange(event.target.value)}
+          >
+            {metricOptions.map((option) => (
+              <option key={option} value={option}>
+                {labelFromCamel(option)}
+              </option>
+            ))}
+          </select>
+        </label>
+      }
+    >
       <div className="overflow-x-auto p-4">
         <svg
           role="img"
@@ -1466,7 +1526,7 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
           ))}
         </div>
       </div>
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -1496,10 +1556,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
     ["finalPartnerOwnershipPct", "Partner own."],
   ].filter(([column]) => showCheckingFloorColumns || !CHECKING_FLOOR_METRICS.has(column));
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Distribution terminal scenario comparison</div>
-      </div>
+    <ResultPanel kind="distribution" title="Distribution terminal scenario comparison">
       {result?.warnings?.length > 0 && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
           {result.warnings.join(" ")}
@@ -1544,7 +1601,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -1554,11 +1611,7 @@ function MarketMetadataPanel({ result }) {
   const sourceEntries = Object.entries(metadata.sourceMetadata ?? {});
   const metadataValue = (value) => (typeof value === "object" ? JSON.stringify(value) : String(value));
   return (
-    <details className="augur-card overflow-hidden">
-      <summary className="cursor-pointer border-b border-slate-200 px-4 py-3 marker:text-slate-500 dark:border-slate-700 dark:marker:text-slate-400">
-        <span className="augur-eyebrow">Market model metadata</span>
-        <span className="ml-3 text-xs augur-muted">{metadata.marketModelId ?? "unknown model"}</span>
-      </summary>
+    <ResultDisclosurePanel kind="distribution" title="Market model metadata" summary={metadata.marketModelId ?? null}>
       <div className="grid gap-4 p-4 lg:grid-cols-2">
         <div className="min-w-0">
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
@@ -1596,7 +1649,7 @@ function MarketMetadataPanel({ result }) {
           )}
         </div>
       </div>
-    </details>
+    </ResultDisclosurePanel>
   );
 }
 
@@ -1793,35 +1846,31 @@ function ScenarioMonthlyLedger({ scenario, scenarioResult, selectedRolloutIndex,
   };
 
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="augur-eyebrow">Selected path monthly ledger</div>
-            <div className="mt-1 text-sm augur-muted">
-              {scenario.label} · rollout {fmtInteger(rolloutIndex)}
-            </div>
-          </div>
-          <label className="min-w-[10rem]">
-            <span className="sr-only">Ledger path</span>
-            <select
-              className="augur-select w-full text-sm"
-              aria-label="Ledger path"
-              value={rolloutIndex}
-              onChange={(event) => onSelectedRolloutIndexChange(Number(event.target.value))}
-            >
-              {rolloutIndexes.map((index) => (
-                <option key={index} value={index}>
-                  Path {index}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </div>
+    <ResultPanel
+      kind="accounting_detail"
+      title="Selected path monthly ledger"
+      subtitle={`${scenario.label} · rollout ${fmtInteger(rolloutIndex)}`}
+      actions={
+        <label className="min-w-[10rem]">
+          <span className="sr-only">Ledger path</span>
+          <select
+            className="augur-select w-full text-sm"
+            aria-label="Ledger path"
+            value={rolloutIndex}
+            onChange={(event) => onSelectedRolloutIndexChange(Number(event.target.value))}
+          >
+            {rolloutIndexes.map((index) => (
+              <option key={index} value={index}>
+                Path {index}
+              </option>
+            ))}
+          </select>
+        </label>
+      }
+    >
       <LedgerDetailToggles groups={rawGroups} expandedGroups={expandedLedgerGroups} onToggle={toggleLedgerGroup} />
       <LedgerTable rows={rows} columns={ledgerColumns} className="max-h-[28rem]" />
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -1829,10 +1878,7 @@ function ScenarioAcceptedPanel({ selection }) {
   const { scenario, scenarioResult } = selection;
   if (!scenario || !scenarioResult) return null;
   return (
-    <section className="augur-card overflow-hidden">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Scenario contract</div>
-      </div>
+    <ResultPanel kind="accounting_detail" title="Scenario contract">
       <DetailTable
         rows={[
           ["Scenario id", scenarioResult.scenarioId],
@@ -1844,7 +1890,7 @@ function ScenarioAcceptedPanel({ selection }) {
           ["Warnings", scenarioResult.warnings?.join("; ") || "none"],
         ]}
       />
-    </section>
+    </ResultPanel>
   );
 }
 
@@ -1874,7 +1920,7 @@ function DistributionResults({
         selectedMetric={selectedFanMetric}
         onSelectedMetricChange={onSelectedFanMetricChange}
       />
-      <PropertyLocationPanel selection={selection} />
+      <PropertyLocationPanel selection={selection} kind="distribution" />
       <ScenarioValueSummary scenarioResult={scenarioResult} />
       <SaleTaxLoanPanel selection={selection} />
       <TerminalPercentileSnapshot scenarioResult={scenarioResult} />
@@ -1895,7 +1941,7 @@ function TrajectoryResults({
   return (
     <>
       <RunStatusNotice runError={runError} />
-      <PropertyLocationPanel selection={selection} />
+      <PropertyLocationPanel selection={selection} kind="trajectory" />
       <ScenarioPathPreview scenarioResult={scenarioResult} selectedRolloutIndex={selectedRolloutIndex} />
       <ScenarioMonthlyLedger
         scenario={scenario}
@@ -1915,7 +1961,7 @@ function TrajectoryResults({
   );
 }
 
-export default function AugurApp() {
+function AugurAppShell() {
   const [bootstrap, setBootstrap] = useState(null);
   const [bootstrapError, setBootstrapError] = useState(null);
   const [urlStateError, setUrlStateError] = useState(null);
@@ -2151,5 +2197,13 @@ export default function AugurApp() {
         </section>
       </main>
     </div>
+  );
+}
+
+export default function AugurApp() {
+  return (
+    <MantineProvider defaultColorScheme="auto">
+      <AugurAppShell />
+    </MantineProvider>
   );
 }

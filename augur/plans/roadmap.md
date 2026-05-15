@@ -49,9 +49,10 @@ Target shape:
 
 Implementation notes:
 
-- Add typed frontend helpers that distinguish distribution tables from sample
-  trajectory tables and accounting-detail rows. Avoid generic `rowsFromTable`
-  flows that make P50 rows and rollout rows feel interchangeable.
+- Keep result panels declared through the shared frontend result-panel contract:
+  `distribution`, `trajectory`, or `accounting_detail`. This is now visible in
+  panel headers and encoded in `data-result-panel-kind`; keep new result panels
+  on that path instead of adding bare cards.
 - Trajectory URLs are reproducible only when the encoded market request has a
   deterministic seed. The locator is effectively scenario-set input plus
   market model/version plus seed plus `scenario_id` plus `rollout_index`; seed
@@ -65,7 +66,8 @@ Implementation notes:
 Acceptance criteria:
 
 - Every result panel has a visible mode: distribution, trajectory, or
-  accounting detail.
+  accounting detail. The current React app has the panel contract in place; keep
+  extending it as panels split or move.
 - No panel combines percentile summaries with one-rollout path rows unless the
   split is explicit and visually separated.
 - Deltas are result-view comparisons between two real scenarios, not a
@@ -74,6 +76,12 @@ Acceptance criteria:
   sampled differences between scenario distributions.
 - Full-page visual goldens cover representative distribution and trajectory
   routes so UI structure changes are reviewable in git.
+
+Component-kit decision:
+
+- Mantine is the standard React component kit for Augur. The app now installs a
+  `MantineProvider` and uses Mantine primitives for result tabs/disclosure; keep
+  migrating remaining controls to Mantine instead of inventing new local widgets.
 
 ## Priority 2: Replace The Flat Browser Scenario Row
 
@@ -252,15 +260,14 @@ work so they do not polish the wrong structure.
 
 Work:
 
-- Adopt a standard React component kit for boring controls before polishing the
-  current hand-built Tailwind widgets. Prefix/suffix input adornments,
-  disclosures, tabs, tables, buttons, and form groups should come from a
-  tested component surface unless there is a documented reason not to.
+- Continue the Mantine migration for boring controls before polishing current
+  hand-built Tailwind widgets. Prefix/suffix input adornments, tables, buttons,
+  and form groups should move to the chosen component surface unless there is a
+  documented reason not to.
 - Continue renaming private-equity result columns/panels away from generic
   liquidity language where they mean tender eligibility or sale opportunities.
 - Rework mortgage controls around standard mortgage products and explicit
   custom override mode.
-- Keep market metadata in a collapsed disclosure by default.
 - Refresh `augur/SPEC.md` after policy execution, tax timing, and result-view
   contracts stabilize.
 

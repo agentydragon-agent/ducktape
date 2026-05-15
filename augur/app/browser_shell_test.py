@@ -255,6 +255,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_text("Distribution terminal scenario comparison").wait_for(state="visible", timeout=30_000)
     assert page.evaluate("() => window.location.pathname") == "/distribution"
     assert page.get_by_text("Selected path monthly ledger").count() == 0
+    assert page.locator("[data-result-panel-kind='distribution']").count() >= 3
+    assert page.locator("[data-result-panel-kind='trajectory']").count() == 0
+    assert page.locator("[data-result-panel-kind='accounting_detail']").count() == 0
     page.get_by_text("Market model metadata").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Event stream IDs").wait_for(state="hidden", timeout=30_000)
     page.get_by_text("Market model metadata").click()
@@ -263,11 +266,14 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_text("Location B shared").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A Property").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("No image").first.wait_for(state="visible", timeout=30_000)
-    page.get_by_role("button", name="Trajectory").click()
+    page.get_by_role("tab", name="Trajectory").click()
     page.get_by_text("Trajectory view").wait_for(state="visible", timeout=30_000)
     page.wait_for_function("() => window.location.pathname === '/trajectory'")
     page.get_by_text("Selected path monthly ledger").wait_for(state="visible", timeout=30_000)
     assert page.get_by_text("Distribution terminal scenario comparison").count() == 0
+    assert page.locator("[data-result-panel-kind='trajectory']").count() >= 3
+    assert page.locator("[data-result-panel-kind='accounting_detail']").count() >= 2
+    assert page.locator("[data-result-panel-kind='distribution']").count() == 0
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('rollout')") == "0"
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('scenario')") == "scenario_1"
 
