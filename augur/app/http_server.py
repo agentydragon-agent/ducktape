@@ -115,24 +115,23 @@ def run_server(
     market_bundle_provider = _make_provider(args, augur_config, default_market_config_path)
     if args.dist_dir:
         dist_dir = Path(args.dist_dir).resolve()
-    if not args.api_only and dist_dir is None:
-        parser.error("--dist-dir or deployment-provided dist_dir is required unless --api-only is set")
-    app = (
-        create_api_app(
+    if args.api_only:
+        app = create_api_app(
             augur_config=augur_config,
             market_bundle_provider=market_bundle_provider,
             default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
             max_rollout_samples=args.max_rollout_samples,
         )
-        if args.api_only
-        else create_app(
+    else:
+        if dist_dir is None:
+            parser.error("--dist-dir or deployment-provided dist_dir is required unless --api-only is set")
+        app = create_app(
             augur_config=augur_config,
             market_bundle_provider=market_bundle_provider,
             default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
             max_rollout_samples=args.max_rollout_samples,
             dist_dir=dist_dir,
         )
-    )
     print(f"serving Augur on http://{args.host}:{args.port}")
     print(f"market provider: {args.provider}")
     print(f"static bundle: {'disabled' if args.api_only else dist_dir}")

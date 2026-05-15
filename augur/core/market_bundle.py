@@ -187,8 +187,11 @@ class FlatMarketBundleProvider:
         for month in self.private_equity_liquidity_event_months:
             if 0 <= month <= horizon_months:
                 private_equity_events[:, month] = True
-        home_by_location = {"default": flat, **dict.fromkeys(LocationId, flat)}
-        rent_by_location = {"default": flat, **dict.fromkeys(LocationId, flat)}
+        home_by_location: dict[str, np.ndarray] = {"default": flat}
+        rent_by_location: dict[str, np.ndarray] = {"default": flat}
+        for location_id in LocationId:
+            home_by_location[location_id] = flat
+            rent_by_location[location_id] = flat
         return MarketBundle(
             month_index=np.arange(horizon_months + 1, dtype="int64"),
             inflation_multipliers=flat,
