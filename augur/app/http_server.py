@@ -60,11 +60,35 @@ def create_app(
     )
 
 
+def create_api_app(
+    *,
+    augur_config: AugurConfig,
+    market_bundle_provider: MarketBundleProvider,
+    default_rollout_samples: int,
+    max_rollout_samples: int,
+):
+    augur_backend = AugurBackend(
+        augur_config=augur_config,
+        market_bundle_provider=market_bundle_provider,
+        default_rollout_samples=default_rollout_samples,
+        max_rollout_samples=max_rollout_samples,
+    )
+    return create_augur_backend_app(
+        title="Augur scenario API",
+        static_path=None,
+        bootstrap=augur_backend.bootstrap_payload,
+        scenario_set_run=augur_backend.run_scenario_set_for_request_body,
+    )
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Serve the combined property-first Augur backend API.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8767)
     parser.add_argument("--market-config", help="Path to the market model config JSON.")
+    parser.add_argument(
+        "--api-only", action="store_true", help="Serve only JSON API routes; static assets are external."
+    )
     parser.add_argument(
         "--provider",
         choices=(*_BUILT_IN_PROVIDER_LABELS, *LABELS),
@@ -94,12 +118,21 @@ def run_server(
     print(f"market provider: {args.provider}")
     print(f"static bundle: {dist_dir}")
     uvicorn.run(
-        create_app(
-            augur_config=augur_config,
-            market_bundle_provider=market_bundle_provider,
-            default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
-            max_rollout_samples=args.max_rollout_samples,
-            dist_dir=dist_dir,
+        (
+            create_api_app(
+                augur_config=augur_config,
+                market_bundle_provider=market_bundle_provider,
+                default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
+                max_rollout_samples=args.max_rollout_samples,
+            )
+            if args.api_only
+            else create_app(
+                augur_config=augur_config,
+                market_bundle_provider=market_bundle_provider,
+                default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
+                max_rollout_samples=args.max_rollout_samples,
+                dist_dir=dist_dir,
+            )
         ),
         host=args.host,
         port=args.port,
