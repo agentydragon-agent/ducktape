@@ -153,6 +153,15 @@ py_library(
 )
 
 py_library(
+    name = "finance_py",
+    srcs = ["finance.py"],
+    deps = [
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "augur_accounting_py",
     srcs = ["augur_accounting.py"],
     deps = [
@@ -176,9 +185,11 @@ py_library(
     name = "bootstrap_py",
     srcs = ["bootstrap.py"],
     deps = [
+        ":finance_py",
         ":local_regulation_py",
         ":scenario_set_py",
         ":schemas_py",
+        "@pypi//pydantic",
     ],
 )
 

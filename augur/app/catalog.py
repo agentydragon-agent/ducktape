@@ -15,8 +15,6 @@ from augur.core.bootstrap import (
     ActorPolicyId,
     ActorPolicyOption,
     AgentOption,
-    BootstrapConcentratedHoldingSnapshot,
-    BootstrapFinanceSnapshot,
     BootstrapResponse,
     LiquidReservePolicyId,
     LiquidReservePolicyOption,
@@ -136,29 +134,6 @@ def _locations_for_config(config: AugurConfig) -> tuple[Location, ...]:
 def _validate_property_location(property_: Property, *, location_by_id: dict[str, Location]) -> None:
     if property_.location_id not in location_by_id:
         raise ValueError(f"property {property_.id!r} references unknown location {property_.location_id!r}")
-
-
-def _finance_snapshot_for_config(config: AugurConfig) -> BootstrapFinanceSnapshot:
-    holding_labels = {holding.holding_id: holding.label for holding in config.personal_finance.concentrated_holdings}
-    return BootstrapFinanceSnapshot(
-        as_of_date=config.snapshot.as_of_date,
-        cash_usd=config.snapshot.cash_usd,
-        wealthfront_sp500_usd=config.snapshot.wealthfront_sp500_usd,
-        ibkr_vt_usd=config.snapshot.ibkr_vt_usd,
-        sp500_proxy_portfolio_usd=config.snapshot.sp500_proxy_portfolio_usd,
-        concentrated_holdings=tuple(
-            BootstrapConcentratedHoldingSnapshot(
-                holding_id=holding.holding_id,
-                label=holding_labels.get(holding.holding_id, holding.holding_id),
-                units=holding.units,
-                fmv_usd_per_unit=holding.fmv_usd_per_unit,
-                value_usd=holding.units * holding.fmv_usd_per_unit,
-                valuation_source=holding.valuation_source,
-            )
-            for holding in config.snapshot.concentrated_holdings
-        ),
-        notes=config.snapshot.notes,
-    )
 
 
 def _default_knobs_for_config(config: AugurConfig) -> ScenarioKnobs:
@@ -285,7 +260,7 @@ def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
         default_owner_residence_property_id=properties[0].id,
         default_rental_use_policy=RentalUsePolicyId.NOT_RENTED,
         default_liquid_reserve_policy=LiquidReservePolicyId.NONE,
-        default_initial_checking_usd=config.personal_finance.cash_usd,
+        default_initial_checking_usd=config.snapshot.cash_usd,
         default_checking_floor_usd=10_000,
         default_checking_sale_amount_usd=20_000,
         default_knobs=_default_knobs_for_config(config),
@@ -296,6 +271,6 @@ def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
         rental_use_policy_options=_rental_use_policy_options(primary, partner),
         liquid_reserve_policy_options=LIQUID_RESERVE_POLICY_OPTIONS,
         agents=[AgentOption(actor_id=agent.actor_id, label=agent.label, role=agent.role) for agent in config.agents],
-        finance_snapshot=_finance_snapshot_for_config(config),
+        finance_snapshot=config.snapshot,
         default_partner_monthly_payment_usd=config.personal_finance.default_partner_monthly_payment_usd,
     )

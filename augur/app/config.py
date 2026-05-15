@@ -22,6 +22,7 @@ import yaml
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
 
 from augur.core.bootstrap import DefaultScenario
+from augur.core.finance import FinanceSnapshot
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType
 from augur.core.schemas import ApiModel
@@ -41,27 +42,10 @@ class AgentDefinition(ApiModel):
     role: ActorRole
 
 
-class ConcentratedHoldingConfig(ApiModel):
-    """A single private-company equity holding owned by one of the agents.
-
-    The user-facing `label` is display data; the simulator treats holdings
-    generically. `holding_id` is the lowercase machine-readable identifier
-    used in event streams and scenario actions."""
-
-    holding_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
-    label: str
-    units: NonNegativeInt
-    basis_per_unit_usd: NonNegativeFloat = 0.0
-
-
 class PersonalFinanceConfig(ApiModel):
-    """Initial agent state. Currently single-agent (the primary owner);
-    multi-agent state will go through `agents` + per-agent balance sheets
-    when the underlying scenario model adopts that shape uniformly."""
+    """User-specific finance defaults that are not balance-sheet rows."""
 
-    cash_usd: float
     minimum_liquid_reserve_usd: NonNegativeFloat = 0.0
-    concentrated_holdings: tuple[ConcentratedHoldingConfig, ...] = ()
     default_partner_monthly_payment_usd: NonNegativeFloat = 0.0
 
 
@@ -85,26 +69,6 @@ class LocationConfig(ApiModel):
     city: str
     state: str
     local_regulation: LocalRegulation
-    notes: tuple[str, ...] = ()
-
-
-class ConcentratedHoldingSnapshot(ApiModel):
-    holding_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
-    units: NonNegativeInt
-    fmv_usd_per_unit: NonNegativeFloat
-    valuation_source: str = ""
-
-
-class FinanceSnapshot(ApiModel):
-    """Display-only methodology-panel strings. Not consumed by the simulator;
-    purely surfaces what the user's portfolio actually looks like today."""
-
-    as_of_date: str
-    cash_usd: float = 0.0
-    wealthfront_sp500_usd: float = 0.0
-    ibkr_vt_usd: float = 0.0
-    sp500_proxy_portfolio_usd: float = 0.0
-    concentrated_holdings: tuple[ConcentratedHoldingSnapshot, ...] = ()
     notes: tuple[str, ...] = ()
 
 
@@ -174,4 +138,6 @@ def dump_augur_config_yaml(config: AugurConfig) -> str:
 
     Uses Pydantic's JSON-mode dump (so Path/Enum fields serialize cleanly) then
     re-emits as YAML with sorted keys and block style for diff stability."""
-    return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=True, default_flow_style=False)
+    return yaml.safe_dump(
+        config.model_dump(mode="json", exclude_computed_fields=True), sort_keys=True, default_flow_style=False
+    )

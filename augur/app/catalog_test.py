@@ -12,7 +12,6 @@ from augur.app.catalog import build_bootstrap_payload
 from augur.app.config import (
     AgentDefinition,
     AugurConfig,
-    ConcentratedHoldingConfig,
     ConcentratedHoldingSnapshot,
     FinanceSnapshot,
     LocationConfig,
@@ -88,14 +87,7 @@ def _fixture_locations() -> tuple[LocationConfig, ...]:
 def _config(properties_path: Path, *, location_selection: tuple[str, ...] | None = None) -> AugurConfig:
     return AugurConfig(
         agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
-        personal_finance=PersonalFinanceConfig(
-            cash_usd=12_345,
-            concentrated_holdings=(
-                ConcentratedHoldingConfig(
-                    holding_id="private_holding_a", label="Private Holding A", units=500, basis_per_unit_usd=5
-                ),
-            ),
-        ),
+        personal_finance=PersonalFinanceConfig(minimum_liquid_reserve_usd=0),
         property_source=PropertySourceConfig(properties_path=properties_path),
         snapshot=FinanceSnapshot(
             as_of_date="2026-05-14",
@@ -105,7 +97,12 @@ def _config(properties_path: Path, *, location_selection: tuple[str, ...] | None
             sp500_proxy_portfolio_usd=100_000,
             concentrated_holdings=(
                 ConcentratedHoldingSnapshot(
-                    holding_id="private_holding_a", units=500, fmv_usd_per_unit=20, valuation_source="fixture mark"
+                    holding_id="private_holding_a",
+                    label="Private Holding A",
+                    units=500,
+                    fmv_usd_per_unit=20,
+                    basis_per_unit_usd=5,
+                    valuation_source="fixture mark",
                 ),
             ),
         ),

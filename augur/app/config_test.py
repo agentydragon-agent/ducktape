@@ -12,7 +12,6 @@ from pydantic import ValidationError
 from augur.app.config import (
     AgentDefinition,
     AugurConfig,
-    ConcentratedHoldingConfig,
     ConcentratedHoldingSnapshot,
     FinanceSnapshot,
     LocationConfig,
@@ -30,7 +29,7 @@ def _minimal_config(**overrides: object) -> AugurConfig:
     intentionally generic — deployments supply their own real values."""
     defaults: dict[str, object] = {
         "agents": (AgentDefinition(actor_id="alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER),),
-        "personal_finance": PersonalFinanceConfig(cash_usd=1.0),
+        "personal_finance": PersonalFinanceConfig(),
         "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
     }
@@ -48,26 +47,32 @@ def test_minimal_config_validates_with_defaults() -> None:
     assert config.default_rollout_samples == 128
 
 
-def test_concentrated_holdings_round_trip_through_json() -> None:
+def test_finance_snapshot_holdings_round_trip_through_json() -> None:
     config = _minimal_config(
-        personal_finance=PersonalFinanceConfig(
+        snapshot=FinanceSnapshot(
+            as_of_date="2026-05-12",
             cash_usd=100.0,
-            minimum_liquid_reserve_usd=0,
             concentrated_holdings=(
-                ConcentratedHoldingConfig(
-                    holding_id="example_holding", label="Example Holding", units=10, basis_per_unit_usd=0
+                ConcentratedHoldingSnapshot(
+                    holding_id="example_holding",
+                    label="Example Holding",
+                    units=10,
+                    fmv_usd_per_unit=1.5,
+                    basis_per_unit_usd=0,
                 ),
             ),
         )
     )
 
-    reloaded = AugurConfig.model_validate_json(config.model_dump_json())
+    reloaded = AugurConfig.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
 
-    holding = reloaded.personal_finance.concentrated_holdings[0]
+    holding = reloaded.snapshot.concentrated_holdings[0]
     assert holding.holding_id == "example_holding"
     assert holding.label == "Example Holding"
     assert holding.units == 10
+    assert holding.fmv_usd_per_unit == 1.5
     assert holding.basis_per_unit_usd == 0
+    assert holding.value_usd == 15
 
 
 def test_location_selection_accepts_location_strings() -> None:
@@ -100,7 +105,7 @@ def test_at_least_one_agent_required() -> None:
     with pytest.raises(ValidationError, match="Tuple should have at least 1 item"):
         AugurConfig(
             agents=(),
-            personal_finance=PersonalFinanceConfig(cash_usd=0),
+            personal_finance=PersonalFinanceConfig(),
             property_source=PropertySourceConfig(properties_path="/tmp/x.json"),
             snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
         )
@@ -113,7 +118,7 @@ def test_actor_id_must_be_snake_case() -> None:
 
 def test_holding_id_must_be_snake_case() -> None:
     with pytest.raises(ValidationError, match="String should match pattern"):
-        ConcentratedHoldingConfig(holding_id="ExampleHolding", label="Example", units=100)
+        ConcentratedHoldingSnapshot(holding_id="ExampleHolding", label="Example", units=100, fmv_usd_per_unit=1.0)
 
 
 def test_snapshot_optional_fields_default_to_zero() -> None:
@@ -129,11 +134,16 @@ def test_snapshot_carries_per_holding_fmv() -> None:
         as_of_date="2026-05-12",
         concentrated_holdings=(
             ConcentratedHoldingSnapshot(
-                holding_id="example_holding", units=10, fmv_usd_per_unit=1.5, valuation_source="placeholder"
+                holding_id="example_holding",
+                label="Example Holding",
+                units=10,
+                fmv_usd_per_unit=1.5,
+                valuation_source="placeholder",
             ),
         ),
     )
     assert snapshot.concentrated_holdings[0].fmv_usd_per_unit == 1.5
+    assert snapshot.concentrated_holdings[0].value_usd == 15
 
 
 def test_unknown_field_is_rejected() -> None:

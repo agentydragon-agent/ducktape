@@ -41,12 +41,6 @@ location_selection:
   - location_b
 minimum_reserve_mode: projected_deficits
 personal_finance:
-  cash_usd: 50000.0
-  concentrated_holdings:
-    - basis_per_unit_usd: 5.0
-      holding_id: private_holding_a
-      label: Private Holding A
-      units: 1000
   default_partner_monthly_payment_usd: 2000.0
   minimum_liquid_reserve_usd: 10000.0
 pmms_survey_date: "2026-05-14"
@@ -57,8 +51,10 @@ snapshot:
   as_of_date: "2026-05-14"
   cash_usd: 50000.0
   concentrated_holdings:
-    - fmv_usd_per_unit: 25.0
+    - basis_per_unit_usd: 5.0
+      fmv_usd_per_unit: 25.0
       holding_id: private_holding_a
+      label: Private Holding A
       units: 1000
       valuation_source: public fixture
   notes:
