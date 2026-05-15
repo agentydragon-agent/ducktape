@@ -1,10 +1,47 @@
-# Claude Sandbox Namespace
+# Claude Sandbox RBAC
 
-This directory configures a sandbox namespace for Claude AI assistant with full access
-for experimentation.
+This directory is the **lightweight base** for Claude agent sandbox RBAC. It contains only
+cluster-scoped resources (ClusterRoles) and sandbox-internal resources (namespace + RoleBindings
+within `claude-sandbox`). It must **never** depend on service or database kustomizations.
 
-**Cross-references**: RBAC is referenced from the root `AGENTS.md` (Kubernetes MCP Server
-section). Keep both in sync when changing permissions.
+Namespace-scoped RoleBindings targeting other namespaces live in per-service `agent-rbac/`
+directories (see Architecture below).
+
+**Cross-references**: RBAC is referenced from `cluster/AGENTS.md` (Kubernetes MCP Server
+section) and the root `AGENTS.md`. Keep in sync when changing permissions.
+
+## Architecture
+
+Agent RBAC is split across three layers:
+
+### 1. `claude-rbac` (this directory) — lightweight base
+
+Depends on: `kyverno-policies` only. No service or database dependencies.
+
+Contains:
+
+- `claude-sandbox` namespace, ResourceQuota, LimitRange
+- Sandbox-internal Role + RoleBinding (`role-sandbox.yaml`, `rolebinding-sandbox.yaml`)
+- Sandbox-internal `rolebinding-ollama-consumer.yaml` (binds ClusterRole in claude-sandbox ns)
+- Three ClusterRoles: `cluster-diagnostics-reader`, `logs-configmaps-reader`,
+  `namespace-diagnostics-reader`
+
+### 2. `shared-rbac` — cluster-scoped bindings
+
+Depends on: `claude-rbac`, `kyverno-policies`.
+
+Contains:
+
+- `ClusterRoleBinding` for `cluster-diagnostics-reader` (cluster-wide)
+- `RoleBinding` for `logs-configmaps-reader` in `flux-system` only
+
+### 3. Per-service `<service>/agent-rbac/` — namespace-scoped RoleBindings
+
+Each service that grants agent read access has its own `agent-rbac/` directory with an
+independent Flux kustomization. Depends on: `[service's namespace kustomization]` + `claude-rbac`.
+
+This isolation ensures that missing/suspended service namespaces don't block unrelated RBAC
+from applying.
 
 ## Permissions Granted
 
@@ -35,11 +72,30 @@ bound via `shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`:
 
 ### 3. Cross-namespace read
 
-Namespaced Roles + RoleBindings for specific namespaces:
+Namespaced RoleBindings live in per-service `agent-rbac/` directories. Each is an independent
+Flux kustomization that depends only on the target namespace + `claude-rbac`.
 
-- Namespace diagnostics (pods, logs, services, configmaps, PVCs, events, deployments, replicasets, statefulsets) in harbor, gatus, authentik-mcp-poc, csi-proxmox, openebs, proxmox-proxy, cnpg-system, nvidia-device-plugin, node-feature-discovery, local-path-storage, cert-manager, litellm, docker-ci, matrix, grocy-sf, grocy-vallejo, study-casino
-- Extended read in langfuse, ollama (read + consumer), openclaw, props (+ jobs, constrained secrets)
-- Logs/configmaps in monitoring, kube-system, longhorn-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik
+**Namespace diagnostics** (`namespace-diagnostics-reader` ClusterRole bound per-namespace):
+harbor, gatus, authentik-mcp-poc, csi-proxmox, openebs, proxmox-proxy, cnpg-system,
+nvidia-device-plugin, node-feature-discovery, local-path-storage, cert-manager, litellm,
+docker-ci, matrix, grocy-sf, grocy-vallejo, study-casino, props, ollama, langfuse
+
+**Extended read**: ollama (`rolebinding-ollama-reader.yaml` in `ollama/agent-rbac/`),
+langfuse (in `langfuse/agent-rbac/`), openclaw (in `openclaw/gateway-namespace/`),
+props (Role + RoleBinding in `props/agent-rbac/`)
+
+**Logs/configmaps** (`logs-configmaps-reader` ClusterRole bound per-namespace):
+monitoring, kube-system, longhorn-system, grocy-sf, grocy-vallejo, airlock, authentik
+(plus `flux-system` in `shared-rbac/`)
+
+## Adding Agent RBAC for a New Service
+
+1. Create `<service>/agent-rbac/` with:
+   - `flux-kustomization.yaml` — depends on service's namespace kustomization + `claude-rbac`
+   - `kustomization.yaml` — lists the RoleBinding YAML(s)
+   - RoleBinding YAML(s) referencing the appropriate ClusterRole from `claude-rbac/`
+2. Add the `flux-kustomization.yaml` path to the root `cluster/k8s/kustomization.yaml`
+3. The service namespace kustomization has **zero coupling** to agent infrastructure
 
 ## Authentication
 

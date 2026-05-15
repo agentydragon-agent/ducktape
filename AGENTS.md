@@ -29,12 +29,13 @@ triggers permission prompts.
 - **Cluster-wide read** (`cluster-diagnostics-reader` ClusterRole): nodes, pods,
   deployments, Flux kustomizations (+ patch for reconcile triggers), HelmReleases,
   cert-manager, CNPG clusters, metrics, Longhorn, Gateway API, Kyverno, and more.
-- **Cross-namespace read**: harbor, langfuse, ollama, openclaw, props, gatus,
-  csi-proxmox, openebs, proxmox-proxy, cnpg-system, nvidia-device-plugin,
-  node-feature-discovery, local-path-storage, cert-manager, litellm, docker-ci,
-  matrix, grocy-sf, grocy-vallejo,
-  logs/configmaps via namespaced rolebindings (monitoring, kube-system,
-  longhorn-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik).
+- **Cross-namespace read**: per-service `agent-rbac/` directories bind ClusterRoles
+  in each target namespace. See `cluster/k8s/agents/claude-rbac/README.md` for the
+  full list. Covers: harbor, langfuse, ollama, openclaw, props, gatus, csi-proxmox,
+  openebs, proxmox-proxy, cnpg-system, nvidia-device-plugin, node-feature-discovery,
+  local-path-storage, cert-manager, litellm, docker-ci, matrix, grocy-sf, grocy-vallejo,
+  study-casino, authentik-mcp-poc, monitoring, kube-system, longhorn-system,
+  flux-system, airlock, authentik.
 
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
 session kubeconfig (web) for operations needing higher privileges or other namespaces.
