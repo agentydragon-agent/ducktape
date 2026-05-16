@@ -40,6 +40,7 @@ py_library(
         ":location_market_sources_py",
         ":market_config_py",
         "//augur/core:market_bundle_py",
+        "//augur/core:provenance_py",
         "//augur/core:scenario_set_py",
         "//augur/model/markets:data_py",
         "//augur/model/markets:market_model_py",

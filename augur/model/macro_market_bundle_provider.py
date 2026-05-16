@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
+from augur.core.provenance import stable_identity_digest
 from augur.core.scenario_set import MarketRequest
 from augur.model.location_market_sources import LocationMarketSources, build_location_market_maps
 from augur.model.market_config import load_market_config
@@ -23,8 +24,6 @@ from augur.model.markets.registry import BY_LABEL
 
 _TENDER_INTERVAL_MONTHS = 12
 _MODEL_CARD_ID = "augur-market-model-card:2026-05-15"
-_UNVERSIONED_PUBLIC_EVIDENCE_SET_ID = "evidence-set:augur-public-market-data:unversioned"
-_IN_MEMORY_CALIBRATION_ARTIFACT_PREFIX = "calibration-artifact:in-memory"
 _KNOWN_LIMITATION_IDS = (
     "evidence-set-id-unversioned",
     "calibration-artifact-id-unversioned",
@@ -43,6 +42,27 @@ class MacroMarketBundleProvider:
 
         historical, evidence = load_evidence(config, self.config_path.parent)
         self.latest_observations: dict[str, Any] = dict(evidence.latest_observations)
+        self._risk_factor_set_id = "risk_factor_set:" + stable_identity_digest(
+            {"factor_names": historical.factor_names}
+        )
+        self._market_model_version_id = "model_version:" + stable_identity_digest(
+            {"label": self.label, "class": type(market_model).__qualname__}
+        )
+        self._evidence_set_id = "evidence_set:" + stable_identity_digest(
+            {
+                "config_file": self.config_path.name,
+                "factor_names": historical.factor_names,
+                "latest_observations": self.latest_observations,
+            }
+        )
+        self._calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
+            {
+                "market_model_id": self.label,
+                "market_model_version_id": self._market_model_version_id,
+                "evidence_set_id": self._evidence_set_id,
+                "risk_factor_set_id": self._risk_factor_set_id,
+            }
+        )
         self._current_mortgage30_rate_pct = float(evidence.current_mortgage30_rate_pct)
         self._current_private_equity_price_usd = float(current_private_equity_price_usd)
         self._factor_index = {name: idx for idx, name in enumerate(historical.factor_names)}
@@ -89,11 +109,15 @@ class MacroMarketBundleProvider:
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
                 model_card_id=_MODEL_CARD_ID,
-                model_version_id=f"macro-market-model:{self.label}:unversioned",
-                evidence_set_id=_UNVERSIONED_PUBLIC_EVIDENCE_SET_ID,
-                calibration_artifact_id=f"{_IN_MEMORY_CALIBRATION_ARTIFACT_PREFIX}:{self.label}:unversioned",
+                model_version_id=self._market_model_version_id,
                 validation_report_id=None,
                 known_limitation_ids=_KNOWN_LIMITATION_IDS,
+                market_model_version_id=self._market_model_version_id,
+                scenario_generator_id="macro_market_bundle_provider",
+                scenario_generator_version_id="macro_market_bundle_provider:v1",
+                evidence_set_id=self._evidence_set_id,
+                calibration_artifact_id=self._calibration_artifact_id,
+                risk_factor_set_id=self._risk_factor_set_id,
                 seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,

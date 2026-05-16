@@ -11,6 +11,7 @@ from augur.core.market_bundle import (
     SimpleMarketBundleProvider,
     sample_market_bundle_for_request,
 )
+from augur.core.provenance import policy_program_set_id, projection_trajectory_id, scenario_input_id
 from augur.core.scenario_engine import ScenarioRunArrays, run_scenario_vectorized
 from augur.core.scenario_set import (
     ActorRole,
@@ -289,7 +290,10 @@ class ScenarioRun:
             scenario_label=self.scenario.label,
             summary=_accepted_summary(self.scenario),
             projection_trajectories=_projection_trajectory_identities(
-                scenario_id=self.scenario.scenario_id, exogenous_paths=exogenous_paths
+                scenario_id=self.scenario.scenario_id,
+                scenario_input_id=scenario_input_id(self.scenario),
+                policies=self.scenario.policies,
+                exogenous_paths=exogenous_paths,
             ),
             rollout_statuses=rollout_statuses,
             metric_fan_columns=self.arrays.metric_fan_columns(),
@@ -386,6 +390,12 @@ def _exogenous_path_identities(metadata: Any) -> tuple[ExogenousPathIdentity, ..
             path_set_id=metadata.path_set_id,
             exogenous_path_id=exogenous_path_id,
             market_model_id=metadata.market_model_id,
+            market_model_version_id=metadata.market_model_version_id,
+            scenario_generator_id=metadata.scenario_generator_id,
+            scenario_generator_version_id=metadata.scenario_generator_version_id,
+            evidence_set_id=metadata.evidence_set_id,
+            calibration_artifact_id=metadata.calibration_artifact_id,
+            risk_factor_set_id=metadata.risk_factor_set_id,
             seed=metadata.seed,
             event_stream_ids=metadata.event_stream_ids,
         )
@@ -394,15 +404,27 @@ def _exogenous_path_identities(metadata: Any) -> tuple[ExogenousPathIdentity, ..
 
 
 def _projection_trajectory_identities(
-    *, scenario_id: str, exogenous_paths: tuple[ExogenousPathIdentity, ...]
+    *,
+    scenario_id: str,
+    scenario_input_id: str,
+    policies: tuple[Any, ...] = (),
+    exogenous_paths: tuple[ExogenousPathIdentity, ...],
 ) -> tuple[ProjectionTrajectoryIdentity, ...]:
+    scenario_policy_program_set_id = policy_program_set_id(scenario_id=scenario_id, policies=policies)
     return tuple(
         ProjectionTrajectoryIdentity(
             scenario_id=scenario_id,
             rollout_index=path.rollout_index,
             path_set_id=path.path_set_id,
             exogenous_path_id=path.exogenous_path_id,
-            projection_trajectory_id=f"trajectory:{scenario_id}:{path.exogenous_path_id}",
+            scenario_input_id=scenario_input_id,
+            policy_program_set_id=scenario_policy_program_set_id,
+            projection_trajectory_id=projection_trajectory_id(
+                scenario_id=scenario_id,
+                scenario_input_id=scenario_input_id,
+                exogenous_path_id=path.exogenous_path_id,
+                policy_program_set_id=scenario_policy_program_set_id,
+            ),
         )
         for path in exogenous_paths
     )

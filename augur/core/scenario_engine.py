@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -38,6 +39,7 @@ from augur.core.property_sale import (
     property_disposition_arrays,
 )
 from augur.core.property_tax import monthly_property_tax_usd
+from augur.core.provenance import policy_program_set_id, projection_trajectory_id, scenario_input_id
 from augur.core.scenario_set import (
     AccountingDetailType,
     AccruePartnerEquityAction,
@@ -1097,6 +1099,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="depreciation_recapture_usd",
     )
+    trace_identity_by_rollout = _trace_identity_by_rollout(scenario, market_bundle)
     return ScenarioRunArrays(
         scenario_id=scenario.scenario_id,
         scenario_label=scenario.label,
@@ -1167,13 +1170,44 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         net_worth_usd=net_worth,
         partner_present=partner_present,
         monthly_spend_usd=monthly_spend_from_ledger,
-        actions=_sorted_actions(actions),
-        policy_decisions=_sorted_policy_decisions(policy_decisions),
-        market_observations=_sorted_market_observations(market_observations),
-        ledger_entries=_sorted_ledger_entries(ledger_entries),
-        balance_snapshots=_sorted_balance_snapshots(balance_snapshots),
-        accounting_details=_sorted_accounting_details(accounting_details),
+        actions=_sorted_actions(_with_trajectory_identity(actions, trace_identity_by_rollout)),
+        policy_decisions=_sorted_policy_decisions(
+            _with_trajectory_identity(policy_decisions, trace_identity_by_rollout)
+        ),
+        market_observations=_sorted_market_observations(
+            _with_trajectory_identity(market_observations, trace_identity_by_rollout)
+        ),
+        ledger_entries=_sorted_ledger_entries(_with_trajectory_identity(ledger_entries, trace_identity_by_rollout)),
+        balance_snapshots=_sorted_balance_snapshots(
+            _with_trajectory_identity(balance_snapshots, trace_identity_by_rollout)
+        ),
+        accounting_details=_sorted_accounting_details(
+            _with_trajectory_identity(accounting_details, trace_identity_by_rollout)
+        ),
     )
+
+
+def _trace_identity_by_rollout(scenario: Scenario, market_bundle: MarketBundle) -> dict[int, dict[str, str]]:
+    scenario_policy_program_set_id = policy_program_set_id(scenario_id=scenario.scenario_id, policies=scenario.policies)
+    scenario_identity = scenario_input_id(scenario)
+    return {
+        rollout_index: {
+            "path_set_id": market_bundle.metadata.path_set_id,
+            "exogenous_path_id": exogenous_path_id,
+            "scenario_input_id": scenario_identity,
+            "projection_trajectory_id": projection_trajectory_id(
+                scenario_id=scenario.scenario_id,
+                scenario_input_id=scenario_identity,
+                exogenous_path_id=exogenous_path_id,
+                policy_program_set_id=scenario_policy_program_set_id,
+            ),
+        }
+        for rollout_index, exogenous_path_id in enumerate(market_bundle.metadata.exogenous_path_ids)
+    }
+
+
+def _with_trajectory_identity(records: list[Any], identity_by_rollout: Mapping[int, dict[str, str]]) -> tuple[Any, ...]:
+    return tuple(record.model_copy(update=identity_by_rollout[int(record.rollout_index)]) for record in records)
 
 
 def _market_path_observations(

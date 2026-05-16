@@ -276,6 +276,10 @@ Policy = Annotated[
 class _SimulationActionBase(ApiModel):
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
+    path_set_id: str | None = None
+    exogenous_path_id: str | None = None
+    scenario_input_id: str | None = None
+    projection_trajectory_id: str | None = None
     actor_id: str
     policy_id: str
 
@@ -376,6 +380,10 @@ SimulationAction = Annotated[
 class _SimulationPolicyDecisionBase(ApiModel):
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
+    path_set_id: str | None = None
+    exogenous_path_id: str | None = None
+    scenario_input_id: str | None = None
+    projection_trajectory_id: str | None = None
     actor_id: str
     policy_id: str
 
@@ -423,6 +431,10 @@ SimulationPolicyDecision = Annotated[
 class _SimulationMarketObservationBase(ApiModel):
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
+    path_set_id: str | None = None
+    exogenous_path_id: str | None = None
+    scenario_input_id: str | None = None
+    projection_trajectory_id: str | None = None
 
 
 class MarketPathObservation(_SimulationMarketObservationBase):
@@ -455,6 +467,10 @@ SimulationMarketObservation = Annotated[
 class _SimulationLedgerBase(ApiModel):
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
+    path_set_id: str | None = None
+    exogenous_path_id: str | None = None
+    scenario_input_id: str | None = None
+    projection_trajectory_id: str | None = None
     actor_id: str
     policy_id: str | None = None
     event_id: str | None = None
@@ -479,6 +495,10 @@ class SimulationBalanceSnapshot(_SimulationLedgerBase):
 class _SimulationAccountingDetailBase(ApiModel):
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
+    path_set_id: str | None = None
+    exogenous_path_id: str | None = None
+    scenario_input_id: str | None = None
+    projection_trajectory_id: str | None = None
     actor_id: str
     policy_id: str | None = None
     event_id: str | None = None
@@ -629,17 +649,25 @@ RentalPlan = Annotated[
 ]
 
 
+class PositionProvenance(ApiModel):
+    source_id: str | None = None
+    snapshot_id: str | None = None
+    as_of: str | None = None
+
+
 class AccountBalance(ApiModel):
     account_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     account_type: AccountType
     owner_actor_id: str
     balance_usd: float
+    provenance: PositionProvenance = Field(default_factory=PositionProvenance)
 
 
 class _AssetPositionBase(ApiModel):
     asset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     owner_actor_id: str
     value_usd: float
+    provenance: PositionProvenance = Field(default_factory=PositionProvenance)
 
 
 class GenericSp500StockPosition(_AssetPositionBase):
@@ -719,6 +747,12 @@ class ExogenousPathIdentity(ApiModel):
     path_set_id: str
     exogenous_path_id: str
     market_model_id: str
+    market_model_version_id: str = "unknown"
+    scenario_generator_id: str = "market_bundle_provider"
+    scenario_generator_version_id: str = "unknown"
+    evidence_set_id: str = "unknown"
+    calibration_artifact_id: str = "unknown"
+    risk_factor_set_id: str = "core_market_factors:v1"
     seed: int
     event_stream_ids: tuple[str, ...] = ()
 
@@ -728,6 +762,8 @@ class ProjectionTrajectoryIdentity(ApiModel):
     rollout_index: NonNegativeInt
     path_set_id: str
     exogenous_path_id: str
+    scenario_input_id: str
+    policy_program_set_id: str
     projection_trajectory_id: str
 
 

@@ -33,6 +33,36 @@ def test_simple_market_bundle_shapes_and_reproducibility() -> None:
     assert_allclose(first.generic_sp500_multipliers, second.generic_sp500_multipliers)
     assert_allclose(first.inflation_multipliers[:, 0], 1.0)
     assert_allclose(first.private_equity_value_multipliers[:, 0], 1.0)
+    assert first.metadata.path_set_id == second.metadata.path_set_id
+    assert first.metadata.exogenous_path_ids == second.metadata.exogenous_path_ids
+
+
+def test_market_bundle_provenance_fields_drive_path_identity() -> None:
+    base = MarketBundleMetadata(
+        market_model_id="model_a",
+        market_model_version_id="model_version:1",
+        scenario_generator_id="generator",
+        scenario_generator_version_id="generator:1",
+        evidence_set_id="evidence:1",
+        calibration_artifact_id="calibration:1",
+        seed=1,
+        rollout_count=2,
+        horizon_months=3,
+        event_stream_ids=("private_equity_sale_opportunity_event",),
+    )
+    same = MarketBundleMetadata.model_validate(base.model_dump(exclude={"path_set_id", "exogenous_path_ids"}))
+    changed_seed = base.model_copy(update={"seed": 2})
+    changed_model = base.model_copy(update={"market_model_version_id": "model_version:2"})
+    changed_evidence = base.model_copy(update={"evidence_set_id": "evidence:2"})
+    changed_calibration = base.model_copy(update={"calibration_artifact_id": "calibration:2"})
+
+    assert base.path_set_id == same.path_set_id
+    assert base.exogenous_path_ids == same.exogenous_path_ids
+    assert changed_seed.path_set_id != base.path_set_id
+    assert changed_model.path_set_id != base.path_set_id
+    assert changed_evidence.path_set_id != base.path_set_id
+    assert changed_calibration.path_set_id != base.path_set_id
+    assert changed_evidence.exogenous_path_ids[0] != base.exogenous_path_ids[0]
 
 
 def test_market_bundle_rejects_bad_shapes() -> None:

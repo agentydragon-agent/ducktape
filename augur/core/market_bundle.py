@@ -7,6 +7,7 @@ import numpy as np
 from pydantic import Field, computed_field
 
 from augur.core.local_regulation import LocationId
+from augur.core.provenance import exogenous_path_id, path_set_id
 from augur.core.scenario_set import MarketRequest
 from augur.core.schemas import ApiModel
 
@@ -15,10 +16,14 @@ class MarketBundleMetadata(ApiModel):
     market_model_id: str
     model_card_id: str | None = None
     model_version_id: str | None = None
-    evidence_set_id: str | None = None
-    calibration_artifact_id: str | None = None
     validation_report_id: str | None = None
     known_limitation_ids: tuple[str, ...] = ()
+    market_model_version_id: str = "unknown"
+    scenario_generator_id: str = "market_bundle_provider"
+    scenario_generator_version_id: str = "unknown"
+    evidence_set_id: str = "unknown"
+    calibration_artifact_id: str = "unknown"
+    risk_factor_set_id: str = "core_market_factors:v1"
     seed: int
     rollout_count: int
     horizon_months: int
@@ -29,15 +34,27 @@ class MarketBundleMetadata(ApiModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def path_set_id(self) -> str:
-        return (
-            f"path_set:{self.market_model_id}:seed:{self.seed}:"
-            f"rollouts:{self.rollout_count}:horizon_months:{self.horizon_months}"
+        return path_set_id(
+            market_model_id=self.market_model_id,
+            market_model_version_id=self.market_model_version_id,
+            scenario_generator_id=self.scenario_generator_id,
+            scenario_generator_version_id=self.scenario_generator_version_id,
+            evidence_set_id=self.evidence_set_id,
+            calibration_artifact_id=self.calibration_artifact_id,
+            risk_factor_set_id=self.risk_factor_set_id,
+            seed=self.seed,
+            rollout_count=self.rollout_count,
+            horizon_months=self.horizon_months,
+            event_stream_ids=self.event_stream_ids,
         )
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def exogenous_path_ids(self) -> tuple[str, ...]:
-        return tuple(f"{self.path_set_id}:path:{rollout_index}" for rollout_index in range(self.rollout_count))
+        return tuple(
+            exogenous_path_id(path_set_id=self.path_set_id, rollout_index=rollout_index)
+            for rollout_index in range(self.rollout_count)
+        )
 
     def to_json_dict(self) -> dict[str, object]:
         return self.model_dump(mode="json")
@@ -215,6 +232,10 @@ class FlatMarketBundleProvider:
             private_equity_sale_opportunity_mask=private_equity_events,
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
+                scenario_generator_id="flat_market_bundle_provider",
+                scenario_generator_version_id="flat_market_bundle_provider:v1",
+                evidence_set_id="fixture:flat",
+                calibration_artifact_id="fixture:flat",
                 seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
@@ -292,6 +313,10 @@ class SimpleMarketBundleProvider:
         )
         metadata = MarketBundleMetadata(
             market_model_id=market_request.market_model_id,
+            scenario_generator_id="simple_market_bundle_provider",
+            scenario_generator_version_id="simple_market_bundle_provider:v1",
+            evidence_set_id="fixture:simple",
+            calibration_artifact_id="fixture:simple",
             seed=seed,
             rollout_count=rollout_count,
             horizon_months=horizon_months,

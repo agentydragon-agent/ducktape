@@ -851,7 +851,7 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     assert private_equity_action["event_id"] is None
     assert private_equity_action["event_type"] is None
     assert private_equity_action["opportunity_id"] == (
-        "path_set:e2e_noop:seed:0:rollouts:1:horizon_months:2:path:0:month:1:private_equity_holding:pe:sale_opportunity"
+        f"{private_equity_action['path_set_id']}:path:0:month:1:private_equity_holding:pe:sale_opportunity"
     )
     assert private_equity_action["opportunity_cause_id"] == private_equity_action["opportunity_id"]
     assert private_equity_action["amount_usd"] == 50_000
@@ -1143,8 +1143,7 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     assert no_opportunity_decisions[-1].sale_opportunity_value_usd == 0
     assert no_opportunity_decisions[-1].opportunity_id is None
     assert no_opportunity_decisions[-1].opportunity_cause_id == (
-        "path_set:e2e_noop:seed:0:rollouts:1:horizon_months:12:path:0:month:12:"
-        "private_equity_holding:pe:no_sale_opportunity"
+        f"{no_opportunity_decisions[-1].path_set_id}:path:0:month:12:private_equity_holding:pe:no_sale_opportunity"
     )
     assert no_opportunity.rollout(0).market_observations(PrivateEquitySaleOpportunityObservation) == ()
 
@@ -1173,8 +1172,7 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     assert len(opportunity_observations) == 1
     assert opportunity_observations[0].month_index == 12
     expected_opportunity_id = (
-        "path_set:e2e_noop:seed:0:rollouts:1:horizon_months:12:path:0:month:12:"
-        "private_equity_holding:pe:sale_opportunity"
+        f"{opportunity_observations[0].path_set_id}:path:0:month:12:private_equity_holding:pe:sale_opportunity"
     )
     assert opportunity_observations[0].opportunity_id == expected_opportunity_id
     assert opportunity_observations[0].opportunity_cause_id == expected_opportunity_id

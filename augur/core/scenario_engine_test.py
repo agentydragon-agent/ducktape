@@ -195,11 +195,11 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
     assert first_sp500 == second_sp500
     assert response.scenario_results[0].metric_fan_columns["net_worth_usd"].row_count == 4
     assert response.market_metadata["seed"] == 7
-    assert response.market_metadata["path_set_id"] == "path_set:test:seed:7:rollouts:2:horizon_months:3"
-    assert response.market_metadata["exogenous_path_ids"] == [
-        "path_set:test:seed:7:rollouts:2:horizon_months:3:path:0",
-        "path_set:test:seed:7:rollouts:2:horizon_months:3:path:1",
-    ]
+    path_set_id = response.market_metadata["path_set_id"]
+    assert path_set_id.startswith("path_set:")
+    assert response.market_metadata["evidence_set_id"] == "unknown"
+    assert response.market_metadata["calibration_artifact_id"] == "unknown"
+    assert response.market_metadata["exogenous_path_ids"] == [f"{path_set_id}:path:0", f"{path_set_id}:path:1"]
     assert [path.exogenous_path_id for path in response.exogenous_paths] == response.market_metadata[
         "exogenous_path_ids"
     ]
@@ -209,13 +209,42 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
     )
     assert (
         response.scenario_results[0].projection_trajectories[0].projection_trajectory_id
-        == "trajectory:first:path_set:test:seed:7:rollouts:2:horizon_months:3:path:0"
+        != response.scenario_results[1].projection_trajectories[0].projection_trajectory_id
     )
+    first_observation = response.scenario_results[0].market_observations[0]
+    assert first_observation.path_set_id == path_set_id
+    assert first_observation.exogenous_path_id in response.market_metadata["exogenous_path_ids"]
     assert (
-        response.scenario_results[1].projection_trajectories[0].projection_trajectory_id
-        == "trajectory:second:path_set:test:seed:7:rollouts:2:horizon_months:3:path:0"
+        first_observation.projection_trajectory_id
+        == response.scenario_results[0]
+        .projection_trajectories[first_observation.rollout_index]
+        .projection_trajectory_id
     )
     assert response.scenario_results[0].rollout_statuses[0].status == RolloutStatusType.ACTIVE
+
+
+def test_projection_trajectory_identity_includes_input_snapshot_provenance() -> None:
+    base_scenario = _scenario_body("portfolio", private_equity_usd=0)
+    sourced_scenario = _scenario_body("portfolio", private_equity_usd=0)
+    sourced_scenario["initial_balance_sheet"]["accounts"][0]["provenance"] = {
+        "source_id": "wealthfront",
+        "snapshot_id": "snapshot-2026-05-16",
+        "as_of": "2026-05-16",
+    }
+    market_bundle = _bundle()
+
+    base_response = simulate_set(
+        ScenarioSet.model_validate(_scenario_set_body(base_scenario)), market_bundle=market_bundle
+    ).to_response()
+    sourced_response = simulate_set(
+        ScenarioSet.model_validate(_scenario_set_body(sourced_scenario)), market_bundle=market_bundle
+    ).to_response()
+
+    base_trajectory = base_response.scenario_results[0].projection_trajectories[0]
+    sourced_trajectory = sourced_response.scenario_results[0].projection_trajectories[0]
+    assert base_trajectory.exogenous_path_id == sourced_trajectory.exogenous_path_id
+    assert base_trajectory.scenario_input_id != sourced_trajectory.scenario_input_id
+    assert base_trajectory.projection_trajectory_id != sourced_trajectory.projection_trajectory_id
 
 
 def test_response_omits_rollout_status_summary_next_to_full_statuses() -> None:
@@ -984,7 +1013,8 @@ def test_purchase_event_parameters_drive_property_costs() -> None:
 def test_private_equity_stock_is_not_sold_without_policy() -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("no_sale_policy")))
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    market_bundle = _bundle(private_equity_sale_opportunity_month=1)
+    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert_allclose(result.private_equity_sale_usd, 0)
@@ -995,7 +1025,8 @@ def test_private_equity_stock_is_not_sold_without_policy() -> None:
 def test_private_equity_sale_opportunity_without_policy_does_not_sell() -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("sale_opportunity_without_policy")))
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    market_bundle = _bundle(private_equity_sale_opportunity_month=1)
+    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert_allclose(result.private_equity_sale_usd, 0)
@@ -1036,16 +1067,15 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     ]
     assert len(no_opportunity_decisions) == 8
     assert {decision.opportunity_id for decision in no_opportunity_decisions} == {None}
+    no_opportunity_path_set_id = _bundle().metadata.path_set_id
     assert {
         decision.opportunity_cause_id
         for decision in no_opportunity_decisions
         if decision.month_index == 1 and decision.rollout_index == 0
-    } == {
-        "path_set:test:seed:7:rollouts:2:horizon_months:3:path:0:month:1:"
-        "private_equity_holding:private_equity:no_sale_opportunity"
-    }
+    } == {f"{no_opportunity_path_set_id}:path:0:month:1:private_equity_holding:private_equity:no_sale_opportunity"}
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    market_bundle = _bundle(private_equity_sale_opportunity_month=1)
+    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert_allclose(result.private_equity_sale_usd[:, 0], 0)
@@ -1060,7 +1090,7 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     assert len(actions) == 2
     for action in actions:
         expected_opportunity_id = (
-            f"path_set:test:seed:7:rollouts:2:horizon_months:3:path:{action.rollout_index}:month:1:"
+            f"{market_bundle.metadata.path_set_id}:path:{action.rollout_index}:month:1:"
             "private_equity_holding:private_equity:sale_opportunity"
         )
         assert action.event_id is None
@@ -1086,7 +1116,7 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     assert len(sale_decisions) == 2
     for decision in sale_decisions:
         expected_opportunity_id = (
-            f"path_set:test:seed:7:rollouts:2:horizon_months:3:path:{decision.rollout_index}:month:1:"
+            f"{market_bundle.metadata.path_set_id}:path:{decision.rollout_index}:month:1:"
             "private_equity_holding:private_equity:sale_opportunity"
         )
         assert decision.opportunity_id == expected_opportunity_id
@@ -1111,7 +1141,8 @@ def test_private_equity_sale_policy_reinvests_sale_proceeds_in_sp500() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    market_bundle = _bundle(private_equity_sale_opportunity_month=1)
+    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
@@ -1147,7 +1178,8 @@ def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportun
     _assert_liquid_net_worth_matches_cash_and_public_stock(no_opportunity)
     assert_allclose(no_opportunity.private_equity_sale_usd, 0)
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    market_bundle = _bundle(private_equity_sale_opportunity_month=1)
+    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
 
     assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
@@ -1167,7 +1199,7 @@ def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportun
     assert_allclose([decision.sale_opportunity_value_usd for decision in sale_decisions], [50_000, 50_000])
     for decision in sale_decisions:
         assert decision.opportunity_id == (
-            f"path_set:test:seed:7:rollouts:2:horizon_months:3:path:{decision.rollout_index}:month:1:"
+            f"{market_bundle.metadata.path_set_id}:path:{decision.rollout_index}:month:1:"
             "private_equity_holding:private_equity:sale_opportunity"
         )
 
@@ -1194,7 +1226,8 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    market_bundle = _bundle(private_equity_sale_opportunity_month=1)
+    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
 
     assert_allclose(result.private_equity_sale_usd, 0)
     decisions = [
@@ -1211,7 +1244,7 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
     assert_allclose([decision.liquid_net_worth_usd for decision in decisions], [120_000, 120_000])
     for decision in decisions:
         expected_opportunity_id = (
-            f"path_set:test:seed:7:rollouts:2:horizon_months:3:path:{decision.rollout_index}:month:1:"
+            f"{market_bundle.metadata.path_set_id}:path:{decision.rollout_index}:month:1:"
             "private_equity_holding:private_equity:sale_opportunity"
         )
         assert decision.opportunity_id == expected_opportunity_id

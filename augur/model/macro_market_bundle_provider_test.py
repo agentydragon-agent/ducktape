@@ -69,9 +69,11 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
     assert bundle.horizon_months == horizon_months
     assert bundle.metadata.seed == 42
     assert bundle.metadata.model_card_id == "augur-market-model-card:2026-05-15"
-    assert bundle.metadata.model_version_id == f"macro-market-model:{provider.label}:unversioned"
-    assert bundle.metadata.evidence_set_id == "evidence-set:augur-public-market-data:unversioned"
-    assert bundle.metadata.calibration_artifact_id == f"calibration-artifact:in-memory:{provider.label}:unversioned"
+    assert bundle.metadata.model_version_id == bundle.metadata.market_model_version_id
+    assert bundle.metadata.market_model_version_id.startswith("model_version:")
+    assert bundle.metadata.evidence_set_id.startswith("evidence_set:")
+    assert bundle.metadata.calibration_artifact_id.startswith("calibration_artifact:")
+    assert bundle.metadata.risk_factor_set_id.startswith("risk_factor_set:")
     assert bundle.metadata.validation_report_id is None
     assert bundle.metadata.known_limitation_ids == (
         "evidence-set-id-unversioned",
