@@ -750,6 +750,19 @@ class PrivateEquitySaleActionRecord:
     sale_application: PrivateEquitySaleApplication
 
 
+@dataclass(frozen=True)
+class ObligationFundingPolicyApplication:
+    policy_step: ActorPolicyStep[Policy]
+    instruction: SellAssetInstructionBatch
+    sale_usd: np.ndarray
+    basis_usd: np.ndarray
+    funded_cash_usd: np.ndarray
+    shortfall_usd: np.ndarray
+    remaining_due_usd: np.ndarray
+    remaining_units: np.ndarray
+    remaining_basis_usd: np.ndarray
+
+
 def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> ScenarioRunArrays:
     month_index = market_bundle.month_index
     rollout_count = market_bundle.rollout_count
@@ -2432,6 +2445,7 @@ def _sorted_funding_decisions(records: list[SimulationFundingDecision]) -> tuple
             key=lambda decision: (
                 decision.month_index,
                 decision.rollout_index,
+                -1 if decision.policy_sequence_index is None else decision.policy_sequence_index,
                 decision.decision_type,
                 decision.policy_id or "",
                 decision.obligation_id,
@@ -2633,38 +2647,23 @@ def _settle_required_cash_obligations(
         )
 
         for policy_step in policy_steps:
-            policy = policy_step.policy
-            if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
-                continue
             if not np.any(remaining_due > 0):
                 break
-            projected_cash_after_obligation = cash_usd[:, month_position] - due
-            requested_sale = np.where(
-                (remaining_due > 0) & (projected_cash_after_obligation < float(policy.floor_usd)),
-                float(policy.sale_amount_usd),
-                0.0,
-            )
-            sale_instruction = SellAssetInstructionBatch(
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                asset_type=AssetType.GENERIC_SP500_STOCK,
-                requested_amount_usd=requested_sale,
-                target_cash_floor_usd=float(policy.floor_usd),
-            )
-            sale_application = apply_generic_sp500_sale_instruction(
-                sale_instruction,
-                current_cash_usd=cash_usd[:, month_position],
+            application = _apply_obligation_funding_policy_step(
+                policy_step,
+                due_usd=due,
+                remaining_due_usd=remaining_due,
+                cash_usd=cash_usd[:, month_position],
                 remaining_units=remaining_sp500_units_by_month[:, month_position],
                 remaining_basis_usd=remaining_sp500_basis_by_month[:, month_position],
                 sp500_unit_price_usd=market_bundle.generic_sp500_multipliers[:, month_position],
             )
-            sale_usd = sale_application.sale_usd
-            if not np.any((requested_sale > 0) | (sale_application.shortfall_usd > 0)):
+            if application is None:
                 continue
             old_units = remaining_sp500_units_by_month[:, month_position].copy()
             old_basis = remaining_sp500_basis_by_month[:, month_position].copy()
-            units_sold = np.maximum(0.0, old_units - sale_application.remaining_units)
-            basis_sold = np.maximum(0.0, old_basis - sale_application.remaining_basis_usd)
+            units_sold = np.maximum(0.0, old_units - application.remaining_units)
+            basis_sold = np.maximum(0.0, old_basis - application.remaining_basis_usd)
             remaining_sp500_units_by_month[:, month_position:] = np.maximum(
                 0.0, remaining_sp500_units_by_month[:, month_position:] - units_sold[:, None]
             )
@@ -2675,9 +2674,8 @@ def _settle_required_cash_obligations(
                 remaining_sp500_units_by_month[:, month_position:]
                 * market_bundle.generic_sp500_multipliers[:, month_position:]
             )
-            cash_usd[:, month_position:] = cash_usd[:, month_position:] + sale_usd[:, None]
-            funded_by_sale = np.minimum(remaining_due, sale_usd)
-            remaining_due = np.maximum(0.0, remaining_due - funded_by_sale)
+            cash_usd[:, month_position:] = cash_usd[:, month_position:] + application.sale_usd[:, None]
+            remaining_due = application.remaining_due_usd
             checking_floor_shortfall_usd[:, month_position] = np.maximum(
                 checking_floor_shortfall_usd[:, month_position], remaining_due
             )
@@ -2686,18 +2684,18 @@ def _settle_required_cash_obligations(
                 obligation_type=obligation_type,
                 actor_id=actor_id,
                 month_index=int(due_month_index),
-                policy=policy,
+                policy_step=application.policy_step,
                 obligation_amount_usd=due,
-                requested_sale_usd=requested_sale,
-                funded_cash_usd=funded_by_sale,
-                shortfall_usd=remaining_due,
+                requested_sale_usd=application.instruction.requested_amount_usd,
+                funded_cash_usd=application.funded_cash_usd,
+                shortfall_usd=application.shortfall_usd,
             )
             sp500_sale_action_records.append(
                 Sp500SaleActionRecord(
                     month_position=month_position,
                     month_index=int(due_month_index),
-                    policy=policy,
-                    amount_usd=sale_usd,
+                    policy=application.policy_step.policy,
+                    amount_usd=application.sale_usd,
                     basis_usd=basis_sold,
                     shortfall_usd=remaining_due,
                 )
@@ -2747,6 +2745,80 @@ def _settle_required_cash_obligations(
         )
 
 
+def _apply_obligation_funding_policy_step(
+    policy_step: ActorPolicyStep[Policy],
+    *,
+    due_usd: np.ndarray,
+    remaining_due_usd: np.ndarray,
+    cash_usd: np.ndarray,
+    remaining_units: np.ndarray,
+    remaining_basis_usd: np.ndarray,
+    sp500_unit_price_usd: np.ndarray,
+) -> ObligationFundingPolicyApplication | None:
+    policy = policy_step.policy
+    if isinstance(policy, CheckingFloorSellPublicStockPolicy):
+        return _apply_checking_floor_obligation_funding_policy(
+            policy_step,
+            due_usd=due_usd,
+            remaining_due_usd=remaining_due_usd,
+            cash_usd=cash_usd,
+            remaining_units=remaining_units,
+            remaining_basis_usd=remaining_basis_usd,
+            sp500_unit_price_usd=sp500_unit_price_usd,
+        )
+    return None
+
+
+def _apply_checking_floor_obligation_funding_policy(
+    policy_step: ActorPolicyStep[Policy],
+    *,
+    due_usd: np.ndarray,
+    remaining_due_usd: np.ndarray,
+    cash_usd: np.ndarray,
+    remaining_units: np.ndarray,
+    remaining_basis_usd: np.ndarray,
+    sp500_unit_price_usd: np.ndarray,
+) -> ObligationFundingPolicyApplication | None:
+    policy = policy_step.policy
+    if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
+        raise TypeError(f"checking-floor obligation funding handler received {type(policy).__name__}")
+    projected_cash_after_obligation = cash_usd - due_usd
+    requested_sale = np.where(
+        (remaining_due_usd > 0) & (projected_cash_after_obligation < float(policy.floor_usd)),
+        float(policy.sale_amount_usd),
+        0.0,
+    )
+    instruction = SellAssetInstructionBatch(
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        asset_type=AssetType.GENERIC_SP500_STOCK,
+        requested_amount_usd=requested_sale,
+        target_cash_floor_usd=float(policy.floor_usd),
+    )
+    sale_application = apply_generic_sp500_sale_instruction(
+        instruction,
+        current_cash_usd=cash_usd,
+        remaining_units=remaining_units,
+        remaining_basis_usd=remaining_basis_usd,
+        sp500_unit_price_usd=sp500_unit_price_usd,
+    )
+    if not np.any((requested_sale > 0) | (sale_application.shortfall_usd > 0)):
+        return None
+    funded_cash = np.minimum(remaining_due_usd, sale_application.sale_usd)
+    remaining_due_after_sale = np.maximum(0.0, remaining_due_usd - funded_cash)
+    return ObligationFundingPolicyApplication(
+        policy_step=policy_step,
+        instruction=instruction,
+        sale_usd=sale_application.sale_usd,
+        basis_usd=sale_application.basis_usd,
+        funded_cash_usd=funded_cash,
+        shortfall_usd=remaining_due_after_sale,
+        remaining_due_usd=remaining_due_after_sale,
+        remaining_units=sale_application.remaining_units,
+        remaining_basis_usd=sale_application.remaining_basis_usd,
+    )
+
+
 def _record_obligation_cash_funding_decisions(
     records: list[SimulationFundingDecision],
     *,
@@ -2783,12 +2855,13 @@ def _record_obligation_sale_funding_decisions(
     obligation_type: ObligationType,
     actor_id: str,
     month_index: int,
-    policy: CheckingFloorSellPublicStockPolicy,
+    policy_step: ActorPolicyStep[Policy],
     obligation_amount_usd: np.ndarray,
     requested_sale_usd: np.ndarray,
     funded_cash_usd: np.ndarray,
     shortfall_usd: np.ndarray,
 ) -> None:
+    policy = policy_step.policy
     records.extend(
         (
             SimulationFundingDecision(
@@ -2798,6 +2871,7 @@ def _record_obligation_sale_funding_decisions(
                 decision_type=FundingDecisionType.SELL_PUBLIC_STOCK,
                 actor_id=actor_id,
                 policy_id=policy.policy_id,
+                policy_sequence_index=policy_step.sequence_index,
                 available_cash_usd=0.0,
                 requested_cash_usd=float(obligation_amount_usd[rollout_index]),
                 requested_sale_usd=float(requested_sale_usd[rollout_index]),

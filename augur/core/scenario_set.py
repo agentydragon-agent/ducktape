@@ -638,6 +638,7 @@ class SimulationFundingDecision(_SimulationTraceBase):
     decision_type: FundingDecisionType
     actor_id: str
     policy_id: str | None = None
+    policy_sequence_index: NonNegativeInt | None = None
     available_cash_usd: float
     requested_cash_usd: float
     requested_sale_usd: float = 0.0

@@ -1451,9 +1451,70 @@ def test_required_tax_obligation_can_be_rescued_by_existing_public_stock_sale_po
     ]
     assert len(sale_decisions) == 2
     assert {decision.policy_id for decision in sale_decisions} == {"tax_funding_sale"}
+    assert {decision.policy_sequence_index for decision in sale_decisions} == {1}
     assert all(decision.funded_cash_usd > 0 for decision in sale_decisions)
     assert_allclose(result.cash_usd[:, 1], 20_000 - result.total_income_tax_usd[:, 1])
     assert_allclose(result.generic_sp500_value_usd[:, 1], 80_000)
+
+
+def test_required_tax_obligation_funding_uses_policy_program_order() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "ordered_tax_funding",
+                cash_usd=0,
+                sp500_usd=0,
+                private_equity_usd=200_000,
+                private_equity_basis_usd=0,
+                private_equity_units=100,
+                policies=[
+                    {
+                        "policy_id": "private_equity_sale",
+                        "policy_type": "private_equity_sale",
+                        "actor_id": "owner",
+                        "proceeds_destination": "generic_sp500_stock",
+                        "sale_rule": {"sale_rule_type": "fixed_amount_on_opportunity", "amount_usd": 100_000},
+                    },
+                    {
+                        "policy_id": "small_tax_funding_sale",
+                        "policy_type": "checking_floor_sell_public_stock",
+                        "actor_id": "owner",
+                        "floor_usd": 0,
+                        "sale_amount_usd": 100,
+                    },
+                    {
+                        "policy_id": "large_tax_funding_sale",
+                        "policy_type": "checking_floor_sell_public_stock",
+                        "actor_id": "owner",
+                        "floor_usd": 0,
+                        "sale_amount_usd": 20_000,
+                    },
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+
+    assert {obligation.status for obligation in result.obligations} == {ObligationStatus.PAID}
+    sale_decisions = [
+        decision
+        for decision in result.funding_decisions
+        if decision.decision_type is FundingDecisionType.SELL_PUBLIC_STOCK
+    ]
+    assert [(decision.policy_id, decision.policy_sequence_index) for decision in sale_decisions] == [
+        ("small_tax_funding_sale", 1),
+        ("large_tax_funding_sale", 2),
+        ("small_tax_funding_sale", 1),
+        ("large_tax_funding_sale", 2),
+    ]
+    assert_allclose(
+        [decision.funded_cash_usd for decision in sale_decisions if decision.policy_id == "small_tax_funding_sale"], 100
+    )
+    assert all(
+        decision.funded_cash_usd > 0 for decision in sale_decisions if decision.policy_id == "large_tax_funding_sale"
+    )
+    assert_allclose(result.generic_sp500_value_usd[:, 1], 79_900)
 
 
 if __name__ == "__main__":
