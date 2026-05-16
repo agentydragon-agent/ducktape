@@ -1,143 +1,23 @@
 """Scan Claude Code session transcripts for permission allowlist candidates.
 
 Reads user-configured permissions from settings files (project + global) so
-coverage detection stays in sync automatically. Claude Code's built-in
-auto-allow list is hardcoded here since it's compiled into the binary.
+coverage detection stays in sync automatically.
 
 Usage:
-    python3 devinfra/claude/scan_transcript_permissions.py [--max-sessions N] [--min-count N]
+    bb run --remote_executor="" //devinfra/claude:scan_transcript_permissions -- [--max-sessions N] [--min-count N]
 """
 
 import argparse
 import json
+import logging
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 
-# ── Layer 1: Claude Code built-in auto-allow (compiled into binary) ────────
-# Source: readOnlyValidation.ts, readOnlyCommandValidation.ts in Claude Code
+from devinfra.claude.readonly_commands import _skip_env_prefix, is_builtin_allowed
 
-# Any-args auto-allowed
-_BUILTIN_CMDS = frozenset(
-    [
-        "cal",
-        "uptime",
-        "cat",
-        "head",
-        "tail",
-        "wc",
-        "stat",
-        "strings",
-        "hexdump",
-        "od",
-        "nl",
-        "id",
-        "uname",
-        "free",
-        "df",
-        "du",
-        "locale",
-        "groups",
-        "nproc",
-        "basename",
-        "dirname",
-        "realpath",
-        "cut",
-        "paste",
-        "tr",
-        "column",
-        "tac",
-        "rev",
-        "fold",
-        "expand",
-        "unexpand",
-        "fmt",
-        "comm",
-        "cmp",
-        "numfmt",
-        "readlink",
-        "diff",
-        "true",
-        "false",
-        "sleep",
-        "which",
-        "type",
-        "expr",
-        "test",
-        "getconf",
-        "seq",
-        "tsort",
-        "pr",
-        "echo",
-        "printf",
-        "ls",
-        "cd",
-        "find",
-    ]
-)
-
-# Tool-specific read-only subcommands (auto-allowed by Claude Code)
-_GIT_READONLY = frozenset(
-    [
-        "status",
-        "log",
-        "diff",
-        "show",
-        "blame",
-        "branch",
-        "tag",
-        "remote",
-        "ls-files",
-        "ls-remote",
-        "config",
-        "rev-parse",
-        "describe",
-        "reflog",
-        "shortlog",
-        "cat-file",
-        "for-each-ref",
-        "worktree",
-        "name-rev",
-    ]
-)
-_GH_READONLY = frozenset(["pr", "issue", "run", "workflow", "repo", "release", "auth", "api"])
-_KUBECTL_READONLY = frozenset(
-    ["get", "describe", "logs", "top", "api-resources", "api-versions", "version", "cluster-info"]
-)
-
-
-def is_builtin_allowed(cmd: str) -> bool:
-    """Check if Claude Code auto-allows this command without any config."""
-    parts = cmd.split()
-    if not parts:
-        return True
-    i = _skip_env_prefix(parts)
-    if i >= len(parts):
-        return True
-    first = parts[i]
-    if first == "sudo":
-        i += 1
-        if i >= len(parts):
-            return True
-        first = parts[i]
-
-    if first in _BUILTIN_CMDS:
-        return True
-
-    if first == "git" and len(parts) > i + 1:
-        sub = parts[i + 1]
-        if sub in _GIT_READONLY:
-            return True
-        if sub == "stash" and len(parts) > i + 2 and parts[i + 2] in ("list", "show"):
-            return True
-
-    if first == "gh" and len(parts) > i + 1 and parts[i + 1] in _GH_READONLY:
-        return True
-
-    return first == "kubectl" and len(parts) > i + 1 and parts[i + 1] in _KUBECTL_READONLY
-
-
-# ── Layer 2: User-configured permissions (from settings files) ─────────────
+logger = logging.getLogger(__name__)
 
 _BASH_PATTERN_RE = re.compile(r"^Bash\((.+?)(?::\*)?\)$")
 
@@ -147,7 +27,11 @@ def _load_bash_prefixes_from_settings(*paths: Path) -> list[str]:
     for p in paths:
         try:
             data = json.loads(p.read_text())
-        except (OSError, json.JSONDecodeError):
+        except OSError as e:
+            logger.warning("Could not read %s: %s", p, e)
+            continue
+        except json.JSONDecodeError as e:
+            logger.warning("Invalid JSON in %s: %s", p, e)
             continue
         for entry in data.get("permissions", {}).get("allow", []):
             if not isinstance(entry, str):
@@ -156,29 +40,6 @@ def _load_bash_prefixes_from_settings(*paths: Path) -> list[str]:
             if m:
                 prefixes.append(m.group(1))
     return prefixes
-
-
-class UserPermissions:
-    """User-configured Bash() allow rules from Claude Code settings."""
-
-    def __init__(self, project_dir: Path | None = None):
-        settings_paths = [Path.home() / ".claude" / "settings.json"]
-        if project_dir:
-            settings_paths.append(project_dir / ".claude" / "settings.json")
-        self.prefixes = _load_bash_prefixes_from_settings(*settings_paths)
-
-    def covers(self, cmd: str) -> bool:
-        return any(cmd.startswith(p) for p in self.prefixes)
-
-
-# ── Shared helpers ─────────────────────────────────────────────────────────
-
-
-def _skip_env_prefix(parts: list[str]) -> int:
-    i = 0
-    while i < len(parts) and "=" in parts[i] and not parts[i].startswith("-"):
-        i += 1
-    return i
 
 
 # ── Transcript scanning ────────────────────────────────────────────────────
@@ -239,11 +100,11 @@ def _iter_tool_calls(transcripts: list[Path], tool_name: str | None = None):
                         if not tool_name and not name.startswith("Bash") and not name.startswith("mcp__"):
                             continue
                         yield name, c.get("input", {})
-        except OSError:
-            continue
+        except OSError as e:
+            logger.warning("Could not read %s: %s", fpath, e)
 
 
-def scan_transcripts(transcripts: list[Path], user_perms: UserPermissions) -> tuple[Counter, Counter, Counter]:
+def scan_transcripts(transcripts: list[Path], user_prefixes: list[str]) -> tuple[Counter, Counter, Counter]:
     all_cmds: Counter = Counter()
     uncovered_cmds: Counter = Counter()
     mcp_tools: Counter = Counter()
@@ -256,7 +117,7 @@ def scan_transcripts(transcripts: list[Path], user_perms: UserPermissions) -> tu
             key = extract_command_key(cmd)
             if key:
                 all_cmds[key] += 1
-                if not is_builtin_allowed(cmd) and not user_perms.covers(cmd):
+                if not is_builtin_allowed(cmd) and not any(cmd.startswith(p) for p in user_prefixes):
                     uncovered_cmds[key] += 1
         elif name.startswith("mcp__"):
             mcp_tools[name] += 1
@@ -310,17 +171,24 @@ def _print_section(title: str, counts: Counter, min_count: int, limit: int = 60)
 
 
 def main():
+    logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
+
     parser = argparse.ArgumentParser(description="Scan Claude Code transcripts for permission candidates")
     parser.add_argument("--max-sessions", type=int, default=50)
     parser.add_argument("--min-count", type=int, default=3)
     parser.add_argument("--all", action="store_true", help="Show all commands including covered ones")
     args = parser.parse_args()
 
-    user_perms = UserPermissions(project_dir=Path.cwd())
-    transcripts = find_transcripts(args.max_sessions)
-    all_cmds, uncovered_cmds, mcp_tools = scan_transcripts(transcripts, user_perms)
+    settings_paths = [Path.home() / ".claude" / "settings.json"]
+    project_settings = Path.cwd() / ".claude" / "settings.json"
+    if project_settings.exists():
+        settings_paths.append(project_settings)
+    user_prefixes = _load_bash_prefixes_from_settings(*settings_paths)
 
-    print(f"Loaded {len(user_perms.prefixes)} Bash() allow rules from settings")
+    transcripts = find_transcripts(args.max_sessions)
+    all_cmds, uncovered_cmds, mcp_tools = scan_transcripts(transcripts, user_prefixes)
+
+    print(f"Loaded {len(user_prefixes)} Bash() allow rules from settings")
 
     if args.all:
         print("\n=== ALL COMMANDS (top 60) ===")

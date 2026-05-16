@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # === Base modules (no internal deps) ===
 
@@ -105,6 +105,30 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+# === Transcript permission scanner ===
+
+py_library(
+    name = "readonly_commands",
+    srcs = ["readonly_commands.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "scan_transcript_permissions_lib",
+    srcs = ["scan_transcript_permissions.py"],
+    imports = ["../.."],
+    deps = [
+        ":readonly_commands",
+    ],
+)
+
+py_binary(
+    name = "scan_transcript_permissions",
+    main_module = "devinfra.claude.scan_transcript_permissions",
+    deps = [":scan_transcript_permissions_lib"],
 )
 
 # === Linting ===
