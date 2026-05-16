@@ -237,6 +237,15 @@ function formatForecast(pace, resetSeconds) {
   return "on pace";
 }
 
+function formatCompactDollars(cents) {
+  const dollars = cents / 100;
+  if (dollars >= 1000) {
+    const k = dollars / 1000;
+    return `$${k >= 10 ? Math.round(k) : Math.round(k * 10) / 10}k`;
+  }
+  return `$${Math.round(dollars)}`;
+}
+
 function formatExtraUsage(extra) {
   if (!extra || !extra.is_enabled) return null;
   const used = extra.used_credits / 100;
@@ -783,7 +792,11 @@ const QuotaIndicator = GObject.registerClass(
       const paceText = formatPace(longPace) ?? "";
       const extraActive =
         state.extraUsage?.is_enabled && longState?.usedPercent != null && longState.usedPercent >= 100;
-      paceLabel.set_text(extraActive ? (paceText ? `${paceText} ⚡` : "⚡") : paceText);
+      if (extraActive) {
+        paceLabel.set_text(`${formatCompactDollars(state.extraUsage.used_credits)} ⚡`);
+      } else {
+        paceLabel.set_text(paceText);
+      }
     }
 
     _renderPopup() {
@@ -793,7 +806,13 @@ const QuotaIndicator = GObject.registerClass(
         this._renderProviderHeader(p.header, p.label, p.state);
         if (inExtraRegime) {
           p.shortRow.visible = false;
-          p.longRow.visible = false;
+          p.longRow.visible = true;
+          const live = withLiveReset(p.state.long);
+          const reset = live ? `↻${formatDuration(live.resetSeconds)}` : "";
+          p.longRow._summaryLabel.set_text(`7d reset: ${reset}`);
+          this._setBarFill(p.longRow._timeFill, null);
+          this._setBarFill(p.longRow._usageFill, null);
+          this._setBarTint(p.longRow._usageFill, "unknown");
         } else {
           p.shortRow.visible = true;
           p.longRow.visible = true;
