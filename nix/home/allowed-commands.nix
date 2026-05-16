@@ -112,6 +112,10 @@ in
         type = "prefix";
         cmd = "nix-prefetch-url";
       }
+      {
+        type = "exact";
+        cmd = "pwd";
+      }
     ]
     ++ cargoMetadataCommands;
 
