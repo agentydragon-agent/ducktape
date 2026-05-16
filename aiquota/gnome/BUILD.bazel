@@ -76,6 +76,12 @@ py_test(
 sh_binary(
     name = "devkit",
     srcs = ["devkit.sh"],
-    data = [":aiquota_zip"],
+    data = [
+        ":aiquota_zip",
+        # In-repo CLI so the spawned gnome-shell extension hits the local
+        # build instead of whatever `aiquota` is on PATH (whole point of
+        # devkit is to iterate without re-installing).
+        "//aiquota",
+    ],
     deps = ["@bazel_tools//tools/bash/runfiles"],
 )

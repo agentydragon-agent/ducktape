@@ -41,6 +41,17 @@ if [[ ! -f "$zip_path" ]]; then
   exit 1
 fi
 
+# The whole point of devkit is to exercise the in-repo aiquota — both the
+# extension *and* the CLI it subprocesses. Resolve the bazel-built py_binary
+# launcher and hand it to the extension via AI_QUOTA_BIN so the spawn doesn't
+# fall back to whatever `aiquota` happens to be on PATH (typically a stale
+# home-manager install of the released wheel).
+aiquota_bin="$(rlocation "_main/aiquota/aiquota")"
+if [[ ! -x "$aiquota_bin" ]]; then
+  echo "ERROR: aiquota py_binary not found in runfiles at $aiquota_bin" >&2
+  exit 1
+fi
+
 uuid="aiquota@allegedly.works"
 
 # --- set up isolated temp tree ---------------------------------------------
@@ -79,6 +90,9 @@ EOF
 export XDG_DATA_DIRS="$tmpdir/data${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 export XDG_CONFIG_HOME="$conf_dir"
 export DCONF_PROFILE="$tmpdir/dconf-profile"
+# Force the extension's CLI subprocess to use the in-repo build.
+export AI_QUOTA_BIN="$aiquota_bin"
+echo ">> AI_QUOTA_BIN=$AI_QUOTA_BIN"
 
 # --- enable extension in isolated dconf ------------------------------------
 gsettings set org.gnome.shell disable-user-extensions false
