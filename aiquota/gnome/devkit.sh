@@ -56,7 +56,9 @@ uuid="aiquota@allegedly.works"
 
 # --- set up isolated temp tree ---------------------------------------------
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/aiquota-devkit.XXXXXX")
-trap 'rm -rf "$tmpdir"' EXIT
+# Keep the trace log around on exit so users can diagnose spawn failures
+# after gnome-shell quits. Everything else under $tmpdir is cleaned.
+trap 'mv "$tmpdir/aiquota-spawn.log" "${TMPDIR:-/tmp}/aiquota-devkit-last-spawn.log" 2>/dev/null; rm -rf "$tmpdir"' EXIT
 
 # Extract extension to temp data dir.
 ext_dir="$tmpdir/data/gnome-shell/extensions/$uuid"
@@ -100,13 +102,26 @@ if [[ ! -e "$real_aiquota_config" ]]; then
   echo "WARN: $real_aiquota_config not found — providers needing config will error" >&2
 fi
 wrapper="$tmpdir/aiquota-wrapper.sh"
+trace_log="$tmpdir/aiquota-spawn.log"
 cat >"$wrapper" <<EOF
 #!/usr/bin/env bash
-exec $(printf %q "$aiquota_bin") --config $(printf %q "$real_aiquota_config") "\$@"
+# devkit spawn trace — every invocation logs argv + env + cwd + exit status here
+# so we can diagnose env passthrough issues.
+{
+  printf '=== spawn %s ===\n' "\$(date -Is)"
+  printf 'argv:'; printf ' %q' "\$0" "\$@"; printf '\n'
+  printf 'cwd: %s\n' "\$(pwd)"
+  printf 'env:\n'; env | sort | sed 's/^/  /'
+} >>$(printf %q "$trace_log") 2>&1
+$(printf %q "$aiquota_bin") --config $(printf %q "$real_aiquota_config") "\$@"
+rc=\$?
+printf 'exit: %d\n' "\$rc" >>$(printf %q "$trace_log")
+exit \$rc
 EOF
 chmod +x "$wrapper"
 export AI_QUOTA_BIN="$wrapper"
-echo ">> AI_QUOTA_BIN=$AI_QUOTA_BIN (wraps $aiquota_bin --config $real_aiquota_config)"
+echo ">> AI_QUOTA_BIN=$AI_QUOTA_BIN"
+echo ">> spawn trace: $trace_log"
 
 # --- enable extension in isolated dconf ------------------------------------
 gsettings set org.gnome.shell disable-user-extensions false
