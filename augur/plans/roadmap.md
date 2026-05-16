@@ -266,7 +266,6 @@ inspection surfaces.
 Work:
 
 - Replace class-filtered policy execution with ordered actor policy programs.
-- Remove or implement schema-only policy types.
 - Rename or reframe the runtime vocabulary around `Instruction` plus `Effect`.
   In the current accounting-oriented simulator, the actor's RL-like choice is
   closer to a policy decision/instruction, while the existing `Action` concept
@@ -324,9 +323,9 @@ Work:
 
 ## Immediate Implementation Sequence
 
-1. Generate browser schema/types from the Python Pydantic/OpenAPI schema and
-   start replacing hand-written JS normalization/shape checks with generated
-   boundary validation.
+1. Wire the generated Augur OpenAPI/browser schema target into browser state
+   normalization and request mapping, replacing hand-written JS shape checks
+   where practical.
 2. Redesign private-equity sale opportunities around exogenous events plus
    actor policy, building on the existing liquid-net-worth-floor tender policy.
 3. Continue Step 7 tax/accounting reconciliation once the app state and result
@@ -336,24 +335,21 @@ Work:
 
 ## Next Work Plans
 
-### Plan A: Generate Browser Schemas From Backend Pydantic Models
+### Plan A: Consume Generated Browser Schemas
 
 Scope:
 
-- Add a backend schema-export target for Augur, likely via FastAPI/OpenAPI or a
-  focused Pydantic JSON-schema emitter for `ScenarioSet`, `ScenarioSetRunResponse`,
-  and bootstrap/config payloads.
-- Use the existing repo pattern in `//devinfra/js:openapi.bzl` to generate
-  browser-consumable types/schema artifacts at build time.
 - Wire `augur/app/lib/scenario_set_state.js` and tests to consume the generated
-  boundary shape instead of hand-maintaining field lists and ad hoc object
-  probes.
+  Augur OpenAPI/browser schema target instead of hand-maintaining boundary
+  field lists and ad hoc object probes.
+- Keep the generated schema target as the only browser-facing API schema source
+  of truth; backend Pydantic models define the public payloads.
 - Avoid defining an independent Augur Zod schema by hand; if Zod is used, it
   should be generated from the Python schema.
 
 Validation:
 
-- `nix develop --command pre-commit run --files augur/app/BUILD.bazel augur/app/lib/BUILD.bazel augur/core/BUILD.bazel augur/plans/roadmap.md augur/TODO.md`
+- `nix develop --command pre-commit run --files augur/app/lib/BUILD.bazel augur/app/lib/scenario_set_state.js augur/app/lib/scenario_set_state_test.mjs augur/plans/roadmap.md augur/TODO.md`
 - `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-schema-generation test //augur/app/lib:scenario_set_state_test //augur/app:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
 
 ### Plan B: Make Private-Equity Opportunities And Policy Explicit

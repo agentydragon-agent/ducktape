@@ -8,12 +8,10 @@ programs, private-equity opportunities rather than liquidity, and
 ledger/accounting-backed reporting. The implementation still carries several
 old or parallel paths that make that direction harder to enforce.
 
-The highest-value cleanup is not broad refactoring. Delete or collapse
-schema-only policy types, redundant response summaries, hidden source-data
-fallbacks, and parallel trace/detail surfaces. Then force the engine to choose
-one source of truth for policy execution and result detail: ordered policy
-programs plus state/ledger/accounting rows, with monthly arrays as derived chart
-output.
+The highest-value remaining cleanup is not broad refactoring. Force the engine
+to choose one source of truth for policy execution and result detail: ordered
+policy programs plus state/ledger/accounting rows, with monthly arrays as
+derived chart output.
 
 Root `STYLE.md` and `augur/AGENTS.md` make several of these findings stronger:
 Augur is pre-production, so compatibility shims need explicit justification;
@@ -21,68 +19,6 @@ API responses should not return trivially derived fields next to their source
 collections; dynamic attribute probing should be rare; and config/source-data
 errors should generally propagate to a real error boundary instead of being
 hidden behind fallbacks.
-
-## High-Confidence Cleanup Targets
-
-1. Delete or implement schema-only policy types.
-
-   Files/classes: `PolicyType.PORTFOLIO_TARGET_REBALANCE`,
-   `MANUAL_EVENT_SCHEDULE`, `LIQUIDITY_RESERVE` at
-   `augur/core/scenario_set.py:25-32`; `LiquidityReservePolicy`,
-   `PortfolioTargetRebalancePolicy`, and `ManualEventSchedulePolicy` at lines
-   304-329; only `LiquidityReservePolicy` is asserted in
-   `augur/core/scenario_set_test.py`.
-
-   Why: these policies are accepted by the public scenario schema but no engine
-   code executes them. That is worse than a TODO because callers can believe a
-   modeled policy affects outcomes when it is silently inert.
-
-   Replace with: either remove them from the `Policy` union until runtime
-   semantics exist, or implement them as ordered policy steps with decisions,
-   instructions, applied effects, and reconciliation tests.
-
-   Prove safe by: schema tests should reject these policy types until
-   implemented; `rg "LiquidityReservePolicy|PortfolioTargetRebalancePolicy|ManualEventSchedulePolicy"`
-   should show no production references outside the schema union.
-
-2. Remove redundant derived response summaries unless a real consumer needs
-   them.
-
-   Files/classes: `ScenarioAcceptedSummary.actor_count`, `.event_count`, and
-   `.policy_count` in `augur/core/scenario_set.py:842-849` are computed by
-   `_accepted_summary()` at `augur/core/api.py:569-577` while
-   `ScenarioSetRunResponse.request` returns the source scenario at
-   `augur/core/scenario_set.py:905-913`. `RolloutStatusSummary` at
-   `augur/core/scenario_set.py:875-883` is emitted alongside full
-   `rollout_statuses` at lines 890-892 and computed again in
-   `ScenarioRun.to_response_result()` at `augur/core/api.py:289-299`.
-
-   Why: root `STYLE.md:40-41` explicitly rejects dead code and redundant
-   derived response fields. These summaries can be useful for a compact index
-   view, but the current default response returns both the collection and its
-   direct counts in every result.
-
-   Replace with: either delete the summary fields from the full run response, or
-   introduce a genuinely compact result-list endpoint that returns summaries
-   instead of the source request and row collections.
-
-   Prove safe by: app code should compute counts from `request.scenarios` and
-   `rollout_statuses`, or tests should show a summary-only response mode where
-   the collections are absent.
-
-3. Completed: stop hiding market data/config load failures behind a broad
-   synthetic fallback.
-
-   Files/functions: `augur/model/markets/data.py` now lets configured
-   `load_market_evidence()` errors propagate by default.
-
-   Outcome: lower-fidelity FRED-only synthesized evidence is available only via
-   the explicit `fred_only=True` / `load_fred_only_evidence()` path and is
-   labelled in `MarketEvidence.latest_observations["evidence_mode"]`.
-
-   Proved by: `//augur/model/markets:data_test` covers malformed configured
-   source data raising by default and explicit FRED-only synthesized evidence
-   succeeding with metadata labels.
 
 ## Suspicious/Needs-Design Review
 
@@ -222,16 +158,7 @@ hidden behind fallbacks.
    Collapse if: no consumer appears soon. Keep the opportunity array and sale
    action cause IDs, but stop serializing full no-op decision rows by default.
 
-2. The current docs correctly name the debt, but some TODOs are already more
-   precise than code.
-
-   Example: `augur/TODO.md:30-41` says to replace class-filtered policy
-   execution and remove schema-only policy types. Those are not open-ended
-   architecture ideas; they point at concrete deletion/implementation targets.
-   Treat this cleanup audit as confirmation that those TODOs should be promoted
-   into near-term cleanup work.
-
-3. Annual-tax parameter extraction should remain one source of truth, not become
+2. Annual-tax parameter extraction should remain one source of truth, not become
    a JSON/YAML transition seam.
 
    The landed shape uses `augur/core/annual_tax_parameters.yaml` as the only
@@ -251,7 +178,7 @@ hidden behind fallbacks.
    Collapse if: both JSON and YAML remain, or runtime code has to probe
    multiple filenames. Pick one format and delete the other before merging.
 
-4. Avoid literal "checked-in data equals itself" tests for extracted tax tables.
+3. Avoid literal "checked-in data equals itself" tests for extracted tax tables.
 
    The landed test mutates `_ANNUAL_TAX_PARAMETERS.model_dump(mode="json")` and
    verifies that missing filing statuses are rejected. That is a useful schema
@@ -271,23 +198,15 @@ hidden behind fallbacks.
 
 ## Suggested Deletion/Replacement Sequence
 
-1. Remove redundant default-response summaries:
-   `ScenarioAcceptedSummary.actor_count`, `.event_count`, `.policy_count`, and
-   `ScenarioResult.rollout_status_summary` unless a summary-only response mode
-   replaces the full source collections.
-
-2. Remove schema-only policies from the `Policy` union, or implement the first
-   one end-to-end. Do not keep inert policy types in public request schemas.
-
-3. Convert `run_scenario_vectorized()` to execute ordered policy steps rather
+1. Convert `run_scenario_vectorized()` to execute ordered policy steps rather
    than per-class loops. Delete `enabled_rules_of_type()` and any tests that
    encode class-filtered behavior.
 
-4. Pick one trace/source-of-truth path. Start by collapsing one duplicated
+2. Pick one trace/source-of-truth path. Start by collapsing one duplicated
    family, such as mortgage payment action rows or partner ownership rows, into
    ledger/accounting/snapshot detail.
 
-5. Replace temporary tax timing with obligations. Keep
+3. Replace temporary tax timing with obligations. Keep
    `cash_negative` as a warning, but introduce failure only through an
    obligation settlement result, not through raw cash-path inspection.
 
@@ -305,9 +224,9 @@ hidden behind fallbacks.
   `opportunity_id`/`opportunity_cause_id`; no-op decision rows should be absent
   from default responses unless a detail flag requests them.
 
-- Inert-schema guard: unsupported policy, asset, and liability variants should
-  be rejected at validation, or covered by an e2e test proving they affect
-  runtime state.
+- Inert-schema guard: unsupported asset and liability variants should be
+  rejected at validation, or covered by an e2e test proving they affect runtime
+  state.
 
 - STYLE guard: a repo-local audit script or focused tests should catch new
   Augur compatibility shims, redundant derived response fields, dynamic metric

@@ -418,22 +418,7 @@ function rolloutStatuses(scenarioResult) {
   return Array.isArray(scenarioResult?.rolloutStatuses) ? scenarioResult.rolloutStatuses : [];
 }
 
-function rolloutStatusSummaryCount(summary, status) {
-  const counts = summary?.countsByStatus ?? {};
-  const camelStatus = status.replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
-  return Number(counts[status] ?? counts[camelStatus] ?? 0);
-}
-
 function rolloutStatusSummary(scenarioResult) {
-  const summary = scenarioResult?.rolloutStatusSummary;
-  const total = Number(summary?.totalRolloutCount);
-  if (Number.isFinite(total) && total > 0) {
-    return {
-      total,
-      active: rolloutStatusSummaryCount(summary, ROLLOUT_STATUS_ACTIVE),
-      cashNegative: rolloutStatusSummaryCount(summary, ROLLOUT_STATUS_CASH_NEGATIVE),
-    };
-  }
   const statuses = rolloutStatuses(scenarioResult);
   return {
     total: statuses.length,
@@ -2157,7 +2142,6 @@ function ScenarioAcceptedPanel({ selection }) {
           ["Property id", scenarioResult.summary?.propertyId ?? propertyAndLocation.propertyId],
           ["Location", scenarioResult.summary?.locationId ?? "n/a"],
           ["Participants", actorsAndOwnership.actorPolicy === "owner_plus_partner" ? "Owner + partner" : "Owner only"],
-          ["Events", fmtNumber(scenarioResult.summary?.eventCount)],
           ["Warnings", scenarioResult.warnings?.join("; ") || "none"],
         ]}
       />

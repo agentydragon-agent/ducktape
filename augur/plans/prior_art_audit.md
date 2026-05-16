@@ -500,8 +500,9 @@ Recommended vocabulary:
 - `PrivateEquitySaleOpportunityObservation` has no stable opportunity id.
 - Policy execution is class-grouped. This conflicts with "ordered actor policy
   programs" and will become brittle when policies compete for cash or assets.
-- `LiquidityReservePolicy`, `PortfolioTargetRebalancePolicy`, and
-  `ManualEventSchedulePolicy` exist as schema-only policies.
+- Some asset/liability variants still look more public than their runtime
+  semantics justify; each should either drive simulation state or be rejected
+  until implemented.
 - `TaxPaymentTiming.ALLOCATED_TO_SOURCE_MONTH` is documented as a debt item; it
   should become liability/payment timing, not just a source-month adjustment.
 - `TaxProfile.marginal_tax_rate` and `cap_gains_rate` are too coarse for

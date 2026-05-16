@@ -1,6 +1,6 @@
 # Augur TODO
 
-Last design scan: 2026-05-15.
+Last design scan: 2026-05-16.
 
 This file tracks public, generic Augur backlog. Downstream repos should keep
 private composition, deployment, and user-/company-specific modeling assumptions
@@ -12,11 +12,10 @@ second ordered roadmap.
 
 ## Next
 
-- [ ] Make browser-side schema/types generated from the Python Pydantic API
-      schema. The source of truth should be the backend Pydantic models exposed
-      through an OpenAPI/JSON-schema build target, then generated into JS/TS
-      validation/types for the browser. Do not grow a second hand-maintained
-      Zod/schema definition in `augur/app`.
+- [ ] Use the generated Augur OpenAPI/browser schema target in browser state
+      normalization and request mapping. Python Pydantic remains the source of
+      truth; do not grow a second hand-maintained Zod/schema definition in
+      `augur/app`.
 - [ ] Continue `plans/e2e_redesign.md` Step 7 by replacing `allocated_to_source_month` tax timing with realistic annual/estimated-payment liability timing.
 - [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 - [ ] Add a durable property-asset storage contract: stable property asset IDs/URLs backed by object storage or a database-like asset table, so deployments do not need to bake private media into frontend images.
@@ -38,7 +37,6 @@ second ordered roadmap.
       this period and receives this equity/share/claim in return" should be a
       modeled agreement between agents, not a scenario-level enum that activates a
       hardcoded partner-ownership hack. The exact representation still needs design.
-- [ ] Remove or implement schema-only policy types: `LiquidityReservePolicy`, `PortfolioTargetRebalancePolicy`, and `ManualEventSchedulePolicy`.
 - [ ] Make result inspection typed and local. String metric names via `series("cash_usd")` are acceptable as a compatibility layer, but primary callers should get discoverable typed metric/rollout/detail helpers.
 - [ ] Separate rollout stochastic inputs in the API/data model. Today a rollout
       is effectively a sampled market environment plus deterministic policy. Make
@@ -78,11 +76,6 @@ second ordered roadmap.
 - [ ] Prefer Pydantic for serde and validation at API/config boundaries. Avoid
       custom `to_json_dict()`-style conversion helpers except at narrow
       compatibility seams.
-- [ ] Add an Augur build target that exports the backend Pydantic/FastAPI
-      OpenAPI schema and generates browser-consumable schema/types from it,
-      following existing repo patterns such as `//devinfra/js:openapi.bzl` and
-      `//props/frontend/src/lib:schema`. JS validation should consume generated
-      artifacts from the Python schema, not independent hand-written schemas.
 - [ ] Stop requiring private-equity input positions to carry both `units` and a
       marked `value_usd` when the value is determined by units plus the private
       equity price model. The browser no longer stores an editable private
