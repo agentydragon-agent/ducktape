@@ -116,6 +116,18 @@ in
         type = "exact";
         cmd = "pwd";
       }
+      {
+        type = "exact";
+        cmd = "talosctl version";
+      }
+      {
+        type = "prefix";
+        cmd = "prettier";
+      }
+      {
+        type = "prefix";
+        cmd = "pre-commit run";
+      }
     ]
     ++ cargoMetadataCommands;
 
