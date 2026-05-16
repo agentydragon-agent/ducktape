@@ -308,3 +308,4 @@ resources:
   - seaweedfs/namespace/flux-kustomization.yaml
   - seaweedfs/secrets/flux-kustomization.yaml
   - seaweedfs/operator/flux-kustomization.yaml
+  - seaweedfs/cluster/flux-kustomization.yaml

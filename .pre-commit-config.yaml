@@ -257,6 +257,10 @@ repos:
             cluster/k8s/.*/kustomization\.yaml|
             # RedisReplication CRD schema in datreeio catalog is outdated (missing spec.sentinel)
             cluster/k8s/.*/valkey-instance\.yaml|
+            # Seaweed v1 CRD schema in datreeio catalog is outdated (missing spec.s3,
+            # spec.master.defaultReplication, spec.volume.storageClassName — all
+            # present in operator v1.0.19's live CRD)
+            cluster/k8s/seaweedfs/cluster/seaweed\.yaml|
             # Authentik blueprints are not K8s manifests, skip validation
             cluster/k8s/authentik/app/blueprints/.*|
             # Application config files, not K8s manifests
