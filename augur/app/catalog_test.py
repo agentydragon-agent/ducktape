@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from augur.app.augur_backend import AugurBackend
+from augur.app.augur_backend import AugurBackend, AugurBackendRuntimeConfig
 from augur.app.catalog import build_bootstrap_payload
 from augur.app.config import (
     AgentDefinition,
@@ -21,6 +21,7 @@ from augur.app.config import (
     PropertySourceConfig,
 )
 from augur.core.local_regulation import LocalRegulation, LocationId
+from augur.core.market_bundle import SimpleMarketBundleProvider
 from augur.core.scenario_set import ActorRole, ScenarioSet, TaxRegime
 
 
@@ -191,7 +192,12 @@ def test_bootstrap_builtin_location_carries_modeled_tax_defaults(tmp_path: Path)
 def test_backend_applies_location_tax_defaults_to_scenario(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
-    backend = AugurBackend(augur_config=_config(properties_path))
+    backend = AugurBackend(
+        augur_config=_config(properties_path),
+        runtime_config=AugurBackendRuntimeConfig(
+            market_bundle_provider=SimpleMarketBundleProvider(), default_rollout_samples=8, max_rollout_samples=128
+        ),
+    )
     request = {
         "scenario_set_id": "tax_defaults",
         "title": "Tax defaults",

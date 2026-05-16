@@ -52,6 +52,7 @@ py_test(
         ":catalog_py",
         ":config_py",
         "//augur/core:local_regulation_py",
+        "//augur/core:market_bundle_py",
         "//augur/core:scenario_set_py",
         "@pypi//pytest_bazel",
     ],
