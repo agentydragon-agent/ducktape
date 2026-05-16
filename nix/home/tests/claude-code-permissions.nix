@@ -68,4 +68,40 @@ in
     expr = builtins.elem "Bash(nix build:*)" bashPerms;
     expected = true;
   };
+
+  # nix develop wrapped commands
+  test_has_prettier = {
+    expr = builtins.elem "Bash(prettier:*)" bashPerms;
+    expected = true;
+  };
+
+  test_has_nix_develop_prettier = {
+    expr = builtins.elem "Bash(nix develop --command prettier:*)" bashPerms;
+    expected = true;
+  };
+
+  test_has_nix_develop_c_prettier = {
+    expr = builtins.elem "Bash(nix develop -c prettier:*)" bashPerms;
+    expected = true;
+  };
+
+  test_has_pre_commit_run = {
+    expr = builtins.elem "Bash(pre-commit run:*)" bashPerms;
+    expected = true;
+  };
+
+  test_has_nix_develop_pre_commit_run = {
+    expr = builtins.elem "Bash(nix develop -c pre-commit run:*)" bashPerms;
+    expected = true;
+  };
+
+  test_has_talosctl_version = {
+    expr = builtins.elem "Bash(talosctl version:*)" bashPerms;
+    expected = true;
+  };
+
+  test_has_nix_develop_talosctl_version = {
+    expr = builtins.elem "Bash(nix develop --command talosctl version:*)" bashPerms;
+    expected = true;
+  };
 }
