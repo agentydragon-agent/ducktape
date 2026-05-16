@@ -20,10 +20,10 @@ result panels. That is the right raw vocabulary.
 
 The important gaps are sharper than the code currently names:
 
-- `rollout_index` is not a sufficient trajectory identity. A reproducible
-  trajectory needs scenario-set input, scenario id, market model identity,
-  calibration/evidence identity, generator implementation/version, random seed,
-  path index, and any non-market event streams.
+- `rollout_index` is not a sufficient trajectory identity. Augur now carries a
+  first typed path/projection identity layer; reproducibility still needs those
+  IDs backed by persisted evidence/calibration artifacts, generator versions,
+  scenario inputs, and any non-market event streams.
 - Policy programs now execute through the ordered actor program path. The
   remaining gap is richer execution trace coverage for no-op, rejected,
   instructed, and applied decisions as policy families grow.
@@ -36,9 +36,11 @@ The important gaps are sharper than the code currently names:
   arrays are now derived or reconciled, but postings are still stringly typed
   `domain`/`category` rows rather than balanced journal entries with typed
   accounts, lots, liabilities, cause ids, and reconciliation invariants.
-- Model governance is mostly implicit. The model layer loads evidence and emits
-  metadata, but there is no model inventory, model card, validation report,
-  calibration artifact identity, or intended-use boundary attached to outputs.
+- Model governance has a first typed surface: model card, validation-report,
+  evidence, calibration, scenario-generator, and path-set identities are attached
+  to market outputs. They are not yet decision-grade governance artifacts:
+  validation is placeholder-level and evidence/calibration artifacts are not
+  persisted reviewed records.
 - Calibration/evidence and projection boundaries are improving but should be
   made explicit: evidence feeds model fitting; fitted scenario generators feed
   `MarketBundle`; the core projector should not know source-specific evidence.
@@ -577,12 +579,12 @@ Standardize these names before the next large redesign:
    - Add tests for mortgage/payment shortfalls, policy rescue through sale, and
      unrecoverable default.
 
-2. Add explicit trajectory/path provenance.
-   - Keep `rollout_index`, but add `PathSetId`, `ExogenousPathId`, and
-     `ProjectionTrajectoryId` to metadata and trace rows.
-   - Include market model id, generator version, evidence id, calibration id,
-     seed, path index, risk-factor set, event-stream ids, and code
-     version where available.
+2. Persist explicit trajectory/path provenance.
+   - Keep `rollout_index`, `PathSetId`, `ExogenousPathId`, and
+     `ProjectionTrajectoryId` as the public identity vocabulary.
+   - Back those IDs with persisted market model, generator version, evidence,
+     calibration, seed, path index, risk-factor set, event-stream, and code
+     version artifacts where available.
 
 3. Extend ordered actor program tracing.
    - Keep policy execution on the ordered actor program dispatcher.
@@ -601,10 +603,11 @@ Standardize these names before the next large redesign:
    - Add tests that fail if monthly columns drift from ledger/snapshot/detail
      rows.
 
-6. Write a minimal model card for the current market model.
-   - Document intended use, source data, calibration, limitations, validation
-     status, and known non-goals.
-   - Attach the model card/version id to `MarketBundleMetadata`.
+6. Replace placeholder governance with reviewed artifacts.
+   - Keep the current model-card/version and validation-report fields, but back
+     them with reviewed intended use, source data, calibration, limitations,
+     validation status, and known non-goals.
+   - Attach durable artifact hashes or reviewed IDs to `MarketBundleMetadata`.
 
 ### Medium-Term Redesign
 

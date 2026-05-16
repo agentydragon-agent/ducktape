@@ -55,9 +55,10 @@ The prior-art audit points to a conservative target shape:
 - Ledgers, balance snapshots, accounting detail, lots, liabilities, and typed
   cause IDs are the source of truth. Monthly arrays are chart/report views over
   that state, not a parallel semantic model.
-- Model governance is part of the model output: market bundles should carry
-  model/evidence/calibration identity and point at model-card or validation
-  artifacts as those exist.
+- Model governance is part of the model output. Market bundles now carry first
+  typed model/evidence/calibration/generator/path identities and model-card or
+  validation-report pointers; the next cleanup is to persist real artifacts and
+  validation results behind those IDs.
 
 ## Priority 1: Type Result Views And Accounting Detail
 
@@ -355,9 +356,9 @@ Work:
 1. Continue core model cleanup before broad UI polish: account-aware
    obligations/funding, failure/default semantics, and ledger/accounting detail
    as the source of truth for monthly report arrays.
-2. Strengthen trajectory, path, cause, and model-governance identities so a
-   selected rollout can be reproduced and audited from scenario input through
-   market evidence and policy decisions.
+2. Persist and harden trajectory, path, cause, and model-governance identities
+   so a selected rollout can be reproduced and audited from scenario input
+   through market evidence and policy decisions.
 3. Keep expanding ordered actor policy programs through explicit decision and
    instruction traces, now that execution order is the runtime path.
 4. Move public generic data toward typed config resources: local

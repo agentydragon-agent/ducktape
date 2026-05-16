@@ -88,9 +88,11 @@ second ordered roadmap.
       securities, crypto holdings, private-equity lots/marks/tender windows,
       cost basis, custody/source metadata, and valuation provenance; downstream
       private repos own the actual values.
-- [ ] Add minimal model-governance artifacts for market providers: model
-      card/version, evidence/calibration IDs, validation-report link, and source
-      data provenance attached to `MarketBundleMetadata`.
+- [ ] Persist and harden model-governance artifacts for market providers. The
+      runtime now attaches typed model card, evidence, calibration, scenario
+      generator, path-set, and validation-report identities; the next step is
+      durable evidence/calibration artifacts, real validation reports, and
+      reviewed limitations rather than placeholder IDs.
 - [ ] Replace `AugurBackend` constructor shapes that rely on many nullable
       parameters with explicit dependency/config objects or separate factory
       paths for production static serving versus dev/test API serving.
