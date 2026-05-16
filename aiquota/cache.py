@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -26,7 +27,9 @@ def write(quotas: AllQuotas, path: Path = CACHE_PATH) -> None:
 
 
 def get_or_fetch(
-    fetch_fn, cache_path: Path = CACHE_PATH, ttl: timedelta = CACHE_TTL
+    fetch_fn: Callable[[], AllQuotas],
+    cache_path: Path = CACHE_PATH,
+    ttl: timedelta = CACHE_TTL,
 ) -> AllQuotas:
     cached = read(cache_path)
     if cached is not None and datetime.now(UTC) - cached.fetched_at < ttl:
