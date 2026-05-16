@@ -10,6 +10,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 from collections import Counter
@@ -40,6 +41,21 @@ def _load_bash_prefixes_from_settings(*paths: Path) -> list[str]:
             if m:
                 prefixes.append(m.group(1))
     return prefixes
+
+
+def _resolve_inner_command(cmd: str) -> str:
+    """Unwrap nix develop/bash -c wrappers to find the actual inner command."""
+    # nix develop --command bash -c '...'
+    # nix develop -c bash -c '...'
+    m = re.match(r"nix develop\s+(?:--command|-c)\s+bash\s+(?:--command|-c)\s+", cmd)
+    if m:
+        return cmd[m.end() :].strip().strip("'\"")
+    # nix develop --command <cmd> ...
+    # nix develop -c <cmd> ...
+    m = re.match(r"nix develop\s+(?:--command|-c)\s+", cmd)
+    if m:
+        return cmd[m.end() :].strip()
+    return cmd
 
 
 # ── Transcript scanning ────────────────────────────────────────────────────
@@ -104,6 +120,13 @@ def _iter_tool_calls(transcripts: list[Path], tool_name: str | None = None):
             logger.warning("Could not read %s: %s", fpath, e)
 
 
+def _strip_env_prefix(cmd: str) -> str:
+    """Strip leading VAR=value assignments so prefix matching works on the actual command."""
+    parts = cmd.split()
+    i = _skip_env_prefix(parts)
+    return " ".join(parts[i:]) if i > 0 else cmd
+
+
 def scan_transcripts(transcripts: list[Path], user_prefixes: list[str]) -> tuple[Counter, Counter, Counter]:
     all_cmds: Counter = Counter()
     uncovered_cmds: Counter = Counter()
@@ -117,7 +140,8 @@ def scan_transcripts(transcripts: list[Path], user_prefixes: list[str]) -> tuple
             key = extract_command_key(cmd)
             if key:
                 all_cmds[key] += 1
-                if not is_builtin_allowed(cmd) and not any(cmd.startswith(p) for p in user_prefixes):
+                bare_cmd = _strip_env_prefix(cmd)
+                if not is_builtin_allowed(cmd) and not any(bare_cmd.startswith(p) for p in user_prefixes):
                     uncovered_cmds[key] += 1
         elif name.startswith("mcp__"):
             mcp_tools[name] += 1
@@ -126,6 +150,19 @@ def scan_transcripts(transcripts: list[Path], user_prefixes: list[str]) -> tuple
 
 
 # ── Specialized collectors ─────────────────────────────────────────────────
+
+
+def _collect_nix_develop(transcripts: list[Path]) -> Counter:
+    """Break down nix develop commands by their inner command."""
+    counts: Counter = Counter()
+    for _, inp in _iter_tool_calls(transcripts, tool_name="Bash"):
+        cmd = inp.get("command", "").strip()
+        if not cmd.startswith("nix develop"):
+            continue
+        inner = _resolve_inner_command(cmd)
+        key = extract_command_key(inner) or inner[:60]
+        counts[key] += 1
+    return counts
 
 
 def _collect_run_targets(transcripts: list[Path], prefixes: tuple[str, ...]) -> Counter:
@@ -177,10 +214,16 @@ def main():
     parser.add_argument("--max-sessions", type=int, default=50)
     parser.add_argument("--min-count", type=int, default=3)
     parser.add_argument("--all", action="store_true", help="Show all commands including covered ones")
+    parser.add_argument(
+        "--project-dir",
+        type=Path,
+        help="Project root for .claude/settings.json (default: BUILD_WORKING_DIRECTORY or cwd)",
+    )
     args = parser.parse_args()
 
     settings_paths = [Path.home() / ".claude" / "settings.json"]
-    project_settings = Path.cwd() / ".claude" / "settings.json"
+    project_dir = args.project_dir or Path(os.environ.get("BUILD_WORKING_DIRECTORY", Path.cwd()))
+    project_settings = project_dir / ".claude" / "settings.json"
     if project_settings.exists():
         settings_paths.append(project_settings)
     user_prefixes = _load_bash_prefixes_from_settings(*settings_paths)
@@ -198,6 +241,9 @@ def main():
 
     _print_section(f"UNCOVERED COMMANDS (min {args.min_count})", uncovered_cmds, args.min_count)
     _print_section(f"MCP TOOL USAGE (min {args.min_count})", mcp_tools, args.min_count)
+
+    nix_cmds = _collect_nix_develop(transcripts)
+    _print_section("NIX DEVELOP INNER COMMANDS", nix_cmds, args.min_count, 30)
 
     run_targets = _collect_run_targets(transcripts, ("bazelisk run ", "bb run "))
     _print_section("BAZELISK/BB RUN TARGETS", run_targets, args.min_count, 20)

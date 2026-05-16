@@ -56,10 +56,17 @@ let
 
   bazelCommands = prefixCommandProduct bazelExecutables bazelSubcommands;
 
-  nixDevelopBazelCommands = prefixCommandProduct [
-    "nix develop --command bazel"
-    "nix develop --command bazelisk"
-  ] bazelSubcommands;
+  nixDevelopBazelCommands =
+    let
+      commandFlags = [
+        "--command"
+        "-c"
+      ];
+      nixDevelopBazel = builtins.concatMap (
+        flag: map (exe: "nix develop ${flag} ${exe}") bazelExecutables
+      ) commandFlags;
+    in
+    prefixCommandProduct nixDevelopBazel bazelSubcommands;
 
   nixCommands =
     prefixCommandProduct
@@ -67,6 +74,7 @@ let
       [
         "eval"
         "build"
+        "hash"
       ];
 
   cargoMetadataCommands =
@@ -97,6 +105,12 @@ in
       {
         type = "prefix";
         cmd = "home-manager build";
+      }
+
+      # Nix prefetch (read-only — fetches and prints hash without adding to store)
+      {
+        type = "prefix";
+        cmd = "nix-prefetch-url";
       }
     ]
     ++ cargoMetadataCommands;
