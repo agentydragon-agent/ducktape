@@ -1,0 +1,39 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: study-casino-db
+  namespace: study-casino
+  annotations:
+    description: "CNPG Postgres for study-casino state. Replaces per-user SQLite files on hcloud-volumes."
+spec:
+  instances: 2
+
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: hil
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # One PostgreSQL instance per VPS node for real HA
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path
+    size: 1Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: studycasino
+      owner: studycasino
+      # CNPG auto-generates credentials in secret study-casino-db-app
