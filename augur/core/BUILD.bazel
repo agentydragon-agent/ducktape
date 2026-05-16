@@ -320,6 +320,7 @@ py_test(
         ":scenario_engine_py",
         ":scenario_set_py",
         "@pypi//numpy",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import pytest_bazel
 from numpy.testing import assert_allclose
 
 from augur.core.api import simulate_set
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
-from augur.core.scenario_engine import run_scenario_vectorized
+from augur.core.scenario_engine import MonthlyColumnSource, monthly_column_specs, run_scenario_vectorized
 from augur.core.scenario_set import (
     AccountType,
     AccruePartnerEquityAction,
@@ -15,6 +16,7 @@ from augur.core.scenario_set import (
     PayMortgageAction,
     PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
+    ReportMetric,
     RolloutStatusType,
     ScenarioSet,
     SettlePropertySaleAction,
@@ -164,6 +166,40 @@ def test_portfolio_only_baseline_uses_numpy_paths() -> None:
     assert_allclose(result.private_equity_value_usd[:, 2], 100_000)
     assert_allclose(result.net_worth_usd[:, 2], 230_000)
     assert result.monthly_columns().row_count == 8
+
+
+def test_report_metrics_are_explicit_typed_views() -> None:
+    scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("typed_metrics")))
+    run = simulate_set(scenario_set, market_bundle=_bundle())
+    result = run.scenario("typed_metrics")
+
+    assert_allclose(result.matrix(ReportMetric.CASH_USD), result.matrix("cash_usd"))
+    assert_allclose(result.rollout(0).series(ReportMetric.NET_WORTH_USD), result.series("net_worth_usd", rollout=0))
+    assert result.terminal(ReportMetric.MONTH_INDEX) == 3
+    with pytest.raises(KeyError, match="unknown metric 'actions'"):
+        result.series("actions")
+
+
+def test_monthly_column_specs_name_report_view_sources() -> None:
+    specs_by_metric = {spec.metric: spec for spec in monthly_column_specs()}
+    scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("monthly_sources")))
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    expected_columns = {
+        "scenario_id",
+        "scenario_label",
+        "rollout_index",
+        "month_index",
+        *(spec.metric.value for spec in monthly_column_specs()),
+    }
+
+    assert specs_by_metric[ReportMetric.MONTHLY_SPEND_USD].source is MonthlyColumnSource.LEDGER_ENTRY
+    assert specs_by_metric[ReportMetric.PARTNER_EQUITY_LEDGER_USD].source is MonthlyColumnSource.BALANCE_SNAPSHOT
+    assert specs_by_metric[ReportMetric.PROPERTY_SALE_ADJUSTED_BASIS_USD].source is (
+        MonthlyColumnSource.ACCOUNTING_DETAIL
+    )
+    assert specs_by_metric[ReportMetric.NET_WORTH_USD].source is MonthlyColumnSource.REPORT_PROJECTION
+    assert set(result.monthly_columns().columns) == expected_columns
+    assert ReportMetric.MONTH_INDEX not in specs_by_metric
 
 
 def test_run_scenario_set_samples_shared_market_bundle_once() -> None:

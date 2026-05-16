@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from typing import Any, TypeVar, overload
 
 import numpy as np
@@ -12,7 +12,12 @@ from augur.core.market_bundle import (
     sample_market_bundle_for_request,
 )
 from augur.core.provenance import policy_program_set_id, projection_trajectory_id, scenario_input_id
-from augur.core.scenario_engine import ScenarioRunArrays, run_scenario_vectorized
+from augur.core.scenario_engine import (
+    ScenarioRunArrays,
+    available_report_metrics,
+    report_metric_array,
+    run_scenario_vectorized,
+)
 from augur.core.scenario_set import (
     ActorRole,
     EventType,
@@ -20,6 +25,7 @@ from augur.core.scenario_set import (
     PartnerEquityAccrualPolicy,
     ProjectionTrajectoryIdentity,
     RentalMode,
+    ReportMetric,
     ReportSpec,
     RolloutStatus,
     RolloutStatusSummary,
@@ -51,10 +57,10 @@ class RolloutDetail:
     scenario_run: ScenarioRun
     rollout_index: int
 
-    def series(self, metric: str) -> np.ndarray:
+    def series(self, metric: ReportMetric | str) -> np.ndarray:
         return self.scenario_run.series(metric, rollout=self.rollout_index)
 
-    def terminal(self, metric: str) -> float:
+    def terminal(self, metric: ReportMetric | str) -> float:
         return float(self.scenario_run.terminal(metric, rollout=self.rollout_index))
 
     @overload
@@ -117,20 +123,20 @@ class ScenarioRun:
     def scenario_id(self) -> str:
         return self.scenario.scenario_id
 
-    def matrix(self, metric: str) -> np.ndarray:
+    def matrix(self, metric: ReportMetric | str) -> np.ndarray:
         value = self._metric_array(metric)
         if value.ndim != 2:
             raise KeyError(f"metric {metric!r} is not rollout/month shaped")
         return value.copy()
 
-    def series(self, metric: str, *, rollout: int = 0) -> np.ndarray:
+    def series(self, metric: ReportMetric | str, *, rollout: int = 0) -> np.ndarray:
         value = self._metric_array(metric)
         if value.ndim == 1:
             return value.copy()
         self._validate_rollout_index(rollout)
         return value[rollout, :].copy()
 
-    def terminal(self, metric: str, *, rollout: int | None = 0) -> float | np.ndarray:
+    def terminal(self, metric: ReportMetric | str, *, rollout: int | None = 0) -> float | np.ndarray:
         value = self._metric_array(metric)
         if value.ndim == 1:
             return float(value[-1])
@@ -308,14 +314,10 @@ class ScenarioRun:
             warnings=self.warnings,
         )
 
-    def _metric_array(self, metric: str) -> np.ndarray:
+    def _metric_array(self, metric: ReportMetric | str) -> np.ndarray:
         if self.arrays is None:
             raise ValueError(f"scenario {self.scenario_id!r} was not simulated")
-        value = getattr(self.arrays, metric, None)
-        if not isinstance(value, np.ndarray):
-            available = ", ".join(_available_metric_names())
-            raise KeyError(f"unknown metric {metric!r}; available metrics: {available}")
-        return value
+        return report_metric_array(self.arrays, _normalize_report_metric(metric))
 
     def _validate_rollout_index(self, rollout: int) -> None:
         if self.arrays is None:
@@ -571,18 +573,15 @@ def _accepted_summary(scenario: Scenario) -> ScenarioAcceptedSummary:
     )
 
 
+def _normalize_report_metric(metric: ReportMetric | str) -> ReportMetric:
+    if isinstance(metric, ReportMetric):
+        return metric
+    try:
+        return ReportMetric(metric)
+    except ValueError as exc:
+        available = ", ".join(_available_metric_names())
+        raise KeyError(f"unknown metric {metric!r}; available metrics: {available}") from exc
+
+
 def _available_metric_names() -> tuple[str, ...]:
-    return tuple(
-        field.name
-        for field in fields(ScenarioRunArrays)
-        if field.name
-        not in {
-            "actions",
-            "balance_snapshots",
-            "ledger_entries",
-            "market_observations",
-            "policy_decisions",
-            "scenario_id",
-            "scenario_label",
-        }
-    )
+    return tuple(metric.value for metric in available_report_metrics())
