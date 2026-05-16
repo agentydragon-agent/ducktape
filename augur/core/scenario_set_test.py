@@ -15,14 +15,12 @@ from augur.core.scenario_set import (
     AssetType,
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
-    LiquidityReservePolicy,
     LiquidNetWorthFloorPrivateEquitySaleRule,
     MarketRequest,
     OccupancyMode,
     PolicyType,
     PrivateEquitySalePolicy,
     PrivateEquitySaleProceedsDestination,
-    ProjectedDeficitsLiquidityReserveRule,
     RentalMode,
     RolloutStatus,
     RolloutStatusSummary,
@@ -206,17 +204,7 @@ def test_policy_config_uses_discriminated_rules_and_enums() -> None:
             "actor_id": "owner",
             "proceeds_destination": "generic_sp500_stock",
             "sale_rule": {"sale_rule_type": "fixed_amount_on_opportunity", "amount_usd": 50_000},
-        },
-        {
-            "policy_id": "liquidity_reserve",
-            "policy_type": "liquidity_reserve",
-            "actor_id": "owner",
-            "reserve_rule": {
-                "reserve_rule_type": "projected_deficits",
-                "min_reserve_usd": 10_000,
-                "forward_months": 12,
-            },
-        },
+        }
     ]
 
     scenario = ScenarioSet.model_validate(body).scenarios[0]
@@ -227,12 +215,17 @@ def test_policy_config_uses_discriminated_rules_and_enums() -> None:
     assert private_equity_policy.proceeds_destination is PrivateEquitySaleProceedsDestination.GENERIC_SP500_STOCK
     assert isinstance(private_equity_policy.sale_rule, FixedAmountPrivateEquitySaleRule)
     assert private_equity_policy.sale_rule.amount_usd == 50_000
-    liquidity_policy = scenario.policies[1]
-    assert isinstance(liquidity_policy, LiquidityReservePolicy)
-    assert liquidity_policy.policy_type is PolicyType.LIQUIDITY_RESERVE
-    assert isinstance(liquidity_policy.reserve_rule, ProjectedDeficitsLiquidityReserveRule)
-    assert liquidity_policy.reserve_rule.min_reserve_usd == 10_000
-    assert liquidity_policy.reserve_rule.forward_months == 12
+
+
+@pytest.mark.parametrize("policy_type", ["liquidity_reserve", "portfolio_target_rebalance", "manual_event_schedule"])
+def test_scenario_set_rejects_inert_policy_types(policy_type: str) -> None:
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["policies"] = [
+        {"policy_id": "unsupported_policy", "policy_type": policy_type, "actor_id": "owner"}
+    ]
+
+    with pytest.raises(ValidationError):
+        ScenarioSet.model_validate(body)
 
 
 def test_policy_config_accepts_private_equity_liquid_net_worth_floor_rule() -> None:
@@ -272,19 +265,12 @@ def test_scenario_result_serialization_has_no_projection_compatibility_field() -
     result = ScenarioResult(
         scenario_id="sf_house",
         scenario_label="Sf House",
-        summary=ScenarioAcceptedSummary(
-            enabled=True,
-            property_id="sf_ashton",
-            location_id=LocationId.SAN_FRANCISCO_CA,
-            actor_count=1,
-            event_count=0,
-            policy_count=0,
-        ),
+        summary=ScenarioAcceptedSummary(enabled=True, property_id="sf_ashton", location_id=LocationId.SAN_FRANCISCO_CA),
     )
 
     dumped = result.model_dump(mode="json", exclude_none=True)
     assert "projection" not in dumped
-    assert dumped["rollout_status_summary"] == {"total_rollout_count": 0, "counts_by_status": {}}
+    assert "rollout_status_summary" not in dumped
 
 
 def test_rollout_status_summary_serializes_counts_by_existing_status_type() -> None:

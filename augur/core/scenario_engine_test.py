@@ -218,7 +218,7 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
     assert response.scenario_results[0].rollout_statuses[0].status == RolloutStatusType.ACTIVE
 
 
-def test_response_rollout_status_summary_counts_enabled_and_disabled_scenarios() -> None:
+def test_response_omits_rollout_status_summary_next_to_full_statuses() -> None:
     disabled = _scenario_body("disabled", private_equity_usd=0)
     disabled["enabled"] = False
     scenario_set = ScenarioSet.model_validate(
@@ -229,15 +229,13 @@ def test_response_rollout_status_summary_counts_enabled_and_disabled_scenarios()
 
     disabled_result = response.scenario_results[0]
     assert disabled_result.rollout_statuses == ()
-    assert disabled_result.rollout_status_summary.total_rollout_count == 0
-    assert disabled_result.rollout_status_summary.counts_by_status == {}
+    disabled_dumped = disabled_result.model_dump(mode="json", exclude_none=True)
+    assert "rollout_status_summary" not in disabled_dumped
 
     enabled_result = response.scenario_results[1]
-    assert enabled_result.rollout_status_summary.total_rollout_count == 2
-    assert enabled_result.rollout_status_summary.counts_by_status == {
-        RolloutStatusType.ACTIVE: 2,
-        RolloutStatusType.CASH_NEGATIVE: 0,
-    }
+    assert [status.status for status in enabled_result.rollout_statuses] == [RolloutStatusType.ACTIVE] * 2
+    enabled_dumped = enabled_result.model_dump(mode="json", exclude_none=True)
+    assert "rollout_status_summary" not in enabled_dumped
 
 
 def test_property_purchase_with_mortgage_tracks_debt_and_equity() -> None:

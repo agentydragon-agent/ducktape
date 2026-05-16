@@ -295,7 +295,6 @@ class ScenarioRun:
                 scenario_id=self.scenario.scenario_id, exogenous_paths=exogenous_paths
             ),
             rollout_statuses=rollout_statuses,
-            rollout_status_summary=RolloutStatusSummary.from_statuses(rollout_statuses),
             metric_fan_columns=self.arrays.metric_fan_columns(),
             monthly_columns=self.arrays.monthly_columns() if report_spec.include_monthly_columns else None,
             terminal_columns=self.arrays.terminal_columns(),
@@ -568,12 +567,7 @@ def _validate_market_bundle_matches_request(scenario_set: ScenarioSet, market_bu
 
 def _accepted_summary(scenario: Scenario) -> ScenarioAcceptedSummary:
     return ScenarioAcceptedSummary(
-        enabled=scenario.enabled,
-        property_id=scenario.property_selection.property_id,
-        location_id=scenario.location_id,
-        actor_count=len(scenario.actors),
-        event_count=len(scenario.events),
-        policy_count=len(scenario.policies),
+        enabled=scenario.enabled, property_id=scenario.property_selection.property_id, location_id=scenario.location_id
     )
 
 

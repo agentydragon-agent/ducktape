@@ -25,10 +25,7 @@ class EventType(StrEnum):
 class PolicyType(StrEnum):
     CHECKING_FLOOR_SELL_PUBLIC_STOCK = "checking_floor_sell_public_stock"
     PRIVATE_EQUITY_SALE = "private_equity_sale"
-    PORTFOLIO_TARGET_REBALANCE = "portfolio_target_rebalance"
     PARTNER_EQUITY_ACCRUAL = "partner_equity_accrual"
-    MANUAL_EVENT_SCHEDULE = "manual_event_schedule"
-    LIQUIDITY_RESERVE = "liquidity_reserve"
     MONTHLY_SPEND = "monthly_spend"
 
 
@@ -272,35 +269,6 @@ class PrivateEquitySalePolicy(_PolicyBase):
     sale_rule: PrivateEquitySaleRule
 
 
-class FixedLiquidityReserveRule(ApiModel):
-    reserve_rule_type: Literal[LiquidityReserveRuleType.FIXED] = LiquidityReserveRuleType.FIXED
-    min_reserve_usd: NonNegativeFloat = 0.0
-
-
-class ProjectedDeficitsLiquidityReserveRule(ApiModel):
-    reserve_rule_type: Literal[LiquidityReserveRuleType.PROJECTED_DEFICITS] = (
-        LiquidityReserveRuleType.PROJECTED_DEFICITS
-    )
-    min_reserve_usd: NonNegativeFloat = 0.0
-    forward_months: NonNegativeInt = 0
-
-
-LiquidityReserveRule = Annotated[
-    FixedLiquidityReserveRule | ProjectedDeficitsLiquidityReserveRule, Field(discriminator="reserve_rule_type")
-]
-
-
-class LiquidityReservePolicy(_PolicyBase):
-    """Defines an agent's minimum-liquid-reserve target."""
-
-    policy_type: Literal[PolicyType.LIQUIDITY_RESERVE] = PolicyType.LIQUIDITY_RESERVE
-    reserve_rule: LiquidityReserveRule = Field(default_factory=FixedLiquidityReserveRule)
-
-
-class PortfolioTargetRebalancePolicy(_PolicyBase):
-    policy_type: Literal[PolicyType.PORTFOLIO_TARGET_REBALANCE] = PolicyType.PORTFOLIO_TARGET_REBALANCE
-
-
 class PartnerEquityAccrualPolicy(_PolicyBase):
     """A partner contributes monthly toward a property the primary owner holds, accruing
     ownership share in proportion to principal credit."""
@@ -312,10 +280,6 @@ class PartnerEquityAccrualPolicy(_PolicyBase):
     payment_growth_annual_pct: NonNegativeFloat = 0.0
     occupied_months: NonNegativeInt | None = None
     freeze_ownership_after_month: NonNegativeInt | None = None
-
-
-class ManualEventSchedulePolicy(_PolicyBase):
-    policy_type: Literal[PolicyType.MANUAL_EVENT_SCHEDULE] = PolicyType.MANUAL_EVENT_SCHEDULE
 
 
 class MonthlySpendPolicy(_PolicyBase):
@@ -330,13 +294,7 @@ class MonthlySpendPolicy(_PolicyBase):
 
 
 Policy = Annotated[
-    CheckingFloorSellPublicStockPolicy
-    | PrivateEquitySalePolicy
-    | PortfolioTargetRebalancePolicy
-    | PartnerEquityAccrualPolicy
-    | ManualEventSchedulePolicy
-    | LiquidityReservePolicy
-    | MonthlySpendPolicy,
+    CheckingFloorSellPublicStockPolicy | PrivateEquitySalePolicy | PartnerEquityAccrualPolicy | MonthlySpendPolicy,
     Field(discriminator="policy_type"),
 ]
 
@@ -826,9 +784,6 @@ class ScenarioAcceptedSummary(ApiModel):
     enabled: bool
     property_id: PropertyId | None = None
     location_id: str | None = None
-    actor_count: NonNegativeInt
-    event_count: NonNegativeInt
-    policy_count: NonNegativeInt
 
 
 class ExogenousPathIdentity(ApiModel):
@@ -872,7 +827,6 @@ class ScenarioResult(ApiModel):
     summary: ScenarioAcceptedSummary
     projection_trajectories: tuple[ProjectionTrajectoryIdentity, ...] = ()
     rollout_statuses: tuple[RolloutStatus, ...] = ()
-    rollout_status_summary: RolloutStatusSummary = Field(default_factory=RolloutStatusSummary)
     metric_fan_columns: dict[str, ColumnarTable] = Field(default_factory=dict)
     monthly_columns: ColumnarTable | None = None
     terminal_columns: ColumnarTable | None = None
