@@ -44,10 +44,6 @@ py_library(
     name = "cli_lib",
     srcs = ["cli.py"],
     imports = [".."],
-    visibility = [
-        "//:__pkg__",
-        "//aiquota:__subpackages__",
-    ],
     deps = [
         ":cache",
         ":models",
@@ -97,4 +93,33 @@ py_test(
         ":models",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_package(
+    name = "aiquota_pkg",
+    packages = ["aiquota"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli_lib",
+    ],
+)
+
+py_wheel(
+    name = "aiquota_wheel",
+    distribution = "aiquota",
+    entry_points = {
+        "console_scripts": [
+            "aiquota = aiquota.cli:app",
+        ],
+    },
+    python_requires = ">=3.13",
+    requires = [
+        "httpx>=0.27",
+        "platformdirs>=3.0",
+        "pydantic>=2.0",
+        "typer>=0.9",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":aiquota_pkg"],
 )
