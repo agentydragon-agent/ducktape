@@ -36,9 +36,12 @@ back into typed backend objects.
 
 ## Priority 1: Type Result Views And Accounting Detail
 
-Distribution and trajectory have separate top-level views. The remaining
-product and correctness work is to make the result helpers and deeper
-accounting views enforce that boundary instead of relying on panel placement.
+Distribution and trajectory have separate top-level views. The React app now
+uses capability-focused result helper wrappers so child panels ask for
+distribution percentiles, selected-rollout rows, or accounting-detail rows
+instead of reaching through raw result payloads. The remaining product and
+correctness work is to keep that boundary intact while deeper accounting views
+and inputs move into their final shape.
 
 Current state and target shape:
 
@@ -69,9 +72,10 @@ Implementation notes:
 Acceptance criteria:
 
 - Every result panel has a machine-readable mode: distribution, trajectory, or
-  accounting detail. The current React app has the panel contract in place; keep
-  extending it as panels split or move while keeping visible mode labels at the
-  page/view boundary rather than repeating them on every child card.
+  accounting detail. The current React app has the panel contract and per-view
+  helper wrappers in place; keep extending them as panels split or move while
+  keeping visible mode labels at the page/view boundary rather than repeating
+  them on every child card.
 - No panel combines percentile summaries with one-rollout path rows unless the
   split is explicit and visually separated.
 - Scenario/run context is not rendered as distribution or trajectory output;
@@ -306,13 +310,11 @@ Work:
 
 ## Immediate Implementation Sequence
 
-1. Finish result helper typing so distribution and trajectory data cannot be
-   mixed accidentally without relying on panel placement.
-2. Replace the flat browser scenario state with nested domain state. Break URL
+1. Replace the flat browser scenario state with nested domain state. Break URL
    compatibility if needed.
-3. Redesign private-equity sale opportunities around exogenous events plus
+2. Redesign private-equity sale opportunities around exogenous events plus
    actor policy.
-4. Continue Step 7 tax/accounting reconciliation once the result views and
+3. Continue Step 7 tax/accounting reconciliation once the result views and
    state shape stop obscuring accounting semantics.
 
 ## Verification Loop

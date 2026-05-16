@@ -152,36 +152,57 @@ function selectedRolloutFromRows(rows, requestedRolloutIndex) {
   };
 }
 
+function sumRows(rows, column) {
+  return rows.reduce((total, row) => total + (Number(row[column]) || 0), 0);
+}
+
+function rowsHaveAny(rows, columns) {
+  return rows.some((row) => columns.some((column) => Boolean(row[column])));
+}
+
+function annualRowsFromRows(rows, { includeInitial = true, limit = 8 } = {}) {
+  return rows
+    .filter((row) => (includeInitial ? row.monthIndex === 0 || row.monthIndex % 12 === 0 : row.monthIndex % 12 === 0))
+    .slice(0, limit);
+}
+
 function distributionResultView(scenarioResult) {
+  const terminal = terminalRows(scenarioResult);
+  const hasMetricFanColumns = Object.keys(scenarioResult?.metricFanColumns ?? {}).length > 0;
   return {
     kind: "distribution",
-    scenarioResult,
+    hasMetricFanColumns,
+    hasTerminalRows: terminal.length > 0,
     metricFanRows: (metricName) => metricFanRows(scenarioResult, metricName),
     metricFanTerminal: (metricName) => metricFanTerminal(scenarioResult, metricName),
-    terminalRows: () => terminalRows(scenarioResult),
+    terminalRows: () => terminal,
     terminalP50: (column) => terminalP50(scenarioResult, column),
   };
 }
 
-function trajectoryResultView(scenarioResult, selectedRolloutIndex) {
+function selectedRolloutResultView(scenarioResult, selectedRolloutIndex, kind) {
   const monthlyRows = rowsFromTable(scenarioResult?.monthlyColumns);
   const selected = selectedRolloutFromRows(monthlyRows, selectedRolloutIndex);
   return {
-    kind: "trajectory",
-    scenarioResult,
-    monthlyRows,
+    kind,
+    hasRows: selected.rows.length > 0,
     rolloutIndexes: selected.rolloutIndexes,
     rolloutIndex: selected.rolloutIndex,
-    rolloutRows: selected.rows,
+    selectedRows: selected.rows,
+    annualRows: (options) => annualRowsFromRows(selected.rows, options),
+    terminalRow: () => selected.rows.at(-1) ?? null,
+    sum: (column) => sumRows(selected.rows, column),
+    hasAny: (columns) => rowsHaveAny(selected.rows, columns),
+    rowsWhere: (predicate) => selected.rows.filter(predicate),
   };
 }
 
+function trajectoryResultView(scenarioResult, selectedRolloutIndex) {
+  return selectedRolloutResultView(scenarioResult, selectedRolloutIndex, "trajectory");
+}
+
 function accountingDetailResultView(scenarioResult, selectedRolloutIndex) {
-  const trajectory = trajectoryResultView(scenarioResult, selectedRolloutIndex);
-  return {
-    ...trajectory,
-    kind: "accounting_detail",
-  };
+  return selectedRolloutResultView(scenarioResult, selectedRolloutIndex, "accounting_detail");
 }
 
 function fmtUsd(value) {
@@ -658,7 +679,7 @@ function ScenarioContextDisclosurePanel({
 
 function ScenarioValueSummary({ distribution }) {
   assertResultViewKind(distribution, "distribution");
-  if (!distribution.scenarioResult?.terminalColumns) {
+  if (!distribution.hasMetricFanColumns) {
     return <div className="augur-note">Scenario details are waiting for central scenario-engine results.</div>;
   }
   const rows = [
@@ -810,7 +831,7 @@ function ScenarioFinancingTaxPanel({ selection }) {
 
 function TerminalPercentileSnapshot({ distribution }) {
   assertResultViewKind(distribution, "distribution");
-  if (!distribution.scenarioResult?.metricFanColumns) return null;
+  if (!distribution.hasMetricFanColumns) return null;
   const rows = [
     ["Net worth", "netWorthUsd", fmtUsd],
     ["Liquid net worth", "liquidNetWorthUsd", fmtUsd],
@@ -857,7 +878,7 @@ function TerminalPercentileSnapshot({ distribution }) {
 
 function ScenarioPathPreview({ trajectory }) {
   assertResultViewKind(trajectory, "trajectory");
-  const annualRows = trajectory.rolloutRows.filter((row) => row.monthIndex % 12 === 0).slice(0, 8);
+  const annualRows = trajectory.annualRows();
   if (annualRows.length === 0) return null;
   return (
     <ResultPanel kind="trajectory" title="Trajectory annual snapshot">
@@ -899,8 +920,7 @@ function ScenarioPathPreview({ trajectory }) {
 
 function PropertySaleTaxDistributionPanel({ distribution }) {
   assertResultViewKind(distribution, "distribution");
-  const rows = distribution.terminalRows();
-  if (rows.length === 0) return null;
+  if (!distribution.hasTerminalRows) return null;
   return (
     <ResultPanel kind="distribution" title="Distribution property sale and tax">
       <DetailTable
@@ -928,27 +948,17 @@ function PartnerOwnershipPanel({ trajectory, bootstrap }) {
   assertResultViewKind(trajectory, "trajectory");
   const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
   const partnerLabel = partner?.label ?? "Partner";
-  const rolloutRows = trajectory.rolloutRows;
-  if (rolloutRows.length === 0) return null;
-  const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
-  const terminalRow = rolloutRows.at(-1) ?? null;
-  const hasPartner = rolloutRows.some(
-    (row) => row.partnerPresent || row.partnerContributionUsd || row.partnerHomeEquityClaimUsd
-  );
-  if (!hasPartner) return null;
-  const firstPathContribution = rolloutRows.reduce(
-    (total, row) => total + (Number(row.partnerContributionUsd) || 0),
-    0
-  );
+  if (!trajectory.hasRows) return null;
+  const annualRows = trajectory.annualRows();
+  const terminalRow = trajectory.terminalRow();
+  if (!trajectory.hasAny(["partnerPresent", "partnerContributionUsd", "partnerHomeEquityClaimUsd"])) return null;
+  const firstPathContribution = trajectory.sum("partnerContributionUsd");
   return (
     <ResultPanel kind="trajectory" title={`Trajectory ${partnerLabel} contribution and equity`}>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           ["Path contribution", fmtUsd(firstPathContribution)],
-          [
-            "Contribution used",
-            fmtUsd(rolloutRows.reduce((total, row) => total + (Number(row.partnerContributionUsedUsd) || 0), 0)),
-          ],
+          ["Contribution used", fmtUsd(trajectory.sum("partnerContributionUsedUsd"))],
           ["Equity claim", fmtUsd(terminalRow?.partnerHomeEquityClaimUsd)],
           ["Final ownership", fmtPct(terminalRow?.partnerOwnershipPct)],
         ].map(([label, value]) => (
@@ -990,22 +1000,15 @@ function PartnerOwnershipPanel({ trajectory, bootstrap }) {
 
 function LiquidityPolicyPanel({ trajectory }) {
   assertResultViewKind(trajectory, "trajectory");
-  const rolloutRows = trajectory.rolloutRows;
-  if (rolloutRows.length === 0) return null;
-  const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
-  const terminalRow = rolloutRows.at(-1) ?? null;
+  if (!trajectory.hasRows) return null;
+  const annualRows = trajectory.annualRows();
+  const terminalRow = trajectory.terminalRow();
   return (
     <ResultPanel kind="trajectory" title="Trajectory liquidity and stock sales">
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
-          [
-            "SP500 sales",
-            fmtUsd(rolloutRows.reduce((total, row) => total + (Number(row.genericSp500SaleUsd) || 0), 0)),
-          ],
-          [
-            "SP500 sale gain",
-            fmtUsd(rolloutRows.reduce((total, row) => total + (Number(row.genericSp500SaleGainUsd) || 0), 0)),
-          ],
+          ["SP500 sales", fmtUsd(trajectory.sum("genericSp500SaleUsd"))],
+          ["SP500 sale gain", fmtUsd(trajectory.sum("genericSp500SaleGainUsd"))],
           ["Final shortfall", fmtUsd(terminalRow?.checkingFloorShortfallUsd)],
           ["Final SP500", fmtUsd(terminalRow?.genericSp500ValueUsd)],
         ].map(([label, value]) => (
@@ -1049,24 +1052,21 @@ function LiquidityPolicyPanel({ trajectory }) {
 
 function PrivateEquitySaleOpportunityPanel({ trajectory }) {
   assertResultViewKind(trajectory, "trajectory");
-  const rolloutRows = trajectory.rolloutRows;
-  if (rolloutRows.length === 0) return null;
-  const hasPrivateEquity = rolloutRows.some(
-    (row) => row.privateEquityValueUsd || row.privateEquitySaleOpportunityValueUsd || row.privateEquitySaleUsd
+  if (!trajectory.hasRows) return null;
+  if (!trajectory.hasAny(["privateEquityValueUsd", "privateEquitySaleOpportunityValueUsd", "privateEquitySaleUsd"])) {
+    return null;
+  }
+  const terminalRow = trajectory.terminalRow();
+  const eventRows = trajectory.rowsWhere(
+    (row) => row.privateEquitySaleOpportunityEvent || row.privateEquitySaleUsd > 0
   );
-  if (!hasPrivateEquity) return null;
-  const terminalRow = rolloutRows.at(-1) ?? null;
-  const eventRows = rolloutRows.filter((row) => row.privateEquitySaleOpportunityEvent || row.privateEquitySaleUsd > 0);
-  const displayRows = (eventRows.length > 0 ? eventRows : rolloutRows.filter((row) => row.monthIndex % 12 === 0)).slice(
-    0,
-    8
-  );
+  const displayRows = (eventRows.length > 0 ? eventRows : trajectory.annualRows()).slice(0, 8);
   return (
     <ResultPanel kind="trajectory" title="Trajectory private equity tender opportunities">
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2">
         {[
           ["Private equity value", fmtUsd(terminalRow?.privateEquityValueUsd)],
-          ["Sales", fmtUsd(rolloutRows.reduce((total, row) => total + (Number(row.privateEquitySaleUsd) || 0), 0))],
+          ["Sales", fmtUsd(trajectory.sum("privateEquitySaleUsd"))],
         ].map(([label, value]) => (
           <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
             <div className="augur-eyebrow">{label}</div>
@@ -1928,12 +1928,11 @@ function ScenarioMonthlyLedger({ scenario, accountingDetail, onSelectedRolloutIn
   const [expandedLedgerGroups, setExpandedLedgerGroups] = useState({});
   const scenarioView = scenarioInputView(scenario);
   assertResultViewKind(accountingDetail, "accounting_detail");
-  const monthlyRows = accountingDetail.monthlyRows;
-  if (!scenario || monthlyRows.length === 0) return null;
+  if (!scenario || !accountingDetail.hasRows) return null;
   const showCheckingFloorColumns = scenarioUsesCheckingFloorPolicy(scenario);
   const rolloutIndexes = accountingDetail.rolloutIndexes;
   const rolloutIndex = accountingDetail.rolloutIndex;
-  const rows = accountingDetail.rolloutRows;
+  const rows = accountingDetail.selectedRows;
   const rawGroups = [
     {
       id: "portfolio_sales",
