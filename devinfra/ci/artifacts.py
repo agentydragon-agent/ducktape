@@ -37,8 +37,19 @@ def is_tag_for_pkg(tag: str, pkg: str) -> bool:
 
 
 class Artifact(BaseModel, frozen=True):
-    pkg: str = Field(description="npins package name")
+    pkg: str = Field(description="npins package name (sources.json key)")
     filename: str = Field(description="Artifact filename attached to the GitHub release")
+    tag_pkg: str | None = Field(
+        default=None,
+        description=(
+            "Release tag prefix (e.g. 'aiquota' matches 'aiquota-<sha>' tags). "
+            "Defaults to `pkg`. Use when multiple npins pins share a single release tag."
+        ),
+    )
+
+    @property
+    def release_tag_prefix(self) -> str:
+        return self.tag_pkg or self.pkg
 
 
 ARTIFACTS = [
@@ -48,7 +59,8 @@ ARTIFACTS = [
     Artifact(pkg="ducktape-git-hooks", filename="ducktape_git_hooks-0.1.0-py3-none-any.whl"),
     Artifact(pkg="ducktape-util", filename="ducktape_util-0.1.0-py3-none-any.whl"),
     Artifact(pkg="ducktape", filename="ducktape-0.1.0-py3-none-any.whl"),
-    Artifact(pkg="gnome-shell-aiquota", filename="aiquota.zip"),
+    Artifact(pkg="aiquota", filename="aiquota-0.1.0-py3-none-any.whl"),
+    Artifact(pkg="aiquota-extension", tag_pkg="aiquota", filename="aiquota.zip"),
     Artifact(pkg="gterm-theme", filename="gterm_theme-0.1.0-py3-none-any.whl"),
     Artifact(pkg="skills", filename="all_skills_tar.tar"),
     Artifact(pkg="bbapi", filename="bbapi"),

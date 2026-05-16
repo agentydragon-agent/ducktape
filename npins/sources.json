@@ -43,10 +43,6 @@
     "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gnome-shell-aiquota-7a34226e7336/aiquota.zip",
       "sha256": "ejQibnM24fsh55JEeEfiDfUxa1wuMzO8ZUf6EaW8gDU="
-    },
-    "gnome-shell-aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gnome-shell-aiquota-57d05a4fb605/aiquota.zip",
-      "sha256": "V9BaT7YFN3O+cB5AhIDsYlalXqFSmGI0gEaWCw+SbWY="
     }
   }
 }

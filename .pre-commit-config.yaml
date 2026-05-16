@@ -96,7 +96,9 @@ repos:
         types: [nix]
         pass_filenames: false
 
-  # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
+  # Markdown linting. Scoped to staged files via `files:` regex below; the
+  # markdownlint-cli2 config (.markdownlint-cli2.jsonc) has no globs of its
+  # own, so pre-commit's positional args (= staged files) are the only inputs.
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.22.0
     hooks:

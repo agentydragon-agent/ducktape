@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "httpx>=0.27"]
+# dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "httpx>=0.27", "more-itertools>=10.0"]
 # ///
 """Sync npins/sources.json with the latest GitHub Release for each package.
 
@@ -20,6 +20,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from github import Auth, Github
+from more_itertools import first
 
 from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, is_tag_for_pkg, sources_path, url_sha256
 
@@ -40,7 +41,7 @@ def main() -> None:
 
     updated = []
     for artifact in ARTIFACTS:
-        release = next((r for r in releases if is_tag_for_pkg(r.tag_name, artifact.pkg)), None)
+        release = first((r for r in releases if is_tag_for_pkg(r.tag_name, artifact.release_tag_prefix)), default=None)
         if not release:
             print(f"{artifact.pkg}: no release found, skipping")
             continue
