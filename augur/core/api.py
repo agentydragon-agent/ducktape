@@ -13,14 +13,11 @@ from augur.core.market_bundle import (
 )
 from augur.core.scenario_engine import ScenarioRunArrays, run_scenario_vectorized
 from augur.core.scenario_set import (
-    ActorEquityClaimLiability,
     ActorRole,
     EventType,
     ExogenousPathIdentity,
-    MortgageLiability,
     PartnerEquityAccrualPolicy,
     ProjectionTrajectoryIdentity,
-    RealEstateAssetPosition,
     RentalMode,
     ReportSpec,
     RolloutStatus,
@@ -439,12 +436,6 @@ def _validate_scenario(scenario: Scenario, path: str) -> list[str]:
     _append_duplicate_errors(
         errors, [asset.asset_id for asset in balance_sheet.assets], f"{path}.initial_balance_sheet.assets", "asset_id"
     )
-    _append_duplicate_errors(
-        errors,
-        [liability.liability_id for liability in balance_sheet.liabilities],
-        f"{path}.initial_balance_sheet.liabilities",
-        "liability_id",
-    )
     _append_duplicate_errors(errors, [event.event_id for event in scenario.events], f"{path}.events", "event_id")
     _append_duplicate_errors(
         errors, [policy.policy_id for policy in scenario.policies], f"{path}.policies", "policy_id"
@@ -460,13 +451,6 @@ def _validate_scenario(scenario: Scenario, path: str) -> list[str]:
     for index, asset in enumerate(balance_sheet.assets):
         _validate_actor_ref(
             errors, actor_id_set, asset.owner_actor_id, f"{path}.initial_balance_sheet.assets[{index}].owner_actor_id"
-        )
-    for index, liability in enumerate(balance_sheet.liabilities):
-        _validate_actor_ref(
-            errors,
-            actor_id_set,
-            liability.owner_actor_id,
-            f"{path}.initial_balance_sheet.liabilities[{index}].owner_actor_id",
         )
     for index, policy in enumerate(scenario.policies):
         _validate_actor_ref(errors, actor_id_set, policy.actor_id, f"{path}.policies[{index}].actor_id")
@@ -528,12 +512,6 @@ def _known_property_ids(scenario: Scenario) -> set[str]:
     property_ids: set[str] = set()
     if scenario.property_selection.property_id is not None:
         property_ids.add(scenario.property_selection.property_id)
-    for asset in scenario.initial_balance_sheet.assets:
-        if isinstance(asset, RealEstateAssetPosition):
-            property_ids.add(asset.property_id)
-    for liability in scenario.initial_balance_sheet.liabilities:
-        if isinstance(liability, MortgageLiability | ActorEquityClaimLiability) and liability.property_id is not None:
-            property_ids.add(liability.property_id)
     return property_ids
 
 

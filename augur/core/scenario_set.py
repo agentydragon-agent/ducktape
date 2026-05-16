@@ -100,17 +100,8 @@ class AccountType(StrEnum):
 
 
 class AssetType(StrEnum):
-    CASH = "cash"
     GENERIC_SP500_STOCK = "generic_sp500_stock"
     PRIVATE_EQUITY = "private_equity"
-    REAL_ESTATE = "real_estate"
-    DEFERRED_TAX_ASSET = "deferred_tax_asset"
-
-
-class LiabilityType(StrEnum):
-    MORTGAGE = "mortgage"
-    TAX_LIABILITY = "tax_liability"
-    ACTOR_EQUITY_CLAIM = "actor_equity_claim"
 
 
 PropertyId = str
@@ -668,10 +659,6 @@ class _AssetPositionBase(ApiModel):
     value_usd: float
 
 
-class CashAssetPosition(_AssetPositionBase):
-    asset_type: Literal[AssetType.CASH] = AssetType.CASH
-
-
 class GenericSp500StockPosition(_AssetPositionBase):
     asset_type: Literal[AssetType.GENERIC_SP500_STOCK] = AssetType.GENERIC_SP500_STOCK
     cost_basis_usd: float | None = None
@@ -683,55 +670,13 @@ class PrivateEquityPosition(_AssetPositionBase):
     cost_basis_usd: float | None = None
 
 
-class RealEstateAssetPosition(_AssetPositionBase):
-    asset_type: Literal[AssetType.REAL_ESTATE] = AssetType.REAL_ESTATE
-    property_id: PropertyId
-
-
-class DeferredTaxAssetPosition(_AssetPositionBase):
-    asset_type: Literal[AssetType.DEFERRED_TAX_ASSET] = AssetType.DEFERRED_TAX_ASSET
-
-
-AssetPosition = Annotated[
-    CashAssetPosition
-    | GenericSp500StockPosition
-    | PrivateEquityPosition
-    | RealEstateAssetPosition
-    | DeferredTaxAssetPosition,
-    Field(discriminator="asset_type"),
-]
-
-
-class _LiabilityBase(ApiModel):
-    liability_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
-    owner_actor_id: str
-    balance_usd: float
-
-
-class MortgageLiability(_LiabilityBase):
-    liability_type: Literal[LiabilityType.MORTGAGE] = LiabilityType.MORTGAGE
-    rate_pct: NonNegativeFloat | None = None
-    property_id: PropertyId | None = None
-
-
-class TaxLiability(_LiabilityBase):
-    liability_type: Literal[LiabilityType.TAX_LIABILITY] = LiabilityType.TAX_LIABILITY
-
-
-class ActorEquityClaimLiability(_LiabilityBase):
-    liability_type: Literal[LiabilityType.ACTOR_EQUITY_CLAIM] = LiabilityType.ACTOR_EQUITY_CLAIM
-    property_id: PropertyId | None = None
-
-
-LiabilityBalance = Annotated[
-    MortgageLiability | TaxLiability | ActorEquityClaimLiability, Field(discriminator="liability_type")
-]
+AssetPosition = Annotated[GenericSp500StockPosition | PrivateEquityPosition, Field(discriminator="asset_type")]
 
 
 class InitialBalanceSheet(ApiModel):
     accounts: tuple[AccountBalance, ...] = ()
     assets: tuple[AssetPosition, ...] = ()
-    liabilities: tuple[LiabilityBalance, ...] = ()
+    liabilities: tuple[Any, ...] = Field(default=(), max_length=0)
 
 
 class MarketRequest(ApiModel):

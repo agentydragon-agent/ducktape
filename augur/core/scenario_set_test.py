@@ -163,6 +163,33 @@ def test_scenario_set_accepts_one_and_two_scenarios_with_typed_enums() -> None:
     assert TaxRegime.FEDERAL_MORTGAGE_INTEREST in first.tax_regimes
 
 
+@pytest.mark.parametrize("asset_type", ["cash", "real_estate", "deferred_tax_asset"])
+def test_scenario_set_rejects_unsupported_initial_asset_variants(asset_type: str) -> None:
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
+        {"asset_id": "unsupported_asset", "asset_type": asset_type, "owner_actor_id": "owner", "value_usd": 100_000}
+    ]
+
+    with pytest.raises(ValidationError):
+        ScenarioSet.model_validate(body)
+
+
+@pytest.mark.parametrize("liability_type", ["mortgage", "tax_liability", "actor_equity_claim"])
+def test_scenario_set_rejects_initial_liabilities(liability_type: str) -> None:
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["initial_balance_sheet"]["liabilities"] = [
+        {
+            "liability_id": "unsupported_liability",
+            "liability_type": liability_type,
+            "owner_actor_id": "owner",
+            "balance_usd": 100_000,
+        }
+    ]
+
+    with pytest.raises(ValidationError):
+        ScenarioSet.model_validate(body)
+
+
 def test_scenario_set_accepts_typed_scenario_economic_assumptions() -> None:
     body = _scenario_set_body("sf_house")
     body["scenarios"][0]["tax_profile"] = {
