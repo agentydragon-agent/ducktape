@@ -39,8 +39,14 @@ that **isn't covered by `/dedicated/server/*`**.
 - `GET /services`, `GET /services/*`
 - `PUT /services/*`
 
-With `/services/*` granted, no HCL workaround is needed — the resource's auto-sync
-of `iam.displayName` succeeds via `PUT /services/{id}`.
+**…but the HCL workaround is still needed when any cancelled server is in TF
+state.** With `/services/*` granted, healthy servers' display_name sync works.
+But for a server in cancellation state (OVH service marked for non-renewal),
+`PUT /services/{id}` hangs ~10 min and then times out — discovered 2026-05-15
+during a Kimsufi-worker replacement when the cancelled worker_0 was still in
+state. Keep `display_name = each.value.service_name` in `ovh-nodes.tf` (so
+state matches config and no PUT is attempted) until all cancelled servers have
+been removed from state or have expired.
 
 **Stopgap** (only useful when running with an older, narrower token): set
 `TERRAFORM_OVH_RESTORE_BAREMETAL_DISPLAYNAME_BEHAVIOUR=1` in the environment before

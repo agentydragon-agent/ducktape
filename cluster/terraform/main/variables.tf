@@ -86,5 +86,5 @@ variable "kimsufi_service_name" {
 variable "kimsufi_service_name_1" {
   description = "OVH service name of the second Kimsufi KS-5 server (empty = not yet provisioned)"
   type        = string
-  default     = ""
+  default     = "ns103711.ip-147-135-39.us"
 }

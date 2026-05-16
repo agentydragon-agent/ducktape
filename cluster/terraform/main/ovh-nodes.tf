@@ -106,6 +106,13 @@ resource "ovh_dedicated_server" "kimsufi" {
 
   service_name   = each.value.service_name
   rescue_ssh_key = data.sops_file.ovh_rescue_ssh.data["public_key"]
+  # Match iam.displayName so the resource's Read→Update cycle doesn't try to
+  # PUT /services/{id}. Even with the scope granted, the PUT hangs for ~10 min
+  # then times out when the underlying server is in cancellation state
+  # (OVH-side service marked for non-renewal). Keeping this set to the OVH
+  # service name makes state == config, so no PUT is ever attempted.
+  # See cluster/docs/lessons_learned/2026_05_13_provisioning_ovh_kimsufi.md §2.
+  display_name = each.value.service_name
   # Without this, OVH's iPXE falls back to rEFInd which "starts" the Talos UKI
   # but doesn't actually run it — control returns to firmware, BIOS reboots,
   # forever. systemd-boot (dropped at this path by the Talos metal image) IS
