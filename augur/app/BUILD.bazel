@@ -88,8 +88,24 @@ py_library(
 )
 
 py_library(
+    name = "export_schema_py",
+    srcs = ["export_schema.py"],
+    deps = [
+        "//augur/core:bootstrap_py",
+        "//augur/core:scenario_set_py",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "static_py",
     srcs = ["static.py"],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    main_module = "augur.app.export_schema",
+    deps = [":export_schema_py"],
 )
 
 py_binary(
