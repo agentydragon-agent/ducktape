@@ -249,6 +249,27 @@ data "talos_machine_configuration" "kimsufi" {
         auto       = "off"
         hostname   = each.value.hostname
       }),
+      # User volume: claim the entire second disk (/dev/sdb on KS-5; both
+      # KS-5 disks are 2 TB SATA HDD in JBOD, Talos installs onto /dev/sda).
+      # `!system_disk` excludes the Talos system disk so the predicate stays
+      # robust against kernel reordering. Talos auto-mounts at
+      # /var/mnt/seaweedfs-data with partition label u-seaweedfs-data.
+      # Consumed by the local-path-ovh StorageClass; see cluster/docs/plan.md
+      # SeaweedFS trial notes.
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "UserVolumeConfig"
+        name       = "seaweedfs-data"
+        volumeType = "disk"
+        provisioning = {
+          diskSelector = {
+            match = "!system_disk"
+          }
+        }
+        filesystem = {
+          type = "xfs"
+        }
+      }),
     ],
     local.nebula_machine_patches[each.key],
   )
