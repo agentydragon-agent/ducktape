@@ -41,8 +41,12 @@
       "sha256": "gU9sKJq56TlnpstcqHFa812KHWF3nsZlX9i2bk5WE+4="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gnome-shell-aiquota-7a34226e7336/aiquota.zip",
-      "sha256": "ejQibnM24fsh55JEeEfiDfUxa1wuMzO8ZUf6EaW8gDU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-bb88e46e0f0f/aiquota.zip",
+      "sha256": "V9BaT7YFN3O+cB5AhIDsYlalXqFSmGI0gEaWCw+SbWY="
+    },
+    "aiquota": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-bb88e46e0f0f/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "u4jkbg8PwZy9J6rt5LX34JNggvirvVR8DpsMXm/gS6I="
     }
   }
 }
