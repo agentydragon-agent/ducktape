@@ -24,7 +24,6 @@ from augur.core.scenario_set import (
     PrivateEquitySaleProceedsDestination,
     ProjectedDeficitsLiquidityReserveRule,
     RentalMode,
-    ReportSpec,
     RolloutStatus,
     RolloutStatusSummary,
     RolloutStatusType,
@@ -47,12 +46,7 @@ def _scenario_set_body(*scenario_ids: str) -> dict[str, Any]:
             "horizon_months": 120,
             "seed": 7,
         },
-        "report_spec": {
-            "metrics": ["net_worth", "liquid_net_worth", "home_equity"],
-            "percentiles": [5, 50, 95],
-            "include_monthly_columns": True,
-            "include_sample_paths": False,
-        },
+        "report_spec": {"percentiles": [5, 50, 95], "include_monthly_columns": True},
         "scenarios": [
             {
                 "scenario_id": scenario_id,
@@ -192,15 +186,6 @@ def test_scenario_set_accepts_typed_scenario_economic_assumptions() -> None:
     assert scenario.tax_profile.cap_gains_exclusion_usd == 500_000
     assert scenario.transaction_costs.closing_cost_sell_pct == 6.5
     assert scenario.property_assumptions.insurance_annual_usd == 1800
-
-
-def test_report_spec_rejects_unsupported_sample_paths() -> None:
-    report_spec = ReportSpec(include_sample_paths=False)
-
-    assert report_spec.include_sample_paths is False
-
-    with pytest.raises(ValidationError, match="include_sample_paths"):
-        ReportSpec(include_sample_paths=True)
 
 
 def test_market_request_requires_seed() -> None:

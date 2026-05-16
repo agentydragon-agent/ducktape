@@ -195,30 +195,31 @@ verification loop.
 
 ## Next App-State Spiral
 
-The browser scenario state is now written by domain section, but normal app
-reads and backend request mapping still pass through `scenarioInputView()`.
-That helper is useful only as a temporary compatibility seam; leaving it in the
-main path keeps the old spreadsheet-shaped scenario row alive.
+The browser scenario state is now written, read, normalized, serialized, and
+mapped to backend requests by domain section. The remaining app-state risk is
+letting the browser become its own schema authority through hand-maintained
+field lists and local validation logic.
 
 Next slice:
 
-1. Update React call sites to read named sections directly:
-   `identity`, `propertyAndLocation`, `actorsAndOwnership`, `timeline`,
-   `financing`, `occupancyAndRental`, `propertyAssumptions`,
-   `taxAccounting`, `initialBalanceSheet`, and `policies`.
-2. Update normalization and serialization to construct and validate those
-   sections directly. Do not preserve stale URL compatibility when the shape
-   changes again.
-3. Update `scenarioSetInputToRequest()` to map from structured sections into
-   backend `Scenario` fields without reconstructing a wide field bag.
-4. Delete or quarantine the flat helpers once tests no longer need them for
-   fixture/migration coverage.
+1. Add an Augur schema-export target for the backend Pydantic API models,
+   likely via FastAPI/OpenAPI or a focused Pydantic JSON-schema emitter.
+2. Generate browser-consumable schema/types from that backend schema at build
+   time, following existing repo patterns such as `//devinfra/js:openapi.bzl`
+   and `//props/frontend/src/lib:schema`.
+3. Replace hand-maintained browser field lists and ad hoc boundary checks with
+   the generated artifacts. If the browser uses Zod or a similar library, it
+   should consume generated schemas rather than defining a second source of
+   truth.
+4. Do not preserve stale URL compatibility when the state shape changes again.
 
 Acceptance checks:
 
-- Normal app and request-mapping code no longer calls `scenarioInputView()`.
-- Adding a new field requires choosing a domain section, not extending a
-  scenario-wide row.
+- There is one schema source of truth for Augur API payloads: Python Pydantic.
+- Browser validation/types are generated from the backend schema, not
+  independently maintained.
+- Adding a new API field starts in the Pydantic model and propagates to the
+  browser build.
 - Existing browser shell and visual golden tests still prove the distribution
   and trajectory routes render after URL/state normalization.
 

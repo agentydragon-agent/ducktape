@@ -147,7 +147,7 @@ def _decode_url_state(page: Page) -> dict[str, Any] | None:
         return None
     padded_state = state + "=" * (-len(state) % 4)
     payload = json.loads(urlsafe_b64decode(padded_state.encode()).decode())
-    assert payload["version"] == 3
+    assert payload["version"] == 4
     return cast(dict[str, Any], payload["scenario_set_input"])
 
 

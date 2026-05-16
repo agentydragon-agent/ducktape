@@ -2,7 +2,7 @@ import { camelizeObjectKeys, decamelizeObjectKeys } from "./casing.js";
 
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
 
-const URL_STATE_VERSION = 3;
+const URL_STATE_VERSION = 4;
 
 const DEFAULT_MARKET_REQUEST = {
   marketModelId: "current_market_model",
@@ -12,10 +12,8 @@ const DEFAULT_MARKET_REQUEST = {
 };
 
 const DEFAULT_REPORT_SPEC = {
-  metrics: ["net_worth", "liquid_net_worth", "home_equity", "actor_equity", "property_value"],
   percentiles: [5, 25, 50, 75, 95],
   includeMonthlyColumns: true,
-  includeSamplePaths: false,
 };
 
 const FINANCING_MODE_IDS = new Set(["cash", "fixed_30", "fixed_15", "custom"]);
@@ -51,12 +49,7 @@ const SCENARIO_INPUT_SECTION_FIELDS = Object.freeze({
     "marginalTaxRate",
     "capGainsRate",
   ]),
-  initialBalanceSheet: Object.freeze([
-    "initialCheckingUsd",
-    "startingPortfolioUsd",
-    "privateEquityValueUsd",
-    "privateEquityUnits",
-  ]),
+  initialBalanceSheet: Object.freeze(["initialCheckingUsd", "startingPortfolioUsd", "privateEquityUnits"]),
   policies: Object.freeze([
     "liquidReservePolicy",
     "checkingFloorUsd",
@@ -67,33 +60,33 @@ const SCENARIO_INPUT_SECTION_FIELDS = Object.freeze({
   ]),
 });
 
-function finiteNumber(value, fallback) {
+function finiteNumber(value, defaultValue) {
   const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
+  return Number.isFinite(number) ? number : defaultValue;
 }
 
-function nullableNumber(value, fallback = null) {
-  if (value === null || value === undefined || value === "") return fallback;
-  return finiteNumber(value, fallback);
+function nullableNumber(value, defaultValue = null) {
+  if (value === null || value === undefined || value === "") return defaultValue;
+  return finiteNumber(value, defaultValue);
 }
 
-function positiveNumber(value, fallback) {
-  const number = finiteNumber(value, fallback);
-  return number > 0 ? number : fallback;
+function positiveNumber(value, defaultValue) {
+  const number = finiteNumber(value, defaultValue);
+  return number > 0 ? number : defaultValue;
 }
 
-function nullableInteger(value, fallback = null) {
-  if (value === null || value === undefined || value === "") return fallback;
+function nullableInteger(value, defaultValue = null) {
+  if (value === null || value === undefined || value === "") return defaultValue;
   const number = Number(value);
-  return Number.isInteger(number) ? number : fallback;
+  return Number.isInteger(number) ? number : defaultValue;
 }
 
 function optionIds(options) {
   return new Set((options ?? []).map((option) => option.id));
 }
 
-function defaultOption(options, fallback) {
-  return options?.[0]?.id ?? fallback;
+function defaultOption(options, defaultId) {
+  return options?.[0]?.id ?? defaultId;
 }
 
 function propertyById(bootstrap, propertyId) {
@@ -112,42 +105,9 @@ function holdingValueUsd(holding) {
   return finiteNumber(holding?.valueUsd, finiteNumber(holding?.units, 0) * finiteNumber(holding?.fmvUsdPerUnit, 0));
 }
 
-function scenarioInputSectionsFromFlatFields(fields) {
-  const source = fields ?? {};
-  return Object.fromEntries(
-    Object.entries(SCENARIO_INPUT_SECTION_FIELDS).map(([section, fieldNames]) => [
-      section,
-      Object.fromEntries(fieldNames.map((fieldName) => [fieldName, source[fieldName]])),
-    ])
-  );
-}
-
-function scenarioInputFromFlatFields(fields) {
-  return scenarioInputSectionsFromFlatFields(fields);
-}
-
 function scenarioSection(scenario, section) {
   const value = scenario?.[section];
   return value && typeof value === "object" ? value : {};
-}
-
-function nonEmptyObject(value) {
-  return Boolean(value && typeof value === "object" && Object.keys(value).length > 0);
-}
-
-export function scenarioResultDataModes(scenarioResult) {
-  const modes = [];
-  if (nonEmptyObject(scenarioResult?.metricFanColumns) || nonEmptyObject(scenarioResult?.terminalColumns)) {
-    modes.push("distribution");
-  }
-  if (nonEmptyObject(scenarioResult?.monthlyColumns)) {
-    modes.push("trajectory");
-  }
-  return modes;
-}
-
-export function scenarioResultSupportsMode(scenarioResult, mode) {
-  return scenarioResultDataModes(scenarioResult).includes(mode);
 }
 
 export function privateEquityCurrentUnitPriceUsd(bootstrap) {
@@ -164,19 +124,6 @@ export function privateEquityValueUsdForUnits(bootstrap, units) {
 
 function scenarioIdFromIndex(index) {
   return `scenario_${index + 1}`;
-}
-
-function scenarioFromFields(fields) {
-  return scenarioInputFromFlatFields(fields);
-}
-
-export function scenarioInputView(scenario) {
-  // Compatibility bridge for augur-app.jsx while the UI finishes moving to section reads.
-  return Object.fromEntries(
-    Object.entries(SCENARIO_INPUT_SECTION_FIELDS).flatMap(([section, fieldNames]) =>
-      fieldNames.map((fieldName) => [fieldName, scenario?.[section]?.[fieldName] ?? scenario?.[fieldName]])
-    )
-  );
 }
 
 export function patchScenarioInputSection(scenario, section, patch) {
@@ -205,81 +152,100 @@ export function uniqueScenarioId(existingScenarioIds, base = "scenario") {
 
 export function createScenarioInput(bootstrap, overrides = {}) {
   const index = finiteNumber(overrides.index, 0);
-  const fallbackPropertyId = defaultPropertyId(bootstrap);
-  const propertyId = overrides.propertyId ?? fallbackPropertyId;
+  const defaultScenarioPropertyId = defaultPropertyId(bootstrap);
+  const propertyId = overrides.propertyId ?? defaultScenarioPropertyId;
   const property = propertyById(bootstrap, propertyId);
   const defaultKnobs = bootstrap?.defaultKnobs ?? {};
   const holding = defaultConcentratedHolding(bootstrap);
   const privateEquityUnits = finiteNumber(overrides.privateEquityUnits, holding?.units ?? 0);
-  return scenarioFromFields({
-    scenarioId: overrides.scenarioId ?? scenarioIdFromIndex(index),
-    label: overrides.label ?? (property?.address ? `${property.address}` : `Scenario ${index + 1}`),
-    enabled: overrides.enabled ?? true,
-    color: overrides.color ?? SCENARIO_COLORS[index % SCENARIO_COLORS.length],
-    propertyId,
-    actorPolicy:
-      overrides.actorPolicy ??
-      bootstrap?.defaultActorPolicy ??
-      defaultOption(bootstrap?.actorPolicyOptions, "owner_only"),
-    ownerResidenceMode:
-      overrides.ownerResidenceMode ??
-      bootstrap?.defaultOwnerResidenceMode ??
-      defaultOption(bootstrap?.ownerResidenceModeOptions, "selected_property"),
-    rentalUsePolicy:
-      overrides.rentalUsePolicy ??
-      bootstrap?.defaultRentalUsePolicy ??
-      defaultOption(bootstrap?.rentalUsePolicyOptions, "not_rented"),
-    liquidReservePolicy:
-      overrides.liquidReservePolicy ??
-      bootstrap?.defaultLiquidReservePolicy ??
-      defaultOption(bootstrap?.liquidReservePolicyOptions, "none"),
-    initialCheckingUsd: finiteNumber(overrides.initialCheckingUsd, bootstrap?.defaultInitialCheckingUsd ?? 25_000),
-    checkingFloorUsd: finiteNumber(overrides.checkingFloorUsd, bootstrap?.defaultCheckingFloorUsd ?? 10_000),
-    checkingSaleAmountUsd: positiveNumber(
-      overrides.checkingSaleAmountUsd,
-      bootstrap?.defaultCheckingSaleAmountUsd ?? 20_000
-    ),
-    startingPortfolioUsd: finiteNumber(
-      overrides.startingPortfolioUsd,
-      defaultKnobs.startingPortfolioUsd ?? bootstrap?.financeSnapshot?.sp500ProxyPortfolioUsd ?? 0
-    ),
-    partnerPaymentMonthlyUsd: finiteNumber(
-      overrides.partnerPaymentMonthlyUsd,
-      bootstrap?.defaultPartnerMonthlyPaymentUsd ?? 0
-    ),
-    holdYears: positiveNumber(overrides.holdYears, defaultKnobs.holdYears ?? 5),
-    financingMode: FINANCING_MODE_IDS.has(overrides.financingMode)
-      ? overrides.financingMode
-      : (defaultKnobs.financingMode ?? "fixed_30"),
-    downPaymentPct: finiteNumber(overrides.downPaymentPct, defaultKnobs.downPaymentPct ?? 25),
-    customMortgageRate: nullableNumber(overrides.customMortgageRate, defaultKnobs.customMortgageRate ?? null),
-    customMortgageTermYears: positiveNumber(
-      overrides.customMortgageTermYears,
-      defaultKnobs.customMortgageTermYears ?? 30
-    ),
-    creditScore: nullableNumber(overrides.creditScore, defaultKnobs.creditScore ?? null),
-    vacancyPct: finiteNumber(overrides.vacancyPct, defaultKnobs.vacancyPct ?? 0),
-    managementFeePct: finiteNumber(overrides.managementFeePct, defaultKnobs.mgmtPct ?? 0),
-    leasingFeePct: finiteNumber(overrides.leasingFeePct, defaultKnobs.leasingFeePct ?? 0),
-    roomsRentedWhileLiving: finiteNumber(overrides.roomsRentedWhileLiving, defaultKnobs.roomsRentedWhileLiving ?? 0),
-    roomRentMonthlyUsd: finiteNumber(overrides.roomRentMonthlyUsd, defaultKnobs.roomRentMonthlyUsd ?? 0),
-    roomVacancyPct: finiteNumber(overrides.roomVacancyPct, defaultKnobs.roomVacancyPct ?? 0),
-    maintenancePct: finiteNumber(overrides.maintenancePct, defaultKnobs.maintenancePct ?? 1),
-    insuranceAnnualUsd: finiteNumber(overrides.insuranceAnnualUsd, defaultKnobs.insuranceAnnualUsd ?? 0),
-    closingCostBuyPct: finiteNumber(overrides.closingCostBuyPct, defaultKnobs.closingCostBuyPct ?? 0),
-    closingCostSellPct: finiteNumber(overrides.closingCostSellPct, defaultKnobs.closingCostSellPct ?? 0),
-    capGainsExclusionUsd: finiteNumber(overrides.capGainsExclusionUsd, defaultKnobs.capGainsExclusionUsd ?? 0),
-    depreciableBasisPct: finiteNumber(overrides.depreciableBasisPct, defaultKnobs.depreciableBasisPct ?? 0),
-    marginalTaxRate: finiteNumber(overrides.marginalTaxRate, defaultKnobs.marginalTaxRate ?? 0),
-    capGainsRate: finiteNumber(overrides.capGainsRate, defaultKnobs.capGainsRate ?? 0),
-    privateEquityValueUsd: privateEquityValueUsdForUnits(bootstrap, privateEquityUnits),
-    privateEquityUnits,
-    privateEquitySalePolicy: PRIVATE_EQUITY_SALE_POLICY_IDS.has(overrides.privateEquitySalePolicy)
-      ? overrides.privateEquitySalePolicy
-      : "none",
-    privateEquityLiquidNetWorthFloorUsd: finiteNumber(overrides.privateEquityLiquidNetWorthFloorUsd, 0),
-    privateEquityTenderSaleAmountUsd: positiveNumber(overrides.privateEquityTenderSaleAmountUsd, 50_000),
-  });
+  return {
+    identity: {
+      scenarioId: overrides.scenarioId ?? scenarioIdFromIndex(index),
+      label: overrides.label ?? (property?.address ? `${property.address}` : `Scenario ${index + 1}`),
+      enabled: overrides.enabled ?? true,
+      color: overrides.color ?? SCENARIO_COLORS[index % SCENARIO_COLORS.length],
+    },
+    propertyAndLocation: {
+      propertyId,
+    },
+    actorsAndOwnership: {
+      actorPolicy:
+        overrides.actorPolicy ??
+        bootstrap?.defaultActorPolicy ??
+        defaultOption(bootstrap?.actorPolicyOptions, "owner_only"),
+      partnerPaymentMonthlyUsd: finiteNumber(
+        overrides.partnerPaymentMonthlyUsd,
+        bootstrap?.defaultPartnerMonthlyPaymentUsd ?? 0
+      ),
+    },
+    timeline: {
+      holdYears: positiveNumber(overrides.holdYears, defaultKnobs.holdYears ?? 5),
+    },
+    financing: {
+      financingMode: FINANCING_MODE_IDS.has(overrides.financingMode)
+        ? overrides.financingMode
+        : (defaultKnobs.financingMode ?? "fixed_30"),
+      downPaymentPct: finiteNumber(overrides.downPaymentPct, defaultKnobs.downPaymentPct ?? 25),
+      customMortgageRate: nullableNumber(overrides.customMortgageRate, defaultKnobs.customMortgageRate ?? null),
+      customMortgageTermYears: positiveNumber(
+        overrides.customMortgageTermYears,
+        defaultKnobs.customMortgageTermYears ?? 30
+      ),
+      creditScore: nullableNumber(overrides.creditScore, defaultKnobs.creditScore ?? null),
+    },
+    occupancyAndRental: {
+      ownerResidenceMode:
+        overrides.ownerResidenceMode ??
+        bootstrap?.defaultOwnerResidenceMode ??
+        defaultOption(bootstrap?.ownerResidenceModeOptions, "selected_property"),
+      rentalUsePolicy:
+        overrides.rentalUsePolicy ??
+        bootstrap?.defaultRentalUsePolicy ??
+        defaultOption(bootstrap?.rentalUsePolicyOptions, "not_rented"),
+      vacancyPct: finiteNumber(overrides.vacancyPct, defaultKnobs.vacancyPct ?? 0),
+      managementFeePct: finiteNumber(overrides.managementFeePct, defaultKnobs.mgmtPct ?? 0),
+      leasingFeePct: finiteNumber(overrides.leasingFeePct, defaultKnobs.leasingFeePct ?? 0),
+      roomsRentedWhileLiving: finiteNumber(overrides.roomsRentedWhileLiving, defaultKnobs.roomsRentedWhileLiving ?? 0),
+      roomRentMonthlyUsd: finiteNumber(overrides.roomRentMonthlyUsd, defaultKnobs.roomRentMonthlyUsd ?? 0),
+      roomVacancyPct: finiteNumber(overrides.roomVacancyPct, defaultKnobs.roomVacancyPct ?? 0),
+    },
+    propertyAssumptions: {
+      maintenancePct: finiteNumber(overrides.maintenancePct, defaultKnobs.maintenancePct ?? 1),
+      insuranceAnnualUsd: finiteNumber(overrides.insuranceAnnualUsd, defaultKnobs.insuranceAnnualUsd ?? 0),
+      depreciableBasisPct: finiteNumber(overrides.depreciableBasisPct, defaultKnobs.depreciableBasisPct ?? 0),
+    },
+    taxAccounting: {
+      closingCostBuyPct: finiteNumber(overrides.closingCostBuyPct, defaultKnobs.closingCostBuyPct ?? 0),
+      closingCostSellPct: finiteNumber(overrides.closingCostSellPct, defaultKnobs.closingCostSellPct ?? 0),
+      capGainsExclusionUsd: finiteNumber(overrides.capGainsExclusionUsd, defaultKnobs.capGainsExclusionUsd ?? 0),
+      marginalTaxRate: finiteNumber(overrides.marginalTaxRate, defaultKnobs.marginalTaxRate ?? 0),
+      capGainsRate: finiteNumber(overrides.capGainsRate, defaultKnobs.capGainsRate ?? 0),
+    },
+    initialBalanceSheet: {
+      initialCheckingUsd: finiteNumber(overrides.initialCheckingUsd, bootstrap?.defaultInitialCheckingUsd ?? 25_000),
+      startingPortfolioUsd: finiteNumber(
+        overrides.startingPortfolioUsd,
+        defaultKnobs.startingPortfolioUsd ?? bootstrap?.financeSnapshot?.sp500ProxyPortfolioUsd ?? 0
+      ),
+      privateEquityUnits,
+    },
+    policies: {
+      liquidReservePolicy:
+        overrides.liquidReservePolicy ??
+        bootstrap?.defaultLiquidReservePolicy ??
+        defaultOption(bootstrap?.liquidReservePolicyOptions, "none"),
+      checkingFloorUsd: finiteNumber(overrides.checkingFloorUsd, bootstrap?.defaultCheckingFloorUsd ?? 10_000),
+      checkingSaleAmountUsd: positiveNumber(
+        overrides.checkingSaleAmountUsd,
+        bootstrap?.defaultCheckingSaleAmountUsd ?? 20_000
+      ),
+      privateEquitySalePolicy: PRIVATE_EQUITY_SALE_POLICY_IDS.has(overrides.privateEquitySalePolicy)
+        ? overrides.privateEquitySalePolicy
+        : "none",
+      privateEquityLiquidNetWorthFloorUsd: finiteNumber(overrides.privateEquityLiquidNetWorthFloorUsd, 0),
+      privateEquityTenderSaleAmountUsd: positiveNumber(overrides.privateEquityTenderSaleAmountUsd, 50_000),
+    },
+  };
 }
 
 export function createDefaultScenarioSetInput(bootstrap) {
@@ -337,7 +303,6 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
     initialBalanceSheet.privateEquityUnits,
     defaultInitialBalanceSheet.privateEquityUnits
   );
-  const privateEquityValueUsd = privateEquityValueUsdForUnits(bootstrap, privateEquityUnits);
   const scenarioId =
     typeof identity.scenarioId === "string" && /^[a-z0-9][a-z0-9_-]*$/.test(identity.scenarioId)
       ? identity.scenarioId
@@ -427,7 +392,6 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
         initialBalanceSheet.startingPortfolioUsd,
         defaultInitialBalanceSheet.startingPortfolioUsd
       ),
-      privateEquityValueUsd,
       privateEquityUnits,
     },
     policies: {
@@ -452,35 +416,33 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
 }
 
 export function normalizeScenarioSetInput(input, bootstrap) {
-  const fallback = createDefaultScenarioSetInput(bootstrap);
+  const defaultInput = createDefaultScenarioSetInput(bootstrap);
   const existingIds = new Set();
   const scenariosSource =
-    Array.isArray(input?.scenarios) && input.scenarios.length > 0 ? input.scenarios : fallback.scenarios;
+    Array.isArray(input?.scenarios) && input.scenarios.length > 0 ? input.scenarios : defaultInput.scenarios;
   const scenarios = scenariosSource.map((scenario, index) =>
     normalizeScenarioInput(scenario, bootstrap, index, existingIds)
   );
   const horizonMonths = Math.max(1, ...scenarios.map((scenario) => Math.ceil(scenario.timeline.holdYears * 12)));
   return {
-    title: typeof input?.title === "string" && input.title.trim() ? input.title.trim() : fallback.title,
+    title: typeof input?.title === "string" && input.title.trim() ? input.title.trim() : defaultInput.title,
     marketRequest: {
-      ...fallback.marketRequest,
+      ...defaultInput.marketRequest,
       ...(input?.marketRequest && typeof input.marketRequest === "object" ? input.marketRequest : {}),
       horizonMonths,
-      rolloutCount: positiveNumber(input?.marketRequest?.rolloutCount, fallback.marketRequest.rolloutCount),
-      seed: nullableInteger(input?.marketRequest?.seed, fallback.marketRequest.seed),
+      rolloutCount: positiveNumber(input?.marketRequest?.rolloutCount, defaultInput.marketRequest.rolloutCount),
+      seed: nullableInteger(input?.marketRequest?.seed, defaultInput.marketRequest.seed),
     },
-    reportSpec: normalizeReportSpec(input?.reportSpec, fallback.reportSpec),
+    reportSpec: normalizeReportSpec(input?.reportSpec),
     scenarios,
   };
 }
 
-function normalizeReportSpec(reportSpec, fallback) {
+function normalizeReportSpec(reportSpec) {
   const source = reportSpec && typeof reportSpec === "object" ? reportSpec : {};
   return {
-    ...fallback,
-    ...source,
-    includeMonthlyColumns: Boolean(source.includeMonthlyColumns ?? fallback.includeMonthlyColumns),
-    includeSamplePaths: false,
+    percentiles: Array.isArray(source.percentiles) ? source.percentiles : DEFAULT_REPORT_SPEC.percentiles,
+    includeMonthlyColumns: Boolean(source.includeMonthlyColumns ?? DEFAULT_REPORT_SPEC.includeMonthlyColumns),
   };
 }
 
@@ -804,7 +766,7 @@ function serializableScenarioSetInput(input) {
   return {
     title: input.title,
     marketRequest: input.marketRequest,
-    reportSpec: input.reportSpec,
+    reportSpec: normalizeReportSpec(input.reportSpec),
     scenarios: (input.scenarios ?? []).map(serializableScenario),
   };
 }

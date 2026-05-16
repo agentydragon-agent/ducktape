@@ -66,8 +66,9 @@ Implementation notes:
   and rollout alone are not enough.
 - The same `rollout_index` should identify the same exogenous market path
   across scenarios in a scenario-set run so trajectory comparison is meaningful.
-- Make `ReportSpec.include_monthly_columns`, `include_sample_paths`, and
-  related response fields match the view contract or remove unsupported knobs.
+- Keep report/view knobs honest: `include_monthly_columns` is currently real;
+  do not add report selectors or response-shaping fields unless the backend and
+  UI actually honor them.
 
 Acceptance criteria:
 
@@ -93,15 +94,13 @@ Component-kit decision:
   `MantineProvider` and uses Mantine primitives for result tabs/disclosure; keep
   migrating remaining controls to Mantine instead of inventing new local widgets.
 
-## Priority 2: Replace The Flat Browser Scenario Row
+## Priority 2: Keep Browser State Structured And Schema-Driven
 
-The backend scenario shape is already partly structured; the risky layer is now
-the browser compatibility seam. URL and browser scenario inputs are nested by
-domain section, and UI writes go through section-scoped patches. The remaining
-flat adapter is read-side: many app/backend-mapping call sites still call
-`scenarioInputView()` and receive one wide field bag before expanding fields
-into actors, events, policies, tax profile, transaction costs, and
-balance-sheet positions.
+The flat browser scenario row has been retired from normal app state and
+request mapping. URL and browser scenario inputs are nested by domain section,
+UI writes go through section-scoped patches, and new URL versions can break
+stale state. The next risk is allowing the browser to become an independent
+schema owner through hand-written field lists and ad hoc validators.
 
 Target browser state:
 
@@ -125,18 +124,17 @@ Target browser state:
 Implementation notes:
 
 - URL state does not need stale compatibility unless explicitly requested.
-- Next, remove `scenarioInputView()` from normal React reads. Scenario list,
-  selected-scenario controls, run summaries, and result-context panels should
-  read `scenario.identity`, `scenario.financing`,
-  `scenario.initialBalanceSheet`, and other named sections directly. Keep any
-  temporary flattening helper isolated to tests or migration code while this
-  happens.
-- Then make `normalizeScenarioInput()`, `scenarioSetInputToRequest()`, and URL
-  serialization consume structured scenario sections directly. This is the
-  point where the app/backend mapping stops depending on one wide field bag.
-- Once structured reads are in place, delete the flat-field compatibility path
-  instead of keeping support for older URL payloads. New URL versions can break
-  stale state.
+- The browser state and request mapping now consume structured scenario
+  sections directly. Do not reintroduce a catch-all flat scenario view or
+  wide-row migration path.
+- Generate browser-side schema/types from the backend Pydantic/OpenAPI schema
+  instead of growing independent hand-written JS schemas. The repo already has
+  `//devinfra/js:openapi.bzl` and `//props/frontend/src/lib:schema` as patterns
+  for this class of build-time propagation.
+- Private-equity initial positions should eventually carry units plus a holding
+  or price-model reference, not a duplicated editable `value_usd`. Today the
+  browser derives a backend asset value from units only because the generic
+  backend asset schema still requires a mark; simulation should own that mark.
 - Replace `scenario.actorPolicy` enums with modeled agreements between agents.
   A partner contribution should look like a contract: agent X pays agent Y some
   amount over a period and receives a specified equity/share/claim in return.
@@ -145,8 +143,8 @@ Implementation notes:
 - `scenarioSetInputToRequest` should mostly map structured UI state into the
   backend schema. It should stop hiding domain decisions behind unrelated flat
   fields or actor-policy ids.
-- Update app tests around the new state shape rather than preserving the
-  current wide-row browser contract.
+- App tests should cover current structured state and generated boundary
+  validation rather than preserving older wide-row browser contracts.
 
 Acceptance criteria:
 
@@ -326,9 +324,9 @@ Work:
 
 ## Immediate Implementation Sequence
 
-1. Finish replacing the flat browser scenario row by removing read-side
-   `scenarioInputView()` use from normal app code and backend request mapping.
-   Break stale URL compatibility rather than preserving wide-row state.
+1. Generate browser schema/types from the Python Pydantic/OpenAPI schema and
+   start replacing hand-written JS normalization/shape checks with generated
+   boundary validation.
 2. Redesign private-equity sale opportunities around exogenous events plus
    actor policy, building on the existing liquid-net-worth-floor tender policy.
 3. Continue Step 7 tax/accounting reconciliation once the app state and result
@@ -338,25 +336,25 @@ Work:
 
 ## Next Work Plans
 
-### Plan A: Retire The Read-Side Flat Scenario Adapter
+### Plan A: Generate Browser Schemas From Backend Pydantic Models
 
 Scope:
 
-- Add section-focused frontend helpers only where they clarify call sites; avoid
-  creating a new grab-bag context object that re-flattens the scenario.
-- Update `augur/app/augur-app.jsx` so scenario list, selected-scenario
-  controls, result-context panels, and run summaries read named scenario
-  sections directly.
-- Update `augur/app/lib/scenario_set_state.js` so normalization, request
-  mapping, and serialization consume structured sections directly.
-- Delete or quarantine `scenarioInputView()`, `patchScenarioInput()`, and
-  `scenarioInputFromFlatFields()` once no production path needs them.
+- Add a backend schema-export target for Augur, likely via FastAPI/OpenAPI or a
+  focused Pydantic JSON-schema emitter for `ScenarioSet`, `ScenarioSetRunResponse`,
+  and bootstrap/config payloads.
+- Use the existing repo pattern in `//devinfra/js:openapi.bzl` to generate
+  browser-consumable types/schema artifacts at build time.
+- Wire `augur/app/lib/scenario_set_state.js` and tests to consume the generated
+  boundary shape instead of hand-maintaining field lists and ad hoc object
+  probes.
+- Avoid defining an independent Augur Zod schema by hand; if Zod is used, it
+  should be generated from the Python schema.
 
 Validation:
 
-- `nix develop --command pre-commit run --files augur/app/augur-app.jsx augur/app/lib/scenario_set_state.js augur/app/lib/scenario_set_state_test.mjs augur/plans/roadmap.md augur/TODO.md augur/plans/e2e_redesign.md`
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-state-read-plan test //augur/app/lib:scenario_set_state_test --nocache_test_results --test_size_filters=small,medium,large`
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-state-read-plan test //augur/app:browser_shell_test //augur/app:visual_golden_test --nocache_test_results --test_size_filters=small,medium,large`
+- `nix develop --command pre-commit run --files augur/app/BUILD.bazel augur/app/lib/BUILD.bazel augur/core/BUILD.bazel augur/plans/roadmap.md augur/TODO.md`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-schema-generation test //augur/app/lib:scenario_set_state_test //augur/app:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
 
 ### Plan B: Make Private-Equity Opportunities And Policy Explicit
 

@@ -12,11 +12,11 @@ second ordered roadmap.
 
 ## Next
 
-- [ ] Finish replacing the flat browser scenario row. URL/browser scenario
-      state is now sectioned and UI writes are section-scoped; the remaining
-      work is to remove normal app/backend reads of the temporary
-      `scenarioInputView()` bag and make request mapping consume structured
-      sections directly.
+- [ ] Make browser-side schema/types generated from the Python Pydantic API
+      schema. The source of truth should be the backend Pydantic models exposed
+      through an OpenAPI/JSON-schema build target, then generated into JS/TS
+      validation/types for the browser. Do not grow a second hand-maintained
+      Zod/schema definition in `augur/app`.
 - [ ] Continue `plans/e2e_redesign.md` Step 7 by replacing `allocated_to_source_month` tax timing with realistic annual/estimated-payment liability timing.
 - [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 - [ ] Add a durable property-asset storage contract: stable property asset IDs/URLs backed by object storage or a database-like asset table, so deployments do not need to bake private media into frontend images.
@@ -78,6 +78,17 @@ second ordered roadmap.
 - [ ] Prefer Pydantic for serde and validation at API/config boundaries. Avoid
       custom `to_json_dict()`-style conversion helpers except at narrow
       compatibility seams.
+- [ ] Add an Augur build target that exports the backend Pydantic/FastAPI
+      OpenAPI schema and generates browser-consumable schema/types from it,
+      following existing repo patterns such as `//devinfra/js:openapi.bzl` and
+      `//props/frontend/src/lib:schema`. JS validation should consume generated
+      artifacts from the Python schema, not independent hand-written schemas.
+- [ ] Stop requiring private-equity input positions to carry both `units` and a
+      marked `value_usd` when the value is determined by units plus the private
+      equity price model. The browser no longer stores an editable private
+      equity value, but the backend request still has to derive `value_usd` to
+      satisfy the generic asset-position schema. Clean this up in the backend
+      position/API model so simulation owns the mark.
 - [ ] Move evidence/model-fetching shapes out of core simulator API when touched. Core should consume calibrated market/provider inputs, not source-specific evidence objects.
 - [ ] Remove redundant `augur_` prefixes from internal module names such as
       `augur.core.augur_accounting`; inside the `augur` package they add noise
@@ -114,9 +125,9 @@ second ordered roadmap.
       product feel internally confused. Start with an information architecture pass:
       define scenario identity, actors/ownership, initial balance sheet, market
       assumptions, policy choices, tax assumptions, and output diagnostics as
-      separate concepts before continuing local control tweaks. Continue removing
-      the remaining read-side flat browser scenario adapter so the app does not
-      recreate spreadsheet-style coupling while mapping into typed backend objects.
+      separate concepts before continuing local control tweaks. Keep browser
+      state sectioned and typed so the app does not recreate spreadsheet-style
+      coupling while mapping into backend objects.
 - [ ] Add explicit comparison views for deltas between two scenario
       distributions. The simulator should not bake a baseline/counterfactual
       into each rollout; a delta view should compare two real scenarios, either

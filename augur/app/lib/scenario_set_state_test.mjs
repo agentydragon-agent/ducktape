@@ -7,8 +7,6 @@ import {
   encodeScenarioSetUrlState,
   normalizeScenarioSetInput,
   patchScenarioInputSection,
-  scenarioResultDataModes,
-  scenarioResultSupportsMode,
   scenarioSetInputToRequest,
 } from "./scenario_set_state.js";
 import { decamelizeObjectKeys } from "./casing.js";
@@ -138,14 +136,12 @@ test("default input creates comparable generic location scenarios", () => {
   assert.equal(firstScenario.propertyAndLocation.propertyId, "location_a_property");
   assert.equal(firstScenario.initialBalanceSheet.initialCheckingUsd, 25_000);
   assert.equal(firstScenario.initialBalanceSheet.startingPortfolioUsd, 100_000);
-  assert.equal(firstScenario.initialBalanceSheet.privateEquityValueUsd, 10_000);
   assert.equal(firstScenario.initialBalanceSheet.privateEquityUnits, 500);
   assert.equal(firstScenario.policies.privateEquitySalePolicy, "none");
   assert.equal(secondScenario.propertyAndLocation.propertyId, "location_b_property");
   assert.equal(secondScenario.actorsAndOwnership.actorPolicy, "owner_plus_partner");
   assert.equal(input.marketRequest.seed, 0);
   assert.equal(input.reportSpec.includeMonthlyColumns, true);
-  assert.equal(input.reportSpec.includeSamplePaths, false);
 });
 
 test("normalized scenario input stays in nested domain sections", () => {
@@ -176,30 +172,6 @@ test("section patch updates one nested domain section", () => {
   assert.equal(changed.identity.label, original.identity.label);
   assert.equal(changed.taxAccounting.marginalTaxRate, original.taxAccounting.marginalTaxRate);
   assert.throws(() => patchScenarioInputSection(original, "unknown", {}), /Unknown Augur scenario input section/);
-});
-
-test("result mode helpers distinguish distribution summaries from trajectory rows", () => {
-  const metricFanTable = {
-    rowCount: 1,
-    columns: { monthIndex: [12], p50: [125_000] },
-  };
-  const monthlyTable = {
-    rowCount: 2,
-    columns: { monthIndex: [0, 1], rolloutIndex: [0, 0], cashUsd: [25_000, 24_500] },
-  };
-
-  assert.deepEqual(scenarioResultDataModes({ metricFanColumns: { netWorthUsd: metricFanTable } }), ["distribution"]);
-  assert.deepEqual(scenarioResultDataModes({ monthlyColumns: monthlyTable }), ["trajectory"]);
-  assert.deepEqual(
-    scenarioResultDataModes({
-      terminalColumns: metricFanTable,
-      monthlyColumns: monthlyTable,
-    }),
-    ["distribution", "trajectory"]
-  );
-  assert.equal(scenarioResultSupportsMode({ monthlyColumns: monthlyTable }, "trajectory"), true);
-  assert.equal(scenarioResultSupportsMode({ monthlyColumns: monthlyTable }, "distribution"), false);
-  assert.deepEqual(scenarioResultDataModes({ metricFanColumns: {}, monthlyColumns: null }), []);
 });
 
 test("scenario set request is canonical backend input after decamelizing", () => {
@@ -234,7 +206,6 @@ test("scenario set request is canonical backend input after decamelizing", () =>
       capGainsRate: 28,
     },
     initialBalanceSheet: {
-      privateEquityValueUsd: 123_000,
       privateEquityUnits: 456,
     },
     policies: {
@@ -252,7 +223,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
 
   assert.equal(backendRequest.scenario_set_id, "augur_futures_explorer");
   assert.equal(backendRequest.report_spec.include_monthly_columns, true);
-  assert.equal(backendRequest.report_spec.include_sample_paths, false);
+  assert.deepEqual(Object.keys(backendRequest.report_spec).sort(), ["include_monthly_columns", "percentiles"]);
   assert.deepEqual(firstScenario.property_selection, { property_id: "location_a_property" });
   assert.equal(firstScenario.tax_regimes, undefined);
   assert.equal(firstScenario.financing.financing_mode, "custom");
@@ -321,16 +292,15 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(backendRequest.scenarios[1].policies[0].base_monthly_payment_usd, 2_435);
 });
 
-test("request normalization does not send unsupported report knobs", () => {
+test("request normalization only sends current report fields", () => {
   const input = createDefaultScenarioSetInput(bootstrap);
-  input.reportSpec.includeSamplePaths = true;
   input.reportSpec.includeMonthlyColumns = false;
 
   const request = scenarioSetInputToRequest(input, bootstrap);
   const backendRequest = decamelizeObjectKeys(request);
 
   assert.equal("shared_market_paths" in backendRequest.market_request, false);
-  assert.equal(backendRequest.report_spec.include_sample_paths, false);
+  assert.deepEqual(Object.keys(backendRequest.report_spec).sort(), ["include_monthly_columns", "percentiles"]);
   assert.equal(backendRequest.report_spec.include_monthly_columns, false);
 });
 
@@ -367,7 +337,6 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
       vacancyPct: 7,
     },
     initialBalanceSheet: {
-      privateEquityValueUsd: 987_000,
       privateEquityUnits: 1_234,
     },
     policies: {
@@ -385,15 +354,10 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   assert.equal(decoded.scenarios[0].financing.customMortgageTermYears, 20);
   assert.equal(decoded.scenarios[0].taxAccounting.marginalTaxRate, 39);
   assert.equal(decoded.scenarios[0].occupancyAndRental.vacancyPct, 7);
-  assert.equal(decoded.scenarios[0].initialBalanceSheet.privateEquityValueUsd, undefined);
   assert.equal(decoded.scenarios[0].initialBalanceSheet.privateEquityUnits, 1_234);
   assert.equal(decoded.scenarios[0].policies.privateEquitySalePolicy, "liquid_net_worth_floor");
   assert.equal(decoded.scenarios[0].policies.privateEquityLiquidNetWorthFloorUsd, 250_000);
   assert.equal(decoded.scenarios[0].policies.privateEquityTenderSaleAmountUsd, 60_000);
-  assert.equal(
-    normalizeScenarioSetInput(decoded, bootstrap).scenarios[0].initialBalanceSheet.privateEquityValueUsd,
-    24_680
-  );
 });
 
 test("URL state normalizes missing trajectory seed to deterministic default", () => {

@@ -164,17 +164,6 @@ class FinancingMode(StrEnum):
     CUSTOM = "custom"
 
 
-class ReportMetric(StrEnum):
-    NET_WORTH = "net_worth"
-    LIQUID_NET_WORTH = "liquid_net_worth"
-    HOME_EQUITY = "home_equity"
-    ACTOR_EQUITY = "actor_equity"
-    PROPERTY_VALUE = "property_value"
-    OWNER_CASH_FLOW = "owner_cash_flow"
-    TAX_CASH_FLOW = "tax_cash_flow"
-    PRIVATE_EQUITY_SALE_OPPORTUNITY = "private_equity_sale_opportunity"
-
-
 class Actor(ApiModel):
     actor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
@@ -601,14 +590,8 @@ SimulationAccountingDetail = Annotated[
 
 
 class ReportSpec(ApiModel):
-    metrics: tuple[ReportMetric, ...] = (
-        ReportMetric.NET_WORTH,
-        ReportMetric.LIQUID_NET_WORTH,
-        ReportMetric.HOME_EQUITY,
-    )
     percentiles: tuple[float, ...] = (5, 25, 50, 75, 95)
     include_monthly_columns: bool = True
-    include_sample_paths: Literal[False] = False
 
     @model_validator(mode="after")
     def _percentiles_in_range(self) -> ReportSpec:
