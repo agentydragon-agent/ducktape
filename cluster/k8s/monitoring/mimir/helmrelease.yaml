@@ -22,7 +22,7 @@ spec:
     global:
       extraEnvFrom:
         - secretRef:
-            name: minio-credentials
+            name: mimir-s3-credentials
 
     minio:
       enabled: false
@@ -37,7 +37,7 @@ spec:
           storage:
             backend: s3
             s3:
-              endpoint: minio.minio-hil.svc.cluster.local:9000
+              endpoint: seaweedfs-s3.seaweedfs.svc:8333
               bucket_name: mimir-blocks
               region: us-east-1
               insecure: true
@@ -64,7 +64,7 @@ spec:
         ruler_storage:
           backend: s3
           s3:
-            endpoint: minio.minio-hil.svc.cluster.local:9000
+            endpoint: seaweedfs-s3.seaweedfs.svc:8333
             bucket_name: mimir-ruler
             region: us-east-1
             insecure: true

@@ -13,6 +13,13 @@ from cluster.validation.kustomize import KustomizeBuildResult
 
 def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     """Find YAML files not referenced by any kustomization."""
+    # TODO(2026-05-16): scope this scan to staged files only when invoked via
+    # pre-commit. Today it walks every YAML under cluster/k8s and complains
+    # about anything orphan — including parallel-agent files that exist on
+    # disk but aren't staged yet. That makes unrelated commits fail until the
+    # other agent lands its work. Likely fix: thread a "candidate set" argument
+    # through ParsedCluster.all_yaml_files and have the pre-commit entrypoint
+    # pass `git diff --cached --name-only` instead of the whole tree.
     errors = []
 
     # Build set of all referenced files
