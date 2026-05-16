@@ -27,6 +27,7 @@ spec:
     replicas: 1 # raft singleton — bump to 3 after the trial proves stable
     volumeSizeLimitMB: 30000
     defaultReplication: "001"
+    metricsPort: 9321
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
 
@@ -37,6 +38,7 @@ spec:
     storageClassName: local-path-ovh
     dataCenter: "hil"
     rack: "hil-ovh-h109b04"
+    metricsPort: 9325
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
 
@@ -46,6 +48,7 @@ spec:
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
+    metricsPort: 9326
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
 
@@ -54,5 +57,6 @@ spec:
     configSecret:
       name: seaweedfs-s3-config
       key: seaweedfs_s3_config.json
+    metricsPort: 9327
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
