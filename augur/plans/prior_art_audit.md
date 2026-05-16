@@ -24,13 +24,14 @@ The important gaps are sharper than the code currently names:
   trajectory needs scenario-set input, scenario id, market model identity,
   calibration/evidence identity, generator implementation/version, random seed,
   path index, and any non-market event streams.
-- Policy programs exist as a data shape, but `run_scenario_vectorized()` still
-  flattens policies by class with `enabled_rules_of_type()`. That weakens the
-  intended ordered actor policy semantics.
-- Cash-under-zero and failed-rollout semantics are not first-class. Current
-  tests intentionally allow cases such as a property purchase producing negative
-  cash after closing costs; without explicit credit/default/failure state this
-  is financially misleading.
+- Policy programs now execute through the ordered actor program path. The
+  remaining gap is richer execution trace coverage for no-op, rejected,
+  instructed, and applied decisions as policy families grow.
+- Cash-under-zero and failed-rollout semantics now have a first slice: unsettled
+  required annual-tax obligations produce settlement/failure rows and failed
+  rollout status. The remaining gap is generalizing that shape to mortgages,
+  other cash demands, explicit credit/default state, and continued-vs-terminated
+  projection behavior.
 - Ledger and accounting detail are valuable but not yet accounting-grade. Many
   arrays are now derived or reconciled, but postings are still stringly typed
   `domain`/`category` rows rather than balanced journal entries with typed
@@ -66,7 +67,7 @@ This audit is grounded in the current Augur files:
   batches, application results, ledger batches, and partner-ownership accrual.
 - `augur/core/scenario_engine.py`: performs vectorized projection over a
   `MarketBundle`, records row-level trace data, derives many arrays from ledger
-  and accounting details, and still runs policy families through class filters.
+  and accounting details, and executes policies through ordered actor programs.
 - `augur/model/`: contains evidence loading, market model protocols,
   historical series, simulated scenario arrays, and `MacroMarketBundleProvider`.
 
@@ -524,8 +525,9 @@ Recommended vocabulary:
   distinction must stay enforced.
 - Reproducibility is under-specified. A URL with seed and rollout is not enough
   if model code, source data, calibration, or scenario generator settings move.
-- Policy order bugs will be hard to spot when multiple policies interact with
-  the same cash, assets, lots, or opportunity stream.
+- Policy-order regressions will be hard to spot when multiple policies interact
+  with the same cash, assets, lots, or opportunity stream, so the ordered
+  program dispatcher needs durable guard tests.
 - Governance is not yet strong enough for financial advice-like use. Even for a
   personal tool, outputs should state model version, evidence, assumptions,
   limitations, and validation status.
@@ -567,11 +569,12 @@ Standardize these names before the next large redesign:
 
 ### Near-Term Implementation Slices
 
-1. Add first-class rollout health.
-   - Introduce `RolloutStatus` and `FailureEvent`.
+1. Generalize rollout health and required-obligation settlement.
+   - Extend the landed `RolloutStatus`, `FailureEvent`, obligation, funding
+     decision, and settlement-result shapes beyond annual tax obligations.
    - Decide whether `cash_usd < 0` is failed, defaulted, or allowed only through
      an explicit `CreditFacility`.
-   - Add tests for insufficient liquidity, policy rescue through sale, and
+   - Add tests for mortgage/payment shortfalls, policy rescue through sale, and
      unrecoverable default.
 
 2. Add explicit trajectory/path provenance.
@@ -581,9 +584,8 @@ Standardize these names before the next large redesign:
      seed, path index, risk-factor set, event-stream ids, and code
      version where available.
 
-3. Execute policies through one ordered actor program loop.
-   - Replace class-filtered policy execution with phase/order-driven policy
-     steps.
+3. Extend ordered actor program tracing.
+   - Keep policy execution on the ordered actor program dispatcher.
    - Emit `PolicyExecutionTrace` rows even for no-op or rejected decisions.
    - Preserve vectorized performance, but make semantics actor/order-first.
 

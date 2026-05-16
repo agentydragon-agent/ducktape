@@ -12,6 +12,9 @@ and deployment-specific composition stay in the downstream private repo.
 - `augur/SPEC.md`: product contract and simulator vocabulary.
 - `augur/plans/e2e_redesign.md`: distribution-first runtime redesign and
   ledger/reconciliation work.
+- `augur/plans/prior_art_audit.md`: external architecture lessons for path
+  identity, governance, policy projection, and accounting traces.
+- `augur/plans/cleanup_audit.md`: local stale-path audit and deletion sequence.
 - `augur/TODO.md`: public generic backlog.
 - `gaffer-private/TODO.md`: private personal-finance modeling follow-ups.
 - `gaffer-private/x/augur/SPEC.md`: private deployment boundary and image
@@ -33,6 +36,28 @@ liabilities, markets, policies, actions, ledgers, accounting detail, and
 balance snapshots. The app may provide friendly controls, but it should not use
 a flat browser-side "scenario row" as the source of truth and then expand it
 back into typed backend objects.
+
+## Prior-Art Shape For Core Cleanup
+
+The prior-art audit points to a conservative target shape:
+
+- Market generation and household projection stay separate. `MarketRequest` plus
+  `MarketBundle` is the economic scenario generator boundary; the core
+  simulator is deterministic once it receives a scenario set and sampled
+  exogenous paths.
+- Trajectory identity includes scenario input, market model identity,
+  evidence/calibration identity, generator implementation/version, seed, path
+  index, and any non-market event streams. `rollout_index` remains a convenient
+  selector, not a reproducibility key by itself.
+- Actor policy programs are ordered programs. Policy steps emit decisions and
+  instructions; accounting/runtime code validates and applies effects. New
+  policy families should not reintroduce per-class execution loops.
+- Ledgers, balance snapshots, accounting detail, lots, liabilities, and typed
+  cause IDs are the source of truth. Monthly arrays are chart/report views over
+  that state, not a parallel semantic model.
+- Model governance is part of the model output: market bundles should carry
+  model/evidence/calibration identity and point at model-card or validation
+  artifacts as those exist.
 
 ## Priority 1: Type Result Views And Accounting Detail
 
@@ -265,7 +290,10 @@ inspection surfaces.
 
 Work:
 
-- Replace class-filtered policy execution with ordered actor policy programs.
+- Keep execution on the ordered actor policy program dispatcher as policy
+  families grow; do not add new per-class monthly loops.
+- Add richer policy execution trace rows for no-op, rejected, instructed, and
+  applied decisions where trajectory inspection needs them.
 - Rename or reframe the runtime vocabulary around `Instruction` plus `Effect`.
   In the current accounting-oriented simulator, the actor's RL-like choice is
   closer to a policy decision/instruction, while the existing `Action` concept
@@ -278,6 +306,7 @@ Work:
 Acceptance criteria:
 
 - Policy order is explicit and testable.
+- No policy family bypasses the ordered actor program dispatcher.
 - Policy decisions are visible in trajectory inspection.
 - Result arrays are not the only way to understand why something happened.
 
@@ -323,15 +352,21 @@ Work:
 
 ## Immediate Implementation Sequence
 
-1. Wire the generated Augur OpenAPI/browser schema target into browser state
-   normalization and request mapping, replacing hand-written JS shape checks
-   where practical.
-2. Redesign private-equity sale opportunities around exogenous events plus
-   actor policy, building on the existing liquid-net-worth-floor tender policy.
-3. Continue Step 7 tax/accounting reconciliation once the app state and result
-   views stop obscuring accounting semantics.
-4. Start the ordered policy-program runtime refactor only after the app state
-   and PE/tax surfaces no longer require scenario-level enum hacks.
+1. Continue core model cleanup before broad UI polish: account-aware
+   obligations/funding, failure/default semantics, and ledger/accounting detail
+   as the source of truth for monthly report arrays.
+2. Strengthen trajectory, path, cause, and model-governance identities so a
+   selected rollout can be reproduced and audited from scenario input through
+   market evidence and policy decisions.
+3. Keep expanding ordered actor policy programs through explicit decision and
+   instruction traces, now that execution order is the runtime path.
+4. Move public generic data toward typed config resources: local
+   regulation/tax defaults, catalog rows, market config, and eventually a
+   deployment-supplied portfolio/account YAML contract. Private values stay in
+   downstream repos.
+5. Wire the generated Augur OpenAPI/browser schema target into browser state
+   normalization and request mapping, then split app/frontend/server packages
+   after the core contracts and server cleanup settle.
 
 ## Next Work Plans
 
@@ -370,19 +405,99 @@ Validation:
 
 ### Plan C: Tax/Obligation Settlement Slice
 
+Status:
+
+- First slice landed for annual tax obligations: unsettled required obligations
+  produce settlement/failure rows and `RolloutStatusType.FAILED`; sale policy can
+  rescue the obligation. Remaining work is to generalize the shape.
+
 Scope:
 
-- Introduce the smallest first-class obligation/settlement shape needed for tax
-  or mortgage cash demands.
-- Preserve today's `cash_negative` warning semantics while reserving future
-  `failed` rollout status for required obligations that cannot be settled after
-  policy funding attempts.
-- Add tests for no-policy shortfall, sale-policy rescue, and explicit
-  failure/default semantics.
+- Extend the first-class obligation/settlement shape from annual taxes to
+  mortgage and other required cash demands.
+- Preserve `cash_negative` warning semantics for unexplained negative cash while
+  using `failed` rollout status for required obligations that cannot be settled
+  after policy funding attempts.
+- Add tests for mortgage/payment shortfall, sale-policy rescue, explicit
+  failure/default semantics, and continued-vs-terminated projection behavior.
 
 Validation:
 
 - `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-obligation-plan test //augur/core:test_e2e //augur/core:scenario_engine_test //augur/core:policy_runtime_test --nocache_test_results --test_size_filters=small,medium,large`
+
+### Plan D: Keep Market Configuration Typed At The Boundary
+
+Status:
+
+- Implemented for the current macro market config. The remaining work is to
+  keep the file-contract guardrail in place as source data and downstream
+  deployment inputs grow.
+
+Scope:
+
+- Maintain the Pydantic model for the macro market config file and parse JSON
+  once at load time.
+- Keep `MacroMarketBundleProvider`, evidence loaders, and location market source
+  mapping on typed field access.
+- Keep `SourceDataConfig`, location-market-source validation, and the checked-in
+  example file under the same typed config tree, with no parallel hand-written
+  schema or compatibility path.
+- Reject stale simulation knobs at the file boundary. `MarketRequest` owns
+  rollout count, horizon, and seed; the market config should not keep a second
+  inert version of those controls.
+- Use the contract test as the review point when adding new source-data fields
+  or deployment-supplied config.
+
+Validation:
+
+- `bbr test //augur/model:market_config_test //augur/model/...`
+- `bbr test //augur/core:test_e2e`
+
+### Plan E: Server Boundary Cleanup
+
+Scope:
+
+- Replace `AugurBackend` constructor nullability with explicit dependency/config
+  objects or separate production/dev factory paths.
+- Collapse the one-function static-path helper into the HTTP server boundary
+  unless it grows real ownership.
+- Keep this as a behavior-preserving server cleanup; defer package moves until
+  the server surface is smaller.
+
+Validation:
+
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-server-cleanup test //augur/app:browser_shell_test //augur/app:config_test --nocache_test_results --test_size_filters=small,medium,large`
+
+### Plan F: Move Location Tax Defaults To Model Config
+
+Scope:
+
+- Move app-owned tax-regime defaults and location-to-tax-regime mapping into
+  typed location/local-regulation configuration.
+- Keep app catalog/server code as a consumer of modeled location defaults, not
+  the place that decides tax semantics.
+- Use behavior tests around scenario conversion/catalog output rather than
+  literal YAML value change-detector tests.
+
+Validation:
+
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-location-tax-config test //augur/app:catalog_test //augur/app:config_test //augur/core:local_regulation_test //augur/core:scenario_set_test --nocache_test_results --test_size_filters=small,medium,large`
+
+### Plan G: Split App Package Boundaries
+
+Scope:
+
+- Move browser code and bundle targets from `augur/app` toward an
+  `augur/frontend` package.
+- Move HTTP/API/server code from `augur/app` toward an `augur/server` or
+  `augur/api` package.
+- Run this after the server cleanup, Mantine cleanup, and visual-test helper
+  lanes land, so the split is mostly mechanical and easier to review.
+
+Validation:
+
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-app-split test //augur/... --nocache_test_results`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-app-split build //augur/...`
 
 ## Verification Loop
 

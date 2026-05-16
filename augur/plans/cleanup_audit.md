@@ -5,13 +5,13 @@
 Augur is moving in the right direction: the current docs define a
 distribution-first simulator, sectioned scenario state, ordered actor policy
 programs, private-equity opportunities rather than liquidity, and
-ledger/accounting-backed reporting. The implementation still carries several
-old or parallel paths that make that direction harder to enforce.
+ledger/accounting-backed reporting. The ordered actor policy runtime has landed,
+but the implementation still carries several old or parallel trace/detail paths
+that make that direction harder to enforce.
 
 The highest-value remaining cleanup is not broad refactoring. Force the engine
-to choose one source of truth for policy execution and result detail: ordered
-policy programs plus state/ledger/accounting rows, with monthly arrays as
-derived chart output.
+to choose one source of truth for result detail: ordered policy programs plus
+state/ledger/accounting rows, with monthly arrays as derived chart output.
 
 Root `STYLE.md` and `augur/AGENTS.md` make several of these findings stronger:
 Augur is pre-production, so compatibility shims need explicit justification;
@@ -22,27 +22,25 @@ hidden behind fallbacks.
 
 ## Suspicious/Needs-Design Review
 
-1. Ordered policy programs exist, but execution still groups by policy class.
+1. Ordered policy programs exist, and execution now uses their order.
+   (Completed)
 
    Files/functions: `actor_policy_programs()` and `actor_policy_steps()` in
-   `augur/core/policy_runtime.py:207-254`; `run_scenario_vectorized()` flattens
-   those steps into `partner_equity_steps`, `spend_steps`, `checking_steps`,
-   and `private_equity_sale_steps` at
-   `augur/core/scenario_engine.py:468-473`, then runs hardcoded loops by type at
-   lines 560-704.
+   `augur/core/policy_runtime.py`; `run_scenario_vectorized()` builds
+   `policy_steps` from those programs and dispatches each typed policy in
+   sequence.
 
-   Why suspicious: the design invariant says actor policy programs are ordered
-   sequences. The current engine preserves sequence metadata but then ignores
-   cross-type ordering. A monthly spend policy cannot be ordered before or after
-   private-equity sale in the same actor program in a meaningful way.
+   Why this mattered: the design invariant says actor policy programs are
+   ordered sequences. Preserving sequence metadata while executing by policy
+   class made cross-type ordering meaningless.
 
-   Replace with: a month loop that iterates `ActorPolicyStep.sequence_index`
-   and dispatches each policy through a typed handler. Delete
-   `enabled_rules_of_type()` if it remains test-only; it is the older
-   class-filtered shape.
+   Completed by: `run_scenario_vectorized()` now dispatches ordered policy steps
+   through typed handlers, and the older `enabled_rules_of_type()` helper was
+   removed.
 
-   Prove safe by: add a test with two policies whose order changes cash and
-   sale behavior, then assert reversing policy order reverses the effect.
+   Remaining guard: keep adding policy families through the ordered dispatcher,
+   and add richer trace rows for no-op, rejected, instructed, and applied
+   decisions where trajectory inspection needs them.
 
 2. Actions, decisions, ledger entries, balance snapshots, accounting details,
    and monthly arrays overlap heavily.
@@ -195,9 +193,9 @@ hidden behind fallbacks.
 
 ## Suggested Deletion/Replacement Sequence
 
-1. Convert `run_scenario_vectorized()` to execute ordered policy steps rather
-   than per-class loops. Delete `enabled_rules_of_type()` and any tests that
-   encode class-filtered behavior.
+1. Keep policy execution on the ordered dispatcher. Do not add new per-class
+   monthly loops, and extend policy trace rows as trajectory inspection needs
+   no-op/rejected/applied decision detail.
 
 2. Pick one trace/source-of-truth path. Start by collapsing one duplicated
    family, such as mortgage payment action rows or partner ownership rows, into

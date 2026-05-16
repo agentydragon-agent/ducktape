@@ -16,6 +16,11 @@ second ordered roadmap.
       normalization and request mapping. Python Pydantic remains the source of
       truth; do not grow a second hand-maintained Zod/schema definition in
       `augur/app`.
+- [ ] Split the current `augur/app` package into clearer ownership boundaries:
+      browser/frontend assets in an `augur/frontend`-style package, and HTTP/API
+      server code in an `augur/api` or `augur/server`-style package. Do this
+      after the current app/server cleanup lanes are integrated, so the move is
+      mostly mechanical rather than mixing package motion with behavior changes.
 - [ ] Continue `plans/e2e_redesign.md` Step 7 by replacing `allocated_to_source_month` tax timing with realistic annual/estimated-payment liability timing.
 - [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 - [ ] Add a durable property-asset storage contract: stable property asset IDs/URLs backed by object storage or a database-like asset table, so deployments do not need to bake private media into frontend images.
@@ -26,7 +31,10 @@ second ordered roadmap.
 
 ## API / Runtime Design Debt
 
-- [ ] Replace class-filtered policy execution with ordered actor policy programs. `actor_policy_programs()` exists, but the engine still flattens policies with `enabled_rules_of_type()` and runs hardcoded branches in `run_scenario_vectorized()`.
+- [ ] Keep actor policy execution order-first as policy families grow. New
+      policies should run through ordered actor policy programs and emit
+      inspectable decisions/traces rather than reintroducing per-class monthly
+      loops.
 - [ ] Split private-equity sale opportunity, user participation preference,
       policy decision, accounting application, and public action into separate
       concepts with explicit cause IDs. Tender-eligible private marks are not
@@ -43,39 +51,52 @@ second ordered roadmap.
       that explicit, and consider separate structures/identifiers for market
       nondeterminism, policy nondeterminism, and any future non-market random
       events so trajectory IDs do not conflate different sources of randomness.
-- [ ] Make rollout failure semantics first-class. Today
-      `RolloutStatusType.CASH_NEGATIVE` is an annotation/warning about the cash
-      path, not a failed simulation. A future `failed` status should mean a
-      required obligation/cash demand could not be settled after actor policy
-      had a chance to fund it through cash, sale, or financing instructions.
+- [ ] Generalize rollout failure semantics beyond the first annual-tax
+      obligation settlement slice. `RolloutStatusType.FAILED` now hangs off
+      unsettled required obligations; extend that pattern to mortgages, other
+      tax/payment demands, and future default/termination behavior.
 - [ ] Decide whether negative cash is allowed only through explicit borrowing.
       If the model says an actor has overdraft, credit-line, margin, or other
       borrowing capacity, negative cash can be an accounting effect paired with
       that liability/financing state. Otherwise, a cash shortfall should invoke
       sale/financing policies or mark the corresponding obligation settlement
       failed, rather than silently implying borrowing.
-- [ ] Keep rollout health machine-readable in the `RolloutStatusType.status`
-      enum. Add structured failure/obligation detail later if needed, but do
-      not reintroduce an enum-like `status_reason` string.
+- [ ] Keep rollout health machine-readable through `RolloutStatusType`, failure
+      events, obligations, funding decisions, and settlement results. Do not
+      reintroduce an enum-like `status_reason` string.
 - [ ] Clarify initial state vs scheduled transitions. Property purchase,
       financing, ownership, future sale, rental transition, and private-stock
       sale opportunities should not be split across fields/events that can
       contradict each other.
 - [ ] Reduce single-property/global assumptions. Scenario-level `property_selection`, `financing`, `rental_plan`, and `tax_profile` should eventually become initial positions, per-property settings, or per-actor/accounting inputs as the simulator grows.
 - [ ] Replace built-in `LocationId` enum with database-like location entities, parallel to properties. A location should carry regulation/tax/modeling knobs that downstream regulation and tax code interprets, not require hardcoded enum extension.
-- [ ] Move local-regulation definitions toward config-driven data, likely YAML
-      or another reviewed structured format. The config should cover generic
-      knobs where possible while still being able to select location-specific
-      code paths for tax, regulation, or other behaviors that cannot be modeled
-      cleanly as data alone.
-- [ ] Move pure-data model inputs out of Python modules and into dumb parsed
-      configuration resources, such as Pydantic-parsed YAML loaded via runfiles
-      or `importlib.resources`. Tables/constants like those currently embedded
-      in `annual_tax.py` should be data unless the Python code is doing real
-      behavior.
+- [ ] Move pure-data model inputs, catalog rows, local-regulation/tax defaults,
+      and location-to-tax-regime mappings out of app/server Python and into
+      typed configuration resources, such as Pydantic-parsed YAML loaded via
+      runfiles or `importlib.resources`. Keep Python for loading, validation,
+      and composition logic; use behavior tests around conversion/catalog
+      output rather than literal YAML mirror tests.
 - [ ] Prefer Pydantic for serde and validation at API/config boundaries. Avoid
       custom `to_json_dict()`-style conversion helpers except at narrow
       compatibility seams.
+- [ ] Keep the macro market config file boundary pinned by contract tests. New
+      fields should update `augur/model/market_config_test.py`, remain
+      Pydantic-parsed at load time, and avoid stale simulation knobs already
+      owned by `MarketRequest`.
+- [ ] Define a generic deployment-supplied portfolio YAML contract for real
+      financial inputs. The public schema should cover accounts/cash, public
+      securities, crypto holdings, private-equity lots/marks/tender windows,
+      cost basis, custody/source metadata, and valuation provenance; downstream
+      private repos own the actual values.
+- [ ] Add minimal model-governance artifacts for market providers: model
+      card/version, evidence/calibration IDs, validation-report link, and source
+      data provenance attached to `MarketBundleMetadata`.
+- [ ] Replace `AugurBackend` constructor shapes that rely on many nullable
+      parameters with explicit dependency/config objects or separate factory
+      paths for production static serving versus dev/test API serving.
+- [ ] Collapse `augur/app/static.py` unless the static-path helper grows a real
+      module boundary. A one-function wrapper should live next to the HTTP
+      server code that uses it.
 - [ ] Stop requiring private-equity input positions to carry both `units` and a
       marked `value_usd` when the value is determined by units plus the private
       equity price model. The browser no longer stores an editable private
@@ -132,6 +153,11 @@ second ordered roadmap.
       result disclosure behavior. Migrate form controls, tables, buttons, input
       groups, and remaining disclosure widgets incrementally instead of adding
       more one-off local primitives.
+- [ ] Extract shared browser visual-test utilities for deterministic Playwright
+      runs. Augur visual goldens currently carry their own Chromium determinism
+      flags and injected determinism CSS; those should move into a shared repo
+      helper alongside similar browser visual tests so each app does not invent
+      its own deterministic screenshot harness.
 - [ ] Finish financing-control cleanup around mortgage terms. The browser now
       hides custom term/rate fields outside custom override mode, but the broader
       domain model still needs a pass over which mortgage products and override
