@@ -60,6 +60,7 @@ py_binary(
     name = "aiquota",
     imports = [".."],
     main_module = "aiquota.cli",
+    visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":cli_lib",
         "@pypi//typer",
