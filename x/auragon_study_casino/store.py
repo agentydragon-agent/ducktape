@@ -114,9 +114,7 @@ class SqlStore:
             connect_args["check_same_thread"] = False
         self._engine: Engine = create_engine(database_url, connect_args=connect_args)
         if self._engine.dialect.name == "sqlite":
-            with self._engine.connect() as conn:
-                conn.exec_driver_sql("PRAGMA journal_mode=WAL")
-                conn.commit()
+            _enable_sqlite_wal(self._engine)
         _run_alembic_migrations(self._engine)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
 
@@ -425,17 +423,15 @@ _DEFAULT_PRIZES_AS_DICTS: list[dict[str, Any]] = [
 ]
 
 
-# Enable WAL on every pooled SQLite connection. No-op for other dialects.
-@event.listens_for(Engine, "connect")
-def _sqlite_pragma_on_connect(dbapi_conn: Any, _record: Any) -> None:
-    # SQLite connections expose `isolation_level`; Postgres ones don't have
-    # the same `cursor()` semantics but `execute` raises before we'd care.
-    if not hasattr(dbapi_conn, "isolation_level"):
-        return
-    try:
+def _enable_sqlite_wal(engine: Engine) -> None:
+    """Enable WAL journaling on every pooled connection of a SQLite engine.
+
+    Registered only on SQLite engines (Postgres does not understand
+    `PRAGMA` and would abort the connection transaction).
+    """
+
+    @event.listens_for(engine, "connect")
+    def _set_wal(dbapi_conn: Any, _record: Any) -> None:
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.close()
-    except Exception:
-        # Pragma only meaningful for SQLite — silently ignore for other DBs.
-        pass
