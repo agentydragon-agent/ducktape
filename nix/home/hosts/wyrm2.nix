@@ -54,6 +54,7 @@
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
+    ducktapePackages.aiquota
     ducktapePackages.bebas-neue-font
     pkgs.inkscape
     pkgs.kicad

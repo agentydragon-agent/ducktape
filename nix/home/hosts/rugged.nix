@@ -84,6 +84,7 @@
   };
 
   home.packages = [
+    ducktapePackages.aiquota
     ducktapePackages.bebas-neue-font
     pkgs.inkscape
     pkgs.kicad
