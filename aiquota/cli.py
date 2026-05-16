@@ -1,40 +1,35 @@
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
 
-from aiquota.cache import QuotaCache, _fetch_providers
-from aiquota.config import load as load_config
-from aiquota.models import AllQuotas
+from aiquota.cache import QuotaService
+from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
 from aiquota.render import json_output, tmux as render_tmux
 
-app = typer.Typer(add_completion=False)
+_CONFIG_OPTION = typer.Option(DEFAULT_CONFIG_PATH, "--config", "-c", help="Config file path")
+
+app = typer.Typer(add_completion=False, invoke_without_command=True)
+
+
+@app.callback()
+def main(ctx: typer.Context, config: Path = _CONFIG_OPTION) -> None:
+    """AI subscription quota tracker."""
+    ctx.ensure_object(dict)
+    ctx.obj["service"] = QuotaService(config=load_config(config))
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(fetch, ctx=ctx)
+
+
+def _service(ctx: typer.Context) -> QuotaService:
+    return ctx.obj["service"]
 
 
 @app.command()
-def tmux(config: Path | None = typer.Option(None, "--config", "-c", help="Config file path")) -> None:
-    """Render quota status as a tmux status line segment."""
-    cfg = load_config(config)
-    cache = QuotaCache()
-    quotas = cache.fetch_all(cfg)
-    sys.stdout.write(render_tmux.render(quotas.providers))
-
-
-@app.command(name="json")
-def json_cmd(config: Path | None = typer.Option(None, "--config", "-c", help="Config file path")) -> None:
-    """Render quota status as JSON (for GNOME extension consumption)."""
-    cfg = load_config(config)
-    cache = QuotaCache()
-    quotas = cache.fetch_all(cfg)
-    json_output.render(quotas)
-
-
-@app.command()
-def fetch(config: Path | None = typer.Option(None, "--config", "-c", help="Config file path")) -> None:
+def fetch(ctx: typer.Context) -> None:
     """Fetch and display quota status in human-readable form."""
-    cfg = load_config(config)
-    quotas = AllQuotas(providers=_fetch_providers(cfg), fetched_at=datetime.now(UTC))
+    svc = _service(ctx)
+    quotas = svc.fetch_fresh()
     for pq in quotas.providers:
         if pq.error:
             print(f"{pq.provider}: error — {pq.error}")
@@ -45,3 +40,23 @@ def fetch(config: Path | None = typer.Option(None, "--config", "-c", help="Confi
         if pq.long_window:
             parts.append(f"7d:{round(pq.long_window.used_percent)}%")
         print(f"{pq.provider}: {' '.join(parts) if parts else 'no data'}")
+
+
+@app.command()
+def tmux(ctx: typer.Context) -> None:
+    """Render quota status as a tmux status line segment."""
+    svc = _service(ctx)
+    quotas = svc.fetch_all()
+    sys.stdout.write(render_tmux.render(quotas.providers))
+
+
+@app.command(name="json")
+def json_cmd(ctx: typer.Context) -> None:
+    """Render quota status as JSON (for GNOME extension consumption)."""
+    svc = _service(ctx)
+    quotas = svc.fetch_all()
+    json_output.render(quotas)
+
+
+if __name__ == "__main__":
+    app()

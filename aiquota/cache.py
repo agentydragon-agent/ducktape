@@ -38,6 +38,18 @@ class QuotaCache:
         return fresh
 
 
+class QuotaService:
+    def __init__(self, config: ConfigFile, cache: QuotaCache | None = None) -> None:
+        self.config = config
+        self.cache = cache or QuotaCache()
+
+    def fetch_all(self) -> AllQuotas:
+        return self.cache.fetch_all(self.config)
+
+    def fetch_fresh(self) -> AllQuotas:
+        return AllQuotas(providers=_fetch_providers(self.config), fetched_at=datetime.now(UTC))
+
+
 def _fetch_providers(config: ConfigFile) -> list[ProviderQuota]:
     providers: list[ProviderQuota] = []
     for name, fetch_fn in [("claude", claude.fetch), ("codex", codex.fetch)]:

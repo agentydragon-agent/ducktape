@@ -1,8 +1,8 @@
+import tomllib
 from pathlib import Path
 
-import tomllib
-from pydantic import BaseModel
 from platformdirs import user_config_dir
+from pydantic import BaseModel
 
 CONFIG_DIR = Path(user_config_dir("aiquota"))
 DEFAULT_CONFIG_PATH = CONFIG_DIR / "config.toml"
@@ -17,10 +17,9 @@ class ConfigFile(BaseModel):
     providers: dict[str, ProviderSettings] = {}
 
 
-def load(path: Path | None = None) -> ConfigFile:
-    p = path or DEFAULT_CONFIG_PATH
+def load(path: Path) -> ConfigFile:
     try:
-        raw = p.read_text()
+        raw = path.read_text()
     except OSError:
         return ConfigFile()
     try:
