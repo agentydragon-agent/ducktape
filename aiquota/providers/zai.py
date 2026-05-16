@@ -5,7 +5,7 @@ Auth via API key read from a configurable file path.
 """
 
 import logging
-import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -45,10 +45,14 @@ class _QuotaResponse(BaseModel):
 def _to_window(limit: _Limit | None, window_secs: float) -> QuotaWindow | None:
     if limit is None or limit.percentage is None:
         return None
+    reset_at: datetime | None = None
     reset_secs = 0.0
     if limit.next_reset_time is not None:
-        reset_secs = max(0, (limit.next_reset_time - time.time() * 1000) / 1000)
-    return QuotaWindow(used_percent=limit.percentage, reset_seconds=reset_secs, window_seconds=window_secs)
+        reset_at = datetime.fromtimestamp(limit.next_reset_time / 1000, UTC)
+        reset_secs = max(0, (reset_at - datetime.now(UTC)).total_seconds())
+    return QuotaWindow(
+        used_percent=limit.percentage, reset_seconds=reset_secs, window_seconds=window_secs, reset_at=reset_at
+    )
 
 
 def fetch(api_key_path: str | None = None) -> ProviderQuota:
@@ -63,19 +67,15 @@ def fetch(api_key_path: str | None = None) -> ProviderQuota:
         return ProviderQuota(provider="zai", error="api key file is empty")
 
     try:
-        resp = httpx.get(
-            QUOTA_URL,
-            headers={"Authorization": f"Bearer {key}"},
-            timeout=API_TIMEOUT_SECS,
-        )
+        resp = httpx.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"}, timeout=API_TIMEOUT_SECS)
         resp.raise_for_status()
         quota = _QuotaResponse.model_validate(resp.json())
     except Exception as e:
         return ProviderQuota(provider="zai", error=str(e))
 
     limits = quota.data.limits if quota.data else []
-    short_limit = next((l for l in limits if l.type == "TOKENS_LIMIT" and l.unit == 3), None)
-    long_limit = next((l for l in limits if l.type == "TOKENS_LIMIT" and l.unit == 6), None)
+    short_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 3), None)
+    long_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 6), None)
     short = _to_window(short_limit, SHORT_WINDOW_SECS)
     long = _to_window(long_limit, LONG_WINDOW_SECS)
     return ProviderQuota(provider="zai", short_window=short, long_window=long)

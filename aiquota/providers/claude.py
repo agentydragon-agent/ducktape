@@ -11,20 +11,14 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from aiquota.models import ProviderQuota, QuotaWindow
+from aiquota.models import ExtraUsage, ProviderQuota, QuotaWindow
 
 logger = logging.getLogger(__name__)
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-OAUTH_SCOPES = [
-    "user:profile",
-    "user:inference",
-    "user:sessions:claude_code",
-    "user:mcp_servers",
-    "user:file_upload",
-]
+OAUTH_SCOPES = ["user:profile", "user:inference", "user:sessions:claude_code", "user:mcp_servers", "user:file_upload"]
 SHORT_WINDOW_SECS = 5 * 3600
 LONG_WINDOW_SECS = 7 * 86400
 TOKEN_EXPIRY_SKEW_SECS = 30
@@ -54,11 +48,21 @@ class _UsageBucket(BaseModel):
     resets_at: str | None = None
 
 
+class _ExtraUsage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    is_enabled: bool = False
+    monthly_limit: float = 0
+    used_credits: float = 0
+    utilization: float = 0
+
+
 class _UsageResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     five_hour: _UsageBucket | None = None
     seven_day: _UsageBucket | None = None
+    extra_usage: _ExtraUsage | None = None
 
 
 class _TokenRefreshResponse(BaseModel):
@@ -125,14 +129,17 @@ def _token_expired(creds: _Credentials) -> bool:
 def _to_window(bucket: _UsageBucket | None, window_secs: float) -> QuotaWindow | None:
     if bucket is None:
         return None
+    reset_at: datetime | None = None
     reset_secs = 0.0
     if bucket.resets_at:
         try:
-            resets_at_ms = datetime.fromisoformat(bucket.resets_at.replace("Z", "+00:00")).timestamp() * 1000
-            reset_secs = max(0, (resets_at_ms - datetime.now(UTC).timestamp() * 1000) / 1000)
+            reset_at = datetime.fromisoformat(bucket.resets_at)
+            reset_secs = max(0, (reset_at.timestamp() - datetime.now(UTC).timestamp()))
         except (ValueError, OSError):
             pass
-    return QuotaWindow(used_percent=bucket.utilization, reset_seconds=reset_secs, window_seconds=window_secs)
+    return QuotaWindow(
+        used_percent=bucket.utilization, reset_seconds=reset_secs, window_seconds=window_secs, reset_at=reset_at
+    )
 
 
 def fetch() -> ProviderQuota:
@@ -148,10 +155,7 @@ def fetch() -> ProviderQuota:
     try:
         resp = httpx.get(
             USAGE_URL,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "anthropic-beta": "oauth-2025-04-20",
-            },
+            headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"},
             timeout=API_TIMEOUT_SECS,
         )
         resp.raise_for_status()
@@ -161,4 +165,13 @@ def fetch() -> ProviderQuota:
 
     short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
     long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
-    return ProviderQuota(provider="claude", short_window=short, long_window=long)
+    extra: ExtraUsage | None = None
+    if usage.extra_usage and usage.extra_usage.is_enabled:
+        eu = usage.extra_usage
+        extra = ExtraUsage(
+            is_enabled=True,
+            monthly_limit_usd=eu.monthly_limit / 100,
+            used_usd=eu.used_credits / 100,
+            utilization=eu.utilization,
+        )
+    return ProviderQuota(provider="claude", short_window=short, long_window=long, extra_usage=extra)

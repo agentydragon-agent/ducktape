@@ -5,6 +5,7 @@ Auth via ~/.codex/auth.json (file-based; Secret Service not available from CLI).
 """
 
 import logging
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -64,10 +65,12 @@ def _read_auth() -> _AuthTokens | None:
 def _to_window(w: _WindowData | None) -> QuotaWindow | None:
     if w is None or w.limit_window_seconds <= 0:
         return None
+    reset_secs = max(0, w.reset_after_seconds)
     return QuotaWindow(
         used_percent=w.used_percent,
-        reset_seconds=max(0, w.reset_after_seconds),
+        reset_seconds=reset_secs,
         window_seconds=w.limit_window_seconds,
+        reset_at=datetime.now(UTC) + timedelta(seconds=reset_secs),
     )
 
 
