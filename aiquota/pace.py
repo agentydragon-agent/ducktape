@@ -18,14 +18,11 @@ def compute_pace(w: QuotaWindow) -> PaceResult | None:
         projected_at_reset = w.used_percent + rate_per_sec * w.reset_seconds
     stable = STABLE_FRACTION < elapsed_frac < 1 - STABLE_FRACTION
     return PaceResult(
-        deviation=deviation,
-        projected_at_reset=projected_at_reset,
-        seconds_to_exhaust=seconds_to_exhaust,
-        stable=stable,
+        deviation=deviation, projected_at_reset=projected_at_reset, seconds_to_exhaust=seconds_to_exhaust, stable=stable
     )
 
 
-# Pace deviation thresholds (percentage points: used% − expected%).
+# Pace deviation thresholds (percentage points: used% - expected%).
 PACE_COOL_BELOW = -10
 PACE_WARN_ABOVE = 5
 PACE_HOT_ABOVE = 15

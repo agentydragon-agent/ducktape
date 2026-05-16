@@ -1,10 +1,10 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest_bazel
+
 from aiquota.cache import QuotaCache
 from aiquota.models import AllQuotas, ProviderQuota
-
-import pytest_bazel
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -12,10 +12,7 @@ if __name__ == "__main__":
 
 def test_cache_roundtrip(tmp_path: Path) -> None:
     cache = QuotaCache(path=tmp_path / "cache.json")
-    quotas = AllQuotas(
-        providers=[ProviderQuota(provider="test", error="none")],
-        fetched_at=datetime.now(UTC),
-    )
+    quotas = AllQuotas(providers=[ProviderQuota(provider="test", error="none")], fetched_at=datetime.now(UTC))
     cache.write(quotas)
     restored = cache.read()
     assert restored is not None
