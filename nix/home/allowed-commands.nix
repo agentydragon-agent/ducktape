@@ -56,17 +56,53 @@ let
 
   bazelCommands = prefixCommandProduct bazelExecutables bazelSubcommands;
 
-  nixDevelopBazelCommands =
+  # Generate "nix develop <flag> <cmd>" variants for both --command and -c flags.
+  nixDevelopWrapped =
+    commands:
     let
       commandFlags = [
         "--command"
         "-c"
       ];
-      nixDevelopBazel = builtins.concatMap (
-        flag: map (exe: "nix develop ${flag} ${exe}") bazelExecutables
-      ) commandFlags;
+    in
+    builtins.concatMap (cmd: map (flag: "nix develop ${flag} ${cmd}") commandFlags) commands;
+
+  nixDevelopBazelCommands =
+    let
+      nixDevelopBazel = nixDevelopWrapped bazelExecutables;
     in
     prefixCommandProduct nixDevelopBazel bazelSubcommands;
+
+  # Commands that need both bare and nix-develop-wrapped variants.
+  # bareOnlyWrapped: no subcommand, just the command with trailing args
+  # bareAndWrapped: command + subcommand (e.g. "pre-commit run")
+  wrappedCommands =
+    let
+      bareAndWrapped =
+        commands: subcommands:
+        let
+          bare = prefixCommandProduct commands subcommands;
+          wrapped = prefixCommandProduct (nixDevelopWrapped commands) subcommands;
+        in
+        bare ++ wrapped;
+
+      bareOnlyWrapped =
+        commands:
+        let
+          bare = map (cmd: {
+            type = "prefix";
+            inherit cmd;
+          }) commands;
+          wrapped = map (cmd: {
+            type = "prefix";
+            inherit cmd;
+          }) (nixDevelopWrapped commands);
+        in
+        bare ++ wrapped;
+    in
+    bareOnlyWrapped [ "prettier" ]
+    ++ bareAndWrapped [ "pre-commit" ] [ "run" ]
+    ++ bareAndWrapped [ "talosctl" ] [ "version" ];
 
   nixCommands =
     prefixCommandProduct
@@ -116,19 +152,8 @@ in
         type = "exact";
         cmd = "pwd";
       }
-      {
-        type = "exact";
-        cmd = "talosctl version";
-      }
-      {
-        type = "prefix";
-        cmd = "prettier";
-      }
-      {
-        type = "prefix";
-        cmd = "pre-commit run";
-      }
     ]
+    ++ wrappedCommands
     ++ cargoMetadataCommands;
 
   # TODO: Add build system queries:
