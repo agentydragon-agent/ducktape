@@ -82,10 +82,14 @@ let
       ++ [ ducktape-util ];
   };
 
+  # Combined CLI + GNOME Shell extension package.
+  aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
+
 in
 {
   inherit ducktape-util;
   inherit ducktape-git-hooks;
+  inherit aiquota;
 
   bbr = mkWheel {
     pname = "bbr";
@@ -217,8 +221,6 @@ in
     ];
   };
 
-  # Combined CLI + GNOME Shell extension package.
-  aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
   # Alias for programs.gnome-shell.extensions compatibility.
   gnome-shell-aiquota = aiquota;
   tana = pkgs.callPackage ./tana.nix { };
