@@ -48,6 +48,7 @@ py_library(
     deps = [
         ":cache",
         ":models",
+        "//aiquota/render:human_lib",
         "//aiquota/render:json_output_lib",
         "//aiquota/render:tmux_lib",
         "@pypi//typer",

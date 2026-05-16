@@ -1,4 +1,25 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_test")
+
+py_library(
+    name = "format_lib",
+    srcs = ["format.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = ["//aiquota:models"],
+)
+
+py_library(
+    name = "human_lib",
+    srcs = ["human.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__pkg__"],
+    deps = [
+        ":format_lib",
+        "//aiquota:models",
+        "//aiquota:pace",
+    ],
+)
 
 py_library(
     name = "tmux_lib",
@@ -41,5 +62,18 @@ py_test(
         ":json_output_lib",
         "//aiquota:models",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_human",
+    srcs = ["test_human.py"],
+    data = ["__snapshots__/test_human.ambr"],
+    uses_syrupy = True,
+    deps = [
+        ":human_lib",
+        "//aiquota:models",
+        "@pypi//pytest_bazel",
+        "@pypi//syrupy",
     ],
 )

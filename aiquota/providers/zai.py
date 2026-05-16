@@ -10,6 +10,7 @@ from pathlib import Path
 
 import httpx
 from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 from aiquota.models import ProviderQuota, QuotaWindow
 
@@ -21,8 +22,12 @@ SHORT_WINDOW_SECS = 5 * 3600
 LONG_WINDOW_SECS = 7 * 86400
 
 
+# z.ai monitor API uses camelCase (nextResetTime, ...).
+_ZAI = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
+
+
 class _Limit(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = _ZAI
 
     type: str | None = None
     unit: int | None = None
@@ -31,13 +36,13 @@ class _Limit(BaseModel):
 
 
 class _LimitData(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = _ZAI
 
     limits: list[_Limit] = []
 
 
 class _QuotaResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = _ZAI
 
     data: _LimitData | None = None
 

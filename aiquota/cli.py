@@ -5,7 +5,7 @@ import typer
 
 from aiquota.cache import QuotaService
 from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
-from aiquota.render import json_output, tmux as render_tmux
+from aiquota.render import human as render_human, json_output, tmux as render_tmux
 
 _CONFIG_OPTION = typer.Option(DEFAULT_CONFIG_PATH, "--config", "-c", help="Config file path")
 
@@ -27,19 +27,9 @@ def _service(ctx: typer.Context) -> QuotaService:
 
 @app.command()
 def fetch(ctx: typer.Context) -> None:
-    """Fetch and display quota status in human-readable form."""
-    svc = _service(ctx)
-    quotas = svc.fetch_fresh()
-    for pq in quotas.providers:
-        if pq.error:
-            print(f"{pq.provider}: error — {pq.error}")
-            continue
-        parts = []
-        if pq.short_window:
-            parts.append(f"5h:{round(pq.short_window.used_percent)}%")
-        if pq.long_window:
-            parts.append(f"7d:{round(pq.long_window.used_percent)}%")
-        print(f"{pq.provider}: {' '.join(parts) if parts else 'no data'}")
+    """Fetch and display quota status in human-readable form (same info as the GNOME popup)."""
+    quotas = _service(ctx).fetch_fresh()
+    print(render_human.render(quotas))
 
 
 @app.command()
