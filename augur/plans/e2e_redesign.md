@@ -190,7 +190,37 @@ them, but their source should be another state/ledger-backed metric.
 ## Open Design Follow-Ups
 
 Current open follow-ups live in `augur/TODO.md`. Keep this plan focused on the
-Step 7 array-source inventory and the e2e verification loop.
+Step 7 array-source inventory, the app-state spiral below, and the e2e
+verification loop.
+
+## Next App-State Spiral
+
+The browser scenario state is now written by domain section, but normal app
+reads and backend request mapping still pass through `scenarioInputView()`.
+That helper is useful only as a temporary compatibility seam; leaving it in the
+main path keeps the old spreadsheet-shaped scenario row alive.
+
+Next slice:
+
+1. Update React call sites to read named sections directly:
+   `identity`, `propertyAndLocation`, `actorsAndOwnership`, `timeline`,
+   `financing`, `occupancyAndRental`, `propertyAssumptions`,
+   `taxAccounting`, `initialBalanceSheet`, and `policies`.
+2. Update normalization and serialization to construct and validate those
+   sections directly. Do not preserve stale URL compatibility when the shape
+   changes again.
+3. Update `scenarioSetInputToRequest()` to map from structured sections into
+   backend `Scenario` fields without reconstructing a wide field bag.
+4. Delete or quarantine the flat helpers once tests no longer need them for
+   fixture/migration coverage.
+
+Acceptance checks:
+
+- Normal app and request-mapping code no longer calls `scenarioInputView()`.
+- Adding a new field requires choosing a domain section, not extending a
+  scenario-wide row.
+- Existing browser shell and visual golden tests still prove the distribution
+  and trajectory routes render after URL/state normalization.
 
 ## Verification
 

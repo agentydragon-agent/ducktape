@@ -1,6 +1,6 @@
 # Augur Unified Plan
 
-Last consolidated: 2026-05-15.
+Last consolidated: 2026-05-16.
 
 This plan consolidates the active Augur work from the public framework docs and
 the private deployment notes. It is the priority ordering. `augur/TODO.md`
@@ -95,12 +95,13 @@ Component-kit decision:
 
 ## Priority 2: Replace The Flat Browser Scenario Row
 
-The backend scenario shape is already partly structured; the risky layer is the
-browser state. URL and browser scenario inputs are now nested by domain section,
-and UI writes go through section-scoped patches. The remaining flat adapter is
-read-side: many app/backend-mapping call sites still call `scenarioInputView()`
-and receive one wide field bag before expanding fields into actors, events,
-policies, tax profile, transaction costs, and balance-sheet positions.
+The backend scenario shape is already partly structured; the risky layer is now
+the browser compatibility seam. URL and browser scenario inputs are nested by
+domain section, and UI writes go through section-scoped patches. The remaining
+flat adapter is read-side: many app/backend-mapping call sites still call
+`scenarioInputView()` and receive one wide field bag before expanding fields
+into actors, events, policies, tax profile, transaction costs, and
+balance-sheet positions.
 
 Target browser state:
 
@@ -124,16 +125,26 @@ Target browser state:
 Implementation notes:
 
 - URL state does not need stale compatibility unless explicitly requested.
+- Next, remove `scenarioInputView()` from normal React reads. Scenario list,
+  selected-scenario controls, run summaries, and result-context panels should
+  read `scenario.identity`, `scenario.financing`,
+  `scenario.initialBalanceSheet`, and other named sections directly. Keep any
+  temporary flattening helper isolated to tests or migration code while this
+  happens.
+- Then make `normalizeScenarioInput()`, `scenarioSetInputToRequest()`, and URL
+  serialization consume structured scenario sections directly. This is the
+  point where the app/backend mapping stops depending on one wide field bag.
+- Once structured reads are in place, delete the flat-field compatibility path
+  instead of keeping support for older URL payloads. New URL versions can break
+  stale state.
 - Replace `scenario.actorPolicy` enums with modeled agreements between agents.
   A partner contribution should look like a contract: agent X pays agent Y some
   amount over a period and receives a specified equity/share/claim in return.
   The exact object model is still open, but it should live in actor/ownership
   state rather than as a scenario-wide enum that triggers bespoke runtime code.
-- Continue moving app and backend-mapping reads from the temporary
-  `scenarioInputView()` bag to section-specific scenario input reads.
-  `scenarioSetInputToRequest` should mostly map structured UI state into the
+- `scenarioSetInputToRequest` should mostly map structured UI state into the
   backend schema. It should stop hiding domain decisions behind unrelated flat
-  fields such as sale-request amount/month or actor-policy ids.
+  fields or actor-policy ids.
 - Update app tests around the new state shape rather than preserving the
   current wide-row browser contract.
 
@@ -142,6 +153,7 @@ Acceptance criteria:
 - Adding a new tax assumption, asset type, policy, or actor does not require
   another unrelated field on a giant scenario object.
 - The app state names the same domain layers the backend schema names.
+- Normal app code does not call a catch-all flat scenario view.
 
 ## Priority 3: Redesign Private-Equity Tender Opportunities And Policy
 
@@ -314,12 +326,69 @@ Work:
 
 ## Immediate Implementation Sequence
 
-1. Replace the flat browser scenario state with nested domain state. Break URL
-   compatibility if needed.
+1. Finish replacing the flat browser scenario row by removing read-side
+   `scenarioInputView()` use from normal app code and backend request mapping.
+   Break stale URL compatibility rather than preserving wide-row state.
 2. Redesign private-equity sale opportunities around exogenous events plus
-   actor policy.
-3. Continue Step 7 tax/accounting reconciliation once the result views and
-   state shape stop obscuring accounting semantics.
+   actor policy, building on the existing liquid-net-worth-floor tender policy.
+3. Continue Step 7 tax/accounting reconciliation once the app state and result
+   views stop obscuring accounting semantics.
+4. Start the ordered policy-program runtime refactor only after the app state
+   and PE/tax surfaces no longer require scenario-level enum hacks.
+
+## Next Work Plans
+
+### Plan A: Retire The Read-Side Flat Scenario Adapter
+
+Scope:
+
+- Add section-focused frontend helpers only where they clarify call sites; avoid
+  creating a new grab-bag context object that re-flattens the scenario.
+- Update `augur/app/augur-app.jsx` so scenario list, selected-scenario
+  controls, result-context panels, and run summaries read named scenario
+  sections directly.
+- Update `augur/app/lib/scenario_set_state.js` so normalization, request
+  mapping, and serialization consume structured sections directly.
+- Delete or quarantine `scenarioInputView()`, `patchScenarioInput()`, and
+  `scenarioInputFromFlatFields()` once no production path needs them.
+
+Validation:
+
+- `nix develop --command pre-commit run --files augur/app/augur-app.jsx augur/app/lib/scenario_set_state.js augur/app/lib/scenario_set_state_test.mjs augur/plans/roadmap.md augur/TODO.md augur/plans/e2e_redesign.md`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-state-read-plan test //augur/app/lib:scenario_set_state_test --nocache_test_results --test_size_filters=small,medium,large`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-state-read-plan test //augur/app:browser_shell_test //augur/app:visual_golden_test --nocache_test_results --test_size_filters=small,medium,large`
+
+### Plan B: Make Private-Equity Opportunities And Policy Explicit
+
+Scope:
+
+- Rename remaining result labels that imply general liquidity when the model
+  only has tender eligibility or sale opportunity value.
+- Add stable IDs and row-level observations for private-equity tender
+  opportunities.
+- Extend policy-decision rows so sale and non-sale reasons are enough for the
+  trajectory view to explain each tender.
+- Keep `liquid_net_worth` as cash plus public liquid securities.
+
+Validation:
+
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/core:test_e2e //augur/core:scenario_engine_test //augur/app:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
+
+### Plan C: Tax/Obligation Settlement Slice
+
+Scope:
+
+- Introduce the smallest first-class obligation/settlement shape needed for tax
+  or mortgage cash demands.
+- Preserve today's `cash_negative` warning semantics while reserving future
+  `failed` rollout status for required obligations that cannot be settled after
+  policy funding attempts.
+- Add tests for no-policy shortfall, sale-policy rescue, and explicit
+  failure/default semantics.
+
+Validation:
+
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-obligation-plan test //augur/core:test_e2e //augur/core:scenario_engine_test //augur/core:policy_runtime_test --nocache_test_results --test_size_filters=small,medium,large`
 
 ## Verification Loop
 

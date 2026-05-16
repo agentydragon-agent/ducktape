@@ -12,6 +12,11 @@ second ordered roadmap.
 
 ## Next
 
+- [ ] Finish replacing the flat browser scenario row. URL/browser scenario
+      state is now sectioned and UI writes are section-scoped; the remaining
+      work is to remove normal app/backend reads of the temporary
+      `scenarioInputView()` bag and make request mapping consume structured
+      sections directly.
 - [ ] Continue `plans/e2e_redesign.md` Step 7 by replacing `allocated_to_source_month` tax timing with realistic annual/estimated-payment liability timing.
 - [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 - [ ] Add a durable property-asset storage contract: stable property asset IDs/URLs backed by object storage or a database-like asset table, so deployments do not need to bake private media into frontend images.
@@ -109,10 +114,9 @@ second ordered roadmap.
       product feel internally confused. Start with an information architecture pass:
       define scenario identity, actors/ownership, initial balance sheet, market
       assumptions, policy choices, tax assumptions, and output diagnostics as
-      separate concepts before continuing local control tweaks. Do not keep using a
-      flat browser-side "scenario row" as the source of truth and then expand it
-      into typed backend objects; that shape recreates the spreadsheet-style
-      coupling the simulator is supposed to avoid.
+      separate concepts before continuing local control tweaks. Continue removing
+      the remaining read-side flat browser scenario adapter so the app does not
+      recreate spreadsheet-style coupling while mapping into typed backend objects.
 - [ ] Add explicit comparison views for deltas between two scenario
       distributions. The simulator should not bake a baseline/counterfactual
       into each rollout; a delta view should compare two real scenarios, either
