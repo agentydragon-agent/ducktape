@@ -5,6 +5,19 @@ from typing import Any, TypeVar, overload
 
 import numpy as np
 
+from augur.core.accounting import (
+    ChartAccount,
+    ChartAccountRole,
+    JournalEntryType,
+    LiabilityState,
+    LotAssetClass,
+    LotDisposition,
+    PostingSide,
+    SimulationBalanceSnapshot,
+    SimulationJournalEntry,
+    SimulationPosting,
+    TaxLot,
+)
 from augur.core.market_bundle import (
     MarketBundle,
     MarketBundleProvider,
@@ -42,8 +55,6 @@ from augur.core.scenario_set import (
     ScenarioSetRunResponse,
     SimulationAccountingDetail,
     SimulationAction,
-    SimulationBalanceSnapshot,
-    SimulationLedgerEntry,
     SimulationMarketObservation,
     SimulationPolicyDecision,
 )
@@ -96,15 +107,25 @@ class RolloutDetail:
     def market_observations(self, observation_type: type[Any] | None = None) -> tuple[Any, ...]:
         return self.scenario_run.market_observations(observation_type, rollout=self.rollout_index)
 
-    def ledger_entries(
-        self, *, domain: str | None = None, category: str | None = None
-    ) -> tuple[SimulationLedgerEntry, ...]:
-        return self.scenario_run.ledger_entries(domain=domain, category=category, rollout=self.rollout_index)
+    def journal_entries(
+        self, *, journal_entry_type: JournalEntryType | None = None
+    ) -> tuple[SimulationJournalEntry, ...]:
+        return self.scenario_run.journal_entries(journal_entry_type=journal_entry_type, rollout=self.rollout_index)
+
+    def postings(
+        self, *, role: ChartAccountRole | None = None, side: PostingSide | None = None
+    ) -> tuple[SimulationPosting, ...]:
+        return self.scenario_run.postings(role=role, side=side, rollout=self.rollout_index)
 
     def balance_snapshots(
-        self, *, domain: str | None = None, category: str | None = None
+        self, *, role: ChartAccountRole | None = None
     ) -> tuple[SimulationBalanceSnapshot, ...]:
-        return self.scenario_run.balance_snapshots(domain=domain, category=category, rollout=self.rollout_index)
+        return self.scenario_run.balance_snapshots(role=role, rollout=self.rollout_index)
+
+    def lot_dispositions(
+        self, *, asset_class: LotAssetClass | None = None
+    ) -> tuple[LotDisposition, ...]:
+        return self.scenario_run.lot_dispositions(asset_class=asset_class, rollout=self.rollout_index)
 
     @overload
     def accounting_details(self, detail_type: type[AccountingDetailT]) -> tuple[AccountingDetailT, ...]: ...
@@ -220,35 +241,88 @@ class ScenarioRun:
             observations = tuple(observation for observation in observations if observation.rollout_index == rollout)
         return observations
 
-    def ledger_entries(
-        self, *, domain: str | None = None, category: str | None = None, rollout: int | None = None
-    ) -> tuple[SimulationLedgerEntry, ...]:
+    def chart_accounts(self, *, role: ChartAccountRole | None = None) -> tuple[ChartAccount, ...]:
         if self.arrays is None:
             return ()
-        entries = self.arrays.ledger_entries
-        if domain is not None:
-            entries = tuple(entry for entry in entries if entry.domain == domain)
-        if category is not None:
-            entries = tuple(entry for entry in entries if entry.category == category)
+        accounts = self.arrays.chart_accounts
+        if role is not None:
+            accounts = tuple(account for account in accounts if account.role is role)
+        return accounts
+
+    def journal_entries(
+        self, *, journal_entry_type: JournalEntryType | None = None, rollout: int | None = None
+    ) -> tuple[SimulationJournalEntry, ...]:
+        if self.arrays is None:
+            return ()
+        entries = self.arrays.journal_entries
+        if journal_entry_type is not None:
+            entries = tuple(entry for entry in entries if entry.journal_entry_type is journal_entry_type)
         if rollout is not None:
             self._validate_rollout_index(rollout)
             entries = tuple(entry for entry in entries if entry.rollout_index == rollout)
         return entries
 
+    def postings(
+        self,
+        *,
+        role: ChartAccountRole | None = None,
+        side: PostingSide | None = None,
+        rollout: int | None = None,
+    ) -> tuple[SimulationPosting, ...]:
+        if self.arrays is None:
+            return ()
+        postings = self.arrays.postings
+        if role is not None:
+            account_by_id = {account.chart_account_id: account for account in self.arrays.chart_accounts}
+            postings = tuple(posting for posting in postings if account_by_id[posting.chart_account_id].role is role)
+        if side is not None:
+            postings = tuple(posting for posting in postings if posting.side is side)
+        if rollout is not None:
+            self._validate_rollout_index(rollout)
+            postings = tuple(posting for posting in postings if posting.rollout_index == rollout)
+        return postings
+
     def balance_snapshots(
-        self, *, domain: str | None = None, category: str | None = None, rollout: int | None = None
+        self, *, role: ChartAccountRole | None = None, rollout: int | None = None
     ) -> tuple[SimulationBalanceSnapshot, ...]:
         if self.arrays is None:
             return ()
         snapshots = self.arrays.balance_snapshots
-        if domain is not None:
-            snapshots = tuple(snapshot for snapshot in snapshots if snapshot.domain == domain)
-        if category is not None:
-            snapshots = tuple(snapshot for snapshot in snapshots if snapshot.category == category)
+        if role is not None:
+            account_by_id = {account.chart_account_id: account for account in self.arrays.chart_accounts}
+            snapshots = tuple(
+                snapshot for snapshot in snapshots if account_by_id[snapshot.chart_account_id].role is role
+            )
         if rollout is not None:
             self._validate_rollout_index(rollout)
             snapshots = tuple(snapshot for snapshot in snapshots if snapshot.rollout_index == rollout)
         return snapshots
+
+    def tax_lots(self, *, asset_class: LotAssetClass | None = None) -> tuple[TaxLot, ...]:
+        if self.arrays is None:
+            return ()
+        lots = self.arrays.tax_lots
+        if asset_class is not None:
+            lots = tuple(lot for lot in lots if lot.asset_class is asset_class)
+        return lots
+
+    def lot_dispositions(
+        self, *, asset_class: LotAssetClass | None = None, rollout: int | None = None
+    ) -> tuple[LotDisposition, ...]:
+        if self.arrays is None:
+            return ()
+        dispositions = self.arrays.lot_dispositions
+        if asset_class is not None:
+            dispositions = tuple(disposition for disposition in dispositions if disposition.asset_class is asset_class)
+        if rollout is not None:
+            self._validate_rollout_index(rollout)
+            dispositions = tuple(disposition for disposition in dispositions if disposition.rollout_index == rollout)
+        return dispositions
+
+    def liabilities(self) -> tuple[LiabilityState, ...]:
+        if self.arrays is None:
+            return ()
+        return self.arrays.liabilities
 
     @overload
     def accounting_details(
@@ -314,8 +388,13 @@ class ScenarioRun:
             actions=self.arrays.actions,
             policy_decisions=self.arrays.policy_decisions,
             market_observations=self.arrays.market_observations,
-            ledger_entries=self.arrays.ledger_entries,
+            chart_accounts=self.arrays.chart_accounts,
+            journal_entries=self.arrays.journal_entries,
+            postings=self.arrays.postings,
             balance_snapshots=self.arrays.balance_snapshots,
+            tax_lots=self.arrays.tax_lots,
+            lot_dispositions=self.arrays.lot_dispositions,
+            liabilities=self.arrays.liabilities,
             accounting_details=self.arrays.accounting_details,
             obligations=self.arrays.obligations,
             funding_decisions=self.arrays.funding_decisions,

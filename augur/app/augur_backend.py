@@ -10,10 +10,10 @@ from typing import Any
 from augur.app.catalog import build_bootstrap_payload
 from augur.app.config import AugurConfig
 from augur.core.api import simulate_set
-from augur.core.augur_accounting import MONTHS_PER_YEAR
 from augur.core.bootstrap import Property
 from augur.core.local_regulation import LocalRegulation, TaxRegime, tax_regimes_for_local_regulation
 from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider
+from augur.core.scenario_engine import MONTHS_PER_YEAR
 from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.core.schemas import ScenarioKnobs
 

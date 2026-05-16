@@ -17,6 +17,7 @@ import pytest_bazel
 from numpy.testing import assert_allclose
 from pydantic import ValidationError
 
+from augur.core.accounting import ChartAccountRole, JournalEntryType, LotAssetClass, PostingSide
 from augur.core.api import ScenarioRun, simulate_set
 from augur.core.local_regulation import LocationId
 from augur.core.market_bundle_test_support import NoopMarketBundleProvider
@@ -110,17 +111,33 @@ def _cash_only_scenario(*, cash_usd: float, scenario_id: str = "e2e") -> Scenari
     )
 
 
-def _ledger_matrix(result: ScenarioRun, *, domain: str, category: str) -> np.ndarray:
+def _posting_matrix(
+    result: ScenarioRun,
+    *,
+    role: ChartAccountRole,
+    side: PostingSide,
+    journal_entry_type: JournalEntryType | None = None,
+) -> np.ndarray:
     matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
-    for entry in result.ledger_entries(domain=domain, category=category):
-        matrix[entry.rollout_index, entry.month_index] += entry.amount_usd
+    journal_type_by_id = {entry.journal_entry_id: entry.journal_entry_type for entry in result.journal_entries()}
+    for posting in result.postings(role=role, side=side):
+        if journal_entry_type is not None and journal_type_by_id[posting.journal_entry_id] is not journal_entry_type:
+            continue
+        matrix[posting.rollout_index, posting.month_index] += posting.amount_usd
     return matrix
 
 
-def _snapshot_matrix(result: ScenarioRun, *, domain: str, category: str) -> np.ndarray:
+def _balance_snapshot_matrix(result: ScenarioRun, *, role: ChartAccountRole) -> np.ndarray:
     matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
-    for snapshot in result.balance_snapshots(domain=domain, category=category):
-        matrix[snapshot.rollout_index, snapshot.month_index] += snapshot.amount_usd
+    for snapshot in result.balance_snapshots(role=role):
+        matrix[snapshot.rollout_index, snapshot.month_index] += snapshot.balance_usd
+    return matrix
+
+
+def _lot_disposition_matrix(result: ScenarioRun, *, asset_class: LotAssetClass, amount_field: str) -> np.ndarray:
+    matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
+    for disposition in result.lot_dispositions(asset_class=asset_class):
+        matrix[disposition.rollout_index, disposition.month_index] += getattr(disposition, amount_field)
     return matrix
 
 
@@ -164,8 +181,8 @@ def test_cash_only_no_activity_preserves_balance() -> None:
     assert_allclose(result.matrix("private_equity_value_usd"), 0)
     assert_allclose(result.matrix("property_value_usd"), 0)
     assert_allclose(result.series("net_worth_usd"), 100_000)
-    assert result.ledger_entries() == ()
-    assert result.balance_snapshots() == ()
+    assert {entry.journal_entry_type for entry in result.journal_entries()} == {JournalEntryType.OPENING_BALANCE}
+    assert len(result.balance_snapshots(role=ChartAccountRole.CHECKING_CASH)) == 13
     market_path = result.rollout(0).market_observations(MarketPathObservation)
     assert len(market_path) == 13
     assert market_path[0].month_index == 0
@@ -308,7 +325,8 @@ def test_monthly_spend_drains_cash() -> None:
     assert_allclose(result.series("monthly_spend_usd")[1], 5_000)
     assert_allclose(result.series("monthly_spend_usd")[12], 5_000)
     assert_allclose(
-        -_ledger_matrix(result, domain="cash", category="monthly_spend"), result.matrix("monthly_spend_usd")
+        _posting_matrix(result, role=ChartAccountRole.MONTHLY_LIVING_EXPENSE, side=PostingSide.DEBIT),
+        result.matrix("monthly_spend_usd"),
     )
     # Verify actions recorded for each month 1..12
     spend_actions = result.actions(MonthlySpendAction)
@@ -346,7 +364,8 @@ def test_monthly_spend_records_each_rollout_and_month() -> None:
     assert_allclose(result.matrix("cash_usd")[:, 2], 90_000)
     assert_allclose(result.matrix("monthly_spend_usd")[:, 1:], 5_000)
     assert_allclose(
-        -_ledger_matrix(result, domain="cash", category="monthly_spend"), result.matrix("monthly_spend_usd")
+        _posting_matrix(result, role=ChartAccountRole.MONTHLY_LIVING_EXPENSE, side=PostingSide.DEBIT),
+        result.matrix("monthly_spend_usd"),
     )
     assert [
         (action.rollout_index, action.month_index, action.amount_usd) for action in result.actions(MonthlySpendAction)
@@ -405,13 +424,16 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
     assert_allclose(rollout.series("mortgage_payment_usd")[1], payment)
     assert_allclose(rollout.series("mortgage_balance_usd")[1], loan_amount - expected_month_1_principal)
     assert_allclose(
-        -_ledger_matrix(result, domain="cash", category="mortgage_interest"), result.matrix("mortgage_interest_usd")
+        _posting_matrix(result, role=ChartAccountRole.MORTGAGE_INTEREST_EXPENSE, side=PostingSide.DEBIT),
+        result.matrix("mortgage_interest_usd"),
     )
     assert_allclose(
-        -_ledger_matrix(result, domain="cash", category="mortgage_principal"), result.matrix("mortgage_principal_usd")
-    )
-    assert_allclose(
-        -_ledger_matrix(result, domain="liability", category="mortgage_principal"),
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.MORTGAGE_PAYABLE,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.MORTGAGE_PAYMENT,
+        ),
         result.matrix("mortgage_principal_usd"),
     )
     mortgage_payments = result.actions(PayMortgageAction)
@@ -500,77 +522,83 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
     assert_allclose(rollout.series("cash_usd")[0], 20_000)
     assert_allclose(rollout.series("cash_usd")[60], 20_000)
     assert_allclose(
-        -_ledger_matrix(result, domain="cash", category="partner_contribution_transfer"),
+        _posting_matrix(result, role=ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER, side=PostingSide.CREDIT),
         result.matrix("partner_contribution_usd"),
     )
     assert_allclose(
-        _ledger_matrix(result, domain="cash", category="partner_contribution_used_for_house_costs"),
+        _posting_matrix(result, role=ChartAccountRole.PARTNER_CONTRIBUTION_USED, side=PostingSide.DEBIT),
         result.matrix("partner_contribution_used_usd"),
     )
     assert_allclose(
-        _ledger_matrix(result, domain="escrow", category="partner_contribution_unallocated"),
+        _posting_matrix(result, role=ChartAccountRole.PARTNER_UNALLOCATED_CLAIM, side=PostingSide.DEBIT),
         result.matrix("partner_unallocated_excess_usd"),
     )
     assert_allclose(
-        _ledger_matrix(result, domain="ownership", category="partner_principal_credit"),
+        _posting_matrix(result, role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT),
         result.matrix("partner_principal_credit_usd"),
     )
     assert_allclose(
-        _ledger_matrix(result, domain="ownership", category="owner_principal_credit"),
+        _posting_matrix(result, role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT),
         result.matrix("owner_principal_credit_usd"),
     )
     assert_allclose(
-        _snapshot_matrix(result, domain="ownership", category="partner_equity_ledger"),
+        _balance_snapshot_matrix(result, role=ChartAccountRole.PARTNER_EQUITY_LEDGER),
         result.matrix("partner_equity_ledger_usd"),
     )
     assert_allclose(
-        _snapshot_matrix(result, domain="ownership", category="owner_equity_ledger"),
+        _balance_snapshot_matrix(result, role=ChartAccountRole.OWNER_EQUITY_LEDGER),
         result.matrix("owner_equity_ledger_usd"),
     )
     assert_allclose(
-        _snapshot_matrix(result, domain="ownership", category="partner_home_equity_claim"),
+        _balance_snapshot_matrix(result, role=ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM),
         result.matrix("partner_home_equity_claim_usd"),
     )
     assert_allclose(
-        _snapshot_matrix(result, domain="ownership", category="owner_home_equity_claim"),
+        _balance_snapshot_matrix(result, role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM),
         result.matrix("owner_home_equity_claim_usd"),
     )
-    partner_ledger_rows = [
-        entry
-        for entry in result.ledger_entries()
-        if entry.category
+    account_by_id = {account.chart_account_id: account for account in result.chart_accounts()}
+    partner_postings = [
+        posting
+        for posting in result.postings()
+        if account_by_id[posting.chart_account_id].role
         in {
-            "partner_contribution_transfer",
-            "partner_contribution_used_for_house_costs",
-            "partner_contribution_unallocated",
-            "partner_principal_credit",
-            "owner_principal_credit",
+            ChartAccountRole.PARTNER_CONTRIBUTION_USED,
+            ChartAccountRole.PARTNER_UNALLOCATED_CLAIM,
+            ChartAccountRole.PARTNER_PRINCIPAL_CREDIT,
+            ChartAccountRole.OWNER_PRINCIPAL_CREDIT,
         }
     ]
-    assert {entry.property_id for entry in partner_ledger_rows} == {"test_property"}
+    assert {
+        account_by_id[posting.chart_account_id].property_id for posting in partner_postings
+    } == {"test_property"}
     assert (
         len(
             [
-                entry
-                for entry in result.ledger_entries()
-                if entry.domain == "ownership" and entry.category == "partner_principal_credit"
+                posting
+                for posting in result.postings(role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT)
             ]
         )
         == horizon_months
     )
     assert all(
-        entry.counterparty_actor_id == "alpha"
-        for entry in result.ledger_entries()
-        if entry.category in {"partner_contribution_transfer", "partner_principal_credit"}
+        account_by_id[posting.chart_account_id].counterparty_actor_id == "alpha"
+        for posting in result.postings(role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT)
     )
     partner_snapshot_rows = [
         snapshot
         for snapshot in result.balance_snapshots()
-        if snapshot.domain == "ownership"
-        and snapshot.category
-        in {"partner_equity_ledger", "owner_equity_ledger", "partner_home_equity_claim", "owner_home_equity_claim"}
+        if account_by_id[snapshot.chart_account_id].role
+        in {
+            ChartAccountRole.PARTNER_EQUITY_LEDGER,
+            ChartAccountRole.OWNER_EQUITY_LEDGER,
+            ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM,
+            ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
+        }
     ]
-    assert {snapshot.property_id for snapshot in partner_snapshot_rows} == {"test_property"}
+    assert {account_by_id[snapshot.chart_account_id].property_id for snapshot in partner_snapshot_rows} == {
+        "test_property"
+    }
 
     transfers = result.actions(TransferPartnerContributionAction)
     assert len(transfers) == horizon_months
@@ -660,18 +688,45 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     assert_allclose(rollout.series("property_sale_net_proceeds_usd")[60], sale_value - sale_closing_cost - sale_tax)
     assert_allclose(result.matrix("net_property_sale_cash_flow_usd"), result.matrix("property_sale_net_proceeds_usd"))
     assert_allclose(
-        _ledger_matrix(result, domain="property_sale", category="property_sale_gross"),
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.PROPERTY,
+            side=PostingSide.CREDIT,
+            journal_entry_type=JournalEntryType.PROPERTY_SALE,
+        ),
         result.matrix("property_sale_gross_usd"),
     )
     assert_allclose(
-        -_ledger_matrix(result, domain="property_sale", category="sale_closing_cost"),
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.PROPERTY_SALE_CLOSING_EXPENSE,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.PROPERTY_SALE,
+        ),
         result.matrix("sale_closing_cost_usd"),
     )
     assert_allclose(
-        -_ledger_matrix(result, domain="tax", category="property_sale_tax"), result.matrix("property_sale_tax_usd")
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.TAX_EXPENSE,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.PROPERTY_SALE,
+        ),
+        result.matrix("property_sale_tax_usd"),
     )
     assert_allclose(
-        _ledger_matrix(result, domain="cash", category="property_sale_net_proceeds"),
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.CHECKING_CASH,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.PROPERTY_SALE,
+        )
+        - _posting_matrix(
+            result,
+            role=ChartAccountRole.CHECKING_CASH,
+            side=PostingSide.CREDIT,
+            journal_entry_type=JournalEntryType.PROPERTY_SALE,
+        ),
         result.matrix("property_sale_net_proceeds_usd"),
     )
     assert_allclose(
@@ -768,7 +823,12 @@ def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
     assert_allclose(rollout.series("property_sale_net_proceeds_usd")[sale_month], sale_net_proceeds)
     assert_allclose(rollout.series("property_sale_debt_payoff_usd")[sale_month], sale_action.debt_payoff_usd)
     assert_allclose(
-        -_ledger_matrix(result, domain="property_sale", category="property_sale_debt_payoff"),
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.MORTGAGE_PAYABLE,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.PROPERTY_SALE,
+        ),
         result.matrix("property_sale_debt_payoff_usd"),
     )
     assert sale_net_proceeds < rollout.series("home_equity_usd")[sale_month]
@@ -862,12 +922,14 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     )
     actions = {action["action_type"]: action for action in result["actions"]}
     assert set(actions) == {"sell_sp500", "sell_private_equity", "settle_property_sale"}
+    account_by_id = {account["chart_account_id"]: account for account in result["chart_accounts"]}
+    posting_roles = {account_by_id[posting["chart_account_id"]]["role"] for posting in result["postings"]}
     assert {
-        ("asset", "generic_sp500_sale"),
-        ("asset", "private_equity_sale"),
-        ("cash", "property_sale_net_proceeds"),
-        ("tax", "property_sale_tax"),
-    } <= {(entry["domain"], entry["category"]) for entry in result["ledger_entries"]}
+        "public_security",
+        "private_equity",
+        "checking_cash",
+        "tax_expense",
+    } <= posting_roles
     assert {"sell_public_stock", "private_equity_sale"} <= {
         decision["decision_type"] for decision in result["policy_decisions"]
     }
@@ -970,17 +1032,28 @@ def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
     assert_allclose(rollout.series("cash_usd")[0], 130_000)
     assert_allclose(rollout.series("cash_usd")[1], 130_000 + expected_net_property_cash_flow)
     assert_allclose(
-        _ledger_matrix(result, domain="rental", category="rental_gross_income"),
+        _posting_matrix(result, role=ChartAccountRole.RENTAL_GROSS_INCOME, side=PostingSide.CREDIT),
         result.matrix("rental_gross_income_usd"),
     )
     assert_allclose(
-        -_ledger_matrix(result, domain="rental", category="rental_vacancy_loss"),
+        _posting_matrix(result, role=ChartAccountRole.RENTAL_VACANCY_LOSS, side=PostingSide.DEBIT),
         result.matrix("rental_vacancy_loss_usd"),
     )
-    assert_allclose(_ledger_matrix(result, domain="cash", category="rental_income"), result.matrix("rental_income_usd"))
-    assert_allclose(-_ledger_matrix(result, domain="cash", category="property_tax"), result.matrix("property_tax_usd"))
     assert_allclose(
-        -_ledger_matrix(result, domain="cash", category="rental_management_fee"),
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.CHECKING_CASH,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.PROPERTY_OPERATING,
+        ),
+        result.matrix("rental_income_usd"),
+    )
+    assert_allclose(
+        _posting_matrix(result, role=ChartAccountRole.PROPERTY_TAX_EXPENSE, side=PostingSide.DEBIT),
+        result.matrix("property_tax_usd"),
+    )
+    assert_allclose(
+        _posting_matrix(result, role=ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE, side=PostingSide.DEBIT),
         result.matrix("rental_management_fee_usd"),
     )
 
@@ -1052,18 +1125,34 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
     assert_allclose(rollout.series("generic_sp500_sale_tax_usd")[5], expected_stock_sale_tax)
     assert_allclose(rollout.series("checking_floor_shortfall_usd"), 0)
     assert_allclose(
-        -_ledger_matrix(result, domain="asset", category="generic_sp500_sale"), result.matrix("generic_sp500_sale_usd")
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.PUBLIC_SECURITY,
+            side=PostingSide.CREDIT,
+            journal_entry_type=JournalEntryType.ASSET_SALE,
+        ),
+        result.matrix("generic_sp500_sale_usd"),
     )
     assert_allclose(
-        -_ledger_matrix(result, domain="basis", category="generic_sp500_sale_basis"),
+        _lot_disposition_matrix(
+            result, asset_class=LotAssetClass.PUBLIC_SECURITY, amount_field="cost_basis_usd"
+        ),
         result.matrix("generic_sp500_sale_basis_usd"),
     )
     assert_allclose(
-        -_ledger_matrix(result, domain="tax", category="generic_sp500_sale_tax"),
+        _lot_disposition_matrix(
+            result, asset_class=LotAssetClass.PUBLIC_SECURITY, amount_field="tax_expense_usd"
+        ),
         result.matrix("generic_sp500_sale_tax_usd"),
     )
     assert_allclose(
-        _ledger_matrix(result, domain="cash", category="generic_sp500_after_tax_proceeds"),
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.CHECKING_CASH,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.ASSET_SALE,
+        )
+        - result.matrix("generic_sp500_sale_tax_usd"),
         result.matrix("generic_sp500_sale_usd") - result.matrix("generic_sp500_sale_tax_usd"),
     )
 
@@ -1224,19 +1313,30 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     assert pe_decision.requested_amount_usd == 100_000
     assert pe_decision.sale_opportunity_value_usd == 200_000
     assert_allclose(
-        -_ledger_matrix(result, domain="asset", category="private_equity_sale"),
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.PRIVATE_EQUITY,
+            side=PostingSide.CREDIT,
+            journal_entry_type=JournalEntryType.ASSET_SALE,
+        ),
         result.matrix("private_equity_sale_usd"),
     )
     assert_allclose(
-        -_ledger_matrix(result, domain="basis", category="private_equity_sale_basis"),
+        _lot_disposition_matrix(result, asset_class=LotAssetClass.PRIVATE_EQUITY, amount_field="cost_basis_usd"),
         result.matrix("private_equity_sale_basis_usd"),
     )
     assert_allclose(
-        -_ledger_matrix(result, domain="tax", category="private_equity_sale_tax"),
+        _lot_disposition_matrix(result, asset_class=LotAssetClass.PRIVATE_EQUITY, amount_field="tax_expense_usd"),
         result.matrix("private_equity_sale_tax_usd"),
     )
     assert_allclose(
-        _ledger_matrix(result, domain="cash", category="private_equity_after_tax_proceeds"),
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.CHECKING_CASH,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.ASSET_SALE,
+        )
+        - result.matrix("private_equity_sale_tax_usd"),
         result.matrix("private_equity_sale_usd") - result.matrix("private_equity_sale_tax_usd"),
     )
 

@@ -4,6 +4,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from augur.core.accounting import (
+    AccountingCauseType,
+    ChartAccountRole,
+    JournalEntryType,
+    PostingSide,
+)
 from augur.core.scenario_set import (
     AccountType,
     AssetType,
@@ -51,7 +57,6 @@ class DebitAccountInstructionBatch:
     policy_id: str
     account_type: AccountType
     amount_usd: np.ndarray
-    category: str
 
 
 @dataclass(frozen=True)
@@ -60,7 +65,6 @@ class TransferCashInstructionBatch:
     policy_id: str
     recipient_actor_id: str
     amount_usd: np.ndarray
-    category: str
 
 
 @dataclass(frozen=True)
@@ -100,32 +104,48 @@ class GenericSp500SaleApplication:
 
 
 @dataclass(frozen=True)
-class LedgerEntryBatch:
-    actor_id: str
-    policy_id: str | None
-    domain: str
+class PostingBatch:
+    role: ChartAccountRole
+    side: PostingSide
     amount_usd: np.ndarray
-    category: str
-    counterparty_actor_id: str | None = None
+    actor_id: str | None = None
+    source_account_id: str | None = None
+    source_asset_id: str | None = None
+    liability_id: str | None = None
     property_id: str | None = None
+    counterparty_actor_id: str | None = None
+
+
+@dataclass(frozen=True)
+class JournalEntryBatch:
+    journal_entry_type: JournalEntryType
+    cause_type: AccountingCauseType
+    cause_id_prefix: str
+    postings: tuple[PostingBatch, ...]
+    actor_id: str | None = None
+    policy_id: str | None = None
+    event_id: str | None = None
+    obligation_id_prefix: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
 class BalanceSnapshotBatch:
-    actor_id: str
-    policy_id: str | None
-    domain: str
+    role: ChartAccountRole
     amount_usd: np.ndarray
-    category: str
-    counterparty_actor_id: str | None = None
+    actor_id: str | None = None
+    source_account_id: str | None = None
+    source_asset_id: str | None = None
+    liability_id: str | None = None
     property_id: str | None = None
+    counterparty_actor_id: str | None = None
 
 
 @dataclass(frozen=True)
 class DebitAccountApplication:
     current_cash_usd: np.ndarray
     debit_usd: np.ndarray
-    ledger_entries: tuple[LedgerEntryBatch, ...]
+    journal_entries: tuple[JournalEntryBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -136,7 +156,7 @@ class MortgagePaymentApplication:
     mortgage_interest_usd: np.ndarray
     mortgage_principal_usd: np.ndarray
     mortgage_balance_after_usd: np.ndarray
-    ledger_entries: tuple[LedgerEntryBatch, ...]
+    journal_entries: tuple[JournalEntryBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -154,7 +174,7 @@ class PropertyOperatingCashFlowApplication:
     rental_leasing_fee_usd: np.ndarray
     property_carrying_cost_usd: np.ndarray
     net_operating_cash_flow_usd: np.ndarray
-    ledger_entries: tuple[LedgerEntryBatch, ...]
+    journal_entries: tuple[JournalEntryBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -166,7 +186,7 @@ class PartnerHouseCostContributionApplication:
     house_cost_share: np.ndarray
     principal_credit_usd: np.ndarray
     owner_principal_usd: np.ndarray
-    ledger_entries: tuple[LedgerEntryBatch, ...]
+    journal_entries: tuple[JournalEntryBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -182,7 +202,7 @@ class PartnerOwnershipAccrualApplication:
     ownership_pct: np.ndarray
     home_equity_claim_usd: np.ndarray
     owner_home_equity_claim_usd: np.ndarray
-    ledger_entries: tuple[LedgerEntryBatch, ...]
+    journal_entries: tuple[JournalEntryBatch, ...]
     balance_snapshots: tuple[BalanceSnapshotBatch, ...]
 
 
@@ -198,7 +218,7 @@ class PrivateEquitySaleApplication:
     remaining_units: np.ndarray
     remaining_basis_usd: np.ndarray
     remaining_fraction: np.ndarray
-    ledger_entries: tuple[LedgerEntryBatch, ...]
+    journal_entries: tuple[JournalEntryBatch, ...]
 
 
 def actor_policy_programs(scenario: Scenario) -> tuple[ActorPolicyProgram, ...]:
@@ -253,7 +273,6 @@ def monthly_spend_debit_instruction(
         policy_id=policy.policy_id,
         account_type=AccountType.CHECKING,
         amount_usd=float(policy.monthly_spend_usd) * applied_multiplier,
-        category="monthly_spend",
     )
     return MonthlySpendDecisionBatch(debit=debit, inflation_multiplier=applied_multiplier)
 
@@ -266,7 +285,6 @@ def partner_contribution_instruction(
         policy_id=policy.policy_id,
         recipient_actor_id=recipient_actor_id,
         amount_usd=contribution_usd,
-        category="partner_contribution",
     )
 
 
@@ -276,17 +294,32 @@ def apply_debit_account_instruction(
     if instruction.account_type is not AccountType.CHECKING:
         raise ValueError(f"unsupported account type for cash debit applier: {instruction.account_type}")
 
-    ledger_entry = LedgerEntryBatch(
+    journal_entry = JournalEntryBatch(
+        journal_entry_type=JournalEntryType.CASH_EXPENSE,
+        cause_type=AccountingCauseType.POLICY_DECISION,
+        cause_id_prefix=f"policy:{instruction.policy_id}:monthly_spend",
         actor_id=instruction.actor_id,
         policy_id=instruction.policy_id,
-        domain="cash",
-        amount_usd=-instruction.amount_usd,
-        category=instruction.category,
+        description="monthly_spend",
+        postings=(
+            PostingBatch(
+                role=ChartAccountRole.MONTHLY_LIVING_EXPENSE,
+                side=PostingSide.DEBIT,
+                amount_usd=instruction.amount_usd,
+                actor_id=instruction.actor_id,
+            ),
+            PostingBatch(
+                role=ChartAccountRole.CHECKING_CASH,
+                side=PostingSide.CREDIT,
+                amount_usd=instruction.amount_usd,
+                actor_id=instruction.actor_id,
+            ),
+        ),
     )
     return DebitAccountApplication(
         current_cash_usd=current_cash_usd - instruction.amount_usd,
         debit_usd=instruction.amount_usd,
-        ledger_entries=(ledger_entry,),
+        journal_entries=(journal_entry,),
     )
 
 
@@ -300,38 +333,61 @@ def apply_partner_house_cost_contribution(
     )
     principal_credit_usd = mortgage_principal_usd * house_cost_share
     owner_principal_usd = np.maximum(0.0, mortgage_principal_usd - principal_credit_usd)
-    ledger_entries = (
-        LedgerEntryBatch(
+    journal_entries = (
+        JournalEntryBatch(
+            journal_entry_type=JournalEntryType.PARTNER_CONTRIBUTION,
+            cause_type=AccountingCauseType.POLICY_DECISION,
+            cause_id_prefix=f"policy:{instruction.policy_id}:partner_contribution_transfer",
             actor_id=instruction.actor_id,
             policy_id=instruction.policy_id,
-            domain="cash",
-            amount_usd=-instruction.amount_usd,
-            category="partner_contribution_transfer",
-            counterparty_actor_id=instruction.recipient_actor_id,
+            description="partner contribution cash transfer",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.DEBIT,
+                    amount_usd=instruction.amount_usd,
+                    actor_id=instruction.recipient_actor_id,
+                    counterparty_actor_id=instruction.actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.CREDIT,
+                    amount_usd=instruction.amount_usd,
+                    actor_id=instruction.actor_id,
+                    counterparty_actor_id=instruction.recipient_actor_id,
+                ),
+            ),
         ),
-        LedgerEntryBatch(
-            actor_id=instruction.recipient_actor_id,
-            policy_id=instruction.policy_id,
-            domain="cash",
-            amount_usd=contribution_used_usd,
-            category="partner_contribution_used_for_house_costs",
-            counterparty_actor_id=instruction.actor_id,
-        ),
-        LedgerEntryBatch(
-            actor_id=instruction.recipient_actor_id,
-            policy_id=instruction.policy_id,
-            domain="escrow",
-            amount_usd=unallocated_excess_usd,
-            category="partner_contribution_unallocated",
-            counterparty_actor_id=instruction.actor_id,
-        ),
-        LedgerEntryBatch(
+        JournalEntryBatch(
+            journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
+            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+            cause_id_prefix=f"policy:{instruction.policy_id}:partner_contribution_allocation",
             actor_id=instruction.actor_id,
             policy_id=instruction.policy_id,
-            domain="ownership",
-            amount_usd=principal_credit_usd,
-            category="partner_principal_credit",
-            counterparty_actor_id=instruction.recipient_actor_id,
+            description="partner contribution allocation to property costs",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.PARTNER_CONTRIBUTION_USED,
+                    side=PostingSide.DEBIT,
+                    amount_usd=contribution_used_usd,
+                    actor_id=instruction.recipient_actor_id,
+                    counterparty_actor_id=instruction.actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PARTNER_UNALLOCATED_CLAIM,
+                    side=PostingSide.DEBIT,
+                    amount_usd=unallocated_excess_usd,
+                    actor_id=instruction.recipient_actor_id,
+                    counterparty_actor_id=instruction.actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER,
+                    side=PostingSide.CREDIT,
+                    amount_usd=instruction.amount_usd,
+                    actor_id=instruction.actor_id,
+                    counterparty_actor_id=instruction.recipient_actor_id,
+                ),
+            ),
         ),
     )
     return PartnerHouseCostContributionApplication(
@@ -342,7 +398,7 @@ def apply_partner_house_cost_contribution(
         house_cost_share=house_cost_share,
         principal_credit_usd=principal_credit_usd,
         owner_principal_usd=owner_principal_usd,
-        ledger_entries=ledger_entries,
+        journal_entries=journal_entries,
     )
 
 
@@ -373,55 +429,55 @@ def apply_partner_ownership_accrual(
     ownership_pct = _freeze_ownership_pct(live_ownership_pct, month_index, freeze_after_month)
     home_equity_claim_usd = np.maximum(home_equity_usd, 0.0) * ownership_pct
     owner_home_equity_claim_usd = home_equity_usd - home_equity_claim_usd
-    ledger_entries = (
-        LedgerEntryBatch(
+    journal_entries = (
+        JournalEntryBatch(
+            journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
+            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+            cause_id_prefix=f"policy:{transfer.policy_id}:principal_credit_allocation",
             actor_id=transfer.actor_id,
             policy_id=transfer.policy_id,
-            domain="ownership",
-            amount_usd=partner_principal_credit_usd,
-            category="partner_principal_credit",
-            counterparty_actor_id=transfer.recipient_actor_id,
-        ),
-        LedgerEntryBatch(
-            actor_id=transfer.recipient_actor_id,
-            policy_id=transfer.policy_id,
-            domain="ownership",
-            amount_usd=owner_principal_usd,
-            category="owner_principal_credit",
-            counterparty_actor_id=transfer.actor_id,
+            description="partner principal credit allocation",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT,
+                    side=PostingSide.DEBIT,
+                    amount_usd=partner_principal_credit_usd,
+                    actor_id=transfer.actor_id,
+                    counterparty_actor_id=transfer.recipient_actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION,
+                    side=PostingSide.CREDIT,
+                    amount_usd=partner_principal_credit_usd,
+                    actor_id=transfer.recipient_actor_id,
+                    counterparty_actor_id=transfer.actor_id,
+                ),
+            ),
         ),
     )
     balance_snapshots = (
         BalanceSnapshotBatch(
             actor_id=transfer.actor_id,
-            policy_id=transfer.policy_id,
-            domain="ownership",
+            role=ChartAccountRole.PARTNER_EQUITY_LEDGER,
             amount_usd=partner_equity_ledger_usd,
-            category="partner_equity_ledger",
             counterparty_actor_id=transfer.recipient_actor_id,
         ),
         BalanceSnapshotBatch(
             actor_id=transfer.recipient_actor_id,
-            policy_id=transfer.policy_id,
-            domain="ownership",
+            role=ChartAccountRole.OWNER_EQUITY_LEDGER,
             amount_usd=owner_equity_ledger_usd,
-            category="owner_equity_ledger",
             counterparty_actor_id=transfer.actor_id,
         ),
         BalanceSnapshotBatch(
             actor_id=transfer.actor_id,
-            policy_id=transfer.policy_id,
-            domain="ownership",
+            role=ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM,
             amount_usd=home_equity_claim_usd,
-            category="partner_home_equity_claim",
             counterparty_actor_id=transfer.recipient_actor_id,
         ),
         BalanceSnapshotBatch(
             actor_id=transfer.recipient_actor_id,
-            policy_id=transfer.policy_id,
-            domain="ownership",
+            role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
             amount_usd=owner_home_equity_claim_usd,
-            category="owner_home_equity_claim",
             counterparty_actor_id=transfer.actor_id,
         ),
     )
@@ -437,7 +493,7 @@ def apply_partner_ownership_accrual(
         ownership_pct=ownership_pct,
         home_equity_claim_usd=home_equity_claim_usd,
         owner_home_equity_claim_usd=owner_home_equity_claim_usd,
-        ledger_entries=ledger_entries,
+        journal_entries=journal_entries,
         balance_snapshots=balance_snapshots,
     )
 
@@ -451,27 +507,34 @@ def apply_mortgage_payment(
     mortgage_principal_usd: np.ndarray,
     mortgage_balance_after_usd: np.ndarray,
 ) -> MortgagePaymentApplication:
-    ledger_entries = (
-        LedgerEntryBatch(
+    journal_entries = (
+        JournalEntryBatch(
+            journal_entry_type=JournalEntryType.MORTGAGE_PAYMENT,
+            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+            cause_id_prefix=f"policy:{policy_id}:mortgage_payment",
             actor_id=actor_id,
             policy_id=policy_id,
-            domain="cash",
-            amount_usd=-mortgage_interest_usd,
-            category="mortgage_interest",
-        ),
-        LedgerEntryBatch(
-            actor_id=actor_id,
-            policy_id=policy_id,
-            domain="cash",
-            amount_usd=-mortgage_principal_usd,
-            category="mortgage_principal",
-        ),
-        LedgerEntryBatch(
-            actor_id=actor_id,
-            policy_id=policy_id,
-            domain="liability",
-            amount_usd=-mortgage_principal_usd,
-            category="mortgage_principal",
+            description="mortgage payment",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.MORTGAGE_INTEREST_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=mortgage_interest_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.MORTGAGE_PAYABLE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=mortgage_principal_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.CREDIT,
+                    amount_usd=mortgage_interest_usd + mortgage_principal_usd,
+                    actor_id=actor_id,
+                ),
+            ),
         ),
     )
     return MortgagePaymentApplication(
@@ -481,7 +544,7 @@ def apply_mortgage_payment(
         mortgage_interest_usd=mortgage_interest_usd,
         mortgage_principal_usd=mortgage_principal_usd,
         mortgage_balance_after_usd=mortgage_balance_after_usd,
-        ledger_entries=ledger_entries,
+        journal_entries=journal_entries,
     )
 
 
@@ -508,51 +571,71 @@ def apply_property_operating_cash_flows(
         + rental_leasing_fee_usd
     )
     net_operating_cash_flow_usd = rental_income_usd - property_carrying_cost_usd
-    ledger_entries = (
-        LedgerEntryBatch(
+    journal_entries = (
+        JournalEntryBatch(
+            journal_entry_type=JournalEntryType.PROPERTY_OPERATING,
+            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+            cause_id_prefix=f"policy:{policy_id}:property_operating",
             actor_id=actor_id,
             policy_id=policy_id,
-            domain="rental",
-            amount_usd=rental_gross_income_usd,
-            category="rental_gross_income",
-        ),
-        LedgerEntryBatch(
-            actor_id=actor_id,
-            policy_id=policy_id,
-            domain="rental",
-            amount_usd=-rental_vacancy_loss_usd,
-            category="rental_vacancy_loss",
-        ),
-        LedgerEntryBatch(
-            actor_id=actor_id,
-            policy_id=policy_id,
-            domain="cash",
-            amount_usd=rental_income_usd,
-            category="rental_income",
-        ),
-        LedgerEntryBatch(
-            actor_id=actor_id, policy_id=policy_id, domain="cash", amount_usd=-property_tax_usd, category="property_tax"
-        ),
-        LedgerEntryBatch(actor_id=actor_id, policy_id=policy_id, domain="cash", amount_usd=-hoa_usd, category="hoa"),
-        LedgerEntryBatch(
-            actor_id=actor_id, policy_id=policy_id, domain="cash", amount_usd=-insurance_usd, category="insurance"
-        ),
-        LedgerEntryBatch(
-            actor_id=actor_id, policy_id=policy_id, domain="cash", amount_usd=-maintenance_usd, category="maintenance"
-        ),
-        LedgerEntryBatch(
-            actor_id=actor_id,
-            policy_id=policy_id,
-            domain="cash",
-            amount_usd=-rental_management_fee_usd,
-            category="rental_management_fee",
-        ),
-        LedgerEntryBatch(
-            actor_id=actor_id,
-            policy_id=policy_id,
-            domain="cash",
-            amount_usd=-rental_leasing_fee_usd,
-            category="rental_leasing_fee",
+            description="property operating cash flow",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.DEBIT,
+                    amount_usd=rental_income_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.RENTAL_VACANCY_LOSS,
+                    side=PostingSide.DEBIT,
+                    amount_usd=rental_vacancy_loss_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.RENTAL_GROSS_INCOME,
+                    side=PostingSide.CREDIT,
+                    amount_usd=rental_gross_income_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PROPERTY_TAX_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=property_tax_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(role=ChartAccountRole.HOA_EXPENSE, side=PostingSide.DEBIT, amount_usd=hoa_usd, actor_id=actor_id),
+                PostingBatch(
+                    role=ChartAccountRole.INSURANCE_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=insurance_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.MAINTENANCE_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=maintenance_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=rental_management_fee_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.RENTAL_LEASING_FEE_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=rental_leasing_fee_usd,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.CREDIT,
+                    amount_usd=property_carrying_cost_usd,
+                    actor_id=actor_id,
+                ),
+            ),
         ),
     )
     return PropertyOperatingCashFlowApplication(
@@ -569,7 +652,7 @@ def apply_property_operating_cash_flows(
         rental_leasing_fee_usd=rental_leasing_fee_usd,
         property_carrying_cost_usd=property_carrying_cost_usd,
         net_operating_cash_flow_usd=net_operating_cash_flow_usd,
-        ledger_entries=ledger_entries,
+        journal_entries=journal_entries,
     )
 
 
@@ -679,28 +762,39 @@ def apply_private_equity_sale_instruction(
     estimated_tax_usd = taxable_gain_usd * cap_gains_rate_pct / 100
     after_tax_proceeds_usd = np.maximum(0.0, sale_usd - estimated_tax_usd)
     sold_units = remaining_units * sold_fraction
-    destination_domain = "asset" if instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK else "cash"
-    ledger_entries = (
-        LedgerEntryBatch(
+    destination_role = (
+        ChartAccountRole.PUBLIC_SECURITY
+        if instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK
+        else ChartAccountRole.CHECKING_CASH
+    )
+    journal_entries = (
+        JournalEntryBatch(
+            journal_entry_type=JournalEntryType.ASSET_SALE,
+            cause_type=AccountingCauseType.POLICY_DECISION,
+            cause_id_prefix=f"policy:{instruction.policy_id}:private_equity_sale",
             actor_id=instruction.actor_id,
             policy_id=instruction.policy_id,
-            domain="asset",
-            amount_usd=-sale_usd,
-            category="private_equity_sale",
-        ),
-        LedgerEntryBatch(
-            actor_id=instruction.actor_id,
-            policy_id=instruction.policy_id,
-            domain="tax",
-            amount_usd=-estimated_tax_usd,
-            category="private_equity_capital_gains_tax",
-        ),
-        LedgerEntryBatch(
-            actor_id=instruction.actor_id,
-            policy_id=instruction.policy_id,
-            domain=destination_domain,
-            amount_usd=after_tax_proceeds_usd,
-            category="private_equity_after_tax_proceeds",
+            description="private equity sale",
+            postings=(
+                PostingBatch(
+                    role=destination_role,
+                    side=PostingSide.DEBIT,
+                    amount_usd=after_tax_proceeds_usd,
+                    actor_id=instruction.actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.TAX_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=estimated_tax_usd,
+                    actor_id=instruction.actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PRIVATE_EQUITY,
+                    side=PostingSide.CREDIT,
+                    amount_usd=sale_usd,
+                    actor_id=instruction.actor_id,
+                ),
+            ),
         ),
     )
     return PrivateEquitySaleApplication(
@@ -714,7 +808,7 @@ def apply_private_equity_sale_instruction(
         remaining_units=np.maximum(0.0, remaining_units - sold_units),
         remaining_basis_usd=np.maximum(0.0, remaining_basis_usd - basis_usd),
         remaining_fraction=np.maximum(0.0, remaining_fraction * (1 - sold_fraction)),
-        ledger_entries=ledger_entries,
+        journal_entries=journal_entries,
     )
 
 

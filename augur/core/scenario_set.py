@@ -6,6 +6,15 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
+from augur.core.accounting import (
+    ChartAccount,
+    LiabilityState,
+    LotDisposition,
+    SimulationBalanceSnapshot,
+    SimulationJournalEntry,
+    SimulationPosting,
+    TaxLot,
+)
 from augur.core.local_regulation import LocalRegulation, TaxRegime
 from augur.core.provenance import ProjectionRun
 from augur.core.schemas import ApiModel, ColumnarTable, Percentage
@@ -561,28 +570,6 @@ SimulationMarketObservation = Annotated[
 ]
 
 
-class _SimulationLedgerBase(_SimulationTraceBase):
-    actor_id: str
-    policy_id: str | None = None
-    event_id: str | None = None
-    account_id: str | None = None
-    asset_id: str | None = None
-    liability_id: str | None = None
-    property_id: PropertyId | None = None
-    domain: str
-    category: str
-    amount_usd: float
-    counterparty_actor_id: str | None = None
-
-
-class SimulationLedgerEntry(_SimulationLedgerBase):
-    """A realized economic movement for one rollout/month."""
-
-
-class SimulationBalanceSnapshot(_SimulationLedgerBase):
-    """A point-in-time state value for one rollout/month."""
-
-
 class _SimulationAccountingDetailBase(_SimulationTraceBase):
     actor_id: str
     policy_id: str | None = None
@@ -942,8 +929,13 @@ class ScenarioResult(ApiModel):
     actions: tuple[SimulationAction, ...] = ()
     policy_decisions: tuple[SimulationPolicyDecision, ...] = ()
     market_observations: tuple[SimulationMarketObservation, ...] = ()
-    ledger_entries: tuple[SimulationLedgerEntry, ...] = ()
+    chart_accounts: tuple[ChartAccount, ...] = ()
+    journal_entries: tuple[SimulationJournalEntry, ...] = ()
+    postings: tuple[SimulationPosting, ...] = ()
     balance_snapshots: tuple[SimulationBalanceSnapshot, ...] = ()
+    tax_lots: tuple[TaxLot, ...] = ()
+    lot_dispositions: tuple[LotDisposition, ...] = ()
+    liabilities: tuple[LiabilityState, ...] = ()
     accounting_details: tuple[SimulationAccountingDetail, ...] = ()
     obligations: tuple[SimulationObligation, ...] = ()
     funding_decisions: tuple[SimulationFundingDecision, ...] = ()

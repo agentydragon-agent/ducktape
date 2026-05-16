@@ -3,7 +3,9 @@ from __future__ import annotations
 import numpy as np
 import pytest_bazel
 
+from augur.core.accounting import ChartAccountRole, JournalEntryType, PostingSide
 from augur.core.policy_runtime import (
+    JournalEntryBatch,
     actor_policy_programs,
     actor_policy_steps,
     apply_debit_account_instruction,
@@ -32,6 +34,12 @@ from augur.core.scenario_set import (
     PrivateEquitySalePolicy,
     Scenario,
 )
+
+
+def _posting_amount(entry: JournalEntryBatch, role: ChartAccountRole, side: PostingSide) -> np.ndarray:
+    matches = [posting for posting in entry.postings if posting.role is role and posting.side is side]
+    assert len(matches) == 1
+    return matches[0].amount_usd
 
 
 def test_actor_policy_programs_preserve_actor_order_and_enabled_rule_order() -> None:
@@ -128,7 +136,7 @@ def test_checking_floor_instruction_applier_clips_sale_and_records_shortfall() -
     np.testing.assert_allclose(result.shortfall_usd, [10.0, 0.0, 0.0])
 
 
-def test_monthly_spend_instruction_applier_debits_cash_and_records_ledger() -> None:
+def test_monthly_spend_instruction_applier_debits_cash_and_records_journal() -> None:
     policy = MonthlySpendPolicy(
         policy_id="living_expenses", actor_id="alpha", monthly_spend_usd=100, inflation_adjusted=True
     )
@@ -137,20 +145,25 @@ def test_monthly_spend_instruction_applier_debits_cash_and_records_ledger() -> N
     result = apply_debit_account_instruction(decision.debit, current_cash_usd=np.array([1_000.0, 500.0, 50.0]))
 
     assert decision.debit.account_type is AccountType.CHECKING
-    assert decision.debit.category == "monthly_spend"
     np.testing.assert_allclose(decision.inflation_multiplier, [1.0, 1.2, 1.5])
     np.testing.assert_allclose(result.debit_usd, [100.0, 120.0, 150.0])
     np.testing.assert_allclose(result.current_cash_usd, [900.0, 380.0, -100.0])
-    assert len(result.ledger_entries) == 1
-    spend_ledger = result.ledger_entries[0]
-    assert spend_ledger.actor_id == "alpha"
-    assert spend_ledger.policy_id == "living_expenses"
-    assert spend_ledger.domain == "cash"
-    assert spend_ledger.category == "monthly_spend"
-    np.testing.assert_allclose(spend_ledger.amount_usd, [-100.0, -120.0, -150.0])
+    assert len(result.journal_entries) == 1
+    spend_journal = result.journal_entries[0]
+    assert spend_journal.actor_id == "alpha"
+    assert spend_journal.policy_id == "living_expenses"
+    assert spend_journal.journal_entry_type is JournalEntryType.CASH_EXPENSE
+    np.testing.assert_allclose(
+        _posting_amount(spend_journal, ChartAccountRole.MONTHLY_LIVING_EXPENSE, PostingSide.DEBIT),
+        [100.0, 120.0, 150.0],
+    )
+    np.testing.assert_allclose(
+        _posting_amount(spend_journal, ChartAccountRole.CHECKING_CASH, PostingSide.CREDIT),
+        [100.0, 120.0, 150.0],
+    )
 
 
-def test_mortgage_payment_application_records_cash_and_liability_ledger() -> None:
+def test_mortgage_payment_application_records_balanced_journal() -> None:
     result = apply_mortgage_payment(
         actor_id="alpha",
         policy_id="mortgage_servicing",
@@ -166,14 +179,18 @@ def test_mortgage_payment_application_records_cash_and_liability_ledger() -> Non
     np.testing.assert_allclose(result.mortgage_interest_usd, [0.0, 2_000.0])
     np.testing.assert_allclose(result.mortgage_principal_usd, [0.0, 500.0])
     np.testing.assert_allclose(result.mortgage_balance_after_usd, [400_000.0, 399_500.0])
-    assert [(entry.domain, entry.category) for entry in result.ledger_entries] == [
-        ("cash", "mortgage_interest"),
-        ("cash", "mortgage_principal"),
-        ("liability", "mortgage_principal"),
-    ]
-    np.testing.assert_allclose(result.ledger_entries[0].amount_usd, [-0.0, -2_000.0])
-    np.testing.assert_allclose(result.ledger_entries[1].amount_usd, [-0.0, -500.0])
-    np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [-0.0, -500.0])
+    assert len(result.journal_entries) == 1
+    journal = result.journal_entries[0]
+    assert journal.journal_entry_type is JournalEntryType.MORTGAGE_PAYMENT
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.MORTGAGE_INTEREST_EXPENSE, PostingSide.DEBIT), [0.0, 2_000.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.MORTGAGE_PAYABLE, PostingSide.DEBIT), [0.0, 500.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.CHECKING_CASH, PostingSide.CREDIT), [0.0, 2_500.0]
+    )
 
 
 def test_partner_contribution_instruction_applies_house_costs_and_principal_credit() -> None:
@@ -191,22 +208,30 @@ def test_partner_contribution_instruction_applies_house_costs_and_principal_cred
     assert instruction.actor_id == "beta"
     assert instruction.recipient_actor_id == "alpha"
     assert instruction.policy_id == "partner_equity"
-    assert instruction.category == "partner_contribution"
     np.testing.assert_allclose(result.contribution_used_usd, [0.0, 1_000.0, 2_000.0])
     np.testing.assert_allclose(result.unallocated_excess_usd, [0.0, 0.0, 1_000.0])
     np.testing.assert_allclose(result.house_cost_share, [0.0, 0.5, 1.0])
     np.testing.assert_allclose(result.principal_credit_usd, [0.0, 200.0, 500.0])
     np.testing.assert_allclose(result.owner_principal_usd, [0.0, 200.0, 0.0])
-    assert [(entry.actor_id, entry.domain, entry.category) for entry in result.ledger_entries] == [
-        ("beta", "cash", "partner_contribution_transfer"),
-        ("alpha", "cash", "partner_contribution_used_for_house_costs"),
-        ("alpha", "escrow", "partner_contribution_unallocated"),
-        ("beta", "ownership", "partner_principal_credit"),
+    assert [entry.journal_entry_type for entry in result.journal_entries] == [
+        JournalEntryType.PARTNER_CONTRIBUTION,
+        JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
     ]
-    np.testing.assert_allclose(result.ledger_entries[0].amount_usd, [-0.0, -1_000.0, -3_000.0])
-    np.testing.assert_allclose(result.ledger_entries[1].amount_usd, [0.0, 1_000.0, 2_000.0])
-    np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [0.0, 0.0, 1_000.0])
-    np.testing.assert_allclose(result.ledger_entries[3].amount_usd, [0.0, 200.0, 500.0])
+    transfer, allocation = result.journal_entries
+    np.testing.assert_allclose(
+        _posting_amount(transfer, ChartAccountRole.CHECKING_CASH, PostingSide.DEBIT), [0.0, 1_000.0, 3_000.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(transfer, ChartAccountRole.CHECKING_CASH, PostingSide.CREDIT), [0.0, 1_000.0, 3_000.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(allocation, ChartAccountRole.PARTNER_CONTRIBUTION_USED, PostingSide.DEBIT),
+        [0.0, 1_000.0, 2_000.0],
+    )
+    np.testing.assert_allclose(
+        _posting_amount(allocation, ChartAccountRole.PARTNER_UNALLOCATED_CLAIM, PostingSide.DEBIT),
+        [0.0, 0.0, 1_000.0],
+    )
 
 
 def test_partner_ownership_accrual_applies_freeze_and_records_ledgers() -> None:
@@ -237,28 +262,29 @@ def test_partner_ownership_accrual_applies_freeze_and_records_ledgers() -> None:
     np.testing.assert_allclose(
         result.owner_home_equity_claim_usd + result.home_equity_claim_usd, [[20_000.0, 20_600.0, 21_200.0, 24_000.0]]
     )
-    ledger_shape = [
-        (entry.actor_id, entry.domain, entry.category, entry.counterparty_actor_id) for entry in result.ledger_entries
-    ]
-    assert ledger_shape == [
-        ("beta", "ownership", "partner_principal_credit", "alpha"),
-        ("alpha", "ownership", "owner_principal_credit", "beta"),
-    ]
+    assert len(result.journal_entries) == 1
+    journal = result.journal_entries[0]
+    assert journal.actor_id == "beta"
+    assert journal.journal_entry_type is JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, PostingSide.DEBIT),
+        [[0.0, 100.0, 100.0, 100.0]],
+    )
     snapshot_shape = [
-        (snapshot.actor_id, snapshot.domain, snapshot.category, snapshot.counterparty_actor_id)
+        (snapshot.actor_id, snapshot.role, snapshot.counterparty_actor_id)
         for snapshot in result.balance_snapshots
     ]
     assert snapshot_shape == [
-        ("beta", "ownership", "partner_equity_ledger", "alpha"),
-        ("alpha", "ownership", "owner_equity_ledger", "beta"),
-        ("beta", "ownership", "partner_home_equity_claim", "alpha"),
-        ("alpha", "ownership", "owner_home_equity_claim", "beta"),
+        ("beta", ChartAccountRole.PARTNER_EQUITY_LEDGER, "alpha"),
+        ("alpha", ChartAccountRole.OWNER_EQUITY_LEDGER, "beta"),
+        ("beta", ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM, "alpha"),
+        ("alpha", ChartAccountRole.OWNER_HOME_EQUITY_CLAIM, "beta"),
     ]
     np.testing.assert_allclose(result.balance_snapshots[0].amount_usd, expected_partner_ledger)
     np.testing.assert_allclose(result.balance_snapshots[1].amount_usd, expected_owner_ledger)
 
 
-def test_property_operating_cash_flow_application_records_cash_ledger() -> None:
+def test_property_operating_cash_flow_application_records_balanced_journal() -> None:
     result = apply_property_operating_cash_flows(
         actor_id="alpha",
         policy_id="property_operating_cash_flow",
@@ -277,20 +303,24 @@ def test_property_operating_cash_flow_application_records_cash_ledger() -> None:
     assert result.policy_id == "property_operating_cash_flow"
     np.testing.assert_allclose(result.property_carrying_cost_usd, [0.0, 442.0])
     np.testing.assert_allclose(result.net_operating_cash_flow_usd, [0.0, 1_458.0])
-    assert [(entry.domain, entry.category) for entry in result.ledger_entries] == [
-        ("rental", "rental_gross_income"),
-        ("rental", "rental_vacancy_loss"),
-        ("cash", "rental_income"),
-        ("cash", "property_tax"),
-        ("cash", "hoa"),
-        ("cash", "insurance"),
-        ("cash", "maintenance"),
-        ("cash", "rental_management_fee"),
-        ("cash", "rental_leasing_fee"),
-    ]
-    np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [0.0, 1_900.0])
-    np.testing.assert_allclose(result.ledger_entries[3].amount_usd, [-0.0, -100.0])
-    np.testing.assert_allclose(result.ledger_entries[8].amount_usd, [-0.0, -40.0])
+    assert len(result.journal_entries) == 1
+    journal = result.journal_entries[0]
+    assert journal.journal_entry_type is JournalEntryType.PROPERTY_OPERATING
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.RENTAL_GROSS_INCOME, PostingSide.CREDIT), [0.0, 2_000.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.RENTAL_VACANCY_LOSS, PostingSide.DEBIT), [0.0, 100.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.CHECKING_CASH, PostingSide.DEBIT), [0.0, 1_900.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.PROPERTY_TAX_EXPENSE, PostingSide.DEBIT), [0.0, 100.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.RENTAL_LEASING_FEE_EXPENSE, PostingSide.DEBIT), [0.0, 40.0]
+    )
 
 
 def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None:
@@ -337,14 +367,18 @@ def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None
     np.testing.assert_allclose(result.remaining_units, [100.0, 75.0])
     np.testing.assert_allclose(result.remaining_basis_usd, [80_000.0, 60_000.0])
     np.testing.assert_allclose(result.remaining_fraction, [1.0, 0.75])
-    assert [entry.category for entry in result.ledger_entries] == [
-        "private_equity_sale",
-        "private_equity_capital_gains_tax",
-        "private_equity_after_tax_proceeds",
-    ]
-    np.testing.assert_allclose(result.ledger_entries[0].amount_usd, [0.0, -50_000.0])
-    np.testing.assert_allclose(result.ledger_entries[1].amount_usd, [-0.0, -6_000.0])
-    np.testing.assert_allclose(result.ledger_entries[2].amount_usd, [0.0, 44_000.0])
+    assert len(result.journal_entries) == 1
+    journal = result.journal_entries[0]
+    assert journal.journal_entry_type is JournalEntryType.ASSET_SALE
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.PRIVATE_EQUITY, PostingSide.CREDIT), [0.0, 50_000.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.TAX_EXPENSE, PostingSide.DEBIT), [0.0, 6_000.0]
+    )
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.CHECKING_CASH, PostingSide.DEBIT), [0.0, 44_000.0]
+    )
 
 
 def test_private_equity_liquid_net_worth_floor_rule_uses_opportunity_and_liquid_assets() -> None:

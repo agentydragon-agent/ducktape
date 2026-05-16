@@ -8,12 +8,32 @@ from typing import Any, cast
 import numpy as np
 
 from augur.core.annual_tax import AnnualSaleTaxAllocation, annual_sale_tax_allocation
+from augur.core.accounting import (
+    AccountingCause,
+    AccountingCauseType,
+    ChartAccount,
+    ChartAccountRole,
+    JournalEntryType,
+    LiabilityState,
+    LiabilityType,
+    LotAssetClass,
+    LotDisposition,
+    PostingSide,
+    SimulationBalanceSnapshot,
+    SimulationJournalEntry,
+    SimulationPosting,
+    TaxLot,
+    chart_account_id,
+    chart_account_type_for_role,
+    validate_accounting_trace,
+)
 from augur.core.local_regulation import LocalRegulation, local_regulation_for_location
 from augur.core.market_bundle import MarketBundle
 from augur.core.policy_runtime import (
     ActorPolicyStep,
     BalanceSnapshotBatch,
-    LedgerEntryBatch,
+    JournalEntryBatch,
+    PostingBatch,
     MortgagePaymentApplication,
     PrivateEquitySaleApplication,
     PrivateEquitySaleInstructionBatch,
@@ -86,10 +106,8 @@ from augur.core.scenario_set import (
     SettlePropertySaleAction,
     SimulationAccountingDetail,
     SimulationAction,
-    SimulationBalanceSnapshot,
     SimulationFailureEvent,
     SimulationFundingDecision,
-    SimulationLedgerEntry,
     SimulationMarketObservation,
     SimulationObligation,
     SimulationPolicyDecision,
@@ -180,8 +198,13 @@ class ScenarioRunArrays:
     actions: tuple[SimulationAction, ...]
     policy_decisions: tuple[SimulationPolicyDecision, ...]
     market_observations: tuple[SimulationMarketObservation, ...]
-    ledger_entries: tuple[SimulationLedgerEntry, ...]
+    chart_accounts: tuple[ChartAccount, ...]
+    journal_entries: tuple[SimulationJournalEntry, ...]
+    postings: tuple[SimulationPosting, ...]
     balance_snapshots: tuple[SimulationBalanceSnapshot, ...]
+    tax_lots: tuple[TaxLot, ...]
+    lot_dispositions: tuple[LotDisposition, ...]
+    liabilities: tuple[LiabilityState, ...]
     accounting_details: tuple[SimulationAccountingDetail, ...]
     obligations: tuple[SimulationObligation, ...]
     funding_decisions: tuple[SimulationFundingDecision, ...]
@@ -690,7 +713,7 @@ class PropertyCashFlowArrays:
     rental_leasing_fee_usd: np.ndarray
     property_carrying_cost_usd: np.ndarray
     net_property_cash_flow_usd: np.ndarray
-    ledger_entries: tuple[LedgerEntryBatch, ...]
+    journal_entries: tuple[JournalEntryBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -714,7 +737,7 @@ class PartnerEquityAgreementArrays:
     ownership_pct: np.ndarray
     home_equity_claim_usd: np.ndarray
     owner_home_equity_claim_usd: np.ndarray
-    ledger_entries: tuple[LedgerEntryBatch, ...]
+    journal_entries: tuple[JournalEntryBatch, ...]
     balance_snapshots: tuple[BalanceSnapshotBatch, ...]
 
 
@@ -736,7 +759,7 @@ class PartnerEquityArrays:
     home_equity_claim_usd: np.ndarray
     owner_home_equity_claim_usd: np.ndarray
     agreements: tuple[PartnerEquityAgreementArrays, ...]
-    ledger_entries: tuple[LedgerEntryBatch, ...]
+    journal_entries: tuple[JournalEntryBatch, ...]
     balance_snapshots: tuple[BalanceSnapshotBatch, ...]
 
 
@@ -745,6 +768,7 @@ class Sp500SaleActionRecord:
     month_position: int
     month_index: int
     policy: Policy
+    cause_id_prefix: str
     amount_usd: np.ndarray
     basis_usd: np.ndarray
     shortfall_usd: np.ndarray
@@ -769,6 +793,439 @@ class ObligationFundingPolicyApplication:
     remaining_due_usd: np.ndarray
     remaining_units: np.ndarray
     remaining_basis_usd: np.ndarray
+
+
+class AccountingTraceBuilder:
+    def __init__(self) -> None:
+        self.chart_accounts_by_id: dict[str, ChartAccount] = {}
+        self.journal_entries: list[SimulationJournalEntry] = []
+        self.postings: list[SimulationPosting] = []
+        self.balance_snapshots: list[SimulationBalanceSnapshot] = []
+
+    def record_entry(
+        self,
+        *,
+        month_index: int | np.ndarray,
+        entry: JournalEntryBatch,
+        amount_multiplier: np.ndarray | None = None,
+    ) -> None:
+        month_values, posting_amounts = _normalized_posting_amounts(
+            month_index=month_index, postings=entry.postings, amount_multiplier=amount_multiplier
+        )
+        if not posting_amounts:
+            return
+        active = np.zeros(posting_amounts[0][1].shape, dtype=np.bool_)
+        for _, amount_usd in posting_amounts:
+            active |= amount_usd > 0
+        rollout_indexes, month_positions = np.nonzero(active)
+        for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
+            month = int(month_values[month_position])
+            journal_entry_id = _trace_row_id(entry.cause_id_prefix, rollout_index=rollout_index, month_index=month)
+            obligation_id = (
+                _trace_row_id(entry.obligation_id_prefix, rollout_index=rollout_index, month_index=month)
+                if entry.obligation_id_prefix is not None
+                else None
+            )
+            self.journal_entries.append(
+                SimulationJournalEntry(
+                    journal_entry_id=journal_entry_id,
+                    rollout_index=rollout_index,
+                    month_index=month,
+                    journal_entry_type=entry.journal_entry_type,
+                    actor_id=entry.actor_id,
+                    policy_id=entry.policy_id,
+                    event_id=entry.event_id,
+                    obligation_id=obligation_id,
+                    description=entry.description,
+                    cause=AccountingCause(
+                        cause_type=entry.cause_type,
+                        cause_id=journal_entry_id,
+                        policy_id=entry.policy_id,
+                        event_id=entry.event_id,
+                        obligation_id=obligation_id,
+                    ),
+                )
+            )
+            for posting_index, (posting, amount_matrix) in enumerate(posting_amounts):
+                amount_usd = float(amount_matrix[rollout_index, month_position])
+                if amount_usd <= 0:
+                    continue
+                chart_account = self._chart_account(posting)
+                self.postings.append(
+                    SimulationPosting(
+                        posting_id=f"{journal_entry_id}:posting:{posting_index}:{posting.side.value}",
+                        journal_entry_id=journal_entry_id,
+                        rollout_index=rollout_index,
+                        month_index=month,
+                        chart_account_id=chart_account.chart_account_id,
+                        side=posting.side,
+                        amount_usd=amount_usd,
+                        liability_id=posting.liability_id,
+                    )
+                )
+
+    def record_snapshot(self, *, month_index: np.ndarray, snapshot: BalanceSnapshotBatch) -> None:
+        amount_usd = np.asarray(snapshot.amount_usd, dtype="float64")
+        if amount_usd.ndim != 2:
+            raise ValueError("balance snapshot amount_usd must be rollout/month shaped")
+        chart_account = self._chart_account(
+            PostingBatch(
+                role=snapshot.role,
+                side=PostingSide.DEBIT,
+                amount_usd=amount_usd,
+                actor_id=snapshot.actor_id,
+                source_account_id=snapshot.source_account_id,
+                source_asset_id=snapshot.source_asset_id,
+                liability_id=snapshot.liability_id,
+                property_id=snapshot.property_id,
+                counterparty_actor_id=snapshot.counterparty_actor_id,
+            )
+        )
+        rollout_indexes, month_positions = np.nonzero(amount_usd != 0)
+        for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
+            self.balance_snapshots.append(
+                SimulationBalanceSnapshot(
+                    rollout_index=rollout_index,
+                    month_index=int(month_index[month_position]),
+                    chart_account_id=chart_account.chart_account_id,
+                    balance_usd=float(amount_usd[rollout_index, month_position]),
+                )
+            )
+
+    def _chart_account(self, posting: PostingBatch) -> ChartAccount:
+        account_id = chart_account_id(
+            posting.role,
+            actor_id=posting.actor_id,
+            source_account_id=posting.source_account_id,
+            source_asset_id=posting.source_asset_id,
+            liability_id=posting.liability_id,
+            property_id=posting.property_id,
+            counterparty_actor_id=posting.counterparty_actor_id,
+        )
+        account = self.chart_accounts_by_id.get(account_id)
+        if account is None:
+            account = ChartAccount(
+                chart_account_id=account_id,
+                account_type=chart_account_type_for_role(posting.role),
+                role=posting.role,
+                actor_id=posting.actor_id,
+                source_account_id=posting.source_account_id,
+                source_asset_id=posting.source_asset_id,
+                liability_id=posting.liability_id,
+                property_id=posting.property_id,
+                counterparty_actor_id=posting.counterparty_actor_id,
+            )
+            self.chart_accounts_by_id[account_id] = account
+        return account
+
+    def validate(self) -> None:
+        validate_accounting_trace(
+            chart_accounts=tuple(self.chart_accounts_by_id.values()),
+            journal_entries=tuple(self.journal_entries),
+            postings=tuple(self.postings),
+        )
+
+
+def _normalized_posting_amounts(
+    *,
+    month_index: int | np.ndarray,
+    postings: tuple[PostingBatch, ...],
+    amount_multiplier: np.ndarray | None = None,
+) -> tuple[np.ndarray, list[tuple[PostingBatch, np.ndarray]]]:
+    month_values = np.asarray([month_index], dtype="int64") if isinstance(month_index, int) else month_index
+    normalized: list[tuple[PostingBatch, np.ndarray]] = []
+    for posting in postings:
+        amount_usd = np.asarray(posting.amount_usd, dtype="float64")
+        if amount_usd.ndim == 1:
+            amount_usd = amount_usd[:, None]
+        if amount_usd.ndim != 2:
+            raise ValueError("posting amount_usd must be rollout or rollout/month shaped")
+        if amount_multiplier is not None:
+            multiplier = np.asarray(amount_multiplier, dtype="float64")
+            if multiplier.ndim == 1:
+                multiplier = multiplier[:, None]
+            amount_usd = amount_usd * multiplier
+        if amount_usd.shape[1] != len(month_values):
+            raise ValueError(
+                f"posting month dimension {amount_usd.shape[1]} does not match month_index length {len(month_values)}"
+            )
+        normalized.append((posting, amount_usd))
+    return month_values, normalized
+
+
+def _trace_row_id(prefix: str, *, rollout_index: int, month_index: int) -> str:
+    return f"{prefix}:rollout:{rollout_index}:month:{month_index}"
+
+
+def _record_opening_accounting_state(
+    accounting: AccountingTraceBuilder,
+    tax_lots: list[TaxLot],
+    liabilities: list[LiabilityState],
+    *,
+    scenario: Scenario,
+    rollout_count: int,
+    initial_cash_usd: float,
+    initial_sp500_value_usd: float,
+    initial_sp500_basis_usd: float,
+    initial_private_equity_value_usd: float,
+    initial_private_equity_basis_usd: float,
+    purchase_price_usd: float,
+    down_payment_usd: float,
+    purchase_closing_cost_usd: np.ndarray,
+    mortgage_balance_usd: np.ndarray,
+) -> None:
+    actor_id = _primary_owner_actor_id(scenario)
+    cash_source = _single_checking_account_source(scenario, actor_id=actor_id)
+    sp500_source = _single_sp500_asset_source(scenario, actor_id=actor_id)
+    private_equity_source_id = _private_equity_source_holding_id(scenario)
+    month_zero = 0
+
+    if initial_cash_usd > 0:
+        amount = np.full(rollout_count, initial_cash_usd, dtype="float64")
+        accounting.record_entry(
+            month_index=month_zero,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.OPENING_BALANCE,
+                cause_type=AccountingCauseType.OPENING_BALANCE,
+                cause_id_prefix="opening:checking_cash",
+                actor_id=actor_id,
+                description="opening checking cash",
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.CHECKING_CASH,
+                        side=PostingSide.DEBIT,
+                        amount_usd=amount,
+                        actor_id=actor_id,
+                        source_account_id=cash_source.account_id if cash_source is not None else None,
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.OPENING_EQUITY,
+                        side=PostingSide.CREDIT,
+                        amount_usd=amount,
+                        actor_id=actor_id,
+                    ),
+                ),
+            ),
+        )
+
+    if initial_sp500_value_usd > 0:
+        amount = np.full(rollout_count, initial_sp500_value_usd, dtype="float64")
+        lot_id = _tax_lot_id(LotAssetClass.PUBLIC_SECURITY, sp500_source.asset_id if sp500_source else "portfolio")
+        accounting.record_entry(
+            month_index=month_zero,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.OPENING_BALANCE,
+                cause_type=AccountingCauseType.OPENING_BALANCE,
+                cause_id_prefix="opening:public_security",
+                actor_id=actor_id,
+                description="opening public security holdings",
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.PUBLIC_SECURITY,
+                        side=PostingSide.DEBIT,
+                        amount_usd=amount,
+                        actor_id=actor_id,
+                        source_asset_id=sp500_source.asset_id if sp500_source is not None else None,
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.OPENING_EQUITY,
+                        side=PostingSide.CREDIT,
+                        amount_usd=amount,
+                        actor_id=actor_id,
+                    ),
+                ),
+            ),
+        )
+        tax_lots.append(
+            TaxLot(
+                lot_id=lot_id,
+                asset_class=LotAssetClass.PUBLIC_SECURITY,
+                owner_actor_id=actor_id,
+                source_asset_id=sp500_source.asset_id if sp500_source is not None else None,
+                cost_basis_usd=max(0.0, float(initial_sp500_basis_usd)),
+                acquisition_month_index=0,
+            )
+        )
+
+    if initial_private_equity_value_usd > 0:
+        amount = np.full(rollout_count, initial_private_equity_value_usd, dtype="float64")
+        lot_id = _tax_lot_id(LotAssetClass.PRIVATE_EQUITY, private_equity_source_id)
+        accounting.record_entry(
+            month_index=month_zero,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.OPENING_BALANCE,
+                cause_type=AccountingCauseType.OPENING_BALANCE,
+                cause_id_prefix="opening:private_equity",
+                actor_id=actor_id,
+                description="opening private equity holdings",
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.PRIVATE_EQUITY,
+                        side=PostingSide.DEBIT,
+                        amount_usd=amount,
+                        actor_id=actor_id,
+                        source_asset_id=private_equity_source_id,
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.OPENING_EQUITY,
+                        side=PostingSide.CREDIT,
+                        amount_usd=amount,
+                        actor_id=actor_id,
+                    ),
+                ),
+            ),
+        )
+        tax_lots.append(
+            TaxLot(
+                lot_id=lot_id,
+                asset_class=LotAssetClass.PRIVATE_EQUITY,
+                owner_actor_id=actor_id,
+                source_asset_id=private_equity_source_id,
+                cost_basis_usd=max(0.0, float(initial_private_equity_basis_usd)),
+                quantity=_initial_private_equity_units(scenario) or None,
+                acquisition_month_index=0,
+            )
+        )
+
+    property_id = scenario.property_selection.property_id
+    if property_id is None or purchase_price_usd <= 0:
+        return
+
+    purchase = np.full(rollout_count, purchase_price_usd, dtype="float64")
+    closing = np.asarray(purchase_closing_cost_usd, dtype="float64")
+    mortgage = np.asarray(mortgage_balance_usd, dtype="float64")
+    cash_outlay = np.full(rollout_count, down_payment_usd, dtype="float64") + closing
+    liability_id = _mortgage_liability_id(property_id)
+    accounting.record_entry(
+        month_index=month_zero,
+        entry=JournalEntryBatch(
+            journal_entry_type=JournalEntryType.OPENING_BALANCE,
+            cause_type=AccountingCauseType.OPENING_BALANCE,
+            cause_id_prefix=f"opening:property:{property_id}",
+            actor_id=actor_id,
+            description="opening property purchase",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.PROPERTY,
+                    side=PostingSide.DEBIT,
+                    amount_usd=purchase,
+                    actor_id=actor_id,
+                    property_id=property_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PROPERTY_PURCHASE_CLOSING_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=closing,
+                    actor_id=actor_id,
+                    property_id=property_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.CREDIT,
+                    amount_usd=cash_outlay,
+                    actor_id=actor_id,
+                    source_account_id=cash_source.account_id if cash_source is not None else None,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.MORTGAGE_PAYABLE,
+                    side=PostingSide.CREDIT,
+                    amount_usd=mortgage,
+                    actor_id=actor_id,
+                    liability_id=liability_id,
+                    property_id=property_id,
+                ),
+            ),
+        ),
+    )
+    tax_lots.append(
+        TaxLot(
+            lot_id=_tax_lot_id(LotAssetClass.PROPERTY, property_id),
+            asset_class=LotAssetClass.PROPERTY,
+            owner_actor_id=actor_id,
+            property_id=property_id,
+            cost_basis_usd=max(0.0, purchase_price_usd + float(np.mean(closing))),
+            acquisition_month_index=0,
+        )
+    )
+    initial_mortgage = float(np.max(mortgage))
+    if initial_mortgage > 0:
+        liabilities.append(
+            LiabilityState(
+                liability_id=liability_id,
+                liability_type=LiabilityType.MORTGAGE,
+                actor_id=actor_id,
+                creditor_id="mortgage_lender",
+                property_id=property_id,
+                balance_usd=initial_mortgage,
+            )
+        )
+
+
+def _record_state_balance_snapshots(
+    accounting: AccountingTraceBuilder,
+    *,
+    scenario: Scenario,
+    month_index: np.ndarray,
+    cash_usd: np.ndarray,
+    generic_sp500_value_usd: np.ndarray,
+    private_equity_value_usd: np.ndarray,
+    property_value_usd: np.ndarray,
+    mortgage_balance_usd: np.ndarray,
+    property_balance_mask: np.ndarray,
+) -> None:
+    actor_id = _primary_owner_actor_id(scenario)
+    cash_source = _single_checking_account_source(scenario, actor_id=actor_id)
+    sp500_source = _single_sp500_asset_source(scenario, actor_id=actor_id)
+    private_equity_source_id = _private_equity_source_holding_id(scenario)
+    accounting.record_snapshot(
+        month_index=month_index,
+        snapshot=BalanceSnapshotBatch(
+            role=ChartAccountRole.CHECKING_CASH,
+            amount_usd=cash_usd,
+            actor_id=actor_id,
+            source_account_id=cash_source.account_id if cash_source is not None else None,
+        ),
+    )
+    accounting.record_snapshot(
+        month_index=month_index,
+        snapshot=BalanceSnapshotBatch(
+            role=ChartAccountRole.PUBLIC_SECURITY,
+            amount_usd=generic_sp500_value_usd,
+            actor_id=actor_id,
+            source_asset_id=sp500_source.asset_id if sp500_source is not None else None,
+        ),
+    )
+    accounting.record_snapshot(
+        month_index=month_index,
+        snapshot=BalanceSnapshotBatch(
+            role=ChartAccountRole.PRIVATE_EQUITY,
+            amount_usd=private_equity_value_usd,
+            actor_id=actor_id,
+            source_asset_id=private_equity_source_id,
+        ),
+    )
+    property_id = scenario.property_selection.property_id
+    if property_id is None:
+        return
+    accounting.record_snapshot(
+        month_index=month_index,
+        snapshot=BalanceSnapshotBatch(
+            role=ChartAccountRole.PROPERTY,
+            amount_usd=property_value_usd * property_balance_mask,
+            actor_id=actor_id,
+            property_id=property_id,
+        ),
+    )
+    accounting.record_snapshot(
+        month_index=month_index,
+        snapshot=BalanceSnapshotBatch(
+            role=ChartAccountRole.MORTGAGE_PAYABLE,
+            amount_usd=mortgage_balance_usd * property_balance_mask,
+            actor_id=actor_id,
+            liability_id=_mortgage_liability_id(property_id),
+            property_id=property_id,
+        ),
+    )
 
 
 def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> ScenarioRunArrays:
@@ -861,8 +1318,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     actions: list[SimulationAction] = []
     policy_decisions: list[SimulationPolicyDecision] = []
     market_observations: list[SimulationMarketObservation] = list(_market_path_observations(scenario, market_bundle))
-    ledger_entries: list[SimulationLedgerEntry] = []
-    balance_snapshots: list[SimulationBalanceSnapshot] = []
+    accounting = AccountingTraceBuilder()
+    tax_lots: list[TaxLot] = []
+    lot_dispositions: list[LotDisposition] = []
+    liabilities: list[LiabilityState] = []
     accounting_details: list[SimulationAccountingDetail] = []
     obligations: list[SimulationObligation] = []
     funding_decisions: list[SimulationFundingDecision] = []
@@ -870,6 +1329,22 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     failure_events: list[SimulationFailureEvent] = []
     sp500_sale_action_records: list[Sp500SaleActionRecord] = []
     private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
+    _record_opening_accounting_state(
+        accounting,
+        tax_lots,
+        liabilities,
+        scenario=scenario,
+        rollout_count=rollout_count,
+        initial_cash_usd=initial_cash,
+        initial_sp500_value_usd=initial_sp500,
+        initial_sp500_basis_usd=initial_sp500_basis,
+        initial_private_equity_value_usd=initial_private_equity,
+        initial_private_equity_basis_usd=initial_private_equity_basis,
+        purchase_price_usd=purchase_price,
+        down_payment_usd=down_payment,
+        purchase_closing_cost_usd=disposition.purchase_closing_cost_usd[:, 0],
+        mortgage_balance_usd=mortgage_balance[:, 0],
+    )
 
     for month in range(month_count):
         current_cash = current_cash + disposition.net_property_sale_cash_flow_usd[:, month]
@@ -913,8 +1388,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 )
                 spend_application = apply_debit_account_instruction(spend_decision.debit, current_cash_usd=current_cash)
                 current_cash = spend_application.current_cash_usd
-                spend_ledger = spend_application.ledger_entries[0]
-                _record_ledger_entry_month(ledger_entries, month_index=int(month_index[month]), entry=spend_ledger)
+                accounting.record_entry(
+                    month_index=int(month_index[month]), entry=spend_application.journal_entries[0]
+                )
                 _record_monthly_spend_decisions(
                     policy_decisions,
                     month_index=int(month_index[month]),
@@ -1019,6 +1495,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                         month_position=month,
                         month_index=int(month_index[month]),
                         policy=policy,
+                        cause_id_prefix=f"policy:{policy.policy_id}:generic_sp500_sale",
                         amount_usd=sp500_sale_application.sale_usd,
                         basis_usd=sp500_sale_application.basis_usd,
                         shortfall_usd=sp500_sale_application.shortfall_usd,
@@ -1095,7 +1572,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         funding_decisions=funding_decisions,
         settlement_results=settlement_results,
         failure_events=failure_events,
-        ledger_entries=ledger_entries,
+        accounting=accounting,
         sp500_sale_action_records=sp500_sale_action_records,
     )
     private_equity_sale_tax = adjusted_private_equity_sale_tax
@@ -1117,8 +1594,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         tax_usd=property_sale_tax,
         net_proceeds_usd=property_sale_net_proceeds,
     )
-    _record_property_sale_ledger_entries(
-        ledger_entries,
+    _record_property_sale_journal_entries(
+        accounting,
+        lot_dispositions,
         scenario=scenario,
         disposition=disposition,
         tax_usd=property_sale_tax,
@@ -1145,10 +1623,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 0.0, generic_sp500_sale_gain[:, sp500_sale_action_record.month_position]
             ),
         )
-        _record_sp500_sale_ledger_entries(
-            ledger_entries,
+        _record_sp500_sale_journal_entries(
+            accounting,
+            lot_dispositions,
             month_index=sp500_sale_action_record.month_index,
             policy=sp500_sale_action_record.policy,
+            cause_id_prefix=sp500_sale_action_record.cause_id_prefix,
             amount_usd=sp500_sale_action_record.amount_usd,
             basis_usd=sp500_sale_action_record.basis_usd,
             tax_usd=source_tax,
@@ -1170,12 +1650,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 :, private_equity_sale_action_record.month_position
             ],
         )
-        _record_private_equity_sale_ledger_entries(
-            ledger_entries,
+        _record_private_equity_sale_journal_entries(
+            accounting,
+            lot_dispositions,
             month_index=private_equity_sale_action_record.month_index,
             instruction=private_equity_sale_action_record.instruction,
             sale_application=private_equity_sale_action_record.sale_application,
             tax_usd=source_tax,
+            source_holding_id=private_equity_source_holding_id,
         )
         _record_private_equity_sale_actions(
             actions,
@@ -1186,9 +1668,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         )
     _record_partner_agreement_actions(actions, month_index=month_index, partner_equity=partner_equity)
     _record_partner_contribution_decisions(policy_decisions, month_index=month_index, partner_equity=partner_equity)
-    _record_partner_agreement_ledger_detail(
-        ledger_entries, balance_snapshots, month_index=month_index, partner_equity=partner_equity
-    )
+    _record_partner_agreement_accounting_detail(accounting, month_index=month_index, partner_equity=partner_equity)
     mortgage_application = apply_mortgage_payment(
         actor_id=_primary_owner_actor_id(scenario),
         policy_id=MORTGAGE_SERVICING_POLICY_ID,
@@ -1198,223 +1678,273 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         mortgage_balance_after_usd=mortgage_balance,
     )
     _record_mortgage_payment_actions(actions, month_index=month_index, mortgage_application=mortgage_application)
-    _record_ledger_entry_batches(ledger_entries, month_index=month_index, entries=mortgage_application.ledger_entries)
-    _record_ledger_entry_batches(
-        ledger_entries,
+    _record_journal_entry_batches(accounting, month_index=month_index, entries=mortgage_application.journal_entries)
+    _record_journal_entry_batches(
+        accounting,
         month_index=month_index,
-        entries=property_cash_flow.ledger_entries,
+        entries=property_cash_flow.journal_entries,
         amount_multiplier=property_live_mask,
     )
-    monthly_spend_from_ledger = -_ledger_amount_matrix(
-        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="monthly_spend"
+    if disposition.sale_month is None:
+        property_balance_mask = property_live_mask
+    else:
+        property_balance_mask = (month_index < disposition.sale_month).astype("float64")
+        property_balance_mask = np.broadcast_to(property_balance_mask[None, :], (rollout_count, month_count)).copy()
+    _record_state_balance_snapshots(
+        accounting,
+        scenario=scenario,
+        month_index=month_index,
+        cash_usd=cash,
+        generic_sp500_value_usd=generic_sp500_value,
+        private_equity_value_usd=private_equity_value,
+        property_value_usd=property_value,
+        mortgage_balance_usd=mortgage_balance,
+        property_balance_mask=property_balance_mask,
     )
-    mortgage_interest_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    accounting.validate()
+    monthly_spend_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="cash",
-        category="mortgage_interest",
+        role=ChartAccountRole.MONTHLY_LIVING_EXPENSE,
+        side=PostingSide.DEBIT,
     )
-    mortgage_principal_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    mortgage_interest_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="cash",
-        category="mortgage_principal",
+        role=ChartAccountRole.MORTGAGE_INTEREST_EXPENSE,
+        side=PostingSide.DEBIT,
     )
-    mortgage_payment_from_ledger = mortgage_interest_from_ledger + mortgage_principal_from_ledger
-    property_tax_from_ledger = -_ledger_amount_matrix(
-        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="property_tax"
-    )
-    hoa_from_ledger = -_ledger_amount_matrix(
-        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="hoa"
-    )
-    insurance_from_ledger = -_ledger_amount_matrix(
-        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="insurance"
-    )
-    maintenance_from_ledger = -_ledger_amount_matrix(
-        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="maintenance"
-    )
-    rental_gross_income_from_ledger = _ledger_amount_matrix(
-        ledger_entries,
+    mortgage_principal_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="rental",
-        category="rental_gross_income",
+        role=ChartAccountRole.MORTGAGE_PAYABLE,
+        side=PostingSide.DEBIT,
+        journal_entry_type=JournalEntryType.MORTGAGE_PAYMENT,
     )
-    rental_vacancy_loss_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    mortgage_payment_from_accounting = mortgage_interest_from_accounting + mortgage_principal_from_accounting
+    property_tax_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="rental",
-        category="rental_vacancy_loss",
+        role=ChartAccountRole.PROPERTY_TAX_EXPENSE,
+        side=PostingSide.DEBIT,
     )
-    rental_income_from_ledger = _ledger_amount_matrix(
-        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="cash", category="rental_income"
+    hoa_from_accounting = _posting_amount_matrix(
+        accounting, rollout_count=rollout_count, month_index=month_index, role=ChartAccountRole.HOA_EXPENSE, side=PostingSide.DEBIT
     )
-    rental_management_fee_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    insurance_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="cash",
-        category="rental_management_fee",
+        role=ChartAccountRole.INSURANCE_EXPENSE,
+        side=PostingSide.DEBIT,
     )
-    rental_leasing_fee_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    maintenance_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="cash",
-        category="rental_leasing_fee",
+        role=ChartAccountRole.MAINTENANCE_EXPENSE,
+        side=PostingSide.DEBIT,
     )
-    property_carrying_cost_from_ledger = (
-        property_tax_from_ledger
-        + hoa_from_ledger
-        + insurance_from_ledger
-        + maintenance_from_ledger
-        + rental_management_fee_from_ledger
-        + rental_leasing_fee_from_ledger
-    )
-    net_property_cash_flow_from_ledger = (
-        rental_income_from_ledger - property_carrying_cost_from_ledger - mortgage_payment_from_ledger
-    )
-    generic_sp500_sale_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    rental_gross_income_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="asset",
-        category="generic_sp500_sale",
+        role=ChartAccountRole.RENTAL_GROSS_INCOME,
+        side=PostingSide.CREDIT,
     )
-    generic_sp500_sale_basis_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    rental_vacancy_loss_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="basis",
-        category="generic_sp500_sale_basis",
+        role=ChartAccountRole.RENTAL_VACANCY_LOSS,
+        side=PostingSide.DEBIT,
     )
-    generic_sp500_sale_tax_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    rental_income_from_accounting = rental_gross_income_from_accounting - rental_vacancy_loss_from_accounting
+    rental_management_fee_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="tax",
-        category="generic_sp500_sale_tax",
+        role=ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE,
+        side=PostingSide.DEBIT,
     )
-    private_equity_sale_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    rental_leasing_fee_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="asset",
-        category="private_equity_sale",
+        role=ChartAccountRole.RENTAL_LEASING_FEE_EXPENSE,
+        side=PostingSide.DEBIT,
     )
-    private_equity_sale_basis_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    property_carrying_cost_from_accounting = (
+        property_tax_from_accounting
+        + hoa_from_accounting
+        + insurance_from_accounting
+        + maintenance_from_accounting
+        + rental_management_fee_from_accounting
+        + rental_leasing_fee_from_accounting
+    )
+    net_property_cash_flow_from_accounting = (
+        rental_income_from_accounting - property_carrying_cost_from_accounting - mortgage_payment_from_accounting
+    )
+    generic_sp500_sale_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="basis",
-        category="private_equity_sale_basis",
+        role=ChartAccountRole.PUBLIC_SECURITY,
+        side=PostingSide.CREDIT,
+        journal_entry_type=JournalEntryType.ASSET_SALE,
     )
-    private_equity_sale_tax_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    generic_sp500_sale_basis_from_accounting = _lot_disposition_amount_matrix(
+        lot_dispositions,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="tax",
-        category="private_equity_sale_tax",
+        asset_class=LotAssetClass.PUBLIC_SECURITY,
+        amount_field="cost_basis_usd",
     )
-    property_sale_gross_from_ledger = _ledger_amount_matrix(
-        ledger_entries,
+    generic_sp500_sale_tax_from_accounting = _lot_disposition_amount_matrix(
+        lot_dispositions,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="property_sale",
-        category="property_sale_gross",
+        asset_class=LotAssetClass.PUBLIC_SECURITY,
+        amount_field="tax_expense_usd",
     )
-    sale_closing_cost_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    private_equity_sale_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="property_sale",
-        category="sale_closing_cost",
+        role=ChartAccountRole.PRIVATE_EQUITY,
+        side=PostingSide.CREDIT,
+        journal_entry_type=JournalEntryType.ASSET_SALE,
     )
-    property_sale_debt_payoff_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    private_equity_sale_basis_from_accounting = _lot_disposition_amount_matrix(
+        lot_dispositions,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="property_sale",
-        category="property_sale_debt_payoff",
+        asset_class=LotAssetClass.PRIVATE_EQUITY,
+        amount_field="cost_basis_usd",
     )
-    property_sale_tax_from_ledger = -_ledger_amount_matrix(
-        ledger_entries, rollout_count=rollout_count, month_index=month_index, domain="tax", category="property_sale_tax"
-    )
-    property_sale_net_proceeds_from_ledger = _ledger_amount_matrix(
-        ledger_entries,
+    private_equity_sale_tax_from_accounting = _lot_disposition_amount_matrix(
+        lot_dispositions,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="cash",
-        category="property_sale_net_proceeds",
+        asset_class=LotAssetClass.PRIVATE_EQUITY,
+        amount_field="tax_expense_usd",
     )
-    partner_contribution_from_ledger = -_ledger_amount_matrix(
-        ledger_entries,
+    property_sale_gross_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="cash",
-        category="partner_contribution_transfer",
+        role=ChartAccountRole.PROPERTY,
+        side=PostingSide.CREDIT,
+        journal_entry_type=JournalEntryType.PROPERTY_SALE,
     )
-    partner_contribution_used_from_ledger = _ledger_amount_matrix(
-        ledger_entries,
+    sale_closing_cost_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="cash",
-        category="partner_contribution_used_for_house_costs",
+        role=ChartAccountRole.PROPERTY_SALE_CLOSING_EXPENSE,
+        side=PostingSide.DEBIT,
+        journal_entry_type=JournalEntryType.PROPERTY_SALE,
     )
-    partner_unallocated_excess_from_ledger = _ledger_amount_matrix(
-        ledger_entries,
+    property_sale_debt_payoff_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="escrow",
-        category="partner_contribution_unallocated",
+        role=ChartAccountRole.MORTGAGE_PAYABLE,
+        side=PostingSide.DEBIT,
+        journal_entry_type=JournalEntryType.PROPERTY_SALE,
     )
-    partner_principal_credit_from_ledger = _ledger_amount_matrix(
-        ledger_entries,
+    property_sale_tax_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="ownership",
-        category="partner_principal_credit",
+        role=ChartAccountRole.TAX_EXPENSE,
+        side=PostingSide.DEBIT,
+        journal_entry_type=JournalEntryType.PROPERTY_SALE,
     )
-    owner_principal_credit_from_ledger = _ledger_amount_matrix(
-        ledger_entries,
+    property_sale_cash_in_from_accounting = _posting_amount_matrix(
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="ownership",
-        category="owner_principal_credit",
+        role=ChartAccountRole.CHECKING_CASH,
+        side=PostingSide.DEBIT,
+        journal_entry_type=JournalEntryType.PROPERTY_SALE,
+    )
+    property_sale_cash_out_from_accounting = _posting_amount_matrix(
+        accounting,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.CHECKING_CASH,
+        side=PostingSide.CREDIT,
+        journal_entry_type=JournalEntryType.PROPERTY_SALE,
+    )
+    property_sale_net_proceeds_from_accounting = (
+        property_sale_cash_in_from_accounting - property_sale_cash_out_from_accounting
+    )
+    partner_contribution_from_accounting = _posting_amount_matrix(
+        accounting,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER,
+        side=PostingSide.CREDIT,
+    )
+    partner_contribution_used_from_accounting = _posting_amount_matrix(
+        accounting,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.PARTNER_CONTRIBUTION_USED,
+        side=PostingSide.DEBIT,
+    )
+    partner_unallocated_excess_from_accounting = _posting_amount_matrix(
+        accounting,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.PARTNER_UNALLOCATED_CLAIM,
+        side=PostingSide.DEBIT,
+    )
+    partner_principal_credit_from_accounting = _posting_amount_matrix(
+        accounting,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT,
+        side=PostingSide.DEBIT,
+    )
+    owner_principal_credit_from_accounting = _posting_amount_matrix(
+        accounting,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT,
+        side=PostingSide.DEBIT,
     )
     partner_equity_ledger_from_snapshot = _balance_snapshot_amount_matrix(
-        balance_snapshots,
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="ownership",
-        category="partner_equity_ledger",
+        role=ChartAccountRole.PARTNER_EQUITY_LEDGER,
     )
     owner_equity_ledger_from_snapshot = _balance_snapshot_amount_matrix(
-        balance_snapshots,
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="ownership",
-        category="owner_equity_ledger",
+        role=ChartAccountRole.OWNER_EQUITY_LEDGER,
     )
     partner_home_equity_claim_from_snapshot = _balance_snapshot_amount_matrix(
-        balance_snapshots,
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="ownership",
-        category="partner_home_equity_claim",
+        role=ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM,
     )
     owner_home_equity_claim_from_snapshot = _balance_snapshot_amount_matrix(
-        balance_snapshots,
+        accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        domain="ownership",
-        category="owner_home_equity_claim",
+        role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
     )
     if not partner_equity.agreements:
-        owner_principal_credit_from_ledger = partner_equity.owner_principal_usd
+        owner_principal_credit_from_accounting = partner_equity.owner_principal_usd
         partner_equity_ledger_from_snapshot = partner_equity.partner_equity_ledger_usd
         owner_equity_ledger_from_snapshot = partner_equity.owner_equity_ledger_usd
         partner_home_equity_claim_from_snapshot = partner_equity.home_equity_claim_usd
@@ -1496,45 +2026,45 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         month_index=month_index,
         cash_usd=cash,
         generic_sp500_value_usd=generic_sp500_value,
-        generic_sp500_sale_usd=generic_sp500_sale_from_ledger,
-        generic_sp500_sale_basis_usd=generic_sp500_sale_basis_from_ledger,
-        generic_sp500_sale_gain_usd=generic_sp500_sale_from_ledger - generic_sp500_sale_basis_from_ledger,
-        generic_sp500_sale_tax_usd=generic_sp500_sale_tax_from_ledger,
-        checking_floor_action_usd=generic_sp500_sale_from_ledger,
+        generic_sp500_sale_usd=generic_sp500_sale_from_accounting,
+        generic_sp500_sale_basis_usd=generic_sp500_sale_basis_from_accounting,
+        generic_sp500_sale_gain_usd=generic_sp500_sale_from_accounting - generic_sp500_sale_basis_from_accounting,
+        generic_sp500_sale_tax_usd=generic_sp500_sale_tax_from_accounting,
+        checking_floor_action_usd=generic_sp500_sale_from_accounting,
         checking_floor_shortfall_usd=checking_floor_shortfall,
         private_equity_value_usd=private_equity_value,
         private_equity_sale_opportunity_value_usd=private_equity_sale_opportunity_value,
-        private_equity_sale_usd=private_equity_sale_from_ledger,
-        private_equity_sale_basis_usd=private_equity_sale_basis_from_ledger,
-        private_equity_sale_tax_usd=private_equity_sale_tax_from_ledger,
+        private_equity_sale_usd=private_equity_sale_from_accounting,
+        private_equity_sale_basis_usd=private_equity_sale_basis_from_accounting,
+        private_equity_sale_tax_usd=private_equity_sale_tax_from_accounting,
         federal_income_tax_usd=federal_income_tax_from_accounting,
         california_income_tax_usd=california_income_tax_from_accounting,
         total_income_tax_usd=total_income_tax_from_accounting,
         private_equity_sale_opportunity_event=private_equity_sale_opportunity_event,
         property_value_usd=property_value,
         mortgage_balance_usd=mortgage_balance,
-        mortgage_interest_usd=mortgage_interest_from_ledger,
-        mortgage_principal_usd=mortgage_principal_from_ledger,
-        mortgage_payment_usd=mortgage_payment_from_ledger,
-        property_tax_usd=property_tax_from_ledger,
-        hoa_usd=hoa_from_ledger,
-        insurance_usd=insurance_from_ledger,
-        maintenance_usd=maintenance_from_ledger,
-        rental_gross_income_usd=rental_gross_income_from_ledger,
-        rental_vacancy_loss_usd=rental_vacancy_loss_from_ledger,
-        rental_income_usd=rental_income_from_ledger,
-        rental_management_fee_usd=rental_management_fee_from_ledger,
-        rental_leasing_fee_usd=rental_leasing_fee_from_ledger,
-        property_carrying_cost_usd=property_carrying_cost_from_ledger,
-        net_property_cash_flow_usd=net_property_cash_flow_from_ledger,
+        mortgage_interest_usd=mortgage_interest_from_accounting,
+        mortgage_principal_usd=mortgage_principal_from_accounting,
+        mortgage_payment_usd=mortgage_payment_from_accounting,
+        property_tax_usd=property_tax_from_accounting,
+        hoa_usd=hoa_from_accounting,
+        insurance_usd=insurance_from_accounting,
+        maintenance_usd=maintenance_from_accounting,
+        rental_gross_income_usd=rental_gross_income_from_accounting,
+        rental_vacancy_loss_usd=rental_vacancy_loss_from_accounting,
+        rental_income_usd=rental_income_from_accounting,
+        rental_management_fee_usd=rental_management_fee_from_accounting,
+        rental_leasing_fee_usd=rental_leasing_fee_from_accounting,
+        property_carrying_cost_usd=property_carrying_cost_from_accounting,
+        net_property_cash_flow_usd=net_property_cash_flow_from_accounting,
         purchase_closing_cost_usd=disposition.purchase_closing_cost_usd,
-        sale_closing_cost_usd=sale_closing_cost_from_ledger,
+        sale_closing_cost_usd=sale_closing_cost_from_accounting,
         property_depreciation_usd=disposition.property_depreciation_usd,
         cumulative_property_depreciation_usd=disposition.cumulative_property_depreciation_usd,
-        property_sale_gross_usd=property_sale_gross_from_ledger,
-        property_sale_net_proceeds_usd=property_sale_net_proceeds_from_ledger,
-        property_sale_tax_usd=property_sale_tax_from_ledger,
-        property_sale_debt_payoff_usd=property_sale_debt_payoff_from_ledger,
+        property_sale_gross_usd=property_sale_gross_from_accounting,
+        property_sale_net_proceeds_usd=property_sale_net_proceeds_from_accounting,
+        property_sale_tax_usd=property_sale_tax_from_accounting,
+        property_sale_debt_payoff_usd=property_sale_debt_payoff_from_accounting,
         property_sale_adjusted_basis_usd=property_sale_adjusted_basis_from_accounting,
         realized_property_gain_usd=realized_property_gain_from_accounting,
         property_sale_capital_gain_usd=property_sale_capital_gain_from_accounting,
@@ -1542,16 +2072,16 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         taxable_property_capital_gain_usd=taxable_property_capital_gain_from_accounting,
         taxable_property_gain_usd=taxable_property_gain_from_accounting,
         depreciation_recapture_usd=depreciation_recapture_from_accounting,
-        net_property_sale_cash_flow_usd=property_sale_net_proceeds_from_ledger,
+        net_property_sale_cash_flow_usd=property_sale_net_proceeds_from_accounting,
         home_equity_usd=home_equity,
         owner_home_equity_claim_usd=owner_home_equity_claim_from_snapshot,
         partner_home_equity_claim_usd=partner_home_equity_claim_from_snapshot,
-        partner_contribution_usd=partner_contribution_from_ledger,
-        partner_contribution_used_usd=partner_contribution_used_from_ledger,
-        partner_unallocated_excess_usd=partner_unallocated_excess_from_ledger,
+        partner_contribution_usd=partner_contribution_from_accounting,
+        partner_contribution_used_usd=partner_contribution_used_from_accounting,
+        partner_unallocated_excess_usd=partner_unallocated_excess_from_accounting,
         partner_house_costs_usd=partner_equity.house_costs_usd,
-        partner_principal_credit_usd=partner_principal_credit_from_ledger,
-        owner_principal_credit_usd=owner_principal_credit_from_ledger,
+        partner_principal_credit_usd=partner_principal_credit_from_accounting,
+        owner_principal_credit_usd=owner_principal_credit_from_accounting,
         partner_house_cost_share=partner_equity.house_cost_share,
         partner_equity_ledger_usd=partner_equity_ledger_from_snapshot,
         owner_equity_ledger_usd=owner_equity_ledger_from_snapshot,
@@ -1559,7 +2089,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         liquid_net_worth_usd=liquid_net_worth,
         net_worth_usd=net_worth,
         partner_present=partner_present,
-        monthly_spend_usd=monthly_spend_from_ledger,
+        monthly_spend_usd=monthly_spend_from_accounting,
         actions=_sorted_actions(_with_trajectory_identity(actions, trace_identity_by_rollout)),
         policy_decisions=_sorted_policy_decisions(
             _with_trajectory_identity(policy_decisions, trace_identity_by_rollout)
@@ -1567,10 +2097,17 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         market_observations=_sorted_market_observations(
             _with_trajectory_identity(market_observations, trace_identity_by_rollout)
         ),
-        ledger_entries=_sorted_ledger_entries(_with_trajectory_identity(ledger_entries, trace_identity_by_rollout)),
-        balance_snapshots=_sorted_balance_snapshots(
-            _with_trajectory_identity(balance_snapshots, trace_identity_by_rollout)
+        chart_accounts=_sorted_chart_accounts(list(accounting.chart_accounts_by_id.values())),
+        journal_entries=_sorted_journal_entries(
+            _with_trajectory_identity(accounting.journal_entries, trace_identity_by_rollout)
         ),
+        postings=_sorted_postings(_with_trajectory_identity(accounting.postings, trace_identity_by_rollout)),
+        balance_snapshots=_sorted_balance_snapshots(
+            _with_trajectory_identity(accounting.balance_snapshots, trace_identity_by_rollout)
+        ),
+        tax_lots=_sorted_tax_lots(tax_lots),
+        lot_dispositions=_sorted_lot_dispositions(_with_trajectory_identity(lot_dispositions, trace_identity_by_rollout)),
+        liabilities=_sorted_liabilities(liabilities),
         accounting_details=_sorted_accounting_details(
             _with_trajectory_identity(accounting_details, trace_identity_by_rollout)
         ),
@@ -1801,97 +2338,105 @@ def _record_partner_contribution_decisions(
             )
 
 
-def _record_ledger_entry_month(
-    records: list[SimulationLedgerEntry], *, month_index: int, entry: LedgerEntryBatch
-) -> None:
-    active_rollouts = np.nonzero(entry.amount_usd != 0)[0].tolist()
-    records.extend(
-        (
-            SimulationLedgerEntry(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=entry.actor_id,
-                policy_id=entry.policy_id,
-                domain=entry.domain,
-                category=entry.category,
-                amount_usd=float(entry.amount_usd[rollout_index]),
-                counterparty_actor_id=entry.counterparty_actor_id,
-                property_id=entry.property_id,
-            )
-        )
-        for rollout_index in active_rollouts
-    )
-
-
-def _record_ledger_entry_batches(
-    records: list[SimulationLedgerEntry],
+def _record_journal_entry_batches(
+    accounting: AccountingTraceBuilder,
     *,
     month_index: np.ndarray,
-    entries: tuple[LedgerEntryBatch, ...],
+    entries: tuple[JournalEntryBatch, ...],
     amount_multiplier: np.ndarray | None = None,
 ) -> None:
     for entry in entries:
-        amount_usd = entry.amount_usd if amount_multiplier is None else entry.amount_usd * amount_multiplier
-        _record_ledger_matrix(
-            records,
-            month_index=month_index,
-            actor_id=entry.actor_id,
-            policy_id=entry.policy_id,
-            domain=entry.domain,
-            category=entry.category,
-            amount_usd=amount_usd,
-            counterparty_actor_id=entry.counterparty_actor_id,
-            property_id=entry.property_id,
-        )
+        accounting.record_entry(month_index=month_index, entry=entry, amount_multiplier=amount_multiplier)
 
 
 def _record_balance_snapshot_batches(
-    records: list[SimulationBalanceSnapshot], *, month_index: np.ndarray, entries: tuple[BalanceSnapshotBatch, ...]
+    accounting: AccountingTraceBuilder, *, month_index: np.ndarray, entries: tuple[BalanceSnapshotBatch, ...]
 ) -> None:
     for entry in entries:
-        _record_balance_snapshot_matrix(
-            records,
-            month_index=month_index,
-            actor_id=entry.actor_id,
-            policy_id=entry.policy_id,
-            domain=entry.domain,
-            category=entry.category,
-            amount_usd=entry.amount_usd,
-            counterparty_actor_id=entry.counterparty_actor_id,
-            property_id=entry.property_id,
-        )
+        accounting.record_snapshot(month_index=month_index, snapshot=entry)
 
 
-def _ledger_amount_matrix(
-    records: list[SimulationLedgerEntry], *, rollout_count: int, month_index: np.ndarray, domain: str, category: str
+def _posting_amount_matrix(
+    accounting: AccountingTraceBuilder,
+    *,
+    rollout_count: int,
+    month_index: np.ndarray,
+    role: ChartAccountRole,
+    side: PostingSide | None = None,
+    journal_entry_type: JournalEntryType | None = None,
 ) -> np.ndarray:
     matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
     month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-    for entry in records:
-        if entry.domain != domain or entry.category != category:
+    journal_type_by_id = {
+        entry.journal_entry_id: entry.journal_entry_type for entry in accounting.journal_entries
+    }
+    for posting in accounting.postings:
+        account = accounting.chart_accounts_by_id[posting.chart_account_id]
+        if account.role is not role:
+            continue
+        if side is not None and posting.side is not side:
+            continue
+        if journal_entry_type is not None and journal_type_by_id[posting.journal_entry_id] is not journal_entry_type:
             continue
         try:
-            month_position = month_position_by_index[entry.month_index]
+            month_position = month_position_by_index[posting.month_index]
         except KeyError as exc:
-            raise ValueError(f"ledger entry has month outside result horizon: {entry.month_index}") from exc
-        matrix[entry.rollout_index, month_position] += entry.amount_usd
+            raise ValueError(f"posting has month outside result horizon: {posting.month_index}") from exc
+        matrix[posting.rollout_index, month_position] += posting.amount_usd
     return matrix
 
 
 def _balance_snapshot_amount_matrix(
-    records: list[SimulationBalanceSnapshot], *, rollout_count: int, month_index: np.ndarray, domain: str, category: str
+    accounting: AccountingTraceBuilder,
+    *,
+    rollout_count: int,
+    month_index: np.ndarray,
+    role: ChartAccountRole,
 ) -> np.ndarray:
     matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
     month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-    for snapshot in records:
-        if snapshot.domain != domain or snapshot.category != category:
+    for snapshot in accounting.balance_snapshots:
+        account = accounting.chart_accounts_by_id[snapshot.chart_account_id]
+        if account.role is not role:
             continue
         try:
             month_position = month_position_by_index[snapshot.month_index]
         except KeyError as exc:
             raise ValueError(f"balance snapshot has month outside result horizon: {snapshot.month_index}") from exc
-        matrix[snapshot.rollout_index, month_position] += snapshot.amount_usd
+        matrix[snapshot.rollout_index, month_position] += snapshot.balance_usd
     return matrix
+
+
+def _lot_disposition_amount_matrix(
+    records: list[LotDisposition],
+    *,
+    rollout_count: int,
+    month_index: np.ndarray,
+    asset_class: LotAssetClass,
+    amount_field: str,
+) -> np.ndarray:
+    matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
+    month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
+    for disposition in records:
+        if disposition.asset_class is not asset_class:
+            continue
+        try:
+            month_position = month_position_by_index[disposition.month_index]
+        except KeyError as exc:
+            raise ValueError(f"lot disposition has month outside result horizon: {disposition.month_index}") from exc
+        amount = getattr(disposition, amount_field)
+        if not isinstance(amount, int | float):
+            raise TypeError(f"lot disposition field {amount_field!r} is not numeric")
+        matrix[disposition.rollout_index, month_position] += float(amount)
+    return matrix
+
+
+def _tax_lot_id(asset_class: LotAssetClass, source_id: str) -> str:
+    return f"lot:{asset_class.value}:{source_id}"
+
+
+def _mortgage_liability_id(property_id: str) -> str:
+    return f"mortgage:{property_id}"
 
 
 def _accounting_detail_amount_matrix(
@@ -1918,101 +2463,9 @@ def _accounting_detail_amount_matrix(
     return matrix
 
 
-def _record_ledger_matrix(
-    records: list[SimulationLedgerEntry],
-    *,
-    month_index: np.ndarray,
-    actor_id: str,
-    policy_id: str | None,
-    domain: str,
-    category: str,
-    amount_usd: np.ndarray,
-    counterparty_actor_id: str | None = None,
-    event_id: str | None = None,
-    property_id: str | None = None,
-) -> None:
-    rollout_indexes, month_positions = np.nonzero(amount_usd != 0)
-    for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
-        records.append(
-            SimulationLedgerEntry(
-                rollout_index=rollout_index,
-                month_index=int(month_index[month_position]),
-                actor_id=actor_id,
-                policy_id=policy_id,
-                event_id=event_id,
-                property_id=property_id,
-                domain=domain,
-                category=category,
-                amount_usd=float(amount_usd[rollout_index, month_position]),
-                counterparty_actor_id=counterparty_actor_id,
-            )
-        )
-
-
-def _record_ledger_month_vector(
-    records: list[SimulationLedgerEntry],
-    *,
-    month_index: int,
-    actor_id: str,
-    policy_id: str | None,
-    domain: str,
-    category: str,
-    amount_usd: np.ndarray,
-    counterparty_actor_id: str | None = None,
-    event_id: str | None = None,
-    property_id: str | None = None,
-) -> None:
-    active_rollouts = np.nonzero(amount_usd != 0)[0].tolist()
-    records.extend(
-        (
-            SimulationLedgerEntry(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=actor_id,
-                policy_id=policy_id,
-                event_id=event_id,
-                property_id=property_id,
-                domain=domain,
-                category=category,
-                amount_usd=float(amount_usd[rollout_index]),
-                counterparty_actor_id=counterparty_actor_id,
-            )
-        )
-        for rollout_index in active_rollouts
-    )
-
-
-def _record_balance_snapshot_matrix(
-    records: list[SimulationBalanceSnapshot],
-    *,
-    month_index: np.ndarray,
-    actor_id: str,
-    policy_id: str | None,
-    domain: str,
-    category: str,
-    amount_usd: np.ndarray,
-    counterparty_actor_id: str | None = None,
-    property_id: str | None = None,
-) -> None:
-    rollout_indexes, month_positions = np.nonzero(amount_usd != 0)
-    for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
-        records.append(
-            SimulationBalanceSnapshot(
-                rollout_index=rollout_index,
-                month_index=int(month_index[month_position]),
-                actor_id=actor_id,
-                policy_id=policy_id,
-                property_id=property_id,
-                domain=domain,
-                category=category,
-                amount_usd=float(amount_usd[rollout_index, month_position]),
-                counterparty_actor_id=counterparty_actor_id,
-            )
-        )
-
-
-def _record_property_sale_ledger_entries(
-    records: list[SimulationLedgerEntry],
+def _record_property_sale_journal_entries(
+    accounting: AccountingTraceBuilder,
+    lot_dispositions: list[LotDisposition],
     *,
     scenario: Scenario,
     disposition: PropertyDispositionArrays,
@@ -2028,61 +2481,85 @@ def _record_property_sale_ledger_entries(
     actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
     month_index = disposition.sale_month
     settlement = disposition.sale_settlement
-    _record_ledger_month_vector(
-        records,
+    gross = settlement.gross_usd[:, month_index]
+    selling_cost = settlement.selling_cost_usd[:, month_index]
+    debt_payoff = settlement.debt_payoff_usd[:, month_index]
+    tax = tax_usd[:, month_index]
+    net_proceeds = net_proceeds_usd[:, month_index]
+    entry_prefix = f"event:{sale_event.event_id}:property_sale"
+    accounting.record_entry(
         month_index=month_index,
-        actor_id=actor_id,
-        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-        event_id=sale_event.event_id,
-        property_id=property_id,
-        domain="property_sale",
-        category="property_sale_gross",
-        amount_usd=settlement.gross_usd[:, month_index],
+        entry=JournalEntryBatch(
+            journal_entry_type=JournalEntryType.PROPERTY_SALE,
+            cause_type=AccountingCauseType.SCHEDULED_EVENT,
+            cause_id_prefix=entry_prefix,
+            actor_id=actor_id,
+            policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
+            event_id=sale_event.event_id,
+            description="property sale settlement",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.DEBIT,
+                    amount_usd=np.maximum(0.0, net_proceeds),
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PROPERTY_SALE_CLOSING_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=selling_cost,
+                    actor_id=actor_id,
+                    property_id=property_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.MORTGAGE_PAYABLE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=debt_payoff,
+                    actor_id=actor_id,
+                    liability_id=_mortgage_liability_id(property_id),
+                    property_id=property_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.TAX_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=tax,
+                    actor_id=actor_id,
+                    property_id=property_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PROPERTY,
+                    side=PostingSide.CREDIT,
+                    amount_usd=gross,
+                    actor_id=actor_id,
+                    property_id=property_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.CREDIT,
+                    amount_usd=np.maximum(0.0, -net_proceeds),
+                    actor_id=actor_id,
+                ),
+            ),
+        ),
     )
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=actor_id,
-        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-        event_id=sale_event.event_id,
-        property_id=property_id,
-        domain="property_sale",
-        category="sale_closing_cost",
-        amount_usd=-settlement.selling_cost_usd[:, month_index],
-    )
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=actor_id,
-        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-        event_id=sale_event.event_id,
-        property_id=property_id,
-        domain="property_sale",
-        category="property_sale_debt_payoff",
-        amount_usd=-settlement.debt_payoff_usd[:, month_index],
-    )
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=actor_id,
-        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-        event_id=sale_event.event_id,
-        property_id=property_id,
-        domain="tax",
-        category="property_sale_tax",
-        amount_usd=-tax_usd[:, month_index],
-    )
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=actor_id,
-        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-        event_id=sale_event.event_id,
-        property_id=property_id,
-        domain="cash",
-        category="property_sale_net_proceeds",
-        amount_usd=net_proceeds_usd[:, month_index],
-    )
+    lot_id = _tax_lot_id(LotAssetClass.PROPERTY, property_id)
+    for rollout_index in np.nonzero(gross > 0)[0].tolist():
+        journal_entry_id = _trace_row_id(entry_prefix, rollout_index=rollout_index, month_index=month_index)
+        lot_dispositions.append(
+            LotDisposition(
+                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
+                journal_entry_id=journal_entry_id,
+                rollout_index=rollout_index,
+                month_index=month_index,
+                lot_id=lot_id,
+                asset_class=LotAssetClass.PROPERTY,
+                proceeds_usd=float(gross[rollout_index]),
+                cost_basis_usd=float(settlement.adjusted_basis_usd[rollout_index, month_index]),
+                realized_gain_usd=float(settlement.realized_property_gain_usd[rollout_index, month_index]),
+                taxable_gain_usd=float(settlement.taxable_property_gain_usd[rollout_index, month_index]),
+                tax_expense_usd=float(tax[rollout_index]),
+            )
+        )
 
 
 def _record_property_sale_accounting_details(
@@ -2172,113 +2649,138 @@ def _record_tax_payment_allocation_details(
         )
 
 
-def _record_sp500_sale_ledger_entries(
-    records: list[SimulationLedgerEntry],
+def _record_sp500_sale_journal_entries(
+    accounting: AccountingTraceBuilder,
+    lot_dispositions: list[LotDisposition],
     *,
     month_index: int,
     policy: Policy,
+    cause_id_prefix: str,
     amount_usd: np.ndarray,
     basis_usd: np.ndarray,
     tax_usd: np.ndarray,
 ) -> None:
-    _record_ledger_month_vector(
-        records,
+    entry_prefix = cause_id_prefix
+    accounting.record_entry(
         month_index=month_index,
-        actor_id=policy.actor_id,
-        policy_id=policy.policy_id,
-        domain="asset",
-        category="generic_sp500_sale",
-        amount_usd=-amount_usd,
+        entry=JournalEntryBatch(
+            journal_entry_type=JournalEntryType.ASSET_SALE,
+            cause_type=AccountingCauseType.POLICY_DECISION,
+            cause_id_prefix=entry_prefix,
+            actor_id=policy.actor_id,
+            policy_id=policy.policy_id,
+            description="public security sale",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.DEBIT,
+                    amount_usd=amount_usd,
+                    actor_id=policy.actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PUBLIC_SECURITY,
+                    side=PostingSide.CREDIT,
+                    amount_usd=amount_usd,
+                    actor_id=policy.actor_id,
+                ),
+            ),
+        ),
     )
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=policy.actor_id,
-        policy_id=policy.policy_id,
-        domain="basis",
-        category="generic_sp500_sale_basis",
-        amount_usd=-basis_usd,
-    )
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=policy.actor_id,
-        policy_id=policy.policy_id,
-        domain="tax",
-        category="generic_sp500_sale_tax",
-        amount_usd=-tax_usd,
-    )
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=policy.actor_id,
-        policy_id=policy.policy_id,
-        domain="cash",
-        category="generic_sp500_after_tax_proceeds",
-        amount_usd=np.maximum(0.0, amount_usd - tax_usd),
-    )
+    lot_id = _tax_lot_id(LotAssetClass.PUBLIC_SECURITY, "portfolio")
+    for rollout_index in np.nonzero(amount_usd > 0)[0].tolist():
+        amount = float(amount_usd[rollout_index])
+        basis = float(basis_usd[rollout_index])
+        journal_entry_id = _trace_row_id(entry_prefix, rollout_index=rollout_index, month_index=month_index)
+        lot_dispositions.append(
+            LotDisposition(
+                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
+                journal_entry_id=journal_entry_id,
+                rollout_index=rollout_index,
+                month_index=month_index,
+                lot_id=lot_id,
+                asset_class=LotAssetClass.PUBLIC_SECURITY,
+                proceeds_usd=amount,
+                cost_basis_usd=max(0.0, basis),
+                realized_gain_usd=amount - basis,
+                taxable_gain_usd=max(0.0, amount - basis),
+                tax_expense_usd=float(tax_usd[rollout_index]),
+            )
+        )
 
 
-def _record_private_equity_sale_ledger_entries(
-    records: list[SimulationLedgerEntry],
+def _record_private_equity_sale_journal_entries(
+    accounting: AccountingTraceBuilder,
+    lot_dispositions: list[LotDisposition],
     *,
     month_index: int,
     instruction: PrivateEquitySaleInstructionBatch,
     sale_application: PrivateEquitySaleApplication,
     tax_usd: np.ndarray,
+    source_holding_id: str,
 ) -> None:
-    destination_domain = "asset" if instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK else "cash"
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=instruction.actor_id,
-        policy_id=instruction.policy_id,
-        domain="asset",
-        category="private_equity_sale",
-        amount_usd=-sale_application.sale_usd,
+    destination_role = (
+        ChartAccountRole.PUBLIC_SECURITY
+        if instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK
+        else ChartAccountRole.CHECKING_CASH
     )
-    _record_ledger_month_vector(
-        records,
+    entry_prefix = f"policy:{instruction.policy_id}:private_equity_sale"
+    accounting.record_entry(
         month_index=month_index,
-        actor_id=instruction.actor_id,
-        policy_id=instruction.policy_id,
-        domain="basis",
-        category="private_equity_sale_basis",
-        amount_usd=-sale_application.basis_usd,
+        entry=JournalEntryBatch(
+            journal_entry_type=JournalEntryType.ASSET_SALE,
+            cause_type=AccountingCauseType.POLICY_DECISION,
+            cause_id_prefix=entry_prefix,
+            actor_id=instruction.actor_id,
+            policy_id=instruction.policy_id,
+            description="private equity sale",
+            postings=(
+                PostingBatch(
+                    role=destination_role,
+                    side=PostingSide.DEBIT,
+                    amount_usd=sale_application.sale_usd,
+                    actor_id=instruction.actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PRIVATE_EQUITY,
+                    side=PostingSide.CREDIT,
+                    amount_usd=sale_application.sale_usd,
+                    actor_id=instruction.actor_id,
+                    source_asset_id=source_holding_id,
+                ),
+            ),
+        ),
     )
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=instruction.actor_id,
-        policy_id=instruction.policy_id,
-        domain="tax",
-        category="private_equity_sale_tax",
-        amount_usd=-tax_usd,
-    )
-    _record_ledger_month_vector(
-        records,
-        month_index=month_index,
-        actor_id=instruction.actor_id,
-        policy_id=instruction.policy_id,
-        domain=destination_domain,
-        category="private_equity_after_tax_proceeds",
-        amount_usd=np.maximum(0.0, sale_application.sale_usd - tax_usd),
-    )
-
-
-def _record_partner_agreement_ledger_detail(
-    ledger_records: list[SimulationLedgerEntry],
-    snapshot_records: list[SimulationBalanceSnapshot],
+    lot_id = _tax_lot_id(LotAssetClass.PRIVATE_EQUITY, source_holding_id)
+    for rollout_index in np.nonzero(sale_application.sale_usd > 0)[0].tolist():
+        amount = float(sale_application.sale_usd[rollout_index])
+        basis = float(sale_application.basis_usd[rollout_index])
+        journal_entry_id = _trace_row_id(entry_prefix, rollout_index=rollout_index, month_index=month_index)
+        lot_dispositions.append(
+            LotDisposition(
+                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
+                journal_entry_id=journal_entry_id,
+                rollout_index=rollout_index,
+                month_index=month_index,
+                lot_id=lot_id,
+                asset_class=LotAssetClass.PRIVATE_EQUITY,
+                proceeds_usd=amount,
+                cost_basis_usd=max(0.0, basis),
+                realized_gain_usd=amount - basis,
+                taxable_gain_usd=float(sale_application.taxable_gain_usd[rollout_index]),
+                quantity_sold=float(sale_application.sold_units[rollout_index]),
+                tax_expense_usd=float(tax_usd[rollout_index]),
+            )
+        )
+def _record_partner_agreement_accounting_detail(
+    accounting: AccountingTraceBuilder,
     *,
     month_index: np.ndarray,
     partner_equity: PartnerEquityArrays,
 ) -> None:
-    if not partner_equity.ledger_entries and not partner_equity.balance_snapshots:
+    if not partner_equity.journal_entries and not partner_equity.balance_snapshots:
         return
-    _record_ledger_entry_batches(ledger_records, month_index=month_index, entries=partner_equity.ledger_entries)
-    _record_balance_snapshot_batches(
-        snapshot_records, month_index=month_index, entries=partner_equity.balance_snapshots
-    )
+    _record_journal_entry_batches(accounting, month_index=month_index, entries=partner_equity.journal_entries)
+    _record_balance_snapshot_batches(accounting, month_index=month_index, entries=partner_equity.balance_snapshots)
 
 
 def _sorted_policy_decisions(records: list[SimulationPolicyDecision]) -> tuple[SimulationPolicyDecision, ...]:
@@ -2306,17 +2808,35 @@ def _sorted_market_observations(records: list[SimulationMarketObservation]) -> t
     )
 
 
-def _sorted_ledger_entries(records: list[SimulationLedgerEntry]) -> tuple[SimulationLedgerEntry, ...]:
+def _sorted_chart_accounts(records: list[ChartAccount]) -> tuple[ChartAccount, ...]:
+    return tuple(sorted(records, key=lambda account: account.chart_account_id))
+
+
+def _sorted_journal_entries(records: list[SimulationJournalEntry]) -> tuple[SimulationJournalEntry, ...]:
     return tuple(
         sorted(
             records,
             key=lambda entry: (
                 entry.month_index,
                 entry.rollout_index,
-                entry.domain,
-                entry.category,
+                entry.journal_entry_type,
+                entry.journal_entry_id,
                 entry.actor_id,
                 entry.policy_id or "",
+            ),
+        )
+    )
+
+
+def _sorted_postings(records: list[SimulationPosting]) -> tuple[SimulationPosting, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda posting: (
+                posting.month_index,
+                posting.rollout_index,
+                posting.journal_entry_id,
+                posting.posting_id,
             ),
         )
     )
@@ -2329,13 +2849,32 @@ def _sorted_balance_snapshots(records: list[SimulationBalanceSnapshot]) -> tuple
             key=lambda entry: (
                 entry.month_index,
                 entry.rollout_index,
-                entry.domain,
-                entry.category,
-                entry.actor_id,
-                entry.policy_id or "",
+                entry.chart_account_id,
             ),
         )
     )
+
+
+def _sorted_tax_lots(records: list[TaxLot]) -> tuple[TaxLot, ...]:
+    return tuple(sorted(records, key=lambda lot: lot.lot_id))
+
+
+def _sorted_lot_dispositions(records: list[LotDisposition]) -> tuple[LotDisposition, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda disposition: (
+                disposition.month_index,
+                disposition.rollout_index,
+                disposition.asset_class,
+                disposition.lot_disposition_id,
+            ),
+        )
+    )
+
+
+def _sorted_liabilities(records: list[LiabilityState]) -> tuple[LiabilityState, ...]:
+    return tuple(sorted(records, key=lambda liability: liability.liability_id))
 
 
 def _sorted_accounting_details(records: list[SimulationAccountingDetail]) -> tuple[SimulationAccountingDetail, ...]:
@@ -2556,7 +3095,7 @@ def _settle_required_cash_obligations(
     funding_decisions: list[SimulationFundingDecision],
     settlement_results: list[SimulationSettlementResult],
     failure_events: list[SimulationFailureEvent],
-    ledger_entries: list[SimulationLedgerEntry],
+    accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
 ) -> None:
     actor_id = _primary_owner_actor_id(scenario)
@@ -2631,6 +3170,10 @@ def _settle_required_cash_obligations(
                     month_position=month_position,
                     month_index=int(due_month_index),
                     policy=application.policy_step.policy,
+                    cause_id_prefix=(
+                        f"policy:{application.policy_step.policy.policy_id}:"
+                        f"{obligation_type.value}:funding_sale"
+                    ),
                     amount_usd=application.sale_usd,
                     basis_usd=basis_sold,
                     shortfall_usd=remaining_due,
@@ -2640,23 +3183,59 @@ def _settle_required_cash_obligations(
         amount_paid = np.minimum(due, np.maximum(0.0, cash_usd[:, month_position]))
         unpaid = np.maximum(0.0, due - amount_paid)
         cash_usd[:, month_position:] = cash_usd[:, month_position:] - amount_paid[:, None]
-        _record_ledger_month_vector(
-            ledger_entries,
+        accounting.record_entry(
             month_index=int(due_month_index),
-            actor_id=actor_id,
-            policy_id=source_policy_id,
-            domain="cash",
-            category="annual_tax_payment",
-            amount_usd=-amount_paid,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.TAX_ACCRUAL,
+                cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:accrual",
+                obligation_id_prefix=obligation_type.value,
+                actor_id=actor_id,
+                policy_id=source_policy_id,
+                description=obligation_type.value,
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.TAX_EXPENSE,
+                        side=PostingSide.DEBIT,
+                        amount_usd=due,
+                        actor_id=actor_id,
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.TAX_PAYABLE,
+                        side=PostingSide.CREDIT,
+                        amount_usd=due,
+                        actor_id=actor_id,
+                        liability_id=f"tax:{obligation_type.value}",
+                    ),
+                ),
+            ),
         )
-        _record_ledger_month_vector(
-            ledger_entries,
+        accounting.record_entry(
             month_index=int(due_month_index),
-            actor_id=actor_id,
-            policy_id=source_policy_id,
-            domain="tax",
-            category="annual_tax_payment",
-            amount_usd=-amount_paid,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.OBLIGATION_SETTLEMENT,
+                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+                obligation_id_prefix=obligation_type.value,
+                actor_id=actor_id,
+                policy_id=source_policy_id,
+                description=obligation_type.value,
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.TAX_PAYABLE,
+                        side=PostingSide.DEBIT,
+                        amount_usd=amount_paid,
+                        actor_id=actor_id,
+                        liability_id=f"tax:{obligation_type.value}",
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.CHECKING_CASH,
+                        side=PostingSide.CREDIT,
+                        amount_usd=amount_paid,
+                        actor_id=actor_id,
+                    ),
+                ),
+            ),
         )
         _record_unfunded_obligation_decisions(
             funding_decisions,
@@ -3059,7 +3638,7 @@ def _property_cash_flow_arrays(
             rental_leasing_fee_usd=zeros,
             property_carrying_cost_usd=zeros,
             net_property_cash_flow_usd=-mortgage_payment,
-            ledger_entries=(),
+            journal_entries=(),
         )
 
     property_tax = monthly_property_tax_usd(
@@ -3104,7 +3683,7 @@ def _property_cash_flow_arrays(
         rental_leasing_fee_usd=operating_cash_flow.rental_leasing_fee_usd,
         property_carrying_cost_usd=operating_cash_flow.property_carrying_cost_usd,
         net_property_cash_flow_usd=net_property_cash_flow,
-        ledger_entries=operating_cash_flow.ledger_entries,
+        journal_entries=operating_cash_flow.journal_entries,
     )
 
 
@@ -3174,7 +3753,7 @@ def _partner_equity_arrays(
         home_equity_claim_usd=zeros,
         owner_home_equity_claim_usd=home_equity_usd,
         agreements=(),
-        ledger_entries=(),
+        journal_entries=(),
         balance_snapshots=(),
     )
     if not _has_partner(scenario):
@@ -3257,17 +3836,13 @@ def _partner_equity_arrays(
             owner_equity_ledger_usd=owner_equity_ledger,
             total_partner_equity_ledger_usd=total_partner_equity_ledger,
         )
-        contribution_cash_ledger_entries = tuple(
-            entry for entry in contribution_application.ledger_entries if entry.domain != "ownership"
-        )
-        partner_ownership_ledger_entries = tuple(
-            entry for entry in ownership_application.ledger_entries if entry.actor_id == policy.actor_id
-        )
+        contribution_cash_journal_entries = contribution_application.journal_entries
+        partner_ownership_journal_entries = ownership_application.journal_entries
         partner_balance_snapshots = tuple(
             snapshot for snapshot in ownership_application.balance_snapshots if snapshot.actor_id == policy.actor_id
         )
-        agreement_ledger_entries = _ledger_entries_for_property(
-            contribution_cash_ledger_entries + partner_ownership_ledger_entries, property_id=property_id
+        agreement_journal_entries = _journal_entries_for_property(
+            contribution_cash_journal_entries + partner_ownership_journal_entries, property_id=property_id
         )
         agreement_balance_snapshots = _balance_snapshots_for_property(
             partner_balance_snapshots, property_id=property_id
@@ -3293,7 +3868,7 @@ def _partner_equity_arrays(
                 ownership_pct=ownership_application.ownership_pct,
                 home_equity_claim_usd=ownership_application.home_equity_claim_usd,
                 owner_home_equity_claim_usd=ownership_application.owner_home_equity_claim_usd,
-                ledger_entries=agreement_ledger_entries,
+                journal_entries=agreement_journal_entries,
                 balance_snapshots=agreement_balance_snapshots,
             )
         )
@@ -3303,31 +3878,43 @@ def _partner_equity_arrays(
     unallocated_excess = sum((agreement.unallocated_excess_usd for agreement in agreements), start=zeros.copy())
     home_equity_claim = sum((agreement.home_equity_claim_usd for agreement in agreements), start=zeros.copy())
     property_id = contribution_inputs[0][2]
-    owner_ledger_entries = (
-        LedgerEntryBatch(
+    owner_journal_entries = (
+        JournalEntryBatch(
+            journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
+            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+            cause_id_prefix="accounting:owner_principal_credit_allocation",
             actor_id=owner_actor_id,
             policy_id=None,
-            domain="ownership",
-            amount_usd=owner_principal,
-            category="owner_principal_credit",
-            property_id=property_id,
+            description="owner principal credit allocation",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT,
+                    side=PostingSide.DEBIT,
+                    amount_usd=owner_principal,
+                    actor_id=owner_actor_id,
+                    property_id=property_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION,
+                    side=PostingSide.CREDIT,
+                    amount_usd=owner_principal,
+                    actor_id=owner_actor_id,
+                    property_id=property_id,
+                ),
+            ),
         ),
     )
     owner_balance_snapshots = (
         BalanceSnapshotBatch(
             actor_id=owner_actor_id,
-            policy_id=None,
-            domain="ownership",
+            role=ChartAccountRole.OWNER_EQUITY_LEDGER,
             amount_usd=owner_equity_ledger,
-            category="owner_equity_ledger",
             property_id=property_id,
         ),
         BalanceSnapshotBatch(
             actor_id=owner_actor_id,
-            policy_id=None,
-            domain="ownership",
+            role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
             amount_usd=home_equity_usd - home_equity_claim,
-            category="owner_home_equity_claim",
             property_id=property_id,
         ),
     )
@@ -3354,17 +3941,28 @@ def _partner_equity_arrays(
         home_equity_claim_usd=home_equity_claim,
         owner_home_equity_claim_usd=home_equity_usd - home_equity_claim,
         agreements=tuple(agreements),
-        ledger_entries=owner_ledger_entries
-        + tuple(entry for agreement in agreements for entry in agreement.ledger_entries),
+        journal_entries=owner_journal_entries
+        + tuple(entry for agreement in agreements for entry in agreement.journal_entries),
         balance_snapshots=owner_balance_snapshots
         + tuple(snapshot for agreement in agreements for snapshot in agreement.balance_snapshots),
     )
 
 
-def _ledger_entries_for_property(
-    entries: tuple[LedgerEntryBatch, ...], *, property_id: str
-) -> tuple[LedgerEntryBatch, ...]:
-    return tuple(replace(entry, property_id=property_id) for entry in entries)
+def _journal_entries_for_property(
+    entries: tuple[JournalEntryBatch, ...], *, property_id: str
+) -> tuple[JournalEntryBatch, ...]:
+    return tuple(
+        replace(
+            entry,
+            postings=tuple(
+                replace(posting, property_id=property_id)
+                if posting.property_id is None
+                else posting
+                for posting in entry.postings
+            ),
+        )
+        for entry in entries
+    )
 
 
 def _balance_snapshots_for_property(
@@ -3396,10 +3994,10 @@ def _settle_partner_equity_on_property_sale(
     )
     owner_balance_snapshots = tuple(
         replace(snapshot, amount_usd=owner_home_equity_claim_usd)
-        if snapshot.category == "owner_home_equity_claim"
+        if snapshot.role is ChartAccountRole.OWNER_HOME_EQUITY_CLAIM
         else snapshot
         for snapshot in partner_equity.balance_snapshots
-        if snapshot.policy_id is None
+        if snapshot.role in {ChartAccountRole.OWNER_EQUITY_LEDGER, ChartAccountRole.OWNER_HOME_EQUITY_CLAIM}
     )
     return replace(
         partner_equity,
@@ -3422,7 +4020,7 @@ def _settle_partner_equity_agreement_on_property_sale(
     owner_home_equity_claim_usd[:, sale_month:] = sale_net_proceeds[:, None] - partner_sale_claim[:, None]
     balance_snapshots = tuple(
         replace(snapshot, amount_usd=home_equity_claim_usd)
-        if snapshot.category == "partner_home_equity_claim"
+        if snapshot.role is ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM
         else snapshot
         for snapshot in agreement.balance_snapshots
     )

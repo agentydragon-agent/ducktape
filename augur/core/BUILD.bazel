@@ -29,9 +29,19 @@ py_library(
 )
 
 py_library(
+    name = "accounting_py",
+    srcs = ["accounting.py"],
+    deps = [
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "scenario_set_py",
     srcs = ["scenario_set.py"],
     deps = [
+        ":accounting_py",
         ":local_regulation_py",
         ":provenance_py",
         ":schemas_py",
@@ -190,26 +200,6 @@ py_library(
 )
 
 py_library(
-    name = "augur_accounting_py",
-    srcs = ["augur_accounting.py"],
-    deps = [
-        ":schemas_py",
-        "@pypi//numpy",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "vectorized_py",
-    srcs = ["vectorized.py"],
-    deps = [
-        ":augur_accounting_py",
-        ":schemas_py",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "bootstrap_py",
     srcs = ["bootstrap.py"],
     deps = [
@@ -222,11 +212,10 @@ py_library(
 )
 
 py_test(
-    name = "augur_accounting_test",
-    srcs = ["augur_accounting_test.py"],
+    name = "accounting_test",
+    srcs = ["accounting_test.py"],
     deps = [
-        ":augur_accounting_py",
-        ":schemas_py",
+        ":accounting_py",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -337,19 +326,6 @@ py_test(
         ":market_bundle_py",
         ":scenario_engine_py",
         ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "vectorized_test",
-    srcs = ["vectorized_test.py"],
-    deps = [
-        ":augur_accounting_py",
-        ":schemas_py",
-        ":vectorized_py",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

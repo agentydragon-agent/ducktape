@@ -5,6 +5,7 @@ import pytest
 import pytest_bazel
 from numpy.testing import assert_allclose
 
+from augur.core.accounting import ChartAccountRole, PostingSide
 from augur.core.api import simulate_set
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
 from augur.core.scenario_engine import MonthlyColumnSource, monthly_column_specs, run_scenario_vectorized
@@ -1016,22 +1017,28 @@ def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> No
     assert_allclose(result.partner_contribution_usd[:, 1:], 100)
     assert np.all(result.partner_principal_credit_usd[:, 1:] > 0)
     assert np.all(result.partner_equity_ledger_usd[:, 2] > result.partner_equity_ledger_usd[:, 1])
+    account_by_id = {account.chart_account_id: account for account in result.chart_accounts}
     owner_principal_rows = [
-        entry
-        for entry in result.ledger_entries
-        if entry.domain == "ownership" and entry.category == "owner_principal_credit"
+        posting
+        for posting in result.postings
+        if account_by_id[posting.chart_account_id].role is ChartAccountRole.OWNER_PRINCIPAL_CREDIT
+        and posting.side is PostingSide.DEBIT
     ]
     assert len(owner_principal_rows) == 2
-    assert {entry.policy_id for entry in owner_principal_rows} == {None}
-    assert {entry.property_id for entry in owner_principal_rows} == {"vallejo_calhoun"}
-    assert_allclose([entry.amount_usd for entry in owner_principal_rows], result.owner_principal_credit_usd[0, 1:])
+    assert {account_by_id[posting.chart_account_id].property_id for posting in owner_principal_rows} == {
+        "vallejo_calhoun"
+    }
+    assert_allclose([posting.amount_usd for posting in owner_principal_rows], result.owner_principal_credit_usd[0, 1:])
     partner_principal_rows = [
-        entry
-        for entry in result.ledger_entries
-        if entry.domain == "ownership" and entry.category == "partner_principal_credit"
+        posting
+        for posting in result.postings
+        if account_by_id[posting.chart_account_id].role is ChartAccountRole.PARTNER_PRINCIPAL_CREDIT
+        and posting.side is PostingSide.DEBIT
     ]
     assert len(partner_principal_rows) == 4
-    assert {entry.property_id for entry in partner_principal_rows} == {"vallejo_calhoun"}
+    assert {account_by_id[posting.chart_account_id].property_id for posting in partner_principal_rows} == {
+        "vallejo_calhoun"
+    }
     transfers = [action for action in result.actions if isinstance(action, TransferPartnerContributionAction)]
     assert [(action.month_index, action.actor_id, action.amount_usd) for action in transfers] == [
         (1, "partner_a", 50),
