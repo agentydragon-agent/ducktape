@@ -46,18 +46,30 @@ fi
 uuid="aiquota@allegedly.works"
 target_dir="${HOME}/.local/share/gnome-shell/extensions/${uuid}"
 
-# --- install fresh build ---------------------------------------------------
-echo ">> installing $(basename "$zip_path") → $target_dir"
-rm -rf "$target_dir"
-mkdir -p "$target_dir"
-unzip -q -o "$zip_path" -d "$target_dir"
+# --- extract to temp dir (avoids polluting ~/.local/share) -----------------
+tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/aiquota-devkit.XXXXXX")
+ext_dir="$tmpdir/gnome-shell/extensions/$uuid"
+mkdir -p "$ext_dir"
+echo ">> extracting $(basename "$zip_path") → $ext_dir"
+unzip -q -o "$zip_path" -d "$ext_dir"
+trap 'rm -rf "$tmpdir"' EXIT
 
-# --- enable via gnome-extensions CLI --------------------------------------
-# `gnome-extensions enable` appends to the existing enabled-extensions list.
-# Manually rewriting the gsettings key would clobber other extensions the
-# user already has on.
+# --- add temp dir to XDG_DATA_DIRS so gnome-shell discovers the extension --
+export XDG_DATA_DIRS="$tmpdir${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+
+# --- enable via gsettings --------------------------------------------------
+# Write directly to dconf so the devkit session picks it up.
+# `gnome-extensions enable` needs a running shell (DBus), so we use gsettings.
 gsettings set org.gnome.shell disable-user-extensions false
-gnome-extensions enable "$uuid"
+current=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo "@as []")
+if echo "$current" | grep -q "'$uuid'"; then
+  echo ">> $uuid already in enabled-extensions"
+else
+  # Append to the existing list without clobbering other extensions.
+  gsettings set org.gnome.shell enabled-extensions \
+    "$(python3 -c "import ast,sys; l=ast.literal_eval(sys.argv[1]); l.append(sys.argv[2]); print(repr(l))" "$current" "$uuid")"
+  echo ">> added $uuid to enabled-extensions"
+fi
 
 # --- launch the devkit shell ----------------------------------------------
 # --devkit replaces the GNOME 45-removed --nested. Wayland is required;
