@@ -1,16 +1,21 @@
 """Scan Claude Code session transcripts for permission allowlist candidates.
 
+Reads the current permissions from settings files (project + global) so the
+"covered" detection stays in sync with the actual allowlist automatically.
+
 Usage:
     python3 devinfra/claude/scan_transcript_permissions.py [--max-sessions N] [--min-count N]
 """
 
 import argparse
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
+# Claude Code auto-allows these without any permission entry.
 # Source: Claude Code readOnlyValidation.ts, readOnlyCommandValidation.ts
-AUTO_ALLOWED_BASE = frozenset(
+AUTO_ALLOWED_CMDS = frozenset(
     [
         "cal",
         "uptime",
@@ -68,8 +73,7 @@ AUTO_ALLOWED_BASE = frozenset(
     ]
 )
 
-AUTO_ALLOWED_NOARGS = frozenset({"pwd", "whoami", "alias"})
-
+# Claude Code auto-allows all git/gh/docker read-only subcommands.
 GIT_READ_ONLY = frozenset(
     [
         "status",
@@ -93,146 +97,80 @@ GIT_READ_ONLY = frozenset(
         "name-rev",
     ]
 )
-
 GH_READ_ONLY = frozenset(["pr", "issue", "run", "workflow", "repo", "release", "auth", "api"])
-
 KUBECTL_READ_ONLY = frozenset(
     ["get", "describe", "logs", "top", "api-resources", "api-versions", "version", "cluster-info"]
 )
 
-# From nix/home/allowed-commands.nix
-NIX_ALLOWED_PREFIXES = [
-    *(
-        f"{exe} {sub}"
-        for exe in ("bazel", "bazelisk")
-        for sub in ("query", "cquery", "aquery", "info", "build", "test")
-    ),
-    *(
-        f"nix develop --command {exe} {sub}"
-        for exe in ("bazel", "bazelisk")
-        for sub in ("query", "cquery", "aquery", "info", "build", "test")
-    ),
-    *(f"git {sub}" for sub in ("diff", "log", "show", "stash list", "stash show", "status")),
-    *(f"nix {sub}" for sub in ("eval", "build", "hash", "search")),
-    *(f"cargo {sub}" for sub in ("info", "search", "tree")),
-    "home-manager build",
-]
+# Regex to extract the command string from a "Bash(cmd:*)" or "Bash(cmd)" allow entry.
+_BASH_PATTERN_RE = re.compile(r"^Bash\((.+?)(?::\*)?\)$")
 
-# From .claude/settings.json
-SETTINGS_PREFIXES = [
-    *(f"bb {sub}" for sub in ("remote", "build", "query", "test")),
-    *(f"bbapi {sub}" for sub in ("artifact", "invocation", "target")),
-    "bbr",
-    "flux reconcile",
-    *(f"gh pr {sub}" for sub in ("list", "view")),
-    *(f"gh run {sub}" for sub in ("list", "view")),
-    "gh search",
-    *(
-        f"kubectl get {r}"
-        for r in (
-            "gitrepository",
-            "grafanadatasource",
-            "helmrelease",
-            "imagerepository",
-            "job",
-            "kustomization",
-            "networkpolicy",
-            "ns",
-            "pod",
-            "pods",
-            "receiver",
-            "svc",
-            "terraform",
-        )
-    ),
-    "kubectl rollout restart",
-    "kubectl top",
-    "pre-commit run",
-]
 
-# From nix/lib/inspection-commands.nix
-INSPECTION_CMDS = frozenset(
-    [
-        "lspci",
-        "lsusb",
-        "lscpu",
-        "lsblk",
-        "sensors",
-        "ps",
-        "pstree",
-        "top",
-        "htop",
-        "pgrep",
-        "free",
-        "vmstat",
-        "df",
-        "du",
-        "findmnt",
-        "netstat",
-        "ss",
-        "dig",
-        "nslookup",
-        "host",
-        "traceroute",
-        "mtr",
-        "nmap",
-        "lsmod",
-        "dmesg",
-        "journalctl",
-        "last",
-        "w",
-        "who",
-        "users",
-        "id",
-        "groups",
-        "lpstat",
-        "rfkill",
-    ]
-)
-
-# Combined prefix set for fast matching
-_COVERED_PREFIXES = tuple(NIX_ALLOWED_PREFIXES + SETTINGS_PREFIXES)
+def _load_bash_prefixes_from_settings(*paths: Path) -> list[str]:
+    """Parse Bash() permission patterns from Claude Code settings JSON files."""
+    prefixes: list[str] = []
+    for p in paths:
+        try:
+            data = json.loads(p.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        for entry in data.get("permissions", {}).get("allow", []):
+            if not isinstance(entry, str):
+                continue
+            m = _BASH_PATTERN_RE.match(entry)
+            if m:
+                prefixes.append(m.group(1))
+    return prefixes
 
 
 def _skip_env_prefix(parts: list[str]) -> int:
-    """Return index past any KEY=VALUE env-var prefixes."""
     i = 0
     while i < len(parts) and "=" in parts[i] and not parts[i].startswith("-"):
         i += 1
     return i
 
 
-def is_covered(cmd: str) -> bool:
-    parts = cmd.split()
-    if not parts:
-        return True
-    i = _skip_env_prefix(parts)
-    if i >= len(parts):
-        return True
-    first = parts[i]
-    if first == "sudo":
-        i += 1
+class CoverageChecker:
+    """Checks whether a shell command is already covered by existing permissions."""
+
+    def __init__(self, project_dir: Path | None = None):
+        home = Path.home()
+        settings_paths = [home / ".claude" / "settings.json"]
+        if project_dir:
+            settings_paths.append(project_dir / ".claude" / "settings.json")
+        self.allowed_prefixes = _load_bash_prefixes_from_settings(*settings_paths)
+
+    def is_covered(self, cmd: str) -> bool:
+        parts = cmd.split()
+        if not parts:
+            return True
+        i = _skip_env_prefix(parts)
         if i >= len(parts):
             return True
         first = parts[i]
+        if first == "sudo":
+            i += 1
+            if i >= len(parts):
+                return True
+            first = parts[i]
 
-    if first in AUTO_ALLOWED_BASE | INSPECTION_CMDS:
-        return True
-
-    if first == "git" and len(parts) > i + 1:
-        sub = parts[i + 1]
-        if sub in GIT_READ_ONLY:
-            return True
-        if sub == "stash" and len(parts) > i + 2 and parts[i + 2] in ("list", "show"):
+        if first in AUTO_ALLOWED_CMDS:
             return True
 
-    if first == "gh" and len(parts) > i + 1 and parts[i + 1] in GH_READ_ONLY:
-        return True
+        if first == "git" and len(parts) > i + 1:
+            sub = parts[i + 1]
+            if sub in GIT_READ_ONLY:
+                return True
+            if sub == "stash" and len(parts) > i + 2 and parts[i + 2] in ("list", "show"):
+                return True
 
-    if first == "kubectl" and len(parts) > i + 1 and parts[i + 1] in KUBECTL_READ_ONLY:
-        return True
+        if first == "gh" and len(parts) > i + 1 and parts[i + 1] in GH_READ_ONLY:
+            return True
 
-    return any(cmd.startswith(p) for p in _COVERED_PREFIXES)
+        if first == "kubectl" and len(parts) > i + 1 and parts[i + 1] in KUBECTL_READ_ONLY:
+            return True
+
+        return any(cmd.startswith(p) for p in self.allowed_prefixes)
 
 
 def extract_command_key(cmd: str) -> str | None:
@@ -268,7 +206,6 @@ def find_transcripts(max_sessions: int = 50) -> list[Path]:
 
 
 def _iter_tool_calls(transcripts: list[Path], tool_name: str | None = None):
-    """Yield (tool_name, input_dict) for each matching tool call in transcripts."""
     for fpath in transcripts:
         try:
             with fpath.open() as fh:
@@ -295,12 +232,11 @@ def _iter_tool_calls(transcripts: list[Path], tool_name: str | None = None):
             continue
 
 
-def scan_transcripts(max_sessions: int = 50) -> tuple[Counter, Counter, Counter]:
+def scan_transcripts(transcripts: list[Path], checker: CoverageChecker) -> tuple[Counter, Counter, Counter]:
     all_cmds: Counter = Counter()
     uncovered_cmds: Counter = Counter()
     mcp_tools: Counter = Counter()
 
-    transcripts = find_transcripts(max_sessions)
     for name, inp in _iter_tool_calls(transcripts):
         if name == "Bash":
             cmd = inp.get("command", "").strip()
@@ -309,7 +245,7 @@ def scan_transcripts(max_sessions: int = 50) -> tuple[Counter, Counter, Counter]
             key = extract_command_key(cmd)
             if key:
                 all_cmds[key] += 1
-                if not is_covered(cmd):
+                if not checker.is_covered(cmd):
                     uncovered_cmds[key] += 1
         elif name.startswith("mcp__"):
             mcp_tools[name] += 1
@@ -363,11 +299,14 @@ def main():
     parser.add_argument("--all", action="store_true", help="Show all commands including covered ones")
     args = parser.parse_args()
 
-    all_cmds, uncovered_cmds, mcp_tools = scan_transcripts(args.max_sessions)
+    checker = CoverageChecker(project_dir=Path.cwd())
     transcripts = find_transcripts(args.max_sessions)
+    all_cmds, uncovered_cmds, mcp_tools = scan_transcripts(transcripts, checker)
+
+    print(f"Loaded {len(checker.allowed_prefixes)} Bash() allow rules from settings")
 
     if args.all:
-        print("=== ALL COMMANDS (top 60) ===")
+        print("\n=== ALL COMMANDS (top 60) ===")
         for key, cnt in all_cmds.most_common(60):
             tag = "" if uncovered_cmds.get(key, 0) > 0 else " [covered]"
             print(f"  {cnt:5d}  {key}{tag}")
