@@ -3,7 +3,7 @@
   "claude": {
     "short": { "usedPercent": 50, "resetSeconds": 12600, "windowSeconds": 18000 },
     "long": { "usedPercent": 100, "resetSeconds": 423360, "windowSeconds": 604800 },
-    "lastFetch": null,
+    "lastFetch": 1,
     "error": null,
     "extraUsage": {
       "is_enabled": true,
@@ -17,14 +17,14 @@
   "codex": {
     "short": { "usedPercent": 30, "resetSeconds": 12600, "windowSeconds": 18000 },
     "long": { "usedPercent": 30, "resetSeconds": 423360, "windowSeconds": 604800 },
-    "lastFetch": null,
+    "lastFetch": 1,
     "error": null,
     "extraUsage": null
   },
   "zai": {
     "short": null,
     "long": { "usedPercent": 40, "resetSeconds": 423360, "windowSeconds": 604800 },
-    "lastFetch": null,
+    "lastFetch": 1,
     "error": null,
     "extraUsage": null
   }

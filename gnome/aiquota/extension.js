@@ -369,7 +369,7 @@ const QuotaIndicator = GObject.registerClass(
       const provider = (node) => ({
         short: node?.short ?? null,
         long: node?.long ?? null,
-        lastFetch: node?.lastFetch ?? null,
+        lastFetch: node?.lastFetch != null ? Date.now() : null,
         error: node?.error ?? null,
         extraUsage: node?.extraUsage ?? null,
       });
