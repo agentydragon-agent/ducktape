@@ -195,6 +195,19 @@ export function patchScenarioInput(scenario, patch) {
   return next;
 }
 
+export function patchScenarioInputSection(scenario, section, patch) {
+  if (!Object.hasOwn(SCENARIO_INPUT_SECTION_FIELDS, section)) {
+    throw new Error(`Unknown Augur scenario input section: ${section}`);
+  }
+  return {
+    ...scenario,
+    [section]: {
+      ...(scenario?.[section] ?? {}),
+      ...(patch ?? {}),
+    },
+  };
+}
+
 export function uniqueScenarioId(existingScenarioIds, base = "scenario") {
   const existing = new Set(existingScenarioIds);
   let index = 1;

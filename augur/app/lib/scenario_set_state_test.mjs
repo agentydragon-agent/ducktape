@@ -7,6 +7,7 @@ import {
   encodeScenarioSetUrlState,
   normalizeScenarioSetInput,
   patchScenarioInput,
+  patchScenarioInputSection,
   scenarioInputFromFlatFields,
   scenarioInputView,
   scenarioResultDataModes,
@@ -162,6 +163,21 @@ test("flat scenario fields group into nested domain sections without changing re
   );
 
   assert.deepEqual(requestWithGroupedScenario, requestWithOriginalScenario);
+});
+
+test("section patch updates one nested domain section", () => {
+  const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
+  const original = input.scenarios[0];
+  const changed = patchScenarioInputSection(original, "financing", {
+    financingMode: "custom",
+    downPaymentPct: 35,
+  });
+
+  assert.equal(changed.financing.financingMode, "custom");
+  assert.equal(changed.financing.downPaymentPct, 35);
+  assert.equal(changed.identity.label, original.identity.label);
+  assert.equal(changed.taxAccounting.marginalTaxRate, original.taxAccounting.marginalTaxRate);
+  assert.throws(() => patchScenarioInputSection(original, "unknown", {}), /Unknown Augur scenario input section/);
 });
 
 test("result mode helpers distinguish distribution summaries from trajectory rows", () => {

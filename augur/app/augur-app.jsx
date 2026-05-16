@@ -22,7 +22,7 @@ import {
   createDefaultScenarioSetInput,
   createScenarioInput,
   normalizeScenarioSetInput,
-  patchScenarioInput,
+  patchScenarioInputSection,
   privateEquityCurrentUnitPriceUsd,
   privateEquityValueUsdForUnits,
   scenarioInputView,
@@ -107,11 +107,11 @@ function scenarioIdOf(scenario) {
   return scenarioInputView(scenario).scenarioId;
 }
 
-function scenarioPatch(scenarioSetInput, scenarioId, patch) {
+function scenarioSectionPatch(scenarioSetInput, scenarioId, section, patch) {
   return {
     ...scenarioSetInput,
     scenarios: scenarioSetInput.scenarios.map((scenario) =>
-      scenarioIdOf(scenario) === scenarioId ? patchScenarioInput(scenario, patch) : scenario
+      scenarioIdOf(scenario) === scenarioId ? patchScenarioInputSection(scenario, section, patch) : scenario
     ),
   };
 }
@@ -1115,8 +1115,8 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
     [bootstrap]
   );
 
-  function updateScenario(scenarioId, patch) {
-    onChange(scenarioPatch(scenarioSetInput, scenarioId, patch));
+  function updateScenarioSection(scenarioId, section, patch) {
+    onChange(scenarioSectionPatch(scenarioSetInput, scenarioId, section, patch));
   }
 
   function addScenario() {
@@ -1135,7 +1135,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
     if (!selected) return;
     const selectedView = scenarioInputView(selected);
     const scenarioId = uniqueScenarioId(scenarios.map(scenarioIdOf), `${selectedView.scenarioId}_copy`);
-    const copy = patchScenarioInput(selected, {
+    const copy = patchScenarioInputSection(selected, "identity", {
       scenarioId,
       label: `${selectedView.label} copy`,
       color: SCENARIO_COLORS[scenarios.length % SCENARIO_COLORS.length],
@@ -1200,7 +1200,9 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                     size="xs"
                     label="Include"
                     checked={view.enabled}
-                    onChange={(event) => updateScenario(view.scenarioId, { enabled: event.target.checked })}
+                    onChange={(event) =>
+                      updateScenarioSection(view.scenarioId, "identity", { enabled: event.target.checked })
+                    }
                   />
                   <div className="flex items-center gap-1">
                     <Button
@@ -1231,7 +1233,9 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                     className="h-8 w-12 rounded border border-slate-300 bg-white p-0 dark:border-slate-600"
                     type="color"
                     value={view.color}
-                    onChange={(event) => updateScenario(view.scenarioId, { color: event.target.value })}
+                    onChange={(event) =>
+                      updateScenarioSection(view.scenarioId, "identity", { color: event.target.value })
+                    }
                   />
                 </label>
                 <span className="min-w-0 max-w-full shrink-0 truncate rounded border border-slate-200 px-2 py-1 text-xs augur-muted dark:border-slate-700">
@@ -1265,8 +1269,8 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
     [bootstrap]
   );
 
-  function updateScenario(patch) {
-    onChange(scenarioPatch(scenarioSetInput, view.scenarioId, patch));
+  function updateScenarioSection(section, patch) {
+    onChange(scenarioSectionPatch(scenarioSetInput, view.scenarioId, section, patch));
   }
 
   return (
@@ -1278,7 +1282,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             label="Label"
             value={view.label}
             classNames={{ label: "augur-field-label mb-2 block" }}
-            onChange={(event) => updateScenario({ label: event.target.value })}
+            onChange={(event) => updateScenarioSection("identity", { label: event.target.value })}
           />
           <ColorInput
             label="Color"
@@ -1286,7 +1290,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             format="hex"
             swatches={SCENARIO_COLORS}
             classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
-            onChange={(color) => updateScenario({ color })}
+            onChange={(color) => updateScenarioSection("identity", { color })}
           />
         </div>
 
@@ -1294,7 +1298,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
           <SelectField
             label="Scenario property"
             value={view.propertyId}
-            onChange={(propertyId) => updateScenario({ propertyId })}
+            onChange={(propertyId) => updateScenarioSection("propertyAndLocation", { propertyId })}
             options={bootstrap.properties.map((property) => ({
               id: property.id,
               label: `${property.address} · ${propertyLocation(property, locationsById)?.label ?? property.locationId}`,
@@ -1309,19 +1313,19 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             label="Actors"
             options={bootstrap.actorPolicyOptions}
             value={view.actorPolicy}
-            onChange={(actorPolicy) => updateScenario({ actorPolicy })}
+            onChange={(actorPolicy) => updateScenarioSection("actorsAndOwnership", { actorPolicy })}
           />
           <OptionButtons
             label={`Where ${primaryLabel} lives`}
             options={bootstrap.ownerResidenceModeOptions}
             value={view.ownerResidenceMode}
-            onChange={(ownerResidenceMode) => updateScenario({ ownerResidenceMode })}
+            onChange={(ownerResidenceMode) => updateScenarioSection("occupancyAndRental", { ownerResidenceMode })}
           />
           <OptionButtons
             label="Rental use"
             options={bootstrap.rentalUsePolicyOptions}
             value={view.rentalUsePolicy}
-            onChange={(rentalUsePolicy) => updateScenario({ rentalUsePolicy })}
+            onChange={(rentalUsePolicy) => updateScenarioSection("occupancyAndRental", { rentalUsePolicy })}
           />
         </div>
       </ControlSection>
@@ -1331,7 +1335,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
           <SelectField
             label="Financing mode"
             value={view.financingMode}
-            onChange={(financingMode) => updateScenario({ financingMode })}
+            onChange={(financingMode) => updateScenarioSection("financing", { financingMode })}
             options={FINANCING_OPTIONS}
           />
           <NumberField
@@ -1339,7 +1343,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             min={0}
             step={5}
             value={view.downPaymentPct}
-            onChange={(downPaymentPct) => updateScenario({ downPaymentPct })}
+            onChange={(downPaymentPct) => updateScenarioSection("financing", { downPaymentPct })}
             suffix="%"
           />
           {isCustomFinancing && (
@@ -1348,7 +1352,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
                 label="Custom mortgage rate"
                 step={0.05}
                 value={view.customMortgageRate}
-                onChange={(customMortgageRate) => updateScenario({ customMortgageRate })}
+                onChange={(customMortgageRate) => updateScenarioSection("financing", { customMortgageRate })}
                 suffix="%"
               />
               <NumberField
@@ -1356,7 +1360,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
                 min={1}
                 step={1}
                 value={view.customMortgageTermYears}
-                onChange={(customMortgageTermYears) => updateScenario({ customMortgageTermYears })}
+                onChange={(customMortgageTermYears) => updateScenarioSection("financing", { customMortgageTermYears })}
                 suffix="yr"
               />
             </>
@@ -1366,14 +1370,14 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             min={300}
             step={1}
             value={view.creditScore}
-            onChange={(creditScore) => updateScenario({ creditScore })}
+            onChange={(creditScore) => updateScenarioSection("financing", { creditScore })}
           />
           <NumberField
             label="Hold period"
             min={1}
             step={1}
             value={view.holdYears}
-            onChange={(holdYears) => updateScenario({ holdYears })}
+            onChange={(holdYears) => updateScenarioSection("timeline", { holdYears })}
             suffix="yr"
           />
         </ControlGrid>
@@ -1385,41 +1389,43 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             label="Vacancy"
             step={1}
             value={view.vacancyPct}
-            onChange={(vacancyPct) => updateScenario({ vacancyPct })}
+            onChange={(vacancyPct) => updateScenarioSection("occupancyAndRental", { vacancyPct })}
             suffix="%"
           />
           <NumberField
             label="Management fee"
             step={0.5}
             value={view.managementFeePct}
-            onChange={(managementFeePct) => updateScenario({ managementFeePct })}
+            onChange={(managementFeePct) => updateScenarioSection("occupancyAndRental", { managementFeePct })}
             suffix="%"
           />
           <NumberField
             label="Leasing fee"
             step={5}
             value={view.leasingFeePct}
-            onChange={(leasingFeePct) => updateScenario({ leasingFeePct })}
+            onChange={(leasingFeePct) => updateScenarioSection("occupancyAndRental", { leasingFeePct })}
             suffix="%"
           />
           <NumberField
             label="Rooms rented while living"
             step={1}
             value={view.roomsRentedWhileLiving}
-            onChange={(roomsRentedWhileLiving) => updateScenario({ roomsRentedWhileLiving })}
+            onChange={(roomsRentedWhileLiving) =>
+              updateScenarioSection("occupancyAndRental", { roomsRentedWhileLiving })
+            }
           />
           <MoneyField
             label="Room rent"
             step={50}
             value={view.roomRentMonthlyUsd}
-            onChange={(roomRentMonthlyUsd) => updateScenario({ roomRentMonthlyUsd })}
+            onChange={(roomRentMonthlyUsd) => updateScenarioSection("occupancyAndRental", { roomRentMonthlyUsd })}
             suffix="/ mo"
           />
           <NumberField
             label="Room vacancy"
             step={1}
             value={view.roomVacancyPct}
-            onChange={(roomVacancyPct) => updateScenario({ roomVacancyPct })}
+            onChange={(roomVacancyPct) => updateScenarioSection("occupancyAndRental", { roomVacancyPct })}
             suffix="%"
           />
         </ControlGrid>
@@ -1431,55 +1437,55 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             label="Maintenance"
             step={0.1}
             value={view.maintenancePct}
-            onChange={(maintenancePct) => updateScenario({ maintenancePct })}
+            onChange={(maintenancePct) => updateScenarioSection("propertyAssumptions", { maintenancePct })}
             suffix="%"
           />
           <MoneyField
             label="Insurance"
             step={100}
             value={view.insuranceAnnualUsd}
-            onChange={(insuranceAnnualUsd) => updateScenario({ insuranceAnnualUsd })}
+            onChange={(insuranceAnnualUsd) => updateScenarioSection("propertyAssumptions", { insuranceAnnualUsd })}
             suffix="/ yr"
           />
           <NumberField
             label="Buy closing cost"
             step={0.1}
             value={view.closingCostBuyPct}
-            onChange={(closingCostBuyPct) => updateScenario({ closingCostBuyPct })}
+            onChange={(closingCostBuyPct) => updateScenarioSection("taxAccounting", { closingCostBuyPct })}
             suffix="%"
           />
           <NumberField
             label="Sell closing cost"
             step={0.1}
             value={view.closingCostSellPct}
-            onChange={(closingCostSellPct) => updateScenario({ closingCostSellPct })}
+            onChange={(closingCostSellPct) => updateScenarioSection("taxAccounting", { closingCostSellPct })}
             suffix="%"
           />
           <MoneyField
             label="Capital gains exclusion"
             step={50_000}
             value={view.capGainsExclusionUsd}
-            onChange={(capGainsExclusionUsd) => updateScenario({ capGainsExclusionUsd })}
+            onChange={(capGainsExclusionUsd) => updateScenarioSection("taxAccounting", { capGainsExclusionUsd })}
           />
           <NumberField
             label="Depreciable basis"
             step={1}
             value={view.depreciableBasisPct}
-            onChange={(depreciableBasisPct) => updateScenario({ depreciableBasisPct })}
+            onChange={(depreciableBasisPct) => updateScenarioSection("propertyAssumptions", { depreciableBasisPct })}
             suffix="%"
           />
           <NumberField
             label="Marginal tax rate"
             step={1}
             value={view.marginalTaxRate}
-            onChange={(marginalTaxRate) => updateScenario({ marginalTaxRate })}
+            onChange={(marginalTaxRate) => updateScenarioSection("taxAccounting", { marginalTaxRate })}
             suffix="%"
           />
           <NumberField
             label="Capital gains rate"
             step={1}
             value={view.capGainsRate}
-            onChange={(capGainsRate) => updateScenario({ capGainsRate })}
+            onChange={(capGainsRate) => updateScenarioSection("taxAccounting", { capGainsRate })}
             suffix="%"
           />
         </ControlGrid>
@@ -1492,7 +1498,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             label="Reserve sales rule"
             options={bootstrap.liquidReservePolicyOptions}
             value={view.liquidReservePolicy}
-            onChange={(liquidReservePolicy) => updateScenario({ liquidReservePolicy })}
+            onChange={(liquidReservePolicy) => updateScenarioSection("policies", { liquidReservePolicy })}
           />
           <ControlGrid>
             {usesCheckingFloorPolicy && (
@@ -1500,25 +1506,27 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
                 <MoneyField
                   label="Checking floor"
                   value={view.checkingFloorUsd}
-                  onChange={(checkingFloorUsd) => updateScenario({ checkingFloorUsd })}
+                  onChange={(checkingFloorUsd) => updateScenarioSection("policies", { checkingFloorUsd })}
                 />
                 <MoneyField
                   label="Sale amount"
                   min={1_000}
                   value={view.checkingSaleAmountUsd}
-                  onChange={(checkingSaleAmountUsd) => updateScenario({ checkingSaleAmountUsd })}
+                  onChange={(checkingSaleAmountUsd) => updateScenarioSection("policies", { checkingSaleAmountUsd })}
                 />
               </>
             )}
             <MoneyField
               label="Initial checking"
               value={view.initialCheckingUsd}
-              onChange={(initialCheckingUsd) => updateScenario({ initialCheckingUsd })}
+              onChange={(initialCheckingUsd) => updateScenarioSection("initialBalanceSheet", { initialCheckingUsd })}
             />
             <MoneyField
               label="SP500-like portfolio"
               value={view.startingPortfolioUsd}
-              onChange={(startingPortfolioUsd) => updateScenario({ startingPortfolioUsd })}
+              onChange={(startingPortfolioUsd) =>
+                updateScenarioSection("initialBalanceSheet", { startingPortfolioUsd })
+              }
             />
             <ReadOnlyMetricField
               label={`${privateEquityLabel} value`}
@@ -1529,14 +1537,14 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               label={`${privateEquityLabel} units`}
               step={1}
               value={view.privateEquityUnits}
-              onChange={(privateEquityUnits) => updateScenario({ privateEquityUnits })}
+              onChange={(privateEquityUnits) => updateScenarioSection("initialBalanceSheet", { privateEquityUnits })}
             />
           </ControlGrid>
           <OptionButtons
             label={`${privateEquityLabel} tender policy`}
             options={PRIVATE_EQUITY_SALE_POLICY_OPTIONS}
             value={view.privateEquitySalePolicy}
-            onChange={(privateEquitySalePolicy) => updateScenario({ privateEquitySalePolicy })}
+            onChange={(privateEquitySalePolicy) => updateScenarioSection("policies", { privateEquitySalePolicy })}
           />
           {usesPrivateEquityLiquidFloorPolicy && (
             <ControlGrid>
@@ -1544,14 +1552,16 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
                 label="Liquid worth floor"
                 value={view.privateEquityLiquidNetWorthFloorUsd}
                 onChange={(privateEquityLiquidNetWorthFloorUsd) =>
-                  updateScenario({ privateEquityLiquidNetWorthFloorUsd })
+                  updateScenarioSection("policies", { privateEquityLiquidNetWorthFloorUsd })
                 }
               />
               <MoneyField
                 label="Tender sale amount"
                 min={1_000}
                 value={view.privateEquityTenderSaleAmountUsd}
-                onChange={(privateEquityTenderSaleAmountUsd) => updateScenario({ privateEquityTenderSaleAmountUsd })}
+                onChange={(privateEquityTenderSaleAmountUsd) =>
+                  updateScenarioSection("policies", { privateEquityTenderSaleAmountUsd })
+                }
               />
             </ControlGrid>
           )}
@@ -1560,7 +1570,9 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               label={`${partnerLabel} payment`}
               step={50}
               value={view.partnerPaymentMonthlyUsd}
-              onChange={(partnerPaymentMonthlyUsd) => updateScenario({ partnerPaymentMonthlyUsd })}
+              onChange={(partnerPaymentMonthlyUsd) =>
+                updateScenarioSection("actorsAndOwnership", { partnerPaymentMonthlyUsd })
+              }
               suffix="/ mo"
             />
           </ControlGrid>

@@ -96,9 +96,11 @@ Component-kit decision:
 ## Priority 2: Replace The Flat Browser Scenario Row
 
 The backend scenario shape is already partly structured; the risky layer is the
-browser state. It currently normalizes one wide object and expands fields into
-actors, events, policies, tax profile, transaction costs, and balance-sheet
-positions.
+browser state. URL and browser scenario inputs are now nested by domain section,
+and UI writes go through section-scoped patches. The remaining flat adapter is
+read-side: many app/backend-mapping call sites still call `scenarioInputView()`
+and receive one wide field bag before expanding fields into actors, events,
+policies, tax profile, transaction costs, and balance-sheet positions.
 
 Target browser state:
 
@@ -127,7 +129,9 @@ Implementation notes:
   amount over a period and receives a specified equity/share/claim in return.
   The exact object model is still open, but it should live in actor/ownership
   state rather than as a scenario-wide enum that triggers bespoke runtime code.
-- `scenarioSetInputToRequest` should mostly map structured UI state into the
+- Continue moving app and backend-mapping reads from the temporary
+  `scenarioInputView()` bag to section-specific scenario input reads.
+  `scenarioSetInputToRequest` should mostly map structured UI state into the
   backend schema. It should stop hiding domain decisions behind unrelated flat
   fields such as sale-request amount/month or actor-policy ids.
 - Update app tests around the new state shape rather than preserving the
