@@ -54,6 +54,14 @@ These are not required, just nice-to-haves surfaced during the
       we're confident no env in the wild still relies on it. Today the
       production deployment still passes `STUDY_CASINO_DATA_DIR=/data`
       because the Phase A image hasn't been rolled.
+- [ ] Consider migrating the `*_at_ms` columns from `BigInteger` (Unix
+      milliseconds) to Postgres `TIMESTAMP WITH TIME ZONE`. Today the
+      columns are bigints because the wire format (`/state` JSON,
+      frontend) uses ms-since-epoch integers, and changing the column
+      type would force either a JSON schema change or a model-layer
+      adapter (datetime in the DB, int on the wire). Defer until there's
+      a real reason — e.g. needing time-range queries that bigint
+      indexes don't serve well.
 
 ## Notes
 

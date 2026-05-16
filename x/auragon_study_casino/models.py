@@ -13,7 +13,7 @@ recoverable.
 
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -59,7 +59,7 @@ class SessionRow(Base):
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     subject: Mapped[str] = mapped_column(String(120), nullable=False)
     seconds: Mapped[int] = mapped_column(Integer, nullable=False)
-    ended_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    ended_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class PrizeRow(Base):
@@ -91,7 +91,7 @@ class PrizeLogRow(Base):
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     cost: Mapped[int] = mapped_column(Integer, nullable=False)
-    at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class GameEventRow(Base):
@@ -106,8 +106,8 @@ class GameEventRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(_USER_ID, nullable=False)
     client_event_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    server_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    occurred_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    server_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    occurred_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     game: Mapped[str] = mapped_column(String(32), nullable=False)
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="server_resolved")
@@ -136,7 +136,7 @@ class LedgerEventRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(_USER_ID, nullable=False)
     client_action_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    server_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    server_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     action_type: Mapped[str] = mapped_column(String(64), nullable=False)
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     rules_version: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -157,7 +157,7 @@ class StateSnapshotRow(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(_USER_ID, nullable=False)
-    server_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    server_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     reason: Mapped[str] = mapped_column(String(64), nullable=False)
     decoded_json: Mapped[str] = mapped_column(Text, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -172,8 +172,8 @@ class BlackjackHandRow(Base):
 
     user_id: Mapped[str] = mapped_column(_USER_ID, primary_key=True)
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    created_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    updated_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     wager_credits: Mapped[int] = mapped_column(Integer, nullable=False)
     current_wager_credits: Mapped[int] = mapped_column(Integer, nullable=False)
