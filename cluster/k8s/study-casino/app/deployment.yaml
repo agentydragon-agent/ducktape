@@ -6,15 +6,11 @@ metadata:
   labels:
     app.kubernetes.io/name: study-casino
   annotations:
-    description: "Habit-tracking casino app. Serves PWA + /sync endpoint with OIDC auth (Authorization Code flow, confidential client)."
+    description: "Habit-tracking casino app. Serves PWA + /sync endpoint with OIDC auth (Authorization Code flow, confidential client). State lives in CNPG Postgres (study-casino-db)."
 spec:
-  # Single replica because the PVC is RWO and SQLite WAL doesn't tolerate
-  # concurrent writers across processes.
   replicas: 1
   strategy:
-    # Recreate instead of RollingUpdate so the old pod releases the PVC
-    # before the new one tries to mount it.
-    type: Recreate
+    type: RollingUpdate
   selector:
     matchLabels:
       app.kubernetes.io/name: study-casino
@@ -32,15 +28,44 @@ spec:
       enableServiceLinks: false
       containers:
         - name: app
-          image: ghcr.io/agentydragon/study-casino:devel-20260514021738-96eeb28 # {"$imagepolicy": "flux-system:study-casino"}
+          image: ghcr.io/agentydragon/study-casino:devel-20260516082904-f2932bb # {"$imagepolicy": "flux-system:study-casino"}
           imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
           env:
-            - name: STUDY_CASINO_DATA_DIR
-              value: /data
+            # Compose the SQLAlchemy URL from the CNPG-generated secret. The
+            # `$(VAR)` syntax in env values is resolved by the kubelet from
+            # earlier-defined env vars in the same container. `+psycopg`
+            # forces SQLAlchemy to pick the psycopg v3 driver.
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: user
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: password
+            - name: PG_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: host
+            - name: PG_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: port
+            - name: PG_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-app
+                  key: dbname
+            - name: STUDY_CASINO_DATABASE_URL
+              value: "postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DBNAME)"
             - name: STUDY_CASINO_OIDC_ISSUER
               value: "https://auth.allegedly.works/application/o/study-casino/"
             - name: STUDY_CASINO_OIDC_CLIENT_ID
@@ -73,10 +98,3 @@ spec:
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 20
-          volumeMounts:
-            - name: data
-              mountPath: /data
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: study-casino-data

@@ -3,16 +3,7 @@ kind: ImagePolicy
 metadata:
   name: study-casino
   namespace: flux-system
-  annotations:
-    # CLEANUP(2026-05-16): Remove `suspend: true` once the SQLite→Postgres
-    # cutover is done. Suspended during Phase A of the migration so the
-    # new image with Postgres support builds and publishes but does not
-    # auto-roll the live deployment (which is still on the SQLite PVC
-    # path). The Phase B cutover bumps the deployment manifest's image
-    # pin explicitly and resumes this automation.
-    description: "Image policy for study-casino. Currently suspended for the SQLite→Postgres migration."
 spec:
-  suspend: true
   imageRepositoryRef:
     name: study-casino
   filterTags:
