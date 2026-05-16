@@ -463,6 +463,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     initial_private_equity = _initial_private_equity_value_usd(scenario)
     initial_private_equity_basis = _initial_private_equity_cost_basis_usd(scenario)
     initial_private_equity_units = _initial_private_equity_units(scenario)
+    private_equity_source_holding_id = _private_equity_source_holding_id(scenario)
     purchase_price = _purchase_price_usd(scenario)
     policy_programs = actor_policy_programs(scenario)
     policy_steps = actor_policy_steps(policy_programs)
@@ -589,6 +590,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         market_opportunity = private_equity_sale_opportunity(
             sale_opportunity_mask=market_bundle.private_equity_sale_opportunity_mask[:, month],
             private_equity_value_before_sale_usd=private_equity_value_before_sale,
+            path_set_id=market_bundle.metadata.path_set_id,
+            month_index=int(month_index[month]),
+            source_holding_id=private_equity_source_holding_id,
         )
         _record_private_equity_sale_opportunity_observations(
             market_observations, month_index=int(month_index[month]), opportunity=market_opportunity
@@ -607,6 +611,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             current_opportunity = private_equity_sale_opportunity(
                 sale_opportunity_mask=market_bundle.private_equity_sale_opportunity_mask[:, month],
                 private_equity_value_before_sale_usd=current_private_equity_value,
+                path_set_id=market_bundle.metadata.path_set_id,
+                month_index=int(month_index[month]),
+                source_holding_id=private_equity_source_holding_id,
             )
             liquid_net_worth = current_cash + remaining_sp500_units * market_bundle.generic_sp500_multipliers[:, month]
             sale_instruction = private_equity_sale_instruction(
@@ -1211,6 +1218,8 @@ def _record_private_equity_sale_opportunity_observations(
             PrivateEquitySaleOpportunityObservation(
                 rollout_index=rollout_index,
                 month_index=month_index,
+                opportunity_id=str(opportunity.opportunity_id[rollout_index]),
+                opportunity_cause_id=str(opportunity.opportunity_cause_id[rollout_index]),
                 sale_opportunity_value_usd=float(opportunity.sale_opportunity_value_usd[rollout_index]),
                 private_equity_value_before_sale_usd=float(
                     opportunity.private_equity_value_before_sale_usd[rollout_index]
@@ -1295,6 +1304,8 @@ def _record_private_equity_sale_decisions(
                     requested_amount_usd=instruction.requested_amount_usd[rollout_index],
                     sale_opportunity_value_usd=opportunity.sale_opportunity_value_usd[rollout_index],
                 ),
+                opportunity_id=instruction.opportunity_id[rollout_index],
+                opportunity_cause_id=str(instruction.opportunity_cause_id[rollout_index]),
                 requested_amount_usd=float(instruction.requested_amount_usd[rollout_index]),
                 sale_opportunity_value_usd=float(opportunity.sale_opportunity_value_usd[rollout_index]),
                 private_equity_value_before_sale_usd=float(
@@ -2045,6 +2056,8 @@ def _record_private_equity_sale_actions(
             month_index=month_index,
             actor_id=instruction.actor_id,
             policy_id=instruction.policy_id,
+            opportunity_id=instruction.opportunity_id[rollout_index],
+            opportunity_cause_id=str(instruction.opportunity_cause_id[rollout_index]),
             amount_usd=float(sale_application.sale_usd[rollout_index]),
             after_tax_proceeds_usd=float(np.maximum(0.0, sale_application.sale_usd - sale_tax)[rollout_index]),
             basis_usd=float(sale_application.basis_usd[rollout_index]),
@@ -2666,6 +2679,15 @@ def _initial_private_equity_units(scenario: Scenario) -> float:
         for asset in scenario.initial_balance_sheet.assets
         if isinstance(asset, PrivateEquityPosition)
     )
+
+
+def _private_equity_source_holding_id(scenario: Scenario) -> str:
+    positions = tuple(
+        asset for asset in scenario.initial_balance_sheet.assets if isinstance(asset, PrivateEquityPosition)
+    )
+    if len(positions) == 1:
+        return positions[0].asset_id
+    return "private_equity_portfolio"
 
 
 def _has_partner(scenario: Scenario) -> bool:

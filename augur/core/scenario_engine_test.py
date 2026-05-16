@@ -1037,6 +1037,15 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
         and decision.decision_reason is PrivateEquitySaleDecisionReason.NO_SALE_OPPORTUNITY
     ]
     assert len(no_opportunity_decisions) == 8
+    assert {decision.opportunity_id for decision in no_opportunity_decisions} == {None}
+    assert {
+        decision.opportunity_cause_id
+        for decision in no_opportunity_decisions
+        if decision.month_index == 1 and decision.rollout_index == 0
+    } == {
+        "path_set:test:seed:7:rollouts:2:horizon_months:3:path:0:month:1:"
+        "private_equity_holding:private_equity:no_sale_opportunity"
+    }
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
@@ -1052,8 +1061,14 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
     assert len(actions) == 2
     for action in actions:
+        expected_opportunity_id = (
+            f"path_set:test:seed:7:rollouts:2:horizon_months:3:path:{action.rollout_index}:month:1:"
+            "private_equity_holding:private_equity:sale_opportunity"
+        )
         assert action.event_id is None
         assert action.event_type is None
+        assert action.opportunity_id == expected_opportunity_id
+        assert action.opportunity_cause_id == expected_opportunity_id
         assert action.actor_id == "owner"
         assert action.policy_id == "private_equity_sale"
         assert action.amount_usd == 20_000
@@ -1071,6 +1086,13 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
         and decision.decision_reason is PrivateEquitySaleDecisionReason.SALE_REQUESTED
     ]
     assert len(sale_decisions) == 2
+    for decision in sale_decisions:
+        expected_opportunity_id = (
+            f"path_set:test:seed:7:rollouts:2:horizon_months:3:path:{decision.rollout_index}:month:1:"
+            "private_equity_holding:private_equity:sale_opportunity"
+        )
+        assert decision.opportunity_id == expected_opportunity_id
+        assert decision.opportunity_cause_id == expected_opportunity_id
 
 
 def test_private_equity_sale_policy_reinvests_sale_proceeds_in_sp500() -> None:
@@ -1144,6 +1166,12 @@ def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportun
     assert len(sale_decisions) == 2
     assert {decision.target_liquid_net_worth_floor_usd for decision in sale_decisions} == {125_000}
     assert_allclose([decision.liquid_net_worth_usd for decision in sale_decisions], [120_000, 120_000])
+    assert_allclose([decision.sale_opportunity_value_usd for decision in sale_decisions], [50_000, 50_000])
+    for decision in sale_decisions:
+        assert decision.opportunity_id == (
+            f"path_set:test:seed:7:rollouts:2:horizon_months:3:path:{decision.rollout_index}:month:1:"
+            "private_equity_holding:private_equity:sale_opportunity"
+        )
 
 
 def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() -> None:
@@ -1180,7 +1208,16 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
     ]
     assert len(decisions) == 2
     assert {decision.target_liquid_net_worth_floor_usd for decision in decisions} == {100_000}
+    assert_allclose(result.liquid_net_worth_usd[:, 1], [120_000, 120_000])
+    assert_allclose([decision.sale_opportunity_value_usd for decision in decisions], [50_000, 50_000])
     assert_allclose([decision.liquid_net_worth_usd for decision in decisions], [120_000, 120_000])
+    for decision in decisions:
+        expected_opportunity_id = (
+            f"path_set:test:seed:7:rollouts:2:horizon_months:3:path:{decision.rollout_index}:month:1:"
+            "private_equity_holding:private_equity:sale_opportunity"
+        )
+        assert decision.opportunity_id == expected_opportunity_id
+        assert decision.opportunity_cause_id == expected_opportunity_id
 
 
 if __name__ == "__main__":

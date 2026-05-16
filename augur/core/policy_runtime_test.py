@@ -310,6 +310,9 @@ def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None
     opportunity = private_equity_sale_opportunity(
         sale_opportunity_mask=np.array([False, True]),
         private_equity_value_before_sale_usd=np.array([200_000.0, 200_000.0]),
+        path_set_id="path_set:test:seed:7:rollouts:2:horizon_months:3",
+        month_index=2,
+        source_holding_id="pe",
     )
     instruction = private_equity_sale_instruction(
         policy, opportunity=opportunity, liquid_net_worth_usd=np.array([100_000.0, 100_000.0])
@@ -325,6 +328,14 @@ def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None
     )
 
     assert instruction.proceeds_destination is AccountType.CHECKING
+    assert instruction.opportunity_id.tolist() == [
+        None,
+        "path_set:test:seed:7:rollouts:2:horizon_months:3:path:1:month:2:private_equity_holding:pe:sale_opportunity",
+    ]
+    assert instruction.opportunity_cause_id.tolist() == [
+        "path_set:test:seed:7:rollouts:2:horizon_months:3:path:0:month:2:private_equity_holding:pe:no_sale_opportunity",
+        "path_set:test:seed:7:rollouts:2:horizon_months:3:path:1:month:2:private_equity_holding:pe:sale_opportunity",
+    ]
     np.testing.assert_allclose(instruction.requested_amount_usd, [0.0, 50_000.0])
     np.testing.assert_allclose(result.sale_usd, [0.0, 50_000.0])
     np.testing.assert_allclose(result.basis_usd, [0.0, 20_000.0])
@@ -356,6 +367,9 @@ def test_private_equity_liquid_net_worth_floor_rule_uses_opportunity_and_liquid_
     opportunity = private_equity_sale_opportunity(
         sale_opportunity_mask=np.array([False, True, True]),
         private_equity_value_before_sale_usd=np.array([200_000.0, 200_000.0, 200_000.0]),
+        path_set_id="path_set:test:seed:7:rollouts:3:horizon_months:3",
+        month_index=1,
+        source_holding_id="pe",
     )
 
     instruction = private_equity_sale_instruction(
@@ -364,6 +378,11 @@ def test_private_equity_liquid_net_worth_floor_rule_uses_opportunity_and_liquid_
 
     assert instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK
     np.testing.assert_allclose(instruction.requested_amount_usd, [0.0, 50_000.0, 0.0])
+    assert instruction.opportunity_id.tolist() == [
+        None,
+        "path_set:test:seed:7:rollouts:3:horizon_months:3:path:1:month:1:private_equity_holding:pe:sale_opportunity",
+        "path_set:test:seed:7:rollouts:3:horizon_months:3:path:2:month:1:private_equity_holding:pe:sale_opportunity",
+    ]
 
 
 if __name__ == "__main__":

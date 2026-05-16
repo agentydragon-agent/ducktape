@@ -850,6 +850,10 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     private_equity_action = actions["sell_private_equity"]
     assert private_equity_action["event_id"] is None
     assert private_equity_action["event_type"] is None
+    assert private_equity_action["opportunity_id"] == (
+        "path_set:e2e_noop:seed:0:rollouts:1:horizon_months:2:path:0:month:1:private_equity_holding:pe:sale_opportunity"
+    )
+    assert private_equity_action["opportunity_cause_id"] == private_equity_action["opportunity_id"]
     assert private_equity_action["amount_usd"] == 50_000
     assert private_equity_action["basis_usd"] == 20_000
     assert private_equity_action["taxable_gain_usd"] == 30_000
@@ -1137,6 +1141,11 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     }
     assert no_opportunity_decisions[-1].requested_amount_usd == 0
     assert no_opportunity_decisions[-1].sale_opportunity_value_usd == 0
+    assert no_opportunity_decisions[-1].opportunity_id is None
+    assert no_opportunity_decisions[-1].opportunity_cause_id == (
+        "path_set:e2e_noop:seed:0:rollouts:1:horizon_months:12:path:0:month:12:"
+        "private_equity_holding:pe:no_sale_opportunity"
+    )
     assert no_opportunity.rollout(0).market_observations(PrivateEquitySaleOpportunityObservation) == ()
 
     result = _run_scenario(
@@ -1163,11 +1172,19 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     opportunity_observations = rollout.market_observations(PrivateEquitySaleOpportunityObservation)
     assert len(opportunity_observations) == 1
     assert opportunity_observations[0].month_index == 12
+    expected_opportunity_id = (
+        "path_set:e2e_noop:seed:0:rollouts:1:horizon_months:12:path:0:month:12:"
+        "private_equity_holding:pe:sale_opportunity"
+    )
+    assert opportunity_observations[0].opportunity_id == expected_opportunity_id
+    assert opportunity_observations[0].opportunity_cause_id == expected_opportunity_id
     assert opportunity_observations[0].sale_opportunity_value_usd == 200_000
     pe_decision = next(
         decision for decision in result.policy_decisions(PrivateEquitySaleDecision) if decision.month_index == 12
     )
     assert pe_decision.decision_reason is PrivateEquitySaleDecisionReason.SALE_REQUESTED
+    assert pe_decision.opportunity_id == expected_opportunity_id
+    assert pe_decision.opportunity_cause_id == expected_opportunity_id
     assert pe_decision.requested_amount_usd == 100_000
     assert pe_decision.sale_opportunity_value_usd == 200_000
     assert_allclose(
@@ -1192,6 +1209,8 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     assert actions[0].month_index == 12
     assert actions[0].event_id is None
     assert actions[0].event_type is None
+    assert actions[0].opportunity_id == expected_opportunity_id
+    assert actions[0].opportunity_cause_id == expected_opportunity_id
     assert actions[0].actor_id == "alpha"
     assert actions[0].policy_id == "private_equity_sale"
     assert actions[0].amount_usd == expected_sale

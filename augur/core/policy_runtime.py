@@ -79,6 +79,8 @@ class PrivateEquitySaleOpportunityBatch:
     sale_opportunity_mask: np.ndarray
     sale_opportunity_value_usd: np.ndarray
     private_equity_value_before_sale_usd: np.ndarray
+    opportunity_id: np.ndarray
+    opportunity_cause_id: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -87,6 +89,8 @@ class PrivateEquitySaleInstructionBatch:
     policy_id: str
     requested_amount_usd: np.ndarray
     proceeds_destination: AccountType | AssetType
+    opportunity_id: np.ndarray
+    opportunity_cause_id: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -595,12 +599,54 @@ def apply_property_operating_cash_flows(
 
 
 def private_equity_sale_opportunity(
-    *, sale_opportunity_mask: np.ndarray, private_equity_value_before_sale_usd: np.ndarray
+    *,
+    sale_opportunity_mask: np.ndarray,
+    private_equity_value_before_sale_usd: np.ndarray,
+    path_set_id: str = "path_set:unknown",
+    month_index: int | None = None,
+    source_holding_id: str = "private_equity",
 ) -> PrivateEquitySaleOpportunityBatch:
+    if sale_opportunity_mask.shape != private_equity_value_before_sale_usd.shape:
+        raise ValueError("sale_opportunity_mask must match private_equity_value_before_sale_usd shape")
+    rollout_indexes = np.arange(sale_opportunity_mask.shape[0], dtype="int64")
+    opportunity_id = np.array(
+        [
+            (
+                _private_equity_sale_opportunity_id(
+                    path_set_id=path_set_id,
+                    rollout_index=int(rollout_index),
+                    month_index=month_index,
+                    source_holding_id=source_holding_id,
+                )
+                if sale_opportunity_mask[rollout_index]
+                else None
+            )
+            for rollout_index in rollout_indexes
+        ],
+        dtype=object,
+    )
+    opportunity_cause_id = np.array(
+        [
+            (
+                str(opportunity_id[rollout_index])
+                if opportunity_id[rollout_index] is not None
+                else _private_equity_no_sale_opportunity_cause_id(
+                    path_set_id=path_set_id,
+                    rollout_index=int(rollout_index),
+                    month_index=month_index,
+                    source_holding_id=source_holding_id,
+                )
+            )
+            for rollout_index in rollout_indexes
+        ],
+        dtype=object,
+    )
     return PrivateEquitySaleOpportunityBatch(
         sale_opportunity_mask=sale_opportunity_mask,
         sale_opportunity_value_usd=np.where(sale_opportunity_mask, private_equity_value_before_sale_usd, 0.0),
         private_equity_value_before_sale_usd=private_equity_value_before_sale_usd,
+        opportunity_id=opportunity_id,
+        opportunity_cause_id=opportunity_cause_id,
     )
 
 
@@ -626,6 +672,8 @@ def private_equity_sale_instruction(
         policy_id=policy.policy_id,
         requested_amount_usd=requested_amount,
         proceeds_destination=private_equity_sale_proceeds_destination(policy),
+        opportunity_id=opportunity.opportunity_id,
+        opportunity_cause_id=opportunity.opportunity_cause_id,
     )
 
 
@@ -723,6 +771,26 @@ def apply_generic_sp500_sale_instruction(
         basis_usd=basis_usd,
         gain_usd=sale_usd - basis_usd,
         shortfall_usd=shortfall_usd,
+    )
+
+
+def _private_equity_sale_opportunity_id(
+    *, path_set_id: str, rollout_index: int, month_index: int | None, source_holding_id: str
+) -> str:
+    month_label = "unknown" if month_index is None else str(int(month_index))
+    return (
+        f"{path_set_id}:path:{rollout_index}:month:{month_label}:"
+        f"private_equity_holding:{source_holding_id}:sale_opportunity"
+    )
+
+
+def _private_equity_no_sale_opportunity_cause_id(
+    *, path_set_id: str, rollout_index: int, month_index: int | None, source_holding_id: str
+) -> str:
+    month_label = "unknown" if month_index is None else str(int(month_index))
+    return (
+        f"{path_set_id}:path:{rollout_index}:month:{month_label}:"
+        f"private_equity_holding:{source_holding_id}:no_sale_opportunity"
     )
 
 

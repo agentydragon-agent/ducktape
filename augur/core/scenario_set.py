@@ -373,6 +373,8 @@ class SellPrivateEquityAction(_SimulationActionBase):
     action_type: Literal[ActionType.SELL_PRIVATE_EQUITY] = ActionType.SELL_PRIVATE_EQUITY
     event_id: str | None = None
     event_type: EventType | None = None
+    opportunity_id: str | None = None
+    opportunity_cause_id: str
     amount_usd: float
     after_tax_proceeds_usd: float
     basis_usd: float
@@ -474,6 +476,8 @@ class SellPublicStockDecision(_SimulationPolicyDecisionBase):
 class PrivateEquitySaleDecision(_SimulationPolicyDecisionBase):
     decision_type: Literal[PolicyDecisionType.PRIVATE_EQUITY_SALE] = PolicyDecisionType.PRIVATE_EQUITY_SALE
     decision_reason: PrivateEquitySaleDecisionReason
+    opportunity_id: str | None = None
+    opportunity_cause_id: str
     requested_amount_usd: float
     sale_opportunity_value_usd: float
     private_equity_value_before_sale_usd: float
@@ -516,6 +520,8 @@ class PrivateEquitySaleOpportunityObservation(_SimulationMarketObservationBase):
     observation_type: Literal[MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY] = (
         MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY
     )
+    opportunity_id: str
+    opportunity_cause_id: str
     sale_opportunity_value_usd: float
     private_equity_value_before_sale_usd: float
 
