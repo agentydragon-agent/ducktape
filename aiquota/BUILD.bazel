@@ -44,6 +44,10 @@ py_library(
     name = "cli_lib",
     srcs = ["cli.py"],
     imports = [".."],
+    visibility = [
+        "//:__pkg__",
+        "//aiquota:__subpackages__",
+    ],
     deps = [
         ":cache",
         ":models",
