@@ -6,8 +6,10 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from augur.core.local_regulation import (
+    BUILTIN_LOCATION_CONFIGS,
     LocationId,
     TaxRegime,
+    _validate_builtin_location_data,
     _validate_local_regulation_data,
     known_location_id,
     local_regulation_for_location,
@@ -37,10 +39,35 @@ def _valid_payload() -> dict[str, dict[str, dict[str, object]]]:
     }
 
 
+def _valid_location_payload() -> dict[str, list[dict[str, object]]]:
+    return {
+        "builtin_locations": [
+            {
+                "location_id": location_id.value,
+                "label": f"{location_id.value} fixture",
+                "city": "Fixture City",
+                "state": "CA",
+                "notes": [f"{location_id.value} fixture note"],
+            }
+            for location_id in LocationId
+        ]
+    }
+
+
 def test_unknown_location_rejected() -> None:
     assert known_location_id("oakland_ca") is None
     with pytest.raises(ValueError, match="unknown built-in local regulation"):
         local_regulation_for_location("oakland_ca")
+
+
+def test_builtin_location_configs_cover_local_regulation_locations() -> None:
+    location_ids = tuple(location.location_id for location in BUILTIN_LOCATION_CONFIGS)
+
+    assert set(location_ids) == set(LocationId)
+    assert len(location_ids) == len(set(location_ids))
+    for location in BUILTIN_LOCATION_CONFIGS:
+        regulation = local_regulation_for_location(location.location_id)
+        assert regulation.property_tax_regime in regulation.default_tax_regimes
 
 
 def test_loaded_builtin_regulation_drives_property_tax() -> None:
@@ -75,6 +102,24 @@ def test_local_regulation_data_requires_all_builtin_locations() -> None:
 
     with pytest.raises(ValidationError, match="missing: mare_island_vallejo_ca"):
         _validate_local_regulation_data(payload)
+
+
+def test_builtin_location_data_requires_all_builtin_locations() -> None:
+    payload = _valid_location_payload()
+    payload["builtin_locations"] = [
+        location for location in payload["builtin_locations"] if location["location_id"] != "mare_island_vallejo_ca"
+    ]
+
+    with pytest.raises(ValidationError, match="missing: mare_island_vallejo_ca"):
+        _validate_builtin_location_data(payload)
+
+
+def test_builtin_location_data_rejects_duplicate_locations() -> None:
+    payload = _valid_location_payload()
+    payload["builtin_locations"].append(dict(payload["builtin_locations"][0]))
+
+    with pytest.raises(ValidationError, match="duplicate location ids"):
+        _validate_builtin_location_data(payload)
 
 
 def test_local_regulation_data_requires_regulation_fields() -> None:

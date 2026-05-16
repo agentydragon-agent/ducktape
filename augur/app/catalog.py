@@ -26,43 +26,11 @@ from augur.core.bootstrap import (
     RentalUsePolicyId,
     RentalUsePolicyOption,
 )
-from augur.core.local_regulation import LOCAL_REGULATION_BY_LOCATION, LocationId
+from augur.core.local_regulation import BUILTIN_LOCATION_CONFIGS, BuiltinLocationConfig, local_regulation_for_location
 from augur.core.scenario_set import ActorRole
 from augur.core.schemas import ScenarioKnobs
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
-
-SF_LOCATION = Location(
-    id=LocationId.SAN_FRANCISCO_CA,
-    label="San Francisco, CA",
-    city="San Francisco",
-    state="CA",
-    local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.SAN_FRANCISCO_CA],
-    notes=("Home-value and rent trajectories should use SF-specific fitted real-estate paths.",),
-)
-
-VALLEJO_MAINLAND_LOCATION = Location(
-    id=LocationId.VALLEJO_CA,
-    label="Vallejo, CA",
-    city="Vallejo",
-    state="CA",
-    local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.VALLEJO_CA],
-    notes=("Home-value and rent trajectories should use Vallejo-specific fitted real-estate paths.",),
-)
-
-VALLEJO_MARE_ISLAND_LOCATION = Location(
-    id=LocationId.MARE_ISLAND_VALLEJO_CA,
-    label="Mare Island, Vallejo, CA",
-    city="Vallejo",
-    state="CA",
-    local_regulation=LOCAL_REGULATION_BY_LOCATION[LocationId.MARE_ISLAND_VALLEJO_CA],
-    notes=(
-        "Mare Island properties share the Vallejo real-estate market model for now.",
-        "Special assessments and CFDs should be refined before bidding.",
-    ),
-)
-
-LOCATIONS = (SF_LOCATION, VALLEJO_MAINLAND_LOCATION, VALLEJO_MARE_ISLAND_LOCATION)
 
 DEFAULT_KNOBS = ScenarioKnobs(
     down_payment_pct=25,
@@ -120,8 +88,21 @@ def _location_from_config(config: LocationConfig) -> Location:
     )
 
 
+def _location_from_builtin_config(config: BuiltinLocationConfig) -> Location:
+    return Location(
+        id=config.location_id,
+        label=config.label,
+        city=config.city,
+        state=config.state,
+        local_regulation=local_regulation_for_location(config.location_id),
+        notes=config.notes,
+    )
+
+
 def _locations_for_config(config: AugurConfig) -> tuple[Location, ...]:
-    locations = tuple(_location_from_config(location) for location in config.locations) + LOCATIONS
+    locations = tuple(_location_from_config(location) for location in config.locations) + tuple(
+        _location_from_builtin_config(location) for location in BUILTIN_LOCATION_CONFIGS
+    )
     location_id_counts = Counter(location.id for location in locations)
     duplicate_ids = sorted(location_id for location_id, count in location_id_counts.items() if count > 1)
     if duplicate_ids:

@@ -185,6 +185,8 @@ def test_bootstrap_builtin_location_carries_modeled_tax_defaults(tmp_path: Path)
     location = bootstrap.locations[0]
 
     assert location.id == LocationId.SAN_FRANCISCO_CA
+    assert location.label == "San Francisco, CA"
+    assert location.city == "San Francisco"
     assert location.local_regulation.property_tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
     assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in location.local_regulation.default_tax_regimes
 
