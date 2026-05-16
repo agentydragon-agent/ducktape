@@ -1,9 +1,9 @@
 #!/bin/bash
 # Bazel-runnable launcher for local iteration on aiquota.
 #
-# Builds the extension zip via Bazel, installs it into the user's
-# gnome-shell extension dir (replacing any previous build), and launches
+# Builds the extension zip via Bazel, extracts it to a temp dir, and launches
 # a nested gnome-shell --devkit session with the extension pre-enabled.
+# Fully isolated: does not write to ~/.local/share or modify live dconf.
 # Requires gnome-shell to be installed on the host (not bundled — local
 # iteration only).
 #
@@ -17,8 +17,6 @@
 set -euo pipefail
 
 # --- begin runfiles.bash initialization v3 ---
-# Standard Bazel runfiles bootstrap snippet. `f` must be defined before the
-# source chain — set -u rejects unset references in `${RUNFILES_DIR:-/dev/null}/$f`.
 f=bazel_tools/tools/bash/runfiles/runfiles.bash
 source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null \
   || source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null \
@@ -44,35 +42,49 @@ if [[ ! -f "$zip_path" ]]; then
 fi
 
 uuid="aiquota@allegedly.works"
-target_dir="${HOME}/.local/share/gnome-shell/extensions/${uuid}"
 
-# --- extract to temp dir (avoids polluting ~/.local/share) -----------------
+# --- set up isolated temp tree ---------------------------------------------
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/aiquota-devkit.XXXXXX")
-ext_dir="$tmpdir/gnome-shell/extensions/$uuid"
+trap 'rm -rf "$tmpdir"' EXIT
+
+# Extract extension to temp data dir.
+ext_dir="$tmpdir/data/gnome-shell/extensions/$uuid"
 mkdir -p "$ext_dir"
 echo ">> extracting $(basename "$zip_path") → $ext_dir"
 unzip -q -o "$zip_path" -d "$ext_dir"
-trap 'rm -rf "$tmpdir"' EXIT
 
-# --- add temp dir to XDG_DATA_DIRS so gnome-shell discovers the extension --
-export XDG_DATA_DIRS="$tmpdir${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+# Isolated config dir: symlink everything from real config except dconf,
+# which gets its own isolated db via DCONF_PROFILE.
+real_conf="${XDG_CONFIG_HOME:-$HOME/.config}"
+conf_dir="$tmpdir/config"
+mkdir -p "$conf_dir/dconf"
+for item in "$real_conf"/*; do
+  base=$(basename "$item")
+  [[ "$base" == "dconf" ]] && continue
+  ln -s "$item" "$conf_dir/$base"
+done
 
-# --- enable via gsettings --------------------------------------------------
-# Write directly to dconf so the devkit session picks it up.
-# `gnome-extensions enable` needs a running shell (DBus), so we use gsettings.
-gsettings set org.gnome.shell disable-user-extensions false
-current=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo "@as []")
-if echo "$current" | grep -q "'$uuid'"; then
-  echo ">> $uuid already in enabled-extensions"
-else
-  # Append to the existing list without clobbering other extensions.
-  gsettings set org.gnome.shell enabled-extensions \
-    "$(python3 -c "import ast,sys; l=ast.literal_eval(sys.argv[1]); l.append(sys.argv[2]); print(repr(l))" "$current" "$uuid")"
-  echo ">> added $uuid to enabled-extensions"
+# Copy user's dconf db as read-only fallback.
+if [[ -f "$real_conf/dconf/user" ]]; then
+  cp "$real_conf/dconf/user" "$conf_dir/dconf/user"
 fi
 
+# DCONF_PROFILE: writable "devkit" db (auto-created), read-only "user" fallback.
+cat > "$tmpdir/dconf-profile" << 'EOF'
+user-db:devkit
+user-db:user
+EOF
+
+# --- set isolated environment for gsettings + gnome-shell -------------------
+export XDG_DATA_DIRS="$tmpdir/data${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+export XDG_CONFIG_HOME="$conf_dir"
+export DCONF_PROFILE="$tmpdir/dconf-profile"
+
+# --- enable extension in isolated dconf ------------------------------------
+gsettings set org.gnome.shell disable-user-extensions false
+gsettings set org.gnome.shell enabled-extensions "['$uuid']"
+echo ">> enabled $uuid in isolated dconf"
+
 # --- launch the devkit shell ----------------------------------------------
-# --devkit replaces the GNOME 45-removed --nested. Wayland is required;
-# the host needs an active Wayland compositor to attach to.
 echo ">> launching gnome-shell --devkit (Ctrl-C to exit)"
 exec dbus-run-session -- gnome-shell --devkit --wayland
