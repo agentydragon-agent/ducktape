@@ -4,41 +4,39 @@ sets through the vectorized engine. User-specific data is read from the
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from augur.app.catalog import build_bootstrap_payload
 from augur.app.config import AugurConfig
 from augur.core.api import simulate_set
 from augur.core.augur_accounting import MONTHS_PER_YEAR
-from augur.core.bootstrap import ActorPolicyId, Property
+from augur.core.bootstrap import Property
 from augur.core.local_regulation import LocationId, known_location_id
-from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider, SimpleMarketBundleProvider
+from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider
 from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario, ScenarioSet, ScenarioSetRunResponse, TaxRegime
 from augur.core.schemas import ScenarioKnobs
 
 
+@dataclass(frozen=True)
+class AugurBackendRuntimeConfig:
+    market_bundle_provider: MarketBundleProvider
+    default_rollout_samples: int
+    max_rollout_samples: int
+
+
 class AugurBackend:
-    def __init__(
-        self,
-        *,
-        augur_config: AugurConfig,
-        default_rollout_samples: int | None = None,
-        max_rollout_samples: int = 2048,
-        default_property_id: str | None = None,
-        default_actor_policy: ActorPolicyId | None = None,
-        market_bundle_provider: MarketBundleProvider | None = None,
-    ) -> None:
-        self.market_bundle_provider = market_bundle_provider or SimpleMarketBundleProvider()
+    def __init__(self, *, augur_config: AugurConfig, runtime_config: AugurBackendRuntimeConfig) -> None:
+        self.runtime_config = runtime_config
+        self.market_bundle_provider = runtime_config.market_bundle_provider
         self._bootstrap = build_bootstrap_payload(augur_config)
         self._property_by_id: dict[str, Property] = {
             property_.id: property_ for property_ in self._bootstrap.properties
         }
         self._location_by_id = {location.id: location for location in self._bootstrap.locations}
-        self.default_rollout_samples = default_rollout_samples or self._bootstrap.default_rollout_samples
-        self.max_rollout_samples = max_rollout_samples
         self.default_knobs = self._default_knobs_for_provider(self._bootstrap.default_knobs)
-        self.default_property_id = default_property_id or self._bootstrap.default_property_id
-        self.default_actor_policy = default_actor_policy or self._bootstrap.default_actor_policy
+        self.default_property_id = self._bootstrap.default_property_id
+        self.default_actor_policy = self._bootstrap.default_actor_policy
 
     def bootstrap_payload(self):
         return self._bootstrap.model_copy(
@@ -46,7 +44,7 @@ class AugurBackend:
                 "default_property_id": self.default_property_id,
                 "default_actor_policy": self.default_actor_policy,
                 "default_knobs": self.default_knobs,
-                "default_rollout_samples": self.default_rollout_samples,
+                "default_rollout_samples": self.runtime_config.default_rollout_samples,
             }
         )
 
