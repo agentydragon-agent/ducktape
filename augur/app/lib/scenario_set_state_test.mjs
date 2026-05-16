@@ -6,10 +6,7 @@ import {
   decodeScenarioSetUrlState,
   encodeScenarioSetUrlState,
   normalizeScenarioSetInput,
-  patchScenarioInput,
   patchScenarioInputSection,
-  scenarioInputFromFlatFields,
-  scenarioInputView,
   scenarioResultDataModes,
   scenarioResultSupportsMode,
   scenarioSetInputToRequest,
@@ -125,44 +122,45 @@ const bootstrap = {
   ],
 };
 
+function patchScenarioSections(scenario, sectionPatches) {
+  return Object.entries(sectionPatches).reduce(
+    (nextScenario, [section, patch]) => patchScenarioInputSection(nextScenario, section, patch),
+    scenario
+  );
+}
+
 test("default input creates comparable generic location scenarios", () => {
   const input = createDefaultScenarioSetInput(bootstrap);
-  const firstScenario = scenarioInputView(input.scenarios[0]);
-  const secondScenario = scenarioInputView(input.scenarios[1]);
+  const firstScenario = input.scenarios[0];
+  const secondScenario = input.scenarios[1];
 
   assert.equal(input.scenarios.length, 2);
-  assert.equal(firstScenario.propertyId, "location_a_property");
-  assert.equal(firstScenario.initialCheckingUsd, 25_000);
-  assert.equal(firstScenario.startingPortfolioUsd, 100_000);
-  assert.equal(firstScenario.privateEquityValueUsd, 10_000);
-  assert.equal(firstScenario.privateEquityUnits, 500);
-  assert.equal(firstScenario.privateEquitySalePolicy, "none");
-  assert.equal(secondScenario.propertyId, "location_b_property");
-  assert.equal(secondScenario.actorPolicy, "owner_plus_partner");
+  assert.equal(firstScenario.propertyAndLocation.propertyId, "location_a_property");
+  assert.equal(firstScenario.initialBalanceSheet.initialCheckingUsd, 25_000);
+  assert.equal(firstScenario.initialBalanceSheet.startingPortfolioUsd, 100_000);
+  assert.equal(firstScenario.initialBalanceSheet.privateEquityValueUsd, 10_000);
+  assert.equal(firstScenario.initialBalanceSheet.privateEquityUnits, 500);
+  assert.equal(firstScenario.policies.privateEquitySalePolicy, "none");
+  assert.equal(secondScenario.propertyAndLocation.propertyId, "location_b_property");
+  assert.equal(secondScenario.actorsAndOwnership.actorPolicy, "owner_plus_partner");
   assert.equal(input.marketRequest.seed, 0);
   assert.equal(input.reportSpec.includeMonthlyColumns, true);
   assert.equal(input.reportSpec.includeSamplePaths, false);
 });
 
-test("flat scenario fields group into nested domain sections without changing request payloads", () => {
+test("normalized scenario input stays in nested domain sections", () => {
   const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
-  const flatScenario = scenarioInputView(input.scenarios[0]);
-  const groupedScenario = scenarioInputFromFlatFields(flatScenario);
+  const scenario = input.scenarios[0];
 
-  assert.deepEqual(scenarioInputView(groupedScenario), flatScenario);
-  assert.equal(groupedScenario.identity.scenarioId, "scenario_1");
-  assert.equal(groupedScenario.propertyAndLocation.propertyId, "location_a_property");
-  assert.equal(groupedScenario.financing.financingMode, "fixed_30");
-  assert.equal(groupedScenario.taxAccounting.marginalTaxRate, 40);
-  assert.equal(groupedScenario.initialBalanceSheet.privateEquityUnits, 500);
-  assert.equal(groupedScenario.policies.privateEquitySalePolicy, "none");
-
-  const requestWithOriginalScenario = decamelizeObjectKeys(scenarioSetInputToRequest(input, bootstrap));
-  const requestWithGroupedScenario = decamelizeObjectKeys(
-    scenarioSetInputToRequest({ ...input, scenarios: [groupedScenario, input.scenarios[1]] }, bootstrap)
-  );
-
-  assert.deepEqual(requestWithGroupedScenario, requestWithOriginalScenario);
+  assert.equal(scenario.identity.scenarioId, "scenario_1");
+  assert.equal(scenario.propertyAndLocation.propertyId, "location_a_property");
+  assert.equal(scenario.financing.financingMode, "fixed_30");
+  assert.equal(scenario.taxAccounting.marginalTaxRate, 40);
+  assert.equal(scenario.initialBalanceSheet.privateEquityUnits, 500);
+  assert.equal(scenario.policies.privateEquitySalePolicy, "none");
+  assert.equal(scenario.scenarioId, undefined);
+  assert.equal(scenario.propertyId, undefined);
+  assert.equal(scenario.privateEquityUnits, undefined);
 });
 
 test("section patch updates one nested domain section", () => {
@@ -206,33 +204,45 @@ test("result mode helpers distinguish distribution summaries from trajectory row
 
 test("scenario set request is canonical backend input after decamelizing", () => {
   const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
-  input.scenarios[0] = patchScenarioInput(input.scenarios[0], {
-    liquidReservePolicy: "checking_floor_sp500",
-    rentalUsePolicy: "rent_rooms_while_owner_lives_there",
-    financingMode: "custom",
-    downPaymentPct: 42,
-    customMortgageRate: 7.25,
-    customMortgageTermYears: 18,
-    creditScore: 701,
-    vacancyPct: 12,
-    managementFeePct: 9.5,
-    leasingFeePct: 50,
-    roomsRentedWhileLiving: 2,
-    roomRentMonthlyUsd: 1_650,
-    roomVacancyPct: 11,
-    maintenancePct: 1.4,
-    insuranceAnnualUsd: 3_200,
-    closingCostBuyPct: 3.1,
-    closingCostSellPct: 5.9,
-    capGainsExclusionUsd: 500_000,
-    depreciableBasisPct: 75,
-    marginalTaxRate: 37,
-    capGainsRate: 28,
-    privateEquityValueUsd: 123_000,
-    privateEquityUnits: 456,
-    privateEquitySalePolicy: "liquid_net_worth_floor",
-    privateEquityLiquidNetWorthFloorUsd: 300_000,
-    privateEquityTenderSaleAmountUsd: 75_000,
+  input.scenarios[0] = patchScenarioSections(input.scenarios[0], {
+    financing: {
+      financingMode: "custom",
+      downPaymentPct: 42,
+      customMortgageRate: 7.25,
+      customMortgageTermYears: 18,
+      creditScore: 701,
+    },
+    occupancyAndRental: {
+      rentalUsePolicy: "rent_rooms_while_owner_lives_there",
+      vacancyPct: 12,
+      managementFeePct: 9.5,
+      leasingFeePct: 50,
+      roomsRentedWhileLiving: 2,
+      roomRentMonthlyUsd: 1_650,
+      roomVacancyPct: 11,
+    },
+    propertyAssumptions: {
+      maintenancePct: 1.4,
+      insuranceAnnualUsd: 3_200,
+      depreciableBasisPct: 75,
+    },
+    taxAccounting: {
+      closingCostBuyPct: 3.1,
+      closingCostSellPct: 5.9,
+      capGainsExclusionUsd: 500_000,
+      marginalTaxRate: 37,
+      capGainsRate: 28,
+    },
+    initialBalanceSheet: {
+      privateEquityValueUsd: 123_000,
+      privateEquityUnits: 456,
+    },
+    policies: {
+      liquidReservePolicy: "checking_floor_sp500",
+      privateEquitySalePolicy: "liquid_net_worth_floor",
+      privateEquityLiquidNetWorthFloorUsd: 300_000,
+      privateEquityTenderSaleAmountUsd: 75_000,
+    },
   });
   const request = scenarioSetInputToRequest(input, bootstrap);
   const backendRequest = decamelizeObjectKeys(request);
@@ -343,18 +353,28 @@ test("URL state round-trips only input state", () => {
 
 test("URL state round-trips rich scenario controls in camelCase", () => {
   const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
-  input.scenarios[0] = patchScenarioInput(input.scenarios[0], {
-    financingMode: "custom",
-    downPaymentPct: 35,
-    customMortgageRate: 7.125,
-    customMortgageTermYears: 20,
-    marginalTaxRate: 39,
-    vacancyPct: 7,
-    privateEquityValueUsd: 987_000,
-    privateEquityUnits: 1_234,
-    privateEquitySalePolicy: "liquid_net_worth_floor",
-    privateEquityLiquidNetWorthFloorUsd: 250_000,
-    privateEquityTenderSaleAmountUsd: 60_000,
+  input.scenarios[0] = patchScenarioSections(input.scenarios[0], {
+    financing: {
+      financingMode: "custom",
+      downPaymentPct: 35,
+      customMortgageRate: 7.125,
+      customMortgageTermYears: 20,
+    },
+    taxAccounting: {
+      marginalTaxRate: 39,
+    },
+    occupancyAndRental: {
+      vacancyPct: 7,
+    },
+    initialBalanceSheet: {
+      privateEquityValueUsd: 987_000,
+      privateEquityUnits: 1_234,
+    },
+    policies: {
+      privateEquitySalePolicy: "liquid_net_worth_floor",
+      privateEquityLiquidNetWorthFloorUsd: 250_000,
+      privateEquityTenderSaleAmountUsd: 60_000,
+    },
   });
 
   const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
@@ -371,7 +391,7 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   assert.equal(decoded.scenarios[0].policies.privateEquityLiquidNetWorthFloorUsd, 250_000);
   assert.equal(decoded.scenarios[0].policies.privateEquityTenderSaleAmountUsd, 60_000);
   assert.equal(
-    scenarioInputView(normalizeScenarioSetInput(decoded, bootstrap).scenarios[0]).privateEquityValueUsd,
+    normalizeScenarioSetInput(decoded, bootstrap).scenarios[0].initialBalanceSheet.privateEquityValueUsd,
     24_680
   );
 });

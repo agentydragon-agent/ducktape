@@ -112,26 +112,23 @@ function holdingValueUsd(holding) {
   return finiteNumber(holding?.valueUsd, finiteNumber(holding?.units, 0) * finiteNumber(holding?.fmvUsdPerUnit, 0));
 }
 
-function hasOwnField(value, field) {
-  return Object.prototype.hasOwnProperty.call(value ?? {}, field);
-}
-
-function scenarioInputSectionsFromFlatFields(fields, { includeMissing }) {
+function scenarioInputSectionsFromFlatFields(fields) {
   const source = fields ?? {};
   return Object.fromEntries(
     Object.entries(SCENARIO_INPUT_SECTION_FIELDS).map(([section, fieldNames]) => [
       section,
-      Object.fromEntries(
-        fieldNames.flatMap((fieldName) =>
-          includeMissing || hasOwnField(source, fieldName) ? [[fieldName, source[fieldName]]] : []
-        )
-      ),
+      Object.fromEntries(fieldNames.map((fieldName) => [fieldName, source[fieldName]])),
     ])
   );
 }
 
-export function scenarioInputFromFlatFields(fields) {
-  return scenarioInputSectionsFromFlatFields(fields, { includeMissing: true });
+function scenarioInputFromFlatFields(fields) {
+  return scenarioInputSectionsFromFlatFields(fields);
+}
+
+function scenarioSection(scenario, section) {
+  const value = scenario?.[section];
+  return value && typeof value === "object" ? value : {};
 }
 
 function nonEmptyObject(value) {
@@ -174,25 +171,12 @@ function scenarioFromFields(fields) {
 }
 
 export function scenarioInputView(scenario) {
+  // Compatibility bridge for augur-app.jsx while the UI finishes moving to section reads.
   return Object.fromEntries(
     Object.entries(SCENARIO_INPUT_SECTION_FIELDS).flatMap(([section, fieldNames]) =>
       fieldNames.map((fieldName) => [fieldName, scenario?.[section]?.[fieldName] ?? scenario?.[fieldName]])
     )
   );
-}
-
-export function patchScenarioInput(scenario, patch) {
-  const next = {
-    ...scenario,
-  };
-  for (const section of Object.keys(SCENARIO_INPUT_SECTION_FIELDS)) {
-    next[section] = { ...(scenario?.[section] ?? {}) };
-  }
-  const sections = scenarioInputSectionsFromFlatFields(patch, { includeMissing: false });
-  for (const [section, values] of Object.entries(sections)) {
-    Object.assign(next[section], values);
-  }
-  return next;
 }
 
 export function patchScenarioInputSection(scenario, section, patch) {
@@ -323,88 +307,148 @@ export function createDefaultScenarioSetInput(bootstrap) {
 }
 
 function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
-  const sourceScenario = scenarioInputView(scenario);
   const propertyIds = new Set((bootstrap?.properties ?? []).map((property) => property.id));
   const actorPolicyIds = optionIds(bootstrap?.actorPolicyOptions);
   const ownerResidenceModeIds = optionIds(bootstrap?.ownerResidenceModeOptions);
   const rentalUsePolicyIds = optionIds(bootstrap?.rentalUsePolicyOptions);
   const liquidReservePolicyIds = optionIds(bootstrap?.liquidReservePolicyOptions);
   const defaultScenario = createScenarioInput(bootstrap, { index });
-  const defaultView = scenarioInputView(defaultScenario);
-  const privateEquityUnits = finiteNumber(sourceScenario.privateEquityUnits, defaultView.privateEquityUnits);
+  const identity = scenarioSection(scenario, "identity");
+  const propertyAndLocation = scenarioSection(scenario, "propertyAndLocation");
+  const actorsAndOwnership = scenarioSection(scenario, "actorsAndOwnership");
+  const timeline = scenarioSection(scenario, "timeline");
+  const financing = scenarioSection(scenario, "financing");
+  const occupancyAndRental = scenarioSection(scenario, "occupancyAndRental");
+  const propertyAssumptions = scenarioSection(scenario, "propertyAssumptions");
+  const taxAccounting = scenarioSection(scenario, "taxAccounting");
+  const initialBalanceSheet = scenarioSection(scenario, "initialBalanceSheet");
+  const policies = scenarioSection(scenario, "policies");
+  const defaultIdentity = defaultScenario.identity;
+  const defaultPropertyAndLocation = defaultScenario.propertyAndLocation;
+  const defaultActorsAndOwnership = defaultScenario.actorsAndOwnership;
+  const defaultTimeline = defaultScenario.timeline;
+  const defaultFinancing = defaultScenario.financing;
+  const defaultOccupancyAndRental = defaultScenario.occupancyAndRental;
+  const defaultPropertyAssumptions = defaultScenario.propertyAssumptions;
+  const defaultTaxAccounting = defaultScenario.taxAccounting;
+  const defaultInitialBalanceSheet = defaultScenario.initialBalanceSheet;
+  const defaultPolicies = defaultScenario.policies;
+  const privateEquityUnits = finiteNumber(
+    initialBalanceSheet.privateEquityUnits,
+    defaultInitialBalanceSheet.privateEquityUnits
+  );
   const privateEquityValueUsd = privateEquityValueUsdForUnits(bootstrap, privateEquityUnits);
   const scenarioId =
-    typeof sourceScenario.scenarioId === "string" && /^[a-z0-9][a-z0-9_-]*$/.test(sourceScenario.scenarioId)
-      ? sourceScenario.scenarioId
+    typeof identity.scenarioId === "string" && /^[a-z0-9][a-z0-9_-]*$/.test(identity.scenarioId)
+      ? identity.scenarioId
       : uniqueScenarioId(existingIds, "scenario");
   existingIds.add(scenarioId);
-  return scenarioFromFields({
-    ...defaultView,
-    scenarioId,
-    label:
-      typeof sourceScenario.label === "string" && sourceScenario.label.trim()
-        ? sourceScenario.label.trim()
-        : defaultView.label,
-    enabled: Boolean(sourceScenario.enabled ?? defaultView.enabled),
-    color: typeof sourceScenario.color === "string" && sourceScenario.color ? sourceScenario.color : defaultView.color,
-    propertyId: propertyIds.has(sourceScenario.propertyId) ? sourceScenario.propertyId : defaultView.propertyId,
-    actorPolicy: actorPolicyIds.has(sourceScenario.actorPolicy) ? sourceScenario.actorPolicy : defaultView.actorPolicy,
-    ownerResidenceMode: ownerResidenceModeIds.has(sourceScenario.ownerResidenceMode)
-      ? sourceScenario.ownerResidenceMode
-      : defaultView.ownerResidenceMode,
-    rentalUsePolicy: rentalUsePolicyIds.has(sourceScenario.rentalUsePolicy)
-      ? sourceScenario.rentalUsePolicy
-      : defaultView.rentalUsePolicy,
-    liquidReservePolicy: liquidReservePolicyIds.has(sourceScenario.liquidReservePolicy)
-      ? sourceScenario.liquidReservePolicy
-      : defaultView.liquidReservePolicy,
-    initialCheckingUsd: finiteNumber(sourceScenario.initialCheckingUsd, defaultView.initialCheckingUsd),
-    checkingFloorUsd: finiteNumber(sourceScenario.checkingFloorUsd, defaultView.checkingFloorUsd),
-    checkingSaleAmountUsd: positiveNumber(sourceScenario.checkingSaleAmountUsd, defaultView.checkingSaleAmountUsd),
-    startingPortfolioUsd: finiteNumber(sourceScenario.startingPortfolioUsd, defaultView.startingPortfolioUsd),
-    partnerPaymentMonthlyUsd: finiteNumber(
-      sourceScenario.partnerPaymentMonthlyUsd,
-      defaultView.partnerPaymentMonthlyUsd
-    ),
-    holdYears: positiveNumber(sourceScenario.holdYears, defaultView.holdYears),
-    financingMode: FINANCING_MODE_IDS.has(sourceScenario.financingMode)
-      ? sourceScenario.financingMode
-      : defaultView.financingMode,
-    downPaymentPct: finiteNumber(sourceScenario.downPaymentPct, defaultView.downPaymentPct),
-    customMortgageRate: nullableNumber(sourceScenario.customMortgageRate, defaultView.customMortgageRate),
-    customMortgageTermYears: positiveNumber(
-      sourceScenario.customMortgageTermYears,
-      defaultView.customMortgageTermYears
-    ),
-    creditScore: nullableNumber(sourceScenario.creditScore, defaultView.creditScore),
-    vacancyPct: finiteNumber(sourceScenario.vacancyPct, defaultView.vacancyPct),
-    managementFeePct: finiteNumber(sourceScenario.managementFeePct, defaultView.managementFeePct),
-    leasingFeePct: finiteNumber(sourceScenario.leasingFeePct, defaultView.leasingFeePct),
-    roomsRentedWhileLiving: finiteNumber(sourceScenario.roomsRentedWhileLiving, defaultView.roomsRentedWhileLiving),
-    roomRentMonthlyUsd: finiteNumber(sourceScenario.roomRentMonthlyUsd, defaultView.roomRentMonthlyUsd),
-    roomVacancyPct: finiteNumber(sourceScenario.roomVacancyPct, defaultView.roomVacancyPct),
-    maintenancePct: finiteNumber(sourceScenario.maintenancePct, defaultView.maintenancePct),
-    insuranceAnnualUsd: finiteNumber(sourceScenario.insuranceAnnualUsd, defaultView.insuranceAnnualUsd),
-    closingCostBuyPct: finiteNumber(sourceScenario.closingCostBuyPct, defaultView.closingCostBuyPct),
-    closingCostSellPct: finiteNumber(sourceScenario.closingCostSellPct, defaultView.closingCostSellPct),
-    capGainsExclusionUsd: finiteNumber(sourceScenario.capGainsExclusionUsd, defaultView.capGainsExclusionUsd),
-    depreciableBasisPct: finiteNumber(sourceScenario.depreciableBasisPct, defaultView.depreciableBasisPct),
-    marginalTaxRate: finiteNumber(sourceScenario.marginalTaxRate, defaultView.marginalTaxRate),
-    capGainsRate: finiteNumber(sourceScenario.capGainsRate, defaultView.capGainsRate),
-    privateEquityValueUsd,
-    privateEquityUnits,
-    privateEquitySalePolicy: PRIVATE_EQUITY_SALE_POLICY_IDS.has(sourceScenario.privateEquitySalePolicy)
-      ? sourceScenario.privateEquitySalePolicy
-      : defaultView.privateEquitySalePolicy,
-    privateEquityLiquidNetWorthFloorUsd: finiteNumber(
-      sourceScenario.privateEquityLiquidNetWorthFloorUsd,
-      defaultView.privateEquityLiquidNetWorthFloorUsd
-    ),
-    privateEquityTenderSaleAmountUsd: positiveNumber(
-      sourceScenario.privateEquityTenderSaleAmountUsd,
-      defaultView.privateEquityTenderSaleAmountUsd
-    ),
-  });
+  return {
+    identity: {
+      scenarioId,
+      label:
+        typeof identity.label === "string" && identity.label.trim() ? identity.label.trim() : defaultIdentity.label,
+      enabled: Boolean(identity.enabled ?? defaultIdentity.enabled),
+      color: typeof identity.color === "string" && identity.color ? identity.color : defaultIdentity.color,
+    },
+    propertyAndLocation: {
+      propertyId: propertyIds.has(propertyAndLocation.propertyId)
+        ? propertyAndLocation.propertyId
+        : defaultPropertyAndLocation.propertyId,
+    },
+    actorsAndOwnership: {
+      actorPolicy: actorPolicyIds.has(actorsAndOwnership.actorPolicy)
+        ? actorsAndOwnership.actorPolicy
+        : defaultActorsAndOwnership.actorPolicy,
+      partnerPaymentMonthlyUsd: finiteNumber(
+        actorsAndOwnership.partnerPaymentMonthlyUsd,
+        defaultActorsAndOwnership.partnerPaymentMonthlyUsd
+      ),
+    },
+    timeline: {
+      holdYears: positiveNumber(timeline.holdYears, defaultTimeline.holdYears),
+    },
+    financing: {
+      financingMode: FINANCING_MODE_IDS.has(financing.financingMode)
+        ? financing.financingMode
+        : defaultFinancing.financingMode,
+      downPaymentPct: finiteNumber(financing.downPaymentPct, defaultFinancing.downPaymentPct),
+      customMortgageRate: nullableNumber(financing.customMortgageRate, defaultFinancing.customMortgageRate),
+      customMortgageTermYears: positiveNumber(
+        financing.customMortgageTermYears,
+        defaultFinancing.customMortgageTermYears
+      ),
+      creditScore: nullableNumber(financing.creditScore, defaultFinancing.creditScore),
+    },
+    occupancyAndRental: {
+      ownerResidenceMode: ownerResidenceModeIds.has(occupancyAndRental.ownerResidenceMode)
+        ? occupancyAndRental.ownerResidenceMode
+        : defaultOccupancyAndRental.ownerResidenceMode,
+      rentalUsePolicy: rentalUsePolicyIds.has(occupancyAndRental.rentalUsePolicy)
+        ? occupancyAndRental.rentalUsePolicy
+        : defaultOccupancyAndRental.rentalUsePolicy,
+      vacancyPct: finiteNumber(occupancyAndRental.vacancyPct, defaultOccupancyAndRental.vacancyPct),
+      managementFeePct: finiteNumber(occupancyAndRental.managementFeePct, defaultOccupancyAndRental.managementFeePct),
+      leasingFeePct: finiteNumber(occupancyAndRental.leasingFeePct, defaultOccupancyAndRental.leasingFeePct),
+      roomsRentedWhileLiving: finiteNumber(
+        occupancyAndRental.roomsRentedWhileLiving,
+        defaultOccupancyAndRental.roomsRentedWhileLiving
+      ),
+      roomRentMonthlyUsd: finiteNumber(
+        occupancyAndRental.roomRentMonthlyUsd,
+        defaultOccupancyAndRental.roomRentMonthlyUsd
+      ),
+      roomVacancyPct: finiteNumber(occupancyAndRental.roomVacancyPct, defaultOccupancyAndRental.roomVacancyPct),
+    },
+    propertyAssumptions: {
+      maintenancePct: finiteNumber(propertyAssumptions.maintenancePct, defaultPropertyAssumptions.maintenancePct),
+      insuranceAnnualUsd: finiteNumber(
+        propertyAssumptions.insuranceAnnualUsd,
+        defaultPropertyAssumptions.insuranceAnnualUsd
+      ),
+      depreciableBasisPct: finiteNumber(
+        propertyAssumptions.depreciableBasisPct,
+        defaultPropertyAssumptions.depreciableBasisPct
+      ),
+    },
+    taxAccounting: {
+      closingCostBuyPct: finiteNumber(taxAccounting.closingCostBuyPct, defaultTaxAccounting.closingCostBuyPct),
+      closingCostSellPct: finiteNumber(taxAccounting.closingCostSellPct, defaultTaxAccounting.closingCostSellPct),
+      capGainsExclusionUsd: finiteNumber(taxAccounting.capGainsExclusionUsd, defaultTaxAccounting.capGainsExclusionUsd),
+      marginalTaxRate: finiteNumber(taxAccounting.marginalTaxRate, defaultTaxAccounting.marginalTaxRate),
+      capGainsRate: finiteNumber(taxAccounting.capGainsRate, defaultTaxAccounting.capGainsRate),
+    },
+    initialBalanceSheet: {
+      initialCheckingUsd: finiteNumber(
+        initialBalanceSheet.initialCheckingUsd,
+        defaultInitialBalanceSheet.initialCheckingUsd
+      ),
+      startingPortfolioUsd: finiteNumber(
+        initialBalanceSheet.startingPortfolioUsd,
+        defaultInitialBalanceSheet.startingPortfolioUsd
+      ),
+      privateEquityValueUsd,
+      privateEquityUnits,
+    },
+    policies: {
+      liquidReservePolicy: liquidReservePolicyIds.has(policies.liquidReservePolicy)
+        ? policies.liquidReservePolicy
+        : defaultPolicies.liquidReservePolicy,
+      checkingFloorUsd: finiteNumber(policies.checkingFloorUsd, defaultPolicies.checkingFloorUsd),
+      checkingSaleAmountUsd: positiveNumber(policies.checkingSaleAmountUsd, defaultPolicies.checkingSaleAmountUsd),
+      privateEquitySalePolicy: PRIVATE_EQUITY_SALE_POLICY_IDS.has(policies.privateEquitySalePolicy)
+        ? policies.privateEquitySalePolicy
+        : defaultPolicies.privateEquitySalePolicy,
+      privateEquityLiquidNetWorthFloorUsd: finiteNumber(
+        policies.privateEquityLiquidNetWorthFloorUsd,
+        defaultPolicies.privateEquityLiquidNetWorthFloorUsd
+      ),
+      privateEquityTenderSaleAmountUsd: positiveNumber(
+        policies.privateEquityTenderSaleAmountUsd,
+        defaultPolicies.privateEquityTenderSaleAmountUsd
+      ),
+    },
+  };
 }
 
 export function normalizeScenarioSetInput(input, bootstrap) {
@@ -415,10 +459,7 @@ export function normalizeScenarioSetInput(input, bootstrap) {
   const scenarios = scenariosSource.map((scenario, index) =>
     normalizeScenarioInput(scenario, bootstrap, index, existingIds)
   );
-  const horizonMonths = Math.max(
-    1,
-    ...scenarios.map((scenario) => Math.ceil(scenarioInputView(scenario).holdYears * 12))
-  );
+  const horizonMonths = Math.max(1, ...scenarios.map((scenario) => Math.ceil(scenario.timeline.holdYears * 12)));
   return {
     title: typeof input?.title === "string" && input.title.trim() ? input.title.trim() : fallback.title,
     marketRequest: {
@@ -451,54 +492,54 @@ function agentsByRole(bootstrap) {
 }
 
 function occupancyModeForScenario(scenario) {
-  const view = scenarioInputView(scenario);
-  if (view.ownerResidenceMode === "other_owned_property") {
+  const occupancyAndRental = scenario.occupancyAndRental;
+  if (occupancyAndRental.ownerResidenceMode === "other_owned_property") {
     return "owner_lives_in_other_owned_property";
   }
-  if (view.ownerResidenceMode === "rental_elsewhere") {
+  if (occupancyAndRental.ownerResidenceMode === "rental_elsewhere") {
     return "owner_rents_elsewhere";
   }
-  if (view.rentalUsePolicy === "rent_whole_property") {
+  if (occupancyAndRental.rentalUsePolicy === "rent_whole_property") {
     return "no_owner_occupancy";
   }
   return "owner_lives_in_property";
 }
 
 function rentalModeForScenario(scenario) {
-  const view = scenarioInputView(scenario);
-  if (view.rentalUsePolicy === "rent_rooms_while_owner_lives_there") {
+  const { rentalUsePolicy } = scenario.occupancyAndRental;
+  if (rentalUsePolicy === "rent_rooms_while_owner_lives_there") {
     return "rent_rooms_while_owner_lives_there";
   }
-  if (view.rentalUsePolicy === "rent_whole_property") {
+  if (rentalUsePolicy === "rent_whole_property") {
     return "rent_whole_property";
   }
   return "not_rented";
 }
 
 function scenarioPolicies(scenario, bootstrap) {
-  const view = scenarioInputView(scenario);
+  const { identity, actorsAndOwnership, policies: scenarioPolicyInputs } = scenario;
   const { primary, partner } = agentsByRole(bootstrap);
   const policies = [];
-  if (view.actorPolicy === "owner_plus_partner" && partner) {
+  if (actorsAndOwnership.actorPolicy === "owner_plus_partner" && partner) {
     policies.push({
       policyId: "partner_equity_accrual",
       policyType: "partner_equity_accrual",
       actorId: partner.actorId,
-      enabled: view.enabled,
-      baseMonthlyPaymentUsd: view.partnerPaymentMonthlyUsd,
+      enabled: identity.enabled,
+      baseMonthlyPaymentUsd: actorsAndOwnership.partnerPaymentMonthlyUsd,
     });
   }
-  if (view.liquidReservePolicy === "checking_floor_sp500") {
+  if (scenarioPolicyInputs.liquidReservePolicy === "checking_floor_sp500") {
     policies.push({
       policyId: "checking_floor",
       policyType: "checking_floor_sell_public_stock",
       actorId: primary.actorId,
       enabled: true,
-      floorUsd: view.checkingFloorUsd,
-      saleAmountUsd: view.checkingSaleAmountUsd,
+      floorUsd: scenarioPolicyInputs.checkingFloorUsd,
+      saleAmountUsd: scenarioPolicyInputs.checkingSaleAmountUsd,
     });
   }
-  if (view.privateEquitySalePolicy === "liquid_net_worth_floor") {
+  if (scenarioPolicyInputs.privateEquitySalePolicy === "liquid_net_worth_floor") {
     policies.push({
       policyId: "private_equity_liquid_floor_sale",
       policyType: "private_equity_sale",
@@ -507,8 +548,8 @@ function scenarioPolicies(scenario, bootstrap) {
       proceedsDestination: "generic_sp500_stock",
       saleRule: {
         saleRuleType: "liquid_net_worth_floor",
-        minLiquidNetWorthUsd: view.privateEquityLiquidNetWorthFloorUsd,
-        saleAmountUsd: view.privateEquityTenderSaleAmountUsd,
+        minLiquidNetWorthUsd: scenarioPolicyInputs.privateEquityLiquidNetWorthFloorUsd,
+        saleAmountUsd: scenarioPolicyInputs.privateEquityTenderSaleAmountUsd,
       },
     });
   }
@@ -516,7 +557,7 @@ function scenarioPolicies(scenario, bootstrap) {
 }
 
 function scenarioActors(scenario, bootstrap) {
-  const view = scenarioInputView(scenario);
+  const { actorPolicy } = scenario.actorsAndOwnership;
   const { primary, partner } = agentsByRole(bootstrap);
   const actors = [
     {
@@ -525,7 +566,7 @@ function scenarioActors(scenario, bootstrap) {
       role: primary.role,
     },
   ];
-  if (view.actorPolicy === "owner_plus_partner" && partner) {
+  if (actorPolicy === "owner_plus_partner" && partner) {
     actors.push({
       actorId: partner.actorId,
       label: partner.label,
@@ -536,9 +577,9 @@ function scenarioActors(scenario, bootstrap) {
 }
 
 function scenarioEvents(scenario, property, bootstrap) {
-  const view = scenarioInputView(scenario);
+  const { propertyId } = scenario.propertyAndLocation;
+  const { downPaymentPct } = scenario.financing;
   const { primary } = agentsByRole(bootstrap);
-  const downPaymentPct = view.downPaymentPct;
   const loanAmountUsd = Math.max(0, (property?.priceUsd ?? 0) * (1 - downPaymentPct / 100));
   const events = [
     {
@@ -546,7 +587,7 @@ function scenarioEvents(scenario, property, bootstrap) {
       eventType: "property_purchase",
       monthIndex: 0,
       actorId: primary.actorId,
-      propertyId: view.propertyId,
+      propertyId,
       amountUsd: property?.priceUsd ?? 0,
       description: "Property purchase at scenario start.",
       hoaMonthlyUsd: property?.hoaMonthlyUsd ?? 0,
@@ -556,7 +597,7 @@ function scenarioEvents(scenario, property, bootstrap) {
       eventType: "mortgage_origination",
       monthIndex: 0,
       actorId: primary.actorId,
-      propertyId: view.propertyId,
+      propertyId,
       amountUsd: loanAmountUsd,
       description: "Mortgage originated at scenario start.",
     },
@@ -565,17 +606,17 @@ function scenarioEvents(scenario, property, bootstrap) {
 }
 
 function scenarioBalanceSheet(scenario, bootstrap) {
-  const view = scenarioInputView(scenario);
+  const initialBalanceSheet = scenario.initialBalanceSheet;
   const { primary } = agentsByRole(bootstrap);
-  const privateEquityUnits = Math.max(0, finiteNumber(view.privateEquityUnits, 0));
+  const privateEquityUnits = Math.max(0, finiteNumber(initialBalanceSheet.privateEquityUnits, 0));
   const privateEquityValueUsd = privateEquityValueUsdForUnits(bootstrap, privateEquityUnits);
   const assets = [
     {
       assetId: "sp500",
       assetType: "generic_sp500_stock",
       ownerActorId: primary.actorId,
-      valueUsd: view.startingPortfolioUsd,
-      costBasisUsd: view.startingPortfolioUsd,
+      valueUsd: initialBalanceSheet.startingPortfolioUsd,
+      costBasisUsd: initialBalanceSheet.startingPortfolioUsd,
     },
   ];
   if (privateEquityValueUsd > 0 || privateEquityUnits > 0) {
@@ -594,7 +635,7 @@ function scenarioBalanceSheet(scenario, bootstrap) {
         accountId: "checking",
         accountType: "checking",
         ownerActorId: primary.actorId,
-        balanceUsd: view.initialCheckingUsd,
+        balanceUsd: initialBalanceSheet.initialCheckingUsd,
       },
     ],
     assets,
@@ -603,35 +644,37 @@ function scenarioBalanceSheet(scenario, bootstrap) {
 }
 
 function scenarioToBackendScenario(scenario, bootstrap) {
-  const view = scenarioInputView(scenario);
-  const property = propertyById(bootstrap, view.propertyId);
-  const holdMonths = Math.ceil(view.holdYears * 12);
+  const { identity, propertyAndLocation, timeline, financing, occupancyAndRental, propertyAssumptions, taxAccounting } =
+    scenario;
+  const property = propertyById(bootstrap, propertyAndLocation.propertyId);
+  const holdMonths = Math.ceil(timeline.holdYears * 12);
   const rentalMode = rentalModeForScenario(scenario);
   const rentEstimate = finiteNumber(property?.rentEstimateUsd, 0);
   const beds = Math.max(1, finiteNumber(property?.beds, 1));
   return {
-    scenarioId: view.scenarioId,
-    label: view.label,
-    enabled: view.enabled,
-    color: view.color,
+    scenarioId: identity.scenarioId,
+    label: identity.label,
+    enabled: identity.enabled,
+    color: identity.color,
     actors: scenarioActors(scenario, bootstrap),
     events: scenarioEvents(scenario, property, bootstrap),
     policies: scenarioPolicies(scenario, bootstrap),
     propertySelection: {
-      propertyId: view.propertyId,
+      propertyId: propertyAndLocation.propertyId,
     },
     financing: {
-      financingMode: view.financingMode,
-      downPaymentPct: view.downPaymentPct,
-      mortgageRatePct: view.customMortgageRate,
-      mortgageTermYears: view.customMortgageTermYears,
-      creditScore: view.creditScore,
+      financingMode: financing.financingMode,
+      downPaymentPct: financing.downPaymentPct,
+      mortgageRatePct: financing.customMortgageRate,
+      mortgageTermYears: financing.customMortgageTermYears,
+      creditScore: financing.creditScore,
     },
     occupancyPlan: {
       occupancyMode: occupancyModeForScenario(scenario),
-      ownerResidencePropertyId: view.ownerResidenceMode === "selected_property" ? view.propertyId : null,
+      ownerResidencePropertyId:
+        occupancyAndRental.ownerResidenceMode === "selected_property" ? propertyAndLocation.propertyId : null,
       startMonth: 0,
-      endMonth: view.rentalUsePolicy === "rent_whole_property" ? 0 : holdMonths,
+      endMonth: occupancyAndRental.rentalUsePolicy === "rent_whole_property" ? 0 : holdMonths,
     },
     rentalPlan: {
       rentalMode,
@@ -640,27 +683,28 @@ function scenarioToBackendScenario(scenario, bootstrap) {
       monthlyRentUsd: rentalMode === "rent_whole_property" ? rentEstimate : null,
       roomsRented:
         rentalMode === "rent_rooms_while_owner_lives_there"
-          ? Math.min(Math.max(0, view.roomsRentedWhileLiving), Math.max(0, beds - 1))
+          ? Math.min(Math.max(0, occupancyAndRental.roomsRentedWhileLiving), Math.max(0, beds - 1))
           : 0,
-      roomRentMonthlyUsd: rentalMode === "rent_rooms_while_owner_lives_there" ? view.roomRentMonthlyUsd : null,
-      vacancyPct: view.vacancyPct,
-      roomVacancyPct: view.roomVacancyPct,
-      managementFeePct: view.managementFeePct,
-      leasingFeePct: view.leasingFeePct,
+      roomRentMonthlyUsd:
+        rentalMode === "rent_rooms_while_owner_lives_there" ? occupancyAndRental.roomRentMonthlyUsd : null,
+      vacancyPct: occupancyAndRental.vacancyPct,
+      roomVacancyPct: occupancyAndRental.roomVacancyPct,
+      managementFeePct: occupancyAndRental.managementFeePct,
+      leasingFeePct: occupancyAndRental.leasingFeePct,
     },
     taxProfile: {
-      marginalTaxRate: view.marginalTaxRate,
-      capGainsRate: view.capGainsRate,
-      capGainsExclusionUsd: view.capGainsExclusionUsd,
+      marginalTaxRate: taxAccounting.marginalTaxRate,
+      capGainsRate: taxAccounting.capGainsRate,
+      capGainsExclusionUsd: taxAccounting.capGainsExclusionUsd,
     },
     transactionCosts: {
-      closingCostBuyPct: view.closingCostBuyPct,
-      closingCostSellPct: view.closingCostSellPct,
+      closingCostBuyPct: taxAccounting.closingCostBuyPct,
+      closingCostSellPct: taxAccounting.closingCostSellPct,
     },
     propertyAssumptions: {
-      insuranceAnnualUsd: view.insuranceAnnualUsd,
-      maintenancePct: view.maintenancePct,
-      depreciableBasisPct: view.depreciableBasisPct,
+      insuranceAnnualUsd: propertyAssumptions.insuranceAnnualUsd,
+      maintenancePct: propertyAssumptions.maintenancePct,
+      depreciableBasisPct: propertyAssumptions.depreciableBasisPct,
     },
     initialBalanceSheet: scenarioBalanceSheet(scenario, bootstrap),
   };
@@ -678,69 +722,80 @@ export function scenarioSetInputToRequest(input, bootstrap) {
 }
 
 function serializableScenario(scenario) {
-  const view = scenarioInputView(scenario);
+  const {
+    identity,
+    propertyAndLocation,
+    actorsAndOwnership,
+    timeline,
+    financing,
+    occupancyAndRental,
+    propertyAssumptions,
+    taxAccounting,
+    initialBalanceSheet,
+    policies,
+  } = scenario;
   return {
     identity: {
-      scenarioId: view.scenarioId,
-      label: view.label,
-      enabled: view.enabled,
-      color: view.color,
+      scenarioId: identity.scenarioId,
+      label: identity.label,
+      enabled: identity.enabled,
+      color: identity.color,
     },
     propertyAndLocation: {
-      propertyId: view.propertyId,
+      propertyId: propertyAndLocation.propertyId,
     },
     actorsAndOwnership: {
-      actorPolicy: view.actorPolicy,
-      partnerPaymentMonthlyUsd: view.partnerPaymentMonthlyUsd,
+      actorPolicy: actorsAndOwnership.actorPolicy,
+      partnerPaymentMonthlyUsd: actorsAndOwnership.partnerPaymentMonthlyUsd,
     },
     timeline: {
-      holdYears: view.holdYears,
+      holdYears: timeline.holdYears,
     },
     financing: {
-      financingMode: view.financingMode,
-      downPaymentPct: view.downPaymentPct,
-      ...(view.financingMode === "custom"
+      financingMode: financing.financingMode,
+      downPaymentPct: financing.downPaymentPct,
+      ...(financing.financingMode === "custom"
         ? {
-            customMortgageRate: view.customMortgageRate,
-            customMortgageTermYears: view.customMortgageTermYears,
+            customMortgageRate: financing.customMortgageRate,
+            customMortgageTermYears: financing.customMortgageTermYears,
           }
         : {}),
-      creditScore: view.creditScore,
+      creditScore: financing.creditScore,
     },
     occupancyAndRental: {
-      ownerResidenceMode: view.ownerResidenceMode,
-      rentalUsePolicy: view.rentalUsePolicy,
-      vacancyPct: view.vacancyPct,
-      managementFeePct: view.managementFeePct,
-      leasingFeePct: view.leasingFeePct,
-      roomsRentedWhileLiving: view.roomsRentedWhileLiving,
-      roomRentMonthlyUsd: view.roomRentMonthlyUsd,
-      roomVacancyPct: view.roomVacancyPct,
+      ownerResidenceMode: occupancyAndRental.ownerResidenceMode,
+      rentalUsePolicy: occupancyAndRental.rentalUsePolicy,
+      vacancyPct: occupancyAndRental.vacancyPct,
+      managementFeePct: occupancyAndRental.managementFeePct,
+      leasingFeePct: occupancyAndRental.leasingFeePct,
+      roomsRentedWhileLiving: occupancyAndRental.roomsRentedWhileLiving,
+      roomRentMonthlyUsd: occupancyAndRental.roomRentMonthlyUsd,
+      roomVacancyPct: occupancyAndRental.roomVacancyPct,
     },
     propertyAssumptions: {
-      maintenancePct: view.maintenancePct,
-      insuranceAnnualUsd: view.insuranceAnnualUsd,
-      depreciableBasisPct: view.depreciableBasisPct,
+      maintenancePct: propertyAssumptions.maintenancePct,
+      insuranceAnnualUsd: propertyAssumptions.insuranceAnnualUsd,
+      depreciableBasisPct: propertyAssumptions.depreciableBasisPct,
     },
     taxAccounting: {
-      closingCostBuyPct: view.closingCostBuyPct,
-      closingCostSellPct: view.closingCostSellPct,
-      capGainsExclusionUsd: view.capGainsExclusionUsd,
-      marginalTaxRate: view.marginalTaxRate,
-      capGainsRate: view.capGainsRate,
+      closingCostBuyPct: taxAccounting.closingCostBuyPct,
+      closingCostSellPct: taxAccounting.closingCostSellPct,
+      capGainsExclusionUsd: taxAccounting.capGainsExclusionUsd,
+      marginalTaxRate: taxAccounting.marginalTaxRate,
+      capGainsRate: taxAccounting.capGainsRate,
     },
     initialBalanceSheet: {
-      initialCheckingUsd: view.initialCheckingUsd,
-      startingPortfolioUsd: view.startingPortfolioUsd,
-      privateEquityUnits: view.privateEquityUnits,
+      initialCheckingUsd: initialBalanceSheet.initialCheckingUsd,
+      startingPortfolioUsd: initialBalanceSheet.startingPortfolioUsd,
+      privateEquityUnits: initialBalanceSheet.privateEquityUnits,
     },
     policies: {
-      liquidReservePolicy: view.liquidReservePolicy,
-      checkingFloorUsd: view.checkingFloorUsd,
-      checkingSaleAmountUsd: view.checkingSaleAmountUsd,
-      privateEquitySalePolicy: view.privateEquitySalePolicy,
-      privateEquityLiquidNetWorthFloorUsd: view.privateEquityLiquidNetWorthFloorUsd,
-      privateEquityTenderSaleAmountUsd: view.privateEquityTenderSaleAmountUsd,
+      liquidReservePolicy: policies.liquidReservePolicy,
+      checkingFloorUsd: policies.checkingFloorUsd,
+      checkingSaleAmountUsd: policies.checkingSaleAmountUsd,
+      privateEquitySalePolicy: policies.privateEquitySalePolicy,
+      privateEquityLiquidNetWorthFloorUsd: policies.privateEquityLiquidNetWorthFloorUsd,
+      privateEquityTenderSaleAmountUsd: policies.privateEquityTenderSaleAmountUsd,
     },
   };
 }
