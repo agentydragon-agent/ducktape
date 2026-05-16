@@ -11,7 +11,13 @@ from augur.core.market_bundle import (
     SimpleMarketBundleProvider,
     sample_market_bundle_for_request,
 )
-from augur.core.provenance import policy_program_set_id, projection_trajectory_id, scenario_input_id
+from augur.core.provenance import (
+    ProjectionRun,
+    policy_program_set_id,
+    projection_run_id,
+    projection_trajectory_id,
+    scenario_input_id,
+)
 from augur.core.scenario_engine import (
     ScenarioRunArrays,
     available_report_metrics,
@@ -349,12 +355,23 @@ class SimulationRun:
 
     def to_response(self) -> ScenarioSetRunResponse:
         exogenous_paths = _exogenous_path_identities(self.market_bundle.metadata)
+        scenario_input_ids = tuple(scenario_input_id(scenario) for scenario in self.scenario_set.scenarios)
         return ScenarioSetRunResponse(
             scenario_set_id=self.scenario_set.scenario_set_id,
             request=self.scenario_set,
             market_request=self.scenario_set.market_request,
             report_spec=self.scenario_set.report_spec,
             market_metadata=self.market_bundle.metadata.to_json_dict(),
+            projection_run=ProjectionRun(
+                projection_run_id=projection_run_id(
+                    scenario_set_id=self.scenario_set.scenario_set_id,
+                    path_set_id=self.market_bundle.metadata.path_set_id,
+                    scenario_input_ids=scenario_input_ids,
+                ),
+                scenario_set_id=self.scenario_set.scenario_set_id,
+                path_set_id=self.market_bundle.metadata.path_set_id,
+                scenario_input_ids=scenario_input_ids,
+            ),
             exogenous_paths=exogenous_paths,
             scenario_results=tuple(
                 scenario_run.to_response_result(self.scenario_set.report_spec, exogenous_paths=exogenous_paths)

@@ -24,9 +24,11 @@ from augur.model.markets.registry import BY_LABEL
 
 _TENDER_INTERVAL_MONTHS = 12
 _MODEL_CARD_ID = "augur-market-model-card:2026-05-15"
+_VALIDATION_REPORT_ID = "validation_report:augur-market-models:not_available:2026-05-15"
 _KNOWN_LIMITATION_IDS = (
     "evidence-set-id-unversioned",
     "calibration-artifact-id-unversioned",
+    "validation-report-not-decision-grade",
     "constant-mortgage-rate-path",
     "private-equity-marks-flat-fixture",
 )
@@ -65,6 +67,8 @@ class MacroMarketBundleProvider:
         )
         self._current_mortgage30_rate_pct = float(evidence.current_mortgage30_rate_pct)
         self._current_private_equity_price_usd = float(current_private_equity_price_usd)
+        self._risk_factor_ids = historical.factor_names
+        self._evidence_latest_observation_ids = tuple(sorted(str(key) for key in self.latest_observations))
         self._factor_index = {name: idx for idx, name in enumerate(historical.factor_names)}
         self._location_market_sources = LocationMarketSources.from_config(config.location_market_sources)
 
@@ -110,7 +114,7 @@ class MacroMarketBundleProvider:
                 market_model_id=market_request.market_model_id,
                 model_card_id=_MODEL_CARD_ID,
                 model_version_id=self._market_model_version_id,
-                validation_report_id=None,
+                validation_report_id=_VALIDATION_REPORT_ID,
                 known_limitation_ids=_KNOWN_LIMITATION_IDS,
                 market_model_version_id=self._market_model_version_id,
                 scenario_generator_id="macro_market_bundle_provider",
@@ -118,6 +122,8 @@ class MacroMarketBundleProvider:
                 evidence_set_id=self._evidence_set_id,
                 calibration_artifact_id=self._calibration_artifact_id,
                 risk_factor_set_id=self._risk_factor_set_id,
+                risk_factor_ids=self._risk_factor_ids,
+                evidence_latest_observation_ids=self._evidence_latest_observation_ids,
                 seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
@@ -126,7 +132,7 @@ class MacroMarketBundleProvider:
                 source_metadata={
                     "market_provider_label": self.label,
                     "current_private_equity_price_usd": self._current_private_equity_price_usd,
-                    "latest_observation_ids": sorted(str(key) for key in self.latest_observations),
+                    "latest_observation_ids": list(self._evidence_latest_observation_ids),
                 },
             ),
         )

@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
 from augur.core.local_regulation import LocalRegulation, TaxRegime
+from augur.core.provenance import ProjectionRun
 from augur.core.schemas import ApiModel, ColumnarTable, Percentage
 
 
@@ -945,6 +946,7 @@ class ScenarioSetRunResponse(ApiModel):
     market_request: MarketRequest
     report_spec: ReportSpec
     market_metadata: dict[str, Any] | None = None
+    projection_run: ProjectionRun | None = None
     exogenous_paths: tuple[ExogenousPathIdentity, ...] = ()
     scenario_results: tuple[ScenarioResult, ...]
     warnings: tuple[str, ...] = ()

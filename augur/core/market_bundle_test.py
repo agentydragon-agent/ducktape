@@ -50,7 +50,19 @@ def test_market_bundle_provenance_fields_drive_path_identity() -> None:
         horizon_months=3,
         event_stream_ids=("private_equity_sale_opportunity_event",),
     )
-    same = MarketBundleMetadata.model_validate(base.model_dump(exclude={"path_set_id", "exogenous_path_ids"}))
+    computed_metadata_fields = {
+        "path_set_id",
+        "exogenous_path_ids",
+        "model_card",
+        "validation_report",
+        "known_limitations",
+        "evidence_set",
+        "calibration_run",
+        "calibration_artifact",
+        "scenario_generator_run",
+        "exogenous_path_set",
+    }
+    same = MarketBundleMetadata.model_validate(base.model_dump(exclude=computed_metadata_fields))
     changed_seed = base.model_copy(update={"seed": 2})
     changed_model = base.model_copy(update={"market_model_version_id": "model_version:2"})
     changed_evidence = base.model_copy(update={"evidence_set_id": "evidence:2"})
@@ -63,6 +75,12 @@ def test_market_bundle_provenance_fields_drive_path_identity() -> None:
     assert changed_evidence.path_set_id != base.path_set_id
     assert changed_calibration.path_set_id != base.path_set_id
     assert changed_evidence.exogenous_path_ids[0] != base.exogenous_path_ids[0]
+    assert base.evidence_set.evidence_set_id == "evidence:1"
+    assert base.calibration_run.evidence_set_id == "evidence:1"
+    assert base.calibration_artifact.calibration_run_id == base.calibration_run.calibration_run_id
+    assert base.scenario_generator_run.scenario_generator_run_id.startswith("scenario_generator_run:")
+    assert base.exogenous_path_set.path_set_id == base.path_set_id
+    assert base.exogenous_path_set.scenario_generator_run_id == base.scenario_generator_run.scenario_generator_run_id
 
 
 def test_market_bundle_rejects_bad_shapes() -> None:

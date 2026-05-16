@@ -69,18 +69,36 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
     assert bundle.horizon_months == horizon_months
     assert bundle.metadata.seed == 42
     assert bundle.metadata.model_card_id == "augur-market-model-card:2026-05-15"
+    assert bundle.metadata.model_card is not None
+    assert bundle.metadata.model_card.model_card_id == bundle.metadata.model_card_id
     assert bundle.metadata.model_version_id == bundle.metadata.market_model_version_id
     assert bundle.metadata.market_model_version_id.startswith("model_version:")
     assert bundle.metadata.evidence_set_id.startswith("evidence_set:")
+    assert bundle.metadata.evidence_set.evidence_set_id == bundle.metadata.evidence_set_id
+    assert bundle.metadata.evidence_set.factor_ids == bundle.metadata.risk_factor_ids
+    assert bundle.metadata.evidence_set.latest_observation_ids == bundle.metadata.evidence_latest_observation_ids
     assert bundle.metadata.calibration_artifact_id.startswith("calibration_artifact:")
+    assert bundle.metadata.calibration_run.calibration_run_id.startswith("calibration_run:")
+    assert bundle.metadata.calibration_artifact.calibration_run_id == bundle.metadata.calibration_run.calibration_run_id
     assert bundle.metadata.risk_factor_set_id.startswith("risk_factor_set:")
-    assert bundle.metadata.validation_report_id is None
+    assert {"sp500", "rent", "inflation"} <= set(bundle.metadata.risk_factor_ids)
+    assert bundle.metadata.validation_report_id == "validation_report:augur-market-models:not_available:2026-05-15"
+    assert bundle.metadata.validation_report is not None
+    assert bundle.metadata.validation_report.evidence_set_id == bundle.metadata.evidence_set_id
     assert bundle.metadata.known_limitation_ids == (
         "evidence-set-id-unversioned",
         "calibration-artifact-id-unversioned",
+        "validation-report-not-decision-grade",
         "constant-mortgage-rate-path",
         "private-equity-marks-flat-fixture",
     )
+    assert (
+        tuple(limitation.known_limitation_id for limitation in bundle.metadata.known_limitations)
+        == bundle.metadata.known_limitation_ids
+    )
+    assert bundle.metadata.scenario_generator_run.scenario_generator_run_id.startswith("scenario_generator_run:")
+    assert bundle.metadata.scenario_generator_run.evidence_set_id == bundle.metadata.evidence_set_id
+    assert bundle.metadata.exogenous_path_set.path_set_id == bundle.metadata.path_set_id
     assert bundle.metadata.source_metadata["market_provider_label"] == provider.label
     assert "market_provider_seed" not in bundle.metadata.source_metadata
     assert "market_provider_horizon_months" not in bundle.metadata.source_metadata

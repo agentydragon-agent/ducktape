@@ -33,6 +33,7 @@ py_library(
     srcs = ["scenario_set.py"],
     deps = [
         ":local_regulation_py",
+        ":provenance_py",
         ":schemas_py",
         "@pypi//pydantic",
     ],
@@ -41,6 +42,9 @@ py_library(
 py_library(
     name = "provenance_py",
     srcs = ["provenance.py"],
+    deps = [
+        ":schemas_py",
+    ],
 )
 
 py_library(

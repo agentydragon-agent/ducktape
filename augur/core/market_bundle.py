@@ -7,9 +7,24 @@ import numpy as np
 from pydantic import Field, computed_field
 
 from augur.core.local_regulation import LocationId
-from augur.core.provenance import exogenous_path_id, path_set_id
+from augur.core.provenance import (
+    CalibrationArtifact,
+    CalibrationRun,
+    EvidenceSet,
+    ExogenousPathSet,
+    KnownLimitation,
+    ModelCard,
+    ScenarioGeneratorRun,
+    ValidationReport,
+    calibration_run_id,
+    exogenous_path_id,
+    path_set_id,
+    scenario_generator_run_id,
+)
 from augur.core.scenario_set import MarketRequest
 from augur.core.schemas import ApiModel
+
+CORE_MARKET_RISK_FACTOR_IDS = ("inflation", "sp500", "home", "rent", "mortgage_30y_rate_pct", "private_equity_value")
 
 
 class MarketBundleMetadata(ApiModel):
@@ -24,6 +39,8 @@ class MarketBundleMetadata(ApiModel):
     evidence_set_id: str = "unknown"
     calibration_artifact_id: str = "unknown"
     risk_factor_set_id: str = "core_market_factors:v1"
+    risk_factor_ids: tuple[str, ...] = ()
+    evidence_latest_observation_ids: tuple[str, ...] = ()
     seed: int
     rollout_count: int
     horizon_months: int
@@ -43,6 +60,106 @@ class MarketBundleMetadata(ApiModel):
             calibration_artifact_id=self.calibration_artifact_id,
             risk_factor_set_id=self.risk_factor_set_id,
             seed=self.seed,
+            rollout_count=self.rollout_count,
+            horizon_months=self.horizon_months,
+            event_stream_ids=self.event_stream_ids,
+        )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def model_card(self) -> ModelCard | None:
+        if self.model_card_id is None:
+            return None
+        return ModelCard(model_card_id=self.model_card_id, model_version_id=self.model_version_id)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def validation_report(self) -> ValidationReport | None:
+        if self.validation_report_id is None:
+            return None
+        return ValidationReport(
+            validation_report_id=self.validation_report_id,
+            model_version_id=self.model_version_id or self.market_model_version_id,
+            evidence_set_id=self.evidence_set_id,
+            calibration_artifact_id=self.calibration_artifact_id,
+        )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def known_limitations(self) -> tuple[KnownLimitation, ...]:
+        return tuple(KnownLimitation(known_limitation_id=limitation_id) for limitation_id in self.known_limitation_ids)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def evidence_set(self) -> EvidenceSet:
+        return EvidenceSet(
+            evidence_set_id=self.evidence_set_id,
+            risk_factor_set_id=self.risk_factor_set_id,
+            factor_ids=self.risk_factor_ids,
+            latest_observation_ids=self.evidence_latest_observation_ids,
+        )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def calibration_run(self) -> CalibrationRun:
+        return CalibrationRun(
+            calibration_run_id=calibration_run_id(
+                model_version_id=self.market_model_version_id,
+                evidence_set_id=self.evidence_set_id,
+                risk_factor_set_id=self.risk_factor_set_id,
+            ),
+            model_version_id=self.market_model_version_id,
+            evidence_set_id=self.evidence_set_id,
+            risk_factor_set_id=self.risk_factor_set_id,
+        )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def calibration_artifact(self) -> CalibrationArtifact:
+        return CalibrationArtifact(
+            calibration_artifact_id=self.calibration_artifact_id,
+            calibration_run_id=self.calibration_run.calibration_run_id,
+            model_version_id=self.market_model_version_id,
+            evidence_set_id=self.evidence_set_id,
+            risk_factor_set_id=self.risk_factor_set_id,
+        )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def scenario_generator_run(self) -> ScenarioGeneratorRun:
+        return ScenarioGeneratorRun(
+            scenario_generator_run_id=scenario_generator_run_id(
+                market_model_id=self.market_model_id,
+                model_version_id=self.market_model_version_id,
+                scenario_generator_id=self.scenario_generator_id,
+                scenario_generator_version_id=self.scenario_generator_version_id,
+                evidence_set_id=self.evidence_set_id,
+                calibration_artifact_id=self.calibration_artifact_id,
+                risk_factor_set_id=self.risk_factor_set_id,
+                seed=self.seed,
+                rollout_count=self.rollout_count,
+                horizon_months=self.horizon_months,
+                event_stream_ids=self.event_stream_ids,
+            ),
+            scenario_generator_id=self.scenario_generator_id,
+            scenario_generator_version_id=self.scenario_generator_version_id,
+            market_model_id=self.market_model_id,
+            model_version_id=self.market_model_version_id,
+            evidence_set_id=self.evidence_set_id,
+            calibration_artifact_id=self.calibration_artifact_id,
+            risk_factor_set_id=self.risk_factor_set_id,
+            seed=self.seed,
+            rollout_count=self.rollout_count,
+            horizon_months=self.horizon_months,
+            event_stream_ids=self.event_stream_ids,
+        )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def exogenous_path_set(self) -> ExogenousPathSet:
+        return ExogenousPathSet(
+            path_set_id=self.path_set_id,
+            scenario_generator_run_id=self.scenario_generator_run.scenario_generator_run_id,
             rollout_count=self.rollout_count,
             horizon_months=self.horizon_months,
             event_stream_ids=self.event_stream_ids,
@@ -236,6 +353,7 @@ class FlatMarketBundleProvider:
                 scenario_generator_version_id="flat_market_bundle_provider:v1",
                 evidence_set_id="fixture:flat",
                 calibration_artifact_id="fixture:flat",
+                risk_factor_ids=CORE_MARKET_RISK_FACTOR_IDS,
                 seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
@@ -317,6 +435,7 @@ class SimpleMarketBundleProvider:
             scenario_generator_version_id="simple_market_bundle_provider:v1",
             evidence_set_id="fixture:simple",
             calibration_artifact_id="fixture:simple",
+            risk_factor_ids=CORE_MARKET_RISK_FACTOR_IDS,
             seed=seed,
             rollout_count=rollout_count,
             horizon_months=horizon_months,

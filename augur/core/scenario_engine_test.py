@@ -241,6 +241,15 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
     assert path_set_id.startswith("path_set:")
     assert response.market_metadata["evidence_set_id"] == "unknown"
     assert response.market_metadata["calibration_artifact_id"] == "unknown"
+    assert response.market_metadata["evidence_set"]["evidence_set_id"] == "unknown"
+    assert response.market_metadata["calibration_run"]["evidence_set_id"] == "unknown"
+    assert response.market_metadata["scenario_generator_run"]["scenario_generator_run_id"].startswith(
+        "scenario_generator_run:"
+    )
+    assert response.market_metadata["exogenous_path_set"]["path_set_id"] == path_set_id
+    assert response.projection_run is not None
+    assert response.projection_run.path_set_id == path_set_id
+    assert response.projection_run.projection_run_id.startswith("projection_run:")
     assert response.market_metadata["exogenous_path_ids"] == [f"{path_set_id}:path:0", f"{path_set_id}:path:1"]
     assert [path.exogenous_path_id for path in response.exogenous_paths] == response.market_metadata[
         "exogenous_path_ids"
@@ -287,6 +296,10 @@ def test_projection_trajectory_identity_includes_input_snapshot_provenance() -> 
     assert base_trajectory.exogenous_path_id == sourced_trajectory.exogenous_path_id
     assert base_trajectory.scenario_input_id != sourced_trajectory.scenario_input_id
     assert base_trajectory.projection_trajectory_id != sourced_trajectory.projection_trajectory_id
+    assert base_response.projection_run is not None
+    assert sourced_response.projection_run is not None
+    assert base_response.projection_run.path_set_id == sourced_response.projection_run.path_set_id
+    assert base_response.projection_run.projection_run_id != sourced_response.projection_run.projection_run_id
 
 
 def test_response_omits_rollout_status_summary_next_to_full_statuses() -> None:

@@ -2,12 +2,13 @@
 
 Last updated: 2026-05-15.
 
-This is the minimal `ModelCard` for the current Augur market-model layer. It is
-partly documentation-only: `MacroMarketBundleProvider` now attaches minimal
-model-card, model-version, evidence, calibration, validation-report, and known
-limitation identity fields to `MarketBundleMetadata`, but evidence and
-calibration identity are still unversioned placeholders rather than durable
-artifacts.
+This is the minimal `ModelCard` for the current Augur market-model layer.
+`MacroMarketBundleProvider` attaches typed model-card, model-version, evidence,
+calibration, scenario-generator, exogenous-path-set, validation-report, and
+known-limitation identity metadata to `MarketBundleMetadata`. Those identities
+are stable for the same checked-in public evidence and model inputs, but
+evidence, calibration, and validation are still runtime-derived metadata rather
+than durable persisted artifacts.
 
 ## Scope
 
@@ -72,11 +73,12 @@ Today that means:
   shapes.
 
 Current persisted provenance is partial. `MarketBundleMetadata` carries model
-id, model-card id, model-version id, seed, rollout count, horizon, event stream
-ids, notes, source metadata such as provider label and latest-observation ids,
-known limitation ids, and placeholder evidence/calibration/validation-report
-ids. It does not yet carry a stable `EvidenceSetId`,
-`CalibrationArtifactId`, or full `RunProvenance`.
+id, model-card id, model-version id, typed `EvidenceSet`, `CalibrationRun`,
+`CalibrationArtifact`, `ScenarioGeneratorRun`, `ExogenousPathSet`,
+`ValidationReport`, and `KnownLimitation` payloads, plus seed, rollout count,
+horizon, event stream ids, notes, provider label, and latest-observation ids.
+It does not yet persist evidence/calibration/validation artifacts outside the
+run payload, so these identities are not archival proof on their own.
 
 ## Current Evidence And Artifacts
 
@@ -93,26 +95,29 @@ Current calibration artifact, informally:
 
 - in-memory fitted parameters on one `MarketModel` instance;
 - per-factor market-path prior calibration stored in `MarketEvidence`;
-- an unversioned placeholder calibration artifact id in `MarketBundleMetadata`;
-- no durable calibration bundle, hash, or stable artifact id yet.
+- a runtime-derived calibration run/artifact identity in
+  `MarketBundleMetadata`;
+- no durable calibration bundle or persisted fitted-parameter artifact yet.
 
 Current generator run, informally:
 
 - registry model label;
 - model implementation and config from `MacroModelSpec`;
 - `MarketRequest` horizon, rollout count, seed, and market model id;
-- model-card/version, evidence, calibration, validation-report, and known
-  limitation placeholder identity in `MarketBundleMetadata`;
+- model-card/version, evidence, calibration, scenario-generator,
+  validation-report, and known-limitation identity in `MarketBundleMetadata`;
 - provider-level source metadata embedded in `MarketBundleMetadata`.
 
 ## Known Limitations
 
 `KnownLimitation` entries for the current model layer:
 
-- Evidence-set identity is not stable. File paths and latest-observation
-  metadata exist, but there is no hash or versioned `EvidenceSetId`.
-- Calibration identity is not stable. Fitted parameters are not persisted behind
-  a `CalibrationArtifactId`.
+- Evidence-set identity is runtime-derived from the loaded public market
+  evidence metadata. It is stable for the same checked-in inputs, but there is
+  no persisted evidence artifact yet.
+- Calibration identity is runtime-derived from model/evidence/factor identity.
+  Fitted parameters are not persisted behind a durable
+  `CalibrationArtifactId`.
 - `rollout_index` is only an array coordinate. Reproducible path identity needs
   model version, evidence id, calibration id, generator settings, seed, path
   index, factor set, and event-stream identity.
@@ -126,8 +131,8 @@ Current generator run, informally:
 - Source refresh recency is not enforced by this document or by model metadata.
 - Market models do not model agent feedback, strategic behavior, market impact,
   tax-law changes, credit availability, or general equilibrium dynamics.
-- Validation status is not attached to `MarketBundleMetadata` as a first-class
-  `ValidationReport`.
+- Validation status is attached as a placeholder `ValidationReport`, not a
+  decision-grade report artifact.
 
 ## Validation Gaps
 
@@ -137,11 +142,12 @@ on held-out, rolling-origin, and multi-step predictive log-density.
 
 Still missing:
 
-- a durable `ValidationReport` artifact with report id, evidence id,
-  calibration id, model implementation version, score summary, and date;
+- a durable `ValidationReport` artifact with score summary, report date,
+  validation window, and acceptance criteria instead of the current
+  `not_available` placeholder;
 - documented stress scenarios and sensitivity checks;
-- tests proving output provenance changes when evidence, calibration, model
-  implementation, or generator settings change;
+- broader tests proving output provenance changes when persisted evidence,
+  calibration, model implementation, or generator settings change;
 - calibration-data coverage and recency checks enforced at runtime;
 - household-outcome validation that connects market-model differences to
   projection-level differences;
