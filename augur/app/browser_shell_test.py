@@ -180,6 +180,10 @@ def _assert_scenario_contract_context_boundary(page: Page) -> None:
     _assert_context_panel_boundary(page, "[data-scenario-context-panel='scenario-contract']")
 
 
+def _assert_financing_tax_context_boundary(page: Page) -> None:
+    _assert_context_panel_boundary(page, "[data-scenario-context-panel='financing-tax']")
+
+
 def _assert_market_metadata_context_boundary(page: Page) -> None:
     _assert_context_panel_boundary(page, "[data-run-context-panel='market-metadata']")
 
@@ -284,6 +288,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_text("Location B shared").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A Property").first.wait_for(state="visible", timeout=30_000)
     _assert_property_location_context_boundary(page)
+    _assert_financing_tax_context_boundary(page)
     page.get_by_text("No image").first.wait_for(state="visible", timeout=30_000)
     page.get_by_role("tab", name="Trajectory").click()
     page.get_by_text("Trajectory view").wait_for(state="visible", timeout=30_000)
@@ -294,6 +299,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert page.locator("[data-result-panel-kind='accounting_detail']").count() >= 1
     assert page.locator("[data-result-panel-kind='distribution']").count() == 0
     _assert_property_location_context_boundary(page)
+    _assert_financing_tax_context_boundary(page)
     _assert_market_metadata_context_boundary(page)
     _assert_scenario_contract_context_boundary(page)
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('rollout')") == "0"
@@ -308,6 +314,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("Scenario property").select_option("location_b_property")
     page.get_by_role("heading", name="Location B Property").wait_for(state="visible", timeout=30_000)
     _assert_property_location_context_boundary(page)
+    _assert_financing_tax_context_boundary(page)
     _assert_scenario_contract_context_boundary(page)
     page.get_by_label("Financing mode").select_option("custom")
     page.get_by_label("Down payment").fill("40")

@@ -40,15 +40,15 @@ Distribution and trajectory have separate top-level views. The remaining
 product and correctness work is to make the result helpers and deeper
 accounting views enforce that boundary instead of relying on panel placement.
 
-Target shape:
+Current state and target shape:
 
 - `/inputs` or an equivalent persistent edit surface: scenario identity,
   initial balance sheet, actors/ownership, property/location, financing,
   occupancy/rental plan, tax/accounting assumptions, market assumptions, and
   policy programs.
-- Property/location details belong to scenario context, not to either result
-  mode. Keep the current property/location card in shared scenario context or
-  another non-result surface.
+- Property/location details, financing/tax assumptions, market metadata, and
+  accepted scenario contract are shared context, not distribution or trajectory
+  output. Keep that boundary as result panels and inputs continue to move.
 
 Implementation notes:
 
@@ -74,9 +74,8 @@ Acceptance criteria:
   page/view boundary rather than repeating them on every child card.
 - No panel combines percentile summaries with one-rollout path rows unless the
   split is explicit and visually separated.
-- Property/location details are not rendered as distribution or trajectory
-  output; they are scenario metadata shown in shared context or a dedicated
-  details surface.
+- Scenario/run context is not rendered as distribution or trajectory output;
+  it is shown in shared context or a dedicated details/input surface.
 - Deltas are result-view comparisons between two real scenarios, not a
   simulator-level baseline inside each rollout. Prefer paired differences when
   both scenarios share exogenous paths; otherwise expose the choice as a
@@ -307,8 +306,8 @@ Work:
 
 ## Immediate Implementation Sequence
 
-1. Refactor result helpers so distribution and trajectory data cannot be mixed
-   accidentally.
+1. Finish result helper typing so distribution and trajectory data cannot be
+   mixed accidentally without relying on panel placement.
 2. Replace the flat browser scenario state with nested domain state. Break URL
    compatibility if needed.
 3. Redesign private-equity sale opportunities around exogenous events plus

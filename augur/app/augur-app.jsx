@@ -124,6 +124,10 @@ function scenarioSetUsesCheckingFloorPolicy(scenarioSetInput) {
   return (scenarioSetInput?.scenarios ?? []).some(scenarioUsesCheckingFloorPolicy);
 }
 
+function optionLabel(options, id) {
+  return options.find((option) => option.id === id)?.label ?? id ?? "n/a";
+}
+
 function assertResultViewKind(view, kind) {
   if (view?.kind !== kind) {
     throw new Error(`Expected ${kind} Augur result view, got ${view?.kind ?? "<missing>"}`);
@@ -631,6 +635,27 @@ function RunContextDisclosurePanel({ context, title, subtitle = null, summary = 
   );
 }
 
+function ScenarioContextDisclosurePanel({
+  context,
+  title,
+  subtitle = null,
+  summary = null,
+  children,
+  defaultOpen = false,
+}) {
+  return (
+    <DisclosurePanel
+      title={title}
+      subtitle={subtitle}
+      summary={summary}
+      defaultOpen={defaultOpen}
+      marker={{ "data-scenario-context-panel": context }}
+    >
+      {children}
+    </DisclosurePanel>
+  );
+}
+
 function ScenarioValueSummary({ distribution }) {
   assertResultViewKind(distribution, "distribution");
   if (!distribution.scenarioResult?.terminalColumns) {
@@ -727,12 +752,59 @@ function PropertyLocationPanel({ selection }) {
               ["Special assessment", `${fmtUsd(localRegulation.specialAssessmentAnnualUsd ?? 0)} / yr`],
               ["Location id", scenarioResult?.summary?.locationId ?? property.locationId ?? "n/a"],
               ["Hold period", scenario ? `${fmtNumber(scenarioView.holdYears)} yr` : "n/a"],
-              ["Marginal tax rate", scenario ? fmtPct(scenarioView.marginalTaxRate / 100) : "n/a"],
             ]}
           />
         </div>
       </div>
     </section>
+  );
+}
+
+function ScenarioFinancingTaxPanel({ selection }) {
+  const { property, scenario } = selection;
+  if (!scenario) return null;
+  const scenarioView = scenarioInputView(scenario);
+  const purchasePrice = Number(property?.priceUsd ?? property?.purchasePriceUsd);
+  const downPaymentPct = Number(scenarioView.downPaymentPct);
+  const isCashPurchase = scenarioView.financingMode === "cash";
+  const downPayment =
+    Number.isFinite(purchasePrice) && Number.isFinite(downPaymentPct)
+      ? isCashPurchase
+        ? purchasePrice
+        : purchasePrice * (downPaymentPct / 100)
+      : NaN;
+  const loanAmount =
+    Number.isFinite(purchasePrice) && Number.isFinite(downPayment) ? Math.max(0, purchasePrice - downPayment) : NaN;
+  const customMortgageRows =
+    scenarioView.financingMode === "custom"
+      ? [
+          ["Custom mortgage rate", fmtPct(scenarioView.customMortgageRate / 100)],
+          ["Custom mortgage term", `${fmtNumber(scenarioView.customMortgageTermYears)} yr`],
+        ]
+      : [];
+  return (
+    <ScenarioContextDisclosurePanel
+      context="financing-tax"
+      title="Scenario financing and tax assumptions"
+      summary={`${optionLabel(FINANCING_OPTIONS, scenarioView.financingMode)} · ${fmtPct(downPaymentPct / 100)} down`}
+    >
+      <DetailTable
+        rows={[
+          ["Financing mode", optionLabel(FINANCING_OPTIONS, scenarioView.financingMode)],
+          ["Purchase price", fmtUsd(purchasePrice)],
+          ["Down payment", `${fmtUsd(downPayment)} (${fmtPct(downPaymentPct / 100)})`],
+          ["Loan amount", fmtUsd(loanAmount)],
+          ["Credit score", fmtInteger(scenarioView.creditScore)],
+          ...customMortgageRows,
+          ["Buy closing cost", fmtPct(scenarioView.closingCostBuyPct / 100)],
+          ["Sell closing cost", fmtPct(scenarioView.closingCostSellPct / 100)],
+          ["Capital gains exclusion", fmtUsd(scenarioView.capGainsExclusionUsd)],
+          ["Marginal tax rate", fmtPct(scenarioView.marginalTaxRate / 100)],
+          ["Capital gains rate", fmtPct(scenarioView.capGainsRate / 100)],
+          ["Depreciable basis", fmtPct(scenarioView.depreciableBasisPct / 100)],
+        ]}
+      />
+    </ScenarioContextDisclosurePanel>
   );
 }
 
@@ -825,26 +897,15 @@ function ScenarioPathPreview({ trajectory }) {
   );
 }
 
-function SaleTaxLoanPanel({ selection, distribution }) {
-  const { property, scenario } = selection;
-  const scenarioView = scenarioInputView(scenario);
+function PropertySaleTaxDistributionPanel({ distribution }) {
   assertResultViewKind(distribution, "distribution");
   const rows = distribution.terminalRows();
   if (rows.length === 0) return null;
-  const purchasePrice = Number(property?.priceUsd ?? property?.purchasePriceUsd);
-  const downPaymentPct = Number(scenarioView.downPaymentPct);
-  const downPayment =
-    Number.isFinite(purchasePrice) && Number.isFinite(downPaymentPct) ? purchasePrice * (downPaymentPct / 100) : NaN;
-  const loanAmount =
-    Number.isFinite(purchasePrice) && Number.isFinite(downPayment) ? Math.max(0, purchasePrice - downPayment) : NaN;
   return (
-    <ResultPanel kind="distribution" title="Sale, tax, and loan">
+    <ResultPanel kind="distribution" title="Distribution property sale and tax">
       <DetailTable
         rows={[
-          ["Purchase price", fmtUsd(purchasePrice)],
-          ["Down payment", fmtUsd(downPayment)],
           ["Purchase closing costs", fmtUsd(distribution.terminalP50("totalPurchaseClosingCostUsd"))],
-          ["Loan amount", fmtUsd(loanAmount)],
           ["Final loan balance", fmtUsd(distribution.terminalP50("finalMortgageBalanceUsd"))],
           ["Terminal home value", fmtUsd(distribution.terminalP50("finalPropertyValueUsd"))],
           ["Sale gross", fmtUsd(distribution.terminalP50("totalPropertySaleGrossUsd"))],
@@ -867,15 +928,14 @@ function PartnerOwnershipPanel({ trajectory, bootstrap }) {
   assertResultViewKind(trajectory, "trajectory");
   const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
   const partnerLabel = partner?.label ?? "Partner";
-  const rows = trajectory.monthlyRows;
-  if (rows.length === 0) return null;
   const rolloutRows = trajectory.rolloutRows;
+  if (rolloutRows.length === 0) return null;
   const annualRows = rolloutRows.filter((row) => row.monthIndex === 0 || row.monthIndex % 12 === 0).slice(0, 8);
   const terminalRow = rolloutRows.at(-1) ?? null;
-  const hasAuragon = rows.some(
+  const hasPartner = rolloutRows.some(
     (row) => row.partnerPresent || row.partnerContributionUsd || row.partnerHomeEquityClaimUsd
   );
-  if (!hasAuragon) return null;
+  if (!hasPartner) return null;
   const firstPathContribution = rolloutRows.reduce(
     (total, row) => total + (Number(row.partnerContributionUsd) || 0),
     0
@@ -989,13 +1049,12 @@ function LiquidityPolicyPanel({ trajectory }) {
 
 function PrivateEquitySaleOpportunityPanel({ trajectory }) {
   assertResultViewKind(trajectory, "trajectory");
-  const rows = trajectory.monthlyRows;
-  if (rows.length === 0) return null;
-  const hasPrivateEquity = rows.some(
+  const rolloutRows = trajectory.rolloutRows;
+  if (rolloutRows.length === 0) return null;
+  const hasPrivateEquity = rolloutRows.some(
     (row) => row.privateEquityValueUsd || row.privateEquitySaleOpportunityValueUsd || row.privateEquitySaleUsd
   );
   if (!hasPrivateEquity) return null;
-  const rolloutRows = trajectory.rolloutRows;
   const terminalRow = rolloutRows.at(-1) ?? null;
   const eventRows = rolloutRows.filter((row) => row.privateEquitySaleOpportunityEvent || row.privateEquitySaleUsd > 0);
   const displayRows = (eventRows.length > 0 ? eventRows : rolloutRows.filter((row) => row.monthIndex % 12 === 0)).slice(
@@ -2062,7 +2121,7 @@ function DistributionResults({
         onSelectedMetricChange={onSelectedFanMetricChange}
       />
       <ScenarioValueSummary distribution={distribution} />
-      <SaleTaxLoanPanel selection={selection} distribution={distribution} />
+      <PropertySaleTaxDistributionPanel distribution={distribution} />
       <TerminalPercentileSnapshot distribution={distribution} />
     </>
   );
@@ -2302,6 +2361,7 @@ function AugurAppShell() {
               <ResultViewTabs viewMode={viewMode} onViewModeChange={setViewMode} />
             </div>
             <PropertyLocationPanel selection={selectedContext} />
+            <ScenarioFinancingTaxPanel selection={selectedContext} />
             <MarketMetadataPanel result={result} />
             <ScenarioAcceptedPanel selection={selectedContext} />
             <ResultModeHeader

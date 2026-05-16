@@ -113,10 +113,11 @@ second ordered roadmap.
       flat browser-side "scenario row" as the source of truth and then expand it
       into typed backend objects; that shape recreates the spreadsheet-style
       coupling the simulator is supposed to avoid.
-- [ ] Audit remaining result panels for distribution-vs-trajectory mixing. The
-      first split moved the liquidity/stock-sales panel into the trajectory view so
-      "Final SP500" is sourced from the selected rollout instead of a terminal P50
-      next to a path table; keep applying that rule as result helpers become typed.
+- [ ] Keep tightening result helper types so distribution percentiles,
+      selected-rollout trajectories, accounting detail, and shared scenario/run
+      context cannot be mixed accidentally. The visible panel split is now in
+      place; the next useful work is to make misuse harder at the data-helper
+      level.
 - [ ] Add explicit comparison views for deltas between two scenario
       distributions. The simulator should not bake a baseline/counterfactual
       into each rollout; a delta view should compare two real scenarios, either
