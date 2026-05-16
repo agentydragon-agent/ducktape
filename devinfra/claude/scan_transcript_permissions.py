@@ -1,7 +1,8 @@
 """Scan Claude Code session transcripts for permission allowlist candidates.
 
-Reads the current permissions from settings files (project + global) so the
-"covered" detection stays in sync with the actual allowlist automatically.
+Reads user-configured permissions from settings files (project + global) so
+coverage detection stays in sync automatically. Claude Code's built-in
+auto-allow list is hardcoded here since it's compiled into the binary.
 
 Usage:
     python3 devinfra/claude/scan_transcript_permissions.py [--max-sessions N] [--min-count N]
@@ -13,9 +14,11 @@ import re
 from collections import Counter
 from pathlib import Path
 
-# Claude Code auto-allows these without any permission entry.
-# Source: Claude Code readOnlyValidation.ts, readOnlyCommandValidation.ts
-AUTO_ALLOWED_CMDS = frozenset(
+# ── Layer 1: Claude Code built-in auto-allow (compiled into binary) ────────
+# Source: readOnlyValidation.ts, readOnlyCommandValidation.ts in Claude Code
+
+# Any-args auto-allowed
+_BUILTIN_CMDS = frozenset(
     [
         "cal",
         "uptime",
@@ -73,8 +76,8 @@ AUTO_ALLOWED_CMDS = frozenset(
     ]
 )
 
-# Claude Code auto-allows all git/gh/docker read-only subcommands.
-GIT_READ_ONLY = frozenset(
+# Tool-specific read-only subcommands (auto-allowed by Claude Code)
+_GIT_READONLY = frozenset(
     [
         "status",
         "log",
@@ -97,17 +100,49 @@ GIT_READ_ONLY = frozenset(
         "name-rev",
     ]
 )
-GH_READ_ONLY = frozenset(["pr", "issue", "run", "workflow", "repo", "release", "auth", "api"])
-KUBECTL_READ_ONLY = frozenset(
+_GH_READONLY = frozenset(["pr", "issue", "run", "workflow", "repo", "release", "auth", "api"])
+_KUBECTL_READONLY = frozenset(
     ["get", "describe", "logs", "top", "api-resources", "api-versions", "version", "cluster-info"]
 )
 
-# Regex to extract the command string from a "Bash(cmd:*)" or "Bash(cmd)" allow entry.
+
+def is_builtin_allowed(cmd: str) -> bool:
+    """Check if Claude Code auto-allows this command without any config."""
+    parts = cmd.split()
+    if not parts:
+        return True
+    i = _skip_env_prefix(parts)
+    if i >= len(parts):
+        return True
+    first = parts[i]
+    if first == "sudo":
+        i += 1
+        if i >= len(parts):
+            return True
+        first = parts[i]
+
+    if first in _BUILTIN_CMDS:
+        return True
+
+    if first == "git" and len(parts) > i + 1:
+        sub = parts[i + 1]
+        if sub in _GIT_READONLY:
+            return True
+        if sub == "stash" and len(parts) > i + 2 and parts[i + 2] in ("list", "show"):
+            return True
+
+    if first == "gh" and len(parts) > i + 1 and parts[i + 1] in _GH_READONLY:
+        return True
+
+    return first == "kubectl" and len(parts) > i + 1 and parts[i + 1] in _KUBECTL_READONLY
+
+
+# ── Layer 2: User-configured permissions (from settings files) ─────────────
+
 _BASH_PATTERN_RE = re.compile(r"^Bash\((.+?)(?::\*)?\)$")
 
 
 def _load_bash_prefixes_from_settings(*paths: Path) -> list[str]:
-    """Parse Bash() permission patterns from Claude Code settings JSON files."""
     prefixes: list[str] = []
     for p in paths:
         try:
@@ -123,6 +158,22 @@ def _load_bash_prefixes_from_settings(*paths: Path) -> list[str]:
     return prefixes
 
 
+class UserPermissions:
+    """User-configured Bash() allow rules from Claude Code settings."""
+
+    def __init__(self, project_dir: Path | None = None):
+        settings_paths = [Path.home() / ".claude" / "settings.json"]
+        if project_dir:
+            settings_paths.append(project_dir / ".claude" / "settings.json")
+        self.prefixes = _load_bash_prefixes_from_settings(*settings_paths)
+
+    def covers(self, cmd: str) -> bool:
+        return any(cmd.startswith(p) for p in self.prefixes)
+
+
+# ── Shared helpers ─────────────────────────────────────────────────────────
+
+
 def _skip_env_prefix(parts: list[str]) -> int:
     i = 0
     while i < len(parts) and "=" in parts[i] and not parts[i].startswith("-"):
@@ -130,47 +181,7 @@ def _skip_env_prefix(parts: list[str]) -> int:
     return i
 
 
-class CoverageChecker:
-    """Checks whether a shell command is already covered by existing permissions."""
-
-    def __init__(self, project_dir: Path | None = None):
-        home = Path.home()
-        settings_paths = [home / ".claude" / "settings.json"]
-        if project_dir:
-            settings_paths.append(project_dir / ".claude" / "settings.json")
-        self.allowed_prefixes = _load_bash_prefixes_from_settings(*settings_paths)
-
-    def is_covered(self, cmd: str) -> bool:
-        parts = cmd.split()
-        if not parts:
-            return True
-        i = _skip_env_prefix(parts)
-        if i >= len(parts):
-            return True
-        first = parts[i]
-        if first == "sudo":
-            i += 1
-            if i >= len(parts):
-                return True
-            first = parts[i]
-
-        if first in AUTO_ALLOWED_CMDS:
-            return True
-
-        if first == "git" and len(parts) > i + 1:
-            sub = parts[i + 1]
-            if sub in GIT_READ_ONLY:
-                return True
-            if sub == "stash" and len(parts) > i + 2 and parts[i + 2] in ("list", "show"):
-                return True
-
-        if first == "gh" and len(parts) > i + 1 and parts[i + 1] in GH_READ_ONLY:
-            return True
-
-        if first == "kubectl" and len(parts) > i + 1 and parts[i + 1] in KUBECTL_READ_ONLY:
-            return True
-
-        return any(cmd.startswith(p) for p in self.allowed_prefixes)
+# ── Transcript scanning ────────────────────────────────────────────────────
 
 
 def extract_command_key(cmd: str) -> str | None:
@@ -232,7 +243,7 @@ def _iter_tool_calls(transcripts: list[Path], tool_name: str | None = None):
             continue
 
 
-def scan_transcripts(transcripts: list[Path], checker: CoverageChecker) -> tuple[Counter, Counter, Counter]:
+def scan_transcripts(transcripts: list[Path], user_perms: UserPermissions) -> tuple[Counter, Counter, Counter]:
     all_cmds: Counter = Counter()
     uncovered_cmds: Counter = Counter()
     mcp_tools: Counter = Counter()
@@ -245,12 +256,15 @@ def scan_transcripts(transcripts: list[Path], checker: CoverageChecker) -> tuple
             key = extract_command_key(cmd)
             if key:
                 all_cmds[key] += 1
-                if not checker.is_covered(cmd):
+                if not is_builtin_allowed(cmd) and not user_perms.covers(cmd):
                     uncovered_cmds[key] += 1
         elif name.startswith("mcp__"):
             mcp_tools[name] += 1
 
     return all_cmds, uncovered_cmds, mcp_tools
+
+
+# ── Specialized collectors ─────────────────────────────────────────────────
 
 
 def _collect_run_targets(transcripts: list[Path], prefixes: tuple[str, ...]) -> Counter:
@@ -280,6 +294,9 @@ def _collect_kubectl_non_get(transcripts: list[Path]) -> Counter:
     return counts
 
 
+# ── Output ──────────────────────────────────────────────────────────────────
+
+
 def _print_section(title: str, counts: Counter, min_count: int, limit: int = 60):
     print(f"\n=== {title} ===")
     shown = 0
@@ -299,11 +316,11 @@ def main():
     parser.add_argument("--all", action="store_true", help="Show all commands including covered ones")
     args = parser.parse_args()
 
-    checker = CoverageChecker(project_dir=Path.cwd())
+    user_perms = UserPermissions(project_dir=Path.cwd())
     transcripts = find_transcripts(args.max_sessions)
-    all_cmds, uncovered_cmds, mcp_tools = scan_transcripts(transcripts, checker)
+    all_cmds, uncovered_cmds, mcp_tools = scan_transcripts(transcripts, user_perms)
 
-    print(f"Loaded {len(checker.allowed_prefixes)} Bash() allow rules from settings")
+    print(f"Loaded {len(user_perms.prefixes)} Bash() allow rules from settings")
 
     if args.all:
         print("\n=== ALL COMMANDS (top 60) ===")
