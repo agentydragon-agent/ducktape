@@ -26,11 +26,17 @@ js_library(
 js_library(
     name = "scenario_set_state",
     srcs = ["scenario_set_state.js"],
-    deps = [":casing"],
+    deps = [
+        ":casing",
+        ":schema",
+    ],
 )
 
 js_test(
     name = "scenario_set_state_test",
-    data = [":scenario_set_state"],
+    data = [
+        ":_schema_openapi_json",
+        ":scenario_set_state",
+    ],
     entry_point = "scenario_set_state_test.mjs",
 )
