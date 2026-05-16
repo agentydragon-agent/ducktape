@@ -13,6 +13,12 @@ from augur.core.schemas import ApiModel
 
 class MarketBundleMetadata(ApiModel):
     market_model_id: str
+    model_card_id: str | None = None
+    model_version_id: str | None = None
+    evidence_set_id: str | None = None
+    calibration_artifact_id: str | None = None
+    validation_report_id: str | None = None
+    known_limitation_ids: tuple[str, ...] = ()
     seed: int
     rollout_count: int
     horizon_months: int

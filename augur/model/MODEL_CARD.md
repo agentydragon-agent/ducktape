@@ -3,8 +3,11 @@
 Last updated: 2026-05-15.
 
 This is the minimal `ModelCard` for the current Augur market-model layer. It is
-documentation-only: the IDs named here are target vocabulary unless noted as
-already persisted in code.
+partly documentation-only: `MacroMarketBundleProvider` now attaches minimal
+model-card, model-version, evidence, calibration, validation-report, and known
+limitation identity fields to `MarketBundleMetadata`, but evidence and
+calibration identity are still unversioned placeholders rather than durable
+artifacts.
 
 ## Scope
 
@@ -69,10 +72,11 @@ Today that means:
   shapes.
 
 Current persisted provenance is partial. `MarketBundleMetadata` carries model
-id, seed, rollout count, horizon, event stream ids, notes, and source
-metadata such as provider label and latest-observation ids. It does not yet
-carry a stable `EvidenceSetId`, `CalibrationArtifactId`, or full
-`RunProvenance`.
+id, model-card id, model-version id, seed, rollout count, horizon, event stream
+ids, notes, source metadata such as provider label and latest-observation ids,
+known limitation ids, and placeholder evidence/calibration/validation-report
+ids. It does not yet carry a stable `EvidenceSetId`,
+`CalibrationArtifactId`, or full `RunProvenance`.
 
 ## Current Evidence And Artifacts
 
@@ -89,13 +93,16 @@ Current calibration artifact, informally:
 
 - in-memory fitted parameters on one `MarketModel` instance;
 - per-factor market-path prior calibration stored in `MarketEvidence`;
-- no durable calibration bundle, hash, or artifact id yet.
+- an unversioned placeholder calibration artifact id in `MarketBundleMetadata`;
+- no durable calibration bundle, hash, or stable artifact id yet.
 
 Current generator run, informally:
 
 - registry model label;
 - model implementation and config from `MacroModelSpec`;
 - `MarketRequest` horizon, rollout count, seed, and market model id;
+- model-card/version, evidence, calibration, validation-report, and known
+  limitation placeholder identity in `MarketBundleMetadata`;
 - provider-level source metadata embedded in `MarketBundleMetadata`.
 
 ## Known Limitations

@@ -22,6 +22,15 @@ from augur.model.markets.market_model import MarketModel
 from augur.model.markets.registry import BY_LABEL
 
 _TENDER_INTERVAL_MONTHS = 12
+_MODEL_CARD_ID = "augur-market-model-card:2026-05-15"
+_UNVERSIONED_PUBLIC_EVIDENCE_SET_ID = "evidence-set:augur-public-market-data:unversioned"
+_IN_MEMORY_CALIBRATION_ARTIFACT_PREFIX = "calibration-artifact:in-memory"
+_KNOWN_LIMITATION_IDS = (
+    "evidence-set-id-unversioned",
+    "calibration-artifact-id-unversioned",
+    "constant-mortgage-rate-path",
+    "private-equity-marks-flat-fixture",
+)
 
 
 class MacroMarketBundleProvider:
@@ -79,6 +88,12 @@ class MacroMarketBundleProvider:
             private_equity_sale_opportunity_mask=private_equity_events,
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
+                model_card_id=_MODEL_CARD_ID,
+                model_version_id=f"macro-market-model:{self.label}:unversioned",
+                evidence_set_id=_UNVERSIONED_PUBLIC_EVIDENCE_SET_ID,
+                calibration_artifact_id=f"{_IN_MEMORY_CALIBRATION_ARTIFACT_PREFIX}:{self.label}:unversioned",
+                validation_report_id=None,
+                known_limitation_ids=_KNOWN_LIMITATION_IDS,
                 seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,

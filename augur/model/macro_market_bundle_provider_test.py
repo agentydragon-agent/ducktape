@@ -68,6 +68,17 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
     assert bundle.rollout_count == n_rollouts
     assert bundle.horizon_months == horizon_months
     assert bundle.metadata.seed == 42
+    assert bundle.metadata.model_card_id == "augur-market-model-card:2026-05-15"
+    assert bundle.metadata.model_version_id == f"macro-market-model:{provider.label}:unversioned"
+    assert bundle.metadata.evidence_set_id == "evidence-set:augur-public-market-data:unversioned"
+    assert bundle.metadata.calibration_artifact_id == f"calibration-artifact:in-memory:{provider.label}:unversioned"
+    assert bundle.metadata.validation_report_id is None
+    assert bundle.metadata.known_limitation_ids == (
+        "evidence-set-id-unversioned",
+        "calibration-artifact-id-unversioned",
+        "constant-mortgage-rate-path",
+        "private-equity-marks-flat-fixture",
+    )
     assert bundle.metadata.source_metadata["market_provider_label"] == provider.label
     assert "market_provider_seed" not in bundle.metadata.source_metadata
     assert "market_provider_horizon_months" not in bundle.metadata.source_metadata

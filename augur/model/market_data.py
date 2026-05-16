@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from python.runfiles import runfiles
 
-from augur.core.schemas import SourceDataConfig
+from augur.model.market_config import SourceDataConfig
 
 _RUNFILES_PREFIX = "runfiles:"
 

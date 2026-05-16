@@ -6,7 +6,7 @@ py_library(
     name = "market_data_py",
     srcs = ["market_data.py"],
     deps = [
-        "//augur/core:schemas_py",
+        ":market_config_py",
         "@pypi//numpy",
         "@pypi//pandas",
         "@rules_python//python/runfiles",
@@ -56,6 +56,18 @@ py_binary(
         "//augur/model/markets:data_py",
         "//augur/model/markets:metrics_py",
         "//augur/model/markets:registry_py",
+    ],
+)
+
+py_test(
+    name = "market_config_test",
+    srcs = ["market_config_test.py"],
+    data = ["//augur/model/config:market_config_files"],
+    deps = [
+        ":market_config_py",
+        "//augur/core:schemas_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

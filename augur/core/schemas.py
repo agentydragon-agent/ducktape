@@ -284,26 +284,8 @@ class ColumnarTable(InternalModel):
 
 
 # ---------------------------------------------------------------------------
-# Source-data + Manifold fetch shapes (already existed).
+# Lenient source fetch shapes used by evidence adapters.
 # ---------------------------------------------------------------------------
-
-
-class ZillowCityRegionConfig(StrictModel):
-    region_name: str
-    state: str = "CA"
-
-
-class SourceDataConfig(StrictModel):
-    fred_sp500_csv: str
-    yahoo_spy_adjusted_json: str
-    fred_cpi_us_csv: str
-    fred_sf_rent_cpi_csv: str
-    fred_sfxrsa_csv: str
-    fred_fhfa_sf_oakland_berkeley_csv: str
-    fred_mortgage30_csv: str
-    zillow_city_zhvi_csv: str
-    zillow_home_value_regions: dict[str, ZillowCityRegionConfig]
-    minimum_aligned_months: int = 36
 
 
 class ManifoldAnswer(LenientSourceModel):
