@@ -46,10 +46,6 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-# `pycrdt` is still listed as a `store` dep because the alembic 0004
-# migration imports it to decode existing `doc.update_blob` rows on first
-# upgrade. After 0004 has run on the live database a follow-up commit can
-# drop the dep here and from `requirements_bazel.txt`.
 py_library(
     name = "store",
     srcs = ["store.py"],
@@ -60,7 +56,7 @@ py_library(
         ":games",
         ":models",
         "@pypi//alembic",
-        "@pypi//pycrdt",
+        "@pypi//psycopg",
         "@pypi//sqlalchemy",
     ],
 )
@@ -103,20 +99,27 @@ py_binary(
     deps = [":app"],
 )
 
-# ── Tests ─────────────────────────────────────────────────────────────────────
-
-py_test(
-    name = "test_0004_backfill",
-    srcs = ["migrations/test_0004_backfill.py"],
+py_library(
+    name = "migrate_sqlite_to_postgres_lib",
+    srcs = ["migrate_sqlite_to_postgres.py"],
     data = glob(["migrations/**"]),
+    visibility = ["//visibility:public"],
     deps = [
         ":models",
         "@pypi//alembic",
-        "@pypi//pycrdt",
-        "@pypi//pytest_bazel",
+        "@pypi//psycopg",
         "@pypi//sqlalchemy",
     ],
 )
+
+py_binary(
+    name = "migrate_sqlite_to_postgres",
+    main_module = "x.auragon_study_casino.migrate_sqlite_to_postgres",
+    visibility = ["//visibility:public"],
+    deps = [":migrate_sqlite_to_postgres_lib"],
+)
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
 
 py_test(
     name = "test_store",
@@ -125,6 +128,17 @@ py_test(
         ":models",
         ":store",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_migrate",
+    srcs = ["test_migrate.py"],
+    deps = [
+        ":migrate_sqlite_to_postgres_lib",
+        ":models",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

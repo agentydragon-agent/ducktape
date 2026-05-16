@@ -21,10 +21,20 @@ class OidcConfig:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="STUDY_CASINO_")
 
+    database_url: str | None = Field(
+        default=None,
+        description=(
+            "SQLAlchemy URL for the casino state database "
+            "(e.g. `postgresql+psycopg://user:pass@host/db`). "
+            "When unset, falls back to SQLite at `data_dir/casino.db` "
+            "(for tests and local dev)."
+        ),
+    )
     data_dir: Path = Field(
         default=Path("/data"),
-        description="Directory containing the SQLite state database. "
-        "Should be backed by a PersistentVolume in production.",
+        description=(
+            "Directory for the SQLite fallback when `database_url` is unset. Ignored when `database_url` is set."
+        ),
     )
     host: str = "0.0.0.0"
     port: int = 8080
@@ -51,6 +61,13 @@ class Settings(BaseSettings):
         default="https://casino.allegedly.works",
         description="Public base URL of this app, used to build the OIDC redirect_uri.",
     )
+
+    def resolved_database_url(self) -> str:
+        """Return the effective SQLAlchemy URL — explicit `database_url` or SQLite fallback."""
+        if self.database_url is not None:
+            return self.database_url
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{self.data_dir / 'casino.db'}"
 
     def oidc_config(self) -> OidcConfig | None:
         """Return fully-typed OIDC config if all four fields are set, else None."""

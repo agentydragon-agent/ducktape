@@ -22,9 +22,38 @@
 
 ## Cleanup follow-ups
 
-- [ ] Drop `pycrdt` from `requirements_bazel.txt` once alembic 0004 has run on
-      the live database. Until then it's still needed as the migration's
-      decoder for any pre-cutover `doc.update_blob` it encounters.
+- [x] Drop `pycrdt` from `requirements_bazel.txt`. (Done as part of the
+      Postgres migration: the alembic 0001-0004 chain was deleted entirely
+      since live SQLite DBs are migrated to Postgres by
+      `migrate_sqlite_to_postgres.py`, not by alembic.)
+
+## After Postgres migration — possible refactors
+
+These are not required, just nice-to-haves surfaced during the
+2026-05-16 SQLite→Postgres cutover. Defer until there's a real need.
+
+- [ ] Push `username` into the `ServerActionMutator` signature instead of
+      passing via closure. Today every endpoint's mutator captures `username`
+      from the enclosing scope; making it an explicit parameter of the
+      mutator callable would surface the user-scoping dependency at every
+      ORM-row construction and helper invocation.
+- [ ] Replace the SELECT-then-INSERT lazy-seed in `SqlStore._ensure_user`
+      with a dialect-aware upsert (`INSERT ... ON CONFLICT DO NOTHING`)
+      so first-touch by two concurrent requests can't race. Current
+      behavior is fine for a single-replica deployment.
+- [ ] Reconsider whether the casino actually needs multi-tenancy. The
+      shared-schema refactor was driven by symmetry with other CNPG apps
+      in the cluster; if auragon stays the only user, the `user_id`
+      column adds friction without value and could be dropped.
+- [ ] The CNPG cluster is provisioned with `instances: 2` (VPS-HA) but
+      the app deployment is still `replicas: 1`. The DB can survive a
+      single VPS loss; the app cannot. Decide whether to bump the app
+      to `replicas: 2` with proper Postgres-backed session state, or
+      accept the asymmetry.
+- [ ] `data_dir` setting (the SQLite-fallback path) can be removed once
+      we're confident no env in the wild still relies on it. Today the
+      production deployment still passes `STUDY_CASINO_DATA_DIR=/data`
+      because the Phase A image hasn't been rolled.
 
 ## Notes
 

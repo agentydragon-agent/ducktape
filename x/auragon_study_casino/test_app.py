@@ -1,8 +1,7 @@
-"""HTTP-surface tests for the casino backend after the Y-CRDT removal."""
+"""HTTP-surface tests for the casino backend."""
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -252,28 +251,8 @@ def test_reset_zeroes_balance_keeps_prizes(client: TestClient) -> None:
     assert len(state["prizes"]) == 6
 
 
-def test_pre_alembic_user_db_is_baselined_and_upgraded(tmp_path: Path) -> None:
-    """A DB with the legacy schema (only `doc` table, no alembic_version) is
-    baselined at 0001 and upgraded through 0004 on first request."""
-    db_path = tmp_path / "casino-default.db"
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("CREATE TABLE doc (id INTEGER PRIMARY KEY, update_blob BLOB NOT NULL)")
-        # An empty Y.Doc encodes as `b"\x00\x00"` (zero clients, zero deletes);
-        # alembic 0004 backfill produces an empty state from it.
-        conn.execute("INSERT INTO doc (id, update_blob) VALUES (1, ?)", (b"\x00\x00",))
-
-    app = create_app(Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist"))
-    with TestClient(app) as c:
-        r = c.get("/state")
-        assert r.status_code == 200, r.text
-
-    with sqlite3.connect(db_path) as conn:
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0004",)
-        # After 0004, the legacy doc table is gone.
-        assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'doc'").fetchone() is None
-
-
 def test_users_have_isolated_state(tmp_path: Path) -> None:
+    """Two users hitting the same shared-schema store see only their own balances."""
     app = create_app(Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist"))
     dep = app.state.current_user_dep
 
@@ -284,9 +263,12 @@ def test_users_have_isolated_state(tmp_path: Path) -> None:
 
         app.dependency_overrides[dep] = lambda: "bob"
         assert client.get("/state").json()["balance"]["credits"] == 0
+        _grant_credits(client, 7, action_id="bob-seed")
+        assert client.get("/state").json()["balance"]["credits"] == 7
 
-        assert (tmp_path / "casino-alice.db").exists()
-        assert (tmp_path / "casino-bob.db").exists()
+        # Alice's balance is unchanged by bob's activity.
+        app.dependency_overrides[dep] = lambda: "alice"
+        assert client.get("/state").json()["balance"]["credits"] == 50
 
 
 def test_ws_emits_state_changed_on_connect(client: TestClient) -> None:
