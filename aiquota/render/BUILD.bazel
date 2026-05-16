@@ -1,0 +1,36 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "tmux_lib",
+    srcs = ["tmux.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__pkg__"],
+    deps = [
+        "//aiquota:models",
+        "//aiquota:pace",
+    ],
+)
+
+py_library(
+    name = "json_output_lib",
+    srcs = ["json_output.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__pkg__"],
+    deps = [
+        "//aiquota:models",
+    ],
+)
+
+py_test(
+    name = "test_tmux",
+    srcs = ["test_tmux.py"],
+    imports = ["../.."],
+    deps = [":tmux_lib", "//aiquota:models", "//aiquota:pace", "@pypi//pytest_bazel"],
+)
+
+py_test(
+    name = "test_json_output",
+    srcs = ["test_json_output.py"],
+    imports = ["../.."],
+    deps = [":json_output_lib", "//aiquota:models", "@pypi//pytest_bazel"],
+)

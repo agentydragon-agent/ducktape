@@ -1,0 +1,82 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_binary", "py_test")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = [".."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "pace",
+    srcs = ["pace.py"],
+    imports = [".."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = [":models"],
+)
+
+py_library(
+    name = "cache",
+    srcs = ["cache.py"],
+    imports = [".."],
+    deps = [
+        ":models",
+        "@pypi//platformdirs",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = [".."],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//platformdirs",
+    ],
+)
+
+py_library(
+    name = "cli_lib",
+    srcs = ["cli.py"],
+    imports = [".."],
+    deps = [
+        ":cache",
+        ":config",
+        ":models",
+        "//aiquota/providers:claude_lib",
+        "//aiquota/providers:codex_lib",
+        "//aiquota/providers:zai_lib",
+        "//aiquota/render:tmux_lib",
+        "//aiquota/render:json_output_lib",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "aiquota",
+    main_module = "aiquota.cli",
+    imports = [".."],
+    deps = [":cli_lib"],
+)
+
+py_test(
+    name = "test_models",
+    srcs = ["test_models.py"],
+    imports = [".."],
+    deps = [":models", "@pypi//pytest_bazel"],
+)
+
+py_test(
+    name = "test_pace",
+    srcs = ["test_pace.py"],
+    imports = [".."],
+    deps = [":models", ":pace", "@pypi//pytest_bazel"],
+)
+
+py_test(
+    name = "test_cache",
+    srcs = ["test_cache.py"],
+    imports = [".."],
+    deps = [":cache", ":models", "@pypi//pytest_bazel"],
+)

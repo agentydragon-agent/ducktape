@@ -1,0 +1,81 @@
+"""z.ai quota provider.
+
+Fetches 5-hour and 7-day token limits from the z.ai monitor API.
+Auth via API key read from a configurable file path.
+"""
+
+import logging
+import time
+from pathlib import Path
+
+import httpx
+from pydantic import BaseModel, ConfigDict
+
+from aiquota.models import ProviderQuota, QuotaWindow
+
+logger = logging.getLogger(__name__)
+
+QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit"
+API_TIMEOUT_SECS = 5.0
+SHORT_WINDOW_SECS = 5 * 3600
+LONG_WINDOW_SECS = 7 * 86400
+
+
+class _Limit(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: str | None = None
+    unit: int | None = None
+    percentage: float | None = None
+    next_reset_time: float | None = None
+
+
+class _LimitData(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    limits: list[_Limit] = []
+
+
+class _QuotaResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    data: _LimitData | None = None
+
+
+def _to_window(limit: _Limit | None, window_secs: float) -> QuotaWindow | None:
+    if limit is None or limit.percentage is None:
+        return None
+    reset_secs = 0.0
+    if limit.next_reset_time is not None:
+        reset_secs = max(0, (limit.next_reset_time - time.time() * 1000) / 1000)
+    return QuotaWindow(used_percent=limit.percentage, reset_seconds=reset_secs, window_seconds=window_secs)
+
+
+def fetch(api_key_path: str | None = None) -> ProviderQuota:
+    if not api_key_path:
+        return ProviderQuota(provider="zai", error="no api key path configured")
+
+    try:
+        key = Path(api_key_path).expanduser().read_text().strip()
+    except OSError as e:
+        return ProviderQuota(provider="zai", error=str(e))
+    if not key:
+        return ProviderQuota(provider="zai", error="api key file is empty")
+
+    try:
+        resp = httpx.get(
+            QUOTA_URL,
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=API_TIMEOUT_SECS,
+        )
+        resp.raise_for_status()
+        quota = _QuotaResponse.model_validate(resp.json())
+    except Exception as e:
+        return ProviderQuota(provider="zai", error=str(e))
+
+    limits = quota.data.limits if quota.data else []
+    short_limit = next((l for l in limits if l.type == "TOKENS_LIMIT" and l.unit == 3), None)
+    long_limit = next((l for l in limits if l.type == "TOKENS_LIMIT" and l.unit == 6), None)
+    short = _to_window(short_limit, SHORT_WINDOW_SECS)
+    long = _to_window(long_limit, LONG_WINDOW_SECS)
+    return ProviderQuota(provider="zai", short_window=short, long_window=long)
