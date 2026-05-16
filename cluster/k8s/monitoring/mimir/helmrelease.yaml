@@ -54,6 +54,12 @@ spec:
           enabled: false
         ingester:
           push_grpc_method_enabled: true
+          # We run a single ingester (replicas=1 in the chart values below);
+          # the distributor's default replication_factor=3 makes writes fail
+          # with "at least 2 live replicas required" (HTTP 500 to Alloy
+          # remote_write). Force RF=1 so quorum = 1.
+          ring:
+            replication_factor: 1
 
         multitenancy_enabled: false
 
