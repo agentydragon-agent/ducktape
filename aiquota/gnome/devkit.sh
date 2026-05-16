@@ -119,8 +119,16 @@ printf 'exit: %d\n' "\$rc" >>$(printf %q "$trace_log")
 exit \$rc
 EOF
 chmod +x "$wrapper"
+# Belt-and-suspenders: export AI_QUOTA_BIN (preferred path in extension.js)
+# AND prepend a $tmpdir/bin/aiquota symlink to the wrapper onto PATH. If
+# gnome-shell --devkit strips arbitrary env vars but preserves PATH, the
+# spawn fallback to plain `aiquota` still lands on our wrapper.
+mkdir -p "$tmpdir/bin"
+ln -sf "$wrapper" "$tmpdir/bin/aiquota"
 export AI_QUOTA_BIN="$wrapper"
+export PATH="$tmpdir/bin:$PATH"
 echo ">> AI_QUOTA_BIN=$AI_QUOTA_BIN"
+echo ">> PATH prepend: $tmpdir/bin (aiquota → wrapper)"
 echo ">> spawn trace: $trace_log"
 
 # --- enable extension in isolated dconf ------------------------------------
