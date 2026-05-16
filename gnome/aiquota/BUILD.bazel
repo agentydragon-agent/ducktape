@@ -84,6 +84,6 @@ py_test(
 sh_binary(
     name = "devkit",
     srcs = ["devkit.sh"],
-    data = [":ai-quota_zip"],
+    data = [":aiquota_zip"],
     deps = ["@bazel_tools//tools/bash/runfiles"],
 )
