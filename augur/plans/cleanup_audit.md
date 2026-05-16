@@ -70,26 +70,19 @@ hidden behind fallbacks.
    `rollout_statuses`, or tests should show a summary-only response mode where
    the collections are absent.
 
-3. Stop hiding market data/config load failures behind a broad synthetic
-   fallback.
+3. Completed: stop hiding market data/config load failures behind a broad
+   synthetic fallback.
 
-   Files/functions: `augur/model/markets/data.py:37-54` catches
-   `json.JSONDecodeError`, `ValueError`, and `OSError` from
-   `load_market_evidence()` and silently swaps in FRED-only synthesized
-   evidence after printing to stderr.
+   Files/functions: `augur/model/markets/data.py` now lets configured
+   `load_market_evidence()` errors propagate by default.
 
-   Why: this conflicts with `STYLE.md:45-72`: invalid config, unreadable source
-   files, or malformed market data should surface unless the caller explicitly
-   selected fallback data. The current behavior makes a broken Yahoo/Zillow
-   source look like a successful lower-fidelity model run.
+   Outcome: lower-fidelity FRED-only synthesized evidence is available only via
+   the explicit `fred_only=True` / `load_fred_only_evidence()` path and is
+   labelled in `MarketEvidence.latest_observations["evidence_mode"]`.
 
-   Replace with: make fallback mode an explicit argument or test fixture path,
-   and let default config/source-data errors propagate. If a CLI wants degraded
-   mode, put the error boundary there and label the resulting evidence clearly.
-
-   Prove safe by: add one test where a malformed configured source raises, and
-   one explicit `fred_only=True` or fixture-config test that returns synthesized
-   evidence.
+   Proved by: `//augur/model/markets:data_test` covers malformed configured
+   source data raising by default and explicit FRED-only synthesized evidence
+   succeeding with metadata labels.
 
 ## Suspicious/Needs-Design Review
 

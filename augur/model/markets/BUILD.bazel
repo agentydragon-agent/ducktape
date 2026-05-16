@@ -73,3 +73,14 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "data_test",
+    srcs = ["data_test.py"],
+    data = ["//augur/model/config:market_config_files"],
+    deps = [
+        ":data_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

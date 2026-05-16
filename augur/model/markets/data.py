@@ -1,10 +1,11 @@
 """Load aligned monthly log-returns for the market factors.
 
 `load_evidence(...)` is the single entry point. It returns a typed
-`(HistoricalSeries, MarketEvidence)` tuple. Tries the Yahoo-SPY + Zillow
-loader (`augur.model.market_data.load_market_evidence`) first; falls
-back to a FRED-only synthesised `MarketEvidence` when those LFS sources
-are unreadable.
+`(HistoricalSeries, MarketEvidence)` tuple from configured Yahoo-SPY,
+Zillow, and FRED source data. Config/source-data errors propagate by
+default. Callers that intentionally want lower-fidelity FRED-only
+synthesised evidence must opt in with `fred_only=True` or
+`load_fred_only_evidence(...)`.
 
 `load_historical(...)` is a thin wrapper for the metric harness, which
 only needs `HistoricalSeries`.
@@ -13,7 +14,6 @@ only needs `HistoricalSeries`.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -34,28 +34,31 @@ from augur.model.markets.scenarios import HistoricalSeries
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "market_config.example.json"
 
 
-def load_evidence(config_path: Path | None = None) -> tuple[HistoricalSeries, MarketEvidence]:
+def load_evidence(
+    config_path: Path | None = None, *, fred_only: bool = False
+) -> tuple[HistoricalSeries, MarketEvidence]:
     """Load the full `MarketEvidence` and a derived `HistoricalSeries`.
 
-    Tries the Yahoo+Zillow `load_market_evidence`; on JSON / OS / value
-    errors (e.g. LFS pointer files) falls back to a FRED-only
-    synthesised `MarketEvidence`.
+    The default path loads the configured Yahoo+Zillow+FRED market
+    evidence and lets malformed config or unreadable source data raise.
+    `fred_only=True` is an explicit lower-fidelity fixture/degraded mode;
+    its evidence metadata is labelled as synthesized.
     """
     path = (config_path or DEFAULT_CONFIG_PATH).resolve()
     config = json.loads(path.read_text(encoding="utf-8"))
-    try:
-        evidence = load_market_evidence(config, path.parent)
-    except (json.JSONDecodeError, ValueError, OSError) as exc:
-        print(
-            f"markets.data: load_market_evidence failed ({exc!r}); falling back to FRED-only synthesised evidence.",
-            file=sys.stderr,
-        )
+    if fred_only:
         return _evidence_fred_only(config, path.parent)
+    evidence = load_market_evidence(config, path.parent)
     return _historical_from_evidence(evidence), evidence
 
 
-def load_historical(config_path: Path | None = None) -> HistoricalSeries:
-    return load_evidence(config_path)[0]
+def load_fred_only_evidence(config_path: Path | None = None) -> tuple[HistoricalSeries, MarketEvidence]:
+    """Load explicitly selected FRED-only synthesized market evidence."""
+    return load_evidence(config_path, fred_only=True)
+
+
+def load_historical(config_path: Path | None = None, *, fred_only: bool = False) -> HistoricalSeries:
+    return load_evidence(config_path, fred_only=fred_only)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +116,7 @@ def _evidence_fred_only(config: dict[str, Any], base_dir: Path) -> tuple[Histori
         {"sp500": sp500, **dict.fromkeys(home_factor_names, home), "rent": rent, "inflation": cpi}, axis=1, join="inner"
     ).dropna()
     if len(aligned) < 36:
-        raise ValueError(f"only {len(aligned)} aligned months across the FRED fallback series")
+        raise ValueError(f"only {len(aligned)} aligned months across the FRED-only synthesized series")
 
     monthly_log_returns = np.diff(np.log(aligned.loc[:, list(market_factors)].to_numpy(dtype="float64")), axis=0)
     return_months = tuple(str(period) for period in aligned.index[1:])
@@ -151,7 +154,11 @@ def _evidence_fred_only(config: dict[str, Any], base_dir: Path) -> tuple[Histori
             "value": float(mortgage.iloc[-1]),
             "source": str(mortgage_path.name),
         },
-        "data_path_note": "FRED-only fallback (Yahoo SPY / Zillow ZHVI unreadable)",
+        "evidence_mode": {
+            "mode": "fred_only_synthesized",
+            "explicit": True,
+            "description": "FRED-only synthesized evidence explicitly selected; Yahoo SPY and Zillow ZHVI were not loaded.",
+        },
     }
     evidence = MarketEvidence(
         factor_names=market_factors,
