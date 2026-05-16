@@ -1,42 +1,53 @@
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from platformdirs import user_cache_dir
 
-from aiquota.models import AllQuotas
+from aiquota.config import ConfigFile
+from aiquota.models import AllQuotas, ProviderQuota
+from aiquota.providers import claude, codex, zai
 
-CACHE_DIR = Path(user_cache_dir("aiquota"))
-CACHE_PATH = CACHE_DIR / "quotas.json"
 CACHE_TTL = timedelta(seconds=120)
 
 
-def read(path: Path = CACHE_PATH) -> AllQuotas | None:
-    try:
-        return AllQuotas.model_validate_json(path.read_text())
-    except (OSError, ValueError):
-        return None
+class QuotaCache:
+    def __init__(self, path: Path | None = None, ttl: timedelta = CACHE_TTL) -> None:
+        self.path = path or Path(user_cache_dir("aiquota")) / "quotas.json"
+        self.ttl = ttl
+
+    def read(self) -> AllQuotas | None:
+        try:
+            return AllQuotas.model_validate_json(self.path.read_text())
+        except (OSError, ValueError):
+            return None
+
+    def write(self, quotas: AllQuotas) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(quotas.model_dump_json())
+        except OSError:
+            pass
+
+    def fetch_all(self, config: ConfigFile) -> AllQuotas:
+        cached = self.read()
+        if cached is not None and datetime.now(UTC) - cached.fetched_at < self.ttl:
+            return cached
+        providers = _fetch_providers(config)
+        fresh = AllQuotas(providers=providers, fetched_at=datetime.now(UTC))
+        self.write(fresh)
+        return fresh
 
 
-def write(quotas: AllQuotas, path: Path = CACHE_PATH) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(quotas.model_dump_json())
-    except OSError:
-        pass
+def _fetch_providers(config: ConfigFile) -> list[ProviderQuota]:
+    providers: list[ProviderQuota] = []
+    for name, fetch_fn in [("claude", claude.fetch), ("codex", codex.fetch)]:
+        settings = config.providers.get(name)
+        if settings is not None and not settings.enabled:
+            continue
+        providers.append(fetch_fn())
 
+    zai_settings = config.providers.get("zai")
+    if zai_settings is None or zai_settings.enabled:
+        providers.append(zai.fetch(api_key_path=zai_settings.api_key_path if zai_settings else None))
 
-def get_or_fetch(
-    fetch_fn: Callable[[], AllQuotas],
-    cache_path: Path = CACHE_PATH,
-    ttl: timedelta = CACHE_TTL,
-) -> AllQuotas:
-    cached = read(cache_path)
-    if cached is not None and datetime.now(UTC) - cached.fetched_at < ttl:
-        return cached
-    try:
-        fresh = fetch_fn()
-    except Exception:
-        return cached if cached is not None else AllQuotas(providers=[], fetched_at=datetime.now(UTC))
-    write(fresh, cache_path)
-    return fresh
+    return providers

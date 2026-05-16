@@ -21,7 +21,11 @@ py_library(
     srcs = ["cache.py"],
     imports = [".."],
     deps = [
+        ":config",
         ":models",
+        "//aiquota/providers:claude_lib",
+        "//aiquota/providers:codex_lib",
+        "//aiquota/providers:zai_lib",
         "@pypi//platformdirs",
     ],
 )
@@ -42,11 +46,7 @@ py_library(
     imports = [".."],
     deps = [
         ":cache",
-        ":config",
         ":models",
-        "//aiquota/providers:claude_lib",
-        "//aiquota/providers:codex_lib",
-        "//aiquota/providers:zai_lib",
         "//aiquota/render:tmux_lib",
         "//aiquota/render:json_output_lib",
         "@pypi//typer",
