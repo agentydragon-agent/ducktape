@@ -12,7 +12,8 @@
 #
 # Allowed egress from Loki:
 #   - kube-apiserver (k8s-sidecar needs to list/watch secrets for rule sync)
-#   - MinIO (minio-hil namespace, S3 chunk/index storage)
+#   - SeaweedFS S3 gateway (seaweedfs namespace, S3 chunk/index storage)
+#   - Loki memberlist (intra-namespace gossip on port 7946)
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -96,12 +97,23 @@ spec:
             - port: "53"
               protocol: TCP
 
-    # Loki → MinIO (S3 chunk/index storage)
+    # Loki → SeaweedFS S3 (S3 chunk/index storage)
     - toEndpoints:
         - matchLabels:
-            app: minio
-            k8s:io.kubernetes.pod.namespace: minio-hil
+            app.kubernetes.io/component: s3
+            app.kubernetes.io/name: seaweedfs
+            k8s:io.kubernetes.pod.namespace: seaweedfs
       toPorts:
         - ports:
-            - port: "9000"
+            - port: "8333"
+              protocol: TCP
+
+    # Loki ↔ Loki memberlist gossip (intra-namespace, port 7946)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: loki
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "7946"
               protocol: TCP
