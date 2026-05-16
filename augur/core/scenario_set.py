@@ -456,6 +456,7 @@ class _SimulationPolicyDecisionBase(ApiModel):
     projection_trajectory_id: str | None = None
     actor_id: str
     policy_id: str
+    policy_sequence_index: NonNegativeInt
 
 
 class MonthlySpendDecision(_SimulationPolicyDecisionBase):

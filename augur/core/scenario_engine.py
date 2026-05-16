@@ -29,7 +29,6 @@ from augur.core.policy_runtime import (
     checking_floor_sell_public_stock_instruction,
     monthly_spend_debit_instruction,
     partner_contribution_instruction,
-    policy_steps_of_type,
     private_equity_sale_instruction,
     private_equity_sale_opportunity,
 )
@@ -661,6 +660,7 @@ class PropertyCashFlowArrays:
 
 @dataclass(frozen=True)
 class PartnerEquityAgreementArrays:
+    policy_sequence_index: int
     policy: PartnerEquityAccrualPolicy
     property_id: str
     recipient_actor_id: str
@@ -734,10 +734,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     purchase_price = _purchase_price_usd(scenario)
     policy_programs = actor_policy_programs(scenario)
     policy_steps = actor_policy_steps(policy_programs)
-    partner_equity_steps = policy_steps_of_type(policy_steps, PartnerEquityAccrualPolicy)
-    spend_steps = policy_steps_of_type(policy_steps, MonthlySpendPolicy)
-    checking_steps = policy_steps_of_type(policy_steps, CheckingFloorSellPublicStockPolicy)
-    private_equity_sale_steps = policy_steps_of_type(policy_steps, PrivateEquitySalePolicy)
 
     property_value, mortgage_balance, mortgage_interest, mortgage_principal = _property_and_mortgage_arrays(
         scenario, market_bundle, location_id=location_id
@@ -774,7 +770,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     partner_equity = _partner_equity_arrays(
         scenario,
         market_bundle,
-        partner_equity_steps=partner_equity_steps,
+        policy_steps=policy_steps,
         owner_initial_equity_usd=down_payment,
         home_equity_usd=home_equity,
         mortgage_interest_usd=mortgage_interest,
@@ -824,31 +820,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 current_cash + net_property_cash_flow[:, month] + partner_equity.contribution_used_usd[:, month]
             )
 
-        if month > 0:
-            for spend_step in spend_steps:
-                spend_policy = spend_step.policy
-                spend_decision = monthly_spend_debit_instruction(
-                    spend_policy, inflation_multiplier=market_bundle.inflation_multipliers[:, month]
-                )
-                spend_application = apply_debit_account_instruction(spend_decision.debit, current_cash_usd=current_cash)
-                current_cash = spend_application.current_cash_usd
-                spend_ledger = spend_application.ledger_entries[0]
-                _record_ledger_entry_month(ledger_entries, month_index=int(month_index[month]), entry=spend_ledger)
-                _record_monthly_spend_decisions(
-                    policy_decisions,
-                    month_index=int(month_index[month]),
-                    policy=spend_policy,
-                    amount_usd=spend_decision.debit.amount_usd,
-                    inflation_multiplier=spend_decision.inflation_multiplier,
-                )
-                _record_monthly_spend_actions(
-                    actions,
-                    month_index=int(month_index[month]),
-                    policy=spend_policy,
-                    amount_usd=spend_application.debit_usd,
-                    inflation_multiplier=spend_decision.inflation_multiplier,
-                )
-
         private_equity_value_before_sale = (
             initial_private_equity
             * remaining_private_equity_fraction
@@ -868,107 +839,133 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         private_equity_sale_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_taxable_gain_month = np.zeros(rollout_count, dtype="float64")
         private_equity_sale_tax_month = np.zeros(rollout_count, dtype="float64")
-        for private_equity_sale_step in private_equity_sale_steps:
-            private_equity_sale_policy = private_equity_sale_step.policy
-            current_private_equity_value = (
-                initial_private_equity
-                * remaining_private_equity_fraction
-                * market_bundle.private_equity_value_multipliers[:, month]
-            )
-            current_opportunity = private_equity_sale_opportunity(
-                sale_opportunity_mask=market_bundle.private_equity_sale_opportunity_mask[:, month],
-                private_equity_value_before_sale_usd=current_private_equity_value,
-                path_set_id=market_bundle.metadata.path_set_id,
-                month_index=int(month_index[month]),
-                source_holding_id=private_equity_source_holding_id,
-            )
-            liquid_net_worth = current_cash + remaining_sp500_units * market_bundle.generic_sp500_multipliers[:, month]
-            sale_instruction = private_equity_sale_instruction(
-                private_equity_sale_policy, opportunity=current_opportunity, liquid_net_worth_usd=liquid_net_worth
-            )
-            _record_private_equity_sale_decisions(
-                policy_decisions,
-                month_index=int(month_index[month]),
-                policy=private_equity_sale_policy,
-                instruction=sale_instruction,
-                opportunity=current_opportunity,
-                liquid_net_worth_usd=liquid_net_worth,
-            )
-            sale_application = apply_private_equity_sale_instruction(
-                sale_instruction,
-                opportunity=current_opportunity,
-                remaining_basis_usd=remaining_private_equity_basis,
-                remaining_units=remaining_private_equity_units,
-                remaining_fraction=remaining_private_equity_fraction,
-                cap_gains_rate_pct=0.0,
-            )
-            if sale_instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK:
-                sp500_multiplier = market_bundle.generic_sp500_multipliers[:, month]
-                remaining_sp500_units = remaining_sp500_units + np.divide(
-                    sale_application.after_tax_proceeds_usd,
-                    sp500_multiplier,
-                    out=np.zeros_like(sale_application.after_tax_proceeds_usd),
-                    where=sp500_multiplier > 0,
-                )
-                remaining_sp500_basis = remaining_sp500_basis + sale_application.after_tax_proceeds_usd
-            else:
-                current_cash = current_cash + sale_application.after_tax_proceeds_usd
-            private_equity_sale_action_records.append(
-                PrivateEquitySaleActionRecord(
-                    month_position=month,
-                    month_index=int(month_index[month]),
-                    instruction=sale_instruction,
-                    sale_application=sale_application,
-                )
-            )
-            remaining_private_equity_fraction = sale_application.remaining_fraction
-            remaining_private_equity_basis = sale_application.remaining_basis_usd
-            remaining_private_equity_units = sale_application.remaining_units
-            private_equity_sale_month = private_equity_sale_month + sale_application.sale_usd
-            private_equity_sale_taxable_gain_month = (
-                private_equity_sale_taxable_gain_month + sale_application.taxable_gain_usd
-            )
-            private_equity_sale_tax_month = private_equity_sale_tax_month + sale_application.estimated_tax_usd
-
         sp500_multiplier = market_bundle.generic_sp500_multipliers[:, month]
         sp500_sale = np.zeros(rollout_count, dtype="float64")
         sp500_basis = np.zeros(rollout_count, dtype="float64")
         sp500_shortfall = np.zeros(rollout_count, dtype="float64")
-        for checking_step in checking_steps:
-            checking_policy = checking_step.policy
-            sp500_sale_instruction = checking_floor_sell_public_stock_instruction(
-                checking_policy, current_cash_usd=current_cash
-            )
-            _record_sell_public_stock_decisions(
-                policy_decisions,
-                month_index=int(month_index[month]),
-                policy=checking_policy,
-                current_cash_usd=current_cash,
-                requested_amount_usd=sp500_sale_instruction.requested_amount_usd,
-            )
-            sp500_sale_application = apply_generic_sp500_sale_instruction(
-                sp500_sale_instruction,
-                current_cash_usd=current_cash,
-                remaining_units=remaining_sp500_units,
-                remaining_basis_usd=remaining_sp500_basis,
-                sp500_unit_price_usd=sp500_multiplier,
-            )
-            current_cash = sp500_sale_application.current_cash_usd
-            remaining_sp500_units = sp500_sale_application.remaining_units
-            remaining_sp500_basis = sp500_sale_application.remaining_basis_usd
-            sp500_sale = sp500_sale + sp500_sale_application.sale_usd
-            sp500_basis = sp500_basis + sp500_sale_application.basis_usd
-            sp500_shortfall = np.maximum(sp500_shortfall, sp500_sale_application.shortfall_usd)
-            sp500_sale_action_records.append(
-                Sp500SaleActionRecord(
-                    month_position=month,
-                    month_index=int(month_index[month]),
-                    policy=checking_policy,
-                    amount_usd=sp500_sale_application.sale_usd,
-                    basis_usd=sp500_sale_application.basis_usd,
-                    shortfall_usd=sp500_sale_application.shortfall_usd,
+        for policy_step in policy_steps:
+            policy = policy_step.policy
+            if isinstance(policy, PartnerEquityAccrualPolicy):
+                continue
+            if isinstance(policy, MonthlySpendPolicy):
+                if month == 0:
+                    continue
+                spend_decision = monthly_spend_debit_instruction(
+                    policy, inflation_multiplier=market_bundle.inflation_multipliers[:, month]
                 )
-            )
+                spend_application = apply_debit_account_instruction(spend_decision.debit, current_cash_usd=current_cash)
+                current_cash = spend_application.current_cash_usd
+                spend_ledger = spend_application.ledger_entries[0]
+                _record_ledger_entry_month(ledger_entries, month_index=int(month_index[month]), entry=spend_ledger)
+                _record_monthly_spend_decisions(
+                    policy_decisions,
+                    month_index=int(month_index[month]),
+                    policy_step=policy_step,
+                    amount_usd=spend_decision.debit.amount_usd,
+                    inflation_multiplier=spend_decision.inflation_multiplier,
+                )
+                _record_monthly_spend_actions(
+                    actions,
+                    month_index=int(month_index[month]),
+                    policy=policy,
+                    amount_usd=spend_application.debit_usd,
+                    inflation_multiplier=spend_decision.inflation_multiplier,
+                )
+                continue
+            if isinstance(policy, PrivateEquitySalePolicy):
+                current_private_equity_value = (
+                    initial_private_equity
+                    * remaining_private_equity_fraction
+                    * market_bundle.private_equity_value_multipliers[:, month]
+                )
+                current_opportunity = private_equity_sale_opportunity(
+                    sale_opportunity_mask=market_bundle.private_equity_sale_opportunity_mask[:, month],
+                    private_equity_value_before_sale_usd=current_private_equity_value,
+                    path_set_id=market_bundle.metadata.path_set_id,
+                    month_index=int(month_index[month]),
+                    source_holding_id=private_equity_source_holding_id,
+                )
+                liquid_net_worth = current_cash + remaining_sp500_units * sp500_multiplier
+                sale_instruction = private_equity_sale_instruction(
+                    policy, opportunity=current_opportunity, liquid_net_worth_usd=liquid_net_worth
+                )
+                _record_private_equity_sale_decisions(
+                    policy_decisions,
+                    month_index=int(month_index[month]),
+                    policy_step=policy_step,
+                    instruction=sale_instruction,
+                    opportunity=current_opportunity,
+                    liquid_net_worth_usd=liquid_net_worth,
+                )
+                sale_application = apply_private_equity_sale_instruction(
+                    sale_instruction,
+                    opportunity=current_opportunity,
+                    remaining_basis_usd=remaining_private_equity_basis,
+                    remaining_units=remaining_private_equity_units,
+                    remaining_fraction=remaining_private_equity_fraction,
+                    cap_gains_rate_pct=0.0,
+                )
+                if sale_instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK:
+                    remaining_sp500_units = remaining_sp500_units + np.divide(
+                        sale_application.after_tax_proceeds_usd,
+                        sp500_multiplier,
+                        out=np.zeros_like(sale_application.after_tax_proceeds_usd),
+                        where=sp500_multiplier > 0,
+                    )
+                    remaining_sp500_basis = remaining_sp500_basis + sale_application.after_tax_proceeds_usd
+                else:
+                    current_cash = current_cash + sale_application.after_tax_proceeds_usd
+                private_equity_sale_action_records.append(
+                    PrivateEquitySaleActionRecord(
+                        month_position=month,
+                        month_index=int(month_index[month]),
+                        instruction=sale_instruction,
+                        sale_application=sale_application,
+                    )
+                )
+                remaining_private_equity_fraction = sale_application.remaining_fraction
+                remaining_private_equity_basis = sale_application.remaining_basis_usd
+                remaining_private_equity_units = sale_application.remaining_units
+                private_equity_sale_month = private_equity_sale_month + sale_application.sale_usd
+                private_equity_sale_taxable_gain_month = (
+                    private_equity_sale_taxable_gain_month + sale_application.taxable_gain_usd
+                )
+                private_equity_sale_tax_month = private_equity_sale_tax_month + sale_application.estimated_tax_usd
+                continue
+            if isinstance(policy, CheckingFloorSellPublicStockPolicy):
+                sp500_sale_instruction = checking_floor_sell_public_stock_instruction(
+                    policy, current_cash_usd=current_cash
+                )
+                _record_sell_public_stock_decisions(
+                    policy_decisions,
+                    month_index=int(month_index[month]),
+                    policy_step=policy_step,
+                    current_cash_usd=current_cash,
+                    requested_amount_usd=sp500_sale_instruction.requested_amount_usd,
+                )
+                sp500_sale_application = apply_generic_sp500_sale_instruction(
+                    sp500_sale_instruction,
+                    current_cash_usd=current_cash,
+                    remaining_units=remaining_sp500_units,
+                    remaining_basis_usd=remaining_sp500_basis,
+                    sp500_unit_price_usd=sp500_multiplier,
+                )
+                current_cash = sp500_sale_application.current_cash_usd
+                remaining_sp500_units = sp500_sale_application.remaining_units
+                remaining_sp500_basis = sp500_sale_application.remaining_basis_usd
+                sp500_sale = sp500_sale + sp500_sale_application.sale_usd
+                sp500_basis = sp500_basis + sp500_sale_application.basis_usd
+                sp500_shortfall = np.maximum(sp500_shortfall, sp500_sale_application.shortfall_usd)
+                sp500_sale_action_records.append(
+                    Sp500SaleActionRecord(
+                        month_position=month,
+                        month_index=int(month_index[month]),
+                        policy=policy,
+                        amount_usd=sp500_sale_application.sale_usd,
+                        basis_usd=sp500_sale_application.basis_usd,
+                        shortfall_usd=sp500_sale_application.shortfall_usd,
+                    )
+                )
         sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
 
         cash[:, month] = current_cash
@@ -1573,10 +1570,13 @@ def _record_monthly_spend_decisions(
     records: list[SimulationPolicyDecision],
     *,
     month_index: int,
-    policy: MonthlySpendPolicy,
+    policy_step: ActorPolicyStep[Policy],
     amount_usd: np.ndarray,
     inflation_multiplier: np.ndarray,
 ) -> None:
+    policy = policy_step.policy
+    if not isinstance(policy, MonthlySpendPolicy):
+        raise TypeError(f"monthly spend decision recorder received {type(policy).__name__}")
     active_rollouts = np.nonzero(amount_usd > 0)[0].tolist()
     records.extend(
         (
@@ -1585,6 +1585,7 @@ def _record_monthly_spend_decisions(
                 month_index=month_index,
                 actor_id=policy.actor_id,
                 policy_id=policy.policy_id,
+                policy_sequence_index=policy_step.sequence_index,
                 amount_usd=float(amount_usd[rollout_index]),
                 inflation_multiplier=float(inflation_multiplier[rollout_index]),
             )
@@ -1597,10 +1598,13 @@ def _record_sell_public_stock_decisions(
     records: list[SimulationPolicyDecision],
     *,
     month_index: int,
-    policy: CheckingFloorSellPublicStockPolicy,
+    policy_step: ActorPolicyStep[Policy],
     current_cash_usd: np.ndarray,
     requested_amount_usd: np.ndarray,
 ) -> None:
+    policy = policy_step.policy
+    if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
+        raise TypeError(f"public stock decision recorder received {type(policy).__name__}")
     active_rollouts = np.nonzero(requested_amount_usd > 0)[0].tolist()
     records.extend(
         (
@@ -1609,6 +1613,7 @@ def _record_sell_public_stock_decisions(
                 month_index=month_index,
                 actor_id=policy.actor_id,
                 policy_id=policy.policy_id,
+                policy_sequence_index=policy_step.sequence_index,
                 requested_amount_usd=float(requested_amount_usd[rollout_index]),
                 current_cash_usd=float(current_cash_usd[rollout_index]),
                 target_cash_floor_usd=float(policy.floor_usd),
@@ -1622,11 +1627,14 @@ def _record_private_equity_sale_decisions(
     records: list[SimulationPolicyDecision],
     *,
     month_index: int,
-    policy: PrivateEquitySalePolicy,
+    policy_step: ActorPolicyStep[Policy],
     instruction: PrivateEquitySaleInstructionBatch,
     opportunity: PrivateEquitySaleOpportunityBatch,
     liquid_net_worth_usd: np.ndarray,
 ) -> None:
+    policy = policy_step.policy
+    if not isinstance(policy, PrivateEquitySalePolicy):
+        raise TypeError(f"private equity decision recorder received {type(policy).__name__}")
     target_liquid_net_worth_floor_usd = (
         float(policy.sale_rule.min_liquid_net_worth_usd)
         if isinstance(policy.sale_rule, LiquidNetWorthFloorPrivateEquitySaleRule)
@@ -1639,6 +1647,7 @@ def _record_private_equity_sale_decisions(
                 month_index=month_index,
                 actor_id=instruction.actor_id,
                 policy_id=instruction.policy_id,
+                policy_sequence_index=policy_step.sequence_index,
                 decision_reason=_private_equity_sale_decision_reason(
                     requested_amount_usd=instruction.requested_amount_usd[rollout_index],
                     sale_opportunity_value_usd=opportunity.sale_opportunity_value_usd[rollout_index],
@@ -1682,6 +1691,7 @@ def _record_partner_contribution_decisions(
                     month_index=int(month_index[month_position]),
                     actor_id=policy.actor_id,
                     policy_id=policy.policy_id,
+                    policy_sequence_index=agreement.policy_sequence_index,
                     recipient_actor_id=agreement.recipient_actor_id,
                     requested_amount_usd=float(agreement.contribution_usd[rollout_index, month_position]),
                     property_id=agreement.property_id,
@@ -2249,8 +2259,9 @@ def _sorted_policy_decisions(records: list[SimulationPolicyDecision]) -> tuple[S
             key=lambda decision: (
                 decision.month_index,
                 decision.rollout_index,
-                decision.decision_type,
                 decision.actor_id,
+                decision.policy_sequence_index,
+                decision.decision_type,
                 decision.policy_id,
             ),
         )
@@ -2641,7 +2652,7 @@ def _partner_equity_arrays(
     scenario: Scenario,
     market_bundle: MarketBundle,
     *,
-    partner_equity_steps: tuple[ActorPolicyStep[PartnerEquityAccrualPolicy], ...],
+    policy_steps: tuple[ActorPolicyStep[Policy], ...],
     owner_initial_equity_usd: float,
     home_equity_usd: np.ndarray,
     mortgage_interest_usd: np.ndarray,
@@ -2671,7 +2682,7 @@ def _partner_equity_arrays(
         owner_home_equity_claim_usd=home_equity_usd,
         agreements=(),
     )
-    if not partner_equity_steps or not _has_partner(scenario):
+    if not _has_partner(scenario):
         return empty
 
     month_matrix = np.broadcast_to(market_bundle.month_index[None, :], home_equity_usd.shape)
@@ -2683,8 +2694,10 @@ def _partner_equity_arrays(
     contribution_inputs = []
     remaining_house_uses = house_uses.copy()
     remaining_principal = mortgage_principal_usd.copy()
-    for partner_equity_step in partner_equity_steps:
+    for partner_equity_step in policy_steps:
         policy = partner_equity_step.policy
+        if not isinstance(policy, PartnerEquityAccrualPolicy):
+            continue
         property_id = _partner_equity_property_id(scenario, policy)
         if property_id is None:
             continue
@@ -2706,6 +2719,7 @@ def _partner_equity_arrays(
         contribution_inputs.append(
             (
                 policy,
+                partner_equity_step.sequence_index,
                 property_id,
                 contribution_instruction,
                 contribution_application,
@@ -2719,17 +2733,18 @@ def _partner_equity_arrays(
         return empty
 
     principal_credit = sum(
-        (application.principal_credit_usd for _, _, _, application, _, _ in contribution_inputs), start=zeros.copy()
+        (application.principal_credit_usd for _, _, _, _, application, _, _ in contribution_inputs), start=zeros.copy()
     )
     owner_principal = np.maximum(0.0, mortgage_principal_usd - principal_credit)
     owner_equity_ledger = float(owner_initial_equity_usd) + np.cumsum(owner_principal, axis=1)
     total_partner_equity_ledger = sum(
-        (np.cumsum(application.principal_credit_usd, axis=1) for _, _, _, application, _, _ in contribution_inputs),
+        (np.cumsum(application.principal_credit_usd, axis=1) for _, _, _, _, application, _, _ in contribution_inputs),
         start=zeros.copy(),
     )
     agreements = []
     for (
         policy,
+        policy_sequence_index,
         property_id,
         contribution_instruction,
         contribution_application,
@@ -2749,6 +2764,7 @@ def _partner_equity_arrays(
         )
         agreements.append(
             PartnerEquityAgreementArrays(
+                policy_sequence_index=policy_sequence_index,
                 policy=policy,
                 property_id=property_id,
                 recipient_actor_id=owner_actor_id,

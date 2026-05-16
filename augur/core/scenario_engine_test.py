@@ -13,12 +13,14 @@ from augur.core.scenario_set import (
     AccruePartnerEquityAction,
     ActionType,
     MarketRequest,
+    MonthlySpendDecision,
     PayMortgageAction,
     PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
     ReportMetric,
     RolloutStatusType,
     ScenarioSet,
+    SellPublicStockDecision,
     SettlePropertySaleAction,
     TransferPartnerContributionAction,
 )
@@ -791,6 +793,66 @@ def test_checking_floor_policy_reports_shortfall_when_public_stock_is_exhausted(
     assert_allclose(result.cash_usd[:, 0], 5_000)
     assert_allclose(result.generic_sp500_value_usd, 0)
     assert_allclose(result.checking_floor_shortfall_usd[:, 0], 5_000)
+
+
+def test_cross_type_policy_order_changes_cash_management_result() -> None:
+    spend_policy = {
+        "policy_id": "living_expenses",
+        "policy_type": "monthly_spend",
+        "actor_id": "owner",
+        "monthly_spend_usd": 10_000,
+        "inflation_adjusted": False,
+    }
+    checking_floor_policy = {
+        "policy_id": "checking_floor",
+        "policy_type": "checking_floor_sell_public_stock",
+        "actor_id": "owner",
+        "floor_usd": 10_000,
+        "sale_amount_usd": 20_000,
+    }
+
+    def run_ordered(policies: list[dict]):
+        scenario_set = ScenarioSet.model_validate(
+            _scenario_set_body(
+                _scenario_body(
+                    "policy_order",
+                    cash_usd=15_000,
+                    sp500_usd=100_000,
+                    sp500_basis_usd=100_000,
+                    private_equity_usd=0,
+                    policies=policies,
+                )
+            )
+        )
+        return run_scenario_vectorized(scenario_set.scenarios[0], _bundle(horizon_months=1, sp500_path=(1.0, 1.0)))
+
+    spend_then_sale = run_ordered([spend_policy, checking_floor_policy])
+    sale_then_spend = run_ordered([checking_floor_policy, spend_policy])
+
+    assert_allclose(spend_then_sale.cash_usd[:, 1], 25_000)
+    assert_allclose(spend_then_sale.generic_sp500_sale_usd[:, 1], 20_000)
+    assert_allclose(spend_then_sale.generic_sp500_value_usd[:, 1], 80_000)
+    assert_allclose(sale_then_spend.cash_usd[:, 1], 5_000)
+    assert_allclose(sale_then_spend.generic_sp500_sale_usd[:, 1], 0)
+    assert_allclose(sale_then_spend.generic_sp500_value_usd[:, 1], 100_000)
+
+    spend_then_sale_decisions = [
+        decision
+        for decision in spend_then_sale.policy_decisions
+        if decision.month_index == 1 and decision.rollout_index == 0
+    ]
+    assert [decision.policy_id for decision in spend_then_sale_decisions] == ["living_expenses", "checking_floor"]
+    assert [decision.policy_sequence_index for decision in spend_then_sale_decisions] == [0, 1]
+    assert isinstance(spend_then_sale_decisions[0], MonthlySpendDecision)
+    assert isinstance(spend_then_sale_decisions[1], SellPublicStockDecision)
+
+    sale_then_spend_decisions = [
+        decision
+        for decision in sale_then_spend.policy_decisions
+        if decision.month_index == 1 and decision.rollout_index == 0
+    ]
+    assert [decision.policy_id for decision in sale_then_spend_decisions] == ["living_expenses"]
+    assert [decision.policy_sequence_index for decision in sale_then_spend_decisions] == [1]
 
 
 def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_appreciation() -> None:

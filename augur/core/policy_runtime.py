@@ -36,12 +36,6 @@ class ActorPolicyStep[PolicyT: _PolicyBase]:
 
 
 @dataclass(frozen=True)
-class PolicyContext:
-    actor_id: str
-    month_index: int
-
-
-@dataclass(frozen=True)
 class SellAssetInstructionBatch:
     actor_id: str
     policy_id: str
@@ -230,28 +224,6 @@ def actor_policy_steps(programs: tuple[ActorPolicyProgram, ...]) -> tuple[ActorP
             )
             sequence_index += 1
     return tuple(steps)
-
-
-def enabled_rules_of_type[PolicyT: _PolicyBase](
-    programs: tuple[ActorPolicyProgram, ...], cls: type[PolicyT]
-) -> tuple[PolicyT, ...]:
-    return tuple(rule for program in programs for rule in program.rules if isinstance(rule, cls))
-
-
-def policy_steps_of_type[PolicyT: _PolicyBase](
-    steps: tuple[ActorPolicyStep[Policy], ...], cls: type[PolicyT]
-) -> tuple[ActorPolicyStep[PolicyT], ...]:
-    return tuple(
-        ActorPolicyStep(
-            actor_index=step.actor_index,
-            rule_index=step.rule_index,
-            sequence_index=step.sequence_index,
-            actor_id=step.actor_id,
-            policy=step.policy,
-        )
-        for step in steps
-        if isinstance(step.policy, cls)
-    )
 
 
 def checking_floor_sell_public_stock_instruction(

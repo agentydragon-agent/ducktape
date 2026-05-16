@@ -14,10 +14,8 @@ from augur.core.policy_runtime import (
     apply_private_equity_sale_instruction,
     apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
-    enabled_rules_of_type,
     monthly_spend_debit_instruction,
     partner_contribution_instruction,
-    policy_steps_of_type,
     private_equity_sale_instruction,
     private_equity_sale_opportunity,
 )
@@ -62,9 +60,6 @@ def test_actor_policy_programs_preserve_actor_order_and_enabled_rule_order() -> 
         ("alpha", ["alpha_floor", "alpha_spend"]),
         ("beta", ["beta_spend"]),
     ]
-    assert [rule.policy_id for rule in enabled_rules_of_type(programs, CheckingFloorSellPublicStockPolicy)] == [
-        "alpha_floor"
-    ]
 
 
 def test_actor_policy_steps_make_actor_rule_and_global_order_explicit() -> None:
@@ -105,11 +100,6 @@ def test_actor_policy_steps_make_actor_rule_and_global_order_explicit() -> None:
         (1, 0, 2, "beta", "beta_spend"),
         (1, 1, 3, "beta", "beta_private_equity_sale"),
     ]
-    assert [step.policy.policy_id for step in policy_steps_of_type(steps, MonthlySpendPolicy)] == [
-        "alpha_spend",
-        "beta_spend",
-    ]
-    assert [step.sequence_index for step in policy_steps_of_type(steps, PrivateEquitySalePolicy)] == [3]
 
 
 def test_checking_floor_instruction_applier_clips_sale_and_records_shortfall() -> None:
