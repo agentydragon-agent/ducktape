@@ -249,13 +249,19 @@ data "talos_machine_configuration" "kimsufi" {
         auto       = "off"
         hostname   = each.value.hostname
       }),
-      # User volume: claim the entire second disk (/dev/sdb on KS-5; both
-      # KS-5 disks are 2 TB SATA HDD in JBOD, Talos installs onto /dev/sda).
-      # `!system_disk` excludes the Talos system disk so the predicate stays
-      # robust against kernel reordering. Talos auto-mounts at
-      # /var/mnt/seaweedfs-data with partition label u-seaweedfs-data.
-      # Consumed by the local-path-ovh StorageClass; see cluster/docs/plan.md
-      # SeaweedFS trial notes.
+      # User volume: claim the entire second disk for SeaweedFS data.
+      #
+      # KS-5 ships with 2x 2TB SATA HDD in JBOD (per OVH /specifications/hardware).
+      # Talos installs onto /dev/sda via our dd-in-rescue step
+      # (null_resource.install_talos_kimsufi), so /dev/sdb is reliably the
+      # non-system disk. We'd prefer the more declarative `!system_disk`
+      # but that variable isn't exposed in the CEL env on Talos v1.12.3
+      # ("no such attribute(s): system_disk"). The dev_path-based match is
+      # robust enough given our deterministic install path.
+      #
+      # Talos auto-mounts at /var/mnt/seaweedfs-data with partition label
+      # u-seaweedfs-data. Consumed by the local-path-ovh StorageClass; see
+      # cluster/docs/kimsufi_provisioning.md and the SeaweedFS trial plan.
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "UserVolumeConfig"
@@ -263,7 +269,7 @@ data "talos_machine_configuration" "kimsufi" {
         volumeType = "disk"
         provisioning = {
           diskSelector = {
-            match = "!system_disk"
+            match = "disk.dev_path == '/dev/sdb'"
           }
         }
         filesystem = {
