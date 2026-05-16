@@ -22,7 +22,7 @@ def main(ctx: typer.Context, config: Path = _CONFIG_OPTION) -> None:
 
 
 def _service(ctx: typer.Context) -> QuotaService:
-    return ctx.obj["service"]
+    return ctx.obj["service"]  # type: ignore[no-any-return]
 
 
 @app.command()
