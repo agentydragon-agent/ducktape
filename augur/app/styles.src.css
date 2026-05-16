@@ -225,18 +225,6 @@
     @apply border border-blue-200 bg-blue-50 text-blue-900 dark:border-sky-400/20 dark:bg-sky-950/20 dark:text-sky-100/90;
   }
 
-  .augur-option {
-    @apply w-full rounded-lg border px-3 py-3 text-left transition;
-  }
-
-  .augur-option-selected {
-    @apply border-blue-500 bg-blue-50 shadow-sm dark:border-blue-400 dark:bg-blue-950/30;
-  }
-
-  .augur-option-idle {
-    @apply border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-500 dark:hover:bg-slate-800;
-  }
-
   .augur-tone-button {
     @apply rounded-lg border px-3 py-2 text-left text-xs leading-snug transition;
   }
