@@ -1,123 +1,181 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import numpy as np
+import yaml
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from augur.core.scenario_set import TaxFilingStatus, TaxProfile
 
 Bracket = tuple[float | None, float]
 
-FEDERAL_STANDARD_DEDUCTION_2026 = {
-    TaxFilingStatus.SINGLE: 16_100.0,
-    TaxFilingStatus.MARRIED_FILING_JOINTLY: 32_200.0,
-    TaxFilingStatus.MARRIED_FILING_SEPARATELY: 16_100.0,
-    TaxFilingStatus.HEAD_OF_HOUSEHOLD: 24_150.0,
-}
+_ANNUAL_TAX_PARAMETERS_PATH = Path(__file__).with_name("annual_tax_parameters.yaml")
+_TAX_FILING_STATUSES = tuple(TaxFilingStatus)
 
-FEDERAL_ORDINARY_BRACKETS_2026: dict[TaxFilingStatus, tuple[Bracket, ...]] = {
-    TaxFilingStatus.SINGLE: (
-        (12_400.0, 0.10),
-        (50_400.0, 0.12),
-        (105_700.0, 0.22),
-        (201_775.0, 0.24),
-        (256_225.0, 0.32),
-        (640_600.0, 0.35),
-        (None, 0.37),
-    ),
-    TaxFilingStatus.MARRIED_FILING_JOINTLY: (
-        (24_800.0, 0.10),
-        (100_800.0, 0.12),
-        (211_400.0, 0.22),
-        (403_550.0, 0.24),
-        (512_450.0, 0.32),
-        (768_700.0, 0.35),
-        (None, 0.37),
-    ),
-    TaxFilingStatus.MARRIED_FILING_SEPARATELY: (
-        (12_400.0, 0.10),
-        (50_400.0, 0.12),
-        (105_700.0, 0.22),
-        (201_775.0, 0.24),
-        (256_225.0, 0.32),
-        (384_350.0, 0.35),
-        (None, 0.37),
-    ),
-    TaxFilingStatus.HEAD_OF_HOUSEHOLD: (
-        (17_700.0, 0.10),
-        (67_450.0, 0.12),
-        (105_700.0, 0.22),
-        (201_750.0, 0.24),
-        (256_200.0, 0.32),
-        (640_600.0, 0.35),
-        (None, 0.37),
-    ),
-}
 
+class _TaxParameterModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class _TaxBracketParameters(_TaxParameterModel):
+    upper_bound_usd: float | None
+    rate: float
+
+    @model_validator(mode="after")
+    def _validate_bracket(self) -> _TaxBracketParameters:
+        if self.upper_bound_usd is not None and self.upper_bound_usd <= 0.0:
+            raise ValueError("upper_bound_usd must be positive or null")
+        _validate_rate("rate", self.rate)
+        return self
+
+
+class _FederalLongTermCapitalGainThresholds(_TaxParameterModel):
+    zero_rate_ceiling_usd: float
+    fifteen_rate_ceiling_usd: float
+
+    @model_validator(mode="after")
+    def _validate_thresholds(self) -> _FederalLongTermCapitalGainThresholds:
+        if self.zero_rate_ceiling_usd < 0.0:
+            raise ValueError("zero_rate_ceiling_usd must be non-negative")
+        if self.fifteen_rate_ceiling_usd <= self.zero_rate_ceiling_usd:
+            raise ValueError("fifteen_rate_ceiling_usd must be greater than zero_rate_ceiling_usd")
+        return self
+
+
+class _BehavioralHealthServicesTaxParameters(_TaxParameterModel):
+    threshold_usd: float
+    rate: float
+
+    @model_validator(mode="after")
+    def _validate_behavioral_health_tax(self) -> _BehavioralHealthServicesTaxParameters:
+        if self.threshold_usd < 0.0:
+            raise ValueError("threshold_usd must be non-negative")
+        _validate_rate("rate", self.rate)
+        return self
+
+
+class _BaseJurisdictionTaxParameters(_TaxParameterModel):
+    tax_year: int
+    standard_deduction_usd_by_filing_status: dict[TaxFilingStatus, float]
+    ordinary_brackets_by_filing_status: dict[TaxFilingStatus, tuple[_TaxBracketParameters, ...]]
+
+    @model_validator(mode="after")
+    def _validate_base_jurisdiction(self) -> _BaseJurisdictionTaxParameters:
+        if self.tax_year <= 0:
+            raise ValueError("tax_year must be positive")
+        _validate_status_map("standard_deduction_usd_by_filing_status", self.standard_deduction_usd_by_filing_status)
+        _validate_status_map("ordinary_brackets_by_filing_status", self.ordinary_brackets_by_filing_status)
+        for status in _TAX_FILING_STATUSES:
+            if self.standard_deduction_usd_by_filing_status[status] < 0.0:
+                raise ValueError(f"standard_deduction_usd_by_filing_status.{status.value} must be non-negative")
+            _validate_brackets(
+                f"ordinary_brackets_by_filing_status.{status.value}", self.ordinary_brackets_by_filing_status[status]
+            )
+        return self
+
+
+class _FederalTaxParameters(_BaseJurisdictionTaxParameters):
+    long_term_capital_gain_thresholds_usd_by_filing_status: dict[TaxFilingStatus, _FederalLongTermCapitalGainThresholds]
+    unrecaptured_1250_gain_max_rate: float
+
+    @model_validator(mode="after")
+    def _validate_federal(self) -> _FederalTaxParameters:
+        _validate_status_map(
+            "long_term_capital_gain_thresholds_usd_by_filing_status",
+            self.long_term_capital_gain_thresholds_usd_by_filing_status,
+        )
+        _validate_rate("unrecaptured_1250_gain_max_rate", self.unrecaptured_1250_gain_max_rate)
+        return self
+
+
+class _CaliforniaTaxParameters(_BaseJurisdictionTaxParameters):
+    behavioral_health_services_tax: _BehavioralHealthServicesTaxParameters
+
+
+class _AnnualTaxParameters(_TaxParameterModel):
+    federal: _FederalTaxParameters
+    california: _CaliforniaTaxParameters
+
+
+def _validate_rate(field_name: str, rate: float) -> None:
+    if not 0.0 <= rate <= 1.0:
+        raise ValueError(f"{field_name} must be between 0 and 1")
+
+
+def _validate_status_map(field_name: str, value_by_status: dict[TaxFilingStatus, Any]) -> None:
+    expected = set(_TAX_FILING_STATUSES)
+    actual = set(value_by_status)
+    if actual != expected:
+        missing = ", ".join(status.value for status in _TAX_FILING_STATUSES if status not in actual) or "none"
+        unexpected = ", ".join(sorted(str(status) for status in actual - expected)) or "none"
+        expected_list = ", ".join(status.value for status in _TAX_FILING_STATUSES)
+        raise ValueError(
+            f"{field_name} must define exactly these filing statuses: {expected_list}; "
+            f"missing: {missing}; unexpected: {unexpected}"
+        )
+
+
+def _validate_brackets(field_name: str, brackets: tuple[_TaxBracketParameters, ...]) -> None:
+    if not brackets:
+        raise ValueError(f"{field_name} must contain at least one bracket")
+    lower_bound = 0.0
+    for index, bracket in enumerate(brackets):
+        if bracket.upper_bound_usd is None:
+            if index != len(brackets) - 1:
+                raise ValueError(f"{field_name} may only use null upper_bound_usd on the final bracket")
+            return
+        if bracket.upper_bound_usd <= lower_bound:
+            raise ValueError(f"{field_name} upper_bound_usd values must be strictly increasing")
+        lower_bound = bracket.upper_bound_usd
+    raise ValueError(f"{field_name} must end with an unbounded bracket")
+
+
+def _validate_annual_tax_parameters(payload: Any) -> _AnnualTaxParameters:
+    return _AnnualTaxParameters.model_validate(payload)
+
+
+def _load_annual_tax_parameters(path: Path = _ANNUAL_TAX_PARAMETERS_PATH) -> _AnnualTaxParameters:
+    return _validate_annual_tax_parameters(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+def _deduction_table(parameters: _BaseJurisdictionTaxParameters) -> dict[TaxFilingStatus, float]:
+    return {status: parameters.standard_deduction_usd_by_filing_status[status] for status in _TAX_FILING_STATUSES}
+
+
+def _bracket_table(parameters: _BaseJurisdictionTaxParameters) -> dict[TaxFilingStatus, tuple[Bracket, ...]]:
+    return {
+        status: tuple(
+            (bracket.upper_bound_usd, bracket.rate) for bracket in parameters.ordinary_brackets_by_filing_status[status]
+        )
+        for status in _TAX_FILING_STATUSES
+    }
+
+
+_ANNUAL_TAX_PARAMETERS = _load_annual_tax_parameters()
+
+FEDERAL_STANDARD_DEDUCTION_2026 = _deduction_table(_ANNUAL_TAX_PARAMETERS.federal)
+FEDERAL_ORDINARY_BRACKETS_2026 = _bracket_table(_ANNUAL_TAX_PARAMETERS.federal)
 FEDERAL_LONG_TERM_CAPITAL_GAIN_THRESHOLDS_2026 = {
-    TaxFilingStatus.SINGLE: (49_450.0, 545_500.0),
-    TaxFilingStatus.MARRIED_FILING_JOINTLY: (98_900.0, 613_700.0),
-    TaxFilingStatus.MARRIED_FILING_SEPARATELY: (49_450.0, 306_850.0),
-    TaxFilingStatus.HEAD_OF_HOUSEHOLD: (66_200.0, 579_600.0),
+    status: (
+        _ANNUAL_TAX_PARAMETERS.federal.long_term_capital_gain_thresholds_usd_by_filing_status[
+            status
+        ].zero_rate_ceiling_usd,
+        _ANNUAL_TAX_PARAMETERS.federal.long_term_capital_gain_thresholds_usd_by_filing_status[
+            status
+        ].fifteen_rate_ceiling_usd,
+    )
+    for status in _TAX_FILING_STATUSES
 }
-
-CALIFORNIA_STANDARD_DEDUCTION_2025 = {
-    TaxFilingStatus.SINGLE: 5_706.0,
-    TaxFilingStatus.MARRIED_FILING_JOINTLY: 11_412.0,
-    TaxFilingStatus.MARRIED_FILING_SEPARATELY: 5_706.0,
-    TaxFilingStatus.HEAD_OF_HOUSEHOLD: 11_412.0,
-}
-
-CALIFORNIA_ORDINARY_BRACKETS_2025: dict[TaxFilingStatus, tuple[Bracket, ...]] = {
-    TaxFilingStatus.SINGLE: (
-        (11_079.0, 0.01),
-        (26_264.0, 0.02),
-        (41_452.0, 0.04),
-        (57_542.0, 0.06),
-        (72_724.0, 0.08),
-        (371_479.0, 0.093),
-        (445_771.0, 0.103),
-        (742_953.0, 0.113),
-        (None, 0.123),
-    ),
-    TaxFilingStatus.MARRIED_FILING_JOINTLY: (
-        (22_158.0, 0.01),
-        (52_528.0, 0.02),
-        (82_904.0, 0.04),
-        (115_084.0, 0.06),
-        (145_448.0, 0.08),
-        (742_958.0, 0.093),
-        (891_542.0, 0.103),
-        (1_485_906.0, 0.113),
-        (None, 0.123),
-    ),
-    TaxFilingStatus.MARRIED_FILING_SEPARATELY: (
-        (11_079.0, 0.01),
-        (26_264.0, 0.02),
-        (41_452.0, 0.04),
-        (57_542.0, 0.06),
-        (72_724.0, 0.08),
-        (371_479.0, 0.093),
-        (445_771.0, 0.103),
-        (742_953.0, 0.113),
-        (None, 0.123),
-    ),
-    TaxFilingStatus.HEAD_OF_HOUSEHOLD: (
-        (22_173.0, 0.01),
-        (52_530.0, 0.02),
-        (67_716.0, 0.04),
-        (83_805.0, 0.06),
-        (98_990.0, 0.08),
-        (505_208.0, 0.093),
-        (606_251.0, 0.103),
-        (1_010_417.0, 0.113),
-        (None, 0.123),
-    ),
-}
-
-CALIFORNIA_BEHAVIORAL_HEALTH_SERVICES_TAX_THRESHOLD_USD = 1_000_000.0
-CALIFORNIA_BEHAVIORAL_HEALTH_SERVICES_TAX_RATE = 0.01
-FEDERAL_UNRECAPTURED_1250_GAIN_MAX_RATE = 0.25
+CALIFORNIA_STANDARD_DEDUCTION_2025 = _deduction_table(_ANNUAL_TAX_PARAMETERS.california)
+CALIFORNIA_ORDINARY_BRACKETS_2025 = _bracket_table(_ANNUAL_TAX_PARAMETERS.california)
+CALIFORNIA_BEHAVIORAL_HEALTH_SERVICES_TAX_THRESHOLD_USD = (
+    _ANNUAL_TAX_PARAMETERS.california.behavioral_health_services_tax.threshold_usd
+)
+CALIFORNIA_BEHAVIORAL_HEALTH_SERVICES_TAX_RATE = _ANNUAL_TAX_PARAMETERS.california.behavioral_health_services_tax.rate
+FEDERAL_UNRECAPTURED_1250_GAIN_MAX_RATE = _ANNUAL_TAX_PARAMETERS.federal.unrecaptured_1250_gain_max_rate
 
 
 @dataclass(frozen=True)

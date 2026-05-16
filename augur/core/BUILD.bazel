@@ -106,9 +106,12 @@ py_library(
 py_library(
     name = "annual_tax_py",
     srcs = ["annual_tax.py"],
+    data = ["annual_tax_parameters.yaml"],
     deps = [
         ":scenario_set_py",
         "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -279,6 +282,7 @@ py_test(
         ":annual_tax_py",
         ":scenario_set_py",
         "@pypi//numpy",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

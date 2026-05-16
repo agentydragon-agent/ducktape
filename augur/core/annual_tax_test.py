@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import pytest_bazel
 
+from augur.core import annual_tax
 from augur.core.annual_tax import annual_sale_tax_allocation, california_income_tax_due_usd, federal_income_tax_due_usd
 from augur.core.scenario_set import TaxProfile
+
+
+def test_tax_parameter_validation_rejects_missing_filing_status() -> None:
+    payload = annual_tax._ANNUAL_TAX_PARAMETERS.model_dump(mode="json")
+    del payload["federal"]["standard_deduction_usd_by_filing_status"]["head_of_household"]
+
+    with pytest.raises(ValueError, match="standard_deduction_usd_by_filing_status must define exactly"):
+        annual_tax._validate_annual_tax_parameters(payload)
 
 
 def test_federal_ordinary_income_uses_2026_single_brackets_after_standard_deduction() -> None:
