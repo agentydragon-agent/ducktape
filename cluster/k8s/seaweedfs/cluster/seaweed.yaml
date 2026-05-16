@@ -58,5 +58,10 @@ spec:
       name: seaweedfs-s3-config
       key: seaweedfs_s3_config.json
     metricsPort: 9327
+    # weed s3 defaults -ip.bind to localhost — kubelet's readiness probe from
+    # outside the pod gets "connection refused". Bind to 0.0.0.0 so probes
+    # (and the Service ClusterIP) reach the API.
+    extraArgs:
+      - "-ip.bind=0.0.0.0"
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
