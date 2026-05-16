@@ -10,3 +10,4 @@ resources:
   - longhorn.yaml
   - cilium-agent.yaml
   - etcd.yaml
+  - seaweedfs.yaml
