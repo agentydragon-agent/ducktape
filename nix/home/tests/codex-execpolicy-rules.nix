@@ -55,9 +55,9 @@ let
   ];
 in
 {
-  test_rule_count_matches_ssot = {
+  test_rule_count_matches_prefix_entries = {
     expr = builtins.length generated.rules;
-    expected = builtins.length allowed.noSudo;
+    expected = builtins.length (builtins.filter (entry: entry.type == "prefix") allowed.noSudo);
   };
 
   test_has_git_read_only_rules = {
