@@ -88,6 +88,10 @@ second ordered roadmap.
       securities, crypto holdings, private-equity lots/marks/tender windows,
       cost basis, custody/source metadata, and valuation provenance; downstream
       private repos own the actual values.
+      First public contract: `augur/core/portfolio.py` with
+      `augur/core/testdata/portfolio.example.yaml`. Next step: teach runtime
+      funding policies to consume crypto and tender-window-aware private equity
+      positions instead of only preserving those holdings in typed input data.
 - [ ] Persist and harden model-governance artifacts for market providers. The
       runtime now attaches typed model card, evidence, calibration, scenario
       generator, path-set, and validation-report identities; the next step is

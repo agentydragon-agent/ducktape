@@ -140,6 +140,17 @@ py_library(
 )
 
 py_library(
+    name = "portfolio_py",
+    srcs = ["portfolio.py"],
+    deps = [
+        ":scenario_set_py",
+        ":schemas_py",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "scenario_engine_py",
     srcs = ["scenario_engine.py"],
     deps = [
@@ -352,6 +363,19 @@ py_test(
         ":policy_runtime_py",
         ":scenario_set_py",
         "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "portfolio_test",
+    srcs = ["portfolio_test.py"],
+    data = ["testdata/portfolio.example.yaml"],
+    deps = [
+        ":portfolio_py",
+        ":scenario_set_py",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

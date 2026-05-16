@@ -1,0 +1,146 @@
+schema_version: augur.portfolio.v1
+statement_id: public_example_portfolio
+base_currency: USD
+accounts:
+  - account_id: checking_cash
+    account_type: checking
+    owner_actor_id: owner
+    label: Checking cash
+    cash_balance_usd: 12500
+    custody:
+      custodian: public_example_bank
+      source_id: checking_public_example
+      external_account_id: checking-001
+    valuation:
+      source_id: checking_statement
+      snapshot_id: checking_statement_2026_01
+      as_of: "2026-01-31"
+      method: statement
+  - account_id: wealthfront_taxable
+    account_type: taxable_brokerage
+    owner_actor_id: owner
+    label: Taxable brokerage
+    cash_balance_usd: 250
+    custody:
+      custodian: wealthfront
+      source_id: wealthfront_public_example
+      external_account_id: brokerage-001
+    valuation:
+      source_id: wealthfront_statement
+      snapshot_id: wealthfront_statement_2026_01
+      as_of: "2026-01-31"
+      method: statement
+  - account_id: coinbase_exchange
+    account_type: crypto_exchange
+    owner_actor_id: owner
+    label: Coinbase exchange
+    custody:
+      custodian: coinbase
+      source_id: coinbase_public_example
+      external_account_id: coinbase-001
+    valuation:
+      source_id: coinbase_statement
+      snapshot_id: coinbase_statement_2026_01
+      as_of: "2026-01-31"
+      method: statement
+  - account_id: private_equity_portal
+    account_type: private_equity_platform
+    owner_actor_id: owner
+    label: Private equity portal
+    custody:
+      custodian: private_platform
+      source_id: private_equity_public_example
+      external_account_id: pe-001
+    valuation:
+      source_id: private_equity_statement
+      snapshot_id: private_equity_statement_2026_01
+      as_of: "2026-01-31"
+      method: manual_mark
+public_securities:
+  - position_id: wealthfront_sp500
+    account_id: wealthfront_taxable
+    symbol: VOO
+    security_kind: etf
+    augur_asset_type: generic_sp500_stock
+    quantity: 10
+    market_value_usd: 50000
+    cost_basis:
+      amount_usd: 30000
+      source_id: wealthfront_basis
+      as_of: "2026-01-31"
+    custody:
+      custodian: wealthfront
+      source_id: wealthfront_public_example
+      external_position_id: voo-taxable-001
+    valuation:
+      source_id: wealthfront_quote
+      snapshot_id: wealthfront_statement_2026_01
+      as_of: "2026-01-31"
+      method: market_quote
+crypto_holdings:
+  - position_id: coinbase_btc
+    account_id: coinbase_exchange
+    asset_symbol: BTC
+    network: bitcoin
+    quantity: 0.1
+    market_value_usd: 12000
+    cost_basis:
+      amount_usd: 8000
+      source_id: coinbase_basis
+      as_of: "2026-01-31"
+    custody:
+      custodian: coinbase
+      source_id: coinbase_public_example
+      external_position_id: btc-001
+    valuation:
+      source_id: coinbase_quote
+      snapshot_id: coinbase_statement_2026_01
+      as_of: "2026-01-31"
+      method: market_quote
+  - position_id: coinbase_eth
+    account_id: coinbase_exchange
+    asset_symbol: ETH
+    network: ethereum
+    quantity: 2
+    market_value_usd: 7000
+    cost_basis:
+      amount_usd: 4500
+      source_id: coinbase_basis
+      as_of: "2026-01-31"
+    custody:
+      custodian: coinbase
+      source_id: coinbase_public_example
+      external_position_id: eth-001
+    valuation:
+      source_id: coinbase_quote
+      snapshot_id: coinbase_statement_2026_01
+      as_of: "2026-01-31"
+      method: market_quote
+private_equity_lots:
+  - lot_id: private_company_seed_lot
+    account_id: private_equity_portal
+    issuer_id: private_company
+    label: Private company seed lot
+    liquidity: tender_only
+    units: 1000
+    mark_value_usd: 25000
+    cost_basis:
+      amount_usd: 5000
+      source_id: cap_table_basis
+      as_of: "2026-01-31"
+    tender_windows:
+      - window_id: example_2026_q2
+        status: scheduled
+        opens_on: 2026-04-01
+        closes_on: 2026-04-30
+        tenderable_units: 250
+        source_id: tender_notice_2026_q2
+    custody:
+      custodian: private_platform
+      source_id: private_equity_public_example
+      external_position_id: pe-lot-001
+    valuation:
+      source_id: private_equity_mark
+      snapshot_id: private_equity_statement_2026_01
+      as_of: "2026-01-31"
+      method: manual_mark
