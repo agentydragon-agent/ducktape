@@ -90,9 +90,23 @@ EOF
 export XDG_DATA_DIRS="$tmpdir/data${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 export XDG_CONFIG_HOME="$conf_dir"
 export DCONF_PROFILE="$tmpdir/dconf-profile"
-# Force the extension's CLI subprocess to use the in-repo build.
-export AI_QUOTA_BIN="$aiquota_bin"
-echo ">> AI_QUOTA_BIN=$AI_QUOTA_BIN"
+
+# Force the extension's CLI subprocess to use the in-repo build, and pass
+# --config explicitly so the spawn doesn't depend on XDG_CONFIG_HOME making
+# it through the gnome-shell / dbus-run-session env passthrough (which is
+# how zai's [zai] section was getting lost — `api_key_path not configured`).
+real_aiquota_config="$real_conf/aiquota/config.toml"
+if [[ ! -e "$real_aiquota_config" ]]; then
+  echo "WARN: $real_aiquota_config not found — providers needing config will error" >&2
+fi
+wrapper="$tmpdir/aiquota-wrapper.sh"
+cat >"$wrapper" <<EOF
+#!/usr/bin/env bash
+exec $(printf %q "$aiquota_bin") --config $(printf %q "$real_aiquota_config") "\$@"
+EOF
+chmod +x "$wrapper"
+export AI_QUOTA_BIN="$wrapper"
+echo ">> AI_QUOTA_BIN=$AI_QUOTA_BIN (wraps $aiquota_bin --config $real_aiquota_config)"
 
 # --- enable extension in isolated dconf ------------------------------------
 gsettings set org.gnome.shell disable-user-extensions false
