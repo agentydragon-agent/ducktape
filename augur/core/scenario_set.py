@@ -174,6 +174,12 @@ class FundingDecisionType(StrEnum):
     UNFUNDED = "unfunded"
 
 
+class FundingSourceType(StrEnum):
+    CASH_ACCOUNT = "cash_account"
+    PUBLIC_MARKET_ASSET = "public_market_asset"
+    UNFUNDED = "unfunded"
+
+
 class SettlementStatus(StrEnum):
     PAID = "paid"
     PARTIALLY_PAID = "partially_paid"
@@ -639,6 +645,11 @@ class SimulationFundingDecision(_SimulationTraceBase):
     actor_id: str
     policy_id: str | None = None
     policy_sequence_index: NonNegativeInt | None = None
+    source_type: FundingSourceType | None = None
+    source_account_id: str | None = None
+    source_account_type: AccountType | None = None
+    source_asset_id: str | None = None
+    source_asset_type: AssetType | None = None
     available_cash_usd: float
     requested_cash_usd: float
     requested_sale_usd: float = 0.0

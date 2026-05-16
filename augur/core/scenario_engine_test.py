@@ -12,7 +12,9 @@ from augur.core.scenario_set import (
     AccountType,
     AccruePartnerEquityAction,
     ActionType,
+    AssetType,
     FundingDecisionType,
+    FundingSourceType,
     MarketRequest,
     MonthlySpendDecision,
     ObligationStatus,
@@ -1366,6 +1368,44 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
         assert decision.opportunity_cause_id == expected_opportunity_id
 
 
+def test_required_tax_obligation_can_be_funded_from_cash_account() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "cash_funded_tax_obligation",
+                cash_usd=0,
+                sp500_usd=0,
+                private_equity_usd=200_000,
+                private_equity_basis_usd=0,
+                private_equity_units=100,
+                policies=[
+                    {
+                        "policy_id": "private_equity_sale",
+                        "policy_type": "private_equity_sale",
+                        "actor_id": "owner",
+                        "proceeds_destination": "cash",
+                        "sale_rule": {"sale_rule_type": "fixed_amount_on_opportunity", "amount_usd": 100_000},
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+
+    assert len(result.obligations) == 2
+    assert {obligation.status for obligation in result.obligations} == {ObligationStatus.PAID}
+    assert {settlement.status for settlement in result.settlement_results} == {SettlementStatus.PAID}
+    assert result.failure_events == ()
+    assert [status.status for status in result.rollout_statuses()] == [RolloutStatusType.ACTIVE] * 2
+    assert {decision.decision_type for decision in result.funding_decisions} == {FundingDecisionType.USE_CASH}
+    assert all(decision.funded_cash_usd > 0 for decision in result.funding_decisions)
+    assert {
+        (decision.source_type, decision.source_account_id, decision.source_account_type)
+        for decision in result.funding_decisions
+    } == {(FundingSourceType.CASH_ACCOUNT, "checking", AccountType.CHECKING)}
+
+
 def test_required_tax_obligation_fails_when_policy_does_not_fund_it() -> None:
     scenario_set = ScenarioSet.model_validate(
         _scenario_set_body(
@@ -1401,6 +1441,19 @@ def test_required_tax_obligation_fails_when_policy_does_not_fund_it() -> None:
         FundingDecisionType.USE_CASH,
         FundingDecisionType.UNFUNDED,
     }
+    cash_decisions = [
+        decision for decision in result.funding_decisions if decision.decision_type is FundingDecisionType.USE_CASH
+    ]
+    assert {
+        (decision.source_type, decision.source_account_id, decision.source_account_type) for decision in cash_decisions
+    } == {(FundingSourceType.CASH_ACCOUNT, "checking", AccountType.CHECKING)}
+    unfunded_decisions = [
+        decision for decision in result.funding_decisions if decision.decision_type is FundingDecisionType.UNFUNDED
+    ]
+    assert {decision.source_type for decision in unfunded_decisions} == {FundingSourceType.UNFUNDED}
+    assert all(
+        decision.source_account_id is None and decision.source_asset_id is None for decision in unfunded_decisions
+    )
     assert [status.status for status in result.rollout_statuses()] == [RolloutStatusType.FAILED] * 2
     assert result.rollout_statuses()[0].failed_obligation_count == 1
     assert result.rollout_statuses()[0].unpaid_obligation_usd > 0
@@ -1453,6 +1506,15 @@ def test_required_tax_obligation_can_be_rescued_by_existing_public_stock_sale_po
     assert {decision.policy_id for decision in sale_decisions} == {"tax_funding_sale"}
     assert {decision.policy_sequence_index for decision in sale_decisions} == {1}
     assert all(decision.funded_cash_usd > 0 for decision in sale_decisions)
+    assert {
+        (decision.source_type, decision.source_asset_id, decision.source_asset_type) for decision in sale_decisions
+    } == {(FundingSourceType.PUBLIC_MARKET_ASSET, "sp500", AssetType.GENERIC_SP500_STOCK)}
+    cash_decisions = [
+        decision for decision in result.funding_decisions if decision.decision_type is FundingDecisionType.USE_CASH
+    ]
+    assert {
+        (decision.source_type, decision.source_account_id, decision.source_account_type) for decision in cash_decisions
+    } == {(FundingSourceType.CASH_ACCOUNT, "checking", AccountType.CHECKING)}
     assert_allclose(result.cash_usd[:, 1], 20_000 - result.total_income_tax_usd[:, 1])
     assert_allclose(result.generic_sp500_value_usd[:, 1], 80_000)
 

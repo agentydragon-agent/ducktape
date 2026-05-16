@@ -42,6 +42,7 @@ class SellAssetInstructionBatch:
     asset_type: AssetType
     requested_amount_usd: np.ndarray
     target_cash_floor_usd: float | None = None
+    source_asset_id: str | None = None
 
 
 @dataclass(frozen=True)

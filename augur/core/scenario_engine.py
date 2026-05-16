@@ -42,7 +42,9 @@ from augur.core.property_sale import (
 from augur.core.property_tax import monthly_property_tax_usd
 from augur.core.provenance import policy_program_set_id, projection_trajectory_id, scenario_input_id
 from augur.core.scenario_set import (
+    AccountBalance,
     AccountingDetailType,
+    AccountType,
     AccruePartnerEquityAction,
     ActorRole,
     AssetType,
@@ -50,6 +52,7 @@ from augur.core.scenario_set import (
     FailureEventType,
     FinancingMode,
     FundingDecisionType,
+    FundingSourceType,
     GenericSp500StockPosition,
     LiquidNetWorthFloorPrivateEquitySaleRule,
     MarketPathObservation,
@@ -2629,6 +2632,8 @@ def _settle_required_cash_obligations(
     sp500_sale_action_records: list[Sp500SaleActionRecord],
 ) -> None:
     actor_id = _primary_owner_actor_id(scenario)
+    cash_source_account = _single_checking_account_source(scenario, actor_id=actor_id)
+    sp500_source_asset = _single_sp500_asset_source(scenario, actor_id=actor_id)
     for month_position, due_month_index in enumerate(month_index.tolist()):
         due = obligation_amount_usd[:, month_position]
         if not np.any(due > 0):
@@ -2644,6 +2649,7 @@ def _settle_required_cash_obligations(
             obligation_amount_usd=due,
             available_cash_usd=cash_usd[:, month_position],
             funded_cash_usd=paid_from_cash,
+            source_account=cash_source_account,
         )
 
         for policy_step in policy_steps:
@@ -2657,6 +2663,7 @@ def _settle_required_cash_obligations(
                 remaining_units=remaining_sp500_units_by_month[:, month_position],
                 remaining_basis_usd=remaining_sp500_basis_by_month[:, month_position],
                 sp500_unit_price_usd=market_bundle.generic_sp500_multipliers[:, month_position],
+                source_asset=sp500_source_asset,
             )
             if application is None:
                 continue
@@ -2689,6 +2696,7 @@ def _settle_required_cash_obligations(
                 requested_sale_usd=application.instruction.requested_amount_usd,
                 funded_cash_usd=application.funded_cash_usd,
                 shortfall_usd=application.shortfall_usd,
+                source_asset=sp500_source_asset,
             )
             sp500_sale_action_records.append(
                 Sp500SaleActionRecord(
@@ -2754,6 +2762,7 @@ def _apply_obligation_funding_policy_step(
     remaining_units: np.ndarray,
     remaining_basis_usd: np.ndarray,
     sp500_unit_price_usd: np.ndarray,
+    source_asset: GenericSp500StockPosition | None,
 ) -> ObligationFundingPolicyApplication | None:
     policy = policy_step.policy
     if isinstance(policy, CheckingFloorSellPublicStockPolicy):
@@ -2765,6 +2774,7 @@ def _apply_obligation_funding_policy_step(
             remaining_units=remaining_units,
             remaining_basis_usd=remaining_basis_usd,
             sp500_unit_price_usd=sp500_unit_price_usd,
+            source_asset=source_asset,
         )
     return None
 
@@ -2778,6 +2788,7 @@ def _apply_checking_floor_obligation_funding_policy(
     remaining_units: np.ndarray,
     remaining_basis_usd: np.ndarray,
     sp500_unit_price_usd: np.ndarray,
+    source_asset: GenericSp500StockPosition | None,
 ) -> ObligationFundingPolicyApplication | None:
     policy = policy_step.policy
     if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
@@ -2794,6 +2805,7 @@ def _apply_checking_floor_obligation_funding_policy(
         asset_type=AssetType.GENERIC_SP500_STOCK,
         requested_amount_usd=requested_sale,
         target_cash_floor_usd=float(policy.floor_usd),
+        source_asset_id=source_asset.asset_id if source_asset is not None else None,
     )
     sale_application = apply_generic_sp500_sale_instruction(
         instruction,
@@ -2828,6 +2840,7 @@ def _record_obligation_cash_funding_decisions(
     obligation_amount_usd: np.ndarray,
     available_cash_usd: np.ndarray,
     funded_cash_usd: np.ndarray,
+    source_account: AccountBalance | None,
 ) -> None:
     records.extend(
         (
@@ -2837,6 +2850,9 @@ def _record_obligation_cash_funding_decisions(
                 obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
                 decision_type=FundingDecisionType.USE_CASH,
                 actor_id=actor_id,
+                source_type=FundingSourceType.CASH_ACCOUNT,
+                source_account_id=source_account.account_id if source_account is not None else None,
+                source_account_type=AccountType.CHECKING,
                 available_cash_usd=float(available_cash_usd[rollout_index]),
                 requested_cash_usd=float(obligation_amount_usd[rollout_index]),
                 funded_cash_usd=float(funded_cash_usd[rollout_index]),
@@ -2860,6 +2876,7 @@ def _record_obligation_sale_funding_decisions(
     requested_sale_usd: np.ndarray,
     funded_cash_usd: np.ndarray,
     shortfall_usd: np.ndarray,
+    source_asset: GenericSp500StockPosition | None,
 ) -> None:
     policy = policy_step.policy
     records.extend(
@@ -2872,6 +2889,9 @@ def _record_obligation_sale_funding_decisions(
                 actor_id=actor_id,
                 policy_id=policy.policy_id,
                 policy_sequence_index=policy_step.sequence_index,
+                source_type=FundingSourceType.PUBLIC_MARKET_ASSET,
+                source_asset_id=source_asset.asset_id if source_asset is not None else None,
+                source_asset_type=AssetType.GENERIC_SP500_STOCK,
                 available_cash_usd=0.0,
                 requested_cash_usd=float(obligation_amount_usd[rollout_index]),
                 requested_sale_usd=float(requested_sale_usd[rollout_index]),
@@ -2900,6 +2920,7 @@ def _record_unfunded_obligation_decisions(
                 obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
                 decision_type=FundingDecisionType.UNFUNDED,
                 actor_id=actor_id,
+                source_type=FundingSourceType.UNFUNDED,
                 available_cash_usd=0.0,
                 requested_cash_usd=float(obligation_amount_usd[rollout_index]),
                 funded_cash_usd=0.0,
@@ -3558,6 +3579,17 @@ def _initial_cash_usd(scenario: Scenario) -> float:
     )
 
 
+def _single_checking_account_source(scenario: Scenario, *, actor_id: str) -> AccountBalance | None:
+    accounts = tuple(
+        account
+        for account in scenario.initial_balance_sheet.accounts
+        if account.account_type is AccountType.CHECKING and account.owner_actor_id == actor_id
+    )
+    if len(accounts) == 1:
+        return accounts[0]
+    return None
+
+
 def _initial_sp500_value_usd(scenario: Scenario) -> float:
     return sum(
         asset.value_usd
@@ -3572,6 +3604,17 @@ def _initial_sp500_cost_basis_usd(scenario: Scenario) -> float:
         for asset in scenario.initial_balance_sheet.assets
         if isinstance(asset, GenericSp500StockPosition)
     )
+
+
+def _single_sp500_asset_source(scenario: Scenario, *, actor_id: str) -> GenericSp500StockPosition | None:
+    positions = tuple(
+        asset
+        for asset in scenario.initial_balance_sheet.assets
+        if isinstance(asset, GenericSp500StockPosition) and asset.owner_actor_id == actor_id
+    )
+    if len(positions) == 1:
+        return positions[0]
+    return None
 
 
 def _initial_private_equity_value_usd(scenario: Scenario) -> float:
