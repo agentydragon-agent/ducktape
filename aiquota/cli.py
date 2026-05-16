@@ -27,8 +27,13 @@ def _service(ctx: typer.Context) -> QuotaService:
 
 @app.command()
 def fetch(ctx: typer.Context) -> None:
-    """Fetch and display quota status in human-readable form (same info as the GNOME popup)."""
-    quotas = _service(ctx).fetch_fresh()
+    """Fetch and display quota status in human-readable form (same info as the GNOME popup).
+
+    Goes through the same cached path as the GNOME extension and `aiquota json`,
+    so all surfaces show the same numbers within the cache TTL. The cache
+    refreshes itself when older than `CACHE_TTL` (see aiquota/cache.py).
+    """
+    quotas = _service(ctx).fetch_all()
     print(render_human.render(quotas))
 
 

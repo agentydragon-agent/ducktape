@@ -46,9 +46,6 @@ class QuotaService:
     def fetch_all(self) -> AllQuotas:
         return self.cache.fetch_all(self.config)
 
-    def fetch_fresh(self) -> AllQuotas:
-        return AllQuotas(providers=_fetch_providers(self.config), fetched_at=datetime.now(UTC))
-
 
 def _fetch_providers(config: ConfigFile) -> list[ProviderQuota]:
     providers: list[ProviderQuota] = []
