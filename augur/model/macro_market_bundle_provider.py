@@ -31,9 +31,6 @@ class MacroMarketBundleProvider:
         self.config_path = Path(config_path).resolve()
         config = load_market_config(self.config_path)
         self.label: str = market_model.label
-        self.horizon_start = config.horizon_start
-        self.horizon_months = config.horizon_years * 12
-        self.seed = config.seed
 
         historical, evidence = load_evidence(config, self.config_path.parent)
         self.latest_observations: dict[str, Any] = dict(evidence.latest_observations)
@@ -89,9 +86,6 @@ class MacroMarketBundleProvider:
                 notes=("sampled by MacroMarketBundleProvider",),
                 source_metadata={
                     "market_provider_label": self.label,
-                    "market_provider_horizon_start": self.horizon_start,
-                    "market_provider_horizon_months": self.horizon_months,
-                    "market_provider_seed": self.seed,
                     "current_private_equity_price_usd": self._current_private_equity_price_usd,
                     "latest_observation_ids": sorted(str(key) for key in self.latest_observations),
                 },

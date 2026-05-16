@@ -33,8 +33,6 @@ def provider(request: pytest.FixtureRequest) -> MacroMarketBundleProvider:
 
 def test_metadata_populated(provider: MacroMarketBundleProvider) -> None:
     assert provider.label in LABELS
-    assert provider.horizon_months > 0
-    assert isinstance(provider.horizon_start, str)
     assert isinstance(provider.latest_observations, dict)
 
 
@@ -69,6 +67,10 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
 
     assert bundle.rollout_count == n_rollouts
     assert bundle.horizon_months == horizon_months
+    assert bundle.metadata.seed == 42
+    assert bundle.metadata.source_metadata["market_provider_label"] == provider.label
+    assert "market_provider_seed" not in bundle.metadata.source_metadata
+    assert "market_provider_horizon_months" not in bundle.metadata.source_metadata
     np.testing.assert_array_equal(bundle.month_index, np.arange(horizon_months + 1, dtype="int64"))
     for key in (
         "inflation_multipliers",

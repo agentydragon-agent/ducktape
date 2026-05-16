@@ -1,6 +1,4 @@
 {
-  "horizon_start": "2026-04-29",
-  "horizon_years": 30,
   "source_data": {
     "fred_sp500_csv": "source/fred_sp500.csv",
     "yahoo_spy_adjusted_json": "source/yahoo_spy_chart_adjusted.json",
@@ -33,12 +31,5 @@
       "vallejo_ca": "rent",
       "mare_island_vallejo_ca": "rent"
     }
-  },
-  "seed": 20260429,
-  "simulation": {
-    "rollout_samples": 512
-  },
-  "runtime": {
-    "sampler": "numpy"
   }
 }
