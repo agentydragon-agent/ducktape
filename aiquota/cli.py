@@ -5,7 +5,7 @@ import typer
 
 from aiquota.cache import QuotaService
 from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
-from aiquota.render import human as render_human, json_output, tmux as render_tmux
+from aiquota.render import human as render_human, json_output, tmux as render_tmux, view_model
 
 _CONFIG_OPTION = typer.Option(DEFAULT_CONFIG_PATH, "--config", "-c", help="Config file path")
 
@@ -42,10 +42,23 @@ def tmux(ctx: typer.Context) -> None:
 
 @app.command(name="json")
 def json_cmd(ctx: typer.Context) -> None:
-    """Render quota status as JSON (for GNOME extension consumption)."""
-    svc = _service(ctx)
-    quotas = svc.fetch_all()
+    """Render raw quota status as JSON."""
+    quotas = _service(ctx).fetch_all()
     json_output.render(quotas)
+
+
+@app.command(name="gnome-extension-json")
+def gnome_extension_json(ctx: typer.Context) -> None:
+    """Emit the JSON view consumed by the GNOME shell extension.
+
+    Same raw quota fields as `json`, plus derived view-model bits
+    (`currently_over_plan`, `extra_status`) so the extension and the CLI
+    can't drift on policy decisions. See aiquota/AGENTS.md.
+    """
+    quotas = _service(ctx).fetch_all()
+    view = view_model.to_view(quotas)
+    sys.stdout.write(view.model_dump_json(indent=2))
+    sys.stdout.write("\n")
 
 
 if __name__ == "__main__":

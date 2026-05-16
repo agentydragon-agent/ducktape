@@ -11,8 +11,12 @@
       "used_credits": 314159.0,
       "utilization": 62.8318,
       "currency": "USD",
-      "disabled_reason": null
-    }
+      "disabled_reason": null,
+      "used_usd": 3141.59,
+      "monthly_limit_usd": 5000.0
+    },
+    "currentlyOverPlan": true,
+    "extraStatus": "active"
   },
   "codex": {
     "short": { "usedPercent": 30, "resetSeconds": 12600, "windowSeconds": 18000 },

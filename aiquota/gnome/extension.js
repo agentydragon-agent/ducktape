@@ -136,16 +136,10 @@ function formatCompactDollars(usd) {
   return `$${Math.round(usd)}`;
 }
 
-// `is_enabled` only means the extra-usage feature is turned on for the
-// account; the user is *currently* burning extra only when the 7d cap is
-// exhausted. The monthly $ tally is cumulative across the billing month
-// and isn't a "right now" signal.
-function currentlyOverPlan(state) {
-  if (!state?.extraUsage?.is_enabled) return false;
-  const used = state.long?.usedPercent;
-  return used != null && used >= 100;
-}
-
+// The "currently burning extra" decision lives in the Python view model
+// (see aiquota/render/view_model.py) and is delivered to us by
+// `aiquota gnome-extension-json` as state.currentlyOverPlan. Don't
+// reintroduce a local copy: see aiquota/AGENTS.md.
 function formatExtraUsage(extra) {
   if (!extra || !extra.is_enabled || !(extra.used_usd > 0)) return null;
   const used = extra.used_usd;
@@ -165,7 +159,15 @@ function elapsedFraction(state) {
 }
 
 function emptyProviderState() {
-  return { short: null, long: null, lastFetch: null, error: null, extraUsage: null };
+  return {
+    short: null,
+    long: null,
+    lastFetch: null,
+    error: null,
+    extraUsage: null,
+    currentlyOverPlan: false,
+    extraStatus: "none",
+  };
 }
 
 // Descriptor for each provider. All runtime state (UI elements, fetch state)
@@ -235,12 +237,16 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _loadFixtureData(data) {
+      // Test fixtures specify currentlyOverPlan / extraStatus explicitly so
+      // we never re-derive policy on the JS side (see aiquota/AGENTS.md).
       const provider = (node) => ({
         short: node?.short ?? null,
         long: node?.long ?? null,
         lastFetch: node?.lastFetch != null ? Date.now() : null,
         error: node?.error ?? null,
         extraUsage: node?.extraUsage ?? null,
+        currentlyOverPlan: node?.currentlyOverPlan === true,
+        extraStatus: node?.extraStatus ?? "none",
       });
       for (const p of this._providers) p.state = provider(data[p.id]);
       this._renderPanel();
@@ -418,6 +424,9 @@ const QuotaIndicator = GObject.registerClass(
                 monthly_limit_usd: extra.monthly_limit_usd,
               }
             : null,
+          // Derived policy bits from the Python view model — single source of truth.
+          currentlyOverPlan: pq.currently_over_plan === true,
+          extraStatus: pq.extra_status ?? "none",
         };
       }
     }
@@ -457,7 +466,7 @@ const QuotaIndicator = GObject.registerClass(
       const longTint = longState
         ? tintFor({ pace: longPace, usedPercent: longState.usedPercent, isShort: false })
         : "unknown";
-      const overPlan = currentlyOverPlan(state);
+      const overPlan = state.currentlyOverPlan === true;
       const tint = overPlan ? "hot" : stale ? "stale" : bindingTint(shortTint, longTint);
       this._setTint(icon, paceLabel, tint);
       const paceText = formatPace(longPace) ?? "";
@@ -471,7 +480,7 @@ const QuotaIndicator = GObject.registerClass(
     _renderPopup() {
       for (const p of this._providers) {
         this._renderProviderHeader(p.header, p.label, p.state);
-        if (currentlyOverPlan(p.state)) {
+        if (p.state.currentlyOverPlan === true) {
           p.shortRow.visible = false;
           p.longRow.visible = true;
           const live = withLiveReset(p.state.long);
@@ -574,7 +583,7 @@ const QuotaIndicator = GObject.registerClass(
     _refresh() {
       const binPath = GLib.getenv("AI_QUOTA_BIN") || "aiquota";
       try {
-        const [ok, stdout, , exitStatus] = GLib.spawn_command_line_sync(`${binPath} json`);
+        const [ok, stdout, , exitStatus] = GLib.spawn_command_line_sync(`${binPath} gnome-extension-json`);
         if (!ok || exitStatus !== 0) {
           for (const p of this._providers) p.state.error = `aiquota exited ${exitStatus}`;
         } else {

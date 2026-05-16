@@ -1,58 +1,45 @@
 """Human-readable CLI rendering — mirrors the GNOME extension popup bars."""
 
-from aiquota.models import AllQuotas, ExtraUsage, ProviderQuota, QuotaWindow
+from aiquota.models import AllQuotas, ExtraUsage, QuotaWindow
 from aiquota.pace import compute_pace
 from aiquota.render.format import format_duration, format_pace, format_pace_forecast
-
-# At/above this 7d usage we treat the user as "currently burning extra" — every
-# additional call exceeds the prepaid weekly cap and goes on the monthly bill.
-# `extra_usage.is_enabled` only means the feature is on for the account, not
-# that they're actively over plan. The monthly $ tally likewise accumulates
-# across the whole billing month and isn't a "right now" signal.
-_OVER_PLAN_PERCENT = 100.0
+from aiquota.render.view_model import ProviderView, to_view
 
 
 def render(quotas: AllQuotas) -> str:
-    return "\n".join(_render_provider(pq) for pq in quotas.providers)
+    return "\n".join(_render_provider(pv) for pv in to_view(quotas).providers)
 
 
-def _render_provider(pq: ProviderQuota) -> str:
-    if pq.error and pq.short_window is None and pq.long_window is None:
-        return f"{pq.provider}: error — {pq.error}"
+def _render_provider(pv: ProviderView) -> str:
+    if pv.error and pv.short_window is None and pv.long_window is None:
+        return f"{pv.provider}: error — {pv.error}"
 
-    if _currently_over_plan(pq):
+    if pv.currently_over_plan:
         # Mirror the GNOME popup's collapsed view: while burning, 5h/7d bars are
         # noise — what matters is when the 7d window resets (which ends the burn).
-        lines = [f"{pq.provider}  {_format_extra_active(pq.extra_usage)}"]
-        if pq.long_window is not None:
-            lines.append(f"  7d reset: ↻ {format_duration(pq.long_window.reset_seconds)}")
+        lines = [f"{pv.provider}  {_format_extra_active(pv.extra_usage)}"]
+        if pv.long_window is not None:
+            lines.append(f"  7d reset: ↻ {format_duration(pv.long_window.reset_seconds)}")
         return "\n".join(lines)
 
-    lines = [_header(pq)]
-    if pq.short_window is not None:
-        lines.append(_window_line("5h", pq.short_window))
-    if pq.long_window is not None:
-        lines.append(_window_line("7d", pq.long_window))
-    if pq.extra_usage is not None and pq.extra_usage.used_usd > 0:
-        # Informational: prepaid still has room, but the user already incurred
-        # extra-usage spend earlier in the billing month. Worth surfacing so the
-        # monthly bill doesn't sneak up.
-        lines.append(f"  {_format_extra_informational(pq.extra_usage)}")
+    lines = [_header(pv)]
+    if pv.short_window is not None:
+        lines.append(_window_line("5h", pv.short_window))
+    if pv.long_window is not None:
+        lines.append(_window_line("7d", pv.long_window))
+    if pv.extra_status == "informational" and pv.extra_usage is not None:
+        # Prepaid still has room, but the user incurred extra-usage spend earlier
+        # in the billing month. Surface it so the monthly bill doesn't sneak up.
+        lines.append(f"  {_format_extra_informational(pv.extra_usage)}")
     if len(lines) == 1:
         lines.append("  no data")
     return "\n".join(lines)
 
 
-def _currently_over_plan(pq: ProviderQuota) -> bool:
-    if pq.extra_usage is None or not pq.extra_usage.is_enabled:
-        return False
-    return pq.long_window is not None and pq.long_window.used_percent >= _OVER_PLAN_PERCENT
-
-
-def _header(pq: ProviderQuota) -> str:
-    parts = [pq.provider]
-    if pq.error is not None:
-        parts.append(f"last refresh failed: {pq.error}")
+def _header(pv: ProviderView) -> str:
+    parts = [pv.provider]
+    if pv.error is not None:
+        parts.append(f"last refresh failed: {pv.error}")
     return "  ".join(parts)
 
 

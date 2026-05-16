@@ -10,12 +10,24 @@ py_library(
 )
 
 py_library(
+    name = "view_model_lib",
+    srcs = ["view_model.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = [
+        "//aiquota:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "human_lib",
     srcs = ["human.py"],
     imports = ["../.."],
     visibility = ["//aiquota:__pkg__"],
     deps = [
         ":format_lib",
+        ":view_model_lib",
         "//aiquota:models",
         "//aiquota:pace",
     ],
@@ -75,5 +87,15 @@ py_test(
         "//aiquota:models",
         "@pypi//pytest_bazel",
         "@pypi//syrupy",
+    ],
+)
+
+py_test(
+    name = "test_view_model",
+    srcs = ["test_view_model.py"],
+    deps = [
+        ":view_model_lib",
+        "//aiquota:models",
+        "@pypi//pytest_bazel",
     ],
 )
