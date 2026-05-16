@@ -5,6 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
+  retryInterval: 1m
   path: ./cluster/k8s/valkey
   prune: true
   sourceRef:
