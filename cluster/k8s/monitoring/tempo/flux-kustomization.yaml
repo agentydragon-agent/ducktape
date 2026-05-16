@@ -4,7 +4,7 @@ metadata:
   name: tempo
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/monitoring/tempo
@@ -25,4 +25,4 @@ spec:
   dependsOn:
     - name: monitoring-stack
     - name: grafana-helmrepository
-    - name: minio-hil
+    - name: seaweedfs-cluster

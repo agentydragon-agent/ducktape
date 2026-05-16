@@ -28,13 +28,13 @@ spec:
         trace:
           backend: s3
           s3:
-            endpoint: minio.minio-hil.svc.cluster.local:9000
+            endpoint: seaweedfs-s3.seaweedfs.svc:8333
             bucket: tempo
             insecure: true
 
       extraEnvFrom:
         - secretRef:
-            name: minio-credentials
+            name: tempo-s3-credentials
 
     persistence:
       enabled: false

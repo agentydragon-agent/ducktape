@@ -29,7 +29,7 @@ spec:
       storage:
         type: s3
         s3:
-          endpoint: http://minio.minio-hil.svc.cluster.local:9000
+          endpoint: http://seaweedfs-s3.seaweedfs.svc:8333
           region: us-east-1
           s3ForcePathStyle: true
           insecure: true
@@ -76,7 +76,7 @@ spec:
         size: 10Gi
       extraEnvFrom:
         - secretRef:
-            name: minio-credentials
+            name: loki-s3-credentials
       resources:
         requests:
           cpu: 100m
