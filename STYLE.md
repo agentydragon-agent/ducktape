@@ -245,6 +245,15 @@ old_field: str | None = None
 - **Fixture imports belong in conftest.py, not test files**: Never import pytest fixtures directly in `test_*.py` files. Instead, add fixture imports to the nearest `conftest.py`. Ruff ignores F401 in conftest files via `per-file-ignores` in `ruff.toml` (`"**/conftest.py" = ["F401"]`), so no `# noqa` comments are needed. Importing fixtures in test files causes F811 (redefinition) when the same name appears as a test function parameter.
 - **Concise test bodies**: Keep test functions focused on assertions. Delegate setup to fixtures.
 - **Update tests with production code**: When editing production code, check what tests use the interfaces you touched and propagate edits. Type signature changes, parameter changes, renamed functions, or changed behavior require corresponding test updates.
+- **No pure change-detector tests**: Do not add tests that only assert a
+  checked-in constant, enum value, fixture field, or config literal equals the
+  same literal copied into the test. These tests exercise no behavior and only
+  force mechanical updates when intentional data changes. Prefer tests that
+  prove semantics: parsing rejects invalid values, invariants hold, generated
+  schemas contain required structure, or representative calculations/flows
+  produce expected results. Example: testing that `FooMode.BAR == "bar"` is
+  usually not useful; testing that an unknown mode is rejected or that BAR mode
+  changes runtime behavior is useful.
 - **No lint silencing without approval**: Do not add ignore rules or silence individual lint errors unless explicitly approved.
 - **Use pre-commit**: Prefer `pre-commit run --all-files` over manually running individual tools (ruff, mypy, etc.) since pre-commit is configured correctly for this repository.
 - **Use `textwrap.dedent` for inline multiline strings**: When embedding multiline strings in tests (YAML, JSON, scripts), use `textwrap.dedent()` to maintain proper indentation in the test file while removing leading whitespace from the string content:
