@@ -96,7 +96,7 @@
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   programs.gnome-shell.extensions = [
     { package = pkgs.gnomeExtensions.appindicator; }
-    { package = ducktapePackages.gnome-shell-aiquota; }
+    { package = ducktapePackages.aiquota; }
   ];
 
   # gaffer-private disabled — see nix/docs/private_flake_inputs.md

@@ -52,10 +52,11 @@ jobs:
             target: //:wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl
             tests: //difftree/... //git_commit_ai/... //gmail_archiver/... //mcp_infra/... //mcp_utils/... //openai_utils/...
-          - pkg: gnome-shell-aiquota
-            target: //aiquota/gnome:aiquota_zip
-            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip
-            tests: //aiquota/gnome/...
+          - pkg: aiquota
+            target: //:aiquota_wheel //aiquota/gnome:aiquota_zip
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/aiquota-0.1.0-py3-none-any.whl
+            extra_outputs: bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip
+            tests: //aiquota/...
           - pkg: gterm-theme
             target: //gnome/gterm_theme:wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl
@@ -93,4 +94,5 @@ jobs:
           pkg: ${{ matrix.pkg }}
           bazel_target: ${{ matrix.target }}
           bazel_output: ${{ matrix.bazel_output }}
+          extra_outputs: ${{ matrix.extra_outputs || '' }}
           rbe_image: ${{ inputs.rbe_image }}

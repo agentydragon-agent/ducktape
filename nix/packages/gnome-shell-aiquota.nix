@@ -1,32 +1,40 @@
 {
   artifacts,
+  lib,
   pkgs,
 }:
-pkgs.stdenv.mkDerivation {
-  pname = "gnome-shell-extension-aiquota";
-  version = "1";
-  src = artifacts."gnome-shell-aiquota";
-
-  nativeBuildInputs = [
-    pkgs.jq
-    pkgs.unzip
+let
+  wheel = artifacts.aiquota;
+  extensionZip = artifacts.aiquota-extension;
+in
+pkgs.python3Packages.buildPythonApplication {
+  pname = "aiquota";
+  version = "latest";
+  format = "wheel";
+  src = wheel;
+  propagatedBuildInputs = with pkgs.python3Packages; [
+    httpx
+    platformdirs
+    pydantic
+    typer
   ];
+  doCheck = false;
+  dontUsePytestCheck = true;
 
-  unpackPhase = ''
-    runHook preUnpack
-    mkdir source
-    unzip "$src" -d source
-    cd source
-    runHook postUnpack
-  '';
-
-  installPhase = ''
-    runHook preInstall
-    uuid=$(jq -r '.uuid' metadata.json)
-    mkdir -p "$out/share/gnome-shell/extensions/$uuid"
-    cp -r . "$out/share/gnome-shell/extensions/$uuid"
-    runHook postInstall
+  nativeBuildInputs = [ pkgs.unzip ];
+  postInstall = ''
+    uuid="aiquota@allegedly.works"
+    extDir="$out/share/gnome-shell/extensions/$uuid"
+    mkdir -p "$extDir"
+    unzip -o ${extensionZip} -d "$extDir"
   '';
 
   passthru.extensionUuid = "aiquota@allegedly.works";
+
+  meta = {
+    description = "AI subscription quota tracker (CLI + GNOME Shell extension)";
+    homepage = "https://github.com/agentydragon/ducktape";
+    license = lib.licenses.agpl3Only;
+    mainProgram = "aiquota";
+  };
 }

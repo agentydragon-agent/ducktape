@@ -217,9 +217,10 @@ in
     ];
   };
 
-  # Standalone packages (not wheels)
-
-  gnome-shell-aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts; };
+  # Combined CLI + GNOME Shell extension package.
+  aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
+  # Alias for programs.gnome-shell.extensions compatibility.
+  gnome-shell-aiquota = aiquota;
   tana = pkgs.callPackage ./tana.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };

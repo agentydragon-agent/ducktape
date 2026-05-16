@@ -11,6 +11,10 @@ inputs:
   bazel_output:
     description: "Path to artifact under bb-out/ (e.g. bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl)"
     required: true
+  extra_outputs:
+    description: "Space-separated additional artifact paths to include in the release"
+    required: false
+    default: ""
   rbe_image:
     description: "Override RBE container image (optional)"
     required: false
@@ -54,7 +58,15 @@ runs:
           exit 1
         fi
 
-        # Content-addressed skip check: tag by hash of the unstamped wheel.
+        # Verify extra outputs exist
+        for extra in ${{ inputs.extra_outputs }}; do
+          if [[ ! -f "$extra" ]]; then
+            echo "::error::Extra output not found at $extra"
+            exit 1
+          fi
+        done
+
+        # Content-addressed skip check: tag by hash of the primary artifact.
         # If a release with this tag already exists, the content hasn't changed.
         content_sha=$(sha256sum "$artifact" | awk '{print $1}')
         tag="${PKG}-${content_sha:0:12}"
@@ -90,10 +102,16 @@ runs:
 
         tag="${{ steps.check.outputs.tag }}"
         artifact="${{ inputs.bazel_output }}"
+        files=("$artifact")
+
+        # Collect extra outputs
+        for extra in ${{ inputs.extra_outputs }}; do
+          files+=("$extra")
+        done
 
         echo "$PKG: content changed, creating release $tag"
 
-        gh release create "$tag" "$artifact" \
+        gh release create "$tag" "${files[@]}" \
           --title "$PKG (${tag#"${PKG}"-})" \
           --notes "$PKG release" \
           --latest=false

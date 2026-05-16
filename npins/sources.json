@@ -40,7 +40,7 @@
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-814f6c289ab9/claude_hook",
       "sha256": "gU9sKJq56TlnpstcqHFa812KHWF3nsZlX9i2bk5WE+4="
     },
-    "gnome-shell-aiquota": {
+    "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gnome-shell-aiquota-7a34226e7336/aiquota.zip",
       "sha256": "ejQibnM24fsh55JEeEfiDfUxa1wuMzO8ZUf6EaW8gDU="
     }

@@ -70,7 +70,7 @@
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   programs.gnome-shell.extensions = [
     { package = pkgs.gnomeExtensions.appindicator; }
-    { package = ducktapePackages.gnome-shell-aiquota; }
+    { package = ducktapePackages.aiquota; }
   ];
 
   # drivefs is provided by gaffer-private CI via cache.allegedly.works/gaffer
