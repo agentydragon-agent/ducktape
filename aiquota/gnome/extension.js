@@ -581,24 +581,19 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _refresh() {
-      const envBin = GLib.getenv("AI_QUOTA_BIN");
-      const binPath = envBin || "aiquota";
-      console.log(`[aiquota] _refresh: AI_QUOTA_BIN=${envBin ?? "<unset>"} → binPath=${binPath}`);
+      const binPath = GLib.getenv("AI_QUOTA_BIN") || "aiquota";
       try {
         const [ok, stdout, stderr, exitStatus] = GLib.spawn_command_line_sync(`${binPath} gnome-extension-json`);
-        console.log(
-          `[aiquota] spawn: ok=${ok} exit=${exitStatus} stdout_bytes=${stdout?.length ?? 0} stderr_bytes=${stderr?.length ?? 0}`
-        );
         if (!ok || exitStatus !== 0) {
           const stderrText = stderr ? decodeBytes(stderr) : "";
-          console.warn(`[aiquota] spawn failed; stderr: ${stderrText}`);
+          console.warn(`[aiquota] ${binPath} exited ${exitStatus}: ${stderrText}`);
           for (const p of this._providers) p.state.error = `aiquota exited ${exitStatus}`;
         } else {
           const data = JSON.parse(decodeBytes(stdout));
           this._loadSubprocessData(data);
         }
       } catch (e) {
-        console.error(`[aiquota] spawn threw: ${errorMessage(e)}`);
+        console.error(`[aiquota] spawn ${binPath} threw: ${errorMessage(e)}`);
         for (const p of this._providers) p.state.error = errorMessage(e);
       }
       this._renderPanel();

@@ -34,6 +34,20 @@ if ! command -v gnome-shell >/dev/null 2>&1; then
   exit 1
 fi
 
+# gnome-shell precedence for extension lookup is ~/.local/share > /etc/profiles
+# (home-manager) > XDG_DATA_DIRS, so a hand-installed copy at ~/.local will
+# shadow the devkit-extracted version and you'll be debugging stale JS. We
+# burned an evening on this once; fail loudly instead.
+uuid="aiquota@allegedly.works"
+shadow="$HOME/.local/share/gnome-shell/extensions/$uuid"
+if [[ -e "$shadow" ]]; then
+  echo "ERROR: $shadow exists and would shadow the devkit extension." >&2
+  echo "  gnome-shell prefers ~/.local/share over XDG_DATA_DIRS, so devkit JS" >&2
+  echo "  would never load. Remove it (or move it aside) and re-run:" >&2
+  echo "    rm -rf $shadow" >&2
+  exit 1
+fi
+
 # --- locate inputs ---------------------------------------------------------
 zip_path="$(rlocation "_main/aiquota/gnome/aiquota.zip")"
 if [[ ! -f "$zip_path" ]]; then
@@ -52,13 +66,9 @@ if [[ ! -x "$aiquota_bin" ]]; then
   exit 1
 fi
 
-uuid="aiquota@allegedly.works"
-
 # --- set up isolated temp tree ---------------------------------------------
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/aiquota-devkit.XXXXXX")
-# Keep the trace log around on exit so users can diagnose spawn failures
-# after gnome-shell quits. Everything else under $tmpdir is cleaned.
-trap 'mv "$tmpdir/aiquota-spawn.log" "${TMPDIR:-/tmp}/aiquota-devkit-last-spawn.log" 2>/dev/null; rm -rf "$tmpdir"' EXIT
+trap 'rm -rf "$tmpdir"' EXIT
 
 # Extract extension to temp data dir.
 ext_dir="$tmpdir/data/gnome-shell/extensions/$uuid"
@@ -93,43 +103,26 @@ export XDG_DATA_DIRS="$tmpdir/data${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 export XDG_CONFIG_HOME="$conf_dir"
 export DCONF_PROFILE="$tmpdir/dconf-profile"
 
-# Force the extension's CLI subprocess to use the in-repo build, and pass
-# --config explicitly so the spawn doesn't depend on XDG_CONFIG_HOME making
-# it through the gnome-shell / dbus-run-session env passthrough (which is
-# how zai's [zai] section was getting lost — `api_key_path not configured`).
+# Wrapper around the bazel-built aiquota so the spawned CLI always reads the
+# *real* config.toml regardless of XDG_CONFIG_HOME passthrough. Belt-and-
+# suspenders: export AI_QUOTA_BIN (extension.js's preferred path) and also
+# prepend a $tmpdir/bin/aiquota symlink to PATH so the spawn's default
+# fallback still lands here if env doesn't survive.
 real_aiquota_config="$real_conf/aiquota/config.toml"
 if [[ ! -e "$real_aiquota_config" ]]; then
   echo "WARN: $real_aiquota_config not found — providers needing config will error" >&2
 fi
 wrapper="$tmpdir/aiquota-wrapper.sh"
-trace_log="$tmpdir/aiquota-spawn.log"
 cat >"$wrapper" <<EOF
 #!/usr/bin/env bash
-# devkit spawn trace — every invocation logs argv + env + cwd + exit status here
-# so we can diagnose env passthrough issues.
-{
-  printf '=== spawn %s ===\n' "\$(date -Is)"
-  printf 'argv:'; printf ' %q' "\$0" "\$@"; printf '\n'
-  printf 'cwd: %s\n' "\$(pwd)"
-  printf 'env:\n'; env | sort | sed 's/^/  /'
-} >>$(printf %q "$trace_log") 2>&1
-$(printf %q "$aiquota_bin") --config $(printf %q "$real_aiquota_config") "\$@"
-rc=\$?
-printf 'exit: %d\n' "\$rc" >>$(printf %q "$trace_log")
-exit \$rc
+exec $(printf %q "$aiquota_bin") --config $(printf %q "$real_aiquota_config") "\$@"
 EOF
 chmod +x "$wrapper"
-# Belt-and-suspenders: export AI_QUOTA_BIN (preferred path in extension.js)
-# AND prepend a $tmpdir/bin/aiquota symlink to the wrapper onto PATH. If
-# gnome-shell --devkit strips arbitrary env vars but preserves PATH, the
-# spawn fallback to plain `aiquota` still lands on our wrapper.
 mkdir -p "$tmpdir/bin"
 ln -sf "$wrapper" "$tmpdir/bin/aiquota"
 export AI_QUOTA_BIN="$wrapper"
 export PATH="$tmpdir/bin:$PATH"
 echo ">> AI_QUOTA_BIN=$AI_QUOTA_BIN"
-echo ">> PATH prepend: $tmpdir/bin (aiquota → wrapper)"
-echo ">> spawn trace: $trace_log"
 
 # --- enable extension in isolated dconf ------------------------------------
 gsettings set org.gnome.shell disable-user-extensions false
