@@ -75,6 +75,7 @@ class MarketObservationType(StrEnum):
 class RolloutStatusType(StrEnum):
     ACTIVE = "active"
     CASH_NEGATIVE = "cash_negative"
+    FAILED = "failed"
 
 
 class AccountingDetailType(StrEnum):
@@ -154,6 +155,32 @@ class ReportMetric(StrEnum):
 
 class TaxPaymentTiming(StrEnum):
     ALLOCATED_TO_SOURCE_MONTH = "allocated_to_source_month"
+
+
+class ObligationType(StrEnum):
+    ANNUAL_TAX_PAYMENT = "annual_tax_payment"
+
+
+class ObligationStatus(StrEnum):
+    PAID = "paid"
+    PARTIALLY_PAID = "partially_paid"
+    UNPAID = "unpaid"
+
+
+class FundingDecisionType(StrEnum):
+    USE_CASH = "use_cash"
+    SELL_PUBLIC_STOCK = "sell_public_stock"
+    UNFUNDED = "unfunded"
+
+
+class SettlementStatus(StrEnum):
+    PAID = "paid"
+    PARTIALLY_PAID = "partially_paid"
+    UNPAID = "unpaid"
+
+
+class FailureEventType(StrEnum):
+    UNSETTLED_OBLIGATION = "unsettled_obligation"
 
 
 class ActorRole(StrEnum):
@@ -343,13 +370,16 @@ Policy = Annotated[
 ]
 
 
-class _SimulationActionBase(ApiModel):
+class _SimulationTraceBase(ApiModel):
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
     path_set_id: str | None = None
     exogenous_path_id: str | None = None
     scenario_input_id: str | None = None
     projection_trajectory_id: str | None = None
+
+
+class _SimulationActionBase(_SimulationTraceBase):
     actor_id: str
     policy_id: str
 
@@ -447,13 +477,7 @@ SimulationAction = Annotated[
 ]
 
 
-class _SimulationPolicyDecisionBase(ApiModel):
-    rollout_index: NonNegativeInt
-    month_index: NonNegativeInt
-    path_set_id: str | None = None
-    exogenous_path_id: str | None = None
-    scenario_input_id: str | None = None
-    projection_trajectory_id: str | None = None
+class _SimulationPolicyDecisionBase(_SimulationTraceBase):
     actor_id: str
     policy_id: str
     policy_sequence_index: NonNegativeInt
@@ -499,13 +523,8 @@ SimulationPolicyDecision = Annotated[
 ]
 
 
-class _SimulationMarketObservationBase(ApiModel):
-    rollout_index: NonNegativeInt
-    month_index: NonNegativeInt
-    path_set_id: str | None = None
-    exogenous_path_id: str | None = None
-    scenario_input_id: str | None = None
-    projection_trajectory_id: str | None = None
+class _SimulationMarketObservationBase(_SimulationTraceBase):
+    pass
 
 
 class MarketPathObservation(_SimulationMarketObservationBase):
@@ -535,13 +554,7 @@ SimulationMarketObservation = Annotated[
 ]
 
 
-class _SimulationLedgerBase(ApiModel):
-    rollout_index: NonNegativeInt
-    month_index: NonNegativeInt
-    path_set_id: str | None = None
-    exogenous_path_id: str | None = None
-    scenario_input_id: str | None = None
-    projection_trajectory_id: str | None = None
+class _SimulationLedgerBase(_SimulationTraceBase):
     actor_id: str
     policy_id: str | None = None
     event_id: str | None = None
@@ -563,13 +576,7 @@ class SimulationBalanceSnapshot(_SimulationLedgerBase):
     """A point-in-time state value for one rollout/month."""
 
 
-class _SimulationAccountingDetailBase(ApiModel):
-    rollout_index: NonNegativeInt
-    month_index: NonNegativeInt
-    path_set_id: str | None = None
-    exogenous_path_id: str | None = None
-    scenario_input_id: str | None = None
-    projection_trajectory_id: str | None = None
+class _SimulationAccountingDetailBase(_SimulationTraceBase):
     actor_id: str
     policy_id: str | None = None
     event_id: str | None = None
@@ -610,6 +617,49 @@ class TaxPaymentAllocationDetail(_SimulationAccountingDetailBase):
 SimulationAccountingDetail = Annotated[
     PropertySaleBasisGainDetail | TaxPaymentAllocationDetail, Field(discriminator="detail_type")
 ]
+
+
+class SimulationObligation(_SimulationTraceBase):
+    obligation_id: str
+    obligation_type: ObligationType
+    actor_id: str
+    creditor_id: str
+    due_month_index: NonNegativeInt
+    amount_due_usd: float
+    amount_paid_usd: float
+    unpaid_amount_usd: float
+    status: ObligationStatus
+    source_policy_id: str | None = None
+
+
+class SimulationFundingDecision(_SimulationTraceBase):
+    obligation_id: str
+    decision_type: FundingDecisionType
+    actor_id: str
+    policy_id: str | None = None
+    available_cash_usd: float
+    requested_cash_usd: float
+    requested_sale_usd: float = 0.0
+    funded_cash_usd: float = 0.0
+    shortfall_usd: float = 0.0
+
+
+class SimulationSettlementResult(_SimulationTraceBase):
+    obligation_id: str
+    obligation_type: ObligationType
+    actor_id: str
+    status: SettlementStatus
+    amount_due_usd: float
+    amount_paid_usd: float
+    unpaid_amount_usd: float
+
+
+class SimulationFailureEvent(_SimulationTraceBase):
+    failure_event_id: str
+    failure_event_type: FailureEventType
+    obligation_id: str
+    actor_id: str
+    unpaid_amount_usd: float
 
 
 class ReportSpec(ApiModel):
@@ -843,6 +893,9 @@ class RolloutStatus(ApiModel):
     status: RolloutStatusType
     min_cash_usd: float
     first_negative_cash_month_index: NonNegativeInt | None = None
+    first_failed_obligation_month_index: NonNegativeInt | None = None
+    failed_obligation_count: NonNegativeInt = 0
+    unpaid_obligation_usd: NonNegativeFloat = 0.0
 
 
 class RolloutStatusSummary(ApiModel):
@@ -852,7 +905,15 @@ class RolloutStatusSummary(ApiModel):
     @classmethod
     def from_statuses(cls, statuses: tuple[RolloutStatus, ...]) -> RolloutStatusSummary:
         status_counts = Counter(status.status for status in statuses)
-        counts = {status: status_counts[status] for status in RolloutStatusType} if statuses else {}
+        counts = (
+            {
+                status: status_counts[status]
+                for status in RolloutStatusType
+                if status is not RolloutStatusType.FAILED or status_counts[status] > 0
+            }
+            if statuses
+            else {}
+        )
         return cls(total_rollout_count=len(statuses), counts_by_status=counts)
 
 
@@ -871,6 +932,10 @@ class ScenarioResult(ApiModel):
     ledger_entries: tuple[SimulationLedgerEntry, ...] = ()
     balance_snapshots: tuple[SimulationBalanceSnapshot, ...] = ()
     accounting_details: tuple[SimulationAccountingDetail, ...] = ()
+    obligations: tuple[SimulationObligation, ...] = ()
+    funding_decisions: tuple[SimulationFundingDecision, ...] = ()
+    settlement_results: tuple[SimulationSettlementResult, ...] = ()
+    failure_events: tuple[SimulationFailureEvent, ...] = ()
     warnings: tuple[str, ...] = ()
 
 

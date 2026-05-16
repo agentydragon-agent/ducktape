@@ -12,8 +12,11 @@ from augur.core.scenario_set import (
     AccountType,
     AccruePartnerEquityAction,
     ActionType,
+    FundingDecisionType,
     MarketRequest,
     MonthlySpendDecision,
+    ObligationStatus,
+    ObligationType,
     PayMortgageAction,
     PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
@@ -21,6 +24,7 @@ from augur.core.scenario_set import (
     RolloutStatusType,
     ScenarioSet,
     SellPublicStockDecision,
+    SettlementStatus,
     SettlePropertySaleAction,
     TransferPartnerContributionAction,
 )
@@ -1347,6 +1351,96 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
         )
         assert decision.opportunity_id == expected_opportunity_id
         assert decision.opportunity_cause_id == expected_opportunity_id
+
+
+def test_required_tax_obligation_fails_when_policy_does_not_fund_it() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "unfunded_tax_obligation",
+                cash_usd=0,
+                sp500_usd=0,
+                private_equity_usd=200_000,
+                private_equity_basis_usd=0,
+                private_equity_units=100,
+                policies=[
+                    {
+                        "policy_id": "private_equity_sale",
+                        "policy_type": "private_equity_sale",
+                        "actor_id": "owner",
+                        "proceeds_destination": "generic_sp500_stock",
+                        "sale_rule": {"sale_rule_type": "fixed_amount_on_opportunity", "amount_usd": 100_000},
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+
+    assert len(result.obligations) == 2
+    assert {obligation.obligation_type for obligation in result.obligations} == {ObligationType.ANNUAL_TAX_PAYMENT}
+    assert {obligation.status for obligation in result.obligations} == {ObligationStatus.UNPAID}
+    assert all(obligation.amount_due_usd > 0 for obligation in result.obligations)
+    assert_allclose([obligation.amount_paid_usd for obligation in result.obligations], 0)
+    assert len(result.failure_events) == 2
+    assert {decision.decision_type for decision in result.funding_decisions} == {
+        FundingDecisionType.USE_CASH,
+        FundingDecisionType.UNFUNDED,
+    }
+    assert [status.status for status in result.rollout_statuses()] == [RolloutStatusType.FAILED] * 2
+    assert result.rollout_statuses()[0].failed_obligation_count == 1
+    assert result.rollout_statuses()[0].unpaid_obligation_usd > 0
+    assert_allclose(result.cash_usd[:, 1], 0)
+
+
+def test_required_tax_obligation_can_be_rescued_by_existing_public_stock_sale_policy() -> None:
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "funded_tax_obligation",
+                cash_usd=0,
+                sp500_usd=0,
+                private_equity_usd=200_000,
+                private_equity_basis_usd=0,
+                private_equity_units=100,
+                policies=[
+                    {
+                        "policy_id": "private_equity_sale",
+                        "policy_type": "private_equity_sale",
+                        "actor_id": "owner",
+                        "proceeds_destination": "generic_sp500_stock",
+                        "sale_rule": {"sale_rule_type": "fixed_amount_on_opportunity", "amount_usd": 100_000},
+                    },
+                    {
+                        "policy_id": "tax_funding_sale",
+                        "policy_type": "checking_floor_sell_public_stock",
+                        "actor_id": "owner",
+                        "floor_usd": 0,
+                        "sale_amount_usd": 20_000,
+                    },
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+
+    assert len(result.obligations) == 2
+    assert {obligation.status for obligation in result.obligations} == {ObligationStatus.PAID}
+    assert {settlement.status for settlement in result.settlement_results} == {SettlementStatus.PAID}
+    assert result.failure_events == ()
+    assert [status.status for status in result.rollout_statuses()] == [RolloutStatusType.ACTIVE] * 2
+    sale_decisions = [
+        decision
+        for decision in result.funding_decisions
+        if decision.decision_type is FundingDecisionType.SELL_PUBLIC_STOCK
+    ]
+    assert len(sale_decisions) == 2
+    assert {decision.policy_id for decision in sale_decisions} == {"tax_funding_sale"}
+    assert all(decision.funded_cash_usd > 0 for decision in sale_decisions)
+    assert_allclose(result.cash_usd[:, 1], 20_000 - result.total_income_tax_usd[:, 1])
+    assert_allclose(result.generic_sp500_value_usd[:, 1], 80_000)
 
 
 if __name__ == "__main__":

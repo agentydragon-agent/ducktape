@@ -311,6 +311,10 @@ class ScenarioRun:
             ledger_entries=self.arrays.ledger_entries,
             balance_snapshots=self.arrays.balance_snapshots,
             accounting_details=self.arrays.accounting_details,
+            obligations=self.arrays.obligations,
+            funding_decisions=self.arrays.funding_decisions,
+            settlement_results=self.arrays.settlement_results,
+            failure_events=self.arrays.failure_events,
             warnings=self.warnings,
         )
 

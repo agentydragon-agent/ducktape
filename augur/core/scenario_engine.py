@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol, Self
 
 import numpy as np
 
@@ -17,6 +17,7 @@ from augur.core.policy_runtime import (
     PrivateEquitySaleApplication,
     PrivateEquitySaleInstructionBatch,
     PrivateEquitySaleOpportunityBatch,
+    SellAssetInstructionBatch,
     actor_policy_programs,
     actor_policy_steps,
     apply_debit_account_instruction,
@@ -46,13 +47,17 @@ from augur.core.scenario_set import (
     ActorRole,
     AssetType,
     CheckingFloorSellPublicStockPolicy,
+    FailureEventType,
     FinancingMode,
+    FundingDecisionType,
     GenericSp500StockPosition,
     LiquidNetWorthFloorPrivateEquitySaleRule,
     MarketPathObservation,
     MonthlySpendAction,
     MonthlySpendDecision,
     MonthlySpendPolicy,
+    ObligationStatus,
+    ObligationType,
     OccupancyMode,
     PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
@@ -73,13 +78,18 @@ from augur.core.scenario_set import (
     SellPrivateEquityAction,
     SellPublicStockDecision,
     SellSp500Action,
+    SettlementStatus,
     SettlePropertySaleAction,
     SimulationAccountingDetail,
     SimulationAction,
     SimulationBalanceSnapshot,
+    SimulationFailureEvent,
+    SimulationFundingDecision,
     SimulationLedgerEntry,
     SimulationMarketObservation,
+    SimulationObligation,
     SimulationPolicyDecision,
+    SimulationSettlementResult,
     TaxPaymentAllocationDetail,
     TransferPartnerContributionAction,
 )
@@ -90,6 +100,12 @@ MORTGAGE_SERVICING_POLICY_ID = "mortgage_servicing"
 PROPERTY_OPERATING_CASH_FLOW_POLICY_ID = "property_operating_cash_flow"
 PROPERTY_SALE_SETTLEMENT_POLICY_ID = "property_sale_settlement"
 ANNUAL_TAX_ACCOUNTING_POLICY_ID = "annual_tax_accounting"
+
+
+class _TrajectoryTraceRecord(Protocol):
+    rollout_index: int
+
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self: ...
 
 
 @dataclass(frozen=True)
@@ -169,6 +185,10 @@ class ScenarioRunArrays:
     ledger_entries: tuple[SimulationLedgerEntry, ...]
     balance_snapshots: tuple[SimulationBalanceSnapshot, ...]
     accounting_details: tuple[SimulationAccountingDetail, ...]
+    obligations: tuple[SimulationObligation, ...]
+    funding_decisions: tuple[SimulationFundingDecision, ...]
+    settlement_results: tuple[SimulationSettlementResult, ...]
+    failure_events: tuple[SimulationFailureEvent, ...]
 
     @property
     def rollout_count(self) -> int:
@@ -184,6 +204,23 @@ class ScenarioRunArrays:
             cash_path = self.cash_usd[rollout_index, :]
             negative_positions = np.nonzero(cash_path < 0)[0]
             min_cash_usd = float(np.min(cash_path))
+            failed_events = tuple(event for event in self.failure_events if event.rollout_index == rollout_index)
+            if failed_events:
+                first_failed_month = min(event.month_index for event in failed_events)
+                statuses.append(
+                    RolloutStatus(
+                        rollout_index=rollout_index,
+                        status=RolloutStatusType.FAILED,
+                        min_cash_usd=min_cash_usd,
+                        first_negative_cash_month_index=(
+                            int(self.month_index[int(negative_positions[0])]) if negative_positions.size else None
+                        ),
+                        first_failed_obligation_month_index=first_failed_month,
+                        failed_obligation_count=len(failed_events),
+                        unpaid_obligation_usd=sum(event.unpaid_amount_usd for event in failed_events),
+                    )
+                )
+                continue
             if negative_positions.size == 0:
                 statuses.append(
                     RolloutStatus(
@@ -789,6 +826,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     private_equity_sale_taxable_gain = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     cash = np.zeros((rollout_count, month_count), dtype="float64")
+    remaining_sp500_units_by_month = np.zeros((rollout_count, month_count), dtype="float64")
+    remaining_sp500_basis_by_month = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_opportunity_event = market_bundle.private_equity_sale_opportunity_mask.copy()
     remaining_private_equity_fraction = np.ones(rollout_count, dtype="float64")
     remaining_sp500_units = np.divide(
@@ -810,6 +849,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     ledger_entries: list[SimulationLedgerEntry] = []
     balance_snapshots: list[SimulationBalanceSnapshot] = []
     accounting_details: list[SimulationAccountingDetail] = []
+    obligations: list[SimulationObligation] = []
+    funding_decisions: list[SimulationFundingDecision] = []
+    settlement_results: list[SimulationSettlementResult] = []
+    failure_events: list[SimulationFailureEvent] = []
     sp500_sale_action_records: list[Sp500SaleActionRecord] = []
     private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
 
@@ -970,6 +1013,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
 
         cash[:, month] = current_cash
         generic_sp500_value[:, month] = sp500_value_after_sale
+        remaining_sp500_units_by_month[:, month] = remaining_sp500_units
+        remaining_sp500_basis_by_month[:, month] = remaining_sp500_basis
         generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis
         checking_floor_shortfall[:, month] = sp500_shortfall
         private_equity_sale_taxable_gain[:, month] = private_equity_sale_taxable_gain_month
@@ -1000,12 +1045,44 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         partner_equity, sale_month=disposition.sale_month, property_sale_net_proceeds_usd=property_sale_net_proceeds
     )
     tax_cash_adjustment = np.cumsum(
-        (disposition.property_sale_tax_usd - property_sale_tax)
-        + (private_equity_sale_tax - adjusted_private_equity_sale_tax)
-        - generic_sp500_sale_tax,
+        np.maximum(
+            0.0,
+            (disposition.property_sale_tax_usd - property_sale_tax)
+            + (private_equity_sale_tax - adjusted_private_equity_sale_tax)
+            - generic_sp500_sale_tax,
+        ),
         axis=1,
     )
     cash = cash + tax_cash_adjustment
+    obligation_tax_due = np.maximum(
+        0.0,
+        -(
+            (disposition.property_sale_tax_usd - property_sale_tax)
+            + (private_equity_sale_tax - adjusted_private_equity_sale_tax)
+            - generic_sp500_sale_tax
+        ),
+    )
+    _settle_required_cash_obligations(
+        scenario=scenario,
+        market_bundle=market_bundle,
+        month_index=month_index,
+        policy_steps=policy_steps,
+        obligation_amount_usd=obligation_tax_due,
+        obligation_type=ObligationType.ANNUAL_TAX_PAYMENT,
+        creditor_id="tax_authority",
+        source_policy_id=ANNUAL_TAX_ACCOUNTING_POLICY_ID,
+        cash_usd=cash,
+        generic_sp500_value_usd=generic_sp500_value,
+        remaining_sp500_units_by_month=remaining_sp500_units_by_month,
+        remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
+        checking_floor_shortfall_usd=checking_floor_shortfall,
+        obligations=obligations,
+        funding_decisions=funding_decisions,
+        settlement_results=settlement_results,
+        failure_events=failure_events,
+        ledger_entries=ledger_entries,
+        sp500_sale_action_records=sp500_sale_action_records,
+    )
     private_equity_sale_tax = adjusted_private_equity_sale_tax
 
     partner_present = np.full((rollout_count, month_count), _has_partner(scenario), dtype=np.bool_)
@@ -1486,6 +1563,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         accounting_details=_sorted_accounting_details(
             _with_trajectory_identity(accounting_details, trace_identity_by_rollout)
         ),
+        obligations=_sorted_obligations(_with_trajectory_identity(obligations, trace_identity_by_rollout)),
+        funding_decisions=_sorted_funding_decisions(
+            _with_trajectory_identity(funding_decisions, trace_identity_by_rollout)
+        ),
+        settlement_results=_sorted_settlement_results(
+            _with_trajectory_identity(settlement_results, trace_identity_by_rollout)
+        ),
+        failure_events=_sorted_failure_events(_with_trajectory_identity(failure_events, trace_identity_by_rollout)),
     )
 
 
@@ -1508,8 +1593,10 @@ def _trace_identity_by_rollout(scenario: Scenario, market_bundle: MarketBundle) 
     }
 
 
-def _with_trajectory_identity(records: list[Any], identity_by_rollout: Mapping[int, dict[str, str]]) -> tuple[Any, ...]:
-    return tuple(record.model_copy(update=identity_by_rollout[int(record.rollout_index)]) for record in records)
+def _with_trajectory_identity[TraceRecordT: _TrajectoryTraceRecord](
+    records: list[TraceRecordT], identity_by_rollout: Mapping[int, dict[str, str]]
+) -> list[TraceRecordT]:
+    return [record.model_copy(update=identity_by_rollout[int(record.rollout_index)]) for record in records]
 
 
 def _market_path_observations(
@@ -2326,6 +2413,63 @@ def _sorted_accounting_details(records: list[SimulationAccountingDetail]) -> tup
     )
 
 
+def _sorted_obligations(records: list[SimulationObligation]) -> tuple[SimulationObligation, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda obligation: (
+                obligation.month_index,
+                obligation.rollout_index,
+                obligation.obligation_type,
+                obligation.obligation_id,
+            ),
+        )
+    )
+
+
+def _sorted_funding_decisions(records: list[SimulationFundingDecision]) -> tuple[SimulationFundingDecision, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda decision: (
+                decision.month_index,
+                decision.rollout_index,
+                decision.decision_type,
+                decision.policy_id or "",
+                decision.obligation_id,
+            ),
+        )
+    )
+
+
+def _sorted_settlement_results(records: list[SimulationSettlementResult]) -> tuple[SimulationSettlementResult, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda settlement: (
+                settlement.month_index,
+                settlement.rollout_index,
+                settlement.obligation_type,
+                settlement.obligation_id,
+            ),
+        )
+    )
+
+
+def _sorted_failure_events(records: list[SimulationFailureEvent]) -> tuple[SimulationFailureEvent, ...]:
+    return tuple(
+        sorted(
+            records,
+            key=lambda event: (
+                event.month_index,
+                event.rollout_index,
+                event.failure_event_type,
+                event.failure_event_id,
+            ),
+        )
+    )
+
+
 def _record_property_sale_actions(
     actions: list[SimulationAction],
     *,
@@ -2448,6 +2592,334 @@ def _tax_share_for_sale_action(
         where=source_taxable_income_usd > 0,
     )
     return tax_share
+
+
+def _settle_required_cash_obligations(
+    *,
+    scenario: Scenario,
+    market_bundle: MarketBundle,
+    month_index: np.ndarray,
+    policy_steps: tuple[ActorPolicyStep[Policy], ...],
+    obligation_amount_usd: np.ndarray,
+    obligation_type: ObligationType,
+    creditor_id: str,
+    source_policy_id: str,
+    cash_usd: np.ndarray,
+    generic_sp500_value_usd: np.ndarray,
+    remaining_sp500_units_by_month: np.ndarray,
+    remaining_sp500_basis_by_month: np.ndarray,
+    checking_floor_shortfall_usd: np.ndarray,
+    obligations: list[SimulationObligation],
+    funding_decisions: list[SimulationFundingDecision],
+    settlement_results: list[SimulationSettlementResult],
+    failure_events: list[SimulationFailureEvent],
+    ledger_entries: list[SimulationLedgerEntry],
+    sp500_sale_action_records: list[Sp500SaleActionRecord],
+) -> None:
+    actor_id = _primary_owner_actor_id(scenario)
+    for month_position, due_month_index in enumerate(month_index.tolist()):
+        due = obligation_amount_usd[:, month_position]
+        if not np.any(due > 0):
+            continue
+
+        paid_from_cash = np.minimum(np.maximum(0.0, cash_usd[:, month_position]), due)
+        remaining_due = np.maximum(0.0, due - paid_from_cash)
+        _record_obligation_cash_funding_decisions(
+            funding_decisions,
+            obligation_type=obligation_type,
+            actor_id=actor_id,
+            month_index=int(due_month_index),
+            obligation_amount_usd=due,
+            available_cash_usd=cash_usd[:, month_position],
+            funded_cash_usd=paid_from_cash,
+        )
+
+        for policy_step in policy_steps:
+            policy = policy_step.policy
+            if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
+                continue
+            if not np.any(remaining_due > 0):
+                break
+            projected_cash_after_obligation = cash_usd[:, month_position] - due
+            requested_sale = np.where(
+                (remaining_due > 0) & (projected_cash_after_obligation < float(policy.floor_usd)),
+                float(policy.sale_amount_usd),
+                0.0,
+            )
+            sale_instruction = SellAssetInstructionBatch(
+                actor_id=policy.actor_id,
+                policy_id=policy.policy_id,
+                asset_type=AssetType.GENERIC_SP500_STOCK,
+                requested_amount_usd=requested_sale,
+                target_cash_floor_usd=float(policy.floor_usd),
+            )
+            sale_application = apply_generic_sp500_sale_instruction(
+                sale_instruction,
+                current_cash_usd=cash_usd[:, month_position],
+                remaining_units=remaining_sp500_units_by_month[:, month_position],
+                remaining_basis_usd=remaining_sp500_basis_by_month[:, month_position],
+                sp500_unit_price_usd=market_bundle.generic_sp500_multipliers[:, month_position],
+            )
+            sale_usd = sale_application.sale_usd
+            if not np.any((requested_sale > 0) | (sale_application.shortfall_usd > 0)):
+                continue
+            old_units = remaining_sp500_units_by_month[:, month_position].copy()
+            old_basis = remaining_sp500_basis_by_month[:, month_position].copy()
+            units_sold = np.maximum(0.0, old_units - sale_application.remaining_units)
+            basis_sold = np.maximum(0.0, old_basis - sale_application.remaining_basis_usd)
+            remaining_sp500_units_by_month[:, month_position:] = np.maximum(
+                0.0, remaining_sp500_units_by_month[:, month_position:] - units_sold[:, None]
+            )
+            remaining_sp500_basis_by_month[:, month_position:] = np.maximum(
+                0.0, remaining_sp500_basis_by_month[:, month_position:] - basis_sold[:, None]
+            )
+            generic_sp500_value_usd[:, month_position:] = (
+                remaining_sp500_units_by_month[:, month_position:]
+                * market_bundle.generic_sp500_multipliers[:, month_position:]
+            )
+            cash_usd[:, month_position:] = cash_usd[:, month_position:] + sale_usd[:, None]
+            funded_by_sale = np.minimum(remaining_due, sale_usd)
+            remaining_due = np.maximum(0.0, remaining_due - funded_by_sale)
+            checking_floor_shortfall_usd[:, month_position] = np.maximum(
+                checking_floor_shortfall_usd[:, month_position], remaining_due
+            )
+            _record_obligation_sale_funding_decisions(
+                funding_decisions,
+                obligation_type=obligation_type,
+                actor_id=actor_id,
+                month_index=int(due_month_index),
+                policy=policy,
+                obligation_amount_usd=due,
+                requested_sale_usd=requested_sale,
+                funded_cash_usd=funded_by_sale,
+                shortfall_usd=remaining_due,
+            )
+            sp500_sale_action_records.append(
+                Sp500SaleActionRecord(
+                    month_position=month_position,
+                    month_index=int(due_month_index),
+                    policy=policy,
+                    amount_usd=sale_usd,
+                    basis_usd=basis_sold,
+                    shortfall_usd=remaining_due,
+                )
+            )
+
+        amount_paid = np.minimum(due, np.maximum(0.0, cash_usd[:, month_position]))
+        unpaid = np.maximum(0.0, due - amount_paid)
+        cash_usd[:, month_position:] = cash_usd[:, month_position:] - amount_paid[:, None]
+        _record_ledger_month_vector(
+            ledger_entries,
+            month_index=int(due_month_index),
+            actor_id=actor_id,
+            policy_id=source_policy_id,
+            domain="cash",
+            category="annual_tax_payment",
+            amount_usd=-amount_paid,
+        )
+        _record_ledger_month_vector(
+            ledger_entries,
+            month_index=int(due_month_index),
+            actor_id=actor_id,
+            policy_id=source_policy_id,
+            domain="tax",
+            category="annual_tax_payment",
+            amount_usd=-amount_paid,
+        )
+        _record_unfunded_obligation_decisions(
+            funding_decisions,
+            obligation_type=obligation_type,
+            actor_id=actor_id,
+            month_index=int(due_month_index),
+            obligation_amount_usd=due,
+            unpaid_amount_usd=unpaid,
+        )
+        _record_obligation_settlement_rows(
+            obligations,
+            settlement_results,
+            failure_events,
+            obligation_type=obligation_type,
+            actor_id=actor_id,
+            creditor_id=creditor_id,
+            source_policy_id=source_policy_id,
+            month_index=int(due_month_index),
+            amount_due_usd=due,
+            amount_paid_usd=amount_paid,
+            unpaid_amount_usd=unpaid,
+        )
+
+
+def _record_obligation_cash_funding_decisions(
+    records: list[SimulationFundingDecision],
+    *,
+    obligation_type: ObligationType,
+    actor_id: str,
+    month_index: int,
+    obligation_amount_usd: np.ndarray,
+    available_cash_usd: np.ndarray,
+    funded_cash_usd: np.ndarray,
+) -> None:
+    records.extend(
+        (
+            SimulationFundingDecision(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
+                decision_type=FundingDecisionType.USE_CASH,
+                actor_id=actor_id,
+                available_cash_usd=float(available_cash_usd[rollout_index]),
+                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
+                funded_cash_usd=float(funded_cash_usd[rollout_index]),
+                shortfall_usd=float(
+                    np.maximum(0.0, obligation_amount_usd[rollout_index] - funded_cash_usd[rollout_index])
+                ),
+            )
+        )
+        for rollout_index in np.nonzero(obligation_amount_usd > 0)[0].tolist()
+    )
+
+
+def _record_obligation_sale_funding_decisions(
+    records: list[SimulationFundingDecision],
+    *,
+    obligation_type: ObligationType,
+    actor_id: str,
+    month_index: int,
+    policy: CheckingFloorSellPublicStockPolicy,
+    obligation_amount_usd: np.ndarray,
+    requested_sale_usd: np.ndarray,
+    funded_cash_usd: np.ndarray,
+    shortfall_usd: np.ndarray,
+) -> None:
+    records.extend(
+        (
+            SimulationFundingDecision(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
+                decision_type=FundingDecisionType.SELL_PUBLIC_STOCK,
+                actor_id=actor_id,
+                policy_id=policy.policy_id,
+                available_cash_usd=0.0,
+                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
+                requested_sale_usd=float(requested_sale_usd[rollout_index]),
+                funded_cash_usd=float(funded_cash_usd[rollout_index]),
+                shortfall_usd=float(shortfall_usd[rollout_index]),
+            )
+        )
+        for rollout_index in np.nonzero((requested_sale_usd > 0) | (shortfall_usd > 0))[0].tolist()
+    )
+
+
+def _record_unfunded_obligation_decisions(
+    records: list[SimulationFundingDecision],
+    *,
+    obligation_type: ObligationType,
+    actor_id: str,
+    month_index: int,
+    obligation_amount_usd: np.ndarray,
+    unpaid_amount_usd: np.ndarray,
+) -> None:
+    records.extend(
+        (
+            SimulationFundingDecision(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
+                decision_type=FundingDecisionType.UNFUNDED,
+                actor_id=actor_id,
+                available_cash_usd=0.0,
+                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
+                funded_cash_usd=0.0,
+                shortfall_usd=float(unpaid_amount_usd[rollout_index]),
+            )
+        )
+        for rollout_index in np.nonzero(unpaid_amount_usd > 0)[0].tolist()
+    )
+
+
+def _record_obligation_settlement_rows(
+    obligations: list[SimulationObligation],
+    settlement_results: list[SimulationSettlementResult],
+    failure_events: list[SimulationFailureEvent],
+    *,
+    obligation_type: ObligationType,
+    actor_id: str,
+    creditor_id: str,
+    source_policy_id: str,
+    month_index: int,
+    amount_due_usd: np.ndarray,
+    amount_paid_usd: np.ndarray,
+    unpaid_amount_usd: np.ndarray,
+) -> None:
+    for rollout_index in np.nonzero(amount_due_usd > 0)[0].tolist():
+        due = float(amount_due_usd[rollout_index])
+        paid = float(amount_paid_usd[rollout_index])
+        unpaid = float(unpaid_amount_usd[rollout_index])
+        obligation_id = _obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index)
+        obligation_status = _obligation_status(amount_due_usd=due, unpaid_amount_usd=unpaid)
+        settlement_status = _settlement_status(amount_due_usd=due, unpaid_amount_usd=unpaid)
+        obligations.append(
+            SimulationObligation(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                obligation_id=obligation_id,
+                obligation_type=obligation_type,
+                actor_id=actor_id,
+                creditor_id=creditor_id,
+                due_month_index=month_index,
+                amount_due_usd=due,
+                amount_paid_usd=paid,
+                unpaid_amount_usd=unpaid,
+                status=obligation_status,
+                source_policy_id=source_policy_id,
+            )
+        )
+        settlement_results.append(
+            SimulationSettlementResult(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                obligation_id=obligation_id,
+                obligation_type=obligation_type,
+                actor_id=actor_id,
+                status=settlement_status,
+                amount_due_usd=due,
+                amount_paid_usd=paid,
+                unpaid_amount_usd=unpaid,
+            )
+        )
+        if unpaid > 0:
+            failure_events.append(
+                SimulationFailureEvent(
+                    rollout_index=rollout_index,
+                    month_index=month_index,
+                    failure_event_id=f"{obligation_id}:failure",
+                    failure_event_type=FailureEventType.UNSETTLED_OBLIGATION,
+                    obligation_id=obligation_id,
+                    actor_id=actor_id,
+                    unpaid_amount_usd=unpaid,
+                )
+            )
+
+
+def _obligation_id(obligation_type: ObligationType, *, rollout_index: int, month_index: int) -> str:
+    return f"{obligation_type.value}:rollout:{rollout_index}:month:{month_index}"
+
+
+def _obligation_status(*, amount_due_usd: float, unpaid_amount_usd: float) -> ObligationStatus:
+    if unpaid_amount_usd <= 0:
+        return ObligationStatus.PAID
+    if unpaid_amount_usd >= amount_due_usd:
+        return ObligationStatus.UNPAID
+    return ObligationStatus.PARTIALLY_PAID
+
+
+def _settlement_status(*, amount_due_usd: float, unpaid_amount_usd: float) -> SettlementStatus:
+    if unpaid_amount_usd <= 0:
+        return SettlementStatus.PAID
+    if unpaid_amount_usd >= amount_due_usd:
+        return SettlementStatus.UNPAID
+    return SettlementStatus.PARTIALLY_PAID
 
 
 def _record_monthly_spend_actions(
