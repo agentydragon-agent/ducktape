@@ -591,11 +591,10 @@ function ResultPanel({ kind, title, subtitle = null, actions = null, children, c
   );
 }
 
-function ResultDisclosurePanel({ kind, title, subtitle = null, summary = null, children, defaultOpen = false }) {
-  assertResultPanelKind(kind);
+function DisclosurePanel({ title, subtitle = null, summary = null, children, defaultOpen = false, marker = {} }) {
   const [opened, setOpened] = useState(defaultOpen);
   return (
-    <section className="augur-card overflow-hidden" data-result-panel-kind={kind}>
+    <section className="augur-card overflow-hidden" {...marker}>
       <button
         type="button"
         className="flex w-full min-w-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 text-left dark:border-slate-700"
@@ -615,6 +614,20 @@ function ResultDisclosurePanel({ kind, title, subtitle = null, summary = null, c
         {children}
       </Collapse>
     </section>
+  );
+}
+
+function RunContextDisclosurePanel({ context, title, subtitle = null, summary = null, children, defaultOpen = false }) {
+  return (
+    <DisclosurePanel
+      title={title}
+      subtitle={subtitle}
+      summary={summary}
+      defaultOpen={defaultOpen}
+      marker={{ "data-run-context-panel": context }}
+    >
+      {children}
+    </DisclosurePanel>
   );
 }
 
@@ -1741,7 +1754,11 @@ function MarketMetadataPanel({ result }) {
   const sourceEntries = Object.entries(metadata.sourceMetadata ?? {});
   const metadataValue = (value) => (typeof value === "object" ? JSON.stringify(value) : String(value));
   return (
-    <ResultDisclosurePanel kind="distribution" title="Market model metadata" summary={metadata.marketModelId ?? null}>
+    <RunContextDisclosurePanel
+      context="market-metadata"
+      title="Market model metadata"
+      summary={metadata.marketModelId ?? null}
+    >
       <div className="grid gap-4 p-4 lg:grid-cols-2">
         <div className="min-w-0">
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
@@ -1779,7 +1796,7 @@ function MarketMetadataPanel({ result }) {
           )}
         </div>
       </div>
-    </ResultDisclosurePanel>
+    </RunContextDisclosurePanel>
   );
 }
 
@@ -2001,7 +2018,8 @@ function ScenarioAcceptedPanel({ selection }) {
   if (!scenario || !scenarioResult) return null;
   const scenarioView = scenarioInputView(scenario);
   return (
-    <ResultPanel kind="accounting_detail" title="Scenario contract">
+    <section className="augur-card overflow-hidden" data-scenario-context-panel="scenario-contract">
+      <ResultPanelHeader title="Scenario contract" />
       <DetailTable
         rows={[
           ["Scenario id", scenarioResult.scenarioId],
@@ -2013,7 +2031,7 @@ function ScenarioAcceptedPanel({ selection }) {
           ["Warnings", scenarioResult.warnings?.join("; ") || "none"],
         ]}
       />
-    </ResultPanel>
+    </section>
   );
 }
 
@@ -2032,7 +2050,6 @@ function DistributionResults({
   return (
     <>
       <RunStatusNotice runError={runError} />
-      <MarketMetadataPanel result={result} />
       <ScenarioComparisonPanel
         scenarioSetInput={normalizedScenarioSetInput}
         result={result}
@@ -2075,7 +2092,6 @@ function TrajectoryResults({
       <PartnerOwnershipPanel trajectory={trajectory} bootstrap={bootstrap} />
       <LiquidityPolicyPanel trajectory={trajectory} />
       <PrivateEquitySaleOpportunityPanel trajectory={trajectory} />
-      <ScenarioAcceptedPanel selection={selection} />
     </>
   );
 }
@@ -2286,6 +2302,8 @@ function AugurAppShell() {
               <ResultViewTabs viewMode={viewMode} onViewModeChange={setViewMode} />
             </div>
             <PropertyLocationPanel selection={selectedContext} />
+            <MarketMetadataPanel result={result} />
+            <ScenarioAcceptedPanel selection={selectedContext} />
             <ResultModeHeader
               viewMode={viewMode}
               scenarioSetRequest={scenarioSetRequest}

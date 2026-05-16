@@ -163,13 +163,25 @@ def _wait_for_url_state(page: Page, predicate: Callable[[dict[str, Any]], bool])
     )
 
 
+def _assert_context_panel_boundary(page: Page, selector: str) -> None:
+    panel = page.locator(selector)
+    panel.wait_for(state="visible", timeout=30_000)
+    assert panel.count() == 1
+    assert page.locator(f"{selector}[data-result-panel-kind]").count() == 0
+    assert page.locator(f"{selector} [data-result-panel-kind]").count() == 0
+    assert page.locator(f"[data-result-panel-kind] {selector}").count() == 0
+
+
 def _assert_property_location_context_boundary(page: Page) -> None:
-    property_location_panel = page.locator("[data-scenario-context-panel='property-location']")
-    property_location_panel.wait_for(state="visible", timeout=30_000)
-    assert property_location_panel.count() == 1
-    assert page.locator("[data-scenario-context-panel='property-location'][data-result-panel-kind]").count() == 0
-    assert page.locator("[data-scenario-context-panel='property-location'] [data-result-panel-kind]").count() == 0
-    assert page.locator("[data-result-panel-kind] [data-scenario-context-panel='property-location']").count() == 0
+    _assert_context_panel_boundary(page, "[data-scenario-context-panel='property-location']")
+
+
+def _assert_scenario_contract_context_boundary(page: Page) -> None:
+    _assert_context_panel_boundary(page, "[data-scenario-context-panel='scenario-contract']")
+
+
+def _assert_market_metadata_context_boundary(page: Page) -> None:
+    _assert_context_panel_boundary(page, "[data-run-context-panel='market-metadata']")
 
 
 def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server: str) -> None:
@@ -263,6 +275,8 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert page.locator("[data-result-panel-kind='trajectory']").count() == 0
     assert page.locator("[data-result-panel-kind='accounting_detail']").count() == 0
     page.get_by_text("Market model metadata").wait_for(state="visible", timeout=30_000)
+    _assert_market_metadata_context_boundary(page)
+    _assert_scenario_contract_context_boundary(page)
     page.get_by_text("Event stream IDs").wait_for(state="hidden", timeout=30_000)
     page.get_by_text("Market model metadata").click()
     page.get_by_text("Event stream IDs").wait_for(state="visible", timeout=30_000)
@@ -277,9 +291,11 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_text("Selected path monthly ledger").wait_for(state="visible", timeout=30_000)
     assert page.get_by_text("Distribution terminal scenario comparison").count() == 0
     assert page.locator("[data-result-panel-kind='trajectory']").count() >= 3
-    assert page.locator("[data-result-panel-kind='accounting_detail']").count() >= 2
+    assert page.locator("[data-result-panel-kind='accounting_detail']").count() >= 1
     assert page.locator("[data-result-panel-kind='distribution']").count() == 0
     _assert_property_location_context_boundary(page)
+    _assert_market_metadata_context_boundary(page)
+    _assert_scenario_contract_context_boundary(page)
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('rollout')") == "0"
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('scenario')") == "scenario_1"
 
@@ -292,6 +308,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("Scenario property").select_option("location_b_property")
     page.get_by_role("heading", name="Location B Property").wait_for(state="visible", timeout=30_000)
     _assert_property_location_context_boundary(page)
+    _assert_scenario_contract_context_boundary(page)
     page.get_by_label("Financing mode").select_option("custom")
     page.get_by_label("Down payment").fill("40")
     page.get_by_label("Custom mortgage rate").fill("7.35")
