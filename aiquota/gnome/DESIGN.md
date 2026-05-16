@@ -179,28 +179,19 @@ A separate **instantaneous** metric ("burn rate over last 30 min") is useful for
 
 Defer to v2 (see `TODO.md`). When implemented, surface as a third popup field: "burn rate (last 30m): 4%/h → would exhaust in 5h 12m at this rate".
 
-## Render knobs (proposed gschema settings)
+## Architecture
 
-| Key                         | Type     | Default | Purpose                                                                                  |
-| --------------------------- | -------- | ------- | ---------------------------------------------------------------------------------------- |
-| `show-pace-numeral`         | bool     | true    | The `+12%` / `-8%` text after each logo                                                  |
-| `show-percent`              | bool     | false   | Replace the pace numeral with raw `% used`. Mutually exclusive with `show-pace-numeral`. |
-| `show-short-window-bar`     | bool     | false   | Tiny `▮▮▯▯▯` short-window bar to the right of the logo                                   |
-| `pace-yellow-threshold`     | int (pp) | 5       | Pace deviation at which logo turns yellow                                                |
-| `pace-red-threshold`        | int (pp) | 15      | Pace deviation at which logo turns red                                                   |
-| `short-window-warn-percent` | int      | 85      | Short-window % at which the icon flips to red regardless of long-window pace             |
-| `surplus-blue-threshold`    | int (pp) | 10      | Pace deviation below which logo tints blue ("use it or lose it")                         |
-| `poll-interval-seconds`     | int      | 120     | Currently a const; promote to a setting                                                  |
+The extension has no HTTP/auth code — it calls `aiquota json` (the Python CLI) via
+`GLib.spawn_command_line_sync` and renders the JSON output. Provider enable/disable and
+API key paths are configured in `~/.config/aiquota/config.toml` (see `aiquota/config.py`).
+Pace thresholds, poll interval, and render constants live in `extension.js` as plain
+constants.
 
-A second tier of cosmetic knobs (`show-claude` / `show-codex` to hide a provider; `compact-mode` to drop suffixes entirely) can come later — start with the table above.
+## Implementation notes
 
-## Implementation notes (carry-overs to TODO.md)
-
-- Brand SVG marks: ship monochrome single-path SVGs in `gnome/aiquota/icons/` (Anthropic press kit + OpenAI brand page; both publish a black/white mark suitable for monochrome use). Load via `Gio.FileIcon` from `extension.path`. Note: SVGs are owned by Anthropic/OpenAI and are not covered by the repo's AGPL license — they're vendored under fair use for personal use only.
-- `St.Icon` supports CSS-based recoloring via `-st-icon-style: symbolic` + `color:` on the style class. Use `style_class` swaps (`quota-ok` / `quota-warn` / `quota-hot` / `quota-cool`) rather than inline color.
-- Window total lengths: hard-code the four (5h, 7d, ~1h, ~24h) initially. The Codex API returns `limit_window_seconds` so prefer that when present; the Claude API doesn't, so derive from `resets_at - now` floor-rounded to the next 5h or 7d boundary.
-- Move `POLL_INTERVAL_SECONDS` and the thresholds from `extension.js` constants to a `Gio.Settings` schema.
-- The `_updateLabel`/`_fetchClaude`/`_fetchCodex` methods currently compose the panel string inline. Refactor: each provider returns a `ProviderState` (used %, reset_seconds, window_seconds, pace_deviation, status: ok|warn|hot|cool|stale|unknown), and a single `_renderPanel(states)` builds the panel widget from those. Makes pace-state coloring a one-liner and the popup a separate render path.
+- Brand SVG marks are shipped as monochrome single-path SVGs in `aiquota/gnome/icons/`. They are owned by Anthropic/OpenAI and are not covered by the repo's AGPL license — vendored under fair use for personal use only.
+- `St.Icon` supports CSS-based recoloring via `-st-icon-style: symbolic` + `color:` on the style class. Tint classes: `quota-ok` / `quota-warn` / `quota-hot` / `quota-cool`.
+- Window total lengths come from the Python CLI's JSON output (`window_seconds`). The Codex API returns `limit_window_seconds` directly; Claude and z.ai derive from `reset_at`.
 
 ## Open questions
 

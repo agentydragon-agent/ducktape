@@ -27,14 +27,14 @@ multiple tints simultaneously (providers can have different short vs long states
 
 Update flow when the rendering changes intentionally:
 
-    bazelisk test //gnome/aiquota:test_render \\
+    bazelisk test //aiquota/gnome:test_render \\
         --test_env=UPDATE_GOLDEN=1 \\
         --remote_upload_local_results=false --nocache_test_results
 
     INV=<invocation-id from build output>
     for f in empty tints hot; do
       bbapi artifact "$INV" "test.outputs/$f.png" \\
-        > "gnome/aiquota/__snapshots__/$f.png"
+        > "aiquota/gnome/__snapshots__/$f.png"
     done
 
     # Eyeball, commit, then re-run without UPDATE_GOLDEN=1 to confirm green.
@@ -66,7 +66,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 logger = logging.getLogger(__name__)
 
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
-_EXTENSION_ZIP = "_main/gnome/aiquota/aiquota.zip"
+_EXTENSION_ZIP = "_main/aiquota/gnome/aiquota.zip"
 _EXTENSION_UUID = "aiquota@allegedly.works"
 
 # Xvfb dims must match boot.sh — the combined panel+menu crop extends to
@@ -109,7 +109,7 @@ def render_session(
     handle + host-side output directory. Each parametrized test calls
     Reload + screenshots, leaving the shell process alone.
     """
-    fixtures_dir = get_required_path(f"_main/gnome/aiquota/test_fixtures/{_FIXTURES[0]}.json").parent
+    fixtures_dir = get_required_path(f"_main/aiquota/gnome/test_fixtures/{_FIXTURES[0]}.json").parent
     out_dir = tmp_path_factory.mktemp("ai-quota-renders")
     out_dir.chmod(0o777)  # gnome-shell writes the screenshot as a different uid
 
@@ -354,13 +354,13 @@ def test_render(
         return
 
     try:
-        expected_path = get_required_path(f"_main/gnome/aiquota/__snapshots__/{out_name}")
+        expected_path = get_required_path(f"_main/aiquota/gnome/__snapshots__/{out_name}")
     except RuntimeError:
         shutil.copy(actual_path, undeclared_dir / f"{fixture_name}.actual.png")
         pytest.fail(
             f"No golden checked in for {out_name}. Re-run with --test_env=UPDATE_GOLDEN=1, "
             f"then cp the produced {out_name} from undeclared outputs into "
-            f"gnome/aiquota/__snapshots__/."
+            f"aiquota/gnome/__snapshots__/."
         )
 
     assert_png_matches_golden(actual_path, expected_path, name=fixture_name, out_dir=undeclared_dir)

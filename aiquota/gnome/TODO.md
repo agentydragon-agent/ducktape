@@ -2,19 +2,6 @@
 
 See `DESIGN.md` for the UX design and rationale; this file lists deferred work.
 
-## v0 follow-ups (settings)
-
-The v0 implementation hard-codes the following constants in `extension.js`. Move
-them to a `Gio.Settings` schema (and a preferences UI) once the design has
-shaken out:
-
-- `POLL_INTERVAL_SECONDS`
-- `STALE_AFTER_SECONDS`
-- `PACE_COOL_BELOW`, `PACE_WARN_ABOVE`, `PACE_HOT_ABOVE`
-- `SHORT_WIN_HOT_PERCENT`
-- `STABLE_FRACTION`
-- Toggles: `show-pace-numeral`, `show-percent`, `show-short-window-bar`
-
 ## Pace label currently tracks the long window only
 
 `_renderProvider` shows `formatPace(longPace)` next to the icon. The icon's

@@ -8,12 +8,12 @@
 # iteration only).
 #
 # Usage:
-#   bazelisk run //gnome/aiquota:devkit
+#   bazelisk run //aiquota/gnome:devkit
 #
 # Optional env:
 #   AI_QUOTA_FIXTURE=/path/to/fixture.json
 #       Skip real auth/HTTP and load the indicator from a fixture JSON
-#       (same hook used by //gnome/aiquota:test_render).
+#       (same hook used by //aiquota/gnome:test_render).
 set -euo pipefail
 
 # --- begin runfiles.bash initialization v3 ---
@@ -35,7 +35,7 @@ if ! command -v gnome-shell >/dev/null 2>&1; then
 fi
 
 # --- locate inputs ---------------------------------------------------------
-zip_path="$(rlocation "_main/gnome/aiquota/aiquota.zip")"
+zip_path="$(rlocation "_main/aiquota/gnome/aiquota.zip")"
 if [[ ! -f "$zip_path" ]]; then
   echo "ERROR: aiquota.zip not found in runfiles at $zip_path" >&2
   exit 1
@@ -70,7 +70,7 @@ if [[ -f "$real_conf/dconf/user" ]]; then
 fi
 
 # DCONF_PROFILE: writable "devkit" db (auto-created), read-only "user" fallback.
-cat > "$tmpdir/dconf-profile" << 'EOF'
+cat >"$tmpdir/dconf-profile" <<'EOF'
 user-db:devkit
 user-db:user
 EOF

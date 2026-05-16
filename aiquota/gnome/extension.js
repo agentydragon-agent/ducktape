@@ -788,7 +788,7 @@ const QuotaIndicator = GObject.registerClass(
         ? tintFor({ pace: longPace, usedPercent: longState.usedPercent, isShort: false })
         : "unknown";
       const extraActive = state.extraUsage?.is_enabled === true;
-      const tint = extraActive ? "hot" : (stale ? "stale" : bindingTint(shortTint, longTint));
+      const tint = extraActive ? "hot" : stale ? "stale" : bindingTint(shortTint, longTint);
       this._setTint(icon, paceLabel, tint);
       const paceText = formatPace(longPace) ?? "";
       if (extraActive) {
