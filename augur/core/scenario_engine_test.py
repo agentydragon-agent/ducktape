@@ -1016,6 +1016,22 @@ def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> No
     assert_allclose(result.partner_contribution_usd[:, 1:], 100)
     assert np.all(result.partner_principal_credit_usd[:, 1:] > 0)
     assert np.all(result.partner_equity_ledger_usd[:, 2] > result.partner_equity_ledger_usd[:, 1])
+    owner_principal_rows = [
+        entry
+        for entry in result.ledger_entries
+        if entry.domain == "ownership" and entry.category == "owner_principal_credit"
+    ]
+    assert len(owner_principal_rows) == 2
+    assert {entry.policy_id for entry in owner_principal_rows} == {None}
+    assert {entry.property_id for entry in owner_principal_rows} == {"vallejo_calhoun"}
+    assert_allclose([entry.amount_usd for entry in owner_principal_rows], result.owner_principal_credit_usd[0, 1:])
+    partner_principal_rows = [
+        entry
+        for entry in result.ledger_entries
+        if entry.domain == "ownership" and entry.category == "partner_principal_credit"
+    ]
+    assert len(partner_principal_rows) == 4
+    assert {entry.property_id for entry in partner_principal_rows} == {"vallejo_calhoun"}
     transfers = [action for action in result.actions if isinstance(action, TransferPartnerContributionAction)]
     assert [(action.month_index, action.actor_id, action.amount_usd) for action in transfers] == [
         (1, "partner_a", 50),

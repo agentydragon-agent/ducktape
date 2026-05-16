@@ -535,6 +535,42 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
         _snapshot_matrix(result, domain="ownership", category="owner_home_equity_claim"),
         result.matrix("owner_home_equity_claim_usd"),
     )
+    partner_ledger_rows = [
+        entry
+        for entry in result.ledger_entries()
+        if entry.category
+        in {
+            "partner_contribution_transfer",
+            "partner_contribution_used_for_house_costs",
+            "partner_contribution_unallocated",
+            "partner_principal_credit",
+            "owner_principal_credit",
+        }
+    ]
+    assert {entry.property_id for entry in partner_ledger_rows} == {"test_property"}
+    assert (
+        len(
+            [
+                entry
+                for entry in result.ledger_entries()
+                if entry.domain == "ownership" and entry.category == "partner_principal_credit"
+            ]
+        )
+        == horizon_months
+    )
+    assert all(
+        entry.counterparty_actor_id == "alpha"
+        for entry in result.ledger_entries()
+        if entry.category in {"partner_contribution_transfer", "partner_principal_credit"}
+    )
+    partner_snapshot_rows = [
+        snapshot
+        for snapshot in result.balance_snapshots()
+        if snapshot.domain == "ownership"
+        and snapshot.category
+        in {"partner_equity_ledger", "owner_equity_ledger", "partner_home_equity_claim", "owner_home_equity_claim"}
+    ]
+    assert {snapshot.property_id for snapshot in partner_snapshot_rows} == {"test_property"}
 
     transfers = result.actions(TransferPartnerContributionAction)
     assert len(transfers) == horizon_months

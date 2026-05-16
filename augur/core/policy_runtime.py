@@ -107,6 +107,7 @@ class LedgerEntryBatch:
     amount_usd: np.ndarray
     category: str
     counterparty_actor_id: str | None = None
+    property_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,7 @@ class BalanceSnapshotBatch:
     amount_usd: np.ndarray
     category: str
     counterparty_actor_id: str | None = None
+    property_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ from augur.core.local_regulation import LocalRegulation, local_regulation_for_lo
 from augur.core.market_bundle import MarketBundle
 from augur.core.policy_runtime import (
     ActorPolicyStep,
+    BalanceSnapshotBatch,
     LedgerEntryBatch,
     MortgagePaymentApplication,
     PrivateEquitySaleApplication,
@@ -713,6 +714,8 @@ class PartnerEquityAgreementArrays:
     ownership_pct: np.ndarray
     home_equity_claim_usd: np.ndarray
     owner_home_equity_claim_usd: np.ndarray
+    ledger_entries: tuple[LedgerEntryBatch, ...]
+    balance_snapshots: tuple[BalanceSnapshotBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -733,6 +736,8 @@ class PartnerEquityArrays:
     home_equity_claim_usd: np.ndarray
     owner_home_equity_claim_usd: np.ndarray
     agreements: tuple[PartnerEquityAgreementArrays, ...]
+    ledger_entries: tuple[LedgerEntryBatch, ...]
+    balance_snapshots: tuple[BalanceSnapshotBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -1182,11 +1187,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     _record_partner_agreement_actions(actions, month_index=month_index, partner_equity=partner_equity)
     _record_partner_contribution_decisions(policy_decisions, month_index=month_index, partner_equity=partner_equity)
     _record_partner_agreement_ledger_detail(
-        ledger_entries,
-        balance_snapshots,
-        month_index=month_index,
-        partner_equity=partner_equity,
-        owner_actor_id=_primary_owner_actor_id(scenario),
+        ledger_entries, balance_snapshots, month_index=month_index, partner_equity=partner_equity
     )
     mortgage_application = apply_mortgage_payment(
         actor_id=_primary_owner_actor_id(scenario),
@@ -1815,6 +1816,7 @@ def _record_ledger_entry_month(
                 category=entry.category,
                 amount_usd=float(entry.amount_usd[rollout_index]),
                 counterparty_actor_id=entry.counterparty_actor_id,
+                property_id=entry.property_id,
             )
         )
         for rollout_index in active_rollouts
@@ -1839,6 +1841,24 @@ def _record_ledger_entry_batches(
             category=entry.category,
             amount_usd=amount_usd,
             counterparty_actor_id=entry.counterparty_actor_id,
+            property_id=entry.property_id,
+        )
+
+
+def _record_balance_snapshot_batches(
+    records: list[SimulationBalanceSnapshot], *, month_index: np.ndarray, entries: tuple[BalanceSnapshotBatch, ...]
+) -> None:
+    for entry in entries:
+        _record_balance_snapshot_matrix(
+            records,
+            month_index=month_index,
+            actor_id=entry.actor_id,
+            policy_id=entry.policy_id,
+            domain=entry.domain,
+            category=entry.category,
+            amount_usd=entry.amount_usd,
+            counterparty_actor_id=entry.counterparty_actor_id,
+            property_id=entry.property_id,
         )
 
 
@@ -2252,105 +2272,13 @@ def _record_partner_agreement_ledger_detail(
     *,
     month_index: np.ndarray,
     partner_equity: PartnerEquityArrays,
-    owner_actor_id: str,
 ) -> None:
-    if not partner_equity.agreements:
+    if not partner_equity.ledger_entries and not partner_equity.balance_snapshots:
         return
-    _record_ledger_matrix(
-        ledger_records,
-        month_index=month_index,
-        actor_id=owner_actor_id,
-        policy_id=None,
-        domain="ownership",
-        category="owner_principal_credit",
-        amount_usd=partner_equity.owner_principal_usd,
+    _record_ledger_entry_batches(ledger_records, month_index=month_index, entries=partner_equity.ledger_entries)
+    _record_balance_snapshot_batches(
+        snapshot_records, month_index=month_index, entries=partner_equity.balance_snapshots
     )
-    _record_balance_snapshot_matrix(
-        snapshot_records,
-        month_index=month_index,
-        actor_id=owner_actor_id,
-        policy_id=None,
-        domain="ownership",
-        category="owner_equity_ledger",
-        amount_usd=partner_equity.owner_equity_ledger_usd,
-    )
-    _record_balance_snapshot_matrix(
-        snapshot_records,
-        month_index=month_index,
-        actor_id=owner_actor_id,
-        policy_id=None,
-        domain="ownership",
-        category="owner_home_equity_claim",
-        amount_usd=partner_equity.owner_home_equity_claim_usd,
-    )
-    for agreement in partner_equity.agreements:
-        policy = agreement.policy
-        _record_ledger_matrix(
-            ledger_records,
-            month_index=month_index,
-            actor_id=policy.actor_id,
-            policy_id=policy.policy_id,
-            domain="cash",
-            category="partner_contribution_transfer",
-            amount_usd=-agreement.contribution_usd,
-            counterparty_actor_id=agreement.recipient_actor_id,
-            property_id=agreement.property_id,
-        )
-        _record_ledger_matrix(
-            ledger_records,
-            month_index=month_index,
-            actor_id=agreement.recipient_actor_id,
-            policy_id=policy.policy_id,
-            domain="cash",
-            category="partner_contribution_used_for_house_costs",
-            amount_usd=agreement.contribution_used_usd,
-            counterparty_actor_id=policy.actor_id,
-            property_id=agreement.property_id,
-        )
-        _record_ledger_matrix(
-            ledger_records,
-            month_index=month_index,
-            actor_id=agreement.recipient_actor_id,
-            policy_id=policy.policy_id,
-            domain="escrow",
-            category="partner_contribution_unallocated",
-            amount_usd=agreement.unallocated_excess_usd,
-            counterparty_actor_id=policy.actor_id,
-            property_id=agreement.property_id,
-        )
-        _record_ledger_matrix(
-            ledger_records,
-            month_index=month_index,
-            actor_id=policy.actor_id,
-            policy_id=policy.policy_id,
-            domain="ownership",
-            category="partner_principal_credit",
-            amount_usd=agreement.principal_credit_usd,
-            counterparty_actor_id=agreement.recipient_actor_id,
-            property_id=agreement.property_id,
-        )
-        _record_balance_snapshot_matrix(
-            snapshot_records,
-            month_index=month_index,
-            actor_id=policy.actor_id,
-            policy_id=policy.policy_id,
-            domain="ownership",
-            category="partner_equity_ledger",
-            amount_usd=agreement.partner_equity_ledger_usd,
-            counterparty_actor_id=agreement.recipient_actor_id,
-            property_id=agreement.property_id,
-        )
-        _record_balance_snapshot_matrix(
-            snapshot_records,
-            month_index=month_index,
-            actor_id=policy.actor_id,
-            policy_id=policy.policy_id,
-            domain="ownership",
-            category="partner_home_equity_claim",
-            amount_usd=agreement.home_equity_claim_usd,
-            counterparty_actor_id=agreement.recipient_actor_id,
-            property_id=agreement.property_id,
-        )
 
 
 def _sorted_policy_decisions(records: list[SimulationPolicyDecision]) -> tuple[SimulationPolicyDecision, ...]:
@@ -3246,6 +3174,8 @@ def _partner_equity_arrays(
         home_equity_claim_usd=zeros,
         owner_home_equity_claim_usd=home_equity_usd,
         agreements=(),
+        ledger_entries=(),
+        balance_snapshots=(),
     )
     if not _has_partner(scenario):
         return empty
@@ -3327,6 +3257,21 @@ def _partner_equity_arrays(
             owner_equity_ledger_usd=owner_equity_ledger,
             total_partner_equity_ledger_usd=total_partner_equity_ledger,
         )
+        contribution_cash_ledger_entries = tuple(
+            entry for entry in contribution_application.ledger_entries if entry.domain != "ownership"
+        )
+        partner_ownership_ledger_entries = tuple(
+            entry for entry in ownership_application.ledger_entries if entry.actor_id == policy.actor_id
+        )
+        partner_balance_snapshots = tuple(
+            snapshot for snapshot in ownership_application.balance_snapshots if snapshot.actor_id == policy.actor_id
+        )
+        agreement_ledger_entries = _ledger_entries_for_property(
+            contribution_cash_ledger_entries + partner_ownership_ledger_entries, property_id=property_id
+        )
+        agreement_balance_snapshots = _balance_snapshots_for_property(
+            partner_balance_snapshots, property_id=property_id
+        )
         agreements.append(
             PartnerEquityAgreementArrays(
                 policy_sequence_index=policy_sequence_index,
@@ -3348,6 +3293,8 @@ def _partner_equity_arrays(
                 ownership_pct=ownership_application.ownership_pct,
                 home_equity_claim_usd=ownership_application.home_equity_claim_usd,
                 owner_home_equity_claim_usd=ownership_application.owner_home_equity_claim_usd,
+                ledger_entries=agreement_ledger_entries,
+                balance_snapshots=agreement_balance_snapshots,
             )
         )
 
@@ -3355,6 +3302,35 @@ def _partner_equity_arrays(
     contribution_used = sum((agreement.contribution_used_usd for agreement in agreements), start=zeros.copy())
     unallocated_excess = sum((agreement.unallocated_excess_usd for agreement in agreements), start=zeros.copy())
     home_equity_claim = sum((agreement.home_equity_claim_usd for agreement in agreements), start=zeros.copy())
+    property_id = contribution_inputs[0][2]
+    owner_ledger_entries = (
+        LedgerEntryBatch(
+            actor_id=owner_actor_id,
+            policy_id=None,
+            domain="ownership",
+            amount_usd=owner_principal,
+            category="owner_principal_credit",
+            property_id=property_id,
+        ),
+    )
+    owner_balance_snapshots = (
+        BalanceSnapshotBatch(
+            actor_id=owner_actor_id,
+            policy_id=None,
+            domain="ownership",
+            amount_usd=owner_equity_ledger,
+            category="owner_equity_ledger",
+            property_id=property_id,
+        ),
+        BalanceSnapshotBatch(
+            actor_id=owner_actor_id,
+            policy_id=None,
+            domain="ownership",
+            amount_usd=home_equity_usd - home_equity_claim,
+            category="owner_home_equity_claim",
+            property_id=property_id,
+        ),
+    )
     positive_home_equity = np.maximum(home_equity_usd, 0.0)
     ownership_pct = np.divide(
         home_equity_claim, positive_home_equity, out=np.zeros_like(home_equity_claim), where=positive_home_equity > 0
@@ -3378,7 +3354,23 @@ def _partner_equity_arrays(
         home_equity_claim_usd=home_equity_claim,
         owner_home_equity_claim_usd=home_equity_usd - home_equity_claim,
         agreements=tuple(agreements),
+        ledger_entries=owner_ledger_entries
+        + tuple(entry for agreement in agreements for entry in agreement.ledger_entries),
+        balance_snapshots=owner_balance_snapshots
+        + tuple(snapshot for agreement in agreements for snapshot in agreement.balance_snapshots),
     )
+
+
+def _ledger_entries_for_property(
+    entries: tuple[LedgerEntryBatch, ...], *, property_id: str
+) -> tuple[LedgerEntryBatch, ...]:
+    return tuple(replace(entry, property_id=property_id) for entry in entries)
+
+
+def _balance_snapshots_for_property(
+    entries: tuple[BalanceSnapshotBatch, ...], *, property_id: str
+) -> tuple[BalanceSnapshotBatch, ...]:
+    return tuple(replace(entry, property_id=property_id) for entry in entries)
 
 
 def _settle_partner_equity_on_property_sale(
@@ -3402,11 +3394,20 @@ def _settle_partner_equity_on_property_sale(
     owner_home_equity_claim_usd[:, sale_month:] = (
         sale_net_proceeds[:, None] - partner_home_equity_claim_usd[:, sale_month:]
     )
+    owner_balance_snapshots = tuple(
+        replace(snapshot, amount_usd=owner_home_equity_claim_usd)
+        if snapshot.category == "owner_home_equity_claim"
+        else snapshot
+        for snapshot in partner_equity.balance_snapshots
+        if snapshot.policy_id is None
+    )
     return replace(
         partner_equity,
         home_equity_claim_usd=partner_home_equity_claim_usd,
         owner_home_equity_claim_usd=owner_home_equity_claim_usd,
         agreements=agreements,
+        balance_snapshots=owner_balance_snapshots
+        + tuple(snapshot for agreement in agreements for snapshot in agreement.balance_snapshots),
     )
 
 
@@ -3419,8 +3420,17 @@ def _settle_partner_equity_agreement_on_property_sale(
     partner_sale_claim = np.maximum(0.0, sale_net_proceeds) * agreement.ownership_pct[:, sale_month]
     home_equity_claim_usd[:, sale_month:] = partner_sale_claim[:, None]
     owner_home_equity_claim_usd[:, sale_month:] = sale_net_proceeds[:, None] - partner_sale_claim[:, None]
+    balance_snapshots = tuple(
+        replace(snapshot, amount_usd=home_equity_claim_usd)
+        if snapshot.category == "partner_home_equity_claim"
+        else snapshot
+        for snapshot in agreement.balance_snapshots
+    )
     return replace(
-        agreement, home_equity_claim_usd=home_equity_claim_usd, owner_home_equity_claim_usd=owner_home_equity_claim_usd
+        agreement,
+        home_equity_claim_usd=home_equity_claim_usd,
+        owner_home_equity_claim_usd=owner_home_equity_claim_usd,
+        balance_snapshots=balance_snapshots,
     )
 
 
