@@ -5,7 +5,7 @@ import typer
 
 from aiquota.cache import QuotaService
 from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
-from aiquota.render import human as render_human, json_output, tmux as render_tmux, view_model
+from aiquota.render import human as render_human, tmux as render_tmux, view_model
 
 _CONFIG_OPTION = typer.Option(DEFAULT_CONFIG_PATH, "--config", "-c", help="Config file path")
 
@@ -29,9 +29,9 @@ def _service(ctx: typer.Context) -> QuotaService:
 def fetch(ctx: typer.Context) -> None:
     """Fetch and display quota status in human-readable form (same info as the GNOME popup).
 
-    Goes through the same cached path as the GNOME extension and `aiquota json`,
-    so all surfaces show the same numbers within the cache TTL. The cache
-    refreshes itself when older than `CACHE_TTL` (see aiquota/cache.py).
+    Goes through the same cached path as `gnome-extension-json`, so the
+    terminal and GNOME popup agree within the cache TTL. The cache refreshes
+    itself when older than `CACHE_TTL` (see aiquota/cache.py).
     """
     quotas = _service(ctx).fetch_all()
     print(render_human.render(quotas))
@@ -45,20 +45,13 @@ def tmux(ctx: typer.Context) -> None:
     sys.stdout.write(render_tmux.render(quotas.providers))
 
 
-@app.command(name="json")
-def json_cmd(ctx: typer.Context) -> None:
-    """Render raw quota status as JSON."""
-    quotas = _service(ctx).fetch_all()
-    json_output.render(quotas)
-
-
 @app.command(name="gnome-extension-json")
 def gnome_extension_json(ctx: typer.Context) -> None:
     """Emit the JSON view consumed by the GNOME shell extension.
 
-    Same raw quota fields as `json`, plus derived view-model bits
-    (`currently_over_plan`, `extra_status`) so the extension and the CLI
-    can't drift on policy decisions. See aiquota/AGENTS.md.
+    Raw quota fields plus derived view-model bits (`currently_over_plan`,
+    `extra_status`) so the extension and the CLI can't drift on policy
+    decisions. See aiquota/AGENTS.md.
     """
     quotas = _service(ctx).fetch_all()
     view = view_model.to_view(quotas)

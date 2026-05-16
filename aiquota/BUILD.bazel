@@ -49,7 +49,6 @@ py_library(
         ":cache",
         ":models",
         "//aiquota/render:human_lib",
-        "//aiquota/render:json_output_lib",
         "//aiquota/render:tmux_lib",
         "//aiquota/render:view_model_lib",
         "@pypi//typer",

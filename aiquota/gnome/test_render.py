@@ -19,11 +19,13 @@ labels and the menu's headers / bars / forecast strings in one image.
 The fixture matrix uses mixed per-provider state so each render exercises
 multiple tints simultaneously (providers can have different short vs long states):
 
-  empty   all providers null                                — unknown/no-data state
-  tints   claude=error; codex=warn-short/cool-long;        — error, warn, cool, hot(absolute), ok
-          zai=absolute-hot-short/ok-long
-  hot     claude=pace-hot-short/long-100%+extra-usage(⚡);  — hot(pace), extra usage header + ⚡ icon
-          codex=ok/ok; zai=null-short/warn-long
+  empty                       all providers null                                — unknown/no-data state
+  tints                       claude=error; codex=warn-short/cool-long;        — error, warn, cool, hot(absolute), ok
+                              zai=absolute-hot-short/ok-long
+  hot                         claude=pace-hot-short/long-100%+extra-usage(⚡); — hot(pace), extra usage header + ⚡ icon
+                              codex=ok/ok; zai=null-short/warn-long
+  extra_enabled_not_burning   claude has extra-usage on with $2324.85 already   — pins the regression where the popup
+                              spent this month, but long=2% — must NOT collapse  collapsed purely on is_enabled
 
 Update flow when the rendering changes intentionally:
 
@@ -32,7 +34,7 @@ Update flow when the rendering changes intentionally:
         --remote_upload_local_results=false --nocache_test_results
 
     INV=<invocation-id from build output>
-    for f in empty tints hot; do
+    for f in empty tints hot extra_enabled_not_burning; do
       bbapi artifact "$INV" "test.outputs/$f.png" \\
         > "aiquota/gnome/__snapshots__/$f.png"
     done
@@ -79,7 +81,7 @@ _EXTENSION_STATE_ENABLED = 1
 _TEST_DBUS_DEST = "works.allegedly.AiQuotaTest"
 _TEST_DBUS_PATH = "/works/allegedly/AiQuotaTest"
 
-_FIXTURES = ["empty", "tints", "hot"]
+_FIXTURES = ["empty", "tints", "hot", "extra_enabled_not_burning"]
 
 
 @pytest.fixture(scope="module")
