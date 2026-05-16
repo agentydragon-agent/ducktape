@@ -41,6 +41,18 @@ spec:
     metricsPort: 9325
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    # Hard anti-affinity so the two volume servers always sit on different
+    # kimsufi nodes — that's what makes replication=001 actually no-SPOF.
+    # The StatefulSet would otherwise co-locate both volumes on whichever
+    # node the scheduler picks first (verified live).
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: volume
+                app.kubernetes.io/name: seaweedfs
+            topologyKey: kubernetes.io/hostname
 
   filer:
     replicas: 1 # leveldb2 metadata is per-pod; can't HA without a shared backend
