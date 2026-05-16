@@ -4,12 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from augur.core.accounting import (
-    AccountingCauseType,
-    ChartAccountRole,
-    JournalEntryType,
-    PostingSide,
-)
+from augur.core.accounting import AccountingCauseType, ChartAccountRole, JournalEntryType, PostingSide
 from augur.core.scenario_set import (
     AccountType,
     AssetType,
@@ -167,8 +162,6 @@ class PropertyOperatingCashFlowApplication:
     hoa_usd: np.ndarray
     insurance_usd: np.ndarray
     maintenance_usd: np.ndarray
-    rental_gross_income_usd: np.ndarray
-    rental_vacancy_loss_usd: np.ndarray
     rental_income_usd: np.ndarray
     rental_management_fee_usd: np.ndarray
     rental_leasing_fee_usd: np.ndarray
@@ -211,8 +204,6 @@ class PrivateEquitySaleApplication:
     sale_usd: np.ndarray
     basis_usd: np.ndarray
     taxable_gain_usd: np.ndarray
-    estimated_tax_usd: np.ndarray
-    after_tax_proceeds_usd: np.ndarray
     sold_units: np.ndarray
     sold_fraction: np.ndarray
     remaining_units: np.ndarray
@@ -556,8 +547,6 @@ def apply_property_operating_cash_flows(
     hoa_usd: np.ndarray,
     insurance_usd: np.ndarray,
     maintenance_usd: np.ndarray,
-    rental_gross_income_usd: np.ndarray,
-    rental_vacancy_loss_usd: np.ndarray,
     rental_income_usd: np.ndarray,
     rental_management_fee_usd: np.ndarray,
     rental_leasing_fee_usd: np.ndarray,
@@ -587,15 +576,9 @@ def apply_property_operating_cash_flows(
                     actor_id=actor_id,
                 ),
                 PostingBatch(
-                    role=ChartAccountRole.RENTAL_VACANCY_LOSS,
-                    side=PostingSide.DEBIT,
-                    amount_usd=rental_vacancy_loss_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.RENTAL_GROSS_INCOME,
+                    role=ChartAccountRole.RENTAL_INCOME,
                     side=PostingSide.CREDIT,
-                    amount_usd=rental_gross_income_usd,
+                    amount_usd=rental_income_usd,
                     actor_id=actor_id,
                 ),
                 PostingBatch(
@@ -604,7 +587,9 @@ def apply_property_operating_cash_flows(
                     amount_usd=property_tax_usd,
                     actor_id=actor_id,
                 ),
-                PostingBatch(role=ChartAccountRole.HOA_EXPENSE, side=PostingSide.DEBIT, amount_usd=hoa_usd, actor_id=actor_id),
+                PostingBatch(
+                    role=ChartAccountRole.HOA_EXPENSE, side=PostingSide.DEBIT, amount_usd=hoa_usd, actor_id=actor_id
+                ),
                 PostingBatch(
                     role=ChartAccountRole.INSURANCE_EXPENSE,
                     side=PostingSide.DEBIT,
@@ -645,8 +630,6 @@ def apply_property_operating_cash_flows(
         hoa_usd=hoa_usd,
         insurance_usd=insurance_usd,
         maintenance_usd=maintenance_usd,
-        rental_gross_income_usd=rental_gross_income_usd,
-        rental_vacancy_loss_usd=rental_vacancy_loss_usd,
         rental_income_usd=rental_income_usd,
         rental_management_fee_usd=rental_management_fee_usd,
         rental_leasing_fee_usd=rental_leasing_fee_usd,
@@ -748,7 +731,6 @@ def apply_private_equity_sale_instruction(
     remaining_basis_usd: np.ndarray,
     remaining_units: np.ndarray,
     remaining_fraction: np.ndarray,
-    cap_gains_rate_pct: float,
 ) -> PrivateEquitySaleApplication:
     sale_usd = np.minimum(instruction.requested_amount_usd, opportunity.sale_opportunity_value_usd)
     sold_fraction = np.divide(
@@ -759,8 +741,9 @@ def apply_private_equity_sale_instruction(
     )
     basis_usd = remaining_basis_usd * sold_fraction
     taxable_gain_usd = np.maximum(0.0, sale_usd - basis_usd)
-    estimated_tax_usd = taxable_gain_usd * cap_gains_rate_pct / 100
-    after_tax_proceeds_usd = np.maximum(0.0, sale_usd - estimated_tax_usd)
+    # Sale-tax computation is owned by annual_tax.annual_sale_tax_allocation
+    # (bracket-aware federal + California). The sale handler reports gross
+    # proceeds; the annual-tax obligation path settles the tax cash demand.
     sold_units = remaining_units * sold_fraction
     destination_role = (
         ChartAccountRole.PUBLIC_SECURITY
@@ -777,16 +760,7 @@ def apply_private_equity_sale_instruction(
             description="private equity sale",
             postings=(
                 PostingBatch(
-                    role=destination_role,
-                    side=PostingSide.DEBIT,
-                    amount_usd=after_tax_proceeds_usd,
-                    actor_id=instruction.actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.TAX_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=estimated_tax_usd,
-                    actor_id=instruction.actor_id,
+                    role=destination_role, side=PostingSide.DEBIT, amount_usd=sale_usd, actor_id=instruction.actor_id
                 ),
                 PostingBatch(
                     role=ChartAccountRole.PRIVATE_EQUITY,
@@ -801,8 +775,6 @@ def apply_private_equity_sale_instruction(
         sale_usd=sale_usd,
         basis_usd=basis_usd,
         taxable_gain_usd=taxable_gain_usd,
-        estimated_tax_usd=estimated_tax_usd,
-        after_tax_proceeds_usd=after_tax_proceeds_usd,
         sold_units=sold_units,
         sold_fraction=sold_fraction,
         remaining_units=np.maximum(0.0, remaining_units - sold_units),

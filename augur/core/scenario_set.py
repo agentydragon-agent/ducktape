@@ -108,6 +108,7 @@ class ReportMetric(StrEnum):
     PRIVATE_EQUITY_SALE_USD = "private_equity_sale_usd"
     PRIVATE_EQUITY_SALE_BASIS_USD = "private_equity_sale_basis_usd"
     PRIVATE_EQUITY_SALE_TAX_USD = "private_equity_sale_tax_usd"
+    RENTAL_INCOME_TAX_USD = "rental_income_tax_usd"
     FEDERAL_INCOME_TAX_USD = "federal_income_tax_usd"
     CALIFORNIA_INCOME_TAX_USD = "california_income_tax_usd"
     TOTAL_INCOME_TAX_USD = "total_income_tax_usd"
@@ -121,8 +122,6 @@ class ReportMetric(StrEnum):
     HOA_USD = "hoa_usd"
     INSURANCE_USD = "insurance_usd"
     MAINTENANCE_USD = "maintenance_usd"
-    RENTAL_GROSS_INCOME_USD = "rental_gross_income_usd"
-    RENTAL_VACANCY_LOSS_USD = "rental_vacancy_loss_usd"
     RENTAL_INCOME_USD = "rental_income_usd"
     RENTAL_MANAGEMENT_FEE_USD = "rental_management_fee_usd"
     RENTAL_LEASING_FEE_USD = "rental_leasing_fee_usd"
@@ -601,10 +600,12 @@ class TaxPaymentAllocationDetail(_SimulationAccountingDetailBase):
     property_sale_tax_usd: float
     generic_sp500_sale_tax_usd: float
     private_equity_sale_tax_usd: float
+    rental_income_tax_usd: float
     property_depreciation_recapture_usd: float
     taxable_property_capital_gain_usd: float
     generic_sp500_taxable_gain_usd: float
     private_equity_taxable_gain_usd: float
+    net_rental_taxable_income_usd: float
     total_taxable_income_usd: float
 
 
@@ -679,9 +680,6 @@ class TaxProfile(ApiModel):
     annual_ordinary_income_usd: NonNegativeFloat = 0
     federal_standard_deduction_usd: NonNegativeFloat | None = None
     california_standard_deduction_usd: NonNegativeFloat | None = None
-    marginal_tax_rate: Percentage = 40
-    cap_gains_rate: Percentage = 30
-    cap_gains_exclusion_usd: NonNegativeFloat = 250_000
 
 
 class TransactionCosts(ApiModel):

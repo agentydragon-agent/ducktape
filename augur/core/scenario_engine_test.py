@@ -586,7 +586,7 @@ def test_capital_gains_exclusion_offsets_property_sale_gain() -> None:
                 },
                 financing={"financing_mode": "cash"},
                 transaction_costs={"closing_cost_buy_pct": 0, "closing_cost_sell_pct": 0},
-                tax_profile={"cap_gains_exclusion_usd": 250_000, "cap_gains_rate": 30},
+                tax_profile={"filing_status": "single"},
                 events=[
                     {"event_id": "sale", "event_type": "property_sale", "month_index": 3, "property_id": "sf_ashton"}
                 ],
@@ -618,12 +618,7 @@ def test_rental_depreciation_recaptures_on_sale() -> None:
                 financing={"financing_mode": "cash"},
                 transaction_costs={"closing_cost_buy_pct": 0, "closing_cost_sell_pct": 0},
                 property_assumptions={"depreciable_basis_pct": 100},
-                tax_profile={
-                    "annual_ordinary_income_usd": 100_000,
-                    "marginal_tax_rate": 25,
-                    "cap_gains_rate": 15,
-                    "cap_gains_exclusion_usd": 250_000,
-                },
+                tax_profile={"annual_ordinary_income_usd": 100_000, "filing_status": "single"},
                 rental_plan={
                     "rental_mode": "rent_whole_property",
                     "start_month": 1,
@@ -646,13 +641,21 @@ def test_rental_depreciation_recaptures_on_sale() -> None:
 
     expected_monthly_depreciation = 100_000 / (27.5 * 12)
     expected_cumulative_depreciation = expected_monthly_depreciation * 3
-    expected_recapture_tax = expected_cumulative_depreciation * (0.22 + 0.093)
     assert_allclose(result.property_depreciation_usd[:, 1:4], expected_monthly_depreciation)
     assert_allclose(result.cumulative_property_depreciation_usd[:, 3], expected_cumulative_depreciation)
     assert_allclose(result.realized_property_gain_usd[:, 3], expected_cumulative_depreciation)
     assert_allclose(result.depreciation_recapture_usd[:, 3], expected_cumulative_depreciation)
     assert_allclose(result.taxable_property_gain_usd[:, 3], expected_cumulative_depreciation)
-    assert_allclose(result.property_sale_tax_usd[:, 3], expected_recapture_tax)
+    # Recapture tax allocated to the sale month: bracket-aware federal + California,
+    # net of the SALT and qualified-residence-interest deductions that lower the
+    # year's ordinary income on which the recapture stacks.
+    sale_month_tax = result.property_sale_tax_usd[:, 3]
+    expected_ca_marginal_rate = 0.093
+    expected_federal_marginal_rate = 0.22  # ordinary income at \$100k baseline lands in the 22% bracket
+    upper_bound_tax = expected_cumulative_depreciation * (expected_federal_marginal_rate + expected_ca_marginal_rate)
+    lower_bound_tax = expected_cumulative_depreciation * (0.10 + expected_ca_marginal_rate)
+    assert np.all(sale_month_tax > lower_bound_tax)
+    assert np.all(sale_month_tax < upper_bound_tax)
 
 
 def test_no_property_scenario_ignores_real_estate_tax_accounting_parameters() -> None:
@@ -1087,12 +1090,9 @@ def test_rental_income_and_carrying_costs_feed_cash_flow() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(rent_path=(1.0, 1.0, 1.1, 1.2)))
 
-    expected_month_1_gross = 2_000
-    expected_month_1_income = expected_month_1_gross * 0.9
+    expected_month_1_income = 2_000 * 0.9
     expected_month_1_management = expected_month_1_income * 0.05
-    expected_month_1_leasing = expected_month_1_gross * 0.12 / 12
-    assert_allclose(result.rental_gross_income_usd[:, 1], expected_month_1_gross)
-    assert_allclose(result.rental_vacancy_loss_usd[:, 1], 200)
+    expected_month_1_leasing = expected_month_1_income * 0.12 / 12
     assert_allclose(result.rental_income_usd[:, 1], expected_month_1_income)
     assert_allclose(result.rental_management_fee_usd[:, 1], expected_month_1_management)
     assert_allclose(result.rental_leasing_fee_usd[:, 1], expected_month_1_leasing)
