@@ -201,6 +201,10 @@
     @apply rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200;
   }
 
+  .augur-number-section {
+    @apply text-xs font-semibold leading-none text-slate-500 dark:text-slate-400;
+  }
+
   .augur-view-tab {
     @apply rounded-md px-3 py-1.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800;
   }

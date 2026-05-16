@@ -520,13 +520,13 @@ function scenarioFanRows(result, scenarioId, metricName) {
 function OptionButtons({ label, options, value, onChange }) {
   return (
     <Radio.Group value={value} onChange={onChange} label={label} classNames={{ label: "augur-field-label mb-2 block" }}>
-      <Stack gap={6}>
+      <Stack gap="xs">
         {options.map((option) => {
           return (
-            <Radio.Card key={option.id} value={option.id} radius="sm" p="xs" withBorder>
-              <Group wrap="nowrap" align="flex-start" gap="xs">
-                <Radio.Indicator mt={3} />
-                <Stack gap={1} className="min-w-0 py-0.5">
+            <Radio.Card key={option.id} value={option.id} radius="md" p="md" withBorder>
+              <Group wrap="nowrap" align="flex-start" gap="sm">
+                <Radio.Indicator mt={2} />
+                <Stack gap={3} className="min-w-0">
                   <Text size="sm" fw={650} lh={1.2}>
                     {option.label}
                   </Text>
@@ -549,8 +549,14 @@ function ControlGrid({ children, className = "" }) {
   return <div className={`${CONTROL_GRID_CLASS} ${className}`}>{children}</div>;
 }
 
+function numberFieldSectionWidth(section) {
+  if (!section) return undefined;
+  return Math.max(34, String(section).length * 8 + 24);
+}
+
 function NumberField({ label, value, onChange, min = 0, step = 1000, prefix = null, suffix = null }) {
-  const formattedSuffix = suffix ? (suffix === "%" ? suffix : ` ${String(suffix).trimStart()}`) : undefined;
+  const formattedPrefix = prefix ? String(prefix).trim() : undefined;
+  const formattedSuffix = suffix ? String(suffix).trim() : undefined;
   return (
     <NumberInput
       label={label}
@@ -558,8 +564,13 @@ function NumberField({ label, value, onChange, min = 0, step = 1000, prefix = nu
       min={min}
       step={step}
       value={value ?? ""}
-      prefix={prefix ?? undefined}
-      suffix={formattedSuffix}
+      hideControls
+      leftSection={formattedPrefix ? <Text className="augur-number-section">{formattedPrefix}</Text> : undefined}
+      leftSectionPointerEvents="none"
+      leftSectionWidth={numberFieldSectionWidth(formattedPrefix)}
+      rightSection={formattedSuffix ? <Text className="augur-number-section">{formattedSuffix}</Text> : undefined}
+      rightSectionPointerEvents="none"
+      rightSectionWidth={numberFieldSectionWidth(formattedSuffix)}
       thousandSeparator=","
       classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
       onChange={(nextValue) => {
@@ -907,7 +918,7 @@ function ScenarioPathPreview({ trajectory }) {
   const annualRows = trajectory.annualRows();
   if (annualRows.length === 0) return null;
   return (
-    <ResultPanel kind="trajectory" title="Trajectory annual snapshot">
+    <ResultPanel kind="trajectory" title="Annual snapshot">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -948,7 +959,7 @@ function PropertySaleTaxDistributionPanel({ distribution }) {
   assertResultViewKind(distribution, "distribution");
   if (!distribution.hasTerminalRows) return null;
   return (
-    <ResultPanel kind="distribution" title="Distribution property sale and tax">
+    <ResultPanel kind="distribution" title="Property sale and tax">
       <DetailTable
         rows={[
           ["Purchase closing costs", fmtUsd(distribution.terminalP50("totalPurchaseClosingCostUsd"))],
@@ -980,7 +991,7 @@ function PartnerOwnershipPanel({ trajectory, bootstrap }) {
   if (!trajectory.hasAny(["partnerPresent", "partnerContributionUsd", "partnerHomeEquityClaimUsd"])) return null;
   const firstPathContribution = trajectory.sum("partnerContributionUsd");
   return (
-    <ResultPanel kind="trajectory" title={`Trajectory ${partnerLabel} contribution and equity`}>
+    <ResultPanel kind="trajectory" title={`${partnerLabel} contribution and equity`}>
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           ["Path contribution", fmtUsd(firstPathContribution)],
@@ -1030,7 +1041,7 @@ function LiquidityPolicyPanel({ trajectory }) {
   const annualRows = trajectory.annualRows();
   const terminalRow = trajectory.terminalRow();
   return (
-    <ResultPanel kind="trajectory" title="Trajectory liquidity and stock sales">
+    <ResultPanel kind="trajectory" title="Liquidity and stock sales">
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
         {[
           ["SP500 sales", fmtUsd(trajectory.sum("genericSp500SaleUsd"))],
@@ -1088,7 +1099,7 @@ function PrivateEquitySaleOpportunityPanel({ trajectory }) {
   );
   const displayRows = (eventRows.length > 0 ? eventRows : trajectory.annualRows()).slice(0, 8);
   return (
-    <ResultPanel kind="trajectory" title="Trajectory private equity tender opportunities">
+    <ResultPanel kind="trajectory" title="Private equity tender opportunities">
       <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2">
         {[
           ["Private equity value", fmtUsd(terminalRow?.privateEquityValueUsd)],
@@ -1809,7 +1820,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
     ["finalPartnerOwnershipPct", "P50 partner own."],
   ].filter(([column]) => showCheckingFloorColumns || !CHECKING_FLOOR_METRICS.has(column));
   return (
-    <ResultPanel kind="distribution" title="Distribution terminal scenario comparison">
+    <ResultPanel kind="distribution" title="Terminal scenario comparison">
       {result?.warnings?.length > 0 && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
           {result.warnings.join(" ")}

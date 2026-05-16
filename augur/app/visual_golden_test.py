@@ -140,7 +140,7 @@ VISUAL_CASES = (
     VisualCase(
         name="distribution_default",
         path="/distribution?scenario=scenario_1&rollout=0",
-        visible_text="Distribution terminal scenario comparison",
+        visible_text="Terminal scenario comparison",
         hidden_text="Selected path monthly ledger",
     ),
     VisualCase(
@@ -154,7 +154,7 @@ VISUAL_CASES = (
         name="trajectory_scenario_2_rollout_3",
         path="/trajectory?scenario=scenario_2&rollout=3",
         visible_text="Selected path monthly ledger",
-        hidden_text="Distribution terminal scenario comparison",
+        hidden_text="Terminal scenario comparison",
     ),
 )
 

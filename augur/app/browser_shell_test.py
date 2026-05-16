@@ -272,7 +272,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=15_000)
     page.get_by_text("Financial futures explorer").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Distribution view").wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Distribution terminal scenario comparison").wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Terminal scenario comparison").wait_for(state="visible", timeout=30_000)
     assert page.evaluate("() => window.location.pathname") == "/distribution"
     assert page.get_by_text("Selected path monthly ledger").count() == 0
     assert page.locator("[data-result-panel-kind='distribution']").count() >= 2
@@ -294,7 +294,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_text("Trajectory view").wait_for(state="visible", timeout=30_000)
     page.wait_for_function("() => window.location.pathname === '/trajectory'")
     page.get_by_text("Selected path monthly ledger").wait_for(state="visible", timeout=30_000)
-    assert page.get_by_text("Distribution terminal scenario comparison").count() == 0
+    assert page.get_by_text("Terminal scenario comparison").count() == 0
     assert page.locator("[data-result-panel-kind='trajectory']").count() >= 3
     assert page.locator("[data-result-panel-kind='accounting_detail']").count() >= 1
     assert page.locator("[data-result-panel-kind='distribution']").count() == 0
