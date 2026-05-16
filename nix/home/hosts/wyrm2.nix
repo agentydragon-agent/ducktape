@@ -37,19 +37,18 @@
     };
   };
 
-  # Place decrypted z.ai API key where the aiquota GNOME extension reads it.
-  # sopsEnv exports ZAI_API_KEY as a shell env var, but GNOME Shell (systemd --user)
-  # never inherits shell-init exports. The extension reads zai-api-key-path from
-  # its own GSettings schema and loads the key from the sops-decrypted file.
+  # Place decrypted z.ai API key where aiquota reads it.
+  # The Python CLI reads ~/.config/aiquota/config.toml for the key path.
   sops.secrets.zai_api_key_file = {
     sopsFile = ../../../secrets/home/wyrm2/zai.yaml;
     key = "zai_api_key";
   };
 
-  dconf.settings = {
-    "org/gnome/shell/extensions/aiquota" = {
-      zai-api-key-path = config.sops.secrets.zai_api_key_file.path;
-    };
+  xdg.configFile."aiquota/config.toml" = {
+    text = ''
+      [zai]
+      api_key_path = "${config.sops.secrets.zai_api_key_file.path}"
+    '';
   };
 
   home.packages = [

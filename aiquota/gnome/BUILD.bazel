@@ -3,13 +3,6 @@ load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//devinfra/python:defs.bzl", "py_test")
 
-genrule(
-    name = "compiled_schemas",
-    srcs = ["schemas/org.gnome.shell.extensions.aiquota.gschema.xml"],
-    outs = ["schemas/gschemas.compiled"],
-    cmd = "cp $(location schemas/org.gnome.shell.extensions.aiquota.gschema.xml) $(@D)/ && glib-compile-schemas $(@D)",
-)
-
 pkg_files(
     name = "extension_files",
     # Source files that GNOME Shell loads at runtime. Single source of
@@ -22,7 +15,6 @@ pkg_files(
         "icons/zai-symbolic.svg",
         "metadata.json",
         "stylesheet.css",
-        ":compiled_schemas",
     ],
     strip_prefix = strip_prefix.from_pkg(),
     visibility = ["//visibility:public"],

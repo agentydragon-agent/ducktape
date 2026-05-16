@@ -3,29 +3,14 @@ import GObject from "gi://GObject";
 import Gio from "gi://Gio";
 import St from "gi://St";
 import Clutter from "gi://Clutter";
-import Soup from "gi://Soup";
-import Secret from "gi://Secret";
 
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 
-const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
-const CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
-const CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-const CLAUDE_OAUTH_SCOPES = [
-  "user:profile",
-  "user:inference",
-  "user:sessions:claude_code",
-  "user:mcp_servers",
-  "user:file_upload",
-];
-const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
-const ZAI_QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
 const POLL_INTERVAL_SECONDS = 120;
 const STALE_AFTER_SECONDS = 5 * 60;
-const TOKEN_EXPIRY_SKEW_SECONDS = 30;
 
 // Pace deviation thresholds, in signed percentage points (used% − expected%).
 const PACE_COOL_BELOW = -10;
@@ -33,21 +18,6 @@ const PACE_WARN_ABOVE = 5;
 const PACE_HOT_ABOVE = 15;
 const SHORT_WIN_HOT_PERCENT = 85;
 const STABLE_FRACTION = 0.05;
-
-// Window total lengths. Codex returns `limit_window_seconds`; Claude does not.
-const CLAUDE_SHORT_W = 5 * 3600;
-const CLAUDE_LONG_W = 7 * 86400;
-// z.ai: 5h rolling quota (GLM-5.1 burns at 3× during peak hours 14:00–18:00 UTC+8,
-// currently 1× off-peak through end of June). The 7d window always has nextResetTime.
-// The 5h window frequently lacks nextResetTime (especially at 0% usage), so pace math
-// degrades gracefully to usedPercent-only display.
-const ZAI_SHORT_W = 5 * 3600;
-const ZAI_LONG_W = 7 * 86400;
-
-const CODEX_KEYRING_SCHEMA = new Secret.Schema("org.freedesktop.Secret.Generic", Secret.SchemaFlags.DONT_MATCH_NAME, {
-  service: Secret.SchemaAttributeType.STRING,
-  username: Secret.SchemaAttributeType.STRING,
-});
 
 const TINT_CLASSES = [
   "quota-cool",
@@ -60,76 +30,12 @@ const TINT_CLASSES = [
 ];
 const TINT_RANK = { unknown: 0, stale: 0, ok: 1, cool: 1, warn: 2, hot: 3 };
 
-// Per-provider enable flags are read from ~/.config/aiquota/config.json.
-// Missing file or missing key → provider is shown (default on).
-function readExtensionConfig() {
-  const path = `${GLib.get_home_dir()}/.config/aiquota/config.json`;
-  try {
-    const [ok, bytes] = GLib.file_get_contents(path);
-    if (!ok) return {};
-    return JSON.parse(decodeBytes(bytes));
-  } catch {
-    return {};
-  }
-}
-
 function decodeBytes(bytes) {
   return new TextDecoder().decode(typeof bytes.get_data === "function" ? bytes.get_data() : bytes);
 }
 
 function errorMessage(error) {
   return error?.message ?? String(error);
-}
-
-function formatUtcTimestamp(ms) {
-  const date = new Date(ms);
-  if (Number.isNaN(date.getTime())) return String(ms);
-  return date
-    .toISOString()
-    .replace(/:\d{2}\.\d{3}Z$/, "Z")
-    .replace("T", " ");
-}
-
-function objectSummary(value) {
-  if (value == null) return String(value);
-  if (typeof value !== "object" || Array.isArray(value)) return typeof value;
-  const keys = Object.keys(value);
-  return keys.length ? `keys: ${keys.join(", ")}` : "empty object";
-}
-
-function messageStatus(message) {
-  if (typeof message.get_status === "function") return message.get_status();
-  return message.status_code ?? 0;
-}
-
-function isHttpErrorStatus(status) {
-  return status !== 0 && (status < 200 || status >= 300);
-}
-
-function httpErrorMessage(status, body, rawBody) {
-  const statusLabel = status === 0 ? "error" : status;
-  const apiError = body?.error;
-  if (apiError?.message) {
-    return `HTTP ${statusLabel} ${apiError.type ?? "error"}: ${apiError.message}`;
-  }
-  if (body?.message) return `HTTP ${statusLabel}: ${body.message}`;
-  const bodyPreview = rawBody ? `: ${rawBody.slice(0, 160)}` : "";
-  return `HTTP ${statusLabel}${bodyPreview}`;
-}
-
-class HttpResponseError extends Error {
-  constructor(status, body, rawBody) {
-    super(httpErrorMessage(status, body, rawBody));
-    this.name = "HttpResponseError";
-    this.status = status;
-    this.body = body;
-    this.rawBody = rawBody;
-  }
-}
-
-function parseScopes(scopeString, fallback) {
-  if (typeof scopeString !== "string") return fallback ?? [];
-  return scopeString.split(/\s+/).filter(Boolean);
 }
 
 function formatDuration(seconds) {
@@ -141,21 +47,6 @@ function formatDuration(seconds) {
   if (d > 0) return `${d}d${h}h`;
   if (h > 0) return `${h}h${m}m`;
   return `${m}m`;
-}
-
-function parseClaudeResetAtMs(timestamp, label) {
-  if (typeof timestamp !== "string") return null;
-  const ms = new Date(timestamp).getTime();
-  if (!Number.isFinite(ms)) return null;
-  return ms;
-}
-
-function codexResetAtMsFromResetAfter(node, label) {
-  const resetAfterSeconds = Number(node?.reset_after_seconds ?? NaN);
-  if (!Number.isFinite(resetAfterSeconds) || resetAfterSeconds < 0) {
-    throw new Error(`${label} window missing reset_after_seconds`);
-  }
-  return Date.now() + resetAfterSeconds * 1000;
 }
 
 function withLiveReset(state) {
@@ -237,19 +128,18 @@ function formatForecast(pace, resetSeconds) {
   return "on pace";
 }
 
-function formatCompactDollars(cents) {
-  const dollars = cents / 100;
-  if (dollars >= 1000) {
-    const k = dollars / 1000;
+function formatCompactDollars(usd) {
+  if (usd >= 1000) {
+    const k = usd / 1000;
     return `$${k >= 10 ? Math.round(k) : Math.round(k * 10) / 10}k`;
   }
-  return `$${Math.round(dollars)}`;
+  return `$${Math.round(usd)}`;
 }
 
 function formatExtraUsage(extra) {
   if (!extra || !extra.is_enabled) return null;
-  const used = extra.used_credits / 100;
-  const limit = extra.monthly_limit / 100;
+  const used = extra.used_usd;
+  const limit = extra.monthly_limit_usd;
   const pct = Math.round(extra.utilization);
   return `extra $${Math.round(used)}/$${Math.round(limit)} (${pct}%)`;
 }
@@ -262,44 +152,6 @@ function clamp01(value) {
 function elapsedFraction(state) {
   if (state?.resetSeconds == null || state?.windowSeconds == null || state.windowSeconds <= 0) return null;
   return clamp01((state.windowSeconds - state.resetSeconds) / state.windowSeconds);
-}
-
-function windowFromClaude(node, label, windowSeconds) {
-  if (!node) return null;
-  const resetAtMs = parseClaudeResetAtMs(node.resets_at, label);
-  return {
-    usedPercent: node.utilization ?? null,
-    resetAtMs,
-    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
-    windowSeconds,
-  };
-}
-
-function windowFromCodex(node, label) {
-  if (!node) return null;
-  const windowSeconds = Number(node.limit_window_seconds ?? NaN);
-  if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) {
-    throw new Error(`${label} window missing limit_window_seconds`);
-  }
-  const resetAtMs = codexResetAtMsFromResetAfter(node, label);
-  return {
-    usedPercent: node.used_percent ?? null,
-    resetAtMs,
-    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
-    windowSeconds,
-  };
-}
-
-function windowFromZai(node, windowSeconds) {
-  if (!node) return null;
-  const usedPercent = node.percentage ?? null;
-  const resetAtMs = node.nextResetTime ?? null;
-  return {
-    usedPercent,
-    resetAtMs,
-    resetSeconds: resetAtMs == null ? null : Math.max(0, (resetAtMs - Date.now()) / 1000),
-    windowSeconds,
-  };
 }
 
 function emptyProviderState() {
@@ -320,8 +172,6 @@ const QuotaIndicator = GObject.registerClass(
       super._init(0.0, "AI Quota Tracker", false);
 
       this._iconsDir = `${extension.path}/icons`;
-      this._settings = extension.getSettings();
-      this._httpSession = new Soup.Session();
       this._popupTickId = null;
 
       const fixturePath = GLib.getenv("AI_QUOTA_FIXTURE");
@@ -338,9 +188,9 @@ const QuotaIndicator = GObject.registerClass(
         return;
       }
 
-      const cfg = readExtensionConfig();
+      // Show all providers; Python config.toml controls which are enabled.
       const shows = {};
-      for (const { id } of PROVIDER_DEFS) shows[id] = cfg[`show${id.charAt(0).toUpperCase()}${id.slice(1)}`] !== false;
+      for (const { id } of PROVIDER_DEFS) shows[id] = true;
       this._initUI(shows);
       this._refresh();
       this._timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_INTERVAL_SECONDS, () => {
@@ -523,233 +373,43 @@ const QuotaIndicator = GObject.registerClass(
       return { track, fill };
     }
 
-    _readClaudeAuth() {
-      const path = `${GLib.get_home_dir()}/.claude/.credentials.json`;
-      try {
-        const [ok, bytes] = GLib.file_get_contents(path);
-        if (!ok) return { error: `${path}: not readable` };
-        const creds = JSON.parse(decodeBytes(bytes));
-        const token = creds?.claudeAiOauth?.accessToken ?? null;
-        if (!token) return { error: `${path}: missing claudeAiOauth.accessToken` };
-
-        const refreshToken = creds?.claudeAiOauth?.refreshToken ?? null;
-        const expiresAt = Number(creds?.claudeAiOauth?.expiresAt ?? NaN);
-        if (Number.isFinite(expiresAt) && expiresAt - Date.now() <= TOKEN_EXPIRY_SKEW_SECONDS * 1000) {
-          if (!refreshToken) {
-            return { error: `access token expired ${formatUtcTimestamp(expiresAt)} and no refreshToken is stored` };
-          }
-          return { creds, expired: true, path, refreshToken, token };
-        }
-
-        return { creds, expired: false, path, refreshToken, token };
-      } catch (error) {
-        return { error: `${path}: ${errorMessage(error)}` };
-      }
-    }
-
-    _readCodexAuth() {
-      // File-based auth (~/.codex/auth.json) — Codex CLI writes this when
-      // Secret Service is unavailable (common on headless/NixOS setups).
-      try {
-        const path = `${GLib.get_home_dir()}/.codex/auth.json`;
-        const [ok, bytes] = GLib.file_get_contents(path);
-        if (ok) {
-          const auth = JSON.parse(decodeBytes(bytes));
-          const token = auth?.tokens?.access_token ?? null;
-          const accountId = auth?.tokens?.account_id ?? null;
-          if (token) return { token, accountId };
-        }
-      } catch {
-        // fall through to keyring
-      }
-      try {
-        const results = Secret.password_search_sync(
-          CODEX_KEYRING_SCHEMA,
-          { service: "Codex Auth" },
-          Secret.SearchFlags.UNLOCK | Secret.SearchFlags.LOAD_SECRETS,
-          null
-        );
-        if (!results?.length) return null;
-        const token = results[0].get_secret()?.get_text() ?? null;
-        return token ? { token, accountId: null } : null;
-      } catch {
-        return null;
-      }
-    }
-
-    _readZaiAuth() {
-      const path = this._settings.get_string("zai-api-key-path");
-      if (!path) return { error: "zai-api-key-path not configured" };
-      try {
-        const [ok, bytes] = GLib.file_get_contents(path);
-        if (!ok) return { error: `${path}: not readable` };
-        const key = decodeBytes(bytes).trim();
-        if (!key) return { error: `${path}: empty` };
-        return { token: key };
-      } catch (error) {
-        return { error: `${path}: ${errorMessage(error)}` };
-      }
-    }
-
-    _providerById(id) {
-      return this._providers.find((p) => p.id === id) ?? null;
-    }
-
-    _fetchAsync(url, headers, onSuccess, onError) {
-      const msg = Soup.Message.new("GET", url);
-      for (const [k, v] of Object.entries(headers)) msg.request_headers.append(k, v);
-      this._sendAsync(msg, onSuccess, onError);
-    }
-
-    _postJsonAsync(url, body, onSuccess, onError) {
-      const msg = Soup.Message.new("POST", url);
-      const encoded = new TextEncoder().encode(JSON.stringify(body));
-      msg.set_request_body_from_bytes("application/json", new GLib.Bytes(encoded));
-      this._sendAsync(msg, onSuccess, onError);
-    }
-
-    _sendAsync(msg, onSuccess, onError) {
-      this._httpSession.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (session, result) => {
-        try {
-          const bytes = session.send_and_read_finish(result);
-          const text = decodeBytes(bytes);
-          const status = messageStatus(msg);
-          let json = null;
-          try {
-            json = JSON.parse(text);
-          } catch (error) {
-            if (isHttpErrorStatus(status)) {
-              throw new HttpResponseError(status, null, text);
-            }
-            throw error;
-          }
-          if (isHttpErrorStatus(status) || json?.error) {
-            throw new HttpResponseError(status, json, text);
-          }
-          onSuccess(json);
-        } catch (error) {
-          onError(error);
-        } finally {
-          this._renderPanel();
-          this._renderPopup();
-        }
-      });
-    }
-
-    _saveClaudeAuth(path, creds) {
-      const ok = GLib.file_set_contents(path, JSON.stringify(creds, null, 2));
-      if (!ok) throw new Error(`${path}: write failed`);
-      Gio.File.new_for_path(path).set_attribute_uint32("unix::mode", 0o600, Gio.FileQueryInfoFlags.NONE, null);
-    }
-
-    _refreshClaudeToken(auth) {
-      this._postJsonAsync(
-        CLAUDE_TOKEN_URL,
-        {
-          grant_type: "refresh_token",
-          refresh_token: auth.refreshToken,
-          client_id: CLAUDE_OAUTH_CLIENT_ID,
-          scope: CLAUDE_OAUTH_SCOPES.join(" "),
-        },
-        (data) => {
-          const accessToken = data.access_token ?? null;
-          const expiresIn = Number(data.expires_in ?? NaN);
-          if (!accessToken || !Number.isFinite(expiresIn)) {
-            throw new Error(`unexpected token refresh response (${objectSummary(data)})`);
-          }
-
-          auth.creds.claudeAiOauth = {
-            ...(auth.creds.claudeAiOauth ?? {}),
-            accessToken,
-            refreshToken: data.refresh_token ?? auth.refreshToken,
-            expiresAt: Date.now() + expiresIn * 1000,
-            scopes: parseScopes(data.scope, auth.creds.claudeAiOauth?.scopes),
-          };
-          this._saveClaudeAuth(auth.path, auth.creds);
-          auth.refreshToken = auth.creds.claudeAiOauth.refreshToken;
-          this._fetchClaude(accessToken, auth, false);
-        },
-        (error) => {
-          const p = this._providerById("claude");
-          if (p) p.state.error = `token refresh failed: ${errorMessage(error)}`;
-        }
-      );
-    }
-
-    _fetchClaude(token, auth, allowRefresh = true) {
-      const p = this._providerById("claude");
-      this._fetchAsync(
-        CLAUDE_USAGE_URL,
-        {
-          Authorization: `Bearer ${token}`,
-          "anthropic-beta": "oauth-2025-04-20",
-        },
-        (data) => {
-          if (data.five_hour == null && data.seven_day == null) {
-            throw new Error(`unexpected response (${objectSummary(data)})`);
-          }
-          p.state.short = windowFromClaude(data.five_hour, "5h", CLAUDE_SHORT_W);
-          p.state.long = windowFromClaude(data.seven_day, "7d", CLAUDE_LONG_W);
-          p.state.extraUsage = data.extra_usage ?? null;
-          p.state.lastFetch = Date.now();
-          p.state.error = null;
-        },
-        (error) => {
-          if (allowRefresh && auth?.refreshToken && error?.status === 401) {
-            this._refreshClaudeToken(auth);
-          } else if (p) {
-            p.state.error = errorMessage(error);
-          }
-        }
-      );
-    }
-
-    _fetchCodex({ token, accountId }) {
-      const p = this._providerById("codex");
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64) gnome-shell-extension",
+    _mapWindow(w) {
+      if (!w) return null;
+      const resetAtMs = w.reset_at ? new Date(w.reset_at).getTime() : null;
+      return {
+        usedPercent: w.used_percent ?? null,
+        resetAtMs,
+        resetSeconds: w.reset_seconds ?? null,
+        windowSeconds: w.window_seconds ?? null,
       };
-      if (accountId) headers["ChatGPT-Account-Id"] = accountId;
-      this._fetchAsync(
-        CODEX_USAGE_URL,
-        headers,
-        (data) => {
-          if (data.rate_limit?.primary_window == null && data.rate_limit?.secondary_window == null) {
-            throw new Error(`unexpected response (${objectSummary(data)})`);
-          }
-          p.state.short = windowFromCodex(data.rate_limit?.primary_window, "5h");
-          p.state.long = windowFromCodex(data.rate_limit?.secondary_window, "7d");
-          p.state.lastFetch = Date.now();
-          p.state.error = null;
-        },
-        (error) => {
-          if (p) p.state.error = errorMessage(error);
-        }
-      );
     }
 
-    _fetchZai(token) {
-      const p = this._providerById("zai");
-      this._fetchAsync(
-        ZAI_QUOTA_URL,
-        { Authorization: `Bearer ${token}` },
-        (data) => {
-          if (!Array.isArray(data?.data?.limits)) {
-            throw new Error(`unexpected response (${objectSummary(data)})`);
-          }
-          const limits = data.data.limits;
-          const shortLimit = limits.find((l) => l.type === "TOKENS_LIMIT" && l.unit === 3);
-          const longLimit = limits.find((l) => l.type === "TOKENS_LIMIT" && l.unit === 6);
-          p.state.short = windowFromZai(shortLimit, ZAI_SHORT_W);
-          p.state.long = windowFromZai(longLimit, ZAI_LONG_W);
-          p.state.lastFetch = Date.now();
-          p.state.error = null;
-        },
-        (error) => {
-          if (p) p.state.error = errorMessage(error);
+    _loadSubprocessData(data) {
+      const fetchedAt = data.fetched_at ? new Date(data.fetched_at).getTime() : null;
+      for (const p of this._providers) {
+        const pq = data.providers?.find((x) => x.provider === p.id);
+        if (!pq) {
+          p.state = emptyProviderState();
+          continue;
         }
-      );
+        const extra = pq.extra_usage ?? null;
+        p.state = {
+          short: this._mapWindow(pq.short_window),
+          long: this._mapWindow(pq.long_window),
+          lastFetch: fetchedAt,
+          error: pq.error ?? null,
+          extraUsage: extra
+            ? {
+                is_enabled: extra.is_enabled,
+                used_credits: Math.round(extra.used_usd * 100),
+                monthly_limit: Math.round(extra.monthly_limit_usd * 100),
+                utilization: extra.utilization,
+                used_usd: extra.used_usd,
+                monthly_limit_usd: extra.monthly_limit_usd,
+              }
+            : null,
+        };
+      }
     }
 
     _setTint(icon, paceLabel, tint) {
@@ -792,7 +452,7 @@ const QuotaIndicator = GObject.registerClass(
       this._setTint(icon, paceLabel, tint);
       const paceText = formatPace(longPace) ?? "";
       if (extraActive) {
-        paceLabel.set_text(`${formatCompactDollars(state.extraUsage.used_credits)} ⚡`);
+        paceLabel.set_text(`${formatCompactDollars(state.extraUsage.used_usd)} ⚡`);
       } else {
         paceLabel.set_text(paceText);
       }
@@ -903,38 +563,18 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _refresh() {
-      const claudeP = this._providerById("claude");
-      if (claudeP) {
-        const claudeAuth = this._readClaudeAuth();
-        if (claudeAuth.token) {
-          if (claudeAuth.expired) {
-            this._refreshClaudeToken(claudeAuth);
-          } else {
-            this._fetchClaude(claudeAuth.token, claudeAuth);
-          }
+      const binPath = GLib.getenv("AI_QUOTA_BIN") || "aiquota";
+      try {
+        const [ok, stdout, , exitStatus] = GLib.spawn_command_line_sync(`${binPath} json`);
+        if (!ok || exitStatus !== 0) {
+          for (const p of this._providers) p.state.error = `aiquota exited ${exitStatus}`;
         } else {
-          claudeP.state.error = claudeAuth.error;
+          const data = JSON.parse(decodeBytes(stdout));
+          this._loadSubprocessData(data);
         }
+      } catch (e) {
+        for (const p of this._providers) p.state.error = errorMessage(e);
       }
-
-      const codexP = this._providerById("codex");
-      if (codexP) {
-        const codexAuth = this._readCodexAuth();
-        if (codexAuth) {
-          this._fetchCodex(codexAuth);
-        }
-      }
-
-      const zaiP = this._providerById("zai");
-      if (zaiP) {
-        const zaiAuth = this._readZaiAuth();
-        if (zaiAuth.token) {
-          this._fetchZai(zaiAuth.token);
-        } else {
-          zaiP.state.error = zaiAuth.error;
-        }
-      }
-
       this._renderPanel();
       this._renderPopup();
     }
@@ -950,7 +590,6 @@ const QuotaIndicator = GObject.registerClass(
         GLib.source_remove(this._timerId);
         this._timerId = null;
       }
-      this._httpSession.abort();
       super.destroy();
     }
   }

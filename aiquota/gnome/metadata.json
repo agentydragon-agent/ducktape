@@ -2,7 +2,6 @@
   "name": "AI Quota Tracker",
   "description": "Shows Claude Code and OpenAI Codex subscription quota in the GNOME panel",
   "uuid": "aiquota@allegedly.works",
-  "settings-schema": "org.gnome.shell.extensions.aiquota",
   "version": 1,
   "shell-version": ["45", "46", "47", "48", "49"],
   "url": "https://github.com/agentydragon/ducktape"
