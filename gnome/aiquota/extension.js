@@ -790,8 +790,7 @@ const QuotaIndicator = GObject.registerClass(
       const tint = stale ? "stale" : bindingTint(shortTint, longTint);
       this._setTint(icon, paceLabel, tint);
       const paceText = formatPace(longPace) ?? "";
-      const extraActive =
-        state.extraUsage?.is_enabled && longState?.usedPercent != null && longState.usedPercent >= 100;
+      const extraActive = state.extraUsage?.is_enabled === true;
       if (extraActive) {
         paceLabel.set_text(`${formatCompactDollars(state.extraUsage.used_credits)} ⚡`);
       } else {
@@ -801,8 +800,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderPopup() {
       for (const p of this._providers) {
-        const inExtraRegime =
-          p.state.extraUsage?.is_enabled && p.state.long?.usedPercent != null && p.state.long.usedPercent >= 100;
+        const inExtraRegime = p.state.extraUsage?.is_enabled === true;
         this._renderProviderHeader(p.header, p.label, p.state);
         if (inExtraRegime) {
           p.shortRow.visible = false;
