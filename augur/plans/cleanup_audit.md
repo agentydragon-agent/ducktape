@@ -1,0 +1,466 @@
+# Augur Cleanup Audit
+
+## Executive Summary
+
+Augur is moving in the right direction: the current docs define a
+distribution-first simulator, sectioned scenario state, ordered actor policy
+programs, private-equity opportunities rather than liquidity, and
+ledger/accounting-backed reporting. The implementation still carries several
+old or parallel paths that make that direction harder to enforce.
+
+The highest-value cleanup is not broad refactoring. Delete or collapse the
+temporary browser flat-scenario adapter, schema-only policy types, report knobs
+that are ignored, and result helper APIs used only by tests. Then force the
+engine to choose one source of truth for policy execution and result detail:
+ordered policy programs plus state/ledger/accounting rows, with monthly arrays
+as derived chart output.
+
+The React section-read integration removed production `scenarioInputView()`
+callers from `augur/app/augur-app.jsx`, but it did not remove the deeper
+compatibility path in `augur/app/lib/scenario_set_state.js`. Treat it as a
+useful intermediate, not a cleanup finish line.
+
+Root `STYLE.md` and `augur/AGENTS.md` make several of these findings stronger:
+Augur is pre-production, so compatibility shims need explicit justification;
+API responses should not return trivially derived fields next to their source
+collections; dynamic attribute probing should be rare; and config/source-data
+errors should generally propagate to a real error boundary instead of being
+hidden behind fallbacks.
+
+## High-Confidence Cleanup Targets
+
+1. Delete the remaining flat browser scenario adapter.
+
+   Files/functions: `augur/app/lib/scenario_set_state.js`
+   `scenarioInputSectionsFromFlatFields()`, `scenarioInputFromFlatFields()`,
+   `scenarioFromFields()`, and `scenarioInputView()` at lines 115-180. Current
+   production references are confined to `scenario_set_state.js`, including
+   `createScenarioInput()` routing through `scenarioFromFields()`.
+
+   Why: the flat adapter is explicitly a compatibility bridge, but Augur is
+   pre-production and `augur/AGENTS.md` says not to preserve stale URL/request
+   compatibility unless asked. It also keeps a spreadsheet-shaped scenario row
+   alive while docs and roadmap say the browser state should be sectioned.
+
+   Replace with: direct section reads plus a small typed accessor layer if
+   React needs null-safe helpers. Keep patching through
+   `patchScenarioInputSection()`, but do not export a catch-all wide view.
+
+   Prove safe by: run:
+
+   ```bash
+   rg "scenarioInputView|scenarioInputFromFlatFields|scenarioFromFields" augur/app
+   ```
+
+   It should find no production callers or compatibility helpers. Browser shell
+   and scenario-state tests should assert sectioned URL state only, not wide-row
+   migration.
+
+2. Remove `initialBalanceSheet.privateEquityValueUsd` from browser state.
+
+   Files/functions: `SCENARIO_INPUT_SECTION_FIELDS` includes
+   `privateEquityValueUsd` at `augur/app/lib/scenario_set_state.js:54-59`;
+   `createScenarioInput()` and `normalizeScenarioInput()` compute it at lines
+   213-276 and 336-431; `scenarioBalanceSheet()` recomputes the backend value
+   from units at lines 608-629; `serializableScenario()` omits the value at
+   lines 787-791.
+
+   Why: the value is derived from units and the current concentrated-holding
+   price. It is computed, normalized, and tested, but not serialized as durable
+   state and not needed for backend request construction. That makes it a
+   stale-value trap if unit price changes.
+
+   Replace with: store `privateEquityUnits` only. Compute display value with
+   `privateEquityValueUsdForUnits()` and compute backend asset value inside
+   `scenarioBalanceSheet()`.
+
+   Prove safe by: remove state tests asserting normalized
+   `privateEquityValueUsd`; keep tests proving backend request asset value is
+   computed from units and current bootstrap price.
+
+3. Delete or implement schema-only policy types.
+
+   Files/classes: `PolicyType.PORTFOLIO_TARGET_REBALANCE`,
+   `MANUAL_EVENT_SCHEDULE`, `LIQUIDITY_RESERVE` at
+   `augur/core/scenario_set.py:25-32`; `LiquidityReservePolicy`,
+   `PortfolioTargetRebalancePolicy`, and `ManualEventSchedulePolicy` at lines
+   304-329; only `LiquidityReservePolicy` is asserted in
+   `augur/core/scenario_set_test.py`.
+
+   Why: these policies are accepted by the public scenario schema but no engine
+   code executes them. That is worse than a TODO because callers can believe a
+   modeled policy affects outcomes when it is silently inert.
+
+   Replace with: either remove them from the `Policy` union until runtime
+   semantics exist, or implement them as ordered policy steps with decisions,
+   instructions, applied effects, and reconciliation tests.
+
+   Prove safe by: schema tests should reject these policy types until
+   implemented; `rg "LiquidityReservePolicy|PortfolioTargetRebalancePolicy|ManualEventSchedulePolicy"`
+   should show no production references outside the schema union.
+
+4. Remove `ReportSpec.metrics` and `include_sample_paths` until they are real.
+
+   Files/classes: `DEFAULT_REPORT_SPEC` in
+   `augur/app/lib/scenario_set_state.js:14-19`; `normalizeReportSpec()` forces
+   `includeSamplePaths: false` at lines 477-484; backend `ReportSpec` exposes
+   `metrics` and `include_sample_paths: Literal[False]` at
+   `augur/core/scenario_set.py:603-611`; `ScenarioRun.to_response_result()`
+   ignores `report_spec.metrics` and always returns all fan columns at
+   `augur/core/api.py:278-308`.
+
+   Why: `include_sample_paths` is a disabled compatibility knob and `metrics`
+   is accepted but ignored. Both make the response contract look configurable
+   when it is not.
+
+   Replace with: either delete both fields for now, or make `metrics` filter
+   `ScenarioRunArrays.metric_fan_columns()` and terminal output.
+   Distribution-first does not require pretending unused report selectors exist.
+
+   Prove safe by: tests should show unknown/unsupported report fields fail or
+   are absent; if `metrics` remains, add a test that a one-metric request emits
+   only that metric.
+
+5. Delete test-only frontend result-mode helpers or move them into the app.
+
+   Files/functions: `scenarioResultDataModes()` and
+   `scenarioResultSupportsMode()` in
+   `augur/app/lib/scenario_set_state.js:134-150`; only
+   `augur/app/lib/scenario_set_state_test.mjs` calls them.
+
+   Why: they are exported from the scenario-state module but no app code uses
+   them. Keeping unused exported helpers makes the state library look like a
+   broader compatibility API.
+
+   Replace with: delete them, or move equivalent logic next to actual view-mode
+   routing if the app starts using it.
+
+   Prove safe by:
+
+   ```bash
+   rg "scenarioResultDataModes|scenarioResultSupportsMode" augur/app
+   ```
+
+   It should return no production callers before deletion.
+
+6. Remove redundant derived response summaries unless a real consumer needs
+   them.
+
+   Files/classes: `ScenarioAcceptedSummary.actor_count`, `.event_count`, and
+   `.policy_count` in `augur/core/scenario_set.py:842-849` are computed by
+   `_accepted_summary()` at `augur/core/api.py:569-577` while
+   `ScenarioSetRunResponse.request` returns the source scenario at
+   `augur/core/scenario_set.py:905-913`. `RolloutStatusSummary` at
+   `augur/core/scenario_set.py:875-883` is emitted alongside full
+   `rollout_statuses` at lines 890-892 and computed again in
+   `ScenarioRun.to_response_result()` at `augur/core/api.py:289-299`.
+
+   Why: root `STYLE.md:40-41` explicitly rejects dead code and redundant
+   derived response fields. These summaries can be useful for a compact index
+   view, but the current default response returns both the collection and its
+   direct counts in every result.
+
+   Replace with: either delete the summary fields from the full run response, or
+   introduce a genuinely compact result-list endpoint that returns summaries
+   instead of the source request and row collections.
+
+   Prove safe by: app code should compute counts from `request.scenarios` and
+   `rollout_statuses`, or tests should show a summary-only response mode where
+   the collections are absent.
+
+7. Stop hiding market data/config load failures behind a broad synthetic
+   fallback.
+
+   Files/functions: `augur/model/markets/data.py:37-54` catches
+   `json.JSONDecodeError`, `ValueError`, and `OSError` from
+   `load_market_evidence()` and silently swaps in FRED-only synthesized
+   evidence after printing to stderr.
+
+   Why: this conflicts with `STYLE.md:45-72`: invalid config, unreadable source
+   files, or malformed market data should surface unless the caller explicitly
+   selected fallback data. The current behavior makes a broken Yahoo/Zillow
+   source look like a successful lower-fidelity model run.
+
+   Replace with: make fallback mode an explicit argument or test fixture path,
+   and let default config/source-data errors propagate. If a CLI wants degraded
+   mode, put the error boundary there and label the resulting evidence clearly.
+
+   Prove safe by: add one test where a malformed configured source raises, and
+   one explicit `fred_only=True` or fixture-config test that returns synthesized
+   evidence.
+
+## Suspicious/Needs-Design Review
+
+1. Ordered policy programs exist, but execution still groups by policy class.
+
+   Files/functions: `actor_policy_programs()` and `actor_policy_steps()` in
+   `augur/core/policy_runtime.py:207-254`; `run_scenario_vectorized()` flattens
+   those steps into `partner_equity_steps`, `spend_steps`, `checking_steps`,
+   and `private_equity_sale_steps` at
+   `augur/core/scenario_engine.py:468-473`, then runs hardcoded loops by type at
+   lines 560-704.
+
+   Why suspicious: the design invariant says actor policy programs are ordered
+   sequences. The current engine preserves sequence metadata but then ignores
+   cross-type ordering. A monthly spend policy cannot be ordered before or after
+   private-equity sale in the same actor program in a meaningful way.
+
+   Replace with: a month loop that iterates `ActorPolicyStep.sequence_index`
+   and dispatches each policy through a typed handler. Delete
+   `enabled_rules_of_type()` if it remains test-only; it is the older
+   class-filtered shape.
+
+   Prove safe by: add a test with two policies whose order changes cash and
+   sale behavior, then assert reversing policy order reverses the effect.
+
+2. Actions, decisions, ledger entries, balance snapshots, accounting details,
+   and monthly arrays overlap heavily.
+
+   Files/classes: `SimulationAction` rows at
+   `augur/core/scenario_set.py:355-452`, policy decisions at lines 455-499,
+   market observations at lines 502-530, ledger/snapshot/detail rows at lines
+   534-599, and response exposure at lines 886-901. `run_scenario_vectorized()`
+   builds all of them plus wide arrays in `ScenarioRunArrays` at
+   `augur/core/scenario_engine.py:92-168` and returns them all at lines
+   1100-1175.
+
+   Why suspicious: these rows are valuable as a future trace model, but today
+   the app primarily consumes fan/terminal/monthly columns. The row surfaces
+   are mostly exercised by tests and emitted wholesale in every response. That
+   creates a parallel public API before the source-of-truth boundary is clear.
+
+   Replace with: make ledger/accounting/snapshot rows the canonical detail
+   surface, then either delete `SimulationAction` rows or narrow them to
+   user-visible commands only. Gate heavyweight detail rows behind an explicit
+   report/detail option once the UI has a real consumer.
+
+   Prove safe by: add reconciliation tests that every public monthly flow is
+   derived from ledger/accounting rows. Then remove one action family, such as
+   `PayMortgageAction`, and confirm no app or API behavior depends on it.
+
+3. Partner ownership runtime still computes parallel ledger data.
+
+   Files/functions: `PartnerOwnershipAccrualApplication` in
+   `augur/core/policy_runtime.py:175-189` returns ledger and snapshot batches,
+   but `_partner_equity_arrays()` stores the computed arrays in
+   `PartnerEquityAgreementArrays` and `_record_partner_agreement_ledger_detail()`
+   separately reconstructs ledger/snapshot rows at
+   `augur/core/scenario_engine.py:1783-1887`.
+
+   Why suspicious: recent work moved partner accrual math into runtime, but the
+   engine still treats the application result as an array bundle and later
+   re-records public detail rows from a second structure. That makes it easy
+   for ledger rows and partner arrays to drift.
+
+   Replace with: either consume `ownership_application.ledger_entries` and
+   `.balance_snapshots` directly, or make `_partner_equity_arrays()` return a
+   state object plus already-recorded rows. Avoid reconstructing equivalent
+   ownership ledger rows later.
+
+   Prove safe by: tests should compare partner arrays to rows generated by the
+   same application object, not by a parallel recorder.
+
+4. Schema-only assets and liabilities advertise state the engine ignores.
+
+   Files/classes: `CashAssetPosition`, `RealEstateAssetPosition`,
+   `DeferredTaxAssetPosition`, `TaxLiability`, and
+   `ActorEquityClaimLiability` in `augur/core/scenario_set.py:730-786`.
+   The engine initializes cash from accounts and real estate from
+   `property_selection`, while `RealEstateAssetPosition` and
+   `ActorEquityClaimLiability` are only used by validation in
+   `augur/core/api.py:529-536`.
+
+   Why suspicious: these look like first-class balance-sheet primitives, but
+   not all of them affect simulation. That conflicts with the design goal that
+   initial accounts/assets/liabilities drive runtime state.
+
+   Replace with: remove unsupported asset/liability variants from the public
+   union, or make engine initialization consume them as the actual source of
+   cash, properties, mortgages, tax liabilities, and actor claims.
+
+   Prove safe by: a scenario with one of these positions should either be
+   rejected or change results in a tested, documented way.
+
+5. `PolicyContext` and dynamic metric access look like future scaffolding, not
+   current primitives.
+
+   Files/functions: `PolicyContext` is defined at
+   `augur/core/policy_runtime.py:38-41` and has no production use. `ScenarioRun`
+   exposes `_metric_array(metric: str)` at `augur/core/api.py:311-318`, which
+   uses `getattr(self.arrays, metric, None)` and string metric names while the
+   report schema already has a typed `ReportMetric` enum.
+
+   Why suspicious: `PolicyContext` is classic dead scaffolding under
+   `STYLE.md:40`. `_metric_array()` may be acceptable as a notebook/debug helper,
+   but root `STYLE.md:44` says dynamic attribute probing should be justified and
+   documented. Keeping both makes it unclear whether the replacement primitive is
+   typed report metrics, string metric names, or future policy context objects.
+
+   Replace with: delete `PolicyContext` until a handler signature consumes it.
+   If metric selection remains, map `ReportMetric` values to explicit arrays
+   through a table rather than probing attributes by string.
+
+   Prove safe by: `rg "PolicyContext"` should only find the removed definition;
+   metric filtering tests should pass using `ReportMetric`, not raw attribute
+   names.
+
+## Recent Work Risk Review
+
+1. The React section-read integration reduced `scenarioInputView()` usage but
+   risks replacing one adapter with many tiny local adapters.
+
+   `augur/app/augur-app.jsx` now has local helpers such as
+   `scenarioIdentity()`, `scenarioFinancing()`, and `scenarioPolicies()`. That
+   is better than one wide bag, but it is still an adapter layer if it spreads
+   rather than disappearing. The next patch should delete `scenarioInputView()`
+   and either read `scenario.identity` directly or export a narrow, shared
+   section accessor for null-safety only.
+
+2. Private-equity opportunity tracing is directionally correct but too chatty
+   for the current consumers.
+
+   Files/functions: `PrivateEquitySaleOpportunityBatch` in
+   `augur/core/policy_runtime.py:77-83`, opportunity ID construction at lines
+   584-642, policy decisions in `augur/core/scenario_engine.py:622-629` and
+   `_record_private_equity_sale_decisions()` at lines 1269-1321.
+
+   Risk: opportunities are now exogenous observations, which matches the spec.
+   But `PrivateEquitySaleDecision` rows are emitted for every rollout/month
+   when a PE sale policy exists, including no-op/no-opportunity rows, and the
+   app does not consume them. This can become provenance noise unless there is
+   a concrete diagnostic view or invariant attached to each row.
+
+   Keep if: a trajectory details view uses the rows to explain sale/no-sale
+   reasons, or tests assert that each sale action joins to one opportunity and
+   one decision by ID.
+
+   Collapse if: no consumer appears soon. Keep the opportunity array and sale
+   action cause IDs, but stop serializing full no-op decision rows by default.
+
+3. The current docs correctly name the debt, but some TODOs are already more
+   precise than code.
+
+   Example: `augur/TODO.md:30-41` says to replace class-filtered policy
+   execution and remove schema-only policy types. Those are not open-ended
+   architecture ideas; they point at concrete deletion/implementation targets.
+   Treat this cleanup audit as confirmation that those TODOs should be promoted
+   into near-term cleanup work.
+
+4. The URL/state version bump is good, but old-shape compatibility is still
+   partially preserved.
+
+   Files/functions: URL state is versioned at
+   `augur/app/lib/scenario_set_state.js:5` and rejects mismatched versions at
+   lines 843-852. That is good. But `scenarioInputView()` still accepts
+   `scenario?.[fieldName]` fallback values at lines 173-179, and the flat
+   construction helpers still build sections from wide fields at lines 115-170.
+
+   Risk: stale URL compatibility can survive indirectly even though the decoder
+   rejects old versions. Remove both paths together so new state shape changes
+   fail loudly.
+
+5. Annual-tax parameter extraction should remain one source of truth, not become
+   a JSON/YAML transition seam.
+
+   The landed shape uses `augur/core/annual_tax_parameters.yaml` as the only
+   parameter file, with `BUILD.bazel` data pointing at that file and the Python
+   loader letting YAML/Pydantic exceptions propagate directly.
+
+   Risk: extracting tax tables out of Python is aligned with the TODO to move
+   pure data into parsed configuration. Keep this as one parameter file with no
+   JSON/YAML probing or catch-and-reraise wrapper around the loader. Letting
+   YAML/Pydantic errors propagate is better than wrapping them in generic "could
+   not read config" exceptions that restate the traceback.
+
+   Keep if: there is exactly one parameter file, `BUILD.bazel` points at that
+   file, validation rejects missing statuses/brackets, and tax behavior tests
+   still prove representative calculations.
+
+   Collapse if: both JSON and YAML remain, or runtime code has to probe
+   multiple filenames. Pick one format and delete the other before merging.
+
+6. Avoid literal "checked-in data equals itself" tests for extracted tax tables.
+
+   The landed test mutates `_ANNUAL_TAX_PARAMETERS.model_dump(mode="json")` and
+   verifies that missing filing statuses are rejected. That is a useful schema
+   guard. Do not add the lower-value variant: a test that loads
+   `annual_tax_parameters.yaml` and asserts every checked-in bracket/deduction
+   equals the same literal values copied into the test.
+
+   Risk: such tests become change detectors for a data file, not semantic tax
+   tests. They add maintenance friction while proving only that two checked-in
+   literals were changed together.
+
+   Keep if: tests validate invariants, boundary calculations, and tax behavior
+   for representative incomes/statuses.
+
+   Collapse if: tests merely mirror the parameter table. Use source citations in
+   the data file comments or docs, and behavior tests around the calculator.
+
+## Suggested Deletion/Replacement Sequence
+
+1. Remove `scenarioInputView()` and the flat construction helpers from
+   `scenario_set_state.js`. Update tests to assert only sectioned state.
+
+2. Delete derived `initialBalanceSheet.privateEquityValueUsd` browser state.
+   Keep unit count as input and compute value at render/request boundaries.
+
+3. Remove unused exported helpers and fake knobs:
+   `scenarioResultDataModes()`, `scenarioResultSupportsMode()`,
+   `ReportSpec.include_sample_paths`, and either delete or implement
+   `ReportSpec.metrics`.
+
+4. Remove redundant default-response summaries:
+   `ScenarioAcceptedSummary.actor_count`, `.event_count`, `.policy_count`, and
+   `ScenarioResult.rollout_status_summary` unless a summary-only response mode
+   replaces the full source collections.
+
+5. Remove schema-only policies from the `Policy` union, or implement the first
+   one end-to-end. Do not keep inert policy types in public request schemas.
+
+6. Convert `run_scenario_vectorized()` to execute ordered policy steps rather
+   than per-class loops. Delete `enabled_rules_of_type()` and any tests that
+   encode class-filtered behavior.
+
+7. Pick one trace/source-of-truth path. Start by collapsing one duplicated
+   family, such as mortgage payment action rows or partner ownership rows, into
+   ledger/accounting/snapshot detail.
+
+8. Replace temporary tax timing with obligations. Keep
+   `cash_negative` as a warning, but introduce failure only through an
+   obligation settlement result, not through raw cash-path inspection.
+
+## Suggested Tests/Guards
+
+- Browser state guard: a test that `augur/app/augur-app.jsx` and
+  `augur/app/lib/scenario_set_state.js` have no production references to
+  `scenarioInputView` or flat scenario fields after normalization.
+
+- URL guard: encode/decode only the current sectioned state shape. A wide-row
+  payload with the current version should fail or normalize to defaults
+  deliberately, not silently migrate.
+
+- Report contract guard: if `ReportSpec.metrics` remains, one test should
+  request a single metric and assert omitted metrics are absent from fan and
+  terminal output.
+
+- Policy-order guard: two policies in one actor program should produce
+  different results when their order is reversed.
+
+- Detail-row reconciliation guard: for each monthly transaction array retained
+  for charts, assert it equals a ledger/accounting/snapshot-derived matrix or
+  document a deliberate exception.
+
+- PE opportunity guard: every `SellPrivateEquityAction` should join to exactly
+  one opportunity observation and one sale decision by
+  `opportunity_id`/`opportunity_cause_id`; no-op decision rows should be absent
+  from default responses unless a detail flag requests them.
+
+- Inert-schema guard: unsupported policy, asset, and liability variants should
+  be rejected at validation, or covered by an e2e test proving they affect
+  runtime state.
+
+- STYLE guard: a repo-local audit script or focused tests should catch new
+  Augur compatibility shims, redundant derived response fields, dynamic metric
+  `getattr()` dispatch, and config/data loaders that swallow errors without an
+  explicit degraded-mode flag.
