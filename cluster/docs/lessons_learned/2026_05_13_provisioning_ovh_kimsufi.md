@@ -33,14 +33,19 @@ into the `display_name` state attribute on every Read. If your HCL doesn't set
 `PUT /services/{serviceId}` to "clear" it — which needs `/services/*` permission
 that **isn't covered by `/dedicated/server/*`**.
 
-**Fix when creating the OVH API token**: add these scopes too:
+**Fix**: when creating the OVH API token, grant these scopes alongside
+`/dedicated/server/*`:
 
-- `GET /services/*`
+- `GET /services`, `GET /services/*`
 - `PUT /services/*`
 
-**Stopgap**: set `TERRAFORM_OVH_RESTORE_BAREMETAL_DISPLAYNAME_BEHAVIOUR=1` in the
-environment before `tofu apply`. That skips the iam → display_name copy, so state
-stays empty and the spurious update is never triggered. (See the env-var check in
+With `/services/*` granted, no HCL workaround is needed — the resource's auto-sync
+of `iam.displayName` succeeds via `PUT /services/{id}`.
+
+**Stopgap** (only useful when running with an older, narrower token): set
+`TERRAFORM_OVH_RESTORE_BAREMETAL_DISPLAYNAME_BEHAVIOUR=1` in the environment before
+`tofu apply`. That skips the iam → display_name copy, so state stays empty and the
+spurious update is never triggered. (See the env-var check in
 `resource_dedicated_server.go::Read`.)
 
 ## 3. OVH endpoint for HIL is `ovh-us`
