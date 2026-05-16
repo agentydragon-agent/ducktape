@@ -10,6 +10,7 @@ from pathlib import Path
 
 import httpx
 from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraUsage, ProviderQuota, QuotaWindow
 
@@ -27,8 +28,14 @@ API_TIMEOUT_SECS = 5.0
 CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
 
 
+# Preserve unknown fields (e.g. mcpOAuth) on the round-trip so that
+# _save_credentials after a token refresh doesn't clobber Claude Code's
+# other state in ~/.claude/.credentials.json.
+_CAMEL = ConfigDict(extra="allow", alias_generator=to_camel, populate_by_name=True)
+
+
 class _OAuthTokens(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = _CAMEL
 
     access_token: str | None = None
     refresh_token: str | None = None
@@ -36,7 +43,7 @@ class _OAuthTokens(BaseModel):
 
 
 class _Credentials(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = _CAMEL
 
     claude_ai_oauth: _OAuthTokens | None = None
 
@@ -86,7 +93,7 @@ def _read_credentials() -> tuple[_Credentials, str | None]:
 
 def _save_credentials(creds: _Credentials) -> None:
     try:
-        CREDENTIALS_PATH.write_text(creds.model_dump_json(indent=2))
+        CREDENTIALS_PATH.write_text(creds.model_dump_json(indent=2, by_alias=True))
     except OSError:
         logger.debug("Could not write Claude credentials", exc_info=True)
 

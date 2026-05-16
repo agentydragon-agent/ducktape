@@ -20,10 +20,11 @@ class ConfigFile(BaseModel):
 def load(path: Path) -> ConfigFile:
     try:
         raw = path.read_text()
-    except OSError:
+    except FileNotFoundError:
         return ConfigFile()
-    try:
-        data = tomllib.loads(raw)
-    except tomllib.TOMLDecodeError:
-        return ConfigFile()
-    return ConfigFile.model_validate(data)
+    # Each top-level table is a provider section, e.g. `[zai] api_key_path = "..."`.
+    data = tomllib.loads(raw)
+    providers = {
+        name: ProviderSettings.model_validate(value) for name, value in data.items() if isinstance(value, dict)
+    }
+    return ConfigFile(providers=providers)
