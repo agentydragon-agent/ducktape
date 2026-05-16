@@ -1,11 +1,10 @@
 """Load aligned monthly log-returns for the market factors.
 
-`load_evidence(...)` is the single entry point. It returns a typed
-`(HistoricalSeries, MarketEvidence)` tuple from configured Yahoo-SPY,
-Zillow, and FRED source data. Config/source-data errors propagate by
-default. Callers that intentionally want lower-fidelity FRED-only
-synthesised evidence must opt in with `fred_only=True` or
-`load_fred_only_evidence(...)`.
+`load_evidence(...)` returns a typed `(HistoricalSeries, MarketEvidence)`
+tuple from parsed `MarketConfig` plus configured Yahoo-SPY, Zillow, and
+FRED source data. Config/source-data errors propagate by default. Callers
+that intentionally want lower-fidelity FRED-only synthesised evidence
+must opt in with `fred_only=True` or `load_fred_only_evidence(...)`.
 
 `load_historical(...)` is a thin wrapper for the metric harness, which
 only needs `HistoricalSeries`.
@@ -13,15 +12,14 @@ only needs `HistoricalSeries`.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from augur.core.schemas import SourceDataConfig
 from augur.model.location_market_sources import LocationMarketSources
+from augur.model.market_config import MarketConfig, load_market_config
 from augur.model.market_data import (
     MarketEvidence,
     PeriodReturns,
@@ -35,7 +33,7 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "market_c
 
 
 def load_evidence(
-    config_path: Path | None = None, *, fred_only: bool = False
+    config: MarketConfig, base_dir: Path, *, fred_only: bool = False
 ) -> tuple[HistoricalSeries, MarketEvidence]:
     """Load the full `MarketEvidence` and a derived `HistoricalSeries`.
 
@@ -44,21 +42,31 @@ def load_evidence(
     `fred_only=True` is an explicit lower-fidelity fixture/degraded mode;
     its evidence metadata is labelled as synthesized.
     """
-    path = (config_path or DEFAULT_CONFIG_PATH).resolve()
-    config = json.loads(path.read_text(encoding="utf-8"))
     if fred_only:
-        return _evidence_fred_only(config, path.parent)
-    evidence = load_market_evidence(config, path.parent)
+        return _evidence_fred_only(config, base_dir)
+    evidence = load_market_evidence(config.source_data, base_dir)
     return _historical_from_evidence(evidence), evidence
 
 
-def load_fred_only_evidence(config_path: Path | None = None) -> tuple[HistoricalSeries, MarketEvidence]:
+def load_evidence_from_path(
+    config_path: Path | None = None, *, fred_only: bool = False
+) -> tuple[HistoricalSeries, MarketEvidence]:
+    path = (config_path or DEFAULT_CONFIG_PATH).resolve()
+    return load_evidence(load_market_config(path), path.parent, fred_only=fred_only)
+
+
+def load_fred_only_evidence(config: MarketConfig, base_dir: Path) -> tuple[HistoricalSeries, MarketEvidence]:
     """Load explicitly selected FRED-only synthesized market evidence."""
-    return load_evidence(config_path, fred_only=True)
+    return load_evidence(config, base_dir, fred_only=True)
+
+
+def load_fred_only_evidence_from_path(config_path: Path | None = None) -> tuple[HistoricalSeries, MarketEvidence]:
+    path = (config_path or DEFAULT_CONFIG_PATH).resolve()
+    return load_fred_only_evidence(load_market_config(path), path.parent)
 
 
 def load_historical(config_path: Path | None = None, *, fred_only: bool = False) -> HistoricalSeries:
-    return load_evidence(config_path, fred_only=fred_only)[0]
+    return load_evidence_from_path(config_path, fred_only=fred_only)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -91,13 +99,13 @@ def _historical_from_evidence(evidence: MarketEvidence) -> HistoricalSeries:
     )
 
 
-def _evidence_fred_only(config: dict[str, Any], base_dir: Path) -> tuple[HistoricalSeries, MarketEvidence]:
+def _evidence_fred_only(config: MarketConfig, base_dir: Path) -> tuple[HistoricalSeries, MarketEvidence]:
     """Read only FRED CSVs (no Yahoo, no Zillow) and synthesise a
     `MarketEvidence` matching the production loader's shape with what we
     can construct: SP500 from FRED price-level (no dividends), Case-Shiller
     SF for housing, FRED rent CPI, FRED US CPI, FRED 30-year mortgage."""
-    source = SourceDataConfig.model_validate(config.get("source_data"))
-    market_sources = LocationMarketSources.from_config(config)
+    source = config.source_data
+    market_sources = LocationMarketSources.from_config(config.location_market_sources)
     home_factor_names = tuple(dict.fromkeys(market_sources.home_value.values()))
     market_factors = ("sp500", *home_factor_names, "rent", "inflation")
     sp500_path = resolve_path(source.fred_sp500_csv, base_dir)

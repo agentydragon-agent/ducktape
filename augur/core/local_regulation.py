@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
+from typing import Any
 
-from pydantic import Field, NonNegativeFloat
+import yaml
+from pydantic import Field, NonNegativeFloat, model_validator
 
 from augur.core.schemas import ApiModel, Percentage
+
+_LOCAL_REGULATION_DATA_PATH = Path(__file__).with_name("local_regulation.yaml")
 
 
 class LocationId(StrEnum):
@@ -26,19 +31,35 @@ class LocalRegulation(ApiModel):
     notes: str = Field(description="Human-readable source and modeling notes for this location.")
 
 
-LOCAL_REGULATION_BY_LOCATION: dict[LocationId, LocalRegulation] = {
-    LocationId.SAN_FRANCISCO_CA: LocalRegulation(
-        property_tax_annual_pct=1.18,
-        notes="San Francisco secured property-tax default used by the consolidated house model.",
-    ),
-    LocationId.VALLEJO_CA: LocalRegulation(
-        property_tax_annual_pct=1.1, notes="Vallejo mainland property-tax default around 1.1%."
-    ),
-    LocationId.MARE_ISLAND_VALLEJO_CA: LocalRegulation(
-        property_tax_annual_pct=2.4,
-        notes="Mare Island default includes high local special assessments at roughly 2.4%.",
-    ),
-}
+class _LocalRegulationData(ApiModel):
+    local_regulation_by_location: dict[LocationId, LocalRegulation]
+
+    @model_validator(mode="after")
+    def _validate_complete_location_table(self) -> _LocalRegulationData:
+        expected = set(LocationId)
+        actual = set(self.local_regulation_by_location)
+        if actual != expected:
+            missing = ", ".join(location_id.value for location_id in LocationId if location_id not in actual) or "none"
+            unexpected = ", ".join(sorted(location_id.value for location_id in actual - expected)) or "none"
+            expected_list = ", ".join(location_id.value for location_id in LocationId)
+            raise ValueError(
+                "local_regulation_by_location must define exactly these locations: "
+                f"{expected_list}; missing: {missing}; unexpected: {unexpected}"
+            )
+        return self
+
+
+def _validate_local_regulation_data(payload: Any) -> _LocalRegulationData:
+    return _LocalRegulationData.model_validate(payload)
+
+
+def _load_local_regulation_data(path: Path = _LOCAL_REGULATION_DATA_PATH) -> _LocalRegulationData:
+    return _validate_local_regulation_data(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+LOCAL_REGULATION_BY_LOCATION: dict[LocationId, LocalRegulation] = dict(
+    _load_local_regulation_data().local_regulation_by_location
+)
 
 
 def known_location_id(location_id: LocationId | str) -> LocationId | None:

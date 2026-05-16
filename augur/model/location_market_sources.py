@@ -3,6 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import Field
+
+from augur.core.schemas import StrictModel
+
+
+class LocationMarketSourcesConfig(StrictModel):
+    home_value: dict[str, str] = Field(min_length=1)
+    rent: dict[str, str] = Field(min_length=1)
+
 
 @dataclass(frozen=True)
 class LocationMarketSources:
@@ -10,21 +19,11 @@ class LocationMarketSources:
     rent: dict[str, str]
 
     @classmethod
-    def from_config(cls, config: dict[str, Any]) -> LocationMarketSources:
-        raw = config.get("location_market_sources")
-        if not isinstance(raw, dict):
-            raise ValueError("joint config must define location_market_sources")
-        return cls(home_value=_location_sources(raw, "home_value"), rent=_location_sources(raw, "rent"))
+    def from_config(cls, config: LocationMarketSourcesConfig) -> LocationMarketSources:
+        return cls(home_value=dict(config.home_value), rent=dict(config.rent))
 
     def market_factor_names(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(("sp500", *self.home_value.values(), *self.rent.values(), "inflation")))
-
-
-def _location_sources(raw: dict[str, Any], key: str) -> dict[str, str]:
-    value = raw.get(key)
-    if not isinstance(value, dict) or not value:
-        raise ValueError(f"location_market_sources.{key} must be a non-empty object")
-    return {str(location_id): str(source_factor) for location_id, source_factor in value.items()}
 
 
 def build_location_market_maps(

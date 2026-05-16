@@ -253,9 +253,7 @@ def _return_frame_summary(frame: pd.DataFrame, *, source: str, used_as_marginal_
     }
 
 
-def load_market_evidence(config: dict[str, Any], base_dir: str | Path) -> MarketEvidence:
-    source_config = SourceDataConfig.model_validate(config.get("source_data"))
-
+def load_market_evidence(source_config: SourceDataConfig, base_dir: str | Path) -> MarketEvidence:
     sp500_price = _monthly_last(_read_fred_series(resolve_path(source_config.fred_sp500_csv, base_dir), "SP500"))
     sp500_total_return = _monthly_last(
         _read_yahoo_spy_adjusted_close(resolve_path(source_config.yahoo_spy_adjusted_json, base_dir))

@@ -7,6 +7,7 @@ from typing import Any, cast
 import pytest
 import pytest_bazel
 
+from augur.model.market_config import load_market_config
 from augur.model.markets.data import load_evidence, load_fred_only_evidence
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "market_config.example.json"
@@ -33,11 +34,11 @@ def test_configured_market_source_errors_raise_by_default(tmp_path: Path) -> Non
     config_path.write_text(json.dumps(config), encoding="utf-8")
 
     with pytest.raises(json.JSONDecodeError):
-        load_evidence(config_path)
+        load_evidence(load_market_config(config_path), config_path.parent)
 
 
 def test_explicit_fred_only_evidence_is_synthesized_and_labeled() -> None:
-    historical, evidence = load_fred_only_evidence(CONFIG_PATH)
+    historical, evidence = load_fred_only_evidence(load_market_config(CONFIG_PATH), CONFIG_PATH.parent)
 
     assert historical.factor_names == evidence.factor_names
     assert evidence.monthly_log_returns.shape[0] == len(evidence.monthly_return_months)

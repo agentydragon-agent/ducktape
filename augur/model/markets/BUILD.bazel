@@ -43,6 +43,7 @@ py_library(
         ":scenarios_py",
         "//augur/core:schemas_py",
         "//augur/model:location_market_sources_py",
+        "//augur/model:market_config_py",
         "//augur/model:market_data_py",
         "@pypi//numpy",
         "@pypi//pandas",
@@ -80,6 +81,7 @@ py_test(
     data = ["//augur/model/config:market_config_files"],
     deps = [
         ":data_py",
+        "//augur/model:market_config_py",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

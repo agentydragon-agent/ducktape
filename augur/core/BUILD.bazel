@@ -41,9 +41,11 @@ py_library(
 py_library(
     name = "local_regulation_py",
     srcs = ["local_regulation.py"],
+    data = ["local_regulation.yaml"],
     deps = [
         ":schemas_py",
         "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -246,6 +248,20 @@ py_test(
         ":market_bundle_test_support_py",
         ":property_tax_py",
         "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "local_regulation_test",
+    srcs = ["local_regulation_test.py"],
+    deps = [
+        ":local_regulation_py",
+        ":market_bundle_test_support_py",
+        ":property_tax_py",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

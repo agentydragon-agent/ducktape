@@ -1,0 +1,16 @@
+local_regulation_by_location:
+  san_francisco_ca:
+    property_tax_annual_pct: 1.18
+    local_transfer_tax_pct: 0
+    special_assessment_annual_usd: 0
+    notes: San Francisco secured property-tax default used by the consolidated house model.
+  vallejo_ca:
+    property_tax_annual_pct: 1.1
+    local_transfer_tax_pct: 0
+    special_assessment_annual_usd: 0
+    notes: Vallejo mainland property-tax default around 1.1%.
+  mare_island_vallejo_ca:
+    property_tax_annual_pct: 2.4
+    local_transfer_tax_pct: 0
+    special_assessment_annual_usd: 0
+    notes: Mare Island default includes high local special assessments at roughly 2.4%.

@@ -8,7 +8,6 @@ mortgage rates, and location-specific path selection are runtime bundle concerns
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ import numpy as np
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
 from augur.core.scenario_set import MarketRequest
 from augur.model.location_market_sources import LocationMarketSources, build_location_market_maps
+from augur.model.market_config import load_market_config
 from augur.model.markets.data import load_evidence
 from augur.model.markets.market_model import MarketModel
 from augur.model.markets.registry import BY_LABEL
@@ -29,19 +29,18 @@ class MacroMarketBundleProvider:
         self, market_model: MarketModel, config_path: Path, *, current_private_equity_price_usd: float
     ) -> None:
         self.config_path = Path(config_path).resolve()
-        config = json.loads(self.config_path.read_text(encoding="utf-8"))
+        config = load_market_config(self.config_path)
         self.label: str = market_model.label
-        self.horizon_start: str = config["horizon_start"]
-        horizon_years = int(config.get("horizon_years", 30))
-        self.horizon_months: int = horizon_years * 12
-        self.seed: int = int(config.get("seed", 0))
+        self.horizon_start = config.horizon_start
+        self.horizon_months = config.horizon_years * 12
+        self.seed = config.seed
 
-        historical, evidence = load_evidence(self.config_path)
+        historical, evidence = load_evidence(config, self.config_path.parent)
         self.latest_observations: dict[str, Any] = dict(evidence.latest_observations)
         self._current_mortgage30_rate_pct = float(evidence.current_mortgage30_rate_pct)
         self._current_private_equity_price_usd = float(current_private_equity_price_usd)
         self._factor_index = {name: idx for idx, name in enumerate(historical.factor_names)}
-        self._location_market_sources = LocationMarketSources.from_config(config)
+        self._location_market_sources = LocationMarketSources.from_config(config.location_market_sources)
 
         market_model.fit(historical)
         self._market_model = market_model

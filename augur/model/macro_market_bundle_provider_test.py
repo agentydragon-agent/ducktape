@@ -8,23 +8,26 @@ The model-internal correctness tests live next to each model in
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 import pytest_bazel
 from numpy.testing import assert_allclose
+from pydantic import ValidationError
 
 from augur.core.scenario_set import MarketRequest
 from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets.registry import LABELS
 
+CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
+
 
 @pytest.fixture(params=LABELS)
 def provider(request: pytest.FixtureRequest) -> MacroMarketBundleProvider:
-    config_path = Path(__file__).resolve().parent / "config" / "market_config.example.json"
     return MacroMarketBundleProvider.for_label(
-        request.param, config_path=config_path, current_private_equity_price_usd=100.0
+        request.param, config_path=CONFIG_PATH, current_private_equity_price_usd=100.0
     )
 
 
@@ -33,6 +36,16 @@ def test_metadata_populated(provider: MacroMarketBundleProvider) -> None:
     assert provider.horizon_months > 0
     assert isinstance(provider.horizon_start, str)
     assert isinstance(provider.latest_observations, dict)
+
+
+def test_provider_rejects_unknown_market_config_fields(tmp_path: Path) -> None:
+    config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    config["unused_knob"] = True
+    config_path = tmp_path / "market_config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="unused_knob"):
+        MacroMarketBundleProvider.for_label(LABELS[0], config_path=config_path, current_private_equity_price_usd=100.0)
 
 
 def _request(provider: MacroMarketBundleProvider, *, rollout_count: int = 3, horizon_months: int = 24) -> MarketRequest:
