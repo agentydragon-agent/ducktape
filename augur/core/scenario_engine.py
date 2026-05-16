@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Any, Protocol, Self
+from typing import Any, cast
 
 import numpy as np
 
@@ -100,12 +100,6 @@ MORTGAGE_SERVICING_POLICY_ID = "mortgage_servicing"
 PROPERTY_OPERATING_CASH_FLOW_POLICY_ID = "property_operating_cash_flow"
 PROPERTY_SALE_SETTLEMENT_POLICY_ID = "property_sale_settlement"
 ANNUAL_TAX_ACCOUNTING_POLICY_ID = "annual_tax_accounting"
-
-
-class _TrajectoryTraceRecord(Protocol):
-    rollout_index: int
-
-    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self: ...
 
 
 @dataclass(frozen=True)
@@ -1593,10 +1587,14 @@ def _trace_identity_by_rollout(scenario: Scenario, market_bundle: MarketBundle) 
     }
 
 
-def _with_trajectory_identity[TraceRecordT: _TrajectoryTraceRecord](
+def _with_trajectory_identity[TraceRecordT](
     records: list[TraceRecordT], identity_by_rollout: Mapping[int, dict[str, str]]
 ) -> list[TraceRecordT]:
-    return [record.model_copy(update=identity_by_rollout[int(record.rollout_index)]) for record in records]
+    return [cast(TraceRecordT, _copy_with_trajectory_identity(record, identity_by_rollout)) for record in records]
+
+
+def _copy_with_trajectory_identity(record: Any, identity_by_rollout: Mapping[int, dict[str, str]]) -> Any:
+    return record.model_copy(update=identity_by_rollout[int(record.rollout_index)])
 
 
 def _market_path_observations(
