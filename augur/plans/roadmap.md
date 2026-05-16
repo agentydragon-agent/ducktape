@@ -47,9 +47,8 @@ Target shape:
   occupancy/rental plan, tax/accounting assumptions, market assumptions, and
   policy programs.
 - Property/location details belong to scenario context, not to either result
-  mode. Move the current property/location card into shared scenario context,
-  the left input pane, a dedicated property/details tab, or another non-result
-  surface.
+  mode. Keep the current property/location card in shared scenario context or
+  another non-result surface.
 
 Implementation notes:
 

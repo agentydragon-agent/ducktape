@@ -117,11 +117,6 @@ second ordered roadmap.
       first split moved the liquidity/stock-sales panel into the trajectory view so
       "Final SP500" is sourced from the selected rollout instead of a terminal P50
       next to a path table; keep applying that rule as result helpers become typed.
-- [ ] Move property/location details out of result views. The property and
-      location card describes scenario input, not a distribution or a selected
-      trajectory. It should become part of shared scenario context, the left input
-      pane, or a dedicated property/details view rather than living under
-      distribution/trajectory results.
 - [ ] Add explicit comparison views for deltas between two scenario
       distributions. The simulator should not bake a baseline/counterfactual
       into each rollout; a delta view should compare two real scenarios, either

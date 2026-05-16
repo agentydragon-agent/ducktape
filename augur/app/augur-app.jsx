@@ -682,13 +682,14 @@ function PortfolioSnapshotPanel({ bootstrap }) {
   );
 }
 
-function PropertyLocationPanel({ selection, kind = "distribution" }) {
+function PropertyLocationPanel({ selection }) {
   const { property, location, scenario, scenarioResult } = selection;
   const scenarioView = scenarioInputView(scenario);
   if (!property) return null;
   const localRegulation = location?.localRegulation ?? {};
   return (
-    <ResultPanel kind={kind} title="Property and location">
+    <section className="augur-card overflow-hidden" data-scenario-context-panel="property-location">
+      <ResultPanelHeader title="Property and location" />
       <div className="grid min-w-0 gap-4 p-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
           {property.imageUrl ? (
@@ -718,7 +719,7 @@ function PropertyLocationPanel({ selection, kind = "distribution" }) {
           />
         </div>
       </div>
-    </ResultPanel>
+    </section>
   );
 }
 
@@ -2043,7 +2044,6 @@ function DistributionResults({
         selectedMetric={selectedFanMetric}
         onSelectedMetricChange={onSelectedFanMetricChange}
       />
-      <PropertyLocationPanel selection={selection} kind="distribution" />
       <ScenarioValueSummary distribution={distribution} />
       <SaleTaxLoanPanel selection={selection} distribution={distribution} />
       <TerminalPercentileSnapshot distribution={distribution} />
@@ -2285,6 +2285,7 @@ function AugurAppShell() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <ResultViewTabs viewMode={viewMode} onViewModeChange={setViewMode} />
             </div>
+            <PropertyLocationPanel selection={selectedContext} />
             <ResultModeHeader
               viewMode={viewMode}
               scenarioSetRequest={scenarioSetRequest}
