@@ -48,6 +48,7 @@ py_test(
     name = "catalog_test",
     srcs = ["catalog_test.py"],
     deps = [
+        ":augur_backend_py",
         ":catalog_py",
         ":config_py",
         "//augur/core:local_regulation_py",

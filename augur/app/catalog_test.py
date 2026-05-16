@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from augur.app.augur_backend import AugurBackend
 from augur.app.catalog import build_bootstrap_payload
 from augur.app.config import (
     AgentDefinition,
@@ -19,8 +20,8 @@ from augur.app.config import (
     PropertyAssetConfig,
     PropertySourceConfig,
 )
-from augur.core.local_regulation import LocalRegulation
-from augur.core.scenario_set import ActorRole
+from augur.core.local_regulation import LocalRegulation, LocationId
+from augur.core.scenario_set import ActorRole, ScenarioSet, TaxRegime
 
 
 def _write_properties(path: Path) -> None:
@@ -63,8 +64,48 @@ def _write_properties(path: Path) -> None:
     )
 
 
+def _write_builtin_properties(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "sf_property",
+                    "source_catalog_id": "public_fixture",
+                    "source_property_id": "sf-property",
+                    "location_id": "san_francisco_ca",
+                    "address": "SF Property",
+                    "neighborhood": "San Francisco",
+                    "type": "Fixture",
+                    "price_usd": 900000,
+                    "rent_estimate_usd": 4200,
+                    "beds": 3,
+                    "baths": 2,
+                    "sqft": 1400,
+                    "year_built": 2000,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _fixture_regulation() -> LocalRegulation:
+    return LocalRegulation(
+        property_tax_regime=TaxRegime.CALIFORNIA_PROP13,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+            TaxRegime.FEDERAL_CAPITAL_GAINS,
+            TaxRegime.CALIFORNIA_INCOME_TAX,
+        ),
+        property_tax_annual_pct=1.0,
+        notes="Synthetic public fixture location.",
+    )
+
+
 def _fixture_locations() -> tuple[LocationConfig, ...]:
-    regulation = LocalRegulation(property_tax_annual_pct=1.0, notes="Synthetic public fixture location.")
+    regulation = _fixture_regulation()
     return (
         LocationConfig(
             location_id="location_a",
@@ -133,6 +174,47 @@ def test_bootstrap_locations_default_to_loaded_property_source(tmp_path: Path) -
 
     assert [location.id for location in bootstrap.locations] == ["location_a", "location_b"]
     assert [property_.id for property_ in bootstrap.properties] == ["location_a_property", "location_b_property"]
+
+
+def test_bootstrap_builtin_location_carries_modeled_tax_defaults(tmp_path: Path) -> None:
+    properties_path = tmp_path / "properties.json"
+    _write_builtin_properties(properties_path)
+
+    bootstrap = build_bootstrap_payload(_config(properties_path))
+    location = bootstrap.locations[0]
+
+    assert location.id == LocationId.SAN_FRANCISCO_CA
+    assert location.local_regulation.property_tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
+    assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in location.local_regulation.default_tax_regimes
+
+
+def test_backend_applies_location_tax_defaults_to_scenario(tmp_path: Path) -> None:
+    properties_path = tmp_path / "properties.json"
+    _write_builtin_properties(properties_path)
+    backend = AugurBackend(augur_config=_config(properties_path))
+    request = {
+        "scenario_set_id": "tax_defaults",
+        "title": "Tax defaults",
+        "market_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
+        "scenarios": [
+            {
+                "scenario_id": "sf_property",
+                "label": "SF Property",
+                "actors": [{"actor_id": "agent_a", "label": "Agent A", "role": "primary_owner"}],
+                "property_selection": {"property_id": "sf_property"},
+                "occupancy_plan": {"occupancy_mode": "owner_lives_in_property"},
+                "rental_plan": {"rental_mode": "not_rented"},
+            }
+        ],
+    }
+
+    scenario_set = backend._scenario_set_with_catalog_defaults(ScenarioSet.model_validate(request))
+    scenario = scenario_set.scenarios[0]
+
+    assert scenario.property_selection.tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
+    assert TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX in scenario.tax_regimes
+    assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in scenario.tax_regimes
+    assert TaxRegime.PRIMARY_RESIDENCE_EXCLUSION in scenario.tax_regimes
 
 
 def test_bootstrap_applies_public_property_asset_base_url(tmp_path: Path) -> None:

@@ -12,9 +12,9 @@ from augur.app.config import AugurConfig
 from augur.core.api import simulate_set
 from augur.core.augur_accounting import MONTHS_PER_YEAR
 from augur.core.bootstrap import Property
-from augur.core.local_regulation import LocationId, known_location_id
+from augur.core.local_regulation import LocalRegulation, TaxRegime, tax_regimes_for_local_regulation
 from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider
-from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario, ScenarioSet, ScenarioSetRunResponse, TaxRegime
+from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.core.schemas import ScenarioKnobs
 
 
@@ -81,62 +81,37 @@ class AugurBackend:
                 scenarios.append(scenario)
                 continue
             property_ = self._property_by_id[property_id]
+            location = self._location_by_id[property_.location_id]
             selection = scenario.property_selection.model_copy(
                 update={
                     "location_id": scenario.property_selection.location_id or property_.location_id,
-                    "local_regulation": scenario.property_selection.local_regulation
-                    or self._location_by_id[property_.location_id].local_regulation,
+                    "local_regulation": scenario.property_selection.local_regulation or location.local_regulation,
                     "purchase_price_usd": scenario.property_selection.purchase_price_usd
                     if scenario.property_selection.purchase_price_usd is not None
                     else property_.price_usd,
                     "tax_regime": scenario.property_selection.tax_regime
-                    or tax_regime_for_location(property_.location_id),
+                    or location.local_regulation.property_tax_regime,
                 }
             )
             scenarios.append(
                 scenario.model_copy(
                     update={
                         "property_selection": selection,
-                        "tax_regimes": _tax_regimes_with_catalog_defaults(scenario, property_.location_id),
+                        "tax_regimes": _tax_regimes_with_catalog_defaults(scenario, location.local_regulation),
                     }
                 )
             )
         return scenario_set.model_copy(update={"scenarios": tuple(scenarios)})
 
 
-def tax_regime_for_location(location_id: LocationId | str) -> TaxRegime:
-    known_id = known_location_id(location_id)
-    if known_id is LocationId.MARE_ISLAND_VALLEJO_CA:
-        return TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS
-    if known_id is LocationId.VALLEJO_CA:
-        return TaxRegime.VALLEJO_PROPERTY_TAX
-    if known_id is LocationId.SAN_FRANCISCO_CA:
-        return TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
-    return TaxRegime.CALIFORNIA_PROP13
-
-
-def _tax_regimes_with_catalog_defaults(scenario: Scenario, location_id: LocationId | str) -> tuple[TaxRegime, ...]:
-    known_id = known_location_id(location_id)
-    regimes = [
-        *scenario.tax_regimes,
-        TaxRegime.CALIFORNIA_PROP13,
-        TaxRegime.CALIFORNIA_TRANSFER_TAX,
-        TaxRegime.FEDERAL_MORTGAGE_INTEREST,
-        TaxRegime.FEDERAL_CAPITAL_GAINS,
-        TaxRegime.CALIFORNIA_INCOME_TAX,
-        tax_regime_for_location(location_id),
-    ]
-    if known_id is LocationId.SAN_FRANCISCO_CA:
-        regimes.append(TaxRegime.SAN_FRANCISCO_TRANSFER_TAX)
-    if (
+def _tax_regimes_with_catalog_defaults(scenario: Scenario, local_regulation: LocalRegulation) -> tuple[TaxRegime, ...]:
+    owner_occupied = (
         scenario.occupancy_plan.occupancy_mode is OccupancyMode.OWNER_LIVES_IN_PROPERTY
         and scenario.rental_plan.rental_mode is not RentalMode.RENT_WHOLE_PROPERTY
-    ):
-        regimes.append(TaxRegime.CALIFORNIA_OWNER_OCCUPIED)
-        regimes.append(TaxRegime.PRIMARY_RESIDENCE_EXCLUSION)
-    else:
-        regimes.append(TaxRegime.CALIFORNIA_INVESTMENT_PROPERTY)
-    if scenario.rental_plan.rental_mode is not RentalMode.NOT_RENTED:
-        regimes.append(TaxRegime.RENTAL_DEPRECIATION)
-        regimes.append(TaxRegime.DEPRECIATION_RECAPTURE)
-    return tuple(dict.fromkeys(regimes))
+    )
+    return tax_regimes_for_local_regulation(
+        local_regulation,
+        existing_tax_regimes=scenario.tax_regimes,
+        owner_occupied=owner_occupied,
+        rented=scenario.rental_plan.rental_mode is not RentalMode.NOT_RENTED,
+    )

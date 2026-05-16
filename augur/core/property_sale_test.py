@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest_bazel
 
-from augur.core.local_regulation import LocalRegulation, LocationId
+from augur.core.local_regulation import LocalRegulation, LocationId, TaxRegime
 from augur.core.market_bundle_test_support import constant_market_bundle
 from augur.core.property_sale import empty_property_disposition_arrays, property_disposition_arrays
 from augur.core.scenario_set import (
@@ -20,6 +20,17 @@ from augur.core.scenario_set import (
     TransactionCosts,
     WholePropertyRentalPlan,
 )
+
+
+def _local_regulation(**overrides: object) -> LocalRegulation:
+    values = {
+        "property_tax_regime": TaxRegime.CALIFORNIA_PROP13,
+        "default_tax_regimes": (TaxRegime.CALIFORNIA_PROP13,),
+        "property_tax_annual_pct": 1.2,
+        "notes": "test",
+    }
+    values.update(overrides)
+    return LocalRegulation(**values)
 
 
 def sale_scenario(
@@ -52,7 +63,7 @@ def test_property_sale_combines_closing_costs_local_transfer_tax_and_debt_payoff
         property_value_usd=100_000 * bundle.home_value_multipliers(LocationId.SAN_FRANCISCO_CA),
         mortgage_balance_usd=np.full((2, 4), 40_000.0),
         purchase_price_usd=100_000,
-        local_regulation=LocalRegulation(property_tax_annual_pct=1.2, local_transfer_tax_pct=1, notes="test"),
+        local_regulation=_local_regulation(local_transfer_tax_pct=1),
     )
 
     np.testing.assert_allclose(sale.property_sale_gross_usd[:, 3], 120_000)
@@ -81,7 +92,7 @@ def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> 
         property_value_usd=100_000 * bundle.home_value_multipliers(LocationId.SAN_FRANCISCO_CA),
         mortgage_balance_usd=np.zeros((2, 4), dtype="float64"),
         purchase_price_usd=100_000,
-        local_regulation=LocalRegulation(property_tax_annual_pct=1.2, notes="test"),
+        local_regulation=_local_regulation(),
     )
 
     expected_depreciation = 100_000 / (27.5 * 12) * 3
@@ -101,7 +112,7 @@ def test_property_without_sale_event_returns_zero_sale_cash_flow() -> None:
         property_value_usd=100_000 * bundle.home_value_multipliers(LocationId.SAN_FRANCISCO_CA),
         mortgage_balance_usd=np.full((2, 4), 40_000.0),
         purchase_price_usd=100_000,
-        local_regulation=LocalRegulation(property_tax_annual_pct=1.2, notes="test"),
+        local_regulation=_local_regulation(),
     )
 
     assert sale.sale_month is None

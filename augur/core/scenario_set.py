@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
-from augur.core.local_regulation import LocalRegulation
+from augur.core.local_regulation import LocalRegulation, TaxRegime
 from augur.core.schemas import ApiModel, ColumnarTable, Percentage
 
 
@@ -119,23 +119,6 @@ class RentalMode(StrEnum):
     RENT_ROOMS_WHILE_OWNER_LIVES_THERE = "rent_rooms_while_owner_lives_there"
     RENT_WHOLE_PROPERTY = "rent_whole_property"
     TRANSITION_TO_WHOLE_PROPERTY_RENTAL = "transition_to_whole_property_rental"
-
-
-class TaxRegime(StrEnum):
-    CALIFORNIA_PROP13 = "california_prop13"
-    CALIFORNIA_OWNER_OCCUPIED = "california_owner_occupied"
-    CALIFORNIA_INVESTMENT_PROPERTY = "california_investment_property"
-    SAN_FRANCISCO_SECURED_PROPERTY_TAX = "san_francisco_secured_property_tax"
-    SAN_FRANCISCO_TRANSFER_TAX = "san_francisco_transfer_tax"
-    VALLEJO_PROPERTY_TAX = "vallejo_property_tax"
-    MARE_ISLAND_SPECIAL_ASSESSMENTS = "mare_island_special_assessments"
-    CALIFORNIA_TRANSFER_TAX = "california_transfer_tax"
-    FEDERAL_MORTGAGE_INTEREST = "federal_mortgage_interest"
-    RENTAL_DEPRECIATION = "rental_depreciation"
-    DEPRECIATION_RECAPTURE = "depreciation_recapture"
-    FEDERAL_CAPITAL_GAINS = "federal_capital_gains"
-    CALIFORNIA_INCOME_TAX = "california_income_tax"
-    PRIMARY_RESIDENCE_EXCLUSION = "primary_residence_exclusion"
 
 
 class TaxFilingStatus(StrEnum):

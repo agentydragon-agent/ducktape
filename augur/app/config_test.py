@@ -22,7 +22,7 @@ from augur.app.config import (
     load_augur_config,
 )
 from augur.core.local_regulation import LocalRegulation, LocationId
-from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType
+from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
 
 
 def _minimal_config(**overrides: object) -> AugurConfig:
@@ -36,6 +36,19 @@ def _minimal_config(**overrides: object) -> AugurConfig:
     }
     defaults.update(overrides)
     return AugurConfig(**defaults)
+
+
+def _fixture_regulation() -> LocalRegulation:
+    return LocalRegulation(
+        property_tax_regime=TaxRegime.CALIFORNIA_PROP13,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+        ),
+        property_tax_annual_pct=1.0,
+        notes="Synthetic public fixture location.",
+    )
 
 
 def test_minimal_config_validates_with_defaults() -> None:
@@ -129,9 +142,7 @@ def test_config_can_define_deployment_owned_locations() -> None:
                 label="Location A",
                 city="Location A",
                 state="Fixture",
-                local_regulation=LocalRegulation(
-                    property_tax_annual_pct=1.0, notes="Synthetic public fixture location."
-                ),
+                local_regulation=_fixture_regulation(),
             ),
         ),
         location_selection=("location_a",),
