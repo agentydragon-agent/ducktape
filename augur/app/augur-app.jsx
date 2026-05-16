@@ -65,6 +65,8 @@ const CONTROL_GRID_CLASS = "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(1
 const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 const RESULT_VIEW_MODES = new Set(["distribution", "trajectory"]);
 const RESULT_PANEL_KINDS = new Set(["distribution", "trajectory", "accounting_detail"]);
+const ROLLOUT_STATUS_ACTIVE = "active";
+const ROLLOUT_STATUS_CASH_NEGATIVE = "cash_negative";
 
 function viewModeFromPathname(pathname) {
   const segment = String(pathname ?? "")
@@ -346,6 +348,77 @@ function terminalRows(scenarioResult) {
 
 function terminalP50(scenarioResult, column) {
   return p50Column(terminalRows(scenarioResult), column);
+}
+
+function rolloutStatuses(scenarioResult) {
+  return Array.isArray(scenarioResult?.rolloutStatuses) ? scenarioResult.rolloutStatuses : [];
+}
+
+function rolloutStatusSummaryCount(summary, status) {
+  const counts = summary?.countsByStatus ?? {};
+  const camelStatus = status.replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
+  return Number(counts[status] ?? counts[camelStatus] ?? 0);
+}
+
+function rolloutStatusSummary(scenarioResult) {
+  const summary = scenarioResult?.rolloutStatusSummary;
+  const total = Number(summary?.totalRolloutCount);
+  if (Number.isFinite(total) && total > 0) {
+    return {
+      total,
+      active: rolloutStatusSummaryCount(summary, ROLLOUT_STATUS_ACTIVE),
+      cashNegative: rolloutStatusSummaryCount(summary, ROLLOUT_STATUS_CASH_NEGATIVE),
+    };
+  }
+  const statuses = rolloutStatuses(scenarioResult);
+  return {
+    total: statuses.length,
+    active: statuses.filter((status) => status?.status === ROLLOUT_STATUS_ACTIVE).length,
+    cashNegative: statuses.filter((status) => status?.status === ROLLOUT_STATUS_CASH_NEGATIVE).length,
+  };
+}
+
+function fmtRolloutStatusShare(count, total) {
+  if (!Number.isFinite(total) || total <= 0) return "unknown";
+  return `${fmtInteger(count)} / ${fmtInteger(total)} (${fmtPct(count / total)})`;
+}
+
+function RolloutHealthCell({ statusSummary }) {
+  return (
+    <td className="min-w-[10rem] whitespace-nowrap">
+      <div className="space-y-1 text-right">
+        <div>
+          <span className="augur-muted">Active</span> {fmtRolloutStatusShare(statusSummary.active, statusSummary.total)}
+        </div>
+        <div>
+          <span className="augur-muted">Cash negative</span>{" "}
+          {fmtRolloutStatusShare(statusSummary.cashNegative, statusSummary.total)}
+        </div>
+      </div>
+    </td>
+  );
+}
+
+function rolloutStatusForIndex(scenarioResult, rolloutIndex) {
+  const target = Number(rolloutIndex);
+  if (!Number.isInteger(target) || target < 0) return null;
+  return rolloutStatuses(scenarioResult).find((status) => Number(status?.rolloutIndex) === target) ?? null;
+}
+
+function selectedRolloutStatusText(status) {
+  if (!status) return "status unknown";
+  const minCash = fmtUsd(Number(status.minCashUsd));
+  if (status.status === ROLLOUT_STATUS_ACTIVE) {
+    return `active; minimum cash ${minCash}`;
+  }
+  if (status.status === ROLLOUT_STATUS_CASH_NEGATIVE) {
+    const firstNegativeMonth = Number(status.firstNegativeCashMonthIndex);
+    const monthText = Number.isFinite(firstNegativeMonth)
+      ? `first negative cash month ${fmtInteger(firstNegativeMonth)}`
+      : "first negative cash month unknown";
+    return `cash went negative; ${monthText}; minimum cash ${minCash}`;
+  }
+  return `status ${String(status.status ?? "unknown")}`;
 }
 
 function metricFanTerminal(scenarioResult, metricName) {
@@ -1463,13 +1536,14 @@ function ResultModeHeader({ viewMode, scenarioSetRequest, selection, selectedRol
   const isTrajectory = viewMode === "trajectory";
   const seed = scenarioSetRequest.marketRequest.seed;
   const kind = isTrajectory ? "trajectory" : "distribution";
+  const rolloutStatus = isTrajectory ? rolloutStatusForIndex(selection.scenarioResult, selectedRolloutIndex) : null;
   return (
     <ResultPanel
       kind={kind}
       title={isTrajectory ? "Trajectory view" : "Distribution view"}
       subtitle={
         isTrajectory
-          ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · seed ${seed}`
+          ? `${selection.scenario?.label ?? "Selected scenario"} · rollout ${fmtInteger(selectedRolloutIndex)} · ${selectedRolloutStatusText(rolloutStatus)} · seed ${seed}`
           : "Terminal percentiles and probability fans"
       }
     />
@@ -1619,6 +1693,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
             <tr>
               <th className="text-left">Scenario</th>
               <th className="min-w-[11rem] text-left">Property</th>
+              <th>Rollout health</th>
               {terminalMetricColumns.map(([, label]) => (
                 <th key={label}>{label}</th>
               ))}
@@ -1632,6 +1707,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
               const fanRows = distribution.metricFanRows("netWorthUsd");
               const terminal = fanRows.length > 0 ? fanRows[fanRows.length - 1] : null;
               const property = propertiesById.get(view.propertyId);
+              const statusSummary = rolloutStatusSummary(scenarioResult);
               return (
                 <tr key={view.scenarioId}>
                   <td className="label">
@@ -1643,6 +1719,7 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
                   <td className="min-w-[11rem] whitespace-nowrap text-left">
                     {property ? property.address : view.propertyId}
                   </td>
+                  <RolloutHealthCell statusSummary={statusSummary} />
                   {terminalMetricColumns.map(([column]) => {
                     const value = column === "finalNetWorthUsd" ? terminal?.p50 : distribution.terminalP50(column);
                     return <td key={column}>{fmtMetricValue(column, value)}</td>;

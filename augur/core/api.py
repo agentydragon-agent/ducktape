@@ -24,6 +24,7 @@ from augur.core.scenario_set import (
     RentalMode,
     ReportSpec,
     RolloutStatus,
+    RolloutStatusSummary,
     Scenario,
     ScenarioAcceptedSummary,
     ScenarioResult,
@@ -267,6 +268,9 @@ class ScenarioRun:
             return ()
         return self.arrays.rollout_statuses()
 
+    def rollout_status_summary(self) -> RolloutStatusSummary:
+        return RolloutStatusSummary.from_statuses(self.rollout_statuses())
+
     def rollout_status(self, rollout: int) -> RolloutStatus:
         self._validate_rollout_index(rollout)
         return self.rollout_statuses()[rollout]
@@ -282,6 +286,7 @@ class ScenarioRun:
                 summary=_accepted_summary(self.scenario),
                 warnings=self.warnings,
             )
+        rollout_statuses = self.rollout_statuses()
         return ScenarioResult(
             scenario_id=self.scenario.scenario_id,
             scenario_label=self.scenario.label,
@@ -289,7 +294,8 @@ class ScenarioRun:
             projection_trajectories=_projection_trajectory_identities(
                 scenario_id=self.scenario.scenario_id, exogenous_paths=exogenous_paths
             ),
-            rollout_statuses=self.rollout_statuses(),
+            rollout_statuses=rollout_statuses,
+            rollout_status_summary=RolloutStatusSummary.from_statuses(rollout_statuses),
             metric_fan_columns=self.arrays.metric_fan_columns(),
             monthly_columns=self.arrays.monthly_columns() if report_spec.include_monthly_columns else None,
             terminal_columns=self.arrays.terminal_columns(),

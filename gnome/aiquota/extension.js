@@ -791,7 +791,6 @@ const QuotaIndicator = GObject.registerClass(
       const tint = extraActive ? "hot" : (stale ? "stale" : bindingTint(shortTint, longTint));
       this._setTint(icon, paceLabel, tint);
       const paceText = formatPace(longPace) ?? "";
-      const extraActive = state.extraUsage?.is_enabled === true;
       if (extraActive) {
         paceLabel.set_text(`${formatCompactDollars(state.extraUsage.used_credits)} ⚡`);
       } else {

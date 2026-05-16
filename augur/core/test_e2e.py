@@ -391,6 +391,11 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
     assert status.status == RolloutStatusType.CASH_NEGATIVE
     assert status.first_negative_cash_month_index == 0
     assert_allclose(status.min_cash_usd, np.min(rollout.series("cash_usd")))
+    assert rollout.scenario_run.rollout_status_summary().total_rollout_count == 1
+    assert rollout.scenario_run.rollout_status_summary().counts_by_status == {
+        RolloutStatusType.ACTIVE: 0,
+        RolloutStatusType.CASH_NEGATIVE: 1,
+    }
     assert_allclose(rollout.series("property_value_usd")[0], 500_000)
     assert_allclose(rollout.series("mortgage_balance_usd")[0], loan_amount)
     assert_allclose(rollout.series("mortgage_interest_usd")[1], expected_month_1_interest)

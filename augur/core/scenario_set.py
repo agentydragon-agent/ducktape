@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
@@ -865,12 +866,24 @@ class RolloutStatus(ApiModel):
     first_negative_cash_month_index: NonNegativeInt | None = None
 
 
+class RolloutStatusSummary(ApiModel):
+    total_rollout_count: NonNegativeInt = 0
+    counts_by_status: dict[RolloutStatusType, NonNegativeInt] = Field(default_factory=dict)
+
+    @classmethod
+    def from_statuses(cls, statuses: tuple[RolloutStatus, ...]) -> RolloutStatusSummary:
+        status_counts = Counter(status.status for status in statuses)
+        counts = {status: status_counts[status] for status in RolloutStatusType} if statuses else {}
+        return cls(total_rollout_count=len(statuses), counts_by_status=counts)
+
+
 class ScenarioResult(ApiModel):
     scenario_id: str
     scenario_label: str
     summary: ScenarioAcceptedSummary
     projection_trajectories: tuple[ProjectionTrajectoryIdentity, ...] = ()
     rollout_statuses: tuple[RolloutStatus, ...] = ()
+    rollout_status_summary: RolloutStatusSummary = Field(default_factory=RolloutStatusSummary)
     metric_fan_columns: dict[str, ColumnarTable] = Field(default_factory=dict)
     monthly_columns: ColumnarTable | None = None
     terminal_columns: ColumnarTable | None = None

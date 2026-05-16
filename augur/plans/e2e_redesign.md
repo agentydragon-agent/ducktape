@@ -35,9 +35,14 @@ API.
    relevant scheduled events, market observations, and available opportunities.
 4. Policies emit typed decisions/instructions. They do not directly mutate
    cash, holdings, basis, liabilities, ownership, taxes, or result arrays.
-5. Accounting appliers validate and apply instructions, update state, record
+5. Cash-demanding processes emit first-class obligations before mutating cash:
+   actor, amount, due month/date, cause, creditor/counterparty, and relevant
+   source rows. Actor policy gets a chance to fund each obligation by using
+   cash, selling assets, borrowing, or explicitly declining/being unable to act.
+6. Accounting appliers validate and apply instructions, update state, record
    ledger entries and balance snapshots, and record any shortfall/rejection.
-6. Reporting arrays are derived from state/ledger or reconciled against them.
+   Obligation settlement then records paid, partially paid, unpaid, or failed.
+7. Reporting arrays are derived from state/ledger or reconciled against them.
    Arrays can stay for chart performance, but they are not the source of truth.
 
 ## Invariants
@@ -51,6 +56,58 @@ API.
 - Every cash/asset/liability/ownership/tax state change has a cause:
   `policy_id`, `event_id`, market opportunity, or system accounting process.
 - Public result arrays reconcile to ledger/snapshot detail in e2e tests.
+- Rollout health is machine-readable via `RolloutStatusType.status`. Structured
+  details may point at failed obligations or first negative-cash months later,
+  but do not add enum-like `status_reason` strings.
+
+## Rollout Status And Failure Semantics
+
+The current `cash_negative` rollout status is an annotation/warning, not a
+terminal simulation failure. It means the generated cash path dipped below zero
+and the result should surface that fact for diagnosis. It does not by itself
+prove that the simulation could not continue, that an obligation defaulted, or
+that a policy failed.
+
+The next core slice should reserve a first-class `failed` rollout status for
+settlement failure. A rollout should become failed when a required
+obligation/cash demand cannot be settled after the responsible actor's policy
+program has had a chance to fund it. The planned flow is:
+
+1. Accounting or scheduled model logic emits an obligation/cash demand with a
+   cause and due time.
+2. The actor policy program receives that demand and emits funding instructions:
+   use cash, sell public assets, sell private assets if an opportunity exists,
+   borrow through an explicitly modeled facility, or decline/fail.
+3. Accounting validates and applies the instructions, records cash/liability
+   effects, and marks the obligation paid, partially paid, unpaid, or failed.
+4. A failed required obligation marks the rollout `failed` through the status
+   enum and records any richer detail through structured rows later.
+
+Negative cash should not silently imply borrowing. If the scenario explicitly
+models overdraft, margin, a credit line, or another borrowing facility, then
+negative cash may be an intentional accounting representation paired with that
+borrowing state and can remain a warning/diagnostic status. Without that
+explicit model, the engine should try sale/financing policies before recording
+a settlement failure.
+
+### Failure Semantics Test Sketch
+
+Keep these as pending sketches until the obligation/settlement shape exists:
+
+- A path whose cash goes negative under today's accounting, but has no failed
+  required obligation, returns `RolloutStatusType.CASH_NEGATIVE` and complete
+  monthly arrays. This preserves the current warning semantics.
+- A required tax or mortgage obligation with insufficient cash and no applicable
+  sale/financing policy records a failed obligation and returns a future
+  `RolloutStatusType.FAILED`.
+- The same obligation succeeds when a policy sells enough liquid assets before
+  settlement; the rollout remains active or only cash-negative if its cash path
+  still legitimately dips below zero.
+- Explicit borrowing capacity either prevents negative cash by funding the
+  obligation or records negative cash together with borrowing/liability state;
+  it must not look like unexplained implicit credit.
+- API serialization exposes the machine state through the `status` enum and
+  structured fields only. It does not emit a separate enum-like `status_reason`.
 
 ## Active Step 7: Arrays Reconcile To Ledger
 

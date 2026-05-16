@@ -40,11 +40,20 @@ second ordered roadmap.
       that explicit, and consider separate structures/identifiers for market
       nondeterminism, policy nondeterminism, and any future non-market random
       events so trajectory IDs do not conflate different sources of randomness.
-- [ ] Decide how failed or insolvent rollouts should be represented. Consider a
-      programmatic guard that treats `cash_usd <= 0` as a failure unless an
-      enabled sale/financing policy can cover the shortfall, and define whether
-      actual cash is ever allowed to go below zero or instead produces a
-      first-class failed-rollout state.
+- [ ] Make rollout failure semantics first-class. Today
+      `RolloutStatusType.CASH_NEGATIVE` is an annotation/warning about the cash
+      path, not a failed simulation. A future `failed` status should mean a
+      required obligation/cash demand could not be settled after actor policy
+      had a chance to fund it through cash, sale, or financing instructions.
+- [ ] Decide whether negative cash is allowed only through explicit borrowing.
+      If the model says an actor has overdraft, credit-line, margin, or other
+      borrowing capacity, negative cash can be an accounting effect paired with
+      that liability/financing state. Otherwise, a cash shortfall should invoke
+      sale/financing policies or mark the corresponding obligation settlement
+      failed, rather than silently implying borrowing.
+- [ ] Keep rollout health machine-readable in the `RolloutStatusType.status`
+      enum. Add structured failure/obligation detail later if needed, but do
+      not reintroduce an enum-like `status_reason` string.
 - [ ] Clarify initial state vs scheduled transitions. Property purchase,
       financing, ownership, future sale, rental transition, and private-stock
       sale opportunities should not be split across fields/events that can
@@ -82,7 +91,9 @@ second ordered roadmap.
       than arbitrary policy hooks. The accounting layer should emit obligations
       with due dates and causes; actor policy should decide how to fund them;
       simulator instructions should sell/borrow/use cash and resulting effects
-      should settle or fail the obligation.
+      should settle or fail the obligation. Rollout failure should hang off this
+      settlement result: obligation/cash demand -> policy funding instruction ->
+      accounting effect/settlement or failed obligation.
 - [ ] Keep stock-sale, PE-sale, and property-sale tax reconciliation in the Step 7 test set.
 - [ ] Replace user-entered flat marginal tax rates with bracket-aware tax
       accounting. Asking for a single "marginal tax rate" is a symptom that the

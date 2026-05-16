@@ -25,6 +25,9 @@ from augur.core.scenario_set import (
     ProjectedDeficitsLiquidityReserveRule,
     RentalMode,
     ReportSpec,
+    RolloutStatus,
+    RolloutStatusSummary,
+    RolloutStatusType,
     ScenarioAcceptedSummary,
     ScenarioResult,
     ScenarioSet,
@@ -296,6 +299,24 @@ def test_scenario_result_serialization_has_no_projection_compatibility_field() -
 
     dumped = result.model_dump(mode="json", exclude_none=True)
     assert "projection" not in dumped
+    assert dumped["rollout_status_summary"] == {"total_rollout_count": 0, "counts_by_status": {}}
+
+
+def test_rollout_status_summary_serializes_counts_by_existing_status_type() -> None:
+    summary = RolloutStatusSummary.from_statuses(
+        (
+            RolloutStatus(rollout_index=0, status=RolloutStatusType.ACTIVE, min_cash_usd=1_000),
+            RolloutStatus(rollout_index=1, status=RolloutStatusType.CASH_NEGATIVE, min_cash_usd=-1),
+            RolloutStatus(rollout_index=2, status=RolloutStatusType.ACTIVE, min_cash_usd=500),
+        )
+    )
+
+    assert summary.total_rollout_count == 3
+    assert summary.counts_by_status == {RolloutStatusType.ACTIVE: 2, RolloutStatusType.CASH_NEGATIVE: 1}
+    assert summary.model_dump(mode="json") == {
+        "total_rollout_count": 3,
+        "counts_by_status": {"active": 2, "cash_negative": 1},
+    }
 
 
 def test_scenario_set_rejects_wrong_casing() -> None:
