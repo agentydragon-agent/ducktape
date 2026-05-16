@@ -24,6 +24,21 @@ keys:
   # Bootstrap deploys it to the cluster as a k8s Secret.
   - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
+  # tofu-state PG backend credentials — Flux applies the Secret, CNPG consumes it
+  # in-cluster (cluster-secrets), AND tofu running on user machines needs to read
+  # the password to set PG_CONN_STR (user keys). More specific than the generic
+  # cluster/k8s/* rule below, so this match wins.
+  - path_regex: cluster/k8s/tofu-state/db/credentials\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
   # Cluster k8s secrets (Flux + admin can decrypt)
   - path_regex: cluster/k8s/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
