@@ -136,12 +136,22 @@ function formatCompactDollars(usd) {
   return `$${Math.round(usd)}`;
 }
 
+// `is_enabled` only means the extra-usage feature is turned on for the
+// account; the user is *currently* burning extra only when the 7d cap is
+// exhausted. The monthly $ tally is cumulative across the billing month
+// and isn't a "right now" signal.
+function currentlyOverPlan(state) {
+  if (!state?.extraUsage?.is_enabled) return false;
+  const used = state.long?.usedPercent;
+  return used != null && used >= 100;
+}
+
 function formatExtraUsage(extra) {
-  if (!extra || !extra.is_enabled) return null;
+  if (!extra || !extra.is_enabled || !(extra.used_usd > 0)) return null;
   const used = extra.used_usd;
   const limit = extra.monthly_limit_usd;
   const pct = Math.round(extra.utilization);
-  return `extra $${Math.round(used)}/$${Math.round(limit)} (${pct}%)`;
+  return `extra $${Math.round(used)}/$${Math.round(limit)} (${pct}%) this month`;
 }
 
 function clamp01(value) {
@@ -447,11 +457,11 @@ const QuotaIndicator = GObject.registerClass(
       const longTint = longState
         ? tintFor({ pace: longPace, usedPercent: longState.usedPercent, isShort: false })
         : "unknown";
-      const extraActive = state.extraUsage?.is_enabled === true;
-      const tint = extraActive ? "hot" : stale ? "stale" : bindingTint(shortTint, longTint);
+      const overPlan = currentlyOverPlan(state);
+      const tint = overPlan ? "hot" : stale ? "stale" : bindingTint(shortTint, longTint);
       this._setTint(icon, paceLabel, tint);
       const paceText = formatPace(longPace) ?? "";
-      if (extraActive) {
+      if (overPlan) {
         paceLabel.set_text(`${formatCompactDollars(state.extraUsage.used_usd)} ⚡`);
       } else {
         paceLabel.set_text(paceText);
@@ -460,13 +470,12 @@ const QuotaIndicator = GObject.registerClass(
 
     _renderPopup() {
       for (const p of this._providers) {
-        const inExtraRegime = p.state.extraUsage?.is_enabled === true;
         this._renderProviderHeader(p.header, p.label, p.state);
-        if (inExtraRegime) {
+        if (currentlyOverPlan(p.state)) {
           p.shortRow.visible = false;
           p.longRow.visible = true;
           const live = withLiveReset(p.state.long);
-          const reset = live ? `↻${formatDuration(live.resetSeconds)}` : "";
+          const reset = live ? `↻ ${formatDuration(live.resetSeconds)}` : "";
           p.longRow._summaryLabel.set_text(`7d reset: ${reset}`);
           this._setBarFill(p.longRow._timeFill, null);
           this._setBarFill(p.longRow._usageFill, null);

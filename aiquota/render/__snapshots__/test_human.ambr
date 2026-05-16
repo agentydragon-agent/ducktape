@@ -1,4 +1,10 @@
 # serializer version: 1
+# name: test_currently_over_plan_collapses_to_7d_reset_only
+  '''
+  claude  ⚡ OVER PLAN — extra $3120.50/$4600 (68%) this month
+    7d reset: ↻ 6d10h
+  '''
+# ---
 # name: test_error_after_partial_success_keeps_data
   '''
   claude  last refresh failed: last call failed
@@ -8,10 +14,12 @@
 # name: test_error_only_when_no_data
   'zai: error — no api key path configured'
 # ---
-# name: test_extra_usage_collapses_to_7d_reset_only
+# name: test_extra_enabled_but_prepaid_has_room_shows_normal_bars
   '''
-  claude  ⚡ EXTRA $2324.85/$4600 (51%) — over plan
-    7d reset: ↻ 6d10h
+  claude
+    5h:   6%  ↻ 2h05m  Δ-52%  leaves ~90% unused at reset
+    7d:   2%  ↻ 4d21h  Δ-28%  leaves ~93% unused at reset
+    extra: $2324.85/$4600 (51%) spent this month
   '''
 # ---
 # name: test_renders_both_windows_with_reset_and_pace
