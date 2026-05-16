@@ -43,11 +43,15 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
-- [ ] **Provision second Kimsufi KS-5 worker** (`talos-kimsufi-worker-1`, Nebula `10.42.0.14`).
-      OVH order placed 2026-05-15. Once ready: set `TF_VAR_kimsufi_service_name_1=<name>`,
-      run `tofu state mv` for 9 singleton→`for_each` resources, then `tofu apply`.
-      See `cluster/terraform/main/ovh-nodes.tf` and the plan at
-      `~/.claude/plans/let-s-add-another-kimsufi-steady-peach.md`.
+- [ ] **Replace Kimsufi worker_0** with the second new KS-5 from order #7958582
+      once it's delivered. Sequence: cordon + drain `talos-kimsufi-worker-0`,
+      `talosctl shutdown` the cancelled `ns103656` server, `kubectl delete node`,
+      `tofu state rm` the 9 worker_0 entries, set `var.kimsufi_service_name` to
+      the new server name, targeted `tofu apply`. Then update
+      `nebula-mesh.json:static_host_map` with the new public IP for `10.42.0.13`.
+      See <kimsufi_provisioning.md> §5 (path B already executed for worker_1 from
+      the same order — `ns103711.ip-147-135-39.us` joined as
+      `talos-kimsufi-worker-1` on 2026-05-15).
 - [ ] **Re-key admin-only SOPS files to include user keys** — admin age key currently
       lives only on wyrm2, which is offline in a SF storage unit. `.sops.yaml` rules say
       `secrets/nebula/ca.sops.key` and `k8s/tofu-state/db/credentials.sops.yaml` (among
