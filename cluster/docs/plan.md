@@ -238,17 +238,16 @@ CloudNativePG `local-path`.
       right tool for _rebalancing_ after VPA shrinks requests, but the root fix is
       bounding VPA recommendations via resource policies so they never balloon in the
       first place.
-- Loki + MinIO:
-  - [ ] Reconsider MinIO on control-plane nodes: currently 4 replicas across all
-        VPS nodes (2 CP + 2 worker) with CP tolerations. Alternative: 2 replicas on
-        workers only with `drivesPerNode: 2` (4 drives total, still erasure coded).
-        Keeps CP nodes lighter but halves node-loss tolerance (1 node = all data).
-  - [ ] **Phase 3** (future): Deploy a second MinIO instance on Proxmox (`local-path`,
-        single-node). Set up async replication or scheduled `mc mirror` from the
-        Hetzner instance for off-site backup of log history.
+- Loki + SeaweedFS S3 (MinIO retired 2026-05; Loki/Tempo/Mimir all point at the
+  SeaweedFS S3 gateway on OVH):
+  - [ ] **Phase 3** (future): Off-site backup of log history — replicate the
+        OVH SeaweedFS buckets to a second location (Hetzner Object Storage,
+        Cloudflare R2, or a second SeaweedFS instance on Proxmox) for
+        disaster recovery.
   - [ ] **Phase 4** (future): Split Loki write path by region — Proxmox node logs
-        write to Proxmox MinIO, Hetzner node logs write to Hetzner MinIO. Avoids
-        cross-site traffic for log ingestion. Grafana queries both.
+        write to a Proxmox-local object store, Hetzner node logs write to the
+        OVH SeaweedFS. Avoids cross-site traffic for log ingestion.
+        Grafana queries both.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
 - [ ] Wire `scripts/check-authentik-login.py` into bootstrap/CI
 - [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
@@ -464,8 +463,9 @@ needed:
 
 - [ ] Generalize the `tofu-state` pg_dump CronJob pattern to all Proxmox CNPG clusters
       (write dumps to VPS-hosted PVC or object storage)
-- [ ] Longer term: CNPG `ScheduledBackup` + Barman to S3-compatible store (MinIO on VPS
-      or cloud bucket) for continuous WAL archiving and point-in-time recovery
+- [ ] Longer term: CNPG `ScheduledBackup` + Barman to S3-compatible store (SeaweedFS
+      S3 gateway, or an external cloud bucket) for continuous WAL archiving and
+      point-in-time recovery
 - [ ] Verify Proxmox ZFS auto-snapshot schedule covers CNPG data directories
 
 ### Velero PVC Backup
@@ -606,12 +606,11 @@ See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md>.
 
 Minimize Hetzner volumes; generous on Proxmox.
 
-| Location | Services                                       | Rationale                         |
-| -------- | ---------------------------------------------- | --------------------------------- |
-| VPS      | Authentik, Grafana, Gateway, DNS, cert-mgr     | Always-on, critical path          |
-| Home     | Harbor, Gitea, Ollama                          | Storage-heavy, tolerates downtime |
-| OVH      | SeaweedFS, attic-db, Nix cache chunks (via S3) | Replicated across 2 kimsufi nodes |
-| MinIO    | Loki, Mimir, Tempo                             | Erasure-coded object storage      |
+| Location | Services                                                      | Rationale                         |
+| -------- | ------------------------------------------------------------- | --------------------------------- |
+| VPS      | Authentik, Grafana, Gateway, DNS, cert-mgr                    | Always-on, critical path          |
+| Home     | Harbor, Gitea, Ollama                                         | Storage-heavy, tolerates downtime |
+| OVH      | SeaweedFS, attic-db, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across 2 kimsufi nodes |
 
 CNPG: individual clusters per app. Three profiles: VPS-HA (2 instances, Hetzner),
 OVH-HA (2 instances, OVH kimsufi), Proxmox-single (1 instance). See <cnpg_conventions.md>.

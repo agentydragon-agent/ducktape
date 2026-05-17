@@ -4,6 +4,11 @@ Status: **Draft / In Progress**
 
 See also: <sso.md>, <storage.md>
 
+> **Object storage note (2026-05-17)**: References to "MinIO" in the tables
+> and notes below describe earlier exploration. The cluster shipped with
+> **SeaweedFS** as its S3 backend — Loki, Tempo, and Mimir now point at
+> `seaweedfs-s3.seaweedfs.svc:8333`. See <storage.md> for context.
+
 ## Motivation
 
 etcd on VPS control planes gets starved by co-scheduled workloads, causing

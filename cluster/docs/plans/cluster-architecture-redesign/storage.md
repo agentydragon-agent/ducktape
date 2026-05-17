@@ -2,6 +2,13 @@
 
 Part of <plan.md>.
 
+> **Status (2026-05-17)**: Object-storage decision resolved — the cluster
+> deploys **SeaweedFS** on the OVH kimsufi pair as its S3 backend.
+> Loki, Tempo, and Mimir all write to `seaweedfs-s3.seaweedfs.svc:8333`.
+> The MinIO + JuiceFS exploration below is kept as historical context for
+> the decision; references to "MinIO" describe the alternative that was
+> considered, not the implementation that shipped.
+
 ## Why Region-Explicit Storage
 
 No distributed storage system can provide fast local writes AND

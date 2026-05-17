@@ -159,8 +159,10 @@ spec:
         persistence:
           storageClass: lvm-proxmox-hdd
 
-    # TODO(reliability): Replace bundled MinIO with multi-node MinIO or
-    # external S3 (Cloudflare R2 / Hetzner Object Storage) for durability.
+    # TODO(reliability): Replace bundled MinIO with the cluster's SeaweedFS S3
+    # gateway (seaweedfs-s3.seaweedfs.svc:8333) for durability. The chart's
+    # `minio:` key configures Langfuse's object storage backend regardless of
+    # which S3 implementation it points at — keep the key name when migrating.
     minio:
       deploy: true
       nodeSelector:

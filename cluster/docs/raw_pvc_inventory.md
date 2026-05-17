@@ -3,7 +3,7 @@
 PVCs not managed by a database operator (CNPG, Valkey/Redis operator). All are
 single-pod SPOFs with no replication or operator-managed failover.
 
-Last updated: 2026-05-15
+Last updated: 2026-05-17
 
 | PVC                                        | Size  | StorageClass           | What it holds                        |
 | ------------------------------------------ | ----- | ---------------------- | ------------------------------------ |
@@ -16,10 +16,6 @@ Last updated: 2026-05-15
 | `harbor/harbor-jobservice`                 | 1Gi   | lvm-proxmox-hdd        | Harbor job logs                      |
 | `loki/storage-loki-0`                      | 10Gi  | local-path-hetzner     | Loki log chunks                      |
 | `matrix/matrix-synapse`                    | 20Gi  | local-path-proxmox     | Synapse media + state                |
-| `minio-hil/export-minio-0`                 | 40Gi  | local-path             | MinIO object storage                 |
-| `minio-hil/export-minio-1`                 | 40Gi  | local-path             | MinIO object storage                 |
-| `minio-hil/export-minio-2`                 | 40Gi  | local-path             | MinIO object storage                 |
-| `minio-hil/export-minio-3`                 | 40Gi  | local-path             | MinIO object storage                 |
 | `monitoring/db-alertmanager-monitoring-0`  | 1Gi   | local-path-hetzner     | Mimir alertmanager state             |
 | `monitoring/db-alertmanager-monitoring-1`  | 1Gi   | local-path-hetzner     | Mimir alertmanager state             |
 | `monitoring/storage-mimir-compactor-0`     | 10Gi  | local-path-hetzner     | Mimir TSDB blocks                    |

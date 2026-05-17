@@ -11,10 +11,11 @@
       Proxmox. For production use, deploy a 3-node ClickHouse cluster.
       See `cluster/k8s/langfuse/helmrelease.yaml`.
 
-- [ ] **TODO(reliability): Replace bundled MinIO with external S3** —
+- [ ] **TODO(reliability): Replace bundled MinIO with SeaweedFS S3** —
       Currently using the Langfuse Helm chart's bundled single-node MinIO on
-      Proxmox. For durability, replace with Cloudflare R2, Hetzner Object
-      Storage, or a multi-node MinIO cluster.
+      Proxmox. Point Langfuse at the cluster's SeaweedFS S3 gateway
+      (`seaweedfs-s3.seaweedfs.svc:8333`, OVH-backed) — same migration pattern
+      already applied to Loki, Tempo, and Mimir.
       See `cluster/k8s/langfuse/helmrelease.yaml`.
 
 - [ ] **TODO(reliability): Move Redis to VPS or add Sentinel** — Currently

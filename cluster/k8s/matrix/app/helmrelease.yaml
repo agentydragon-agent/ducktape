@@ -69,7 +69,7 @@ spec:
         memory: 512Mi
 
     # Persistence for media store
-    # TODO: consider migrating to S3-compatible storage (MinIO) via synapse-s3-storage-provider
+    # TODO: consider migrating to SeaweedFS S3 via synapse-s3-storage-provider
     persistence:
       enabled: true
       storageClass: "local-path-proxmox"

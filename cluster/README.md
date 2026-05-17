@@ -78,7 +78,7 @@ All storage is region-local — no cross-site synchronous replication.
 
 | StorageClass         | Provisioner            | Region    | Notes                                                                    |
 | -------------------- | ---------------------- | --------- | ------------------------------------------------------------------------ |
-| `local-path`         | local-path-provisioner | Any       | CNPG (most databases), Gatus, MinIO                                      |
+| `local-path`         | local-path-provisioner | Any       | CNPG (most databases), Gatus                                             |
 | `local-path-hetzner` | local-path-provisioner | `hil`     | Loki, Mimir, Alertmanager, Grafana DB                                    |
 | `local-path-proxmox` | local-path-provisioner | `proxmox` | Matrix, ActivityWatch, Scanner, OpenClaw, Google Workspace MCP, Tana MCP |
 | `local-path-ovh`     | local-path-provisioner | `hil-ovh` | SeaweedFS volume servers, attic-db (CNPG OVH-HA)                         |
