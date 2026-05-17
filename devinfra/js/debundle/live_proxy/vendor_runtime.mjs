@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { posix } from "node:path";
 import { assertRealPathWithinRoot, resolvePackageSubpath } from "./package_tree.mjs";
@@ -161,15 +161,15 @@ export function resolvePartialSwapRuntimeRequest(relativePath, partialSwapIndex)
         continue;
       }
       const suffix = rest.slice(packagePrefix.length);
-      const resolvedPath = resolvePartialSwapAssetPath(entry.mountRoot, suffix);
+      const { filePath, resolvedSuffix } = resolvePartialSwapAssetPath(entry.mountRoot, suffix);
       assertPathWithinRoot(
-        resolvedPath,
+        filePath,
         entry.mountRoot,
         `Partial-swap request escapes mounted root for ${entry.package}: ${suffix}`
       );
-      if (existsSync(resolvedPath)) {
+      if (existsSync(filePath)) {
         assertRealPathWithinRoot(
-          resolvedPath,
+          filePath,
           entry.mountRoot,
           `Partial-swap request realpath escapes mounted root for ${entry.package}: ${suffix}`
         );
@@ -177,9 +177,10 @@ export function resolvePartialSwapRuntimeRequest(relativePath, partialSwapIndex)
       return {
         package: entry.package,
         version: entry.version,
-        filePath: resolvedPath,
+        filePath,
         requestPath: candidatePath,
         requestSuffix: suffix,
+        resolvedSuffix,
       };
     }
   }
@@ -191,27 +192,49 @@ export function resolvePartialSwapRuntimeRequest(relativePath, partialSwapIndex)
 // (`import "./utils"` rather than `./utils.js`); the browser doesn't
 // rewrite those, so the proxy tries `.js` / `.mjs` / `.cjs` / `/index.*`
 // in order, mirroring Node's CommonJS-influenced resolver. Returns the
-// first existing path; otherwise returns the exact path requested (the
-// caller will then surface a clean 404).
+// first existing file path along with the in-package suffix that maps
+// to it; otherwise returns the exact (file-less) suffix the caller
+// requested so the proxy can surface a clean 404. A directory at the
+// exact path is treated as not-yet-resolved — Node would fall through
+// to its `index.*` lookup, and so do we.
+//
+// The returned `resolvedSuffix` may differ from the requested `suffix`
+// (e.g. when `./platform` resolves to `platform/index.js`). The caller
+// is expected to issue a 301 to the resolved URL so the browser's
+// module base URL tracks the actual served file — otherwise relative
+// imports inside that file (`./node` becoming `platform/node` vs
+// `node`) would resolve from the wrong directory.
 function resolvePartialSwapAssetPath(mountRoot, suffix) {
   const exact = resolve(mountRoot, suffix);
-  if (existsSync(exact)) {
-    return exact;
+  if (isExistingFile(exact)) {
+    return { filePath: exact, resolvedSuffix: suffix };
   }
   const extensions = [".js", ".mjs", ".cjs"];
   for (const ext of extensions) {
     const candidate = `${exact}${ext}`;
-    if (existsSync(candidate)) {
-      return candidate;
+    if (isExistingFile(candidate)) {
+      return { filePath: candidate, resolvedSuffix: `${suffix}${ext}` };
     }
   }
-  for (const indexFile of extensions.map((ext) => `index${ext}`)) {
-    const candidate = resolve(exact, indexFile);
-    if (existsSync(candidate)) {
-      return candidate;
+  for (const ext of extensions) {
+    const candidate = resolve(exact, `index${ext}`);
+    if (isExistingFile(candidate)) {
+      const trimmed = suffix.replace(/\/+$/, "");
+      return { filePath: candidate, resolvedSuffix: `${trimmed}/index${ext}` };
     }
   }
-  return exact;
+  return { filePath: exact, resolvedSuffix: suffix };
+}
+
+function isExistingFile(path) {
+  if (!existsSync(path)) {
+    return false;
+  }
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function resolvePackageMountRoot(packageName, { packageRoots, packagesRoot, filePath }) {
