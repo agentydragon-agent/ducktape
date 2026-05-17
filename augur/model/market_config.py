@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import Field, model_validator
 
 from augur.core.schemas import StrictModel
@@ -64,4 +64,6 @@ def parse_market_config(payload: Any) -> MarketConfig:
 
 
 def load_market_config(path: Path) -> MarketConfig:
-    return parse_market_config(json.loads(path.read_text(encoding="utf-8")))
+    # `yaml.safe_load` reads both YAML and JSON (JSON is a YAML subset), so either
+    # extension is supported; deployments pick whichever is more ergonomic.
+    return parse_market_config(yaml.safe_load(path.read_text(encoding="utf-8")))

@@ -115,18 +115,25 @@ py_binary(
     deps = [":export_schema_py"],
 )
 
-py_binary(
-    name = "server",
+py_library(
+    name = "server_lib",
     srcs = ["server.py"],
-    data = [
-        "//augur/frontend:bundle_base",
-        "//augur/model/config:market_config_files",
-    ],
+    data = ["//augur/model/config:market_config_files"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
     deps = [
         ":config_py",
         ":http_server_py",
         "//util/bazel:runfiles",
     ],
+)
+
+py_binary(
+    name = "server",
+    data = ["//augur/frontend:bundle_base"],
+    env = {"AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html"},
+    main_module = "augur.api.server",
+    deps = [":server_lib"],
 )
 
 filegroup(
@@ -150,6 +157,7 @@ py_test(
         "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html",
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
     deps = [
