@@ -369,6 +369,29 @@ Work:
    normalization and request mapping, then split app/frontend/server packages
    after the core contracts and server cleanup settle.
 
+## In Flight
+
+- **Sale-tax timing slice** — move sale-tax obligations off
+  `ALLOCATED_TO_SOURCE_MONTH` onto realistic year-end / estimated-payment
+  dates. `augur/core/{annual_tax,scenario_engine}.py` + visual goldens.
+
+## Next Lanes (parallelism + sequencing)
+
+- **Generalize rollout failure semantics beyond mortgage** — insurance /
+  HOA / special assessments through the obligation pipeline. Sequence
+  after sale-tax + partner-ownership (shares `scenario_engine.py`).
+- **Cleanup audit item 2 — pick one source of truth for trace detail**.
+  Actions, decisions, ledger entries, balance snapshots, accounting
+  details, monthly arrays overlap heavily. Collapse one row/decision/
+  ledger surface; document which stays. Sequence after Round 3 (shares
+  `scenario_engine.py`).
+- **Teach runtime funding policies to consume crypto + tender-window-
+  aware private-equity positions** from the portfolio YAML contract.
+  Self-contained.
+- **Persist model-governance artifacts** — durable evidence / calibration
+  / validation-report storage for market providers. `augur/model/`.
+  Self-contained.
+
 ## Next Work Plans
 
 ### Plan A: Consume Generated Browser Schemas

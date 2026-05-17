@@ -1,6 +1,6 @@
 # Augur TODO
 
-Last design scan: 2026-05-16. Last consolidation: 2026-05-16.
+Last design scan: 2026-05-17. Last consolidation: 2026-05-17.
 
 This file tracks public, generic Augur backlog. Downstream repos should keep
 private composition, deployment, and user-/company-specific modeling assumptions
@@ -9,6 +9,12 @@ in their own trackers.
 Priority ordering and cross-repo consolidation live in
 `plans/roadmap.md`. Keep this file as the public generic backlog rather than a
 second ordered roadmap.
+
+## In Flight
+
+- Sale-tax timing slice — move sale-tax obligations off
+  `ALLOCATED_TO_SOURCE_MONTH` onto realistic year-end / estimated-payment
+  dates. Branch `claude/sale-tax-timing-slice`.
 
 ## Next
 
