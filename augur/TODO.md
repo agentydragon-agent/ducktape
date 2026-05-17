@@ -15,18 +15,32 @@ second ordered roadmap.
 - Funding policies consume crypto + tender-window-aware PE — extend the
   obligation-funding policy chain so `CheckingFloorSellPublicStockPolicy`
   (and siblings) can liquidate crypto holdings and tender-eligible PE
-  alongside SP500. Branch `claude/funding-policies-crypto-tender`.
-- Collapse trace surfaces — cleanup-audit item 2. Make
-  ledger/accounting/snapshot rows the canonical detail surface and either
-  delete `SimulationAction` rows or narrow them to user-visible commands.
-  Branch `claude/collapse-trace-surfaces`.
+  alongside SP500. Branch `claude/funding-policies-crypto-tender`. This
+  slice covers the runtime asset + funding side only; the stochastic
+  price-path side is the priority-3 follow-on below.
+- Mantine migration of remaining frontend controls. Branch
+  `claude/augur-frontend-mantine-migration`.
 
 ## Next
 
-- [ ] Use the generated Augur OpenAPI/browser schema target in browser state
-      normalization and request mapping. Python Pydantic remains the source of
-      truth; do not grow a second hand-maintained Zod/schema definition in
-      `augur/frontend`.
+- [ ] **PE should actually be simulated** (Priority 3 in `plans/roadmap.md`).
+      Today the market provider holds private-equity marks flat at 1.0 for
+      the entire horizon and emits tender opportunities at deterministic
+      month indices (every 12 months from t=0, identical across all
+      rollouts and all PE assets). The fit is **open design work** —
+      available evidence is sparse (e.g. ~5-10 historical OpenAI tenders),
+      so the natural shape is a model fit **jointly** with SP500,
+      inflation, and the per-location housing factors that the macro
+      provider already estimates (VECM/VAR/Wilkie/etc.), rather than an
+      independent process per PE asset. Tender-frequency arrival rate is
+      fitted on the same evidence.
+- [ ] **Crypto price should be sampled.** Runtime asset class + funding-
+      policy wiring landed via #1582; the remaining gap is replacing the
+      `np.ones(...)` placeholder `crypto_value_multipliers` array with a
+      sampled per-asset path so crypto contributes real variance to the
+      distribution. Model design is part of the same pass as PE above
+      (joint vs independent fit is a design question; deployment evidence
+      is private and stays downstream).
 - [ ] Plan C in `plans/roadmap.md`: unified obligation/funding semantics
       for all immediate cash demands (property tax, HOA, insurance,
       maintenance, outside rent, partner contributions, special assessments,
