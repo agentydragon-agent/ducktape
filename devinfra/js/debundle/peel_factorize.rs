@@ -115,10 +115,6 @@ pub struct FactorizeProposal {
     /// Should be empty for certified proposals. Kept for defensive
     /// compatibility with older reports.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub emit_blocked_residual_bindings: Vec<String>,
-    /// Should be empty for certified proposals. Kept for defensive
-    /// compatibility with older reports.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cycle_blocker_owner_ids: Vec<String>,
     /// Analyzer verdict for this proposal's final owner set.
     /// Certified proposals should be `PeelableNow`.
@@ -153,8 +149,6 @@ pub struct FactorizeDiagnosticReport {
     pub ordinal_span: usize,
     pub status: PeelCandidateStatus,
     pub reason: FactorizeDiagnosticReason,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub emit_blocked_residual_bindings: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cycle_blocker_owner_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -225,7 +219,6 @@ pub fn factorize(
                 Verdict {
                     status: cell.status,
                     landable_today: cell.landable_today,
-                    emit_blocked_residual_bindings: cell.emit_blocked_residual_bindings.clone(),
                     cycle_blocker_owner_ids: cell.cycle_blocker_owner_ids.clone(),
                 },
             ));
@@ -329,7 +322,6 @@ fn diagnostics_from_analyzer(graph: &OwnerGraphReport) -> Vec<FactorizeDiagnosti
             ordinal_span: diagnostic.ordinal_span,
             status: diagnostic.status,
             reason: diagnostic.reason,
-            emit_blocked_residual_bindings: diagnostic.emit_blocked_residual_bindings.clone(),
             cycle_blocker_owner_ids: diagnostic.cycle_blocker_owner_ids.clone(),
             active_modules_referenced: diagnostic.active_modules_referenced.clone(),
             extends_module_id: diagnostic.extends_module_id.clone(),
@@ -348,7 +340,6 @@ fn diagnostic_from_legacy_cell(idx: usize, cell: &FactorizeCell) -> FactorizeDia
         ordinal_span: cell.ordinal_span,
         status: cell.status,
         reason: FactorizeDiagnosticReason::NoExactRepair,
-        emit_blocked_residual_bindings: cell.emit_blocked_residual_bindings.clone(),
         cycle_blocker_owner_ids: cell.cycle_blocker_owner_ids.clone(),
         active_modules_referenced: cell.active_modules_referenced.clone(),
         extends_module_id: cell.extends_module_id.clone(),
@@ -373,7 +364,6 @@ struct Cell {
 struct Verdict {
     status: PeelCandidateStatus,
     landable_today: bool,
-    emit_blocked_residual_bindings: Vec<String>,
     cycle_blocker_owner_ids: Vec<String>,
 }
 
@@ -580,8 +570,6 @@ fn build_proposal(
     // shape, which drifted from the predicate on edges through
     // pre-existing entry exports (the recompute treated those as
     // residual_entry cycles even though entry mediates them).
-    let emit_blocked_residual_bindings: Vec<String> =
-        verdict.emit_blocked_residual_bindings.clone();
     let cycle_blocker_owner_ids = verdict.cycle_blocker_owner_ids.clone();
     let extension_owner_ids: Vec<String> = {
         let mut ids: Vec<String> = cell
@@ -614,7 +602,6 @@ fn build_proposal(
         other_residual_cells_referenced,
         edges_to_active_modules: to_active,
         active_modules_referenced,
-        emit_blocked_residual_bindings,
         cycle_blocker_owner_ids,
         status: verdict.status,
         landable_today: verdict.landable_today,
@@ -724,7 +711,6 @@ fn status_key(status: PeelCandidateStatus) -> &'static str {
         PeelCandidateStatus::PeelableNow => "peelable_now",
         PeelCandidateStatus::BlockedCycle => "blocked_cycle",
         PeelCandidateStatus::BlockedResidualDependency => "blocked_residual_dependency",
-        PeelCandidateStatus::BlockedEmitResolvability => "blocked_emit_resolvability",
     }
 }
 
@@ -870,7 +856,6 @@ mod tests {
                 residual_owner_horizon: vec![],
                 evaluated_owner_sets: vec![],
             },
-            pre_existing_entry_exports: vec![],
             factorize: FactorizeReport {
                 size_cap_lines: 10_000,
                 residual_owner_count: nodes_residual_count(&[]),
@@ -897,9 +882,8 @@ mod tests {
         owner_ids: &[&str],
         nodes: &[OwnerGraphNodeReport],
         status: PeelCandidateStatus,
-        emit_blocked: &[&str],
     ) -> FactorizeCell {
-        cell_with_blockers(id, owner_ids, nodes, status, emit_blocked, &[])
+        cell_with_blockers(id, owner_ids, nodes, status, &[])
     }
 
     fn cell_with_blockers(
@@ -907,7 +891,6 @@ mod tests {
         owner_ids: &[&str],
         nodes: &[OwnerGraphNodeReport],
         status: PeelCandidateStatus,
-        emit_blocked: &[&str],
         cycle_blockers: &[&str],
     ) -> FactorizeCell {
         let owners: Vec<String> = owner_ids.iter().map(|s| s.to_string()).collect();
@@ -954,7 +937,6 @@ mod tests {
             ordinal_span: max_ord.saturating_sub(min_ord),
             status,
             landable_today: landable,
-            emit_blocked_residual_bindings: emit_blocked.iter().map(|s| s.to_string()).collect(),
             cycle_blocker_owner_ids: cycle_blockers.iter().map(|s| s.to_string()).collect(),
             active_modules_referenced: Vec::new(),
             extends_module_id: None,
@@ -987,14 +969,12 @@ mod tests {
                 &["a"],
                 &nodes,
                 PeelCandidateStatus::PeelableNow,
-                &[],
             ),
             cell(
                 "auto_partition_0001",
                 &["b"],
                 &nodes,
                 PeelCandidateStatus::PeelableNow,
-                &[],
             ),
         ];
         let graph = graph_with_cells(nodes, vec![], cells);
@@ -1039,14 +1019,12 @@ mod tests {
                 &["a"],
                 &nodes,
                 PeelCandidateStatus::PeelableNow,
-                &[],
             ),
             cell(
                 "auto_partition_0001",
                 &["b"],
                 &nodes,
                 PeelCandidateStatus::PeelableNow,
-                &[],
             ),
         ];
         let graph = graph_with_cells(nodes, edges, cells);
@@ -1082,7 +1060,6 @@ mod tests {
             &["b"],
             &nodes,
             PeelCandidateStatus::PeelableNow,
-            &[],
         )];
         let graph = graph_with_cells(nodes, edges, cells);
         let claims = BTreeMap::from([("a".to_string(), "ui/x".to_string())]);
@@ -1093,64 +1070,6 @@ mod tests {
             report.proposals[0].active_modules_referenced,
             vec!["ui/x".to_string()],
         );
-    }
-
-    #[test]
-    fn legacy_analyzer_emit_blocked_cell_is_reported_as_diagnostic() {
-        // Analyzer-side cell carries emit_blocked_residual_bindings.
-        // The CLI must not surface the blocked row as a proposal.
-        // It is a diagnostic because proposals are certified-only.
-        let nodes = vec![
-            owner("consumer", 1, &["consumer"], 10),
-            owner("dep", 2, &["dep"], 5),
-        ];
-        let edges = vec![edge_for_binding(
-            "e1",
-            "consumer",
-            "dep",
-            DepKind::LazyUse,
-            false,
-            Some("dep"),
-        )];
-        let cells = vec![
-            cell(
-                "auto_partition_0000",
-                &["consumer"],
-                &nodes,
-                PeelCandidateStatus::BlockedEmitResolvability,
-                &["dep"],
-            ),
-            cell(
-                "auto_partition_0001",
-                &["dep"],
-                &nodes,
-                PeelCandidateStatus::PeelableNow,
-                &[],
-            ),
-        ];
-        let graph = graph_with_cells(nodes, edges, cells);
-        let report = factorize(&graph, &no_claims(), 12);
-        assert!(
-            !report
-                .proposals
-                .iter()
-                .any(|p| p.binding_ids.contains(&"consumer".to_string())),
-            "blocked legacy cell must not be a proposal: {report:#?}",
-        );
-        let consumer = report
-            .diagnostics
-            .iter()
-            .find(|p| p.binding_ids.contains(&"consumer".to_string()))
-            .expect("consumer diagnostic");
-        assert_eq!(
-            consumer.emit_blocked_residual_bindings,
-            vec!["dep".to_string()],
-        );
-        assert_eq!(
-            consumer.status,
-            PeelCandidateStatus::BlockedEmitResolvability
-        );
-        assert_eq!(consumer.reason, FactorizeDiagnosticReason::NoExactRepair);
     }
 
     #[test]
@@ -1165,7 +1084,6 @@ mod tests {
                 &["consumer"],
                 &nodes,
                 PeelCandidateStatus::BlockedCycle,
-                &[],
                 &["blocker"],
             ),
             cell(
@@ -1173,7 +1091,6 @@ mod tests {
                 &["blocker"],
                 &nodes,
                 PeelCandidateStatus::PeelableNow,
-                &[],
             ),
         ];
         let graph = graph_with_cells(nodes, vec![], cells);

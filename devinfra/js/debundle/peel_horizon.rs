@@ -640,7 +640,6 @@ mod tests {
                 residual_owner_horizon: Vec::new(),
                 evaluated_owner_sets: Vec::new(),
             },
-            pre_existing_entry_exports: Vec::new(),
             factorize: analysis::FactorizeReport::default(),
         }
     }
@@ -663,7 +662,6 @@ mod tests {
                     export_name: binding.to_string(),
                 })
                 .collect(),
-            emit_blocked_residual_bindings: Vec::new(),
         }
     }
 

@@ -860,7 +860,6 @@ fn materialize_logical_chunk(
                 chunk_renames_map.clone(),
                 default_destination,
             )
-            .with_pre_existing_entry_exports(pre_existing_entry_exports.clone())
         });
         (schedule, redundant_purity_hints)
     };
@@ -929,6 +928,7 @@ fn materialize_logical_chunk(
             schedule: &schedule,
             chunk_renames: &chunk_renames_map,
             runtime_import_facts: &runtime_import_facts,
+            pre_existing_entry_exports: &pre_existing_entry_exports,
         })
     })?;
     let LoweredChunk {
@@ -1151,6 +1151,12 @@ struct LowerChunkInputs<'a> {
     /// undefined; the validation pass sorts by binding name before
     /// iterating so any spec errors are deterministic.
     chunk_renames: &'a HashMap<String, String>,
+    /// Names the source chunk's entry exports verbatim
+    /// (`record_pre_existing_named_exports`). Consulted by
+    /// `auto_grown_residual_exports` so the auto-grow pass doesn't
+    /// emit a `Duplicate export of 'name'` clash with an existing
+    /// source export.
+    pre_existing_entry_exports: &'a BTreeSet<String>,
 }
 
 #[derive(Debug, Default)]
@@ -1258,6 +1264,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         schedule,
         runtime_import_facts,
         chunk_renames,
+        pre_existing_entry_exports,
     } = inputs;
     let mut timings = PhaseTimings::default();
     let selected_ordinals = time_phase!(timings, "compute_selected_ordinals", {
@@ -1494,6 +1501,27 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             &entry_binding_renames,
         ) {
             entry_body.push(export);
+        }
+        // Auto-grow entry's export list for any residual binding a
+        // moved module body references. Without this, the per-module
+        // emit path below would surface a "moved module references
+        // residual entry binding(s) … not exported by entry"
+        // rejection — i.e. would refuse to emit valid JS — for any
+        // peel whose body happens to read a top-level binding that
+        // the upstream source didn't already `export {...}`.
+        // Emitting the export here makes the assignment importable
+        // by construction (see DESIGN.md "Valid peels and atomic
+        // modules", importability clause). The grow set excludes
+        // names already in entry's source-level exports.
+        let auto_grow = auto_grown_residual_exports(
+            &selected_by_module,
+            declaration_by_name,
+            binding_assignment,
+            pre_existing_entry_exports,
+            &entry_binding_renames,
+        );
+        if !auto_grow.is_empty() {
+            entry_body.push(export_named_for_bindings(&auto_grow));
         }
         trim_dead_named_specifiers(&mut entry_body, &schedule.bindings);
     });
@@ -2197,12 +2225,11 @@ struct ChunkAstAnalysis {
     destructure_siblings: BTreeMap<String, BTreeSet<String>>,
     /// Names that the source chunk's entry already exports (via
     /// `export { foo, bar }` re-exports of local bindings, or
-    /// `export const foo = …` style declarations). Passed to
-    /// [`Schedule::with_pre_existing_entry_exports`] so
-    /// peelability's emit-resolvability projection can predict
-    /// the materializer's "moved module references residual entry
-    /// binding(s) … not exported by entry" rejection without
-    /// re-walking the AST.
+    /// `export const foo = …` style declarations). The materializer
+    /// consults this set in `auto_grown_residual_exports` so the
+    /// auto-grown `export { name }` block doesn't duplicate an
+    /// existing source-level export — emitting a duplicate would be
+    /// a `SyntaxError: Duplicate export of 'name'` at load time.
     pre_existing_entry_exports: BTreeSet<String>,
 }
 
@@ -2714,8 +2741,16 @@ fn residual_entry_imports_for_moved_body(
     renames: &mut BTreeMap<String, String>,
 ) -> Result<Vec<ModuleItem>> {
     if !missing_exports.is_empty() {
+        // Defense-in-depth: `auto_grown_residual_exports` is supposed
+        // to make sure every cross-destination read into residual
+        // entry resolves to an exported binding. If a name slips
+        // through (the binding is declared in the chunk but never
+        // got an entry export), that's an internal materializer
+        // invariant violation rather than a user-facing spec error
+        // — bail with the offending names so the bug stays
+        // diagnosable.
         bail!(
-            "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry; refusing to emit free references. Keep those bindings with the moved module, expose them from entry, or use an explicit residual module.",
+            "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry. This is an internal invariant violation in `auto_grown_residual_exports` — the export-growth pass should have surfaced these names before per-module emission. Report with the chunk's `owner_graph.json`.",
             missing_exports.into_iter().collect::<Vec<_>>().join(", "),
         );
     }
@@ -4022,6 +4057,70 @@ fn entry_exports_for_moved_bindings(
     } else {
         vec![export_named_for_bindings(&exports)]
     }
+}
+
+/// Compute the residual entry bindings every moved module body
+/// references but entry doesn't yet export. The per-module emit
+/// path needs every such reference to import from entry, so the
+/// materializer auto-grows entry's export list to cover them — that
+/// way peeling a body whose lazy/eager reads target an
+/// unexported residual binding emits valid JS without making the
+/// peel proposer responsible for predicting the materializer's
+/// export policy. See DESIGN.md "Valid peels and atomic modules"
+/// (importability clause).
+///
+/// Returns a `local → exported` map (with `local == exported`
+/// because we surface the residual binding's own name); the caller
+/// feeds it to `export_named_for_bindings`.
+///
+/// Skips:
+/// - bindings already in `existing_exports` (the upstream source
+///   exports plus the moved-binding re-exports already emitted by
+///   `entry_exports_for_moved_bindings`),
+/// - names not declared anywhere in the chunk
+///   (`declaration_by_name` covers every top-level decl, so this is
+///   the "globals / runtime imports / unknown ident" case the
+///   per-module emit path silently lets fall through to the implicit
+///   runtime resolution),
+/// - bindings owned by a logical module (`binding_assignment`), which
+///   are imported directly module→module rather than mediated by
+///   entry.
+fn auto_grown_residual_exports(
+    selected_by_module: &[Vec<ModuleItem>],
+    declaration_by_name: &BTreeMap<String, usize>,
+    binding_assignment: &BTreeMap<String, usize>,
+    pre_existing_entry_exports: &BTreeSet<String>,
+    entry_renames: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut needed = BTreeSet::<String>::new();
+    for body in selected_by_module {
+        let facts = collect_module_body_facts(body);
+        for name in &facts.referenced_idents {
+            if facts.provided_locals.contains(name) {
+                continue;
+            }
+            if binding_assignment.contains_key(name) {
+                continue;
+            }
+            if !declaration_by_name.contains_key(name) {
+                continue;
+            }
+            if pre_existing_entry_exports.contains(name) {
+                continue;
+            }
+            needed.insert(name.clone());
+        }
+    }
+    needed
+        .into_iter()
+        .map(|name| {
+            let final_local = entry_renames
+                .get(&name)
+                .cloned()
+                .unwrap_or_else(|| name.clone());
+            (final_local, name)
+        })
+        .collect()
 }
 
 fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: &[String]) {

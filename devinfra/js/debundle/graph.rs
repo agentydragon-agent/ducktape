@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
@@ -500,80 +500,4 @@ pub struct OwnerEdge {
     pub from: OwnerId,
     pub to: OwnerId,
     pub reason: EdgeReason,
-}
-
-/// Predicate shared by `materialize_logical_modules` and
-/// `peelability.rs`: given a candidate set of moved owners and the
-/// post-peel entry export set, report binding names that moved bodies
-/// would reference free — bindings declared by an owner that stays in
-/// the source destination but aren't on entry's export list.
-///
-/// SSOT for the materializer's "moved module references source
-/// destination binding(s) … not exported by entry" rejection: when
-/// this returns a non-empty set, the materializer would reject and
-/// peelability marks the candidate `BlockedEmitResolvability`.
-/// Mirrors the `constrains_init_order` SSOT introduced in
-/// `f86e84b7e`.
-///
-/// Inputs:
-/// - `owner_graph`: source of the per-reason edge list (`.edges`)
-///   walked here, the binding-name table, and `node()` lookups for
-///   each edge's target.
-/// - `partition`: per-owner module assignment. The destination module
-///   of each edge's target is read via `partition.of(edge.to)`; only
-///   targets sharing the moved set's source destination are
-///   considered. The source destination is derived from
-///   `moved_owners` (all moved owners share one destination by
-///   precondition).
-/// - `moved_owners`: the candidate's moved owner set (a peel of these
-///   is the hypothetical change being evaluated).
-/// - `base_entry_exports`: the schedule's cached pre-peel entry
-///   export set — pre-existing source exports plus bindings of any
-///   owner already living in a logical module. Stable across all
-///   candidates evaluated for the same chunk; passed by reference to
-///   avoid the per-candidate clone the previous BTreeSet API forced.
-/// - `candidate_members`: bindings the candidate would auto-export
-///   from entry on emit (via `entry_exports_for_moved_bindings`),
-///   i.e. the per-candidate addition on top of `base_entry_exports`.
-pub(crate) fn peel_emit_blocked_source_destination_bindings(
-    owner_graph: &OwnerGraph,
-    partition: &Partition,
-    moved_owners: &BTreeSet<OwnerId>,
-    base_entry_exports: &HashSet<BindingName>,
-    candidate_members: &[BindingName],
-) -> BTreeSet<BindingName> {
-    let Some(&first) = moved_owners.iter().next() else {
-        return BTreeSet::new();
-    };
-    let source_destination = partition.of(first);
-    // Hoist the candidate-members membership test out of the per-edge
-    // loop; this function is called once per peelability candidate
-    // (≥1500/chunk on Tana), so the inner test wants O(1).
-    let candidate_members_set: HashSet<&BindingName> = candidate_members.iter().collect();
-    let mut blocked = BTreeSet::new();
-    for edge in &owner_graph.edges {
-        if !moved_owners.contains(&edge.from) {
-            continue;
-        }
-        if moved_owners.contains(&edge.to) {
-            continue;
-        }
-        if owner_graph.node(edge.to).is_none() {
-            continue;
-        }
-        if partition.of(edge.to) != source_destination {
-            continue;
-        }
-        let Some(binding_id) = edge.reason.binding else {
-            continue;
-        };
-        let Some(name) = owner_graph.binding_table.name(binding_id) else {
-            continue;
-        };
-        if base_entry_exports.contains(name) || candidate_members_set.contains(name) {
-            continue;
-        }
-        blocked.insert(name.clone());
-    }
-    blocked
 }

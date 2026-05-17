@@ -1130,11 +1130,13 @@ the labels/provenance on every cross-destination edge.
 A cross-destination read edge is **importable** iff the provider can
 be named by an emitted ESM import from the consumer destination:
 the provider is already in an external chunk, is exported by a
-logical module, is an imported binding being re-exported, is an
-entry export the residual module may legally surface, or moves with
-the consumer. Reads of private residual-entry bindings are not
-importable unless the assignment also exports or colocates the
-provider.
+logical module, is an imported binding being re-exported, lives in
+the residual entry (the emitter auto-exports residual entry bindings
+on demand — see "Emit-side responsibilities" below), or moves with
+the consumer. There is no first-class "binding is private to entry"
+spec contract: any top-level declaration in entry is fair game for a
+moved module to read, and the materializer grows entry's export
+list to cover such reads.
 
 A cross-destination **rebinding write** is never importable. ESM
 imports are live for reads but read-only in the importing module, so
@@ -1199,6 +1201,49 @@ So "factorize the graph" is not the problem statement. The problem is:
 construct owner sets whose induced destination assignment is valid under
 the same static semantics as materialization. The graph is the data
 structure used to compute that proof.
+
+### Emit-side responsibilities: refuse to emit invalid JS by construction
+
+The validity predicate above leaves one degree of freedom: which
+residual entry bindings are surfaced as ESM exports of entry. The
+materializer (`materialize_logical_modules`) owns that decision and
+makes it **per emit pass**, not as a static property the proposer
+must predict.
+
+Concretely: when a moved module body references a top-level
+declaration that lives in the residual entry but isn't yet on
+entry's `export {...}` list, the emit step grows the export list to
+include it (see `auto_grown_residual_exports` in `logical_modules.rs`).
+The moved module then imports the binding from entry via a normal ESM
+`import { name } from "../entry.js"`. Source-level exports are not
+clobbered: the auto-grow only adds names that the upstream source
+didn't already export.
+
+This decoupling is load-bearing for two reasons:
+
+1. **The proposer never models the emit policy.** Asking the
+   peelability proposer to predict "will the materializer accept
+   this peel after its export-growth pass?" forces a duplicate
+   implementation of the export logic on the proposer side and
+   creates an SSOT drift hazard the moment the emit policy
+   evolves. Keeping the proposer concerned with the
+   importability/cycle/rebind predicates *only* means a peel that
+   passes the proposer's check is always materializable.
+2. **There is no "binding is private to entry" spec contract.** Any
+   top-level entry declaration is implicitly exportable when a
+   peeled module needs to read it. Spec authors who want a binding
+   to stay strictly internal must keep it inside a logical module
+   (or refuse to peel any consumer that would read it from entry).
+
+The materializer's bail-on-missing-export message
+(`"moved module references residual entry binding(s) … not
+exported by entry"`) is therefore an internal invariant check: if
+the auto-grow pass missed a name, that's a bug to fix in
+`auto_grown_residual_exports`, not a verdict the spec author can
+work around. A truly absent reference (binding declared nowhere in
+the chunk) was already a runtime `ReferenceError` in the upstream
+source and remains one in the debundled output — emit doesn't try
+to invent a binding it can't resolve.
 
 ### Factorization proposals
 

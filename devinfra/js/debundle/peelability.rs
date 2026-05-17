@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 
-use crate::graph::{OwnerEdge, peel_emit_blocked_source_destination_bindings};
+use crate::graph::OwnerEdge;
 use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
@@ -86,11 +86,6 @@ pub(crate) struct PeelCandidateEvaluation {
     /// in `evaluated_owner_sets[].residual_dependency_blockers` so
     /// callers can pinpoint which residual neighbor blocked the peel.
     pub(crate) residual_dependency_blocker_owner_ids: Vec<OwnerId>,
-    /// Residual binding names that the candidate's moved bodies
-    /// reference but entry doesn't export — populated only when
-    /// `status == BlockedEmitResolvability`. SSOT'd via
-    /// [`peel_emit_blocked_source_destination_bindings`] in `graph.rs`.
-    pub(crate) emit_blocked_residual_bindings: Vec<BindingName>,
 }
 
 pub(crate) fn build_peelability_report(
@@ -182,7 +177,6 @@ pub(crate) fn build_peelability_report(
             candidate_id: candidate.id.clone(),
             owner_ids: candidate.owner_ids.iter().copied().map(owner_key).collect(),
             members: binding_reports(schedule, candidate.members.iter()),
-            emit_blocked_residual_bindings: candidate.emit_blocked_residual_bindings.clone(),
         })
         .collect();
 
@@ -204,7 +198,6 @@ pub(crate) fn build_peelability_report(
                 .copied()
                 .map(owner_key)
                 .collect(),
-            emit_blocked_residual_bindings: candidate.emit_blocked_residual_bindings.clone(),
         })
         .collect();
 
@@ -524,10 +517,9 @@ fn residual_pair_candidates_from_singleton_blockers(
 /// destination, because the constraining edges between members make
 /// any split unrealizable. Candidates emitted here pass through the
 /// same `evaluate_peel_candidate` predicate as `direct`/pair/closure
-/// candidates: realizability of the new SCC, residual-dependency
-/// check, emit-resolvability projection. They show up as
-/// `PeelableNow` iff the unit has no outgoing constraining edge into
-/// a residual non-member.
+/// candidates: realizability of the new SCC and residual-dependency
+/// check. They show up as `PeelableNow` iff the unit has no outgoing
+/// constraining edge into a residual non-member.
 ///
 /// Size-1 units (the common case, where an owner has no constraining
 /// peers) are already covered by the singleton `direct` candidates;
@@ -766,44 +758,19 @@ pub(crate) fn evaluate_peel_candidate(
         candidate_blocking_scc_owner_edge_indices(context, &candidate_edges, &adjustment)
     };
 
-    // Emit-resolvability projection: even if the candidate passes
-    // cycle/realizability checks, `materialize_logical_modules` will
-    // reject it when a moved body references a residual entry binding
-    // that isn't on entry's export list. Compute that here using the
-    // shared predicate so peelability and the materializer can't
-    // drift (cf. `constrains_init_order` SSOT in f86e84b7e).
-    //
-    // Skipped when the schedule was built without AST analysis (no
-    // `pre_existing_entry_exports` set) — that's the test-helper case
-    // where there's no chunk source to derive exports from. Real
-    // pipeline runs always populate the set.
-    let blocks_via_cycle = !constraining_owner_edge_indices.is_empty();
-    let emit_blocked_residual_bindings: Vec<BindingName> =
-        if has_residual_dependency || blocks_via_cycle {
-            // Already blocked for a stronger reason; no need to also
-            // surface emit-resolvability blockers.
-            Vec::new()
-        } else {
-            match schedule.entry_exported_binding_names() {
-                Some(base_exports) => peel_emit_blocked_source_destination_bindings(
-                    &schedule.owner_graph,
-                    &schedule.partition,
-                    &moved_owners,
-                    base_exports,
-                    &declared,
-                )
-                .into_iter()
-                .collect(),
-                None => Vec::new(),
-            }
-        };
-
+    // The emit step (`materialize_logical_modules`) is responsible
+    // for ensuring every cross-destination read in a peel resolves
+    // to an exported binding: when a moved body lazily reads a
+    // residual entry binding that isn't currently exported, emit
+    // grows entry's export list to include it. The proposer therefore
+    // does NOT model an emit-resolvability blocker — proposing the
+    // peel is always safe (DESIGN.md "Valid peels and atomic modules",
+    // importability clause: residual entry bindings are importable
+    // because the emitter auto-exports them on demand).
     let status = if has_residual_dependency {
         PeelCandidateStatus::BlockedResidualDependency
-    } else if blocks_via_cycle {
+    } else if !constraining_owner_edge_indices.is_empty() {
         PeelCandidateStatus::BlockedCycle
-    } else if !emit_blocked_residual_bindings.is_empty() {
-        PeelCandidateStatus::BlockedEmitResolvability
     } else {
         PeelCandidateStatus::PeelableNow
     };
@@ -815,7 +782,6 @@ pub(crate) fn evaluate_peel_candidate(
         members: declared,
         constraining_owner_edge_indices,
         residual_dependency_blocker_owner_ids,
-        emit_blocked_residual_bindings,
     }
 }
 
@@ -989,14 +955,15 @@ fn candidate_incident_edges(
 ///
 /// This is consistent with `compute_atomic_units`, which builds
 /// `G_atomic` from constraining edges only. The previous
-/// implementation walked reachability over all edges (lazy + eager
-/// + sequenced + rebind + local-effect), which falsely flagged
-/// any pure-function/var/class owner in residual that had a single
-/// intra-residual lazy out-edge plus any eager-use incoming edges
-/// as `BlockedCycle`. Concretely: a Tana chunk's residual is full
-/// of mutual lazy reads, so almost every pure top-level declaration
-/// in residual with both incoming eager use and any lazy out-edge
-/// to residual ended up `BlockedCycle` with empty `peel_set_ids`.
+/// implementation walked reachability over all edges (lazy plus eager
+/// plus sequenced plus rebind plus local-effect), which falsely
+/// flagged any pure-function/var/class owner in residual that had a
+/// single intra-residual lazy out-edge plus any eager-use incoming
+/// edges as `BlockedCycle`. Concretely: a Tana chunk's residual is
+/// full of mutual lazy reads, so almost every pure top-level
+/// declaration in residual with both incoming eager use and any lazy
+/// out-edge to residual ended up `BlockedCycle` with empty
+/// `peel_set_ids`.
 fn candidate_blocking_scc_owner_edge_indices(
     context: &PeelabilityContext<'_>,
     candidate_edges: &[CandidateIncidentEdge],

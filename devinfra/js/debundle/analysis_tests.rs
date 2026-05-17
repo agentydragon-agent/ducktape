@@ -3757,13 +3757,26 @@ mutable = mutable + 1;"#,
 
     #[test]
     fn factorize_reports_size_cap_closure_as_diagnostic_not_partial_proposal() {
+        // Eager at-init reads (`const consumer = dep_a + dep_b`)
+        // form a real constraining-edge closure: peeling `consumer`
+        // alone leaves dep_a and dep_b in residual, which would
+        // create an unrealizable quotient. The factorizer's closure
+        // expansion pulls dep_a + dep_b in; with `size_cap_lines: 1`
+        // the closure exceeds the cap and must go to diagnostics
+        // rather than emitting a singleton proposal for `consumer`
+        // alone (which would be an invalid spec).
+        //
+        // (The previous shape used `function consumer() { ... }`,
+        // but lazy reads no longer force closures since the
+        // emit-resolvability redesign — entry auto-exports the
+        // residual bindings, so the function consumer is
+        // independently peelable.)
         let schedule = schedule_for(
             r#"const dep_a = "left";
 const dep_b = "right";
-function consumer() { return dep_a + dep_b; }"#,
+const consumer = dep_a + dep_b;"#,
             &[],
-        )
-        .with_pre_existing_entry_exports(BTreeSet::new());
+        );
         let report = schedule
             .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
 
@@ -3806,15 +3819,19 @@ function consumer() { return dep_a + dep_b; }"#,
         // frontier starts grow into closures that overlap heavily. Whether
         // any pair coincides exactly depends on the residual + active-module
         // landscape — the assertion is the invariant, not a fixed count.
+        //
+        // Eager reads here (same reason as
+        // `factorize_reports_size_cap_closure_as_diagnostic_not_partial_proposal`);
+        // lazy reads no longer force closure growth post-emit-
+        // resolvability redesign.
         let schedule = schedule_for(
             r#"const dep_a = "left";
 const dep_b = "right";
-function consumer_one() { return dep_a + dep_b; }
-function consumer_two() { return dep_a + dep_b; }
-function consumer_three() { return dep_a + dep_b; }"#,
+const consumer_one = dep_a + dep_b;
+const consumer_two = dep_a + dep_b;
+const consumer_three = dep_a + dep_b;"#,
             &[],
-        )
-        .with_pre_existing_entry_exports(BTreeSet::new());
+        );
         let report = schedule
             .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
 
