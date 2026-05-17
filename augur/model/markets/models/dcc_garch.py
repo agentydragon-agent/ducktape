@@ -27,11 +27,18 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 from arch.univariate import GARCH, ConstantMean, Normal
+from pydantic import Field
 from scipy.optimize import minimize
 
+from augur.core.market_bundle import MarketBundleProvider
+from augur.core.schemas import ApiModel
+from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
+from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets._density import gaussian_logpdf_from_samples
 from augur.model.markets.scenarios import HistoricalSeries, Scenarios, historical_log_returns
 
@@ -300,6 +307,46 @@ class DccGjrGarch:
 
         return gaussian_logpdf_from_samples(samples=cum_returns, observation=log_returns[t : t + h].sum(axis=0))
 
+    def save(self, descriptor: DccGjrGarchMarketProviderConfig) -> None:
+        """Persist post-fit state to the `.npz` archive named by the
+        descriptor's `trained_blob` so the runtime can skip re-fitting at
+        startup. Symmetric to `DccGjrGarch.load(descriptor)`."""
+        np.savez_compressed(
+            descriptor.trained_blob,
+            mu=self.mu,
+            omega=self.omega,
+            alpha=self.alpha,
+            gamma=self.gamma,
+            beta=self.beta,
+            dcc_a=np.array(self.dcc_a),
+            dcc_b=np.array(self.dcc_b),
+            q_bar=self.q_bar,
+            sigma_last=self.sigma_last,
+            z_last=self.z_last,
+            q_last=self.q_last,
+            factor_names=np.array(self.factor_names, dtype=object),
+        )
+
+    @staticmethod
+    def load(descriptor: DccGjrGarchMarketProviderConfig) -> DccGjrGarch:
+        with np.load(descriptor.trained_blob, allow_pickle=True) as data:
+            factor_names = tuple(str(name) for name in data["factor_names"])
+            model = DccGjrGarch(config=DccGjrGarchConfig())
+            model.mu = np.asarray(data["mu"])
+            model.omega = np.asarray(data["omega"])
+            model.alpha = np.asarray(data["alpha"])
+            model.gamma = np.asarray(data["gamma"])
+            model.beta = np.asarray(data["beta"])
+            model.dcc_a = float(data["dcc_a"])
+            model.dcc_b = float(data["dcc_b"])
+            model.q_bar = np.asarray(data["q_bar"])
+            model.sigma_last = np.asarray(data["sigma_last"])
+            model.z_last = np.asarray(data["z_last"])
+            model.q_last = np.asarray(data["q_last"])
+            model.factor_names = factor_names
+            model.n_factors = len(factor_names)
+        return model
+
     def simulate(self, n_paths: int, n_months: int, seed: int) -> Scenarios:
         rng = np.random.default_rng(seed)
         n_factors = self.n_factors
@@ -346,4 +393,29 @@ class DccGjrGarch:
             multipliers=np.exp(cum),
             seed=seed,
             label=self.label,
+        )
+
+
+class DccGjrGarchMarketProviderConfig(ApiModel):
+    """Pre-trained DCC-GJR-GARCH provider config — points at the trained-state
+    blob written by `bb run //augur/model:train`. The model is loaded at server
+    startup; no fitting happens on the request path."""
+
+    type: Literal["dcc_gjr_garch"] = "dcc_gjr_garch"
+    trained_blob: Path = Field(description="Absolute path to the .npz produced by DccGjrGarch.save(descriptor).")
+    latest_observations: dict[str, Any] = Field(
+        description="Latest observed market state at the start of the simulation horizon (factor → value)."
+    )
+    current_mortgage30_rate_pct: float
+    location_market_sources: LocationMarketSourcesConfig
+
+    def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
+        model = DccGjrGarch.load(self)
+        return MacroMarketBundleProvider.from_loaded_model(
+            model,
+            latest_observations=self.latest_observations,
+            current_mortgage30_rate_pct=self.current_mortgage30_rate_pct,
+            current_private_equity_price_usd=current_private_equity_price_usd,
+            location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
+            evidence_source_id=str(self.trained_blob),
         )

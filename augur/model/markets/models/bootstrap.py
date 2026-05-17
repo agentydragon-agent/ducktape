@@ -11,9 +11,16 @@ once the rollout-based diagnostics in Phase D land.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
+from pydantic import Field
 
+from augur.core.market_bundle import MarketBundleProvider
+from augur.core.schemas import ApiModel
+from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
+from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets.scenarios import HistoricalSeries, Scenarios, historical_log_returns
 
 
@@ -63,6 +70,27 @@ class StationaryBootstrap:
         del historical, t, h
         return None
 
+    def save(self, descriptor: StationaryBootstrapMarketProviderConfig) -> None:
+        """Persist post-fit state to the `.npz` archive named by the
+        descriptor's `trained_blob` so the runtime can skip re-fitting at
+        startup. Symmetric to `StationaryBootstrap.load(descriptor)`."""
+        np.savez_compressed(
+            descriptor.trained_blob,
+            expected_block_length=np.array(self.config.expected_block_length),
+            historical_log_returns=self.historical_log_returns,
+            factor_names=np.array(self.factor_names, dtype=object),
+        )
+
+    @staticmethod
+    def load(descriptor: StationaryBootstrapMarketProviderConfig) -> StationaryBootstrap:
+        with np.load(descriptor.trained_blob, allow_pickle=True) as data:
+            config = StationaryBootstrapConfig(expected_block_length=float(data["expected_block_length"]))
+            factor_names = tuple(str(name) for name in data["factor_names"])
+            model = StationaryBootstrap(config=config)
+            model.historical_log_returns = np.asarray(data["historical_log_returns"])
+            model.factor_names = factor_names
+        return model
+
     def simulate(self, n_paths: int, n_months: int, seed: int) -> Scenarios:
         rng = np.random.default_rng(seed)
         history = self.historical_log_returns
@@ -83,4 +111,31 @@ class StationaryBootstrap:
             multipliers=np.exp(cum),
             seed=seed,
             label=self.label,
+        )
+
+
+class StationaryBootstrapMarketProviderConfig(ApiModel):
+    """Pre-trained stationary bootstrap provider config — points at the
+    trained-state blob written by `bb run //augur/model:train`. The model is
+    loaded at server startup; no fitting happens on the request path."""
+
+    type: Literal["stationary_bootstrap"] = "stationary_bootstrap"
+    trained_blob: Path = Field(
+        description="Absolute path to the .npz produced by StationaryBootstrap.save(descriptor)."
+    )
+    latest_observations: dict[str, Any] = Field(
+        description="Latest observed market state at the start of the simulation horizon (factor → value)."
+    )
+    current_mortgage30_rate_pct: float
+    location_market_sources: LocationMarketSourcesConfig
+
+    def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
+        model = StationaryBootstrap.load(self)
+        return MacroMarketBundleProvider.from_loaded_model(
+            model,
+            latest_observations=self.latest_observations,
+            current_mortgage30_rate_pct=self.current_mortgage30_rate_pct,
+            current_private_equity_price_usd=current_private_equity_price_usd,
+            location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
+            evidence_source_id=str(self.trained_blob),
         )

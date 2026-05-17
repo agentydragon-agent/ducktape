@@ -6,9 +6,14 @@ py_library(
     name = "var_py",
     srcs = ["var.py"],
     deps = [
+        "//augur/core:market_bundle_py",
+        "//augur/core:schemas_py",
+        "//augur/model:location_market_sources_py",
+        "//augur/model:macro_market_bundle_provider_py",
         "//augur/model/markets:density_py",
         "//augur/model/markets:scenarios_py",
         "@pypi//numpy",
+        "@pypi//pydantic",
     ],
 )
 
@@ -28,8 +33,13 @@ py_library(
     srcs = ["wilkie.py"],
     deps = [
         ":var_py",
+        "//augur/core:market_bundle_py",
+        "//augur/core:schemas_py",
+        "//augur/model:location_market_sources_py",
+        "//augur/model:macro_market_bundle_provider_py",
         "//augur/model/markets:scenarios_py",
         "@pypi//numpy",
+        "@pypi//pydantic",
     ],
 )
 
@@ -75,10 +85,15 @@ py_library(
     name = "dcc_garch_py",
     srcs = ["dcc_garch.py"],
     deps = [
+        "//augur/core:market_bundle_py",
+        "//augur/core:schemas_py",
+        "//augur/model:location_market_sources_py",
+        "//augur/model:macro_market_bundle_provider_py",
         "//augur/model/markets:density_py",
         "//augur/model/markets:scenarios_py",
         "@pypi//arch",
         "@pypi//numpy",
+        "@pypi//pydantic",
         "@pypi//scipy",
     ],
 )
@@ -98,8 +113,13 @@ py_library(
     name = "bootstrap_py",
     srcs = ["bootstrap.py"],
     deps = [
+        "//augur/core:market_bundle_py",
+        "//augur/core:schemas_py",
+        "//augur/model:location_market_sources_py",
+        "//augur/model:macro_market_bundle_provider_py",
         "//augur/model/markets:scenarios_py",
         "@pypi//numpy",
+        "@pypi//pydantic",
     ],
 )
 

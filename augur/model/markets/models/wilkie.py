@@ -23,9 +23,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
+from pydantic import Field
 
+from augur.core.market_bundle import MarketBundleProvider
+from augur.core.schemas import ApiModel
+from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
+from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets.models.var import _var1_horizon_density
 from augur.model.markets.scenarios import HistoricalSeries, Scenarios, historical_log_returns
 
@@ -161,6 +168,35 @@ class WilkieCascade:
             h=h,
         )
 
+    def save(self, descriptor: WilkieCascadeMarketProviderConfig) -> None:
+        """Persist post-fit state to the `.npz` archive named by the
+        descriptor's `trained_blob` so the runtime can skip re-fitting at
+        startup. Symmetric to `WilkieCascade.load(descriptor)`."""
+        np.savez_compressed(
+            descriptor.trained_blob,
+            intercept=self.intercept,
+            weight_inflation=self.weight_inflation,
+            weight_own=self.weight_own,
+            residual_sd=self.residual_sd,
+            inflation_index=np.array(self.inflation_index),
+            last_log_return=self.last_log_return,
+            factor_names=np.array(self.factor_names, dtype=object),
+        )
+
+    @staticmethod
+    def load(descriptor: WilkieCascadeMarketProviderConfig) -> WilkieCascade:
+        with np.load(descriptor.trained_blob, allow_pickle=True) as data:
+            factor_names = tuple(str(name) for name in data["factor_names"])
+            model = WilkieCascade(config=WilkieConfig())
+            model.intercept = np.asarray(data["intercept"])
+            model.weight_inflation = np.asarray(data["weight_inflation"])
+            model.weight_own = np.asarray(data["weight_own"])
+            model.residual_sd = np.asarray(data["residual_sd"])
+            model.inflation_index = int(data["inflation_index"])
+            model.last_log_return = np.asarray(data["last_log_return"])
+            model.factor_names = factor_names
+        return model
+
     def simulate(self, n_paths: int, n_months: int, seed: int) -> Scenarios:
         n_factors = self.intercept.shape[0]
         rng = np.random.default_rng(seed)
@@ -185,4 +221,29 @@ class WilkieCascade:
             multipliers=np.exp(cum),
             seed=seed,
             label=self.label,
+        )
+
+
+class WilkieCascadeMarketProviderConfig(ApiModel):
+    """Pre-trained Wilkie cascade provider config — points at the trained-state
+    blob written by `bb run //augur/model:train`. The model is loaded at server
+    startup; no fitting happens on the request path."""
+
+    type: Literal["wilkie_cascade"] = "wilkie_cascade"
+    trained_blob: Path = Field(description="Absolute path to the .npz produced by WilkieCascade.save(descriptor).")
+    latest_observations: dict[str, Any] = Field(
+        description="Latest observed market state at the start of the simulation horizon (factor → value)."
+    )
+    current_mortgage30_rate_pct: float
+    location_market_sources: LocationMarketSourcesConfig
+
+    def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
+        model = WilkieCascade.load(self)
+        return MacroMarketBundleProvider.from_loaded_model(
+            model,
+            latest_observations=self.latest_observations,
+            current_mortgage30_rate_pct=self.current_mortgage30_rate_pct,
+            current_private_equity_price_usd=current_private_equity_price_usd,
+            location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
+            evidence_source_id=str(self.trained_blob),
         )

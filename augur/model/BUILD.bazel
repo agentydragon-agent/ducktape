@@ -64,7 +64,11 @@ py_library(
     deps = [
         "//augur/core:market_bundle_py",
         "//augur/core:schemas_py",
+        "//augur/model/markets/models:bootstrap_py",
+        "//augur/model/markets/models:dcc_garch_py",
+        "//augur/model/markets/models:var_py",
         "//augur/model/markets/models:vecm_py",
+        "//augur/model/markets/models:wilkie_py",
         "@pypi//pydantic",
     ],
 )
@@ -78,7 +82,11 @@ py_library(
         ":market_provider_config_py",
         "//augur/model/markets:data_py",
         "//augur/model/markets:registry_py",
+        "//augur/model/markets/models:bootstrap_py",
+        "//augur/model/markets/models:dcc_garch_py",
+        "//augur/model/markets/models:var_py",
         "//augur/model/markets/models:vecm_py",
+        "//augur/model/markets/models:wilkie_py",
         "@pypi//pyyaml",
     ],
 )
@@ -90,8 +98,9 @@ py_binary(
 )
 
 py_test(
-    name = "vecm_round_trip_test",
-    srcs = ["vecm_round_trip_test.py"],
+    name = "train_round_trip_test",
+    size = "large",
+    srcs = ["train_round_trip_test.py"],
     deps = [
         ":market_provider_config_py",
         ":train_lib",
@@ -99,6 +108,7 @@ py_test(
         "//augur/core:scenario_set_py",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

@@ -25,12 +25,22 @@ from pathlib import Path
 import yaml
 
 from augur.model.market_config import load_market_config
-from augur.model.market_provider_config import VecmMarketProviderConfig
+from augur.model.market_provider_config import (
+    DccGjrGarchMarketProviderConfig,
+    StationaryBootstrapMarketProviderConfig,
+    Var1GaussianMarketProviderConfig,
+    VecmMarketProviderConfig,
+    WilkieCascadeMarketProviderConfig,
+)
 from augur.model.markets.data import load_evidence
+from augur.model.markets.models.bootstrap import StationaryBootstrap
+from augur.model.markets.models.dcc_garch import DccGjrGarch
+from augur.model.markets.models.var import Var1Gaussian
 from augur.model.markets.models.vecm import VecmModel
+from augur.model.markets.models.wilkie import WilkieCascade
 from augur.model.markets.registry import BY_LABEL
 
-_SUPPORTED_MODEL_LABELS = ("vecm",)
+_SUPPORTED_MODEL_LABELS = ("vecm", "var1_gaussian", "wilkie_cascade", "dcc_gjr_garch", "stationary_bootstrap")
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -45,7 +55,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--model",
         required=True,
         choices=_SUPPORTED_MODEL_LABELS,
-        help="Which market model to train. First-cut supports `vecm`; other macro models will join as they migrate.",
+        help="Which market model to train (vecm, var1_gaussian, wilkie_cascade, dcc_gjr_garch, stationary_bootstrap).",
     )
     parser.add_argument(
         "--out-provider-config",
@@ -75,8 +85,47 @@ def main(argv: list[str] | None = None) -> int:
     model = spec.build()
     model.fit(historical)
 
+    provider_config: (
+        VecmMarketProviderConfig
+        | Var1GaussianMarketProviderConfig
+        | WilkieCascadeMarketProviderConfig
+        | DccGjrGarchMarketProviderConfig
+        | StationaryBootstrapMarketProviderConfig
+    )
     if isinstance(model, VecmModel):
         provider_config = VecmMarketProviderConfig(
+            trained_blob=out_blob,
+            latest_observations=dict(evidence.latest_observations),
+            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
+            location_market_sources=config.location_market_sources,
+        )
+        model.save(provider_config)
+    elif isinstance(model, Var1Gaussian):
+        provider_config = Var1GaussianMarketProviderConfig(
+            trained_blob=out_blob,
+            latest_observations=dict(evidence.latest_observations),
+            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
+            location_market_sources=config.location_market_sources,
+        )
+        model.save(provider_config)
+    elif isinstance(model, WilkieCascade):
+        provider_config = WilkieCascadeMarketProviderConfig(
+            trained_blob=out_blob,
+            latest_observations=dict(evidence.latest_observations),
+            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
+            location_market_sources=config.location_market_sources,
+        )
+        model.save(provider_config)
+    elif isinstance(model, DccGjrGarch):
+        provider_config = DccGjrGarchMarketProviderConfig(
+            trained_blob=out_blob,
+            latest_observations=dict(evidence.latest_observations),
+            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
+            location_market_sources=config.location_market_sources,
+        )
+        model.save(provider_config)
+    elif isinstance(model, StationaryBootstrap):
+        provider_config = StationaryBootstrapMarketProviderConfig(
             trained_blob=out_blob,
             latest_observations=dict(evidence.latest_observations),
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),

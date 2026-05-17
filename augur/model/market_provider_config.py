@@ -49,7 +49,11 @@ from augur.core.market_bundle import (
     SimpleMarketModelConfig,
 )
 from augur.core.schemas import ApiModel
+from augur.model.markets.models.bootstrap import StationaryBootstrapMarketProviderConfig
+from augur.model.markets.models.dcc_garch import DccGjrGarchMarketProviderConfig
+from augur.model.markets.models.var import Var1GaussianMarketProviderConfig
 from augur.model.markets.models.vecm import VecmMarketProviderConfig
+from augur.model.markets.models.wilkie import WilkieCascadeMarketProviderConfig
 
 
 class NoopMarketProviderConfig(ApiModel):
@@ -81,5 +85,12 @@ class SimpleMarketProviderConfig(ApiModel):
 
 
 MarketProviderConfig = Annotated[
-    NoopMarketProviderConfig | SimpleMarketProviderConfig | VecmMarketProviderConfig, Field(discriminator="type")
+    NoopMarketProviderConfig
+    | SimpleMarketProviderConfig
+    | VecmMarketProviderConfig
+    | Var1GaussianMarketProviderConfig
+    | WilkieCascadeMarketProviderConfig
+    | DccGjrGarchMarketProviderConfig
+    | StationaryBootstrapMarketProviderConfig,
+    Field(discriminator="type"),
 ]

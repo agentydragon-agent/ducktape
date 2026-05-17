@@ -12,9 +12,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
+from pydantic import Field
 
+from augur.core.market_bundle import MarketBundleProvider
+from augur.core.schemas import ApiModel
+from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
+from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets._density import gaussian_logpdf
 from augur.model.markets.scenarios import HistoricalSeries, Scenarios, historical_log_returns
 
@@ -120,6 +127,35 @@ class Var1Gaussian:
             h=h,
         )
 
+    def save(self, descriptor: Var1GaussianMarketProviderConfig) -> None:
+        """Persist post-fit state to the `.npz` archive named by the
+        descriptor's `trained_blob` so the runtime can skip re-fitting at
+        startup. Symmetric to `Var1Gaussian.load(descriptor)`."""
+        np.savez_compressed(
+            descriptor.trained_blob,
+            intercept=self.intercept,
+            coef=self.coef,
+            inv_cov=self.inv_cov,
+            cov_chol=self.cov_chol,
+            cov_log_det=np.array(self.cov_log_det),
+            last_log_return=self.last_log_return,
+            factor_names=np.array(self.factor_names, dtype=object),
+        )
+
+    @staticmethod
+    def load(descriptor: Var1GaussianMarketProviderConfig) -> Var1Gaussian:
+        with np.load(descriptor.trained_blob, allow_pickle=True) as data:
+            factor_names = tuple(str(name) for name in data["factor_names"])
+            model = Var1Gaussian(config=Var1Config())
+            model.intercept = np.asarray(data["intercept"])
+            model.coef = np.asarray(data["coef"])
+            model.inv_cov = np.asarray(data["inv_cov"])
+            model.cov_chol = np.asarray(data["cov_chol"])
+            model.cov_log_det = float(data["cov_log_det"])
+            model.last_log_return = np.asarray(data["last_log_return"])
+            model.factor_names = factor_names
+        return model
+
     def simulate(self, n_paths: int, n_months: int, seed: int) -> Scenarios:
         n_factors = self.intercept.shape[0]
         rng = np.random.default_rng(seed)
@@ -184,3 +220,28 @@ def _var1_horizon_density(
     diff = observed_cumulative - cumulative_mean
     quad = float(diff @ inv_cov @ diff)
     return float(-0.5 * (n_factors * math.log(2 * math.pi) + log_det + quad))
+
+
+class Var1GaussianMarketProviderConfig(ApiModel):
+    """Pre-trained VAR(1) Gaussian provider config — points at the trained-state
+    blob written by `bb run //augur/model:train`. The model is loaded at server
+    startup; no fitting happens on the request path."""
+
+    type: Literal["var1_gaussian"] = "var1_gaussian"
+    trained_blob: Path = Field(description="Absolute path to the .npz produced by Var1Gaussian.save(descriptor).")
+    latest_observations: dict[str, Any] = Field(
+        description="Latest observed market state at the start of the simulation horizon (factor → value)."
+    )
+    current_mortgage30_rate_pct: float
+    location_market_sources: LocationMarketSourcesConfig
+
+    def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
+        model = Var1Gaussian.load(self)
+        return MacroMarketBundleProvider.from_loaded_model(
+            model,
+            latest_observations=self.latest_observations,
+            current_mortgage30_rate_pct=self.current_mortgage30_rate_pct,
+            current_private_equity_price_usd=current_private_equity_price_usd,
+            location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
+            evidence_source_id=str(self.trained_blob),
+        )
