@@ -537,7 +537,6 @@ class SimpleMarketBundleProvider:
         if horizon_months >= 12:
             event_draws = rng.random((rollout_count, horizon_months))
             private_equity_events[:, 1:] = event_draws < (1 / 72)
-        _reject_model_config_overshoot(self.model_config, required_locations=required_keys.location_ids)
         home_by_location = _location_factor_map(
             home_base,
             required_locations=required_keys.location_ids,
@@ -627,8 +626,10 @@ def _location_factor_map(
     `base * (1 + adj/100)^(months/12)`, where `adj` comes from
     `annual_adjustment_pct_by_location[location]` (default 0.0 = unadjusted base).
 
-    `annual_adjustment_pct_by_location` keys must be a subset of `required_locations`
-    — see `_reject_model_config_overshoot` for the enforcement at the provider boundary.
+    Adjustment entries for locations that aren't in `required_locations` are
+    silently ignored — the deployment's `SimpleMarketModelConfig.location_params`
+    legitimately covers every location the deployment knows about, while a given
+    scenario set may reference only a subset.
     """
     horizon_months = base.shape[1] - 1
     months = np.arange(horizon_months + 1, dtype="float64")
@@ -641,19 +642,3 @@ def _location_factor_map(
             adjustment = (1 + adjustment_pct / 100) ** (months / 12)
             paths[location] = base * adjustment[None, :]
     return paths
-
-
-def _reject_model_config_overshoot(
-    model_config: SimpleMarketModelConfig, *, required_locations: frozenset[str]
-) -> None:
-    """A model config that names location ids the scenario set didn't ask for is a
-    bug in the deployment's model config (typo, stale id). Fail loud — silently
-    populating extra bundle keys would mask the mistake.
-    """
-    overshoot = sorted(set(model_config.location_params) - required_locations)
-    if overshoot:
-        raise ValueError(
-            f"SimpleMarketModelConfig.location_params has entries for locations "
-            f"not declared by the scenario set: {overshoot}. Either remove them from the "
-            "model config or add scenarios that reference those locations."
-        )
