@@ -195,17 +195,15 @@ where:
 Closure rules build a "must-co-locate-to-be-a-valid-proposal"
 digraph `H` on this factorize graph:
 
-- `EagerUse` or `LazyUse` u → v on binding b:
-  - If b is entry-exported under the current claim state (auto-
-    exported by some YAML, or in `pre_existing_entry_exports`): no
-    `H` edge. The materializer can resolve the import through
-    entry; co-location isn't required.
-  - Otherwise (b is currently in the residual catchall and not entry-
-    exported): `H` edge `u → v`. This is the **mode-(a)-specific
-    emit-block force**: in mode (b) every binding is in some real
-    module that exports it, so emit-block can't occur. In mode (a),
-    proposing to peel u out without v would create an unresolvable
-    import.
+- `EagerUse` or `LazyUse` u → v on binding b: no `H` edge for
+  import-resolvability alone. The materializer's
+  `auto_grown_residual_exports` pass surfaces `b` from entry
+  on demand, so a peel that imports `b` from entry is always
+  valid by construction — see DESIGN.md "Emit-side
+  responsibilities". `EagerUse` edges still contribute via the
+  realizability quotient check (a constraining at-init read between
+  two destinations forms an unrealizable SCC iff the modules cycle
+  through it). `LazyUse` is never constraining.
 - `EagerRebind` / `LazyRebind`: bidirectional in `H`. (LazyRebind
   gate.)
 - `Sequenced`: bidirectional in `H`. (Source-order constraint.)
@@ -247,11 +245,12 @@ residual:
   flow signal.
 - `validate_schedule` checks every factor under the same rules; no
   separate path for `ResidualEntry`.
-- `peel_emit_blocked_residual_bindings` becomes
-  `peel_emit_blocked_bindings` over any candidate cell — it doesn't
-  need to know which destination is "residual".
 - The `include_residual: bool` option on the fixture / pipeline
   config goes away; mode (a) vs mode (b) replaces it.
+
+(The previous "predicting which residual bindings are exportable" gate
+is gone — the materializer's auto-grow pass is unconditional and
+makes the prediction unnecessary.)
 
 The `ModuleId::ResidualEntry` enum variant is the only thing that
 stays distinguishable, because it identifies a specific path

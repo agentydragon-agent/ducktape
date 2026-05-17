@@ -193,7 +193,6 @@ struct FactorizeIndex {
     unit_by_owner: Vec<usize>,
     owners_by_unit: Vec<Vec<OwnerId>>,
     bindings_by_owner: HashMap<OwnerId, Vec<BindingName>>,
-    provider_by_binding: HashMap<BindingName, OwnerId>,
 }
 
 impl FactorizeIndex {
@@ -211,7 +210,6 @@ impl FactorizeIndex {
                 members
             })
             .collect();
-        let mut provider_by_binding = HashMap::<BindingName, OwnerId>::new();
         let bindings_by_owner: HashMap<OwnerId, Vec<BindingName>> = schedule
             .owner_graph
             .iter_nodes()
@@ -221,9 +219,6 @@ impl FactorizeIndex {
                     .iter()
                     .map(|bid| schedule.binding_name(*bid).clone())
                     .collect();
-                for name in &names {
-                    provider_by_binding.entry(name.clone()).or_insert(node.id);
-                }
                 (node.id, names)
             })
             .collect();
@@ -231,7 +226,6 @@ impl FactorizeIndex {
             unit_by_owner,
             owners_by_unit,
             bindings_by_owner,
-            provider_by_binding,
         }
     }
 }
@@ -373,17 +367,6 @@ fn close_frontier(
                     }
                 }
             }
-            PeelCandidateStatus::BlockedEmitResolvability => {
-                for binding in &verdict.emit_blocked_residual_bindings {
-                    let Some(&provider) = index.provider_by_binding.get(binding) else {
-                        conflict = true;
-                        continue;
-                    };
-                    if !add_repair_owner(schedule, provider, &mut owners, &mut extension_target) {
-                        conflict = true;
-                    }
-                }
-            }
             PeelCandidateStatus::BlockedCycle => {
                 for &edge_idx in &verdict.constraining_owner_edge_indices {
                     let Some(edge) = schedule.owner_graph.edges.get(edge_idx) else {
@@ -495,7 +478,6 @@ fn empty_blocked_cycle(owners: &BTreeSet<OwnerId>) -> PeelCandidateEvaluation {
         members: Vec::new(),
         constraining_owner_edge_indices: BTreeSet::new(),
         residual_dependency_blocker_owner_ids: Vec::new(),
-        emit_blocked_residual_bindings: Vec::new(),
     }
 }
 
@@ -503,7 +485,6 @@ fn certified_verdict(mut verdict: PeelCandidateEvaluation) -> PeelCandidateEvalu
     verdict.status = PeelCandidateStatus::PeelableNow;
     verdict.constraining_owner_edge_indices.clear();
     verdict.residual_dependency_blocker_owner_ids.clear();
-    verdict.emit_blocked_residual_bindings.clear();
     verdict
 }
 
@@ -739,7 +720,6 @@ fn make_cell(
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         status: verdict.status,
         landable_today,
-        emit_blocked_residual_bindings: verdict.emit_blocked_residual_bindings.clone(),
         cycle_blocker_owner_ids,
         active_modules_referenced,
         extends_module_id,
@@ -848,7 +828,6 @@ fn make_diagnostic(
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         status: verdict.status,
         reason,
-        emit_blocked_residual_bindings: verdict.emit_blocked_residual_bindings.clone(),
         cycle_blocker_owner_ids,
         active_modules_referenced,
         extends_module_id: extension_target.map(module_key),

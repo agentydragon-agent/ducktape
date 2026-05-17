@@ -284,29 +284,31 @@ export { A, B, C, Existing };
     }
 }
 
-// E2E fixture for the post-peelability emit-resolvability
-// projection added on top of `peelability.rs`.
+// Post-redesign expectation for the "lazy read of an unexported
+// residual binding" shape. The old code refused to propose this
+// peel at the proposer stage (`status ==
+// blocked_emit_resolvability`); the new design lets the proposer
+// propose freely and grows entry's export list on emit so the
+// generated JS resolves. The emitter is the single source of truth
+// for what entry exports; the proposer never models the export
+// policy.
 //
-// `materialize_logical_modules` rejects a peel that moves a body
-// whose reads target residual entry binding(s) that aren't on
-// entry's export list — see the bail at
-// "moved module references residual entry binding(s) … not exported
-// by entry". Before this filter, peelability didn't surface that
-// constraint: a candidate could pass cycle/realizability checks and
-// still get rejected when materialization actually ran.
+// `Helper` is a `function` whose body lazily reads the residual
+// `Internal` const. `Internal` is NOT in the source-level
+// `export {}` set. After the fix:
 //
-// The fixture below is the canonical synthetic shape. `Helper` is a
-// `function` whose body lazily reads the residual `Internal` const.
-// `Internal` is NOT in the source's `export {}` set, so peeling
-// `Helper` out of entry would produce a moved module that imports
-// `Internal` from entry — but entry doesn't export it. The
-// `evaluated_owner_sets[]` entry for the singleton {Helper}
-// candidate must therefore have `status ==
-// blocked_emit_resolvability` with `emit_blocked_residual_bindings`
-// listing `Internal`, and `Helper` must NOT appear in
-// `minimal_peel_sets[]`.
+// - `Helper` shows up as `PeelableNow` on the singleton horizon
+//   (`Direct`).
+// - `minimal_peel_sets[]` contains a `SingleOwner` row for
+//   `Helper`.
+// - The emitted bundle runs: entry auto-exports `Internal`, and
+//   `Helper`'s moved body imports `Internal` from entry.
+//
+// See DESIGN.md "Valid peels and atomic modules" — residual entry
+// bindings are importable because the emitter auto-exports them on
+// demand.
 #[test]
-fn unexported_residual_read_marks_candidate_blocked_emit_resolvability() {
+fn unexported_residual_read_is_peelable_via_auto_grown_entry_export() {
     // `Helper` lazy-reads `Internal`, which stays in residual but is
     // not in the source-level `export { … }` list. `Existing` exists
     // so the chunk has at least one already-extracted module — the
@@ -316,13 +318,14 @@ fn unexported_residual_read_marks_candidate_blocked_emit_resolvability() {
 const Internal = "internal";
 const Existing = "existing";
 console.log(Existing);
+console.log(Helper());
 export { Existing };
 "#,
         vec![logical_module("existing", &[Member::new("Existing")])],
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    assert_entry_output(&fixture, "existing\n");
+    assert_entry_output(&fixture, "existing\ninternal\n");
 
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
@@ -338,23 +341,16 @@ export { Existing };
 
     assert_eq!(
         helper_candidate.status,
-        PeelCandidateStatus::BlockedEmitResolvability,
-        "{{Helper}} should be flagged blocked_emit_resolvability \
-         (lazy read of unexported residual binding Internal): {peelability:#?}",
-    );
-    assert_eq!(
-        helper_candidate.emit_blocked_residual_bindings,
-        vec!["Internal".to_string()],
-        "emit_blocked_residual_bindings should pinpoint Internal: {helper_candidate:#?}",
+        PeelCandidateStatus::PeelableNow,
+        "{{Helper}} should be PeelableNow — emit-resolvability is the \
+         emitter's job, not the proposer's: {peelability:#?}",
     );
 
-    // The materializer would reject a {Helper} peel — make sure the
-    // peelability projection mirrors that by NOT advertising it as a
-    // minimal peel set.
+    // The minimal peel set list must include the {Helper} singleton.
     assert!(
-        !peelability.minimal_peel_sets.iter().any(|candidate| {
+        peelability.minimal_peel_sets.iter().any(|candidate| {
             candidate.members.len() == 1 && candidate.members[0].binding == "Helper"
         }),
-        "minimal_peel_sets must omit {{Helper}} when emit-resolvability blocks it: {peelability:#?}",
+        "minimal_peel_sets should include {{Helper}}: {peelability:#?}",
     );
 }

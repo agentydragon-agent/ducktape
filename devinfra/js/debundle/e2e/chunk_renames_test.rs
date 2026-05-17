@@ -188,7 +188,18 @@ console.log(run());
 }
 
 #[test]
-fn rejects_private_chunk_renamed_residual_helper_used_by_extracted_module() {
+fn private_chunk_renamed_residual_helper_used_by_extracted_module_auto_grows_entry_export() {
+    // Even when `helper` is NOT in the source-level `export {...}`
+    // list, the materializer auto-grows entry's export surface so
+    // `mod_run`'s body can `import { helper as readableHelper }` from
+    // entry. The chunk_renames mapping is honored: entry's local name
+    // is `readableHelper`, exported as `helper`.
+    //
+    // Pre-redesign behavior was to reject this spec ("not exported by
+    // entry"). DESIGN.md "Valid peels and atomic modules" now says
+    // residual entry bindings are importable because the emitter
+    // auto-exports them on demand; "private to entry" is not a
+    // first-class spec contract.
     let opts = FixtureOpts {
         source: r#"function helper() {
   return "ok";
@@ -213,7 +224,23 @@ export { run };
         extra_files: &[],
     };
 
-    expect_rejection_containing_all(opts, &["mod_run", "helper", "not exported by entry"]);
+    let fixture = run_fixture(opts);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_run.js",
+        &[
+            r#"import { helper as readableHelper } from "../entry.js";"#,
+            "return readableHelper()",
+        ],
+        &["return helper()"],
+    );
+    assert_generated_module_after_entry_script(
+        &fixture.out_root,
+        r#"const { run } = await import("./static/app/modules/mod_run.js");
+console.log(run());
+"#,
+        "ok\n",
+    );
 }
 
 /// Multiple chunk_renames violations should all surface in a single

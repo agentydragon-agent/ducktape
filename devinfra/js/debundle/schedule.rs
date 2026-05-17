@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
@@ -57,31 +57,6 @@ pub struct Schedule {
     /// evaluation order; see DESIGN.md "Lemma 2".
     pub linker_order: Vec<ModuleId>,
     linker_position_by_module: HashMap<ModuleId, usize>,
-    /// Entry's full post-Owned-resolution export set: the
-    /// pre-existing source exports passed into
-    /// [`Schedule::with_pre_existing_entry_exports`] union the
-    /// bindings of every owner already assigned to a logical
-    /// module. Computed once when the setter runs and reused
-    /// across the ≥1500 peelability candidate evaluations per
-    /// chunk that would otherwise rebuild it from scratch.
-    /// `None` when the schedule was built without AST analysis
-    /// (the test-helper case); peelability's emit-resolvability
-    /// projection then silently skips the check.
-    ///
-    /// Consumed by the emit-resolvability projection in
-    /// `peelability.rs` and the matching predicate in
-    /// `materialize_logical_modules` (SSOT — see
-    /// [`crate::graph::peel_emit_blocked_source_destination_bindings`]).
-    entry_exported_binding_names_cache: Option<HashSet<BindingName>>,
-    /// The pre-existing entry exports as passed in to
-    /// [`Self::with_pre_existing_entry_exports`], stored verbatim
-    /// (no folding in of moved-owner bindings). Used by
-    /// [`Self::pre_existing_entry_exports`] so callers reconstructing
-    /// "what does the upstream chunk source export" don't lose a
-    /// binding that's both in the upstream export list *and* owned
-    /// by a logical module (subtracting Owned bindings from
-    /// `entry_exported_binding_names_cache` would drop those).
-    pre_existing_entry_exports_input: BTreeSet<BindingName>,
     /// Pre-computed `binding → exported name` map. Built once per
     /// chunk in `Schedule::build` so peelability's per-candidate
     /// `binding_reports` calls do a single hash lookup instead of
@@ -171,63 +146,8 @@ impl Schedule {
             owner_report_ids_by_binding,
             linker_order,
             linker_position_by_module,
-            entry_exported_binding_names_cache: None,
-            pre_existing_entry_exports_input: BTreeSet::new(),
             export_name_by_binding,
         }
-    }
-
-    /// Attach the set of binding names that the source chunk's entry
-    /// already exports. Folds them together with the names of every
-    /// owner already assigned to a logical module into the cached
-    /// post-Owned export set queried by the emit-resolvability
-    /// projection in [`crate::graph::peel_emit_blocked_source_destination_bindings`].
-    pub fn with_pre_existing_entry_exports(mut self, exports: BTreeSet<BindingName>) -> Self {
-        let mut cache: HashSet<BindingName> = exports.iter().cloned().collect();
-        for (name, kind) in &self.bindings {
-            // Every owner is a logical module now (the residual is
-            // just a logical module flagged `residual: true`); include
-            // all owned bindings so peelability's emit-resolvability
-            // projection sees the full moved-binding export surface.
-            if let BindingKind::Owned { .. } = kind {
-                cache.insert(name.clone());
-            }
-        }
-        self.pre_existing_entry_exports_input = exports;
-        self.entry_exported_binding_names_cache = Some(cache);
-        self
-    }
-
-    /// Set of binding names that entry exports under the schedule's
-    /// current binding assignment — pre-existing source exports plus
-    /// any binding that's already owned by a logical module
-    /// (each gets an auto-added `export { name }` from entry; see
-    /// `entry_exports_for_moved_bindings` in `materialize_logical_modules`).
-    ///
-    /// Returns `None` when AST analysis didn't populate the
-    /// pre-existing set; peelability treats that as "skip the
-    /// emit-resolvability projection" so non-pipeline test fixtures
-    /// don't have to fake an export list.
-    ///
-    /// Cached on schedule construction; the underlying set is
-    /// stable for the schedule's lifetime, so callers borrow it.
-    pub fn entry_exported_binding_names(&self) -> Option<&HashSet<BindingName>> {
-        self.entry_exported_binding_names_cache.as_ref()
-    }
-
-    /// Binding names entry exports via upstream source statements
-    /// (verbatim what was passed to
-    /// [`Self::with_pre_existing_entry_exports`]). Does NOT include
-    /// the auto-added bindings of currently-moved logical-module
-    /// owners — downstream planners (factorizer, etc.) that need to
-    /// predict the post-promotion export set add their own
-    /// hypothesized moved bindings on top.
-    ///
-    /// Empty `BTreeSet` when AST analysis didn't populate the input
-    /// set (the test-helper case); same convention as
-    /// [`Self::entry_exported_binding_names`].
-    pub fn pre_existing_entry_exports(&self) -> &BTreeSet<BindingName> {
-        &self.pre_existing_entry_exports_input
     }
 
     /// Pre-computed export name for a chunk binding, falling back

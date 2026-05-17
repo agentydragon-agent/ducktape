@@ -72,7 +72,15 @@ fn annotated_effect_module(
 }
 
 #[test]
-fn analyzer_factorizer_emits_only_certified_private_lazy_prerequisite_closure() {
+fn analyzer_factorizer_peels_lazy_consumer_alone_under_emit_auto_grow() {
+    // Pre-redesign: a `function consumer() { return dep; }` body's
+    // lazy read of `dep` (residual + unexported) made `consumer`
+    // `blocked_emit_resolvability`, so the factorizer combined the
+    // pair `{dep, consumer}` into one cell to "internalize the
+    // prerequisite". DESIGN.md "Emit-side responsibilities" now
+    // owns that: emit auto-grows entry's exports, so `consumer` is
+    // independently peelable. The factorizer proposes
+    // `{consumer}` alone, and `dep` stays in residual entry.
     let chunk_source = r#"const anchor = "anchor";
 const dep = "secret";
 function consumer() { return dep; }
@@ -103,15 +111,8 @@ export { anchor, consumer };
             .factorize
             .cells
             .iter()
-            .any(|cell| cell_has_bindings(cell, &["dep", "consumer"])),
-        "private lazy prerequisite should be internalized before emitting: {:#?}",
-        graph.factorize,
-    );
-    assert!(
-        !graph.factorize.cells.iter().any(|cell| {
-            cell.binding_ids == vec!["consumer".to_string()] && !cell.landable_today
-        }),
-        "invalid singleton consumer must be diagnostic-only, not a proposal: {:#?}",
+            .any(|cell| cell.binding_ids == vec!["consumer".to_string()] && cell.landable_today),
+        "lazy consumer should be peelable on its own: {:#?}",
         graph.factorize,
     );
 }
@@ -309,12 +310,15 @@ export { a, b, c };
 }
 
 #[test]
-fn factorizer_combines_emit_blocked_cell_with_blocker_binding() {
+fn factorizer_proposes_lazy_only_consumer_alone_via_emit_auto_grown_exports() {
     // `dep` is residual and NOT in entry's `export { ... }` list.
-    // `consumer` lazily reads `dep` (inside its body). Promoting
-    // consumer's analyzer cell alone would be rejected, but
-    // promoting {dep, consumer} together is valid and small enough
-    // to propose directly.
+    // `consumer` lazily reads `dep` (inside its body). Under the old
+    // emit-resolvability proposer gate this peel was refused; the
+    // factorizer combined `consumer` with `dep` into one cell as a
+    // workaround. The new design (DESIGN.md "Valid peels and atomic
+    // modules", importability clause) makes the emitter grow entry's
+    // export list on demand, so `consumer` is peelable on its own
+    // and the factorizer proposes the smaller `{consumer}` cell.
     //
     // `anchor` exists so the chunk has at least one active logical
     // module (the spec rejects all-residual chunks); `dep` and
@@ -336,34 +340,25 @@ export { anchor, consumer };
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
-    let combined = report
+    let consumer_alone = report
         .proposals
         .iter()
-        .find(|p| {
-            p.binding_ids.contains(&"dep".to_string())
-                && p.binding_ids.contains(&"consumer".to_string())
-        })
-        .expect("factorizer should combine `consumer` with `dep`");
+        .find(|p| p.binding_ids == vec!["consumer".to_string()])
+        .expect("factorizer should propose `{consumer}` as a singleton");
     assert!(
-        combined.landable_today,
-        "combined prerequisite closure must be landable; got {combined:?}",
-    );
-    assert!(
-        combined.emit_blocked_residual_bindings.is_empty(),
-        "internalized blocker should be cleared; got {:?}",
-        combined.emit_blocked_residual_bindings,
+        consumer_alone.landable_today,
+        "singleton consumer cell must be landable; got {consumer_alone:?}",
     );
 }
 
 #[test]
-fn factorizer_combines_blocked_consumer_with_all_landable_prerequisites_when_under_cap() {
-    // `dep_a` and `dep_b` are independently landable leaves. `consumer`
-    // reads both, so promoting `consumer` alone would fail
-    // emit-resolvability. The useful proposal is the whole closure:
-    // {dep_a, dep_b, consumer}. This pins the factorizer behavior we
-    // want for Tana patch queues: do not force lane workers to
-    // discover and hand-assemble every blocked cell's prerequisite
-    // closure when the closure itself is small enough to review.
+fn factorizer_proposes_lazy_consumer_alone_when_multiple_residual_deps_are_unexported() {
+    // `dep_a` and `dep_b` are residual and unexported. `consumer`
+    // reads both lazily (inside its body). Same pattern as the
+    // previous test, but with two prerequisites. With the new
+    // emit-resolvability design, all three of `dep_a`, `dep_b`, and
+    // `consumer` are independently peelable — and the factorizer
+    // proposes them as three singletons rather than one closure.
     let chunk_source = r#"const anchor = "anchor";
 const dep_a = "left";
 const dep_b = "right";
@@ -381,38 +376,15 @@ export { anchor, consumer };
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
-    let combined = report
+    let consumer_alone = report
         .proposals
         .iter()
-        .find(|p| {
-            p.binding_ids.contains(&"dep_a".to_string())
-                && p.binding_ids.contains(&"dep_b".to_string())
-                && p.binding_ids.contains(&"consumer".to_string())
-        })
-        .expect("factorizer should combine the consumer with both prerequisites");
+        .find(|p| p.binding_ids == vec!["consumer".to_string()])
+        .expect("factorizer should propose `{consumer}` as a singleton");
     assert!(
-        combined.landable_today,
-        "combined prerequisite closure must be landable; got {combined:?}",
+        consumer_alone.landable_today,
+        "singleton consumer cell must be landable; got {consumer_alone:?}",
     );
-
-    // The materializer already accepts the same closure when authored
-    // by hand, proving this is a planner limitation rather than a
-    // lowerer/materializer limitation.
-    let promoted_opts = FixtureOpts::new(
-        chunk_source,
-        vec![
-            logical_module("anchors/anchor", &[Member::new("anchor")]),
-            logical_module(
-                "helpers/consumer_closure",
-                &[
-                    Member::new("dep_a"),
-                    Member::new("dep_b"),
-                    Member::new("consumer"),
-                ],
-            ),
-        ],
-    );
-    let _ = run_fixture(promoted_opts);
 }
 
 #[test]
