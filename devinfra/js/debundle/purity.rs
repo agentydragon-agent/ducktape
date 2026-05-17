@@ -24,6 +24,12 @@ use crate::facts::TopLevelItemView;
 pub struct ChunkCodeGraph {
     bindings: BTreeMap<String, ChunkBinding>,
     pure_new_constructors: BTreeSet<String>,
+    /// Per-binding declared-pure member-call set. Looked up by the
+    /// classifier when it sees `<recv>.<prop>(args)` — if `recv` is a
+    /// non-shadowed key here and `<prop>` is in the set, the call is
+    /// admitted as pure with args evaluated normally. Author-trust
+    /// contract; see AGENTS.md "Declared purity".
+    declared_pure_members: BTreeMap<String, BTreeSet<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +125,22 @@ impl ChunkCodeGraph {
         declared_pure: &BTreeSet<String>,
         declared_pure_new: &BTreeSet<String>,
     ) -> Self {
+        Self::build_full(
+            body,
+            shadowed,
+            declared_pure,
+            declared_pure_new,
+            &BTreeMap::new(),
+        )
+    }
+
+    pub(crate) fn build_full(
+        body: &[TopLevelItemView<'_>],
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        declared_pure_new: &BTreeSet<String>,
+        declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
+    ) -> Self {
         let functions = collect_chunk_functions(body);
         let name_to_idx: BTreeMap<&str, usize> = functions
             .iter()
@@ -169,6 +191,7 @@ impl ChunkCodeGraph {
         let mut graph = ChunkCodeGraph {
             bindings,
             pure_new_constructors: declared_pure_new.clone(),
+            declared_pure_members: declared_pure_members.clone(),
         };
         // tarjan_scc emits SCCs in reverse topological order: leaves
         // (sinks — functions that don't call any chunk-top
@@ -248,6 +271,16 @@ impl ChunkCodeGraph {
     pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {
         self.pure_new_constructors.contains(name)
     }
+
+    /// Whether `<recv>.<prop>(args)` is admitted as pure by an author
+    /// `pure_members: [<prop>, …]` annotation on the binding `recv`.
+    /// Args still classified independently — declared purity covers
+    /// the function value, not its arguments.
+    pub(crate) fn is_declared_pure_member(&self, recv: &str, prop: &str) -> bool {
+        self.declared_pure_members
+            .get(recv)
+            .is_some_and(|props| props.contains(prop))
+    }
 }
 
 /// One author-declared `purity: pure` hint the analyzer determines
@@ -275,6 +308,28 @@ pub enum RedundantPurityReason {
     /// binding isn't called as `binding(...)` in any pure-relevant
     /// way that the override would gate.
     InferredPlainDataBinding,
+}
+
+/// One redundant `pure_members: [<prop>]` entry — the
+/// `<binding>.<prop>(args)` call would already classify pure
+/// without the spec hint (e.g. the receiver is `Array` and the
+/// property is `isArray`, already covered by `PURE_STATIC_CALLS`).
+/// Surfaced so spec authors can prune the redundant entry.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RedundantPureMemberHint {
+    pub binding_name: String,
+    pub property: String,
+    pub reason: RedundantPureMemberReason,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RedundantPureMemberReason {
+    /// `(<binding>, <prop>)` is already in `PURE_STATIC_CALLS` AND
+    /// `<binding>` is a whitelist receiver name (e.g. `Array`,
+    /// `Number`) — the call classifies pure on its own with no
+    /// `pure_members` annotation. The hint is a no-op.
+    WhitelistedStaticCall,
 }
 
 /// For each name in `declared_pure`, ask "would the analyzer infer
@@ -328,6 +383,54 @@ pub(crate) fn detect_redundant_purity_hints(
                 binding_name: name.clone(),
                 reason,
             });
+        }
+    }
+    out
+}
+
+/// Walk `declared_pure_members` and flag entries the analyzer would
+/// classify pure without the hint. Currently the only auto-pure path
+/// for member calls is the `PURE_STATIC_CALLS` whitelist for
+/// `(WHITELIST_RECEIVERS, prop)` pairs — so an entry like
+/// `pure_members: [isArray]` on a binding named `Array` is a no-op
+/// (`Array.isArray(...)` is already in `PURE_STATIC_CALLS`).
+///
+/// The `PURE_OBJECT_CALLS_ON_PLAIN_DATA` admission rule has
+/// per-callsite argument-shape gates — without inspecting every
+/// callsite for `<binding>.<prop>(...)` arg shapes, we can't claim
+/// the spec hint is a no-op (the hint covers ALL arg shapes, while
+/// the whitelist only covers plain-data args). To stay sound under
+/// the "report only confirmed-redundant" contract, we don't flag
+/// `pure_members: [entries|keys|values|freeze|fromEntries]` on
+/// `Object` here. Spec authors can drop them manually once they've
+/// verified every callsite uses a plain-data arg.
+pub(crate) fn detect_redundant_pure_member_hints(
+    declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
+) -> Vec<RedundantPureMemberHint> {
+    let mut out = Vec::new();
+    for (binding, props) in declared_pure_members {
+        // Only whitelist-receiver bindings can ride on
+        // `PURE_STATIC_CALLS`. A user-named binding (e.g. a vendor
+        // namespace `b`) doesn't reach the whitelist regardless of
+        // shadowing — so the hint is load-bearing there.
+        let recv = WHITELIST_RECEIVERS
+            .iter()
+            .copied()
+            .find(|r| *r == binding.as_str());
+        let Some(recv) = recv else {
+            continue;
+        };
+        for prop in props {
+            if PURE_STATIC_CALLS
+                .iter()
+                .any(|(r, p)| *r == recv && *p == prop.as_str())
+            {
+                out.push(RedundantPureMemberHint {
+                    binding_name: binding.clone(),
+                    property: prop.clone(),
+                    reason: RedundantPureMemberReason::WhitelistedStaticCall,
+                });
+            }
         }
     }
     out
@@ -1558,6 +1661,92 @@ const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
     ("Object", "hasOwn"),
 ];
 
+/// Static `Object` methods that are Pure when called with a single
+/// argument that is structurally a fresh plain-data object/array
+/// literal (no accessors / methods / `__proto__` / computed keys /
+/// spread of non-plain-data sources) OR a chunk-top binding that has
+/// admitted as `ChunkBinding::PlainData` (whose plain-data shape is
+/// enforced syntactically by `collect_plain_data_bindings` and whose
+/// post-init accessor-installation is rejected by
+/// `PlainDataWriteScanner`).
+///
+/// The contract is stricter than `PURE_STATIC_CALLS` because every
+/// member here either invokes `[[Get]]` on own keys (which fires user
+/// getters / Proxy traps on a general argument) or mutates descriptor
+/// state (`freeze`). Restricting the argument shape to a fresh plain-
+/// data receiver — verified syntactically at the call site — closes
+/// both holes: no own-key access can fire a user accessor (none
+/// exist), and the mutation in `freeze`'s case targets a value that
+/// is not aliased through any user-observable channel before the
+/// call.
+///
+/// Soundness contract per entry:
+///
+/// * `Object.keys(O)` — ECMA-262 §20.1.2.17 calls `ToObject(O)`
+///   (no coercion on an object), then `EnumerableOwnPropertyNames(O,
+///   "key")`. The latter calls `[[OwnPropertyKeys]]` (for an
+///   ordinary plain object: returns the integer-index keys then
+///   string keys in insertion order, no user code) and per-key
+///   `[[GetOwnProperty]]` to check `[[Enumerable]]` — also a
+///   structural read with no user code on a fresh plain literal /
+///   PlainData binding.
+/// * `Object.values(O)` / `Object.entries(O)` — same as `keys` but
+///   additionally call `[[Get]]` on each own key. For an ordinary
+///   plain-data receiver every own key resolves to a data property
+///   ($\Rightarrow$ no accessor fires). PlainData receivers carry
+///   the same guarantee by the chunk-wide write scan
+///   (`PlainDataWriteScanner` rejects any
+///   `Object.defineProperty(X, …)` /
+///   `Object.setPrototypeOf(X, …)` that could install an accessor
+///   post-init).
+/// * `Object.freeze(O)` — ECMA-262 §20.1.2.6 calls
+///   `SetIntegrityLevel(O, "frozen")` which sets `[[Extensible]]`
+///   to false and rewrites each own property descriptor to non-
+///   configurable (and non-writable for data properties). No
+///   `[[Get]]` is performed, no user code fires. The mutation is
+///   on the just-allocated literal (for the literal form) or on a
+///   binding whose only producer/consumer is the chunk being
+///   debundled (for the PlainData form), so it cannot perturb
+///   user-observable state outside the call.
+/// * `Object.fromEntries(I)` — ECMA-262 §20.1.2.7 invokes
+///   `I[@@iterator]()`. For a fresh `Array` literal with no spread,
+///   that resolves to the built-in Array iterator, which `[[Get]]`s
+///   indices `0..length` (own data properties on a fresh array,
+///   no user code) and stops. Each yielded entry must itself be a
+///   2-element Array literal whose [0]/[1] reads are own data
+///   properties (gated by `is_fresh_entry_array_for_from_entries`).
+///   Both gates together rule out the
+///   "non-iterable argument throws TypeError" path that breaks
+///   purity for arbitrary arg shapes (the throw is observable). For
+///   a PlainData Object binding the call would throw, so PlainData
+///   shapes are admitted only for the non-fromEntries methods.
+///
+/// Out of scope (not admitted here; flagged for follow-up review):
+///
+/// * `Object.assign(target, src)` — mutates `target` AND calls
+///   `[[OwnPropertyKeys]]`/`[[Get]]` on `src`. The target-mutation
+///   half rules out the literal-arg shortcut: even with two literal
+///   args, `Object.assign({}, …)` returns the first arg mutated,
+///   which is observable only if the result is captured — but the
+///   mutation itself is invisible without the capture, so this is
+///   safely pure-of-result. Skipped here to keep the rule tight;
+///   the `assign` path needs its own argument-count + result-shape
+///   analysis.
+/// * `Object.getOwnPropertyNames(O)` / `getPrototypeOf(O)` /
+///   `getOwnPropertyDescriptor(O, k)` — same shape as `keys` but
+///   produces a richer return value. Could ride on the same gate
+///   in a follow-up; out for v1 to minimize the audit surface.
+/// * `Array.from(I[, mapFn])` — sound only when `mapFn` is absent
+///   (a `mapFn` invokes user code per element). Skipped here to
+///   avoid the per-call argument-count gate.
+const PURE_OBJECT_CALLS_ON_PLAIN_DATA: &[(&str, &str)] = &[
+    ("Object", "keys"),
+    ("Object", "values"),
+    ("Object", "entries"),
+    ("Object", "freeze"),
+    ("Object", "fromEntries"),
+];
+
 /// Receiver / global-callable names whose whitelist firing depends
 /// on the chunk not having shadowed them at top level.
 /// `analyze_chunk` populates the shadowed-globals set, and
@@ -1590,14 +1779,16 @@ pub(crate) const WHITELIST_RECEIVERS: &[&str] =
 //     fresh array does not fire user code; the open question is
 //     just "could a non-primitive arg do anything observable",
 //     which a primitive-only gate avoids.
-//   - `Object.{keys, values, entries, fromEntries, freeze,
-//     getOwnPropertyNames, getOwnPropertyDescriptor, isFrozen,
-//     hasOwn, assign}` — these *do* observe user callbacks
-//     (getter on `[[Get]]`, ownKeys/getOwnPropertyDescriptor
-//     traps on `Proxy`, mutation), so they remain UNSAFE for
-//     general args. They become Pure only if the receiver is
-//     itself a fresh ordinary-object literal with no accessors —
-//     a separate, stricter analysis.
+//   - `Object.{keys, values, entries, fromEntries, freeze}` on
+//     a fresh plain-data literal / `PlainData` binding —
+//     implemented via `PURE_OBJECT_CALLS_ON_PLAIN_DATA` with a
+//     syntactic argument-shape gate (no accessors / methods /
+//     `__proto__` / computed keys / spread of non-plain sources).
+//     `getOwnPropertyNames`, `getOwnPropertyDescriptor`,
+//     `getPrototypeOf`, `isFrozen`, `hasOwn`, `assign` — the
+//     general-arg form still observes user callbacks and stays
+//     UNSAFE; the plain-data argument-shape gate could extend to
+//     them once a follow-up audits each member's ECMA-262 path.
 //
 // Adding any of these requires (a) a Purity::Primitive variant
 // (or a side analysis that classifies an Expr as
@@ -1765,6 +1956,33 @@ fn classify_fresh_array_spread_source_purity(
         ),
         _ => None,
     }
+}
+
+/// Borrow the `(recv_ident_sym, prop_sym)` pair for a static-ident
+/// member access spelled as either `recv.prop` (`Expr::Member`) or
+/// `recv?.prop` (`Expr::OptChain { base: OptChainBase::Member }`).
+/// Returns `None` for any other shape (chained member access,
+/// computed access, non-Ident receivers, private names, OptCall
+/// bases). The returned references borrow from the AST node and
+/// outlive only the surrounding match — short-lived by design,
+/// because the `pure_members` admission only needs the strings to
+/// look up the per-binding declared-pure set.
+fn static_member_obj_prop(expr: &Expr) -> Option<(&str, &str)> {
+    let member = match expr {
+        Expr::Member(member) => member,
+        Expr::OptChain(opt) => match opt.base.as_ref() {
+            OptChainBase::Member(member) => member,
+            OptChainBase::Call(_) => return None,
+        },
+        _ => return None,
+    };
+    let Expr::Ident(recv) = member.obj.as_ref() else {
+        return None;
+    };
+    let MemberProp::Ident(prop) = &member.prop else {
+        return None;
+    };
+    Some((recv.sym.as_ref(), prop.sym.as_ref()))
 }
 
 /// `(receiver_ident, prop_name)` for `Receiver.prop` where
@@ -2149,6 +2367,24 @@ fn classify_callee_call(
     {
         return all_args_pure(args, shadowed, declared_pure, graph);
     }
+    // Author-declared pure member call: a binding whose spec member
+    // carries `pure_members: [<prop>, …]`. Admits
+    // `<binding>.<prop>(args)` as pure with args still classified
+    // independently. Static identifier-property only — computed
+    // access (`<binding>[expr](...)`) and private fields fall back
+    // to the regular classifier path. Both the call-then-opt form
+    // (`b?.forwardRef(args)`, callee = `Expr::OptChain(Member)`)
+    // and the opt-call form (`b.forwardRef?.(args)`, callee =
+    // `Expr::Member`) qualify under the same admission rule via
+    // `static_member_obj_prop`. As with `purity: pure` on a
+    // direct-Ident call, the annotation overrides shadowing — the
+    // spec author asserts THIS bound value is pure regardless of
+    // where it came from. See AGENTS.md "Declared purity".
+    if let Some((recv, prop)) = static_member_obj_prop(callee_expr)
+        && graph.is_declared_pure_member(recv, prop)
+    {
+        return all_args_pure(args, shadowed, declared_pure, graph);
+    }
     // Chunk-local function declaration: consult the per-chunk
     // function-body purity cache. `Pure` callee + Pure args → Pure;
     // non-Pure callee inherits its reasons (so the chain points
@@ -2165,6 +2401,24 @@ fn classify_callee_call(
         && PURE_STATIC_CALLS.contains(&(recv, prop))
     {
         return all_args_pure(args, shadowed, declared_pure, graph);
+    }
+    // `Object.{entries,keys,values,freeze}(<plain-data arg>)` /
+    // `Object.fromEntries(<entry-array literal>)` — admitted when
+    // the argument is structurally a plain ordinary literal (no
+    // accessors / methods / `__proto__` / computed keys / spread)
+    // OR a chunk-top `PlainData` binding whose accessor-free shape
+    // is enforced by `collect_plain_data_bindings` /
+    // `PlainDataWriteScanner`. See `PURE_OBJECT_CALLS_ON_PLAIN_DATA`
+    // for the per-entry soundness argument.
+    if let Expr::Member(member) = callee_expr
+        && let Some((recv, prop)) = static_member_pair(member)
+        && !shadowed.contains(recv)
+        && PURE_OBJECT_CALLS_ON_PLAIN_DATA.contains(&(recv, prop))
+        && args.len() == 1
+        && args[0].spread.is_none()
+        && is_pure_plain_data_arg_for(prop, &args[0].expr, shadowed, declared_pure, graph)
+    {
+        return Purity::Pure;
     }
     // `globalCallable(args)` against PURE_GLOBAL_CALLS.
     if let Expr::Ident(ident) = callee_expr
@@ -2215,6 +2469,100 @@ fn callee_summary(callee_expr: &Expr) -> Option<String> {
         },
         _ => None,
     }
+}
+
+/// Whether `arg` is a sound argument shape for the
+/// `PURE_OBJECT_CALLS_ON_PLAIN_DATA` admission rule at the given
+/// `Object.<prop>` callsite. Two admissible shapes:
+///
+/// * **Fresh plain-data literal.** An `Expr::Object` with only
+///   `Prop::KeyValue` / `Prop::Shorthand` (no `__proto__`, computed
+///   keys, methods, getters, setters, or `Prop::Assign`), or an
+///   `Expr::Array` (literal). The literal itself must classify
+///   pure — that catches impure value sub-expressions and spreads
+///   of non-plain-data sources (the existing
+///   `classify_array_spread_source` gate). For `Object.fromEntries`
+///   the Array form is required AND each element must itself be a
+///   2-element Array literal with pure values, paralleling the
+///   `new Map([[k, v], …])` gate.
+///
+/// * **`PlainData` chunk-top binding.** A bare `Expr::Ident` whose
+///   `name` is registered as `ChunkBinding::PlainData` in the
+///   chunk graph. `collect_plain_data_bindings` only registers
+///   bindings whose initializers pass `is_plain_data_init` (same
+///   plain-data shape predicate) AND whose chunk-wide write scan
+///   ruled out accessor installation post-init. So a PlainData
+///   binding carries the same "no accessor channels at any
+///   program point" invariant as a fresh literal.
+///
+/// Returning `false` falls back to `Unknown` — the soundness-first
+/// default.
+fn is_pure_plain_data_arg_for(
+    prop: &str,
+    arg: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> bool {
+    let arg = strip_parens(arg);
+    if prop == "fromEntries" {
+        // `Object.fromEntries(I)` iterates I. Restrict I to a fresh
+        // Array literal whose every element is a 2-element Array
+        // literal with pure values — same admission shape as
+        // `new Map([[k, v], …])` (PURE_BUILTIN_NEW_ARRAY_ITERABLE).
+        return matches!(arg, Expr::Array(_))
+            && is_fresh_entry_array_for_from_entries(arg, shadowed, declared_pure, graph);
+    }
+    match arg {
+        // PlainData chunk-top binding read: provably plain-data
+        // shape, no accessor channels anywhere in the chunk.
+        Expr::Ident(ident) => graph.is_plain_data(ident.sym.as_ref()),
+        // Fresh object literal with no accessor channels.
+        Expr::Object(obj) => {
+            obj.props.iter().all(is_plain_data_prop)
+                && classify_expr_purity(arg, shadowed, declared_pure, graph).is_pure()
+        }
+        // Fresh array literal; element purity (including spread
+        // sources) is handled by the standard literal classifier.
+        Expr::Array(_) => classify_expr_purity(arg, shadowed, declared_pure, graph).is_pure(),
+        _ => false,
+    }
+}
+
+/// `Object.fromEntries([[k1, v1], [k2, v2], …])` admission shape.
+/// Every outer element must be a 2-element Array literal whose
+/// element expressions classify pure (key + value). No spreads at
+/// either level: a spread fires the iterable's `[Symbol.iterator]`
+/// which can call user code outside the literal-only domain we
+/// claim sound here. Matches the
+/// `PURE_BUILTIN_NEW_ARRAY_ITERABLE`-style entry test for `Map`.
+fn is_fresh_entry_array_for_from_entries(
+    arg: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> bool {
+    let Expr::Array(outer) = arg else {
+        return false;
+    };
+    outer.elems.iter().all(|elem| {
+        let Some(elem) = elem else {
+            return false;
+        };
+        if elem.spread.is_some() {
+            return false;
+        }
+        let Expr::Array(entry) = strip_parens(&elem.expr) else {
+            return false;
+        };
+        if entry.elems.len() != 2 {
+            return false;
+        }
+        entry.elems.iter().flatten().all(|kv| {
+            kv.spread.is_none()
+                && classify_expr_purity(&kv.expr, shadowed, declared_pure, graph).is_pure()
+        })
+    })
 }
 
 /// True for AST nodes whose evaluation produces a primitive

@@ -2,7 +2,10 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet, HashMap};
 
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
-    use crate::purity::{ChunkCodeGraph, Purity, RedundantPurityReason, classify_expr_purity};
+    use crate::purity::{
+        ChunkCodeGraph, Purity, RedundantPureMemberReason, RedundantPurityReason,
+        classify_expr_purity,
+    };
     use crate::*;
     use swc_common::{FileName, sync::Lrc};
     use swc_ecma_ast::*;
@@ -27,6 +30,7 @@ mod tests {
         AnalysisHints {
             declared_pure: BTreeSet::new(),
             declared_pure_new: BTreeSet::new(),
+            declared_pure_members: BTreeMap::new(),
             known_effects: BTreeMap::from([(
                 name.to_string(),
                 KnownEffect::TypescriptDecorateHelper,
@@ -786,6 +790,34 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)
     }
 
+    fn classify_with_declared_pure_members(
+        prefix: &str,
+        expr_src: &str,
+        binding: &str,
+        props: &[&str],
+    ) -> Purity {
+        let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let declared_pure_members: BTreeMap<String, BTreeSet<String>> = BTreeMap::from([(
+            binding.to_string(),
+            props.iter().map(|s| (*s).to_string()).collect(),
+        )]);
+        let graph = ChunkCodeGraph::build_full(
+            &body,
+            &shadowed,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &declared_pure_members,
+        );
+        let var = match module.body.last().expect("non-empty body") {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+            other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
+        };
+        let init = var.decls[0].init.as_deref().expect("init expected");
+        classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)
+    }
+
     #[test]
     fn classify_literal_kinds_are_pure() {
         assert!((classify("42")).is_pure());
@@ -966,13 +998,21 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn static_function_ref_object_calls_remain_unknown() {
-        // The CALL form of each function-ref entry is unsafe (see
-        // `PURE_STATIC_FUNCTION_REFS` doc-comment for why each is
-        // excluded from `PURE_STATIC_CALLS`). The function-ref
-        // entry only opens the read path; the call must stay
-        // Unknown so the soundness contract holds.
+        // The CALL form of each function-ref entry is unsafe on
+        // arbitrary args (see `PURE_STATIC_FUNCTION_REFS`
+        // doc-comment for why each is excluded from
+        // `PURE_STATIC_CALLS`). The function-ref entry only opens
+        // the read path; the general call must stay Unknown so the
+        // soundness contract holds.
+        //
+        // Note: a subset of these calls (`Object.{keys, values,
+        // entries, freeze, fromEntries}`) becomes Pure when called
+        // with a syntactically plain-data argument — pinned in the
+        // `object_*` tests below. The negatives here use opaque
+        // bindings / non-literal expressions that fall outside that
+        // narrow shape, so they still classify Unknown.
         assert!(!(classify("Object.defineProperty(t, 'k', { value: 1 })")).is_pure());
-        assert!(!(classify("Object.freeze({ x: 1 })")).is_pure());
+        assert!(!(classify("Object.freeze(o)")).is_pure());
         assert!(!(classify("Object.values(o)")).is_pure());
         assert!(!(classify("Object.keys(o)")).is_pure());
     }
@@ -1209,6 +1249,255 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
                 &["PureBox"]
             ))
             .is_pure()
+        );
+    }
+
+    // --- Declared pure members (`pure_members`) ----------------------------
+
+    #[test]
+    fn declared_pure_member_call_classifies_pure() {
+        // A spec member with `pure_members: [forwardRef]` admits
+        // `<binding>.forwardRef(args)` as pure with pure args, even
+        // though the binding's body is unknown to the analyzer
+        // (the vendor namespace shape we target). Args still
+        // classified independently.
+        assert!(
+            (classify_with_declared_pure_members(
+                r#"import * as b from "vendor";"#,
+                "b.forwardRef(function () {})",
+                "b",
+                &["forwardRef"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_member_call_with_impure_arg_inherits_arg_purity() {
+        // The declared-member-purity contract covers the function
+        // value; arg evaluation is independent. An impure arg makes
+        // the whole call Unknown.
+        assert!(
+            !(classify_with_declared_pure_members(
+                r#"import * as b from "vendor"; function io() { globalThis.x = 1; return 1; }"#,
+                "b.forwardRef(io())",
+                "b",
+                &["forwardRef"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_member_does_not_bleed_to_other_props() {
+        // Only the listed property is treated pure. A sibling
+        // property call stays Unknown.
+        assert!(
+            !(classify_with_declared_pure_members(
+                r#"import * as b from "vendor";"#,
+                "b.unknownMethod(1)",
+                "b",
+                &["forwardRef"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_member_does_not_bleed_to_other_bindings() {
+        // Only the listed binding is treated pure. A call on a
+        // different binding stays Unknown.
+        assert!(
+            !(classify_with_declared_pure_members(
+                r#"import * as b from "vendor"; import * as c from "other";"#,
+                "c.forwardRef(1)",
+                "b",
+                &["forwardRef"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_member_computed_access_falls_back_to_unknown() {
+        // Computed access (`b[expr]`) is intentionally not
+        // admitted — `expr` may evaluate to a different property
+        // at runtime, breaking the spec author's trust contract.
+        assert!(
+            !(classify_with_declared_pure_members(
+                r#"import * as b from "vendor"; const key = "forwardRef";"#,
+                "b[key](1)",
+                "b",
+                &["forwardRef"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_member_optional_chain_call_classifies_pure() {
+        // Optional chaining (`b?.forwardRef(...)`) only adds a
+        // null/undefined short-circuit — the call itself still
+        // qualifies under the same admission rule.
+        assert!(
+            (classify_with_declared_pure_members(
+                r#"import * as b from "vendor";"#,
+                "b?.forwardRef(1)",
+                "b",
+                &["forwardRef"]
+            ))
+            .is_pure()
+        );
+    }
+
+    // --- Object.{entries,keys,values,freeze,fromEntries} on plain data -----
+
+    #[test]
+    fn object_keys_on_plain_object_literal_classifies_pure() {
+        // `Object.keys({a: 1, b: 2})` — fresh plain object literal,
+        // no accessors. Spec: §20.1.2.17 calls
+        // `EnumerableOwnPropertyNames(O, "key")` which only does
+        // `[[OwnPropertyKeys]]` and `[[GetOwnProperty]]` — no
+        // user code fires.
+        assert!((classify(r#"Object.keys({a: 1, b: 2})"#)).is_pure());
+    }
+
+    #[test]
+    fn object_values_on_plain_object_literal_classifies_pure() {
+        // `Object.values({a: 1, b: 2})` — same as keys, plus
+        // `[[Get]]` on each own key. Plain literal has only data
+        // properties, so no accessor fires.
+        assert!((classify(r#"Object.values({a: 1, b: 2})"#)).is_pure());
+    }
+
+    #[test]
+    fn object_entries_on_plain_object_literal_classifies_pure() {
+        assert!((classify(r#"Object.entries({a: 1, b: 2})"#)).is_pure());
+    }
+
+    #[test]
+    fn object_freeze_on_plain_object_literal_classifies_pure() {
+        // `Object.freeze({a: 1})` — SetIntegrityLevel does no
+        // `[[Get]]`, only rewrites descriptors. Fresh literal has
+        // no aliases, so mutation is unobservable from outside the
+        // call.
+        assert!((classify(r#"Object.freeze({a: 1})"#)).is_pure());
+    }
+
+    #[test]
+    fn object_keys_on_plain_array_literal_classifies_pure() {
+        // Array literals are ordinary objects with integer-index
+        // own data properties — same admission as object literals.
+        assert!((classify("Object.keys([1, 2, 3])")).is_pure());
+    }
+
+    #[test]
+    fn object_freeze_on_object_with_getter_stays_unknown() {
+        // Getter property would fire `[[Get]]` if subsequently
+        // read — and even for freeze, the rule must not admit
+        // accessor-carrying literals because the syntactic check
+        // is shared with values/entries which do `[[Get]]`. The
+        // strict `is_plain_data_prop` predicate rejects getters.
+        assert!(!(classify(r#"Object.freeze({ get x() { return 1; } })"#)).is_pure());
+    }
+
+    #[test]
+    fn object_values_on_object_with_method_stays_unknown() {
+        // A method property (`{m() {}}`) is also rejected by the
+        // strict shape predicate — admission requires
+        // `Prop::KeyValue` / `Prop::Shorthand` only.
+        assert!(!(classify(r#"Object.values({ m() { return 1; } })"#)).is_pure());
+    }
+
+    #[test]
+    fn object_entries_on_non_literal_arg_stays_unknown() {
+        // Arbitrary expression: could be a Proxy or carry user
+        // accessors. Stay Unknown.
+        assert!(!(classify("Object.entries(somefn())")).is_pure());
+        assert!(!(classify("Object.entries(x)")).is_pure());
+    }
+
+    #[test]
+    fn object_freeze_on_object_with_proto_stays_unknown() {
+        // `{__proto__: …}` in an object literal sets the
+        // prototype — rejected by `is_plain_data_prop`.
+        assert!(!(classify(r#"Object.freeze({ __proto__: x, a: 1 })"#)).is_pure());
+    }
+
+    #[test]
+    fn object_freeze_on_object_with_spread_falls_back_to_unknown() {
+        // Object spread in an object literal is classified
+        // `ObjectSpread`-impure by the existing classifier (it
+        // doesn't track "fresh-literal source ⇒ pure" for spreads),
+        // so a literal carrying a spread doesn't classify pure
+        // overall. The plain-data call rule gates on the overall
+        // literal being pure, so the spread form falls back to
+        // Unknown until the existing spread classifier is
+        // refined.
+        assert!(!(classify(r#"Object.freeze({ ...{a: 1}, b: 2 })"#)).is_pure());
+        assert!(!(classify(r#"Object.freeze({ ...src, b: 2 })"#)).is_pure());
+    }
+
+    #[test]
+    fn object_keys_on_plain_data_binding_classifies_pure() {
+        // `Object.keys(plain)` where `plain` is a chunk-top
+        // `const plain = {…}` bound to a plain-data shape —
+        // accessor-free by `collect_plain_data_bindings` /
+        // `PlainDataWriteScanner` invariants. Same admission as
+        // a fresh literal.
+        let module = parse("const plain = { a: 1 }; const _ = Object.keys(plain);");
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+        let var = match module.body.last().expect("non-empty body") {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+            other => panic!("expected `const _ = …;`, got {other:?}"),
+        };
+        let init = var.decls[0].init.as_deref().expect("init expected");
+        assert!(classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph).is_pure());
+    }
+
+    #[test]
+    fn object_from_entries_on_array_of_pair_literals_classifies_pure() {
+        // `Object.fromEntries([[k, v], …])` — same admission as
+        // `new Map([[k, v], …])`. Array literal of 2-element Array
+        // literals with pure values.
+        assert!((classify(r#"Object.fromEntries([["a", 1], ["b", 2]])"#)).is_pure());
+    }
+
+    #[test]
+    fn object_from_entries_on_object_literal_stays_unknown() {
+        // `Object.fromEntries({...})` is a TypeError at runtime
+        // (objects aren't iterable). Stay Unknown to avoid the
+        // observable throw.
+        assert!(!(classify(r#"Object.fromEntries({a: 1})"#)).is_pure());
+    }
+
+    #[test]
+    fn object_from_entries_on_non_pair_entries_stays_unknown() {
+        // Entries that aren't 2-element Array literals don't
+        // qualify — Map/fromEntries semantics rely on indexed
+        // [0]/[1] reads on the entry being own data properties.
+        assert!(!(classify(r#"Object.fromEntries([{ "0": "k", "1": "v" }])"#)).is_pure());
+        assert!(!(classify(r#"Object.fromEntries([["a", 1, "extra"]])"#)).is_pure());
+    }
+
+    #[test]
+    fn object_calls_with_too_many_args_stay_unknown() {
+        // Single-argument form only. Multi-arg call (e.g. an
+        // accidental third arg) falls back to Unknown rather than
+        // silently admitting.
+        assert!(!(classify(r#"Object.freeze({a: 1}, true)"#)).is_pure());
+        assert!(!(classify(r#"Object.keys({a: 1}, "extra")"#)).is_pure());
+    }
+
+    #[test]
+    fn object_calls_shadowed_receiver_stays_unknown() {
+        // A chunk-top local `Object` re-bind shadows the global
+        // and the rule must fall back to Unknown — the resolved
+        // value isn't the built-in.
+        assert!(
+            !(classify_with_module("const Object = userland;", "Object.entries({a: 1})")).is_pure()
         );
     }
 
@@ -2423,6 +2712,94 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
                 "getEnv".to_string(),
                 RedundantPurityReason::InferredPureFunction
             )]
+        );
+    }
+
+    // --- Redundant `pure_members` hint detection ---------------------------
+
+    fn pure_member_hints(
+        entries: &[(&str, &[&str])],
+    ) -> Vec<(String, String, RedundantPureMemberReason)> {
+        let declared_pure_members: BTreeMap<String, BTreeSet<String>> = entries
+            .iter()
+            .map(|(binding, props)| {
+                (
+                    (*binding).to_string(),
+                    props.iter().map(|s| (*s).to_string()).collect(),
+                )
+            })
+            .collect();
+        // Minimal chunk — the redundant-pure_members check doesn't
+        // consult the chunk body (the redundancy criterion is a
+        // pure function of the hint set + `PURE_STATIC_CALLS`), so
+        // any well-formed module works.
+        let module = parse("const _ = 1;");
+        let hints = AnalysisHints {
+            declared_pure_members,
+            ..AnalysisHints::default()
+        };
+        analyze_chunk(&module, &hints, None, |_| None)
+            .redundant_pure_member_hints
+            .into_iter()
+            .map(|h| (h.binding_name, h.property, h.reason))
+            .collect()
+    }
+
+    #[test]
+    fn redundant_pure_member_on_whitelisted_static_call_is_reported() {
+        // `pure_members: [isArray]` on a binding named `Array` is a
+        // no-op — `Array.isArray(...)` is already in
+        // `PURE_STATIC_CALLS`. Spec author should drop the entry.
+        let got = pure_member_hints(&[("Array", &["isArray"])]);
+        assert_eq!(
+            got,
+            vec![(
+                "Array".to_string(),
+                "isArray".to_string(),
+                RedundantPureMemberReason::WhitelistedStaticCall,
+            )]
+        );
+    }
+
+    #[test]
+    fn load_bearing_pure_member_on_user_binding_is_not_reported() {
+        // `pure_members: [forwardRef]` on a user-named binding `b`
+        // is the load-bearing case — without it, `b.forwardRef(...)`
+        // stays Unknown (no path in the whitelist reaches a user
+        // binding). MUST NOT be flagged.
+        let got = pure_member_hints(&[("b", &["forwardRef"])]);
+        assert!(
+            got.is_empty(),
+            "load-bearing pure_members entry on user binding must not be flagged; got {got:?}",
+        );
+    }
+
+    #[test]
+    fn pure_member_on_object_freeze_is_not_reported() {
+        // `Object.freeze(...)` IS in
+        // `PURE_OBJECT_CALLS_ON_PLAIN_DATA` but NOT in
+        // `PURE_STATIC_CALLS` — the auto-pure path requires the
+        // plain-data arg shape, which the redundant check doesn't
+        // verify per-callsite. MUST NOT be flagged: the spec hint
+        // covers arbitrary arg shapes and is genuinely load-bearing
+        // for non-literal callsites.
+        let got = pure_member_hints(&[("Object", &["freeze", "entries"])]);
+        assert!(
+            got.is_empty(),
+            "pure_members entries shadowed by argument-gated rules must not be flagged; got {got:?}",
+        );
+    }
+
+    #[test]
+    fn pure_member_on_whitelist_receiver_unknown_prop_is_not_reported() {
+        // `pure_members: [unknownProp]` on `Array` — `Array.unknownProp`
+        // is not in `PURE_STATIC_CALLS`, so the hint is load-bearing
+        // (covers a call the analyzer would otherwise classify
+        // Unknown). MUST NOT be flagged.
+        let got = pure_member_hints(&[("Array", &["unknownProp"])]);
+        assert!(
+            got.is_empty(),
+            "pure_members on a non-whitelisted prop must not be flagged; got {got:?}",
         );
     }
 

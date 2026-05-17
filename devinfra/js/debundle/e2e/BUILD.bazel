@@ -53,6 +53,8 @@ rust_library(
         "lowering_test",
         "mini_factors_test",
         "naturalization_test",
+        "object_plain_data_calls_test",
+        "pure_members_test",
         "url_rebase_test",
         "vendor_swap_test",
         "identifier_rename_queue_test",

@@ -47,7 +47,10 @@ pub use ids::{
     LogicalModuleIndex, ModuleId, StatementOrdinal,
 };
 pub use partition::Partition;
-pub use purity::{Purity, PurityReason, PurityRule, RedundantPurityHint, RedundantPurityReason};
+pub use purity::{
+    Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPureMemberReason,
+    RedundantPurityHint, RedundantPurityReason,
+};
 pub use report_schema::{
     BindingReport, EvaluatedPeelCandidateReport, FactorizeCell, FactorizeDiagnostic,
     FactorizeDiagnosticReason, FactorizeOptions, FactorizeReport, ModuleReportRef,
