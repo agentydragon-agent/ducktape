@@ -6,7 +6,9 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - VMs: Talos on Proxmox + Hetzner VPS, configured with OpenTofu
 - Ingress: Cilium Gateway API (Envoy hostNetwork on VPS)
 - CNI: Cilium VXLAN (infrastructure-managed, not GitOps)
-- Secrets: SOPS (age-encrypted in git, decrypted by Flux) + Vault/ESO (runtime)
+- Secrets: SOPS (age-encrypted in git, decrypted by Flux). ESO with the Kubernetes
+  provider mirrors a few secrets cross-namespace. Vault was decommissioned 2026-04-19
+  (see <vault-migration/TODO.md>).
 
 ## Prerequisites
 
@@ -76,9 +78,10 @@ All storage is region-local — no cross-site synchronous replication.
 
 | StorageClass         | Provisioner            | Region    | Notes                                                                    |
 | -------------------- | ---------------------- | --------- | ------------------------------------------------------------------------ |
-| `local-path`         | local-path-provisioner | Any       | CNPG (all databases), Gatus, MinIO, Nix cache                            |
+| `local-path`         | local-path-provisioner | Any       | CNPG (most databases), Gatus, MinIO                                      |
 | `local-path-hetzner` | local-path-provisioner | `hil`     | Loki, Mimir, Alertmanager, Grafana DB                                    |
 | `local-path-proxmox` | local-path-provisioner | `proxmox` | Matrix, ActivityWatch, Scanner, OpenClaw, Google Workspace MCP, Tana MCP |
+| `local-path-ovh`     | local-path-provisioner | `hil-ovh` | SeaweedFS volume servers, attic-db (CNPG OVH-HA)                         |
 | `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning: Firecracker                                      |
 | `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Langfuse, Docker CI, Grocy                |
 | `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API: Ollama, Devbot (migrating off)            |
