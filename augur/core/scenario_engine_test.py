@@ -712,7 +712,10 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
     assert_allclose(result.generic_sp500_sale_tax_usd[:, 0], 42.94)
     assert_allclose(result.checking_floor_action_usd[:, 0], 20_000)
     assert_allclose(result.checking_floor_shortfall_usd[:, 0], 0)
-    assert_allclose(result.cash_usd[:, 0], 25_000 - 42.94)
+    # Sale proceeds land in cash at sale time; tax accrues to month 0 (provenance)
+    # but settles at the last in-horizon month belonging to the tax year.
+    assert_allclose(result.cash_usd[:, 0], 25_000)
+    assert_allclose(result.cash_usd[:, 3], 25_000 - 42.94)
     assert_allclose(result.generic_sp500_value_usd[:, 0], 30_000)
     assert_allclose(result.generic_sp500_sale_usd[:, 1:], 0)
     assert np.all(result.generic_sp500_value_usd[:, 1] > result.generic_sp500_value_usd[:, 0])
@@ -1312,7 +1315,10 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     assert_allclose(result.private_equity_sale_basis_usd[:, 1], 0)
     expected_tax = 175.09
     assert_allclose(result.private_equity_sale_tax_usd[:, 1], expected_tax)
-    assert_allclose(result.cash_usd[:, 1], 30_000 - expected_tax)
+    # Sale proceeds credit cash at month 1; tax accrues to month 1 (provenance)
+    # but settles at the last in-horizon month belonging to the tax year.
+    assert_allclose(result.cash_usd[:, 1], 30_000)
+    assert_allclose(result.cash_usd[:, 3], 30_000 - expected_tax)
     actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
     assert len(actions) == 2
     for action in actions:
@@ -1646,8 +1652,21 @@ def test_required_tax_obligation_can_be_rescued_by_existing_public_stock_sale_po
     assert {
         (decision.source_type, decision.source_account_id, decision.source_account_type) for decision in cash_decisions
     } == {(FundingSourceType.CASH_ACCOUNT, "checking", AccountType.CHECKING)}
-    assert_allclose(result.cash_usd[:, 1], 20_000 - result.total_income_tax_usd[:, 1])
-    assert_allclose(result.generic_sp500_value_usd[:, 1], 80_000)
+    # Tax accrues to the source month (1) but settles at year-end (clipped to the
+    # last in-horizon month belonging to year 0). The funding policy sells SP500
+    # at the settlement month, so cash and SP500 inventory both reflect the
+    # post-settlement state at horizon end (after the SP500 path has grown the
+    # PE-reinvested SP500 between months 1 and 3).
+    expected_year_total_tax = np.sum(result.total_income_tax_usd, axis=1)
+    settlement_month = result.cash_usd.shape[1] - 1
+    assert_allclose(result.cash_usd[:, settlement_month], 20_000 - expected_year_total_tax)
+    # PE sale at month 1 reinvests 100k SP500 (units = 100k / 1.1); at month 3
+    # the funding policy sells 20k of SP500 (units = 20k / 1.3) leaving 75524 units
+    # at multiplier 1.3 = ~98_181.
+    sp500_units_after_pe = 100_000 / 1.1
+    sp500_units_sold = 20_000 / 1.3
+    expected_sp500_value_at_settlement = (sp500_units_after_pe - sp500_units_sold) * 1.3
+    assert_allclose(result.generic_sp500_value_usd[:, settlement_month], expected_sp500_value_at_settlement)
 
 
 def test_required_tax_obligation_funding_uses_policy_program_order() -> None:
@@ -1707,7 +1726,15 @@ def test_required_tax_obligation_funding_uses_policy_program_order() -> None:
     assert all(
         decision.funded_cash_usd > 0 for decision in sale_decisions if decision.policy_id == "large_tax_funding_sale"
     )
-    assert_allclose(result.generic_sp500_value_usd[:, 1], 79_900)
+    # The SP500 funding sales happen at the year-end settlement month (clipped
+    # to horizon end here), not at the PE sale month. PE sale at month 1 reinvests
+    # 100k SP500 (units = 100k / 1.1); at month 3 funding policies sell 100 + 20k
+    # (units = 20_100 / 1.3) leaving 75447 units at multiplier 1.3 = ~98_081.
+    settlement_month = result.generic_sp500_value_usd.shape[1] - 1
+    sp500_units_after_pe = 100_000 / 1.1
+    sp500_units_sold = 20_100 / 1.3
+    expected_sp500_value_at_settlement = (sp500_units_after_pe - sp500_units_sold) * 1.3
+    assert_allclose(result.generic_sp500_value_usd[:, settlement_month], expected_sp500_value_at_settlement)
 
 
 if __name__ == "__main__":
