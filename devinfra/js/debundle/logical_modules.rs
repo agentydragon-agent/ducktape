@@ -14,8 +14,9 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use analysis::{
     AnalysisHints, AtomicUnitConflict, BindingKind, BindingName, DepKind, KnownEffect,
     LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
-    OwnerId, RedundantPurityHint, RedundantPurityReason, Schedule, analyze_chunk,
-    compute_owner_graph_and_units, render_atomic_unit_conflict_summary, render_cycle_summary,
+    OwnerId, RedundantPureMemberReason, RedundantPurityHint, RedundantPurityReason, Schedule,
+    analyze_chunk, compute_owner_graph_and_units, render_atomic_unit_conflict_summary,
+    render_cycle_summary,
 };
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysis, ChunkArtifact, ChunkBundle,
@@ -174,6 +175,13 @@ struct MemberRequest {
     /// their target class/prototype, so the analyzer can model a local
     /// effect edge instead of a global side-effect-order edge.
     effect: MemberEffect,
+    /// Property names on the bound value whose member calls
+    /// (`<binding>.<prop>(args)` / `<binding>?.<prop>(args)`) the author
+    /// asserts have no observable side effects beyond evaluating their
+    /// arguments. Same author-trust contract as `purity: pure` — see
+    /// AGENTS.md "Declared purity". Empty when the spec doesn't carry a
+    /// `pure_members` entry for this member.
+    pure_members: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -678,6 +686,13 @@ fn materialize_logical_chunk(
                     if m.purity == MemberPurity::PureNew {
                         hints.declared_pure_new.insert(m.binding.clone());
                     }
+                    if !m.pure_members.is_empty() {
+                        hints
+                            .declared_pure_members
+                            .entry(m.binding.clone())
+                            .or_default()
+                            .extend(m.pure_members.iter().cloned());
+                    }
                     if let Some(effect) = known_effect_from_member_effect(m.effect) {
                         hints.known_effects.insert(m.binding.clone(), effect);
                     }
@@ -692,6 +707,13 @@ fn materialize_logical_chunk(
                         hints
                             .declared_pure_new
                             .insert(m.selector.binding.name.clone());
+                    }
+                    if !m.pure_members.is_empty() {
+                        hints
+                            .declared_pure_members
+                            .entry(m.selector.binding.name.clone())
+                            .or_default()
+                            .extend(m.pure_members.iter().cloned());
                     }
                     if let Some(effect) = known_effect_from_member_effect(m.effect) {
                         hints
@@ -731,6 +753,19 @@ fn materialize_logical_chunk(
                         "pure (the function body classifies Pure by recursive analysis)",
                     RedundantPurityReason::InferredPlainDataBinding =>
                         "PlainData (chunk-local const/let plain literal with no chunk-wide writes through the binding)",
+                },
+            );
+        }
+        for hint in &analysis.redundant_pure_member_hints {
+            eprintln!(
+                "warning: chunk {chunk_id}: `pure_members: [{property}]` on binding `{binding}` \
+                 is redundant — the analyzer infers {reason} without the hint. \
+                 Remove the entry from the spec.",
+                binding = hint.binding_name,
+                property = hint.property,
+                reason = match hint.reason {
+                    RedundantPureMemberReason::WhitelistedStaticCall =>
+                        "pure via PURE_STATIC_CALLS (already on the global-receiver whitelist)",
                 },
             );
         }
@@ -2131,6 +2166,7 @@ fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {
                 export_name,
                 purity: m.purity,
                 effect: m.effect,
+                pure_members: m.pure_members.clone(),
             }
         })
         .collect()

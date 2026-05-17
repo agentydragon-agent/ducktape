@@ -362,6 +362,31 @@ purity covers the function value, not its arguments.
 does not make `X(...)` pure, and still evaluates constructor
 arguments normally.
 
+`pure_members: [<prop>, …]` is a third trust contract on the same
+member, extending the contract from "calls of the bound Ident are
+pure" to "calls of `<binding>.<prop>(args)` for each listed
+property are pure when args evaluate pure". The intended shape is
+a vendor namespace binding (a star-import or renamed binding
+standing in for a vendor module — React, etc.) whose member
+function values are author-known to be side-effect-free even
+though the analyzer cannot inspect them.
+
+```yaml
+- name: React
+  selector:
+    binding: { name: b, kind: import_specifier }
+  pure_members: [forwardRef, lazy, memo, createContext]
+```
+
+Admission rule: only static identifier-property access fires the
+rule (`<binding>.<prop>(args)` / `<binding>?.<prop>(args)`).
+Computed access (`<binding>[expr](args)`), chained access
+(`<binding>.x.y(args)`), private fields, and non-Ident receivers
+fall back to the regular classifier path. As with `purity: pure`,
+the rule wins over the global-shadowing fallback — the spec
+author asserts THIS bound value is pure regardless of where it
+came from. Args are still classified independently.
+
 The annotation is **per-member**: a sibling member without the
 annotation stays subject to inferred classification. There is no
 "declare a whole module pure" shorthand.
@@ -389,6 +414,32 @@ both:
 The two-direction pinning prevents a future maintainer from
 misreading the read-pure entry as call-pure and incorrectly
 promoting the entry into `PURE_STATIC_CALLS`.
+
+### Argument-shape-gated whitelists
+
+`PURE_OBJECT_CALLS_ON_PLAIN_DATA` is a separate table that admits
+`Object.{keys, values, entries, freeze, fromEntries}` as Pure
+**only when the argument is syntactically a fresh plain-data
+literal** (an `Expr::Object` with `is_plain_data_prop`-passing
+props, an `Expr::Array`, or — for the non-`fromEntries` members
+— a chunk-top binding registered as `ChunkBinding::PlainData`).
+The general-arg form of these calls stays in
+`PURE_STATIC_FUNCTION_REFS` (read-pure, call-unknown), matching
+the soundness rule that we cannot admit `[[Get]]` /
+descriptor-mutation on an arbitrary receiver.
+
+New entries to `PURE_OBJECT_CALLS_ON_PLAIN_DATA` need the same
+per-entry ECMA-262 citation as `PURE_STATIC_CALLS`, plus paired
+positive and negative tests in `analysis_tests.rs`:
+
+- a positive `object_<prop>_on_plain_<shape>_classifies_pure`
+  test (`Object.<prop>({lit})` is Pure), and
+- a negative `object_<prop>_on_<non-plain>_stays_unknown` test
+  (`Object.<prop>(somefn())` is Unknown, opaque-binding form is
+  Unknown).
+
+Cycle-breaking behaviour is pinned in
+`devinfra/js/debundle/e2e/object_plain_data_calls_test.rs`.
 
 ## Testing Philosophy
 

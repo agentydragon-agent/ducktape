@@ -10,9 +10,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::purity::{
-    ChunkCodeGraph, Purity, PurityReason, PurityRule, RedundantPurityHint, WHITELIST_RECEIVERS,
-    class_has_static_observable, classify_expr_purity, classify_var_decl_purity,
-    detect_redundant_purity_hints,
+    ChunkCodeGraph, Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPurityHint,
+    WHITELIST_RECEIVERS, class_has_static_observable, classify_expr_purity,
+    classify_var_decl_purity, detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };
 use crate::{BindingName, SourceLocation, StatementOrdinal};
 
@@ -51,6 +51,13 @@ pub enum KnownEffect {
 pub struct AnalysisHints {
     pub declared_pure: BTreeSet<String>,
     pub declared_pure_new: BTreeSet<String>,
+    /// Author-declared pure member properties — keyed by binding name,
+    /// value is the set of property names whose `<binding>.<prop>(args)`
+    /// calls the spec author asserts are pure. The classifier consults
+    /// this to admit `<recv>.<prop>(args)` as pure when `recv` is the
+    /// keyed binding and `<prop>` is in the value set.
+    /// See AGENTS.md "Declared purity".
+    pub declared_pure_members: BTreeMap<String, BTreeSet<String>>,
     pub known_effects: BTreeMap<String, KnownEffect>,
 }
 
@@ -59,6 +66,7 @@ impl AnalysisHints {
         Self {
             declared_pure: declared_pure.clone(),
             declared_pure_new: BTreeSet::new(),
+            declared_pure_members: BTreeMap::new(),
             known_effects: BTreeMap::new(),
         }
     }
@@ -75,6 +83,13 @@ pub struct ChunkFactAnalysis {
     /// such that the callsite hint is a no-op. Surfaced so the spec
     /// author can prune the hint and shrink the trust surface.
     pub redundant_purity_hints: Vec<RedundantPurityHint>,
+    /// Author-declared `pure_members: [<prop>, …]` entries the
+    /// analyzer would classify pure without the hint — currently
+    /// limited to `(WHITELIST_RECEIVERS, PURE_STATIC_CALLS-prop)`
+    /// pairs (e.g. `pure_members: [isArray]` on a binding named
+    /// `Array`). Surfaced for the same trust-surface-shrinking
+    /// reason as `redundant_purity_hints`.
+    pub redundant_pure_member_hints: Vec<RedundantPureMemberHint>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -165,14 +180,17 @@ where
 {
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build_with_declared_pure_new(
+    let graph = ChunkCodeGraph::build_full(
         &body,
         &shadowed,
         &hints.declared_pure,
         &hints.declared_pure_new,
+        &hints.declared_pure_members,
     );
     let redundant_purity_hints =
         detect_redundant_purity_hints(&body, &shadowed, &hints.declared_pure);
+    let redundant_pure_member_hints =
+        detect_redundant_pure_member_hints(&hints.declared_pure_members);
     let mut top_level_await = None;
     let facts = body
         .iter()
@@ -219,6 +237,7 @@ where
         facts,
         top_level_await,
         redundant_purity_hints,
+        redundant_pure_member_hints,
     }
 }
 

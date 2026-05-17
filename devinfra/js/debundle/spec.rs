@@ -446,6 +446,24 @@ pub struct Member {
     #[serde(skip_serializing_if = "is_default_member_effect")]
     #[serde(default)]
     pub effect: MemberEffect,
+    /// Property names on the bound value whose calls (`<binding>.<name>(args)`)
+    /// the author asserts have no observable side effects when their arguments
+    /// classify pure. Targets the vendor-namespace shape — a star-import or
+    /// renamed binding standing in for a vendor module like React, where
+    /// member calls (`React.forwardRef`, `React.memo`, `React.lazy`,
+    /// `React.createContext`) are pure under the same author-trust contract
+    /// as `purity: pure` extends to direct calls of the bound Ident.
+    ///
+    /// Static identifier-property access only — `<binding>.<name>(...)` and
+    /// `<binding>?.<name>(...)`. Computed access (`<binding>[expr](...)`),
+    /// chained property access (`<binding>.x.y(...)`), shadowed bindings, and
+    /// non-Ident receivers fall through to the regular classifier path.
+    ///
+    /// See AGENTS.md "Declared purity" for the soundness contract — the
+    /// validator does not re-verify; soundness shifts to the spec author.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub pure_members: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
