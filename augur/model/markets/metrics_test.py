@@ -38,6 +38,7 @@ class _ConstantGaussianModel:
     def __init__(self, mu: np.ndarray, sigma: np.ndarray) -> None:
         self._mu = np.asarray(mu, dtype="float64")
         self._sigma = np.asarray(sigma, dtype="float64")
+        self.factor_names: tuple[str, ...] = tuple(f"f{i}" for i in range(len(self._mu)))
 
     def fit(self, historical: HistoricalSeries) -> None:
         del historical
@@ -86,6 +87,7 @@ class _UnscoredModel:
     """Model that can simulate but cannot expose a density — like the bootstrap."""
 
     label = "unscored"
+    factor_names: tuple[str, ...] = ("f0",)
 
     def fit(self, historical: HistoricalSeries) -> None:
         del historical

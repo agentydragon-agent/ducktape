@@ -220,12 +220,6 @@ def augur_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
             str(port),
             "--config",
             str(get_required_path("_main/augur/api/testdata/config.yaml")),
-            "--provider",
-            "simple",
-            "--rollout-samples",
-            "8",
-            "--max-rollout-samples",
-            "32",
         ],
         env={
             **os.environ,

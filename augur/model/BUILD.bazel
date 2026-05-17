@@ -37,16 +37,12 @@ py_library(
 py_library(
     name = "macro_market_bundle_provider_py",
     srcs = ["macro_market_bundle_provider.py"],
-    data = ["//augur/model/config:market_config_files"],
     deps = [
         ":location_market_sources_py",
-        ":market_config_py",
         "//augur/core:market_bundle_py",
         "//augur/core:provenance_py",
         "//augur/core:scenario_set_py",
-        "//augur/model/markets:data_py",
         "//augur/model/markets:market_model_py",
-        "//augur/model/markets:registry_py",
         "@pypi//numpy",
     ],
 )
@@ -59,6 +55,52 @@ py_binary(
         "//augur/model/markets:data_py",
         "//augur/model/markets:metrics_py",
         "//augur/model/markets:registry_py",
+    ],
+)
+
+py_library(
+    name = "market_provider_config_py",
+    srcs = ["market_provider_config.py"],
+    deps = [
+        "//augur/core:market_bundle_py",
+        "//augur/core:schemas_py",
+        "//augur/model/markets/models:vecm_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "train_lib",
+    srcs = ["train.py"],
+    data = ["//augur/model/config:market_config_files"],
+    deps = [
+        ":market_config_py",
+        ":market_provider_config_py",
+        "//augur/model/markets:data_py",
+        "//augur/model/markets:registry_py",
+        "//augur/model/markets/models:vecm_py",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "train",
+    main_module = "augur.model.train",
+    deps = [":train_lib"],
+)
+
+py_test(
+    name = "vecm_round_trip_test",
+    srcs = ["vecm_round_trip_test.py"],
+    deps = [
+        ":market_provider_config_py",
+        ":train_lib",
+        "//augur/core:market_bundle_py",
+        "//augur/core:scenario_set_py",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -77,13 +119,13 @@ py_test(
 py_test(
     name = "macro_market_bundle_provider_test",
     srcs = ["macro_market_bundle_provider_test.py"],
-    data = ["//augur/model/config:market_config_files"],
     deps = [
+        ":location_market_sources_py",
         ":macro_market_bundle_provider_py",
+        "//augur/core:market_bundle_py",
         "//augur/core:scenario_set_py",
-        "//augur/model/markets:registry_py",
+        "//augur/model/markets:scenarios_py",
         "@pypi//numpy",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

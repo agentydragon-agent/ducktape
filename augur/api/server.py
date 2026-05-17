@@ -43,12 +43,7 @@ def _bundle(argv: list[str] | None) -> BundleSource:
 
 def main(argv: list[str] | None = None) -> int:
     config_path, remaining = _split_config_arg(argv)
-    return run_server(
-        augur_config=load_augur_config(config_path),
-        bundle=_bundle(argv),
-        default_market_config_path=get_required_path("_main/augur/model/config/market_config.example.json"),
-        argv=remaining,
-    )
+    return run_server(augur_config=load_augur_config(config_path), bundle=_bundle(argv), argv=remaining)
 
 
 if __name__ == "__main__":

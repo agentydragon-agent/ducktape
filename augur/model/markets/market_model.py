@@ -14,6 +14,7 @@ class MarketModel(Protocol):
     """
 
     label: str
+    factor_names: tuple[str, ...]
 
     def fit(self, historical: HistoricalSeries) -> None: ...
 

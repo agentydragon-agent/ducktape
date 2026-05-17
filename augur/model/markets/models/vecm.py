@@ -21,11 +21,17 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
+from pydantic import Field
 from statsmodels.tsa.vector_ar.vecm import VECM
 
+from augur.core.market_bundle import MarketBundleProvider
+from augur.core.schemas import ApiModel
+from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
+from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets._density import gaussian_logpdf, gaussian_logpdf_from_samples
 from augur.model.markets.scenarios import HistoricalSeries, Scenarios
 
@@ -185,6 +191,43 @@ class VecmModel:
 
         return np.asarray(mean)
 
+    def save(self, descriptor: VecmMarketProviderConfig) -> None:
+        """Persist post-fit state to the `.npz` archive named by the
+        descriptor's `trained_blob` so the runtime can skip re-fitting at
+        startup. Symmetric to `VecmModel.load(descriptor)`."""
+        np.savez_compressed(
+            descriptor.trained_blob,
+            k_ar_diff=np.array(self.config.k_ar_diff),
+            coint_rank=np.array(self.config.coint_rank),
+            alpha=self.alpha,
+            beta=self.beta,
+            gamma=self.gamma,
+            const_coint=self.const_coint,
+            inv_cov=self.inv_cov,
+            cov_chol=self.cov_chol,
+            cov_log_det=np.array(self.cov_log_det),
+            factor_names=np.array(self.factor_names, dtype=object),
+            train_log_levels=self.train_log_levels,
+        )
+
+    @staticmethod
+    def load(descriptor: VecmMarketProviderConfig) -> VecmModel:
+        with np.load(descriptor.trained_blob, allow_pickle=True) as data:
+            config = VecmConfig(k_ar_diff=int(data["k_ar_diff"]), coint_rank=int(data["coint_rank"]))
+            factor_names = tuple(str(name) for name in data["factor_names"])
+            model = VecmModel(config=config)
+            model.alpha = np.asarray(data["alpha"])
+            model.beta = np.asarray(data["beta"])
+            model.gamma = np.asarray(data["gamma"])
+            model.const_coint = np.asarray(data["const_coint"])
+            model.inv_cov = np.asarray(data["inv_cov"])
+            model.cov_chol = np.asarray(data["cov_chol"])
+            model.cov_log_det = float(data["cov_log_det"])
+            model.factor_names = factor_names
+            model.n_factors = len(factor_names)
+            model.train_log_levels = np.asarray(data["train_log_levels"])
+        return model
+
     def simulate(self, n_paths: int, n_months: int, seed: int) -> Scenarios:
         rng = np.random.default_rng(seed)
         n_factors = self.n_factors
@@ -214,4 +257,29 @@ class VecmModel:
             multipliers=multipliers,
             seed=seed,
             label=self.label,
+        )
+
+
+class VecmMarketProviderConfig(ApiModel):
+    """Pre-trained VECM provider config — points at the trained-state blob
+    written by `bb run //augur/model:train`. The model is loaded at server
+    startup; no fitting happens on the request path."""
+
+    type: Literal["vecm"] = "vecm"
+    trained_blob: Path = Field(description="Absolute path to the .npz produced by VecmModel.save(descriptor).")
+    latest_observations: dict[str, Any] = Field(
+        description="Latest observed market state at the start of the simulation horizon (factor → value)."
+    )
+    current_mortgage30_rate_pct: float
+    location_market_sources: LocationMarketSourcesConfig
+
+    def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
+        model = VecmModel.load(self)
+        return MacroMarketBundleProvider.from_loaded_model(
+            model,
+            latest_observations=self.latest_observations,
+            current_mortgage30_rate_pct=self.current_mortgage30_rate_pct,
+            current_private_equity_price_usd=current_private_equity_price_usd,
+            location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
+            evidence_source_id=str(self.trained_blob),
         )

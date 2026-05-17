@@ -23,6 +23,7 @@ from augur.api.config import (
 from augur.core.local_regulation import LocalRegulation
 from augur.core.market_bundle import SimpleMarketBundleProvider
 from augur.core.scenario_set import ActorRole, ScenarioSet, TaxRegime
+from augur.model.market_provider_config import NoopMarketProviderConfig
 
 
 def _write_properties(path: Path) -> None:
@@ -185,6 +186,7 @@ def _config(
         starting_portfolio_usd=100_000,
         locations=_fixture_locations(),
         location_selection=location_selection,
+        market_provider=NoopMarketProviderConfig(),
     )
 
 

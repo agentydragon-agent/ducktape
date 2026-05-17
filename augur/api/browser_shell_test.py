@@ -69,12 +69,6 @@ def augur_server(tmp_path: Path) -> Iterator[str]:
             str(port),
             "--config",
             str(get_required_path("_main/augur/api/testdata/config.yaml")),
-            "--provider",
-            "noop",
-            "--rollout-samples",
-            "8",
-            "--max-rollout-samples",
-            "8",
         ],
         env={
             **os.environ,

@@ -48,9 +48,14 @@ py_library(
     name = "vecm_py",
     srcs = ["vecm.py"],
     deps = [
+        "//augur/core:market_bundle_py",
+        "//augur/core:schemas_py",
+        "//augur/model:location_market_sources_py",
+        "//augur/model:macro_market_bundle_provider_py",
         "//augur/model/markets:density_py",
         "//augur/model/markets:scenarios_py",
         "@pypi//numpy",
+        "@pypi//pydantic",
         "@pypi//statsmodels",
     ],
 )

@@ -1,6 +1,8 @@
 """Generic augur HTTP server. A deployment-side wrapper (e.g. gaffer's
-serve.py) provides the `AugurConfig`, bundle source, and market config
-path, then calls `run_server(...)`."""
+serve.py) provides the `AugurConfig`, bundle source, then calls
+`run_server(...)`. The market-bundle provider is chosen at CLI time via
+`--market-provider <path>`, pointing at a YAML config whose type-discriminated
+content selects between noop / simple / vecm / ... providers."""
 
 from __future__ import annotations
 
@@ -9,21 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import uvicorn
-import yaml
 
 from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
 from augur.api.config import AugurConfig
 from augur.core.backend import StaticPathResolver, create_augur_backend_app
-from augur.core.market_bundle import (
-    FlatMarketBundleProvider,
-    MarketBundleProvider,
-    SimpleMarketBundleProvider,
-    SimpleMarketModelConfig,
-)
-from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
-from augur.model.markets.registry import LABELS
-
-_BUILT_IN_PROVIDER_LABELS = ("noop", "simple")
+from augur.core.market_bundle import MarketBundleProvider
 
 
 @dataclass(frozen=True)
@@ -50,9 +42,7 @@ class AugurServerConfig:
     bundle: BundleSource
 
 
-def _make_provider(
-    args: argparse.Namespace, augur_config: AugurConfig, default_market_config_path: Path
-) -> MarketBundleProvider:
+def _make_provider(augur_config: AugurConfig) -> MarketBundleProvider:
     # Every provider must publish the current per-unit private-equity price so the
     # simulator can resolve units-only PrivateEquityPosition entries (the browser
     # stores units and lets the simulator own the mark).
@@ -60,23 +50,7 @@ def _make_provider(
     if len(holdings) != 1:
         raise ValueError(f"expected exactly one concentrated holding for the provider; got {len(holdings)}")
     current_private_equity_price_usd = float(holdings[0].fmv_usd_per_unit)
-    if args.provider == "noop":
-        return FlatMarketBundleProvider(current_private_equity_price_usd=current_private_equity_price_usd)
-    if args.provider == "simple":
-        model_config = (
-            SimpleMarketModelConfig.model_validate(
-                yaml.safe_load(Path(args.market_config).resolve().read_text(encoding="utf-8"))
-            )
-            if args.market_config
-            else SimpleMarketModelConfig()
-        )
-        return SimpleMarketBundleProvider(
-            current_private_equity_price_usd=current_private_equity_price_usd, model_config=model_config
-        )
-    market_config_path = Path(args.market_config).resolve() if args.market_config else default_market_config_path
-    return MacroMarketBundleProvider.for_label(
-        args.provider, config_path=market_config_path, current_private_equity_price_usd=current_private_equity_price_usd
-    )
+    return augur_config.market_provider.realize(current_private_equity_price_usd=current_private_equity_price_usd)
 
 
 def _static_path_resolver(bundle: BundleSource) -> StaticPathResolver | None:
@@ -123,19 +97,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Serve the combined property-first Augur backend API.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8767)
-    parser.add_argument("--market-config", help="Path to the market model config JSON.")
     parser.add_argument(
         "--api-only", action="store_true", help="Serve only JSON API routes; static assets are external."
     )
-    parser.add_argument(
-        "--provider",
-        choices=(*_BUILT_IN_PROVIDER_LABELS, *LABELS),
-        default="vecm",
-        help="Market provider: built-in noop/simple or a macro model provider from augur.model.markets.registry.",
-    )
     parser.add_argument("--dist-dir", help="Override the prebuilt frontend bundle directory.")
-    parser.add_argument("--rollout-samples", type=int, default=None)
-    parser.add_argument("--max-rollout-samples", type=int, default=2048)
     return parser
 
 
@@ -151,30 +116,29 @@ def _resolve_bundle(
     return default_bundle
 
 
-def run_server(
-    *, augur_config: AugurConfig, bundle: BundleSource, default_market_config_path: Path, argv: list[str] | None = None
-) -> int:
+def run_server(*, augur_config: AugurConfig, bundle: BundleSource, argv: list[str] | None = None) -> int:
     """Run the Augur HTTP server with the supplied AugurConfig and bundle source.
 
-    Deployment-side entry points (e.g. gaffer's `serve.py`) resolve their
-    runfile paths and pass them in as a `StaticBundle` (default) or `ApiOnly`;
-    this module is module-agnostic and never references `_main/` directly.
-    CLI args drive transport and market-provider choice; `--api-only` overrides
-    the supplied default; `--dist-dir` overrides the default `StaticBundle`.
-    AugurConfig drives everything user-specific."""
+    Deployment-side entry points (e.g. gaffer's `serve.py`) pass in a
+    `StaticBundle` (default) or `ApiOnly`; this module never references
+    `_main/` directly. `--api-only` overrides the supplied bundle;
+    `--dist-dir` overrides the default `StaticBundle`. The market provider
+    is selected by `--market-provider <yaml-path>` whose content is a
+    type-discriminated `MarketProviderConfig` (see
+    `augur.model.market_provider_config`)."""
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
-    market_bundle_provider = _make_provider(args, augur_config, default_market_config_path)
+    market_bundle_provider = _make_provider(augur_config)
     server_config = AugurServerConfig(
         augur_config=augur_config,
         market_bundle_provider=market_bundle_provider,
-        default_rollout_samples=args.rollout_samples or augur_config.default_rollout_samples,
-        max_rollout_samples=args.max_rollout_samples,
+        default_rollout_samples=augur_config.default_rollout_samples,
+        max_rollout_samples=augur_config.max_rollout_samples,
         bundle=_resolve_bundle(args, bundle, parser),
     )
     app = create_app(server_config)
     print(f"serving Augur on http://{args.host}:{args.port}")
-    print(f"market provider: {args.provider}")
+    print(f"market provider: {augur_config.market_provider.type}")
     match server_config.bundle:
         case StaticBundle(dist_dir=dist_dir):
             print(f"static bundle: {dist_dir}")

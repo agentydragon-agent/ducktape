@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -27,6 +28,7 @@ from augur.core.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType
 from augur.core.schemas import ApiModel
+from augur.model.market_provider_config import MarketProviderConfig
 
 __all__ = [
     "AgentDefinition",
@@ -146,9 +148,17 @@ class AugurConfig(ApiModel):
     minimum_reserve_mode: LiquidityReserveRuleType = LiquidityReserveRuleType.PROJECTED_DEFICITS
     reserve_forward_months: NonNegativeInt = 12
     starting_portfolio_usd: NonNegativeFloat = 0.0
-    pmms_survey_date: str | None = None
+    pmms_survey_date: date | None = None
     default_rollout_samples: PositiveInt = 128
+    max_rollout_samples: PositiveInt = 2048
     bootstrap_default_scenarios: tuple[DefaultScenario, ...] = ()
+    market_provider: MarketProviderConfig = Field(
+        description=(
+            "Deployment's market-bundle provider choice (discriminated by `type`: noop / simple / vecm / ...). "
+            "Carries per-provider knobs and trained-asset paths; the server materializes this into a "
+            "`MarketBundleProvider` at startup via `MarketProviderConfig.realize(...)`."
+        )
+    )
 
 
 def load_augur_config(path: Path) -> AugurConfig:

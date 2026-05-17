@@ -23,6 +23,7 @@ from augur.api.config import (
 )
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
+from augur.model.market_provider_config import NoopMarketProviderConfig
 
 
 def _minimal_config(**overrides: object) -> AugurConfig:
@@ -33,6 +34,7 @@ def _minimal_config(**overrides: object) -> AugurConfig:
         "personal_finance": PersonalFinanceConfig(),
         "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
+        "market_provider": NoopMarketProviderConfig(),
     }
     defaults.update(overrides)
     return AugurConfig(**defaults)
@@ -159,6 +161,7 @@ def test_at_least_one_agent_required() -> None:
             personal_finance=PersonalFinanceConfig(),
             property_source=PropertySourceConfig(properties_path="/tmp/x.json"),
             snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
+            market_provider=NoopMarketProviderConfig(),
         )
 
 

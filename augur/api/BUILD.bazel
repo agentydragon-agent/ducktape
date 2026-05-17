@@ -10,6 +10,7 @@ py_library(
         "//augur/core:local_regulation_py",
         "//augur/core:scenario_set_py",
         "//augur/core:schemas_py",
+        "//augur/model:market_provider_config_py",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -22,6 +23,7 @@ py_test(
         ":config_py",
         "//augur/core:local_regulation_py",
         "//augur/core:scenario_set_py",
+        "//augur/model:market_provider_config_py",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -52,6 +54,7 @@ py_test(
         "//augur/core:local_regulation_py",
         "//augur/core:market_bundle_py",
         "//augur/core:scenario_set_py",
+        "//augur/model:market_provider_config_py",
         "@pypi//pytest_bazel",
     ],
 )
@@ -80,10 +83,6 @@ py_library(
         ":config_py",
         "//augur/core:backend_py",
         "//augur/core:market_bundle_py",
-        "//augur/model:macro_market_bundle_provider_py",
-        "//augur/model/markets:registry_py",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
         "@pypi//uvicorn",
     ],
 )
@@ -118,7 +117,6 @@ py_binary(
 py_library(
     name = "server_lib",
     srcs = ["server.py"],
-    data = ["//augur/model/config:market_config_files"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
