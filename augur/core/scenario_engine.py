@@ -745,57 +745,91 @@ def _build_property_cash_flow_frame(arrays: dict[str, np.ndarray]) -> pl.DataFra
     )
 
 
-# TODO(refactor-d): migrate `PartnerEquity*Arrays` to a single
-# `numerics: pl.DataFrame` keyed by `(rollout_index, month_index)`, mirroring
-# `PropertyCashFlowArrays` above. Same 15-column wide-format shape; callers
-# in `_partner_equity_arrays` / `_settle_required_cash_obligations` use
-# `pea.X` patterns that map cleanly to `pea.column("X")`. See
-# `augur/TODO.md` (Refactor D rollup).
+# Column names carried in `PartnerEquity*Arrays.numerics`, identical across
+# the agreement-scoped and aggregate-scoped variants.
+_PARTNER_EQUITY_COLUMNS: tuple[str, ...] = (
+    "contribution_usd",
+    "contribution_used_usd",
+    "unallocated_excess_usd",
+    "house_costs_usd",
+    "mortgage_payment_usd",
+    "mortgage_interest_usd",
+    "mortgage_principal_usd",
+    "principal_credit_usd",
+    "owner_principal_usd",
+    "house_cost_share",
+    "partner_equity_ledger_usd",
+    "owner_equity_ledger_usd",
+    "ownership_pct",
+    "home_equity_claim_usd",
+    "owner_home_equity_claim_usd",
+)
+
+
+def _build_partner_equity_frame(arrays: dict[str, np.ndarray]) -> pl.DataFrame:
+    """Build a `PartnerEquity*Arrays.numerics` frame from a dict of
+    `(rollouts, months+1)` ndarrays, one per column in
+    `_PARTNER_EQUITY_COLUMNS`. Flattens rollout-major so `column()` can
+    reshape back without copy."""
+    sample = next(iter(arrays.values()))
+    n_rollouts, n_months_plus_one = sample.shape
+    return pl.DataFrame(
+        {
+            "rollout_index": np.repeat(np.arange(n_rollouts, dtype=np.int32), n_months_plus_one),
+            "month_index": np.tile(np.arange(n_months_plus_one, dtype=np.int32), n_rollouts),
+            **{name: arrays[name].reshape(-1) for name in _PARTNER_EQUITY_COLUMNS},
+        }
+    )
+
+
 @dataclass(frozen=True)
 class PartnerEquityAgreementArrays:
+    """Per-agreement partner-equity arrays, with the 15 per-rollout-per-month
+    numeric columns held in `numerics` (see `_PARTNER_EQUITY_COLUMNS`)."""
+
     policy_sequence_index: int
     policy: PartnerEquityAccrualPolicy
     property_id: str
     recipient_actor_id: str
-    contribution_usd: np.ndarray
-    contribution_used_usd: np.ndarray
-    unallocated_excess_usd: np.ndarray
-    house_costs_usd: np.ndarray
-    mortgage_payment_usd: np.ndarray
-    mortgage_interest_usd: np.ndarray
-    mortgage_principal_usd: np.ndarray
-    principal_credit_usd: np.ndarray
-    owner_principal_usd: np.ndarray
-    house_cost_share: np.ndarray
-    partner_equity_ledger_usd: np.ndarray
-    owner_equity_ledger_usd: np.ndarray
-    ownership_pct: np.ndarray
-    home_equity_claim_usd: np.ndarray
-    owner_home_equity_claim_usd: np.ndarray
+    rollout_count: int
+    horizon_months: int
+    numerics: pl.DataFrame
     journal_entries: tuple[JournalEntryBatch, ...]
     balance_snapshots: tuple[BalanceSnapshotBatch, ...]
+
+    def column(self, name: str) -> np.ndarray:
+        flat: np.ndarray = self.numerics[name].to_numpy()
+        return flat.reshape(self.rollout_count, self.horizon_months + 1)
+
+    def with_numerics(self, **updates: np.ndarray) -> PartnerEquityAgreementArrays:
+        """Return a new instance with the named columns replaced and the
+        rest carried forward unchanged from the existing frame."""
+        cols = {name: self.column(name) for name in _PARTNER_EQUITY_COLUMNS}
+        cols.update(updates)
+        return replace(self, numerics=_build_partner_equity_frame(cols))
 
 
 @dataclass(frozen=True)
 class PartnerEquityArrays:
-    contribution_usd: np.ndarray
-    contribution_used_usd: np.ndarray
-    unallocated_excess_usd: np.ndarray
-    house_costs_usd: np.ndarray
-    mortgage_payment_usd: np.ndarray
-    mortgage_interest_usd: np.ndarray
-    mortgage_principal_usd: np.ndarray
-    principal_credit_usd: np.ndarray
-    owner_principal_usd: np.ndarray
-    house_cost_share: np.ndarray
-    partner_equity_ledger_usd: np.ndarray
-    owner_equity_ledger_usd: np.ndarray
-    ownership_pct: np.ndarray
-    home_equity_claim_usd: np.ndarray
-    owner_home_equity_claim_usd: np.ndarray
+    """Aggregate (across all agreements) partner-equity arrays, with the 15
+    per-rollout-per-month numeric columns held in `numerics` (see
+    `_PARTNER_EQUITY_COLUMNS`)."""
+
+    rollout_count: int
+    horizon_months: int
+    numerics: pl.DataFrame
     agreements: tuple[PartnerEquityAgreementArrays, ...]
     journal_entries: tuple[JournalEntryBatch, ...]
     balance_snapshots: tuple[BalanceSnapshotBatch, ...]
+
+    def column(self, name: str) -> np.ndarray:
+        flat: np.ndarray = self.numerics[name].to_numpy()
+        return flat.reshape(self.rollout_count, self.horizon_months + 1)
+
+    def with_numerics(self, **updates: np.ndarray) -> PartnerEquityArrays:
+        cols = {name: self.column(name) for name in _PARTNER_EQUITY_COLUMNS}
+        cols.update(updates)
+        return replace(self, numerics=_build_partner_equity_frame(cols))
 
 
 # TODO(refactor-d): `Sp500SaleActionRecord` / `CryptoSaleActionRecord` /
@@ -1371,7 +1405,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         current_cash = current_cash + disposition.net_property_sale_cash_flow_usd[:, month]
         if month > 0:
             current_cash = (
-                current_cash + net_property_cash_flow[:, month] + partner_equity.contribution_used_usd[:, month]
+                current_cash
+                + net_property_cash_flow[:, month]
+                + partner_equity.column("contribution_used_usd")[:, month]
             )
         # Settle property-cost obligations for this month BEFORE within-month
         # policies run. This keeps within-month policy decisions (which depend on
@@ -1787,7 +1823,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     )
 
     partner_present = np.full((rollout_count, month_count), _has_partner(scenario), dtype=np.bool_)
-    owner_home_equity_claim = partner_equity.owner_home_equity_claim_usd
+    owner_home_equity_claim = partner_equity.column("owner_home_equity_claim_usd")
     if disposition.sale_month is None:
         owner_home_equity_claim_for_net_worth = owner_home_equity_claim
     else:
@@ -2293,11 +2329,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
     )
     if not partner_equity.agreements:
-        owner_principal_credit_from_accounting = partner_equity.owner_principal_usd
-        partner_equity_ledger_from_snapshot = partner_equity.partner_equity_ledger_usd
-        owner_equity_ledger_from_snapshot = partner_equity.owner_equity_ledger_usd
-        partner_home_equity_claim_from_snapshot = partner_equity.home_equity_claim_usd
-        owner_home_equity_claim_from_snapshot = partner_equity.owner_home_equity_claim_usd
+        owner_principal_credit_from_accounting = partner_equity.column("owner_principal_usd")
+        partner_equity_ledger_from_snapshot = partner_equity.column("partner_equity_ledger_usd")
+        owner_equity_ledger_from_snapshot = partner_equity.column("owner_equity_ledger_usd")
+        partner_home_equity_claim_from_snapshot = partner_equity.column("home_equity_claim_usd")
+        owner_home_equity_claim_from_snapshot = partner_equity.column("owner_home_equity_claim_usd")
     federal_income_tax_from_accounting = _accounting_detail_amount_matrix(
         accounting_details,
         rollout_count=rollout_count,
@@ -2435,13 +2471,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         "partner_contribution_usd": partner_contribution_from_accounting,
         "partner_contribution_used_usd": partner_contribution_used_from_accounting,
         "partner_unallocated_excess_usd": partner_unallocated_excess_from_accounting,
-        "partner_house_costs_usd": partner_equity.house_costs_usd,
+        "partner_house_costs_usd": partner_equity.column("house_costs_usd"),
         "partner_principal_credit_usd": partner_principal_credit_from_accounting,
         "owner_principal_credit_usd": owner_principal_credit_from_accounting,
-        "partner_house_cost_share": partner_equity.house_cost_share,
+        "partner_house_cost_share": partner_equity.column("house_cost_share"),
         "partner_equity_ledger_usd": partner_equity_ledger_from_snapshot,
         "owner_equity_ledger_usd": owner_equity_ledger_from_snapshot,
-        "partner_ownership_pct": partner_equity.ownership_pct,
+        "partner_ownership_pct": partner_equity.column("ownership_pct"),
         "liquid_net_worth_usd": liquid_net_worth,
         "net_worth_usd": net_worth,
         "partner_present": partner_present,
@@ -2794,7 +2830,7 @@ def _record_partner_contribution_decisions(
 ) -> None:
     for agreement in partner_equity.agreements:
         policy = agreement.policy
-        rollout_indexes, month_positions = np.nonzero(agreement.contribution_usd > 0)
+        rollout_indexes, month_positions = np.nonzero(agreement.column("contribution_usd") > 0)
         for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
             records.append(
                 PartnerContributionDecision(
@@ -2804,7 +2840,7 @@ def _record_partner_contribution_decisions(
                     policy_id=policy.policy_id,
                     policy_sequence_index=agreement.policy_sequence_index,
                     recipient_actor_id=agreement.recipient_actor_id,
-                    requested_amount_usd=float(agreement.contribution_usd[rollout_index, month_position]),
+                    requested_amount_usd=float(agreement.column("contribution_usd")[rollout_index, month_position]),
                     property_id=agreement.property_id,
                 )
             )
@@ -3579,7 +3615,7 @@ class _PartnerContributionObligationKind:
     books, and a contributing-actor shortfall fails the rollout.
 
     The cash side is balanced on the settlement JE itself; the engine math
-    separately credits owner cash via `partner_equity.contribution_used_usd` in
+    separately credits owner cash via `partner_equity.column("contribution_used_usd")` in
     the month loop, which mirrors the funded amount on the happy path.
     """
 
@@ -4950,24 +4986,32 @@ def _partner_equity_arrays(
     insurance_usd: np.ndarray,
     maintenance_usd: np.ndarray,
 ) -> PartnerEquityArrays:
+    rollout_count, n_months_plus_one = home_equity_usd.shape
+    horizon_months = n_months_plus_one - 1
     zeros = np.zeros_like(home_equity_usd, dtype="float64")
     owner_equity_without_partners = float(owner_initial_equity_usd) + np.cumsum(mortgage_principal_usd, axis=1)
     empty = PartnerEquityArrays(
-        contribution_usd=zeros,
-        contribution_used_usd=zeros,
-        unallocated_excess_usd=zeros,
-        house_costs_usd=zeros,
-        mortgage_payment_usd=zeros,
-        mortgage_interest_usd=zeros,
-        mortgage_principal_usd=zeros,
-        principal_credit_usd=zeros,
-        owner_principal_usd=mortgage_principal_usd,
-        house_cost_share=zeros,
-        partner_equity_ledger_usd=zeros,
-        owner_equity_ledger_usd=owner_equity_without_partners,
-        ownership_pct=zeros,
-        home_equity_claim_usd=zeros,
-        owner_home_equity_claim_usd=home_equity_usd,
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+        numerics=_build_partner_equity_frame(
+            {
+                "contribution_usd": zeros,
+                "contribution_used_usd": zeros,
+                "unallocated_excess_usd": zeros,
+                "house_costs_usd": zeros,
+                "mortgage_payment_usd": zeros,
+                "mortgage_interest_usd": zeros,
+                "mortgage_principal_usd": zeros,
+                "principal_credit_usd": zeros,
+                "owner_principal_usd": mortgage_principal_usd,
+                "house_cost_share": zeros,
+                "partner_equity_ledger_usd": zeros,
+                "owner_equity_ledger_usd": owner_equity_without_partners,
+                "ownership_pct": zeros,
+                "home_equity_claim_usd": zeros,
+                "owner_home_equity_claim_usd": home_equity_usd,
+            }
+        ),
         agreements=(),
         journal_entries=(),
         balance_snapshots=(),
@@ -5062,30 +5106,38 @@ def _partner_equity_arrays(
                 policy=policy,
                 property_id=property_id,
                 recipient_actor_id=owner_actor_id,
-                contribution_usd=contribution_instruction.amount_usd,
-                contribution_used_usd=contribution_application.contribution_used_usd,
-                unallocated_excess_usd=contribution_application.unallocated_excess_usd,
-                house_costs_usd=contribution_application.house_costs_usd,
-                mortgage_payment_usd=mortgage_payment,
-                mortgage_interest_usd=mortgage_interest_usd,
-                mortgage_principal_usd=principal_available,
-                principal_credit_usd=contribution_application.principal_credit_usd,
-                owner_principal_usd=owner_principal,
-                house_cost_share=contribution_application.house_cost_share,
-                partner_equity_ledger_usd=ownership_application.partner_equity_ledger_usd,
-                owner_equity_ledger_usd=owner_equity_ledger,
-                ownership_pct=ownership_application.ownership_pct,
-                home_equity_claim_usd=ownership_application.home_equity_claim_usd,
-                owner_home_equity_claim_usd=ownership_application.owner_home_equity_claim_usd,
+                rollout_count=rollout_count,
+                horizon_months=horizon_months,
+                numerics=_build_partner_equity_frame(
+                    {
+                        "contribution_usd": contribution_instruction.amount_usd,
+                        "contribution_used_usd": contribution_application.contribution_used_usd,
+                        "unallocated_excess_usd": contribution_application.unallocated_excess_usd,
+                        "house_costs_usd": contribution_application.house_costs_usd,
+                        "mortgage_payment_usd": mortgage_payment,
+                        "mortgage_interest_usd": mortgage_interest_usd,
+                        "mortgage_principal_usd": principal_available,
+                        "principal_credit_usd": contribution_application.principal_credit_usd,
+                        "owner_principal_usd": owner_principal,
+                        "house_cost_share": contribution_application.house_cost_share,
+                        "partner_equity_ledger_usd": ownership_application.partner_equity_ledger_usd,
+                        "owner_equity_ledger_usd": owner_equity_ledger,
+                        "ownership_pct": ownership_application.ownership_pct,
+                        "home_equity_claim_usd": ownership_application.home_equity_claim_usd,
+                        "owner_home_equity_claim_usd": ownership_application.owner_home_equity_claim_usd,
+                    }
+                ),
                 journal_entries=contribution_application.journal_entries + ownership_application.journal_entries,
                 balance_snapshots=ownership_application.balance_snapshots,
             )
         )
 
-    contribution_usd = sum((agreement.contribution_usd for agreement in agreements), start=zeros.copy())
-    contribution_used = sum((agreement.contribution_used_usd for agreement in agreements), start=zeros.copy())
-    unallocated_excess = sum((agreement.unallocated_excess_usd for agreement in agreements), start=zeros.copy())
-    home_equity_claim = sum((agreement.home_equity_claim_usd for agreement in agreements), start=zeros.copy())
+    contribution_usd = sum((agreement.column("contribution_usd") for agreement in agreements), start=zeros.copy())
+    contribution_used = sum((agreement.column("contribution_used_usd") for agreement in agreements), start=zeros.copy())
+    unallocated_excess = sum(
+        (agreement.column("unallocated_excess_usd") for agreement in agreements), start=zeros.copy()
+    )
+    home_equity_claim = sum((agreement.column("home_equity_claim_usd") for agreement in agreements), start=zeros.copy())
     owner_home_equity_claim = home_equity_usd - home_equity_claim
     property_id = contribution_inputs[0][2]
     owner_aggregate = apply_partner_ownership_aggregate(
@@ -5100,23 +5152,29 @@ def _partner_equity_arrays(
         home_equity_claim, positive_home_equity, out=np.zeros_like(home_equity_claim), where=positive_home_equity > 0
     )
     return PartnerEquityArrays(
-        contribution_usd=contribution_usd,
-        contribution_used_usd=contribution_used,
-        unallocated_excess_usd=unallocated_excess,
-        house_costs_usd=house_uses,
-        mortgage_payment_usd=mortgage_payment,
-        mortgage_interest_usd=mortgage_interest_usd,
-        mortgage_principal_usd=mortgage_principal_usd,
-        principal_credit_usd=principal_credit,
-        owner_principal_usd=owner_principal,
-        house_cost_share=np.divide(
-            contribution_used, house_uses, out=np.zeros_like(contribution_used), where=house_uses > 0
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+        numerics=_build_partner_equity_frame(
+            {
+                "contribution_usd": contribution_usd,
+                "contribution_used_usd": contribution_used,
+                "unallocated_excess_usd": unallocated_excess,
+                "house_costs_usd": house_uses,
+                "mortgage_payment_usd": mortgage_payment,
+                "mortgage_interest_usd": mortgage_interest_usd,
+                "mortgage_principal_usd": mortgage_principal_usd,
+                "principal_credit_usd": principal_credit,
+                "owner_principal_usd": owner_principal,
+                "house_cost_share": np.divide(
+                    contribution_used, house_uses, out=np.zeros_like(contribution_used), where=house_uses > 0
+                ),
+                "partner_equity_ledger_usd": total_partner_equity_ledger,
+                "owner_equity_ledger_usd": owner_equity_ledger,
+                "ownership_pct": ownership_pct,
+                "home_equity_claim_usd": home_equity_claim,
+                "owner_home_equity_claim_usd": owner_home_equity_claim,
+            }
         ),
-        partner_equity_ledger_usd=total_partner_equity_ledger,
-        owner_equity_ledger_usd=owner_equity_ledger,
-        ownership_pct=ownership_pct,
-        home_equity_claim_usd=home_equity_claim,
-        owner_home_equity_claim_usd=owner_home_equity_claim,
         agreements=tuple(agreements),
         journal_entries=owner_aggregate.journal_entries
         + tuple(entry for agreement in agreements for entry in agreement.journal_entries),
@@ -5138,10 +5196,10 @@ def _settle_partner_equity_on_property_sale(
         for agreement in partner_equity.agreements
     )
     partner_home_equity_claim_usd = sum(
-        (agreement.home_equity_claim_usd for agreement in agreements),
-        start=np.zeros_like(partner_equity.home_equity_claim_usd),
+        (agreement.column("home_equity_claim_usd") for agreement in agreements),
+        start=np.zeros_like(partner_equity.column("home_equity_claim_usd")),
     )
-    owner_home_equity_claim_usd = partner_equity.owner_home_equity_claim_usd.copy()
+    owner_home_equity_claim_usd = partner_equity.column("owner_home_equity_claim_usd").copy()
     sale_net_proceeds = property_sale_net_proceeds_usd[:, sale_month]
     owner_home_equity_claim_usd[:, sale_month:] = (
         sale_net_proceeds[:, None] - partner_home_equity_claim_usd[:, sale_month:]
@@ -5154,9 +5212,9 @@ def _settle_partner_equity_on_property_sale(
         if snapshot.role in {ChartAccountRole.OWNER_EQUITY_LEDGER, ChartAccountRole.OWNER_HOME_EQUITY_CLAIM}
     )
     return replace(
-        partner_equity,
-        home_equity_claim_usd=partner_home_equity_claim_usd,
-        owner_home_equity_claim_usd=owner_home_equity_claim_usd,
+        partner_equity.with_numerics(
+            home_equity_claim_usd=partner_home_equity_claim_usd, owner_home_equity_claim_usd=owner_home_equity_claim_usd
+        ),
         agreements=agreements,
         balance_snapshots=owner_balance_snapshots
         + tuple(snapshot for agreement in agreements for snapshot in agreement.balance_snapshots),
@@ -5166,10 +5224,10 @@ def _settle_partner_equity_on_property_sale(
 def _settle_partner_equity_agreement_on_property_sale(
     agreement: PartnerEquityAgreementArrays, *, sale_month: int, property_sale_net_proceeds_usd: np.ndarray
 ) -> PartnerEquityAgreementArrays:
-    home_equity_claim_usd = agreement.home_equity_claim_usd.copy()
-    owner_home_equity_claim_usd = agreement.owner_home_equity_claim_usd.copy()
+    home_equity_claim_usd = agreement.column("home_equity_claim_usd").copy()
+    owner_home_equity_claim_usd = agreement.column("owner_home_equity_claim_usd").copy()
     sale_net_proceeds = property_sale_net_proceeds_usd[:, sale_month]
-    partner_sale_claim = np.maximum(0.0, sale_net_proceeds) * agreement.ownership_pct[:, sale_month]
+    partner_sale_claim = np.maximum(0.0, sale_net_proceeds) * agreement.column("ownership_pct")[:, sale_month]
     home_equity_claim_usd[:, sale_month:] = partner_sale_claim[:, None]
     owner_home_equity_claim_usd[:, sale_month:] = sale_net_proceeds[:, None] - partner_sale_claim[:, None]
     balance_snapshots = tuple(
@@ -5179,9 +5237,9 @@ def _settle_partner_equity_agreement_on_property_sale(
         for snapshot in agreement.balance_snapshots
     )
     return replace(
-        agreement,
-        home_equity_claim_usd=home_equity_claim_usd,
-        owner_home_equity_claim_usd=owner_home_equity_claim_usd,
+        agreement.with_numerics(
+            home_equity_claim_usd=home_equity_claim_usd, owner_home_equity_claim_usd=owner_home_equity_claim_usd
+        ),
         balance_snapshots=balance_snapshots,
     )
 
@@ -5605,7 +5663,7 @@ def _settle_partner_contribution_obligations(
     (a balanced cross-actor transfer). The contributing actor's failure to fund
     flips the rollout to FAILED via FailureEvent.
 
-    The owner's cash trajectory is driven by `partner_equity.contribution_used_usd`
+    The owner's cash trajectory is driven by `partner_equity.column("contribution_used_usd")`
     added in the main month loop; on the happy path the obligation pipeline pays
     the configured amount in full and the JE cash debit matches the owner-side
     receipt.
@@ -5617,7 +5675,7 @@ def _settle_partner_contribution_obligations(
         partner_initial_cash = _partner_initial_funding_cash_usd(
             scenario,
             actor_id=contributing_actor_id,
-            configured_contribution_total_usd=float(np.max(np.sum(agreement.contribution_usd, axis=1))),
+            configured_contribution_total_usd=float(np.max(np.sum(agreement.column("contribution_usd"), axis=1))),
         )
         partner_cash = np.full((rollout_count, month_count), partner_initial_cash, dtype="float64")
         # The contribution_usd matrix carries the configured monthly payment per
@@ -5642,7 +5700,7 @@ def _settle_partner_contribution_obligations(
             market_bundle=market_bundle,
             month_index=month_index,
             policy_steps=policy_steps,
-            obligation_amount_usd=agreement.contribution_usd,
+            obligation_amount_usd=agreement.column("contribution_usd"),
             obligation_kind=obligation_kind,
             creditor_id=owner_actor_id,
             source_policy_id=agreement.policy.policy_id,
