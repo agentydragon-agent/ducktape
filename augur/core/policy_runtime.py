@@ -4,7 +4,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from augur.core import posting_schemas
 from augur.core.accounting import AccountingCauseType, ChartAccountRole, JournalEntryType, PostingSide
+from augur.core.posting_schemas import JournalEntrySchema
 from augur.core.scenario_set import (
     AccountType,
     AssetType,
@@ -157,6 +159,61 @@ class BalanceSnapshotBatch:
     counterparty_actor_id: str | None = None
 
 
+def build_journal_entry_batch(
+    *,
+    schema: JournalEntrySchema,
+    cause_id_prefix: str,
+    actor_id: str | None = None,
+    policy_id: str | None = None,
+    event_id: str | None = None,
+    obligation_id_prefix: str | None = None,
+    description: str | None = None,
+    amount_bindings: dict[str, np.ndarray],
+    leg_chart_account_keys: tuple[dict[str, str | None], ...] = (),
+) -> JournalEntryBatch:
+    """Assemble a `JournalEntryBatch` from a static `JournalEntrySchema`.
+
+    Each leg in the schema names the amount binding it pulls from
+    `amount_bindings`. `leg_chart_account_keys` (one dict per leg, in schema
+    order) supplies the chart-account key fields (actor_id,
+    source_account_id, source_asset_id, liability_id, property_id,
+    counterparty_actor_id); legs not covered fall through with no
+    chart-account keys.
+
+    The engine-side `AccountingTraceBuilder.record_entry_firings(...)` is a
+    thin wrapper around this helper plus `record_entry(...)`. Policy
+    applications use it directly to author the `JournalEntryBatch`es they
+    return to the engine.
+    """
+    postings: list[PostingBatch] = []
+    for i, leg in enumerate(schema.legs):
+        keys = leg_chart_account_keys[i] if i < len(leg_chart_account_keys) else {}
+        postings.append(
+            PostingBatch(
+                role=leg.role,
+                side=leg.side,
+                amount_usd=amount_bindings[leg.amount_binding],
+                actor_id=keys.get("actor_id"),
+                source_account_id=keys.get("source_account_id"),
+                source_asset_id=keys.get("source_asset_id"),
+                liability_id=keys.get("liability_id"),
+                property_id=keys.get("property_id"),
+                counterparty_actor_id=keys.get("counterparty_actor_id"),
+            )
+        )
+    return JournalEntryBatch(
+        journal_entry_type=schema.journal_entry_type,
+        cause_type=schema.cause_type,
+        cause_id_prefix=cause_id_prefix,
+        actor_id=actor_id,
+        policy_id=policy_id,
+        event_id=event_id,
+        obligation_id_prefix=obligation_id_prefix,
+        description=description,
+        postings=tuple(postings),
+    )
+
+
 @dataclass(frozen=True)
 class DebitAccountApplication:
     current_cash_usd: np.ndarray
@@ -307,27 +364,14 @@ def apply_debit_account_instruction(
     if instruction.account_type is not AccountType.CHECKING:
         raise ValueError(f"unsupported account type for cash debit applier: {instruction.account_type}")
 
-    journal_entry = JournalEntryBatch(
-        journal_entry_type=JournalEntryType.CASH_EXPENSE,
-        cause_type=AccountingCauseType.POLICY_DECISION,
+    journal_entry = build_journal_entry_batch(
+        schema=posting_schemas.MONTHLY_SPEND,
         cause_id_prefix=f"policy:{instruction.policy_id}:monthly_spend",
         actor_id=instruction.actor_id,
         policy_id=instruction.policy_id,
         description="monthly_spend",
-        postings=(
-            PostingBatch(
-                role=ChartAccountRole.MONTHLY_LIVING_EXPENSE,
-                side=PostingSide.DEBIT,
-                amount_usd=instruction.amount_usd,
-                actor_id=instruction.actor_id,
-            ),
-            PostingBatch(
-                role=ChartAccountRole.CHECKING_CASH,
-                side=PostingSide.CREDIT,
-                amount_usd=instruction.amount_usd,
-                actor_id=instruction.actor_id,
-            ),
-        ),
+        amount_bindings={"amount": instruction.amount_usd},
+        leg_chart_account_keys=({"actor_id": instruction.actor_id}, {"actor_id": instruction.actor_id}),
     )
     return DebitAccountApplication(
         current_cash_usd=current_cash_usd - instruction.amount_usd,
@@ -361,38 +405,33 @@ def apply_partner_house_cost_contribution(
     principal_credit_usd = mortgage_principal_usd * house_cost_share
     owner_principal_usd = np.maximum(0.0, mortgage_principal_usd - principal_credit_usd)
     journal_entries = (
-        JournalEntryBatch(
-            journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
-            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+        build_journal_entry_batch(
+            schema=posting_schemas.PARTNER_CONTRIBUTION_ALLOCATION,
             cause_id_prefix=f"policy:{instruction.policy_id}:partner_contribution_allocation",
             actor_id=instruction.actor_id,
             policy_id=instruction.policy_id,
             description="partner contribution allocation to property costs",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.PARTNER_CONTRIBUTION_USED,
-                    side=PostingSide.DEBIT,
-                    amount_usd=contribution_used_usd,
-                    actor_id=instruction.recipient_actor_id,
-                    counterparty_actor_id=instruction.actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PARTNER_UNALLOCATED_CLAIM,
-                    side=PostingSide.DEBIT,
-                    amount_usd=unallocated_excess_usd,
-                    actor_id=instruction.recipient_actor_id,
-                    counterparty_actor_id=instruction.actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER,
-                    side=PostingSide.CREDIT,
-                    amount_usd=instruction.amount_usd,
-                    actor_id=instruction.actor_id,
-                    counterparty_actor_id=instruction.recipient_actor_id,
-                    property_id=property_id,
-                ),
+            amount_bindings={
+                "contribution_used": contribution_used_usd,
+                "unallocated_excess": unallocated_excess_usd,
+                "contribution": instruction.amount_usd,
+            },
+            leg_chart_account_keys=(
+                {
+                    "actor_id": instruction.recipient_actor_id,
+                    "counterparty_actor_id": instruction.actor_id,
+                    "property_id": property_id,
+                },
+                {
+                    "actor_id": instruction.recipient_actor_id,
+                    "counterparty_actor_id": instruction.actor_id,
+                    "property_id": property_id,
+                },
+                {
+                    "actor_id": instruction.actor_id,
+                    "counterparty_actor_id": instruction.recipient_actor_id,
+                    "property_id": property_id,
+                },
             ),
         ),
     )
@@ -440,30 +479,24 @@ def apply_partner_ownership_accrual(
     # Owner-side aggregate rows are produced by apply_partner_ownership_aggregate, since
     # they reflect state summed across all agreements on the same property.
     journal_entries = (
-        JournalEntryBatch(
-            journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
-            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+        build_journal_entry_batch(
+            schema=posting_schemas.PARTNER_PRINCIPAL_CREDIT_ALLOCATION,
             cause_id_prefix=f"policy:{transfer.policy_id}:principal_credit_allocation",
             actor_id=transfer.actor_id,
             policy_id=transfer.policy_id,
             description="partner principal credit allocation",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT,
-                    side=PostingSide.DEBIT,
-                    amount_usd=partner_principal_credit_usd,
-                    actor_id=transfer.actor_id,
-                    counterparty_actor_id=transfer.recipient_actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION,
-                    side=PostingSide.CREDIT,
-                    amount_usd=partner_principal_credit_usd,
-                    actor_id=transfer.recipient_actor_id,
-                    counterparty_actor_id=transfer.actor_id,
-                    property_id=property_id,
-                ),
+            amount_bindings={"amount": partner_principal_credit_usd},
+            leg_chart_account_keys=(
+                {
+                    "actor_id": transfer.actor_id,
+                    "counterparty_actor_id": transfer.recipient_actor_id,
+                    "property_id": property_id,
+                },
+                {
+                    "actor_id": transfer.recipient_actor_id,
+                    "counterparty_actor_id": transfer.actor_id,
+                    "property_id": property_id,
+                },
             ),
         ),
     )
@@ -517,28 +550,15 @@ def apply_partner_ownership_aggregate(
     ledger rows from raw arrays.
     """
     journal_entries = (
-        JournalEntryBatch(
-            journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
-            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+        build_journal_entry_batch(
+            schema=posting_schemas.OWNER_PRINCIPAL_CREDIT_ALLOCATION,
             cause_id_prefix="accounting:owner_principal_credit_allocation",
             actor_id=owner_actor_id,
-            policy_id=None,
             description="owner principal credit allocation",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT,
-                    side=PostingSide.DEBIT,
-                    amount_usd=owner_principal_usd,
-                    actor_id=owner_actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION,
-                    side=PostingSide.CREDIT,
-                    amount_usd=owner_principal_usd,
-                    actor_id=owner_actor_id,
-                    property_id=property_id,
-                ),
+            amount_bindings={"amount": owner_principal_usd},
+            leg_chart_account_keys=(
+                {"actor_id": owner_actor_id, "property_id": property_id},
+                {"actor_id": owner_actor_id, "property_id": property_id},
             ),
         ),
     )
@@ -607,44 +627,24 @@ def apply_property_operating_cash_flows(
     direct_carrying_cost_usd = rental_management_fee_usd + rental_leasing_fee_usd
     net_operating_cash_flow_usd = rental_income_usd - direct_carrying_cost_usd
     journal_entries = (
-        JournalEntryBatch(
-            journal_entry_type=JournalEntryType.PROPERTY_OPERATING,
-            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+        build_journal_entry_batch(
+            schema=posting_schemas.PROPERTY_OPERATING,
             cause_id_prefix=f"policy:{policy_id}:property_operating",
             actor_id=actor_id,
             policy_id=policy_id,
             description="property operating cash flow",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.DEBIT,
-                    amount_usd=rental_income_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.RENTAL_INCOME,
-                    side=PostingSide.CREDIT,
-                    amount_usd=rental_income_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=rental_management_fee_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.RENTAL_LEASING_FEE_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=rental_leasing_fee_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.CREDIT,
-                    amount_usd=direct_carrying_cost_usd,
-                    actor_id=actor_id,
-                ),
+            amount_bindings={
+                "rental_income": rental_income_usd,
+                "rental_management_fee": rental_management_fee_usd,
+                "rental_leasing_fee": rental_leasing_fee_usd,
+                "direct_carrying_cost": direct_carrying_cost_usd,
+            },
+            leg_chart_account_keys=(
+                {"actor_id": actor_id},
+                {"actor_id": actor_id},
+                {"actor_id": actor_id},
+                {"actor_id": actor_id},
+                {"actor_id": actor_id},
             ),
         ),
     )
@@ -770,30 +770,20 @@ def apply_private_equity_sale_instruction(
     # (bracket-aware federal + California). The sale handler reports gross
     # proceeds; the annual-tax obligation path settles the tax cash demand.
     sold_units = remaining_units * sold_fraction
-    destination_role = (
-        ChartAccountRole.PUBLIC_SECURITY
+    schema = (
+        posting_schemas.ASSET_SALE_PRIVATE_EQUITY_TO_PUBLIC_SECURITY
         if instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK
-        else ChartAccountRole.CHECKING_CASH
+        else posting_schemas.ASSET_SALE_PRIVATE_EQUITY_TO_CASH
     )
     journal_entries = (
-        JournalEntryBatch(
-            journal_entry_type=JournalEntryType.ASSET_SALE,
-            cause_type=AccountingCauseType.POLICY_DECISION,
+        build_journal_entry_batch(
+            schema=schema,
             cause_id_prefix=f"policy:{instruction.policy_id}:private_equity_sale",
             actor_id=instruction.actor_id,
             policy_id=instruction.policy_id,
             description="private equity sale",
-            postings=(
-                PostingBatch(
-                    role=destination_role, side=PostingSide.DEBIT, amount_usd=sale_usd, actor_id=instruction.actor_id
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PRIVATE_EQUITY,
-                    side=PostingSide.CREDIT,
-                    amount_usd=sale_usd,
-                    actor_id=instruction.actor_id,
-                ),
-            ),
+            amount_bindings={"amount": sale_usd},
+            leg_chart_account_keys=({"actor_id": instruction.actor_id}, {"actor_id": instruction.actor_id}),
         ),
     )
     return PrivateEquitySaleApplication(

@@ -63,7 +63,7 @@ from augur.core.accounting import (
     chart_account_id,
     chart_account_type_for_role,
 )
-from augur.core.policy_runtime import BalanceSnapshotBatch, JournalEntryBatch, PostingBatch
+from augur.core.policy_runtime import BalanceSnapshotBatch, JournalEntryBatch, PostingBatch, build_journal_entry_batch
 from augur.core.posting_schemas import JournalEntrySchema
 
 # Polars schemas -------------------------------------------------------------
@@ -969,45 +969,20 @@ class AccountingTraceBuilder:
         leg_chart_account_keys: tuple[dict[str, str | None], ...] = (),
         amount_multiplier: np.ndarray | None = None,
     ) -> None:
-        """High-level wrapper around `record_entry`: take a static
-        `JournalEntrySchema` plus the per-call varying inputs and assemble
-        the equivalent `JournalEntryBatch`.
-
-        `amount_bindings` maps each leg's `amount_binding` name to a
-        `(rollouts, months)` numpy array. `leg_chart_account_keys`, if
-        provided, supplies the chart-account key fields (actor_id,
-        source_account_id, source_asset_id, liability_id, property_id,
-        counterparty_actor_id) for each leg as a dict; legs not covered fall
-        through with no chart-account keys.
-        """
-        postings: list[PostingBatch] = []
-        for i, leg in enumerate(schema.legs):
-            keys = leg_chart_account_keys[i] if i < len(leg_chart_account_keys) else {}
-            postings.append(
-                PostingBatch(
-                    role=leg.role,
-                    side=leg.side,
-                    amount_usd=amount_bindings[leg.amount_binding],
-                    actor_id=keys.get("actor_id"),
-                    source_account_id=keys.get("source_account_id"),
-                    source_asset_id=keys.get("source_asset_id"),
-                    liability_id=keys.get("liability_id"),
-                    property_id=keys.get("property_id"),
-                    counterparty_actor_id=keys.get("counterparty_actor_id"),
-                )
-            )
+        """Thin wrapper: assemble the batch via `build_journal_entry_batch`
+        and pass it through `record_entry`."""
         self.record_entry(
             month_index=month_index,
-            entry=JournalEntryBatch(
-                journal_entry_type=schema.journal_entry_type,
-                cause_type=schema.cause_type,
+            entry=build_journal_entry_batch(
+                schema=schema,
                 cause_id_prefix=cause_id_prefix,
                 actor_id=actor_id,
                 policy_id=policy_id,
                 event_id=event_id,
                 obligation_id_prefix=obligation_id_prefix,
                 description=description,
-                postings=tuple(postings),
+                amount_bindings=amount_bindings,
+                leg_chart_account_keys=leg_chart_account_keys,
             ),
             amount_multiplier=amount_multiplier,
         )

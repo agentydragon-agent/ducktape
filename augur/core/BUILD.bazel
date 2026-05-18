@@ -168,6 +168,7 @@ py_library(
     name = "policy_runtime_py",
     srcs = ["policy_runtime.py"],
     deps = [
+        ":posting_schemas_py",
         ":scenario_set_py",
         "@pypi//numpy",
     ],

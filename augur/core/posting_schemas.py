@@ -271,3 +271,94 @@ CASH_DEBIT_SETTLEMENT_BY_EXPENSE_ROLE: dict[ChartAccountRole, JournalEntrySchema
     ChartAccountRole.MAINTENANCE_EXPENSE: MAINTENANCE_SETTLEMENT,
     ChartAccountRole.OUTSIDE_RENT_EXPENSE: OUTSIDE_RENT_SETTLEMENT,
 }
+
+# Monthly spend (cash expense) -----------------------------------------------
+#
+# Debit monthly_living_expense, credit checking_cash. Emitted by the monthly
+# spend policy applier in `policy_runtime`.
+
+MONTHLY_SPEND = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.CASH_EXPENSE,
+    cause_type=AccountingCauseType.POLICY_DECISION,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.MONTHLY_LIVING_EXPENSE, side=PostingSide.DEBIT, amount_binding="amount"),
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.CREDIT, amount_binding="amount"),
+    ),
+)
+
+# Partner equity / principal credit ------------------------------------------
+#
+# Partner contribution allocation splits a contribution into a "used"
+# portion (paid into shared house costs) and an "unallocated excess"
+# portion (banked as a future partner equity claim). The credit leg
+# represents the cross-actor cash transfer.
+
+PARTNER_CONTRIBUTION_ALLOCATION = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
+    cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+    legs=(
+        PostingLegSchema(
+            role=ChartAccountRole.PARTNER_CONTRIBUTION_USED, side=PostingSide.DEBIT, amount_binding="contribution_used"
+        ),
+        PostingLegSchema(
+            role=ChartAccountRole.PARTNER_UNALLOCATED_CLAIM, side=PostingSide.DEBIT, amount_binding="unallocated_excess"
+        ),
+        PostingLegSchema(
+            role=ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER, side=PostingSide.CREDIT, amount_binding="contribution"
+        ),
+    ),
+)
+
+PARTNER_PRINCIPAL_CREDIT_ALLOCATION = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
+    cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+    legs=(
+        PostingLegSchema(
+            role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT, amount_binding="amount"
+        ),
+        PostingLegSchema(
+            role=ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION, side=PostingSide.CREDIT, amount_binding="amount"
+        ),
+    ),
+)
+
+OWNER_PRINCIPAL_CREDIT_ALLOCATION = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
+    cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT, amount_binding="amount"),
+        PostingLegSchema(
+            role=ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION, side=PostingSide.CREDIT, amount_binding="amount"
+        ),
+    ),
+)
+
+# Property operating cash flow -----------------------------------------------
+#
+# Combined rental income + rental management/leasing fees, settled in one
+# entry: cash debit on rental income, expense debits on the two fee lines,
+# cash credit on the fee total (rental_management + rental_leasing). Property
+# tax / HOA / insurance / maintenance settle separately via the obligation
+# pipeline.
+
+PROPERTY_OPERATING = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.PROPERTY_OPERATING,
+    cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.DEBIT, amount_binding="rental_income"),
+        PostingLegSchema(role=ChartAccountRole.RENTAL_INCOME, side=PostingSide.CREDIT, amount_binding="rental_income"),
+        PostingLegSchema(
+            role=ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE,
+            side=PostingSide.DEBIT,
+            amount_binding="rental_management_fee",
+        ),
+        PostingLegSchema(
+            role=ChartAccountRole.RENTAL_LEASING_FEE_EXPENSE,
+            side=PostingSide.DEBIT,
+            amount_binding="rental_leasing_fee",
+        ),
+        PostingLegSchema(
+            role=ChartAccountRole.CHECKING_CASH, side=PostingSide.CREDIT, amount_binding="direct_carrying_cost"
+        ),
+    ),
+)
