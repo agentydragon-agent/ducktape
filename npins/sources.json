@@ -37,8 +37,8 @@
       "sha256": "3vwJnvYraa+KGgKhbx04ONWdcQmERSjYOx3aC4YMSk4="
     },
     "claude-hook-rs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-9902c6990ff8/claude_hook",
-      "sha256": "mQLGmQ/4BTcxB9W12vei2kGwDMQndY3Z2cJKsqJJliQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-3d97dc62b6c3/claude_hook",
+      "sha256": "PZfcYrbDzv5g0bXn/an2QudoKmsFlfuMFh5ggiHxvUQ="
     },
     "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3c0cae365f9b/aiquota.zip",
