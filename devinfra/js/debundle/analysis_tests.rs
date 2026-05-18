@@ -46,6 +46,110 @@ mod tests {
         analyze_facts_with_hints(module, &AnalysisHints::default())
     }
 
+    /// A direct call `f()` at the chunk top level records `f` in the
+    /// statement's `at_init_calls` set. Drives at-init call promotion
+    /// per DESIGN.md "At-init call promotion".
+    #[test]
+    fn at_init_call_recorded() {
+        let module = parse("function f() {} f();");
+        let facts = analyze_facts(&module);
+        assert_eq!(facts.len(), 2);
+        // function decl: callee never recorded for the decl itself.
+        assert!(facts[0].at_init_calls.is_empty());
+        assert!(facts[0].body_calls.is_empty());
+        // call statement: f() is at-init, no body reads.
+        assert_eq!(facts[1].at_init_calls, BTreeSet::from(["f".to_string()]),);
+        assert!(facts[1].body_calls.is_empty());
+    }
+
+    /// A call inside a function body lives in `body_calls`, not
+    /// `at_init_calls`. The call only fires when the function is
+    /// invoked, so promotion treats it as a lazy edge of the
+    /// containing function.
+    #[test]
+    fn body_call_recorded() {
+        let module = parse("function f() { g(); } function g() {}");
+        let facts = analyze_facts(&module);
+        // f's decl: its body calls g lazily.
+        assert!(facts[0].at_init_calls.is_empty());
+        assert_eq!(facts[0].body_calls, BTreeSet::from(["g".to_string()]),);
+    }
+
+    /// Indirect calls (`const g = f; g()`) are skipped — the callee
+    /// isn't a direct Ident on the CallExpr. Conservative: the
+    /// proposer may miss promotion through this case.
+    #[test]
+    fn indirect_call_not_recorded() {
+        let module = parse("function f() {} const g = f; g();");
+        let facts = analyze_facts(&module);
+        // Last statement: `g()` records `g`, not `f`. (The aliasing
+        // is unmodeled; callee resolution only sees `g`.)
+        assert_eq!(facts[2].at_init_calls, BTreeSet::from(["g".to_string()]),);
+    }
+
+    /// Method calls (`obj.method()`) are skipped — callee is a
+    /// MemberExpr, not an Ident.
+    #[test]
+    fn method_call_not_recorded() {
+        let module = parse("const obj = {}; obj.method();");
+        let facts = analyze_facts(&module);
+        // Last statement: no at_init_calls. `obj` is still recorded
+        // as an eager read.
+        assert!(facts[1].at_init_calls.is_empty());
+        assert!(facts[1].eager_reads.contains("obj"));
+    }
+
+    /// Class static field initializers fire at-init (class evaluation
+    /// time). Calls in static initializers go into `at_init_calls`.
+    #[test]
+    fn class_static_init_call_is_at_init() {
+        let module = parse("function f() {} class C { static x = f(); }");
+        let facts = analyze_facts(&module);
+        assert_eq!(facts[1].at_init_calls, BTreeSet::from(["f".to_string()]),);
+        assert!(facts[1].body_calls.is_empty());
+    }
+
+    /// Class instance field initializers fire per-construction, not
+    /// at class-decl time. Calls inside them are `body_calls`,
+    /// matching how the existing read collectors treat instance
+    /// fields as lazy.
+    #[test]
+    fn class_instance_field_call_is_lazy() {
+        let module = parse("function f() {} class C { x = f(); }");
+        let facts = analyze_facts(&module);
+        assert!(facts[1].at_init_calls.is_empty());
+        assert_eq!(facts[1].body_calls, BTreeSet::from(["f".to_string()]),);
+    }
+
+    /// Nested calls in argument positions are still seen by the
+    /// collector. `console.log(readB())` records both `console` (in
+    /// eager_reads) and `readB` (in at_init_calls).
+    #[test]
+    fn nested_call_arguments_record_inner_callee() {
+        let module = parse("function readB() {} console.log(readB());");
+        let facts = analyze_facts(&module);
+        // The console.log statement: console is an eager read.
+        // readB is recorded as an at-init call. console.log is a
+        // method call, so it's NOT in at_init_calls.
+        assert!(facts[1].eager_reads.contains("console"));
+        assert_eq!(
+            facts[1].at_init_calls,
+            BTreeSet::from(["readB".to_string()]),
+        );
+    }
+
+    /// VarDecl-bound arrow functions participate in body_calls the
+    /// same way function declarations do. `const f = () => g()` is
+    /// a function carrier; the `g()` inside is lazy.
+    #[test]
+    fn vardecl_arrow_body_call_recorded() {
+        let module = parse("function g() {} const f = () => g();");
+        let facts = analyze_facts(&module);
+        // f's vardecl: g() is a lazy body call.
+        assert!(facts[1].at_init_calls.is_empty());
+        assert_eq!(facts[1].body_calls, BTreeSet::from(["g".to_string()]),);
+    }
+
     #[test]
     fn function_body_reads_are_lazy() {
         let module = parse("function f() { return X; } const Y = 1;");
@@ -250,8 +354,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert_eq!(report.cycles.len(), 1);
         assert_eq!(report.cycles[0].modules.len(), 2);
     }
@@ -267,8 +370,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "expected no cycles, got {:?}",
@@ -276,17 +378,20 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
     }
 
-    /// Pin the cut behavior for the canonical mixed cycle: 2-module
-    /// SCC with one lazy forward-edge and one at-init back-edge.
-    /// The cut should contain exactly the at-init back-edge — lazy
-    /// edges aren't realizability-constraining and removing one
-    /// can't fix the cycle.
+    /// A mixed cycle (lazy forward-edge, at-init back-edge) where
+    /// the lazy direction is NOT invoked at-init is realizable per
+    /// DESIGN.md "Realizability primitive" clause 3 — the
+    /// constraining-edge subgraph (drops LazyUse) has no
+    /// multi-module SCC. The materializer's Lemma 2 steering
+    /// (Schedule::source_import_position with SCC-aware reverse)
+    /// gives entry an import order such that the ESM linker
+    /// resolves the cycle without TDZ.
     #[test]
-    fn cut_excludes_lazy_edges_in_mixed_cycle() {
-        // mod_0 owns A and readB; readB body returns B (lazy read).
-        // mod_1 owns B; B = A + 1 (at-init read of A).
-        // R-edge: mod_1 → mod_0 (kind = at-init, binding = A).
-        // L-edge: mod_0 → mod_1 (kind = lazy, binding = B).
+    fn mixed_cycle_without_at_init_call_is_realizable() {
+        // mod_0 owns A and readB; readB body returns B (lazy read,
+        // never invoked at-init). mod_1 owns B; B = A + 1
+        // (at-init read of A). Constraining subgraph: only
+        // mod_1 → mod_0 — acyclic. Relaxed clause-3 accepts.
         let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
         let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
@@ -296,36 +401,89 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
+        assert!(
+            report.cycles.is_empty(),
+            "mixed cycle with no at-init call should be realizable; got {:?}",
+            report.cycles,
+        );
+    }
+
+    /// Verify that at-init call promotion materializes a promoted
+    /// owner-graph edge for a top-level call to a chunk function
+    /// whose body lazily reads a cross-module binding. The promoted
+    /// edge appears as an EagerUse edge from the caller statement's
+    /// owner to the target binding's owner.
+    #[test]
+    fn at_init_call_promotion_materializes_owner_edge() {
+        // owner 0: function readB { return B; } (lazy_reads = {B})
+        // owner 1: const A = 1
+        // owner 2: const triggerInit = readB(); (at_init_calls = {readB})
+        // owner 3: const B = A + 1; (declared = {B}, eager_reads = {A})
+        // Promotion should add an EagerUse edge owner 2 → owner 3
+        // because triggerInit at-init-calls readB whose body reads B.
+        let module = parse(
+            "function readB() { return B; } const A = 1; const triggerInit = readB(); const B = A + 1;",
+        );
+        let facts = analyze_facts(&module);
+        assert_eq!(
+            facts[2].at_init_calls,
+            BTreeSet::from(["readB".to_string()]),
+            "triggerInit's at_init_calls must include readB: {:?}",
+            facts[2].at_init_calls,
+        );
+        let owner_graph = build_owner_graph(&facts);
+        let promoted: Vec<_> = owner_graph
+            .iter_edges()
+            .filter(|e| e.from == OwnerId(2) && e.to == OwnerId(3))
+            .collect();
+        assert!(
+            promoted.iter().any(|e| e.reason.kind == DepKind::EagerUse),
+            "expected a promoted EagerUse edge owner 2 → owner 3 in {:?}",
+            owner_graph
+                .iter_edges()
+                .map(|e| (e.from, e.to, e.reason.kind))
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn at_init_call_promotion_closes_otherwise_relaxed_cycle() {
+        // mod_0 owns readB, triggerInit (which at-init-calls readB),
+        // and A. mod_1 owns B. Promotion: triggerInit's owner (mod_0)
+        // gets a promoted eager edge to B's owner (mod_1) because
+        // readB's body lazily reads B. Combined with B's eager edge
+        // back to A (mod_1 → mod_0), the constraining-edge subgraph
+        // contains a 2-cycle. The lazy `readB → B` edge is still in
+        // the full quotient as evidence but is excluded from the cut.
+        // Source order matters: B reads A (mod_1 → mod_0 eager) is
+        // the back-edge that the promoted forward-edge closes into a
+        // cycle.
+        let module = parse(
+            "function readB() { return B; } const A = 1; const triggerInit = readB(); const B = A + 1;",
+        );
+        let facts = analyze_facts(&module);
+        let mut binding_assignment = HashMap::new();
+        binding_assignment.insert("readB".to_string(), logical(0));
+        binding_assignment.insert("triggerInit".to_string(), logical(0));
+        binding_assignment.insert("A".to_string(), logical(0));
+        binding_assignment.insert("B".to_string(), logical(1));
+        let owner_graph = build_owner_graph(&facts);
+        let partition =
+            Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert_eq!(
             report.cycles.len(),
             1,
-            "expected one cycle, got {:?}",
+            "at-init call promotion must close the cycle; got {:?}",
             report.cycles,
         );
         let cycle = &report.cycles[0];
-        assert!(
-            cycle.evidence.iter().any(|e| e.kind == DepKind::LazyUse),
-            "evidence should include the lazy edge, got {:?}",
-            cycle.evidence,
-        );
         assert!(
             !cycle.cut.iter().any(|e| e.kind == DepKind::LazyUse),
             "cut must not include lazy reasons, got {:?}",
             cycle.cut,
         );
-        assert_eq!(
-            cycle.cut.len(),
-            1,
-            "min cut for a single mixed cycle is one edge, got {:?}",
-            cycle.cut,
-        );
-        let entry = &cycle.cut[0];
-        assert_eq!(entry.from, "mod_1");
-        assert_eq!(entry.to, "mod_0");
-        assert_eq!(entry.binding.as_deref(), Some("A"));
-        assert_eq!(entry.kind, DepKind::EagerUse);
     }
 
     /// Pure-S cycle: cut consists of side-effect reasons; no
@@ -347,8 +505,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert_eq!(report.cycles.len(), 1);
         let cycle = &report.cycles[0];
         assert!(
@@ -382,8 +539,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "lazy-only cycle is realizable; the gate must accept and emit no cycle (got {:?})",
@@ -3371,15 +3527,14 @@ mutable = mutable + 1;"#,
 
     #[test]
     fn validate_returns_empty_linker_order_for_cyclic_spec() {
-        // Cross-unit module cycle: mod_0 owns `A` and `readB`,
-        // mod_1 owns `B`. `readB` lazily reads B (mod_0 → mod_1),
-        // and B eagerly reads A (mod_1 → mod_0). Atomic units stay
-        // singletons because LazyUse is dropped from `G_atomic`, so
-        // `factor_assembly` accepts the partition; the cycle shows up
-        // at the module quotient where the validator catches it.
+        // Genuine cross-module constraining cycle: `A = B + 1` and
+        // `B = A + 1` both read at-init. After the relaxed-predicate
+        // routing of the validator (DESIGN.md "Realizability
+        // primitive"), the case has to actually produce a cycle in
+        // the constraining-edge subgraph — mutual at-init reads do.
         let schedule = schedule_for(
-            "const A = 1; function readB() { return B; } const B = A + 1;",
-            &[("A", logical(0)), ("readB", logical(0)), ("B", logical(1))],
+            "const A = B + 1; const B = A + 1;",
+            &[("A", logical(0)), ("B", logical(1))],
         );
         let report = schedule.validate();
         assert!(!report.cycles.is_empty(), "expected a cycle in {report:?}",);
