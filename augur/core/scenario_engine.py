@@ -832,36 +832,53 @@ class PartnerEquityArrays:
         return replace(self, numerics=_build_partner_equity_frame(cols))
 
 
-# TODO(refactor-d): `Sp500SaleActionRecord` / `CryptoSaleActionRecord` /
-# `PrivateEquitySaleActionRecord` below all carry `(rollouts,)` 1D ndarrays
-# keyed by a single `month_index` scalar. Less obviously frame-shaped than
-# the per-month-per-rollout arrays above, but a polars-native form would
-# keep them in a frame keyed by `(rollout_index, month_index)` together with
-# the other per-action records emitted in the same month — opening up batch
-# aggregation via `group_by`. Lower priority than the PartnerEquity rollup.
+_SP500_SALE_ACTION_COLUMNS: tuple[str, ...] = ("amount_usd", "basis_usd", "shortfall_usd")
+_CRYPTO_SALE_ACTION_COLUMNS: tuple[str, ...] = ("amount_usd", "basis_usd", "quantity_sold", "shortfall_usd")
+
+
+def _build_sale_action_frame(arrays: dict[str, np.ndarray], columns: tuple[str, ...]) -> pl.DataFrame:
+    """Build a per-rollout sale-action frame. Each entry in `arrays` is a
+    `(rollouts,)` ndarray; the resulting frame is keyed by `rollout_index`
+    with one column per name in `columns`."""
+    sample = arrays[columns[0]]
+    n_rollouts = sample.shape[0]
+    return pl.DataFrame(
+        {"rollout_index": np.arange(n_rollouts, dtype=np.int32), **{name: arrays[name] for name in columns}}
+    )
+
+
 @dataclass(frozen=True)
 class Sp500SaleActionRecord:
+    """One SP500 sale action emitted in month `month_index`. The per-rollout
+    numeric columns live in `numerics` (a polars frame keyed by
+    `rollout_index`); reach them via `column(name)`."""
+
     month_position: int
     month_index: int
     policy: Policy
     cause_id_prefix: str
-    amount_usd: np.ndarray
-    basis_usd: np.ndarray
-    shortfall_usd: np.ndarray
+    numerics: pl.DataFrame
+
+    def column(self, name: str) -> np.ndarray:
+        return self.numerics[name].to_numpy()
 
 
 @dataclass(frozen=True)
 class CryptoSaleActionRecord:
+    """One crypto sale action emitted in month `month_index`. Per-rollout
+    columns live in `numerics`; the asset-identifying scalars stay as
+    separate fields."""
+
     month_position: int
     month_index: int
     policy: Policy
     cause_id_prefix: str
     source_asset_id: str
     asset_symbol: str
-    amount_usd: np.ndarray
-    basis_usd: np.ndarray
-    quantity_sold: np.ndarray
-    shortfall_usd: np.ndarray
+    numerics: pl.DataFrame
+
+    def column(self, name: str) -> np.ndarray:
+        return self.numerics[name].to_numpy()
 
 
 @dataclass(frozen=True)
@@ -1660,9 +1677,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                         month_index=int(month_index[month]),
                         policy=policy,
                         cause_id_prefix=f"policy:{policy.policy_id}:generic_sp500_sale",
-                        amount_usd=sp500_sale_application.sale_usd,
-                        basis_usd=sp500_sale_application.basis_usd,
-                        shortfall_usd=sp500_sale_application.shortfall_usd,
+                        numerics=_build_sale_action_frame(
+                            {
+                                "amount_usd": sp500_sale_application.sale_usd,
+                                "basis_usd": sp500_sale_application.basis_usd,
+                                "shortfall_usd": sp500_sale_application.shortfall_usd,
+                            },
+                            _SP500_SALE_ACTION_COLUMNS,
+                        ),
                     )
                 )
         sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
@@ -1863,7 +1885,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         source_tax = _tax_share_for_sale_action(
             source_tax_usd=generic_sp500_sale_tax[:, sp500_sale_action_record.month_position],
             action_taxable_income_usd=np.maximum(
-                0.0, sp500_sale_action_record.amount_usd - sp500_sale_action_record.basis_usd
+                0.0, sp500_sale_action_record.column("amount_usd") - sp500_sale_action_record.column("basis_usd")
             ),
             source_taxable_income_usd=np.maximum(
                 0.0, generic_sp500_sale_gain[:, sp500_sale_action_record.month_position]
@@ -1875,18 +1897,18 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             month_index=sp500_sale_action_record.month_index,
             policy=sp500_sale_action_record.policy,
             cause_id_prefix=sp500_sale_action_record.cause_id_prefix,
-            amount_usd=sp500_sale_action_record.amount_usd,
-            basis_usd=sp500_sale_action_record.basis_usd,
+            amount_usd=sp500_sale_action_record.column("amount_usd"),
+            basis_usd=sp500_sale_action_record.column("basis_usd"),
             tax_usd=source_tax,
         )
         _record_sp500_sale_effects(
             effects,
             month_index=sp500_sale_action_record.month_index,
             policy=sp500_sale_action_record.policy,
-            amount_usd=sp500_sale_action_record.amount_usd,
-            basis_usd=sp500_sale_action_record.basis_usd,
+            amount_usd=sp500_sale_action_record.column("amount_usd"),
+            basis_usd=sp500_sale_action_record.column("basis_usd"),
             tax_usd=source_tax,
-            shortfall_usd=sp500_sale_action_record.shortfall_usd,
+            shortfall_usd=sp500_sale_action_record.column("shortfall_usd"),
         )
     for crypto_sale_action_record in crypto_sale_action_records:
         _record_crypto_sale_journal_entries(
@@ -1896,8 +1918,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             policy=crypto_sale_action_record.policy,
             cause_id_prefix=crypto_sale_action_record.cause_id_prefix,
             source_asset_id=crypto_sale_action_record.source_asset_id,
-            amount_usd=crypto_sale_action_record.amount_usd,
-            basis_usd=crypto_sale_action_record.basis_usd,
+            amount_usd=crypto_sale_action_record.column("amount_usd"),
+            basis_usd=crypto_sale_action_record.column("basis_usd"),
         )
         _record_crypto_sale_effects(
             effects,
@@ -1905,10 +1927,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             policy=crypto_sale_action_record.policy,
             source_asset_id=crypto_sale_action_record.source_asset_id,
             asset_symbol=crypto_sale_action_record.asset_symbol,
-            amount_usd=crypto_sale_action_record.amount_usd,
-            basis_usd=crypto_sale_action_record.basis_usd,
-            quantity_sold=crypto_sale_action_record.quantity_sold,
-            shortfall_usd=crypto_sale_action_record.shortfall_usd,
+            amount_usd=crypto_sale_action_record.column("amount_usd"),
+            basis_usd=crypto_sale_action_record.column("basis_usd"),
+            quantity_sold=crypto_sale_action_record.column("quantity_sold"),
+            shortfall_usd=crypto_sale_action_record.column("shortfall_usd"),
         )
     for private_equity_sale_action_record in private_equity_sale_action_records:
         source_tax = _tax_share_for_sale_action(
@@ -4052,9 +4074,14 @@ def _settle_required_cash_obligation_at_month_position(
                         cause_id_prefix=(
                             f"policy:{application.policy_step.policy.policy_id}:{obligation_type.value}:funding_sale"
                         ),
-                        amount_usd=application.sale_usd,
-                        basis_usd=basis_sold,
-                        shortfall_usd=remaining_due,
+                        numerics=_build_sale_action_frame(
+                            {
+                                "amount_usd": application.sale_usd,
+                                "basis_usd": basis_sold,
+                                "shortfall_usd": remaining_due,
+                            },
+                            _SP500_SALE_ACTION_COLUMNS,
+                        ),
                     )
                 )
             elif asset_type is AssetType.CRYPTO:
@@ -4119,10 +4146,15 @@ def _settle_required_cash_obligation_at_month_position(
                         cause_id_prefix=(f"policy:{policy.policy_id}:{obligation_type.value}:funding_crypto_sale"),
                         source_asset_id=sources.crypto_source_id,
                         asset_symbol=sources.crypto_source_symbol,
-                        amount_usd=crypto_application.sale_usd,
-                        basis_usd=basis_sold,
-                        quantity_sold=quantity_sold,
-                        shortfall_usd=remaining_due.copy(),
+                        numerics=_build_sale_action_frame(
+                            {
+                                "amount_usd": crypto_application.sale_usd,
+                                "basis_usd": basis_sold,
+                                "quantity_sold": quantity_sold,
+                                "shortfall_usd": remaining_due.copy(),
+                            },
+                            _CRYPTO_SALE_ACTION_COLUMNS,
+                        ),
                     )
                 )
             elif asset_type is AssetType.PRIVATE_EQUITY:
