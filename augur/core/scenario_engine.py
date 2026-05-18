@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Any, cast
 
 import numpy as np
+import polars as pl
 
 from augur.core import posting_schemas
 from augur.core.accounting import (
@@ -147,80 +148,50 @@ _SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD = 150_000.0
 _SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD_MFS = 75_000.0
 
 
+# Set of `ReportMetric` column names that the `ScenarioRunArrays.numerics`
+# polars frame carries; used by `__getattr__` to authorize per-metric
+# attribute access. Excludes `MONTH_INDEX`, which lives as a 1D field.
+_NUMERIC_METRIC_COLUMNS: frozenset[str] = frozenset(
+    metric.value for metric in ReportMetric if metric is not ReportMetric.MONTH_INDEX
+)
+
+
+def _build_numerics_frame(month_index: np.ndarray, metric_arrays: dict[str, np.ndarray]) -> pl.DataFrame:
+    """Build the `ScenarioRunArrays.numerics` wide-format polars frame from
+    the per-metric `(rollouts, months+1)` numpy arrays.
+
+    Each metric value is flattened in row-major (rollout-major) order; the
+    `rollout_index` / `month_index` columns are broadcast to match. 1D
+    arrays (a `(months+1,)` per-month vector) are broadcast across rollouts.
+    """
+    sample = next(iter(metric_arrays.values()))
+    n_rollouts, n_months_plus_one = sample.shape
+    columns: dict[str, np.ndarray] = {
+        "rollout_index": np.repeat(np.arange(n_rollouts, dtype=np.int32), n_months_plus_one),
+        "month_index": np.tile(month_index.astype(np.int32), n_rollouts),
+    }
+    for name, value in metric_arrays.items():
+        flat = (
+            value.reshape(-1)
+            if value.ndim == 2
+            else np.broadcast_to(value, (n_rollouts, n_months_plus_one)).reshape(-1)
+        )
+        columns[name] = flat
+    return pl.DataFrame(columns)
+
+
 @dataclass(frozen=True)
 class ScenarioRunArrays:
     scenario_id: str
     scenario_label: str
     month_index: np.ndarray
-    cash_usd: np.ndarray
-    generic_sp500_value_usd: np.ndarray
-    generic_sp500_sale_usd: np.ndarray
-    generic_sp500_sale_basis_usd: np.ndarray
-    generic_sp500_sale_gain_usd: np.ndarray
-    generic_sp500_sale_tax_usd: np.ndarray
-    crypto_value_usd: np.ndarray
-    crypto_sale_usd: np.ndarray
-    crypto_sale_basis_usd: np.ndarray
-    crypto_sale_gain_usd: np.ndarray
-    checking_floor_action_usd: np.ndarray
-    checking_floor_shortfall_usd: np.ndarray
-    private_equity_value_usd: np.ndarray
-    private_equity_sale_opportunity_value_usd: np.ndarray
-    private_equity_sale_usd: np.ndarray
-    private_equity_sale_basis_usd: np.ndarray
-    private_equity_sale_tax_usd: np.ndarray
-    rental_income_tax_usd: np.ndarray
-    federal_income_tax_usd: np.ndarray
-    california_income_tax_usd: np.ndarray
-    total_income_tax_usd: np.ndarray
-    private_equity_sale_opportunity_event: np.ndarray
-    property_value_usd: np.ndarray
-    mortgage_balance_usd: np.ndarray
-    mortgage_interest_usd: np.ndarray
-    mortgage_principal_usd: np.ndarray
-    mortgage_payment_usd: np.ndarray
-    property_tax_usd: np.ndarray
-    hoa_usd: np.ndarray
-    insurance_usd: np.ndarray
-    maintenance_usd: np.ndarray
-    rental_income_usd: np.ndarray
-    rental_management_fee_usd: np.ndarray
-    rental_leasing_fee_usd: np.ndarray
-    property_carrying_cost_usd: np.ndarray
-    net_property_cash_flow_usd: np.ndarray
-    purchase_closing_cost_usd: np.ndarray
-    sale_closing_cost_usd: np.ndarray
-    property_depreciation_usd: np.ndarray
-    cumulative_property_depreciation_usd: np.ndarray
-    property_sale_gross_usd: np.ndarray
-    property_sale_net_proceeds_usd: np.ndarray
-    property_sale_tax_usd: np.ndarray
-    property_sale_debt_payoff_usd: np.ndarray
-    property_sale_adjusted_basis_usd: np.ndarray
-    realized_property_gain_usd: np.ndarray
-    property_sale_capital_gain_usd: np.ndarray
-    property_sale_capital_gain_exclusion_usd: np.ndarray
-    taxable_property_capital_gain_usd: np.ndarray
-    taxable_property_gain_usd: np.ndarray
-    depreciation_recapture_usd: np.ndarray
-    net_property_sale_cash_flow_usd: np.ndarray
-    home_equity_usd: np.ndarray
-    owner_home_equity_claim_usd: np.ndarray
-    partner_home_equity_claim_usd: np.ndarray
-    partner_contribution_usd: np.ndarray
-    partner_contribution_used_usd: np.ndarray
-    partner_unallocated_excess_usd: np.ndarray
-    partner_house_costs_usd: np.ndarray
-    partner_principal_credit_usd: np.ndarray
-    owner_principal_credit_usd: np.ndarray
-    partner_house_cost_share: np.ndarray
-    partner_equity_ledger_usd: np.ndarray
-    owner_equity_ledger_usd: np.ndarray
-    partner_ownership_pct: np.ndarray
-    liquid_net_worth_usd: np.ndarray
-    net_worth_usd: np.ndarray
-    partner_present: np.ndarray
-    monthly_spend_usd: np.ndarray
+    # Wide-format polars frame keyed by `(rollout_index, month_index)`
+    # carrying every `ReportMetric` column (one column per metric, named
+    # for the matching `ReportMetric` enum value). The previous shape
+    # had ~70 separate `(rollouts, months+1)` numpy arrays as fields; they
+    # are now exposed via per-metric `@property` accessors over this frame
+    # so the canonical storage is one place.
+    numerics: pl.DataFrame
     effects: tuple[Effect, ...]
     policy_decisions: tuple[PolicyDecision, ...]
     market_observations: tuple[MarketObservation, ...]
@@ -236,11 +207,36 @@ class ScenarioRunArrays:
 
     @property
     def rollout_count(self) -> int:
-        return int(self.cash_usd.shape[0])
+        # numerics is row-major (rollout, month_index): rows = rollouts × (months+1).
+        return int(self.numerics.height // self.month_index.size)
 
     @property
     def horizon_months(self) -> int:
-        return int(self.cash_usd.shape[1] - 1)
+        return int(self.month_index.size - 1)
+
+    def metric_array(self, metric: ReportMetric) -> np.ndarray:
+        """Look up a `ReportMetric` column as a `(rollouts, months+1)` 2D
+        numpy array. Polars handles the string→column dispatch."""
+        if metric is ReportMetric.MONTH_INDEX:
+            return self.month_index
+        flat: np.ndarray = self.numerics[metric.value].to_numpy()
+        return flat.reshape(self.rollout_count, self.horizon_months + 1)
+
+    def __getattr__(self, name: str) -> np.ndarray:
+        """Backward-compat attribute access for the per-metric 2D arrays.
+
+        Pre-refactor `ScenarioRunArrays` carried ~70 separate numpy fields
+        (one per `ReportMetric`); ~140 call sites still read them by name.
+        After the storage move to `numerics`, the same access goes through
+        the polars frame: `arrays.cash_usd` → `numerics["cash_usd"].to_numpy()
+        .reshape(rollouts, months+1)`.
+        """
+        # Guard against recursion: `numerics` / `month_index` are real fields;
+        # the dataclass machinery handles them before `__getattr__` runs.
+        if name not in _NUMERIC_METRIC_COLUMNS:
+            raise AttributeError(name)
+        flat: np.ndarray = self.numerics[name].to_numpy()
+        return flat.reshape(self.rollout_count, self.horizon_months + 1)
 
     def rollout_statuses(self) -> tuple[RolloutStatus, ...]:
         statuses: list[RolloutStatus] = []
@@ -649,91 +645,12 @@ def available_report_metrics() -> tuple[ReportMetric, ...]:
     return tuple(ReportMetric)
 
 
-def report_metric_array(arrays: ScenarioRunArrays, metric: ReportMetric) -> np.ndarray:
-    return _report_metric_arrays(arrays)[metric]
-
-
 def _monthly_metric_columns(arrays: ScenarioRunArrays) -> dict[str, list[Any]]:
     columns: dict[str, list[Any]] = {}
     for spec in _MONTHLY_COLUMN_SPECS:
-        values = report_metric_array(arrays, spec.metric)
+        values = arrays.metric_array(spec.metric)
         columns[spec.metric.value] = _flat_bool(values) if values.dtype == np.bool_ else _flat(values)
     return columns
-
-
-def _report_metric_arrays(arrays: ScenarioRunArrays) -> dict[ReportMetric, np.ndarray]:
-    return {
-        ReportMetric.MONTH_INDEX: arrays.month_index,
-        ReportMetric.CASH_USD: arrays.cash_usd,
-        ReportMetric.GENERIC_SP500_VALUE_USD: arrays.generic_sp500_value_usd,
-        ReportMetric.GENERIC_SP500_SALE_USD: arrays.generic_sp500_sale_usd,
-        ReportMetric.GENERIC_SP500_SALE_BASIS_USD: arrays.generic_sp500_sale_basis_usd,
-        ReportMetric.GENERIC_SP500_SALE_GAIN_USD: arrays.generic_sp500_sale_gain_usd,
-        ReportMetric.GENERIC_SP500_SALE_TAX_USD: arrays.generic_sp500_sale_tax_usd,
-        ReportMetric.CRYPTO_VALUE_USD: arrays.crypto_value_usd,
-        ReportMetric.CRYPTO_SALE_USD: arrays.crypto_sale_usd,
-        ReportMetric.CRYPTO_SALE_BASIS_USD: arrays.crypto_sale_basis_usd,
-        ReportMetric.CRYPTO_SALE_GAIN_USD: arrays.crypto_sale_gain_usd,
-        ReportMetric.CHECKING_FLOOR_ACTION_USD: arrays.checking_floor_action_usd,
-        ReportMetric.CHECKING_FLOOR_SHORTFALL_USD: arrays.checking_floor_shortfall_usd,
-        ReportMetric.PRIVATE_EQUITY_VALUE_USD: arrays.private_equity_value_usd,
-        ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_VALUE_USD: arrays.private_equity_sale_opportunity_value_usd,
-        ReportMetric.PRIVATE_EQUITY_SALE_USD: arrays.private_equity_sale_usd,
-        ReportMetric.PRIVATE_EQUITY_SALE_BASIS_USD: arrays.private_equity_sale_basis_usd,
-        ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD: arrays.private_equity_sale_tax_usd,
-        ReportMetric.RENTAL_INCOME_TAX_USD: arrays.rental_income_tax_usd,
-        ReportMetric.FEDERAL_INCOME_TAX_USD: arrays.federal_income_tax_usd,
-        ReportMetric.CALIFORNIA_INCOME_TAX_USD: arrays.california_income_tax_usd,
-        ReportMetric.TOTAL_INCOME_TAX_USD: arrays.total_income_tax_usd,
-        ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_EVENT: arrays.private_equity_sale_opportunity_event,
-        ReportMetric.PROPERTY_VALUE_USD: arrays.property_value_usd,
-        ReportMetric.MORTGAGE_BALANCE_USD: arrays.mortgage_balance_usd,
-        ReportMetric.MORTGAGE_INTEREST_USD: arrays.mortgage_interest_usd,
-        ReportMetric.MORTGAGE_PRINCIPAL_USD: arrays.mortgage_principal_usd,
-        ReportMetric.MORTGAGE_PAYMENT_USD: arrays.mortgage_payment_usd,
-        ReportMetric.PROPERTY_TAX_USD: arrays.property_tax_usd,
-        ReportMetric.HOA_USD: arrays.hoa_usd,
-        ReportMetric.INSURANCE_USD: arrays.insurance_usd,
-        ReportMetric.MAINTENANCE_USD: arrays.maintenance_usd,
-        ReportMetric.RENTAL_INCOME_USD: arrays.rental_income_usd,
-        ReportMetric.RENTAL_MANAGEMENT_FEE_USD: arrays.rental_management_fee_usd,
-        ReportMetric.RENTAL_LEASING_FEE_USD: arrays.rental_leasing_fee_usd,
-        ReportMetric.PROPERTY_CARRYING_COST_USD: arrays.property_carrying_cost_usd,
-        ReportMetric.NET_PROPERTY_CASH_FLOW_USD: arrays.net_property_cash_flow_usd,
-        ReportMetric.PURCHASE_CLOSING_COST_USD: arrays.purchase_closing_cost_usd,
-        ReportMetric.SALE_CLOSING_COST_USD: arrays.sale_closing_cost_usd,
-        ReportMetric.PROPERTY_DEPRECIATION_USD: arrays.property_depreciation_usd,
-        ReportMetric.CUMULATIVE_PROPERTY_DEPRECIATION_USD: arrays.cumulative_property_depreciation_usd,
-        ReportMetric.PROPERTY_SALE_GROSS_USD: arrays.property_sale_gross_usd,
-        ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD: arrays.property_sale_net_proceeds_usd,
-        ReportMetric.PROPERTY_SALE_TAX_USD: arrays.property_sale_tax_usd,
-        ReportMetric.PROPERTY_SALE_DEBT_PAYOFF_USD: arrays.property_sale_debt_payoff_usd,
-        ReportMetric.PROPERTY_SALE_ADJUSTED_BASIS_USD: arrays.property_sale_adjusted_basis_usd,
-        ReportMetric.REALIZED_PROPERTY_GAIN_USD: arrays.realized_property_gain_usd,
-        ReportMetric.PROPERTY_SALE_CAPITAL_GAIN_USD: arrays.property_sale_capital_gain_usd,
-        ReportMetric.PROPERTY_SALE_CAPITAL_GAIN_EXCLUSION_USD: arrays.property_sale_capital_gain_exclusion_usd,
-        ReportMetric.TAXABLE_PROPERTY_CAPITAL_GAIN_USD: arrays.taxable_property_capital_gain_usd,
-        ReportMetric.TAXABLE_PROPERTY_GAIN_USD: arrays.taxable_property_gain_usd,
-        ReportMetric.DEPRECIATION_RECAPTURE_USD: arrays.depreciation_recapture_usd,
-        ReportMetric.NET_PROPERTY_SALE_CASH_FLOW_USD: arrays.net_property_sale_cash_flow_usd,
-        ReportMetric.HOME_EQUITY_USD: arrays.home_equity_usd,
-        ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD: arrays.owner_home_equity_claim_usd,
-        ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD: arrays.partner_home_equity_claim_usd,
-        ReportMetric.PARTNER_CONTRIBUTION_USD: arrays.partner_contribution_usd,
-        ReportMetric.PARTNER_CONTRIBUTION_USED_USD: arrays.partner_contribution_used_usd,
-        ReportMetric.PARTNER_UNALLOCATED_EXCESS_USD: arrays.partner_unallocated_excess_usd,
-        ReportMetric.PARTNER_HOUSE_COSTS_USD: arrays.partner_house_costs_usd,
-        ReportMetric.PARTNER_PRINCIPAL_CREDIT_USD: arrays.partner_principal_credit_usd,
-        ReportMetric.OWNER_PRINCIPAL_CREDIT_USD: arrays.owner_principal_credit_usd,
-        ReportMetric.PARTNER_HOUSE_COST_SHARE: arrays.partner_house_cost_share,
-        ReportMetric.PARTNER_EQUITY_LEDGER_USD: arrays.partner_equity_ledger_usd,
-        ReportMetric.OWNER_EQUITY_LEDGER_USD: arrays.owner_equity_ledger_usd,
-        ReportMetric.PARTNER_OWNERSHIP_PCT: arrays.partner_ownership_pct,
-        ReportMetric.LIQUID_NET_WORTH_USD: arrays.liquid_net_worth_usd,
-        ReportMetric.NET_WORTH_USD: arrays.net_worth_usd,
-        ReportMetric.PARTNER_PRESENT: arrays.partner_present,
-        ReportMetric.MONTHLY_SPEND_USD: arrays.monthly_spend_usd,
-    }
 
 
 @dataclass(frozen=True)
@@ -2369,79 +2286,82 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         amount_field="depreciation_recapture_usd",
     )
     trace_identity_by_rollout = _trace_identity_by_rollout(scenario, market_bundle)
+    metric_arrays: dict[str, np.ndarray] = {
+        "cash_usd": cash,
+        "generic_sp500_value_usd": generic_sp500_value,
+        "generic_sp500_sale_usd": generic_sp500_sale_from_accounting,
+        "generic_sp500_sale_basis_usd": generic_sp500_sale_basis_from_accounting,
+        "generic_sp500_sale_gain_usd": generic_sp500_sale_from_accounting - generic_sp500_sale_basis_from_accounting,
+        "generic_sp500_sale_tax_usd": generic_sp500_sale_tax_from_accounting,
+        "crypto_value_usd": crypto_value,
+        "crypto_sale_usd": crypto_sale_usd,
+        "crypto_sale_basis_usd": crypto_sale_basis_usd,
+        "crypto_sale_gain_usd": crypto_sale_usd - crypto_sale_basis_usd,
+        "checking_floor_action_usd": generic_sp500_sale_from_accounting,
+        "checking_floor_shortfall_usd": checking_floor_shortfall,
+        "private_equity_value_usd": private_equity_value,
+        "private_equity_sale_opportunity_value_usd": private_equity_sale_opportunity_value,
+        "private_equity_sale_usd": private_equity_sale_from_accounting,
+        "private_equity_sale_basis_usd": private_equity_sale_basis_from_accounting,
+        "private_equity_sale_tax_usd": private_equity_sale_tax_from_accounting,
+        "rental_income_tax_usd": rental_income_tax_from_accounting,
+        "federal_income_tax_usd": federal_income_tax_from_accounting,
+        "california_income_tax_usd": california_income_tax_from_accounting,
+        "total_income_tax_usd": total_income_tax_from_accounting,
+        "private_equity_sale_opportunity_event": private_equity_sale_opportunity_event,
+        "property_value_usd": property_value,
+        "mortgage_balance_usd": mortgage_balance,
+        "mortgage_interest_usd": mortgage_interest_from_accounting,
+        "mortgage_principal_usd": mortgage_principal_from_accounting,
+        "mortgage_payment_usd": mortgage_payment_from_accounting,
+        "property_tax_usd": property_tax_from_accounting,
+        "hoa_usd": hoa_from_accounting,
+        "insurance_usd": insurance_from_accounting,
+        "maintenance_usd": maintenance_from_accounting,
+        "rental_income_usd": rental_income_from_accounting,
+        "rental_management_fee_usd": rental_management_fee_from_accounting,
+        "rental_leasing_fee_usd": rental_leasing_fee_from_accounting,
+        "property_carrying_cost_usd": property_carrying_cost_from_accounting,
+        "net_property_cash_flow_usd": net_property_cash_flow_from_accounting,
+        "purchase_closing_cost_usd": disposition.purchase_closing_cost_usd,
+        "sale_closing_cost_usd": sale_closing_cost_from_accounting,
+        "property_depreciation_usd": disposition.property_depreciation_usd,
+        "cumulative_property_depreciation_usd": disposition.cumulative_property_depreciation_usd,
+        "property_sale_gross_usd": property_sale_gross_from_accounting,
+        "property_sale_net_proceeds_usd": property_sale_net_proceeds_from_accounting,
+        "property_sale_tax_usd": property_sale_tax_from_accounting,
+        "property_sale_debt_payoff_usd": property_sale_debt_payoff_from_accounting,
+        "property_sale_adjusted_basis_usd": property_sale_adjusted_basis_from_accounting,
+        "realized_property_gain_usd": realized_property_gain_from_accounting,
+        "property_sale_capital_gain_usd": property_sale_capital_gain_from_accounting,
+        "property_sale_capital_gain_exclusion_usd": property_sale_capital_gain_exclusion_from_accounting,
+        "taxable_property_capital_gain_usd": taxable_property_capital_gain_from_accounting,
+        "taxable_property_gain_usd": taxable_property_gain_from_accounting,
+        "depreciation_recapture_usd": depreciation_recapture_from_accounting,
+        "net_property_sale_cash_flow_usd": property_sale_net_proceeds_from_accounting,
+        "home_equity_usd": home_equity,
+        "owner_home_equity_claim_usd": owner_home_equity_claim_from_snapshot,
+        "partner_home_equity_claim_usd": partner_home_equity_claim_from_snapshot,
+        "partner_contribution_usd": partner_contribution_from_accounting,
+        "partner_contribution_used_usd": partner_contribution_used_from_accounting,
+        "partner_unallocated_excess_usd": partner_unallocated_excess_from_accounting,
+        "partner_house_costs_usd": partner_equity.house_costs_usd,
+        "partner_principal_credit_usd": partner_principal_credit_from_accounting,
+        "owner_principal_credit_usd": owner_principal_credit_from_accounting,
+        "partner_house_cost_share": partner_equity.house_cost_share,
+        "partner_equity_ledger_usd": partner_equity_ledger_from_snapshot,
+        "owner_equity_ledger_usd": owner_equity_ledger_from_snapshot,
+        "partner_ownership_pct": partner_equity.ownership_pct,
+        "liquid_net_worth_usd": liquid_net_worth,
+        "net_worth_usd": net_worth,
+        "partner_present": partner_present,
+        "monthly_spend_usd": monthly_spend_from_accounting,
+    }
     return ScenarioRunArrays(
         scenario_id=scenario.scenario_id,
         scenario_label=scenario.label,
         month_index=month_index,
-        cash_usd=cash,
-        generic_sp500_value_usd=generic_sp500_value,
-        generic_sp500_sale_usd=generic_sp500_sale_from_accounting,
-        generic_sp500_sale_basis_usd=generic_sp500_sale_basis_from_accounting,
-        generic_sp500_sale_gain_usd=generic_sp500_sale_from_accounting - generic_sp500_sale_basis_from_accounting,
-        generic_sp500_sale_tax_usd=generic_sp500_sale_tax_from_accounting,
-        crypto_value_usd=crypto_value,
-        crypto_sale_usd=crypto_sale_usd,
-        crypto_sale_basis_usd=crypto_sale_basis_usd,
-        crypto_sale_gain_usd=crypto_sale_usd - crypto_sale_basis_usd,
-        checking_floor_action_usd=generic_sp500_sale_from_accounting,
-        checking_floor_shortfall_usd=checking_floor_shortfall,
-        private_equity_value_usd=private_equity_value,
-        private_equity_sale_opportunity_value_usd=private_equity_sale_opportunity_value,
-        private_equity_sale_usd=private_equity_sale_from_accounting,
-        private_equity_sale_basis_usd=private_equity_sale_basis_from_accounting,
-        private_equity_sale_tax_usd=private_equity_sale_tax_from_accounting,
-        rental_income_tax_usd=rental_income_tax_from_accounting,
-        federal_income_tax_usd=federal_income_tax_from_accounting,
-        california_income_tax_usd=california_income_tax_from_accounting,
-        total_income_tax_usd=total_income_tax_from_accounting,
-        private_equity_sale_opportunity_event=private_equity_sale_opportunity_event,
-        property_value_usd=property_value,
-        mortgage_balance_usd=mortgage_balance,
-        mortgage_interest_usd=mortgage_interest_from_accounting,
-        mortgage_principal_usd=mortgage_principal_from_accounting,
-        mortgage_payment_usd=mortgage_payment_from_accounting,
-        property_tax_usd=property_tax_from_accounting,
-        hoa_usd=hoa_from_accounting,
-        insurance_usd=insurance_from_accounting,
-        maintenance_usd=maintenance_from_accounting,
-        rental_income_usd=rental_income_from_accounting,
-        rental_management_fee_usd=rental_management_fee_from_accounting,
-        rental_leasing_fee_usd=rental_leasing_fee_from_accounting,
-        property_carrying_cost_usd=property_carrying_cost_from_accounting,
-        net_property_cash_flow_usd=net_property_cash_flow_from_accounting,
-        purchase_closing_cost_usd=disposition.purchase_closing_cost_usd,
-        sale_closing_cost_usd=sale_closing_cost_from_accounting,
-        property_depreciation_usd=disposition.property_depreciation_usd,
-        cumulative_property_depreciation_usd=disposition.cumulative_property_depreciation_usd,
-        property_sale_gross_usd=property_sale_gross_from_accounting,
-        property_sale_net_proceeds_usd=property_sale_net_proceeds_from_accounting,
-        property_sale_tax_usd=property_sale_tax_from_accounting,
-        property_sale_debt_payoff_usd=property_sale_debt_payoff_from_accounting,
-        property_sale_adjusted_basis_usd=property_sale_adjusted_basis_from_accounting,
-        realized_property_gain_usd=realized_property_gain_from_accounting,
-        property_sale_capital_gain_usd=property_sale_capital_gain_from_accounting,
-        property_sale_capital_gain_exclusion_usd=property_sale_capital_gain_exclusion_from_accounting,
-        taxable_property_capital_gain_usd=taxable_property_capital_gain_from_accounting,
-        taxable_property_gain_usd=taxable_property_gain_from_accounting,
-        depreciation_recapture_usd=depreciation_recapture_from_accounting,
-        net_property_sale_cash_flow_usd=property_sale_net_proceeds_from_accounting,
-        home_equity_usd=home_equity,
-        owner_home_equity_claim_usd=owner_home_equity_claim_from_snapshot,
-        partner_home_equity_claim_usd=partner_home_equity_claim_from_snapshot,
-        partner_contribution_usd=partner_contribution_from_accounting,
-        partner_contribution_used_usd=partner_contribution_used_from_accounting,
-        partner_unallocated_excess_usd=partner_unallocated_excess_from_accounting,
-        partner_house_costs_usd=partner_equity.house_costs_usd,
-        partner_principal_credit_usd=partner_principal_credit_from_accounting,
-        owner_principal_credit_usd=owner_principal_credit_from_accounting,
-        partner_house_cost_share=partner_equity.house_cost_share,
-        partner_equity_ledger_usd=partner_equity_ledger_from_snapshot,
-        owner_equity_ledger_usd=owner_equity_ledger_from_snapshot,
-        partner_ownership_pct=partner_equity.ownership_pct,
-        liquid_net_worth_usd=liquid_net_worth,
-        net_worth_usd=net_worth,
-        partner_present=partner_present,
-        monthly_spend_usd=monthly_spend_from_accounting,
+        numerics=_build_numerics_frame(month_index, metric_arrays),
         effects=_sorted_effects(_with_trajectory_identity(effects, trace_identity_by_rollout)),
         policy_decisions=_sorted_policy_decisions(
             _with_trajectory_identity(policy_decisions, trace_identity_by_rollout)

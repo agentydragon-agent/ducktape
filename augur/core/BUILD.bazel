@@ -202,6 +202,7 @@ py_library(
         ":scenario_set_py",
         ":schemas_py",
         "@pypi//numpy",
+        "@pypi//polars",
     ],
 )
 

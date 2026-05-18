@@ -34,7 +34,7 @@ from augur.core.provenance import (
     projection_trajectory_id,
     scenario_input_id,
 )
-from augur.core.scenario_engine import ScenarioRunArrays, report_metric_array, run_scenario_vectorized
+from augur.core.scenario_engine import ScenarioRunArrays, run_scenario_vectorized
 from augur.core.scenario_set import (
     AccountingDetail,
     ActorRole,
@@ -372,7 +372,7 @@ class ScenarioRun:
     def _metric_array(self, metric: ReportMetric) -> np.ndarray:
         if self.arrays is None:
             raise ValueError(f"scenario {self.scenario_id!r} was not simulated")
-        return report_metric_array(self.arrays, metric)
+        return self.arrays.metric_array(metric)
 
     def _validate_rollout_index(self, rollout: int) -> None:
         if self.arrays is None:
