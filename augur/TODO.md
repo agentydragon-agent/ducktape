@@ -63,25 +63,25 @@ plus a `column(name)` accessor — same shape as `ScenarioRunArrays.numerics`:
 - `PropertyDispositionArrays` — 16 cols, collapsed `PropertySaleSettlementArrays`
   into the same frame (commit `184466292`)
 
-What's left is the deeper "north star" rewrite:
+What's left:
 
-- [ ] **Engine sub-stages emit polars frames natively.** The 65+ free-floating
-      ndarrays in `run_scenario_vectorized` (`cash`, `generic_sp500_value`,
-      and the various `*_from_accounting` derivations) are still built with
-      numpy operations and gathered into a dict at the end before
-      `_build_numerics_frame` converts. The migrated intermediates above
-      contribute only ~6 columns via `.column(...)` calls; folding them in
-      via `numerics.join(...)` instead is structurally tidier but the bulk
-      of the dict-to-frame conversion stays as long as those upstream
-      numpy stages exist.
-- [ ] **Numpy arithmetic in the engine becomes polars expressions.** This
-      is the multi-month rewrite the plan calls out: `carrying_cost = tax +
-hoa + insurance + maintenance` is currently 4 numpy adds on
-      `(rollouts, months+1)` ndarrays; the polars-native form is one
-      `with_columns(pl.col("tax_usd") + pl.col("hoa_usd") + …)` on the
-      relevant frame. Each helper rewritten independently is small; doing
-      the whole engine is the scope the plan deferred. See
-      `augur/plans/plan-it-out-stateless-snowglobe.md`.
+- [ ] **Engine arithmetic becomes polars expressions on the canonical
+      frame.** The ~65 free-floating ndarrays in `run_scenario_vectorized`
+      that feed `metric_arrays` (`cash`, `generic_sp500_value`,
+      `liquid_net_worth = cash + generic_sp500_value + crypto_value`,
+      cumulative sums via `np.cumsum(..., axis=1)`, the per-metric
+      `*_from_accounting` reductions, etc.) get rewritten as
+      `with_columns(...)` / `cum_sum().over("rollout_index")` /
+      `group_by([...]).agg(...)` calls on a frame keyed by
+      `(rollout_index, month_index)`. The migrated intermediates
+      (PropertyCashFlow, PartnerEquity, PropertyDisposition) join in
+      directly, and the `metric_arrays` dict + `_build_numerics_frame`
+      seam disappears. Helpers to migrate: the ~30 functions that produce
+      per-metric ndarrays — `_accounting_*_amount_matrix`,
+      `_balance_snapshot_amount_matrix`, `_accounting_detail_amount_matrix`,
+      `mortgage_payment_arrays`, etc. Each individually is small (most
+      are 10-30 LOC mask-and-sum kernels that map directly to
+      `group_by + sum`); the count is what makes it work, not the depth.
 
 ## Response wire surface
 
