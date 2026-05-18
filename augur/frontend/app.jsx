@@ -1262,18 +1262,6 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
                 </div>
               </div>
               <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
-                <label className="flex min-w-0 flex-1 items-center gap-2 text-xs augur-muted">
-                  Color
-                  <input
-                    aria-label={`${identity.label} color`}
-                    className="h-8 w-12 rounded border border-slate-300 bg-white p-0 dark:border-slate-600"
-                    type="color"
-                    value={identity.color}
-                    onChange={(event) =>
-                      updateScenarioSection(identity.scenarioId, "identity", { color: event.target.value })
-                    }
-                  />
-                </label>
                 <span className="min-w-0 max-w-full shrink-0 truncate rounded border border-slate-200 px-2 py-1 text-xs augur-muted dark:border-slate-700">
                   {actorsAndOwnership.actorPolicy === "owner_plus_partner"
                     ? `${partnerLabel} active`
