@@ -233,6 +233,91 @@ def test_report_spec_can_omit_monthly_columns_from_response() -> None:
     assert result.metric_fan_columns["net_worth_usd"].row_count == 3
 
 
+def _mortgage_scenario(scenario_id: str) -> Scenario:
+    """Property + 30Y fixed mortgage scenario that produces obligations,
+    funding_decisions, and settlement_results in the in-memory arrays — the
+    debug streams gated by the new include_* flags."""
+    return Scenario(
+        scenario_id=scenario_id,
+        label=scenario_id.replace("_", " ").title(),
+        actors=(_simple_actor(),),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id="san_francisco_ca", purchase_price_usd=500_000
+        ),
+        financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=6),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=2.5, closing_cost_sell_pct=0),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=200_000,
+                ),
+            )
+        ),
+    )
+
+
+def test_report_spec_event_streams_default_to_empty_on_the_wire() -> None:
+    """The four per-rollout-per-month event streams (obligations, funding
+    decisions, settlement results, failure events) dominate response size
+    and aren't consumed by any current frontend, so the default `ReportSpec`
+    drops them from the wire. The in-memory `ScenarioRunArrays` still
+    carries them for backend tests and would-be debug consumers."""
+    scenario_set = ScenarioSet(
+        scenario_set_id="gates_default",
+        title="Gates Default",
+        market_request=MarketRequest(market_model_id="e2e_noop", rollout_count=1, horizon_months=2, seed=0),
+        scenarios=(_mortgage_scenario("gates_default"),),
+    )
+
+    run = simulate_set(
+        scenario_set, market_provider=NoopMarketBundleProvider(), local_regulation_by_id=_TEST_LOCAL_REGULATION_BY_ID
+    )
+    result = run.scenario("gates_default")
+    assert result.arrays is not None
+    assert len(result.arrays.obligations) > 0
+    assert len(result.arrays.funding_decisions) > 0
+    assert len(result.arrays.settlement_results) > 0
+
+    response_result = run.to_response().scenario_results[0]
+    assert response_result.obligations == ()
+    assert response_result.funding_decisions == ()
+    assert response_result.settlement_results == ()
+    assert response_result.failure_events == ()
+
+
+def test_report_spec_event_streams_opt_in_round_trips_array_data() -> None:
+    """When the gates are flipped on, each event stream round-trips to the
+    response in the same shape as the in-memory arrays — same count, same
+    field values per row."""
+    scenario_set = ScenarioSet(
+        scenario_set_id="gates_opt_in",
+        title="Gates Opt In",
+        market_request=MarketRequest(market_model_id="e2e_noop", rollout_count=1, horizon_months=2, seed=0),
+        report_spec=ReportSpec(
+            include_obligations=True,
+            include_funding_decisions=True,
+            include_settlement_results=True,
+            include_failure_events=True,
+        ),
+        scenarios=(_mortgage_scenario("gates_opt_in"),),
+    )
+
+    run = simulate_set(
+        scenario_set, market_provider=NoopMarketBundleProvider(), local_regulation_by_id=_TEST_LOCAL_REGULATION_BY_ID
+    )
+    result = run.scenario("gates_opt_in")
+    response_result = run.to_response().scenario_results[0]
+
+    assert result.arrays is not None
+    assert len(response_result.obligations) == len(result.arrays.obligations)
+    assert len(response_result.funding_decisions) == len(result.arrays.funding_decisions)
+    assert len(response_result.settlement_results) == len(result.arrays.settlement_results)
+    assert len(response_result.failure_events) == len(result.arrays.failure_events)
+
+
 def test_cash_only_no_activity_preserves_balance() -> None:
     """Agent holds $100k in checking, no property, no investments, no spending.
     Flat market. Cash should remain exactly $100k at every month."""

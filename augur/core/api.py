@@ -362,10 +362,10 @@ class ScenarioRun:
             lot_dispositions=self.arrays.lot_dispositions,
             liabilities=self.arrays.liabilities,
             accounting_details=self.arrays.accounting_details,
-            obligations=self.arrays.obligations,
-            funding_decisions=self.arrays.funding_decisions,
-            settlement_results=self.arrays.settlement_results,
-            failure_events=self.arrays.failure_events,
+            obligations=self.arrays.obligations if report_spec.include_obligations else (),
+            funding_decisions=self.arrays.funding_decisions if report_spec.include_funding_decisions else (),
+            settlement_results=self.arrays.settlement_results if report_spec.include_settlement_results else (),
+            failure_events=self.arrays.failure_events if report_spec.include_failure_events else (),
             warnings=self.warnings,
         )
 

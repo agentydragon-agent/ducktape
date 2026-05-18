@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -424,5 +424,22 @@ py_test(
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "bench_augur_run",
+    testonly = True,
+    srcs = ["bench_augur_run.py"],
+    data = ["testdata/portfolio.example.yaml"],
+    deps = [
+        ":api_py",
+        ":local_regulation_py",
+        ":market_bundle_test_support_py",
+        ":portfolio_py",
+        ":scenario_engine_py",
+        ":scenario_set_py",
+        "@pypi//numpy",
+        "@pypi//polars",
     ],
 )

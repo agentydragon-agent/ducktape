@@ -720,6 +720,14 @@ class FailureEvent(_TraceBase):
 class ReportSpec(ApiModel):
     percentiles: tuple[float, ...] = (5, 25, 50, 75, 95)
     include_monthly_columns: bool = True
+    # Per-rollout-per-month event streams; off by default because they're not
+    # consumed by any current frontend and dominate response wire size
+    # (~500 MB for one scenario at 128 rollouts × 360 months with all four
+    # enabled). Opt back in for debug/inspection workloads.
+    include_funding_decisions: bool = False
+    include_obligations: bool = False
+    include_settlement_results: bool = False
+    include_failure_events: bool = False
 
     @model_validator(mode="after")
     def _percentiles_in_range(self) -> ReportSpec:
