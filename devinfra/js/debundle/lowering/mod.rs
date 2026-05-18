@@ -51,8 +51,8 @@ mod visitors;
 use anonymous::resolve_anonymous_statement_ordinals;
 use body_facts::{ModuleBodyFacts, RefCollector, collect_module_body_facts};
 use chunk_ast::{
-    ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_names, declaration_names,
-    top_level_declaration_ids,
+    ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_ids, binding_names, declaration_ids,
+    declaration_names, top_level_declaration_ids,
 };
 use chunk_renames::collect_chunk_renames;
 use exports::{
@@ -61,7 +61,7 @@ use exports::{
 };
 use imports_cross::{
     collect_entry_exports_by_original_local, cross_module_imports_for_plan, final_module_exports,
-    module_export_ident_name, residual_entry_imports_for_moved_body,
+    residual_entry_imports_for_moved_body,
 };
 use imports_runtime::{
     import_decl_module_item, resolve_imported_binding, source_chunk_imports_for_moved_body,
