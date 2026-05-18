@@ -85,15 +85,16 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
 }
 
 pub(super) fn collect_imported_reexports_by_module(
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
     module_count: usize,
 ) -> Vec<Vec<ImportedReexport>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
-    // Stable iteration order on `schedule.bindings` (HashMap): the
+    // Stable iteration order on `factorization.analysis.bindings` (HashMap): the
     // recorded sequence determines the emit order of
     // `import { ... }` statements per module body and we want that
     // source-level shape pinned.
-    let mut sorted_bindings: Vec<(&Id, &BindingKind)> = schedule.bindings.iter().collect();
+    let mut sorted_bindings: Vec<(&Id, &BindingKind)> =
+        factorization.analysis.bindings.iter().collect();
     sorted_bindings.sort_by(|a, b| a.0.0.cmp(&b.0.0));
     for (id, kind) in sorted_bindings {
         // The body of this loop refers to the sym-typed `local` name
@@ -135,7 +136,7 @@ pub(super) struct RuntimeImportLookup<'a> {
 pub(super) fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &ModuleBodyFacts,
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
     declaration_by_name: &HashMap<Id, usize>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
@@ -144,12 +145,14 @@ pub(super) fn plan_module_reference_needs<'a>(
     let mut needs = ModuleReferenceNeeds::default();
     for body_id in &body_facts.referenced_idents {
         // body_id is the hygiene-aware (sym, ctxt) of one referenced ident.
-        // Spec-derived lookup tables (schedule.{owner_of, logical_module},
+        // Spec-derived lookup tables (factorization.{owner_of, logical_module},
         // declaration_by_name, binding_assignment, entry_exports_by_original_local,
         // LogicalModule.rename_map) are still String-keyed by sym; convert at
         // each call. `runtime_imports.imports` IS Id-keyed.
         let name_str = body_id.0.as_ref();
-        if let Some(ModuleId(LogicalModuleIndex(provider_index))) = schedule.owner_of(name_str) {
+        if let Some(ModuleId(LogicalModuleIndex(provider_index))) =
+            factorization.analysis.owner_of(name_str)
+        {
             // provider.rename_map is now Id-keyed; reconstruct the
             // provider's Id from the body ident's sym + ctxt. Within
             // a chunk all top-level bindings share the chunk's
@@ -157,7 +160,9 @@ pub(super) fn plan_module_reference_needs<'a>(
             // binding ctxt.
             let provider_key: Id = (body_id.0.clone(), body_id.1);
             if provider_index != module_index
-                && let Some(provider) = schedule.logical_module(LogicalModuleIndex(provider_index))
+                && let Some(provider) = factorization
+                    .analysis
+                    .logical_module(LogicalModuleIndex(provider_index))
                 && let Some(exported_name) = provider.rename_map.get(&provider_key)
             {
                 needs

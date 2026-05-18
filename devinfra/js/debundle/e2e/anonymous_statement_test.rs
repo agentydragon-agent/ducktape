@@ -392,7 +392,7 @@ export { X, Existing };
 // post-split statement ordinal N + (number of extra splits in
 // body[..N]).
 //
-// Without the conversion, the Schedule's destination override
+// Without the conversion, the ChunkFactorization's destination override
 // (which keys off `statement_ordinal`) targets the wrong owner
 // node — the materializer still emits the right body item into
 // the right module, but the realizability check sees a stale
@@ -412,7 +412,7 @@ fn anon_statement_after_comma_list_resolves_correct_owner() {
     // Post-split statement_ordinal is 2 (because body[0]'s
     // comma-list adds +1 to the count).
     //
-    // If the conversion is wrong, schedule.rs would override
+    // If the conversion is wrong, factorization.rs would override
     // owner with `statement_ordinal == 1` (which is `b`'s owner)
     // instead of the anon owner — `b` would be claimed by
     // x_module while the anon stays in residual, and either:

@@ -360,7 +360,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     /// Test-helper residual destination: the synthesized residual
     /// logical module always sits at the highest index appended by
-    /// `schedule_for` / `schedule_with_residual_module`. Tests use this
+    /// `factorization_for` / `factorization_with_residual_module`. Tests use this
     /// instead of the historical `ModuleId::ResidualEntry` literal.
     fn residual() -> ModuleId {
         ModuleId::logical(usize::MAX)
@@ -408,7 +408,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert_eq!(report.cycles.len(), 1);
         assert_eq!(report.cycles[0].modules.len(), 2);
     }
@@ -424,7 +424,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "expected no cycles, got {:?}",
@@ -437,7 +437,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     /// DESIGN.md "Realizability primitive" clause 3 — the
     /// constraining-edge subgraph (drops LazyUse) has no
     /// multi-module SCC. The materializer's Lemma 2 steering
-    /// (Schedule::source_import_position with SCC-aware reverse)
+    /// (ChunkFactorization::source_import_position with SCC-aware reverse)
     /// gives entry an import order such that the ESM linker
     /// resolves the cycle without TDZ.
     #[test]
@@ -455,7 +455,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "mixed cycle with no at-init call should be realizable; got {:?}",
@@ -525,7 +525,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert_eq!(
             report.cycles.len(),
             1,
@@ -559,7 +559,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert_eq!(report.cycles.len(), 1);
         let cycle = &report.cycles[0];
         assert!(
@@ -593,7 +593,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "lazy-only cycle is realizable; the gate must accept and emit no cycle (got {:?})",
@@ -604,14 +604,14 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     /// LazyRebind atomic-unit split: declarer and assigner of a
     /// mutable binding must materialize together. `factor_assembly`
     /// records this as an `atomic_unit_conflicts` entry on the
-    /// schedule; the materializer bails on any non-empty list.
+    /// factorization; the materializer bails on any non-empty list.
     #[test]
     fn cross_destination_lazy_write_is_rejected() {
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "let A = 0; function B() { A = 1; }",
             &[("A", logical(0)), ("B", residual())],
         );
-        let report = schedule.validate();
+        let report = factorization.validate();
         assert_eq!(
             report.atomic_unit_conflicts.len(),
             1,
@@ -643,12 +643,12 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn same_destination_lazy_write_is_allowed() {
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "let A = 0; function B() { A = 1; }",
             &[("A", logical(0)), ("B", logical(0))],
         );
 
-        let report = schedule.validate();
+        let report = factorization.validate();
         assert!(
             report.atomic_unit_conflicts.is_empty(),
             "same-destination rebinding writes should stay local to the emitted module: {report:?}",
@@ -656,7 +656,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     }
 
     /// Resolve a sentinel `residual()` ModuleId to the real residual
-    /// logical-module index. Helper for `schedule_for`: in the new
+    /// logical-module index. Helper for `factorization_for`: in the new
     /// no-variant world the residual is just a logical module, so
     /// tests that used to write `ModuleId::ResidualEntry` now write
     /// `residual()` (a `usize::MAX`-indexed sentinel) and let the
@@ -669,7 +669,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         }
     }
 
-    fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> Schedule {
+    fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFactorization {
         let module = parse(source);
         let facts = analyze_facts(&module);
         let mut max_idx: Option<usize> = None;
@@ -703,7 +703,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
             rename_map: HashMap::new(),
             anonymous_statement_ordinals: Vec::new(),
         });
-        Schedule::build(
+        ChunkFactorization::build(
             "test_chunk".to_string(),
             facts,
             bindings,
@@ -713,11 +713,11 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         )
     }
 
-    fn schedule_with_residual_module(
+    fn factorization_with_residual_module(
         source: &str,
         residual_bindings: &[&str],
         logical_bindings: &[&str],
-    ) -> Schedule {
+    ) -> ChunkFactorization {
         let module = parse(source);
         let facts = analyze_facts(&module);
         let residual = logical(0);
@@ -745,7 +745,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
                 anonymous_statement_ordinals: Vec::new(),
             },
         ];
-        Schedule::build(
+        ChunkFactorization::build(
             "test_chunk".to_string(),
             facts,
             bindings,
@@ -757,29 +757,33 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
-        let schedule = schedule_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
+        let factorization =
+            factorization_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
 
         assert!(
-            schedule.owner_graph.edges.iter().any(|edge| {
+            factorization.analysis.owner_graph.edges.iter().any(|edge| {
                 edge.from == OwnerId(0)
                     && edge.to == OwnerId(1)
                     && edge.reason.kind == DepKind::EagerUse
                     && edge.reason.statement_ordinal == StatementOrdinal(0)
-                    && schedule.binding_name(edge.reason.binding.unwrap()) == "X"
+                    && factorization
+                        .analysis
+                        .binding_name(edge.reason.binding.unwrap())
+                        == "X"
             }),
             "owner graph should retain the unassigned declared provider edge",
         );
         // The residual is the synthesized logical module at index 1
         // (after the explicit `mod_0` at index 0).
         assert!(
-            schedule
+            factorization
                 .dep_graph
                 .graph
                 .contains_edge(logical(0), ModuleId::logical(1)),
             "the quotient should expose the logical-module -> residual read",
         );
 
-        let report = schedule.owner_graph_report();
+        let report = factorization.owner_graph_report();
         let residual_owner = report
             .nodes
             .iter()
@@ -794,13 +798,13 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn peelability_reports_symbols_currently_peelable_from_residual() {
-        let schedule = schedule_with_residual_module(
+        let factorization = factorization_with_residual_module(
             "const Leaf = 1; const ResidualUse = Leaf + 1; const Existing = ResidualUse + 1;",
             &["Leaf", "ResidualUse"],
             &["Existing"],
         );
 
-        let report = schedule.owner_graph_report();
+        let report = factorization.owner_graph_report();
         assert_eq!(report.peelability.residual_destinations.len(), 1);
         assert_eq!(
             report.peelability.residual_destinations[0].label,
@@ -834,9 +838,10 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn peelability_allows_symbol_with_lazy_only_residual_dependency() {
-        let schedule = schedule_for("function Leaf() { return Dep; } const Dep = 1;", &[]);
+        let factorization =
+            factorization_for("function Leaf() { return Dep; } const Dep = 1;", &[]);
 
-        let report = schedule.owner_graph_report();
+        let report = factorization.owner_graph_report();
         let leaf_horizon = report
             .peelability
             .residual_owner_horizon
@@ -861,10 +866,13 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn peelability_blocks_residual_symbol_that_would_create_constraining_scc() {
-        let schedule =
-            schedule_with_residual_module("const A = B + 1; const B = A + 1;", &["A", "B"], &[]);
+        let factorization = factorization_with_residual_module(
+            "const A = B + 1; const B = A + 1;",
+            &["A", "B"],
+            &[],
+        );
 
-        let report = schedule.owner_graph_report();
+        let report = factorization.owner_graph_report();
         let a_horizon = report
             .peelability
             .residual_owner_horizon
@@ -893,13 +901,13 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn peelability_does_not_overclaim_pair_when_three_owner_cycle_remains() {
-        let schedule = schedule_with_residual_module(
+        let factorization = factorization_with_residual_module(
             "const A = B + 1; const B = C + 1; const C = A + 1;",
             &["A", "B", "C"],
             &[],
         );
 
-        let report = schedule.owner_graph_report();
+        let report = factorization.owner_graph_report();
         // The three-owner closure {A,B,C} is the only legitimate peel:
         // moving any strict subset leaves a back-pointer to the source
         // destination. No pair-peel is overclaimed.
@@ -3397,7 +3405,7 @@ mutable = mutable + 1;"#,
         // nothing readwise (literal init), B's row owns the read
         // of X but its home is mod_1 — so no edge (B reads X
         // within its own module).
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "const A = 1, B = X; const X = 42;",
             &[("A", logical(0)), ("B", logical(1)), ("X", logical(1))],
         );
@@ -3406,14 +3414,14 @@ mutable = mutable + 1;"#,
         let mod_0 = ModuleId(LogicalModuleIndex(0));
         let mod_1 = ModuleId(LogicalModuleIndex(1));
         assert!(
-            !schedule.dep_graph.graph.contains_edge(mod_0, mod_1),
+            !factorization.dep_graph.graph.contains_edge(mod_0, mod_1),
             "no edge mod_0 → mod_1 expected, got: {:?}",
-            schedule.dep_graph.graph.edge_weight(mod_0, mod_1),
+            factorization.dep_graph.graph.edge_weight(mod_0, mod_1),
         );
         assert!(
-            !schedule.dep_graph.graph.contains_edge(mod_1, mod_0),
+            !factorization.dep_graph.graph.contains_edge(mod_1, mod_0),
             "no edge mod_1 → mod_0 expected, got: {:?}",
-            schedule.dep_graph.graph.edge_weight(mod_1, mod_0),
+            factorization.dep_graph.graph.edge_weight(mod_1, mod_0),
         );
     }
 
@@ -3539,7 +3547,7 @@ mutable = mutable + 1;"#,
         // This case demonstrates the split doesn't *miss* real
         // cycles either: the bug bit when multiple declarators
         // had differently-owned reads on the same line.
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "const A = X, B = 1; const X = 42; const Y = A;",
             &[
                 ("A", logical(0)),
@@ -3548,24 +3556,24 @@ mutable = mutable + 1;"#,
                 ("Y", logical(1)),
             ],
         );
-        let report = schedule.validate();
+        let report = factorization.validate();
         assert!(
             !report.cycles.is_empty(),
             "expected a real cycle to be reported"
         );
     }
 
-    // --- linker_order in ScheduleReport --------------------------------------
+    // --- linker_order in FactorizationReport --------------------------------------
 
     #[test]
     fn validate_surfaces_linker_order_for_acyclic_spec() {
         // mod_0 reads B from mod_1 at-init → mod_1 must precede
         // mod_0 in the linker's evaluation order.
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "const A = B + 1; const B = 42;",
             &[("A", logical(0)), ("B", logical(1))],
         );
-        let report = schedule.validate();
+        let report = factorization.validate();
         let order = &report.linker_order;
         let pos = |name: &str| -> usize {
             order
@@ -3586,11 +3594,11 @@ mutable = mutable + 1;"#,
         // routing of the validator (DESIGN.md "Realizability
         // primitive"), the case has to actually produce a cycle in
         // the constraining-edge subgraph — mutual at-init reads do.
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "const A = B + 1; const B = A + 1;",
             &[("A", logical(0)), ("B", logical(1))],
         );
-        let report = schedule.validate();
+        let report = factorization.validate();
         assert!(!report.cycles.is_empty(), "expected a cycle in {report:?}",);
         assert!(
             report.linker_order.is_empty(),
@@ -3714,27 +3722,38 @@ mutable = mutable + 1;"#,
         assert_eq!(unit_sizes(&units), vec![2]);
     }
 
-    fn partition_summary(schedule: &Schedule) -> Vec<(String, String)> {
-        let mut out: Vec<(String, String)> = schedule
+    fn partition_summary(factorization: &ChunkFactorization) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = factorization
+            .analysis
             .owner_graph
             .iter_nodes()
             .map(|node| {
                 let declared: Vec<String> = node
                     .declared
                     .iter()
-                    .filter_map(|b| schedule.owner_graph.binding_table.name(*b).cloned())
+                    .filter_map(|b| {
+                        factorization
+                            .analysis
+                            .owner_graph
+                            .binding_table
+                            .name(*b)
+                            .cloned()
+                    })
                     .collect();
                 let key = if declared.is_empty() {
                     format!("stmt_{}", node.statement_ordinal.0)
                 } else {
                     declared.join(",")
                 };
-                let dest = schedule.partition.of(node.id);
+                let dest = factorization.partition.of(node.id);
                 // Residual modules render as `<residual>` so this
                 // summary stays stable across residual-index changes;
                 // explicit modules use their `mod_<idx>` label.
                 let LogicalModuleIndex(idx) = dest.0;
-                let label = match schedule.logical_module(LogicalModuleIndex(idx)) {
+                let label = match factorization
+                    .analysis
+                    .logical_module(LogicalModuleIndex(idx))
+                {
                     Some(m) if m.residual => "<residual>".to_string(),
                     _ => render(dest),
                 };
@@ -3747,8 +3766,8 @@ mutable = mutable + 1;"#,
 
     #[test]
     fn factor_assembly_unclaimed_owners_default_to_residual() {
-        let schedule = schedule_for("const A = 1; const B = 2;", &[]);
-        let summary = partition_summary(&schedule);
+        let factorization = factorization_for("const A = 1; const B = 2;", &[]);
+        let summary = partition_summary(&factorization);
         assert_eq!(
             summary,
             vec![
@@ -3770,8 +3789,9 @@ mutable = mutable + 1;"#,
         // (`crate::factorize`) may suggest "extend mod_0 to include
         // B" as an advisory edit, but factor_assembly refuses to
         // silently move B for the user.
-        let schedule = schedule_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
-        let report = schedule.validate();
+        let factorization =
+            factorization_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
+        let report = factorization.validate();
         assert_eq!(
             report.atomic_unit_conflicts.len(),
             1,
@@ -3790,11 +3810,11 @@ mutable = mutable + 1;"#,
         // Both members of the same atomic unit claimed for the same
         // module — that's the spec author being explicit, not a
         // conflict.
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "const A = B + 1; const B = A + 1;",
             &[("A", logical(0)), ("B", logical(0))],
         );
-        let summary = partition_summary(&schedule);
+        let summary = partition_summary(&factorization);
         assert_eq!(
             summary,
             vec![
@@ -3806,11 +3826,11 @@ mutable = mutable + 1;"#,
 
     #[test]
     fn factor_assembly_records_conflict_on_split_eager_use_cycle() {
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "const A = B + 1; const B = A + 1;",
             &[("A", logical(0)), ("B", logical(1))],
         );
-        let report = schedule.validate();
+        let report = factorization.validate();
         assert_eq!(
             report.atomic_unit_conflicts.len(),
             1,
@@ -3833,11 +3853,11 @@ mutable = mutable + 1;"#,
         // cycle when the spec creates one through reverse claims,
         // but factor_assembly itself does not panic / record a
         // conflict here.
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
             &[("a1", logical(0)), ("b1", logical(1)), ("a2", logical(0))],
         );
-        let report = schedule.validate();
+        let report = factorization.validate();
         assert!(
             report.atomic_unit_conflicts.is_empty(),
             "Sequenced-only chains never force co-location: {report:?}",
@@ -3848,11 +3868,11 @@ mutable = mutable + 1;"#,
     fn factor_assembly_independent_owners_keep_independent_claims() {
         // Three eager-use chain: A → B → C, no cycle, three atomic
         // units. Each owner's claim takes effect independently.
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "const C = 3; const B = C + 1; const A = B + 1;",
             &[("A", logical(0)), ("B", logical(1)), ("C", logical(0))],
         );
-        let summary = partition_summary(&schedule);
+        let summary = partition_summary(&factorization);
         assert_eq!(
             summary,
             vec![
@@ -3874,11 +3894,11 @@ mutable = mutable + 1;"#,
     /// `module_key`, and `extension_owner_ids` carries C's owner.
     #[test]
     fn factorize_proposes_extension_for_module_with_unclaimed_cycle_member() {
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "const B = 1; const A = C + 1; const C = A + 1;",
             &[("A", logical(0)), ("B", logical(0))],
         );
-        let report = schedule.owner_graph_report().factorize;
+        let report = factorization.owner_graph_report().factorize;
         let extensions: Vec<&FactorizeCell> = report
             .cells
             .iter()
@@ -3933,8 +3953,8 @@ mutable = mutable + 1;"#,
         //   * EagerUse `from→to`           → Loose(Y) → Loose(X)
         //   * Sequenced `to→from` (inverted) → Loose(X) → Loose(Y)
         // ⇒ single SCC, fresh-module proposal.
-        let schedule = schedule_for("const X = init(); const Y = step(X);", &[]);
-        let report = schedule.owner_graph_report().factorize;
+        let factorization = factorization_for("const X = init(); const Y = step(X);", &[]);
+        let report = factorization.owner_graph_report().factorize;
         let fresh: Vec<&FactorizeCell> = report
             .cells
             .iter()
@@ -3980,13 +4000,13 @@ mutable = mutable + 1;"#,
         // emit-resolvability redesign — entry auto-exports the
         // residual bindings, so the function consumer is
         // independently peelable.)
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             r#"const dep_a = "left";
 const dep_b = "right";
 const consumer = dep_a + dep_b;"#,
             &[],
         );
-        let report = schedule
+        let report = factorization
             .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
 
         assert!(
@@ -4033,7 +4053,7 @@ const consumer = dep_a + dep_b;"#,
         // `factorize_reports_size_cap_closure_as_diagnostic_not_partial_proposal`);
         // lazy reads no longer force closure growth post-emit-
         // resolvability redesign.
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             r#"const dep_a = "left";
 const dep_b = "right";
 const consumer_one = dep_a + dep_b;
@@ -4041,7 +4061,7 @@ const consumer_two = dep_a + dep_b;
 const consumer_three = dep_a + dep_b;"#,
             &[],
         );
-        let report = schedule
+        let report = factorization
             .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
 
         let mut seen: BTreeSet<(FactorizeDiagnosticReason, Vec<String>)> = BTreeSet::new();
@@ -4057,15 +4077,15 @@ const consumer_three = dep_a + dep_b;"#,
 
     #[test]
     fn schedule_report_serializes_linker_order_as_snake_case() {
-        let schedule = schedule_for(
+        let factorization = factorization_for(
             "const A = 1; const B = A + 1;",
             &[("A", logical(0)), ("B", logical(1))],
         );
-        let report = schedule.validate();
-        let json = serde_json::to_string(&report).expect("serialize ScheduleReport");
+        let report = factorization.validate();
+        let json = serde_json::to_string(&report).expect("serialize FactorizationReport");
         assert!(
             json.contains(r#""linker_order""#),
-            "ScheduleReport must serialize linker_order as `linker_order`; got: {json}",
+            "FactorizationReport must serialize linker_order as `linker_order`; got: {json}",
         );
     }
 }

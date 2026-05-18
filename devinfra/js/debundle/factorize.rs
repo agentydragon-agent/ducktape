@@ -1,5 +1,5 @@
 //! Certifying factorize proposal emitter. Reads the in-memory
-//! [`Schedule`] and emits only owner sets that have already passed
+//! [`ChunkFactorization`] and emits only owner sets that have already passed
 //! the same peel predicate the materializer uses.
 //!
 //! The algorithm is a monotone closure over residual frontier starts:
@@ -23,8 +23,8 @@ use crate::atomic_units::compute_atomic_units;
 use crate::peelability::{PeelCandidateEvaluation, PeelabilityContext, evaluate_peel_candidate};
 use crate::reports::{build_quotient_edge_reports, is_residual_destination, module_key, owner_key};
 use crate::{
-    BindingName, FactorizeCell, FactorizeDiagnostic, FactorizeDiagnosticReason, FactorizeOptions,
-    FactorizeReport, ModuleId, OwnerId, PeelCandidateStatus, Schedule,
+    BindingName, ChunkFactorization, FactorizeCell, FactorizeDiagnostic, FactorizeDiagnosticReason,
+    FactorizeOptions, FactorizeReport, ModuleId, OwnerId, PeelCandidateStatus,
 };
 
 /// One node of the projected factorize graph H.
@@ -37,18 +37,22 @@ enum FactorizeNode {
     Loose(OwnerId),
 }
 
-pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -> FactorizeReport {
-    let owner_edges = &schedule.owner_graph.edges;
-    let quotient_edges = build_quotient_edge_reports(schedule, owner_edges);
-    let context = PeelabilityContext::new(schedule, owner_edges, &quotient_edges);
-    let index = FactorizeIndex::new(schedule);
+pub fn build_factorize_report(
+    factorization: &ChunkFactorization,
+    options: &FactorizeOptions,
+) -> FactorizeReport {
+    let owner_edges = &factorization.analysis.owner_graph.edges;
+    let quotient_edges = build_quotient_edge_reports(factorization, owner_edges);
+    let context = PeelabilityContext::new(factorization, owner_edges, &quotient_edges);
+    let index = FactorizeIndex::new(factorization);
 
-    let node_by_owner: Vec<FactorizeNode> = schedule
+    let node_by_owner: Vec<FactorizeNode> = factorization
+        .analysis
         .owner_graph
         .iter_nodes()
         .map(|node| {
-            let dest = schedule.partition.of(node.id);
-            if is_residual_destination(schedule, dest) {
+            let dest = factorization.partition.of(node.id);
+            if is_residual_destination(factorization, dest) {
                 FactorizeNode::Loose(node.id)
             } else {
                 FactorizeNode::Supernode(dest)
@@ -72,7 +76,7 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
 
     let mut proposals = Vec::<CertifiedProposal>::new();
     let mut diagnostics = Vec::<FactorizeDiagnostic>::new();
-    let starts = build_frontier_starts(schedule, &index);
+    let starts = build_frontier_starts(factorization, &index);
     // Dedup diagnostics across frontier starts that converge on the same
     // closure: each atomic unit grows independently, but different starts
     // can reach the same blocked or oversize set. Emit one row per
@@ -87,7 +91,7 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
     let mut oversize_owners = BTreeSet::<OwnerId>::new();
     for start in starts {
         match close_frontier(
-            schedule,
+            factorization,
             &context,
             &index,
             start,
@@ -114,7 +118,7 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
                     &diagnostic.verdict,
                     diagnostic.reason,
                     &index.bindings_by_owner,
-                    schedule,
+                    factorization,
                 ));
             }
             FrontierOutcome::Empty => {}
@@ -122,7 +126,7 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
     }
 
     coalesce_certified_proposals(
-        schedule,
+        factorization,
         &context,
         &index,
         &mut proposals,
@@ -157,7 +161,7 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
                 &node_by_owner,
                 &proposal.verdict,
                 &index.bindings_by_owner,
-                schedule,
+                factorization,
             )
         })
         .collect();
@@ -196,9 +200,9 @@ struct FactorizeIndex {
 }
 
 impl FactorizeIndex {
-    fn new(schedule: &Schedule) -> Self {
-        let atomic_units = compute_atomic_units(&schedule.owner_graph);
-        let mut unit_by_owner = vec![0usize; schedule.owner_graph.nodes.len()];
+    fn new(factorization: &ChunkFactorization) -> Self {
+        let atomic_units = compute_atomic_units(&factorization.analysis.owner_graph);
+        let mut unit_by_owner = vec![0usize; factorization.analysis.owner_graph.nodes.len()];
         let owners_by_unit: Vec<Vec<OwnerId>> = atomic_units
             .into_iter()
             .enumerate()
@@ -210,14 +214,15 @@ impl FactorizeIndex {
                 members
             })
             .collect();
-        let bindings_by_owner: HashMap<OwnerId, Vec<BindingName>> = schedule
+        let bindings_by_owner: HashMap<OwnerId, Vec<BindingName>> = factorization
+            .analysis
             .owner_graph
             .iter_nodes()
             .map(|node| {
                 let names: Vec<BindingName> = node
                     .declared
                     .iter()
-                    .map(|bid| schedule.binding_name(*bid).clone())
+                    .map(|bid| factorization.analysis.binding_name(*bid).clone())
                     .collect();
                 (node.id, names)
             })
@@ -256,14 +261,17 @@ enum FrontierOutcome {
     Empty,
 }
 
-fn build_frontier_starts(schedule: &Schedule, index: &FactorizeIndex) -> Vec<FrontierStart> {
+fn build_frontier_starts(
+    factorization: &ChunkFactorization,
+    index: &FactorizeIndex,
+) -> Vec<FrontierStart> {
     let mut starts = BTreeSet::<FrontierStart>::new();
     for owners in &index.owners_by_unit {
         let mut residual = BTreeSet::<OwnerId>::new();
         let mut active_targets = BTreeSet::<ModuleId>::new();
         for &owner in owners {
-            let dest = schedule.partition.of(owner);
-            if is_residual_destination(schedule, dest) {
+            let dest = factorization.partition.of(owner);
+            if is_residual_destination(factorization, dest) {
                 residual.insert(owner);
             } else {
                 active_targets.insert(dest);
@@ -285,7 +293,7 @@ fn build_frontier_starts(schedule: &Schedule, index: &FactorizeIndex) -> Vec<Fro
 }
 
 fn close_frontier(
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     index: &FactorizeIndex,
     start: FrontierStart,
@@ -301,7 +309,7 @@ fn close_frontier(
 
     loop {
         if let Some(verdict) =
-            close_atomic_units(schedule, index, &mut owners, &mut extension_target)
+            close_atomic_units(factorization, index, &mut owners, &mut extension_target)
         {
             return FrontierOutcome::Diagnostic(FrontierDiagnostic {
                 owners,
@@ -313,7 +321,7 @@ fn close_frontier(
 
         let key = (extension_target, owners.iter().copied().collect::<Vec<_>>());
         if !seen.insert(key) {
-            let verdict = evaluate_current(schedule, context, index, &owners);
+            let verdict = evaluate_current(factorization, context, index, &owners);
             return FrontierOutcome::Diagnostic(FrontierDiagnostic {
                 owners,
                 extension_target,
@@ -322,10 +330,10 @@ fn close_frontier(
             });
         }
 
-        let verdict = evaluate_current(schedule, context, index, &owners);
+        let verdict = evaluate_current(factorization, context, index, &owners);
         let size_lines = owners
             .iter()
-            .map(|owner| owner_line_count(schedule, *owner))
+            .map(|owner| owner_line_count(factorization, *owner))
             .sum::<usize>();
         if size_lines > size_cap_lines {
             return FrontierOutcome::Diagnostic(FrontierDiagnostic {
@@ -337,7 +345,12 @@ fn close_frontier(
         }
 
         if verdict.status == PeelCandidateStatus::PeelableNow
-            || extension_cycle_is_internal_to_target(schedule, &owners, extension_target, &verdict)
+            || extension_cycle_is_internal_to_target(
+                factorization,
+                &owners,
+                extension_target,
+                &verdict,
+            )
         {
             return FrontierOutcome::Certified(CertifiedProposal {
                 owners,
@@ -362,22 +375,27 @@ fn close_frontier(
             PeelCandidateStatus::PeelableNow => {}
             PeelCandidateStatus::BlockedResidualDependency => {
                 for owner in &verdict.residual_dependency_blocker_owner_ids {
-                    if !add_repair_owner(schedule, *owner, &mut owners, &mut extension_target) {
+                    if !add_repair_owner(factorization, *owner, &mut owners, &mut extension_target)
+                    {
                         conflict = true;
                     }
                 }
             }
             PeelCandidateStatus::BlockedCycle => {
                 for &edge_idx in &verdict.constraining_owner_edge_indices {
-                    let Some(edge) = schedule.owner_graph.edges.get(edge_idx) else {
+                    let Some(edge) = factorization.analysis.owner_graph.edges.get(edge_idx) else {
                         continue;
                     };
                     for endpoint in [edge.from, edge.to] {
                         if owners.contains(&endpoint) {
                             continue;
                         }
-                        if !add_repair_owner(schedule, endpoint, &mut owners, &mut extension_target)
-                        {
+                        if !add_repair_owner(
+                            factorization,
+                            endpoint,
+                            &mut owners,
+                            &mut extension_target,
+                        ) {
                             conflict = true;
                         }
                     }
@@ -393,7 +411,12 @@ fn close_frontier(
             });
         }
         if owners == before
-            && !extension_cycle_is_internal_to_target(schedule, &owners, extension_target, &verdict)
+            && !extension_cycle_is_internal_to_target(
+                factorization,
+                &owners,
+                extension_target,
+                &verdict,
+            )
         {
             return FrontierOutcome::Diagnostic(FrontierDiagnostic {
                 owners,
@@ -406,7 +429,7 @@ fn close_frontier(
 }
 
 fn close_atomic_units(
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
     index: &FactorizeIndex,
     owners: &mut BTreeSet<OwnerId>,
     extension_target: &mut Option<ModuleId>,
@@ -420,8 +443,8 @@ fn close_atomic_units(
                 continue;
             };
             for &member in &index.owners_by_unit[unit_idx] {
-                let dest = schedule.partition.of(member);
-                if is_residual_destination(schedule, dest) {
+                let dest = factorization.partition.of(member);
+                if is_residual_destination(factorization, dest) {
                     changed |= owners.insert(member);
                 } else if let Some(target) = extension_target {
                     if *target != dest {
@@ -437,13 +460,13 @@ fn close_atomic_units(
 }
 
 fn add_repair_owner(
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
     owner: OwnerId,
     owners: &mut BTreeSet<OwnerId>,
     extension_target: &mut Option<ModuleId>,
 ) -> bool {
-    let dest = schedule.partition.of(owner);
-    if is_residual_destination(schedule, dest) {
+    let dest = factorization.partition.of(owner);
+    if is_residual_destination(factorization, dest) {
         owners.insert(owner);
         true
     } else if let Some(target) = extension_target {
@@ -455,7 +478,7 @@ fn add_repair_owner(
 }
 
 fn evaluate_current(
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     index: &FactorizeIndex,
     owners: &BTreeSet<OwnerId>,
@@ -467,7 +490,7 @@ fn evaluate_current(
         .collect();
     declared.sort();
     declared.dedup();
-    evaluate_peel_candidate(schedule, context, &owner_vec, declared)
+    evaluate_peel_candidate(factorization, context, &owner_vec, declared)
 }
 
 fn empty_blocked_cycle(owners: &BTreeSet<OwnerId>) -> PeelCandidateEvaluation {
@@ -489,7 +512,7 @@ fn certified_verdict(mut verdict: PeelCandidateEvaluation) -> PeelCandidateEvalu
 }
 
 fn extension_cycle_is_internal_to_target(
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
     owners: &BTreeSet<OwnerId>,
     extension_target: Option<ModuleId>,
     verdict: &PeelCandidateEvaluation,
@@ -504,21 +527,22 @@ fn extension_cycle_is_internal_to_target(
         return false;
     }
     verdict.constraining_owner_edge_indices.iter().all(|&idx| {
-        let Some(edge) = schedule.owner_graph.edges.get(idx) else {
+        let Some(edge) = factorization.analysis.owner_graph.edges.get(idx) else {
             return true;
         };
         [edge.from, edge.to].into_iter().all(|owner| {
             owners.contains(&owner)
-                || schedule
+                || factorization
+                    .analysis
                     .owner_graph
                     .node(owner)
-                    .is_some_and(|_| schedule.partition.of(owner) == target)
+                    .is_some_and(|_| factorization.partition.of(owner) == target)
         })
     })
 }
 
 fn coalesce_certified_proposals(
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     index: &FactorizeIndex,
     proposals: &mut Vec<CertifiedProposal>,
@@ -541,15 +565,15 @@ fn coalesce_certified_proposals(
                     .collect();
                 let size_lines = union
                     .iter()
-                    .map(|owner| owner_line_count(schedule, *owner))
+                    .map(|owner| owner_line_count(factorization, *owner))
                     .sum::<usize>();
                 if size_lines > size_cap_lines {
                     continue;
                 }
-                let verdict = evaluate_current(schedule, context, index, &union);
+                let verdict = evaluate_current(factorization, context, index, &union);
                 if verdict.status != PeelCandidateStatus::PeelableNow
                     && !extension_cycle_is_internal_to_target(
-                        schedule,
+                        factorization,
                         &union,
                         proposals[left].extension_target,
                         &verdict,
@@ -576,14 +600,14 @@ fn coalesce_certified_proposals(
         let a_start = a
             .owners
             .iter()
-            .filter_map(|owner| schedule.owner_graph.node(*owner))
+            .filter_map(|owner| factorization.analysis.owner_graph.node(*owner))
             .filter_map(|node| node.source_location.as_ref().map(|loc| loc.start_line))
             .min()
             .unwrap_or(usize::MAX);
         let b_start = b
             .owners
             .iter()
-            .filter_map(|owner| schedule.owner_graph.node(*owner))
+            .filter_map(|owner| factorization.analysis.owner_graph.node(*owner))
             .filter_map(|node| node.source_location.as_ref().map(|loc| loc.start_line))
             .min()
             .unwrap_or(usize::MAX);
@@ -593,8 +617,9 @@ fn coalesce_certified_proposals(
     });
 }
 
-fn owner_line_count(schedule: &Schedule, owner: OwnerId) -> usize {
-    schedule
+fn owner_line_count(factorization: &ChunkFactorization, owner: OwnerId) -> usize {
+    factorization
+        .analysis
         .owner_graph
         .node(owner)
         .and_then(|node| node.source_location.as_ref())
@@ -611,7 +636,7 @@ fn make_cell(
     node_by_owner: &[FactorizeNode],
     verdict: &PeelCandidateEvaluation,
     bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
 ) -> FactorizeCell {
     let mut owner_ids: Vec<String> = owners.iter().copied().map(owner_key).collect();
     owner_ids.sort();
@@ -630,7 +655,7 @@ fn make_cell(
     let mut size_lines: usize = 0;
     let empty_vec: Vec<BindingName> = Vec::new();
     for owner_id in &owners {
-        let Some(node) = schedule.owner_graph.node(*owner_id) else {
+        let Some(node) = factorization.analysis.owner_graph.node(*owner_id) else {
             continue;
         };
         let declared_bindings: &Vec<BindingName> =
@@ -658,7 +683,7 @@ fn make_cell(
         .constraining_owner_edge_indices
         .iter()
         .flat_map(|&idx| {
-            let edge = &schedule.owner_graph.edges[idx];
+            let edge = &factorization.analysis.owner_graph.edges[idx];
             [edge.from, edge.to]
         })
         .filter(|o| !owners.contains(o))
@@ -676,7 +701,7 @@ fn make_cell(
     // cell relationships in `peel_factorize.rs`).
     let mut active_modules_referenced: HashSet<String> = HashSet::new();
     for &owner_id in &owners {
-        for edge in schedule.owner_graph.edges.iter() {
+        for edge in factorization.analysis.owner_graph.edges.iter() {
             if edge.from != owner_id {
                 continue;
             }
@@ -736,7 +761,7 @@ fn make_diagnostic(
     verdict: &PeelCandidateEvaluation,
     reason: FactorizeDiagnosticReason,
     bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
-    schedule: &Schedule,
+    factorization: &ChunkFactorization,
 ) -> FactorizeDiagnostic {
     let mut owner_ids: Vec<String> = owners.iter().copied().map(owner_key).collect();
     owner_ids.sort();
@@ -752,7 +777,7 @@ fn make_diagnostic(
         if let Some(bindings) = bindings_by_owner.get(owner) {
             binding_ids_set.extend(bindings.iter().cloned());
         }
-        let Some(node) = schedule.owner_graph.node(*owner) else {
+        let Some(node) = factorization.analysis.owner_graph.node(*owner) else {
             continue;
         };
         if let Some(loc) = &node.source_location {
@@ -771,7 +796,7 @@ fn make_diagnostic(
         .constraining_owner_edge_indices
         .iter()
         .flat_map(|&edge_idx| {
-            let edge = &schedule.owner_graph.edges[edge_idx];
+            let edge = &factorization.analysis.owner_graph.edges[edge_idx];
             [edge.from, edge.to]
         })
         .filter(|owner| !owners.contains(owner))
@@ -792,7 +817,7 @@ fn make_diagnostic(
 
     let mut active_modules_referenced: HashSet<String> = HashSet::new();
     for &owner in &owners {
-        for edge in schedule.owner_graph.edges.iter() {
+        for edge in factorization.analysis.owner_graph.edges.iter() {
             if edge.from != owner || owners.contains(&edge.to) {
                 continue;
             }

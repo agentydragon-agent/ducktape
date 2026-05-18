@@ -319,7 +319,7 @@ pub(super) fn materialize_logical_chunk(
         // the catchall target. Append unclaimed bindings to that
         // plan so the residual sweep still has a home, and flip
         // its `explicit` flag so downstream consumers see it as
-        // the residual destination (residual flag on the schedule
+        // the residual destination (residual flag on the factorization
         // module, OutputRole::ResidualModule in artifact metadata,
         // residual_logical_modules count on the chunk report).
         let owner_index = module_plans
@@ -355,7 +355,7 @@ pub(super) fn materialize_logical_chunk(
     })?
     .unwrap_or_default();
 
-    let (schedule, redundant_purity_hints) = {
+    let (factorization, redundant_purity_hints) = {
         // Spec annotations carried on any member form (logical-module
         // member, chunk_renames member) propagate the same way:
         // collect them by local binding name and feed them into fact
@@ -483,11 +483,11 @@ pub(super) fn materialize_logical_chunk(
             })?;
         }
         let chunk_top_level_mark = runtime_ast.top_level_mark;
-        let mut logical_modules: Vec<ScheduleLogicalModule> =
+        let mut logical_modules: Vec<FactorizationLogicalModule> =
             time_phase!(timings, "project_schedule_modules", {
                 module_plans
                     .iter()
-                    .map(|plan| ScheduleLogicalModule {
+                    .map(|plan| FactorizationLogicalModule {
                         id: plan.id.clone(),
                         target_file: plan.target_file.clone(),
                         residual: !plan.explicit,
@@ -501,7 +501,7 @@ pub(super) fn materialize_logical_chunk(
                                 )
                             })
                             .collect(),
-                        // Schedule's owner graph uses post-comma-list-split
+                        // ChunkFactorization's owner graph uses post-comma-list-split
                         // `StatementOrdinal`s; convert body indices here so
                         // the destination override targets the right owner
                         // node (an anon body item is always a single
@@ -522,7 +522,7 @@ pub(super) fn materialize_logical_chunk(
             });
         // Commit 1 transitional behavior: the partition's "default
         // destination" — the module owners with no claim fall back to —
-        // is a schedule-only sentinel logical module appended past
+        // is a factorization-only sentinel logical module appended past
         // `module_plans.len()`. The emit loop iterates `module_plans`,
         // so the sentinel never gets emitted as a file. Anonymous
         // statements without an explicit logical-module
@@ -538,7 +538,7 @@ pub(super) fn materialize_logical_chunk(
             .transpose()?
             .unwrap_or_else(|| target_file.clone());
         let sentinel_idx = logical_modules.len();
-        logical_modules.push(ScheduleLogicalModule {
+        logical_modules.push(FactorizationLogicalModule {
             id: format!("{chunk_id}::anon_residual_sentinel"),
             target_file: sentinel_residual_target,
             residual: true,
@@ -556,8 +556,8 @@ pub(super) fn materialize_logical_chunk(
                 )
             })
             .collect();
-        let schedule = time_phase!(timings, "build_schedule", {
-            Schedule::build_with(
+        let factorization = time_phase!(timings, "build_schedule", {
+            ChunkFactorization::build_with(
                 chunk_id.to_string(),
                 analysis.facts,
                 precomputed,
@@ -567,15 +567,17 @@ pub(super) fn materialize_logical_chunk(
                 default_destination,
             )
         });
-        (schedule, redundant_purity_hints)
+        (factorization, redundant_purity_hints)
     };
-    let schedule_report = time_phase!(timings, "validate_schedule", { schedule.validate() });
+    let schedule_report = time_phase!(timings, "validate_factorization", {
+        factorization.validate()
+    });
     if let Some(report_out_dir) = report_out_dir {
         time_phase!(timings, "write_schedule_report", {
             write_chunk_report_json(report_out_dir, chunk_id, "schedule.json", &schedule_report)
         })?;
         let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
-            schedule.owner_graph_report()
+            factorization.owner_graph_report()
         });
         time_phase!(timings, "write_owner_graph_report", {
             write_chunk_report_json(
@@ -590,7 +592,7 @@ pub(super) fn materialize_logical_chunk(
     if !schedule_report.atomic_unit_conflicts.is_empty() {
         let summary =
             render_atomic_unit_conflict_summary(&schedule_report.atomic_unit_conflicts, &|id| {
-                schedule.module_name(id)
+                factorization.analysis.module_name(id)
             });
         let causes = render_atomic_unit_cause_guidance(&schedule_report.atomic_unit_conflicts);
         bail!(
@@ -632,7 +634,7 @@ pub(super) fn materialize_logical_chunk(
             binding_assignment: &binding_assignment,
             chunk_top_level_mark,
             anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
-            schedule: &schedule,
+            factorization: &factorization,
             chunk_renames: &chunk_renames_map,
             runtime_import_facts: &runtime_import_facts,
             pre_existing_entry_exports: &pre_existing_entry_exports,
@@ -654,7 +656,8 @@ pub(super) fn materialize_logical_chunk(
                 sorted.sort_by(|a, b| a.0.cmp(b.0));
                 let binding_names: Vec<String> = sorted.iter().map(|(k, _)| (*k).clone()).collect();
                 let member_names: Vec<String> = sorted.iter().map(|(_, v)| (*v).clone()).collect();
-                let owner_ids = schedule
+                let owner_ids = factorization
+                    .analysis
                     .owner_report_ids_for_bindings(binding_names.iter().map(String::as_str));
                 FinalModuleContent {
                     binding_names,
