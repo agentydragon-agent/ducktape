@@ -44,7 +44,6 @@ the byte-identical output of `_trace_row_id`.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
@@ -64,10 +63,8 @@ from augur.core.accounting import (
     chart_account_id,
     chart_account_type_for_role,
 )
-
-if TYPE_CHECKING:
-    from augur.core.policy_runtime import BalanceSnapshotBatch, JournalEntryBatch, PostingBatch
-
+from augur.core.policy_runtime import BalanceSnapshotBatch, JournalEntryBatch, PostingBatch
+from augur.core.posting_schemas import JournalEntrySchema
 
 # Polars schemas -------------------------------------------------------------
 
@@ -956,6 +953,64 @@ class AccountingTraceBuilder:
             liab_idx = self._liabilities.intern(posting_batch.liability_id)
             self._po_liab.fill(liab_idx, p_n)
             self._po_lot.fill(None, p_n)
+
+    def record_entry_firings(
+        self,
+        *,
+        schema: JournalEntrySchema,
+        month_index: int | np.ndarray,
+        cause_id_prefix: str,
+        actor_id: str | None = None,
+        policy_id: str | None = None,
+        event_id: str | None = None,
+        obligation_id_prefix: str | None = None,
+        description: str | None = None,
+        amount_bindings: dict[str, np.ndarray],
+        leg_chart_account_keys: tuple[dict[str, str | None], ...] = (),
+        amount_multiplier: np.ndarray | None = None,
+    ) -> None:
+        """High-level wrapper around `record_entry`: take a static
+        `JournalEntrySchema` plus the per-call varying inputs and assemble
+        the equivalent `JournalEntryBatch`.
+
+        `amount_bindings` maps each leg's `amount_binding` name to a
+        `(rollouts, months)` numpy array. `leg_chart_account_keys`, if
+        provided, supplies the chart-account key fields (actor_id,
+        source_account_id, source_asset_id, liability_id, property_id,
+        counterparty_actor_id) for each leg as a dict; legs not covered fall
+        through with no chart-account keys.
+        """
+        postings: list[PostingBatch] = []
+        for i, leg in enumerate(schema.legs):
+            keys = leg_chart_account_keys[i] if i < len(leg_chart_account_keys) else {}
+            postings.append(
+                PostingBatch(
+                    role=leg.role,
+                    side=leg.side,
+                    amount_usd=amount_bindings[leg.amount_binding],
+                    actor_id=keys.get("actor_id"),
+                    source_account_id=keys.get("source_account_id"),
+                    source_asset_id=keys.get("source_asset_id"),
+                    liability_id=keys.get("liability_id"),
+                    property_id=keys.get("property_id"),
+                    counterparty_actor_id=keys.get("counterparty_actor_id"),
+                )
+            )
+        self.record_entry(
+            month_index=month_index,
+            entry=JournalEntryBatch(
+                journal_entry_type=schema.journal_entry_type,
+                cause_type=schema.cause_type,
+                cause_id_prefix=cause_id_prefix,
+                actor_id=actor_id,
+                policy_id=policy_id,
+                event_id=event_id,
+                obligation_id_prefix=obligation_id_prefix,
+                description=description,
+                postings=tuple(postings),
+            ),
+            amount_multiplier=amount_multiplier,
+        )
 
     def record_snapshot(self, *, month_index: np.ndarray, snapshot: BalanceSnapshotBatch) -> None:
         amount = np.asarray(snapshot.amount_usd, dtype="float64")

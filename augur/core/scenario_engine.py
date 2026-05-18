@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import numpy as np
 
+from augur.core import posting_schemas
 from augur.core.accounting import (
     AccountingCauseType,
     ChartAccountRole,
@@ -912,58 +913,35 @@ def _record_opening_accounting_state(
 
     if initial_cash_usd > 0:
         amount = np.full(rollout_count, initial_cash_usd, dtype="float64")
-        accounting.record_entry(
+        accounting.record_entry_firings(
+            schema=posting_schemas.OPENING_CHECKING_CASH,
             month_index=month_zero,
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.OPENING_BALANCE,
-                cause_type=AccountingCauseType.OPENING_BALANCE,
-                cause_id_prefix="opening:checking_cash",
-                actor_id=actor_id,
-                description="opening checking cash",
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.CHECKING_CASH,
-                        side=PostingSide.DEBIT,
-                        amount_usd=amount,
-                        actor_id=actor_id,
-                        source_account_id=cash_source.account_id if cash_source is not None else None,
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.OPENING_EQUITY,
-                        side=PostingSide.CREDIT,
-                        amount_usd=amount,
-                        actor_id=actor_id,
-                    ),
-                ),
+            cause_id_prefix="opening:checking_cash",
+            actor_id=actor_id,
+            description="opening checking cash",
+            amount_bindings={"amount": amount},
+            leg_chart_account_keys=(
+                {
+                    "actor_id": actor_id,
+                    "source_account_id": cash_source.account_id if cash_source is not None else None,
+                },
+                {"actor_id": actor_id},
             ),
         )
 
     if initial_sp500_value_usd > 0:
         amount = np.full(rollout_count, initial_sp500_value_usd, dtype="float64")
         lot_id = _tax_lot_id(LotAssetClass.PUBLIC_SECURITY, sp500_source.asset_id if sp500_source else "portfolio")
-        accounting.record_entry(
+        accounting.record_entry_firings(
+            schema=posting_schemas.OPENING_PUBLIC_SECURITY,
             month_index=month_zero,
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.OPENING_BALANCE,
-                cause_type=AccountingCauseType.OPENING_BALANCE,
-                cause_id_prefix="opening:public_security",
-                actor_id=actor_id,
-                description="opening public security holdings",
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.PUBLIC_SECURITY,
-                        side=PostingSide.DEBIT,
-                        amount_usd=amount,
-                        actor_id=actor_id,
-                        source_asset_id=sp500_source.asset_id if sp500_source is not None else None,
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.OPENING_EQUITY,
-                        side=PostingSide.CREDIT,
-                        amount_usd=amount,
-                        actor_id=actor_id,
-                    ),
-                ),
+            cause_id_prefix="opening:public_security",
+            actor_id=actor_id,
+            description="opening public security holdings",
+            amount_bindings={"amount": amount},
+            leg_chart_account_keys=(
+                {"actor_id": actor_id, "source_asset_id": sp500_source.asset_id if sp500_source is not None else None},
+                {"actor_id": actor_id},
             ),
         )
         tax_lots.append(
@@ -981,29 +959,16 @@ def _record_opening_accounting_state(
         crypto_amount = np.full(rollout_count, initial_crypto_value_usd, dtype="float64")
         crypto_source_id = _crypto_source_holding_id(scenario, actor_id=actor_id)
         crypto_lot_id = _tax_lot_id(LotAssetClass.CRYPTO, crypto_source_id)
-        accounting.record_entry(
+        accounting.record_entry_firings(
+            schema=posting_schemas.OPENING_CRYPTO_ASSET,
             month_index=month_zero,
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.OPENING_BALANCE,
-                cause_type=AccountingCauseType.OPENING_BALANCE,
-                cause_id_prefix="opening:crypto_asset",
-                actor_id=actor_id,
-                description="opening crypto holdings",
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.CRYPTO_ASSET,
-                        side=PostingSide.DEBIT,
-                        amount_usd=crypto_amount,
-                        actor_id=actor_id,
-                        source_asset_id=crypto_source_id,
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.OPENING_EQUITY,
-                        side=PostingSide.CREDIT,
-                        amount_usd=crypto_amount,
-                        actor_id=actor_id,
-                    ),
-                ),
+            cause_id_prefix="opening:crypto_asset",
+            actor_id=actor_id,
+            description="opening crypto holdings",
+            amount_bindings={"amount": crypto_amount},
+            leg_chart_account_keys=(
+                {"actor_id": actor_id, "source_asset_id": crypto_source_id},
+                {"actor_id": actor_id},
             ),
         )
         tax_lots.append(
@@ -1020,29 +985,16 @@ def _record_opening_accounting_state(
     if initial_private_equity_value_usd > 0:
         amount = np.full(rollout_count, initial_private_equity_value_usd, dtype="float64")
         lot_id = _tax_lot_id(LotAssetClass.PRIVATE_EQUITY, private_equity_source_id)
-        accounting.record_entry(
+        accounting.record_entry_firings(
+            schema=posting_schemas.OPENING_PRIVATE_EQUITY,
             month_index=month_zero,
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.OPENING_BALANCE,
-                cause_type=AccountingCauseType.OPENING_BALANCE,
-                cause_id_prefix="opening:private_equity",
-                actor_id=actor_id,
-                description="opening private equity holdings",
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.PRIVATE_EQUITY,
-                        side=PostingSide.DEBIT,
-                        amount_usd=amount,
-                        actor_id=actor_id,
-                        source_asset_id=private_equity_source_id,
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.OPENING_EQUITY,
-                        side=PostingSide.CREDIT,
-                        amount_usd=amount,
-                        actor_id=actor_id,
-                    ),
-                ),
+            cause_id_prefix="opening:private_equity",
+            actor_id=actor_id,
+            description="opening private equity holdings",
+            amount_bindings={"amount": amount},
+            leg_chart_account_keys=(
+                {"actor_id": actor_id, "source_asset_id": private_equity_source_id},
+                {"actor_id": actor_id},
             ),
         )
         tax_lots.append(
@@ -1066,45 +1018,18 @@ def _record_opening_accounting_state(
     mortgage = np.asarray(mortgage_balance_usd, dtype="float64")
     cash_outlay = np.full(rollout_count, down_payment_usd, dtype="float64") + closing
     liability_id = _mortgage_liability_id(property_id)
-    accounting.record_entry(
+    accounting.record_entry_firings(
+        schema=posting_schemas.OPENING_PROPERTY,
         month_index=month_zero,
-        entry=JournalEntryBatch(
-            journal_entry_type=JournalEntryType.OPENING_BALANCE,
-            cause_type=AccountingCauseType.OPENING_BALANCE,
-            cause_id_prefix=f"opening:property:{property_id}",
-            actor_id=actor_id,
-            description="opening property purchase",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.PROPERTY,
-                    side=PostingSide.DEBIT,
-                    amount_usd=purchase,
-                    actor_id=actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PROPERTY_PURCHASE_CLOSING_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=closing,
-                    actor_id=actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.CREDIT,
-                    amount_usd=cash_outlay,
-                    actor_id=actor_id,
-                    source_account_id=cash_source.account_id if cash_source is not None else None,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.MORTGAGE_PAYABLE,
-                    side=PostingSide.CREDIT,
-                    amount_usd=mortgage,
-                    actor_id=actor_id,
-                    liability_id=liability_id,
-                    property_id=property_id,
-                ),
-            ),
+        cause_id_prefix=f"opening:property:{property_id}",
+        actor_id=actor_id,
+        description="opening property purchase",
+        amount_bindings={"purchase": purchase, "closing": closing, "cash_outlay": cash_outlay, "mortgage": mortgage},
+        leg_chart_account_keys=(
+            {"actor_id": actor_id, "property_id": property_id},
+            {"actor_id": actor_id, "property_id": property_id},
+            {"actor_id": actor_id, "source_account_id": cash_source.account_id if cash_source is not None else None},
+            {"actor_id": actor_id, "liability_id": liability_id, "property_id": property_id},
         ),
     )
     tax_lots.append(

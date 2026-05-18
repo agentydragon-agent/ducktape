@@ -38,11 +38,20 @@ py_library(
 )
 
 py_library(
+    name = "posting_schemas_py",
+    srcs = ["posting_schemas.py"],
+    deps = [
+        ":accounting_py",
+    ],
+)
+
+py_library(
     name = "accounting_tables_py",
     srcs = ["accounting_tables.py"],
     deps = [
         ":accounting_py",
         ":policy_runtime_py",
+        ":posting_schemas_py",
         "@pypi//numpy",
         "@pypi//polars",
     ],
@@ -184,6 +193,7 @@ py_library(
         ":local_regulation_py",
         ":market_bundle_py",
         ":policy_runtime_py",
+        ":posting_schemas_py",
         ":property_depreciation_py",
         ":property_sale_py",
         ":property_tax_py",
