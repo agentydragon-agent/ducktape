@@ -267,11 +267,14 @@ def _assert_liquid_net_worth_matches_cash_and_public_stock(result) -> None:
 
     Crypto-aware liquid_net_worth_usd was added in the funding-policies/crypto/tender
     slice; the helper name is kept for callers that pre-date crypto and supply no
-    crypto holdings (so `result.crypto_value_usd == 0`), in which case the assertion
+    crypto holdings (so `result.metric_array(ReportMetric.CRYPTO_VALUE_USD) == 0`), in which case the assertion
     still matches the older cash + public-stock shape.
     """
     assert_allclose(
-        result.liquid_net_worth_usd, result.cash_usd + result.generic_sp500_value_usd + result.crypto_value_usd
+        result.metric_array(ReportMetric.LIQUID_NET_WORTH_USD),
+        result.metric_array(ReportMetric.CASH_USD)
+        + result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)
+        + result.metric_array(ReportMetric.CRYPTO_VALUE_USD),
     )
 
 
@@ -282,12 +285,12 @@ def test_portfolio_only_baseline_uses_numpy_paths() -> None:
     result = _run_with_resolved_regulation(scenario, _bundle(private_equity_path=(1.0, 1.5, 2.0, 2.5)))
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
-    assert result.cash_usd.shape == (2, 4)
-    assert_allclose(result.property_value_usd, 0)
-    assert_allclose(result.cash_usd[:, 0], 10_000)
-    assert_allclose(result.generic_sp500_value_usd[:, 2], 120_000)
-    assert_allclose(result.private_equity_value_usd[:, 2], 100_000)
-    assert_allclose(result.net_worth_usd[:, 2], 230_000)
+    assert result.metric_array(ReportMetric.CASH_USD).shape == (2, 4)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_VALUE_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 0], 10_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 2], 120_000)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_VALUE_USD)[:, 2], 100_000)
+    assert_allclose(result.metric_array(ReportMetric.NET_WORTH_USD)[:, 2], 230_000)
     assert result.monthly_columns().row_count == 8
 
 
@@ -305,8 +308,8 @@ def test_private_equity_position_units_only_derives_value_from_market_price() ->
     )
 
     # 1_000 units × $50/unit = $50_000 month-0 mark; multiplier path scales it.
-    assert_allclose(result.private_equity_value_usd[:, 0], 50_000)
-    assert_allclose(result.private_equity_value_usd[:, 2], 100_000)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_VALUE_USD)[:, 0], 50_000)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_VALUE_USD)[:, 2], 100_000)
 
 
 def test_private_equity_position_explicit_value_overrides_market_price() -> None:
@@ -328,8 +331,8 @@ def test_private_equity_position_explicit_value_overrides_market_price() -> None
         ),
     )
 
-    assert_allclose(result.private_equity_value_usd[:, 0], 200_000)
-    assert_allclose(result.private_equity_value_usd[:, 2], 200_000)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_VALUE_USD)[:, 0], 200_000)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_VALUE_USD)[:, 2], 200_000)
 
 
 def test_report_metrics_are_explicit_typed_views() -> None:
@@ -339,8 +342,10 @@ def test_report_metrics_are_explicit_typed_views() -> None:
 
     arrays = result.arrays
     assert arrays is not None
-    assert_allclose(result.matrix(ReportMetric.CASH_USD), arrays.cash_usd)
-    assert_allclose(result.rollout(0).series(ReportMetric.NET_WORTH_USD), arrays.net_worth_usd[0, :])
+    assert_allclose(result.matrix(ReportMetric.CASH_USD), arrays.metric_array(ReportMetric.CASH_USD))
+    assert_allclose(
+        result.rollout(0).series(ReportMetric.NET_WORTH_USD), arrays.metric_array(ReportMetric.NET_WORTH_USD)[0, :]
+    )
     assert result.terminal(ReportMetric.MONTH_INDEX) == 3
 
 
@@ -509,21 +514,21 @@ def test_property_purchase_with_mortgage_tracks_debt_and_equity() -> None:
     )
 
     no_opportunity = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
-    assert_allclose(no_opportunity.private_equity_sale_usd, 0)
-    assert_allclose(no_opportunity.private_equity_sale_opportunity_value_usd, 0)
+    assert_allclose(no_opportunity.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD), 0)
+    assert_allclose(no_opportunity.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_VALUE_USD), 0)
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=2))
 
-    assert_allclose(result.purchase_closing_cost_usd[:, 0], 25_000)
-    assert_allclose(result.cash_usd[:, 0], 75_000)
-    assert_allclose(result.property_value_usd[:, 0], 1_000_000)
-    assert_allclose(result.mortgage_balance_usd[:, 0], 800_000)
-    assert_allclose(result.home_equity_usd[:, 0], 200_000)
-    assert np.all(result.mortgage_interest_usd[:, 1] > 0)
-    assert np.all(result.mortgage_principal_usd[:, 1] > 0)
-    assert np.all(result.mortgage_balance_usd[:, 1] < 800_000)
-    assert np.all(result.partner_present)
-    assert_allclose(result.partner_home_equity_claim_usd, 0)
+    assert_allclose(result.metric_array(ReportMetric.PURCHASE_CLOSING_COST_USD)[:, 0], 25_000)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 0], 75_000)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_VALUE_USD)[:, 0], 1_000_000)
+    assert_allclose(result.metric_array(ReportMetric.MORTGAGE_BALANCE_USD)[:, 0], 800_000)
+    assert_allclose(result.metric_array(ReportMetric.HOME_EQUITY_USD)[:, 0], 200_000)
+    assert np.all(result.metric_array(ReportMetric.MORTGAGE_INTEREST_USD)[:, 1] > 0)
+    assert np.all(result.metric_array(ReportMetric.MORTGAGE_PRINCIPAL_USD)[:, 1] > 0)
+    assert np.all(result.metric_array(ReportMetric.MORTGAGE_BALANCE_USD)[:, 1] < 800_000)
+    assert np.all(result.metric_array(ReportMetric.PARTNER_PRESENT))
+    assert_allclose(result.metric_array(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD), 0)
 
 
 def test_property_purchase_with_cash_financing_has_no_mortgage() -> None:
@@ -546,11 +551,11 @@ def test_property_purchase_with_cash_financing_has_no_mortgage() -> None:
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
-    assert_allclose(result.purchase_closing_cost_usd[:, 0], 18_750)
-    assert_allclose(result.cash_usd[:, 0], 481_250)
-    assert_allclose(result.mortgage_balance_usd, 0)
-    assert_allclose(result.mortgage_interest_usd, 0)
-    assert_allclose(result.home_equity_usd[:, 0], 750_000)
+    assert_allclose(result.metric_array(ReportMetric.PURCHASE_CLOSING_COST_USD)[:, 0], 18_750)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 0], 481_250)
+    assert_allclose(result.metric_array(ReportMetric.MORTGAGE_BALANCE_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.MORTGAGE_INTEREST_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.HOME_EQUITY_USD)[:, 0], 750_000)
 
 
 def test_purchase_closing_cost_reduces_month_zero_cash() -> None:
@@ -574,9 +579,9 @@ def test_purchase_closing_cost_reduces_month_zero_cash() -> None:
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
-    assert_allclose(result.purchase_closing_cost_usd[:, 0], 2_000)
-    assert_allclose(result.purchase_closing_cost_usd[:, 1:], 0)
-    assert_allclose(result.cash_usd[:, 0], 28_000)
+    assert_allclose(result.metric_array(ReportMetric.PURCHASE_CLOSING_COST_USD)[:, 0], 2_000)
+    assert_allclose(result.metric_array(ReportMetric.PURCHASE_CLOSING_COST_USD)[:, 1:], 0)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 0], 28_000)
 
 
 def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
@@ -610,20 +615,26 @@ def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
 
     expected_gross = 120_000
     expected_sale_cost = 6_000
-    expected_debt_payoff = result.mortgage_balance_usd[:, 3]
+    expected_debt_payoff = result.metric_array(ReportMetric.MORTGAGE_BALANCE_USD)[:, 3]
     expected_adjusted_basis = 102_500
     expected_realized_gain = expected_gross - expected_sale_cost - expected_adjusted_basis
-    assert_allclose(result.property_sale_gross_usd[:, 3], expected_gross)
-    assert_allclose(result.sale_closing_cost_usd[:, 3], expected_sale_cost)
-    assert_allclose(result.property_sale_debt_payoff_usd[:, 3], expected_debt_payoff)
-    assert_allclose(result.property_sale_adjusted_basis_usd[:, 3], expected_adjusted_basis)
-    assert_allclose(result.property_sale_capital_gain_usd[:, 3], expected_realized_gain)
-    assert_allclose(result.property_sale_capital_gain_exclusion_usd[:, 3], expected_realized_gain)
-    assert_allclose(result.taxable_property_capital_gain_usd[:, 3], 0)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_SALE_GROSS_USD)[:, 3], expected_gross)
+    assert_allclose(result.metric_array(ReportMetric.SALE_CLOSING_COST_USD)[:, 3], expected_sale_cost)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_SALE_DEBT_PAYOFF_USD)[:, 3], expected_debt_payoff)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_SALE_ADJUSTED_BASIS_USD)[:, 3], expected_adjusted_basis)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_SALE_CAPITAL_GAIN_USD)[:, 3], expected_realized_gain)
     assert_allclose(
-        result.property_sale_net_proceeds_usd[:, 3], expected_gross - expected_sale_cost - expected_debt_payoff
+        result.metric_array(ReportMetric.PROPERTY_SALE_CAPITAL_GAIN_EXCLUSION_USD)[:, 3], expected_realized_gain
     )
-    assert_allclose(result.net_property_sale_cash_flow_usd[:, 3], result.property_sale_net_proceeds_usd[:, 3])
+    assert_allclose(result.metric_array(ReportMetric.TAXABLE_PROPERTY_CAPITAL_GAIN_USD)[:, 3], 0)
+    assert_allclose(
+        result.metric_array(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD)[:, 3],
+        expected_gross - expected_sale_cost - expected_debt_payoff,
+    )
+    assert_allclose(
+        result.metric_array(ReportMetric.NET_PROPERTY_SALE_CASH_FLOW_USD)[:, 3],
+        result.metric_array(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD)[:, 3],
+    )
     sale_effects = [effect for effect in result.effects if isinstance(effect, SettlePropertySaleEffect)]
     assert len(sale_effects) == 2
     assert {effect.rollout_index for effect in sale_effects} == {0, 1}
@@ -636,7 +647,10 @@ def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
         assert_allclose(effect.debt_payoff_usd, expected_debt_payoff[effect.rollout_index])
         assert effect.capital_gain_exclusion_usd == expected_realized_gain
         assert effect.taxable_capital_gain_usd == 0
-        assert_allclose(effect.net_proceeds_usd, result.property_sale_net_proceeds_usd[effect.rollout_index, 3])
+        assert_allclose(
+            effect.net_proceeds_usd,
+            result.metric_array(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD)[effect.rollout_index, 3],
+        )
 
 
 def test_location_local_regulation_drives_property_tax() -> None:
@@ -688,8 +702,8 @@ def test_location_local_regulation_drives_property_tax() -> None:
     mainland = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
     mare_island = _run_with_resolved_regulation(scenario_set.scenarios[1], _bundle())
 
-    assert_allclose(mainland.property_tax_usd[:, 1], 100_000 * 0.011 / 12)
-    assert_allclose(mare_island.property_tax_usd[:, 1], 100_000 * 0.024 / 12)
+    assert_allclose(mainland.metric_array(ReportMetric.PROPERTY_TAX_USD)[:, 1], 100_000 * 0.011 / 12)
+    assert_allclose(mare_island.metric_array(ReportMetric.PROPERTY_TAX_USD)[:, 1], 100_000 * 0.024 / 12)
 
 
 def test_property_sale_stops_operating_cash_flows_after_sale_month() -> None:
@@ -722,14 +736,14 @@ def test_property_sale_stops_operating_cash_flows_after_sale_month() -> None:
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
-    assert np.all(result.rental_income_usd[:, 1] > 0)
-    assert np.all(result.property_carrying_cost_usd[:, 1] > 0)
-    assert_allclose(result.rental_income_usd[:, 2:], 0)
-    assert_allclose(result.property_tax_usd[:, 2:], 0)
-    assert_allclose(result.hoa_usd[:, 2:], 0)
-    assert_allclose(result.insurance_usd[:, 2:], 0)
-    assert_allclose(result.maintenance_usd[:, 2:], 0)
-    assert_allclose(result.net_property_cash_flow_usd[:, 2:], 0)
+    assert np.all(result.metric_array(ReportMetric.RENTAL_INCOME_USD)[:, 1] > 0)
+    assert np.all(result.metric_array(ReportMetric.PROPERTY_CARRYING_COST_USD)[:, 1] > 0)
+    assert_allclose(result.metric_array(ReportMetric.RENTAL_INCOME_USD)[:, 2:], 0)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_TAX_USD)[:, 2:], 0)
+    assert_allclose(result.metric_array(ReportMetric.HOA_USD)[:, 2:], 0)
+    assert_allclose(result.metric_array(ReportMetric.INSURANCE_USD)[:, 2:], 0)
+    assert_allclose(result.metric_array(ReportMetric.MAINTENANCE_USD)[:, 2:], 0)
+    assert_allclose(result.metric_array(ReportMetric.NET_PROPERTY_CASH_FLOW_USD)[:, 2:], 0)
 
 
 def test_capital_gains_exclusion_offsets_property_sale_gain() -> None:
@@ -757,10 +771,10 @@ def test_capital_gains_exclusion_offsets_property_sale_gain() -> None:
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(home_path=(1.0, 1.0, 1.5, 2.0)))
 
-    assert_allclose(result.realized_property_gain_usd[:, 3], 100_000)
-    assert_allclose(result.depreciation_recapture_usd[:, 3], 0)
-    assert_allclose(result.taxable_property_gain_usd[:, 3], 0)
-    assert_allclose(result.property_sale_tax_usd[:, 3], 0)
+    assert_allclose(result.metric_array(ReportMetric.REALIZED_PROPERTY_GAIN_USD)[:, 3], 100_000)
+    assert_allclose(result.metric_array(ReportMetric.DEPRECIATION_RECAPTURE_USD)[:, 3], 0)
+    assert_allclose(result.metric_array(ReportMetric.TAXABLE_PROPERTY_GAIN_USD)[:, 3], 0)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_SALE_TAX_USD)[:, 3], 0)
 
 
 def test_rental_depreciation_recaptures_on_sale() -> None:
@@ -802,15 +816,21 @@ def test_rental_depreciation_recaptures_on_sale() -> None:
 
     expected_monthly_depreciation = 100_000 / (27.5 * 12)
     expected_cumulative_depreciation = expected_monthly_depreciation * 3
-    assert_allclose(result.property_depreciation_usd[:, 1:4], expected_monthly_depreciation)
-    assert_allclose(result.cumulative_property_depreciation_usd[:, 3], expected_cumulative_depreciation)
-    assert_allclose(result.realized_property_gain_usd[:, 3], expected_cumulative_depreciation)
-    assert_allclose(result.depreciation_recapture_usd[:, 3], expected_cumulative_depreciation)
-    assert_allclose(result.taxable_property_gain_usd[:, 3], expected_cumulative_depreciation)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_DEPRECIATION_USD)[:, 1:4], expected_monthly_depreciation)
+    assert_allclose(
+        result.metric_array(ReportMetric.CUMULATIVE_PROPERTY_DEPRECIATION_USD)[:, 3], expected_cumulative_depreciation
+    )
+    assert_allclose(
+        result.metric_array(ReportMetric.REALIZED_PROPERTY_GAIN_USD)[:, 3], expected_cumulative_depreciation
+    )
+    assert_allclose(
+        result.metric_array(ReportMetric.DEPRECIATION_RECAPTURE_USD)[:, 3], expected_cumulative_depreciation
+    )
+    assert_allclose(result.metric_array(ReportMetric.TAXABLE_PROPERTY_GAIN_USD)[:, 3], expected_cumulative_depreciation)
     # Recapture tax allocated to the sale month: bracket-aware federal + California,
     # net of the SALT and qualified-residence-interest deductions that lower the
     # year's ordinary income on which the recapture stacks.
-    sale_month_tax = result.property_sale_tax_usd[:, 3]
+    sale_month_tax = result.metric_array(ReportMetric.PROPERTY_SALE_TAX_USD)[:, 3]
     expected_ca_marginal_rate = 0.093
     expected_federal_marginal_rate = 0.22  # ordinary income at \$100k baseline lands in the 22% bracket
     upper_bound_tax = expected_cumulative_depreciation * (expected_federal_marginal_rate + expected_ca_marginal_rate)
@@ -831,15 +851,15 @@ def test_no_property_scenario_ignores_real_estate_tax_accounting_parameters() ->
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(home_path=(1.0, 2.0, 3.0, 4.0)))
 
-    assert_allclose(result.purchase_closing_cost_usd, 0)
-    assert_allclose(result.sale_closing_cost_usd, 0)
-    assert_allclose(result.property_depreciation_usd, 0)
-    assert_allclose(result.property_sale_gross_usd, 0)
-    assert_allclose(result.property_sale_net_proceeds_usd, 0)
-    assert_allclose(result.property_sale_tax_usd, 0)
-    assert_allclose(result.net_property_sale_cash_flow_usd, 0)
-    assert_allclose(result.cash_usd[:, 0], 10_000)
-    assert_allclose(result.cash_usd[:, 3], 10_000)
+    assert_allclose(result.metric_array(ReportMetric.PURCHASE_CLOSING_COST_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.SALE_CLOSING_COST_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_DEPRECIATION_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_SALE_GROSS_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_SALE_TAX_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.NET_PROPERTY_SALE_CASH_FLOW_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 0], 10_000)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 3], 10_000)
 
 
 def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> None:
@@ -866,19 +886,22 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
-    assert_allclose(result.generic_sp500_sale_usd[:, 0], 20_000)
-    assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 10_000)
-    assert_allclose(result.generic_sp500_sale_gain_usd[:, 0], 10_000)
-    assert_allclose(result.generic_sp500_sale_tax_usd[:, 0], 42.94)
-    assert_allclose(result.checking_floor_action_usd[:, 0], 20_000)
-    assert_allclose(result.checking_floor_shortfall_usd[:, 0], 0)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_SALE_USD)[:, 0], 20_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_SALE_BASIS_USD)[:, 0], 10_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_SALE_GAIN_USD)[:, 0], 10_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_SALE_TAX_USD)[:, 0], 42.94)
+    assert_allclose(result.metric_array(ReportMetric.CHECKING_FLOOR_ACTION_USD)[:, 0], 20_000)
+    assert_allclose(result.metric_array(ReportMetric.CHECKING_FLOOR_SHORTFALL_USD)[:, 0], 0)
     # Sale proceeds land in cash at sale time; tax accrues to month 0 (provenance)
     # but settles at the last in-horizon month belonging to the tax year.
-    assert_allclose(result.cash_usd[:, 0], 25_000)
-    assert_allclose(result.cash_usd[:, 3], 25_000 - 42.94)
-    assert_allclose(result.generic_sp500_value_usd[:, 0], 30_000)
-    assert_allclose(result.generic_sp500_sale_usd[:, 1:], 0)
-    assert np.all(result.generic_sp500_value_usd[:, 1] > result.generic_sp500_value_usd[:, 0])
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 0], 25_000)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 3], 25_000 - 42.94)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 0], 30_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_SALE_USD)[:, 1:], 0)
+    assert np.all(
+        result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 1]
+        > result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 0]
+    )
     assert len(result.effects) == 2
     assert {effect.rollout_index for effect in result.effects} == {0, 1}
     for effect in result.effects:
@@ -945,10 +968,10 @@ def test_checking_floor_policy_does_not_sell_when_cash_is_above_floor() -> None:
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
-    assert_allclose(result.generic_sp500_sale_usd, 0)
-    assert_allclose(result.checking_floor_shortfall_usd, 0)
-    assert_allclose(result.cash_usd, 12_000)
-    assert_allclose(result.generic_sp500_value_usd[:, 2], 60_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_SALE_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.CHECKING_FLOOR_SHORTFALL_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD), 12_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 2], 60_000)
 
 
 def test_checking_floor_policy_reports_shortfall_when_public_stock_is_exhausted() -> None:
@@ -975,11 +998,11 @@ def test_checking_floor_policy_reports_shortfall_when_public_stock_is_exhausted(
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
-    assert_allclose(result.generic_sp500_sale_usd[:, 0], 5_000)
-    assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 1_000)
-    assert_allclose(result.cash_usd[:, 0], 5_000)
-    assert_allclose(result.generic_sp500_value_usd, 0)
-    assert_allclose(result.checking_floor_shortfall_usd[:, 0], 5_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_SALE_USD)[:, 0], 5_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_SALE_BASIS_USD)[:, 0], 1_000)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 0], 5_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.CHECKING_FLOOR_SHORTFALL_USD)[:, 0], 5_000)
 
 
 def test_cross_type_policy_order_changes_cash_management_result() -> None:
@@ -1018,12 +1041,12 @@ def test_cross_type_policy_order_changes_cash_management_result() -> None:
     spend_then_sale = run_ordered([spend_policy, checking_floor_policy])
     sale_then_spend = run_ordered([checking_floor_policy, spend_policy])
 
-    assert_allclose(spend_then_sale.cash_usd[:, 1], 25_000)
-    assert_allclose(spend_then_sale.generic_sp500_sale_usd[:, 1], 20_000)
-    assert_allclose(spend_then_sale.generic_sp500_value_usd[:, 1], 80_000)
-    assert_allclose(sale_then_spend.cash_usd[:, 1], 5_000)
-    assert_allclose(sale_then_spend.generic_sp500_sale_usd[:, 1], 0)
-    assert_allclose(sale_then_spend.generic_sp500_value_usd[:, 1], 100_000)
+    assert_allclose(spend_then_sale.metric_array(ReportMetric.CASH_USD)[:, 1], 25_000)
+    assert_allclose(spend_then_sale.metric_array(ReportMetric.GENERIC_SP500_SALE_USD)[:, 1], 20_000)
+    assert_allclose(spend_then_sale.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 1], 80_000)
+    assert_allclose(sale_then_spend.metric_array(ReportMetric.CASH_USD)[:, 1], 5_000)
+    assert_allclose(sale_then_spend.metric_array(ReportMetric.GENERIC_SP500_SALE_USD)[:, 1], 0)
+    assert_allclose(sale_then_spend.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 1], 100_000)
 
     spend_then_sale_decisions = [
         decision
@@ -1088,13 +1111,29 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
         ),
     )
 
-    assert np.all(result.partner_contribution_used_usd[:, 1:3] > result.mortgage_principal_usd[:, 1:3])
-    assert_allclose(result.partner_contribution_usd[:, 3:], 0)
-    assert np.all(result.partner_ownership_pct[:, 2] > 0)
-    assert_allclose(result.partner_ownership_pct[:, 3], result.partner_ownership_pct[:, 2])
-    assert_allclose(result.partner_ownership_pct[:, 4], result.partner_ownership_pct[:, 2])
-    assert np.all(result.partner_home_equity_claim_usd[:, 4] > result.partner_home_equity_claim_usd[:, 2])
-    assert_allclose(result.owner_home_equity_claim_usd + result.partner_home_equity_claim_usd, result.home_equity_usd)
+    assert np.all(
+        result.metric_array(ReportMetric.PARTNER_CONTRIBUTION_USED_USD)[:, 1:3]
+        > result.metric_array(ReportMetric.MORTGAGE_PRINCIPAL_USD)[:, 1:3]
+    )
+    assert_allclose(result.metric_array(ReportMetric.PARTNER_CONTRIBUTION_USD)[:, 3:], 0)
+    assert np.all(result.metric_array(ReportMetric.PARTNER_OWNERSHIP_PCT)[:, 2] > 0)
+    assert_allclose(
+        result.metric_array(ReportMetric.PARTNER_OWNERSHIP_PCT)[:, 3],
+        result.metric_array(ReportMetric.PARTNER_OWNERSHIP_PCT)[:, 2],
+    )
+    assert_allclose(
+        result.metric_array(ReportMetric.PARTNER_OWNERSHIP_PCT)[:, 4],
+        result.metric_array(ReportMetric.PARTNER_OWNERSHIP_PCT)[:, 2],
+    )
+    assert np.all(
+        result.metric_array(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD)[:, 4]
+        > result.metric_array(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD)[:, 2]
+    )
+    assert_allclose(
+        result.metric_array(ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD)
+        + result.metric_array(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD),
+        result.metric_array(ReportMetric.HOME_EQUITY_USD),
+    )
     # Partner contributions, mortgage payments, and partner-equity accruals are
     # canonicalized in ledger postings and obligation/settlement rows; the
     # PartnerContributionDecision row carries the actor decision trace.
@@ -1170,9 +1209,12 @@ def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> No
         ),
     )
 
-    assert_allclose(result.partner_contribution_usd[:, 1:], 100)
-    assert np.all(result.partner_principal_credit_usd[:, 1:] > 0)
-    assert np.all(result.partner_equity_ledger_usd[:, 2] > result.partner_equity_ledger_usd[:, 1])
+    assert_allclose(result.metric_array(ReportMetric.PARTNER_CONTRIBUTION_USD)[:, 1:], 100)
+    assert np.all(result.metric_array(ReportMetric.PARTNER_PRINCIPAL_CREDIT_USD)[:, 1:] > 0)
+    assert np.all(
+        result.metric_array(ReportMetric.PARTNER_EQUITY_LEDGER_USD)[:, 2]
+        > result.metric_array(ReportMetric.PARTNER_EQUITY_LEDGER_USD)[:, 1]
+    )
     account_by_id = {account.chart_account_id: account for account in result.accounting_trace.chart_accounts_tuple()}
     owner_principal_rows = result.accounting_trace.filter_postings(
         role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT
@@ -1181,7 +1223,10 @@ def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> No
     assert {account_by_id[posting.chart_account_id].property_id for posting in owner_principal_rows} == {
         "vallejo_calhoun"
     }
-    assert_allclose([posting.amount_usd for posting in owner_principal_rows], result.owner_principal_credit_usd[0, 1:])
+    assert_allclose(
+        [posting.amount_usd for posting in owner_principal_rows],
+        result.metric_array(ReportMetric.OWNER_PRINCIPAL_CREDIT_USD)[0, 1:],
+    )
     partner_principal_rows = result.accounting_trace.filter_postings(
         role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT
     )
@@ -1251,7 +1296,7 @@ def test_partner_equity_arrays_match_rows_from_same_application() -> None:
         ),
     )
 
-    rollout_count, month_count = result.partner_equity_ledger_usd.shape
+    rollout_count, month_count = result.metric_array(ReportMetric.PARTNER_EQUITY_LEDGER_USD).shape
     month_index = np.arange(month_count)
 
     def snapshot_matrix(role: ChartAccountRole):
@@ -1268,17 +1313,29 @@ def test_partner_equity_arrays_match_rows_from_same_application() -> None:
     # PartnerOwnershipAccrualApplication, and the same application's balance_snapshots
     # are what get recorded. Equality here proves there is no parallel array
     # reconstruction in the engine.
-    assert_allclose(snapshot_matrix(ChartAccountRole.PARTNER_EQUITY_LEDGER), result.partner_equity_ledger_usd)
-    assert_allclose(snapshot_matrix(ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM), result.partner_home_equity_claim_usd)
+    assert_allclose(
+        snapshot_matrix(ChartAccountRole.PARTNER_EQUITY_LEDGER),
+        result.metric_array(ReportMetric.PARTNER_EQUITY_LEDGER_USD),
+    )
+    assert_allclose(
+        snapshot_matrix(ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM),
+        result.metric_array(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD),
+    )
     assert_allclose(
         posting_matrix(ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, PostingSide.DEBIT),
-        result.partner_principal_credit_usd,
+        result.metric_array(ReportMetric.PARTNER_PRINCIPAL_CREDIT_USD),
     )
     # Owner-side: same property, produced once by apply_partner_ownership_aggregate.
-    assert_allclose(snapshot_matrix(ChartAccountRole.OWNER_EQUITY_LEDGER), result.owner_equity_ledger_usd)
-    assert_allclose(snapshot_matrix(ChartAccountRole.OWNER_HOME_EQUITY_CLAIM), result.owner_home_equity_claim_usd)
     assert_allclose(
-        posting_matrix(ChartAccountRole.OWNER_PRINCIPAL_CREDIT, PostingSide.DEBIT), result.owner_principal_credit_usd
+        snapshot_matrix(ChartAccountRole.OWNER_EQUITY_LEDGER), result.metric_array(ReportMetric.OWNER_EQUITY_LEDGER_USD)
+    )
+    assert_allclose(
+        snapshot_matrix(ChartAccountRole.OWNER_HOME_EQUITY_CLAIM),
+        result.metric_array(ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD),
+    )
+    assert_allclose(
+        posting_matrix(ChartAccountRole.OWNER_PRINCIPAL_CREDIT, PostingSide.DEBIT),
+        result.metric_array(ReportMetric.OWNER_PRINCIPAL_CREDIT_USD),
     )
 
 
@@ -1324,22 +1381,28 @@ def test_rental_income_and_carrying_costs_feed_cash_flow() -> None:
     expected_month_1_income = 2_000 * 0.9
     expected_month_1_management = expected_month_1_income * 0.05
     expected_month_1_leasing = expected_month_1_income * 0.12 / 12
-    assert_allclose(result.rental_income_usd[:, 1], expected_month_1_income)
-    assert_allclose(result.rental_management_fee_usd[:, 1], expected_month_1_management)
-    assert_allclose(result.rental_leasing_fee_usd[:, 1], expected_month_1_leasing)
-    assert_allclose(result.property_tax_usd[:, 1], 275)
-    assert_allclose(result.hoa_usd[:, 1], 100)
-    assert_allclose(result.insurance_usd[:, 1], 100)
-    assert_allclose(result.maintenance_usd[:, 1], 300)
+    assert_allclose(result.metric_array(ReportMetric.RENTAL_INCOME_USD)[:, 1], expected_month_1_income)
+    assert_allclose(result.metric_array(ReportMetric.RENTAL_MANAGEMENT_FEE_USD)[:, 1], expected_month_1_management)
+    assert_allclose(result.metric_array(ReportMetric.RENTAL_LEASING_FEE_USD)[:, 1], expected_month_1_leasing)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_TAX_USD)[:, 1], 275)
+    assert_allclose(result.metric_array(ReportMetric.HOA_USD)[:, 1], 100)
+    assert_allclose(result.metric_array(ReportMetric.INSURANCE_USD)[:, 1], 100)
+    assert_allclose(result.metric_array(ReportMetric.MAINTENANCE_USD)[:, 1], 300)
     assert_allclose(
-        result.property_carrying_cost_usd[:, 1],
+        result.metric_array(ReportMetric.PROPERTY_CARRYING_COST_USD)[:, 1],
         275 + 100 + 100 + 300 + expected_month_1_management + expected_month_1_leasing,
     )
     assert_allclose(
-        result.net_property_cash_flow_usd,
-        result.rental_income_usd - result.property_carrying_cost_usd - result.mortgage_payment_usd,
+        result.metric_array(ReportMetric.NET_PROPERTY_CASH_FLOW_USD),
+        result.metric_array(ReportMetric.RENTAL_INCOME_USD)
+        - result.metric_array(ReportMetric.PROPERTY_CARRYING_COST_USD)
+        - result.metric_array(ReportMetric.MORTGAGE_PAYMENT_USD),
     )
-    assert_allclose(result.cash_usd[:, 1], result.cash_usd[:, 0] + result.net_property_cash_flow_usd[:, 1])
+    assert_allclose(
+        result.metric_array(ReportMetric.CASH_USD)[:, 1],
+        result.metric_array(ReportMetric.CASH_USD)[:, 0]
+        + result.metric_array(ReportMetric.NET_PROPERTY_CASH_FLOW_USD)[:, 1],
+    )
 
 
 def test_purchase_event_parameters_drive_property_costs() -> None:
@@ -1374,11 +1437,13 @@ def test_purchase_event_parameters_drive_property_costs() -> None:
 
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
-    assert_allclose(result.property_tax_usd[:, 1], 118)
-    assert_allclose(result.hoa_usd[:, 1], 250)
-    assert_allclose(result.insurance_usd[:, 1], 50)
-    assert_allclose(result.maintenance_usd[:, 1], 100)
-    assert_allclose(result.cash_usd[:, 1], result.cash_usd[:, 0] - 518)
+    assert_allclose(result.metric_array(ReportMetric.PROPERTY_TAX_USD)[:, 1], 118)
+    assert_allclose(result.metric_array(ReportMetric.HOA_USD)[:, 1], 250)
+    assert_allclose(result.metric_array(ReportMetric.INSURANCE_USD)[:, 1], 50)
+    assert_allclose(result.metric_array(ReportMetric.MAINTENANCE_USD)[:, 1], 100)
+    assert_allclose(
+        result.metric_array(ReportMetric.CASH_USD)[:, 1], result.metric_array(ReportMetric.CASH_USD)[:, 0] - 518
+    )
 
 
 def test_private_equity_stock_is_not_sold_without_policy() -> None:
@@ -1388,9 +1453,9 @@ def test_private_equity_stock_is_not_sold_without_policy() -> None:
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
-    assert_allclose(result.private_equity_sale_usd, 0)
-    assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 50_000)
-    assert_allclose(result.cash_usd[:, 1], 10_000)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_VALUE_USD)[:, 1], 50_000)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 1], 10_000)
 
 
 def test_private_equity_sale_opportunity_without_policy_does_not_sell() -> None:
@@ -1400,10 +1465,10 @@ def test_private_equity_sale_opportunity_without_policy_does_not_sell() -> None:
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
-    assert_allclose(result.private_equity_sale_usd, 0)
-    assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 50_000)
-    assert_allclose(result.cash_usd[:, 1], 10_000)
-    assert np.all(result.private_equity_sale_opportunity_event[:, 1])
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD), 0)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_VALUE_USD)[:, 1], 50_000)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 1], 10_000)
+    assert np.all(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_EVENT)[:, 1])
     assert result.effects == ()
 
 
@@ -1428,7 +1493,7 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     )
 
     no_opportunity = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
-    assert_allclose(no_opportunity.private_equity_sale_usd, 0)
+    assert_allclose(no_opportunity.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD), 0)
     assert no_opportunity.effects == ()
     no_opportunity_decisions = [
         decision
@@ -1449,17 +1514,17 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
-    assert_allclose(result.private_equity_sale_usd[:, 0], 0)
-    assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
-    assert_allclose(result.private_equity_sale_usd[:, 2], 0)
-    assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 30_000)
-    assert_allclose(result.private_equity_sale_basis_usd[:, 1], 0)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD)[:, 0], 0)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD)[:, 1], 20_000)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD)[:, 2], 0)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_VALUE_USD)[:, 1], 30_000)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_BASIS_USD)[:, 1], 0)
     expected_tax = 175.09
-    assert_allclose(result.private_equity_sale_tax_usd[:, 1], expected_tax)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD)[:, 1], expected_tax)
     # Sale proceeds credit cash at month 1; tax accrues to month 1 (provenance)
     # but settles at the last in-horizon month belonging to the tax year.
-    assert_allclose(result.cash_usd[:, 1], 30_000)
-    assert_allclose(result.cash_usd[:, 3], 30_000 - expected_tax)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 1], 30_000)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 3], 30_000 - expected_tax)
     effects = [effect for effect in result.effects if effect.effect_type is EffectType.SELL_PRIVATE_EQUITY]
     assert len(effects) == 2
     for effect in effects:
@@ -1525,10 +1590,10 @@ def test_private_equity_sale_policy_reinvests_sale_proceeds_in_sp500() -> None:
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
-    assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
-    assert_allclose(result.cash_usd[:, 1], 10_000)
-    assert_allclose(result.generic_sp500_value_usd[:, 1], 130_000)
-    assert_allclose(result.generic_sp500_value_usd[:, 2], 141_818.18181818)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD)[:, 1], 20_000)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 1], 10_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 1], 130_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 2], 141_818.18181818)
 
 
 def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportunity() -> None:
@@ -1556,16 +1621,16 @@ def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportun
 
     no_opportunity = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
     _assert_liquid_net_worth_matches_cash_and_public_stock(no_opportunity)
-    assert_allclose(no_opportunity.private_equity_sale_usd, 0)
+    assert_allclose(no_opportunity.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD), 0)
 
     market_bundle = _bundle(private_equity_sale_opportunity_month=1)
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
 
-    assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
-    assert_allclose(result.cash_usd[:, 1], 10_000)
-    assert_allclose(result.generic_sp500_value_usd[:, 1], 130_000)
-    assert_allclose(result.liquid_net_worth_usd[:, 1], 140_000)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD)[:, 1], 20_000)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 1], 10_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, 1], 130_000)
+    assert_allclose(result.metric_array(ReportMetric.LIQUID_NET_WORTH_USD)[:, 1], 140_000)
     sale_decisions = [
         decision
         for decision in result.policy_decisions
@@ -1621,7 +1686,7 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
     market_bundle = _bundle(private_equity_sale_opportunity_month=1)
     result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
-    assert_allclose(result.private_equity_sale_usd, 0)
+    assert_allclose(result.metric_array(ReportMetric.PRIVATE_EQUITY_SALE_USD), 0)
     decisions = [
         decision
         for decision in result.policy_decisions
@@ -1631,7 +1696,7 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
     ]
     assert len(decisions) == 2
     assert {decision.target_liquid_net_worth_floor_usd for decision in decisions} == {100_000}
-    assert_allclose(result.liquid_net_worth_usd[:, 1], [120_000, 120_000])
+    assert_allclose(result.metric_array(ReportMetric.LIQUID_NET_WORTH_USD)[:, 1], [120_000, 120_000])
     assert_allclose([decision.sale_opportunity_value_usd for decision in decisions], [50_000, 50_000])
     assert_allclose([decision.liquid_net_worth_usd for decision in decisions], [120_000, 120_000])
     assert {decision.source_asset_id for decision in decisions} == {"private_equity"}
@@ -1741,7 +1806,7 @@ def test_required_tax_obligation_fails_when_policy_does_not_fund_it() -> None:
     assert [status.status for status in result.rollout_statuses()] == [RolloutStatusType.FAILED] * 2
     assert result.rollout_statuses()[0].failed_obligation_count == 1
     assert result.rollout_statuses()[0].unpaid_obligation_usd > 0
-    assert_allclose(result.cash_usd[:, 1], 0)
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, 1], 0)
 
 
 def test_required_tax_obligation_can_be_rescued_by_existing_public_stock_sale_policy() -> None:
@@ -1806,16 +1871,19 @@ def test_required_tax_obligation_can_be_rescued_by_existing_public_stock_sale_po
     # at the settlement month, so cash and SP500 inventory both reflect the
     # post-settlement state at horizon end (after the SP500 path has grown the
     # PE-reinvested SP500 between months 1 and 3).
-    expected_year_total_tax = np.sum(result.total_income_tax_usd, axis=1)
-    settlement_month = result.cash_usd.shape[1] - 1
-    assert_allclose(result.cash_usd[:, settlement_month], 20_000 - expected_year_total_tax)
+    expected_year_total_tax = np.sum(result.metric_array(ReportMetric.TOTAL_INCOME_TAX_USD), axis=1)
+    settlement_month = result.metric_array(ReportMetric.CASH_USD).shape[1] - 1
+    assert_allclose(result.metric_array(ReportMetric.CASH_USD)[:, settlement_month], 20_000 - expected_year_total_tax)
     # PE sale at month 1 reinvests 100k SP500 (units = 100k / 1.1); at month 3
     # the funding policy sells 20k of SP500 (units = 20k / 1.3) leaving 75524 units
     # at multiplier 1.3 = ~98_181.
     sp500_units_after_pe = 100_000 / 1.1
     sp500_units_sold = 20_000 / 1.3
     expected_sp500_value_at_settlement = (sp500_units_after_pe - sp500_units_sold) * 1.3
-    assert_allclose(result.generic_sp500_value_usd[:, settlement_month], expected_sp500_value_at_settlement)
+    assert_allclose(
+        result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, settlement_month],
+        expected_sp500_value_at_settlement,
+    )
 
 
 def test_required_tax_obligation_funding_uses_policy_program_order() -> None:
@@ -1881,11 +1949,14 @@ def test_required_tax_obligation_funding_uses_policy_program_order() -> None:
     # to horizon end here), not at the PE sale month. PE sale at month 1 reinvests
     # 100k SP500 (units = 100k / 1.1); at month 3 funding policies sell 100 + 20k
     # (units = 20_100 / 1.3) leaving 75447 units at multiplier 1.3 = ~98_081.
-    settlement_month = result.generic_sp500_value_usd.shape[1] - 1
+    settlement_month = result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD).shape[1] - 1
     sp500_units_after_pe = 100_000 / 1.1
     sp500_units_sold = 20_100 / 1.3
     expected_sp500_value_at_settlement = (sp500_units_after_pe - sp500_units_sold) * 1.3
-    assert_allclose(result.generic_sp500_value_usd[:, settlement_month], expected_sp500_value_at_settlement)
+    assert_allclose(
+        result.metric_array(ReportMetric.GENERIC_SP500_VALUE_USD)[:, settlement_month],
+        expected_sp500_value_at_settlement,
+    )
 
 
 def test_checking_floor_policy_falls_through_to_crypto_after_sp500_exhausted() -> None:
@@ -1919,13 +1990,13 @@ def test_checking_floor_policy_falls_through_to_crypto_after_sp500_exhausted() -
 
     # SP500 floor sale runs first in month 0; SP500 only has $5k, so the rest is
     # funded by crypto.
-    assert_allclose(result.generic_sp500_sale_usd[:, 0], 5_000)
+    assert_allclose(result.metric_array(ReportMetric.GENERIC_SP500_SALE_USD)[:, 0], 5_000)
     # Crypto sale picks up the remaining shortfall in the obligation-funding pass.
     # This scenario raises no required obligation in month 0, so the in-month
     # checking-floor crypto path is exercised by the annual-tax obligation flow
     # only — verify the policy is at least recorded and crypto value tracks
     # correctly while it sits there.
-    assert_allclose(result.crypto_value_usd[:, 0], 10_000)
+    assert_allclose(result.metric_array(ReportMetric.CRYPTO_VALUE_USD)[:, 0], 10_000)
     assert {effect.effect_type for effect in result.effects} >= {EffectType.SELL_SP500}
 
 

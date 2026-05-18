@@ -148,14 +148,6 @@ _SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD = 150_000.0
 _SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD_MFS = 75_000.0
 
 
-# Set of `ReportMetric` column names that the `ScenarioRunArrays.numerics`
-# polars frame carries; used by `__getattr__` to authorize per-metric
-# attribute access. Excludes `MONTH_INDEX`, which lives as a 1D field.
-_NUMERIC_METRIC_COLUMNS: frozenset[str] = frozenset(
-    metric.value for metric in ReportMetric if metric is not ReportMetric.MONTH_INDEX
-)
-
-
 def _build_numerics_frame(month_index: np.ndarray, metric_arrays: dict[str, np.ndarray]) -> pl.DataFrame:
     """Build the `ScenarioRunArrays.numerics` wide-format polars frame from
     the per-metric `(rollouts, months+1)` numpy arrays.
@@ -187,10 +179,9 @@ class ScenarioRunArrays:
     month_index: np.ndarray
     # Wide-format polars frame keyed by `(rollout_index, month_index)`
     # carrying every `ReportMetric` column (one column per metric, named
-    # for the matching `ReportMetric` enum value). The previous shape
-    # had ~70 separate `(rollouts, months+1)` numpy arrays as fields; they
-    # are now exposed via per-metric `@property` accessors over this frame
-    # so the canonical storage is one place.
+    # for the matching `ReportMetric` enum value). Reach individual metrics
+    # via `metric_array(ReportMetric.X)` to get a `(rollouts, months+1)`
+    # numpy view.
     numerics: pl.DataFrame
     effects: tuple[Effect, ...]
     policy_decisions: tuple[PolicyDecision, ...]
@@ -220,22 +211,6 @@ class ScenarioRunArrays:
         if metric is ReportMetric.MONTH_INDEX:
             return self.month_index
         flat: np.ndarray = self.numerics[metric.value].to_numpy()
-        return flat.reshape(self.rollout_count, self.horizon_months + 1)
-
-    def __getattr__(self, name: str) -> np.ndarray:
-        """Backward-compat attribute access for the per-metric 2D arrays.
-
-        Pre-refactor `ScenarioRunArrays` carried ~70 separate numpy fields
-        (one per `ReportMetric`); ~140 call sites still read them by name.
-        After the storage move to `numerics`, the same access goes through
-        the polars frame: `arrays.cash_usd` → `numerics["cash_usd"].to_numpy()
-        .reshape(rollouts, months+1)`.
-        """
-        # Guard against recursion: `numerics` / `month_index` are real fields;
-        # the dataclass machinery handles them before `__getattr__` runs.
-        if name not in _NUMERIC_METRIC_COLUMNS:
-            raise AttributeError(name)
-        flat: np.ndarray = self.numerics[name].to_numpy()
         return flat.reshape(self.rollout_count, self.horizon_months + 1)
 
     def rollout_statuses(self) -> tuple[RolloutStatus, ...]:
