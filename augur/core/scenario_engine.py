@@ -9,7 +9,6 @@ import numpy as np
 
 from augur.core import posting_schemas
 from augur.core.accounting import (
-    AccountingCauseType,
     ChartAccountRole,
     JournalEntryType,
     LiabilityState,
@@ -27,7 +26,6 @@ from augur.core.policy_runtime import (
     ActorPolicyStep,
     BalanceSnapshotBatch,
     JournalEntryBatch,
-    PostingBatch,
     PrivateEquitySaleApplication,
     PrivateEquitySaleInstructionBatch,
     PrivateEquitySaleOpportunityBatch,
@@ -4294,31 +4292,16 @@ def _record_obligation_accrual_and_settlement_entries(
         )
         return
     if isinstance(obligation_kind, _CashDebitObligationKind):
-        accounting.record_entry(
+        accounting.record_entry_firings(
+            schema=posting_schemas.CASH_DEBIT_SETTLEMENT_BY_EXPENSE_ROLE[obligation_kind.expense_role],
             month_index=month_index,
-            entry=JournalEntryBatch(
-                journal_entry_type=obligation_kind.journal_entry_type,
-                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
-                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
-                obligation_id_prefix=obligation_type.value,
-                actor_id=actor_id,
-                policy_id=source_policy_id,
-                description=obligation_type.value,
-                postings=(
-                    PostingBatch(
-                        role=obligation_kind.expense_role,
-                        side=PostingSide.DEBIT,
-                        amount_usd=amount_paid_usd,
-                        actor_id=actor_id,
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.CHECKING_CASH,
-                        side=PostingSide.CREDIT,
-                        amount_usd=amount_paid_usd,
-                        actor_id=actor_id,
-                    ),
-                ),
-            ),
+            cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+            obligation_id_prefix=obligation_type.value,
+            actor_id=actor_id,
+            policy_id=source_policy_id,
+            description=obligation_type.value,
+            amount_bindings={"amount": amount_paid_usd},
+            leg_chart_account_keys=({"actor_id": actor_id}, {"actor_id": actor_id}),
         )
         return
     if isinstance(obligation_kind, _PartnerContributionObligationKind):

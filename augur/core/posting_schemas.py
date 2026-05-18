@@ -237,3 +237,37 @@ MORTGAGE_PAYMENT = JournalEntrySchema(
         PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.CREDIT, amount_binding="amount_paid"),
     ),
 )
+
+# Cash-debit obligation settlements ------------------------------------------
+#
+# Property tax / HOA dues / insurance / maintenance / outside rent / special
+# assessment all settle the same way: one expense debit + a cash credit. They
+# differ only in the expense `ChartAccountRole`, so each gets a schema keyed
+# by that role and `CASH_DEBIT_SETTLEMENT_BY_EXPENSE_ROLE` dispatches by the
+# `_CashDebitObligationKind.expense_role` selected at the engine call site.
+
+
+def _cash_debit_settlement(expense_role: ChartAccountRole) -> JournalEntrySchema:
+    return JournalEntrySchema(
+        journal_entry_type=JournalEntryType.OBLIGATION_SETTLEMENT,
+        cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+        legs=(
+            PostingLegSchema(role=expense_role, side=PostingSide.DEBIT, amount_binding="amount"),
+            PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.CREDIT, amount_binding="amount"),
+        ),
+    )
+
+
+PROPERTY_TAX_SETTLEMENT = _cash_debit_settlement(ChartAccountRole.PROPERTY_TAX_EXPENSE)
+HOA_SETTLEMENT = _cash_debit_settlement(ChartAccountRole.HOA_EXPENSE)
+INSURANCE_SETTLEMENT = _cash_debit_settlement(ChartAccountRole.INSURANCE_EXPENSE)
+MAINTENANCE_SETTLEMENT = _cash_debit_settlement(ChartAccountRole.MAINTENANCE_EXPENSE)
+OUTSIDE_RENT_SETTLEMENT = _cash_debit_settlement(ChartAccountRole.OUTSIDE_RENT_EXPENSE)
+
+CASH_DEBIT_SETTLEMENT_BY_EXPENSE_ROLE: dict[ChartAccountRole, JournalEntrySchema] = {
+    ChartAccountRole.PROPERTY_TAX_EXPENSE: PROPERTY_TAX_SETTLEMENT,
+    ChartAccountRole.HOA_EXPENSE: HOA_SETTLEMENT,
+    ChartAccountRole.INSURANCE_EXPENSE: INSURANCE_SETTLEMENT,
+    ChartAccountRole.MAINTENANCE_EXPENSE: MAINTENANCE_SETTLEMENT,
+    ChartAccountRole.OUTSIDE_RENT_EXPENSE: OUTSIDE_RENT_SETTLEMENT,
+}
