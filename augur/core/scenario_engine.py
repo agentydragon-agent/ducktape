@@ -4246,56 +4246,28 @@ def _record_obligation_accrual_and_settlement_entries(
 ) -> None:
     obligation_type = obligation_kind.obligation_type
     if isinstance(obligation_kind, _AnnualTaxObligationKind):
-        accounting.record_entry(
+        tax_liability_id = f"tax:{obligation_type.value}"
+        accounting.record_entry_firings(
+            schema=posting_schemas.TAX_ACCRUAL,
             month_index=month_index,
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.TAX_ACCRUAL,
-                cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
-                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:accrual",
-                obligation_id_prefix=obligation_type.value,
-                actor_id=actor_id,
-                policy_id=source_policy_id,
-                description=obligation_type.value,
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.TAX_EXPENSE, side=PostingSide.DEBIT, amount_usd=due_usd, actor_id=actor_id
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.TAX_PAYABLE,
-                        side=PostingSide.CREDIT,
-                        amount_usd=due_usd,
-                        actor_id=actor_id,
-                        liability_id=f"tax:{obligation_type.value}",
-                    ),
-                ),
-            ),
+            cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:accrual",
+            obligation_id_prefix=obligation_type.value,
+            actor_id=actor_id,
+            policy_id=source_policy_id,
+            description=obligation_type.value,
+            amount_bindings={"amount": due_usd},
+            leg_chart_account_keys=({"actor_id": actor_id}, {"actor_id": actor_id, "liability_id": tax_liability_id}),
         )
-        accounting.record_entry(
+        accounting.record_entry_firings(
+            schema=posting_schemas.TAX_PAYMENT_SETTLEMENT,
             month_index=month_index,
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.OBLIGATION_SETTLEMENT,
-                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
-                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
-                obligation_id_prefix=obligation_type.value,
-                actor_id=actor_id,
-                policy_id=source_policy_id,
-                description=obligation_type.value,
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.TAX_PAYABLE,
-                        side=PostingSide.DEBIT,
-                        amount_usd=amount_paid_usd,
-                        actor_id=actor_id,
-                        liability_id=f"tax:{obligation_type.value}",
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.CHECKING_CASH,
-                        side=PostingSide.CREDIT,
-                        amount_usd=amount_paid_usd,
-                        actor_id=actor_id,
-                    ),
-                ),
-            ),
+            cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+            obligation_id_prefix=obligation_type.value,
+            actor_id=actor_id,
+            policy_id=source_policy_id,
+            description=obligation_type.value,
+            amount_bindings={"amount": amount_paid_usd},
+            leg_chart_account_keys=({"actor_id": actor_id, "liability_id": tax_liability_id}, {"actor_id": actor_id}),
         )
         return
     if isinstance(obligation_kind, _EstimatedTaxObligationKind):
@@ -4306,31 +4278,18 @@ def _record_obligation_accrual_and_settlement_entries(
         # year-end settlement debits the residual back to zero. The liability
         # is keyed against the annual-tax-payment family so estimated payments
         # net against the same TAX_PAYABLE balance the year-end accrual builds.
-        accounting.record_entry(
+        accounting.record_entry_firings(
+            schema=posting_schemas.TAX_PAYMENT_SETTLEMENT,
             month_index=month_index,
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.OBLIGATION_SETTLEMENT,
-                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
-                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
-                obligation_id_prefix=obligation_type.value,
-                actor_id=actor_id,
-                policy_id=source_policy_id,
-                description=obligation_type.value,
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.TAX_PAYABLE,
-                        side=PostingSide.DEBIT,
-                        amount_usd=amount_paid_usd,
-                        actor_id=actor_id,
-                        liability_id=f"tax:{ObligationType.ANNUAL_TAX_PAYMENT.value}",
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.CHECKING_CASH,
-                        side=PostingSide.CREDIT,
-                        amount_usd=amount_paid_usd,
-                        actor_id=actor_id,
-                    ),
-                ),
+            cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+            obligation_id_prefix=obligation_type.value,
+            actor_id=actor_id,
+            policy_id=source_policy_id,
+            description=obligation_type.value,
+            amount_bindings={"amount": amount_paid_usd},
+            leg_chart_account_keys=(
+                {"actor_id": actor_id, "liability_id": f"tax:{ObligationType.ANNUAL_TAX_PAYMENT.value}"},
+                {"actor_id": actor_id},
             ),
         )
         return
@@ -4367,34 +4326,26 @@ def _record_obligation_accrual_and_settlement_entries(
         # actor's cash is credited (cash leaves) and the recipient owner's cash
         # is debited (cash arrives). Each posting carries a counterparty actor
         # and the property id so the ledger explains the transfer.
-        accounting.record_entry(
+        accounting.record_entry_firings(
+            schema=posting_schemas.PARTNER_CONTRIBUTION_TRANSFER,
             month_index=month_index,
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.PARTNER_CONTRIBUTION,
-                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
-                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
-                obligation_id_prefix=obligation_type.value,
-                actor_id=actor_id,
-                policy_id=source_policy_id,
-                description=obligation_type.value,
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.CHECKING_CASH,
-                        side=PostingSide.DEBIT,
-                        amount_usd=amount_paid_usd,
-                        actor_id=obligation_kind.recipient_actor_id,
-                        counterparty_actor_id=actor_id,
-                        property_id=obligation_kind.property_id,
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.CHECKING_CASH,
-                        side=PostingSide.CREDIT,
-                        amount_usd=amount_paid_usd,
-                        actor_id=actor_id,
-                        counterparty_actor_id=obligation_kind.recipient_actor_id,
-                        property_id=obligation_kind.property_id,
-                    ),
-                ),
+            cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+            obligation_id_prefix=obligation_type.value,
+            actor_id=actor_id,
+            policy_id=source_policy_id,
+            description=obligation_type.value,
+            amount_bindings={"amount": amount_paid_usd},
+            leg_chart_account_keys=(
+                {
+                    "actor_id": obligation_kind.recipient_actor_id,
+                    "counterparty_actor_id": actor_id,
+                    "property_id": obligation_kind.property_id,
+                },
+                {
+                    "actor_id": actor_id,
+                    "counterparty_actor_id": obligation_kind.recipient_actor_id,
+                    "property_id": obligation_kind.property_id,
+                },
             ),
         )
         return
@@ -4406,37 +4357,23 @@ def _record_obligation_accrual_and_settlement_entries(
     interest_paid = interest_due * paid_fraction
     principal_paid = principal_due * paid_fraction
     liability_id = _mortgage_liability_id(obligation_kind.property_id)
-    accounting.record_entry(
+    accounting.record_entry_firings(
+        schema=posting_schemas.MORTGAGE_PAYMENT,
         month_index=month_index,
-        entry=JournalEntryBatch(
-            journal_entry_type=JournalEntryType.MORTGAGE_PAYMENT,
-            cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
-            cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
-            obligation_id_prefix=obligation_type.value,
-            actor_id=actor_id,
-            policy_id=source_policy_id,
-            description=obligation_type.value,
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.MORTGAGE_INTEREST_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=interest_paid,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.MORTGAGE_PAYABLE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=principal_paid,
-                    actor_id=actor_id,
-                    liability_id=liability_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.CREDIT,
-                    amount_usd=amount_paid_usd,
-                    actor_id=actor_id,
-                ),
-            ),
+        cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+        obligation_id_prefix=obligation_type.value,
+        actor_id=actor_id,
+        policy_id=source_policy_id,
+        description=obligation_type.value,
+        amount_bindings={
+            "interest_paid": interest_paid,
+            "principal_paid": principal_paid,
+            "amount_paid": amount_paid_usd,
+        },
+        leg_chart_account_keys=(
+            {"actor_id": actor_id},
+            {"actor_id": actor_id, "liability_id": liability_id},
+            {"actor_id": actor_id},
         ),
     )
 

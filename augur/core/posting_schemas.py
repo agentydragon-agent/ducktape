@@ -175,3 +175,65 @@ PROPERTY_SALE = JournalEntrySchema(
         PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.CREDIT, amount_binding="cash_out"),
     ),
 )
+
+# Tax accrual + settlement ---------------------------------------------------
+#
+# `TAX_ACCRUAL` debits the expense and credits the corresponding payable.
+# `TAX_PAYMENT_SETTLEMENT` debits the payable and credits cash, paying off
+# the accrued balance. Estimated tax payments reuse `TAX_PAYMENT_SETTLEMENT`;
+# the only difference is the liability_id on the TAX_PAYABLE leg, which the
+# caller supplies via `leg_chart_account_keys`.
+
+TAX_ACCRUAL = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.TAX_ACCRUAL,
+    cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.TAX_EXPENSE, side=PostingSide.DEBIT, amount_binding="amount"),
+        PostingLegSchema(role=ChartAccountRole.TAX_PAYABLE, side=PostingSide.CREDIT, amount_binding="amount"),
+    ),
+)
+
+TAX_PAYMENT_SETTLEMENT = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.OBLIGATION_SETTLEMENT,
+    cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.TAX_PAYABLE, side=PostingSide.DEBIT, amount_binding="amount"),
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.CREDIT, amount_binding="amount"),
+    ),
+)
+
+# Partner contribution -------------------------------------------------------
+#
+# Balanced cross-actor cash transfer: contributing actor's cash is credited
+# (cash leaves) and recipient owner's cash is debited (cash arrives). Each
+# posting carries a counterparty actor and the property id so the ledger
+# explains the transfer.
+
+PARTNER_CONTRIBUTION_TRANSFER = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.PARTNER_CONTRIBUTION,
+    cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.DEBIT, amount_binding="amount"),
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.CREDIT, amount_binding="amount"),
+    ),
+)
+
+# Mortgage payment -----------------------------------------------------------
+#
+# Three-leg settlement: debit interest expense + debit mortgage principal,
+# credit checking_cash. Caller supplies the per-rollout split between interest
+# and principal as separate bindings plus the total cash amount.
+
+MORTGAGE_PAYMENT = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.MORTGAGE_PAYMENT,
+    cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+    legs=(
+        PostingLegSchema(
+            role=ChartAccountRole.MORTGAGE_INTEREST_EXPENSE, side=PostingSide.DEBIT, amount_binding="interest_paid"
+        ),
+        PostingLegSchema(
+            role=ChartAccountRole.MORTGAGE_PAYABLE, side=PostingSide.DEBIT, amount_binding="principal_paid"
+        ),
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.CREDIT, amount_binding="amount_paid"),
+    ),
+)
