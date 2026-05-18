@@ -222,77 +222,6 @@ keyed off the wrong-era name. Each fix has been a localized defensive
 patch on the consumer side, which leaves the same trap waiting for the
 next consumer that doesn't yet know about the rename.
 
-### Current state (post PR #1639)
-
-PR #1639 landed the foundation and migrated the chunk-scoped
-identifier maps to `Id`-keyed; PR #1647 cleaned up the ergonomic
-leftovers (signature tightening, per-sibling util imports,
-`time_phase!` macro visibility).
-
-What's `Id`-keyed today:
-
-- `RuntimeImportFacts.imports: HashMap<Id, RuntimeImportInfo>`.
-- `ModuleBodyFacts.{imported_locals, provided_locals, referenced_idents}: HashSet<Id>`.
-- `RefCollector.ids: HashSet<Id>`.
-- `Schedule.{bindings, chunk_renames, export_name_by_binding}` (`schedule.rs:31,38,70`).
-- `ScheduleLogicalModule.rename_map: HashMap<Id, Atom>` (`ids.rs:195`).
-- `plan_module_reference_needs` bridge reconstructs pre-rename `Id` by
-  pairing the heuristic-renames pre-sym with body `Id`'s own ctxt
-  (PR #1633 reverse-lookup, retired by PR2).
-- `eq_ignore_span`-based matchers strip `SyntaxContext` via
-  `SyntaxContextStripper` for cross-parse AST comparison
-  (`resolve_anonymous_statement_ordinals`).
-- SWC's `resolver` pass runs on every parsed module
-  (`js_ast::parse_and_resolve`); `swc_common::GLOBALS` is set at
-  `main.rs` / `run_agent` and propagated into every rayon `par_iter`
-  worker (5 sites).
-
-What's still String-keyed (downstream of the spec→Id join, not yet
-migrated):
-
-- `ChunkAstAnalysis.declaration_by_name: BTreeMap<String, usize>`
-  (`lowering/chunk_ast.rs:18`).
-- `ChunkAstAnalysis.pre_existing_entry_exports: BTreeSet<String>`
-  (`lowering/chunk_ast.rs:38`).
-- `LowerChunkInputs.binding_assignment: &BTreeMap<String, usize>`
-  (`lowering/lower.rs:33`) — threaded through the per-module loop.
-- `collect_entry_exports_by_original_local`'s return map
-  (`lowering/imports_cross.rs:75`).
-- `naturalize_module_body`'s returned
-  `local_renames: BTreeMap<String, String>` (the heuristic-renames
-  bridge; consumed via PR #1633's reverse-lookup).
-
-### Pending: spec → Id boundary
-
-Per `AGENTS.md` "Atomic API changes: update all callers in the same
-commit. No transitional shims", the next coherent commit migrates
-**all** of the still-String-keyed spec-derived maps together with a
-single chunk-level `name → Id` resolution boundary:
-
-1. Add `chunk_binding_ids: HashMap<Atom, Vec<Id>>` to `ChunkAstAnalysis`,
-   populated by walking top-level declarations + imports
-   post-`resolver`.
-2. Add `resolve_chunk_binding(analysis, spec_name) -> Result<Id>` helper
-   that errors on ambiguity (`kind_hint` from `BindingSelector.kind`
-   disambiguates when a chunk has the same sym in two scopes).
-3. Migrate the spec-derived maps to `Id`-keyed in one commit:
-   - `declaration_by_name`, `binding_assignment`,
-     `pre_existing_entry_exports`, `entry_exports_by_original_local`
-     → `Id`-keyed.
-4. Spec YAML stays String-keyed (disk boundary unchanged). Conversion
-   happens once when `ChunkAstAnalysis` is consumed by `Schedule::build`
-   and `module_plans` construction.
-5. Report/manifest schemas (`report_schema.rs`, vendor manifests) stay
-   String-keyed at the disk boundary; add `Id → String` rendering
-   helpers that format `name#scope` only when sym is ambiguous in the
-   chunk.
-
-The PR #1633 reverse-lookup bridge in `plan_module_reference_needs`
-survives this commit unchanged in spirit (re-keyed maps); PR2
-(below) is what retires it.
-
-### Proposed architecture (PR2)
-
 The proposed architectural fix is a single **collect → validate → execute
 (once)** rename pipeline:
 
@@ -392,42 +321,6 @@ bindings, logical_modules, chunk_renames) + `Factorization`
 `FactorizationCaches`. Probably not worth the boilerplate, but
 evaluate before doing the rename.
 
-## Id-migration code-reduction follow-ups
-
-PR #1639 migrated chunk-scoped identifier maps to SWC `Id`-keyed. PR
-#1647 closed the easy ergonomic wins. What remains is bounded by
-design choices documented in DESIGN.md.
-
-- **`ident.sym.to_string()` sites (~35).** Three sub-categories with
-  different verdicts:
-  - **Spec/report surfaces** (`facts.rs` visitor collectors,
-    `purity.rs`, `strip_swapped_vendor_exports.rs`,
-    `vendor.rs:707-711`). Values terminate in `StatementFacts.*` /
-    vendor manifests / report JSON. `BindingName = String` is pinned
-    by DESIGN.md "Identifiers and types" (line 2594) because it IS
-    the JS identifier text. **No action.**
-  - **Name-disambiguation surfaces** (`lowering/util.rs`'s
-    `collect_occupied_local_names` / `collect_local_binding_names`,
-    consumed by `disambiguate_import_locals`). The result feeds
-    collision-avoidance logic that emits JS identifiers. These
-    `BTreeSet<String>` could become `BTreeSet<Atom>` (`Atom` impls
-    `Hash`/`Ord`/`Display`) — the conversion at the emit boundary
-    is `format!("{atom}")`. Stylistic cleanup only; semantically
-    identical. **Optional.**
-  - **Pending spec → Id boundary** (the `declaration_by_name` /
-    `binding_assignment` / `pre_existing_entry_exports` /
-    `entry_exports_by_original_local` maps; tracked above under
-    "Pending: spec → Id boundary"). These genuinely should migrate
-    to `Id`-keyed; **track via that section, not here.**
-- **Per-test `js_ast::with_swc_globals(|| {...})` wraps (~14).**
-  In-process tests across `pipeline.rs`, `validate_emitted_exports.rs`,
-  `vendor.rs` each wrap their body in `with_swc_globals`. The per-test
-  wrap is a deliberate design choice (explicit setup over defensive
-  auto-wrap) and preserves mark-identity across calls. A consolidation
-  via proc-macro attribute would obscure the wrap without changing
-  the underlying contract. **No action unless a future API change
-  makes the wrap implicit safely.**
-
 ## RenameLedger (PR2) open questions
 
 Before implementing the "Rename pipeline: collect → validate →
@@ -457,15 +350,3 @@ propKeyA` and `collect_naturalization_renames_from_function` says
    - "all structural moves pre-COLLECT" (cleaner architecturally but
      requires reordering the materializer to compute a final body
      order before any rename intents are submitted).
-
-## lowering/ module ergonomics
-
-PR #1647 cleared the `#[allow(unused_imports)]` and the
-`#[macro_export]` on `time_phase!`. One item remains:
-
-- **PR #1633 reverse-lookup bridge** (`plan_module_reference_needs`
-  reconstructs pre-rename `Id` by pairing the heuristic-rename
-  pre-sym with the body Id's own ctxt). Retired by PR2's
-  `RenameLedger` when the ledger makes pre-rename and post-rename
-  names available without bridging. Track the removal as part of PR2
-  landing, not as an independent cleanup.
