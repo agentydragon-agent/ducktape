@@ -108,13 +108,46 @@ OPENING_PROPERTY = JournalEntrySchema(
     ),
 )
 
+# Asset sales -----------------------------------------------------------------
+#
+# Each `ASSET_SALE` kind is a 2-leg journal entry: cash (or replacement asset)
+# on the debit side, the sold asset on the credit side, with the same sale
+# amount on both legs. The private-equity path has two variants because the
+# sale proceeds can flow to either CHECKING_CASH or PUBLIC_SECURITY depending
+# on the policy's `proceeds_destination`.
 
-__all__ = [
-    "OPENING_CHECKING_CASH",
-    "OPENING_CRYPTO_ASSET",
-    "OPENING_PRIVATE_EQUITY",
-    "OPENING_PROPERTY",
-    "OPENING_PUBLIC_SECURITY",
-    "JournalEntrySchema",
-    "PostingLegSchema",
-]
+ASSET_SALE_PUBLIC_SECURITY = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.ASSET_SALE,
+    cause_type=AccountingCauseType.POLICY_DECISION,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.DEBIT, amount_binding="amount"),
+        PostingLegSchema(role=ChartAccountRole.PUBLIC_SECURITY, side=PostingSide.CREDIT, amount_binding="amount"),
+    ),
+)
+
+ASSET_SALE_CRYPTO = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.ASSET_SALE,
+    cause_type=AccountingCauseType.POLICY_DECISION,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.DEBIT, amount_binding="amount"),
+        PostingLegSchema(role=ChartAccountRole.CRYPTO_ASSET, side=PostingSide.CREDIT, amount_binding="amount"),
+    ),
+)
+
+ASSET_SALE_PRIVATE_EQUITY_TO_CASH = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.ASSET_SALE,
+    cause_type=AccountingCauseType.POLICY_DECISION,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.DEBIT, amount_binding="amount"),
+        PostingLegSchema(role=ChartAccountRole.PRIVATE_EQUITY, side=PostingSide.CREDIT, amount_binding="amount"),
+    ),
+)
+
+ASSET_SALE_PRIVATE_EQUITY_TO_PUBLIC_SECURITY = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.ASSET_SALE,
+    cause_type=AccountingCauseType.POLICY_DECISION,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.PUBLIC_SECURITY, side=PostingSide.DEBIT, amount_binding="amount"),
+        PostingLegSchema(role=ChartAccountRole.PRIVATE_EQUITY, side=PostingSide.CREDIT, amount_binding="amount"),
+    ),
+)

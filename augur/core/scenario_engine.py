@@ -3108,30 +3108,15 @@ def _record_sp500_sale_journal_entries(
     tax_usd: np.ndarray,
 ) -> None:
     entry_prefix = cause_id_prefix
-    accounting.record_entry(
+    accounting.record_entry_firings(
+        schema=posting_schemas.ASSET_SALE_PUBLIC_SECURITY,
         month_index=month_index,
-        entry=JournalEntryBatch(
-            journal_entry_type=JournalEntryType.ASSET_SALE,
-            cause_type=AccountingCauseType.POLICY_DECISION,
-            cause_id_prefix=entry_prefix,
-            actor_id=policy.actor_id,
-            policy_id=policy.policy_id,
-            description="public security sale",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.DEBIT,
-                    amount_usd=amount_usd,
-                    actor_id=policy.actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PUBLIC_SECURITY,
-                    side=PostingSide.CREDIT,
-                    amount_usd=amount_usd,
-                    actor_id=policy.actor_id,
-                ),
-            ),
-        ),
+        cause_id_prefix=entry_prefix,
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        description="public security sale",
+        amount_bindings={"amount": amount_usd},
+        leg_chart_account_keys=({"actor_id": policy.actor_id}, {"actor_id": policy.actor_id}),
     )
     lot_id = _tax_lot_id(LotAssetClass.PUBLIC_SECURITY, "portfolio")
     for rollout_index in np.nonzero(amount_usd > 0)[0].tolist():
@@ -3165,36 +3150,23 @@ def _record_private_equity_sale_journal_entries(
     tax_usd: np.ndarray,
     source_holding_id: str,
 ) -> None:
-    destination_role = (
-        ChartAccountRole.PUBLIC_SECURITY
+    schema = (
+        posting_schemas.ASSET_SALE_PRIVATE_EQUITY_TO_PUBLIC_SECURITY
         if instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK
-        else ChartAccountRole.CHECKING_CASH
+        else posting_schemas.ASSET_SALE_PRIVATE_EQUITY_TO_CASH
     )
     entry_prefix = f"policy:{instruction.policy_id}:private_equity_sale"
-    accounting.record_entry(
+    accounting.record_entry_firings(
+        schema=schema,
         month_index=month_index,
-        entry=JournalEntryBatch(
-            journal_entry_type=JournalEntryType.ASSET_SALE,
-            cause_type=AccountingCauseType.POLICY_DECISION,
-            cause_id_prefix=entry_prefix,
-            actor_id=instruction.actor_id,
-            policy_id=instruction.policy_id,
-            description="private equity sale",
-            postings=(
-                PostingBatch(
-                    role=destination_role,
-                    side=PostingSide.DEBIT,
-                    amount_usd=sale_application.sale_usd,
-                    actor_id=instruction.actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PRIVATE_EQUITY,
-                    side=PostingSide.CREDIT,
-                    amount_usd=sale_application.sale_usd,
-                    actor_id=instruction.actor_id,
-                    source_asset_id=source_holding_id,
-                ),
-            ),
+        cause_id_prefix=entry_prefix,
+        actor_id=instruction.actor_id,
+        policy_id=instruction.policy_id,
+        description="private equity sale",
+        amount_bindings={"amount": sale_application.sale_usd},
+        leg_chart_account_keys=(
+            {"actor_id": instruction.actor_id},
+            {"actor_id": instruction.actor_id, "source_asset_id": source_holding_id},
         ),
     )
     lot_id = _tax_lot_id(LotAssetClass.PRIVATE_EQUITY, source_holding_id)
@@ -3451,30 +3423,17 @@ def _record_crypto_sale_journal_entries(
     the tax model grows to allocate crypto gains, this field gets populated the
     same way the SP500 path does.
     """
-    accounting.record_entry(
+    accounting.record_entry_firings(
+        schema=posting_schemas.ASSET_SALE_CRYPTO,
         month_index=month_index,
-        entry=JournalEntryBatch(
-            journal_entry_type=JournalEntryType.ASSET_SALE,
-            cause_type=AccountingCauseType.POLICY_DECISION,
-            cause_id_prefix=cause_id_prefix,
-            actor_id=policy.actor_id,
-            policy_id=policy.policy_id,
-            description="crypto sale",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.DEBIT,
-                    amount_usd=amount_usd,
-                    actor_id=policy.actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.CRYPTO_ASSET,
-                    side=PostingSide.CREDIT,
-                    amount_usd=amount_usd,
-                    actor_id=policy.actor_id,
-                    source_asset_id=source_asset_id,
-                ),
-            ),
+        cause_id_prefix=cause_id_prefix,
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        description="crypto sale",
+        amount_bindings={"amount": amount_usd},
+        leg_chart_account_keys=(
+            {"actor_id": policy.actor_id},
+            {"actor_id": policy.actor_id, "source_asset_id": source_asset_id},
         ),
     )
     lot_id = _tax_lot_id(LotAssetClass.CRYPTO, source_asset_id)
