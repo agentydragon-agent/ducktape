@@ -1,4 +1,4 @@
-"""Columnar (PyArrow-backed) storage for the augur accounting trace.
+"""Columnar (polars-backed) storage for the augur accounting trace.
 
 The trace is a parallel ledger emitted alongside the numeric scenario
 simulation: every (rollout, month) cell where money moves produces one
@@ -6,8 +6,9 @@ journal entry plus one or more postings, with periodic balance snapshots
 interleaved. Storing this as `tuple[Posting, ...]` Pydantic objects costs
 ~3 GB at the gaffer-private default load (15 scenarios × 128 rollouts ×
 360 months × ~2-3 postings/cell × ~500 B/Pydantic model). This module
-keeps the same data shape but stores it as a small star schema of PyArrow
-tables, with row-by-row materialization to Pydantic on demand.
+keeps the same data shape but stores it as a small star schema of
+`pl.DataFrame`s, with row-by-row materialization to Pydantic on demand.
+Joins / filters / aggregations are expressed as polars expressions.
 
 Dim tables (small, deduped):
 
@@ -42,13 +43,11 @@ the byte-identical output of `_trace_row_id`.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute as pc
+import polars as pl
 
 from augur.core.accounting import (
     AccountingCause,
@@ -69,84 +68,71 @@ from augur.core.accounting import (
 if TYPE_CHECKING:
     from augur.core.policy_runtime import BalanceSnapshotBatch, JournalEntryBatch, PostingBatch
 
-# `pyarrow.compute` kernel functions are registered dynamically at C-extension
-# load time, so the bundled stubs don't list them as attributes. Bind once at
-# module top so we type-ignore the lookup in one place instead of every call.
-_pc_sort_indices = pc.sort_indices  # type: ignore[attr-defined]
-_pc_equal = pc.equal  # type: ignore[attr-defined]
-_pc_is_in = pc.is_in  # type: ignore[attr-defined]
 
+# Polars schemas -------------------------------------------------------------
 
-# Arrow schemas ---------------------------------------------------------------
-
-_CHART_ACCOUNT_SCHEMA = pa.schema(
-    [
-        pa.field("chart_account_id", pa.string(), nullable=False),
-        pa.field("account_type", pa.string(), nullable=False),
-        pa.field("role", pa.string(), nullable=False),
-        pa.field("actor_id", pa.string(), nullable=True),
-        pa.field("label", pa.string(), nullable=True),
-        pa.field("source_account_id", pa.string(), nullable=True),
-        pa.field("source_asset_id", pa.string(), nullable=True),
-        pa.field("liability_id", pa.string(), nullable=True),
-        pa.field("property_id", pa.string(), nullable=True),
-        pa.field("counterparty_actor_id", pa.string(), nullable=True),
-    ]
+_CHART_ACCOUNT_SCHEMA = pl.Schema(
+    {
+        "chart_account_id": pl.String,
+        "account_type": pl.String,
+        "role": pl.String,
+        "actor_id": pl.String,
+        "label": pl.String,
+        "source_account_id": pl.String,
+        "source_asset_id": pl.String,
+        "liability_id": pl.String,
+        "property_id": pl.String,
+        "counterparty_actor_id": pl.String,
+    }
 )
 
-_JOURNAL_ENTRY_KIND_SCHEMA = pa.schema(
-    [
-        pa.field("journal_entry_type", pa.string(), nullable=False),
-        pa.field("cause_type", pa.string(), nullable=False),
-        pa.field("cause_id_prefix", pa.string(), nullable=False),
-        pa.field("actor_id", pa.string(), nullable=True),
-        pa.field("policy_id", pa.string(), nullable=True),
-        pa.field("event_id", pa.string(), nullable=True),
-        pa.field("obligation_id_prefix", pa.string(), nullable=True),
-        pa.field("description", pa.string(), nullable=True),
-    ]
+_JOURNAL_ENTRY_KIND_SCHEMA = pl.Schema(
+    {
+        "journal_entry_type": pl.String,
+        "cause_type": pl.String,
+        "cause_id_prefix": pl.String,
+        "actor_id": pl.String,
+        "policy_id": pl.String,
+        "event_id": pl.String,
+        "obligation_id_prefix": pl.String,
+        "description": pl.String,
+    }
 )
 
-_JOURNAL_ENTRY_SCHEMA = pa.schema(
-    [
-        pa.field("rollout_index", pa.int32(), nullable=False),
-        pa.field("month_index", pa.int32(), nullable=False),
-        pa.field("kind_idx", pa.int32(), nullable=False),
-    ]
+_JOURNAL_ENTRY_SCHEMA = pl.Schema({"rollout_index": pl.Int32, "month_index": pl.Int32, "kind_idx": pl.Int32})
+
+_POSTING_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int32,
+        "month_index": pl.Int32,
+        "journal_entry_idx": pl.Int32,
+        "posting_index": pl.Int8,
+        "chart_account_idx": pl.Int32,
+        "side": pl.Int8,
+        "amount_usd": pl.Float64,
+        "lot_idx": pl.Int32,
+        "liability_idx": pl.Int32,
+    }
 )
 
-_POSTING_SCHEMA = pa.schema(
-    [
-        pa.field("rollout_index", pa.int32(), nullable=False),
-        pa.field("month_index", pa.int32(), nullable=False),
-        pa.field("journal_entry_idx", pa.int32(), nullable=False),
-        pa.field("posting_index", pa.int8(), nullable=False),
-        pa.field("chart_account_idx", pa.int32(), nullable=False),
-        pa.field("side", pa.int8(), nullable=False),
-        pa.field("amount_usd", pa.float64(), nullable=False),
-        pa.field("lot_idx", pa.int32(), nullable=True),
-        pa.field("liability_idx", pa.int32(), nullable=True),
-    ]
+_BALANCE_SNAPSHOT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int32,
+        "month_index": pl.Int32,
+        "chart_account_idx": pl.Int32,
+        "balance_usd": pl.Float64,
+        "quantity": pl.Float64,
+    }
 )
 
-_BALANCE_SNAPSHOT_SCHEMA = pa.schema(
-    [
-        pa.field("rollout_index", pa.int32(), nullable=False),
-        pa.field("month_index", pa.int32(), nullable=False),
-        pa.field("chart_account_idx", pa.int32(), nullable=False),
-        pa.field("balance_usd", pa.float64(), nullable=False),
-        pa.field("quantity", pa.float64(), nullable=True),
-    ]
-)
-
-_ROLLOUT_IDENTITY_SCHEMA = pa.schema(
-    [
-        pa.field("rollout_index", pa.int32(), nullable=False),
-        pa.field("path_set_id", pa.string(), nullable=True),
-        pa.field("exogenous_path_id", pa.string(), nullable=True),
-        pa.field("scenario_input_id", pa.string(), nullable=True),
-        pa.field("projection_trajectory_id", pa.string(), nullable=True),
-    ]
+_ROLLOUT_IDENTITY_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int32,
+        "path_set_id": pl.String,
+        "exogenous_path_id": pl.String,
+        "scenario_input_id": pl.String,
+        "projection_trajectory_id": pl.String,
+    }
 )
 
 # Side encoding: 0 = DEBIT, 1 = CREDIT. Kept in module-private constants so
@@ -297,9 +283,9 @@ class _ChartAccountInterner:
     def chart_accounts_by_id(self) -> dict[str, ChartAccount]:
         return dict(self._by_id)
 
-    def build_table(self) -> pa.Table:
+    def build_table(self) -> pl.DataFrame:
         accounts = list(self._by_id.values())
-        return pa.table(
+        return pl.DataFrame(
             {
                 "chart_account_id": [a.chart_account_id for a in accounts],
                 "account_type": [a.account_type.value for a in accounts],
@@ -356,9 +342,9 @@ class _JournalEntryKindInterner:
     def kinds(self) -> tuple[_JournalEntryKindRow, ...]:
         return tuple(self._kinds)
 
-    def build_table(self) -> pa.Table:
+    def build_table(self) -> pl.DataFrame:
         kinds = self._kinds
-        return pa.table(
+        return pl.DataFrame(
             {
                 "journal_entry_type": [k.journal_entry_type.value for k in kinds],
                 "cause_type": [k.cause_type.value for k in kinds],
@@ -421,12 +407,12 @@ class AccountingTrace:
     when materializing a `Posting` Pydantic model.
     """
 
-    chart_accounts: pa.Table
-    journal_entry_kinds: pa.Table
-    journal_entries: pa.Table
-    postings: pa.Table
-    balance_snapshots: pa.Table
-    rollout_identity: pa.Table
+    chart_accounts: pl.DataFrame
+    journal_entry_kinds: pl.DataFrame
+    journal_entries: pl.DataFrame
+    postings: pl.DataFrame
+    balance_snapshots: pl.DataFrame
+    rollout_identity: pl.DataFrame
     liability_ids: tuple[str, ...]
     # Source dict for fast `chart_account_id -> ChartAccount` lookup.
     # Built once at finalize and shared across materializations.
@@ -435,21 +421,21 @@ class AccountingTrace:
     @classmethod
     def empty(cls) -> AccountingTrace:
         return cls(
-            chart_accounts=_CHART_ACCOUNT_SCHEMA.empty_table(),
-            journal_entry_kinds=_JOURNAL_ENTRY_KIND_SCHEMA.empty_table(),
-            journal_entries=_JOURNAL_ENTRY_SCHEMA.empty_table(),
-            postings=_POSTING_SCHEMA.empty_table(),
-            balance_snapshots=_BALANCE_SNAPSHOT_SCHEMA.empty_table(),
-            rollout_identity=_ROLLOUT_IDENTITY_SCHEMA.empty_table(),
+            chart_accounts=pl.DataFrame(schema=_CHART_ACCOUNT_SCHEMA),
+            journal_entry_kinds=pl.DataFrame(schema=_JOURNAL_ENTRY_KIND_SCHEMA),
+            journal_entries=pl.DataFrame(schema=_JOURNAL_ENTRY_SCHEMA),
+            postings=pl.DataFrame(schema=_POSTING_SCHEMA),
+            balance_snapshots=pl.DataFrame(schema=_BALANCE_SNAPSHOT_SCHEMA),
+            rollout_identity=pl.DataFrame(schema=_ROLLOUT_IDENTITY_SCHEMA),
             liability_ids=(),
             chart_accounts_by_id={},
         )
 
     def with_trajectory_identity(self, by_rollout: dict[int, dict[str, str]]) -> AccountingTrace:
         rollout_indexes = sorted(by_rollout.keys())
-        rollout_identity = pa.table(
+        rollout_identity = pl.DataFrame(
             {
-                "rollout_index": pa.array(rollout_indexes, type=pa.int32()),
+                "rollout_index": rollout_indexes,
                 "path_set_id": [by_rollout[r].get("path_set_id") for r in rollout_indexes],
                 "exogenous_path_id": [by_rollout[r].get("exogenous_path_id") for r in rollout_indexes],
                 "scenario_input_id": [by_rollout[r].get("scenario_input_id") for r in rollout_indexes],
@@ -467,85 +453,61 @@ class AccountingTrace:
         same plus `posting_index : side` for postings). We mirror that by
         first remapping `kind_idx` so kinds are ordered by
         `(cause_id_prefix, journal_entry_type, actor_id|"", policy_id|"")`,
-        then doing an Arrow `sort_indices` on the integer keys that map
-        the same total order.
+        then sorting on the integer keys that capture the same total order.
+
+        Done as a sequence of polars sorts plus index remaps via joins.
         """
-        kinds_sorted_idx = _kind_canonical_permutation(self.journal_entry_kinds)
-        if kinds_sorted_idx is not None:
-            new_kinds = self.journal_entry_kinds.take(pa.array(kinds_sorted_idx, type=pa.int64()))
-            # Remap kind_idx on journal_entries via the inverse permutation.
-            inverse = np.empty(len(kinds_sorted_idx), dtype=np.int32)
-            inverse[kinds_sorted_idx] = np.arange(len(kinds_sorted_idx), dtype=np.int32)
-            old_kind_idx = self.journal_entries.column("kind_idx").to_numpy(zero_copy_only=False)
-            remapped_kind_idx = inverse[old_kind_idx]
-            new_journal_entries = self.journal_entries.set_column(
-                self.journal_entries.schema.get_field_index("kind_idx"),
-                "kind_idx",
-                pa.array(remapped_kind_idx, type=pa.int32()),
+        kinds_sorted = (
+            self.journal_entry_kinds.with_row_index("old_kind_idx")
+            .with_columns(
+                _actor_or_empty=pl.col("actor_id").fill_null(""), _policy_or_empty=pl.col("policy_id").fill_null("")
             )
-        else:
-            new_kinds = self.journal_entry_kinds
-            new_journal_entries = self.journal_entries
-
-        je_sort = _pc_sort_indices(
-            new_journal_entries,
-            sort_keys=[("month_index", "ascending"), ("rollout_index", "ascending"), ("kind_idx", "ascending")],
+            .sort(["cause_id_prefix", "journal_entry_type", "_actor_or_empty", "_policy_or_empty"])
+            .with_row_index("new_kind_idx")
         )
-        je_sorted = new_journal_entries.take(je_sort)
-        # Postings reference journal entries by index; remap them.
-        je_perm = je_sort.to_numpy(zero_copy_only=False).astype(np.int64)
-        je_inverse = np.empty(je_perm.size, dtype=np.int32)
-        je_inverse[je_perm] = np.arange(je_perm.size, dtype=np.int32)
-        old_je_idx = self.postings.column("journal_entry_idx").to_numpy(zero_copy_only=False)
-        postings_remapped = self.postings.set_column(
-            self.postings.schema.get_field_index("journal_entry_idx"),
-            "journal_entry_idx",
-            pa.array(je_inverse[old_je_idx], type=pa.int32()),
+        kind_remap = kinds_sorted.select(["old_kind_idx", "new_kind_idx"])
+        new_kinds = kinds_sorted.drop(["old_kind_idx", "new_kind_idx", "_actor_or_empty", "_policy_or_empty"])
+        new_journal_entries = (
+            self.journal_entries.join(kind_remap, left_on="kind_idx", right_on="old_kind_idx", how="left")
+            .with_columns(kind_idx=pl.col("new_kind_idx").cast(pl.Int32))
+            .drop("new_kind_idx")
+            .select(self.journal_entries.columns)
         )
-        postings_sort = _pc_sort_indices(
-            postings_remapped,
-            sort_keys=[
-                ("month_index", "ascending"),
-                ("rollout_index", "ascending"),
-                ("journal_entry_idx", "ascending"),
-                ("posting_index", "ascending"),
-            ],
+
+        je_sorted_with_pos = (
+            new_journal_entries.with_row_index("old_je_idx")
+            .sort(["month_index", "rollout_index", "kind_idx"])
+            .with_row_index("new_je_idx")
         )
-        postings_sorted = postings_remapped.take(postings_sort)
+        je_remap = je_sorted_with_pos.select(["old_je_idx", "new_je_idx"])
+        je_sorted = je_sorted_with_pos.drop(["old_je_idx", "new_je_idx"])
 
-        snapshots_sort = _pc_sort_indices(
-            self.balance_snapshots,
-            sort_keys=[
-                ("month_index", "ascending"),
-                ("rollout_index", "ascending"),
-                ("chart_account_idx", "ascending"),
-            ],
+        chart_sorted_with_pos = (
+            self.chart_accounts.with_row_index("old_acct_idx").sort("chart_account_id").with_row_index("new_acct_idx")
         )
-        snapshots_sorted = self.balance_snapshots.take(snapshots_sort)
+        chart_remap = chart_sorted_with_pos.select(["old_acct_idx", "new_acct_idx"])
+        new_chart_accounts = chart_sorted_with_pos.drop(["old_acct_idx", "new_acct_idx"])
 
-        # Chart accounts canonical: by chart_account_id ascending. Remap
-        # chart_account_idx on postings + balance snapshots accordingly.
-        chart_perm = _pc_sort_indices(self.chart_accounts, sort_keys=[("chart_account_id", "ascending")])
-        chart_perm_np = chart_perm.to_numpy(zero_copy_only=False).astype(np.int64)
-        chart_inverse = np.empty(chart_perm_np.size, dtype=np.int32)
-        chart_inverse[chart_perm_np] = np.arange(chart_perm_np.size, dtype=np.int32)
-        new_chart_accounts = self.chart_accounts.take(chart_perm)
-        if postings_sorted.num_rows:
-            posting_acct = postings_sorted.column("chart_account_idx").to_numpy(zero_copy_only=False)
-            postings_sorted = postings_sorted.set_column(
-                postings_sorted.schema.get_field_index("chart_account_idx"),
-                "chart_account_idx",
-                pa.array(chart_inverse[posting_acct], type=pa.int32()),
-            )
-        if snapshots_sorted.num_rows:
-            snap_acct = snapshots_sorted.column("chart_account_idx").to_numpy(zero_copy_only=False)
-            snapshots_sorted = snapshots_sorted.set_column(
-                snapshots_sorted.schema.get_field_index("chart_account_idx"),
-                "chart_account_idx",
-                pa.array(chart_inverse[snap_acct], type=pa.int32()),
-            )
+        postings_sorted = (
+            self.postings.join(je_remap, left_on="journal_entry_idx", right_on="old_je_idx", how="left")
+            .with_columns(journal_entry_idx=pl.col("new_je_idx").cast(pl.Int32))
+            .drop("new_je_idx")
+            .join(chart_remap, left_on="chart_account_idx", right_on="old_acct_idx", how="left")
+            .with_columns(chart_account_idx=pl.col("new_acct_idx").cast(pl.Int32))
+            .drop("new_acct_idx")
+            .select(self.postings.columns)
+            .sort(["month_index", "rollout_index", "journal_entry_idx", "posting_index"])
+        )
 
-        new_chart_accounts_by_id = {a.chart_account_id: a for a in _chart_accounts_to_pydantic(new_chart_accounts)}
+        snapshots_sorted = (
+            self.balance_snapshots.join(chart_remap, left_on="chart_account_idx", right_on="old_acct_idx", how="left")
+            .with_columns(chart_account_idx=pl.col("new_acct_idx").cast(pl.Int32))
+            .drop("new_acct_idx")
+            .select(self.balance_snapshots.columns)
+            .sort(["month_index", "rollout_index", "chart_account_idx"])
+        )
+
+        new_chart_accounts_by_id = {a.chart_account_id: a for a in _chart_accounts_from_pl(new_chart_accounts)}
 
         return AccountingTrace(
             chart_accounts=new_chart_accounts,
@@ -558,60 +520,113 @@ class AccountingTrace:
             chart_accounts_by_id=new_chart_accounts_by_id,
         )
 
+    # Join graph -----------------------------------------------------------------
+    #
+    # Storage is polars `DataFrame`s end-to-end (the builder writes numpy
+    # chunks directly into typed columns at `finalize`). The fact-table
+    # `*_idx` columns are positional references into the corresponding dim
+    # tables, so each "joined" view does a positional join via
+    # `with_row_index` on the dim side.
+
+    def _postings_joined(self) -> pl.DataFrame:
+        """Postings with every column needed to materialize a Pydantic `Posting`.
+
+        Joins postings → journal_entries (for the entry's rollout/month, used
+        in id derivation) → journal_entry_kinds (for `cause_id_prefix`) →
+        chart_accounts (for `chart_account_id`) → rollout_identity (for the
+        four trajectory-identity strings).
+        """
+        return (
+            self.postings.join(
+                self.journal_entries.with_row_index("je_pos").rename(
+                    {"rollout_index": "je_rollout", "month_index": "je_month"}
+                ),
+                left_on="journal_entry_idx",
+                right_on="je_pos",
+                how="inner",
+            )
+            .join(
+                self.journal_entry_kinds.with_row_index("kind_pos"),
+                left_on="kind_idx",
+                right_on="kind_pos",
+                how="inner",
+            )
+            .join(
+                self.chart_accounts.with_row_index("acct_pos"),
+                left_on="chart_account_idx",
+                right_on="acct_pos",
+                how="inner",
+            )
+            .join(self.rollout_identity, on="rollout_index", how="left")
+        )
+
+    def _journal_entries_joined(self) -> pl.DataFrame:
+        """JournalEntries with kind + rollout identity columns attached."""
+        return self.journal_entries.join(
+            self.journal_entry_kinds.with_row_index("kind_pos"), left_on="kind_idx", right_on="kind_pos", how="inner"
+        ).join(self.rollout_identity, on="rollout_index", how="left")
+
+    def _balance_snapshots_joined(self) -> pl.DataFrame:
+        return self.balance_snapshots.join(
+            self.chart_accounts.with_row_index("acct_pos"),
+            left_on="chart_account_idx",
+            right_on="acct_pos",
+            how="inner",
+        ).join(self.rollout_identity, on="rollout_index", how="left")
+
     # Materialization to Pydantic ------------------------------------------------
 
     def chart_accounts_tuple(self) -> tuple[ChartAccount, ...]:
-        return tuple(_chart_accounts_to_pydantic(self.chart_accounts))
+        return _chart_accounts_from_pl(self.chart_accounts)
 
     def journal_entries_tuple(self) -> tuple[JournalEntry, ...]:
-        return tuple(self._iter_journal_entries(self.journal_entries))
+        return _journal_entries_from_pl(self._journal_entries_joined())
 
     def postings_tuple(self) -> tuple[Posting, ...]:
-        return tuple(self._iter_postings(self.postings))
+        return _postings_from_pl(self._postings_joined(), liability_ids=self.liability_ids)
 
     def balance_snapshots_tuple(self) -> tuple[BalanceSnapshot, ...]:
-        return tuple(self._iter_balance_snapshots(self.balance_snapshots))
+        return _balance_snapshots_from_pl(self._balance_snapshots_joined())
 
     # Filters --------------------------------------------------------------------
 
     def filter_postings(
         self, *, rollout: int | None = None, side: PostingSide | None = None, role: ChartAccountRole | None = None
     ) -> tuple[Posting, ...]:
-        table = self.postings
+        df = self._postings_joined()
         if rollout is not None:
-            table = table.filter(_pc_equal(table["rollout_index"], rollout))
+            df = df.filter(pl.col("rollout_index") == rollout)
         if side is not None:
-            table = table.filter(_pc_equal(table["side"], _SIDE_TO_INT[side]))
+            df = df.filter(pl.col("side") == _SIDE_TO_INT[side])
         if role is not None:
-            account_indices = _chart_account_indices_with_role(self.chart_accounts, role)
-            table = table.filter(
-                _pc_is_in(table["chart_account_idx"], value_set=pa.array(account_indices, type=pa.int32()))
-            )
-        return tuple(self._iter_postings(table))
+            df = df.filter(pl.col("role") == role.value)
+        return _postings_from_pl(df, liability_ids=self.liability_ids)
 
     def filter_journal_entries(
         self, *, rollout: int | None = None, journal_entry_type: JournalEntryType | None = None
     ) -> tuple[JournalEntry, ...]:
-        table = self.journal_entries
+        df = self._journal_entries_joined()
         if journal_entry_type is not None:
-            kind_indices = _kind_indices_with_type(self.journal_entry_kinds, journal_entry_type)
-            table = table.filter(_pc_is_in(table["kind_idx"], value_set=pa.array(kind_indices, type=pa.int32())))
+            df = df.filter(pl.col("journal_entry_type") == journal_entry_type.value)
         if rollout is not None:
-            table = table.filter(_pc_equal(table["rollout_index"], rollout))
-        return tuple(self._iter_journal_entries(table))
+            df = df.filter(pl.col("rollout_index") == rollout)
+        return _journal_entries_from_pl(df)
 
     def filter_balance_snapshots(
         self, *, rollout: int | None = None, role: ChartAccountRole | None = None
     ) -> tuple[BalanceSnapshot, ...]:
-        table = self.balance_snapshots
+        df = self._balance_snapshots_joined()
         if role is not None:
-            account_indices = _chart_account_indices_with_role(self.chart_accounts, role)
-            table = table.filter(
-                _pc_is_in(table["chart_account_idx"], value_set=pa.array(account_indices, type=pa.int32()))
-            )
+            df = df.filter(pl.col("role") == role.value)
         if rollout is not None:
-            table = table.filter(_pc_equal(table["rollout_index"], rollout))
-        return tuple(self._iter_balance_snapshots(table))
+            df = df.filter(pl.col("rollout_index") == rollout)
+        return _balance_snapshots_from_pl(df)
+
+    def filter_chart_accounts(self, *, role: ChartAccountRole | None = None) -> tuple[ChartAccount, ...]:
+        df = self.chart_accounts
+        if role is not None:
+            df = df.filter(pl.col("role") == role.value)
+        return _chart_accounts_from_pl(df)
 
     # Aggregation kernels ------------------------------------------------------
 
@@ -624,253 +639,76 @@ class AccountingTrace:
         side: PostingSide | None = None,
         journal_entry_type: JournalEntryType | None = None,
     ) -> np.ndarray:
-        """Sum posting amounts by (rollout, month_position) into a dense matrix.
+        """Sum posting amounts matching the filter into a `(rollout_count,
+        len(month_index))` matrix indexed by month-position.
 
-        Equivalent to today's per-`Posting` loop in
-        `augur/core/scenario_engine.py:_posting_amount_matrix`, implemented
-        columnarly: one boolean mask over the postings table per filter,
-        one `np.add.at` for the scatter. Mostly used by the engine's
-        post-simulation aggregations and by tests that want to roll up
-        postings by (rollout, month) without materializing Pydantic models.
+        Filter + join + scatter, expressed in polars. The polars filter pushes
+        through the join graph as a single relational query; what comes out
+        is just three numpy columns to drive `np.add.at`.
         """
-        matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
-        if self.postings.num_rows == 0:
-            return matrix
-
-        posting_acct = self.postings.column("chart_account_idx").to_numpy(zero_copy_only=False)
-        acct_role_col = self.chart_accounts.column("role").to_numpy(zero_copy_only=False)
-        role_acct_idxs = np.flatnonzero(acct_role_col == role.value)
-        if role_acct_idxs.size == 0:
-            return matrix
-        mask = np.isin(posting_acct, role_acct_idxs)
-
+        df = self._postings_joined().filter(pl.col("role") == role.value)
         if side is not None:
-            sides = self.postings.column("side").to_numpy(zero_copy_only=False)
-            side_int = 0 if side is PostingSide.DEBIT else 1
-            mask &= sides == side_int
-
+            df = df.filter(pl.col("side") == _SIDE_TO_INT[side])
         if journal_entry_type is not None:
-            kind_type_col = self.journal_entry_kinds.column("journal_entry_type").to_numpy(zero_copy_only=False)
-            kind_idxs_with_type = np.flatnonzero(kind_type_col == journal_entry_type.value)
-            if kind_idxs_with_type.size == 0:
-                return matrix
-            je_kind_col = self.journal_entries.column("kind_idx").to_numpy(zero_copy_only=False)
-            je_idxs_with_type = np.flatnonzero(np.isin(je_kind_col, kind_idxs_with_type))
-            posting_je = self.postings.column("journal_entry_idx").to_numpy(zero_copy_only=False)
-            mask &= np.isin(posting_je, je_idxs_with_type)
-
-        if not mask.any():
-            return matrix
-
-        rollouts = self.postings.column("rollout_index").to_numpy(zero_copy_only=False)[mask]
-        months = self.postings.column("month_index").to_numpy(zero_copy_only=False)[mask]
-        amounts = self.postings.column("amount_usd").to_numpy(zero_copy_only=False)[mask]
-
-        month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-        try:
-            month_positions = np.fromiter(
-                (month_position_by_index[int(m)] for m in months), dtype=np.int64, count=months.size
-            )
-        except KeyError as exc:
-            raise ValueError(f"posting has month outside result horizon: {exc.args[0]}") from exc
-
-        np.add.at(matrix, (rollouts.astype(np.int64), month_positions), amounts)
-        return matrix
+            df = df.filter(pl.col("journal_entry_type") == journal_entry_type.value)
+        return _aggregate_to_matrix(
+            df, rollout_count=rollout_count, month_index=month_index, amount_column="amount_usd", fact_label="posting"
+        )
 
     def balance_snapshot_amount_matrix(
         self, *, rollout_count: int, month_index: np.ndarray, role: ChartAccountRole
     ) -> np.ndarray:
-        """Sum balance snapshot amounts by (rollout, month_position). Columnar
-        equivalent of today's per-`BalanceSnapshot` loop in
-        `augur/core/scenario_engine.py:_balance_snapshot_amount_matrix`.
-        """
-        matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
-        if self.balance_snapshots.num_rows == 0:
-            return matrix
-
-        snap_acct = self.balance_snapshots.column("chart_account_idx").to_numpy(zero_copy_only=False)
-        acct_role_col = self.chart_accounts.column("role").to_numpy(zero_copy_only=False)
-        role_acct_idxs = np.flatnonzero(acct_role_col == role.value)
-        if role_acct_idxs.size == 0:
-            return matrix
-        mask = np.isin(snap_acct, role_acct_idxs)
-        if not mask.any():
-            return matrix
-
-        rollouts = self.balance_snapshots.column("rollout_index").to_numpy(zero_copy_only=False)[mask]
-        months = self.balance_snapshots.column("month_index").to_numpy(zero_copy_only=False)[mask]
-        balances = self.balance_snapshots.column("balance_usd").to_numpy(zero_copy_only=False)[mask]
-
-        month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-        try:
-            month_positions = np.fromiter(
-                (month_position_by_index[int(m)] for m in months), dtype=np.int64, count=months.size
-            )
-        except KeyError as exc:
-            raise ValueError(f"balance snapshot has month outside result horizon: {exc.args[0]}") from exc
-
-        np.add.at(matrix, (rollouts.astype(np.int64), month_positions), balances)
-        return matrix
-
-    def filter_chart_accounts(self, *, role: ChartAccountRole | None = None) -> tuple[ChartAccount, ...]:
-        if role is None:
-            return self.chart_accounts_tuple()
-        table = self.chart_accounts.filter(_pc_equal(self.chart_accounts["role"], role.value))
-        return tuple(_chart_accounts_to_pydantic(table))
-
-    # Internal materialization helpers ------------------------------------------
-
-    def _iter_journal_entries(self, table: pa.Table) -> Iterator[JournalEntry]:
-        if table.num_rows == 0:
-            return
-        rollouts = table.column("rollout_index").to_pylist()
-        months = table.column("month_index").to_pylist()
-        kinds = table.column("kind_idx").to_pylist()
-        identity = _rollout_identity_lookup(self.rollout_identity)
-        kind_rows = _journal_entry_kind_rows(self.journal_entry_kinds)
-        for rollout, month, kind_idx in zip(rollouts, months, kinds, strict=True):
-            kind = kind_rows[kind_idx]
-            yield _build_journal_entry(
-                rollout_index=rollout, month_index=month, kind=kind, identity=identity.get(rollout, _EMPTY_IDENTITY)
-            )
-
-    def _iter_postings(self, table: pa.Table) -> Iterator[Posting]:
-        if table.num_rows == 0:
-            return
-        rollouts = table.column("rollout_index").to_pylist()
-        months = table.column("month_index").to_pylist()
-        je_idxs = table.column("journal_entry_idx").to_pylist()
-        post_idxs = table.column("posting_index").to_pylist()
-        acct_idxs = table.column("chart_account_idx").to_pylist()
-        sides = table.column("side").to_pylist()
-        amounts = table.column("amount_usd").to_pylist()
-        liab_idxs = table.column("liability_idx").to_pylist()
-        identity = _rollout_identity_lookup(self.rollout_identity)
-        kind_rows = _journal_entry_kind_rows(self.journal_entry_kinds)
-        je_kind_idx = self.journal_entries.column("kind_idx").to_pylist() if self.journal_entries.num_rows else []
-        je_rollout = self.journal_entries.column("rollout_index").to_pylist() if self.journal_entries.num_rows else []
-        je_month = self.journal_entries.column("month_index").to_pylist() if self.journal_entries.num_rows else []
-        chart_ids = self.chart_accounts.column("chart_account_id").to_pylist()
-        for i in range(table.num_rows):
-            rollout = rollouts[i]
-            month = months[i]
-            je_idx = je_idxs[i]
-            posting_index = post_idxs[i]
-            kind = kind_rows[je_kind_idx[je_idx]]
-            side = _INT_TO_SIDE[sides[i]]
-            chart_account_id_value = chart_ids[acct_idxs[i]]
-            journal_entry_id = _trace_row_id(
-                kind.cause_id_prefix, rollout_index=je_rollout[je_idx], month_index=je_month[je_idx]
-            )
-            posting_id = f"{journal_entry_id}:posting:{posting_index}:{side.value}"
-            id_fields = identity.get(rollout, _EMPTY_IDENTITY)
-            liab_idx = liab_idxs[i]
-            yield Posting(
-                posting_id=posting_id,
-                journal_entry_id=journal_entry_id,
-                rollout_index=rollout,
-                month_index=month,
-                chart_account_id=chart_account_id_value,
-                side=side,
-                amount_usd=amounts[i],
-                liability_id=self.liability_ids[liab_idx] if liab_idx is not None else None,
-                path_set_id=id_fields.get("path_set_id"),
-                exogenous_path_id=id_fields.get("exogenous_path_id"),
-                scenario_input_id=id_fields.get("scenario_input_id"),
-                projection_trajectory_id=id_fields.get("projection_trajectory_id"),
-            )
-
-    def _iter_balance_snapshots(self, table: pa.Table) -> Iterator[BalanceSnapshot]:
-        if table.num_rows == 0:
-            return
-        rollouts = table.column("rollout_index").to_pylist()
-        months = table.column("month_index").to_pylist()
-        acct_idxs = table.column("chart_account_idx").to_pylist()
-        balances = table.column("balance_usd").to_pylist()
-        quantities = table.column("quantity").to_pylist()
-        identity = _rollout_identity_lookup(self.rollout_identity)
-        chart_ids = self.chart_accounts.column("chart_account_id").to_pylist()
-        for i in range(table.num_rows):
-            rollout = rollouts[i]
-            id_fields = identity.get(rollout, _EMPTY_IDENTITY)
-            yield BalanceSnapshot(
-                rollout_index=rollout,
-                month_index=months[i],
-                chart_account_id=chart_ids[acct_idxs[i]],
-                balance_usd=balances[i],
-                quantity=quantities[i],
-                path_set_id=id_fields.get("path_set_id"),
-                exogenous_path_id=id_fields.get("exogenous_path_id"),
-                scenario_input_id=id_fields.get("scenario_input_id"),
-                projection_trajectory_id=id_fields.get("projection_trajectory_id"),
-            )
+        df = self._balance_snapshots_joined().filter(pl.col("role") == role.value)
+        return _aggregate_to_matrix(
+            df,
+            rollout_count=rollout_count,
+            month_index=month_index,
+            amount_column="balance_usd",
+            fact_label="balance snapshot",
+        )
 
     def journal_entry_row(self, idx: int) -> JournalEntry:
-        if idx < 0 or idx >= self.journal_entries.num_rows:
+        if idx < 0 or idx >= self.journal_entries.height:
             raise IndexError(idx)
-        return next(self._iter_journal_entries(self.journal_entries.slice(idx, 1)))
-
-
-_EMPTY_IDENTITY: dict[str, str | None] = {
-    "path_set_id": None,
-    "exogenous_path_id": None,
-    "scenario_input_id": None,
-    "projection_trajectory_id": None,
-}
-
-
-def _rollout_identity_lookup(table: pa.Table) -> dict[int, dict[str, str | None]]:
-    if table.num_rows == 0:
-        return {}
-    rollouts = table.column("rollout_index").to_pylist()
-    keys = ("path_set_id", "exogenous_path_id", "scenario_input_id", "projection_trajectory_id")
-    columns = {key: table.column(key).to_pylist() for key in keys}
-    return {rollout: {key: columns[key][i] for key in keys} for i, rollout in enumerate(rollouts)}
-
-
-def _journal_entry_kind_rows(table: pa.Table) -> list[_JournalEntryKindRow]:
-    if table.num_rows == 0:
-        return []
-    cols = {name: table.column(name).to_pylist() for name in table.schema.names}
-    return [
-        _JournalEntryKindRow(
-            journal_entry_type=JournalEntryType(cols["journal_entry_type"][i]),
-            cause_type=AccountingCauseType(cols["cause_type"][i]),
-            cause_id_prefix=cols["cause_id_prefix"][i],
-            actor_id=cols["actor_id"][i],
-            policy_id=cols["policy_id"][i],
-            event_id=cols["event_id"][i],
-            obligation_id_prefix=cols["obligation_id_prefix"][i],
-            description=cols["description"][i],
-        )
-        for i in range(table.num_rows)
-    ]
+        joined = self._journal_entries_joined().slice(idx, 1)
+        return _journal_entries_from_pl(joined)[0]
 
 
 def _build_journal_entry(
-    *, rollout_index: int, month_index: int, kind: _JournalEntryKindRow, identity: dict[str, str | None]
+    *,
+    rollout_index: int,
+    month_index: int,
+    cause_id_prefix: str,
+    journal_entry_type: JournalEntryType,
+    cause_type: AccountingCauseType,
+    actor_id: str | None,
+    policy_id: str | None,
+    event_id: str | None,
+    obligation_id_prefix: str | None,
+    description: str | None,
+    identity: dict[str, str | None],
 ) -> JournalEntry:
-    journal_entry_id = _trace_row_id(kind.cause_id_prefix, rollout_index=rollout_index, month_index=month_index)
+    journal_entry_id = _trace_row_id(cause_id_prefix, rollout_index=rollout_index, month_index=month_index)
     obligation_id = (
-        _trace_row_id(kind.obligation_id_prefix, rollout_index=rollout_index, month_index=month_index)
-        if kind.obligation_id_prefix is not None
+        _trace_row_id(obligation_id_prefix, rollout_index=rollout_index, month_index=month_index)
+        if obligation_id_prefix is not None
         else None
     )
     return JournalEntry(
         journal_entry_id=journal_entry_id,
         rollout_index=rollout_index,
         month_index=month_index,
-        journal_entry_type=kind.journal_entry_type,
-        actor_id=kind.actor_id,
-        policy_id=kind.policy_id,
-        event_id=kind.event_id,
+        journal_entry_type=journal_entry_type,
+        actor_id=actor_id,
+        policy_id=policy_id,
+        event_id=event_id,
         obligation_id=obligation_id,
-        description=kind.description,
+        description=description,
         cause=AccountingCause(
-            cause_type=kind.cause_type,
+            cause_type=cause_type,
             cause_id=journal_entry_id,
-            policy_id=kind.policy_id,
-            event_id=kind.event_id,
+            policy_id=policy_id,
+            event_id=event_id,
             obligation_id=obligation_id,
         ),
         path_set_id=identity.get("path_set_id"),
@@ -880,50 +718,150 @@ def _build_journal_entry(
     )
 
 
-def _chart_accounts_to_pydantic(table: pa.Table) -> Iterator[ChartAccount]:
-    if table.num_rows == 0:
-        return
-    cols = {name: table.column(name).to_pylist() for name in table.schema.names}
-    for i in range(table.num_rows):
-        yield ChartAccount(
-            chart_account_id=cols["chart_account_id"][i],
-            account_type=ChartAccountType(cols["account_type"][i]),
-            role=ChartAccountRole(cols["role"][i]),
-            actor_id=cols["actor_id"][i],
-            label=cols["label"][i],
-            source_account_id=cols["source_account_id"][i],
-            source_asset_id=cols["source_asset_id"][i],
-            liability_id=cols["liability_id"][i],
-            property_id=cols["property_id"][i],
-            counterparty_actor_id=cols["counterparty_actor_id"][i],
+def _chart_accounts_from_pl(df: pl.DataFrame) -> tuple[ChartAccount, ...]:
+    if df.height == 0:
+        return ()
+    return tuple(
+        ChartAccount(
+            chart_account_id=row["chart_account_id"],
+            account_type=ChartAccountType(row["account_type"]),
+            role=ChartAccountRole(row["role"]),
+            actor_id=row["actor_id"],
+            label=row["label"],
+            source_account_id=row["source_account_id"],
+            source_asset_id=row["source_asset_id"],
+            liability_id=row["liability_id"],
+            property_id=row["property_id"],
+            counterparty_actor_id=row["counterparty_actor_id"],
         )
+        for row in df.iter_rows(named=True)
+    )
 
 
-def _chart_account_indices_with_role(table: pa.Table, role: ChartAccountRole) -> list[int]:
-    roles = table.column("role").to_pylist()
-    return [i for i, r in enumerate(roles) if r == role.value]
+def _journal_entries_from_pl(df: pl.DataFrame) -> tuple[JournalEntry, ...]:
+    """Materialize `JournalEntry` Pydantic models from a `_journal_entries_joined`-shaped frame."""
+    if df.height == 0:
+        return ()
+    return tuple(
+        _build_journal_entry(
+            rollout_index=row["rollout_index"],
+            month_index=row["month_index"],
+            cause_id_prefix=row["cause_id_prefix"],
+            journal_entry_type=JournalEntryType(row["journal_entry_type"]),
+            cause_type=AccountingCauseType(row["cause_type"]),
+            actor_id=row["actor_id"],
+            policy_id=row["policy_id"],
+            event_id=row["event_id"],
+            obligation_id_prefix=row["obligation_id_prefix"],
+            description=row["description"],
+            identity={
+                "path_set_id": row["path_set_id"],
+                "exogenous_path_id": row["exogenous_path_id"],
+                "scenario_input_id": row["scenario_input_id"],
+                "projection_trajectory_id": row["projection_trajectory_id"],
+            },
+        )
+        for row in df.iter_rows(named=True)
+    )
 
 
-def _kind_indices_with_type(table: pa.Table, journal_entry_type: JournalEntryType) -> list[int]:
-    types = table.column("journal_entry_type").to_pylist()
-    return [i for i, t in enumerate(types) if t == journal_entry_type.value]
+def _postings_from_pl(df: pl.DataFrame, *, liability_ids: tuple[str, ...]) -> tuple[Posting, ...]:
+    """Materialize `Posting` Pydantic models from a `_postings_joined`-shaped frame."""
+    if df.height == 0:
+        return ()
+    out: list[Posting] = []
+    for row in df.iter_rows(named=True):
+        side = _INT_TO_SIDE[row["side"]]
+        journal_entry_id = _trace_row_id(
+            row["cause_id_prefix"], rollout_index=row["je_rollout"], month_index=row["je_month"]
+        )
+        posting_id = f"{journal_entry_id}:posting:{row['posting_index']}:{side.value}"
+        liab_idx = row["liability_idx"]
+        out.append(
+            Posting(
+                posting_id=posting_id,
+                journal_entry_id=journal_entry_id,
+                rollout_index=row["rollout_index"],
+                month_index=row["month_index"],
+                chart_account_id=row["chart_account_id"],
+                side=side,
+                amount_usd=row["amount_usd"],
+                liability_id=liability_ids[liab_idx] if liab_idx is not None else None,
+                path_set_id=row["path_set_id"],
+                exogenous_path_id=row["exogenous_path_id"],
+                scenario_input_id=row["scenario_input_id"],
+                projection_trajectory_id=row["projection_trajectory_id"],
+            )
+        )
+    return tuple(out)
 
 
-def _kind_canonical_permutation(table: pa.Table) -> list[int] | None:
-    """Order kinds by cause_id_prefix so the int sort matches today's string sort.
+def _balance_snapshots_from_pl(df: pl.DataFrame) -> tuple[BalanceSnapshot, ...]:
+    if df.height == 0:
+        return ()
+    return tuple(
+        BalanceSnapshot(
+            rollout_index=row["rollout_index"],
+            month_index=row["month_index"],
+            chart_account_id=row["chart_account_id"],
+            balance_usd=row["balance_usd"],
+            quantity=row["quantity"],
+            path_set_id=row["path_set_id"],
+            exogenous_path_id=row["exogenous_path_id"],
+            scenario_input_id=row["scenario_input_id"],
+            projection_trajectory_id=row["projection_trajectory_id"],
+        )
+        for row in df.iter_rows(named=True)
+    )
 
-    Returns the permutation as a list[int] (length == num_rows) or None if
-    the table is empty.
+
+def _aggregate_to_matrix(
+    df: pl.DataFrame, *, rollout_count: int, month_index: np.ndarray, amount_column: str, fact_label: str
+) -> np.ndarray:
+    """Group `df` by `(rollout_index, month_index)`, sum `amount_column`, and
+    scatter the result into a dense `(rollout_count, len(month_index))` matrix
+    indexed by month-position. Rows referencing months outside the horizon
+    raise.
+
+    Uses a polars `join` with the horizon's month → position mapping to do the
+    lookup (rather than reaching back into numpy for it), and a polars
+    `group_by` + `agg(sum)` to pre-aggregate before the dense scatter.
     """
-    if table.num_rows == 0:
-        return None
-    cause_prefixes = table.column("cause_id_prefix").to_pylist()
-    types = table.column("journal_entry_type").to_pylist()
-    actors = [v or "" for v in table.column("actor_id").to_pylist()]
-    policies = [v or "" for v in table.column("policy_id").to_pylist()]
-    keys = [(cause_prefixes[i], types[i], actors[i], policies[i], i) for i in range(table.num_rows)]
-    keys.sort()
-    return [key[-1] for key in keys]
+    matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
+    if df.height == 0:
+        return matrix
+
+    horizon = pl.DataFrame(
+        {"month_index": list(month_index.tolist()), "month_position": list(range(len(month_index)))},
+        schema={"month_index": pl.Int32, "month_position": pl.Int32},
+    )
+    matched = df.join(horizon, on="month_index", how="inner")
+    if matched.height != df.height:
+        offenders = df.join(horizon, on="month_index", how="anti")
+        first = int(offenders["month_index"].head(1)[0])
+        raise ValueError(f"{fact_label} has month outside result horizon: {first}")
+
+    grouped = matched.group_by(["rollout_index", "month_position"]).agg(pl.col(amount_column).sum())
+    rollouts = grouped["rollout_index"].to_numpy()
+    positions = grouped["month_position"].to_numpy()
+    amounts = grouped[amount_column].to_numpy()
+    matrix[rollouts, positions] = amounts
+    return matrix
+
+
+def _nullable_int_series(name: str, values: np.ndarray, valid: np.ndarray) -> pl.Series:
+    """Build a nullable int polars Series from a (values, valid_mask) pair."""
+    return _nullable_series(name, values, valid, dtype=pl.Int32)
+
+
+def _nullable_float_series(name: str, values: np.ndarray, valid: np.ndarray) -> pl.Series:
+    return _nullable_series(name, values, valid, dtype=pl.Float64)
+
+
+def _nullable_series(name: str, values: np.ndarray, valid: np.ndarray, *, dtype: type[pl.DataType]) -> pl.Series:
+    raw = pl.Series(name, values, dtype=dtype)
+    mask = pl.Series("_valid", valid, dtype=pl.Boolean)
+    return pl.select(pl.when(mask).then(raw).otherwise(None).alias(name)).to_series()
 
 
 # Builder ---------------------------------------------------------------------
@@ -936,7 +874,7 @@ class AccountingTraceBuilder:
     chart accounts and journal-entry kinds, and a small string interner
     for `liability_id`. `record_entry` and `record_snapshot` append in
     bulk per (rollout, month) batch; `finalize` concatenates the chunks
-    and wraps them in `pa.Table`s for the returned `AccountingTrace`.
+    and wraps them in `pl.DataFrame`s for the returned `AccountingTrace`.
     """
 
     def __init__(self) -> None:
@@ -1037,10 +975,11 @@ class AccountingTraceBuilder:
         self._bs_quantity.fill(None, n)
 
     def finalize(self) -> AccountingTrace:
-        chart_accounts_table = self._chart_accounts.build_table()
-        journal_entry_kinds_table = self._journal_kinds.build_table()
+        po_lot = _nullable_int_series("lot_idx", *self._po_lot.to_arrays())
+        po_liab = _nullable_int_series("liability_idx", *self._po_liab.to_arrays())
+        bs_quantity = _nullable_float_series("quantity", *self._bs_quantity.to_arrays())
 
-        journal_entries_table = pa.table(
+        journal_entries_df = pl.DataFrame(
             {
                 "rollout_index": self._je_rollout.to_array(),
                 "month_index": self._je_month.to_array(),
@@ -1049,9 +988,7 @@ class AccountingTraceBuilder:
             schema=_JOURNAL_ENTRY_SCHEMA,
         )
 
-        po_lot_values, po_lot_valid = self._po_lot.to_arrays()
-        po_liab_values, po_liab_valid = self._po_liab.to_arrays()
-        postings_table = pa.table(
+        postings_df = pl.DataFrame(
             {
                 "rollout_index": self._po_rollout.to_array(),
                 "month_index": self._po_month.to_array(),
@@ -1060,31 +997,30 @@ class AccountingTraceBuilder:
                 "chart_account_idx": self._po_acct.to_array(),
                 "side": self._po_side.to_array(),
                 "amount_usd": self._po_amount.to_array(),
-                "lot_idx": pa.array(po_lot_values, mask=~po_lot_valid, type=pa.int32()),
-                "liability_idx": pa.array(po_liab_values, mask=~po_liab_valid, type=pa.int32()),
+                "lot_idx": po_lot,
+                "liability_idx": po_liab,
             },
             schema=_POSTING_SCHEMA,
         )
 
-        bs_quantity_values, bs_quantity_valid = self._bs_quantity.to_arrays()
-        balance_snapshots_table = pa.table(
+        balance_snapshots_df = pl.DataFrame(
             {
                 "rollout_index": self._bs_rollout.to_array(),
                 "month_index": self._bs_month.to_array(),
                 "chart_account_idx": self._bs_acct.to_array(),
                 "balance_usd": self._bs_balance.to_array(),
-                "quantity": pa.array(bs_quantity_values, mask=~bs_quantity_valid, type=pa.float64()),
+                "quantity": bs_quantity,
             },
             schema=_BALANCE_SNAPSHOT_SCHEMA,
         )
 
         return AccountingTrace(
-            chart_accounts=chart_accounts_table,
-            journal_entry_kinds=journal_entry_kinds_table,
-            journal_entries=journal_entries_table,
-            postings=postings_table,
-            balance_snapshots=balance_snapshots_table,
-            rollout_identity=_ROLLOUT_IDENTITY_SCHEMA.empty_table(),
+            chart_accounts=self._chart_accounts.build_table(),
+            journal_entry_kinds=self._journal_kinds.build_table(),
+            journal_entries=journal_entries_df,
+            postings=postings_df,
+            balance_snapshots=balance_snapshots_df,
+            rollout_identity=pl.DataFrame(schema=_ROLLOUT_IDENTITY_SCHEMA),
             liability_ids=self._liabilities.liability_ids(),
             chart_accounts_by_id=self._chart_accounts.chart_accounts_by_id(),
         )
@@ -1132,39 +1068,36 @@ def validate_trace(trace: AccountingTrace, *, tolerance_usd: float = 0.005) -> N
 
     Reference resolution (every posting's `journal_entry_idx` /
     `chart_account_idx` is in range, no duplicate ids) is structural:
-    the indices are `pa.int32` foreign keys built by interners, so they
+    the indices are `pl.Int32` foreign keys built by interners, so they
     can never reference unknown rows by construction.
     """
-    n_entries = trace.journal_entries.num_rows
-    n_postings = trace.postings.num_rows
-    if n_entries == 0 and n_postings == 0:
-        return
+    # Every journal entry must have at least one posting referring to it.
+    posting_je_idxs = set(trace.postings["journal_entry_idx"].unique().to_list())
+    missing = (
+        trace.journal_entries.with_row_index("je_idx").filter(~pl.col("je_idx").is_in(posting_je_idxs)).sort("je_idx")
+    )
+    if missing.height > 0:
+        first_idx = int(missing.row(0, named=True)["je_idx"])
+        raise AccountingValidationError(
+            f"{missing.height} journal entry/entries have no postings; first idx: {first_idx}"
+        )
 
-    if n_entries > 0:
-        je_idx = trace.postings.column("journal_entry_idx").to_numpy(zero_copy_only=False)
-        has_posting = np.zeros(n_entries, dtype=bool)
-        if je_idx.size:
-            has_posting[je_idx] = True
-        if not has_posting.all():
-            missing = np.flatnonzero(~has_posting)
-            raise AccountingValidationError(
-                f"{missing.size} journal entry/entries have no postings; first idx: {int(missing[0])}"
-            )
-
-    if n_postings > 0:
-        je_idx = trace.postings.column("journal_entry_idx").to_numpy(zero_copy_only=False)
-        sides = trace.postings.column("side").to_numpy(zero_copy_only=False)
-        amounts = trace.postings.column("amount_usd").to_numpy(zero_copy_only=False)
-        signed = np.where(sides == 0, amounts, -amounts)
-        net = np.zeros(n_entries, dtype=np.float64)
-        np.add.at(net, je_idx, signed)
-        bad = np.flatnonzero(np.abs(net) > tolerance_usd)
-        if bad.size > 0:
-            first_bad = int(bad[0])
-            raise AccountingValidationError(
-                f"{bad.size} journal entry/entries unbalanced; "
-                f"first idx={first_bad} net debits-credits={net[first_bad]:.4f}"
-            )
+    # Per-journal-entry debit/credit balance.
+    unbalanced = (
+        trace.postings.with_columns(
+            signed=pl.when(pl.col("side") == 0).then(pl.col("amount_usd")).otherwise(-pl.col("amount_usd"))
+        )
+        .group_by("journal_entry_idx")
+        .agg(net=pl.col("signed").sum())
+        .filter(pl.col("net").abs() > tolerance_usd)
+        .sort("journal_entry_idx")
+    )
+    if unbalanced.height > 0:
+        first = unbalanced.row(0, named=True)
+        raise AccountingValidationError(
+            f"{unbalanced.height} journal entry/entries unbalanced; "
+            f"first idx={int(first['journal_entry_idx'])} net debits-credits={float(first['net']):.4f}"
+        )
 
 
 __all__ = ["AccountingTrace", "AccountingTraceBuilder", "validate_trace"]
