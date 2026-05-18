@@ -155,6 +155,15 @@ def _build_numerics_frame(month_index: np.ndarray, metric_arrays: dict[str, np.n
     Each metric value is flattened in row-major (rollout-major) order; the
     `rollout_index` / `month_index` columns are broadcast to match. 1D
     arrays (a `(months+1,)` per-month vector) are broadcast across rollouts.
+
+    TODO(refactor-d): the polars frame is built at the very end from a dict
+    of ~70 numpy ndarrays produced by separate engine stages. The natural
+    Refactor D direction is to have each engine stage emit an indexed polars
+    frame (keyed by `(rollout_index, month_index)`) and assemble the final
+    `numerics` via `join` instead of `dict` + `_build_numerics_frame`. This
+    would let intermediate engine arithmetic (e.g. the property-cash-flow
+    aggregation, partner-equity ledger derivations, sale-action records)
+    stay in polars throughout. See `augur/TODO.md`.
     """
     sample = next(iter(metric_arrays.values()))
     n_rollouts, n_months_plus_one = sample.shape
@@ -674,21 +683,74 @@ _FAN_METRIC_NAMES: tuple[str, ...] = (
 )
 
 
+# Column names carried inside `PropertyCashFlowArrays.numerics`, in display
+# order. Kept as a module constant so the producer + `column()` accessor can
+# enforce one shared schema without re-declaring it inline.
+_PROPERTY_CASH_FLOW_COLUMNS: tuple[str, ...] = (
+    "mortgage_payment_usd",
+    "property_tax_usd",
+    "hoa_usd",
+    "insurance_usd",
+    "maintenance_usd",
+    "rental_income_usd",
+    "rental_management_fee_usd",
+    "rental_leasing_fee_usd",
+    "property_carrying_cost_usd",
+    "net_property_cash_flow_usd",
+)
+
+
 @dataclass(frozen=True)
 class PropertyCashFlowArrays:
-    mortgage_payment_usd: np.ndarray
-    property_tax_usd: np.ndarray
-    hoa_usd: np.ndarray
-    insurance_usd: np.ndarray
-    maintenance_usd: np.ndarray
-    rental_income_usd: np.ndarray
-    rental_management_fee_usd: np.ndarray
-    rental_leasing_fee_usd: np.ndarray
-    property_carrying_cost_usd: np.ndarray
-    net_property_cash_flow_usd: np.ndarray
+    """Per-rollout-per-month property cash flow inputs as a wide polars frame.
+
+    Each entry in `_PROPERTY_CASH_FLOW_COLUMNS` is a polars column of the
+    `numerics` frame, flattened from a `(rollouts, months+1)` ndarray in
+    rollout-major order. `column(name)` returns the named column reshaped
+    back to its 2D form; this is the Refactor-D-style polars-canonical
+    storage applied to one engine intermediate (`PropertyCashFlowArrays`
+    was the demo target). Other engine intermediates carrying per-rollout
+    per-month ndarrays — `PartnerEquityArrays`, `PartnerEquityAgreementArrays`,
+    `Sp500SaleActionRecord`, `CryptoSaleActionRecord`,
+    `PropertyDispositionArrays` (in `property_sale`), and the
+    `metric_arrays` assembly inside `run_scenario_vectorized` itself —
+    follow the same shape and should migrate to this pattern; see
+    `augur/TODO.md` and `augur/plans/plan-it-out-stateless-snowglobe.md`
+    for the rollup.
+    """
+
+    rollout_count: int
+    horizon_months: int
+    numerics: pl.DataFrame
     journal_entries: tuple[JournalEntryBatch, ...]
 
+    def column(self, name: str) -> np.ndarray:
+        flat: np.ndarray = self.numerics[name].to_numpy()
+        return flat.reshape(self.rollout_count, self.horizon_months + 1)
 
+
+def _build_property_cash_flow_frame(arrays: dict[str, np.ndarray]) -> pl.DataFrame:
+    """Build a `PropertyCashFlowArrays.numerics` frame from a dict of
+    `(rollouts, months+1)` ndarrays, one per column in
+    `_PROPERTY_CASH_FLOW_COLUMNS`. Flattens row-major (rollout-major) so
+    `column()` can reshape back without copy."""
+    sample = next(iter(arrays.values()))
+    n_rollouts, n_months_plus_one = sample.shape
+    return pl.DataFrame(
+        {
+            "rollout_index": np.repeat(np.arange(n_rollouts, dtype=np.int32), n_months_plus_one),
+            "month_index": np.tile(np.arange(n_months_plus_one, dtype=np.int32), n_rollouts),
+            **{name: arrays[name].reshape(-1) for name in _PROPERTY_CASH_FLOW_COLUMNS},
+        }
+    )
+
+
+# TODO(refactor-d): migrate `PartnerEquity*Arrays` to a single
+# `numerics: pl.DataFrame` keyed by `(rollout_index, month_index)`, mirroring
+# `PropertyCashFlowArrays` above. Same 15-column wide-format shape; callers
+# in `_partner_equity_arrays` / `_settle_required_cash_obligations` use
+# `pea.X` patterns that map cleanly to `pea.column("X")`. See
+# `augur/TODO.md` (Refactor D rollup).
 @dataclass(frozen=True)
 class PartnerEquityAgreementArrays:
     policy_sequence_index: int
@@ -736,6 +798,13 @@ class PartnerEquityArrays:
     balance_snapshots: tuple[BalanceSnapshotBatch, ...]
 
 
+# TODO(refactor-d): `Sp500SaleActionRecord` / `CryptoSaleActionRecord` /
+# `PrivateEquitySaleActionRecord` below all carry `(rollouts,)` 1D ndarrays
+# keyed by a single `month_index` scalar. Less obviously frame-shaped than
+# the per-month-per-rollout arrays above, but a polars-native form would
+# keep them in a frame keyed by `(rollout_index, month_index)` together with
+# the other per-action records emitted in the same month — opening up batch
+# aggregation via `group_by`. Lower priority than the PartnerEquity rollup.
 @dataclass(frozen=True)
 class Sp500SaleActionRecord:
     month_position: int
@@ -1150,16 +1219,16 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         property_live_mask = np.broadcast_to(property_live_mask[None, :], (rollout_count, month_count)).copy()
     mortgage_interest = mortgage_interest * property_live_mask
     mortgage_principal = mortgage_principal * property_live_mask
-    net_property_cash_flow = property_cash_flow.net_property_cash_flow_usd * property_live_mask
+    net_property_cash_flow = property_cash_flow.column("net_property_cash_flow_usd") * property_live_mask
     # Per-line cost arrays settle through the obligation pipeline (in-loop, before
     # within-month policies) so each carrying-cost line records its own
     # obligation/settlement/funding-decision rows on the trace. Masking out
     # post-sale months ensures the obligation amount is zero once the property is
     # sold.
-    property_tax_obligation_due = property_cash_flow.property_tax_usd * property_live_mask
-    hoa_obligation_due = property_cash_flow.hoa_usd * property_live_mask
-    insurance_obligation_due = property_cash_flow.insurance_usd * property_live_mask
-    maintenance_obligation_due = property_cash_flow.maintenance_usd * property_live_mask
+    property_tax_obligation_due = property_cash_flow.column("property_tax_usd") * property_live_mask
+    hoa_obligation_due = property_cash_flow.column("hoa_usd") * property_live_mask
+    insurance_obligation_due = property_cash_flow.column("insurance_usd") * property_live_mask
+    maintenance_obligation_due = property_cash_flow.column("maintenance_usd") * property_live_mask
     home_equity = property_value - mortgage_balance
     partner_equity = _partner_equity_arrays(
         scenario,
@@ -1169,10 +1238,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         home_equity_usd=home_equity,
         mortgage_interest_usd=mortgage_interest,
         mortgage_principal_usd=mortgage_principal,
-        property_tax_usd=property_cash_flow.property_tax_usd * property_live_mask,
-        hoa_usd=property_cash_flow.hoa_usd * property_live_mask,
-        insurance_usd=property_cash_flow.insurance_usd * property_live_mask,
-        maintenance_usd=property_cash_flow.maintenance_usd * property_live_mask,
+        property_tax_usd=property_cash_flow.column("property_tax_usd") * property_live_mask,
+        hoa_usd=property_cash_flow.column("hoa_usd") * property_live_mask,
+        insurance_usd=property_cash_flow.column("insurance_usd") * property_live_mask,
+        maintenance_usd=property_cash_flow.column("maintenance_usd") * property_live_mask,
     )
     generic_sp500_value = np.zeros((rollout_count, month_count), dtype="float64")
     generic_sp500_sale_gain = np.zeros((rollout_count, month_count), dtype="float64")
@@ -1583,15 +1652,15 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         remaining_private_equity_units_by_month[:, month] = remaining_private_equity_units
         remaining_private_equity_basis_by_month[:, month] = remaining_private_equity_basis
 
-    property_tax_for_tax_allocation = property_cash_flow.property_tax_usd * property_live_mask
+    property_tax_for_tax_allocation = property_cash_flow.column("property_tax_usd") * property_live_mask
     net_rental_taxable_income = (
-        property_cash_flow.rental_income_usd
-        - property_cash_flow.rental_management_fee_usd
-        - property_cash_flow.rental_leasing_fee_usd
-        - property_cash_flow.property_tax_usd
-        - property_cash_flow.hoa_usd
-        - property_cash_flow.insurance_usd
-        - property_cash_flow.maintenance_usd
+        property_cash_flow.column("rental_income_usd")
+        - property_cash_flow.column("rental_management_fee_usd")
+        - property_cash_flow.column("rental_leasing_fee_usd")
+        - property_cash_flow.column("property_tax_usd")
+        - property_cash_flow.column("hoa_usd")
+        - property_cash_flow.column("insurance_usd")
+        - property_cash_flow.column("maintenance_usd")
         - mortgage_interest
         - disposition.property_depreciation_usd
     ) * property_live_mask
@@ -1831,7 +1900,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         )
     _record_partner_contribution_decisions(policy_decisions, month_index=month_index, partner_equity=partner_equity)
     _record_partner_agreement_accounting_detail(accounting, month_index=month_index, partner_equity=partner_equity)
-    mortgage_payment_due = property_cash_flow.mortgage_payment_usd * property_live_mask
+    mortgage_payment_due = property_cash_flow.column("mortgage_payment_usd") * property_live_mask
     if scenario.property_selection.property_id is not None:
         _settle_required_cash_obligations(
             scenario=scenario,
@@ -4757,6 +4826,8 @@ def _property_cash_flow_arrays(
     mortgage_interest_usd: np.ndarray,
     mortgage_principal_usd: np.ndarray,
 ) -> PropertyCashFlowArrays:
+    rollout_count, n_months_plus_one = property_value_usd.shape
+    horizon_months = n_months_plus_one - 1
     zeros = np.zeros_like(property_value_usd, dtype="float64")
     mortgage_payment = mortgage_interest_usd + mortgage_principal_usd
     # Mortgage payments are settled through the obligation pipeline in
@@ -4765,16 +4836,22 @@ def _property_cash_flow_arrays(
     # operating cash flow stops at carrying cost minus rental income.
     if scenario.property_selection.property_id is None:
         return PropertyCashFlowArrays(
-            mortgage_payment_usd=mortgage_payment,
-            property_tax_usd=zeros,
-            hoa_usd=zeros,
-            insurance_usd=zeros,
-            maintenance_usd=zeros,
-            rental_income_usd=zeros,
-            rental_management_fee_usd=zeros,
-            rental_leasing_fee_usd=zeros,
-            property_carrying_cost_usd=zeros,
-            net_property_cash_flow_usd=zeros,
+            rollout_count=rollout_count,
+            horizon_months=horizon_months,
+            numerics=_build_property_cash_flow_frame(
+                {
+                    "mortgage_payment_usd": mortgage_payment,
+                    "property_tax_usd": zeros,
+                    "hoa_usd": zeros,
+                    "insurance_usd": zeros,
+                    "maintenance_usd": zeros,
+                    "rental_income_usd": zeros,
+                    "rental_management_fee_usd": zeros,
+                    "rental_leasing_fee_usd": zeros,
+                    "property_carrying_cost_usd": zeros,
+                    "net_property_cash_flow_usd": zeros,
+                }
+            ),
             journal_entries=(),
         )
 
@@ -4805,16 +4882,22 @@ def _property_cash_flow_arrays(
         rental_leasing_fee_usd=rental_leasing_fee,
     )
     return PropertyCashFlowArrays(
-        mortgage_payment_usd=mortgage_payment,
-        property_tax_usd=operating_cash_flow.property_tax_usd,
-        hoa_usd=operating_cash_flow.hoa_usd,
-        insurance_usd=operating_cash_flow.insurance_usd,
-        maintenance_usd=operating_cash_flow.maintenance_usd,
-        rental_income_usd=operating_cash_flow.rental_income_usd,
-        rental_management_fee_usd=operating_cash_flow.rental_management_fee_usd,
-        rental_leasing_fee_usd=operating_cash_flow.rental_leasing_fee_usd,
-        property_carrying_cost_usd=operating_cash_flow.property_carrying_cost_usd,
-        net_property_cash_flow_usd=operating_cash_flow.net_operating_cash_flow_usd,
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+        numerics=_build_property_cash_flow_frame(
+            {
+                "mortgage_payment_usd": mortgage_payment,
+                "property_tax_usd": operating_cash_flow.property_tax_usd,
+                "hoa_usd": operating_cash_flow.hoa_usd,
+                "insurance_usd": operating_cash_flow.insurance_usd,
+                "maintenance_usd": operating_cash_flow.maintenance_usd,
+                "rental_income_usd": operating_cash_flow.rental_income_usd,
+                "rental_management_fee_usd": operating_cash_flow.rental_management_fee_usd,
+                "rental_leasing_fee_usd": operating_cash_flow.rental_leasing_fee_usd,
+                "property_carrying_cost_usd": operating_cash_flow.property_carrying_cost_usd,
+                "net_property_cash_flow_usd": operating_cash_flow.net_operating_cash_flow_usd,
+            }
+        ),
         journal_entries=operating_cash_flow.journal_entries,
     )
 

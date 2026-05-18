@@ -48,6 +48,58 @@ generic backlog rather than a second ordered roadmap.
       Today the monthly amount is flat; a real horizon needs CPI scaling
       (or per-actor wage-index scaling).
 
+## Refactor D rollup (engine-internal polars migration)
+
+`PropertyCashFlowArrays` already carries `numerics: pl.DataFrame` instead
+of ~10 named ndarrays; the same shape should propagate through the other
+per-rollout-per-month engine intermediates. Each is `TODO(refactor-d)`-tagged
+inline.
+
+- [ ] **`PartnerEquityArrays` + `PartnerEquityAgreementArrays`** in
+      `augur/core/scenario_engine.py`. 15 numeric columns each; producer is
+      `_partner_equity_arrays`. Migration is `dataclass → numerics: pl.DataFrame
+  - column(name) accessor + rewrite ~30 `pea.X`call sites to
+    `pea.column("X")`. Same shape as the property-cash-flow migration that
+    landed.
+- [ ] **`Sp500SaleActionRecord` / `CryptoSaleActionRecord` /
+      `PrivateEquitySaleActionRecord`**. Per-action 1D arrays keyed by a
+      scalar `month_index`. Lower priority — natural form is one frame keyed
+      by `(rollout_index, month_index)` aggregating all per-action records
+      emitted in the same month, not per-record dataclasses.
+- [ ] **Drop the `metric_arrays` dict in `run_scenario_vectorized`**.
+      `_build_numerics_frame` currently takes a dict of ~70 ndarrays and
+      converts at the end. Engine stages should emit indexed polars frames
+      (keyed by `(rollout_index, month_index)`) that get `join`-ed into the
+      final `numerics`. After the two items above this becomes mostly a
+      mechanical rewrite of `run_scenario_vectorized`.
+
+The "north star" outcome is that intermediate engine arithmetic (carrying
+cost = tax + hoa + insurance + maintenance, ownership_pct = partner_claim /
+positive_home_equity, etc.) is one polars expression on the relevant frame
+instead of 5+ numpy ops with `(rollouts, months+1)` ndarrays. See
+`augur/plans/plan-it-out-stateless-snowglobe.md`.
+
+## Response wire surface
+
+- [ ] **Extend `ReportSpec` `include_*` gates to the smaller response
+      fields**. `include_funding_decisions` / `include_obligations` /
+      `include_settlement_results` / `include_failure_events` shipped
+      default-off (commit `96537e7d`); follow up with
+      `include_market_observations` (~30 MB), `include_projection_trajectories`,
+      `include_effects`, `include_policy_decisions`, `include_tax_lots`,
+      `include_lot_dispositions`, `include_accounting_details`,
+      `include_liabilities`. None are read by any current frontend; one
+      backend test (`test_scenario_set_response_serializes_discriminated_effects`)
+      reads `market_observations` via the response and would need to opt in.
+- [ ] **Server-side result persistence + slicing.** Sketch in
+      `augur/plans/persistence_and_slicing.md`. Cache `ScenarioRunArrays`
+      keyed by `(seed, scenario_input_id, market_request_hash)` (all already
+      content-addressed); expose `/api/runs/<id>/monthly_columns`,
+      `/api/runs/<id>/rollout/<i>/series/<metric>`, etc. so the frontend can
+      fetch slices on demand instead of getting everything every time. This
+      makes "I changed one knob, re-simulate" essentially free and lets the
+      debug streams ship without rebuilding the whole response on each call.
+
 ## Step 7 Scope
 
 - [ ] Make arrays derive from state/ledger where practical. Where an array remains bespoke for performance or UI compatibility, assert that it reconciles to the ledger total and document any intentional difference.
