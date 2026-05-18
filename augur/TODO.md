@@ -50,34 +50,38 @@ generic backlog rather than a second ordered roadmap.
 
 ## Refactor D rollup (engine-internal polars migration)
 
-`PropertyCashFlowArrays` already carries `numerics: pl.DataFrame` instead
-of ~10 named ndarrays; the same shape should propagate through the other
-per-rollout-per-month engine intermediates. Each is `TODO(refactor-d)`-tagged
-inline.
+Every per-rollout-per-month dataclass-of-ndarrays in
+`augur/core/scenario_engine.py` and `augur/core/property_sale.py` now
+carries `numerics: pl.DataFrame` keyed by `(rollout_index, month_index)`
+plus a `column(name)` accessor — same shape as `ScenarioRunArrays.numerics`:
 
-- [ ] **`PartnerEquityArrays` + `PartnerEquityAgreementArrays`** in
-      `augur/core/scenario_engine.py`. 15 numeric columns each; producer is
-      `_partner_equity_arrays`. Migration is `dataclass → numerics: pl.DataFrame
-  - column(name) accessor + rewrite ~30 `pea.X`call sites to
-    `pea.column("X")`. Same shape as the property-cash-flow migration that
-    landed.
-- [ ] **`Sp500SaleActionRecord` / `CryptoSaleActionRecord` /
-      `PrivateEquitySaleActionRecord`**. Per-action 1D arrays keyed by a
-      scalar `month_index`. Lower priority — natural form is one frame keyed
-      by `(rollout_index, month_index)` aggregating all per-action records
-      emitted in the same month, not per-record dataclasses.
-- [ ] **Drop the `metric_arrays` dict in `run_scenario_vectorized`**.
-      `_build_numerics_frame` currently takes a dict of ~70 ndarrays and
-      converts at the end. Engine stages should emit indexed polars frames
-      (keyed by `(rollout_index, month_index)`) that get `join`-ed into the
-      final `numerics`. After the two items above this becomes mostly a
-      mechanical rewrite of `run_scenario_vectorized`.
+- `PropertyCashFlowArrays` — 10 cols (commit `7219c3078`)
+- `PartnerEquityArrays` + `PartnerEquityAgreementArrays` — 15 cols each
+  (commit `f62191dcf`/`1a517c246`)
+- `Sp500SaleActionRecord` + `CryptoSaleActionRecord` — per-rollout 1D
+  frames (commit `7cca75068`)
+- `PropertyDispositionArrays` — 16 cols, collapsed `PropertySaleSettlementArrays`
+  into the same frame (commit `184466292`)
 
-The "north star" outcome is that intermediate engine arithmetic (carrying
-cost = tax + hoa + insurance + maintenance, ownership_pct = partner_claim /
-positive_home_equity, etc.) is one polars expression on the relevant frame
-instead of 5+ numpy ops with `(rollouts, months+1)` ndarrays. See
-`augur/plans/plan-it-out-stateless-snowglobe.md`.
+What's left is the deeper "north star" rewrite:
+
+- [ ] **Engine sub-stages emit polars frames natively.** The 65+ free-floating
+      ndarrays in `run_scenario_vectorized` (`cash`, `generic_sp500_value`,
+      and the various `*_from_accounting` derivations) are still built with
+      numpy operations and gathered into a dict at the end before
+      `_build_numerics_frame` converts. The migrated intermediates above
+      contribute only ~6 columns via `.column(...)` calls; folding them in
+      via `numerics.join(...)` instead is structurally tidier but the bulk
+      of the dict-to-frame conversion stays as long as those upstream
+      numpy stages exist.
+- [ ] **Numpy arithmetic in the engine becomes polars expressions.** This
+      is the multi-month rewrite the plan calls out: `carrying_cost = tax +
+hoa + insurance + maintenance` is currently 4 numpy adds on
+      `(rollouts, months+1)` ndarrays; the polars-native form is one
+      `with_columns(pl.col("tax_usd") + pl.col("hoa_usd") + …)` on the
+      relevant frame. Each helper rewritten independently is small; doing
+      the whole engine is the scope the plan deferred. See
+      `augur/plans/plan-it-out-stateless-snowglobe.md`.
 
 ## Response wire surface
 
