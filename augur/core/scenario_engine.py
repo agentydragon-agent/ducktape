@@ -2935,52 +2935,27 @@ def _record_property_sale_journal_entries(
     tax = tax_usd[:, month_index]
     net_proceeds = net_proceeds_usd[:, month_index]
     entry_prefix = f"event:{sale_event.event_id}:property_sale"
-    accounting.record_entry(
+    accounting.record_entry_firings(
+        schema=posting_schemas.PROPERTY_SALE,
         month_index=month_index,
-        entry=JournalEntryBatch(
-            journal_entry_type=JournalEntryType.PROPERTY_SALE,
-            cause_type=AccountingCauseType.SCHEDULED_EVENT,
-            cause_id_prefix=entry_prefix,
-            actor_id=actor_id,
-            policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-            event_id=sale_event.event_id,
-            description="property sale settlement",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.DEBIT,
-                    amount_usd=np.maximum(0.0, net_proceeds),
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PROPERTY_SALE_CLOSING_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=selling_cost,
-                    actor_id=actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.MORTGAGE_PAYABLE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=debt_payoff,
-                    actor_id=actor_id,
-                    liability_id=_mortgage_liability_id(property_id),
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PROPERTY,
-                    side=PostingSide.CREDIT,
-                    amount_usd=gross,
-                    actor_id=actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.CREDIT,
-                    amount_usd=np.maximum(0.0, -net_proceeds),
-                    actor_id=actor_id,
-                ),
-            ),
+        cause_id_prefix=entry_prefix,
+        actor_id=actor_id,
+        policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
+        event_id=sale_event.event_id,
+        description="property sale settlement",
+        amount_bindings={
+            "cash_in": np.maximum(0.0, net_proceeds),
+            "selling_cost": selling_cost,
+            "debt_payoff": debt_payoff,
+            "gross": gross,
+            "cash_out": np.maximum(0.0, -net_proceeds),
+        },
+        leg_chart_account_keys=(
+            {"actor_id": actor_id},
+            {"actor_id": actor_id, "property_id": property_id},
+            {"actor_id": actor_id, "liability_id": _mortgage_liability_id(property_id), "property_id": property_id},
+            {"actor_id": actor_id, "property_id": property_id},
+            {"actor_id": actor_id},
         ),
     )
     lot_id = _tax_lot_id(LotAssetClass.PROPERTY, property_id)

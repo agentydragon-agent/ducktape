@@ -151,3 +151,27 @@ ASSET_SALE_PRIVATE_EQUITY_TO_PUBLIC_SECURITY = JournalEntrySchema(
         PostingLegSchema(role=ChartAccountRole.PRIVATE_EQUITY, side=PostingSide.CREDIT, amount_binding="amount"),
     ),
 )
+
+# Property sale --------------------------------------------------------------
+#
+# `PROPERTY_SALE` is a 5-leg settlement: the sale proceeds (gross) clear
+# selling costs, mortgage debt payoff, and the property carrying value;
+# remaining cash flows in (or out) via two cash legs split on the sign of
+# `net_proceeds` so both stay non-negative. The caller supplies
+# `cash_in = np.maximum(0, net_proceeds)` and `cash_out = np.maximum(0,
+# -net_proceeds)`; future work can derive these from existing
+# `ScenarioRunArrays` columns.
+
+PROPERTY_SALE = JournalEntrySchema(
+    journal_entry_type=JournalEntryType.PROPERTY_SALE,
+    cause_type=AccountingCauseType.SCHEDULED_EVENT,
+    legs=(
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.DEBIT, amount_binding="cash_in"),
+        PostingLegSchema(
+            role=ChartAccountRole.PROPERTY_SALE_CLOSING_EXPENSE, side=PostingSide.DEBIT, amount_binding="selling_cost"
+        ),
+        PostingLegSchema(role=ChartAccountRole.MORTGAGE_PAYABLE, side=PostingSide.DEBIT, amount_binding="debt_payoff"),
+        PostingLegSchema(role=ChartAccountRole.PROPERTY, side=PostingSide.CREDIT, amount_binding="gross"),
+        PostingLegSchema(role=ChartAccountRole.CHECKING_CASH, side=PostingSide.CREDIT, amount_binding="cash_out"),
+    ),
+)
