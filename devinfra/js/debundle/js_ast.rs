@@ -1,15 +1,49 @@
 use anyhow::{Result, bail};
 use swc_common::sync::Lrc;
-use swc_common::{BytePos, FileName, SourceMap};
+use swc_common::{BytePos, FileName, GLOBALS, Globals, Mark, SourceMap};
 use swc_ecma_ast::{Module, Str};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
+use swc_ecma_transforms_base::resolver;
+use swc_ecma_visit::VisitMutWith;
 
+/// Run `body` inside a fresh `swc_common::GLOBALS` arena. Production
+/// entry points (`main.rs`, `debundle_agent_cli::run_agent`) wrap the
+/// whole program in `GLOBALS.set(...)`; tests that exercise the parse
+/// pipeline directly (vs. through a subprocess) must wrap each test
+/// body in this helper so `Mark::new()` inside `resolver` has an
+/// arena to mint into.
+///
+/// Within a single thread, nested `GLOBALS.set` calls take the inner
+/// scope's value for the duration of the inner closure — so this is
+/// safe to call from a unit test even if the enclosing thread already
+/// has its own GLOBALS set.
+pub fn with_swc_globals<R>(body: impl FnOnce() -> R) -> R {
+    let globals = Globals::default();
+    GLOBALS.set(&globals, body)
+}
+
+/// Parsed module with SWC hygiene contexts assigned.
+///
+/// `unresolved_mark` / `top_level_mark` are the two `Mark`s the
+/// `resolver` pass used when annotating every `Ident` in `module`
+/// with its `SyntaxContext`. Downstream synthesis sites that mint new
+/// bindings must derive fresh marks from `top_level_mark` (via
+/// `Mark::fresh(top_level_mark)`) so the new bindings nest correctly
+/// under the same chunk-root context.
+///
+/// See <devinfra/js/debundle/TODO.md> "Rename pipeline" for why
+/// hygiene contexts matter to the debundler: they make
+/// `ident.to_id() = (sym, ctxt)` the canonical binding identity,
+/// distinguishing two same-named bindings declared in different
+/// scopes.
 #[derive(Clone)]
 pub struct ParsedJsModule {
     pub cm: Lrc<SourceMap>,
     pub module: Module,
+    pub unresolved_mark: Mark,
+    pub top_level_mark: Mark,
 }
 
 impl ParsedJsModule {
@@ -94,8 +128,13 @@ impl FileLineIndex {
 pub fn parse_js_module(source_name: &str, source: &str) -> Result<ParsedJsModule> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = source_file(&cm, source_name, source);
-    let module = parse_module_from_source_file(source_name, &fm)?;
-    Ok(ParsedJsModule { cm, module })
+    let (module, unresolved_mark, top_level_mark) = parse_and_resolve(source_name, &fm)?;
+    Ok(ParsedJsModule {
+        cm,
+        module,
+        unresolved_mark,
+        top_level_mark,
+    })
 }
 
 /// Like `parse_js_module` but takes ownership of the source string, avoiding
@@ -104,24 +143,45 @@ pub fn parse_js_module(source_name: &str, source: &str) -> Result<ParsedJsModule
 pub fn parse_js_module_consuming(source_name: &str, source: String) -> Result<ParsedJsModule> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = cm.new_source_file(FileName::Custom(source_name.to_string()).into(), source);
-    let module = parse_module_from_source_file(source_name, &fm)?;
-    Ok(ParsedJsModule { cm, module })
+    let (module, unresolved_mark, top_level_mark) = parse_and_resolve(source_name, &fm)?;
+    Ok(ParsedJsModule {
+        cm,
+        module,
+        unresolved_mark,
+        top_level_mark,
+    })
 }
 
+/// Parse a module to a bare `Module` with hygiene contexts assigned.
+/// The minted `Mark`s are discarded; callers that need to synthesize
+/// fresh bindings should use `parse_js_module` (which preserves the
+/// marks on `ParsedJsModule`) instead.
 pub fn parse_js_module_ast(source_name: &str, source: &str) -> Result<Module> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = source_file(&cm, source_name, source);
-    parse_module_from_source_file(source_name, &fm)
+    let (module, _, _) = parse_and_resolve(source_name, &fm)?;
+    Ok(module)
 }
 
+/// Wrap a pre-existing `Module` in a `ParsedJsModule`. Callers must
+/// pass the `Mark`s that were used when `resolver` was applied to
+/// `module`; if the module hasn't been through `resolver` yet, mint
+/// fresh marks with `Mark::new()` and call `resolver` first.
 pub fn parsed_js_module_with_source_map(
     source_name: &str,
     source: &str,
     module: Module,
+    unresolved_mark: Mark,
+    top_level_mark: Mark,
 ) -> ParsedJsModule {
     let cm: Lrc<SourceMap> = Default::default();
     let _fm = source_file(&cm, source_name, source);
-    ParsedJsModule { cm, module }
+    ParsedJsModule {
+        cm,
+        module,
+        unresolved_mark,
+        top_level_mark,
+    }
 }
 
 fn source_file(
@@ -133,6 +193,27 @@ fn source_file(
         FileName::Custom(source_name.to_string()).into(),
         source.to_string(),
     )
+}
+
+/// Parse a source file and run SWC's `resolver` pass to assign
+/// `SyntaxContext` to every `Ident`. Returns the parsed module
+/// together with the two `Mark`s the resolver used. After this point
+/// `ident.to_id()` is the canonical binding identity.
+///
+/// Callers MUST be inside a `GLOBALS.set(...)` scope. Production
+/// entry points do this in `main.rs` and `debundle_agent_cli::run_agent`;
+/// tests that exercise this code directly do it via
+/// `with_swc_globals` in their setup.
+fn parse_and_resolve(
+    source_name: &str,
+    fm: &swc_common::SourceFile,
+) -> Result<(Module, Mark, Mark)> {
+    let mut module = parse_module_from_source_file(source_name, fm)?;
+    let unresolved_mark = Mark::new();
+    let top_level_mark = Mark::new();
+    // `true` enables TypeScript-aware scoping (matches `default_syntax`).
+    module.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, true));
+    Ok((module, unresolved_mark, top_level_mark))
 }
 
 fn parse_module_from_source_file(source_name: &str, fm: &swc_common::SourceFile) -> Result<Module> {
@@ -215,37 +296,41 @@ mod tests {
 
     #[test]
     fn source_line_index_matches_source_map_line_numbers() {
-        let parsed = parse_js_module(
-            "test.js",
-            "import a from 'a';\n\nconst b =\n  a;\nexport { b };\n",
-        )
-        .unwrap();
-        let line_index = parsed.line_index();
+        with_swc_globals(|| {
+            let parsed = parse_js_module(
+                "test.js",
+                "import a from 'a';\n\nconst b =\n  a;\nexport { b };\n",
+            )
+            .unwrap();
+            let line_index = parsed.line_index();
 
-        for item in &parsed.module.body {
-            let span = item.span();
-            assert_eq!(
-                line_index.line_for_span(span),
-                Some(parsed.cm.lookup_char_pos(span.lo()).line)
-            );
-            assert_eq!(
-                line_index.line_range_for_span(span),
-                Some((
-                    parsed.cm.lookup_char_pos(span.lo()).line,
-                    parsed.cm.lookup_char_pos(span.hi()).line,
-                ))
-            );
-        }
+            for item in &parsed.module.body {
+                let span = item.span();
+                assert_eq!(
+                    line_index.line_for_span(span),
+                    Some(parsed.cm.lookup_char_pos(span.lo()).line)
+                );
+                assert_eq!(
+                    line_index.line_range_for_span(span),
+                    Some((
+                        parsed.cm.lookup_char_pos(span.lo()).line,
+                        parsed.cm.lookup_char_pos(span.hi()).line,
+                    ))
+                );
+            }
+        });
     }
 
     #[test]
     fn source_line_index_ignores_dummy_spans() {
-        let parsed = parse_js_module("test.js", "const a = 1;\n").unwrap();
-        let line_index = parsed.line_index();
+        with_swc_globals(|| {
+            let parsed = parse_js_module("test.js", "const a = 1;\n").unwrap();
+            let line_index = parsed.line_index();
 
-        assert_eq!(line_for_span(&parsed, DUMMY_SP), None);
-        assert_eq!(line_range_for_span(&parsed, DUMMY_SP), None);
-        assert_eq!(line_index.line_for_span(DUMMY_SP), None);
-        assert_eq!(line_index.line_range_for_span(DUMMY_SP), None);
+            assert_eq!(line_for_span(&parsed, DUMMY_SP), None);
+            assert_eq!(line_range_for_span(&parsed, DUMMY_SP), None);
+            assert_eq!(line_index.line_for_span(DUMMY_SP), None);
+            assert_eq!(line_index.line_range_for_span(DUMMY_SP), None);
+        });
     }
 }

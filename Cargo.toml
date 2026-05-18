@@ -62,10 +62,12 @@ anyhow = "^1.0"
 # Use native-tls instead (system OpenSSL on Linux, no cmake required).
 rig-core = { version = "^0.33.0", default-features = false, features = ["derive", "reqwest-native-tls"] }
 bollard = "^0.20.2"
+swc_atoms = "^9.0.0"
 swc_common = { version = "^21.0.1", features = ["concurrent"] }
 swc_ecma_ast = "^23.0.0"
 swc_ecma_codegen = "^26.0.1"
 swc_ecma_parser = "^39.0.1"
+swc_ecma_transforms_base = "^42.0.0"
 swc_ecma_visit = "^23.0.0"
 relative-path = "^2.0.1"
 lol_html = "^2.8.1"

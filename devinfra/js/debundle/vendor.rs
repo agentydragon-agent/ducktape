@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
-use swc_common::{DUMMY_SP, SyntaxContext};
+use swc_common::{DUMMY_SP, GLOBALS, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -265,10 +265,17 @@ pub fn rename_vendor_exports(
             }
         }
         let chunk_table_ref = &chunk_table;
-        let results = jobs
-            .into_par_iter()
-            .map(|job| rename_vendor_imports_in_file(job, references, &mappings, chunk_table_ref))
-            .collect::<Vec<_>>();
+        // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
+        // `Mark::new()` / `Id` use stays in the caller's arena.
+        let results = GLOBALS.with(|globals| {
+            jobs.into_par_iter()
+                .map(|job| {
+                    GLOBALS.set(globals, || {
+                        rename_vendor_imports_in_file(job, references, &mappings, chunk_table_ref)
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
         for result in results {
             artifact
                 .chunks
@@ -611,10 +618,17 @@ pub fn swap_vendor_chunks(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let resolved = jobs
-        .into_par_iter()
-        .map(|job| resolve_vendor_swap(job, &import_alignment_index, &options))
-        .collect::<Result<Vec<_>>>()?;
+    // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
+    // `Mark::new()` / `Id` use stays in the caller's arena.
+    let resolved = GLOBALS.with(|globals| {
+        jobs.into_par_iter()
+            .map(|job| {
+                GLOBALS.set(globals, || {
+                    resolve_vendor_swap(job, &import_alignment_index, &options)
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
     let resolutions: BTreeMap<String, VendorResolution> = resolved
         .into_iter()
         .map(|resolution| {
@@ -1102,6 +1116,8 @@ fn generate_named_from_default_wrapper(
                 body,
                 shebang: None,
             },
+            unresolved_mark: upstream_ast.unresolved_mark,
+            top_level_mark: upstream_ast.top_level_mark,
         },
         &[],
     )
@@ -1265,6 +1281,8 @@ fn generate_named_from_module_default_wrapper(
                 body,
                 shebang: None,
             },
+            unresolved_mark: upstream_ast.unresolved_mark,
+            top_level_mark: upstream_ast.top_level_mark,
         },
         &[],
     )
@@ -1718,10 +1736,17 @@ pub fn apply_partial_vendor_swaps(
 
     let chunk_table_ref = &chunk_table;
     let mappings_ref = &mappings;
-    let results: Vec<PartialSwapFileResult> = jobs
-        .into_par_iter()
-        .map(|job| rewrite_partial_swap_in_file(job, references, mappings_ref, chunk_table_ref))
-        .collect();
+    // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
+    // `Mark::new()` / `Id` use stays in the caller's arena.
+    let results: Vec<PartialSwapFileResult> = GLOBALS.with(|globals| {
+        jobs.into_par_iter()
+            .map(|job| {
+                GLOBALS.set(globals, || {
+                    rewrite_partial_swap_in_file(job, references, mappings_ref, chunk_table_ref)
+                })
+            })
+            .collect()
+    });
 
     let mut total_references = 0usize;
     for result in results {
@@ -2178,90 +2203,92 @@ mod tests {
 
     #[test]
     fn rename_vendor_exports_rewrites_multiple_vendor_targets_in_one_call() {
-        let mut artifact = ChunkBundle {
-            chunks: Vec::new(),
-            chunk_table: ChunkTable::default(),
-        };
-        insert_chunk(
-            &mut artifact,
-            "app",
-            r#"import { a } from "../vendor-a/entry.js";
+        js_ast::with_swc_globals(|| {
+            let mut artifact = ChunkBundle {
+                chunks: Vec::new(),
+                chunk_table: ChunkTable::default(),
+            };
+            insert_chunk(
+                &mut artifact,
+                "app",
+                r#"import { a } from "../vendor-a/entry.js";
 import { b as localB } from "../vendor-b/entry.js";
 console.log(a, localB);
 "#,
-        );
-        insert_chunk(
-            &mut artifact,
-            "vendor-a",
-            r#"import { b } from "../vendor-b/entry.js";
+            );
+            insert_chunk(
+                &mut artifact,
+                "vendor-a",
+                r#"import { b } from "../vendor-b/entry.js";
 const a = 1;
 export { a as alpha };
 console.log(b);
 "#,
-        );
-        insert_chunk(
-            &mut artifact,
-            "vendor-b",
-            r#"const b = 2;
+            );
+            insert_chunk(
+                &mut artifact,
+                "vendor-b",
+                r#"const b = 2;
 export { b as beta };
 "#,
-        );
+            );
 
-        let vendor = BTreeMap::from([
-            (
-                "vendor-a.js".to_string(),
-                VendorMark {
-                    identity: "a".to_string(),
-                    role: VendorRole::Module,
-                    level: VendorLevel::BoundaryRename,
-                },
-            ),
-            (
-                "vendor-b.js".to_string(),
-                VendorMark {
-                    identity: "b".to_string(),
-                    role: VendorRole::Module,
-                    level: VendorLevel::BoundaryRename,
-                },
-            ),
-        ]);
+            let vendor = BTreeMap::from([
+                (
+                    "vendor-a.js".to_string(),
+                    VendorMark {
+                        identity: "a".to_string(),
+                        role: VendorRole::Module,
+                        level: VendorLevel::BoundaryRename,
+                    },
+                ),
+                (
+                    "vendor-b.js".to_string(),
+                    VendorMark {
+                        identity: "b".to_string(),
+                        role: VendorRole::Module,
+                        level: VendorLevel::BoundaryRename,
+                    },
+                ),
+            ]);
 
-        let references = ArtifactIndexes::build(&artifact).unwrap();
-        let result = rename_vendor_exports(artifact, &vendor, &references).unwrap();
-        let artifact = result.artifact;
-        let manifest = result.manifest;
+            let references = ArtifactIndexes::build(&artifact).unwrap();
+            let result = rename_vendor_exports(artifact, &vendor, &references).unwrap();
+            let artifact = result.artifact;
+            let manifest = result.manifest;
 
-        assert_eq!(manifest.counts.considered, 2);
-        assert_eq!(manifest.counts.chunks_with_mapping, 2);
-        assert_eq!(manifest.counts.rewrites, 3);
-        assert_eq!(manifest.details[0].chunk_id, "vendor-a");
-        assert_eq!(manifest.details[0].mapping_size, 1);
-        assert_eq!(manifest.details[0].rewrites, 1);
-        assert_eq!(manifest.details[0].callers[0].file, "app/entry.js");
-        assert_eq!(manifest.details[1].chunk_id, "vendor-b");
-        assert_eq!(manifest.details[1].mapping_size, 1);
-        assert_eq!(manifest.details[1].rewrites, 2);
-        assert_eq!(
-            manifest.details[1]
-                .callers
-                .iter()
-                .map(|caller| (caller.file.as_str(), caller.rewrites))
-                .collect::<Vec<_>>(),
-            vec![("app/entry.js", 1), ("vendor-a/entry.js", 1)]
-        );
+            assert_eq!(manifest.counts.considered, 2);
+            assert_eq!(manifest.counts.chunks_with_mapping, 2);
+            assert_eq!(manifest.counts.rewrites, 3);
+            assert_eq!(manifest.details[0].chunk_id, "vendor-a");
+            assert_eq!(manifest.details[0].mapping_size, 1);
+            assert_eq!(manifest.details[0].rewrites, 1);
+            assert_eq!(manifest.details[0].callers[0].file, "app/entry.js");
+            assert_eq!(manifest.details[1].chunk_id, "vendor-b");
+            assert_eq!(manifest.details[1].mapping_size, 1);
+            assert_eq!(manifest.details[1].rewrites, 2);
+            assert_eq!(
+                manifest.details[1]
+                    .callers
+                    .iter()
+                    .map(|caller| (caller.file.as_str(), caller.rewrites))
+                    .collect::<Vec<_>>(),
+                vec![("app/entry.js", 1), ("vendor-a/entry.js", 1)]
+            );
 
-        assert_eq!(
-            named_imports(&artifact, "app", "entry.js", "../vendor-a/entry.js"),
-            vec![("alpha".to_string(), "a".to_string())]
-        );
-        assert_eq!(
-            named_imports(&artifact, "app", "entry.js", "../vendor-b/entry.js"),
-            vec![("beta".to_string(), "localB".to_string())]
-        );
-        assert_eq!(
-            named_imports(&artifact, "vendor-a", "entry.js", "../vendor-b/entry.js"),
-            vec![("beta".to_string(), "b".to_string())]
-        );
+            assert_eq!(
+                named_imports(&artifact, "app", "entry.js", "../vendor-a/entry.js"),
+                vec![("alpha".to_string(), "a".to_string())]
+            );
+            assert_eq!(
+                named_imports(&artifact, "app", "entry.js", "../vendor-b/entry.js"),
+                vec![("beta".to_string(), "localB".to_string())]
+            );
+            assert_eq!(
+                named_imports(&artifact, "vendor-a", "entry.js", "../vendor-b/entry.js"),
+                vec![("beta".to_string(), "b".to_string())]
+            );
+        });
     }
 
     fn insert_chunk(artifact: &mut ChunkBundle, chunk_id: &str, source: &str) {
