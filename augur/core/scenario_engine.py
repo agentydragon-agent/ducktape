@@ -1345,7 +1345,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     remaining_private_equity_units = np.full(rollout_count, initial_private_equity_units, dtype="float64")
     current_cash = (
         np.full(rollout_count, initial_cash - down_payment, dtype="float64")
-        - disposition.purchase_closing_cost_usd[:, 0]
+        - disposition.column("purchase_closing_cost_usd")[:, 0]
     )
     effects: list[Effect] = []
     policy_decisions: list[PolicyDecision] = []
@@ -1377,7 +1377,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         initial_private_equity_basis_usd=initial_private_equity_basis,
         purchase_price_usd=purchase_price,
         down_payment_usd=down_payment,
-        purchase_closing_cost_usd=disposition.purchase_closing_cost_usd[:, 0],
+        purchase_closing_cost_usd=disposition.column("purchase_closing_cost_usd")[:, 0],
         mortgage_balance_usd=mortgage_balance[:, 0],
     )
 
@@ -1419,7 +1419,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     )
 
     for month in range(month_count):
-        current_cash = current_cash + disposition.net_property_sale_cash_flow_usd[:, month]
+        current_cash = current_cash + disposition.column("net_property_sale_cash_flow_usd")[:, month]
         if month > 0:
             current_cash = (
                 current_cash
@@ -1720,13 +1720,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         - property_cash_flow.column("insurance_usd")
         - property_cash_flow.column("maintenance_usd")
         - mortgage_interest
-        - disposition.property_depreciation_usd
+        - disposition.column("property_depreciation_usd")
     ) * property_live_mask
     annual_tax = annual_sale_tax_allocation(
         scenario.tax_profile,
         month_index=month_index,
-        property_depreciation_recapture_usd=disposition.depreciation_recapture_usd,
-        taxable_property_capital_gain_usd=disposition.taxable_property_capital_gain_usd,
+        property_depreciation_recapture_usd=disposition.column("depreciation_recapture_usd"),
+        taxable_property_capital_gain_usd=disposition.column("taxable_property_capital_gain_usd"),
         generic_sp500_sale_gain_usd=generic_sp500_sale_gain,
         private_equity_sale_taxable_gain_usd=private_equity_sale_taxable_gain,
         property_tax_usd=property_tax_for_tax_allocation,
@@ -1741,9 +1741,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     # accrued in the source month but settled at year-end via the annual-tax
     # obligation path, so it does not reduce the sale-event cash inflow.
     property_sale_net_proceeds = (
-        disposition.property_sale_gross_usd
-        - disposition.sale_closing_cost_usd
-        - disposition.property_sale_debt_payoff_usd
+        disposition.column("property_sale_gross_usd")
+        - disposition.column("sale_closing_cost_usd")
+        - disposition.column("property_sale_debt_payoff_usd")
     )
     partner_equity = _settle_partner_equity_on_property_sale(
         partner_equity, sale_month=disposition.sale_month, property_sale_net_proceeds_usd=property_sale_net_proceeds
@@ -1875,8 +1875,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         scenario=scenario,
         month_index=month_index,
         annual_tax=annual_tax,
-        property_depreciation_recapture_usd=disposition.depreciation_recapture_usd,
-        taxable_property_capital_gain_usd=disposition.taxable_property_capital_gain_usd,
+        property_depreciation_recapture_usd=disposition.column("depreciation_recapture_usd"),
+        taxable_property_capital_gain_usd=disposition.column("taxable_property_capital_gain_usd"),
         generic_sp500_sale_gain_usd=generic_sp500_sale_gain,
         private_equity_sale_taxable_gain_usd=private_equity_sale_taxable_gain,
         net_rental_taxable_income_usd=net_rental_taxable_income,
@@ -2471,10 +2471,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         "rental_leasing_fee_usd": rental_leasing_fee_from_accounting,
         "property_carrying_cost_usd": property_carrying_cost_from_accounting,
         "net_property_cash_flow_usd": net_property_cash_flow_from_accounting,
-        "purchase_closing_cost_usd": disposition.purchase_closing_cost_usd,
+        "purchase_closing_cost_usd": disposition.column("purchase_closing_cost_usd"),
         "sale_closing_cost_usd": sale_closing_cost_from_accounting,
-        "property_depreciation_usd": disposition.property_depreciation_usd,
-        "cumulative_property_depreciation_usd": disposition.cumulative_property_depreciation_usd,
+        "property_depreciation_usd": disposition.column("property_depreciation_usd"),
+        "cumulative_property_depreciation_usd": disposition.column("cumulative_property_depreciation_usd"),
         "property_sale_gross_usd": property_sale_gross_from_accounting,
         "property_sale_net_proceeds_usd": property_sale_net_proceeds_from_accounting,
         "property_sale_tax_usd": property_sale_tax_from_accounting,
@@ -2994,10 +2994,9 @@ def _record_property_sale_journal_entries(
         return
     actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
     month_index = disposition.sale_month
-    settlement = disposition.sale_settlement
-    gross = settlement.gross_usd[:, month_index]
-    selling_cost = settlement.selling_cost_usd[:, month_index]
-    debt_payoff = settlement.debt_payoff_usd[:, month_index]
+    gross = disposition.column("property_sale_gross_usd")[:, month_index]
+    selling_cost = disposition.column("sale_closing_cost_usd")[:, month_index]
+    debt_payoff = disposition.column("property_sale_debt_payoff_usd")[:, month_index]
     tax = tax_usd[:, month_index]
     net_proceeds = net_proceeds_usd[:, month_index]
     entry_prefix = f"event:{sale_event.event_id}:property_sale"
@@ -3036,9 +3035,11 @@ def _record_property_sale_journal_entries(
                 lot_id=lot_id,
                 asset_class=LotAssetClass.PROPERTY,
                 proceeds_usd=float(gross[rollout_index]),
-                cost_basis_usd=float(settlement.adjusted_basis_usd[rollout_index, month_index]),
-                realized_gain_usd=float(settlement.realized_property_gain_usd[rollout_index, month_index]),
-                taxable_gain_usd=float(settlement.taxable_property_gain_usd[rollout_index, month_index]),
+                cost_basis_usd=float(
+                    disposition.column("property_sale_adjusted_basis_usd")[rollout_index, month_index]
+                ),
+                realized_gain_usd=float(disposition.column("realized_property_gain_usd")[rollout_index, month_index]),
+                taxable_gain_usd=float(disposition.column("taxable_property_gain_usd")[rollout_index, month_index]),
                 tax_expense_usd=float(tax[rollout_index]),
             )
         )
@@ -3055,11 +3056,10 @@ def _record_property_sale_accounting_details(
         return
     actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
     month_position = disposition.sale_month
-    settlement = disposition.sale_settlement
     active_rollouts = np.nonzero(
-        (settlement.gross_usd[:, month_position] != 0)
-        | (settlement.realized_property_gain_usd[:, month_position] != 0)
-        | (settlement.taxable_property_gain_usd[:, month_position] != 0)
+        (disposition.column("property_sale_gross_usd")[:, month_position] != 0)
+        | (disposition.column("realized_property_gain_usd")[:, month_position] != 0)
+        | (disposition.column("taxable_property_gain_usd")[:, month_position] != 0)
     )[0]
     records.extend(
         PropertySaleBasisGainDetail(
@@ -3069,18 +3069,24 @@ def _record_property_sale_accounting_details(
             policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
             event_id=sale_event.event_id,
             property_id=property_id,
-            gross_sale_usd=float(settlement.gross_usd[rollout_index, month_position]),
-            selling_cost_usd=float(settlement.selling_cost_usd[rollout_index, month_position]),
-            debt_payoff_usd=float(settlement.debt_payoff_usd[rollout_index, month_position]),
-            adjusted_basis_usd=float(settlement.adjusted_basis_usd[rollout_index, month_position]),
-            realized_gain_usd=float(settlement.realized_property_gain_usd[rollout_index, month_position]),
-            depreciation_recapture_usd=float(settlement.depreciation_recapture_usd[rollout_index, month_position]),
-            capital_gain_usd=float(settlement.property_sale_capital_gain_usd[rollout_index, month_position]),
-            capital_gain_exclusion_usd=float(
-                settlement.property_sale_capital_gain_exclusion_usd[rollout_index, month_position]
+            gross_sale_usd=float(disposition.column("property_sale_gross_usd")[rollout_index, month_position]),
+            selling_cost_usd=float(disposition.column("sale_closing_cost_usd")[rollout_index, month_position]),
+            debt_payoff_usd=float(disposition.column("property_sale_debt_payoff_usd")[rollout_index, month_position]),
+            adjusted_basis_usd=float(
+                disposition.column("property_sale_adjusted_basis_usd")[rollout_index, month_position]
             ),
-            taxable_capital_gain_usd=float(settlement.taxable_property_capital_gain_usd[rollout_index, month_position]),
-            taxable_gain_usd=float(settlement.taxable_property_gain_usd[rollout_index, month_position]),
+            realized_gain_usd=float(disposition.column("realized_property_gain_usd")[rollout_index, month_position]),
+            depreciation_recapture_usd=float(
+                disposition.column("depreciation_recapture_usd")[rollout_index, month_position]
+            ),
+            capital_gain_usd=float(disposition.column("property_sale_capital_gain_usd")[rollout_index, month_position]),
+            capital_gain_exclusion_usd=float(
+                disposition.column("property_sale_capital_gain_exclusion_usd")[rollout_index, month_position]
+            ),
+            taxable_capital_gain_usd=float(
+                disposition.column("taxable_property_capital_gain_usd")[rollout_index, month_position]
+            ),
+            taxable_gain_usd=float(disposition.column("taxable_property_gain_usd")[rollout_index, month_position]),
         )
         for rollout_index in active_rollouts.tolist()
     )
@@ -3379,13 +3385,14 @@ def _record_property_sale_effects(
     if property_id is None:
         return
     month = disposition.sale_month
-    settlement = disposition.sale_settlement
-    sale_tax = tax_usd if tax_usd is not None else settlement.tax_usd
-    net_proceeds = net_proceeds_usd if net_proceeds_usd is not None else settlement.net_proceeds_usd
+    sale_tax = tax_usd if tax_usd is not None else disposition.column("property_sale_tax_usd")
+    net_proceeds = (
+        net_proceeds_usd if net_proceeds_usd is not None else disposition.column("property_sale_net_proceeds_usd")
+    )
     active = (
-        (settlement.gross_usd[:, month] != 0)
-        | (settlement.selling_cost_usd[:, month] != 0)
-        | (settlement.debt_payoff_usd[:, month] != 0)
+        (disposition.column("property_sale_gross_usd")[:, month] != 0)
+        | (disposition.column("sale_closing_cost_usd")[:, month] != 0)
+        | (disposition.column("property_sale_debt_payoff_usd")[:, month] != 0)
         | (sale_tax[:, month] != 0)
         | (net_proceeds[:, month] != 0)
     )
@@ -3398,16 +3405,20 @@ def _record_property_sale_effects(
             policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
             event_id=sale_event.event_id,
             property_id=property_id,
-            gross_sale_usd=float(settlement.gross_usd[rollout_index, month]),
-            selling_cost_usd=float(settlement.selling_cost_usd[rollout_index, month]),
-            debt_payoff_usd=float(settlement.debt_payoff_usd[rollout_index, month]),
-            adjusted_basis_usd=float(settlement.adjusted_basis_usd[rollout_index, month]),
-            realized_gain_usd=float(settlement.realized_property_gain_usd[rollout_index, month]),
-            depreciation_recapture_usd=float(settlement.depreciation_recapture_usd[rollout_index, month]),
-            capital_gain_usd=float(settlement.property_sale_capital_gain_usd[rollout_index, month]),
-            capital_gain_exclusion_usd=float(settlement.property_sale_capital_gain_exclusion_usd[rollout_index, month]),
-            taxable_capital_gain_usd=float(settlement.taxable_property_capital_gain_usd[rollout_index, month]),
-            taxable_gain_usd=float(settlement.taxable_property_gain_usd[rollout_index, month]),
+            gross_sale_usd=float(disposition.column("property_sale_gross_usd")[rollout_index, month]),
+            selling_cost_usd=float(disposition.column("sale_closing_cost_usd")[rollout_index, month]),
+            debt_payoff_usd=float(disposition.column("property_sale_debt_payoff_usd")[rollout_index, month]),
+            adjusted_basis_usd=float(disposition.column("property_sale_adjusted_basis_usd")[rollout_index, month]),
+            realized_gain_usd=float(disposition.column("realized_property_gain_usd")[rollout_index, month]),
+            depreciation_recapture_usd=float(disposition.column("depreciation_recapture_usd")[rollout_index, month]),
+            capital_gain_usd=float(disposition.column("property_sale_capital_gain_usd")[rollout_index, month]),
+            capital_gain_exclusion_usd=float(
+                disposition.column("property_sale_capital_gain_exclusion_usd")[rollout_index, month]
+            ),
+            taxable_capital_gain_usd=float(
+                disposition.column("taxable_property_capital_gain_usd")[rollout_index, month]
+            ),
+            taxable_gain_usd=float(disposition.column("taxable_property_gain_usd")[rollout_index, month]),
             tax_usd=float(sale_tax[rollout_index, month]),
             net_proceeds_usd=float(net_proceeds[rollout_index, month]),
         )

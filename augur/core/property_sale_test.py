@@ -67,18 +67,19 @@ def test_property_sale_combines_closing_costs_local_transfer_tax_and_debt_payoff
         local_regulation=_local_regulation(local_transfer_tax_pct=1),
     )
 
-    np.testing.assert_allclose(sale.property_sale_gross_usd[:, 3], 120_000)
-    np.testing.assert_allclose(sale.sale_closing_cost_usd[:, 3], 7_200)
-    np.testing.assert_allclose(sale.property_sale_debt_payoff_usd[:, 3], 40_000)
-    np.testing.assert_allclose(sale.property_sale_adjusted_basis_usd[:, 3], 100_000)
-    np.testing.assert_allclose(sale.property_sale_capital_gain_usd[:, 3], 12_800)
-    np.testing.assert_allclose(sale.taxable_property_capital_gain_usd[:, 3], 12_800)
+    np.testing.assert_allclose(sale.column("property_sale_gross_usd")[:, 3], 120_000)
+    np.testing.assert_allclose(sale.column("sale_closing_cost_usd")[:, 3], 7_200)
+    np.testing.assert_allclose(sale.column("property_sale_debt_payoff_usd")[:, 3], 40_000)
+    np.testing.assert_allclose(sale.column("property_sale_adjusted_basis_usd")[:, 3], 100_000)
+    np.testing.assert_allclose(sale.column("property_sale_capital_gain_usd")[:, 3], 12_800)
+    np.testing.assert_allclose(sale.column("taxable_property_capital_gain_usd")[:, 3], 12_800)
     # Disposition reports pre-tax proceeds. Sale tax accrues through the engine's
     # annual-tax obligation path.
-    np.testing.assert_allclose(sale.property_sale_net_proceeds_usd[:, 3], 120_000 - 7_200 - 40_000)
-    np.testing.assert_allclose(sale.property_sale_tax_usd[:, 3], 0)
-    np.testing.assert_allclose(sale.sale_settlement.net_proceeds_usd, sale.property_sale_net_proceeds_usd)
-    np.testing.assert_allclose(sale.net_property_sale_cash_flow_usd, sale.property_sale_net_proceeds_usd)
+    np.testing.assert_allclose(sale.column("property_sale_net_proceeds_usd")[:, 3], 120_000 - 7_200 - 40_000)
+    np.testing.assert_allclose(sale.column("property_sale_tax_usd")[:, 3], 0)
+    np.testing.assert_allclose(
+        sale.column("net_property_sale_cash_flow_usd"), sale.column("property_sale_net_proceeds_usd")
+    )
 
 
 def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> None:
@@ -100,13 +101,13 @@ def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> 
     )
 
     expected_depreciation = 100_000 / (27.5 * 12) * 3
-    np.testing.assert_allclose(sale.depreciation_recapture_usd[:, 3], expected_depreciation)
-    np.testing.assert_allclose(sale.property_sale_capital_gain_exclusion_usd[:, 3], 0, atol=1e-9)
-    np.testing.assert_allclose(sale.taxable_property_capital_gain_usd[:, 3], 0)
-    np.testing.assert_allclose(sale.taxable_property_gain_usd[:, 3], expected_depreciation)
+    np.testing.assert_allclose(sale.column("depreciation_recapture_usd")[:, 3], expected_depreciation)
+    np.testing.assert_allclose(sale.column("property_sale_capital_gain_exclusion_usd")[:, 3], 0, atol=1e-9)
+    np.testing.assert_allclose(sale.column("taxable_property_capital_gain_usd")[:, 3], 0)
+    np.testing.assert_allclose(sale.column("taxable_property_gain_usd")[:, 3], expected_depreciation)
     # Recapture rate is bracket-aware and applied by the engine's annual-tax path,
     # not by property_disposition_arrays itself.
-    np.testing.assert_allclose(sale.property_sale_tax_usd[:, 3], 0)
+    np.testing.assert_allclose(sale.column("property_sale_tax_usd")[:, 3], 0)
 
 
 def test_property_without_sale_event_returns_zero_sale_cash_flow() -> None:
@@ -122,16 +123,16 @@ def test_property_without_sale_event_returns_zero_sale_cash_flow() -> None:
     )
 
     assert sale.sale_month is None
-    np.testing.assert_allclose(sale.property_sale_gross_usd, 0)
-    np.testing.assert_allclose(sale.property_sale_net_proceeds_usd, 0)
-    np.testing.assert_allclose(sale.net_property_sale_cash_flow_usd, 0)
+    np.testing.assert_allclose(sale.column("property_sale_gross_usd"), 0)
+    np.testing.assert_allclose(sale.column("property_sale_net_proceeds_usd"), 0)
+    np.testing.assert_allclose(sale.column("net_property_sale_cash_flow_usd"), 0)
 
 
 def test_no_property_sale_returns_zero_arrays_without_local_regulation() -> None:
     sale = empty_property_disposition_arrays(constant_market_bundle())
 
-    np.testing.assert_allclose(sale.property_sale_gross_usd, 0)
-    np.testing.assert_allclose(sale.property_sale_net_proceeds_usd, 0)
+    np.testing.assert_allclose(sale.column("property_sale_gross_usd"), 0)
+    np.testing.assert_allclose(sale.column("property_sale_net_proceeds_usd"), 0)
     assert sale.sale_month is None
 
 

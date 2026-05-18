@@ -149,6 +149,7 @@ py_library(
         ":property_depreciation_py",
         ":scenario_set_py",
         "@pypi//numpy",
+        "@pypi//polars",
     ],
 )
 

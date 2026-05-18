@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import polars as pl
 
 from augur.core.local_regulation import LocalRegulation
 from augur.core.market_bundle import MarketBundle
@@ -17,83 +18,61 @@ PRIMARY_RESIDENCE_CAPITAL_GAIN_EXCLUSION_USD: dict[TaxFilingStatus, float] = {
 }
 
 
-@dataclass(frozen=True)
-class PropertySaleSettlementArrays:
-    gross_usd: np.ndarray
-    selling_cost_usd: np.ndarray
-    debt_payoff_usd: np.ndarray
-    adjusted_basis_usd: np.ndarray
-    realized_property_gain_usd: np.ndarray
-    property_sale_capital_gain_usd: np.ndarray
-    property_sale_capital_gain_exclusion_usd: np.ndarray
-    taxable_property_capital_gain_usd: np.ndarray
-    taxable_property_gain_usd: np.ndarray
-    depreciation_recapture_usd: np.ndarray
-    tax_usd: np.ndarray
-    net_proceeds_usd: np.ndarray
-    net_cash_flow_usd: np.ndarray
+# Flat column namespace carried in `PropertyDispositionArrays.numerics`.
+# Collapses what used to be a two-level namespace (the disposition-level
+# fields + the `sale_settlement.*` nested fields) into one wide frame
+# keyed by `(rollout_index, month_index)`.
+_PROPERTY_DISPOSITION_COLUMNS: tuple[str, ...] = (
+    "purchase_closing_cost_usd",
+    "property_depreciation_usd",
+    "cumulative_property_depreciation_usd",
+    "property_sale_gross_usd",
+    "sale_closing_cost_usd",
+    "property_sale_debt_payoff_usd",
+    "property_sale_adjusted_basis_usd",
+    "realized_property_gain_usd",
+    "property_sale_capital_gain_usd",
+    "property_sale_capital_gain_exclusion_usd",
+    "taxable_property_capital_gain_usd",
+    "taxable_property_gain_usd",
+    "depreciation_recapture_usd",
+    "property_sale_tax_usd",
+    "property_sale_net_proceeds_usd",
+    "net_property_sale_cash_flow_usd",
+)
+
+
+def _build_property_disposition_frame(arrays: dict[str, np.ndarray]) -> pl.DataFrame:
+    """Build a `PropertyDispositionArrays.numerics` frame from a dict of
+    `(rollouts, months+1)` ndarrays, one per column in
+    `_PROPERTY_DISPOSITION_COLUMNS`. Flattens rollout-major so `column()`
+    can reshape back without copy."""
+    sample = next(iter(arrays.values()))
+    n_rollouts, n_months_plus_one = sample.shape
+    return pl.DataFrame(
+        {
+            "rollout_index": np.repeat(np.arange(n_rollouts, dtype=np.int32), n_months_plus_one),
+            "month_index": np.tile(np.arange(n_months_plus_one, dtype=np.int32), n_rollouts),
+            **{name: arrays[name].reshape(-1) for name in _PROPERTY_DISPOSITION_COLUMNS},
+        }
+    )
 
 
 @dataclass(frozen=True)
 class PropertyDispositionArrays:
-    purchase_closing_cost_usd: np.ndarray
-    property_depreciation_usd: np.ndarray
-    cumulative_property_depreciation_usd: np.ndarray
-    sale_settlement: PropertySaleSettlementArrays
+    """Per-rollout-per-month property disposition state. The 16 numeric
+    columns (purchase + depreciation + sale-settlement outputs) live in
+    `numerics`; `sale_event` and `sale_month` are scenario-scope scalars."""
+
+    rollout_count: int
+    horizon_months: int
+    numerics: pl.DataFrame
     sale_event: PropertySaleEvent | None
     sale_month: int | None
 
-    @property
-    def sale_closing_cost_usd(self) -> np.ndarray:
-        return self.sale_settlement.selling_cost_usd
-
-    @property
-    def property_sale_gross_usd(self) -> np.ndarray:
-        return self.sale_settlement.gross_usd
-
-    @property
-    def property_sale_net_proceeds_usd(self) -> np.ndarray:
-        return self.sale_settlement.net_proceeds_usd
-
-    @property
-    def property_sale_tax_usd(self) -> np.ndarray:
-        return self.sale_settlement.tax_usd
-
-    @property
-    def property_sale_debt_payoff_usd(self) -> np.ndarray:
-        return self.sale_settlement.debt_payoff_usd
-
-    @property
-    def property_sale_adjusted_basis_usd(self) -> np.ndarray:
-        return self.sale_settlement.adjusted_basis_usd
-
-    @property
-    def realized_property_gain_usd(self) -> np.ndarray:
-        return self.sale_settlement.realized_property_gain_usd
-
-    @property
-    def property_sale_capital_gain_usd(self) -> np.ndarray:
-        return self.sale_settlement.property_sale_capital_gain_usd
-
-    @property
-    def property_sale_capital_gain_exclusion_usd(self) -> np.ndarray:
-        return self.sale_settlement.property_sale_capital_gain_exclusion_usd
-
-    @property
-    def taxable_property_capital_gain_usd(self) -> np.ndarray:
-        return self.sale_settlement.taxable_property_capital_gain_usd
-
-    @property
-    def taxable_property_gain_usd(self) -> np.ndarray:
-        return self.sale_settlement.taxable_property_gain_usd
-
-    @property
-    def depreciation_recapture_usd(self) -> np.ndarray:
-        return self.sale_settlement.depreciation_recapture_usd
-
-    @property
-    def net_property_sale_cash_flow_usd(self) -> np.ndarray:
-        return self.sale_settlement.net_cash_flow_usd
+    def column(self, name: str) -> np.ndarray:
+        flat: np.ndarray = self.numerics[name].to_numpy()
+        return flat.reshape(self.rollout_count, self.horizon_months + 1)
 
 
 def property_disposition_arrays(
@@ -149,24 +128,29 @@ def property_disposition_arrays(
     # tax obligation accrues and settles through the annual-tax obligation path.
     sale_tax = np.zeros_like(sale_gross)
     net_proceeds = sale_gross - sale_closing_cost - debt_payoff
+    rollout_count, n_months_plus_one = shape
     return PropertyDispositionArrays(
-        purchase_closing_cost_usd=purchase_closing_cost,
-        property_depreciation_usd=property_depreciation,
-        cumulative_property_depreciation_usd=cumulative_depreciation,
-        sale_settlement=PropertySaleSettlementArrays(
-            gross_usd=sale_gross,
-            selling_cost_usd=sale_closing_cost,
-            debt_payoff_usd=debt_payoff,
-            adjusted_basis_usd=adjusted_basis,
-            realized_property_gain_usd=realized_gain,
-            property_sale_capital_gain_usd=capital_gain,
-            property_sale_capital_gain_exclusion_usd=capital_gain_exclusion,
-            taxable_property_capital_gain_usd=taxable_capital_gain,
-            taxable_property_gain_usd=taxable_gain,
-            depreciation_recapture_usd=depreciation_recapture,
-            tax_usd=sale_tax,
-            net_proceeds_usd=net_proceeds,
-            net_cash_flow_usd=net_proceeds,
+        rollout_count=rollout_count,
+        horizon_months=n_months_plus_one - 1,
+        numerics=_build_property_disposition_frame(
+            {
+                "purchase_closing_cost_usd": purchase_closing_cost,
+                "property_depreciation_usd": property_depreciation,
+                "cumulative_property_depreciation_usd": cumulative_depreciation,
+                "property_sale_gross_usd": sale_gross,
+                "sale_closing_cost_usd": sale_closing_cost,
+                "property_sale_debt_payoff_usd": debt_payoff,
+                "property_sale_adjusted_basis_usd": adjusted_basis,
+                "realized_property_gain_usd": realized_gain,
+                "property_sale_capital_gain_usd": capital_gain,
+                "property_sale_capital_gain_exclusion_usd": capital_gain_exclusion,
+                "taxable_property_capital_gain_usd": taxable_capital_gain,
+                "taxable_property_gain_usd": taxable_gain,
+                "depreciation_recapture_usd": depreciation_recapture,
+                "property_sale_tax_usd": sale_tax,
+                "property_sale_net_proceeds_usd": net_proceeds,
+                "net_property_sale_cash_flow_usd": net_proceeds,
+            }
         ),
         sale_event=sale_event,
         sale_month=sale_month,
@@ -176,24 +160,9 @@ def property_disposition_arrays(
 def empty_property_disposition_arrays(market_bundle: MarketBundle) -> PropertyDispositionArrays:
     zeros = np.zeros((market_bundle.rollout_count, market_bundle.horizon_months + 1), dtype="float64")
     return PropertyDispositionArrays(
-        purchase_closing_cost_usd=zeros,
-        property_depreciation_usd=zeros,
-        cumulative_property_depreciation_usd=zeros,
-        sale_settlement=PropertySaleSettlementArrays(
-            gross_usd=zeros,
-            selling_cost_usd=zeros,
-            debt_payoff_usd=zeros,
-            adjusted_basis_usd=zeros,
-            realized_property_gain_usd=zeros,
-            property_sale_capital_gain_usd=zeros,
-            property_sale_capital_gain_exclusion_usd=zeros,
-            taxable_property_capital_gain_usd=zeros,
-            taxable_property_gain_usd=zeros,
-            depreciation_recapture_usd=zeros,
-            tax_usd=zeros,
-            net_proceeds_usd=zeros,
-            net_cash_flow_usd=zeros,
-        ),
+        rollout_count=market_bundle.rollout_count,
+        horizon_months=market_bundle.horizon_months,
+        numerics=_build_property_disposition_frame(dict.fromkeys(_PROPERTY_DISPOSITION_COLUMNS, zeros)),
         sale_event=None,
         sale_month=None,
     )
