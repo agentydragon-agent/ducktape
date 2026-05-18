@@ -78,7 +78,7 @@ pub(crate) fn daemon_sock_path(session_id: &str) -> PathBuf {
     short_session_dir(session_id).join("d.sock")
 }
 
-fn daemon_dir_path(session_id: &str) -> PathBuf {
+pub(crate) fn daemon_dir_path(session_id: &str) -> PathBuf {
     short_session_dir(session_id)
 }
 
@@ -768,9 +768,17 @@ async fn post_json_over_uds_inner(
     path: &str,
     body: Vec<u8>,
 ) -> Result<Bytes, String> {
-    let stream = UnixStream::connect(sock_path)
-        .await
-        .map_err(|e| format!("connect: {e}"))?;
+    // Connect deadline must stay tight: a hung daemon (or a half-open socket on
+    // an exotic FS) used to spin the shim until the outer 300s ceiling, blocking
+    // the parent shell. The 2s value mirrors `daemon_lifecycle::health_check`.
+    // The "connect:" prefix on both branches lets `shim_runtime` classify this
+    // as "daemon unreachable" and trigger respawn.
+    let stream =
+        match tokio::time::timeout(Duration::from_secs(2), UnixStream::connect(sock_path)).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => return Err(format!("connect: {e}")),
+            Err(_) => return Err("connect: timed out after 2s".to_string()),
+        };
     let io = TokioIo::new(stream);
     let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
         .await
