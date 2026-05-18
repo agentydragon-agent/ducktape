@@ -239,155 +239,92 @@ class ScenarioRunArrays:
         return flat.reshape(self.rollout_count, self.horizon_months + 1)
 
     def rollout_statuses(self) -> tuple[RolloutStatus, ...]:
+        cash_summary = (
+            self.numerics.lazy()
+            .group_by("rollout_index", maintain_order=True)
+            .agg(
+                min_cash_usd=pl.col("cash_usd").min(),
+                first_negative_month=pl.when(pl.col("cash_usd") < 0).then(pl.col("month_index")).otherwise(None).min(),
+            )
+            .sort("rollout_index")
+            .collect()
+        )
+        failures_by_rollout: dict[int, list[FailureEvent]] = {}
+        for event in self.failure_events:
+            failures_by_rollout.setdefault(event.rollout_index, []).append(event)
         statuses: list[RolloutStatus] = []
-        for rollout_index in range(self.rollout_count):
-            cash_path = self.cash_usd[rollout_index, :]
-            negative_positions = np.nonzero(cash_path < 0)[0]
-            min_cash_usd = float(np.min(cash_path))
-            failed_events = tuple(event for event in self.failure_events if event.rollout_index == rollout_index)
+        for row in cash_summary.iter_rows(named=True):
+            rollout_index = int(row["rollout_index"])
+            min_cash_usd = float(row["min_cash_usd"])
+            first_negative_month = row["first_negative_month"]
+            failed_events = failures_by_rollout.get(rollout_index, [])
             if failed_events:
-                first_failed_month = min(event.month_index for event in failed_events)
                 statuses.append(
                     RolloutStatus(
                         rollout_index=rollout_index,
                         status=RolloutStatusType.FAILED,
                         min_cash_usd=min_cash_usd,
                         first_negative_cash_month_index=(
-                            int(self.month_index[int(negative_positions[0])]) if negative_positions.size else None
+                            int(first_negative_month) if first_negative_month is not None else None
                         ),
-                        first_failed_obligation_month_index=first_failed_month,
+                        first_failed_obligation_month_index=min(e.month_index for e in failed_events),
                         failed_obligation_count=len(failed_events),
-                        unpaid_obligation_usd=sum(event.unpaid_amount_usd for event in failed_events),
+                        unpaid_obligation_usd=sum(e.unpaid_amount_usd for e in failed_events),
                     )
                 )
-                continue
-            if negative_positions.size == 0:
+            elif first_negative_month is None:
                 statuses.append(
                     RolloutStatus(
                         rollout_index=rollout_index, status=RolloutStatusType.ACTIVE, min_cash_usd=min_cash_usd
                     )
                 )
-                continue
-            first_negative_position = int(negative_positions[0])
-            statuses.append(
-                RolloutStatus(
-                    rollout_index=rollout_index,
-                    status=RolloutStatusType.CASH_NEGATIVE,
-                    min_cash_usd=min_cash_usd,
-                    first_negative_cash_month_index=int(self.month_index[first_negative_position]),
+            else:
+                statuses.append(
+                    RolloutStatus(
+                        rollout_index=rollout_index,
+                        status=RolloutStatusType.CASH_NEGATIVE,
+                        min_cash_usd=min_cash_usd,
+                        first_negative_cash_month_index=int(first_negative_month),
+                    )
                 )
-            )
         return tuple(statuses)
 
     def monthly_columns(self) -> ColumnarTable:
-        row_count = self.rollout_count * (self.horizon_months + 1)
-        rollout_index = np.repeat(np.arange(self.rollout_count, dtype="int64"), self.horizon_months + 1)
-        month_index = np.tile(self.month_index, self.rollout_count)
-        scenario_ids = [self.scenario_id] * row_count
-        scenario_labels = [self.scenario_label] * row_count
-        return ColumnarTable(
-            row_count=row_count,
-            columns={
-                "scenario_id": scenario_ids,
-                "scenario_label": scenario_labels,
-                "rollout_index": rollout_index.tolist(),
-                "month_index": month_index.tolist(),
-                **_monthly_metric_columns(self),
-            },
+        metric_names = [spec.metric.value for spec in _MONTHLY_COLUMN_SPECS]
+        frame = self.numerics.select(
+            pl.lit(self.scenario_id).alias("scenario_id"),
+            pl.lit(self.scenario_label).alias("scenario_label"),
+            pl.col("rollout_index").cast(pl.Int64),
+            pl.col("month_index").cast(pl.Int64),
+            *[pl.col(name) for name in metric_names],
         )
+        return ColumnarTable(row_count=frame.height, columns=frame.to_dict(as_series=False))
 
     def terminal_columns(self) -> ColumnarTable:
-        final = -1
-        return ColumnarTable(
-            row_count=self.rollout_count,
-            columns={
-                "scenario_id": [self.scenario_id] * self.rollout_count,
-                "scenario_label": [self.scenario_label] * self.rollout_count,
-                "rollout_index": np.arange(self.rollout_count, dtype="int64").tolist(),
-                "month_index": [int(self.month_index[final])] * self.rollout_count,
-                "final_cash_usd": self.cash_usd[:, final].tolist(),
-                "final_generic_sp500_value_usd": self.generic_sp500_value_usd[:, final].tolist(),
-                "total_generic_sp500_sale_usd": np.sum(self.generic_sp500_sale_usd, axis=1).tolist(),
-                "total_generic_sp500_sale_basis_usd": np.sum(self.generic_sp500_sale_basis_usd, axis=1).tolist(),
-                "total_generic_sp500_sale_gain_usd": np.sum(self.generic_sp500_sale_gain_usd, axis=1).tolist(),
-                "total_generic_sp500_sale_tax_usd": np.sum(self.generic_sp500_sale_tax_usd, axis=1).tolist(),
-                "final_checking_floor_shortfall_usd": self.checking_floor_shortfall_usd[:, final].tolist(),
-                "final_private_equity_value_usd": self.private_equity_value_usd[:, final].tolist(),
-                "final_private_equity_sale_opportunity_value_usd": (
-                    self.private_equity_sale_opportunity_value_usd[:, final].tolist()
-                ),
-                "total_private_equity_sale_usd": np.sum(self.private_equity_sale_usd, axis=1).tolist(),
-                "total_private_equity_sale_basis_usd": np.sum(self.private_equity_sale_basis_usd, axis=1).tolist(),
-                "total_private_equity_sale_tax_usd": np.sum(self.private_equity_sale_tax_usd, axis=1).tolist(),
-                "total_federal_income_tax_usd": np.sum(self.federal_income_tax_usd, axis=1).tolist(),
-                "total_california_income_tax_usd": np.sum(self.california_income_tax_usd, axis=1).tolist(),
-                "total_income_tax_usd": np.sum(self.total_income_tax_usd, axis=1).tolist(),
-                "final_property_value_usd": self.property_value_usd[:, final].tolist(),
-                "final_mortgage_balance_usd": self.mortgage_balance_usd[:, final].tolist(),
-                "final_home_equity_usd": self.home_equity_usd[:, final].tolist(),
-                "final_owner_home_equity_claim_usd": self.owner_home_equity_claim_usd[:, final].tolist(),
-                "final_partner_home_equity_claim_usd": self.partner_home_equity_claim_usd[:, final].tolist(),
-                "final_partner_ownership_pct": self.partner_ownership_pct[:, final].tolist(),
-                "total_partner_contribution_used_usd": np.sum(self.partner_contribution_used_usd, axis=1).tolist(),
-                "total_partner_principal_credit_usd": np.sum(self.partner_principal_credit_usd, axis=1).tolist(),
-                "total_owner_principal_credit_usd": np.sum(self.owner_principal_credit_usd, axis=1).tolist(),
-                "final_partner_equity_ledger_usd": self.partner_equity_ledger_usd[:, final].tolist(),
-                "final_owner_equity_ledger_usd": self.owner_equity_ledger_usd[:, final].tolist(),
-                "total_rental_income_usd": np.sum(self.rental_income_usd, axis=1).tolist(),
-                "total_property_carrying_cost_usd": np.sum(self.property_carrying_cost_usd, axis=1).tolist(),
-                "total_net_property_cash_flow_usd": np.sum(self.net_property_cash_flow_usd, axis=1).tolist(),
-                "total_purchase_closing_cost_usd": np.sum(self.purchase_closing_cost_usd, axis=1).tolist(),
-                "total_sale_closing_cost_usd": np.sum(self.sale_closing_cost_usd, axis=1).tolist(),
-                "total_property_depreciation_usd": np.sum(self.property_depreciation_usd, axis=1).tolist(),
-                "final_cumulative_property_depreciation_usd": self.cumulative_property_depreciation_usd[
-                    :, final
-                ].tolist(),
-                "total_property_sale_gross_usd": np.sum(self.property_sale_gross_usd, axis=1).tolist(),
-                "total_property_sale_net_proceeds_usd": np.sum(self.property_sale_net_proceeds_usd, axis=1).tolist(),
-                "total_property_sale_tax_usd": np.sum(self.property_sale_tax_usd, axis=1).tolist(),
-                "total_property_sale_debt_payoff_usd": np.sum(self.property_sale_debt_payoff_usd, axis=1).tolist(),
-                "total_property_sale_adjusted_basis_usd": np.sum(
-                    self.property_sale_adjusted_basis_usd, axis=1
-                ).tolist(),
-                "total_realized_property_gain_usd": np.sum(self.realized_property_gain_usd, axis=1).tolist(),
-                "total_property_sale_capital_gain_usd": np.sum(self.property_sale_capital_gain_usd, axis=1).tolist(),
-                "total_property_sale_capital_gain_exclusion_usd": np.sum(
-                    self.property_sale_capital_gain_exclusion_usd, axis=1
-                ).tolist(),
-                "total_taxable_property_capital_gain_usd": np.sum(
-                    self.taxable_property_capital_gain_usd, axis=1
-                ).tolist(),
-                "total_taxable_property_gain_usd": np.sum(self.taxable_property_gain_usd, axis=1).tolist(),
-                "total_depreciation_recapture_usd": np.sum(self.depreciation_recapture_usd, axis=1).tolist(),
-                "total_net_property_sale_cash_flow_usd": np.sum(self.net_property_sale_cash_flow_usd, axis=1).tolist(),
-                "final_liquid_net_worth_usd": self.liquid_net_worth_usd[:, final].tolist(),
-                "final_net_worth_usd": self.net_worth_usd[:, final].tolist(),
-            },
+        aggregates = (
+            self.numerics.lazy()
+            .group_by("rollout_index", maintain_order=True)
+            .agg(*[_terminal_agg_expr(spec) for spec in _TERMINAL_COLUMN_SPECS])
+            .sort("rollout_index")
+            .with_columns(
+                pl.col("rollout_index").cast(pl.Int64),
+                pl.lit(self.scenario_id).alias("scenario_id"),
+                pl.lit(self.scenario_label).alias("scenario_label"),
+                pl.lit(int(self.month_index[-1]), dtype=pl.Int64).alias("month_index"),
+            )
+            .select(
+                "scenario_id",
+                "scenario_label",
+                "rollout_index",
+                "month_index",
+                *(spec.output_name for spec in _TERMINAL_COLUMN_SPECS),
+            )
+            .collect()
         )
+        return ColumnarTable(row_count=aggregates.height, columns=aggregates.to_dict(as_series=False))
 
     def metric_fan_columns(self) -> dict[str, ColumnarTable]:
-        return {
-            "cash_usd": _fan_columns(self.cash_usd),
-            "net_worth_usd": _fan_columns(self.net_worth_usd),
-            "liquid_net_worth_usd": _fan_columns(self.liquid_net_worth_usd),
-            "generic_sp500_value_usd": _fan_columns(self.generic_sp500_value_usd),
-            "checking_floor_shortfall_usd": _fan_columns(self.checking_floor_shortfall_usd),
-            "property_value_usd": _fan_columns(self.property_value_usd),
-            "home_equity_usd": _fan_columns(self.home_equity_usd),
-            "owner_home_equity_claim_usd": _fan_columns(self.owner_home_equity_claim_usd),
-            "partner_home_equity_claim_usd": _fan_columns(self.partner_home_equity_claim_usd),
-            "partner_principal_credit_usd": _fan_columns(self.partner_principal_credit_usd),
-            "partner_equity_ledger_usd": _fan_columns(self.partner_equity_ledger_usd),
-            "owner_equity_ledger_usd": _fan_columns(self.owner_equity_ledger_usd),
-            "partner_ownership_pct": _fan_columns(self.partner_ownership_pct),
-            "mortgage_balance_usd": _fan_columns(self.mortgage_balance_usd),
-            "rental_income_usd": _fan_columns(self.rental_income_usd),
-            "net_property_cash_flow_usd": _fan_columns(self.net_property_cash_flow_usd),
-            "property_sale_net_proceeds_usd": _fan_columns(self.property_sale_net_proceeds_usd),
-            "net_property_sale_cash_flow_usd": _fan_columns(self.net_property_sale_cash_flow_usd),
-            "private_equity_value_usd": _fan_columns(self.private_equity_value_usd),
-            "private_equity_sale_opportunity_value_usd": _fan_columns(self.private_equity_sale_opportunity_value_usd),
-        }
+        return {name: _fan_columns(self.metric_array(ReportMetric(name))) for name in _FAN_METRIC_NAMES}
 
 
 class MonthlyColumnSource(StrEnum):
@@ -645,12 +582,121 @@ def available_report_metrics() -> tuple[ReportMetric, ...]:
     return tuple(ReportMetric)
 
 
-def _monthly_metric_columns(arrays: ScenarioRunArrays) -> dict[str, list[Any]]:
-    columns: dict[str, list[Any]] = {}
-    for spec in _MONTHLY_COLUMN_SPECS:
-        values = arrays.metric_array(spec.metric)
-        columns[spec.metric.value] = _flat_bool(values) if values.dtype == np.bool_ else _flat(values)
-    return columns
+class _TerminalAggregation(StrEnum):
+    FINAL = "final"  # pl.col(metric).last()
+    TOTAL = "total"  # pl.col(metric).sum()
+
+
+@dataclass(frozen=True)
+class _TerminalSpec:
+    output_name: str
+    source_metric: str
+    aggregation: _TerminalAggregation
+
+
+# Output specs for `ScenarioRunArrays.terminal_columns`. Order is preserved in
+# the emitted `ColumnarTable`; the `output_name`/`source_metric` split is
+# explicit because some source metrics already begin with `total_`
+# (e.g. `total_income_tax_usd`), so a `f"total_{metric}"` naming convention
+# would produce wrong keys.
+_TERMINAL_COLUMN_SPECS: tuple[_TerminalSpec, ...] = (
+    _TerminalSpec("final_cash_usd", "cash_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("final_generic_sp500_value_usd", "generic_sp500_value_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("total_generic_sp500_sale_usd", "generic_sp500_sale_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_generic_sp500_sale_basis_usd", "generic_sp500_sale_basis_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_generic_sp500_sale_gain_usd", "generic_sp500_sale_gain_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_generic_sp500_sale_tax_usd", "generic_sp500_sale_tax_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("final_checking_floor_shortfall_usd", "checking_floor_shortfall_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("final_private_equity_value_usd", "private_equity_value_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec(
+        "final_private_equity_sale_opportunity_value_usd",
+        "private_equity_sale_opportunity_value_usd",
+        _TerminalAggregation.FINAL,
+    ),
+    _TerminalSpec("total_private_equity_sale_usd", "private_equity_sale_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_private_equity_sale_basis_usd", "private_equity_sale_basis_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_private_equity_sale_tax_usd", "private_equity_sale_tax_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_federal_income_tax_usd", "federal_income_tax_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_california_income_tax_usd", "california_income_tax_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_income_tax_usd", "total_income_tax_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("final_property_value_usd", "property_value_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("final_mortgage_balance_usd", "mortgage_balance_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("final_home_equity_usd", "home_equity_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("final_owner_home_equity_claim_usd", "owner_home_equity_claim_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("final_partner_home_equity_claim_usd", "partner_home_equity_claim_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("final_partner_ownership_pct", "partner_ownership_pct", _TerminalAggregation.FINAL),
+    _TerminalSpec("total_partner_contribution_used_usd", "partner_contribution_used_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_partner_principal_credit_usd", "partner_principal_credit_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_owner_principal_credit_usd", "owner_principal_credit_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("final_partner_equity_ledger_usd", "partner_equity_ledger_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("final_owner_equity_ledger_usd", "owner_equity_ledger_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("total_rental_income_usd", "rental_income_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_property_carrying_cost_usd", "property_carrying_cost_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_net_property_cash_flow_usd", "net_property_cash_flow_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_purchase_closing_cost_usd", "purchase_closing_cost_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_sale_closing_cost_usd", "sale_closing_cost_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_property_depreciation_usd", "property_depreciation_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec(
+        "final_cumulative_property_depreciation_usd", "cumulative_property_depreciation_usd", _TerminalAggregation.FINAL
+    ),
+    _TerminalSpec("total_property_sale_gross_usd", "property_sale_gross_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_property_sale_net_proceeds_usd", "property_sale_net_proceeds_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_property_sale_tax_usd", "property_sale_tax_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_property_sale_debt_payoff_usd", "property_sale_debt_payoff_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec(
+        "total_property_sale_adjusted_basis_usd", "property_sale_adjusted_basis_usd", _TerminalAggregation.TOTAL
+    ),
+    _TerminalSpec("total_realized_property_gain_usd", "realized_property_gain_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_property_sale_capital_gain_usd", "property_sale_capital_gain_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec(
+        "total_property_sale_capital_gain_exclusion_usd",
+        "property_sale_capital_gain_exclusion_usd",
+        _TerminalAggregation.TOTAL,
+    ),
+    _TerminalSpec(
+        "total_taxable_property_capital_gain_usd", "taxable_property_capital_gain_usd", _TerminalAggregation.TOTAL
+    ),
+    _TerminalSpec("total_taxable_property_gain_usd", "taxable_property_gain_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_depreciation_recapture_usd", "depreciation_recapture_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec(
+        "total_net_property_sale_cash_flow_usd", "net_property_sale_cash_flow_usd", _TerminalAggregation.TOTAL
+    ),
+    _TerminalSpec("final_liquid_net_worth_usd", "liquid_net_worth_usd", _TerminalAggregation.FINAL),
+    _TerminalSpec("final_net_worth_usd", "net_worth_usd", _TerminalAggregation.FINAL),
+)
+
+
+def _terminal_agg_expr(spec: _TerminalSpec) -> pl.Expr:
+    col = pl.col(spec.source_metric)
+    reducer = col.last() if spec.aggregation is _TerminalAggregation.FINAL else col.sum()
+    return reducer.alias(spec.output_name)
+
+
+# Metric names that participate in `ScenarioRunArrays.metric_fan_columns`,
+# emitted as `(rollouts, months+1)` matrices reduced to per-month percentile
+# tables for the UI's fan-chart views.
+_FAN_METRIC_NAMES: tuple[str, ...] = (
+    "cash_usd",
+    "net_worth_usd",
+    "liquid_net_worth_usd",
+    "generic_sp500_value_usd",
+    "checking_floor_shortfall_usd",
+    "property_value_usd",
+    "home_equity_usd",
+    "owner_home_equity_claim_usd",
+    "partner_home_equity_claim_usd",
+    "partner_principal_credit_usd",
+    "partner_equity_ledger_usd",
+    "owner_equity_ledger_usd",
+    "partner_ownership_pct",
+    "mortgage_balance_usd",
+    "rental_income_usd",
+    "net_property_cash_flow_usd",
+    "property_sale_net_proceeds_usd",
+    "net_property_sale_cash_flow_usd",
+    "private_equity_value_usd",
+    "private_equity_sale_opportunity_value_usd",
+)
 
 
 @dataclass(frozen=True)
@@ -5656,14 +5702,6 @@ def _pct_fraction(value: float, name: str) -> float:
     if value < 0 or value > 100:
         raise ValueError(f"{name} must be in [0, 100]")
     return value / 100
-
-
-def _flat(values: np.ndarray) -> list[float]:
-    return values.reshape(-1).tolist()
-
-
-def _flat_bool(values: np.ndarray) -> list[bool]:
-    return values.reshape(-1).astype(bool).tolist()
 
 
 def _fan_columns(values: np.ndarray) -> ColumnarTable:
