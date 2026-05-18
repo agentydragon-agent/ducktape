@@ -222,50 +222,52 @@ keyed off the wrong-era name. Each fix has been a localized defensive
 patch on the consumer side, which leaves the same trap waiting for the
 next consumer that doesn't yet know about the rename.
 
-### Current state (post PR1a foundation, WIP)
+### Current state (post PR #1639)
 
-The foundation for hygiene-aware identity is in place on branch
-`claude/fix-bazelisk-builds-oK0iE`:
+PR #1639 landed the foundation and migrated the chunk-scoped
+identifier maps to `Id`-keyed; PR #1647 cleaned up the ergonomic
+leftovers (signature tightening, per-sibling util imports,
+`time_phase!` macro visibility).
 
-- SWC's `resolver` pass runs on every parsed module
-  (`js_ast::parse_and_resolve`); every `Ident` carries a
-  `SyntaxContext`; `ident.to_id()` is the canonical binding identity.
-- `swc_common::GLOBALS` is set at `main.rs` / `run_agent` and
-  propagated into every rayon `par_iter` worker (5 sites).
-- The central rename/import bridge is `Id`-keyed:
-  - `RuntimeImportFacts.imports: HashMap<Id, RuntimeImportInfo>`
-  - `ModuleBodyFacts.{imported_locals, provided_locals,
-referenced_idents}: HashSet<Id>`
-  - `RefCollector.ids: HashSet<Id>`
-  - `plan_module_reference_needs` bridge reconstructs pre-rename Id by
-    pairing the heuristic-renames pre-sym with body Id's own ctxt.
+What's `Id`-keyed today:
+
+- `RuntimeImportFacts.imports: HashMap<Id, RuntimeImportInfo>`.
+- `ModuleBodyFacts.{imported_locals, provided_locals, referenced_idents}: HashSet<Id>`.
+- `RefCollector.ids: HashSet<Id>`.
+- `Schedule.{bindings, chunk_renames, export_name_by_binding}` (`schedule.rs:31,38,70`).
+- `ScheduleLogicalModule.rename_map: HashMap<Id, Atom>` (`ids.rs:195`).
+- `plan_module_reference_needs` bridge reconstructs pre-rename `Id` by
+  pairing the heuristic-renames pre-sym with body `Id`'s own ctxt
+  (PR #1633 reverse-lookup, retired by PR2).
 - `eq_ignore_span`-based matchers strip `SyntaxContext` via
   `SyntaxContextStripper` for cross-parse AST comparison
   (`resolve_anonymous_statement_ordinals`).
+- SWC's `resolver` pass runs on every parsed module
+  (`js_ast::parse_and_resolve`); `swc_common::GLOBALS` is set at
+  `main.rs` / `run_agent` and propagated into every rayon `par_iter`
+  worker (5 sites).
 
-Still String-keyed (spec-derived; migration belongs to the next
-atomic unit):
+What's still String-keyed (downstream of the spec→Id join, not yet
+migrated):
 
-- `ScheduleLogicalModule.rename_map: HashMap<BindingName, BindingName>`
-  (`ids.rs:176`) — written from `ModulePlan.bindings` (spec input),
-  consumed at `plan_module_reference_needs` via `name_str` lookup.
-- `Schedule.{bindings, chunk_renames, export_name_by_binding}`
-  (`schedule.rs:21-67`).
-- `analyze_chunk_ast`'s `declaration_by_name: BTreeMap<String, usize>`,
-  `binding_assignment`, `entry_exports_by_original_local`,
-  `pre_existing_entry_exports` — AST-derived but downstream of the
-  spec→Schedule join, so they migrate together.
+- `ChunkAstAnalysis.declaration_by_name: BTreeMap<String, usize>`
+  (`lowering/chunk_ast.rs:18`).
+- `ChunkAstAnalysis.pre_existing_entry_exports: BTreeSet<String>`
+  (`lowering/chunk_ast.rs:38`).
+- `LowerChunkInputs.binding_assignment: &BTreeMap<String, usize>`
+  (`lowering/lower.rs:33`) — threaded through the per-module loop.
+- `collect_entry_exports_by_original_local`'s return map
+  (`lowering/imports_cross.rs:75`).
 - `naturalize_module_body`'s returned
   `local_renames: BTreeMap<String, String>` (the heuristic-renames
-  bridge); the lookup in `plan_module_reference_needs` is already
-  hygiene-aware (`(pre_sym, body_id.ctxt)`-pair reconstruction).
+  bridge; consumed via PR #1633's reverse-lookup).
 
-### Next atomic unit: spec → Id boundary
+### Pending: spec → Id boundary
 
-Per repo convention (`AGENTS.md` → "Atomic API changes: update all
-callers in the same commit. No transitional shims"), the next coherent
-PR1 commit migrates **all** spec-derived identifier maps together with
-a single chunk-level `name → Id` resolution boundary:
+Per `AGENTS.md` "Atomic API changes: update all callers in the same
+commit. No transitional shims", the next coherent commit migrates
+**all** of the still-String-keyed spec-derived maps together with a
+single chunk-level `name → Id` resolution boundary:
 
 1. Add `chunk_binding_ids: HashMap<Atom, Vec<Id>>` to `ChunkAstAnalysis`,
    populated by walking top-level declarations + imports
@@ -274,11 +276,8 @@ a single chunk-level `name → Id` resolution boundary:
    that errors on ambiguity (`kind_hint` from `BindingSelector.kind`
    disambiguates when a chunk has the same sym in two scopes).
 3. Migrate the spec-derived maps to `Id`-keyed in one commit:
-   - `ScheduleLogicalModule.rename_map: HashMap<Id, Atom>`
-   - `Schedule.{bindings, chunk_renames, export_name_by_binding}:
-HashMap<Id, _>`
    - `declaration_by_name`, `binding_assignment`,
-     `entry_exports_by_original_local`, `pre_existing_entry_exports`
+     `pre_existing_entry_exports`, `entry_exports_by_original_local`
      → `Id`-keyed.
 4. Spec YAML stays String-keyed (disk boundary unchanged). Conversion
    happens once when `ChunkAstAnalysis` is consumed by `Schedule::build`
@@ -289,7 +288,7 @@ HashMap<Id, _>`
    chunk.
 
 The PR #1633 reverse-lookup bridge in `plan_module_reference_needs`
-survives this next commit unchanged in spirit (re-keyed maps); PR2
+survives this commit unchanged in spirit (re-keyed maps); PR2
 (below) is what retires it.
 
 ### Proposed architecture (PR2)
@@ -395,30 +394,39 @@ evaluate before doing the rename.
 
 ## Id-migration code-reduction follow-ups
 
-PR #1639 migrated chunk-scoped identifier maps to SWC `Id`-keyed but
-left several duplicate patterns in place. Each is a small, independent
-cleanup PR.
+PR #1639 migrated chunk-scoped identifier maps to SWC `Id`-keyed. PR
+#1647 closed the easy ergonomic wins. What remains is bounded by
+design choices documented in DESIGN.md.
 
-- **`ident.sym.as_ref()` / `id.0.as_str()` iteration sites (~7).**
-  Several call sites still build `String` keys by interning
-  `ident.sym` after the AST visit. Audit `lowering/`, `analyze_chunk`,
-  and `schedule.rs` for `as_str().to_string()` / `.to_string()` on a
-  sym just to feed a `HashMap<String, _>`; in each case either the
-  map should be `Id`- or `Atom`-keyed, or the caller already has an
-  `Id` in scope.
-- **`top_level_id(...)` invocation repetition (~9).** Multiple sites
-  call `top_level_id(name, top_level_mark)` to mint the same Id that
-  was already available via `ident.to_id()` after `resolver`. Replace
-  with the AST-derived Id where possible; keep `top_level_id` only
-  where the caller has a `&str` and no AST node.
+- **`ident.sym.to_string()` sites (~35).** Three sub-categories with
+  different verdicts:
+  - **Spec/report surfaces** (`facts.rs` visitor collectors,
+    `purity.rs`, `strip_swapped_vendor_exports.rs`,
+    `vendor.rs:707-711`). Values terminate in `StatementFacts.*` /
+    vendor manifests / report JSON. `BindingName = String` is pinned
+    by DESIGN.md "Identifiers and types" (line 2594) because it IS
+    the JS identifier text. **No action.**
+  - **Name-disambiguation surfaces** (`lowering/util.rs`'s
+    `collect_occupied_local_names` / `collect_local_binding_names`,
+    consumed by `disambiguate_import_locals`). The result feeds
+    collision-avoidance logic that emits JS identifiers. These
+    `BTreeSet<String>` could become `BTreeSet<Atom>` (`Atom` impls
+    `Hash`/`Ord`/`Display`) — the conversion at the emit boundary
+    is `format!("{atom}")`. Stylistic cleanup only; semantically
+    identical. **Optional.**
+  - **Pending spec → Id boundary** (the `declaration_by_name` /
+    `binding_assignment` / `pre_existing_entry_exports` /
+    `entry_exports_by_original_local` maps; tracked above under
+    "Pending: spec → Id boundary"). These genuinely should migrate
+    to `Id`-keyed; **track via that section, not here.**
 - **Per-test `js_ast::with_swc_globals(|| {...})` wraps (~14).**
   In-process tests across `pipeline.rs`, `validate_emitted_exports.rs`,
-  `vendor.rs` each wrap their body in `with_swc_globals`. Consider
-  a `#[swc_globals_test]` proc-macro attribute or a single test
-  harness fixture so the wrap is implicit. Caveat: explicit per-test
-  wrap was chosen deliberately over a defensive auto-wrap; revisit
-  only if a helper can keep the same mark-identity-across-calls
-  guarantee.
+  `vendor.rs` each wrap their body in `with_swc_globals`. The per-test
+  wrap is a deliberate design choice (explicit setup over defensive
+  auto-wrap) and preserves mark-identity across calls. A consolidation
+  via proc-macro attribute would obscure the wrap without changing
+  the underlying contract. **No action unless a future API change
+  makes the wrap implicit safely.**
 
 ## RenameLedger (PR2) open questions
 
@@ -452,22 +460,9 @@ propKeyA` and `collect_naturalization_renames_from_function` says
 
 ## lowering/ module ergonomics
 
-The post-split `lowering/` directory landed in PR #1643 with a few
-ergonomic compromises that should be cleaned up:
+PR #1647 cleared the `#[allow(unused_imports)]` and the
+`#[macro_export]` on `time_phase!`. One item remains:
 
-- **`#[allow(unused_imports)]` on `mod.rs`'s `use util::{...}`.**
-  Items only used by sibling modules (not by `mod.rs` itself) are
-  imported in `mod.rs` under `#[allow(unused_imports)]` so they're
-  reachable from siblings via Rust's parent-name resolution. Replace
-  with per-child `use super::util::{...}` blocks so each sibling
-  declares exactly what it consumes; drop the allow.
-- **`#[macro_export]` on `time_phase!`.** The macro is exported at
-  crate root to make it visible to `lower.rs` / `materialize.rs`. It
-  has no callers outside the `lowering` crate, so the export is a
-  visibility leak. Replace with a `pub(crate) use` pattern when one
-  of the `macro_rules_2021` features stabilizes, or move the macro
-  into its own `_macros.rs` module declared before its consumers and
-  drop the export.
 - **PR #1633 reverse-lookup bridge** (`plan_module_reference_needs`
   reconstructs pre-rename `Id` by pairing the heuristic-rename
   pre-sym with the body Id's own ctxt). Retired by PR2's
