@@ -13,9 +13,10 @@ Alice, a single-filer SF resident, has:
   - Federal + California tax profile with prior-year-tax
     estimated knob, single filer, standard deduction.
 
-The market bundle samples each asset as a GBM path with its own
-seed, so the 1000 rollouts diverge by market path. Horizon = 60
-months (5 years).
+The spike fixture materializes each asset as a GBM path with its own
+seed, so the 1000 rollouts diverge by market path. Production market
+generation belongs outside `sim`; this bench only needs a stable
+trajectory source. Horizon = 60 months (5 years).
 
 `build_bench_scenario()` returns a `Scenario` instance with the
 defaults above; tune via keyword args.

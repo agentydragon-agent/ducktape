@@ -2,27 +2,27 @@
 
 ## Purpose
 
-Augur's core simulator should be easier to operate and harder to misuse. We are
-expanding e2e coverage in spirals: write a small core scenario, discover the
+Augur's simulator should be easier to operate and harder to misuse. We are
+expanding e2e coverage in spirals: write a small simulation scenario, discover the
 clunky/dead/weird API surface, fix that surface, then make the next spiral
 larger.
 
-The natural public unit is a `ScenarioSet` simulated over sampled market
-trajectories. A selected one-rollout path is useful for UI inspection, but it is
+The natural public unit is a `ScenarioSet` simulated over an exogenous
+trajectory bundle. A selected one-rollout path is useful for UI inspection, but it is
 one sampled trajectory from a distribution, not a separate deterministic product
 API.
 
 ## Boundaries
 
-- `augur/core/`: validates typed scenarios, applies policies/events over
-  sampled rollouts, records accounting truth, and returns typed distribution
-  results.
+- `augur/sim/`: validates typed simulation inputs, applies policies/events over
+  materialized trajectories, records accounting truth, and returns typed
+  distribution results. It should become the durable simulation backend.
 - `augur/model/`: evidence ingestion, calibration, fitting, and market-provider
   construction. Manifold/source-data shapes belong here as evidence that feeds
   fitting, not in app state or the simulator contract.
 - `augur/api/`: catalog/default composition, request parsing, and
-  app-specific validation. It adapts user-facing forms into core scenarios and
-  calls core.
+  app-specific validation. It adapts user-facing forms into model + simulation
+  inputs and calls the simulator.
 - `augur/frontend/`: browser UI bundle (React app, styles, lib).
 
 ## Target Runtime Shape
@@ -170,7 +170,14 @@ ad hoc boundary checks. Pydantic stays the single source of truth.
 
 ## Verification
 
-After each behavioral slice:
+For new `augur/sim` behavioral slices:
+
+```bash
+bbr test //augur/sim:all
+```
+
+While existing frontend/API paths still route through `augur/core`, keep the
+legacy e2e guardrail after each behavioral slice:
 
 ```bash
 bbr test //augur/core:test_e2e

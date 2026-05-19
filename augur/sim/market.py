@@ -1,13 +1,15 @@
-"""Market bundle — exogenous per-(asset, rollout, month) price paths.
+"""Consumer-side market paths for the simulator.
 
-The market is the only source of rollout divergence at spike 1: agent
-decisions don't feed back into the market, and within a rollout every
-agent reads the same price path. The bundle is materialized at sim
-start into a long-form polars frame keyed by
+The simulator consumes materialized per-(asset, rollout, month) price
+paths. Production evidence ingestion, model fitting, stochastic
+sampling, and provenance belong in `augur/model`; `augur/sim` is a
+deterministic path evaluator once it receives those trajectories.
+
+The materialized bundle is a long-form polars frame keyed by
 `(rollout_index, month_index, asset_id)` with one column
 `price_per_unit_usd`. Subsequent step calls index into it by month.
 
-Two path-generator kinds are supported at spike 1:
+Two fixture path-generator kinds remain here at spike 1:
 
 - **DeterministicPath**: a fixed list of monthly prices that the
   same value applies across every rollout. Useful for tests and for
@@ -16,9 +18,9 @@ Two path-generator kinds are supported at spike 1:
   `numpy.random.default_rng(asset_seed)`. Each asset has its own
   seeded generator so results are reproducible.
 
-Real production market models are out of scope for spike 1; this is
-just enough infrastructure to prove the rollout-divergence
-plumbing.
+Those generators are scaffolding for tests and benches until the
+external trajectory-bundle seam lands. They are not the intended
+home for production market modeling.
 """
 
 from __future__ import annotations
@@ -50,9 +52,10 @@ class DeterministicPath(BaseModel):
 
 
 class GeometricBrownianPath(BaseModel):
-    """Per-rollout GBM-sampled price path. `initial_price_usd` is
-    month-0 price; subsequent months apply `exp(N(mu, sigma))` to
-    the previous month's price. Sampling uses
+    """Fixture-only per-rollout GBM-sampled price path.
+
+    `initial_price_usd` is month-0 price; subsequent months apply
+    `exp(N(mu, sigma))` to the previous month's price. Sampling uses
     `numpy.random.default_rng(rng_seed)` so the same seed yields
     the same paths across runs."""
 

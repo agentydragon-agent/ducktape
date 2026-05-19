@@ -12,8 +12,8 @@ here commits to a function shape, a library, or a file layout.
 
 A double-entry bookkeeping financial simulator over a fixed sequence
 of months, run as many rollouts in parallel. Each rollout is a
-self-consistent timeline driven by the same exogenous market path
-(or by per-rollout sampled market paths from a shared model). Agents
+self-consistent timeline driven by one path from the supplied
+exogenous trajectory bundle. Agents
 own cash accounts, asset positions, and liabilities; agents take
 actions; actions transfer value between agents and between accounts.
 Tax law sits on top: realized income and capital gains accrue tax
@@ -56,6 +56,14 @@ These are non-negotiable shapes. Every scenario below assumes them.
 - **State is carried, not rebuilt.** The working state at month T+1 is
   produced from the state at T plus this month's transactions. It is
   not re-derived from scratch from independent sources each iteration.
+- **Simulation and market generation are separate.** The simulator is
+  a deterministic path evaluator: given a scenario set and an
+  exogenous trajectory bundle, it applies policies/accounting/tax
+  forward over those paths. Evidence ingestion, model fitting,
+  calibration, stochastic sampling, and market-model provenance live
+  outside `augur/sim` — normally in `augur/model`. `sim` may keep
+  deterministic or toy stochastic path helpers for tests and benches,
+  but production market modeling does not live here.
 - **Vectorized across rollouts.** Every operation — reads, decisions,
   state updates — is a bulk operation over all rollouts at once. There
   is no Python loop over rollouts anywhere in the per-month step;
@@ -96,10 +104,10 @@ These are non-negotiable shapes. Every scenario below assumes them.
   in. Long-term capital gain treatment is one bracket walk that
   consumes the sum of LTCG-eligible realized gains across all assets
   marked LTCG-eligible; it is not a per-asset-class function called N
-  times. The same applies to deduction caps, withholding rules,
-  obligation settlement chains, depreciation schedules, accrual
-  cadences. If the spec changes the SALT cap or the LTCG threshold,
-  exactly one place changes.
+  times. The same applies to deduction caps, obligation settlement
+  chains, depreciation schedules, accrual cadences, and any future
+  withholding rules. If the spec changes the SALT cap or the LTCG
+  threshold, exactly one place changes.
 - **Vectorized hot path.** Performance is a requirement, not an
   afterthought. The per-month step runs as polars expressions / numpy
   ufuncs / equivalent bulk-vectorized ops over the rollout dimension.
@@ -130,10 +138,10 @@ applies to a template, not to a name.
 
 - **Capital-gains-eligible holding.** A named position composed of
   one or more **tax lots**, where each lot has its own units, cost
-  basis, and acquisition date. The position carries a market
-  unit-price path (per-rollout per-month from the market model) and
-  a cost-basis method (FIFO / LIFO / HIFO / specific-id / average
-  cost) that determines which lots a sale consumes. Sales realize
+  basis, and acquisition date. The position carries an exogenous
+  unit-price path (per-rollout per-month) and
+  a lot-selection rule. FIFO is the current required rule; LIFO,
+  HIFO, specific-id, and average-cost are future extensions. Sales realize
   per-lot gain (`(units_sold × price) − units_sold × per_unit_basis`);
   each consumed lot's gain is classified short-term or long-term
   based on its own acquisition date vs the sale date; per-lot gains
@@ -221,8 +229,9 @@ Rules attached to templates (what runs over them, exactly once):
   consumes the per-month realized-gain stream regardless of which
   template produced each entry.
 - **Quarterly estimated tax + safe harbor** is one function consuming
-  the year's running income totals and the prior-year actual tax.
-  Federal and CA each have their own parameters, same code.
+  the configured prior-year safe-harbor value and the accrued actual
+  tax at true-up time. Federal and CA each have their own parameters,
+  same code.
 - **Capital-gains classification** (long-term vs short-term) is one
   function consuming holding period across every capital-gains-
   eligible row. No per-asset-class duplicate.
@@ -231,6 +240,12 @@ Rules attached to templates (what runs over them, exactly once):
   agent's configured chain of capital-gains-eligible positions in
   preference order. Sells happen against the same code path
   regardless of whether the position is stock-like or crypto-like.
+  Current required obligations are due immediately in the month they
+  fire: the engine debits cash, liquidates configured assets as
+  needed, and fails the rollout if cash still cannot be brought
+  back to non-negative. Partial payments, grace periods,
+  delinquency balances, withholding, underpayment penalties, and
+  other obligation lifecycle refinements are future scope.
 - **Depreciation accrual** is one function consuming every
   depreciable-property-marked row's schedule + month. The engine
   doesn't have a separate "residential" and "rental" depreciation
@@ -502,7 +517,7 @@ short-term gain feeds the ordinary-income bracket walk. The
 simulator does NOT merge them into a single "\$3200 capital gain"
 and apply one rate.
 
-#### S4.7 — Lot selection at sale (specific-id / HIFO).
+#### S4.7 — Future lot selection at sale (specific-id / HIFO).
 
 Same setup as S4.6 but the position is configured for HIFO
 (highest-in-first-out) basis selection. The month-13 lot has higher
@@ -517,9 +532,9 @@ month-13 first:
 Total realized gain (\$2600) differs from S4.6's FIFO total
 (\$3200) because different lots are consumed. The simulator
 correctly routes whichever lots the configured method selects.
-The same code path covers FIFO, LIFO, HIFO, specific-identification,
-and average-cost — the difference is which lots are picked, not how
-the gain is computed once they're picked.
+This is future scope. The current simulator acceptance surface only
+requires FIFO; alternative lot-selection rules should plug into the
+same gain-computation path later.
 
 #### S4.8 — Many positions, all going through one code path.
 
@@ -561,10 +576,10 @@ records the shortfall.
 #### S5.3 — Market path is shared across agents but not rollouts.
 
 Two agents in the same scenario observe the same market path within
-a single rollout. Two rollouts observe two different market paths
-(sampled from the configured market model). Rollouts diverge
-endogenously when agents make state-dependent decisions on top of
-exogenously divergent market paths.
+a single rollout. Two rollouts may observe two different market
+paths from the provided exogenous trajectory bundle. Rollouts
+diverge endogenously when agents make state-dependent decisions on
+top of exogenously divergent market paths.
 
 ### Layer 6: Capital gains taxation
 
@@ -599,16 +614,15 @@ period) on every asset lot.
 
 #### S6.4 — Quarterly estimated tax with safe harbor.
 
-Alice has substantial investment income. To avoid IRS underpayment
-penalties, she pays quarterly estimated tax on the IRS schedule:
-Q1 = April 15, Q2 = June 15, Q3 = September 15, Q4 = January 15 of
-the following year. Each quarterly amount is sized to satisfy the
-safe-harbor rule: total quarterly payments cover the lesser of
-(actual current-year tax) or (a fraction of prior-year tax —
-typically 100% but 110% above the high-income threshold). For year
-zero of the simulation, the prior-year tax value comes from the
-scenario's tax-profile configuration (see [Resolved decisions](#resolved-decisions));
-the engine does not synthesize one.
+Alice has substantial investment income. She pays quarterly
+estimated tax on the IRS schedule: Q1 = April 15, Q2 = June 15,
+Q3 = September 15, Q4 = January 15 of the following year. Each
+quarterly amount is sized from the configured prior-year safe-
+harbor value. For year zero of the simulation, the prior-year tax
+value comes from the scenario's tax-profile configuration (see
+[Resolved decisions](#resolved-decisions)); the engine does not
+synthesize one. The current scope does not model withholding,
+underpayment penalties, or high-income 110% safe-harbor uplift.
 
 The simulator must:
 
@@ -616,9 +630,11 @@ The simulator must:
   amounts.
 - Settle each obligation from Alice's cash, drawing on her funding
   policies (e.g. sell stock to cover) if cash is short.
-- True up at year-end: the year-end obligation is `actual_year_tax
-− sum_of_quarterlies`, never producing a payment greater than the
-  actual year tax across all five settlement events.
+- True up in the following January: the year-end cash payment is
+  `actual_year_tax − safe_harbor_paid`, never producing a current-
+  year payment greater than the remaining actual tax. The January
+  settlement reduces the accrued tax-payable liability to zero for
+  that tax year.
 
 #### S6.5 — Net investment income tax.
 
@@ -639,7 +655,8 @@ as a configured annual amount; the requirement is that ordinary
 income aggregates correctly). At year-end, federal tax on
 `(ordinary_income − standard_deduction)` is computed via the
 applicable filing-status brackets. Federal tax owed equals the
-bracket walk, less any withholding the scenario configures.
+bracket walk. Withholding is future scope; current payments are
+modeled via estimated-tax and true-up transfers.
 
 #### S7.2 — California state income tax.
 
@@ -729,10 +746,11 @@ similar rules. Itemized deduction is the larger-of with standard.
 Alice's checking cash is below the required mortgage payment at
 month M. Her funding policies (sell stock first, sell crypto next,
 etc., per her configured chain) attempt to cover the shortfall.
-If still short, the obligation is recorded as unpaid; the
-rollout's failure state is recorded; subsequent month projections
-continue but the rollout is flagged. The simulator does not
-crash, does not silently underpay, does not double-pay.
+If still short, the rollout's failure state is recorded; subsequent
+month projections continue but the rollout is flagged. Current scope
+does not carry the unpaid balance forward as an open obligation. The
+simulator does not crash, does not silently underpay, does not
+double-pay.
 
 #### S8.6 — Mortgage payoff at property sale.
 
@@ -797,31 +815,35 @@ cover (same chain as any other obligation); if still short, the
 month's spend obligation is unfundable and a failure-event row is
 emitted.
 
-#### S9.7 — Variable monthly spend from the market model.
+#### S9.7 — Variable monthly spend from an exogenous path.
 
 Same template as S9.6, but the monthly amount is supplied by a
-market-model "spending-variance" path: per-rollout per-month
-amounts that differ across rollouts. The recurring-obligation
-template's amount source is either a scenario-configured fixed
-value (S9.6) or a market-model path (this scenario) — the engine
-doesn't branch on the source; it just reads `amount_due[rollout,
-month]` and settles. Different rollouts diverge endogenously
+per-rollout per-month spending-variance path that differs across
+rollouts. The recurring-obligation template's amount source is
+either a scenario-configured fixed value (S9.6) or an exogenous
+path (this scenario) — the engine doesn't branch on the source; it
+just reads `amount_due[rollout, month]` and settles. Different
+rollouts diverge endogenously
 because higher-spend months drain cash faster and trigger
 floor-policy sales earlier.
 
 This is the seam that lets a scenario model "Alice's spending is
 volatile" without an engine change. The same seam supports
-market-driven variable rental income (S13.2) and any other
+path-driven variable rental income (S13.2) and any other
 recurring obligation whose amount is rollout-dependent.
 
-### Layer 10: Market model integration
+### Layer 10: Exogenous trajectory integration
 
-#### S10.1 — Per-rollout sampled market paths.
+#### S10.1 — Per-rollout exogenous market paths.
 
-The simulator integrates with an external market model that, given a
-rollout count and a horizon, produces per-rollout per-month
-multipliers for each asset class. Rollouts have different SP500
-paths, different BTC paths, different property-value paths, etc.
+The simulator consumes paths from an external market/modeling
+package. Given a rollout count and horizon, that package produces
+per-rollout per-month trajectories for each market driver:
+asset-price paths, property-value paths, rates, sellability masks,
+tender opportunities, variable spend/rent paths, etc. Rollouts have
+different SP500 paths, different BTC paths, different property-value
+paths, and so on. `augur/sim` consumes those trajectories; it does
+not own the stochastic model that generated them.
 
 #### S10.2 — Agents' decisions feed back into the rollout's trajectory.
 
@@ -833,7 +855,7 @@ market paths but different agent policies would diverge; two
 rollouts with the same policies but different market paths also
 diverge. The cross-product is the standard Monte Carlo behavior.
 
-#### S10.3 — Same market model across agents.
+#### S10.3 — Same market path across agents.
 
 All agents in a scenario observe the same per-rollout market path
 within a rollout (one rollout has one SP500 path; both Alice and
@@ -850,7 +872,7 @@ having transitioned into a failure state at that month. State
 arrays for subsequent months continue to compute (the property
 keeps depreciating, the stock price keeps moving) but the rollout
 carries a failure flag. The transaction log records the unpaid
-obligation.
+obligation attempt and shortfall.
 
 #### S11.2 — Rollout failure is per-rollout, not scenario-wide.
 
@@ -1090,8 +1112,8 @@ on different positions depending on which masks permit it.
 
 ## Outputs the simulator must produce
 
-For any run (scenario + market bundle + rollout count + horizon
-months):
+For any run (scenario set + exogenous trajectory bundle + rollout
+count + horizon months):
 
 - **Per-rollout per-month per-agent state**: cash balances by
   account, asset holdings (units + basis + current market value) by
@@ -1113,10 +1135,11 @@ months):
   the income totals, deduction amounts, bracket walks, LTCG bracket
   walks, NIIT calculation, federal/CA totals. Enough to audit any
   rollout's tax math.
-- **Per-obligation lifecycle**: every obligation (mortgage payment,
-  property tax, quarterly tax, year-end tax, HOA, special assessment,
-  outside rent, monthly spend) with its accrual month, amount due,
-  amount paid, settlement month(s), unpaid balance.
+- **Per-obligation lifecycle**: current scope models required
+  obligations as due-now events: month, amount due, amount paid,
+  funding sales attempted, and failure if the amount cannot be
+  funded immediately. Partial payments, unpaid-balance carryforward,
+  grace periods, and delinquency lifecycle are future scope.
 - **Lot disposition log**: every sale of a capital-gains-eligible
   position emits one row per consumed lot, carrying `(rollout,
 month, agent_id, position_id, lot_id, units_sold, proceeds_usd,
@@ -1150,9 +1173,9 @@ they are not maintained alongside as separate state.
   end-of-month accruals); there is no event-driven simulation within
   the month.
 - **Inflation modeling, currency conversion, or non-USD assets.**
-  Single currency. Inflation, if relevant, lives in the market model
-  (e.g. growing rent / property-tax paths) rather than as a separate
-  layer.
+  Single currency. Inflation, if relevant, lives in `augur/model`
+  as an exogenous path input (e.g. growing rent / property-tax paths)
+  rather than as a separate simulator-owned stochastic layer.
 - **Liquidity, slippage, transaction costs above what scenarios
   configure as explicit closing costs.** Sales execute at the
   mark-to-market price.

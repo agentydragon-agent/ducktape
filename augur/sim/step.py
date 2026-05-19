@@ -10,7 +10,9 @@ At spike 1 step 7 the step emits:
   - tax_accrual events at the end of each tax year (month_index
     in {11, 23, 35, ...}) — one per (taxed agent, jurisdiction),
     computed by bracket-walking end-of-year ordinary income minus
-    the jurisdiction's standard deduction.
+    the jurisdiction's standard deduction;
+  - estimated-tax payment transfers at quarterly markers, plus a
+    January true-up after the prior year-end accrual is known.
 
 The step does not mutate `state`. The simulate loop calls
 `apply_events(state, step_result)` separately. apply_events
@@ -31,8 +33,11 @@ from augur.sim.events import (
     LOT_DISPOSITION_EVENT_SCHEMA,
     ROLLOUT_FAILURE_EVENT_SCHEMA,
     TAX_ACCRUAL_EVENT_SCHEMA,
+    TAX_BREAKDOWN_EVENT_SCHEMA,
+    TAX_SETTLEMENT_EVENT_SCHEMA,
     TRANSFER_EVENT_SCHEMA,
     EventLog,
+    concat_event_frames,
 )
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.market import MarketContext
@@ -48,6 +53,18 @@ from augur.sim.state import StateCrossSection
 from augur.sim.tax import apply_brackets, apply_ltcg_brackets
 
 
+@dataclass(frozen=True)
+class _TaxYearEvents:
+    accruals: pl.DataFrame
+    breakdowns: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class _TaxPaymentEvents:
+    transfers: pl.DataFrame
+    settlements: pl.DataFrame
+
+
 def step_emit_scheduled_events(
     *,
     state: StateCrossSection,
@@ -58,12 +75,11 @@ def step_emit_scheduled_events(
     rollout_count: int,
 ) -> EventLog:
     """Phase 1 of the month step: scheduled / recurring transfers,
-    scheduled asset sales, year-end tax accruals, and tax-payment
-    transfers derived from those accruals. Pure: does not mutate
-    `state`."""
+    scheduled asset sales, year-end tax accruals, and estimated-tax
+    payment transfers. Pure: does not mutate `state`."""
     transfers = _emit_transfers(scenario, month, rollout_count)
     dispositions = _emit_lot_dispositions(state, scenario, market, month)
-    tax_accruals = _emit_year_end_tax_accruals(
+    tax_year_events = _emit_year_end_tax_events(
         state=state,
         scenario=scenario,
         jurisdictions=jurisdictions,
@@ -71,12 +87,14 @@ def step_emit_scheduled_events(
         transfers=transfers,
         dispositions=dispositions,
     )
-    tax_payments = _emit_tax_payment_transfers(tax_accruals, scenario.tax_profiles)
+    tax_payments = _emit_tax_payment_events(state=state, profiles=scenario.tax_profiles, month=month)
     return EventLog(
-        transfers=pl.concat([transfers, tax_payments]),
+        transfers=concat_event_frames([transfers, tax_payments.transfers], TRANSFER_EVENT_SCHEMA),
         asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
         lot_dispositions=dispositions,
-        tax_accruals=tax_accruals,
+        tax_accruals=tax_year_events.accruals,
+        tax_breakdowns=tax_year_events.breakdowns,
+        tax_settlements=tax_payments.settlements,
         rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
     )
 
@@ -94,6 +112,8 @@ def step_emit_policy_events(
         asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
         lot_dispositions=dispositions,
         tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
+        tax_breakdowns=pl.DataFrame(schema=TAX_BREAKDOWN_EVENT_SCHEMA),
+        tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
         rollout_failures=failures,
     )
 
@@ -143,7 +163,8 @@ def _emit_lot_dispositions(
 
     When the sale supplies an explicit `price_per_unit_usd` that
     price applies uniformly across rollouts; otherwise the price
-    comes from the market bundle's per-rollout per-month curve."""
+    comes from the exogenous trajectory bundle's per-rollout
+    per-month curve."""
     sales = [s for s in scenario.scheduled_asset_sales if s.month == month]
     if not sales:
         return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
@@ -413,41 +434,175 @@ def _is_year_end(month: int) -> bool:
     return month % 12 == 11
 
 
-def _emit_tax_payment_transfers(tax_accruals: pl.DataFrame, profiles: list[TaxProfile]) -> pl.DataFrame:
-    """Mirror each year-end tax accrual into a payment transfer
-    from the taxed agent's `payment_account_id` to the configured
-    tax authority. Combined with the accrual itself this means the
-    full year's tax is paid in one go at year-end; quarterly +
-    true-up timing is deferred to a later step.
+def _emit_tax_payment_events(*, state: StateCrossSection, profiles: list[TaxProfile], month: int) -> _TaxPaymentEvents:
+    """Emit estimated-tax cash transfers and liability settlements.
 
-    A tax-payment transfer is just like any other mandatory cash
-    outflow (rent today; later mortgage payments): if the cash
-    isn't there, phase-2's floor-triggered sale tries to cover and
-    the rollout-failure detector fires when even that fails."""
-    blocks: list[pl.DataFrame] = []
+    Q1/Q2/Q3 estimates are cash payments only: the tax liability for
+    that tax year does not exist yet. The following January emits the
+    Q4/true-up cash transfers and a tax-settlement event that applies
+    the full year's paid tax against the already-accrued liability.
+    """
+    if not profiles:
+        return _empty_tax_payment_events()
+    transfer_blocks: list[pl.DataFrame] = []
+    settlement_blocks: list[pl.DataFrame] = []
+    quarter = _estimated_tax_quarter(month)
     for profile in profiles:
-        agent_accruals = tax_accruals.filter(pl.col("agent_id") == profile.agent_id)
-        if agent_accruals.is_empty():
-            continue
-        blocks.append(
-            agent_accruals.select(
-                pl.col("rollout_index"),
-                pl.col("month_index"),
-                (pl.col("cause_id") + pl.lit("_payment")).alias("cause_id"),
-                pl.lit(profile.agent_id, dtype=pl.Utf8()).alias("from_agent_id"),
-                pl.lit(profile.payment_account_id, dtype=pl.Utf8()).alias("from_account_id"),
-                pl.lit(profile.tax_authority_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
-                pl.lit(profile.tax_authority_account_id, dtype=pl.Utf8()).alias("to_account_id"),
-                pl.col("amount_usd"),
-                pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
+        if quarter in {1, 2, 3}:
+            amount = profile.prior_year_tax_usd / 4.0
+            if amount <= 0:
+                continue
+            amounts = state.rollout_status.select("rollout_index").with_columns(
+                pl.lit(amount, dtype=pl.Float64()).alias("amount_usd")
             )
+            tax_year = month // 12
+            transfer_blocks.append(
+                _tax_payment_transfer_block(
+                    amounts=amounts,
+                    profile=profile,
+                    month=month,
+                    cause_id=f"{profile.agent_id}_estimated_tax_q{quarter}_y{tax_year}",
+                )
+            )
+        elif quarter == 4:
+            tax_year = month // 12 - 1
+            if tax_year < 0:
+                continue
+            final_events = _final_estimated_and_true_up_events(
+                state=state, profile=profile, month=month, tax_year=tax_year
+            )
+            transfer_blocks.append(final_events.transfers)
+            settlement_blocks.append(final_events.settlements)
+    return _TaxPaymentEvents(
+        transfers=concat_event_frames(transfer_blocks, TRANSFER_EVENT_SCHEMA),
+        settlements=concat_event_frames(settlement_blocks, TAX_SETTLEMENT_EVENT_SCHEMA),
+    )
+
+
+def _empty_tax_payment_events() -> _TaxPaymentEvents:
+    return _TaxPaymentEvents(
+        transfers=pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA),
+        settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+    )
+
+
+def _estimated_tax_quarter(month: int) -> int | None:
+    """Calendar-month markers in a zero-based monthly simulation.
+
+    Month 0 is January. Estimated payments are emitted in April,
+    June, September, and the following January."""
+    month_in_year = month % 12
+    if month_in_year == 3:
+        return 1
+    if month_in_year == 5:
+        return 2
+    if month_in_year == 8:
+        return 3
+    if month_in_year == 0 and month > 0:
+        return 4
+    return None
+
+
+def _final_estimated_and_true_up_events(
+    *, state: StateCrossSection, profile: TaxProfile, month: int, tax_year: int
+) -> _TaxPaymentEvents:
+    """Return Q4 estimated, true-up, and settlement events.
+
+    `prior_year_tax_usd` is the aggregate safe-harbor target for
+    the profile. Year-end accruals remain per jurisdiction; the cash
+    payment is aggregate, and the settlement applies against all
+    outstanding jurisdiction rows for the same tax year."""
+    actual = _actual_tax_by_rollout(state.tax_liabilities, profile=profile, tax_year=tax_year)
+    if actual.is_empty():
+        return _empty_tax_payment_events()
+    safe_harbor_total = pl.min_horizontal(
+        pl.lit(profile.prior_year_tax_usd, dtype=pl.Float64()), pl.col("_actual_tax_usd")
+    )
+    paid_before_q4 = profile.prior_year_tax_usd * 0.75
+    payments = actual.with_columns(
+        _q4_amount_usd=pl.max_horizontal(pl.lit(0.0), safe_harbor_total - pl.lit(paid_before_q4)),
+        _true_up_amount_usd=pl.max_horizontal(pl.lit(0.0), pl.col("_actual_tax_usd") - safe_harbor_total),
+    )
+    q4 = payments.select("rollout_index", pl.col("_q4_amount_usd").alias("amount_usd"))
+    true_up = payments.select("rollout_index", pl.col("_true_up_amount_usd").alias("amount_usd"))
+    settlement = payments.select("rollout_index", pl.col("_actual_tax_usd").alias("amount_usd"))
+    return _TaxPaymentEvents(
+        transfers=concat_event_frames(
+            [
+                _tax_payment_transfer_block(
+                    amounts=q4,
+                    profile=profile,
+                    month=month,
+                    cause_id=f"{profile.agent_id}_estimated_tax_q4_y{tax_year}",
+                ),
+                _tax_payment_transfer_block(
+                    amounts=true_up,
+                    profile=profile,
+                    month=month,
+                    cause_id=f"{profile.agent_id}_tax_true_up_y{tax_year}",
+                ),
+            ],
+            TRANSFER_EVENT_SCHEMA,
+        ),
+        settlements=_tax_settlement_block(
+            amounts=settlement,
+            profile=profile,
+            month=month,
+            tax_year=tax_year,
+            cause_id=f"{profile.agent_id}_tax_settlement_y{tax_year}",
+        ),
+    )
+
+
+def _actual_tax_by_rollout(tax_liabilities: pl.DataFrame, *, profile: TaxProfile, tax_year: int) -> pl.DataFrame:
+    """Sum year-end tax accruals across jurisdictions for one profile."""
+    tax_year_end_month = tax_year * 12 + 11
+    return (
+        tax_liabilities.filter(
+            (pl.col("agent_id") == profile.agent_id) & (pl.col("tax_year_end_month") == tax_year_end_month)
         )
-    if not blocks:
-        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
-    return pl.concat(blocks).select(list(TRANSFER_EVENT_SCHEMA.keys()))
+        .group_by("rollout_index")
+        .agg(pl.col("amount_owed_usd").sum().alias("_actual_tax_usd"))
+    )
 
 
-def _emit_year_end_tax_accruals(
+def _tax_payment_transfer_block(
+    *, amounts: pl.DataFrame, profile: TaxProfile, month: int, cause_id: str
+) -> pl.DataFrame:
+    """Project per-rollout tax payment amounts into transfer rows."""
+    return (
+        amounts.filter(pl.col("amount_usd") > 0)
+        .with_columns(
+            pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+            pl.lit(cause_id, dtype=pl.Utf8()).alias("cause_id"),
+            pl.lit(profile.agent_id, dtype=pl.Utf8()).alias("from_agent_id"),
+            pl.lit(profile.payment_account_id, dtype=pl.Utf8()).alias("from_account_id"),
+            pl.lit(profile.tax_authority_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
+            pl.lit(profile.tax_authority_account_id, dtype=pl.Utf8()).alias("to_account_id"),
+            pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
+        )
+        .select(list(TRANSFER_EVENT_SCHEMA.keys()))
+    )
+
+
+def _tax_settlement_block(
+    *, amounts: pl.DataFrame, profile: TaxProfile, month: int, tax_year: int, cause_id: str
+) -> pl.DataFrame:
+    """Project per-rollout settlement amounts into liability rows."""
+    tax_year_end_month = tax_year * 12 + 11
+    return (
+        amounts.filter(pl.col("amount_usd") > 0)
+        .with_columns(
+            pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+            pl.lit(cause_id, dtype=pl.Utf8()).alias("cause_id"),
+            pl.lit(profile.agent_id, dtype=pl.Utf8()).alias("agent_id"),
+            pl.lit(tax_year_end_month, dtype=pl.Int64()).alias("tax_year_end_month"),
+        )
+        .select(list(TAX_SETTLEMENT_EVENT_SCHEMA.keys()))
+    )
+
+
+def _emit_year_end_tax_events(
     *,
     state: StateCrossSection,
     scenario: Scenario,
@@ -455,25 +610,35 @@ def _emit_year_end_tax_accruals(
     month: int,
     transfers: pl.DataFrame,
     dispositions: pl.DataFrame,
-) -> pl.DataFrame:
-    """At year-end emit one `tax_accrual` row per (taxed agent,
-    jurisdiction, rollout). Federal tax = ordinary_bracket_walk
-    (ordinary_income + STCG  - std_ded) + LTCG_bracket_walk(LTCG
-    stacked above ordinary_taxable). California tax = ordinary
-    bracket walk on (ordinary_income + LTCG + STCG  - std_ded) —
-    CA does not have a separate LTCG schedule.
+) -> _TaxYearEvents:
+    """At year-end emit tax accruals plus audit breakdown rows.
+
+    Federal tax = ordinary_bracket_walk (ordinary_income + STCG -
+    std_ded) + LTCG_bracket_walk(LTCG stacked above
+    ordinary_taxable). California tax = ordinary bracket walk on
+    (ordinary_income + LTCG + STCG - std_ded) because CA does not
+    have a separate LTCG schedule.
 
     Like ordinary income, capital gains are summed as `state YTD +
     this-month's dispositions` since `apply_events` will produce
     that same YTD before the year closes."""
     if not _is_year_end(month) or not scenario.tax_profiles:
-        return pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA)
+        return _empty_tax_year_events()
     eoy = _compute_end_of_year_taxable_components(state, transfers, dispositions, scenario.tax_profiles, month)
-    blocks = [_tax_accruals_for_profile(profile, eoy, jurisdictions, month) for profile in scenario.tax_profiles]
-    blocks = [b for b in blocks if not b.is_empty()]
-    if not blocks:
-        return pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA)
-    return pl.concat(blocks).select(list(TAX_ACCRUAL_EVENT_SCHEMA.keys()))
+    events = [_tax_events_for_profile(profile, eoy, jurisdictions, month) for profile in scenario.tax_profiles]
+    accrual_blocks = [event.accruals for event in events]
+    breakdown_blocks = [event.breakdowns for event in events]
+    return _TaxYearEvents(
+        accruals=concat_event_frames(accrual_blocks, TAX_ACCRUAL_EVENT_SCHEMA),
+        breakdowns=concat_event_frames(breakdown_blocks, TAX_BREAKDOWN_EVENT_SCHEMA),
+    )
+
+
+def _empty_tax_year_events() -> _TaxYearEvents:
+    return _TaxYearEvents(
+        accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
+        breakdowns=pl.DataFrame(schema=TAX_BREAKDOWN_EVENT_SCHEMA),
+    )
 
 
 def _compute_end_of_year_taxable_components(
@@ -532,21 +697,19 @@ def _compute_end_of_year_taxable_components(
     )
 
 
-def _tax_accruals_for_profile(
+def _tax_events_for_profile(
     profile: TaxProfile, eoy: pl.DataFrame, jurisdictions: dict[str, Jurisdiction], month: int
-) -> pl.DataFrame:
-    """Compute one row per jurisdiction in the profile. Federal vs
-    California is distinguished by whether the jurisdiction has its
-    own LTCG schedule: federal stacks LTCG above ordinary+STCG;
-    California flattens everything into ordinary brackets."""
+) -> _TaxYearEvents:
+    """Compute accrual and breakdown rows for one tax profile."""
     eoy_rows = eoy.filter(pl.col("agent_id") == profile.agent_id).sort("rollout_index")
     if eoy_rows.is_empty():
-        return pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA)
+        return _empty_tax_year_events()
     rollout_idx = eoy_rows.get_column("rollout_index").to_numpy()
     ordinary = eoy_rows.get_column("ordinary_income_usd").to_numpy()
     ltcg = eoy_rows.get_column("ltcg_usd").to_numpy()
     stcg = eoy_rows.get_column("stcg_usd").to_numpy()
-    blocks = []
+    accrual_blocks = []
+    breakdown_blocks = []
     for jurisdiction_id in profile.jurisdiction_ids:
         jurisdiction = jurisdictions[jurisdiction_id]
         deduction = jurisdiction.standard_deduction[profile.filing_status]
@@ -554,14 +717,18 @@ def _tax_accruals_for_profile(
         if jurisdiction.ltcg_brackets is not None:
             ltcg_brackets = jurisdiction.ltcg_brackets[profile.filing_status]
             ordinary_taxable = np.maximum(ordinary + stcg - deduction, 0.0)
-            tax = apply_brackets(ordinary_taxable, ord_brackets) + apply_ltcg_brackets(
-                ltcg, ordinary_taxable, ltcg_brackets
-            )
+            capital_gain_taxable = ltcg
+            ordinary_tax = apply_brackets(ordinary_taxable, ord_brackets)
+            capital_gain_tax = apply_ltcg_brackets(ltcg, ordinary_taxable, ltcg_brackets)
+            tax = ordinary_tax + capital_gain_tax
         else:
-            total_taxable = np.maximum(ordinary + ltcg + stcg - deduction, 0.0)
-            tax = apply_brackets(total_taxable, ord_brackets)
+            ordinary_taxable = np.maximum(ordinary + ltcg + stcg - deduction, 0.0)
+            capital_gain_taxable = np.zeros_like(ordinary)
+            ordinary_tax = apply_brackets(ordinary_taxable, ord_brackets)
+            capital_gain_tax = np.zeros_like(ordinary)
+            tax = ordinary_tax
         cause_id = f"{profile.agent_id}_{jurisdiction_id}_year_end_accrual_m{month}"
-        blocks.append(
+        accrual_blocks.append(
             pl.DataFrame(
                 {
                     "rollout_index": rollout_idx,
@@ -575,4 +742,29 @@ def _tax_accruals_for_profile(
                 schema=TAX_ACCRUAL_EVENT_SCHEMA,
             )
         )
-    return pl.concat(blocks)
+        breakdown_blocks.append(
+            pl.DataFrame(
+                {
+                    "rollout_index": rollout_idx,
+                    "month_index": np.full_like(rollout_idx, month),
+                    "cause_id": [cause_id] * len(rollout_idx),
+                    "agent_id": [profile.agent_id] * len(rollout_idx),
+                    "jurisdiction_id": [jurisdiction_id] * len(rollout_idx),
+                    "tax_year_end_month": np.full_like(rollout_idx, month),
+                    "ordinary_income_usd": ordinary,
+                    "ltcg_usd": ltcg,
+                    "stcg_usd": stcg,
+                    "standard_deduction_usd": np.full(len(rollout_idx), deduction, dtype=float),
+                    "ordinary_taxable_usd": ordinary_taxable,
+                    "capital_gain_taxable_usd": capital_gain_taxable,
+                    "ordinary_tax_usd": ordinary_tax,
+                    "capital_gain_tax_usd": capital_gain_tax,
+                    "total_tax_usd": tax,
+                },
+                schema=TAX_BREAKDOWN_EVENT_SCHEMA,
+            )
+        )
+    return _TaxYearEvents(
+        accruals=pl.concat(accrual_blocks).select(list(TAX_ACCRUAL_EVENT_SCHEMA.keys())),
+        breakdowns=pl.concat(breakdown_blocks).select(list(TAX_BREAKDOWN_EVENT_SCHEMA.keys())),
+    )

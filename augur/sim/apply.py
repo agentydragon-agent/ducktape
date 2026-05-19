@@ -44,6 +44,7 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
     cash_balances = _apply_transfers(cash_balances, events.transfers)
     ordinary_income_ytd = _apply_income_to_ytd(state.ordinary_income_ytd, events.transfers)
     tax_liabilities = _apply_tax_accruals_to_liabilities(state.tax_liabilities, events.tax_accruals)
+    tax_liabilities = _apply_tax_settlements_to_liabilities(tax_liabilities, events.tax_settlements)
     ordinary_income_ytd = _reset_ytd_for_taxed_agents(ordinary_income_ytd, events.tax_accruals)
     capital_gains_ytd = _reset_capital_gains_for_taxed_agents(capital_gains_ytd, events.tax_accruals)
     rollout_status = _apply_rollout_failures(state.rollout_status, events.rollout_failures)
@@ -151,8 +152,8 @@ def _apply_lot_dispositions_to_cash(cash_balances: pl.DataFrame, dispositions: p
 
 def _apply_tax_accruals_to_liabilities(tax_liabilities: pl.DataFrame, tax_accruals: pl.DataFrame) -> pl.DataFrame:
     """Append each accrual as a new liability row. Liabilities are
-    additive — paying them down is a later concern that reduces
-    `amount_owed_usd` via tax-payment events."""
+    additive until a later tax-settlement event reduces
+    `amount_owed_usd`."""
     new_rows = tax_accruals.select(
         pl.col("rollout_index"),
         pl.col("agent_id"),
@@ -161,6 +162,41 @@ def _apply_tax_accruals_to_liabilities(tax_liabilities: pl.DataFrame, tax_accrua
         pl.col("amount_usd").alias("amount_owed_usd"),
     )
     return pl.concat([tax_liabilities, new_rows])
+
+
+def _apply_tax_settlements_to_liabilities(tax_liabilities: pl.DataFrame, tax_settlements: pl.DataFrame) -> pl.DataFrame:
+    """Reduce outstanding tax liabilities by settlement events.
+
+    Settlements are keyed by (rollout, agent, tax year). Current
+    estimated-tax payments are aggregate across jurisdictions, so if
+    a partial settlement is ever applied to a multi-jurisdiction
+    liability, it is allocated proportionally by each jurisdiction's
+    outstanding amount. Full settlements zero every jurisdiction row.
+    """
+    if tax_liabilities.is_empty() or tax_settlements.is_empty():
+        return tax_liabilities
+    keys = ["rollout_index", "agent_id", "tax_year_end_month"]
+    outstanding = tax_liabilities.group_by(keys).agg(pl.col("amount_owed_usd").sum().alias("_outstanding_usd"))
+    settlements = tax_settlements.group_by(keys).agg(pl.col("amount_usd").sum().alias("_settlement_usd"))
+    return (
+        tax_liabilities.join(outstanding, on=keys, how="left")
+        .join(settlements, on=keys, how="left")
+        .with_columns(
+            _settlement_usd=pl.col("_settlement_usd").fill_null(0.0),
+            _settled_usd=pl.when((pl.col("_outstanding_usd") > 0) & (pl.col("_settlement_usd") > 0))
+            .then(
+                pl.min_horizontal(
+                    pl.col("amount_owed_usd"),
+                    pl.col("amount_owed_usd") / pl.col("_outstanding_usd") * pl.col("_settlement_usd"),
+                )
+            )
+            .otherwise(0.0),
+        )
+        .with_columns(
+            amount_owed_usd=pl.max_horizontal(pl.lit(0.0), pl.col("amount_owed_usd") - pl.col("_settled_usd"))
+        )
+        .drop(["_outstanding_usd", "_settlement_usd", "_settled_usd"])
+    )
 
 
 def _apply_dispositions_to_capital_gains_ytd(

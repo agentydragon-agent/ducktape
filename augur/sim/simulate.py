@@ -25,7 +25,17 @@ from __future__ import annotations
 import polars as pl
 
 from augur.sim.apply import apply_events
-from augur.sim.events import EventLog
+from augur.sim.events import (
+    ASSET_PURCHASE_EVENT_SCHEMA,
+    LOT_DISPOSITION_EVENT_SCHEMA,
+    ROLLOUT_FAILURE_EVENT_SCHEMA,
+    TAX_ACCRUAL_EVENT_SCHEMA,
+    TAX_BREAKDOWN_EVENT_SCHEMA,
+    TAX_SETTLEMENT_EVENT_SCHEMA,
+    TRANSFER_EVENT_SCHEMA,
+    EventLog,
+    concat_event_frames,
+)
 from augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from augur.sim.market import materialize_market
 from augur.sim.run import SimulationRun
@@ -73,6 +83,7 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
         ordinary_income_ytd=_stack_income_ytd(cross_sections),
         capital_gains_ytd=_stack_capital_gains(cross_sections),
         tax_liabilities=_stack_tax_liabilities(cross_sections),
+        rollout_status_history=_stack_rollout_status(cross_sections),
         rollout_status=cross_sections[-1].rollout_status,
         market_prices=market.prices,
         events_log=_concat_events(events_by_month),
@@ -229,26 +240,25 @@ def _stack_tax_liabilities(cross_sections: list[StateCrossSection]) -> pl.DataFr
     )
 
 
+def _stack_rollout_status(cross_sections: list[StateCrossSection]) -> pl.DataFrame:
+    blocks = [
+        cs.rollout_status.with_columns(pl.lit(month, dtype=pl.Int64()).alias("month_index"))
+        for month, cs in enumerate(cross_sections)
+    ]
+    return pl.concat(blocks).select(["rollout_index", "month_index", "status", "failed_month"])
+
+
 def _merge_event_logs(a: EventLog, b: EventLog) -> EventLog:
     """Concatenate two per-phase logs into one per-month log."""
     return EventLog(
-        transfers=_concat_or_empty(a.transfers, b.transfers),
-        asset_purchases=_concat_or_empty(a.asset_purchases, b.asset_purchases),
-        lot_dispositions=_concat_or_empty(a.lot_dispositions, b.lot_dispositions),
-        tax_accruals=_concat_or_empty(a.tax_accruals, b.tax_accruals),
-        rollout_failures=_concat_or_empty(a.rollout_failures, b.rollout_failures),
+        transfers=concat_event_frames([a.transfers, b.transfers], TRANSFER_EVENT_SCHEMA),
+        asset_purchases=concat_event_frames([a.asset_purchases, b.asset_purchases], ASSET_PURCHASE_EVENT_SCHEMA),
+        lot_dispositions=concat_event_frames([a.lot_dispositions, b.lot_dispositions], LOT_DISPOSITION_EVENT_SCHEMA),
+        tax_accruals=concat_event_frames([a.tax_accruals, b.tax_accruals], TAX_ACCRUAL_EVENT_SCHEMA),
+        tax_breakdowns=concat_event_frames([a.tax_breakdowns, b.tax_breakdowns], TAX_BREAKDOWN_EVENT_SCHEMA),
+        tax_settlements=concat_event_frames([a.tax_settlements, b.tax_settlements], TAX_SETTLEMENT_EVENT_SCHEMA),
+        rollout_failures=concat_event_frames([a.rollout_failures, b.rollout_failures], ROLLOUT_FAILURE_EVENT_SCHEMA),
     )
-
-
-def _concat_or_empty(a: pl.DataFrame, b: pl.DataFrame) -> pl.DataFrame:
-    """Concatenate two frames sharing a schema, dropping empties so
-    the result doesn't carry phantom rows when one side has nothing
-    to contribute."""
-    if a.is_empty():
-        return b
-    if b.is_empty():
-        return a
-    return pl.concat([a, b])
 
 
 def _concat_events(events_by_month: list[EventLog]) -> EventLog:
@@ -257,12 +267,15 @@ def _concat_events(events_by_month: list[EventLog]) -> EventLog:
     purchase_blocks = [e.asset_purchases for e in events_by_month if not e.asset_purchases.is_empty()]
     disposition_blocks = [e.lot_dispositions for e in events_by_month if not e.lot_dispositions.is_empty()]
     accrual_blocks = [e.tax_accruals for e in events_by_month if not e.tax_accruals.is_empty()]
+    breakdown_blocks = [e.tax_breakdowns for e in events_by_month if not e.tax_breakdowns.is_empty()]
+    settlement_blocks = [e.tax_settlements for e in events_by_month if not e.tax_settlements.is_empty()]
     failure_blocks = [e.rollout_failures for e in events_by_month if not e.rollout_failures.is_empty()]
-    empty = EventLog.empty()
     return EventLog(
-        transfers=pl.concat(transfer_blocks) if transfer_blocks else empty.transfers,
-        asset_purchases=pl.concat(purchase_blocks) if purchase_blocks else empty.asset_purchases,
-        lot_dispositions=pl.concat(disposition_blocks) if disposition_blocks else empty.lot_dispositions,
-        tax_accruals=pl.concat(accrual_blocks) if accrual_blocks else empty.tax_accruals,
-        rollout_failures=pl.concat(failure_blocks) if failure_blocks else empty.rollout_failures,
+        transfers=concat_event_frames(transfer_blocks, TRANSFER_EVENT_SCHEMA),
+        asset_purchases=concat_event_frames(purchase_blocks, ASSET_PURCHASE_EVENT_SCHEMA),
+        lot_dispositions=concat_event_frames(disposition_blocks, LOT_DISPOSITION_EVENT_SCHEMA),
+        tax_accruals=concat_event_frames(accrual_blocks, TAX_ACCRUAL_EVENT_SCHEMA),
+        tax_breakdowns=concat_event_frames(breakdown_blocks, TAX_BREAKDOWN_EVENT_SCHEMA),
+        tax_settlements=concat_event_frames(settlement_blocks, TAX_SETTLEMENT_EVENT_SCHEMA),
+        rollout_failures=concat_event_frames(failure_blocks, ROLLOUT_FAILURE_EVENT_SCHEMA),
     )

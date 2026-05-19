@@ -8,12 +8,14 @@ specific columns.
 
 At spike 1 step 4: `transfers`, `asset_purchases`, and
 `lot_dispositions` are populated. Later layers add tax accruals +
-payments, mortgage payments, obligation accruals + settlements,
-occupancy-mode changes, depreciation accruals, failure events, etc.
+payments, tax settlements, mortgage payments, obligation accruals +
+settlements, occupancy-mode changes, depreciation accruals, failure
+events, etc.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import polars as pl
@@ -32,6 +34,17 @@ TRANSFER_EVENT_SCHEMA: dict[str, pl.DataType] = {
     # Null for non-income transfers (e.g. expense payments).
     "income_category": pl.Utf8(),
 }
+
+
+def concat_event_frames(frames: Iterable[pl.DataFrame], schema: dict[str, pl.DataType]) -> pl.DataFrame:
+    """Concatenate event frames while preserving the typed empty case.
+
+    Empty event streams are common. Prefixing a schema-only frame
+    makes the empty and non-empty cases use the same code path.
+    """
+    non_empty = [frame for frame in frames if not frame.is_empty()]
+    return pl.concat([pl.DataFrame(schema=schema), *non_empty]).select(list(schema.keys()))
+
 
 # `AssetPurchase` records the creation of a new tax lot — either an
 # initial holding seeded at scenario start, or (later) an in-sim buy.
@@ -62,6 +75,39 @@ TAX_ACCRUAL_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "cause_id": pl.Utf8(),
     "agent_id": pl.Utf8(),
     "jurisdiction_id": pl.Utf8(),
+    "tax_year_end_month": pl.Int64(),
+    "amount_usd": pl.Float64(),
+}
+
+# `TaxBreakdown` records the inputs and component tax amounts behind
+# each year-end accrual. It is audit/output only; `apply_events` does
+# not mutate state from this frame.
+TAX_BREAKDOWN_EVENT_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "cause_id": pl.Utf8(),
+    "agent_id": pl.Utf8(),
+    "jurisdiction_id": pl.Utf8(),
+    "tax_year_end_month": pl.Int64(),
+    "ordinary_income_usd": pl.Float64(),
+    "ltcg_usd": pl.Float64(),
+    "stcg_usd": pl.Float64(),
+    "standard_deduction_usd": pl.Float64(),
+    "ordinary_taxable_usd": pl.Float64(),
+    "capital_gain_taxable_usd": pl.Float64(),
+    "ordinary_tax_usd": pl.Float64(),
+    "capital_gain_tax_usd": pl.Float64(),
+    "total_tax_usd": pl.Float64(),
+}
+
+# `TaxSettlement` applies paid tax dollars against already-accrued
+# liabilities for an agent and tax year. Cash still moves through
+# Transfer events; this frame is the liability-side settlement.
+TAX_SETTLEMENT_EVENT_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "cause_id": pl.Utf8(),
+    "agent_id": pl.Utf8(),
     "tax_year_end_month": pl.Int64(),
     "amount_usd": pl.Float64(),
 }
@@ -108,6 +154,8 @@ class EventLog:
     asset_purchases: pl.DataFrame
     lot_dispositions: pl.DataFrame
     tax_accruals: pl.DataFrame
+    tax_breakdowns: pl.DataFrame
+    tax_settlements: pl.DataFrame
     rollout_failures: pl.DataFrame
 
     @classmethod
@@ -117,5 +165,7 @@ class EventLog:
             asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
             lot_dispositions=pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA),
             tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
+            tax_breakdowns=pl.DataFrame(schema=TAX_BREAKDOWN_EVENT_SCHEMA),
+            tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
             rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
         )

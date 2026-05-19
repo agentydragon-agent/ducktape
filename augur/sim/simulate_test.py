@@ -848,6 +848,11 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     assert accruals_by_jurisdiction["california"]["amount_usd"] == pytest.approx(14754.09, abs=0.02)
     assert accruals_by_jurisdiction["federal_us"]["month_index"] == 11
     assert accruals_by_jurisdiction["federal_us"]["tax_year_end_month"] == 11
+    breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
+    assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(200_000.0, abs=1e-6)
+    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(185_400.0, abs=1e-6)
+    assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(37_538.50, abs=0.01)
+    assert breakdowns["federal_us"]["total_tax_usd"] == pytest.approx(37_538.50, abs=0.01)
 
     # tax_liabilities at end-of-horizon has two rows (one per
     # jurisdiction) with matching amounts.
@@ -939,6 +944,13 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
     assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.25, abs=0.01)
     assert accruals["california"]["amount_usd"] == pytest.approx(2712.36, abs=0.01)
+    breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
+    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(35_400.0, abs=1e-6)
+    assert breakdowns["federal_us"]["capital_gain_taxable_usd"] == pytest.approx(20_000.0, abs=1e-6)
+    assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(4_016.0, abs=0.01)
+    assert breakdowns["federal_us"]["capital_gain_tax_usd"] == pytest.approx(1_256.25, abs=0.01)
+    assert breakdowns["california"]["ordinary_taxable_usd"] == pytest.approx(64_637.0, abs=1e-6)
+    assert breakdowns["california"]["capital_gain_tax_usd"] == 0.0
 
     # YTD captured the LTCG ($20k) before year-end reset.
     cg_at_month_11 = result.capital_gains_ytd.filter((pl.col("month_index") == 11) & (pl.col("agent_id") == "alice"))
@@ -946,6 +958,314 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     row = cg_at_month_11.row(0, named=True)
     assert row["classification"] == "ltcg"
     assert row["gain_usd"] == pytest.approx(20_000.0, abs=1e-6)
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
+    """Pinned deterministic e2e: wages + a long-held asset sale +
+    federal/CA year tax + estimated-tax safe harbor + true-up.
+
+    Alice earns $50k, sells a long-held VTI lot for $28k proceeds
+    and $20k gain, and has $4k of prior-year tax. The safe-harbor
+    quarterlies pay $1k at months 3/5/8/12; the month-12 true-up
+    pays the remaining $3,984.61. Ending cash is:
+
+      1000 + 50000 + 28000 - 7984.61 = 71015.39.
+    """
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_long_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=100.0,
+                cost_basis_per_unit_usd=80.0,
+            )
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=50_000.0 / 12.0,
+                income_category="ordinary",
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=6,
+                cause_id="alice_long_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=100.0,
+                price_per_unit_usd=280.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        tax_profiles=[
+            TaxProfile(
+                agent_id="alice",
+                filing_status="single",
+                jurisdiction_ids=["federal_us", "california"],
+                tax_authority_agent_id="irs",
+                prior_year_tax_usd=4_000.0,
+            )
+        ],
+        horizon_months=13,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
+    assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.25, abs=0.01)
+    assert accruals["california"]["amount_usd"] == pytest.approx(2712.36, abs=0.01)
+
+    tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax")).sort(
+        ["month_index", "cause_id"]
+    )
+    assert tax_payments.select("month_index", "cause_id", "amount_usd").to_dicts() == [
+        {"month_index": 3, "cause_id": "alice_estimated_tax_q1_y0", "amount_usd": pytest.approx(1_000.0)},
+        {"month_index": 5, "cause_id": "alice_estimated_tax_q2_y0", "amount_usd": pytest.approx(1_000.0)},
+        {"month_index": 8, "cause_id": "alice_estimated_tax_q3_y0", "amount_usd": pytest.approx(1_000.0)},
+        {"month_index": 12, "cause_id": "alice_estimated_tax_q4_y0", "amount_usd": pytest.approx(1_000.0)},
+        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_usd": pytest.approx(3_984.61, abs=0.02)},
+    ]
+    assert tax_payments.get_column("amount_usd").sum() == pytest.approx(7_984.61, abs=0.02)
+
+    tax_settlement = result.events_log.tax_settlements.row(0, named=True)
+    assert tax_settlement["month_index"] == 12
+    assert tax_settlement["tax_year_end_month"] == 11
+    assert tax_settlement["amount_usd"] == pytest.approx(7_984.61, abs=0.02)
+    liabilities_due = result.tax_liabilities.filter(pl.col("month_index") == 12).get_column("amount_owed_usd").sum()
+    assert liabilities_due == pytest.approx(7_984.61, abs=0.02)
+    liabilities_settled = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
+    assert liabilities_settled == pytest.approx(0.0, abs=1e-6)
+
+    final_cash = (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert final_cash == pytest.approx(71_015.39, abs=0.02)
+
+    final_lot = result.asset_lots.filter((pl.col("lot_id") == "alice_long_vti") & (pl.col("month_index") == 13))
+    assert final_lot.get_column("remaining_quantity").item() == 0.0
+
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
+    """Pinned tax aggregation e2e: wages plus two asset sales.
+
+    Alice earns $50k, sells one long-held lot for $10k LTCG and one
+    short-held lot for $1.5k STCG. Federal ordinary taxable income is
+    50000 + 1500 - 14600 = 36900, producing $4,196 ordinary tax. The
+    $10k LTCG still fits under the 0% LTCG bracket after stacking, so
+    capital-gain tax is $0.
+    """
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_long_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=100.0,
+                cost_basis_per_unit_usd=100.0,
+            ),
+            InitialLot(
+                lot_id="alice_short_ixus",
+                agent_id="alice",
+                asset_id="ixus",
+                purchase_month_index=0,
+                quantity=10.0,
+                cost_basis_per_unit_usd=50.0,
+            ),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=50_000.0 / 12.0,
+                income_category="ordinary",
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=6,
+                cause_id="alice_long_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=100.0,
+                price_per_unit_usd=200.0,
+                proceeds_account_id="checking",
+            ),
+            ScheduledAssetSale(
+                month=6,
+                cause_id="alice_short_sale",
+                agent_id="alice",
+                asset_id="ixus",
+                quantity=10.0,
+                price_per_unit_usd=200.0,
+                proceeds_account_id="checking",
+            ),
+        ],
+        tax_profiles=[
+            TaxProfile(
+                agent_id="alice", filing_status="single", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs"
+            )
+        ],
+        horizon_months=12,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    accrual = result.events_log.tax_accruals.row(0, named=True)
+    assert accrual["amount_usd"] == pytest.approx(4_196.0, abs=0.01)
+    breakdown = result.events_log.tax_breakdowns.row(0, named=True)
+    assert breakdown["ordinary_income_usd"] == pytest.approx(50_000.0, abs=1e-6)
+    assert breakdown["ltcg_usd"] == pytest.approx(10_000.0, abs=1e-6)
+    assert breakdown["stcg_usd"] == pytest.approx(1_500.0, abs=1e-6)
+    assert breakdown["ordinary_taxable_usd"] == pytest.approx(36_900.0, abs=1e-6)
+    assert breakdown["ordinary_tax_usd"] == pytest.approx(4_196.0, abs=0.01)
+    assert breakdown["capital_gain_tax_usd"] == pytest.approx(0.0, abs=1e-6)
+
+    gains = {
+        row["classification"]: row["gain_usd"]
+        for row in result.capital_gains_ytd.filter((pl.col("month_index") == 11) & (pl.col("agent_id") == "alice"))
+        .sort("classification")
+        .iter_rows(named=True)
+    }
+    assert gains == {"ltcg": pytest.approx(10_000.0), "stcg": pytest.approx(1_500.0)}
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() -> None:
+    """Pinned obligation e2e: taxes are due-now outflows.
+
+    Alice earns $50k and spends every paycheck on rent, so estimated
+    taxes must be funded by selling VTI. Federal tax is $4,016.
+    Prior-year safe harbor is $2,000: three $500 estimates in April,
+    June, September; then January Q4 $500 plus $2,016 true-up.
+    """
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="landlord"), Agent(agent_id="irs")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti_seed",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=100.0,
+                cost_basis_per_unit_usd=100.0,
+            )
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=50_000.0 / 12.0,
+                income_category="ordinary",
+            ),
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_rent",
+                from_agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_usd=50_000.0 / 12.0,
+            ),
+        ],
+        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0] * 14)]),
+        tax_profiles=[
+            TaxProfile(
+                agent_id="alice",
+                filing_status="single",
+                jurisdiction_ids=["federal_us"],
+                tax_authority_agent_id="irs",
+                prior_year_tax_usd=2_000.0,
+            )
+        ],
+        floor_triggered_sale_policies=[
+            FloorTriggeredSalePolicy(
+                agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=["vti"]
+            )
+        ],
+        horizon_months=13,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax")).sort(
+        ["month_index", "cause_id"]
+    )
+    assert tax_payments.select("month_index", "cause_id", "amount_usd").to_dicts() == [
+        {"month_index": 3, "cause_id": "alice_estimated_tax_q1_y0", "amount_usd": pytest.approx(500.0)},
+        {"month_index": 5, "cause_id": "alice_estimated_tax_q2_y0", "amount_usd": pytest.approx(500.0)},
+        {"month_index": 8, "cause_id": "alice_estimated_tax_q3_y0", "amount_usd": pytest.approx(500.0)},
+        {"month_index": 12, "cause_id": "alice_estimated_tax_q4_y0", "amount_usd": pytest.approx(500.0)},
+        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_usd": pytest.approx(2_016.0)},
+    ]
+    assert result.events_log.tax_settlements.get_column("amount_usd").sum() == pytest.approx(4_016.0, abs=0.01)
+
+    policy_sales = result.events_log.lot_dispositions.filter(pl.col("cause_id").str.starts_with("floor_triggered"))
+    assert policy_sales.sort("month_index").select("month_index", "units_sold", "proceeds_usd").to_dicts() == [
+        {"month_index": 3, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
+        {"month_index": 5, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
+        {"month_index": 8, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
+        {"month_index": 12, "units_sold": pytest.approx(25.16), "proceeds_usd": pytest.approx(2_516.0)},
+    ]
+
+    final_cash = (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert final_cash == pytest.approx(0.0, abs=1e-6)
+    remaining_vti = (
+        result.asset_lots.filter((pl.col("lot_id") == "alice_vti_seed") & (pl.col("month_index") == 13))
+        .get_column("remaining_quantity")
+        .item()
+    )
+    assert remaining_vti == pytest.approx(59.84, abs=1e-6)
+    final_due = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
+    assert final_due == pytest.approx(0.0, abs=1e-6)
+    assert result.rollout_status.row(0, named=True)["status"] == "active"
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
@@ -979,12 +1299,10 @@ def test_no_tax_profile_means_no_year_end_accrual() -> None:
 
 
 def test_year_end_tax_payment_debits_agent_cash() -> None:
-    """The year-end tax accrual is mirrored into a transfer event
-    from the taxed agent's checking to the tax authority. Alice
-    earns $200k of W-2 income across year 0; at month 11 the
-    engine emits one tax-payment transfer per jurisdiction whose
-    amount matches the accrual. End-of-year cash reflects the
-    payments having gone out."""
+    """The year-end tax accrual is followed by a January true-up
+    payment to the tax authority. Alice earns $200k of W-2 income
+    across year 0; with no prior-year safe-harbor amount configured,
+    the full tax is paid as the month-12 true-up."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
         initial_cash=[
@@ -1013,27 +1331,38 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
                 tax_authority_agent_id="irs",
             )
         ],
-        horizon_months=12,
+        horizon_months=13,
     )
 
     result = simulate(scenario, rollout_count=1)
 
     # Year-end tax: $37538.50 federal + $14754.09 CA = $52292.59.
-    tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("_payment"))
-    assert tax_payments.height == 2
+    tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax"))
+    assert tax_payments.height == 1
     assert tax_payments.get_column("amount_usd").sum() == pytest.approx(52_292.59, abs=0.02)
-    # Tax payments fire at year-end month 11.
-    assert set(tax_payments.get_column("month_index").to_list()) == {11}
+    assert tax_payments.row(0, named=True)["cause_id"] == "alice_tax_true_up_y0"
+    # Tax true-up fires in January after the year-end accrual.
+    assert set(tax_payments.get_column("month_index").to_list()) == {12}
+    assert result.events_log.tax_settlements.height == 1
+    settlement = result.events_log.tax_settlements.row(0, named=True)
+    assert settlement["cause_id"] == "alice_tax_settlement_y0"
+    assert settlement["amount_usd"] == pytest.approx(52_292.59, abs=0.02)
+
+    due_before_payment = result.tax_liabilities.filter(pl.col("month_index") == 12).get_column("amount_owed_usd").sum()
+    assert due_before_payment == pytest.approx(52_292.59, abs=0.02)
+    due_after_payment = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
+    assert due_after_payment == pytest.approx(0.0, abs=1e-6)
+
     # Cash flow: $200k income - $52292.59 tax = $147707.41 at end of horizon.
     alice_end_cash = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 12))
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
         .get_column("balance_usd")
         .item()
     )
     assert alice_end_cash == pytest.approx(200_000.0 - 52_292.59, abs=0.02)
     # The IRS sink accumulates the tax inflows.
     irs_end_cash = (
-        result.cash_balances.filter((pl.col("agent_id") == "irs") & (pl.col("month_index") == 12))
+        result.cash_balances.filter((pl.col("agent_id") == "irs") & (pl.col("month_index") == 13))
         .get_column("balance_usd")
         .item()
     )
@@ -1042,7 +1371,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
 
 
 def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
-    """When the tax-payment transfer at year-end exceeds the
+    """When the tax-payment true-up transfer exceeds the
     agent's cash plus liquidatable assets, the floor-triggered
     sale policy tries to cover, and the rollout-failure detector
     fires when even that fails. The "mandatory obligation that
@@ -1094,15 +1423,15 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
                 asset_preference_chain=[],  # no assets to sell
             )
         ],
-        horizon_months=12,
+        horizon_months=13,
     )
 
     result = simulate(scenario, rollout_count=1)
-    # Alice has $0 cash at year-end (income == rent), no assets,
-    # but the tax bill arrives. Failure event fires at month 11.
+    # Alice has $0 cash after year 0 (income == rent), no assets,
+    # but the tax bill arrives in January. Failure fires at month 12.
     failures = result.events_log.rollout_failures
     assert failures.height == 1
-    assert failures.row(0, named=True)["month_index"] == 11
+    assert failures.row(0, named=True)["month_index"] == 12
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 

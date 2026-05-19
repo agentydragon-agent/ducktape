@@ -149,8 +149,12 @@ class TaxProfile(BaseModel):
     `tax_authority_agent_id` is the destination of tax-payment
     transfers — a bookkeeping sink, not a taxed agent itself.
     `payment_account_id` is the agent's account that the engine
-    debits at year-end; `tax_authority_account_id` is the matching
-    credit account on the authority side."""
+    debits for estimated-tax and true-up payments;
+    `tax_authority_account_id` is the matching credit account on
+    the authority side. `prior_year_tax_usd` is the aggregate
+    safe-harbor target used to size quarterly estimated payments.
+    If left at zero, no quarterly estimates are emitted and the
+    January true-up pays the full accrued tax."""
 
     agent_id: str
     filing_status: str = "single"

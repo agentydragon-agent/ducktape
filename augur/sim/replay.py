@@ -6,10 +6,9 @@ The spike-1 central guarantee:
         apply_events(initial_state, events_log.filter(month <= M))
 
 for every M. `assert_replay_invariant_holds` is the verification of
-this guarantee at the end-of-horizon cross-section: any scenario test
-can drop it in after a successful `simulate()` call to ratify the
-invariant for that scenario, without writing scenario-specific replay
-plumbing.
+this guarantee for every month boundary: any scenario test can drop it
+in after a successful `simulate()` call to ratify the invariant for
+that scenario, without writing scenario-specific replay plumbing.
 
 The helper compares every state frame the engine touches —
 `cash_balances`, `asset_lots`, `ordinary_income_ytd`,
@@ -25,6 +24,7 @@ from __future__ import annotations
 import polars as pl
 
 from augur.sim.apply import apply_events
+from augur.sim.events import EventLog
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import Scenario
 from augur.sim.simulate import _initial_state
@@ -32,61 +32,86 @@ from augur.sim.state import StateCrossSection
 
 
 def assert_replay_invariant_holds(scenario: Scenario, result: SimulationRun, *, rollout_count: int) -> None:
-    """Re-derive the end-state by applying the full event log to a
-    fresh initial state, then check it matches the incremental
-    result frame-by-frame.
+    """Replay month-by-month from a fresh initial state and check
+    every materialized state frame at every month boundary.
 
     The `rollout_count` argument must match the value passed to
     `simulate()` — it's not stored on `SimulationRun` because the
     rollout dimension lives implicitly in every long-form frame."""
-    initial = _initial_state(scenario, rollout_count)
-    replayed = apply_events(initial, result.events_log)
+    replayed = _initial_state(scenario, rollout_count)
     horizon = int(scenario.horizon_months)
+    for month in range(horizon + 1):
+        _check_month(result=result, replayed=replayed, month=month)
+        if month == horizon:
+            break
+        replayed = apply_events(replayed, _events_at_month(result.events_log, month))
+
+
+def _check_month(*, result: SimulationRun, replayed: StateCrossSection, month: int) -> None:
     _check_frame(
-        kind="cash_balances",
-        incremental=_horizon_slice(result.cash_balances, horizon),
+        kind=f"cash_balances/month_{month}",
+        incremental=_month_slice(result.cash_balances, month),
         replayed=replayed.cash_balances,
         sort_keys=["rollout_index", "agent_id", "account_id"],
     )
     _check_frame(
-        kind="asset_lots",
-        incremental=_horizon_slice(result.asset_lots, horizon),
+        kind=f"asset_lots/month_{month}",
+        incremental=_month_slice(result.asset_lots, month),
         replayed=replayed.asset_lots,
         sort_keys=["rollout_index", "lot_id"],
     )
     _check_frame(
-        kind="ordinary_income_ytd",
-        incremental=_horizon_slice(result.ordinary_income_ytd, horizon),
+        kind=f"ordinary_income_ytd/month_{month}",
+        incremental=_month_slice(result.ordinary_income_ytd, month),
         replayed=replayed.ordinary_income_ytd,
         sort_keys=["rollout_index", "agent_id"],
     )
     _check_frame(
-        kind="capital_gains_ytd",
-        incremental=_horizon_slice(result.capital_gains_ytd, horizon),
+        kind=f"capital_gains_ytd/month_{month}",
+        incremental=_month_slice(result.capital_gains_ytd, month),
         replayed=replayed.capital_gains_ytd,
         sort_keys=["rollout_index", "agent_id", "classification"],
     )
     _check_frame(
-        kind="tax_liabilities",
-        incremental=_horizon_slice(result.tax_liabilities, horizon),
+        kind=f"tax_liabilities/month_{month}",
+        incremental=_month_slice(result.tax_liabilities, month),
         replayed=replayed.tax_liabilities,
         sort_keys=["rollout_index", "agent_id", "jurisdiction_id", "tax_year_end_month"],
     )
-    _check_rollout_status(incremental=result.rollout_status, replayed=replayed)
+    _check_frame(
+        kind=f"rollout_status/month_{month}",
+        incremental=_month_slice(result.rollout_status_history, month),
+        replayed=replayed.rollout_status,
+        sort_keys=["rollout_index"],
+    )
 
 
-def _horizon_slice(frame: pl.DataFrame, horizon: int) -> pl.DataFrame:
-    """End-of-horizon cross-section view of a per-month long-form
+def _month_slice(frame: pl.DataFrame, month: int) -> pl.DataFrame:
+    """One-month cross-section view of a per-month long-form
     frame, projected to the schema apply_events produces."""
-    return frame.filter(pl.col("month_index") == horizon).drop("month_index")
+    return frame.filter(pl.col("month_index") == month).drop("month_index")
 
 
-# Cumulative replay sums all months' transfers in one polars group_by;
-# the incremental loop sums per month and accumulates. Float addition
-# is non-associative, so a many-paycheck-plus-tax-payment scenario can
-# land a few ULPs apart on the two paths. Round float columns before
-# `.equals` so the invariant compares values up to nano-cent precision
-# (more than enough for tax accuracy) without flagging FP noise.
+def _events_at_month(events_log: EventLog, month: int) -> EventLog:
+    """Filter each event-kind frame to one simulated month."""
+    return EventLog(
+        transfers=_frame_at_month(events_log.transfers, month),
+        asset_purchases=_frame_at_month(events_log.asset_purchases, month),
+        lot_dispositions=_frame_at_month(events_log.lot_dispositions, month),
+        tax_accruals=_frame_at_month(events_log.tax_accruals, month),
+        tax_breakdowns=_frame_at_month(events_log.tax_breakdowns, month),
+        tax_settlements=_frame_at_month(events_log.tax_settlements, month),
+        rollout_failures=_frame_at_month(events_log.rollout_failures, month),
+    )
+
+
+def _frame_at_month(frame: pl.DataFrame, month: int) -> pl.DataFrame:
+    return frame.filter(pl.col("month_index") == month)
+
+
+# Round float columns before `.equals` so the invariant compares values
+# up to nano-cent precision (more than enough for tax accuracy) without
+# flagging FP noise.
 _FLOAT_COMPARISON_DECIMALS: int = 6
 
 
@@ -104,12 +129,4 @@ def _round_floats(frame: pl.DataFrame) -> pl.DataFrame:
     cumulative apply paths."""
     return frame.with_columns(
         pl.col(name).round(_FLOAT_COMPARISON_DECIMALS) for name, dtype in frame.schema.items() if dtype.is_float()
-    )
-
-
-def _check_rollout_status(*, incremental: pl.DataFrame, replayed: StateCrossSection) -> None:
-    """`rollout_status` is already a single cross-section on
-    `SimulationRun`; no horizon slicing needed."""
-    _check_frame(
-        kind="rollout_status", incremental=incremental, replayed=replayed.rollout_status, sort_keys=["rollout_index"]
     )

@@ -141,10 +141,17 @@ Followups still on the table:
       modeled agreement between agents, not a scenario-level enum that activates a
       hardcoded partner-ownership hack. The exact representation still needs design.
 - [ ] Separate rollout stochastic inputs in the API/data model. Today a rollout
-      is effectively a sampled market environment plus deterministic policy. Make
-      that explicit, and consider separate structures/identifiers for market
-      nondeterminism, policy nondeterminism, and any future non-market random
-      events so trajectory IDs do not conflate different sources of randomness.
+      is effectively a sampled exogenous trajectory plus deterministic policy.
+      Make that explicit, and consider separate structures/identifiers for
+      market nondeterminism, policy nondeterminism, and any future non-market
+      random events so trajectory IDs do not conflate different sources of
+      randomness.
+- [ ] Move production stochastic path generation behind an `augur/model`
+      trajectory-bundle boundary before wiring `augur/sim` into the product API.
+      `augur/sim.market.GeometricBrownianPath` is acceptable as spike/test/bench
+      scaffolding, but the durable simulator contract should consume
+      materialized exogenous paths plus provenance rather than fitting or
+      sampling markets itself.
 - [ ] Decide whether negative cash is allowed only through explicit borrowing.
       If the model says an actor has overdraft, credit-line, margin, or other
       borrowing capacity, negative cash can be an accounting effect paired with
@@ -172,7 +179,9 @@ Followups still on the table:
       generator, path-set, and validation-report identities; the next step is
       durable evidence/calibration artifacts, real validation reports, and
       reviewed limitations rather than placeholder IDs.
-- [ ] Move evidence/model-fetching shapes out of core simulator API when touched. Core should consume calibrated market/provider inputs, not source-specific evidence objects.
+- [ ] Move evidence/model-fetching shapes out of simulator APIs when touched.
+      The simulator should consume calibrated trajectory/provider inputs, not
+      source-specific evidence objects.
 
 ## Tax Follow-Ups
 

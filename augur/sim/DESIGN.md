@@ -13,6 +13,31 @@ liquidity + multi-jurisdiction-tax spec without retrofitting. If a
 later layer requires moving primitives around, that's a design bug
 to catch here.
 
+## Package Boundaries
+
+`augur/sim` is the durable pathwise evaluator, not the owner of the
+market model and not the owner of API presentation. The intended
+runtime seam is:
+
+```
+augur/model  -> sampled exogenous trajectory bundle
+augur/sim    -> deterministic evaluation of scenario set over paths
+augur/api    -> request parsing, catalog/config composition, response shaping
+augur/frontend -> product UI over the API response
+```
+
+`augur/model` owns evidence ingestion, calibration, fitted-model
+identity, and stochastic sampling. `augur/sim` consumes already-
+materialized exogenous paths: asset prices, property values, rates,
+rent/spend variance, sellability masks, tender opportunities, and
+similar rollout/month streams. A seeded deterministic or GBM path
+helper can live in `sim` temporarily as test/bench scaffolding, but
+production stochastic path generation belongs in `augur/model`.
+
+The seams are allowed to change while this engine becomes the main
+simulation backend. The goal is a clean `model -> sim -> api` contract,
+not compatibility with old names or awkward legacy response shapes.
+
 ## Canonical log; derived state
 
 **The event log is the source of truth.** State at month M is, by
@@ -33,12 +58,12 @@ Practical consequences of this discipline:
     liability principal, occupancy mode, cumulative depreciation,
     ownership tenure, primary-residence-use months, rollout status.
     These are aggregations over the event log.
-  - **Market-derived attributes** — anything that's "what's the
+  - **Trajectory-derived attributes** — anything that's "what's the
     current price / current value / current availability": asset
     unit prices, property current market values, sellability
-    masks. These are per-month reads from the market bundle, not
-    on the log. They're recomputed each month rather than stored
-    long-term.
+    masks. These are per-month reads from the exogenous trajectory
+    bundle, not on the log. They're recomputed each month rather
+    than stored long-term.
 - The `apply_events(state, events) → state'` function is the only
   state-mutation primitive. It's called once per step and is the
   single testable site where "this event changes state this way"
@@ -80,17 +105,19 @@ engine's "five overlapping representations" problem.
    (with location id, occupancy timeline, mortgage reference),
    their policies (funding chain order, sale rules, spending),
    their scheduled events (property purchases, sales, occupancy
-   switches), and the market-bundle reference. Validated at
-   construction time.
+   switches), and references to the exogenous paths they consume.
+   Validated at construction time.
 
-3. **Market bundle** (external, lazy / sampled). Per-rollout
-   per-month paths for every market driver the scenario consumes:
-   asset unit-price multipliers, property-value multipliers per
-   location, sellability masks for constrained-liquidity
-   positions, spending-variance paths, rental-income variance
-   paths, tender-opportunity masks. Same input-output contract as
-   the existing augur market bundle, adapted to template-id-keyed
-   lookups.
+3. **Exogenous trajectory bundle** (produced outside `sim`,
+   usually by `augur/model`). Per-rollout per-month paths for every
+   market driver the scenario consumes: asset unit-price
+   multipliers, property-value multipliers per location,
+   sellability masks for constrained-liquidity positions,
+   spending-variance paths, rental-income variance paths,
+   tender-opportunity masks, rates, and any other market-derived
+   streams. `sim` treats this bundle as input data. It does not fit
+   models, calibrate distributions, or sample production stochastic
+   paths.
 
 4. **Event log — the canonical record of what happened** (polars,
    append-only). Every state-changing happening in the simulation
@@ -128,8 +155,8 @@ lot_id, template_id, units, basis_usd, acquired_month,
 cost_basis_method, sellability_mask_ref, current_unit_price_
 usd, current_market_value_usd)`. **Mixed**: units + basis +
      acquired_month are event-sourced; current_unit_price_usd and
-     current_market_value_usd are market-derived (refreshed each
-     month from the market bundle).
+     current_market_value_usd are trajectory-derived (refreshed
+     each month from the exogenous trajectory bundle).
    - `liabilities` — `(rollout, month, agent_id, liability_id,
 template_id, counterparty_agent_id, principal_usd,
 interest_accrued_this_month_usd, principal_paid_this_month_
@@ -155,18 +182,19 @@ id, failure_month)`. Event-sourced.
    queries are polars filters / group-bys.
 
    **The state-over-time IS an output of the simulation, but it
-   is the materialization of the event log + market reads**, not a
-   separately-maintained truth. If we ever needed to compress the
-   simulation's persistence footprint, the log + initial state +
-   market bundle is the complete record; everything else is
-   derivable.
+   is the materialization of the event log + trajectory reads**,
+   not a separately-maintained truth. If we ever needed to compress
+   the simulation's persistence footprint, the event log, initial
+   state, and exogenous trajectory bundle are the complete record;
+   everything else is derivable.
 
 The boundary discipline: layer 1 is law-and-place data, edited
 when reality changes. Layer 2 is what the user wants to simulate.
-Layer 3 is exogenous market input. **Layer 4 is what happened;
-layer 5 is its per-month view plus market-derived attributes.**
-The forward loop appends to layer 4 and incrementally maintains
-layer 5; the replay invariant guarantees they stay aligned.
+Layer 3 is exogenous path input supplied by the market/modeling
+package. **Layer 4 is what happened; layer 5 is its per-month view
+plus market-derived attributes.** The forward loop appends to layer
+4 and incrementally maintains layer 5; the replay invariant
+guarantees they stay aligned.
 
 ## The forward loop
 
@@ -264,25 +292,23 @@ share state mutation.
      obligation-accrual event (property tax, HOA, insurance,
      maintenance, special assessment if due, mortgage payment,
      monthly spend, outside rent).
-   - Tax-obligation accruals at marker months → each emits a
-     tax-accrual event per (agent, jurisdiction). Quarterly
-     estimated at Apr 15 / Jun 15 / Sep 15 / Jan 15 of next year;
-     year-end true-up at Dec.
+   - Tax accruals at year-end → each emits a tax-accrual event per
+     (agent, jurisdiction). Estimated-tax cash transfers fire at
+     Apr 15 / Jun 15 / Sep 15 / Jan 15 markers; the January marker
+     also emits the true-up and the liability-side settlement.
 
-2. **Settle required obligations.** For every accrued-but-unpaid
-   required obligation (read from the within-step buffer + the
-   prior month's still-open obligations), emit a settlement
-   event:
-   1. Pay from the agent's checking cash if sufficient → emits
-      an obligation-settlement event with cash side.
-   2. If short, walk the agent's funding chain. For each sale
-      step, emit an asset-sale event (consumes lots per the
-      position's cost-basis method) → cash side credits the
-      obligation. Stop selling as soon as the obligation is
-      funded.
-   3. If still short after the chain, emit a failure event for
-      the obligation + a rollout-status-change event flipping
-      the rollout to `failed` for this month.
+2. **Settle required obligations.** Required obligations are
+   immediate due-now cash demands in the month they fire. The
+   current model does not carry partially-paid obligations across
+   months:
+   1. Debit the obligated agent's configured cash account and emit
+      the cash-side settlement event.
+   2. If the account is now negative, walk the agent's funding
+      chain. For each sale step, emit an asset-sale event
+      (consumes lots per the position's cost-basis method) until
+      cash is non-negative or the chain is exhausted.
+   3. If cash is still negative after the chain, emit a failure
+      event and mark the rollout failed for this month.
 
    Settlement order within phase 2 is fixed per agent: tax →
    mortgage → property carrying costs → outside rent → partner
@@ -380,12 +406,14 @@ layer):
 - **Obligation settlement** — cash out from the obligated agent;
   cash in to either a counterparty agent (intra-sim) or a sink
   (taxing authority, HOA, insurance company); marks the
-  obligation as paid. If only partially funded, the obligation
-  remains open with `unpaid_amount_usd > 0` and a failure event
-  fires separately.
+  obligation as paid. Current scope has no partial-payment state:
+  if the settlement cannot be funded immediately, the rollout
+  fails.
 - **Tax payment** — special-case obligation settlement against
   the tax-payable liability. Quarterly estimated or year-end
-  true-up. Cash out, tax_payable balance decreases.
+  true-up. Cash out is recorded as a transfer; the January
+  liability-side settlement is recorded separately so the
+  tax_payable balance decreases when the bill is due.
 - **Property purchase / sale (composite)** — produces multiple
   atomic events sharing a `cause_id`: a cash debit for down +
   buy closing, an asset-purchase-equivalent (the property
@@ -403,8 +431,8 @@ layer):
   the (open obligations view, derivable from log) and feeds
   phase 2's settlement.
 - **Tax accrual** — at year-end, a TAX_PAYABLE liability appears
-  on the agent's books for the year's actual tax minus already-
-  paid estimated. Subsequent tax-payment events settle it.
+  on the agent's books for the year's actual tax by jurisdiction.
+  Subsequent tax-settlement events reduce it.
 - **Depreciation accrual** — property's `cumulative_
 depreciation_usd` increases by `monthly_depreciation_amount`.
   Year-end tax computation reads the year's sum.
@@ -459,6 +487,7 @@ the right frame:
   `property_state`.
 - Rollout-status change → update `rollout_status`.
 - Tax accrual → update `liabilities` (tax_payable row).
+- Tax settlement → reduce `liabilities` (tax_payable row).
 - Failure event / policy decision / tax-year breakdown →
   diagnostic only, no state mutation.
 
@@ -553,11 +582,12 @@ At end of `simulate(...)`:
     realized from lot dispositions, unrealized from state-over-
     time.
 
-The returned `SimulationRun` is a Pydantic object wrapping the
-state-over-time frames + the log frames + the projections. The
-wire / API shape adapts these to the existing `ScenarioRunArrays`
-contract — projections expose specific named columns from
-state-over-time at materialize time.
+The returned `SimulationRun` wraps the state-over-time frames, log
+frames, projections, accepted scenario-set identity, and exogenous
+trajectory provenance. `augur/api` adapts that into the frontend
+response shape. During migration the API may expose a compatibility
+adapter for old consumers, but the durable seam should be the clean
+simulation-run contract, not the old `ScenarioRunArrays` layout.
 
 ## Failure modes
 
@@ -594,7 +624,9 @@ augur/sim/
   scenario.py                      — Scenario Pydantic model (+ Agent,
                                      Position, Liability, Property,
                                      Policy, ScheduledEvent submodels)
-  market.py                        — MarketBundle interface
+  market.py                        — consumer-side exogenous path
+                                     interface; production sampling
+                                     lives in augur/model
 
   state.py                         — StateCrossSection + schemas for
                                      the six working-state frames
@@ -654,12 +686,15 @@ refactoring L1's transfer.
 2. **L2** — multi-month loop, recurring transfer / income.
 3. **L3** — rollout dimension goes from 1 to N. Same test in 2
    rollouts; same test in 100 rollouts; assert linear scaling.
-4. **L4** — `asset_lots` frame with the lot model + cost-basis
-   methods. `AssetSale` transaction with lot consumption +
+4. **L4** — `asset_lots` frame with the lot model + FIFO lot
+   selection. `AssetSale` transaction with lot consumption +
    `lot_dispositions_log`. The capital-gains-eligible-holding
    template + its rules (mark-to-market, sale, classification).
-5. **L5** — `MarketBundle` interface; state-dependent decisions
-   via polars expressions.
+   HIFO, specific-id, and average-cost selection are later
+   extensions.
+5. **L5** — exogenous trajectory-bundle consumer interface;
+   state-dependent decisions via polars expressions. Stochastic
+   market sampling remains outside `sim`.
 6. **L6** — quarterly + year-end tax obligations + safe harbor;
    the tax-liability-instrument template; per-jurisdiction
    year-tax computation; capital-gains classification rule.
@@ -673,8 +708,8 @@ refactoring L1's transfer.
 9. **L9** — agent policies (floor-triggered sale, asset
    preference chain, reinvest, monthly spend, variable spend
    from market). The `policy_decisions_log`.
-10. **L10** — market-driven divergent rollouts; sellability
-    masks (preparing for L14).
+10. **L10** — market-driven divergent rollouts from externally
+    supplied paths; sellability masks (preparing for L14).
 11. **L11** — `failure_events_log`; rollout status flips;
     recovery semantics.
 12. **L12** — `property_state` frame; `depreciable_real_property`
@@ -706,9 +741,9 @@ layer's scenarios + adds the necessary code.
   benchmarking against the legacy engine is deferred to after
   L4 / L8 land.
 - **Wire compatibility with the existing `ScenarioRunArrays`
-  schema.** A compatibility shim exists conceptually (projection
-  layer at simulate()'s output), but the actual mapping is a
-  late-stage concern when the sim engine is being swapped in.
+  schema.** A compatibility shim can exist during migration, but
+  the target is a better `model -> sim -> api` contract. Do not
+  contort `sim` internals to match legacy response names.
 
 These get decided when the code lands. The structural shape
 above is what stays load-bearing through that work.

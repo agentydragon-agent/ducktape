@@ -25,10 +25,11 @@ the structural plan.
   deductions deferred — nothing to itemize against until L8 / L12.)
 - **L9.1, 9.2, 9.6** — floor-triggered sale, asset preference chain,
   fixed monthly spend.
-- **L10.1-10.3** — market model integration (per-rollout sampled
-  paths, agent decisions don't feed the market, agents share path
-  within a rollout). Sellability mask plumbed but no scenarios
-  exercise it.
+- **L10.1-10.3** — exogenous path consumption (per-rollout paths,
+  agent decisions don't feed the market, agents share path within a
+  rollout). Spike fixtures may materialize simple paths inside
+  `sim`; production sampling belongs in `augur/model`. Sellability
+  mask plumbed but no scenarios exercise it.
 - **L11.1, 11.2** — cash-negative failure flag, per-rollout failure
   scope. (Recovery semantics deferred — failed rollouts stay failed
   this spike.)
@@ -49,10 +50,11 @@ One tax-paying agent (Alice, single filer, located `"san_francisco"`):
 - Configured W-2 ordinary income of \$200k/year, arriving monthly.
 - Three capital-gains-eligible positions — `"vti"`, `"qqq"`, `"btc"`
   — each with initial lots configured at scenario start.
-- Market bundle: per-rollout per-month price multipliers for each
-  position (simple stochastic model, GBM-like or bootstrapped from
-  a configured distribution; doesn't need to be the production
-  market model yet).
+- Exogenous trajectory bundle: per-rollout per-month price
+  multipliers for each position. The spike may use temporary
+  deterministic / GBM fixture helpers inside `sim`; that is
+  scaffolding only. Production path generation belongs in
+  `augur/model`.
 - One floor-triggered sale policy: "if checking < \$5000, sell
   \$20000 of vti, then qqq, then btc in order".
 - One \$5000/month recurring spend obligation.
@@ -80,7 +82,7 @@ log.filter(month ≤ M))`. Asserted in tests; opt-in
    the market paths differ. Same market paths with different
    policies also diverge.
 5. **Benchable.** A bench script (sibling to
-   `augur/core/bench_augur_run.py`) runs the representative
+   `augur/sim/bench.py`) runs the representative
    scenario end-to-end on RBE and reports wall-clock time. No
    specific perf target this round — establishes the baseline that
    later waves' bench targets are set against.
@@ -96,6 +98,8 @@ log.filter(month ≤ M))`. Asserted in tests; opt-in
 - That the wire schema matches existing `ScenarioRunArrays` —
   deferred. The new sim has its own `SimulationRun` output type
   for now; the legacy-wire adapter is a separate concern.
+- That the market-model seam is final — the spike fixtures prove
+  path consumption, not production model ownership.
 - That partner-equity multi-stakeholder works — deferred.
 - That performance beats the legacy engine — measures it, doesn't
   yet require a specific target. Tightening comes after L8 + L12
@@ -119,10 +123,11 @@ build later-commit infrastructure.
 5. **L4 lots part B** — multi-lot scenarios (S4.4-S4.6): mixed
    holding periods, sale crossing two lots, per-lot LTCG/STCG
    classification.
-6. **L5 + L10 market integration** — `MarketBundle` interface,
-   per-rollout per-month price paths, asset market values flowing
-   as market-derived state attributes, sellability_mask plumbing
-   (no scenarios exercise non-default mask yet).
+6. **L5 + L10 exogenous path consumption** — `MarketBundle`
+   interface, per-rollout per-month price paths, asset market
+   values flowing as trajectory-derived state attributes,
+   sellability_mask plumbing (no scenarios exercise non-default mask
+   yet). Production model sampling remains outside `sim`.
 7. **Jurisdiction YAML loader** —
    `data/jurisdictions/{federal_us,california}.yaml`, Pydantic
    models, validation, loader.
