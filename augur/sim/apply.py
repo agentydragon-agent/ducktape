@@ -24,7 +24,13 @@ from __future__ import annotations
 import polars as pl
 
 from augur.sim.events import EventLog
-from augur.sim.state import ASSET_LOT_SCHEMA, StateCrossSection
+from augur.sim.state import (
+    ASSET_LOT_SCHEMA,
+    LIABILITY_SCHEMA,
+    PROPERTY_STAKE_SCHEMA,
+    PROPERTY_STATE_SCHEMA,
+    StateCrossSection,
+)
 
 
 def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSection:
@@ -39,6 +45,10 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
     no per-kind guards are needed at this layer."""
     asset_lots = _apply_asset_purchases(state.asset_lots, events.asset_purchases)
     asset_lots = _apply_lot_dispositions_to_lots(asset_lots, events.lot_dispositions)
+    property_state = _apply_property_purchases_to_state(state.property_state, events.property_purchases)
+    property_stakes = _apply_property_purchases_to_stakes(state.property_stakes, events.property_purchases)
+    liabilities = _apply_mortgage_originations(state.liabilities, events.mortgage_originations)
+    liabilities = _apply_mortgage_payments(liabilities, events.mortgage_payments)
     cash_balances = _apply_lot_dispositions_to_cash(state.cash_balances, events.lot_dispositions)
     capital_gains_ytd = _apply_dispositions_to_capital_gains_ytd(state.capital_gains_ytd, events.lot_dispositions)
     cash_balances = _apply_transfers(cash_balances, events.transfers)
@@ -55,6 +65,9 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
         ordinary_income_ytd=ordinary_income_ytd,
         capital_gains_ytd=capital_gains_ytd,
         tax_liabilities=tax_liabilities,
+        property_state=property_state,
+        property_stakes=property_stakes,
+        liabilities=liabilities,
         rollout_status=rollout_status,
     )
 
@@ -162,6 +175,68 @@ def _apply_tax_accruals_to_liabilities(tax_liabilities: pl.DataFrame, tax_accrua
         pl.col("amount_usd").alias("amount_owed_usd"),
     )
     return pl.concat([tax_liabilities, new_rows])
+
+
+def _apply_property_purchases_to_state(property_state: pl.DataFrame, purchases: pl.DataFrame) -> pl.DataFrame:
+    """Append acquired properties to the property-state frame."""
+    new_rows = purchases.select(
+        pl.col("rollout_index"),
+        pl.col("property_id"),
+        pl.col("location_id"),
+        pl.col("month_index").alias("purchase_month_index"),
+        pl.col("adjusted_basis_usd"),
+    ).select(list(PROPERTY_STATE_SCHEMA.keys()))
+    return pl.concat([property_state, new_rows])
+
+
+def _apply_property_purchases_to_stakes(property_stakes: pl.DataFrame, purchases: pl.DataFrame) -> pl.DataFrame:
+    """Create the buyer's property-stake row for each purchase."""
+    new_rows = purchases.select(
+        pl.col("rollout_index"),
+        pl.col("property_id"),
+        pl.col("buyer_agent_id").alias("agent_id"),
+        pl.col("ownership_pct"),
+        pl.col("stake_contribution_usd").alias("contribution_used_usd"),
+        pl.col("equity_ledger_usd"),
+    ).select(list(PROPERTY_STAKE_SCHEMA.keys()))
+    return pl.concat([property_stakes, new_rows])
+
+
+def _apply_mortgage_originations(liabilities: pl.DataFrame, originations: pl.DataFrame) -> pl.DataFrame:
+    """Append mortgage-originated liabilities."""
+    new_rows = originations.select(
+        pl.col("rollout_index"),
+        pl.col("liability_id"),
+        pl.col("agent_id"),
+        pl.col("payment_account_id"),
+        pl.col("counterparty_agent_id"),
+        pl.col("counterparty_account_id"),
+        pl.col("property_id"),
+        pl.col("principal_usd"),
+        pl.col("annual_interest_rate"),
+        pl.col("term_months"),
+        pl.col("month_index").alias("origination_month_index"),
+        pl.col("monthly_payment_usd"),
+        pl.lit(0.0, dtype=pl.Float64()).alias("interest_paid_ytd_usd"),
+        pl.lit(0.0, dtype=pl.Float64()).alias("principal_paid_ytd_usd"),
+    ).select(list(LIABILITY_SCHEMA.keys()))
+    return pl.concat([liabilities, new_rows])
+
+
+def _apply_mortgage_payments(liabilities: pl.DataFrame, payments: pl.DataFrame) -> pl.DataFrame:
+    """Reduce mortgage principal and accumulate YTD payment splits."""
+    deltas = payments.group_by(["rollout_index", "liability_id"]).agg(
+        pl.col("interest_usd").sum().alias("_interest_paid"), pl.col("principal_usd").sum().alias("_principal_paid")
+    )
+    return (
+        liabilities.join(deltas, on=["rollout_index", "liability_id"], how="left")
+        .with_columns(
+            principal_usd=pl.max_horizontal(0.0, pl.col("principal_usd") - pl.col("_principal_paid").fill_null(0.0)),
+            interest_paid_ytd_usd=pl.col("interest_paid_ytd_usd") + pl.col("_interest_paid").fill_null(0.0),
+            principal_paid_ytd_usd=pl.col("principal_paid_ytd_usd") + pl.col("_principal_paid").fill_null(0.0),
+        )
+        .drop(["_interest_paid", "_principal_paid"])
+    )
 
 
 def _apply_tax_settlements_to_liabilities(tax_liabilities: pl.DataFrame, tax_settlements: pl.DataFrame) -> pl.DataFrame:

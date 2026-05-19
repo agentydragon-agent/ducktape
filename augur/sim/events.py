@@ -111,6 +111,52 @@ TAX_SETTLEMENT_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "amount_usd": pl.Float64(),
 }
 
+PROPERTY_PURCHASE_EVENT_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "cause_id": pl.Utf8(),
+    "property_id": pl.Utf8(),
+    "location_id": pl.Utf8(),
+    "buyer_agent_id": pl.Utf8(),
+    "purchase_price_usd": pl.Float64(),
+    "closing_cost_usd": pl.Float64(),
+    "adjusted_basis_usd": pl.Float64(),
+    "ownership_pct": pl.Float64(),
+    "stake_contribution_usd": pl.Float64(),
+    "equity_ledger_usd": pl.Float64(),
+}
+
+MORTGAGE_ORIGINATION_EVENT_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "cause_id": pl.Utf8(),
+    "liability_id": pl.Utf8(),
+    "agent_id": pl.Utf8(),
+    "payment_account_id": pl.Utf8(),
+    "counterparty_agent_id": pl.Utf8(),
+    "counterparty_account_id": pl.Utf8(),
+    "property_id": pl.Utf8(),
+    "principal_usd": pl.Float64(),
+    "annual_interest_rate": pl.Float64(),
+    "term_months": pl.Int64(),
+    "monthly_payment_usd": pl.Float64(),
+}
+
+MORTGAGE_PAYMENT_EVENT_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "cause_id": pl.Utf8(),
+    "liability_id": pl.Utf8(),
+    "agent_id": pl.Utf8(),
+    "counterparty_agent_id": pl.Utf8(),
+    "property_id": pl.Utf8(),
+    "from_account_id": pl.Utf8(),
+    "to_account_id": pl.Utf8(),
+    "interest_usd": pl.Float64(),
+    "principal_usd": pl.Float64(),
+    "total_payment_usd": pl.Float64(),
+}
+
 # `RolloutFailure` flags a rollout as having run out of disposable
 # wealth — agent's cash is negative even after the floor-triggered
 # sale policy has done its best. Once flagged, the rollout stays
@@ -155,6 +201,9 @@ class EventLog:
     tax_accruals: pl.DataFrame
     tax_breakdowns: pl.DataFrame
     tax_settlements: pl.DataFrame
+    property_purchases: pl.DataFrame
+    mortgage_originations: pl.DataFrame
+    mortgage_payments: pl.DataFrame
     rollout_failures: pl.DataFrame
 
     @classmethod
@@ -166,5 +215,8 @@ class EventLog:
             tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
             tax_breakdowns=pl.DataFrame(schema=TAX_BREAKDOWN_EVENT_SCHEMA),
             tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+            property_purchases=pl.DataFrame(schema=PROPERTY_PURCHASE_EVENT_SCHEMA),
+            mortgage_originations=pl.DataFrame(schema=MORTGAGE_ORIGINATION_EVENT_SCHEMA),
+            mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),
             rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
         )

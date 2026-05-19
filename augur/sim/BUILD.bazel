@@ -124,6 +124,7 @@ py_library(
     deps = [
         ":events_py",
         ":jurisdictions_py",
+        ":locations_py",
         ":market_py",
         ":scenario_py",
         ":state_py",
@@ -149,6 +150,7 @@ py_library(
         ":apply_py",
         ":events_py",
         ":jurisdictions_py",
+        ":locations_py",
         ":market_py",
         ":run_py",
         ":scenario_py",

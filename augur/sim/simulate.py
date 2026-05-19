@@ -28,6 +28,9 @@ from augur.sim.apply import apply_events
 from augur.sim.events import (
     ASSET_PURCHASE_EVENT_SCHEMA,
     LOT_DISPOSITION_EVENT_SCHEMA,
+    MORTGAGE_ORIGINATION_EVENT_SCHEMA,
+    MORTGAGE_PAYMENT_EVENT_SCHEMA,
+    PROPERTY_PURCHASE_EVENT_SCHEMA,
     ROLLOUT_FAILURE_EVENT_SCHEMA,
     TAX_ACCRUAL_EVENT_SCHEMA,
     TAX_BREAKDOWN_EVENT_SCHEMA,
@@ -37,6 +40,7 @@ from augur.sim.events import (
     concat_event_frames,
 )
 from augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
+from augur.sim.locations import Location, load_location
 from augur.sim.market import materialize_market
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import Scenario
@@ -44,7 +48,10 @@ from augur.sim.state import (
     ASSET_LOT_SCHEMA,
     CAPITAL_GAINS_YTD_SCHEMA,
     CASH_BALANCES_SCHEMA,
+    LIABILITY_SCHEMA,
     ORDINARY_INCOME_YTD_SCHEMA,
+    PROPERTY_STAKE_SCHEMA,
+    PROPERTY_STATE_SCHEMA,
     ROLLOUT_STATUS_SCHEMA,
     TAX_LIABILITIES_SCHEMA,
     StateCrossSection,
@@ -60,6 +67,7 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
         scenario.market, rollout_count=rollout_count, horizon_months=int(scenario.horizon_months)
     )
     jurisdictions = _load_jurisdictions_for(scenario)
+    locations = _load_locations_for(scenario)
     state_t = _initial_state(scenario, rollout_count)
     cross_sections: list[StateCrossSection] = [state_t]
     events_by_month: list[EventLog] = []
@@ -69,6 +77,7 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
             scenario=scenario,
             market=market,
             jurisdictions=jurisdictions,
+            locations=locations,
             month=month,
             rollout_count=rollout_count,
         )
@@ -83,6 +92,9 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
         ordinary_income_ytd=_stack_income_ytd(cross_sections),
         capital_gains_ytd=_stack_capital_gains(cross_sections),
         tax_liabilities=_stack_tax_liabilities(cross_sections),
+        property_state=_stack_property_state(cross_sections),
+        property_stakes=_stack_property_stakes(cross_sections),
+        liabilities=_stack_liabilities(cross_sections),
         rollout_status_history=_stack_rollout_status(cross_sections),
         rollout_status=cross_sections[-1].rollout_status,
         market_prices=market.prices,
@@ -95,6 +107,11 @@ def _load_jurisdictions_for(scenario: Scenario) -> dict[str, Jurisdiction]:
     Loaded once at sim start; the step closes over the dict."""
     ids = {jid for profile in scenario.tax_profiles for jid in profile.jurisdiction_ids}
     return {jid: load_jurisdiction(jid) for jid in ids}
+
+
+def _load_locations_for(scenario: Scenario) -> dict[str, Location]:
+    ids = {purchase.location_id for purchase in scenario.scheduled_property_purchases}
+    return {location_id: load_location(location_id) for location_id in ids}
 
 
 def _initial_state(scenario: Scenario, rollout_count: int) -> StateCrossSection:
@@ -110,6 +127,9 @@ def _initial_state(scenario: Scenario, rollout_count: int) -> StateCrossSection:
     ordinary_income_ytd = _initial_ordinary_income_ytd(scenario, rollouts)
     capital_gains_ytd = pl.DataFrame(schema=CAPITAL_GAINS_YTD_SCHEMA)
     tax_liabilities = pl.DataFrame(schema=TAX_LIABILITIES_SCHEMA)
+    property_state = pl.DataFrame(schema=PROPERTY_STATE_SCHEMA)
+    property_stakes = pl.DataFrame(schema=PROPERTY_STAKE_SCHEMA)
+    liabilities = pl.DataFrame(schema=LIABILITY_SCHEMA)
     rollout_status = _initial_rollout_status(rollouts)
     return StateCrossSection(
         cash_balances=cash,
@@ -117,6 +137,9 @@ def _initial_state(scenario: Scenario, rollout_count: int) -> StateCrossSection:
         ordinary_income_ytd=ordinary_income_ytd,
         capital_gains_ytd=capital_gains_ytd,
         tax_liabilities=tax_liabilities,
+        property_state=property_state,
+        property_stakes=property_stakes,
+        liabilities=liabilities,
         rollout_status=rollout_status,
     )
 
@@ -240,6 +263,60 @@ def _stack_tax_liabilities(cross_sections: list[StateCrossSection]) -> pl.DataFr
     )
 
 
+def _stack_property_state(cross_sections: list[StateCrossSection]) -> pl.DataFrame:
+    blocks = [
+        cs.property_state.with_columns(pl.lit(month, dtype=pl.Int64()).alias("month_index"))
+        for month, cs in enumerate(cross_sections)
+    ]
+    return pl.concat(blocks).select(
+        ["rollout_index", "month_index", "property_id", "location_id", "purchase_month_index", "adjusted_basis_usd"]
+    )
+
+
+def _stack_property_stakes(cross_sections: list[StateCrossSection]) -> pl.DataFrame:
+    blocks = [
+        cs.property_stakes.with_columns(pl.lit(month, dtype=pl.Int64()).alias("month_index"))
+        for month, cs in enumerate(cross_sections)
+    ]
+    return pl.concat(blocks).select(
+        [
+            "rollout_index",
+            "month_index",
+            "property_id",
+            "agent_id",
+            "ownership_pct",
+            "contribution_used_usd",
+            "equity_ledger_usd",
+        ]
+    )
+
+
+def _stack_liabilities(cross_sections: list[StateCrossSection]) -> pl.DataFrame:
+    blocks = [
+        cs.liabilities.with_columns(pl.lit(month, dtype=pl.Int64()).alias("month_index"))
+        for month, cs in enumerate(cross_sections)
+    ]
+    return pl.concat(blocks).select(
+        [
+            "rollout_index",
+            "month_index",
+            "liability_id",
+            "agent_id",
+            "payment_account_id",
+            "counterparty_agent_id",
+            "counterparty_account_id",
+            "property_id",
+            "principal_usd",
+            "annual_interest_rate",
+            "term_months",
+            "origination_month_index",
+            "monthly_payment_usd",
+            "interest_paid_ytd_usd",
+            "principal_paid_ytd_usd",
+        ]
+    )
+
+
 def _stack_rollout_status(cross_sections: list[StateCrossSection]) -> pl.DataFrame:
     blocks = [
         cs.rollout_status.with_columns(pl.lit(month, dtype=pl.Int64()).alias("month_index"))
@@ -257,6 +334,15 @@ def _merge_event_logs(a: EventLog, b: EventLog) -> EventLog:
         tax_accruals=concat_event_frames([a.tax_accruals, b.tax_accruals], TAX_ACCRUAL_EVENT_SCHEMA),
         tax_breakdowns=concat_event_frames([a.tax_breakdowns, b.tax_breakdowns], TAX_BREAKDOWN_EVENT_SCHEMA),
         tax_settlements=concat_event_frames([a.tax_settlements, b.tax_settlements], TAX_SETTLEMENT_EVENT_SCHEMA),
+        property_purchases=concat_event_frames(
+            [a.property_purchases, b.property_purchases], PROPERTY_PURCHASE_EVENT_SCHEMA
+        ),
+        mortgage_originations=concat_event_frames(
+            [a.mortgage_originations, b.mortgage_originations], MORTGAGE_ORIGINATION_EVENT_SCHEMA
+        ),
+        mortgage_payments=concat_event_frames(
+            [a.mortgage_payments, b.mortgage_payments], MORTGAGE_PAYMENT_EVENT_SCHEMA
+        ),
         rollout_failures=concat_event_frames([a.rollout_failures, b.rollout_failures], ROLLOUT_FAILURE_EVENT_SCHEMA),
     )
 
@@ -272,6 +358,15 @@ def _concat_events(events_by_month: list[EventLog]) -> EventLog:
         tax_accruals=concat_event_frames((e.tax_accruals for e in events_by_month), TAX_ACCRUAL_EVENT_SCHEMA),
         tax_breakdowns=concat_event_frames((e.tax_breakdowns for e in events_by_month), TAX_BREAKDOWN_EVENT_SCHEMA),
         tax_settlements=concat_event_frames((e.tax_settlements for e in events_by_month), TAX_SETTLEMENT_EVENT_SCHEMA),
+        property_purchases=concat_event_frames(
+            (e.property_purchases for e in events_by_month), PROPERTY_PURCHASE_EVENT_SCHEMA
+        ),
+        mortgage_originations=concat_event_frames(
+            (e.mortgage_originations for e in events_by_month), MORTGAGE_ORIGINATION_EVENT_SCHEMA
+        ),
+        mortgage_payments=concat_event_frames(
+            (e.mortgage_payments for e in events_by_month), MORTGAGE_PAYMENT_EVENT_SCHEMA
+        ),
         rollout_failures=concat_event_frames(
             (e.rollout_failures for e in events_by_month), ROLLOUT_FAILURE_EVENT_SCHEMA
         ),

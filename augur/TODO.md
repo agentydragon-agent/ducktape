@@ -160,6 +160,10 @@ Followups still on the table:
       that liability/financing state. Otherwise, a cash shortfall should invoke
       sale/financing policies or mark the corresponding obligation settlement
       failed, rather than silently implying borrowing.
+- [ ] Consider making account IDs globally unique so transfer/event frames do
+      not need separate `agent_id` + `account_id` columns everywhere. The
+      current pair-key shape is explicit but creates boilerplate across cash
+      transfers, mortgage payments, tax payments, and future obligations.
 - [ ] Keep rollout health machine-readable through `RolloutStatusType`, failure
       events, obligations, funding decisions, and settlement results. Do not
       reintroduce an enum-like `status_reason` string.

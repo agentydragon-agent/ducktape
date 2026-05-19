@@ -19,9 +19,12 @@ from augur.sim.scenario import (
     FloorTriggeredSalePolicy,
     InitialAccountBalance,
     InitialLot,
+    MortgageFinancing,
+    PropertyTaxPolicy,
     RecurringTransfer,
     Scenario,
     ScheduledAssetSale,
+    ScheduledPropertyPurchase,
     ScheduledTransfer,
     TaxProfile,
 )
@@ -1471,6 +1474,89 @@ def test_explicit_sale_price_overrides_market() -> None:
 
     result = simulate(scenario, rollout_count=1)
     assert result.events_log.lot_dispositions.get_column("proceeds_usd").item() == 3.0 * 99.0
+
+
+def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
+    """First real-estate slice: purchase creates property state,
+    owner stake, mortgage liability, and monthly carrying-cost cash
+    flows. Month 0 books purchase cash; month 1 books one mortgage
+    payment and one property-tax transfer."""
+    scenario = Scenario(
+        agents=[
+            Agent(agent_id="alice"),
+            Agent(agent_id="seller"),
+            Agent(agent_id="bank"),
+            Agent(agent_id="sf_tax_collector"),
+        ],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=120_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="bank", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="sf_tax_collector", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_sf_home",
+                property_id="sf_home",
+                location_id="san_francisco",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=100_000.0,
+                buyer_closing_cost_usd=10_000.0,
+                mortgage=MortgageFinancing(
+                    liability_id="sf_home_mortgage",
+                    lender_agent_id="bank",
+                    principal_usd=400_000.0,
+                    annual_interest_rate=0.06,
+                    term_months=360,
+                ),
+            )
+        ],
+        property_tax_policies=[
+            PropertyTaxPolicy(
+                property_id="sf_home",
+                owner_agent_id="alice",
+                tax_authority_agent_id="sf_tax_collector",
+                annual_tax_rate=0.012,
+            )
+        ],
+        horizon_months=2,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    final_property = result.property_state.filter(pl.col("month_index") == 2).row(0, named=True)
+    assert final_property["location_id"] == "san_francisco"
+    assert final_property["purchase_month_index"] == 0
+    assert final_property["adjusted_basis_usd"] == pytest.approx(510_000.0)
+
+    final_stake = result.property_stakes.filter(pl.col("month_index") == 2).row(0, named=True)
+    assert final_stake["agent_id"] == "alice"
+    assert final_stake["ownership_pct"] == pytest.approx(1.0)
+    assert final_stake["contribution_used_usd"] == pytest.approx(110_000.0)
+    assert final_stake["equity_ledger_usd"] == pytest.approx(100_000.0)
+
+    mortgage_payment = 400_000.0 * 0.005 / (1.0 - (1.005**-360))
+    final_liability = result.liabilities.filter(pl.col("month_index") == 2).row(0, named=True)
+    assert final_liability["principal_usd"] == pytest.approx(400_000.0 - (mortgage_payment - 2_000.0))
+    assert final_liability["interest_paid_ytd_usd"] == pytest.approx(2_000.0)
+    assert final_liability["principal_paid_ytd_usd"] == pytest.approx(mortgage_payment - 2_000.0)
+
+    final_cash = (
+        result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "alice"))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert final_cash == pytest.approx(120_000.0 - 110_000.0 - mortgage_payment - 510.0)
+
+    assert result.events_log.property_purchases.height == 1
+    assert result.events_log.mortgage_originations.height == 1
+    assert result.events_log.mortgage_payments.height == 1
+    assert result.events_log.transfers.filter(pl.col("cause_id") == "sf_home_property_tax_m1").height == 1
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_floor_triggered_sale_covers_monthly_spend_deficit() -> None:

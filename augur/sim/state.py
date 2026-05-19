@@ -89,6 +89,40 @@ ASSET_LOT_SCHEMA: dict[str, pl.DataType] = {
     "remaining_quantity": pl.Float64(),
 }
 
+PROPERTY_STATE_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "property_id": pl.Utf8(),
+    "location_id": pl.Utf8(),
+    "purchase_month_index": pl.Int64(),
+    "adjusted_basis_usd": pl.Float64(),
+}
+
+PROPERTY_STAKE_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "property_id": pl.Utf8(),
+    "agent_id": pl.Utf8(),
+    "ownership_pct": pl.Float64(),
+    "contribution_used_usd": pl.Float64(),
+    "equity_ledger_usd": pl.Float64(),
+}
+
+LIABILITY_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "liability_id": pl.Utf8(),
+    "agent_id": pl.Utf8(),
+    "payment_account_id": pl.Utf8(),
+    "counterparty_agent_id": pl.Utf8(),
+    "counterparty_account_id": pl.Utf8(),
+    "property_id": pl.Utf8(),
+    "principal_usd": pl.Float64(),
+    "annual_interest_rate": pl.Float64(),
+    "term_months": pl.Int64(),
+    "origination_month_index": pl.Int64(),
+    "monthly_payment_usd": pl.Float64(),
+    "interest_paid_ytd_usd": pl.Float64(),
+    "principal_paid_ytd_usd": pl.Float64(),
+}
+
 
 @dataclass(frozen=True)
 class StateCrossSection:
@@ -99,4 +133,7 @@ class StateCrossSection:
     ordinary_income_ytd: pl.DataFrame
     capital_gains_ytd: pl.DataFrame
     tax_liabilities: pl.DataFrame
+    property_state: pl.DataFrame
+    property_stakes: pl.DataFrame
+    liabilities: pl.DataFrame
     rollout_status: pl.DataFrame

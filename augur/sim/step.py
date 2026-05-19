@@ -31,6 +31,9 @@ import polars as pl
 from augur.sim.events import (
     ASSET_PURCHASE_EVENT_SCHEMA,
     LOT_DISPOSITION_EVENT_SCHEMA,
+    MORTGAGE_ORIGINATION_EVENT_SCHEMA,
+    MORTGAGE_PAYMENT_EVENT_SCHEMA,
+    PROPERTY_PURCHASE_EVENT_SCHEMA,
     ROLLOUT_FAILURE_EVENT_SCHEMA,
     TAX_ACCRUAL_EVENT_SCHEMA,
     TAX_BREAKDOWN_EVENT_SCHEMA,
@@ -40,12 +43,15 @@ from augur.sim.events import (
     concat_event_frames,
 )
 from augur.sim.jurisdictions import Jurisdiction
+from augur.sim.locations import Location
 from augur.sim.market import MarketContext
 from augur.sim.scenario import (
     FloorTriggeredSalePolicy,
+    PropertyTaxPolicy,
     RecurringTransfer,
     Scenario,
     ScheduledAssetSale,
+    ScheduledPropertyPurchase,
     ScheduledTransfer,
     TaxProfile,
 )
@@ -71,6 +77,7 @@ def step_emit_scheduled_events(
     scenario: Scenario,
     market: MarketContext,
     jurisdictions: dict[str, Jurisdiction],
+    locations: dict[str, Location],
     month: int,
     rollout_count: int,
 ) -> EventLog:
@@ -78,6 +85,14 @@ def step_emit_scheduled_events(
     scheduled asset sales, year-end tax accruals, and estimated-tax
     payment transfers. Pure: does not mutate `state`."""
     transfers = _emit_transfers(scenario, month, rollout_count)
+    property_purchases = _emit_property_purchases(scenario, month, rollout_count)
+    mortgage_originations = _emit_mortgage_originations(scenario, month, rollout_count)
+    mortgage_payments = _emit_mortgage_payments(state, month)
+    property_cash_transfers = _property_purchase_transfer_events(scenario, property_purchases)
+    mortgage_payment_transfers = _mortgage_payment_transfer_events(mortgage_payments)
+    property_tax_transfers = _emit_property_tax_transfers(
+        state=state, scenario=scenario, locations=locations, month=month
+    )
     dispositions = _emit_lot_dispositions(state, scenario, market, month)
     tax_year_events = _emit_year_end_tax_events(
         state=state,
@@ -89,12 +104,24 @@ def step_emit_scheduled_events(
     )
     tax_payments = _emit_tax_payment_events(state=state, profiles=scenario.tax_profiles, month=month)
     return EventLog(
-        transfers=concat_event_frames([transfers, tax_payments.transfers], TRANSFER_EVENT_SCHEMA),
+        transfers=concat_event_frames(
+            [
+                transfers,
+                property_cash_transfers,
+                mortgage_payment_transfers,
+                property_tax_transfers,
+                tax_payments.transfers,
+            ],
+            TRANSFER_EVENT_SCHEMA,
+        ),
         asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
         lot_dispositions=dispositions,
         tax_accruals=tax_year_events.accruals,
         tax_breakdowns=tax_year_events.breakdowns,
         tax_settlements=tax_payments.settlements,
+        property_purchases=property_purchases,
+        mortgage_originations=mortgage_originations,
+        mortgage_payments=mortgage_payments,
         rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
     )
 
@@ -114,6 +141,9 @@ def step_emit_policy_events(
         tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
         tax_breakdowns=pl.DataFrame(schema=TAX_BREAKDOWN_EVENT_SCHEMA),
         tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+        property_purchases=pl.DataFrame(schema=PROPERTY_PURCHASE_EVENT_SCHEMA),
+        mortgage_originations=pl.DataFrame(schema=MORTGAGE_ORIGINATION_EVENT_SCHEMA),
+        mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),
         rollout_failures=failures,
     )
 
@@ -151,6 +181,192 @@ def _transfer_block_per_rollout(
         pl.lit(t.amount_usd, dtype=pl.Float64()).alias("amount_usd"),
         pl.lit(t.income_category, dtype=pl.Utf8()).alias("income_category"),
     )
+
+
+def _emit_property_purchases(scenario: Scenario, month: int, rollout_count: int) -> pl.DataFrame:
+    purchases = [purchase for purchase in scenario.scheduled_property_purchases if purchase.month == month]
+    if not purchases:
+        return pl.DataFrame(schema=PROPERTY_PURCHASE_EVENT_SCHEMA)
+    rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
+    return concat_event_frames(
+        [_property_purchase_block_per_rollout(purchase, rollouts, month) for purchase in purchases],
+        PROPERTY_PURCHASE_EVENT_SCHEMA,
+    )
+
+
+def _property_purchase_block_per_rollout(
+    purchase: ScheduledPropertyPurchase, rollouts: pl.DataFrame, month: int
+) -> pl.DataFrame:
+    mortgage_principal = purchase.mortgage.principal_usd if purchase.mortgage is not None else 0.0
+    return rollouts.with_columns(
+        pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+        pl.lit(purchase.cause_id, dtype=pl.Utf8()).alias("cause_id"),
+        pl.lit(purchase.property_id, dtype=pl.Utf8()).alias("property_id"),
+        pl.lit(purchase.location_id, dtype=pl.Utf8()).alias("location_id"),
+        pl.lit(purchase.buyer_agent_id, dtype=pl.Utf8()).alias("buyer_agent_id"),
+        pl.lit(purchase.purchase_price_usd, dtype=pl.Float64()).alias("purchase_price_usd"),
+        pl.lit(purchase.buyer_closing_cost_usd, dtype=pl.Float64()).alias("closing_cost_usd"),
+        pl.lit(purchase.purchase_price_usd + purchase.buyer_closing_cost_usd, dtype=pl.Float64()).alias(
+            "adjusted_basis_usd"
+        ),
+        pl.lit(purchase.ownership_pct, dtype=pl.Float64()).alias("ownership_pct"),
+        pl.lit(purchase.down_payment_usd + purchase.buyer_closing_cost_usd, dtype=pl.Float64()).alias(
+            "stake_contribution_usd"
+        ),
+        pl.lit(purchase.purchase_price_usd - mortgage_principal, dtype=pl.Float64()).alias("equity_ledger_usd"),
+    ).select(list(PROPERTY_PURCHASE_EVENT_SCHEMA.keys()))
+
+
+def _emit_mortgage_originations(scenario: Scenario, month: int, rollout_count: int) -> pl.DataFrame:
+    purchases = [
+        purchase
+        for purchase in scenario.scheduled_property_purchases
+        if purchase.month == month and purchase.mortgage is not None
+    ]
+    if not purchases:
+        return pl.DataFrame(schema=MORTGAGE_ORIGINATION_EVENT_SCHEMA)
+    rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
+    return concat_event_frames(
+        [_mortgage_origination_block_per_rollout(purchase, rollouts, month) for purchase in purchases],
+        MORTGAGE_ORIGINATION_EVENT_SCHEMA,
+    )
+
+
+def _mortgage_origination_block_per_rollout(
+    purchase: ScheduledPropertyPurchase, rollouts: pl.DataFrame, month: int
+) -> pl.DataFrame:
+    mortgage = purchase.mortgage
+    if mortgage is None:
+        raise ValueError("_mortgage_origination_block_per_rollout requires mortgage terms")
+    return rollouts.with_columns(
+        pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+        pl.lit(f"{purchase.cause_id}_mortgage_origination", dtype=pl.Utf8()).alias("cause_id"),
+        pl.lit(mortgage.liability_id, dtype=pl.Utf8()).alias("liability_id"),
+        pl.lit(purchase.buyer_agent_id, dtype=pl.Utf8()).alias("agent_id"),
+        pl.lit(purchase.buyer_account_id, dtype=pl.Utf8()).alias("payment_account_id"),
+        pl.lit(mortgage.lender_agent_id, dtype=pl.Utf8()).alias("counterparty_agent_id"),
+        pl.lit(mortgage.lender_account_id, dtype=pl.Utf8()).alias("counterparty_account_id"),
+        pl.lit(purchase.property_id, dtype=pl.Utf8()).alias("property_id"),
+        pl.lit(mortgage.principal_usd, dtype=pl.Float64()).alias("principal_usd"),
+        pl.lit(mortgage.annual_interest_rate, dtype=pl.Float64()).alias("annual_interest_rate"),
+        pl.lit(int(mortgage.term_months), dtype=pl.Int64()).alias("term_months"),
+        pl.lit(
+            _mortgage_monthly_payment_usd(mortgage.principal_usd, mortgage.annual_interest_rate, mortgage.term_months),
+            dtype=pl.Float64(),
+        ).alias("monthly_payment_usd"),
+    ).select(list(MORTGAGE_ORIGINATION_EVENT_SCHEMA.keys()))
+
+
+def _mortgage_monthly_payment_usd(principal_usd: float, annual_interest_rate: float, term_months: int) -> float:
+    monthly_rate = annual_interest_rate / 12.0
+    if monthly_rate == 0:
+        return principal_usd / term_months
+    return principal_usd * monthly_rate / (1.0 - (1.0 + monthly_rate) ** -term_months)
+
+
+def _property_purchase_transfer_events(scenario: Scenario, purchases: pl.DataFrame) -> pl.DataFrame:
+    if purchases.is_empty():
+        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
+    blocks = []
+    for purchase in scenario.scheduled_property_purchases:
+        purchase_rows = purchases.filter(pl.col("cause_id") == purchase.cause_id)
+        if purchase_rows.is_empty():
+            continue
+        amount = purchase.down_payment_usd + purchase.buyer_closing_cost_usd
+        if amount <= 0:
+            continue
+        blocks.append(
+            purchase_rows.with_columns(
+                pl.lit(f"{purchase.cause_id}_buyer_cash", dtype=pl.Utf8()).alias("cause_id"),
+                pl.lit(purchase.buyer_agent_id, dtype=pl.Utf8()).alias("from_agent_id"),
+                pl.lit(purchase.buyer_account_id, dtype=pl.Utf8()).alias("from_account_id"),
+                pl.lit(purchase.seller_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
+                pl.lit(purchase.seller_account_id, dtype=pl.Utf8()).alias("to_account_id"),
+                pl.lit(amount, dtype=pl.Float64()).alias("amount_usd"),
+                pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
+            ).select(list(TRANSFER_EVENT_SCHEMA.keys()))
+        )
+    return concat_event_frames(blocks, TRANSFER_EVENT_SCHEMA)
+
+
+def _emit_mortgage_payments(state: StateCrossSection, month: int) -> pl.DataFrame:
+    liabilities = state.liabilities.filter(pl.col("principal_usd") > 0)
+    if liabilities.is_empty():
+        return pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA)
+    monthly_interest = pl.col("principal_usd") * pl.col("annual_interest_rate") / 12.0
+    total_payment = pl.min_horizontal(pl.col("monthly_payment_usd"), pl.col("principal_usd") + monthly_interest)
+    return (
+        liabilities.with_columns(
+            _interest_usd=pl.min_horizontal(monthly_interest, total_payment), _total_payment_usd=total_payment
+        )
+        .with_columns(_principal_usd=pl.max_horizontal(0.0, pl.col("_total_payment_usd") - pl.col("_interest_usd")))
+        .with_columns(
+            pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+            pl.concat_str([pl.col("liability_id"), pl.lit("_payment_m"), pl.lit(str(month))]).alias("cause_id"),
+            pl.col("payment_account_id").alias("from_account_id"),
+            pl.col("counterparty_account_id").alias("to_account_id"),
+            pl.col("_interest_usd").alias("interest_usd"),
+            pl.col("_principal_usd").alias("principal_usd"),
+            pl.col("_total_payment_usd").alias("total_payment_usd"),
+        )
+        .select(list(MORTGAGE_PAYMENT_EVENT_SCHEMA.keys()))
+    )
+
+
+def _mortgage_payment_transfer_events(mortgage_payments: pl.DataFrame) -> pl.DataFrame:
+    if mortgage_payments.is_empty():
+        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
+    return mortgage_payments.with_columns(
+        pl.col("agent_id").alias("from_agent_id"),
+        pl.col("counterparty_agent_id").alias("to_agent_id"),
+        pl.col("total_payment_usd").alias("amount_usd"),
+        pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
+    ).select(list(TRANSFER_EVENT_SCHEMA.keys()))
+
+
+def _emit_property_tax_transfers(
+    *, state: StateCrossSection, scenario: Scenario, locations: dict[str, Location], month: int
+) -> pl.DataFrame:
+    active = [policy for policy in scenario.property_tax_policies if policy.is_active_at(month)]
+    if not active or state.property_state.is_empty():
+        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
+    return concat_event_frames(
+        [_property_tax_transfer_block(state, policy, locations, month) for policy in active], TRANSFER_EVENT_SCHEMA
+    )
+
+
+def _property_tax_transfer_block(
+    state: StateCrossSection, policy: PropertyTaxPolicy, locations: dict[str, Location], month: int
+) -> pl.DataFrame:
+    property_rows = state.property_state.filter(pl.col("property_id") == policy.property_id)
+    if property_rows.is_empty():
+        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
+    rate_rows = pl.DataFrame(
+        {
+            "location_id": list(locations),
+            "_annual_tax_rate": [location.annual_property_tax_rate for location in locations.values()],
+        },
+        schema={"location_id": pl.Utf8(), "_annual_tax_rate": pl.Float64()},
+    )
+    taxed = (
+        property_rows.join(rate_rows, on="location_id", how="left")
+        .with_columns(
+            _annual_tax_rate=pl.lit(policy.annual_tax_rate, dtype=pl.Float64())
+            if policy.annual_tax_rate is not None
+            else pl.col("_annual_tax_rate")
+        )
+        .with_columns(amount_usd=pl.col("adjusted_basis_usd") * pl.col("_annual_tax_rate") / 12.0)
+        .filter(pl.col("amount_usd") > 0)
+    )
+    return taxed.with_columns(
+        pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+        pl.lit(f"{policy.property_id}_property_tax_m{month}", dtype=pl.Utf8()).alias("cause_id"),
+        pl.lit(policy.owner_agent_id, dtype=pl.Utf8()).alias("from_agent_id"),
+        pl.lit(policy.from_account_id, dtype=pl.Utf8()).alias("from_account_id"),
+        pl.lit(policy.tax_authority_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
+        pl.lit(policy.tax_authority_account_id, dtype=pl.Utf8()).alias("to_account_id"),
+        pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
+    ).select(list(TRANSFER_EVENT_SCHEMA.keys()))
 
 
 def _emit_lot_dispositions(

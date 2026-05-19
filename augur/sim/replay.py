@@ -12,8 +12,9 @@ that scenario, without writing scenario-specific replay plumbing.
 
 The helper compares every state frame the engine touches —
 `cash_balances`, `asset_lots`, `ordinary_income_ytd`,
-`capital_gains_ytd`, `tax_liabilities`, `rollout_status`. New frames
-added in later spikes need new entries here.
+`capital_gains_ytd`, `tax_liabilities`, `property_state`,
+`property_stakes`, `liabilities`, `rollout_status`. New frames added
+in later spikes need new entries here.
 
 Also intended as the verification hook for an opt-in
 `--check-replay` flag in production (per `DESIGN.md`); not yet wired.
@@ -79,6 +80,24 @@ def _check_month(*, result: SimulationRun, replayed: StateCrossSection, month: i
         sort_keys=["rollout_index", "agent_id", "jurisdiction_id", "tax_year_end_month"],
     )
     _check_frame(
+        kind=f"property_state/month_{month}",
+        incremental=_month_slice(result.property_state, month),
+        replayed=replayed.property_state,
+        sort_keys=["rollout_index", "property_id"],
+    )
+    _check_frame(
+        kind=f"property_stakes/month_{month}",
+        incremental=_month_slice(result.property_stakes, month),
+        replayed=replayed.property_stakes,
+        sort_keys=["rollout_index", "property_id", "agent_id"],
+    )
+    _check_frame(
+        kind=f"liabilities/month_{month}",
+        incremental=_month_slice(result.liabilities, month),
+        replayed=replayed.liabilities,
+        sort_keys=["rollout_index", "liability_id"],
+    )
+    _check_frame(
         kind=f"rollout_status/month_{month}",
         incremental=_month_slice(result.rollout_status_history, month),
         replayed=replayed.rollout_status,
@@ -101,6 +120,9 @@ def _events_at_month(events_log: EventLog, month: int) -> EventLog:
         tax_accruals=_frame_at_month(events_log.tax_accruals, month),
         tax_breakdowns=_frame_at_month(events_log.tax_breakdowns, month),
         tax_settlements=_frame_at_month(events_log.tax_settlements, month),
+        property_purchases=_frame_at_month(events_log.property_purchases, month),
+        mortgage_originations=_frame_at_month(events_log.mortgage_originations, month),
+        mortgage_payments=_frame_at_month(events_log.mortgage_payments, month),
         rollout_failures=_frame_at_month(events_log.rollout_failures, month),
     )
 

@@ -165,6 +165,62 @@ class TaxProfile(BaseModel):
     prior_year_tax_usd: float = 0.0
 
 
+class MortgageFinancing(BaseModel):
+    """Mortgage terms attached to a property purchase."""
+
+    liability_id: str
+    lender_agent_id: str
+    lender_account_id: str = "checking"
+    principal_usd: float
+    annual_interest_rate: float
+    term_months: PositiveInt
+
+
+class ScheduledPropertyPurchase(BaseModel):
+    """Purchase a real property at a fixed month.
+
+    The engine records property state, one owner stake row, optional
+    mortgage origination, and a cash transfer for down payment plus
+    buyer closing costs. Mortgage proceeds are not routed through the
+    buyer's cash account in this first slice; the purchase is booked
+    net, with the debt appearing as a liability.
+    """
+
+    month: int
+    cause_id: str
+    property_id: str
+    location_id: str
+    buyer_agent_id: str
+    buyer_account_id: str
+    seller_agent_id: str
+    seller_account_id: str = "checking"
+    purchase_price_usd: float
+    down_payment_usd: float
+    buyer_closing_cost_usd: float = 0.0
+    ownership_pct: float = 1.0
+    mortgage: MortgageFinancing | None = None
+
+
+class PropertyTaxPolicy(BaseModel):
+    """Monthly property-tax carrying cost for an owned property.
+
+    `annual_tax_rate` can override location reference data; when it
+    is `None`, the rate comes from `Location.annual_property_tax_rate`.
+    """
+
+    property_id: str
+    owner_agent_id: str
+    from_account_id: str = "checking"
+    tax_authority_agent_id: str
+    tax_authority_account_id: str = "checking"
+    annual_tax_rate: float | None = None
+    start_month: int = 0
+    end_month: int | None = None
+
+    def is_active_at(self, month: int) -> bool:
+        return self.start_month <= month and (self.end_month is None or month <= self.end_month)
+
+
 class Scenario(BaseModel):
     """Spike-1 simulation scenario. Carries the minimum to run
     a multi-rollout simulation over a fixed horizon with both
@@ -177,6 +233,8 @@ class Scenario(BaseModel):
     scheduled_transfers: list[ScheduledTransfer] = Field(default_factory=list)
     recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
     scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
+    scheduled_property_purchases: list[ScheduledPropertyPurchase] = Field(default_factory=list)
+    property_tax_policies: list[PropertyTaxPolicy] = Field(default_factory=list)
     market: MarketBundle = Field(default_factory=MarketBundle)
     tax_profiles: list[TaxProfile] = Field(default_factory=list)
     floor_triggered_sale_policies: list[FloorTriggeredSalePolicy] = Field(default_factory=list)
