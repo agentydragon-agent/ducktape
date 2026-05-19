@@ -1,6 +1,7 @@
 # Valkey Kimsufi Local-Storage Migration
 
-Status: draft, being paved on `manifold-mcp/manifold-valkey`.
+Status: paved through Phase 4 on `manifold-mcp/manifold-valkey`; old
+`manifold-valkey` retirement is still pending.
 Last live inventory refresh: 2026-05-19.
 
 This note covers two related tasks:
@@ -41,7 +42,8 @@ Current cluster state:
 
 - HelmRelease: `cluster/k8s/valkey/helmrelease.yaml`
 - chart version: `0.24.0`
-- running operator image: `quay.io/opstree/redis-operator:v0.24.0`
+- running operator image: `quay.io/opstree/redis-operator:v0.25.0`,
+  deployed through chart `0.24.0` with image-tag overrides
 - local source checkout: `/home/agentydragon/code/redis-operator`
 - latest local source tag checked: `v0.25.0`
 - `quay.io/opstree/redis-operator:v0.25.0` exists; the OT Helm repository
@@ -253,6 +255,27 @@ kubectl -n manifold-mcp logs deploy/manifold-mcp -c facade --tail=100
 ```
 
 Expected: the facade is healthy and using the new Kimsufi Valkey service.
+
+## First Run Notes
+
+The Manifold MCP trial was run on 2026-05-19 with these Git commits:
+
+- Phase 0 operator prep: `d1b33344f`
+- Phase 1 Kimsufi followers: `1e2a0531b`
+- Phase 2 app pause: `6b6cebd11`
+- Phase 3 replacement detach: `6b78c31fd`
+- Phase 4 app cutover and unpause: `8ed2af13c`
+
+Observed results:
+
+- Phase 0 rolled the existing Valkeys and they recovered.
+- Phase 1 created two `local-path-ovh` PVCs on
+  `talos-kimsufi-worker-0` and `talos-kimsufi-worker-1`.
+- Phase 3 did roll the replacement pods after removing
+  `additionalRedisConfig`; no extra rollout nudge was needed.
+- Phase 4 restored `manifold-mcp` to `1/1`; the running facade pod had
+  `MCP_FACADE_PERSISTENCE__HOST=manifold-valkey-kimsufi-master.manifold-mcp.svc.cluster.local`
+  and public `/healthz` returned `200`.
 
 ### Phase 5: Retire Old Valkey
 
