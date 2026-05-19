@@ -4,7 +4,6 @@ resources:
   - serviceaccount.yaml
   - configmap.yaml
   - api-key.sops.yaml
-  - valkey-instance.yaml
   - valkey-kimsufi-instance.yaml
   - deployment.yaml
   - service.yaml
