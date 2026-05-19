@@ -136,6 +136,7 @@ locals {
     "talos-vps-worker-1.nebula.allegedly.works"     = { ip = "10.42.0.12/16", groups = "lighthouse" }
     "talos-kimsufi-worker-0.nebula.allegedly.works" = { ip = "10.42.0.13/16", groups = "lighthouse" }
     "talos-kimsufi-worker-1.nebula.allegedly.works" = { ip = "10.42.0.14/16", groups = "lighthouse" }
+    "talos-kimsufi-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.15/16", groups = "lighthouse" }
   }
 
   # Non-Talos nodes (wyrm2, rugged, iguana, atlas, activitywatch)

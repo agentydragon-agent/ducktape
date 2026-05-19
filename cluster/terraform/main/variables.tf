@@ -88,3 +88,9 @@ variable "kimsufi_service_name_1" {
   type        = string
   default     = "ns103711.ip-147-135-39.us"
 }
+
+variable "kimsufi_service_name_cp0" {
+  description = "OVH service name of the first Kimsufi KS-5 control plane server"
+  type        = string
+  default     = "ns102453.ip-147-135-37.us"
+}

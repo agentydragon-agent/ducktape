@@ -39,12 +39,13 @@ locals {
   bootstrap_node = "vps0"
 
   # Total expected node count (for health checks)
-  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes) + length(local.active_kimsufi_servers)
+  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes) + length(local.active_kimsufi_servers) + length(local.active_kimsufi_cp_servers)
 
-  # All controlplane endpoints (for talosconfig) - VPS CP IPs + Proxmox controlplane IPs
+  # All controlplane endpoints (for talosconfig) - VPS CP IPs + Proxmox CP IPs + Kimsufi CP IPs
   all_controlplane_ips = concat(
     [for k, v in hcloud_server.vps : v.ipv4_address if local.vps_nodes[k].role == "controlplane"],
-    [for k, v in local.proxmox_nodes : v.ip if v.type == "controlplane"]
+    [for k, v in local.proxmox_nodes : v.ip if v.type == "controlplane"],
+    [for k, v in data.ovh_dedicated_server.kimsufi_cp : v.ip],
   )
 
   # Containerd registry mirrors — pull through Harbor proxy cache.

@@ -20,6 +20,7 @@ locals {
     vps_worker1     = "talos-vps-worker-1.nebula.allegedly.works"
     kimsufi_worker0 = "talos-kimsufi-worker-0.nebula.allegedly.works"
     kimsufi_worker1 = "talos-kimsufi-worker-1.nebula.allegedly.works"
+    kimsufi_cp0     = "talos-kimsufi-cp-0.nebula.allegedly.works"
   }
 
   nebula_certs = {
@@ -42,6 +43,10 @@ locals {
     {
       for key, node in data.ovh_dedicated_server.kimsufi :
       local.active_kimsufi_servers[key].nebula_ip => ["${node.ip}:4242"]
+    },
+    {
+      for key, node in data.ovh_dedicated_server.kimsufi_cp :
+      local.active_kimsufi_cp_servers[key].nebula_ip => ["${node.ip}:4242"]
     },
   )
 
@@ -145,6 +150,17 @@ locals {
         serve_dns        = true
         interval         = 10
         dns              = { host = "10.42.0.14", port = 53 }
+        local_allow_list = local.nebula_local_allow_list
+      }
+      relay = { am_relay = true }
+    })
+    # OVH Kimsufi bare metal control plane: public IP, acts as lighthouse + relay
+    kimsufi_cp0 = merge(local.nebula_common, {
+      lighthouse = {
+        am_lighthouse    = true
+        serve_dns        = true
+        interval         = 10
+        dns              = { host = "10.42.0.15", port = 53 }
         local_allow_list = local.nebula_local_allow_list
       }
       relay = { am_relay = true }

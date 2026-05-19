@@ -1,4 +1,4 @@
-# OVH Eco Kimsufi KS-5 bare metal worker nodes (HIL, Hillsboro OR)
+# OVH Eco Kimsufi KS-5 bare metal nodes (workers + control plane, HIL, Hillsboro OR)
 #
 # Talos is installed via OVH rescue mode (netboot → dd image to disk).
 # No Packer/snapshot mechanism available for OVH bare metal.
@@ -33,6 +33,17 @@ locals {
   # Filter out unpurchased servers (empty service name)
   active_kimsufi_servers = {
     for k, v in local.kimsufi_servers : k => v if v.service_name != ""
+  }
+
+  kimsufi_cp_servers = {
+    kimsufi_cp0 = {
+      service_name = var.kimsufi_service_name_cp0
+      hostname     = "talos-kimsufi-cp-0"
+      nebula_ip    = "10.42.0.15"
+    }
+  }
+  active_kimsufi_cp_servers = {
+    for k, v in local.kimsufi_cp_servers : k => v if v.service_name != ""
   }
 }
 
@@ -72,6 +83,11 @@ data "talos_image_factory_urls" "kimsufi" {
 
 data "ovh_dedicated_server" "kimsufi" {
   for_each     = local.active_kimsufi_servers
+  service_name = each.value.service_name
+}
+
+data "ovh_dedicated_server" "kimsufi_cp" {
+  for_each     = local.active_kimsufi_cp_servers
   service_name = each.value.service_name
 }
 
@@ -213,6 +229,27 @@ resource "ovh_dedicated_server_reboot_task" "kimsufi_to_talos" {
 # ============================================================================
 
 locals {
+  # Shared user volume config — claims the entire second disk for SeaweedFS data.
+  # Both workers and the CP have a KS-5 with 2x 2TB SATA HDD in JBOD.
+  # Talos installs onto /dev/sda; /dev/sdb is reliably the non-system disk.
+  # Talos auto-mounts at /var/mnt/seaweedfs-data (label: u-seaweedfs-data).
+  # NOTE: this only claims/formats the disk — the node is not added to the
+  # SeaweedFS cluster manifest automatically. Wire SeaweedFS separately.
+  kimsufi_seaweedfs_user_volume = {
+    apiVersion = "v1alpha1"
+    kind       = "UserVolumeConfig"
+    name       = "seaweedfs-data"
+    volumeType = "disk"
+    provisioning = {
+      diskSelector = {
+        match = "disk.dev_path == '/dev/sdb'"
+      }
+    }
+    filesystem = {
+      type = "xfs"
+    }
+  }
+
   kimsufi_machine_config_patch = yamlencode({
     machine = merge(local.worker_machine_base, {
       install = {
@@ -225,6 +262,21 @@ locals {
       }
     })
     cluster = local.worker_cluster_config
+  })
+
+  kimsufi_cp_machine_config_patch = yamlencode({
+    machine = merge(local.common_machine_base, {
+      install = {
+        image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+      }
+      files = local.cp_auth_files
+      # Topology labels set explicitly — no CCM for OVH bare metal.
+      nodeLabels = {
+        "topology.kubernetes.io/region" = "hil"
+        "topology.kubernetes.io/zone"   = "hil-ovh"
+      }
+    })
+    cluster = local.common_cluster_config
   })
 }
 
@@ -249,33 +301,7 @@ data "talos_machine_configuration" "kimsufi" {
         auto       = "off"
         hostname   = each.value.hostname
       }),
-      # User volume: claim the entire second disk for SeaweedFS data.
-      #
-      # KS-5 ships with 2x 2TB SATA HDD in JBOD (per OVH /specifications/hardware).
-      # Talos installs onto /dev/sda via our dd-in-rescue step
-      # (null_resource.install_talos_kimsufi), so /dev/sdb is reliably the
-      # non-system disk. We'd prefer the more declarative `!system_disk`
-      # but that variable isn't exposed in the CEL env on Talos v1.12.3
-      # ("no such attribute(s): system_disk"). The dev_path-based match is
-      # robust enough given our deterministic install path.
-      #
-      # Talos auto-mounts at /var/mnt/seaweedfs-data with partition label
-      # u-seaweedfs-data. Consumed by the local-path-ovh StorageClass; see
-      # cluster/docs/kimsufi_provisioning.md and the SeaweedFS trial plan.
-      yamlencode({
-        apiVersion = "v1alpha1"
-        kind       = "UserVolumeConfig"
-        name       = "seaweedfs-data"
-        volumeType = "disk"
-        provisioning = {
-          diskSelector = {
-            match = "disk.dev_path == '/dev/sdb'"
-          }
-        }
-        filesystem = {
-          type = "xfs"
-        }
-      }),
+      yamlencode(local.kimsufi_seaweedfs_user_volume),
     ],
     local.nebula_machine_patches[each.key],
   )
@@ -289,4 +315,121 @@ resource "talos_machine_configuration_apply" "kimsufi" {
   node                        = data.ovh_dedicated_server.kimsufi[each.key].ip
 
   depends_on = [ovh_dedicated_server_reboot_task.kimsufi_to_talos]
+}
+
+# ============================================================================
+# KIMSUFI CONTROL PLANE — provisioning resources
+# ============================================================================
+
+resource "ovh_dedicated_server" "kimsufi_cp" {
+  for_each = local.active_kimsufi_cp_servers
+
+  service_name        = each.value.service_name
+  rescue_ssh_key      = data.sops_file.ovh_rescue_ssh.data["public_key"]
+  display_name        = each.value.service_name
+  efi_bootloader_path = "\\efi\\boot\\bootx64.efi"
+}
+
+resource "ovh_dedicated_server_update" "kimsufi_cp_rescue" {
+  for_each     = local.active_kimsufi_cp_servers
+  service_name = each.value.service_name
+  boot_id      = local.kimsufi_rescue_boot_id
+  depends_on   = [ovh_dedicated_server.kimsufi_cp]
+
+  lifecycle {
+    ignore_changes = [boot_id]
+  }
+}
+
+resource "ovh_dedicated_server_reboot_task" "kimsufi_cp_to_rescue" {
+  for_each     = local.active_kimsufi_cp_servers
+  service_name = each.value.service_name
+  keepers      = [tostring(local.kimsufi_rescue_boot_id)]
+  depends_on   = [ovh_dedicated_server_update.kimsufi_cp_rescue]
+}
+
+resource "null_resource" "install_talos_kimsufi_cp" {
+  for_each = local.active_kimsufi_cp_servers
+
+  triggers = {
+    schematic_id = talos_image_factory_schematic.kimsufi.id
+  }
+
+  connection {
+    type        = "ssh"
+    host        = data.ovh_dedicated_server.kimsufi_cp[each.key].ip
+    user        = "root"
+    private_key = data.sops_file.ovh_rescue_ssh.data["private_key"]
+    timeout     = "15m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -ex",
+      "apt-get update -qq && apt-get install -y -qq zstd",
+      "URL='${data.talos_image_factory_urls.kimsufi.urls.disk_image}'",
+      "wget -q -O /tmp/talos.bin \"$URL\"",
+      "case \"$URL\" in *.zst) zstd -dc /tmp/talos.bin > /tmp/talos.raw ;; *.xz) xz -dc /tmp/talos.bin > /tmp/talos.raw ;; *) echo \"unknown compression in $URL\" >&2; exit 1 ;; esac",
+      "test -s /tmp/talos.raw",
+      "dd if=/tmp/talos.raw of=/dev/sda bs=4M status=progress",
+      "sync",
+    ]
+  }
+
+  depends_on = [ovh_dedicated_server_reboot_task.kimsufi_cp_to_rescue]
+}
+
+resource "ovh_dedicated_server_update" "kimsufi_cp_harddisk" {
+  for_each     = local.active_kimsufi_cp_servers
+  service_name = each.value.service_name
+  boot_id      = local.kimsufi_harddisk_boot_id
+  depends_on   = [null_resource.install_talos_kimsufi_cp]
+}
+
+resource "ovh_dedicated_server_reboot_task" "kimsufi_cp_to_talos" {
+  for_each     = local.active_kimsufi_cp_servers
+  service_name = each.value.service_name
+  keepers      = [tostring(local.kimsufi_harddisk_boot_id)]
+  depends_on   = [ovh_dedicated_server_update.kimsufi_cp_harddisk]
+}
+
+# ============================================================================
+# KIMSUFI CONTROL PLANE — Talos machine configuration
+# ============================================================================
+
+data "talos_machine_configuration" "kimsufi_cp" {
+  for_each = local.active_kimsufi_cp_servers
+
+  cluster_name       = var.cluster_name
+  cluster_endpoint   = local.cluster_endpoint
+  machine_secrets    = local.machine_secrets
+  machine_type       = "controlplane"
+  talos_version      = var.talos_version
+  kubernetes_version = var.kubernetes_version
+  examples           = false
+  docs               = false
+
+  config_patches = concat(
+    [
+      local.kimsufi_cp_machine_config_patch,
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "HostnameConfig"
+        auto       = "off"
+        hostname   = each.value.hostname
+      }),
+      yamlencode(local.kimsufi_seaweedfs_user_volume),
+    ],
+    local.nebula_machine_patches[each.key],
+  )
+}
+
+resource "talos_machine_configuration_apply" "kimsufi_cp" {
+  for_each = local.active_kimsufi_cp_servers
+
+  client_configuration        = local.client_configuration
+  machine_configuration_input = data.talos_machine_configuration.kimsufi_cp[each.key].machine_configuration
+  node                        = data.ovh_dedicated_server.kimsufi_cp[each.key].ip
+
+  depends_on = [ovh_dedicated_server_reboot_task.kimsufi_cp_to_talos]
 }
