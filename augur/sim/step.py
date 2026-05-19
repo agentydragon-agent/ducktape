@@ -126,11 +126,11 @@ def _emit_transfers(scenario: Scenario, month: int, rollout_count: int) -> pl.Da
     (transfer, rollout)."""
     active: list[ScheduledTransfer | RecurringTransfer] = [t for t in scenario.scheduled_transfers if t.month == month]
     active.extend(t for t in scenario.recurring_transfers if t.is_active_at(month))
-    if not active:
-        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
-    rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
-    blocks = [_transfer_block_per_rollout(t, rollouts, month) for t in active]
-    return pl.concat(blocks).select(list(TRANSFER_EVENT_SCHEMA.keys()))
+    blocks: list[pl.DataFrame] = []
+    if active:
+        rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
+        blocks = [_transfer_block_per_rollout(t, rollouts, month) for t in active]
+    return concat_event_frames(blocks, TRANSFER_EVENT_SCHEMA)
 
 
 def _transfer_block_per_rollout(
@@ -170,10 +170,7 @@ def _emit_lot_dispositions(
         return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
     prices_at_month = market.prices_at(month)
     blocks = [_fifo_dispositions_for_sale(state, sale, prices_at_month, month) for sale in sales]
-    blocks = [b for b in blocks if not b.is_empty()]
-    if not blocks:
-        return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
-    return pl.concat(blocks).select(list(LOT_DISPOSITION_EVENT_SCHEMA.keys()))
+    return concat_event_frames(blocks, LOT_DISPOSITION_EVENT_SCHEMA)
 
 
 def _fifo_dispositions_for_sale(
@@ -253,10 +250,7 @@ def _emit_floor_triggered_sales(
     blocks: list[pl.DataFrame] = []
     for policy in scenario.floor_triggered_sale_policies:
         blocks.extend(_dispositions_for_policy(state, policy, prices, active_rollouts, month))
-    blocks = [b for b in blocks if not b.is_empty()]
-    if not blocks:
-        return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
-    return pl.concat(blocks).select(list(LOT_DISPOSITION_EVENT_SCHEMA.keys()))
+    return concat_event_frames(blocks, LOT_DISPOSITION_EVENT_SCHEMA)
 
 
 def _dispositions_for_policy(
@@ -423,9 +417,7 @@ def _emit_rollout_failures(
                 deficit_usd=-pl.col("_projected"),
             ).select(list(ROLLOUT_FAILURE_EVENT_SCHEMA.keys()))
         )
-    if not blocks:
-        return pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA)
-    return pl.concat(blocks)
+    return concat_event_frames(blocks, ROLLOUT_FAILURE_EVENT_SCHEMA)
 
 
 def _is_year_end(month: int) -> bool:
@@ -765,6 +757,6 @@ def _tax_events_for_profile(
             )
         )
     return _TaxYearEvents(
-        accruals=pl.concat(accrual_blocks).select(list(TAX_ACCRUAL_EVENT_SCHEMA.keys())),
-        breakdowns=pl.concat(breakdown_blocks).select(list(TAX_BREAKDOWN_EVENT_SCHEMA.keys())),
+        accruals=concat_event_frames(accrual_blocks, TAX_ACCRUAL_EVENT_SCHEMA),
+        breakdowns=concat_event_frames(breakdown_blocks, TAX_BREAKDOWN_EVENT_SCHEMA),
     )

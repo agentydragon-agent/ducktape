@@ -42,8 +42,7 @@ def concat_event_frames(frames: Iterable[pl.DataFrame], schema: dict[str, pl.Dat
     Empty event streams are common. Prefixing a schema-only frame
     makes the empty and non-empty cases use the same code path.
     """
-    non_empty = [frame for frame in frames if not frame.is_empty()]
-    return pl.concat([pl.DataFrame(schema=schema), *non_empty]).select(list(schema.keys()))
+    return pl.concat([pl.DataFrame(schema=schema), *frames]).select(list(schema.keys()))
 
 
 # `AssetPurchase` records the creation of a new tax lot — either an

@@ -1,8 +1,8 @@
 """Builds the bootstrap payload the augur frontend reads at startup.
 
 Loads the user's property shortlist from `config.property_source.properties_path`
-and derives display labels (actor policy, residence mode, rental use) from
-`config.agents` so the same generic code serves any deployment's agents."""
+and derives display labels (residence mode, rental use) from `config.agents`
+so the same generic code serves any deployment's agents."""
 
 from __future__ import annotations
 

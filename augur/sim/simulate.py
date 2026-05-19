@@ -263,19 +263,16 @@ def _merge_event_logs(a: EventLog, b: EventLog) -> EventLog:
 
 def _concat_events(events_by_month: list[EventLog]) -> EventLog:
     """Concatenate per-month event logs into one cumulative log."""
-    transfer_blocks = [e.transfers for e in events_by_month if not e.transfers.is_empty()]
-    purchase_blocks = [e.asset_purchases for e in events_by_month if not e.asset_purchases.is_empty()]
-    disposition_blocks = [e.lot_dispositions for e in events_by_month if not e.lot_dispositions.is_empty()]
-    accrual_blocks = [e.tax_accruals for e in events_by_month if not e.tax_accruals.is_empty()]
-    breakdown_blocks = [e.tax_breakdowns for e in events_by_month if not e.tax_breakdowns.is_empty()]
-    settlement_blocks = [e.tax_settlements for e in events_by_month if not e.tax_settlements.is_empty()]
-    failure_blocks = [e.rollout_failures for e in events_by_month if not e.rollout_failures.is_empty()]
     return EventLog(
-        transfers=concat_event_frames(transfer_blocks, TRANSFER_EVENT_SCHEMA),
-        asset_purchases=concat_event_frames(purchase_blocks, ASSET_PURCHASE_EVENT_SCHEMA),
-        lot_dispositions=concat_event_frames(disposition_blocks, LOT_DISPOSITION_EVENT_SCHEMA),
-        tax_accruals=concat_event_frames(accrual_blocks, TAX_ACCRUAL_EVENT_SCHEMA),
-        tax_breakdowns=concat_event_frames(breakdown_blocks, TAX_BREAKDOWN_EVENT_SCHEMA),
-        tax_settlements=concat_event_frames(settlement_blocks, TAX_SETTLEMENT_EVENT_SCHEMA),
-        rollout_failures=concat_event_frames(failure_blocks, ROLLOUT_FAILURE_EVENT_SCHEMA),
+        transfers=concat_event_frames((e.transfers for e in events_by_month), TRANSFER_EVENT_SCHEMA),
+        asset_purchases=concat_event_frames((e.asset_purchases for e in events_by_month), ASSET_PURCHASE_EVENT_SCHEMA),
+        lot_dispositions=concat_event_frames(
+            (e.lot_dispositions for e in events_by_month), LOT_DISPOSITION_EVENT_SCHEMA
+        ),
+        tax_accruals=concat_event_frames((e.tax_accruals for e in events_by_month), TAX_ACCRUAL_EVENT_SCHEMA),
+        tax_breakdowns=concat_event_frames((e.tax_breakdowns for e in events_by_month), TAX_BREAKDOWN_EVENT_SCHEMA),
+        tax_settlements=concat_event_frames((e.tax_settlements for e in events_by_month), TAX_SETTLEMENT_EVENT_SCHEMA),
+        rollout_failures=concat_event_frames(
+            (e.rollout_failures for e in events_by_month), ROLLOUT_FAILURE_EVENT_SCHEMA
+        ),
     )
