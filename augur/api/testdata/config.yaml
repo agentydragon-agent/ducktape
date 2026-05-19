@@ -2,15 +2,10 @@ agents:
   - actor_id: agent_a
     label: Agent A
     role: primary_owner
-  - actor_id: agent_b
-    label: Agent B
-    role: equity_building_occupant
 bootstrap_default_scenarios:
-  - actor_policy: owner_only
-    label: Location A baseline
+  - label: Location A baseline
     property_id: location_a_property
-  - actor_policy: owner_plus_partner
-    label: Location B shared
+  - label: Location B baseline
     property_id: location_b_property
 default_rollout_samples: 8
 max_rollout_samples: 32
@@ -61,7 +56,6 @@ market_provider:
   type: simple
 minimum_reserve_mode: projected_deficits
 personal_finance:
-  default_partner_monthly_payment_usd: 2000.0
   minimum_liquid_reserve_usd: 10000.0
 pmms_survey_date: "2026-05-14"
 property_source:

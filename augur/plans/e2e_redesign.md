@@ -65,7 +65,7 @@ API.
 
 The unified obligation pipeline now runs for every required cash demand
 (annual tax, quarterly estimated tax, mortgage, property tax, HOA, insurance,
-maintenance, outside rent, partner contribution, special assessment). A
+maintenance, outside rent, special assessment). A
 required obligation that cannot be settled — even after the actor's funding
 policies have tried — fires `FailureEvent` and flips the rollout to
 `RolloutStatusType.FAILED`. The matching `test_e2e.py` `FAILED`-on-shortfall
@@ -91,8 +91,7 @@ Next slices:
    sourced from state snapshots rather than transaction ledger rows.
 2. Derive remaining transaction-flow arrays from ledger rows where practical.
    The likely next targets are purchase-closing costs, property depreciation,
-   partner house-cost/share explanation columns, and tax payment timing once the
-   tax ledger/liability shape exists.
+   and tax payment timing once the tax ledger/liability shape exists.
 3. Move remaining explanatory arrays toward typed accounting detail once their
    semantics are explicit enough. These arrays explain calculations; they should
    not pretend to be cash movement unless there is a corresponding ledger row.
@@ -112,10 +111,9 @@ them, but their source should be another state/ledger-backed metric.
 - State snapshots: `cash_usd`, `generic_sp500_value_usd`,
   `private_equity_value_usd`, `private_equity_sale_opportunity_value_usd`,
   `property_value_usd`, `mortgage_balance_usd`, `home_equity_usd`,
-  `owner_home_equity_claim_usd`, `partner_home_equity_claim_usd`,
-  `partner_equity_ledger_usd`, `owner_equity_ledger_usd`,
-  `partner_ownership_pct`, `liquid_net_worth_usd`, `net_worth_usd`,
-  `partner_present`. `private_equity_sale_opportunity_value_usd` is a
+  `owner_home_equity_claim_usd`, `owner_equity_ledger_usd`,
+  `liquid_net_worth_usd`, `net_worth_usd`.
+  `private_equity_sale_opportunity_value_usd` is a
   tender-eligibility/opportunity snapshot, not a liquid asset; current
   `liquid_net_worth_usd` is cash plus public-liquid securities and must not
   include tender-eligible private marks.
@@ -131,9 +129,7 @@ them, but their source should be another state/ledger-backed metric.
   `rental_management_fee_usd`, `rental_leasing_fee_usd`,
   `sale_closing_cost_usd`, `property_sale_gross_usd`,
   `property_sale_net_proceeds_usd`, `property_sale_tax_usd`,
-  `property_sale_debt_payoff_usd`, `partner_contribution_usd`,
-  `partner_contribution_used_usd`, `partner_unallocated_excess_usd`,
-  `partner_principal_credit_usd`.
+  `property_sale_debt_payoff_usd`.
 - Ledger-backed rollups and aliases: `generic_sp500_sale_gain_usd`,
   `checking_floor_action_usd`, `property_carrying_cost_usd`,
   `net_property_cash_flow_usd`, `net_property_sale_cash_flow_usd`.
@@ -147,8 +143,7 @@ them, but their source should be another state/ledger-backed metric.
   `depreciation_recapture_usd`.
 - Explanatory calculations that still need typed accounting detail:
   `purchase_closing_cost_usd`, `property_depreciation_usd`,
-  `cumulative_property_depreciation_usd`, `partner_house_costs_usd`,
-  `owner_principal_credit_usd`, `partner_house_cost_share`.
+  `cumulative_property_depreciation_usd`, `owner_principal_credit_usd`.
 - Policy/result compatibility fields: `checking_floor_shortfall_usd`. Keep
   policy-decision rows as the detailed source for why a shortfall occurred.
 

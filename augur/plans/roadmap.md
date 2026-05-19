@@ -161,7 +161,9 @@ Implementation notes:
   or price-model reference, not a duplicated editable `value_usd`. Today the
   browser derives a backend asset value from units only because the generic
   backend asset schema still requires a mark; simulation should own that mark.
-- Replace `scenario.actorPolicy` enums with modeled agreements between agents.
+- Reintroduce partner/co-owner contributions only after `augur/sim` has a
+  tested agreement model. The old product-facing `scenario.actorPolicy` path is
+  shelved rather than migrated.
   A partner contribution should look like a contract: agent X pays agent Y some
   amount over a period and receives a specified equity/share/claim in return.
   The exact object model is still open, but it should live in actor/ownership
@@ -424,9 +426,11 @@ Work:
 - **Persist model-governance artifacts** — durable evidence / calibration
   / validation-report storage for market providers. `augur/model/`.
   Self-contained, can run in parallel with anything.
-- **Replace `scenario.actorPolicy` enums with modeled actor agreements**
-  (Priority 2). "Agent X pays agent Y this amount over this period for
-  this share/claim" should be a contract, not a scenario-wide enum.
+- **Reintroduce partner/co-owner agreements only after sim is wired**
+  (Priority 2). The product-facing `scenario.actorPolicy` path is shelved.
+  "Agent X pays agent Y this amount over this period for this share/claim"
+  should come back as a tested agreement model in `augur/sim`, not as a
+  scenario-wide enum.
 
 ## Next Work Plans
 
@@ -465,14 +469,16 @@ Validation:
 
 ### Plan C: Unified Obligation/Funding Semantics (complete)
 
-Plan C is **done**. Every immediate cash demand now flows through the
-unified `_settle_required_cash_obligations` pipeline: annual tax,
-estimated tax (quarterly with safe-harbor), mortgage, property tax, HOA,
-insurance, maintenance, outside rent, partner contribution, special
-assessment. Each obligation type has a `required: bool` flag, emits
-settlement rows, and produces `FailureEvent` + `RolloutStatusType.FAILED`
-on shortfall. Two follow-ons remain, both deliberately scoped out of Plan
-C and tracked in `TODO.md`:
+Plan C is **done** for the legacy `augur/core` path. Every immediate cash
+demand flows through the unified `_settle_required_cash_obligations`
+pipeline: annual tax, estimated tax (quarterly with safe-harbor),
+mortgage, property tax, HOA, insurance, maintenance, outside rent, partner
+contribution, special assessment. Partner contribution is no longer a
+product-facing frontend/backend feature; it is shelved until a tested
+`augur/sim` agreement model exists. Each obligation type has a
+`required: bool` flag, emits settlement rows, and produces `FailureEvent` +
+`RolloutStatusType.FAILED` on shortfall. Two follow-ons remain, both
+deliberately scoped out of Plan C and tracked in `TODO.md`:
 
 - **Underpayment-penalty calculation** on estimated-tax shortfalls (IRS
   short-term rate + 3% on the under-paid amount).

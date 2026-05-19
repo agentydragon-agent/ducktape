@@ -27,7 +27,7 @@ from enum import StrEnum
 
 from pydantic import ConfigDict
 
-from augur.core.bootstrap import ActorPolicyId, LiquidReservePolicyId, OwnerResidenceModeId, RentalUsePolicyId
+from augur.core.bootstrap import LiquidReservePolicyId, OwnerResidenceModeId, RentalUsePolicyId
 from augur.core.scenario_set import FinancingMode, MarketRequest, ReportSpec
 from augur.core.schemas import ApiModel
 
@@ -46,11 +46,6 @@ class BrowserScenarioIdentity(ApiModel):
 
 class BrowserPropertyAndLocation(ApiModel):
     property_id: str
-
-
-class BrowserActorsAndOwnership(ApiModel):
-    actor_policy: ActorPolicyId
-    partner_payment_monthly_usd: float
 
 
 class BrowserTimeline(ApiModel):
@@ -115,7 +110,6 @@ class BrowserPolicies(ApiModel):
 class BrowserScenarioInput(ApiModel):
     identity: BrowserScenarioIdentity
     property_and_location: BrowserPropertyAndLocation
-    actors_and_ownership: BrowserActorsAndOwnership
     timeline: BrowserTimeline
     financing: BrowserFinancing
     occupancy_and_rental: BrowserOccupancyAndRental
@@ -155,11 +149,6 @@ class BrowserScenarioIdentityOverrides(_Overrides):
 
 class BrowserPropertyAndLocationOverrides(_Overrides):
     property_id: str | None = None
-
-
-class BrowserActorsAndOwnershipOverrides(_Overrides):
-    actor_policy: ActorPolicyId | None = None
-    partner_payment_monthly_usd: float | None = None
 
 
 class BrowserTimelineOverrides(_Overrides):
@@ -214,7 +203,6 @@ class BrowserPoliciesOverrides(_Overrides):
 class BrowserScenarioInputOverrides(_Overrides):
     identity: BrowserScenarioIdentityOverrides | None = None
     property_and_location: BrowserPropertyAndLocationOverrides | None = None
-    actors_and_ownership: BrowserActorsAndOwnershipOverrides | None = None
     timeline: BrowserTimelineOverrides | None = None
     financing: BrowserFinancingOverrides | None = None
     occupancy_and_rental: BrowserOccupancyAndRentalOverrides | None = None

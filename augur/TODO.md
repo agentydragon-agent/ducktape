@@ -135,11 +135,13 @@ Followups still on the table:
       concepts with explicit cause IDs. Tender-eligible private marks are not
       liquid assets and must stay out of `liquid_net_worth`.
 - [ ] Extend policy schema/programs enough for downstream deployments to express concentrated-holding limits, liquidity-sale preferences, tender/acquisition/IPO preferences, and tax preferences without ad-hoc `AugurConfig` fields.
-- [ ] Replace `scenario.actorPolicy`-style enums with explicit actor
-      agreements/contracts. For example, "agent X pays agent Y this amount over
-      this period and receives this equity/share/claim in return" should be a
-      modeled agreement between agents, not a scenario-level enum that activates a
-      hardcoded partner-ownership hack. The exact representation still needs design.
+- [ ] Reintroduce partner/co-owner contributions only as explicit tested
+      agreements in `augur/sim`, after the sim backend is wired. The old
+      `scenario.actorPolicy` / `owner_plus_partner` product path is shelved:
+      "agent X pays agent Y this amount over this period and receives this
+      equity/share/claim in return" should be a modeled agreement between
+      agents, not a scenario-level enum that activates a hardcoded
+      partner-ownership hack.
 - [ ] Separate rollout stochastic inputs in the API/data model. Today a rollout
       is effectively a sampled exogenous trajectory plus deterministic policy.
       Make that explicit, and consider separate structures/identifiers for
@@ -273,6 +275,4 @@ Followups still on the table:
       columns expandable in place, similar to hidden columns in a spreadsheet:
       e.g. `House costs total` expands in place into tax, insurance, HOA, and
       maintenance subcolumns under the same table header.
-- [ ] Key partner-equity reporting by partner actor or make it derivable from actor-keyed ledger entries. Aggregate scenario arrays are fine for charts but should not be the only public detail.
-- [ ] Reconsider whether to reintroduce per-component partner contribution reporting for interest, property tax, insurance, HOA, and maintenance.
 - [ ] Refresh `augur/SPEC.md` once policy execution, sale taxes, and one-rollout detail have stabilized.

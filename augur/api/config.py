@@ -55,7 +55,7 @@ def _duplicates(values) -> list[str]:
 class AgentDefinition(ApiModel):
     """An economic actor the simulator can attribute state to.
 
-    Actor IDs are user-provided identity strings (e.g. "primary", "partner").
+    Actor IDs are user-provided identity strings (e.g. "primary", "buyer").
     The role is a typed concept the policy / scenario engine consumes."""
 
     actor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
@@ -67,7 +67,6 @@ class PersonalFinanceConfig(ApiModel):
     """User-specific finance defaults that are not balance-sheet rows."""
 
     minimum_liquid_reserve_usd: NonNegativeFloat = 0.0
-    default_partner_monthly_payment_usd: NonNegativeFloat = 0.0
 
 
 class PropertyAssetConfig(ApiModel):

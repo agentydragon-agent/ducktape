@@ -58,7 +58,7 @@ class VisualCase:
 
 
 def _encode_visual_state(scenario_set_input: dict[str, object]) -> str:
-    payload = {"version": 4, "scenario_set_input": scenario_set_input}
+    payload = {"version": 5, "scenario_set_input": scenario_set_input}
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     return base64.urlsafe_b64encode(payload_json).decode().rstrip("=")
 
@@ -83,7 +83,6 @@ FAN_STATE: dict[str, object] = {
                 "color": "#2563eb",
             },
             "property_and_location": {"property_id": "location_a_property"},
-            "actors_and_ownership": {"actor_policy": "owner_only", "partner_payment_monthly_usd": 2000},
             "timeline": {"hold_years": 3},
             "financing": {"financing_mode": "fixed_30", "down_payment_pct": 25, "credit_score": 776},
             "initial_balance_sheet": {
@@ -100,12 +99,11 @@ FAN_STATE: dict[str, object] = {
         {
             "identity": {
                 "scenario_id": "location_b_fan",
-                "label": "Location B shared 3-year fan",
+                "label": "Location B 3-year fan",
                 "enabled": True,
                 "color": "#dc2626",
             },
             "property_and_location": {"property_id": "location_b_property"},
-            "actors_and_ownership": {"actor_policy": "owner_plus_partner", "partner_payment_monthly_usd": 2750},
             "timeline": {"hold_years": 3},
             "financing": {"financing_mode": "fixed_30", "down_payment_pct": 20, "credit_score": 776},
             "occupancy_and_rental": {

@@ -10,11 +10,6 @@ from augur.core.scenario_set import ActorRole, PropertyId
 from augur.core.schemas import ApiModel, ScenarioKnobs
 
 
-class ActorPolicyId(StrEnum):
-    OWNER_ONLY = "owner_only"
-    OWNER_PLUS_PARTNER = "owner_plus_partner"
-
-
 class OwnerResidenceModeId(StrEnum):
     SELECTED_PROPERTY = "selected_property"
     OTHER_OWNED_PROPERTY = "other_owned_property"
@@ -38,10 +33,6 @@ class Option(ApiModel):
     description: str
 
 
-class ActorPolicyOption(Option):
-    id: ActorPolicyId
-
-
 class OwnerResidenceModeOption(Option):
     id: OwnerResidenceModeId
 
@@ -62,7 +53,6 @@ class AgentOption(ApiModel):
 
 class DefaultScenario(ApiModel):
     property_id: PropertyId
-    actor_policy: ActorPolicyId
     label: str | None = None
 
 
@@ -103,7 +93,6 @@ class BootstrapResponse(ApiModel):
     locations: list[Location]
     properties: list[Property]
     default_property_id: str
-    default_actor_policy: ActorPolicyId
     default_owner_residence_mode: OwnerResidenceModeId
     default_owner_residence_property_id: str | None = None
     default_rental_use_policy: RentalUsePolicyId
@@ -114,10 +103,8 @@ class BootstrapResponse(ApiModel):
     default_knobs: ScenarioKnobs
     default_rollout_samples: int
     default_scenarios: list[DefaultScenario]
-    actor_policy_options: list[ActorPolicyOption]
     owner_residence_mode_options: list[OwnerResidenceModeOption]
     rental_use_policy_options: list[RentalUsePolicyOption]
     liquid_reserve_policy_options: list[LiquidReservePolicyOption]
     agents: list[AgentOption]
     finance_snapshot: FinanceSnapshot
-    default_partner_monthly_payment_usd: float = 0

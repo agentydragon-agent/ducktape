@@ -14,8 +14,6 @@ from pydantic import TypeAdapter
 
 from augur.api.config import AugurConfig, LocationConfig, PropertyAssetConfig
 from augur.core.bootstrap import (
-    ActorPolicyId,
-    ActorPolicyOption,
     AgentOption,
     BootstrapResponse,
     LiquidReservePolicyId,
@@ -132,32 +130,10 @@ def _default_knobs_for_config(config: AugurConfig) -> ScenarioKnobs:
     return DEFAULT_KNOBS.model_copy(update={"starting_portfolio_usd": starting_portfolio_usd})
 
 
-def _agents_by_role(config: AugurConfig) -> tuple[str, str | None]:
-    """Return (primary_label, partner_label_or_none) derived from config.agents."""
+def _primary_agent_label(config: AugurConfig) -> str:
+    """Return the primary-owner label derived from config.agents."""
     primary = next(agent for agent in config.agents if agent.role is ActorRole.PRIMARY_OWNER)
-    partner = next((agent for agent in config.agents if agent.role is ActorRole.EQUITY_BUILDING_OCCUPANT), None)
-    return primary.label, partner.label if partner is not None else None
-
-
-def _actor_policy_options(primary: str, partner: str | None) -> list[ActorPolicyOption]:
-    options = [
-        ActorPolicyOption(
-            id=ActorPolicyId.OWNER_ONLY,
-            label=f"{primary} only",
-            description=f"{primary} funds the purchase and owns the property economics.",
-        )
-    ]
-    if partner is not None:
-        options.append(
-            ActorPolicyOption(
-                id=ActorPolicyId.OWNER_PLUS_PARTNER,
-                label=f"{primary} + {partner}",
-                description=(
-                    f"{partner} contributes while housed and earns proportional equity through the shared actor policy."
-                ),
-            )
-        )
-    return options
+    return primary.label
 
 
 def _owner_residence_mode_options(primary: str) -> list[OwnerResidenceModeOption]:
@@ -182,13 +158,12 @@ def _owner_residence_mode_options(primary: str) -> list[OwnerResidenceModeOption
     ]
 
 
-def _rental_use_policy_options(primary: str, partner: str | None) -> list[RentalUsePolicyOption]:
-    occupant_phrase = f"{primary} or {partner}" if partner is not None else primary
+def _rental_use_policy_options(primary: str) -> list[RentalUsePolicyOption]:
     return [
         RentalUsePolicyOption(
             id=RentalUsePolicyId.NOT_RENTED,
             label="Not rented",
-            description=f"No rental income is modeled while {occupant_phrase} uses the property.",
+            description=f"No rental income is modeled while {primary} uses the property.",
         ),
         RentalUsePolicyOption(
             id=RentalUsePolicyId.RENT_ROOMS_WHILE_OWNER_LIVES_THERE,
@@ -198,9 +173,7 @@ def _rental_use_policy_options(primary: str, partner: str | None) -> list[Rental
         RentalUsePolicyOption(
             id=RentalUsePolicyId.RENT_WHOLE_PROPERTY,
             label="Rent whole property",
-            description=(
-                f"Whole-property rental income applies when the property is not occupied by {occupant_phrase}."
-            ),
+            description=f"Whole-property rental income applies when the property is not occupied by {primary}.",
         ),
     ]
 
@@ -243,12 +216,11 @@ def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
     )
     if not properties:
         raise ValueError("Augur property catalog has no properties after applying location_selection")
-    primary, partner = _agents_by_role(config)
+    primary = _primary_agent_label(config)
     return BootstrapResponse(
         locations=locations,
         properties=properties,
         default_property_id=properties[0].id,
-        default_actor_policy=ActorPolicyId.OWNER_ONLY,
         default_owner_residence_mode=OwnerResidenceModeId.SELECTED_PROPERTY,
         default_owner_residence_property_id=properties[0].id,
         default_rental_use_policy=RentalUsePolicyId.NOT_RENTED,
@@ -259,11 +231,9 @@ def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
         default_knobs=_default_knobs_for_config(config),
         default_rollout_samples=config.default_rollout_samples,
         default_scenarios=list(config.bootstrap_default_scenarios),
-        actor_policy_options=_actor_policy_options(primary, partner),
         owner_residence_mode_options=_owner_residence_mode_options(primary),
-        rental_use_policy_options=_rental_use_policy_options(primary, partner),
+        rental_use_policy_options=_rental_use_policy_options(primary),
         liquid_reserve_policy_options=LIQUID_RESERVE_POLICY_OPTIONS,
         agents=[AgentOption(actor_id=agent.actor_id, label=agent.label, role=agent.role) for agent in config.agents],
         finance_snapshot=config.snapshot,
-        default_partner_monthly_payment_usd=config.personal_finance.default_partner_monthly_payment_usd,
     )

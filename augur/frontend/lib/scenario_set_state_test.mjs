@@ -20,14 +20,12 @@ import { z } from "zod";
 
 const bootstrap = {
   defaultPropertyId: "location_a_property",
-  defaultActorPolicy: "owner_only",
   defaultOwnerResidenceMode: "selected_property",
   defaultRentalUsePolicy: "not_rented",
   defaultLiquidReservePolicy: "none",
   defaultInitialCheckingUsd: 25_000,
   defaultCheckingFloorUsd: 10_000,
   defaultCheckingSaleAmountUsd: 20_000,
-  defaultPartnerMonthlyPaymentUsd: 2_435,
   defaultRolloutSamples: 16,
   financeSnapshot: {
     asOfDate: "2026-05-14",
@@ -47,8 +45,8 @@ const bootstrap = {
     ],
   },
   defaultScenarios: [
-    { propertyId: "location_a_property", actorPolicy: "owner_only" },
-    { propertyId: "location_b_property", actorPolicy: "owner_plus_partner", label: "Location B shared" },
+    { propertyId: "location_a_property" },
+    { propertyId: "location_b_property", label: "Location B baseline" },
   ],
   defaultKnobs: {
     holdYears: 5,
@@ -70,18 +68,11 @@ const bootstrap = {
     closingCostSellPct: 6.5,
     depreciableBasisPct: 80,
   },
-  actorPolicyOptions: [
-    { id: "owner_only", label: "Alpha only" },
-    { id: "owner_plus_partner", label: "Alpha + Beta" },
-  ],
   ownerResidenceModeOptions: [
     { id: "selected_property", label: "Selected" },
     { id: "rental_elsewhere", label: "Elsewhere" },
   ],
-  agents: [
-    { actorId: "alpha", label: "Alpha", role: "primary_owner" },
-    { actorId: "beta", label: "Beta", role: "equity_building_occupant" },
-  ],
+  agents: [{ actorId: "alpha", label: "Alpha", role: "primary_owner" }],
   rentalUsePolicyOptions: [
     { id: "not_rented", label: "Not rented" },
     { id: "rent_rooms_while_owner_lives_there", label: "Rent rooms" },
@@ -156,7 +147,6 @@ test("default input creates comparable generic location scenarios", () => {
   assert.equal(firstScenario.initialBalanceSheet.privateEquityUnits, 500);
   assert.equal(firstScenario.policies.privateEquitySalePolicy, "none");
   assert.equal(secondScenario.propertyAndLocation.propertyId, "location_b_property");
-  assert.equal(secondScenario.actorsAndOwnership.actorPolicy, "owner_plus_partner");
   assert.equal(input.marketRequest.seed, 0);
   assert.equal(input.reportSpec.includeMonthlyColumns, true);
 });
@@ -298,9 +288,10 @@ test("scenario set request is canonical backend input after decamelizing", () =>
       cost_basis_usd: 0,
     }
   );
-  assert.equal(backendRequest.scenarios[1].policies[0].policy_type, "partner_equity_accrual");
-  assert.equal(backendRequest.scenarios[1].policies[0].actor_id, "beta");
-  assert.equal(backendRequest.scenarios[1].policies[0].base_monthly_payment_usd, 2_435);
+  assert.equal(
+    backendRequest.scenarios[1].policies.find((policy) => policy.policy_type === "partner_equity_accrual"),
+    undefined
+  );
 });
 
 test("backend request mapper output is covered by generated schema", () => {

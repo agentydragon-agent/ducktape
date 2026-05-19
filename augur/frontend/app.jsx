@@ -112,10 +112,6 @@ function scenarioPropertyAndLocation(scenario) {
   return scenario?.propertyAndLocation ?? {};
 }
 
-function scenarioActorsAndOwnership(scenario) {
-  return scenario?.actorsAndOwnership ?? {};
-}
-
 function scenarioTimeline(scenario) {
   return scenario?.timeline ?? {};
 }
@@ -275,7 +271,7 @@ function metricIsCurrency(metricName) {
 }
 
 function fmtMetricValue(metricName, value) {
-  if (metricName?.endsWith("Pct") || metricName === "partnerOwnershipPct") {
+  if (metricName?.endsWith("Pct")) {
     return fmtPct(value);
   }
   if (metricIsCurrency(metricName)) {
@@ -509,8 +505,6 @@ function metricOptionsFromResult(result, scenarioSetInput) {
     "netPropertySaleCashFlowUsd",
     "privateEquityValueUsd",
     "privateEquitySaleOpportunityValueUsd",
-    "partnerHomeEquityClaimUsd",
-    "partnerOwnershipPct",
     "checkingFloorShortfallUsd",
   ];
   return [...metricNames].sort((left, right) => {
@@ -887,8 +881,6 @@ function TerminalPercentileSnapshot({ distribution }) {
     ["Property sale proceeds", "propertySaleNetProceedsUsd", fmtUsd],
     ["Sale cash flow", "netPropertySaleCashFlowUsd", fmtUsd],
     ["Private equity value", "privateEquityValueUsd", fmtUsd],
-    ["Partner equity", "partnerHomeEquityClaimUsd", fmtUsd],
-    ["Partner ownership", "partnerOwnershipPct", fmtPct],
   ]
     .map(([label, metricName, formatter]) => [label, distribution.metricFanTerminal(metricName), formatter])
     .filter(([, row]) => row);
@@ -984,60 +976,6 @@ function PropertySaleTaxDistributionPanel({ distribution }) {
           ["Net sale cash flow", fmtUsd(distribution.terminalP50("totalNetPropertySaleCashFlowUsd"))],
         ]}
       />
-    </ResultPanel>
-  );
-}
-
-function PartnerOwnershipPanel({ trajectory, bootstrap }) {
-  assertResultViewKind(trajectory, "trajectory");
-  const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
-  const partnerLabel = partner?.label ?? "Partner";
-  if (!trajectory.hasRows) return null;
-  const annualRows = trajectory.annualRows();
-  const terminalRow = trajectory.terminalRow();
-  if (!trajectory.hasAny(["partnerPresent", "partnerContributionUsd", "partnerHomeEquityClaimUsd"])) return null;
-  const firstPathContribution = trajectory.sum("partnerContributionUsd");
-  return (
-    <ResultPanel kind="trajectory" title={`${partnerLabel} contribution and equity`}>
-      <div className="grid gap-px border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-4">
-        {[
-          ["Path contribution", fmtUsd(firstPathContribution)],
-          ["Contribution used", fmtUsd(trajectory.sum("partnerContributionUsedUsd"))],
-          ["Equity claim", fmtUsd(terminalRow?.partnerHomeEquityClaimUsd)],
-          ["Final ownership", fmtPct(terminalRow?.partnerOwnershipPct)],
-        ].map(([label, value]) => (
-          <div key={label} className="bg-white px-4 py-3 dark:bg-slate-900">
-            <div className="augur-eyebrow">{label}</div>
-            <div className="mt-1 mono text-sm font-semibold augur-strong">{value}</div>
-          </div>
-        ))}
-      </div>
-      <div className="overflow-x-auto">
-        <Table className="w-full" unstyled>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Month</Table.Th>
-              <Table.Th>Contribution</Table.Th>
-              <Table.Th>Used</Table.Th>
-              <Table.Th>Equity claim</Table.Th>
-              <Table.Th>Ownership</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {annualRows.map((row) => {
-              return (
-                <Table.Tr key={row.monthIndex}>
-                  <Table.Td>{row.monthIndex}</Table.Td>
-                  <Table.Td>{fmtUsd(row.partnerContributionUsd)}</Table.Td>
-                  <Table.Td>{fmtUsd(row.partnerContributionUsedUsd)}</Table.Td>
-                  <Table.Td>{fmtUsd(row.partnerHomeEquityClaimUsd)}</Table.Td>
-                  <Table.Td>{fmtPct(row.partnerOwnershipPct)}</Table.Td>
-                </Table.Tr>
-              );
-            })}
-          </Table.Tbody>
-        </Table>
-      </div>
     </ResultPanel>
   );
 }
@@ -1146,9 +1084,7 @@ function PrivateEquitySaleOpportunityPanel({ trajectory }) {
 
 function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange, bootstrap }) {
   const primary = bootstrap?.agents?.find((a) => a.role === "primary_owner");
-  const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
   const primaryLabel = primary?.label ?? "Owner";
-  const partnerLabel = partner?.label ?? "Partner";
   const scenarios = scenarioSetInput.scenarios;
   const propertiesById = useMemo(
     () => new Map(bootstrap.properties.map((property) => [property.id, property])),
@@ -1204,7 +1140,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="augur-eyebrow">Scenarios</div>
-            <div className="text-sm augur-muted">Compare property, actor, occupancy, and policy choices.</div>
+            <div className="text-sm augur-muted">Compare property, occupancy, financing, and policy choices.</div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" size="xs" variant="default" onClick={addScenario}>
@@ -1217,7 +1153,6 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
         {scenarios.map((scenario) => {
           const identity = scenarioIdentity(scenario);
           const propertyAndLocation = scenarioPropertyAndLocation(scenario);
-          const actorsAndOwnership = scenarioActorsAndOwnership(scenario);
           const selected = identity.scenarioId === selectedScenarioId;
           const property = propertiesById.get(propertyAndLocation.propertyId);
           return (
@@ -1272,9 +1207,7 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
               </div>
               <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
                 <span className="min-w-0 max-w-full shrink-0 truncate rounded border border-slate-200 px-2 py-1 text-xs augur-muted dark:border-slate-700">
-                  {actorsAndOwnership.actorPolicy === "owner_plus_partner"
-                    ? `${partnerLabel} active`
-                    : `${primaryLabel} only`}
+                  {primaryLabel} only
                 </span>
               </div>
             </div>
@@ -1289,7 +1222,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   if (!scenario) return null;
   const identity = scenarioIdentity(scenario);
   const propertyAndLocation = scenarioPropertyAndLocation(scenario);
-  const actorsAndOwnership = scenarioActorsAndOwnership(scenario);
   const timeline = scenarioTimeline(scenario);
   const financing = scenarioFinancing(scenario);
   const occupancyAndRental = scenarioOccupancyAndRental(scenario);
@@ -1298,9 +1230,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const initialBalanceSheet = scenarioInitialBalanceSheet(scenario);
   const policies = scenarioPolicies(scenario);
   const primary = bootstrap?.agents?.find((a) => a.role === "primary_owner");
-  const partner = bootstrap?.agents?.find((a) => a.role === "equity_building_occupant");
   const primaryLabel = primary?.label ?? "Owner";
-  const partnerLabel = partner?.label ?? "Partner";
   const usesCheckingFloorPolicy = scenarioUsesCheckingFloorPolicy(scenario);
   const concentratedHolding = primaryConcentratedHolding(bootstrap);
   const privateEquityLabel = concentratedHolding?.label ?? "Private equity";
@@ -1351,14 +1281,8 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
         </div>
       </ControlSection>
 
-      <ControlSection title="Ownership and occupancy">
+      <ControlSection title="Occupancy">
         <div className="grid gap-4">
-          <OptionButtons
-            label="Actors"
-            options={bootstrap.actorPolicyOptions}
-            value={actorsAndOwnership.actorPolicy}
-            onChange={(actorPolicy) => updateScenarioSection("actorsAndOwnership", { actorPolicy })}
-          />
           <OptionButtons
             label={`Where ${primaryLabel} lives`}
             options={bootstrap.ownerResidenceModeOptions}
@@ -1515,7 +1439,7 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
         </ControlGrid>
       </ControlSection>
 
-      <ControlSection title="Portfolio and actors">
+      <ControlSection title="Portfolio and policies">
         <div className="grid gap-4">
           <PortfolioSnapshotPanel bootstrap={bootstrap} />
           <OptionButtons
@@ -1589,17 +1513,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               />
             </ControlGrid>
           )}
-          <ControlGrid>
-            <MoneyField
-              label={`${partnerLabel} payment`}
-              step={50}
-              value={actorsAndOwnership.partnerPaymentMonthlyUsd}
-              onChange={(partnerPaymentMonthlyUsd) =>
-                updateScenarioSection("actorsAndOwnership", { partnerPaymentMonthlyUsd })
-              }
-              suffix="/ mo"
-            />
-          </ControlGrid>
         </div>
       </ControlSection>
     </section>
@@ -1785,9 +1698,6 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
     ["totalPropertySaleTaxUsd", "P50 sale tax"],
     ["totalSaleClosingCostUsd", "P50 sale costs"],
     ["finalCumulativePropertyDepreciationUsd", "P50 cum. depreciation"],
-    ["totalPartnerContributionUsedUsd", "P50 partner contrib."],
-    ["finalPartnerHomeEquityClaimUsd", "P50 partner equity"],
-    ["finalPartnerOwnershipPct", "P50 partner own."],
   ].filter(([column]) => showCheckingFloorColumns || !CHECKING_FLOOR_METRICS.has(column));
   return (
     <ResultPanel kind="distribution" title="Terminal scenario comparison">
@@ -2035,20 +1945,6 @@ function ScenarioMonthlyLedger({ scenario, accountingDetail, onSelectedRolloutIn
         ["taxablePropertyGainUsd", "Taxable gain", fmtUsd],
       ],
     },
-    {
-      id: "partner_equity",
-      label: "Partner equity",
-      summary: ["partnerHomeEquityClaimUsd", "Partner equity", fmtUsd],
-      details: [
-        ["partnerContributionUsd", "Partner contrib.", fmtUsd],
-        ["partnerContributionUsedUsd", "Partner used", fmtUsd],
-        ["partnerUnallocatedExcessUsd", "Partner excess", fmtUsd],
-        ["partnerHouseCostsUsd", "Partner costs", fmtUsd],
-        ["partnerPrincipalCreditUsd", "Partner principal", fmtUsd],
-        ["partnerHomeEquityClaimUsd", "Partner equity", fmtUsd],
-        ["partnerOwnershipPct", "Partner own.", fmtPct],
-      ],
-    },
   ]
     .map((group) => ({
       ...group,
@@ -2074,7 +1970,6 @@ function ScenarioMonthlyLedger({ scenario, accountingDetail, onSelectedRolloutIn
     ["mortgageBalanceUsd", "Mortgage balance", fmtUsd],
     ["homeEquityUsd", "Home equity", fmtUsd],
     ...columnsForGroup("transaction_taxes"),
-    ...columnsForGroup("partner_equity"),
     ["netWorthUsd", "Net worth", fmtUsd],
   ].filter(
     ([column], index, columns) =>
@@ -2109,7 +2004,6 @@ function ScenarioAcceptedPanel({ selection }) {
   const { scenario, scenarioResult } = selection;
   if (!scenario || !scenarioResult) return null;
   const propertyAndLocation = scenarioPropertyAndLocation(scenario);
-  const actorsAndOwnership = scenarioActorsAndOwnership(scenario);
   return (
     <section className="augur-card overflow-hidden" data-scenario-context-panel="scenario-contract">
       <ResultPanelHeader title="Scenario contract" />
@@ -2119,7 +2013,7 @@ function ScenarioAcceptedPanel({ selection }) {
           ["Enabled", scenarioResult.summary?.enabled ? "yes" : "no"],
           ["Property id", scenarioResult.summary?.propertyId ?? propertyAndLocation.propertyId],
           ["Location", scenarioResult.summary?.locationId ?? "n/a"],
-          ["Participants", actorsAndOwnership.actorPolicy === "owner_plus_partner" ? "Owner + partner" : "Owner only"],
+          ["Participants", "Owner only"],
           ["Warnings", scenarioResult.warnings?.join("; ") || "none"],
         ]}
       />
@@ -2159,7 +2053,6 @@ function TrajectoryResults({
   selection,
   selectedRolloutIndex,
   onSelectedRolloutIndexChange,
-  bootstrap,
 }) {
   const { scenario, scenarioResult } = selection;
   const trajectory = trajectoryResultView(scenarioResult, selectedRolloutIndex);
@@ -2173,7 +2066,6 @@ function TrajectoryResults({
         accountingDetail={accountingDetail}
         onSelectedRolloutIndexChange={onSelectedRolloutIndexChange}
       />
-      <PartnerOwnershipPanel trajectory={trajectory} bootstrap={bootstrap} />
       <LiquidityPolicyPanel trajectory={trajectory} />
       <PrivateEquitySaleOpportunityPanel trajectory={trajectory} />
     </>
@@ -2411,7 +2303,6 @@ function AugurAppShell() {
                 selection={selectedContext}
                 selectedRolloutIndex={selectedRolloutIndex}
                 onSelectedRolloutIndexChange={setSelectedRolloutIndex}
-                bootstrap={bootstrap}
               />
             ) : (
               <DistributionResults

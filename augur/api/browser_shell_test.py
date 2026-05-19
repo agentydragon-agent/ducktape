@@ -141,7 +141,7 @@ def _decode_url_state(page: Page) -> dict[str, Any] | None:
         return None
     padded_state = state + "=" * (-len(state) % 4)
     payload = json.loads(urlsafe_b64decode(padded_state.encode()).decode())
-    assert payload["version"] == 4
+    assert payload["version"] == 5
     return cast(dict[str, Any], payload["scenario_set_input"])
 
 
@@ -193,7 +193,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     bootstrap_json = json.dumps(bootstrap)
     assert "San Francisco" not in bootstrap_json
     assert "Vallejo" not in bootstrap_json
-    assert any(option["id"] == "owner_plus_partner" for option in bootstrap["actor_policy_options"])
+    assert "actor_policy_options" not in bootstrap
+    assert "default_actor_policy" not in bootstrap
+    assert "default_partner_monthly_payment_usd" not in bootstrap
     assert bootstrap["default_initial_checking_usd"] == 50000
     assert bootstrap["default_knobs"]["starting_portfolio_usd"] == 150000
     assert bootstrap["finance_snapshot"]["sp500_proxy_portfolio_usd"] == 150000
@@ -210,19 +212,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
                 {
                     "scenario_id": "location_a",
                     "label": "Location A",
-                    "actors": [
-                        {"actor_id": "agent_a", "label": "Agent A", "role": "primary_owner"},
-                        {"actor_id": "agent_b", "label": "Agent B", "role": "equity_building_occupant"},
-                    ],
+                    "actors": [{"actor_id": "agent_a", "label": "Agent A", "role": "primary_owner"}],
                     "property_selection": {"property_id": "location_a_property"},
-                    "policies": [
-                        {
-                            "policy_id": "partner_equity_accrual",
-                            "policy_type": "partner_equity_accrual",
-                            "actor_id": "agent_b",
-                            "base_monthly_payment_usd": 2000,
-                        }
-                    ],
+                    "policies": [],
                 }
             ],
         },
@@ -283,7 +275,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_text("Market model metadata").click()
     page.get_by_text("Event stream IDs").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A baseline").first.wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Location B shared").first.wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Location B baseline").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A Property").first.wait_for(state="visible", timeout=30_000)
     _assert_property_location_context_boundary(page)
     _assert_financing_tax_context_boundary(page)
@@ -307,8 +299,6 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("SP500-like portfolio").fill("200000")
     page.get_by_text("SP500 sales").first.wait_for(state="visible", timeout=30_000)
 
-    page.get_by_role("radio", name=re.compile("Agent A \\+ Agent B")).click()
-    page.get_by_text("Agent B contribution and equity").wait_for(state="visible", timeout=30_000)
     page.get_by_label("Scenario property").select_option("location_b_property")
     page.get_by_role("heading", name="Location B Property").wait_for(state="visible", timeout=30_000)
     _assert_property_location_context_boundary(page)
@@ -354,6 +344,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert rich_scenario["policies"]["private_equity_sale_policy"] == "liquid_net_worth_floor"
     assert rich_scenario["policies"]["private_equity_liquid_net_worth_floor_usd"] == 250000
     assert rich_scenario["policies"]["private_equity_tender_sale_amount_usd"] == 50000
+    assert "actors_and_ownership" not in rich_scenario
 
     assert page.get_by_text("Rai").count() == 0
     assert page.get_by_text("Auragon").count() == 0

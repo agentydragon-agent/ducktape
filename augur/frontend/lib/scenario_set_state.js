@@ -8,7 +8,7 @@ import {
 
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
 
-const URL_STATE_VERSION = 4;
+const URL_STATE_VERSION = 5;
 
 const DEFAULT_MARKET_REQUEST = {
   marketModelId: "current_market_model",
@@ -134,16 +134,6 @@ export function createScenarioInput(bootstrap, overrides = {}) {
     propertyAndLocation: {
       propertyId,
     },
-    actorsAndOwnership: {
-      actorPolicy:
-        overrides.actorPolicy ??
-        bootstrap?.defaultActorPolicy ??
-        defaultOption(bootstrap?.actorPolicyOptions, "owner_only"),
-      partnerPaymentMonthlyUsd: finiteNumber(
-        overrides.partnerPaymentMonthlyUsd,
-        bootstrap?.defaultPartnerMonthlyPaymentUsd ?? 0
-      ),
-    },
     timeline: {
       holdYears: positiveNumber(overrides.holdYears, defaultKnobs.holdYears ?? 5),
     },
@@ -215,12 +205,11 @@ export function createDefaultScenarioSetInput(bootstrap) {
   const defaultScenarioSpecs =
     Array.isArray(bootstrap?.defaultScenarios) && bootstrap.defaultScenarios.length > 0
       ? bootstrap.defaultScenarios
-      : [{ propertyId: defaultPropertyId(bootstrap), actorPolicy: bootstrap?.defaultActorPolicy }];
+      : [{ propertyId: defaultPropertyId(bootstrap) }];
   const scenarios = defaultScenarioSpecs.map((spec, index) =>
     createScenarioInput(bootstrap, {
       index,
       propertyId: spec.propertyId,
-      actorPolicy: spec.actorPolicy,
       label: spec.label,
     })
   );
@@ -237,14 +226,12 @@ export function createDefaultScenarioSetInput(bootstrap) {
 
 function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
   const propertyIds = new Set((bootstrap?.properties ?? []).map((property) => property.id));
-  const actorPolicyIds = optionIds(bootstrap?.actorPolicyOptions);
   const ownerResidenceModeIds = optionIds(bootstrap?.ownerResidenceModeOptions);
   const rentalUsePolicyIds = optionIds(bootstrap?.rentalUsePolicyOptions);
   const liquidReservePolicyIds = optionIds(bootstrap?.liquidReservePolicyOptions);
   const defaultScenario = createScenarioInput(bootstrap, { index });
   const identity = scenarioSection(scenario, "identity");
   const propertyAndLocation = scenarioSection(scenario, "propertyAndLocation");
-  const actorsAndOwnership = scenarioSection(scenario, "actorsAndOwnership");
   const timeline = scenarioSection(scenario, "timeline");
   const financing = scenarioSection(scenario, "financing");
   const occupancyAndRental = scenarioSection(scenario, "occupancyAndRental");
@@ -254,7 +241,6 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
   const policies = scenarioSection(scenario, "policies");
   const defaultIdentity = defaultScenario.identity;
   const defaultPropertyAndLocation = defaultScenario.propertyAndLocation;
-  const defaultActorsAndOwnership = defaultScenario.actorsAndOwnership;
   const defaultTimeline = defaultScenario.timeline;
   const defaultFinancing = defaultScenario.financing;
   const defaultOccupancyAndRental = defaultScenario.occupancyAndRental;
@@ -283,15 +269,6 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
       propertyId: propertyIds.has(propertyAndLocation.propertyId)
         ? propertyAndLocation.propertyId
         : defaultPropertyAndLocation.propertyId,
-    },
-    actorsAndOwnership: {
-      actorPolicy: actorPolicyIds.has(actorsAndOwnership.actorPolicy)
-        ? actorsAndOwnership.actorPolicy
-        : defaultActorsAndOwnership.actorPolicy,
-      partnerPaymentMonthlyUsd: finiteNumber(
-        actorsAndOwnership.partnerPaymentMonthlyUsd,
-        defaultActorsAndOwnership.partnerPaymentMonthlyUsd
-      ),
     },
     timeline: {
       holdYears: positiveNumber(timeline.holdYears, defaultTimeline.holdYears),
@@ -409,8 +386,7 @@ function normalizeReportSpec(reportSpec) {
 function agentsByRole(bootstrap) {
   const agents = bootstrap?.agents ?? [];
   const primary = agents.find((a) => a.role === "primary_owner");
-  const partner = agents.find((a) => a.role === "equity_building_occupant") ?? null;
-  return { primary, partner };
+  return { primary };
 }
 
 function occupancyModeForScenario(scenario) {
@@ -439,18 +415,9 @@ function rentalModeForScenario(scenario) {
 }
 
 function scenarioPolicies(scenario, bootstrap) {
-  const { identity, actorsAndOwnership, policies: scenarioPolicyInputs } = scenario;
-  const { primary, partner } = agentsByRole(bootstrap);
+  const { policies: scenarioPolicyInputs } = scenario;
+  const { primary } = agentsByRole(bootstrap);
   const policies = [];
-  if (actorsAndOwnership.actorPolicy === "owner_plus_partner" && partner) {
-    policies.push({
-      policyId: "partner_equity_accrual",
-      policyType: "partner_equity_accrual",
-      actorId: partner.actorId,
-      enabled: identity.enabled,
-      baseMonthlyPaymentUsd: actorsAndOwnership.partnerPaymentMonthlyUsd,
-    });
-  }
   if (scenarioPolicyInputs.liquidReservePolicy === "checking_floor_sp500") {
     policies.push({
       policyId: "checking_floor",
@@ -479,23 +446,14 @@ function scenarioPolicies(scenario, bootstrap) {
 }
 
 function scenarioActors(scenario, bootstrap) {
-  const { actorPolicy } = scenario.actorsAndOwnership;
-  const { primary, partner } = agentsByRole(bootstrap);
-  const actors = [
+  const { primary } = agentsByRole(bootstrap);
+  return [
     {
       actorId: primary.actorId,
       label: primary.label,
       role: primary.role,
     },
   ];
-  if (actorPolicy === "owner_plus_partner" && partner) {
-    actors.push({
-      actorId: partner.actorId,
-      label: partner.label,
-      role: partner.role,
-    });
-  }
-  return actors;
 }
 
 function scenarioEvents(scenario, property, bootstrap) {

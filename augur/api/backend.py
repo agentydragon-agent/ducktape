@@ -40,13 +40,11 @@ class AugurBackend:
         )
         self.default_knobs = self._default_knobs_for_provider(self._bootstrap.default_knobs)
         self.default_property_id = self._bootstrap.default_property_id
-        self.default_actor_policy = self._bootstrap.default_actor_policy
 
     def bootstrap_payload(self):
         return self._bootstrap.model_copy(
             update={
                 "default_property_id": self.default_property_id,
-                "default_actor_policy": self.default_actor_policy,
                 "default_knobs": self.default_knobs,
                 "default_rollout_samples": self.runtime_config.default_rollout_samples,
             }
