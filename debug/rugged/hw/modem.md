@@ -6,9 +6,12 @@
 enable, and Google Fi connection all happen automatically via the NixOS
 module <nix/nixos/hosts/rugged/foxconn-wwan.nix>. Works alongside WiFi
 (IPv6 `never-default` prevents cellular from hijacking IPv6 traffic).
-**Caveat (2026-05-14)**: Ordinary suspend/resume can wedge the modem
-into the SBL firmware-wait state (see TODO + `foxflss_wwan.md`).
-Reboot is currently the only reliable recovery on this hardware.
+**Suspend/resume (2026-05-19)**: At least 2 suspend/resume cycles
+survived without a wedge (2026-05-18/19). The
+`--test-low-power-suspend-resume` MM flag appears to be doing its job.
+Modem re-enumerates on each resume (modem0 → modem1 → modem2) but
+connects to Google Fi reliably. No MHI/SBL wedge observed. See
+`modem_suspend_research.md` for the full workaround history.
 **Throttle appears lifted**: `curl --interface wwan0
 http://speedtest.tele2.net/1MB.zip` measured **~158 KB/s (~1.27 Mbps)**
 on LTE on 2026-05-02 with WiFi off — ~20× over the previously
@@ -84,22 +87,17 @@ http://speedtest.tele2.net/10MB.zip`), and confirm the device is
   to have been the actual unlock path; it's defense-in-depth against
   MM giving up on a future transient FoxFlss failure (per upstream
   contract, MM doesn't retry the script after one failure).
-- **Suspend/resume wedge — investigation in progress**: full mechanism
-  trace + plan in <modem_suspend_research.md>. Two fixes in flight at
-  end of 2026-05-14 session:
-  - **MM `--test-low-power-suspend-resume` flag** applied via
-    `foxconn-wwan.nix` drop-in (Foxconn-recommended workaround;
-    has MM put the modem in firmware-level low-power state before
-    s2idle, avoiding the broken MHI M3 path).
-  - **`WwanAutoSense=Enabled` flipped via dell-wmi-sysman** (BIOS
-    side, pending reboot). Hypothesis: this populates the DSDT's
-    `WWEN` byte that gates the WWAN slot's ACPI `_RST` / `_PRR` /
-    power-cycle methods. Validated by post-reboot
-    `modem.sh dump` — look for `acpi` in
-    `/sys/bus/pci/devices/0000:71:00.0/reset_method`. Script:
-    `debug/rugged/hw/suspend_research/flip_wwan_autosense.sh`.
-  - Suspend/resume experiment matrix (E1/E2/E3 in research doc) is
-    the next concrete validation step once the reboot has landed.
+- **Suspend/resume wedge — workaround confirmed (2026-05-19)**:
+  Full mechanism trace in <modem_suspend_research.md>. At least 2
+  suspend/resume cycles survived without wedge (2026-05-18/19). The
+  `--test-low-power-suspend-resume` MM flag in `foxconn-wwan.nix` is
+  doing its job: MM puts the modem in LOW_POWER before suspend, modem
+  avoids the broken MHI M3 path, and re-enumerates cleanly on resume
+  (modem0 → modem1 → modem2 per boot). **WwanAutoSense=Enabled
+  hypothesis was disproved**: post-reboot `reset_method` is still `flr
+bus` (no `acpi`); see research doc for the DSDT/WWEN analysis.
+  Remaining: run formal E1/E2/E3 matrix (especially E2 — in-flight
+  traffic) to confirm behavior is deterministic.
 - ~~Investigate weak signal (9% vs 92% observed manually)~~ — root
   cause confirmed 2026-05-02: at this location LTE coverage is
   essentially absent (RSRP -156 dBm), so the auto-connect path locked

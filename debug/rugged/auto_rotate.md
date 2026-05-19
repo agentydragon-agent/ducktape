@@ -1035,6 +1035,15 @@ together should be sufficient to either nail a kernel-side root
 cause or rule one out, after which we can pivot to either an upstream
 fix or a deliberate "force polled mode" host-config workaround.
 
+## Status 2026-05-19
+
+After multiple reboots and suspend/resume cycles, auto-rotate is
+working correctly. IIO sensor proxy is running in **buffered mode**
+(`iio:device5/buffer/enable=1`, `trigger=accel_3d-dev5`; confirmed via
+`iio-sensor-proxy` journal showing `Accel read from IIO on
+'iio:device5'`). The kernel-side IIO trigger wedge (second incident) has
+not recurred in this session. The Mutter patch (`mutter-auto-rotate-startup-race.patch`) continues to be active and the negative-`inhibited_count` startup race has not been observed. User confirmed display is auto-rotating correctly.
+
 ### Live investigation 2026-05-08 (post-instrumentation switch)
 
 After deploying `nix/nixos/hosts/rugged/iio-debug.nix`, we used the

@@ -97,38 +97,31 @@ matrix to validate whichever path works.
 
 ---
 
-## Immediate next steps (for the next agent)
+## Post-reboot findings (2026-05-19)
 
-**1. Boot, confirm WWEN hypothesis (reboot already pending from
-WwanAutoSense flip)**:
+**WwanAutoSense=Enabled hypothesis: WRONG.**
 
-```
-sudo /home/agentydragon/code/ducktape/debug/rugged/modem.sh dump
-```
+After rebooting with `WwanAutoSense` flipped to `Enabled`,
+`/sys/bus/pci/devices/0000:71:00.0/reset_method` is still `flr bus` —
+no `acpi` method. The BIOS variable does not correspond to the DSDT
+`WWEN` byte, or at least does not cause the kernel to discover the
+`_RST` method. The WWEN gate remains at 0. `WwanAutoSense` probably
+controls something else (perhaps OS power-management handoff or radio
+mode selection).
 
-In the new snapshot's `00_dump.log`, look for:
+**`--test-low-power-suspend-resume` workaround: confirmed working.**
 
-```
------ PCI reset_method (presence of 'acpi' indicates BIOS WWEN >= 1) -----
-0000:71:00.0: <list>
-```
+At least 2 organic suspend/resume cycles observed without wedge:
 
-- If list now contains `acpi` → hypothesis confirmed. `WwanAutoSense`
-  populates `WWEN`. Proceed to step 2.
-- If list is still `flr bus` → hypothesis wrong; `WwanAutoSense` does
-  something else. Also worth a check of `reset_method` for the parent
-  bridge `0000:00:1c.0` and a DSDT re-decompile (`iasl -d
-snapshots/<TS>/DSDT.aml`) to verify WWEN value changed at all.
-  Look in BIOS Setup (F2) for a less-obvious WWAN power-reset toggle.
+- 2026-05-18 21:30 suspend → 2026-05-19 01:59 resume → modem1 connected
+- 2026-05-19 02:14 suspend → 2026-05-19 12:48 resume → modem2 connected
 
-Also verify in the new dump:
+The modem re-enumerates on each resume (modem index increments per boot
+under the current MM PID), which is expected behavior — MM puts modem in
+LOW_POWER before the kernel's MHI suspend path, modem comes back from
+NAND-boot on resume. No MHI/SBL wedge observed.
 
-- `--test-low-power-suspend-resume` still present in
-  `systemctl cat ModemManager.service` output.
-- No `sleep: command not found` in `journal_kernel_thisboot.txt`.
-- nmcli timings under the `NM state (each command timed)` header
-  (added previously to surface the multi-second `nmcli connection
-show "Google Fi"` stall — root cause is still open).
+## Remaining next steps
 
 **2. Run the suspend experiment matrix**
 
