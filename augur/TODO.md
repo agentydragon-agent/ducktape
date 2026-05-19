@@ -83,6 +83,22 @@ What's left:
       are 10-30 LOC mask-and-sum kernels that map directly to
       `group_by + sum`); the count is what makes it work, not the depth.
 
+## Event-stream polars migration followups
+
+The event-stream root migration in `augur/plans/event_stream_polars_refactor.md`
+landed across commits `a2c3009` (failure_events POC), `d6a9fd7` (obligation
+lifecycle), `a3c0f5e` (funding_decisions), `87453e5` (lot_dispositions),
+`5aa202b` (market_observations), `65ad23a` (accounting_details), `0ac2bc7`
+(effects), `ec69dbc` (policy_decisions + `_with_trajectory_identity`
+teardown). Bench `simulate_set` dropped from 15.7 s → 3.4 s (-78%) at
+3 scenarios × 32 rollouts × 360 months.
+
+Followups still on the table:
+
+- [ ] **Engine arithmetic → polars expressions** (the remaining
+      `Refactor D` rollup item above). Independent track but reads
+      naturally on the polars-backed `ScenarioRunArrays`.
+
 ## Response wire surface
 
 - [ ] **Extend `ReportSpec` `include_*` gates to the smaller response

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import polars as pl
 
-from augur.core import posting_schemas
+from augur.core import event_streams, posting_schemas
 from augur.core.accounting import (
     ChartAccountRole,
     JournalEntryType,
@@ -58,7 +57,6 @@ from augur.core.provenance import policy_program_set_id, projection_trajectory_i
 from augur.core.scenario_set import (
     AccountBalance,
     AccountingDetail,
-    AccountingDetailType,
     AccountType,
     Acquisition,
     ActorRole,
@@ -66,8 +64,8 @@ from augur.core.scenario_set import (
     CheckingFloorSellPublicStockPolicy,
     CryptoAssetPosition,
     Effect,
+    EffectType,
     FailureEvent,
-    FailureEventType,
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
     FundingDecision,
@@ -77,41 +75,30 @@ from augur.core.scenario_set import (
     LiquidityEventOnly,
     LiquidNetWorthFloorPrivateEquitySaleRule,
     MarketObservation,
-    MarketPathObservation,
-    MonthlySpendDecision,
     MonthlySpendPolicy,
     Obligation,
     ObligationStatus,
     ObligationType,
     OccupancyMode,
-    PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
     Policy,
     PolicyDecision,
+    PolicyDecisionType,
     PrivateEquityPosition,
-    PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
-    PrivateEquitySaleOpportunityObservation,
     PrivateEquitySalePolicy,
     PrivateEquitySaleRule,
     PropertyPurchaseEvent,
-    PropertySaleBasisGainDetail,
     PublicMarket,
     RentalMode,
     ReportMetric,
     RolloutStatus,
     RolloutStatusType,
     Scenario,
-    SellCryptoEffect,
-    SellPrivateEquityEffect,
-    SellPublicStockDecision,
-    SellSp500Effect,
     SettlementResult,
-    SettlementStatus,
-    SettlePropertySaleEffect,
     SpecialAssessmentEvent,
     TaxFilingStatus,
-    TaxPaymentAllocationDetail,
+    TaxPaymentTiming,
     TaxProfile,
 )
 from augur.core.schemas import ColumnarTable
@@ -192,18 +179,89 @@ class ScenarioRunArrays:
     # via `metric_array(ReportMetric.X)` to get a `(rollouts, months+1)`
     # numpy view.
     numerics: pl.DataFrame
-    effects: tuple[Effect, ...]
-    policy_decisions: tuple[PolicyDecision, ...]
-    market_observations: tuple[MarketObservation, ...]
+    sp500_effects_frame: pl.DataFrame
+    crypto_effects_frame: pl.DataFrame
+    private_equity_effects_frame: pl.DataFrame
+    settle_property_sale_effects_frame: pl.DataFrame
+    policy_decisions_frame: pl.DataFrame
+    market_path_observations_frame: pl.DataFrame
+    pe_sale_opportunity_observations_frame: pl.DataFrame
     accounting_trace: AccountingTrace
-    tax_lots: tuple[TaxLot, ...]
-    lot_dispositions: tuple[LotDisposition, ...]
-    liabilities: tuple[LiabilityState, ...]
-    accounting_details: tuple[AccountingDetail, ...]
-    obligations: tuple[Obligation, ...]
-    funding_decisions: tuple[FundingDecision, ...]
-    settlement_results: tuple[SettlementResult, ...]
-    failure_events: tuple[FailureEvent, ...]
+    tax_lots_frame: pl.DataFrame
+    lot_dispositions_frame: pl.DataFrame
+    liabilities_frame: pl.DataFrame
+    property_sale_basis_gain_details_frame: pl.DataFrame
+    tax_payment_allocation_details_frame: pl.DataFrame
+    funding_decisions_frame: pl.DataFrame
+    # Single root for the obligation lifecycle. Three Pydantic surfaces
+    # (`obligations`, `settlement_results`, `failure_events`) materialize
+    # from this one frame via projection/filter at end-of-run — `obligations`
+    # is the full set, `settlement_results` is a column subset (different
+    # status-enum class, identical string values), `failure_events` is the
+    # `unpaid > 0 & required` filter with a derived `failure_event_id`.
+    # See `augur/plans/event_stream_polars_refactor.md`.
+    obligations_frame: pl.DataFrame
+
+    @property
+    def obligations(self) -> tuple[Obligation, ...]:
+        return tuple(event_streams.materialize_obligations(self.obligations_frame))
+
+    @property
+    def funding_decisions(self) -> tuple[FundingDecision, ...]:
+        return tuple(event_streams.materialize_funding_decisions(self.funding_decisions_frame))
+
+    @property
+    def lot_dispositions(self) -> tuple[LotDisposition, ...]:
+        return tuple(event_streams.materialize_lot_dispositions(self.lot_dispositions_frame))
+
+    @property
+    def tax_lots(self) -> tuple[TaxLot, ...]:
+        return tuple(event_streams.materialize_tax_lots(self.tax_lots_frame))
+
+    @property
+    def liabilities(self) -> tuple[LiabilityState, ...]:
+        return tuple(event_streams.materialize_liabilities(self.liabilities_frame))
+
+    @property
+    def policy_decisions(self) -> tuple[PolicyDecision, ...]:
+        return tuple(event_streams.materialize_policy_decisions(self.policy_decisions_frame))
+
+    @property
+    def effects(self) -> tuple[Effect, ...]:
+        return tuple(
+            event_streams.materialize_effects(
+                {
+                    EffectType.SELL_SP500: self.sp500_effects_frame,
+                    EffectType.SELL_CRYPTO: self.crypto_effects_frame,
+                    EffectType.SELL_PRIVATE_EQUITY: self.private_equity_effects_frame,
+                    EffectType.SETTLE_PROPERTY_SALE: self.settle_property_sale_effects_frame,
+                }
+            )
+        )
+
+    @property
+    def accounting_details(self) -> tuple[AccountingDetail, ...]:
+        return tuple(
+            event_streams.materialize_accounting_details(
+                self.property_sale_basis_gain_details_frame, self.tax_payment_allocation_details_frame
+            )
+        )
+
+    @property
+    def market_observations(self) -> tuple[MarketObservation, ...]:
+        return tuple(
+            event_streams.materialize_market_observations(
+                self.market_path_observations_frame, self.pe_sale_opportunity_observations_frame
+            )
+        )
+
+    @property
+    def settlement_results(self) -> tuple[SettlementResult, ...]:
+        return tuple(event_streams.materialize_settlement_results(self.obligations_frame))
+
+    @property
+    def failure_events(self) -> tuple[FailureEvent, ...]:
+        return tuple(event_streams.materialize_failure_events(self.obligations_frame))
 
     @property
     def rollout_count(self) -> int:
@@ -233,16 +291,30 @@ class ScenarioRunArrays:
             .sort("rollout_index")
             .collect()
         )
-        failures_by_rollout: dict[int, list[FailureEvent]] = {}
-        for event in self.failure_events:
-            failures_by_rollout.setdefault(event.rollout_index, []).append(event)
+        # Pre-aggregate failures per rollout from the long-format frame so
+        # the status loop below doesn't have to iterate the (possibly huge)
+        # event tuple. One row per rollout that ever produced a failure.
+        failure_summary = (
+            self.obligations_frame.lazy()
+            .filter((pl.col("unpaid_amount_usd") > 0) & pl.col("required"))
+            .group_by("rollout_index")
+            .agg(
+                first_failed_obligation_month_index=pl.col("month_index").min(),
+                failed_obligation_count=pl.col("obligation_id").count(),
+                unpaid_obligation_usd=pl.col("unpaid_amount_usd").sum(),
+            )
+            .collect()
+        )
+        failure_by_rollout: dict[int, dict[str, Any]] = {
+            int(row["rollout_index"]): row for row in failure_summary.iter_rows(named=True)
+        }
         statuses: list[RolloutStatus] = []
         for row in cash_summary.iter_rows(named=True):
             rollout_index = int(row["rollout_index"])
             min_cash_usd = float(row["min_cash_usd"])
             first_negative_month = row["first_negative_month"]
-            failed_events = failures_by_rollout.get(rollout_index, [])
-            if failed_events:
+            failure_row = failure_by_rollout.get(rollout_index)
+            if failure_row is not None:
                 statuses.append(
                     RolloutStatus(
                         rollout_index=rollout_index,
@@ -251,9 +323,9 @@ class ScenarioRunArrays:
                         first_negative_cash_month_index=(
                             int(first_negative_month) if first_negative_month is not None else None
                         ),
-                        first_failed_obligation_month_index=min(e.month_index for e in failed_events),
-                        failed_obligation_count=len(failed_events),
-                        unpaid_obligation_usd=sum(e.unpaid_amount_usd for e in failed_events),
+                        first_failed_obligation_month_index=int(failure_row["first_failed_obligation_month_index"]),
+                        failed_obligation_count=int(failure_row["failed_obligation_count"]),
+                        unpaid_obligation_usd=float(failure_row["unpaid_obligation_usd"]),
                     )
                 )
             elif first_negative_month is None:
@@ -944,8 +1016,8 @@ def _trace_row_id(prefix: str, *, rollout_index: int, month_index: int) -> str:
 
 def _record_opening_accounting_state(
     accounting: AccountingTraceBuilder,
-    tax_lots: list[TaxLot],
-    liabilities: list[LiabilityState],
+    tax_lots: event_streams.StreamFrameBuilder,
+    liabilities: event_streams.StreamFrameBuilder,
     *,
     scenario: Scenario,
     rollout_count: int,
@@ -1000,15 +1072,18 @@ def _record_opening_accounting_state(
                 {"actor_id": actor_id},
             ),
         )
-        tax_lots.append(
-            TaxLot(
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PUBLIC_SECURITY,
-                owner_actor_id=actor_id,
-                source_asset_id=sp500_source.asset_id if sp500_source is not None else None,
-                cost_basis_usd=max(0.0, float(initial_sp500_basis_usd)),
-                acquisition_month_index=0,
-            )
+        tax_lots.extend(
+            {
+                "lot_id": [lot_id],
+                "asset_class": [LotAssetClass.PUBLIC_SECURITY.value],
+                "owner_actor_id": [actor_id],
+                "source_account_id": [None],
+                "source_asset_id": [sp500_source.asset_id if sp500_source is not None else None],
+                "property_id": [None],
+                "quantity": [None],
+                "cost_basis_usd": [max(0.0, float(initial_sp500_basis_usd))],
+                "acquisition_month_index": [0],
+            }
         )
 
     if initial_crypto_value_usd > 0:
@@ -1027,15 +1102,18 @@ def _record_opening_accounting_state(
                 {"actor_id": actor_id},
             ),
         )
-        tax_lots.append(
-            TaxLot(
-                lot_id=crypto_lot_id,
-                asset_class=LotAssetClass.CRYPTO,
-                owner_actor_id=actor_id,
-                source_asset_id=crypto_source_id,
-                cost_basis_usd=max(0.0, float(initial_crypto_basis_usd)),
-                acquisition_month_index=0,
-            )
+        tax_lots.extend(
+            {
+                "lot_id": [crypto_lot_id],
+                "asset_class": [LotAssetClass.CRYPTO.value],
+                "owner_actor_id": [actor_id],
+                "source_account_id": [None],
+                "source_asset_id": [crypto_source_id],
+                "property_id": [None],
+                "quantity": [None],
+                "cost_basis_usd": [max(0.0, float(initial_crypto_basis_usd))],
+                "acquisition_month_index": [0],
+            }
         )
 
     if initial_private_equity_value_usd > 0:
@@ -1053,16 +1131,18 @@ def _record_opening_accounting_state(
                 {"actor_id": actor_id},
             ),
         )
-        tax_lots.append(
-            TaxLot(
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PRIVATE_EQUITY,
-                owner_actor_id=actor_id,
-                source_asset_id=private_equity_source_id,
-                cost_basis_usd=max(0.0, float(initial_private_equity_basis_usd)),
-                quantity=_initial_private_equity_units(scenario) or None,
-                acquisition_month_index=0,
-            )
+        tax_lots.extend(
+            {
+                "lot_id": [lot_id],
+                "asset_class": [LotAssetClass.PRIVATE_EQUITY.value],
+                "owner_actor_id": [actor_id],
+                "source_account_id": [None],
+                "source_asset_id": [private_equity_source_id],
+                "property_id": [None],
+                "quantity": [_initial_private_equity_units(scenario) or None],
+                "cost_basis_usd": [max(0.0, float(initial_private_equity_basis_usd))],
+                "acquisition_month_index": [0],
+            }
         )
 
     property_id = scenario.property_selection.property_id
@@ -1088,27 +1168,31 @@ def _record_opening_accounting_state(
             {"actor_id": actor_id, "liability_id": liability_id, "property_id": property_id},
         ),
     )
-    tax_lots.append(
-        TaxLot(
-            lot_id=_tax_lot_id(LotAssetClass.PROPERTY, property_id),
-            asset_class=LotAssetClass.PROPERTY,
-            owner_actor_id=actor_id,
-            property_id=property_id,
-            cost_basis_usd=max(0.0, purchase_price_usd + float(np.mean(closing))),
-            acquisition_month_index=0,
-        )
+    tax_lots.extend(
+        {
+            "lot_id": [_tax_lot_id(LotAssetClass.PROPERTY, property_id)],
+            "asset_class": [LotAssetClass.PROPERTY.value],
+            "owner_actor_id": [actor_id],
+            "source_account_id": [None],
+            "source_asset_id": [None],
+            "property_id": [property_id],
+            "quantity": [None],
+            "cost_basis_usd": [max(0.0, purchase_price_usd + float(np.mean(closing)))],
+            "acquisition_month_index": [0],
+        }
     )
     initial_mortgage = float(np.max(mortgage))
     if initial_mortgage > 0:
-        liabilities.append(
-            LiabilityState(
-                liability_id=liability_id,
-                liability_type=LiabilityType.MORTGAGE,
-                actor_id=actor_id,
-                creditor_id="mortgage_lender",
-                property_id=property_id,
-                balance_usd=initial_mortgage,
-            )
+        liabilities.extend(
+            {
+                "liability_id": [liability_id],
+                "liability_type": [LiabilityType.MORTGAGE.value],
+                "actor_id": [actor_id],
+                "creditor_id": ["mortgage_lender"],
+                "counterparty_actor_id": [None],
+                "property_id": [property_id],
+                "balance_usd": [initial_mortgage],
+            }
         )
 
 
@@ -1347,18 +1431,37 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         np.full(rollout_count, initial_cash - down_payment, dtype="float64")
         - disposition.column("purchase_closing_cost_usd")[:, 0]
     )
-    effects: list[Effect] = []
-    policy_decisions: list[PolicyDecision] = []
-    market_observations: list[MarketObservation] = list(_market_path_observations(scenario, market_bundle))
+    effects: dict[EffectType, event_streams.StreamFrameBuilder] = {
+        EffectType.SELL_SP500: event_streams.StreamFrameBuilder(event_streams.SELL_SP500_EFFECT_SCHEMA),
+        EffectType.SELL_CRYPTO: event_streams.StreamFrameBuilder(event_streams.SELL_CRYPTO_EFFECT_SCHEMA),
+        EffectType.SELL_PRIVATE_EQUITY: event_streams.StreamFrameBuilder(
+            event_streams.SELL_PRIVATE_EQUITY_EFFECT_SCHEMA
+        ),
+        EffectType.SETTLE_PROPERTY_SALE: event_streams.StreamFrameBuilder(
+            event_streams.SETTLE_PROPERTY_SALE_EFFECT_SCHEMA
+        ),
+    }
+    policy_decisions = event_streams.StreamFrameBuilder(event_streams.POLICY_DECISION_SCHEMA)
+    market_path_observations_frame = _market_path_observations_frame(scenario, market_bundle)
+    pe_sale_opportunity_observations = event_streams.StreamFrameBuilder(
+        event_streams.PE_SALE_OPPORTUNITY_OBSERVATION_SCHEMA
+    )
     accounting = AccountingTraceBuilder()
-    tax_lots: list[TaxLot] = []
-    lot_dispositions: list[LotDisposition] = []
-    liabilities: list[LiabilityState] = []
-    accounting_details: list[AccountingDetail] = []
-    obligations: list[Obligation] = []
-    funding_decisions: list[FundingDecision] = []
-    settlement_results: list[SettlementResult] = []
-    failure_events: list[FailureEvent] = []
+    tax_lots = event_streams.StreamFrameBuilder(event_streams.TAX_LOT_SCHEMA)
+    lot_dispositions = event_streams.StreamFrameBuilder(event_streams.LOT_DISPOSITION_SCHEMA)
+    liabilities = event_streams.StreamFrameBuilder(event_streams.LIABILITY_STATE_SCHEMA)
+    property_sale_basis_gain_details = event_streams.StreamFrameBuilder(
+        event_streams.PROPERTY_SALE_BASIS_GAIN_DETAIL_SCHEMA
+    )
+    tax_payment_allocation_details = event_streams.StreamFrameBuilder(
+        event_streams.TAX_PAYMENT_ALLOCATION_DETAIL_SCHEMA
+    )
+    # One root accumulator for the entire obligation lifecycle. The
+    # `obligations`, `settlement_results`, and `failure_events` Pydantic
+    # surfaces are projection/filter views over this single frame at
+    # end-of-run (see `event_streams.materialize_*`).
+    obligations = event_streams.StreamFrameBuilder(event_streams.OBLIGATION_LIFECYCLE_SCHEMA)
+    funding_decisions = event_streams.StreamFrameBuilder(event_streams.FUNDING_DECISION_SCHEMA)
     sp500_sale_action_records: list[Sp500SaleActionRecord] = []
     crypto_sale_action_records: list[CryptoSaleActionRecord] = []
     private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
@@ -1466,8 +1569,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     checking_floor_shortfall_usd=checking_floor_shortfall,
                     obligations=obligations,
                     funding_decisions=funding_decisions,
-                    settlement_results=settlement_results,
-                    failure_events=failure_events,
                     accounting=accounting,
                     sp500_sale_action_records=sp500_sale_action_records,
                     crypto_sale_action_records=crypto_sale_action_records,
@@ -1550,7 +1651,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             source_holding_id=private_equity_source_holding_id,
         )
         _record_per_issuer_sale_opportunity_observations(
-            market_observations,
+            pe_sale_opportunity_observations,
             scenario=scenario,
             market_bundle=market_bundle,
             month=month,
@@ -1756,7 +1857,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         source_month_tax_due_usd=annual_tax.total_income_tax_usd,
         tax_profile=scenario.tax_profile,
     )
-    settlement_count_before_estimated = len(settlement_results)
+    obligation_blocks_before_estimated = obligations.block_count()
     # PE funding state is shared across all post-loop obligation settlements.
     # Sales taken to fund obligations update remaining units/basis/value matrices
     # in place and append to the action-record list so the standard
@@ -1793,8 +1894,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         checking_floor_shortfall_usd=checking_floor_shortfall,
         obligations=obligations,
         funding_decisions=funding_decisions,
-        settlement_results=settlement_results,
-        failure_events=failure_events,
         accounting=accounting,
         sp500_sale_action_records=sp500_sale_action_records,
         crypto_sale_action_records=crypto_sale_action_records,
@@ -1805,8 +1904,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         int(tax_year_by_position_for_credit.max()) + 1 if tax_year_by_position_for_credit.size else 0
     )
     estimated_payments_credit = _estimated_payments_credit_per_year_usd(
-        settlement_results=settlement_results,
-        initial_settlement_count=settlement_count_before_estimated,
+        obligations_slice=obligations.build_slice(obligation_blocks_before_estimated),
         tax_year_count=tax_year_count_for_credit,
         rollout_count=rollout_count,
     )
@@ -1836,8 +1934,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         checking_floor_shortfall_usd=checking_floor_shortfall,
         obligations=obligations,
         funding_decisions=funding_decisions,
-        settlement_results=settlement_results,
-        failure_events=failure_events,
         accounting=accounting,
         sp500_sale_action_records=sp500_sale_action_records,
         crypto_sale_action_records=crypto_sale_action_records,
@@ -1869,9 +1965,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         tax_usd=property_sale_tax,
         net_proceeds_usd=property_sale_net_proceeds,
     )
-    _record_property_sale_accounting_details(accounting_details, scenario=scenario, disposition=disposition)
+    _record_property_sale_accounting_details(
+        property_sale_basis_gain_details, scenario=scenario, disposition=disposition
+    )
     _record_tax_payment_allocation_details(
-        accounting_details,
+        tax_payment_allocation_details,
         scenario=scenario,
         month_index=month_index,
         annual_tax=annual_tax,
@@ -1985,8 +2083,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             checking_floor_shortfall_usd=checking_floor_shortfall,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
@@ -2019,8 +2115,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             checking_floor_shortfall_usd=checking_floor_shortfall,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
@@ -2055,8 +2149,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             checking_floor_shortfall_usd=checking_floor_shortfall,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
@@ -2080,8 +2172,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         owner_actor_id=primary_owner_actor_id,
         obligations=obligations,
         funding_decisions=funding_decisions,
-        settlement_results=settlement_results,
-        failure_events=failure_events,
         accounting=accounting,
         sp500_sale_action_records=sp500_sale_action_records,
         crypto_sale_action_records=crypto_sale_action_records,
@@ -2357,83 +2447,73 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         partner_home_equity_claim_from_snapshot = partner_equity.column("home_equity_claim_usd")
         owner_home_equity_claim_from_snapshot = partner_equity.column("owner_home_equity_claim_usd")
     federal_income_tax_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        tax_payment_allocation_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
         amount_field="federal_income_tax_usd",
     )
     california_income_tax_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        tax_payment_allocation_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
         amount_field="california_income_tax_usd",
     )
     total_income_tax_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        tax_payment_allocation_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
         amount_field="total_income_tax_usd",
     )
     rental_income_tax_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        tax_payment_allocation_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
         amount_field="rental_income_tax_usd",
     )
     property_sale_adjusted_basis_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="adjusted_basis_usd",
     )
     realized_property_gain_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="realized_gain_usd",
     )
     property_sale_capital_gain_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="capital_gain_usd",
     )
     property_sale_capital_gain_exclusion_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="capital_gain_exclusion_usd",
     )
     taxable_property_capital_gain_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="taxable_capital_gain_usd",
     )
     taxable_property_gain_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="taxable_gain_usd",
     )
     depreciation_recapture_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="depreciation_recapture_usd",
     )
     trace_identity_by_rollout = _trace_identity_by_rollout(scenario, market_bundle)
+    trace_identity_frame = event_streams.build_identity_frame(trace_identity_by_rollout)
     metric_arrays: dict[str, np.ndarray] = {
         "cash_usd": cash,
         "generic_sp500_value_usd": generic_sp500_value,
@@ -2510,30 +2590,49 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         scenario_label=scenario.label,
         month_index=month_index,
         numerics=_build_numerics_frame(month_index, metric_arrays),
-        effects=_sorted_effects(_with_trajectory_identity(effects, trace_identity_by_rollout)),
-        policy_decisions=_sorted_policy_decisions(
-            _with_trajectory_identity(policy_decisions, trace_identity_by_rollout)
+        sp500_effects_frame=event_streams.sort_effects_variant_frame(
+            event_streams.join_trajectory_identity(effects[EffectType.SELL_SP500].build(), trace_identity_frame)
         ),
-        market_observations=_sorted_market_observations(
-            _with_trajectory_identity(market_observations, trace_identity_by_rollout)
+        crypto_effects_frame=event_streams.sort_effects_variant_frame(
+            event_streams.join_trajectory_identity(effects[EffectType.SELL_CRYPTO].build(), trace_identity_frame)
+        ),
+        private_equity_effects_frame=event_streams.sort_effects_variant_frame(
+            event_streams.join_trajectory_identity(
+                effects[EffectType.SELL_PRIVATE_EQUITY].build(), trace_identity_frame
+            )
+        ),
+        settle_property_sale_effects_frame=event_streams.sort_effects_variant_frame(
+            event_streams.join_trajectory_identity(
+                effects[EffectType.SETTLE_PROPERTY_SALE].build(), trace_identity_frame
+            )
+        ),
+        policy_decisions_frame=event_streams.sort_policy_decisions(
+            event_streams.join_trajectory_identity(policy_decisions.build(), trace_identity_frame)
+        ),
+        market_path_observations_frame=event_streams.sort_market_path_observations(
+            event_streams.join_trajectory_identity(market_path_observations_frame, trace_identity_frame)
+        ),
+        pe_sale_opportunity_observations_frame=event_streams.sort_pe_sale_opportunity_observations(
+            event_streams.join_trajectory_identity(pe_sale_opportunity_observations.build(), trace_identity_frame)
         ),
         accounting_trace=accounting_trace.with_trajectory_identity(trace_identity_by_rollout).sorted_canonical(),
-        tax_lots=_sorted_tax_lots(tax_lots),
-        lot_dispositions=_sorted_lot_dispositions(
-            _with_trajectory_identity(lot_dispositions, trace_identity_by_rollout)
+        tax_lots_frame=event_streams.sort_tax_lots(tax_lots.build()),
+        lot_dispositions_frame=event_streams.sort_lot_dispositions(
+            event_streams.join_trajectory_identity(lot_dispositions.build(), trace_identity_frame)
         ),
-        liabilities=_sorted_liabilities(liabilities),
-        accounting_details=_sorted_accounting_details(
-            _with_trajectory_identity(accounting_details, trace_identity_by_rollout)
+        liabilities_frame=event_streams.sort_liabilities(liabilities.build()),
+        property_sale_basis_gain_details_frame=event_streams.sort_property_sale_basis_gain_details(
+            event_streams.join_trajectory_identity(property_sale_basis_gain_details.build(), trace_identity_frame)
         ),
-        obligations=_sorted_obligations(_with_trajectory_identity(obligations, trace_identity_by_rollout)),
-        funding_decisions=_sorted_funding_decisions(
-            _with_trajectory_identity(funding_decisions, trace_identity_by_rollout)
+        tax_payment_allocation_details_frame=event_streams.sort_tax_payment_allocation_details(
+            event_streams.join_trajectory_identity(tax_payment_allocation_details.build(), trace_identity_frame)
         ),
-        settlement_results=_sorted_settlement_results(
-            _with_trajectory_identity(settlement_results, trace_identity_by_rollout)
+        funding_decisions_frame=event_streams.sort_funding_decisions(
+            event_streams.join_trajectory_identity(funding_decisions.build(), trace_identity_frame)
         ),
-        failure_events=_sorted_failure_events(_with_trajectory_identity(failure_events, trace_identity_by_rollout)),
+        obligations_frame=event_streams.sort_obligation_lifecycle(
+            event_streams.join_trajectory_identity(obligations.build(), trace_identity_frame)
+        ),
     )
 
 
@@ -2556,92 +2655,48 @@ def _trace_identity_by_rollout(scenario: Scenario, market_bundle: MarketBundle) 
     }
 
 
-def _with_trajectory_identity[TraceRecordT](
-    records: list[TraceRecordT], identity_by_rollout: Mapping[int, dict[str, str]]
-) -> list[TraceRecordT]:
-    return [cast(TraceRecordT, _copy_with_trajectory_identity(record, identity_by_rollout)) for record in records]
+def _market_path_observations_frame(scenario: Scenario, market_bundle: MarketBundle) -> pl.DataFrame:
+    """Pick the per-scenario market-path keys (location, first PE issuer
+    if any) and hand them to the bundle to assemble the dense
+    `(rollouts × (months+1))` frame. Scenario→key translation lives in
+    the engine; per-key lookup + fallback to all-ones for absent keys
+    lives in `MarketBundle.market_path_observations_frame`."""
 
-
-def _copy_with_trajectory_identity(record: Any, identity_by_rollout: Mapping[int, dict[str, str]]) -> Any:
-    return record.model_copy(update=identity_by_rollout[int(record.rollout_index)])
-
-
-def _market_path_observations(scenario: Scenario, market_bundle: MarketBundle) -> tuple[MarketObservation, ...]:
-    # With explicit location keys, each scenario surfaces only the path for its
-    # declared location. Scenarios with no `location_id` (no property selection)
-    # emit `1.0` for the home/rent multipliers — the bundle has no path for an
-    # absent location to read.
-    shape = (market_bundle.rollout_count, market_bundle.horizon_months + 1)
-    if scenario.location_id is None:
-        home_multiplier = np.ones(shape, dtype="float64")
-        rent_multiplier = np.ones(shape, dtype="float64")
-    else:
-        home_multiplier = market_bundle.home_value_multipliers(scenario.location_id)
-        rent_multiplier = market_bundle.rent_multipliers(scenario.location_id)
-    # MarketPathObservation carries a single PE multiplier and a single
-    # sale-opportunity event flag per (rollout, month). With explicit per-issuer
-    # keying we surface the first issuer's path; per-issuer values are emitted
-    # separately via `PrivateEquitySaleOpportunityObservation`. Scenarios with no
-    # PE positions get the all-ones / no-tender stub.
     pe_issuer_keys = _private_equity_issuer_routing_keys(scenario)
-    if not pe_issuer_keys:
-        pe_value_multipliers = np.ones(shape, dtype="float64")
-        pe_sale_mask = np.zeros(shape, dtype=np.bool_)
-    else:
-        pe_value_multipliers = market_bundle.private_equity_value_multiplier(pe_issuer_keys[0])
-        pe_sale_mask = market_bundle.private_equity_sale_opportunity_mask_for(pe_issuer_keys[0])
-    observations: list[MarketObservation] = []
-    rollout_indexes, month_positions = np.indices(
-        (market_bundle.rollout_count, market_bundle.horizon_months + 1), sparse=False
+    return market_bundle.market_path_observations_frame(
+        location_id=scenario.location_id, pe_issuer_key=pe_issuer_keys[0] if pe_issuer_keys else None
     )
-    for rollout_index, month_position in zip(
-        rollout_indexes.ravel().tolist(), month_positions.ravel().tolist(), strict=True
-    ):
-        observations.append(
-            MarketPathObservation(
-                rollout_index=rollout_index,
-                month_index=int(market_bundle.month_index[month_position]),
-                location_id=scenario.location_id,
-                inflation_multiplier=float(market_bundle.inflation_multipliers[rollout_index, month_position]),
-                sp500_multiplier=float(market_bundle.generic_sp500_multipliers[rollout_index, month_position]),
-                private_equity_value_multiplier=float(pe_value_multipliers[rollout_index, month_position]),
-                home_value_multiplier=float(home_multiplier[rollout_index, month_position]),
-                rent_multiplier=float(rent_multiplier[rollout_index, month_position]),
-                mortgage_30y_rate_pct=float(market_bundle.mortgage_30y_rate_pct[rollout_index, month_position]),
-                private_equity_sale_opportunity_event=bool(pe_sale_mask[rollout_index, month_position]),
-            )
-        )
-    return tuple(observations)
 
 
 def _record_private_equity_sale_opportunity_observations(
-    records: list[MarketObservation],
+    pe_sale_opportunity_observations: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     source_asset_id: str,
     opportunity: PrivateEquitySaleOpportunityBatch,
 ) -> None:
-    active_rollouts = np.nonzero(opportunity.sale_opportunity_mask)[0].tolist()
-    records.extend(
-        (
-            PrivateEquitySaleOpportunityObservation(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                source_asset_id=source_asset_id,
-                opportunity_id=str(opportunity.opportunity_id[rollout_index]),
-                opportunity_cause_id=str(opportunity.opportunity_cause_id[rollout_index]),
-                sale_opportunity_value_usd=float(opportunity.sale_opportunity_value_usd[rollout_index]),
-                private_equity_value_before_sale_usd=float(
-                    opportunity.private_equity_value_before_sale_usd[rollout_index]
-                ),
-            )
-        )
-        for rollout_index in active_rollouts
+    mask = opportunity.sale_opportunity_mask
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    pe_sale_opportunity_observations.extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month_index, dtype=np.int64),
+            "source_asset_id": [source_asset_id] * size,
+            "opportunity_id": [str(opportunity.opportunity_id[r]) for r in rollouts],
+            "opportunity_cause_id": [str(opportunity.opportunity_cause_id[r]) for r in rollouts],
+            "sale_opportunity_value_usd": opportunity.sale_opportunity_value_usd[rollouts].astype(np.float64),
+            "private_equity_value_before_sale_usd": opportunity.private_equity_value_before_sale_usd[rollouts].astype(
+                np.float64
+            ),
+        }
     )
 
 
 def _record_per_issuer_sale_opportunity_observations(
-    records: list[MarketObservation],
+    pe_sale_opportunity_observations: event_streams.StreamFrameBuilder,
     *,
     scenario: Scenario,
     market_bundle: MarketBundle,
@@ -2663,7 +2718,7 @@ def _record_per_issuer_sale_opportunity_observations(
     issuer_keys = _private_equity_issuer_routing_keys(scenario)
     if len(issuer_keys) <= 1:
         _record_private_equity_sale_opportunity_observations(
-            records,
+            pe_sale_opportunity_observations,
             month_index=month_index,
             source_asset_id=aggregate_source_asset_id,
             opportunity=aggregate_opportunity,
@@ -2717,12 +2772,66 @@ def _record_per_issuer_sale_opportunity_observations(
             source_holding_id=issuer_key,
         )
         _record_private_equity_sale_opportunity_observations(
-            records, month_index=month_index, source_asset_id=issuer_key, opportunity=issuer_opportunity
+            pe_sale_opportunity_observations,
+            month_index=month_index,
+            source_asset_id=issuer_key,
+            opportunity=issuer_opportunity,
         )
 
 
+_POLICY_DECISION_VARIANT_ONLY_COLUMNS: frozenset[str] = frozenset(event_streams.POLICY_DECISION_SCHEMA) - {
+    "rollout_index",
+    "month_index",
+    "decision_type",
+    "actor_id",
+    "policy_id",
+    "policy_sequence_index",
+}
+
+
+def _policy_decision_block(
+    *,
+    decision_type: PolicyDecisionType,
+    rollouts: np.ndarray,
+    month_index_value: int | np.ndarray,
+    actor_id_per_row: list[str],
+    policy_id_per_row: list[str],
+    policy_sequence_index_per_row: np.ndarray | int,
+    variant_columns: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the dict-of-columns one `PolicyDecision` row-block needs, padded
+    with `None` for variant-specific columns the caller didn't supply.
+    Single source of truth for the wide POLICY_DECISION_SCHEMA so each
+    recorder only spells out the columns its own variant cares about."""
+
+    size = int(rollouts.size)
+    block: dict[str, Any] = {
+        "rollout_index": rollouts.astype(np.int64),
+        "month_index": (
+            np.full(size, int(month_index_value), dtype=np.int64)
+            if not isinstance(month_index_value, np.ndarray)
+            else month_index_value.astype(np.int64)
+        ),
+        "decision_type": [decision_type.value] * size,
+        "actor_id": actor_id_per_row,
+        "policy_id": policy_id_per_row,
+        "policy_sequence_index": (
+            np.full(size, int(policy_sequence_index_per_row), dtype=np.int64)
+            if not isinstance(policy_sequence_index_per_row, np.ndarray)
+            else policy_sequence_index_per_row.astype(np.int64)
+        ),
+    }
+    unexpected = set(variant_columns) - _POLICY_DECISION_VARIANT_ONLY_COLUMNS
+    if unexpected:
+        raise KeyError(f"unknown variant-specific columns: {sorted(unexpected)}")
+    block.update(variant_columns)
+    for missing in _POLICY_DECISION_VARIANT_ONLY_COLUMNS - set(variant_columns):
+        block[missing] = [None] * size
+    return block
+
+
 def _record_monthly_spend_decisions(
-    records: list[PolicyDecision],
+    policy_decisions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
@@ -2732,25 +2841,29 @@ def _record_monthly_spend_decisions(
     policy = policy_step.policy
     if not isinstance(policy, MonthlySpendPolicy):
         raise TypeError(f"monthly spend decision recorder received {type(policy).__name__}")
-    active_rollouts = np.nonzero(amount_usd > 0)[0].tolist()
-    records.extend(
-        (
-            MonthlySpendDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                amount_usd=float(amount_usd[rollout_index]),
-                inflation_multiplier=float(inflation_multiplier[rollout_index]),
-            )
+    mask = amount_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    policy_decisions.extend(
+        _policy_decision_block(
+            decision_type=PolicyDecisionType.MONTHLY_SPEND,
+            rollouts=rollouts,
+            month_index_value=month_index,
+            actor_id_per_row=[policy.actor_id] * size,
+            policy_id_per_row=[policy.policy_id] * size,
+            policy_sequence_index_per_row=policy_step.sequence_index,
+            variant_columns={
+                "amount_usd": amount_usd[rollouts].astype(np.float64),
+                "inflation_multiplier": inflation_multiplier[rollouts].astype(np.float64),
+            },
         )
-        for rollout_index in active_rollouts
     )
 
 
 def _record_sell_public_stock_decisions(
-    records: list[PolicyDecision],
+    policy_decisions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
@@ -2760,26 +2873,30 @@ def _record_sell_public_stock_decisions(
     policy = policy_step.policy
     if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
         raise TypeError(f"public stock decision recorder received {type(policy).__name__}")
-    active_rollouts = np.nonzero(requested_amount_usd > 0)[0].tolist()
-    records.extend(
-        (
-            SellPublicStockDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                requested_amount_usd=float(requested_amount_usd[rollout_index]),
-                current_cash_usd=float(current_cash_usd[rollout_index]),
-                target_cash_floor_usd=float(policy.floor_usd),
-            )
+    mask = requested_amount_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    policy_decisions.extend(
+        _policy_decision_block(
+            decision_type=PolicyDecisionType.SELL_PUBLIC_STOCK,
+            rollouts=rollouts,
+            month_index_value=month_index,
+            actor_id_per_row=[policy.actor_id] * size,
+            policy_id_per_row=[policy.policy_id] * size,
+            policy_sequence_index_per_row=policy_step.sequence_index,
+            variant_columns={
+                "requested_amount_usd": requested_amount_usd[rollouts].astype(np.float64),
+                "current_cash_usd": current_cash_usd[rollouts].astype(np.float64),
+                "target_cash_floor_usd": np.full(size, float(policy.floor_usd), dtype=np.float64),
+            },
         )
-        for rollout_index in active_rollouts
     )
 
 
 def _record_private_equity_sale_decisions(
-    records: list[PolicyDecision],
+    policy_decisions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
@@ -2796,36 +2913,55 @@ def _record_private_equity_sale_decisions(
         if isinstance(policy.sale_rule, LiquidNetWorthFloorPrivateEquitySaleRule)
         else None
     )
-    sale_rule_type = policy.sale_rule.sale_rule_type
+    sale_rule_type_value = policy.sale_rule.sale_rule_type.value
     configured_sale_amount_usd = _private_equity_configured_sale_amount_usd(policy.sale_rule)
-    records.extend(
-        (
-            PrivateEquitySaleDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=instruction.actor_id,
-                policy_id=instruction.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                decision_reason=_private_equity_sale_decision_reason(
-                    requested_amount_usd=instruction.requested_amount_usd[rollout_index],
-                    sale_opportunity_value_usd=opportunity.sale_opportunity_value_usd[rollout_index],
-                ),
-                source_asset_id=source_asset_id,
-                sale_rule_type=sale_rule_type,
-                configured_sale_amount_usd=configured_sale_amount_usd,
-                opportunity_id=instruction.opportunity_id[rollout_index],
-                opportunity_cause_id=str(instruction.opportunity_cause_id[rollout_index]),
-                requested_amount_usd=float(instruction.requested_amount_usd[rollout_index]),
-                sale_opportunity_value_usd=float(opportunity.sale_opportunity_value_usd[rollout_index]),
-                private_equity_value_before_sale_usd=float(
-                    opportunity.private_equity_value_before_sale_usd[rollout_index]
-                ),
-                liquid_net_worth_usd=float(liquid_net_worth_usd[rollout_index]),
-                target_liquid_net_worth_floor_usd=target_liquid_net_worth_floor_usd,
-                proceeds_destination=instruction.proceeds_destination,
-            )
+    rollouts = np.arange(instruction.requested_amount_usd.shape[0], dtype=np.int64)
+    size = int(rollouts.size)
+    if size == 0:
+        return
+    proceeds_destination_value = (
+        instruction.proceeds_destination.value
+        if hasattr(instruction.proceeds_destination, "value")
+        else str(instruction.proceeds_destination)
+    )
+    requested = instruction.requested_amount_usd[rollouts].astype(np.float64)
+    opportunity_value = opportunity.sale_opportunity_value_usd[rollouts].astype(np.float64)
+    decision_reasons = [
+        _private_equity_sale_decision_reason(
+            requested_amount_usd=float(req), sale_opportunity_value_usd=float(opv)
+        ).value
+        for req, opv in zip(requested.tolist(), opportunity_value.tolist(), strict=True)
+    ]
+    target_floor_col: np.ndarray | list[Any] = (
+        np.full(size, target_liquid_net_worth_floor_usd, dtype=np.float64)
+        if target_liquid_net_worth_floor_usd is not None
+        else [None] * size
+    )
+    policy_decisions.extend(
+        _policy_decision_block(
+            decision_type=PolicyDecisionType.PRIVATE_EQUITY_SALE,
+            rollouts=rollouts,
+            month_index_value=month_index,
+            actor_id_per_row=[instruction.actor_id] * size,
+            policy_id_per_row=[instruction.policy_id] * size,
+            policy_sequence_index_per_row=policy_step.sequence_index,
+            variant_columns={
+                "decision_reason": decision_reasons,
+                "source_asset_id": [source_asset_id] * size,
+                "sale_rule_type": [sale_rule_type_value] * size,
+                "configured_sale_amount_usd": np.full(size, configured_sale_amount_usd, dtype=np.float64),
+                "opportunity_id": [instruction.opportunity_id[r] for r in rollouts],
+                "opportunity_cause_id": [str(instruction.opportunity_cause_id[r]) for r in rollouts],
+                "requested_amount_usd": requested,
+                "sale_opportunity_value_usd": opportunity_value,
+                "private_equity_value_before_sale_usd": opportunity.private_equity_value_before_sale_usd[
+                    rollouts
+                ].astype(np.float64),
+                "liquid_net_worth_usd": liquid_net_worth_usd[rollouts].astype(np.float64),
+                "target_liquid_net_worth_floor_usd": target_floor_col,
+                "proceeds_destination": [proceeds_destination_value] * size,
+            },
         )
-        for rollout_index in range(instruction.requested_amount_usd.shape[0])
     )
 
 
@@ -2848,24 +2984,30 @@ def _private_equity_sale_decision_reason(
 
 
 def _record_partner_contribution_decisions(
-    records: list[PolicyDecision], *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
+    policy_decisions: event_streams.StreamFrameBuilder, *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
 ) -> None:
     for agreement in partner_equity.agreements:
         policy = agreement.policy
-        rollout_indexes, month_positions = np.nonzero(agreement.column("contribution_usd") > 0)
-        for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
-            records.append(
-                PartnerContributionDecision(
-                    rollout_index=rollout_index,
-                    month_index=int(month_index[month_position]),
-                    actor_id=policy.actor_id,
-                    policy_id=policy.policy_id,
-                    policy_sequence_index=agreement.policy_sequence_index,
-                    recipient_actor_id=agreement.recipient_actor_id,
-                    requested_amount_usd=float(agreement.column("contribution_usd")[rollout_index, month_position]),
-                    property_id=agreement.property_id,
-                )
+        contribution_matrix = agreement.column("contribution_usd")
+        rollout_axis, month_axis = np.nonzero(contribution_matrix > 0)
+        if rollout_axis.size == 0:
+            continue
+        size = int(rollout_axis.size)
+        policy_decisions.extend(
+            _policy_decision_block(
+                decision_type=PolicyDecisionType.PARTNER_CONTRIBUTION,
+                rollouts=rollout_axis,
+                month_index_value=month_index[month_axis],
+                actor_id_per_row=[policy.actor_id] * size,
+                policy_id_per_row=[policy.policy_id] * size,
+                policy_sequence_index_per_row=int(agreement.policy_sequence_index),
+                variant_columns={
+                    "recipient_actor_id": [agreement.recipient_actor_id] * size,
+                    "requested_amount_usd": contribution_matrix[rollout_axis, month_axis].astype(np.float64),
+                    "property_id": [agreement.property_id] * size,
+                },
             )
+        )
 
 
 def _record_journal_entry_batches(
@@ -2913,26 +3055,36 @@ def _balance_snapshot_amount_matrix(
 
 
 def _lot_disposition_amount_matrix(
-    records: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     rollout_count: int,
     month_index: np.ndarray,
     asset_class: LotAssetClass,
     amount_field: str,
 ) -> np.ndarray:
+    """Reshape the in-progress `lot_dispositions` builder into a
+    `(rollouts, months)` matrix of `amount_field` summed per
+    `(rollout_index, month_index)` for the given asset class."""
+
     matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
+    frame = lot_dispositions.build()
+    if frame.height == 0:
+        return matrix
     month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-    for disposition in records:
-        if disposition.asset_class is not asset_class:
-            continue
+    aggregated = (
+        frame.lazy()
+        .filter(pl.col("asset_class") == asset_class.value)
+        .group_by(["rollout_index", "month_index"])
+        .agg(amount=pl.col(amount_field).sum())
+        .collect()
+    )
+    for row in aggregated.iter_rows(named=True):
+        month = int(row["month_index"])
         try:
-            month_position = month_position_by_index[disposition.month_index]
+            month_position = month_position_by_index[month]
         except KeyError as exc:
-            raise ValueError(f"lot disposition has month outside result horizon: {disposition.month_index}") from exc
-        amount = getattr(disposition, amount_field)
-        if not isinstance(amount, int | float):
-            raise TypeError(f"lot disposition field {amount_field!r} is not numeric")
-        matrix[disposition.rollout_index, month_position] += float(amount)
+            raise ValueError(f"lot disposition has month outside result horizon: {month}") from exc
+        matrix[int(row["rollout_index"]), month_position] += float(row["amount"])
     return matrix
 
 
@@ -2945,32 +3097,35 @@ def _mortgage_liability_id(property_id: str) -> str:
 
 
 def _accounting_detail_amount_matrix(
-    records: list[AccountingDetail],
-    *,
-    rollout_count: int,
-    month_index: np.ndarray,
-    detail_type: AccountingDetailType,
-    amount_field: str,
+    details: event_streams.StreamFrameBuilder, *, rollout_count: int, month_index: np.ndarray, amount_field: str
 ) -> np.ndarray:
+    """Project the in-progress accounting-detail builder into a
+    `(rollouts, months)` matrix of `amount_field` summed per
+    `(rollout_index, month_index)`. The builder is per-variant so the
+    legacy `detail_type` filter is implicit in which builder the caller
+    passes."""
+
     matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
+    frame = details.build()
+    if frame.height == 0:
+        return matrix
     month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-    for detail in records:
-        if detail.detail_type != detail_type:
-            continue
+    aggregated = (
+        frame.lazy().group_by(["rollout_index", "month_index"]).agg(amount=pl.col(amount_field).sum()).collect()
+    )
+    for row in aggregated.iter_rows(named=True):
+        month = int(row["month_index"])
         try:
-            month_position = month_position_by_index[detail.month_index]
+            month_position = month_position_by_index[month]
         except KeyError as exc:
-            raise ValueError(f"accounting detail has month outside result horizon: {detail.month_index}") from exc
-        amount = getattr(detail, amount_field)
-        if not isinstance(amount, int | float):
-            raise TypeError(f"accounting detail field {amount_field!r} is not numeric")
-        matrix[detail.rollout_index, month_position] += float(amount)
+            raise ValueError(f"accounting detail has month outside result horizon: {month}") from exc
+        matrix[int(row["rollout_index"]), month_position] += float(row["amount"])
     return matrix
 
 
 def _record_property_sale_journal_entries(
     accounting: AccountingTraceBuilder,
-    lot_dispositions: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     scenario: Scenario,
     disposition: PropertyDispositionArrays,
@@ -3024,29 +3179,39 @@ def _record_property_sale_journal_entries(
         ),
     )
     lot_id = _tax_lot_id(LotAssetClass.PROPERTY, property_id)
-    for rollout_index in np.nonzero(gross > 0)[0].tolist():
-        journal_entry_id = _trace_row_id(entry_prefix, rollout_index=rollout_index, month_index=month_index)
-        lot_dispositions.append(
-            LotDisposition(
-                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
-                journal_entry_id=journal_entry_id,
-                rollout_index=rollout_index,
-                month_index=month_index,
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PROPERTY,
-                proceeds_usd=float(gross[rollout_index]),
-                cost_basis_usd=float(
-                    disposition.column("property_sale_adjusted_basis_usd")[rollout_index, month_index]
-                ),
-                realized_gain_usd=float(disposition.column("realized_property_gain_usd")[rollout_index, month_index]),
-                taxable_gain_usd=float(disposition.column("taxable_property_gain_usd")[rollout_index, month_index]),
-                tax_expense_usd=float(tax[rollout_index]),
-            )
+    mask = gross > 0
+    if mask.any():
+        rollouts = np.nonzero(mask)[0].astype(np.int64)
+        size = int(rollouts.size)
+        journal_entry_ids = [
+            _trace_row_id(entry_prefix, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ]
+        basis_col = disposition.column("property_sale_adjusted_basis_usd")[:, month_index]
+        realized_col = disposition.column("realized_property_gain_usd")[:, month_index]
+        taxable_col = disposition.column("taxable_property_gain_usd")[:, month_index]
+        lot_dispositions.extend(
+            {
+                "rollout_index": rollouts,
+                "month_index": np.full(size, month_index, dtype=np.int64),
+                "lot_disposition_id": [f"{jid}:lot:{lot_id}" for jid in journal_entry_ids],
+                "journal_entry_id": journal_entry_ids,
+                "lot_id": [lot_id] * size,
+                "asset_class": [LotAssetClass.PROPERTY.value] * size,
+                "proceeds_usd": gross[rollouts].astype(np.float64),
+                "cost_basis_usd": basis_col[rollouts].astype(np.float64),
+                "realized_gain_usd": realized_col[rollouts].astype(np.float64),
+                "taxable_gain_usd": taxable_col[rollouts].astype(np.float64),
+                "quantity_sold": np.full(size, None, dtype=object),
+                "tax_expense_usd": tax[rollouts].astype(np.float64),
+            }
         )
 
 
 def _record_property_sale_accounting_details(
-    records: list[AccountingDetail], *, scenario: Scenario, disposition: PropertyDispositionArrays
+    property_sale_basis_gain_details: event_streams.StreamFrameBuilder,
+    *,
+    scenario: Scenario,
+    disposition: PropertyDispositionArrays,
 ) -> None:
     if disposition.sale_event is None or disposition.sale_month is None:
         return
@@ -3056,44 +3221,52 @@ def _record_property_sale_accounting_details(
         return
     actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
     month_position = disposition.sale_month
-    active_rollouts = np.nonzero(
-        (disposition.column("property_sale_gross_usd")[:, month_position] != 0)
-        | (disposition.column("realized_property_gain_usd")[:, month_position] != 0)
-        | (disposition.column("taxable_property_gain_usd")[:, month_position] != 0)
-    )[0]
-    records.extend(
-        PropertySaleBasisGainDetail(
-            rollout_index=int(rollout_index),
-            month_index=int(disposition.sale_month),
-            actor_id=actor_id,
-            policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-            event_id=sale_event.event_id,
-            property_id=property_id,
-            gross_sale_usd=float(disposition.column("property_sale_gross_usd")[rollout_index, month_position]),
-            selling_cost_usd=float(disposition.column("sale_closing_cost_usd")[rollout_index, month_position]),
-            debt_payoff_usd=float(disposition.column("property_sale_debt_payoff_usd")[rollout_index, month_position]),
-            adjusted_basis_usd=float(
-                disposition.column("property_sale_adjusted_basis_usd")[rollout_index, month_position]
+    gross_col = disposition.column("property_sale_gross_usd")[:, month_position]
+    realized_col = disposition.column("realized_property_gain_usd")[:, month_position]
+    taxable_col = disposition.column("taxable_property_gain_usd")[:, month_position]
+    mask = (gross_col != 0) | (realized_col != 0) | (taxable_col != 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    property_sale_basis_gain_details.extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, int(disposition.sale_month), dtype=np.int64),
+            "actor_id": [actor_id] * size,
+            "policy_id": [PROPERTY_SALE_SETTLEMENT_POLICY_ID] * size,
+            "event_id": [sale_event.event_id] * size,
+            "property_id": [property_id] * size,
+            "gross_sale_usd": gross_col[rollouts].astype(np.float64),
+            "selling_cost_usd": disposition.column("sale_closing_cost_usd")[rollouts, month_position].astype(
+                np.float64
             ),
-            realized_gain_usd=float(disposition.column("realized_property_gain_usd")[rollout_index, month_position]),
-            depreciation_recapture_usd=float(
-                disposition.column("depreciation_recapture_usd")[rollout_index, month_position]
+            "debt_payoff_usd": disposition.column("property_sale_debt_payoff_usd")[rollouts, month_position].astype(
+                np.float64
             ),
-            capital_gain_usd=float(disposition.column("property_sale_capital_gain_usd")[rollout_index, month_position]),
-            capital_gain_exclusion_usd=float(
-                disposition.column("property_sale_capital_gain_exclusion_usd")[rollout_index, month_position]
+            "adjusted_basis_usd": disposition.column("property_sale_adjusted_basis_usd")[
+                rollouts, month_position
+            ].astype(np.float64),
+            "realized_gain_usd": realized_col[rollouts].astype(np.float64),
+            "depreciation_recapture_usd": disposition.column("depreciation_recapture_usd")[
+                rollouts, month_position
+            ].astype(np.float64),
+            "capital_gain_usd": disposition.column("property_sale_capital_gain_usd")[rollouts, month_position].astype(
+                np.float64
             ),
-            taxable_capital_gain_usd=float(
-                disposition.column("taxable_property_capital_gain_usd")[rollout_index, month_position]
-            ),
-            taxable_gain_usd=float(disposition.column("taxable_property_gain_usd")[rollout_index, month_position]),
-        )
-        for rollout_index in active_rollouts.tolist()
+            "capital_gain_exclusion_usd": disposition.column("property_sale_capital_gain_exclusion_usd")[
+                rollouts, month_position
+            ].astype(np.float64),
+            "taxable_capital_gain_usd": disposition.column("taxable_property_capital_gain_usd")[
+                rollouts, month_position
+            ].astype(np.float64),
+            "taxable_gain_usd": taxable_col[rollouts].astype(np.float64),
+        }
     )
 
 
 def _record_tax_payment_allocation_details(
-    records: list[AccountingDetail],
+    tax_payment_allocation_details: event_streams.StreamFrameBuilder,
     *,
     scenario: Scenario,
     month_index: np.ndarray,
@@ -3115,37 +3288,50 @@ def _record_tax_payment_allocation_details(
     active_rollouts, active_month_positions = np.nonzero(
         (annual_tax.total_income_tax_usd != 0) | (total_taxable_income != 0)
     )
+    if active_rollouts.size == 0:
+        return
     actor_id = _primary_owner_actor_id(scenario)
-    for rollout_index, month_position in zip(active_rollouts.tolist(), active_month_positions.tolist(), strict=True):
-        records.append(
-            TaxPaymentAllocationDetail(
-                rollout_index=rollout_index,
-                month_index=int(month_index[month_position]),
-                actor_id=actor_id,
-                policy_id=ANNUAL_TAX_ACCOUNTING_POLICY_ID,
-                tax_year_index=int(month_index[month_position] // MONTHS_PER_YEAR),
-                federal_income_tax_usd=float(annual_tax.federal_income_tax_usd[rollout_index, month_position]),
-                california_income_tax_usd=float(annual_tax.california_income_tax_usd[rollout_index, month_position]),
-                total_income_tax_usd=float(annual_tax.total_income_tax_usd[rollout_index, month_position]),
-                property_sale_tax_usd=float(annual_tax.property_sale_tax_usd[rollout_index, month_position]),
-                generic_sp500_sale_tax_usd=float(annual_tax.generic_sp500_sale_tax_usd[rollout_index, month_position]),
-                private_equity_sale_tax_usd=float(
-                    annual_tax.private_equity_sale_tax_usd[rollout_index, month_position]
-                ),
-                rental_income_tax_usd=float(annual_tax.rental_income_tax_usd[rollout_index, month_position]),
-                property_depreciation_recapture_usd=float(property_recapture[rollout_index, month_position]),
-                taxable_property_capital_gain_usd=float(property_capital_gain[rollout_index, month_position]),
-                generic_sp500_taxable_gain_usd=float(sp500_capital_gain[rollout_index, month_position]),
-                private_equity_taxable_gain_usd=float(private_equity_capital_gain[rollout_index, month_position]),
-                net_rental_taxable_income_usd=float(rental_taxable[rollout_index, month_position]),
-                total_taxable_income_usd=float(total_taxable_income[rollout_index, month_position]),
-            )
-        )
+    rollouts = active_rollouts.astype(np.int64)
+    months = month_index[active_month_positions].astype(np.int64)
+    size = int(rollouts.size)
+    rollout_axis = active_rollouts
+    month_axis = active_month_positions
+    tax_payment_allocation_details.extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": months,
+            "actor_id": [actor_id] * size,
+            "policy_id": [ANNUAL_TAX_ACCOUNTING_POLICY_ID] * size,
+            "event_id": [None] * size,
+            "property_id": [None] * size,
+            "tax_year_index": (months // MONTHS_PER_YEAR).astype(np.int64),
+            "payment_timing": [TaxPaymentTiming.YEAR_END.value] * size,
+            "federal_income_tax_usd": annual_tax.federal_income_tax_usd[rollout_axis, month_axis].astype(np.float64),
+            "california_income_tax_usd": annual_tax.california_income_tax_usd[rollout_axis, month_axis].astype(
+                np.float64
+            ),
+            "total_income_tax_usd": annual_tax.total_income_tax_usd[rollout_axis, month_axis].astype(np.float64),
+            "property_sale_tax_usd": annual_tax.property_sale_tax_usd[rollout_axis, month_axis].astype(np.float64),
+            "generic_sp500_sale_tax_usd": annual_tax.generic_sp500_sale_tax_usd[rollout_axis, month_axis].astype(
+                np.float64
+            ),
+            "private_equity_sale_tax_usd": annual_tax.private_equity_sale_tax_usd[rollout_axis, month_axis].astype(
+                np.float64
+            ),
+            "rental_income_tax_usd": annual_tax.rental_income_tax_usd[rollout_axis, month_axis].astype(np.float64),
+            "property_depreciation_recapture_usd": property_recapture[rollout_axis, month_axis].astype(np.float64),
+            "taxable_property_capital_gain_usd": property_capital_gain[rollout_axis, month_axis].astype(np.float64),
+            "generic_sp500_taxable_gain_usd": sp500_capital_gain[rollout_axis, month_axis].astype(np.float64),
+            "private_equity_taxable_gain_usd": private_equity_capital_gain[rollout_axis, month_axis].astype(np.float64),
+            "net_rental_taxable_income_usd": rental_taxable[rollout_axis, month_axis].astype(np.float64),
+            "total_taxable_income_usd": total_taxable_income[rollout_axis, month_axis].astype(np.float64),
+        }
+    )
 
 
 def _record_sp500_sale_journal_entries(
     accounting: AccountingTraceBuilder,
-    lot_dispositions: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy: Policy,
@@ -3166,30 +3352,37 @@ def _record_sp500_sale_journal_entries(
         leg_chart_account_keys=({"actor_id": policy.actor_id}, {"actor_id": policy.actor_id}),
     )
     lot_id = _tax_lot_id(LotAssetClass.PUBLIC_SECURITY, "portfolio")
-    for rollout_index in np.nonzero(amount_usd > 0)[0].tolist():
-        amount = float(amount_usd[rollout_index])
-        basis = float(basis_usd[rollout_index])
-        journal_entry_id = _trace_row_id(entry_prefix, rollout_index=rollout_index, month_index=month_index)
-        lot_dispositions.append(
-            LotDisposition(
-                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
-                journal_entry_id=journal_entry_id,
-                rollout_index=rollout_index,
-                month_index=month_index,
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PUBLIC_SECURITY,
-                proceeds_usd=amount,
-                cost_basis_usd=max(0.0, basis),
-                realized_gain_usd=amount - basis,
-                taxable_gain_usd=max(0.0, amount - basis),
-                tax_expense_usd=float(tax_usd[rollout_index]),
-            )
+    mask = amount_usd > 0
+    if mask.any():
+        rollouts = np.nonzero(mask)[0].astype(np.int64)
+        size = int(rollouts.size)
+        amounts = amount_usd[rollouts].astype(np.float64)
+        bases = basis_usd[rollouts].astype(np.float64)
+        gains = amounts - bases
+        journal_entry_ids = [
+            _trace_row_id(entry_prefix, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ]
+        lot_dispositions.extend(
+            {
+                "rollout_index": rollouts,
+                "month_index": np.full(size, month_index, dtype=np.int64),
+                "lot_disposition_id": [f"{jid}:lot:{lot_id}" for jid in journal_entry_ids],
+                "journal_entry_id": journal_entry_ids,
+                "lot_id": [lot_id] * size,
+                "asset_class": [LotAssetClass.PUBLIC_SECURITY.value] * size,
+                "proceeds_usd": amounts,
+                "cost_basis_usd": np.maximum(0.0, bases),
+                "realized_gain_usd": gains,
+                "taxable_gain_usd": np.maximum(0.0, gains),
+                "quantity_sold": np.full(size, None, dtype=object),
+                "tax_expense_usd": tax_usd[rollouts].astype(np.float64),
+            }
         )
 
 
 def _record_private_equity_sale_journal_entries(
     accounting: AccountingTraceBuilder,
-    lot_dispositions: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     instruction: PrivateEquitySaleInstructionBatch,
@@ -3217,25 +3410,30 @@ def _record_private_equity_sale_journal_entries(
         ),
     )
     lot_id = _tax_lot_id(LotAssetClass.PRIVATE_EQUITY, source_holding_id)
-    for rollout_index in np.nonzero(sale_application.sale_usd > 0)[0].tolist():
-        amount = float(sale_application.sale_usd[rollout_index])
-        basis = float(sale_application.basis_usd[rollout_index])
-        journal_entry_id = _trace_row_id(entry_prefix, rollout_index=rollout_index, month_index=month_index)
-        lot_dispositions.append(
-            LotDisposition(
-                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
-                journal_entry_id=journal_entry_id,
-                rollout_index=rollout_index,
-                month_index=month_index,
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PRIVATE_EQUITY,
-                proceeds_usd=amount,
-                cost_basis_usd=max(0.0, basis),
-                realized_gain_usd=amount - basis,
-                taxable_gain_usd=float(sale_application.taxable_gain_usd[rollout_index]),
-                quantity_sold=float(sale_application.sold_units[rollout_index]),
-                tax_expense_usd=float(tax_usd[rollout_index]),
-            )
+    mask = sale_application.sale_usd > 0
+    if mask.any():
+        rollouts = np.nonzero(mask)[0].astype(np.int64)
+        size = int(rollouts.size)
+        amounts = sale_application.sale_usd[rollouts].astype(np.float64)
+        bases = sale_application.basis_usd[rollouts].astype(np.float64)
+        journal_entry_ids = [
+            _trace_row_id(entry_prefix, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ]
+        lot_dispositions.extend(
+            {
+                "rollout_index": rollouts,
+                "month_index": np.full(size, month_index, dtype=np.int64),
+                "lot_disposition_id": [f"{jid}:lot:{lot_id}" for jid in journal_entry_ids],
+                "journal_entry_id": journal_entry_ids,
+                "lot_id": [lot_id] * size,
+                "asset_class": [LotAssetClass.PRIVATE_EQUITY.value] * size,
+                "proceeds_usd": amounts,
+                "cost_basis_usd": np.maximum(0.0, bases),
+                "realized_gain_usd": amounts - bases,
+                "taxable_gain_usd": sale_application.taxable_gain_usd[rollouts].astype(np.float64),
+                "quantity_sold": sale_application.sold_units[rollouts].astype(np.float64).tolist(),
+                "tax_expense_usd": tax_usd[rollouts].astype(np.float64),
+            }
         )
 
 
@@ -3248,130 +3446,8 @@ def _record_partner_agreement_accounting_detail(
     _record_balance_snapshot_batches(accounting, month_index=month_index, entries=partner_equity.balance_snapshots)
 
 
-def _sorted_policy_decisions(records: list[PolicyDecision]) -> tuple[PolicyDecision, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda decision: (
-                decision.month_index,
-                decision.rollout_index,
-                decision.actor_id,
-                decision.policy_sequence_index,
-                decision.decision_type,
-                decision.policy_id,
-            ),
-        )
-    )
-
-
-def _sorted_market_observations(records: list[MarketObservation]) -> tuple[MarketObservation, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda observation: (observation.month_index, observation.rollout_index, observation.observation_type),
-        )
-    )
-
-
-def _sorted_tax_lots(records: list[TaxLot]) -> tuple[TaxLot, ...]:
-    return tuple(sorted(records, key=lambda lot: lot.lot_id))
-
-
-def _sorted_lot_dispositions(records: list[LotDisposition]) -> tuple[LotDisposition, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda disposition: (
-                disposition.month_index,
-                disposition.rollout_index,
-                disposition.asset_class,
-                disposition.lot_disposition_id,
-            ),
-        )
-    )
-
-
-def _sorted_liabilities(records: list[LiabilityState]) -> tuple[LiabilityState, ...]:
-    return tuple(sorted(records, key=lambda liability: liability.liability_id))
-
-
-def _sorted_accounting_details(records: list[AccountingDetail]) -> tuple[AccountingDetail, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda detail: (
-                detail.month_index,
-                detail.rollout_index,
-                detail.detail_type,
-                detail.actor_id,
-                detail.policy_id or "",
-                detail.event_id or "",
-                detail.property_id or "",
-            ),
-        )
-    )
-
-
-def _sorted_obligations(records: list[Obligation]) -> tuple[Obligation, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda obligation: (
-                obligation.month_index,
-                obligation.rollout_index,
-                obligation.obligation_type,
-                obligation.obligation_id,
-            ),
-        )
-    )
-
-
-def _sorted_funding_decisions(records: list[FundingDecision]) -> tuple[FundingDecision, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda decision: (
-                decision.month_index,
-                decision.rollout_index,
-                -1 if decision.policy_sequence_index is None else decision.policy_sequence_index,
-                decision.decision_type,
-                decision.policy_id or "",
-                decision.obligation_id,
-            ),
-        )
-    )
-
-
-def _sorted_settlement_results(records: list[SettlementResult]) -> tuple[SettlementResult, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda settlement: (
-                settlement.month_index,
-                settlement.rollout_index,
-                settlement.obligation_type,
-                settlement.obligation_id,
-            ),
-        )
-    )
-
-
-def _sorted_failure_events(records: list[FailureEvent]) -> tuple[FailureEvent, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda event: (
-                event.month_index,
-                event.rollout_index,
-                event.failure_event_type,
-                event.failure_event_id,
-            ),
-        )
-    )
-
-
 def _record_property_sale_effects(
-    effects: list[Effect],
+    effects: dict[EffectType, event_streams.StreamFrameBuilder],
     *,
     scenario: Scenario,
     disposition: PropertyDispositionArrays,
@@ -3389,45 +3465,54 @@ def _record_property_sale_effects(
     net_proceeds = (
         net_proceeds_usd if net_proceeds_usd is not None else disposition.column("property_sale_net_proceeds_usd")
     )
-    active = (
-        (disposition.column("property_sale_gross_usd")[:, month] != 0)
-        | (disposition.column("sale_closing_cost_usd")[:, month] != 0)
-        | (disposition.column("property_sale_debt_payoff_usd")[:, month] != 0)
-        | (sale_tax[:, month] != 0)
-        | (net_proceeds[:, month] != 0)
-    )
+    gross = disposition.column("property_sale_gross_usd")[:, month]
+    selling_cost = disposition.column("sale_closing_cost_usd")[:, month]
+    debt_payoff = disposition.column("property_sale_debt_payoff_usd")[:, month]
+    tax_col = sale_tax[:, month]
+    net_proceeds_col = net_proceeds[:, month]
+    active = (gross != 0) | (selling_cost != 0) | (debt_payoff != 0) | (tax_col != 0) | (net_proceeds_col != 0)
+    if not active.any():
+        return
+    rollouts = np.nonzero(active)[0].astype(np.int64)
+    size = int(rollouts.size)
     actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
-    effects.extend(
-        SettlePropertySaleEffect(
-            rollout_index=rollout_index,
-            month_index=month,
-            actor_id=actor_id,
-            policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-            event_id=sale_event.event_id,
-            property_id=property_id,
-            gross_sale_usd=float(disposition.column("property_sale_gross_usd")[rollout_index, month]),
-            selling_cost_usd=float(disposition.column("sale_closing_cost_usd")[rollout_index, month]),
-            debt_payoff_usd=float(disposition.column("property_sale_debt_payoff_usd")[rollout_index, month]),
-            adjusted_basis_usd=float(disposition.column("property_sale_adjusted_basis_usd")[rollout_index, month]),
-            realized_gain_usd=float(disposition.column("realized_property_gain_usd")[rollout_index, month]),
-            depreciation_recapture_usd=float(disposition.column("depreciation_recapture_usd")[rollout_index, month]),
-            capital_gain_usd=float(disposition.column("property_sale_capital_gain_usd")[rollout_index, month]),
-            capital_gain_exclusion_usd=float(
-                disposition.column("property_sale_capital_gain_exclusion_usd")[rollout_index, month]
+    effects[EffectType.SETTLE_PROPERTY_SALE].extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month, dtype=np.int64),
+            "actor_id": [actor_id] * size,
+            "policy_id": [PROPERTY_SALE_SETTLEMENT_POLICY_ID] * size,
+            "event_id": [sale_event.event_id] * size,
+            "property_id": [property_id] * size,
+            "gross_sale_usd": gross[rollouts].astype(np.float64),
+            "selling_cost_usd": selling_cost[rollouts].astype(np.float64),
+            "debt_payoff_usd": debt_payoff[rollouts].astype(np.float64),
+            "adjusted_basis_usd": disposition.column("property_sale_adjusted_basis_usd")[rollouts, month].astype(
+                np.float64
             ),
-            taxable_capital_gain_usd=float(
-                disposition.column("taxable_property_capital_gain_usd")[rollout_index, month]
+            "realized_gain_usd": disposition.column("realized_property_gain_usd")[rollouts, month].astype(np.float64),
+            "depreciation_recapture_usd": disposition.column("depreciation_recapture_usd")[rollouts, month].astype(
+                np.float64
             ),
-            taxable_gain_usd=float(disposition.column("taxable_property_gain_usd")[rollout_index, month]),
-            tax_usd=float(sale_tax[rollout_index, month]),
-            net_proceeds_usd=float(net_proceeds[rollout_index, month]),
-        )
-        for rollout_index in np.nonzero(active)[0].tolist()
+            "capital_gain_usd": disposition.column("property_sale_capital_gain_usd")[rollouts, month].astype(
+                np.float64
+            ),
+            "capital_gain_exclusion_usd": disposition.column("property_sale_capital_gain_exclusion_usd")[
+                rollouts, month
+            ].astype(np.float64),
+            "taxable_capital_gain_usd": disposition.column("taxable_property_capital_gain_usd")[rollouts, month].astype(
+                np.float64
+            ),
+            "taxable_gain_usd": disposition.column("taxable_property_gain_usd")[rollouts, month].astype(np.float64),
+            "tax_usd": tax_col[rollouts].astype(np.float64),
+            "net_proceeds_usd": net_proceeds_col[rollouts].astype(np.float64),
+            "proceeds_destination": [AccountType.CHECKING.value] * size,
+        }
     )
 
 
 def _record_sp500_sale_effects(
-    effects: list[Effect],
+    effects: dict[EffectType, event_streams.StreamFrameBuilder],
     *,
     month_index: int,
     policy: Policy,
@@ -3436,29 +3521,33 @@ def _record_sp500_sale_effects(
     tax_usd: np.ndarray,
     shortfall_usd: np.ndarray,
 ) -> None:
-    for rollout_index in np.nonzero((amount_usd > 0) | (shortfall_usd > 0))[0].tolist():
-        amount = float(amount_usd[rollout_index])
-        basis = float(basis_usd[rollout_index])
-        tax = float(tax_usd[rollout_index])
-        effects.append(
-            SellSp500Effect(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                amount_usd=amount,
-                after_tax_proceeds_usd=max(0.0, amount - tax),
-                basis_usd=basis,
-                gain_usd=amount - basis,
-                tax_usd=tax,
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
-        )
+    mask = (amount_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    amounts = amount_usd[rollouts].astype(np.float64)
+    bases = basis_usd[rollouts].astype(np.float64)
+    taxes = tax_usd[rollouts].astype(np.float64)
+    effects[EffectType.SELL_SP500].extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month_index, dtype=np.int64),
+            "actor_id": [policy.actor_id] * size,
+            "policy_id": [policy.policy_id] * size,
+            "amount_usd": amounts,
+            "after_tax_proceeds_usd": np.maximum(0.0, amounts - taxes),
+            "basis_usd": bases,
+            "gain_usd": amounts - bases,
+            "tax_usd": taxes,
+            "shortfall_usd": shortfall_usd[rollouts].astype(np.float64),
+        }
+    )
 
 
 def _record_crypto_sale_journal_entries(
     accounting: AccountingTraceBuilder,
-    lot_dispositions: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy: Policy,
@@ -3489,29 +3578,36 @@ def _record_crypto_sale_journal_entries(
         ),
     )
     lot_id = _tax_lot_id(LotAssetClass.CRYPTO, source_asset_id)
-    for rollout_index in np.nonzero(amount_usd > 0)[0].tolist():
-        amount = float(amount_usd[rollout_index])
-        basis = float(basis_usd[rollout_index])
-        journal_entry_id = _trace_row_id(cause_id_prefix, rollout_index=rollout_index, month_index=month_index)
-        lot_dispositions.append(
-            LotDisposition(
-                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
-                journal_entry_id=journal_entry_id,
-                rollout_index=rollout_index,
-                month_index=month_index,
-                lot_id=lot_id,
-                asset_class=LotAssetClass.CRYPTO,
-                proceeds_usd=amount,
-                cost_basis_usd=max(0.0, basis),
-                realized_gain_usd=amount - basis,
-                taxable_gain_usd=max(0.0, amount - basis),
-                tax_expense_usd=0.0,
-            )
+    mask = amount_usd > 0
+    if mask.any():
+        rollouts = np.nonzero(mask)[0].astype(np.int64)
+        size = int(rollouts.size)
+        amounts = amount_usd[rollouts].astype(np.float64)
+        bases = basis_usd[rollouts].astype(np.float64)
+        gains = amounts - bases
+        journal_entry_ids = [
+            _trace_row_id(cause_id_prefix, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ]
+        lot_dispositions.extend(
+            {
+                "rollout_index": rollouts,
+                "month_index": np.full(size, month_index, dtype=np.int64),
+                "lot_disposition_id": [f"{jid}:lot:{lot_id}" for jid in journal_entry_ids],
+                "journal_entry_id": journal_entry_ids,
+                "lot_id": [lot_id] * size,
+                "asset_class": [LotAssetClass.CRYPTO.value] * size,
+                "proceeds_usd": amounts,
+                "cost_basis_usd": np.maximum(0.0, bases),
+                "realized_gain_usd": gains,
+                "taxable_gain_usd": np.maximum(0.0, gains),
+                "quantity_sold": np.full(size, None, dtype=object),
+                "tax_expense_usd": np.zeros(size, dtype=np.float64),
+            }
         )
 
 
 def _record_crypto_sale_effects(
-    effects: list[Effect],
+    effects: dict[EffectType, event_streams.StreamFrameBuilder],
     *,
     month_index: int,
     policy: Policy,
@@ -3522,53 +3618,70 @@ def _record_crypto_sale_effects(
     quantity_sold: np.ndarray,
     shortfall_usd: np.ndarray,
 ) -> None:
-    for rollout_index in np.nonzero((amount_usd > 0) | (shortfall_usd > 0))[0].tolist():
-        amount = float(amount_usd[rollout_index])
-        basis = float(basis_usd[rollout_index])
-        effects.append(
-            SellCryptoEffect(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                source_asset_id=source_asset_id,
-                asset_symbol=asset_symbol,
-                amount_usd=amount,
-                quantity_sold=float(quantity_sold[rollout_index]),
-                basis_usd=basis,
-                gain_usd=amount - basis,
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
-        )
+    mask = (amount_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    amounts = amount_usd[rollouts].astype(np.float64)
+    bases = basis_usd[rollouts].astype(np.float64)
+    effects[EffectType.SELL_CRYPTO].extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month_index, dtype=np.int64),
+            "actor_id": [policy.actor_id] * size,
+            "policy_id": [policy.policy_id] * size,
+            "source_asset_id": [source_asset_id] * size,
+            "asset_symbol": [asset_symbol] * size,
+            "amount_usd": amounts,
+            "quantity_sold": quantity_sold[rollouts].astype(np.float64),
+            "basis_usd": bases,
+            "gain_usd": amounts - bases,
+            "shortfall_usd": shortfall_usd[rollouts].astype(np.float64),
+        }
+    )
 
 
 def _record_private_equity_sale_effects(
-    effects: list[Effect],
+    effects: dict[EffectType, event_streams.StreamFrameBuilder],
     *,
     month_index: int,
     instruction: PrivateEquitySaleInstructionBatch,
     sale_application: PrivateEquitySaleApplication,
     estimated_tax_usd: np.ndarray,
 ) -> None:
-    sale_tax = estimated_tax_usd
-    effects.extend(
-        SellPrivateEquityEffect(
-            rollout_index=rollout_index,
-            month_index=month_index,
-            actor_id=instruction.actor_id,
-            policy_id=instruction.policy_id,
-            opportunity_id=instruction.opportunity_id[rollout_index],
-            opportunity_cause_id=str(instruction.opportunity_cause_id[rollout_index]),
-            amount_usd=float(sale_application.sale_usd[rollout_index]),
-            after_tax_proceeds_usd=float(np.maximum(0.0, sale_application.sale_usd - sale_tax)[rollout_index]),
-            basis_usd=float(sale_application.basis_usd[rollout_index]),
-            taxable_gain_usd=float(sale_application.taxable_gain_usd[rollout_index]),
-            estimated_tax_usd=float(sale_tax[rollout_index]),
-            units_sold=float(sale_application.sold_units[rollout_index]),
-            sold_fraction=float(sale_application.sold_fraction[rollout_index]),
-            proceeds_destination=instruction.proceeds_destination,
-        )
-        for rollout_index in np.nonzero(sale_application.sale_usd > 0)[0].tolist()
+    mask = sale_application.sale_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    amounts = sale_application.sale_usd[rollouts].astype(np.float64)
+    taxes = estimated_tax_usd[rollouts].astype(np.float64)
+    after_tax = np.maximum(0.0, amounts - taxes)
+    proceeds_destination_value = (
+        instruction.proceeds_destination.value
+        if hasattr(instruction.proceeds_destination, "value")
+        else str(instruction.proceeds_destination)
+    )
+    effects[EffectType.SELL_PRIVATE_EQUITY].extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month_index, dtype=np.int64),
+            "actor_id": [instruction.actor_id] * size,
+            "policy_id": [instruction.policy_id] * size,
+            "event_id": [None] * size,
+            "event_type": [None] * size,
+            "opportunity_id": [instruction.opportunity_id[r] for r in rollouts],
+            "opportunity_cause_id": [str(instruction.opportunity_cause_id[r]) for r in rollouts],
+            "amount_usd": amounts,
+            "after_tax_proceeds_usd": after_tax,
+            "basis_usd": sale_application.basis_usd[rollouts].astype(np.float64),
+            "taxable_gain_usd": sale_application.taxable_gain_usd[rollouts].astype(np.float64),
+            "estimated_tax_usd": taxes,
+            "units_sold": sale_application.sold_units[rollouts].astype(np.float64),
+            "sold_fraction": sale_application.sold_fraction[rollouts].astype(np.float64),
+            "proceeds_destination": [proceeds_destination_value] * size,
+        }
     )
 
 
@@ -3794,46 +3907,53 @@ def _quarterly_estimated_tax_obligation_due_usd(
 
 
 def _estimated_payments_credit_per_year_usd(
-    *,
-    settlement_results: list[SettlementResult],
-    initial_settlement_count: int,
-    tax_year_count: int,
-    rollout_count: int,
+    *, obligations_slice: pl.DataFrame, tax_year_count: int, rollout_count: int
 ) -> np.ndarray:
     """Sum estimated-tax `amount_paid_usd` against the Dec 31 year-end true-up.
 
-    Reads the settlement rows appended since `initial_settlement_count` and
-    aggregates the paid amounts for `ESTIMATED_TAX_PAYMENT` rows by the tax
-    year their `month_index` falls into. Only estimated payments whose due
-    month is at or before the tax year's Dec 31 (offset 11) credit toward
-    that year's residual — the Q4 obligation for tax year N lands on Jan 15
-    of year N+1 (offset 12), which is after the Dec 31 year-end and therefore
+    `obligations_slice` is the slice of the obligation lifecycle frame
+    written since estimated-tax recording started — typically built via
+    `obligations.build_slice(start_block)`. The function aggregates the
+    paid amounts for `ESTIMATED_TAX_PAYMENT` rows by the tax year their
+    `month_index` falls into. Only estimated payments whose due month is at
+    or before the tax year's Dec 31 (offset 11) credit toward that year's
+    residual — the Q4 obligation for tax year N lands on Jan 15 of year
+    N+1 (offset 12), which is after the Dec 31 year-end and therefore
     cannot reduce the year-end true-up amount. The Q4 payment is still a
     legitimate prepayment toward year N's tax bill in IRS terms, but the
     year-end obligation amount the simulator computes at Dec 31 can only
     "see" payments that have already happened by that date.
+
+    The Q4 obligation for tax year N lands at month `N*12 + 12` (Jan 15 of
+    year N+1) but pays toward year N's tax bill, so it credits year N's
+    year-end residual. The Dec 31 year-end true-up at month `N*12 + 11`
+    thus "looks ahead" to credit the scheduled Q4 payment — by the time
+    the simulator finishes processing the estimated-tax obligations for
+    the whole horizon, Q4 has either been paid or has failed independently
+    as its own obligation, so the year-end can treat it as known. Q1/Q2/Q3
+    (offsets 3/5/8) credit their own tax year by straightforward integer
+    division; Q4 (offset 12) needs the -1 correction below.
     """
     credit = np.zeros((rollout_count, tax_year_count), dtype="float64")
-    for settlement in settlement_results[initial_settlement_count:]:
-        if settlement.obligation_type is not ObligationType.ESTIMATED_TAX_PAYMENT:
-            continue
-        # The Q4 obligation for tax year N lands at month `N*12 + 12` (Jan 15
-        # of year N+1) but pays toward year N's tax bill, so it credits year
-        # N's year-end residual. The Dec 31 year-end true-up at month `N*12 +
-        # 11` thus "looks ahead" to credit the scheduled Q4 payment — by the
-        # time the simulator finishes processing the estimated-tax obligations
-        # for the whole horizon, Q4 has either been paid or has failed
-        # independently as its own obligation, so the year-end can treat it as
-        # known. Q1/Q2/Q3 (offsets 3/5/8) credit their own tax year by
-        # straightforward integer division; Q4 (offset 12) needs the -1
-        # correction below.
-        due_month = settlement.month_index
-        if due_month % MONTHS_PER_YEAR == 0 and due_month >= MONTHS_PER_YEAR:
-            tax_year = due_month // MONTHS_PER_YEAR - 1
-        else:
-            tax_year = due_month // MONTHS_PER_YEAR
-        if 0 <= tax_year < tax_year_count:
-            credit[settlement.rollout_index, tax_year] += settlement.amount_paid_usd
+    if obligations_slice.height == 0:
+        return credit
+    tax_year_expr = (
+        pl.when((pl.col("month_index") % MONTHS_PER_YEAR == 0) & (pl.col("month_index") >= MONTHS_PER_YEAR))
+        .then(pl.col("month_index") // MONTHS_PER_YEAR - 1)
+        .otherwise(pl.col("month_index") // MONTHS_PER_YEAR)
+        .alias("tax_year")
+    )
+    aggregated = (
+        obligations_slice.lazy()
+        .filter(pl.col("obligation_type") == ObligationType.ESTIMATED_TAX_PAYMENT.value)
+        .with_columns(tax_year_expr)
+        .filter((pl.col("tax_year") >= 0) & (pl.col("tax_year") < tax_year_count))
+        .group_by(["rollout_index", "tax_year"])
+        .agg(credit_usd=pl.col("amount_paid_usd").sum())
+        .collect()
+    )
+    for row in aggregated.iter_rows(named=True):
+        credit[int(row["rollout_index"]), int(row["tax_year"])] = float(row["credit_usd"])
     return credit
 
 
@@ -3857,10 +3977,8 @@ def _settle_required_cash_obligations(
     crypto_sale_usd: np.ndarray,
     crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
-    obligations: list[Obligation],
-    funding_decisions: list[FundingDecision],
-    settlement_results: list[SettlementResult],
-    failure_events: list[FailureEvent],
+    obligations: event_streams.StreamFrameBuilder,
+    funding_decisions: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -3895,8 +4013,6 @@ def _settle_required_cash_obligations(
             checking_floor_shortfall_usd=checking_floor_shortfall_usd,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
@@ -3992,10 +4108,8 @@ def _settle_required_cash_obligation_at_month_position(
     crypto_sale_usd: np.ndarray,
     crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
-    obligations: list[Obligation],
-    funding_decisions: list[FundingDecision],
-    settlement_results: list[SettlementResult],
-    failure_events: list[FailureEvent],
+    obligations: event_streams.StreamFrameBuilder,
+    funding_decisions: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -4306,8 +4420,6 @@ def _settle_required_cash_obligation_at_month_position(
     )
     _record_obligation_settlement_rows(
         obligations,
-        settlement_results,
-        failure_events,
         obligation_type=obligation_type,
         actor_id=actor_id,
         creditor_id=creditor_id,
@@ -4628,8 +4740,58 @@ def _apply_crypto_checking_floor_obligation_funding_policy(
     )
 
 
+def _funding_decision_block(
+    *,
+    rollouts: np.ndarray,
+    obligation_type: ObligationType,
+    month_index: int,
+    decision_type: FundingDecisionType,
+    actor_id: str,
+    available_cash_usd: np.ndarray,
+    requested_cash_usd: np.ndarray,
+    requested_sale_usd: np.ndarray,
+    funded_cash_usd: np.ndarray,
+    shortfall_usd: np.ndarray,
+    policy_id: str | None = None,
+    policy_sequence_index: int | None = None,
+    source_type: FundingSourceType | None = None,
+    source_account_id: str | None = None,
+    source_account_type: AccountType | None = None,
+    source_asset_id: str | None = None,
+    source_asset_type: AssetType | None = None,
+) -> dict[str, Any]:
+    """Build the dict-of-columns a `FundingDecision` row-block needs.
+
+    All recorders below feed `funding_decisions.extend(_funding_decision_block(...))`
+    so the column-set is single-source-of-truth and matches
+    `event_streams.FUNDING_DECISION_SCHEMA` exactly."""
+
+    size = int(rollouts.size)
+    return {
+        "rollout_index": rollouts.astype(np.int64),
+        "month_index": np.full(size, month_index, dtype=np.int64),
+        "obligation_id": [
+            _obligation_id(obligation_type, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ],
+        "decision_type": [decision_type.value] * size,
+        "actor_id": [actor_id] * size,
+        "policy_id": [policy_id] * size,
+        "policy_sequence_index": [policy_sequence_index] * size,
+        "source_type": [None if source_type is None else source_type.value] * size,
+        "source_account_id": [source_account_id] * size,
+        "source_account_type": [None if source_account_type is None else source_account_type.value] * size,
+        "source_asset_id": [source_asset_id] * size,
+        "source_asset_type": [None if source_asset_type is None else source_asset_type.value] * size,
+        "available_cash_usd": available_cash_usd[rollouts].astype(np.float64),
+        "requested_cash_usd": requested_cash_usd[rollouts].astype(np.float64),
+        "requested_sale_usd": requested_sale_usd[rollouts].astype(np.float64),
+        "funded_cash_usd": funded_cash_usd[rollouts].astype(np.float64),
+        "shortfall_usd": shortfall_usd[rollouts].astype(np.float64),
+    }
+
+
 def _record_obligation_cash_funding_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4639,31 +4801,32 @@ def _record_obligation_cash_funding_decisions(
     funded_cash_usd: np.ndarray,
     source_account: AccountBalance | None,
 ) -> None:
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.USE_CASH,
-                actor_id=actor_id,
-                source_type=FundingSourceType.CASH_ACCOUNT,
-                source_account_id=source_account.account_id if source_account is not None else None,
-                source_account_type=AccountType.CHECKING,
-                available_cash_usd=float(available_cash_usd[rollout_index]),
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                funded_cash_usd=float(funded_cash_usd[rollout_index]),
-                shortfall_usd=float(
-                    np.maximum(0.0, obligation_amount_usd[rollout_index] - funded_cash_usd[rollout_index])
-                ),
-            )
+    mask = obligation_amount_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    shortfall = np.maximum(0.0, obligation_amount_usd - funded_cash_usd)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.USE_CASH,
+            actor_id=actor_id,
+            available_cash_usd=available_cash_usd,
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=np.zeros_like(obligation_amount_usd),
+            funded_cash_usd=funded_cash_usd,
+            shortfall_usd=shortfall,
+            source_type=FundingSourceType.CASH_ACCOUNT,
+            source_account_id=source_account.account_id if source_account is not None else None,
+            source_account_type=AccountType.CHECKING,
         )
-        for rollout_index in np.nonzero(obligation_amount_usd > 0)[0].tolist()
     )
 
 
 def _record_obligation_sale_funding_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4675,33 +4838,33 @@ def _record_obligation_sale_funding_decisions(
     shortfall_usd: np.ndarray,
     source_asset: GenericSp500StockPosition | None,
 ) -> None:
-    policy = policy_step.policy
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.SELL_PUBLIC_STOCK,
-                actor_id=actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                source_type=FundingSourceType.PUBLIC_MARKET_ASSET,
-                source_asset_id=source_asset.asset_id if source_asset is not None else None,
-                source_asset_type=AssetType.GENERIC_SP500_STOCK,
-                available_cash_usd=0.0,
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                requested_sale_usd=float(requested_sale_usd[rollout_index]),
-                funded_cash_usd=float(funded_cash_usd[rollout_index]),
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
+    mask = (requested_sale_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.SELL_PUBLIC_STOCK,
+            actor_id=actor_id,
+            available_cash_usd=np.zeros_like(obligation_amount_usd),
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=requested_sale_usd,
+            funded_cash_usd=funded_cash_usd,
+            shortfall_usd=shortfall_usd,
+            policy_id=policy_step.policy.policy_id,
+            policy_sequence_index=policy_step.sequence_index,
+            source_type=FundingSourceType.PUBLIC_MARKET_ASSET,
+            source_asset_id=source_asset.asset_id if source_asset is not None else None,
+            source_asset_type=AssetType.GENERIC_SP500_STOCK,
         )
-        for rollout_index in np.nonzero((requested_sale_usd > 0) | (shortfall_usd > 0))[0].tolist()
     )
 
 
 def _record_obligation_crypto_sale_funding_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4714,35 +4877,35 @@ def _record_obligation_crypto_sale_funding_decisions(
     source_asset_id: str,
     source_account_id: str | None,
 ) -> None:
-    policy = policy_step.policy
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.SELL_CRYPTO,
-                actor_id=actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                source_type=FundingSourceType.CRYPTO_ASSET,
-                source_account_id=source_account_id,
-                source_account_type=AccountType.CRYPTO_EXCHANGE if source_account_id is not None else None,
-                source_asset_id=source_asset_id,
-                source_asset_type=AssetType.CRYPTO,
-                available_cash_usd=0.0,
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                requested_sale_usd=float(requested_sale_usd[rollout_index]),
-                funded_cash_usd=float(funded_cash_usd[rollout_index]),
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
+    mask = (requested_sale_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.SELL_CRYPTO,
+            actor_id=actor_id,
+            available_cash_usd=np.zeros_like(obligation_amount_usd),
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=requested_sale_usd,
+            funded_cash_usd=funded_cash_usd,
+            shortfall_usd=shortfall_usd,
+            policy_id=policy_step.policy.policy_id,
+            policy_sequence_index=policy_step.sequence_index,
+            source_type=FundingSourceType.CRYPTO_ASSET,
+            source_account_id=source_account_id,
+            source_account_type=AccountType.CRYPTO_EXCHANGE if source_account_id is not None else None,
+            source_asset_id=source_asset_id,
+            source_asset_type=AssetType.CRYPTO,
         )
-        for rollout_index in np.nonzero((requested_sale_usd > 0) | (shortfall_usd > 0))[0].tolist()
     )
 
 
 def _record_obligation_pe_sale_funding_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4754,33 +4917,33 @@ def _record_obligation_pe_sale_funding_decisions(
     shortfall_usd: np.ndarray,
     source_asset_id: str,
 ) -> None:
-    policy = policy_step.policy
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.SELL_PRIVATE_EQUITY,
-                actor_id=actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                source_type=FundingSourceType.PRIVATE_EQUITY_ASSET,
-                source_asset_id=source_asset_id,
-                source_asset_type=AssetType.PRIVATE_EQUITY,
-                available_cash_usd=0.0,
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                requested_sale_usd=float(requested_sale_usd[rollout_index]),
-                funded_cash_usd=float(funded_cash_usd[rollout_index]),
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
+    mask = (requested_sale_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.SELL_PRIVATE_EQUITY,
+            actor_id=actor_id,
+            available_cash_usd=np.zeros_like(obligation_amount_usd),
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=requested_sale_usd,
+            funded_cash_usd=funded_cash_usd,
+            shortfall_usd=shortfall_usd,
+            policy_id=policy_step.policy.policy_id,
+            policy_sequence_index=policy_step.sequence_index,
+            source_type=FundingSourceType.PRIVATE_EQUITY_ASSET,
+            source_asset_id=source_asset_id,
+            source_asset_type=AssetType.PRIVATE_EQUITY,
         )
-        for rollout_index in np.nonzero((requested_sale_usd > 0) | (shortfall_usd > 0))[0].tolist()
     )
 
 
 def _record_unfunded_obligation_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4788,29 +4951,29 @@ def _record_unfunded_obligation_decisions(
     obligation_amount_usd: np.ndarray,
     unpaid_amount_usd: np.ndarray,
 ) -> None:
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.UNFUNDED,
-                actor_id=actor_id,
-                source_type=FundingSourceType.UNFUNDED,
-                available_cash_usd=0.0,
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                funded_cash_usd=0.0,
-                shortfall_usd=float(unpaid_amount_usd[rollout_index]),
-            )
+    mask = unpaid_amount_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.UNFUNDED,
+            actor_id=actor_id,
+            available_cash_usd=np.zeros_like(obligation_amount_usd),
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=np.zeros_like(obligation_amount_usd),
+            funded_cash_usd=np.zeros_like(obligation_amount_usd),
+            shortfall_usd=unpaid_amount_usd,
+            source_type=FundingSourceType.UNFUNDED,
         )
-        for rollout_index in np.nonzero(unpaid_amount_usd > 0)[0].tolist()
     )
 
 
 def _record_obligation_settlement_rows(
-    obligations: list[Obligation],
-    settlement_results: list[SettlementResult],
-    failure_events: list[FailureEvent],
+    obligations: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4822,78 +4985,59 @@ def _record_obligation_settlement_rows(
     unpaid_amount_usd: np.ndarray,
     required: bool = True,
 ) -> None:
-    for rollout_index in np.nonzero(amount_due_usd > 0)[0].tolist():
-        due = float(amount_due_usd[rollout_index])
-        paid = float(amount_paid_usd[rollout_index])
-        unpaid = float(unpaid_amount_usd[rollout_index])
-        obligation_id = _obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index)
-        obligation_status = _obligation_status(amount_due_usd=due, unpaid_amount_usd=unpaid)
-        settlement_status = _settlement_status(amount_due_usd=due, unpaid_amount_usd=unpaid)
-        obligations.append(
-            Obligation(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=obligation_id,
-                obligation_type=obligation_type,
-                actor_id=actor_id,
-                creditor_id=creditor_id,
-                due_month_index=month_index,
-                amount_due_usd=due,
-                amount_paid_usd=paid,
-                unpaid_amount_usd=unpaid,
-                status=obligation_status,
-                source_policy_id=source_policy_id,
-            )
-        )
-        settlement_results.append(
-            SettlementResult(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=obligation_id,
-                obligation_type=obligation_type,
-                actor_id=actor_id,
-                status=settlement_status,
-                amount_due_usd=due,
-                amount_paid_usd=paid,
-                unpaid_amount_usd=unpaid,
-            )
-        )
-        if unpaid > 0 and required:
-            failure_events.append(
-                FailureEvent(
-                    rollout_index=rollout_index,
-                    month_index=month_index,
-                    failure_event_id=f"{obligation_id}:failure",
-                    failure_event_type=FailureEventType.UNSETTLED_OBLIGATION,
-                    obligation_id=obligation_id,
-                    actor_id=actor_id,
-                    unpaid_amount_usd=unpaid,
-                )
-            )
+    # One column-block per recorder call covering every rollout with a
+    # non-zero obligation due. Per-row allocation inside a per-rollout loop
+    # was a measured +54% bench regression (a2c3009 followup); the
+    # vectorized form clears that.
+    nonzero_mask = amount_due_usd > 0
+    if not nonzero_mask.any():
+        return
+    nonzero_rollouts = np.nonzero(nonzero_mask)[0].astype(np.int64)
+    nonzero_due = amount_due_usd[nonzero_rollouts].astype(np.float64)
+    nonzero_paid = amount_paid_usd[nonzero_rollouts].astype(np.float64)
+    nonzero_unpaid = unpaid_amount_usd[nonzero_rollouts].astype(np.float64)
+    obligation_ids = [
+        _obligation_id(obligation_type, rollout_index=int(r), month_index=month_index) for r in nonzero_rollouts
+    ]
+    obligations.extend(
+        {
+            "rollout_index": nonzero_rollouts,
+            "month_index": np.full(nonzero_rollouts.size, month_index, dtype=np.int64),
+            "obligation_id": obligation_ids,
+            "obligation_type": [obligation_type.value] * nonzero_rollouts.size,
+            "actor_id": [actor_id] * nonzero_rollouts.size,
+            "creditor_id": [creditor_id] * nonzero_rollouts.size,
+            "due_month_index": np.full(nonzero_rollouts.size, month_index, dtype=np.int64),
+            "amount_due_usd": nonzero_due,
+            "amount_paid_usd": nonzero_paid,
+            "unpaid_amount_usd": nonzero_unpaid,
+            "status": _vectorized_status_strings(nonzero_due, nonzero_unpaid),
+            "source_policy_id": [source_policy_id] * nonzero_rollouts.size,
+            "required": np.full(nonzero_rollouts.size, required, dtype=np.bool_),
+        }
+    )
+
+
+def _vectorized_status_strings(amount_due_usd: np.ndarray, unpaid_amount_usd: np.ndarray) -> list[str]:
+    # `ObligationStatus.value == SettlementStatus.value` for the three states
+    # (paid / partially_paid / unpaid), so one string column serves both
+    # Pydantic surfaces. Implementation mirrors `_obligation_status`.
+    out: list[str] = []
+    paid = ObligationStatus.PAID.value
+    partial = ObligationStatus.PARTIALLY_PAID.value
+    unpaid_status = ObligationStatus.UNPAID.value
+    for due, unpaid in zip(amount_due_usd.tolist(), unpaid_amount_usd.tolist(), strict=True):
+        if unpaid <= 0:
+            out.append(paid)
+        elif unpaid >= due:
+            out.append(unpaid_status)
+        else:
+            out.append(partial)
+    return out
 
 
 def _obligation_id(obligation_type: ObligationType, *, rollout_index: int, month_index: int) -> str:
     return f"{obligation_type.value}:rollout:{rollout_index}:month:{month_index}"
-
-
-def _obligation_status(*, amount_due_usd: float, unpaid_amount_usd: float) -> ObligationStatus:
-    if unpaid_amount_usd <= 0:
-        return ObligationStatus.PAID
-    if unpaid_amount_usd >= amount_due_usd:
-        return ObligationStatus.UNPAID
-    return ObligationStatus.PARTIALLY_PAID
-
-
-def _settlement_status(*, amount_due_usd: float, unpaid_amount_usd: float) -> SettlementStatus:
-    if unpaid_amount_usd <= 0:
-        return SettlementStatus.PAID
-    if unpaid_amount_usd >= amount_due_usd:
-        return SettlementStatus.UNPAID
-    return SettlementStatus.PARTIALLY_PAID
-
-
-def _sorted_effects(effects: list[Effect]) -> tuple[Effect, ...]:
-    return tuple(sorted(effects, key=lambda effect: (effect.month_index, effect.rollout_index, effect.effect_type)))
 
 
 def _property_cash_flow_arrays(
@@ -5689,10 +5833,8 @@ def _settle_partner_contribution_obligations(
     policy_steps: tuple[ActorPolicyStep[Policy], ...],
     partner_equity: PartnerEquityArrays,
     owner_actor_id: str,
-    obligations: list[Obligation],
-    funding_decisions: list[FundingDecision],
-    settlement_results: list[SettlementResult],
-    failure_events: list[FailureEvent],
+    obligations: event_streams.StreamFrameBuilder,
+    funding_decisions: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -5759,8 +5901,6 @@ def _settle_partner_contribution_obligations(
             checking_floor_shortfall_usd=partner_checking_floor_shortfall,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
@@ -5863,17 +6003,51 @@ def _pct_fraction(value: float, name: str) -> float:
     return value / 100
 
 
+_FAN_PERCENTILES: tuple[int, ...] = (
+    1,
+    2,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    75,
+    80,
+    85,
+    90,
+    95,
+    98,
+    99,
+)
+_FAN_QUANTILE_LEVELS: np.ndarray = np.array(_FAN_PERCENTILES, dtype="float64") / 100.0
+
+
 def _fan_columns(values: np.ndarray) -> ColumnarTable:
     matrix = np.asarray(values, dtype="float64")
     if matrix.ndim != 2:
         raise ValueError("fan values must be shaped (rollout, month)")
     month_index = np.arange(matrix.shape[1], dtype="int64")
-    percentiles = (1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 98, 99)
-    percentile_values = np.nanpercentile(matrix, percentiles, axis=0)
+    # `np.quantile` here instead of `np.nanpercentile` — fan-metric data is
+    # always defined (no NaN sources) so the nan-safety dispatch into
+    # per-column apply_along_axis isn't earning its keep. Direct quantile
+    # is a vectorized native call that profiled as ~10× faster on the bench
+    # (materialize 0.9s -> ~0.4s post-change). If the engine ever starts
+    # emitting NaN into a fan metric, that's a bug to catch — the
+    # propagated NaN here will make it visible.
+    percentile_values = np.quantile(matrix, _FAN_QUANTILE_LEVELS, axis=0, method="linear")
     columns: dict[str, list[Any]] = {
         "month_index": month_index.tolist(),
         "year": (month_index / MONTHS_PER_YEAR).tolist(),
     }
-    for index, percentile in enumerate(percentiles):
+    for index, percentile in enumerate(_FAN_PERCENTILES):
         columns[f"p{percentile:02d}"] = percentile_values[index].tolist()
     return ColumnarTable(row_count=int(matrix.shape[1]), columns=columns)
