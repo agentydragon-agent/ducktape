@@ -7,7 +7,12 @@ pkg_tar(
     name = "all_skills_tar",
     visibility = ["//visibility:public"],
     deps = [
+        "//devinfra/js/debundle/skills/debundle_architect:debundle_architect_tar",
+        "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_tar",
+        "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_tar",
+        "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_tar",
         "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_tar",
+        "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_tar",
         "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_tar",
         "//skills/backtrace:backtrace_tar",
         "//skills/branch_splitter:branch_splitter_tar",

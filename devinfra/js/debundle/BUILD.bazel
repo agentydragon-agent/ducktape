@@ -337,10 +337,9 @@ rust_test(
 )
 
 rust_library(
-    name = "debundle_agent_cli_lib",
-    srcs = ["debundle_agent_cli.rs"],
-    crate_name = "debundle_agent_cli",
-    crate_root = "debundle_agent_cli.rs",
+    name = "peel",
+    srcs = ["peel.rs"],
+    crate_root = "peel.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -357,18 +356,10 @@ rust_library(
 )
 
 rust_test(
-    name = "debundle_agent_cli_test",
-    crate = ":debundle_agent_cli_lib",
+    name = "peel_test",
+    crate = ":peel",
     edition = "2024",
     deps = ["@crates//:tempfile"],
-)
-
-rust_binary(
-    name = "debundle_agent_cli",
-    srcs = ["debundle_agent_cli_main.rs"],
-    crate_root = "debundle_agent_cli_main.rs",
-    edition = "2024",
-    deps = [":debundle_agent_cli_lib"],
 )
 
 rust_library(
@@ -525,13 +516,37 @@ rust_test(
     deps = ["@crates//:tempfile"],
 )
 
+rust_library(
+    name = "cli",
+    srcs = ["cli.rs"],
+    crate_name = "debundle_cli",
+    crate_root = "cli.rs",
+    edition = "2024",
+    deps = [
+        ":peel",
+        ":pipeline",
+        "@crates//:anyhow",
+        "@crates//:clap",
+    ],
+)
+
+rust_test(
+    name = "cli_test",
+    crate = ":cli",
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        ":spec_tree",
+    ],
+)
+
 rust_binary(
     name = "debundle",
     srcs = ["main.rs"],
     crate_root = "main.rs",
     edition = "2024",
     deps = [
-        ":pipeline",
+        ":cli",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:swc_common",

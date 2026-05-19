@@ -26,7 +26,7 @@ def _debundle_pipeline_impl(ctx):
         fail("tree_config, tree_modules, and tree_vendor_marks must all be set together")
 
     # Each entry is a fully-rendered shell token (already quoted/escaped).
-    argv = []
+    argv = ["run"]
     if has_flat:
         argv += ["--spec", _shell_source_path(ctx.file.spec.path)]
     else:
@@ -127,7 +127,7 @@ debundle_pipeline = rule(
             executable = True,
             cfg = "exec",
             mandatory = True,
-            doc = "Debundler binary; must accept flat transform spec or tree-shaped spec args.",
+            doc = "Debundler binary; must support `run` with flat transform spec or tree-shaped spec args.",
         ),
         "force": attr.bool(
             doc = "Pass --force to debundle so output-tree stages may replace existing directories.",

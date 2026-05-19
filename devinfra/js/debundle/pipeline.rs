@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use clap::Parser;
+use clap::Args as ClapArgs;
 use runfiles::{Runfiles, rlocation};
 use serde::{Deserialize, Serialize};
 
@@ -43,15 +43,7 @@ pub enum TransformSpecSource {
 ///
 /// Use [`TransformArgs::resolve`] to obtain a [`TransformCli`] with paths
 /// resolved against Bazel runfiles when running as a `bazel run` target.
-#[derive(Parser, Debug)]
-#[command(
-    name = "debundle",
-    version,
-    about = "Run the debundle transform pipeline from a flat or tree-shaped spec.",
-    long_about = "Runs the transform pipeline described by a flat transform spec or tree-shaped authoring spec. Pipeline stages \
-                  dispatch directly to registered functions; this target does not invoke \
-                  Bazel from inside the pipeline. Specs are parsed as YAML."
-)]
+#[derive(ClapArgs, Debug)]
 pub struct TransformArgs {
     /// Path to a flat transform spec YAML.
     #[arg(long)]
@@ -612,68 +604,6 @@ mod tests {
         js_ast::with_swc_globals(|| {
             let parsed = parse_js_list("\n# comment\nfoo.js\nbar.js\n").expect("parse list");
             assert_eq!(parsed, vec!["foo.js", "bar.js"]);
-        });
-    }
-
-    #[test]
-    fn parse_transform_cli_args_matches_js_surface() {
-        js_ast::with_swc_globals(|| {
-            let args = TransformArgs::try_parse_from([
-                "debundle",
-                "--spec",
-                "spec.yaml",
-                "--package-root",
-                "pkg=/tmp/pkg",
-                "--packages-root",
-                "/tmp/packages",
-                "--force",
-            ])
-            .expect("parse cli");
-            let cli = args.resolve().expect("resolve cli");
-            assert_eq!(
-                cli.spec_source,
-                TransformSpecSource::Flat {
-                    path: PathBuf::from("spec.yaml")
-                }
-            );
-            assert_eq!(
-                cli.package_roots.get("pkg"),
-                Some(&PathBuf::from("/tmp/pkg"))
-            );
-            assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
-            assert!(cli.force);
-        });
-    }
-
-    #[test]
-    fn parse_tree_transform_cli_args() {
-        js_ast::with_swc_globals(|| {
-            let args = TransformArgs::try_parse_from([
-                "debundle",
-                "--tree-config",
-                "spec_config.yaml",
-                "--tree-modules",
-                "modules",
-                "--tree-vendor-marks",
-                "vendor_marks.yaml",
-                "--tree-source-root",
-                "/workspace",
-                "--out-root",
-                "out",
-            ])
-            .expect("parse cli");
-            let cli = args.resolve().expect("resolve cli");
-            assert_eq!(
-                cli.spec_source,
-                TransformSpecSource::Tree(CompileSpecTreeOptions {
-                    config_path: PathBuf::from("spec_config.yaml"),
-                    modules_root: PathBuf::from("modules"),
-                    vendor_marks_path: PathBuf::from("vendor_marks.yaml"),
-                    source_root: Some(PathBuf::from("/workspace")),
-                    out_root: PathBuf::from("out"),
-                    force: false,
-                })
-            );
         });
     }
 

@@ -9,7 +9,7 @@ use swc_ecma_transforms_base::resolver;
 use swc_ecma_visit::VisitMutWith;
 
 /// Run `body` inside a fresh `swc_common::GLOBALS` arena. Production
-/// entry points (`main.rs`, `debundle_agent_cli::run_agent`) wrap the
+/// entry point (`main.rs`) wraps the
 /// whole program in `GLOBALS.set(...)`; tests that exercise the parse
 /// pipeline directly (vs. through a subprocess) must wrap each test
 /// body in this helper so `Mark::new()` inside `resolver` has an
@@ -201,7 +201,7 @@ fn source_file(
 /// `ident.to_id()` is the canonical binding identity.
 ///
 /// Callers MUST be inside a `GLOBALS.set(...)` scope. Production
-/// entry points do this in `main.rs` and `debundle_agent_cli::run_agent`;
+/// entry point does this in `main.rs`;
 /// tests that exercise this code directly do it via
 /// `with_swc_globals` in their setup.
 fn parse_and_resolve(

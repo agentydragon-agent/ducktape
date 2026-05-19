@@ -165,7 +165,7 @@ output base and keeping the action's `cd "${BAZEL_BINDIR}"` shape:
 perf record -F 99 -e cycles:u --call-graph dwarf,8192 \
   -o /tmp/$USER/profile/debundle/perf.data \
   -- /tmp/$USER/bazel-output/ducktape-profile/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle \
-  ...same debundle args from the DebundlePipeline action...
+  ...same debundle run args from the DebundlePipeline action...
 ```
 
 For heap shape, run the same profile-built binary and arguments under
@@ -175,7 +175,7 @@ Massif:
 valgrind --tool=massif \
   --massif-out-file=/tmp/$USER/profile/debundle/massif.out \
   /tmp/$USER/bazel-output/ducktape-profile/execroot/_main/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle \
-  ...same debundle args from the DebundlePipeline action...
+  ...same debundle run args from the DebundlePipeline action...
 ms_print /tmp/$USER/profile/debundle/massif.out \
   >/tmp/$USER/profile/debundle/ms_print.txt
 ```

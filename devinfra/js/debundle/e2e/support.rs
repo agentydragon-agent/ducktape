@@ -656,13 +656,13 @@ fn spawn_transform(spec_path: &Path) -> CommandResult {
     run_debundler(spec_path, &[])
 }
 
-/// Run `debundle --spec <path> [--package-root <name>=<dir> ...]` and return its
+/// Run `debundle run --spec <path> [--package-root <name>=<dir> ...]` and return its
 /// captured stdio + exit status. Used by tests that exercise pipeline stages
 /// outside the logical-modules harness in [`run_fixture`].
 pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> CommandResult {
     let bin = debundler_path();
     let mut command = Command::new(&bin);
-    command.arg("--spec").arg(spec_path);
+    command.arg("run").arg("--spec").arg(spec_path);
     for (name, dir) in package_roots {
         command
             .arg("--package-root")

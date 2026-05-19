@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use clap::Parser;
-use pipeline::{TransformArgs, render_transform_summary, run_transform_cli};
+use debundle_cli::{DebundleArgs, run_debundle_cli};
 use swc_common::{GLOBALS, Globals};
 
 fn main() -> ExitCode {
@@ -22,8 +22,6 @@ fn main() -> ExitCode {
 }
 
 fn real_main() -> anyhow::Result<ExitCode> {
-    let cli = TransformArgs::parse().resolve()?;
-    let summary = run_transform_cli(&cli)?;
-    print!("{}", render_transform_summary(&summary));
+    run_debundle_cli(DebundleArgs::parse())?;
     Ok(ExitCode::SUCCESS)
 }

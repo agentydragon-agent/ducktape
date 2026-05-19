@@ -1,18 +1,17 @@
-//! Agent-facing read-only debundler workbench.
+//! Agent-facing read-only peel-planning workbench.
 //!
-//! This binary is for agents maintaining a debundle spec. It exposes
-//! stable JSON operations over the owner graph and spec tree instead
-//! of human-oriented "views".
+//! These subcommands are for agents maintaining a debundle spec. They expose
+//! stable JSON operations over the owner graph and spec tree instead of
+//! human-oriented "views".
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
-use clap::{Args as ClapArgs, Parser, Subcommand};
+use clap::{Args as ClapArgs, Subcommand};
 use peel_factorize::{FactorizeDiagnosticReport, FactorizeProposal, PeelFactorizeOptions};
 use peel_factorize::{PeelFactorizeReport, analyze_peel_factorize};
 use peel_horizon::{PeelHorizonOptions, PeelHorizonReport, analyze_peel_horizon};
@@ -29,23 +28,19 @@ use spec_modules::{
     module_path_from_file, read_module_file,
 };
 
-#[derive(Debug, Parser)]
-#[command(
-    name = "debundle-agent",
-    about = "Agent-facing read-only operations over a debundle owner_graph.json and spec modules tree."
-)]
-pub struct AgentArgs {
+#[derive(Debug, ClapArgs)]
+pub struct PeelArgs {
     #[command(subcommand)]
-    command: AgentCommand,
+    command: PeelCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum AgentCommand {
+enum PeelCommand {
     /// Emit certified module-assignment proposals and diagnostics.
     #[command(name = "plan-work")]
     PlanWork(PlanWorkArgs),
     /// List peelable binding candidates from the current graph/spec.
-    #[command(name = "list-candidates")]
+    #[command(name = "candidates")]
     ListCandidates(ListCandidatesArgs),
     /// Report binding-patch coverage against current peelability.
     #[command(name = "patch-status")]
@@ -264,37 +259,21 @@ struct SourceSlice {
     text: String,
 }
 
-/// Run the agent CLI from argv. Returns the appropriate exit code.
-///
-/// Wraps the body in `swc_common::GLOBALS.set(...)` so the SWC hygiene
-/// arena (`Mark`, `SyntaxContext`) is available for parsing and AST
-/// operations. See `main.rs` for the same wrap on the primary binary.
-pub fn run_agent() -> ExitCode {
-    let globals = swc_common::Globals::default();
-    swc_common::GLOBALS.set(&globals, || match real_agent(AgentArgs::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("{error:#}");
-            ExitCode::from(1)
-        }
-    })
-}
-
-fn real_agent(args: AgentArgs) -> Result<()> {
+pub fn run_peel(args: PeelArgs) -> Result<()> {
     match args.command {
-        AgentCommand::PlanWork(args) => {
+        PeelCommand::PlanWork(args) => {
             print_json(&run_plan_work_report(&args)?).context("writing plan-work JSON")
         }
-        AgentCommand::ListCandidates(args) => {
-            print_json(&run_list_candidates_report(&args)?).context("writing list-candidates JSON")
+        PeelCommand::ListCandidates(args) => {
+            print_json(&run_list_candidates_report(&args)?).context("writing candidates JSON")
         }
-        AgentCommand::PatchStatus(args) => {
+        PeelCommand::PatchStatus(args) => {
             print_json(&run_patch_status_report(&args)?).context("writing patch-status JSON")
         }
-        AgentCommand::Explain(args) => {
+        PeelCommand::Explain(args) => {
             print_json(&run_explain_report(&args)?).context("writing explain JSON")
         }
-        AgentCommand::SourceSlice(args) => {
+        PeelCommand::SourceSlice(args) => {
             print_json(&run_source_slice_report(&args)?).context("writing source-slice JSON")
         }
     }
