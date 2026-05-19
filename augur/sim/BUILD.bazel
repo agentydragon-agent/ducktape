@@ -1,0 +1,219 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "state_py",
+    srcs = ["state.py"],
+    deps = [
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "events_py",
+    srcs = ["events.py"],
+    deps = [
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "market_py",
+    srcs = ["market.py"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pydantic",
+    ],
+)
+
+filegroup(
+    name = "jurisdiction_data",
+    srcs = glob(["data/jurisdictions/*.yaml"]),
+)
+
+filegroup(
+    name = "location_data",
+    srcs = glob(["data/locations/*.yaml"]),
+)
+
+py_library(
+    name = "locations_py",
+    srcs = ["locations.py"],
+    data = [":location_data"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "locations_test",
+    srcs = ["locations_test.py"],
+    deps = [
+        ":locations_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "jurisdictions_py",
+    srcs = ["jurisdictions.py"],
+    data = [":jurisdiction_data"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "jurisdictions_test",
+    srcs = ["jurisdictions_test.py"],
+    deps = [
+        ":jurisdictions_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "tax_py",
+    srcs = ["tax.py"],
+    deps = [
+        ":jurisdictions_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "tax_test",
+    srcs = ["tax_test.py"],
+    deps = [
+        ":jurisdictions_py",
+        ":tax_py",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "scenario_py",
+    srcs = ["scenario.py"],
+    deps = [
+        ":market_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "apply_py",
+    srcs = ["apply.py"],
+    deps = [
+        ":events_py",
+        ":state_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "step_py",
+    srcs = ["step.py"],
+    deps = [
+        ":events_py",
+        ":jurisdictions_py",
+        ":market_py",
+        ":scenario_py",
+        ":state_py",
+        ":tax_py",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "run_py",
+    srcs = ["run.py"],
+    deps = [
+        ":events_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "simulate_py",
+    srcs = ["simulate.py"],
+    deps = [
+        ":apply_py",
+        ":events_py",
+        ":jurisdictions_py",
+        ":market_py",
+        ":run_py",
+        ":scenario_py",
+        ":state_py",
+        ":step_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "replay_py",
+    srcs = ["replay.py"],
+    deps = [
+        ":apply_py",
+        ":run_py",
+        ":scenario_py",
+        ":simulate_py",
+        ":state_py",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "simulate_test",
+    srcs = ["simulate_test.py"],
+    deps = [
+        ":market_py",
+        ":replay_py",
+        ":scenario_py",
+        ":simulate_py",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "bench_scenario_py",
+    srcs = ["bench_scenario.py"],
+    deps = [
+        ":market_py",
+        ":scenario_py",
+    ],
+)
+
+py_binary(
+    name = "bench",
+    srcs = ["bench.py"],
+    main_module = "augur.sim.bench",
+    deps = [
+        ":bench_scenario_py",
+        ":simulate_py",
+    ],
+)
+
+py_test(
+    name = "bench_test",
+    srcs = ["bench_test.py"],
+    deps = [
+        ":bench_scenario_py",
+        ":market_py",
+        ":scenario_py",
+        ":simulate_py",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
