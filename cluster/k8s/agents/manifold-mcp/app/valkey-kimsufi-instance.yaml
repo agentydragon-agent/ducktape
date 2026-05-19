@@ -7,8 +7,6 @@ metadata:
     description: Replacement Kimsufi Valkey for Manifold MCP OAuth state
 spec:
   clusterSize: 2
-  redisConfig:
-    additionalRedisConfig: manifold-valkey-kimsufi-replica-config
   kubernetesConfig:
     image: valkey/valkey:8-alpine
     imagePullPolicy: IfNotPresent
