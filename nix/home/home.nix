@@ -680,6 +680,29 @@ in
   # Default terminal for xdg-terminal-exec (used by Ctrl+Alt+T keybinding above)
   xdg.configFile."xdg-terminals.list".text = "org.gnome.Terminal.desktop\n";
 
+  xdg.dataFile."themes/Ducktape Shell/gnome-shell/gnome-shell.css" = lib.mkIf enableGui {
+    text = ''
+      @import url("resource:///org/gnome/shell/theme/gnome-shell.css");
+
+      #panel .panel-button,
+      #panel .panel-button:hover,
+      #panel .panel-button:active,
+      #panel .panel-button:focus,
+      #panel .panel-button:checked,
+      #panel .panel-button:overview,
+      #panel .clock-display,
+      #panel .clock-display:hover,
+      #panel .clock-display:active,
+      #panel .clock-display:focus,
+      #panel .clock-display:checked,
+      #panel .clock-display:overview,
+      #panel .clock-display .clock,
+      #panel .clock-display-box {
+        border-radius: 4px;
+      }
+    '';
+  };
+
   xdg.autostart = {
     enable = true;
     entries = [
@@ -722,6 +745,18 @@ in
         format = "%a %Y-%m-%d %H:%M";
       };
 
+      "org/gnome/shell/extensions/just-perfection" = {
+        clock-menu-position = 2; # Left
+        clock-menu-position-offset = 0;
+        panel-button-padding-size = 4; # 3px horizontal padding
+        panel-indicator-padding-size = 4; # 3px spacing between status indicators
+        workspace-background-corner-size = 4; # 3px overview workspace radius
+      };
+
+      "org/gnome/shell/extensions/user-theme" = {
+        name = "Ducktape Shell";
+      };
+
       "org/gnome/terminal/legacy" = {
         default-show-menubar = false;
       };
@@ -749,6 +784,8 @@ in
       # Phone integration (firewall ports opened by programs.kdeconnect in gui.nix).
       { package = pkgs.gnomeExtensions.gsconnect; }
       { package = pkgs.gnomeExtensions.display-scale-switcher; }
+      { package = pkgsUnstable.gnomeExtensions.just-perfection; }
+      { package = pkgs.gnomeExtensions.user-themes; }
     ];
   };
 
