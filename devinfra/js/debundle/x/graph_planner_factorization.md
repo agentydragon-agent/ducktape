@@ -141,6 +141,28 @@ Good: attacks a common pattern in minified application bundles.
 Risk: arbitrary special cases unless the rule is grounded in graph
 metrics.
 
+## Analysis Backlog
+
+These are generic blocker patterns observed in real bundles and worth
+representing as debundler-side analysis work when they recur:
+
+- **Per-declarator owner splitting.** Multi-binding declarations can glue an
+  impure initializer to unrelated pure bindings. The owner model should split
+  declarators when doing so preserves emitted semantics.
+- **Class plus decorator co-attribution.** Transpiled decorator application
+  blocks often belong atomically with the class they decorate. Treating the
+  decorator call as an unrelated side-effect owner can make valid class peels
+  look over-broad.
+- **Mutable binding co-move diagnostics.** When a class or helper mutates a
+  `let` binding, the writer and binding owner must move together or stay
+  together. The planner should surface that as an explicit co-move reason, not
+  as a vague blocked closure.
+- **Large function-internal seams.** A single giant handler can contain
+  independent semantic branches that are invisible to owner-level splitting.
+  That needs a separate finer-grained model; planner output should identify
+  "blocked by function-internal granularity" instead of proposing arbitrary
+  owner moves.
+
 ## Agent Layer
 
 The practical agent architecture is:
