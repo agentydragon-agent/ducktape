@@ -29,3 +29,9 @@ spec:
         kind: HelmRepository
         name: ot-helm
         namespace: flux-system
+  values:
+    redisOperator:
+      imageTag: v0.25.0
+      initContainerImageTag: v0.25.0
+    featureGates:
+      GenerateConfigInInitContainer: true
