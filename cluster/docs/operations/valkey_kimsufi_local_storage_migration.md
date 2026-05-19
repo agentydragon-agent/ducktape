@@ -1,7 +1,7 @@
 # Valkey Kimsufi Local-Storage Migration
 
-Status: paved through Phase 4 on `manifold-mcp/manifold-valkey`; old
-`manifold-valkey` retirement is still pending.
+Status: paved through Phase 5 on `manifold-mcp/manifold-valkey`; Manifold is
+now on `local-path-ovh`.
 Last live inventory refresh: 2026-05-19.
 
 This note covers two related tasks:
@@ -22,7 +22,6 @@ included because local-path PVs are bound to a specific node and host path.
 | `pvc-08d96ead-94e1-4610-a109-d91074d1c67b` | `grocy-sf/grocy-sf-valkey-grocy-sf-valkey-1`                | `grocy-sf-valkey-1`      | Grocy SF MCP OAuth/session state Valkey replica                              | Master is already `grocy-sf-valkey-0` on `talos-kimsufi-worker-0`; this is a removable old-site replica after replacement/scale-down cleanup.      |
 | `pvc-df39ef94-2de0-4946-9410-4187e57da00c` | `grocy-vallejo/grocy-vallejo-valkey-grocy-vallejo-valkey-1` | `grocy-vallejo-valkey-1` | Grocy Vallejo MCP OAuth/session state Valkey replica                         | Master is already `grocy-vallejo-valkey-0` on `talos-kimsufi-worker-0`; this is a removable old-site replica after replacement/scale-down cleanup. |
 | `pvc-b12db62a-efee-41c9-b158-70a30f766cdd` | `loki/storage-loki-0`                                       | `loki-0`                 | Loki single-binary local WAL/cache; chunks and indexes use SeaweedFS S3      | Helm values pin singleBinary persistence to `local-path-hetzner` and region `hil`. Needs a Loki-specific migration or accepted cache/WAL loss.     |
-| `pvc-54c804b4-e1c5-4122-956d-7f65236e5305` | `manifold-mcp/manifold-valkey-manifold-valkey-0`            | `manifold-valkey-0`      | Manifold MCP OAuth/session state Valkey master                               | This is the first Valkey migration target. The only replica is `manifold-valkey-1` on `talos-kimsufi-worker-0`.                                    |
 | `pvc-87eb5e5d-f588-4b20-870d-946c6da4022b` | `monitoring/storage-mimir-compactor-0`                      | `mimir-compactor-0`      | Mimir compactor local working state/cache; long-term blocks use SeaweedFS S3 | StatefulSet with one replica and `local-path-hetzner`. Needs monitoring Helm value migration.                                                      |
 | `pvc-1e35cc4f-913d-4d75-99e3-4af241eba2b1` | `monitoring/storage-mimir-ingester-0`                       | `mimir-ingester-0`       | Mimir ingester local TSDB/WAL                                                | StatefulSet with one replica and `local-path-hetzner`; this is the riskiest monitoring PVC because it can contain recent samples before upload.    |
 | `pvc-e8d15fd7-de1d-4887-94ab-4123c77a2785` | `monitoring/storage-mimir-store-gateway-0`                  | `mimir-store-gateway-0`  | Mimir store-gateway cache/local state; blocks use SeaweedFS S3               | StatefulSet with one replica and `local-path-hetzner`. Needs monitoring Helm value migration.                                                      |
@@ -265,6 +264,7 @@ The Manifold MCP trial was run on 2026-05-19 with these Git commits:
 - Phase 2 app pause: `6b6cebd11`
 - Phase 3 replacement detach: `6b78c31fd`
 - Phase 4 app cutover and unpause: `8ed2af13c`
+- Phase 5 old Valkey retirement: `a707f34dd`
 
 Observed results:
 
@@ -276,6 +276,9 @@ Observed results:
 - Phase 4 restored `manifold-mcp` to `1/1`; the running facade pod had
   `MCP_FACADE_PERSISTENCE__HOST=manifold-valkey-kimsufi-master.manifold-mcp.svc.cluster.local`
   and public `/healthz` returned `200`.
+- Phase 5 removed the old `manifold-valkey` CR, StatefulSet, pods, PVCs, and
+  PVs. The only remaining Manifold Valkey storage is the two
+  `local-path-ovh` PVCs for `manifold-valkey-kimsufi`.
 
 ### Phase 5: Retire Old Valkey
 
