@@ -5,6 +5,8 @@ resources:
   - configmap.yaml
   - api-key.sops.yaml
   - valkey-instance.yaml
+  - valkey-kimsufi-replica-config.yaml
+  - valkey-kimsufi-instance.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml
