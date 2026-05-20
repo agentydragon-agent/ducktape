@@ -36,13 +36,13 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from augur.core.schemas import CoreModel
 from augur.model.market_api import JointMarketModel
 from augur.model.markets.models.vecm import VecmMarketProviderConfig
+from augur.model.schemas import FrozenModel
 from augur.model.simple_market import SimpleLocationModelParams, SimpleMarketModel, SimpleMarketModelConfig
 
 
-class SimpleMarketProviderConfig(CoreModel):
+class SimpleMarketProviderConfig(FrozenModel):
     """Small stochastic placeholder until a calibrated macro model plugs in.
 
     `location_params` carries the deployment's per-location annual home /

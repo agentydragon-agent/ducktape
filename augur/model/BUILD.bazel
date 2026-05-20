@@ -3,10 +3,23 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "schemas_py",
+    srcs = ["schemas.py"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "provenance_py",
+    srcs = ["provenance.py"],
+)
+
+py_library(
     name = "location_market_sources_py",
     srcs = ["location_market_sources.py"],
     deps = [
-        "//augur/core:schemas_py",
+        ":schemas_py",
         "@pypi//pydantic",
     ],
 )
@@ -64,9 +77,9 @@ py_library(
         ":gbm_py",
         ":market_api_py",
         ":market_py",
+        ":schemas_py",
         ":series_py",
         "//augur:frames",
-        "//augur/core:schemas_py",
         "@pypi//numpy",
         "@pypi//pydantic",
     ],
@@ -76,8 +89,8 @@ py_library(
     name = "market_provider_config_py",
     srcs = ["market_provider_config.py"],
     deps = [
+        ":schemas_py",
         ":simple_market_py",
-        "//augur/core:schemas_py",
         "//augur/model/markets/models:vecm_py",
         "@pypi//pydantic",
     ],

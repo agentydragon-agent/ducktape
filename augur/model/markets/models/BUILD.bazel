@@ -7,10 +7,10 @@ py_library(
     srcs = ["vecm.py"],
     deps = [
         "//augur:frames",
-        "//augur/core:provenance_py",
-        "//augur/core:schemas_py",
         "//augur/model:location_market_sources_py",
         "//augur/model:market_api_py",
+        "//augur/model:provenance_py",
+        "//augur/model:schemas_py",
         "//augur/model:series_py",
         "//augur/model/markets:density_py",
         "//augur/model/markets:scenarios_py",

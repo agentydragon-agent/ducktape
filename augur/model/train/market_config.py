@@ -6,8 +6,8 @@ from typing import Any
 import yaml
 from pydantic import Field, model_validator
 
-from augur.core.schemas import StrictModel
 from augur.model.location_market_sources import LocationMarketSourcesConfig
+from augur.model.schemas import StrictModel
 
 
 class ZillowCityRegionConfig(StrictModel):

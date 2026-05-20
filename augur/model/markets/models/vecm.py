@@ -28,8 +28,6 @@ import numpy as np
 from pydantic import Field
 from statsmodels.tsa.vector_ar.vecm import VECM
 
-from augur.core.provenance import stable_identity_digest
-from augur.core.schemas import CoreModel
 from augur.frames import concat_frames
 from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
 from augur.model.market_api import (
@@ -42,6 +40,8 @@ from augur.model.market_api import (
 )
 from augur.model.markets._density import gaussian_logpdf, gaussian_logpdf_from_samples
 from augur.model.markets.scenarios import HistoricalSeries, Scenarios
+from augur.model.provenance import stable_identity_digest
+from augur.model.schemas import FrozenModel
 from augur.model.series import (
     CRYPTO_SERIES_PREFIX,
     HOME_VALUE_SERIES_PREFIX,
@@ -485,7 +485,7 @@ def _observation_value(observation: Any, key: str) -> float:
     raise TypeError(f"VECM latest_observations {key} must be a number or object with numeric 'value'")
 
 
-class VecmMarketProviderConfig(CoreModel):
+class VecmMarketProviderConfig(FrozenModel):
     """Pre-trained VECM provider config — points at the trained-state blob
     written by `bb run //augur/model/train:train`. The model is loaded at server
     startup; no fitting happens on the request path."""

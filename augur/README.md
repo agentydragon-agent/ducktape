@@ -29,11 +29,11 @@ company-/person-specific modeling assumptions.
 
 | Directory      | Purpose                                                                                                                                 |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `core/`        | Engine, typed entity / asset / policy / action / event model, real-estate math, scenario serialization, location regulation registry.   |
 | `model/`       | Runtime market-provider configs, sim-facing market model APIs, simple fixture provider, and the active VECM provider.                   |
 | `model/train/` | Offline market training, public-data loading, evaluation/metric tooling, and training config templates.                                 |
 | `data/market/` | Public market-source blobs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI). Acquisition recipes in `source/SOURCES.md`.            |
-| `api/`         | `AugurConfig` schema, `AugurBackend`, HTTP server, catalog/bootstrap-payload assembly, OpenAPI schema export.                           |
+| `api/`         | `AugurConfig` schema, wire request/response shapes, `AugurBackend`, HTTP server, catalog/bootstrap assembly, OpenAPI schema export.     |
+| `sim/`         | Deterministic trajectory evaluation over typed scenarios and sampled exogenous market/state bundles.                                    |
 | `frontend/`    | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client). |
 
 ## Deployment integration

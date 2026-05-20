@@ -611,7 +611,7 @@ Standardize these names before the next large redesign:
   inspection view for one path from a distribution.
 - Do not let the browser-side flat scenario row become the source of truth.
 - Do not put FRED, Zillow, Manifold, or other source-specific evidence objects
-  in `augur/core`.
+  in the API or sim runtime.
 - Do not revive arbitrary manual sale controls as the private-equity liquidity
   model.
 - Do not treat tender-eligible private-equity marks as liquid net worth.

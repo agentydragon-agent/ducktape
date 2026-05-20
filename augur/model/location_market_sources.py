@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import Field
 
-from augur.core.schemas import StrictModel
+from augur.model.schemas import StrictModel
 
 
 class LocationMarketSourcesConfig(StrictModel):

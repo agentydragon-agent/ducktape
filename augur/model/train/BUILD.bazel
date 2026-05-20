@@ -14,8 +14,8 @@ py_library(
     name = "market_config_py",
     srcs = ["market_config.py"],
     deps = [
-        "//augur/core:schemas_py",
         "//augur/model:location_market_sources_py",
+        "//augur/model:schemas_py",
         "@pypi//pydantic",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
@@ -101,7 +101,7 @@ py_test(
     data = [":market_config_files"],
     deps = [
         ":market_config_py",
-        "//augur/core:schemas_py",
+        "//augur/model:schemas_py",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

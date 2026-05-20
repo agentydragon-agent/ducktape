@@ -1,8 +1,8 @@
 """Bridge from current API scenario shapes into `augur/sim`.
 
-This is not a parity shim for `augur/core`. It is the first narrow translator
-for scenarios that already have native sim equivalents. Unsupported core
-features fail loudly so they can be ported deliberately.
+This is not a parity shim for the deleted legacy core engine. It is the first
+narrow translator for scenarios that already have native sim equivalents.
+Unsupported legacy API features fail loudly so they can be ported deliberately.
 """
 
 from __future__ import annotations

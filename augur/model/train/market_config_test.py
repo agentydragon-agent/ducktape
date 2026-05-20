@@ -8,8 +8,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-import augur.core.schemas as core_schemas
-from augur.model.train.market_config import SourceDataConfig, load_market_config, parse_market_config
+from augur.model.train.market_config import load_market_config, parse_market_config
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
 EXPECTED_TOP_LEVEL_KEYS = frozenset({"source_data", "location_market_sources"})
@@ -32,11 +31,6 @@ EXPECTED_LOCATION_MARKET_SOURCE_KEYS = frozenset({"home_value", "rent"})
 
 def _config_payload() -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
-
-
-def test_source_data_config_is_model_owned() -> None:
-    assert SourceDataConfig.__module__ == "augur.model.train.market_config"
-    assert not hasattr(core_schemas, "SourceDataConfig")
 
 
 def test_example_market_config_is_the_public_file_boundary_contract() -> None:

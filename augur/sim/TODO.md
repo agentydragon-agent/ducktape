@@ -17,9 +17,9 @@ current API / catalog config
 ```
 
 `augur/api` still contains compatibility request/response schemas while
-`augur/core` is reduced to shared model/provenance helpers. Core is no longer
-the production owner of market sampling, path evaluation, or response
-semantics.
+`augur/model` owns market-provider schemas and provenance helpers. The deleted
+`augur/core` tree is no longer the production owner of market sampling, path
+evaluation, or response semantics.
 
 ## Replacement Checklist
 
