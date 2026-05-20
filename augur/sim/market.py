@@ -20,7 +20,7 @@ import polars as pl
 
 from augur.frames import FrameSpec
 from augur.model.sim_market import MarketBundle, materialize_market_prices
-from augur.model.sim_market_api import MARKET_PRICES_SCHEMA
+from augur.model.sim_market_api import MARKET_PRICES_SCHEMA, SampledMarketBundle, market_prices_from_levels
 
 MARKET_PRICES_FRAME = FrameSpec("market_prices", MARKET_PRICES_SCHEMA)
 
@@ -52,3 +52,9 @@ def materialize_market(bundle: MarketBundle, *, rollout_seeds: tuple[int, ...], 
             materialize_market_prices(bundle, rollout_seeds=rollout_seeds, horizon_months=horizon_months)
         )
     )
+
+
+def materialize_sampled_market(bundle: SampledMarketBundle) -> MarketContext:
+    """Adapt a model-owned sampled bundle into the simulator's market context."""
+
+    return MarketContext(prices=MARKET_PRICES_FRAME.normalize(market_prices_from_levels(bundle)))

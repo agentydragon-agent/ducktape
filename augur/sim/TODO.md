@@ -16,33 +16,40 @@ current API / catalog config
   -> augur/api ProjectionRun/read models
 ```
 
-`augur/core` may keep a compatibility runner while parity is being checked, but
-it should not be the production owner of market sampling, path evaluation, or
-response semantics after cutover.
+`augur/core` may keep a compatibility runner while the sim path is being
+covered and switched over, but it should not be the production owner of market
+sampling, path evaluation, or response semantics after cutover.
 
 ## Replacement Checklist
 
-- [ ] Replace the API backend's direct `augur.core.api.ScenarioEngine`
-      execution path with a `model -> sim -> api` path. Keep the legacy
-      path available as an internal parity baseline until the sim path has
-      browser and fixture coverage.
-- [ ] Replace the legacy `ScenarioSet` request boundary with either a
-      native sim request schema or an explicit translator from the current
-      browser/API payload into `augur.sim.scenario.Scenario`.
-- [ ] Replace legacy `ScenarioRunArrays` response shaping with serialized
-      `ProjectionRun` read models. The API should expose compact scenario
-      metadata plus distribution-first projections instead of preserving
-      legacy field names by default.
+- [ ] Make the API backend's `model -> sim -> api` path the default execution
+      path. A guarded `--backend-engine=sim` path exists for the current
+      SP500/spend smoke slice; the legacy `augur.core.api.ScenarioEngine`
+      path remains the default until sim covers the broader browser fixture
+      surface.
+- [ ] Broaden the explicit translator from the current browser/API payload
+      into `augur.sim.scenario.Scenario`. The first slice supports generic
+      SP500 lots, checking cash, monthly spend, and checking-floor public-stock
+      sales; property, mortgage, tax, crypto, private-equity, and richer policy
+      slices still need native sim translation.
+- [ ] Replace the temporary sim dataframe-to-legacy-table materializer with
+      serialized `ProjectionRun` read models. The current sim path derives
+      monthly, terminal, fan, status, and metadata tables from
+      `SimulationRun` dataframes so existing frontend graphs can smoke; the
+      durable API should expose compact scenario metadata plus
+      distribution-first projections instead of preserving legacy field names.
 - [ ] Replace production use of `augur.core.market_bundle.MarketBundle`
-      in the Augur run path with model-owned exogenous bundles supplied by
-      `augur/model` and consumed by `augur/sim`. Deployment market config now
-      materializes a sim-native `JointMarketModel` and wraps it only for the
-      legacy core backend; the remaining work is to pass its
-      `SampledMarketBundle` directly into `augur/sim`.
-- [ ] Replace core-side required-market-key discovery with sim scenario
+      in the default Augur run path with model-owned exogenous bundles supplied
+      by `augur/model` and consumed by `augur/sim`. Deployment market config
+      now materializes a sim-native `JointMarketModel`; the guarded sim path
+      samples its `SampledMarketBundle` directly, while default production
+      still wraps it for the legacy core backend.
+- [ ] Replace core-side required-market-key discovery with full sim scenario
       introspection so model providers know which public markets, private
       equity paths, locations, currencies, and other exogenous series must
-      be sampled.
+      be sampled. The initial sim backend path already unions required level
+      series across translated scenarios before sampling one shared market
+      bundle.
 - [ ] Add the sim-side market consumption adapter: sampled levels/events should
       drive mark-to-market asset values, rent/home-value paths, private-equity
       marks, private-equity sale opportunities, mortgage/rate paths when they
@@ -53,9 +60,9 @@ response semantics after cutover.
 - [ ] Replace ad hoc catalog/default expansion in the legacy backend with
       an `AugurConfig`/catalog-to-sim scenario builder that remains
       compatible with `gaffer-private` deployment YAML.
-- [ ] Replace the current all-or-nothing backend switch with a staged
-      rollout: internal parity harness against overlapping legacy outputs,
-      browser smoke coverage, then frontend cutover.
+- [ ] Continue the staged rollout after the backend sim smoke: broaden the
+      fixture slice, add browser smoke coverage under `--backend-engine=sim`,
+      then flip the frontend/default backend path.
 - [ ] After cutover, keep the core adapter only for explicit legacy fixtures or
       remove it once no API, browser, or private deployment path depends on
       core-shaped market bundles.
@@ -65,10 +72,10 @@ response semantics after cutover.
 - [ ] Add API serialization, compact scenario metadata, and a frontend
       adapter over `ProjectionRun`. Prefer a clean `model -> sim -> api`
       contract over matching legacy `ScenarioRunArrays` names.
-- [ ] Add a backend parity harness that can run the current `ScenarioSet`
-      through both paths. Feed both paths from the same
-      model-owned sampled bundle wherever possible, so parity failures isolate
-      simulator behavior rather than differences in market draws.
+- [ ] Expand the backend sim smoke harness beyond the current SP500/spend
+      slice. The first harness proves a current `ScenarioSet` request can
+      translate into sim, sample a model-owned bundle, complete `augur/sim`,
+      and return graphable tables without relying on core output equality.
 - [ ] Preserve legacy scalar-seed behavior only at the API compatibility edge.
       The request translator or core shim should expand scalar seed + rollout
       count into explicit rollout seeds; model implementations and sim should
@@ -82,6 +89,91 @@ response semantics after cutover.
       frontend/backend integration until a generic, tested property-stake
       model exists. Do not add a bespoke partner-contribution pathway to
       `sim`.
+
+## API-to-Sim Translation Inventory
+
+This inventory tracks the current `augur.core.scenario_set.ScenarioSet`
+compatibility translator, not the long-term native sim request schema. Keep the
+translator honest: unsupported current-API fields should fail loudly until they
+are translated or removed from the frontend path.
+
+Already covered by the guarded sim backend smoke:
+
+- [x] Actors become `augur.sim.scenario.Agent` rows.
+- [x] Checking account balances become `InitialAccountBalance` rows.
+- [x] Generic SP500 positions become `InitialLot` rows.
+- [x] Flat `MonthlySpendPolicy` becomes a recurring hard obligation.
+- [x] SP500-only `CheckingFloorSellPublicStockPolicy` becomes a
+      `LiquidityPolicy`.
+- [x] Scalar API seed plus rollout count expands into explicit rollout seeds
+      for `MarketSamplingRequest`.
+- [x] Required level series are inferred from translated initial lots,
+      scheduled asset sales, and liquidity-policy asset chains, then unioned
+      across scenarios before sampling one shared market bundle.
+
+Translator gaps to migrate next:
+
+- [ ] Fix generic SP500 opening-lot sizing. The translator currently treats
+      `value_usd` as quantity under an implicit month-0 price of 1.0; durable
+      translation should size quantity from the sampled month-0 price or make
+      that normalization explicit in the market model contract.
+- [ ] Translate tax profiles: filing status, taxing jurisdictions,
+      prior-year tax for estimated payments, annual ordinary income as a
+      recurring taxable income source, and any standard-deduction overrides the
+      sim tax layer supports.
+- [ ] Translate outside rent into recurring obligations. Inflation-indexed
+      outside rent should wait for exogenous CPI/wage-indexed obligation
+      amounts instead of baking another flat path.
+- [ ] Translate property selection and catalog defaults into
+      `ScheduledPropertyPurchase`: property id, location id, purchase price,
+      buyer/seller bookkeeping agents, down payment, purchase closing cost, and
+      ownership percentage.
+- [ ] Translate financing into `MortgageFinancing`: loan amount, rate, term,
+      lender agent/account, payment account, and liability id. Mortgage-rate
+      sampling remains a market-model/sim capability follow-up.
+- [ ] Translate property tax policy from local regulation and property
+      selection. Maintenance, insurance, HOA, rental income, depreciation, and
+      sale costs need either native sim policies/events or explicit deferral.
+- [ ] Translate rental plans: whole-property rental, room rental, rental start
+      and stop windows, vacancy assumptions, management fees, and leasing fees.
+      These should become property cashflow policies or recurring
+      income/obligation streams over sim state, not standalone core arrays.
+- [ ] Translate special assessments into scheduled obligations.
+- [ ] Translate explicit portfolio trade events into scheduled asset
+      purchases/sales once sim has the needed buy-side accounting.
+- [ ] Translate crypto positions into sim asset lots with per-symbol market
+      series IDs, basis, quantity/value handling, and liquidity-policy
+      preferences.
+- [ ] Translate private-equity positions into native sim state: units/value,
+      basis, issuer routing, liquidity regime, tender/public-market/acquisition
+      constraints, and event stream requirements.
+- [ ] Translate `PrivateEquitySalePolicy` after private-equity state and tender
+      events are native to sim.
+- [ ] Translate `CheckingFloorSellPublicStockPolicy.sale_asset_preference`
+      beyond SP500: crypto and public-market private equity should use the
+      same ordered liquidity-policy surface once those assets are native.
+- [ ] Translate `PartnerEquityAccrualPolicy` only after the generic property
+      stake model covers partner ownership, contribution allocation, and
+      balance snapshots.
+- [ ] Translate explicit property lifecycle events: property purchase,
+      property sale, mortgage origination, move residence, start/stop rental,
+      PE IPO, and PE acquisition. Events with no native sim semantics should
+      stay hard errors.
+- [ ] Expand required-market-series introspection to cover inflation, home
+      value, rent, crypto prices, private-equity marks, private-equity
+      opportunity/regime events, and mortgage/rate paths.
+
+Suggested migration order:
+
+- [ ] First: generic SP500 sizing, tax profile/ordinary income, outside rent,
+      and the current SP500 spend smoke response shape.
+- [ ] Second: property purchase, mortgage origination, property tax, and
+      browser smoke under `--backend-engine=sim`.
+- [ ] Third: crypto positions and liquidity preferences.
+- [ ] Fourth: private equity, tender/public/acquisition regimes, and partner
+      property stakes.
+- [ ] Fifth: replace the compatibility translator with a native sim request
+      schema or narrow it to legacy imports only.
 
 ## Sim Capability Gaps
 

@@ -161,7 +161,8 @@ def _level_multiplier(
     initial = levels[:, [0]]
     if np.any(initial <= 0):
         raise ValueError(f"sampled market level {series_id!r} must start positive to adapt to a core multiplier")
-    return np.divide(levels, initial, out=np.ones_like(levels), where=initial > 0)
+    multipliers: np.ndarray = np.divide(levels, initial, out=np.ones_like(levels), where=initial > 0)
+    return multipliers
 
 
 def _str_metadata(sampled: SampledMarketBundle, key: str, default: str) -> str:

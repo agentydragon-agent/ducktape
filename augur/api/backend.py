@@ -5,10 +5,12 @@ sets through the vectorized engine. User-specific data is read from the
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import AugurConfig
+from augur.api.sim_bridge import rollout_seeds_from_market_request, translate_scenario_set
+from augur.api.sim_response import scenario_set_response_from_sim_runs
 from augur.core.api import ScenarioEngine
 from augur.core.bootstrap import Property
 from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider
@@ -16,6 +18,11 @@ from augur.core.scenario_engine import MONTHS_PER_YEAR
 from augur.core.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.core.scenario_tax_defaults import scenario_with_location_tax_defaults
 from augur.core.schemas import ScenarioKnobs
+from augur.model.sim_market_api import JointMarketModel, MarketSamplingRequest
+from augur.sim.market import materialize_sampled_market
+from augur.sim.simulate import simulate_with_market
+
+BackendExecutionEngine = Literal["core", "sim"]
 
 
 @dataclass(frozen=True)
@@ -23,6 +30,8 @@ class AugurBackendRuntimeConfig:
     market_bundle_provider: MarketBundleProvider
     default_rollout_samples: int
     max_rollout_samples: int
+    market_model: JointMarketModel | None = None
+    execution_engine: BackendExecutionEngine = "core"
 
 
 class AugurBackend:
@@ -54,7 +63,37 @@ class AugurBackend:
         scenario_set = ScenarioSet.model_validate(body)
         self._validate_scenario_set_property_references(scenario_set)
         scenario_set = self._scenario_set_with_catalog_defaults(scenario_set)
+        if self.runtime_config.execution_engine == "sim":
+            return self._run_scenario_set_with_sim(scenario_set)
         return self._engine.simulate_set(scenario_set).to_response()
+
+    def _run_scenario_set_with_sim(self, scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
+        market_model = self.runtime_config.market_model
+        if market_model is None:
+            raise ValueError("Augur sim backend requires a runtime market_model")
+        translations = translate_scenario_set(scenario_set)
+        sampled = market_model.sample(
+            MarketSamplingRequest(
+                horizon_months=scenario_set.market_request.horizon_months,
+                rollout_seeds=rollout_seeds_from_market_request(scenario_set.market_request),
+                required_level_series=frozenset(
+                    series for translation in translations for series in translation.required_level_series
+                ),
+                required_event_series=frozenset(
+                    series for translation in translations for series in translation.required_event_series
+                ),
+            )
+        )
+        market = materialize_sampled_market(sampled)
+        simulation_runs = {
+            translation.scenario_id: simulate_with_market(
+                translation.scenario, rollout_count=scenario_set.market_request.rollout_count, market=market
+            )
+            for translation in translations
+        }
+        return scenario_set_response_from_sim_runs(
+            scenario_set=scenario_set, simulation_runs=simulation_runs, sampled_market_metadata=sampled.metadata
+        )
 
     def _default_knobs_for_provider(self, knobs: ScenarioKnobs) -> ScenarioKnobs:
         if not isinstance(self.market_bundle_provider, HorizonBoundMarketBundleProvider):

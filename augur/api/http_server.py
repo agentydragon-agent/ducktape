@@ -11,7 +11,7 @@ from pathlib import Path
 
 import uvicorn
 
-from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
+from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig, BackendExecutionEngine
 from augur.api.config import AugurConfig
 from augur.core.backend import StaticPathResolver, create_augur_backend_app
 from augur.core.market_bundle import MarketBundleProvider
@@ -42,6 +42,7 @@ class AugurServerConfig:
     default_rollout_samples: int
     max_rollout_samples: int
     bundle: BundleSource
+    execution_engine: BackendExecutionEngine = "core"
 
 
 def _current_private_equity_price_usd(augur_config: AugurConfig) -> float:
@@ -100,6 +101,8 @@ def create_app(config: AugurServerConfig):
             market_bundle_provider=config.market_bundle_provider,
             default_rollout_samples=config.default_rollout_samples,
             max_rollout_samples=config.max_rollout_samples,
+            market_model=config.market_model,
+            execution_engine=config.execution_engine,
         ),
     )
     return create_augur_backend_app(
@@ -116,6 +119,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=8767)
     parser.add_argument(
         "--api-only", action="store_true", help="Serve only JSON API routes; static assets are external."
+    )
+    parser.add_argument(
+        "--backend-engine",
+        choices=("core", "sim"),
+        default="core",
+        help="Execution backend for /api/scenario_sets/run.",
     )
     parser.add_argument("--dist-dir", help="Override the prebuilt frontend bundle directory.")
     return parser
@@ -156,6 +165,7 @@ def run_server(*, augur_config: AugurConfig, bundle: BundleSource, argv: list[st
         default_rollout_samples=augur_config.default_rollout_samples,
         max_rollout_samples=augur_config.max_rollout_samples,
         bundle=_resolve_bundle(args, bundle, parser),
+        execution_engine=args.backend_engine,
     )
     app = create_app(server_config)
     print(f"serving Augur on http://{args.host}:{args.port}")

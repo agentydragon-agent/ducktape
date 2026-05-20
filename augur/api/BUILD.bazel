@@ -67,6 +67,8 @@ py_library(
     deps = [
         ":catalog_py",
         ":config_py",
+        ":sim_bridge_py",
+        ":sim_response_py",
         "//augur/core:api_py",
         "//augur/core:bootstrap_py",
         "//augur/core:market_bundle_py",
@@ -74,6 +76,9 @@ py_library(
         "//augur/core:scenario_set_py",
         "//augur/core:scenario_tax_defaults_py",
         "//augur/core:schemas_py",
+        "//augur/model:sim_market_api_py",
+        "//augur/sim:market",
+        "//augur/sim:simulate",
     ],
 )
 
@@ -85,7 +90,70 @@ py_library(
         ":config_py",
         "//augur/core:backend_py",
         "//augur/core:market_bundle_py",
+        "//augur/model:market_provider_config_py",
+        "//augur/model:sim_market_api_py",
         "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "sim_bridge_py",
+    srcs = ["sim_bridge.py"],
+    deps = [
+        "//augur/core:scenario_set_py",
+        "//augur/model:sim_market_api_py",
+        "//augur/model:sim_market_series_py",
+        "//augur/sim:market",
+        "//augur/sim:run",
+        "//augur/sim:scenario",
+        "//augur/sim:simulate",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "sim_response_py",
+    srcs = ["sim_response.py"],
+    deps = [
+        "//augur/core:scenario_set_py",
+        "//augur/core:schemas_py",
+        "//augur/model:sim_market_series_py",
+        "//augur/sim:run",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "sim_bridge_test",
+    srcs = ["sim_bridge_test.py"],
+    deps = [
+        ":sim_bridge_py",
+        "//augur/core:scenario_set_py",
+        "//augur/model:sim_market_series_py",
+        "//augur/model:simple_market_py",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "sim_backend_test",
+    srcs = ["sim_backend_test.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
+    deps = [
+        ":backend_py",
+        ":config_py",
+        "//augur/core:casing_py",
+        "//augur/core:market_bundle_py",
+        "//augur/core:scenario_set_py",
+        "//augur/model:simple_market_py",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
     ],
 )
 

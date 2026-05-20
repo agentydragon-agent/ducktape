@@ -9,14 +9,16 @@ generic backlog rather than a second ordered roadmap.
 
 ## Next
 
-- [ ] **Switch the backend to `model -> sim -> api`.** Track the concrete
-      replacement gate in `augur/sim/TODO.md`. The production API run path
-      should translate the current catalog/API payload into a typed sim
-      scenario, expand the legacy scalar seed into explicit per-rollout seeds,
-      ask `augur/model` for a `SampledMarketBundle`, evaluate with
-      `augur/sim`, and serialize `ProjectionRun`/read models. Keep
-      `augur/core` as an internal parity baseline only until browser and
-      fixture coverage prove the sim path.
+- [ ] **Finish switching the backend to `model -> sim -> api`.** Track the
+      concrete replacement gate in `augur/sim/TODO.md`. A `--backend-engine=sim`
+      path now translates the SP500/spend slice of the current API payload,
+      expands the scalar seed into explicit per-rollout seeds, samples a
+      shared `SampledMarketBundle`, evaluates with `augur/sim`, and derives
+      frontend graph tables from sim dataframes. Remaining cutover work is to
+      broaden the translator/materialized response beyond the initial
+      cash/SP500 smoke slice and then make sim the default production owner.
+      The migration inventory for current API fields lives in
+      `augur/sim/TODO.md#api-to-sim-translation-inventory`.
 - [ ] **PE valuation should actually be sampled** (Priority 3 in
       `plans/roadmap.md`). The market provider holds private-equity marks
       flat at 1.0 for the entire horizon. The fit is **open design work**
@@ -165,7 +167,7 @@ Followups still on the table:
 - [ ] Keep the core market-bundle shim one-way and temporary. New model work
       should produce `SampledMarketBundle` levels/events first; adapting that
       output to `augur.core.market_bundle.MarketBundle` is only for legacy
-      parity while the backend still runs through core.
+      core execution while the backend still runs through core.
 - [ ] Decide whether negative cash is allowed only through explicit borrowing.
       If the model says an actor has overdraft, credit-line, margin, or other
       borrowing capacity, negative cash can be an accounting effect paired with

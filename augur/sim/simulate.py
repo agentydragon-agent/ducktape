@@ -28,7 +28,7 @@ from augur.sim.apply import apply_events
 from augur.sim.events import EventLog
 from augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from augur.sim.locations import Location, load_location
-from augur.sim.market import materialize_market
+from augur.sim.market import MarketContext, materialize_market
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import Scenario
 from augur.sim.state import (
@@ -53,6 +53,13 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
     market = materialize_market(
         scenario.market, rollout_seeds=tuple(range(rollout_count)), horizon_months=int(scenario.horizon_months)
     )
+    return simulate_with_market(scenario, rollout_count=rollout_count, market=market)
+
+
+def simulate_with_market(scenario: Scenario, *, rollout_count: int, market: MarketContext) -> SimulationRun:
+    if rollout_count <= 0:
+        msg = f"rollout_count must be positive; got {rollout_count}"
+        raise ValueError(msg)
     jurisdictions = _load_jurisdictions_for(scenario)
     locations = _load_locations_for(scenario)
     state_t = _initial_state(scenario, rollout_count)

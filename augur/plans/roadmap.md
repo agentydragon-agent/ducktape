@@ -42,7 +42,26 @@ The intended production backend path is `augur/model -> augur/sim -> augur/api`:
 model providers sample exogenous levels/events with provenance, `augur/sim`
 deterministically evaluates typed scenarios over those paths, and `augur/api`
 serves compact projection/read models. The legacy `augur/core` path remains a
-parity baseline until the sim path is covered and switched over.
+temporary compatibility fallback until the sim path is covered and switched
+over. The first guarded backend path (`--backend-engine=sim`) now proves the
+SP500/spend slice can sample a shared sim-native market bundle, run
+`augur/sim`, and derive graphable response tables from sim dataframes; the next
+cutover work is broadening that slice and replacing the temporary legacy-table
+materializer with final read models.
+
+Near-term translation order:
+
+- Fix current smoke-slice correctness first: generic SP500 opening-lot sizing,
+  tax profile/ordinary income translation, outside-rent obligations, and the
+  current dataframe-derived response tables.
+- Add property purchase, mortgage origination, and property-tax translation
+  next, then run browser smoke coverage under `--backend-engine=sim`.
+- Add crypto positions and liquidity preferences after the property smoke is
+  graphable.
+- Add private equity, tender/public/acquisition regimes, and partner property
+  stakes after those concepts have native sim state and event streams.
+- Once the compatibility slice is broad enough for the frontend, replace it
+  with a native sim request schema or keep it only for legacy imports.
 
 ## Prior-Art Shape For Core Cleanup
 
@@ -397,9 +416,9 @@ Work:
    series from that sim scenario, expand any legacy scalar seed into explicit
    per-rollout seeds, sample `augur/model`'s `SampledMarketBundle`, run
    `augur/sim`, and serialize projection/read models through `augur/api`.
-2. Add an internal parity harness that runs the legacy core path and the sim
-   path from the same model-owned sampled bundle where possible. Use this to
-   compare overlapping outputs before changing the default frontend/API path.
+2. Expand sim smoke coverage for API-shaped requests: translate current
+   request/catalog objects, sample model-owned bundles, run `augur/sim`, and
+   assert durable sim invariants before changing the default frontend/API path.
 3. Continue core model cleanup only where it reduces switchover risk:
    account-aware obligations/funding, failure/default semantics, and
    ledger/accounting detail as the source of truth for monthly report arrays.
@@ -420,9 +439,9 @@ Work:
 
 - **Backend switchover to `model -> sim -> api`** — the next integration
   lane. Close the checklist in `augur/sim/TODO.md`: sim scenario translator,
-  required-market-series discovery, sim market consumption, internal parity
-  harness, projection/read-model serialization, browser smoke coverage, then
-  make the sim path default.
+  required-market-series discovery, sim market consumption, sim/browser smoke
+  coverage, projection/read-model serialization, then make the sim path
+  default.
 - **Priority 3 — sampled PE / sampled tender timing / sampled crypto +
   sampled mortgage rate** (open design work; see the priority section
   above). Joint fit with SP500 / inflation / per-location housing factors
