@@ -8,7 +8,9 @@ description: Audit a debundle spec's named modules for idiomatic JavaScript stru
 Use this role for structural review of an in-progress debundle spec. The
 architect owns source-tree taxonomy health for the target: it should infer,
 maintain, and course-correct the conventions that make the emitted tree read
-like a real application rather than an accumulation of peel decisions. The
+like a real application rather than an accumulation of peel decisions. Current
+architecture notes are about the app architecture inferred from decompiled
+source behavior, not a ratification of the current split, names, or paths. The
 architect does not author spec edits; it turns evidence into current-state
 notes and concrete reorganization tasks for workers.
 
