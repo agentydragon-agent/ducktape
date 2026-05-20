@@ -1169,6 +1169,159 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
 }
 
 #[test]
+fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleton_user() {
+    // Red test for React-like singleton package families. Swapping a renderer
+    // facade while leaving a component in the residual vendor chunk can mix two
+    // dispatcher singletons: the swapped renderer initializes the package copy,
+    // but the residual component still reads the in-blob copy. The emitted app
+    // must eventually run as `package`; today it throws `residual dispatcher is
+    // null`, matching the browser-load failure seen with React hooks.
+    // TODO: add a browser/importmap load probe alongside this Node check once
+    // the e2e harness has a browser runner.
+    const VENDOR_PATH: &str = "static/vendor.js";
+    const APP_PATH: &str = "static/app.js";
+    const PACKAGE_NAME: &str = "singleton-kit";
+    const CLIENT_NAME: &str = "singleton-kit/client";
+    const PACKAGE_VERSION: &str = "1.0.0";
+
+    let root =
+        TempDir::with_prefix("vendor-bundled-partial-swap-singleton-").expect("create tempdir");
+    let workspace_root = root.path().join("workspace");
+    let extracted_root = workspace_root.join("extracted");
+    let snapshot_root = workspace_root.join("snapshot");
+    let out_root = workspace_root.join("out");
+    let wrapper_root = out_root.join("app").join("vendors").join("generated");
+    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
+    let bundle_root = root.path().join("external-bundles");
+    let bundle_path = bundle_root.join("singleton-kit.esbuilt.js");
+    let package_root = root.path().join("upstream").join(PACKAGE_NAME);
+    fs::create_dir_all(&extracted_root).unwrap();
+    fs::create_dir_all(&snapshot_root).unwrap();
+    fs::create_dir_all(&out_root).unwrap();
+    fs::create_dir_all(&bundle_root).unwrap();
+    fs::create_dir_all(&package_root).unwrap();
+    fs::create_dir_all(snapshot_root.join("static")).unwrap();
+
+    write_text_file(
+        &snapshot_root.join(VENDOR_PATH),
+        "const dispatcher = { current: null };\n\
+         const Hooks = {\n\
+           useCell() {\n\
+             if (dispatcher.current === null) throw new TypeError(\"residual dispatcher is null\");\n\
+             return dispatcher.current.cell;\n\
+           },\n\
+         };\n\
+         function Component() { return Hooks.useCell(); }\n\
+         const Client = {\n\
+           render(component) {\n\
+             dispatcher.current = { cell: \"vendor\" };\n\
+             try { return component(); } finally { dispatcher.current = null; }\n\
+           },\n\
+         };\n\
+         export { Hooks as a, Client as h, Component as c };\n",
+    );
+    write_text_file(
+        &snapshot_root.join(APP_PATH),
+        "import { h as Client, c as Component } from \"../vendor/entry.js\";\n\
+         console.log(Client.render(Component));\n",
+    );
+    let js_list_path = extracted_root.join("js-files.txt");
+    write_text_file(&js_list_path, &format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+    write_text_file(
+        &bundle_path,
+        "const dispatcher = { current: null };\n\
+         const Hooks = {\n\
+           useCell() {\n\
+             if (dispatcher.current === null) throw new TypeError(\"package dispatcher is null\");\n\
+             return dispatcher.current.cell;\n\
+           },\n\
+         };\n\
+         const Client = {\n\
+           render(component) {\n\
+             dispatcher.current = { cell: \"package\" };\n\
+             try { return component(); } finally { dispatcher.current = null; }\n\
+           },\n\
+         };\n\
+         export { Hooks, Client };\n",
+    );
+
+    write_text_file(
+        &package_root.join("package.json"),
+        &format!(
+            "{}\n",
+            serde_json::to_string_pretty(&json!({
+                "name": PACKAGE_NAME,
+                "version": PACKAGE_VERSION,
+                "main": "index.js",
+            }))
+            .unwrap(),
+        ),
+    );
+    write_text_file(
+        &package_root.join("index.js"),
+        "exports.useCell = () => \"package\";\n",
+    );
+    write_text_file(
+        &package_root.join("client.js"),
+        "exports.render = component => component();\n",
+    );
+
+    let spec_path = root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            VENDOR_PATH: {
+                "level": "bundled_partial_swap",
+                "identity": "singleton runtime mixed-copy fixture",
+                "bundle": { "path": &bundle_path },
+                "packages": {
+                    PACKAGE_NAME: {
+                        "version": PACKAGE_VERSION,
+                        "subpath": "index.js",
+                        "bundle_export": "Hooks",
+                    },
+                    CLIENT_NAME: {
+                        "version": PACKAGE_VERSION,
+                        "subpath": "client.js",
+                        "bundle_export": "Client",
+                    },
+                },
+                "symbols": {
+                    "a": { "package": PACKAGE_NAME, "kind": "namespace" },
+                    "h": { "package": CLIENT_NAME, "kind": "namespace" },
+                },
+            },
+        },
+        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &manifest_path,
+            "output_wrapper_dir": &wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "force": true, "out_dir": &out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(
+        &spec_path,
+        &[(PACKAGE_NAME, &package_root), (CLIENT_NAME, &package_root)],
+    );
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let probe_path = out_root.join("__run_entry.mjs");
+    write_text_file(
+        &probe_path,
+        "await import(\"./app/static/app/entry.js\");\n",
+    );
+    assert_node_output(&probe_path, "package\n", "");
+}
+
+#[test]
 fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materialization() {
     // `materialize_logical_modules` can create new import statements after
     // the original artifact graph has been indexed. Vendor swapping still
