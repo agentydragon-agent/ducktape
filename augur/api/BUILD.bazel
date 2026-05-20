@@ -195,12 +195,12 @@ py_library(
     srcs = ["backend.py"],
     deps = [
         ":bootstrap_py",
+        ":bridge_py",
         ":catalog_py",
         ":config_py",
+        ":response_py",
         ":scenario_set_py",
         ":scenario_tax_defaults_py",
-        ":sim_bridge_py",
-        ":sim_response_py",
         "//augur/model:market_api_py",
         "//augur/sim:market",
         "//augur/sim:simulate",
@@ -240,8 +240,8 @@ py_test(
 )
 
 py_library(
-    name = "sim_bridge_py",
-    srcs = ["sim_bridge.py"],
+    name = "bridge_py",
+    srcs = ["bridge.py"],
     deps = [
         ":scenario_set_py",
         "//augur/model:market_api_py",
@@ -256,8 +256,8 @@ py_library(
 )
 
 py_library(
-    name = "sim_response_py",
-    srcs = ["sim_response.py"],
+    name = "response_py",
+    srcs = ["response.py"],
     deps = [
         ":scenario_set_py",
         "//augur/model:provenance_py",
@@ -269,12 +269,12 @@ py_library(
 )
 
 py_test(
-    name = "sim_bridge_test",
-    srcs = ["sim_bridge_test.py"],
+    name = "bridge_test",
+    srcs = ["bridge_test.py"],
     deps = [
+        ":bridge_py",
         ":portfolio_py",
         ":scenario_set_py",
-        ":sim_bridge_py",
         "//augur/model:series_py",
         "//augur/model:simple_market_py",
         "@pypi//polars",
@@ -284,8 +284,8 @@ py_test(
 )
 
 py_test(
-    name = "sim_backend_test",
-    srcs = ["sim_backend_test.py"],
+    name = "backend_test",
+    srcs = ["backend_test.py"],
     data = [
         ":public_fixture_config",
         ":public_fixture_properties",
@@ -302,8 +302,8 @@ py_test(
 )
 
 py_test(
-    name = "sim_server_test",
-    srcs = ["sim_server_test.py"],
+    name = "server_test",
+    srcs = ["server_test.py"],
     data = [
         ":public_fixture_config",
         ":public_fixture_properties",

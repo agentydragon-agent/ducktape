@@ -174,7 +174,7 @@ bbr test //augur/sim:all
 Keep the backend/browser sim smoke guardrails after each behavioral slice:
 
 ```bash
-bbr test //augur/api:sim_backend_test //augur/api:sim_server_test
+bbr test //augur/api:backend_test //augur/api:server_test
 ```
 
 Before handing off a finished spiral:

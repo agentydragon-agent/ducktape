@@ -1,4 +1,4 @@
-"""Schema-level checks for AugurConfig. Verifies the contract a deployment
+"""Schema-level checks for Config. Verifies the contract a deployment
 must satisfy without exercising any actual file loading."""
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from pydantic import ValidationError
 
 from augur.api.config import (
     AgentDefinition,
-    AugurConfig,
     ConcentratedHoldingSnapshot,
+    Config,
     FinanceSnapshot,
     LocationConfig,
     PersonalFinanceConfig,
@@ -32,8 +32,8 @@ from augur.api.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegim
 from augur.model.market_provider_config import SimpleMarketProviderConfig
 
 
-def _minimal_config(**overrides: object) -> AugurConfig:
-    """Build a placeholder AugurConfig for schema-shape tests. Values are
+def _minimal_config(**overrides: object) -> Config:
+    """Build a placeholder Config for schema-shape tests. Values are
     intentionally generic — deployments supply their own real values."""
     defaults: dict[str, object] = {
         "agents": (AgentDefinition(actor_id="alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER),),
@@ -43,7 +43,7 @@ def _minimal_config(**overrides: object) -> AugurConfig:
         "market_provider": SimpleMarketProviderConfig(),
     }
     defaults.update(overrides)
-    return AugurConfig(**defaults)
+    return Config(**defaults)
 
 
 def _fixture_regulation() -> LocalRegulation:
@@ -125,7 +125,7 @@ def test_finance_snapshot_holdings_round_trip_through_json() -> None:
         )
     )
 
-    reloaded = AugurConfig.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
+    reloaded = Config.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
 
     holding = reloaded.snapshot.concentrated_holdings[0]
     assert holding.holding_id == "example_holding"
@@ -161,7 +161,7 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
         )
     )
 
-    reloaded = AugurConfig.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
+    reloaded = Config.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
 
     assert reloaded.portfolio.public_securities[0].lots[0].holding_period_months_at_start == 24
     assert reloaded.portfolio.to_initial_lots()[0].purchase_month_index == -24
@@ -193,7 +193,7 @@ def test_config_can_define_deployment_owned_locations() -> None:
 
 def test_at_least_one_agent_required() -> None:
     with pytest.raises(ValidationError, match="Tuple should have at least 1 item"):
-        AugurConfig(
+        Config(
             agents=(),
             personal_finance=PersonalFinanceConfig(),
             property_source=PropertySourceConfig(properties_path="/tmp/x.json"),

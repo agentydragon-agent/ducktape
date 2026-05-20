@@ -43,7 +43,7 @@ model providers sample exogenous levels/events with provenance, `augur/sim`
 deterministically evaluates typed scenarios over those paths, and `augur/api`
 serves compact projection/read models. The backend now executes only this sim
 path. The current compatibility response proves browser-shaped smoke requests
-can sample a shared sim-native market bundle, run `augur/sim`, and derive
+can sample a shared market bundle, run `augur/sim`, and derive
 graphable response tables from sim dataframes; the next cutover work is
 broadening that slice and replacing the temporary legacy-table materializer
 with final read models.
@@ -65,7 +65,7 @@ Near-term translation order:
   path-indexed amount contract for other recurring cashflows instead of adding
   one-off inflation/rent flags.
 - Continue the first property slice: month-0 purchase and mortgage origination
-  smoke through the sim-only backend, then add property tax. Keep this slice
+  smoke through the backend, then add property tax. Keep this slice
   narrow: purchase is month 0, occupancy is forever when selected, rental state
   does not transition mid-horizon, and any sale support can be end-of-horizon
   only if needed for graphs. Property value should start from the
@@ -448,7 +448,7 @@ Work:
 3. Keep the switchover slice scoped: support month-0 property purchase,
    forever occupancy when selected, no rental start/stop transition, nominal
    backend dollars, and config-owned initial positions. Unsupported frontend
-   metrics/controls can be hidden until their native sim data exists.
+   metrics/controls can be hidden until their native runtime data exists.
 4. Continue core model cleanup only where it reduces switchover risk:
    account-aware obligations/funding, failure/default semantics, and
    ledger/accounting detail as the source of truth for monthly report arrays.
@@ -467,8 +467,8 @@ Work:
 
 ## Next Lanes (parallelism + sequencing)
 
-- **Backend sim-native contract completion** — the next integration lane now
-  that backend execution is sim-only. Close the checklist in `augur/sim/TODO.md`:
+- **Backend contract completion** — the next integration lane now
+  that backend execution is runtime-backed. Close the checklist in `augur/sim/TODO.md`:
   broaden the sim scenario translator, complete required-market-series
   discovery, expand sim market consumption, keep browser smoke coverage, and
   replace compatibility tables with projection/read-model serialization.
@@ -534,7 +534,7 @@ Scope:
 
 Validation:
 
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/api:sim_backend_test //augur/api:sim_server_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/api:backend_test //augur/api:server_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
 
 ### Plan C: Unified Obligation/Funding Semantics (complete)
 
@@ -570,7 +570,7 @@ For each public framework slice:
 ```bash
 bbr test //augur/api:browser_shell_test
 bbr test //augur/frontend/lib:scenario_set_state_test
-bbr test //augur/api:sim_server_test
+bbr test //augur/api:server_test
 ```
 
 Before handing off a broader spiral:

@@ -3,7 +3,7 @@ blob, re-load via Pydantic + `<Model>MarketProviderConfig.realize_model(...)`,
 and sample.
 
 This is the public contract the augur server consumes at startup: read
-`AugurConfig.market_provider`, dispatch via the discriminated union, and
+`Config.market_provider`, dispatch via the discriminated union, and
 sample without re-fitting from source CSVs."""
 
 from __future__ import annotations

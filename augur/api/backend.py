@@ -1,5 +1,5 @@
 """Generic augur backend: builds bootstrap payloads and runs scenario sets
-through the sim runtime. User-specific data is read from the `AugurConfig`
+through the runtime. User-specific data is read from the `Config`
 passed at construction time."""
 
 from __future__ import annotations
@@ -8,26 +8,26 @@ from dataclasses import dataclass
 from typing import Any
 
 from augur.api.bootstrap import Property
+from augur.api.bridge import sample_market_for_translations, translate_scenario_set
 from augur.api.catalog import build_bootstrap_payload
-from augur.api.config import AugurConfig
+from augur.api.config import Config
+from augur.api.response import scenario_set_response_from_runs
 from augur.api.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.api.scenario_tax_defaults import scenario_with_location_tax_defaults
-from augur.api.sim_bridge import sample_market_for_translations, translate_scenario_set
-from augur.api.sim_response import scenario_set_response_from_sim_runs
 from augur.model.market_api import JointMarketModel
 from augur.sim.market import materialize_sampled_market
 from augur.sim.simulate import simulate_with_market
 
 
 @dataclass(frozen=True)
-class AugurBackendRuntimeConfig:
+class BackendRuntimeConfig:
     default_rollout_samples: int
     max_rollout_samples: int
     market_model: JointMarketModel
 
 
-class AugurBackend:
-    def __init__(self, *, augur_config: AugurConfig, runtime_config: AugurBackendRuntimeConfig) -> None:
+class Backend:
+    def __init__(self, *, augur_config: Config, runtime_config: BackendRuntimeConfig) -> None:
         self.runtime_config = runtime_config
         self._portfolio = augur_config.portfolio
         self._bootstrap = build_bootstrap_payload(augur_config)
@@ -51,9 +51,9 @@ class AugurBackend:
         scenario_set = ScenarioSet.model_validate(body)
         self._validate_scenario_set_property_references(scenario_set)
         scenario_set = self._scenario_set_with_catalog_defaults(scenario_set)
-        return self._run_scenario_set_with_sim(scenario_set)
+        return self._run_scenario_set(scenario_set)
 
-    def _run_scenario_set_with_sim(self, scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
+    def _run_scenario_set(self, scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
         market_model = self.runtime_config.market_model
         translations = translate_scenario_set(scenario_set, configured_lots=self._portfolio.to_initial_lots())
         sampled = sample_market_for_translations(
@@ -69,7 +69,7 @@ class AugurBackend:
             )
             for translation in translations
         }
-        return scenario_set_response_from_sim_runs(
+        return scenario_set_response_from_runs(
             scenario_set=scenario_set, simulation_runs=simulation_runs, sampled_market_metadata=sampled.metadata
         )
 

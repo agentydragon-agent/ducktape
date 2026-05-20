@@ -3,7 +3,7 @@
 Reads a `MarketConfig` + source CSVs, fits a chosen `MarketModel`, and
 writes two files: a `MarketProviderConfig` YAML (the discriminated
 deployment config that the augur server reads at startup as part of
-`AugurConfig.market_provider`) and a per-model trained-state blob (e.g. an
+`Config.market_provider`) and a per-model trained-state blob (e.g. an
 `.npz` archive). The manifest YAML's `trained_blob` is an absolute path so
 the deployment authoring it knows exactly where the blob will live at
 runtime.

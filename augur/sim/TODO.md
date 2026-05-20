@@ -50,10 +50,10 @@ evaluation, or response semantics.
 - [ ] Replace bespoke partner-equity contribution handling with the generic
       property-stake model once property stakes are covered by sim tests.
 - [ ] Replace ad hoc catalog/default expansion in the backend compatibility
-      translator with an `AugurConfig`/catalog-to-sim scenario builder that
+      translator with a `Config`/catalog-to-runtime scenario builder that
       remains compatible with `gaffer-private` deployment YAML.
 - [ ] Continue the staged rollout after the backend sim smoke: broaden the
-      fixture slice and keep browser smoke coverage on the sim-only backend.
+      fixture slice and keep browser smoke coverage on the backend.
 
 ## Frontend/API Integration Blockers
 
@@ -165,7 +165,7 @@ Translator gaps to migrate next:
 - [ ] Translate crypto positions into sim asset lots with per-symbol market
       series IDs, basis, quantity/value handling, and liquidity-policy
       preferences.
-- [ ] Finish private-equity native sim semantics: explicit mark anchoring,
+- [ ] Finish private-equity native runtime semantics: explicit mark anchoring,
       liquidity regime, tender/public-market/acquisition constraints, and
       event stream requirements.
 - [ ] Translate `PrivateEquitySalePolicy` after private-equity state and tender
@@ -184,7 +184,7 @@ Translator gaps to migrate next:
       balance snapshots.
 - [ ] Translate explicit property lifecycle events: property purchase,
       property sale, mortgage origination, move residence, start/stop rental,
-      PE IPO, and PE acquisition. Events with no native sim semantics should
+      PE IPO, and PE acquisition. Events with no native runtime semantics should
       stay hard errors.
 - [ ] Keep browser timeline lowering deliberately narrow for the first cutover:
       property purchase happens at month 0, owner occupancy lasts forever when
@@ -223,7 +223,7 @@ Translator gaps to migrate next:
       or inflation-adjusted display should be a later postprocessing/read-model
       layer, not alternate simulator accounting.
 - [ ] Let the frontend omit unsupported legacy metrics during the cutover. The
-      sim response should expose only metrics it can derive honestly; property,
+      response should expose only metrics it can derive honestly; property,
       tax, crypto, private-equity, and detail streams can be filled back in as
       their native sim frames land.
 - [ ] Make YAML configuration the source of truth for initial positions and
@@ -237,7 +237,7 @@ Suggested migration order:
       concrete sim lots/price paths for those securities, tax profile/ordinary
       income, outside rent, and the current SP500 spend smoke response shape.
 - [ ] Second: property purchase, mortgage origination, property tax, and
-      browser smoke on the sim-only backend.
+      browser smoke on the backend.
 - [ ] Third: crypto positions and liquidity preferences.
 - [ ] Fourth: private equity, tender/public/acquisition regimes, and partner
       property stakes.
@@ -261,7 +261,7 @@ Suggested migration order:
       income sources. The sim version should be jurisdiction reference data
       plus annual tax accrual/settlement over realized sim events, not a
       core-shaped array helper.
-- [ ] Add a sim-native ordered policy-program surface only if richer decisions
+- [ ] Add an ordered policy-program surface only if richer decisions
       need it. The deleted `augur/core/policy_runtime.py` path had ordered
       per-actor policy programs, monthly-spend debit decisions,
       checking-floor public-stock sale instructions, private-equity
@@ -270,7 +270,7 @@ Suggested migration order:
       operating-cashflow applications. Existing sim obligations and liquidity
       policies cover part of this; missing behavior should land as typed sim
       decisions/events with explicit cause IDs.
-- [ ] Consider a sim-native ledger/read-model storage layer once consumers need
+- [ ] Consider a ledger/read-model storage layer once consumers need
       double-entry projections. The deleted core accounting tables used Polars
       dimension/fact tables for chart accounts, journal-entry kinds, journal
       entries, postings, balance snapshots, rollout identity, and materialized

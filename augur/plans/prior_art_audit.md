@@ -49,7 +49,7 @@ This audit is grounded in the current Augur files:
   rollout/month external level and event series plus model provenance.
 - `augur/sim/`: deterministically evaluates typed scenarios over a sampled
   bundle and emits state/event frames.
-- `augur/api/sim_response.py`: derives the current compatibility graph tables
+- `augur/api/response.py`: derives the current compatibility graph tables
   from sim dataframes until final projection/read models replace them.
 - Deleted legacy `augur/core/policy_runtime.py`: previously defined
   `ActorPolicyProgram`, instruction batches, application results, ledger

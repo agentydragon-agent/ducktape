@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
+from augur.api.backend import Backend, BackendRuntimeConfig
 from augur.api.casing import plain_json
 from augur.api.config import load_augur_config
 from augur.api.scenario_set import RolloutStatusType
@@ -11,9 +11,9 @@ from util.bazel.runfiles import get_required_path
 
 
 def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
-    backend = AugurBackend(
+    backend = Backend(
         augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-        runtime_config=AugurBackendRuntimeConfig(
+        runtime_config=BackendRuntimeConfig(
             default_rollout_samples=3,
             max_rollout_samples=3,
             market_model=SimpleMarketModel(current_private_equity_price_usd=25.0),
@@ -22,8 +22,8 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
 
     response = backend.run_scenario_set_for_request_body(
         {
-            "scenario_set_id": "sim_backend_cutover_smoke",
-            "title": "Sim backend cutover smoke",
+            "scenario_set_id": "backend_smoke",
+            "title": "Backend smoke",
             "market_request": {"market_model_id": "simple", "rollout_count": 3, "horizon_months": 3, "seed": 11},
             "scenarios": [
                 {
@@ -73,7 +73,7 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
     assert response.market_metadata["market_model_id"] == "simple_market_model"
     assert response.market_metadata["source_metadata"]["level_anchors"] == {"sp500": 500.0}
     assert response.projection_run is not None
-    assert response.projection_run.scenario_set_id == "sim_backend_cutover_smoke"
+    assert response.projection_run.scenario_set_id == "backend_smoke"
     assert response.projection_run.path_set_id.startswith("path_set:")
     assert len(response.projection_run.scenario_input_ids) == 1
     assert [path.rollout_index for path in response.exogenous_paths] == [0, 1, 2]
@@ -109,9 +109,9 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
 
 
 def test_backend_accepts_catalog_defaulted_property_selection() -> None:
-    backend = AugurBackend(
+    backend = Backend(
         augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-        runtime_config=AugurBackendRuntimeConfig(
+        runtime_config=BackendRuntimeConfig(
             default_rollout_samples=3,
             max_rollout_samples=3,
             market_model=SimpleMarketModel(current_private_equity_price_usd=25.0),
@@ -120,8 +120,8 @@ def test_backend_accepts_catalog_defaulted_property_selection() -> None:
 
     response = backend.run_scenario_set_for_request_body(
         {
-            "scenario_set_id": "sim_backend_property_smoke",
-            "title": "Sim backend property smoke",
+            "scenario_set_id": "backend_property_smoke",
+            "title": "Backend property smoke",
             "market_request": {"market_model_id": "simple", "rollout_count": 3, "horizon_months": 3, "seed": 11},
             "scenarios": [
                 {

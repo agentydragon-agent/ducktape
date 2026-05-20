@@ -9,8 +9,8 @@ generic backlog rather than a second ordered roadmap.
 
 ## Next
 
-- [ ] **Finish the sim-native API contract now that backend execution is
-      sim-only.** Track the concrete replacement work in `augur/sim/TODO.md`.
+- [ ] **Finish the projection API contract now that backend execution is
+      runtime-backed.** Track the concrete replacement work in `augur/sim/TODO.md`.
       The production path now translates current API payloads, expands scalar
       seeds into explicit per-rollout seeds, samples a shared
       `SampledMarketBundle`, evaluates with `augur/sim`, and derives frontend
@@ -94,7 +94,7 @@ generic backlog rather than a second ordered roadmap.
       derive from config, and unsupported scenario toggles can be removed or
       hidden while the sim cutover is narrowed.
 - [ ] Consider whether the deleted legacy market models should be revived as
-      sim-native `augur/model` implementations where they are actually useful:
+      runtime-native `augur/model` implementations where they are actually useful:
       `var` as a lighter joint macro baseline, `dcc_garch` for time-varying
       liquid-market/crypto volatility and correlations, `wilkie` for
       actuarial long-horizon inflation/equity/rate scenarios, and `bootstrap`
@@ -139,7 +139,7 @@ generic backlog rather than a second ordered roadmap.
       policy decision, accounting application, and public action into separate
       concepts with explicit cause IDs. Tender-eligible private marks are not
       liquid assets and must stay out of `liquid_net_worth`.
-- [ ] Extend policy schema/programs enough for downstream deployments to express concentrated-holding limits, liquidity-sale preferences, tender/acquisition/IPO preferences, and tax preferences without ad-hoc `AugurConfig` fields.
+- [ ] Extend policy schema/programs enough for downstream deployments to express concentrated-holding limits, liquidity-sale preferences, tender/acquisition/IPO preferences, and tax preferences without ad-hoc `Config` fields.
 - [ ] Reintroduce partner/co-owner contributions only as explicit tested
       agreements in `augur/sim`, after the sim backend is wired. The old
       `scenario.actorPolicy` / `owner_plus_partner` product path is shelved:

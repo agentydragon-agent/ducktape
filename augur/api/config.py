@@ -2,7 +2,7 @@
 
 The generic augur framework knows nothing about specific users, holdings,
 or property shortlists. It loads everything user-specific from a single
-validated `AugurConfig` at startup. Concretely: `http_server.py` reads
+validated `Config` at startup. Concretely: `http_server.py` reads
 the path from `AUGUR_CONFIG_PATH` (default `/etc/augur/config.yaml`),
 parses + validates via Pydantic, and threads the result through the
 backend and frontend bootstrap payload.
@@ -33,8 +33,8 @@ from augur.model.market_provider_config import MarketProviderConfig
 
 __all__ = [
     "AgentDefinition",
-    "AugurConfig",
     "ConcentratedHoldingSnapshot",
+    "Config",
     "FinanceSnapshot",
     "LocationConfig",
     "PersonalFinanceConfig",
@@ -131,7 +131,7 @@ class LocationConfig(ApiModel):
     notes: tuple[str, ...] = ()
 
 
-class AugurConfig(ApiModel):
+class Config(ApiModel):
     """The single root configuration object an augur deployment reads
     at startup. Everything user-specific lives here.
 
@@ -158,23 +158,23 @@ class AugurConfig(ApiModel):
         description=(
             "Deployment's market-bundle provider choice (discriminated by `type`: simple / vecm). "
             "Carries per-provider knobs and trained-asset paths; the server materializes this into a "
-            "sim-native `JointMarketModel` at startup, then wraps it for the legacy core backend."
+            "runtime `JointMarketModel` at startup."
         )
     )
 
 
-def load_augur_config(path: Path) -> AugurConfig:
-    """Parse + validate an AugurConfig from a YAML file.
+def load_augur_config(path: Path) -> Config:
+    """Parse + validate a Config from a YAML file.
 
     Relative `property_source.properties_path` and `property_source.asset_dir`
     are anchored against the yaml's parent directory — useful for ConfigMap
     mounts where the yaml and the property data live side-by-side (e.g.
     `/etc/augur/{config.yaml,properties.json}`)."""
-    config = AugurConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
     return _anchor_property_source_paths(config, base_dir=path.parent)
 
 
-def _anchor_property_source_paths(config: AugurConfig, *, base_dir: Path) -> AugurConfig:
+def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
     source = config.property_source
     properties_path = source.properties_path
     if not properties_path.is_absolute():
@@ -192,7 +192,7 @@ def _anchor_property_source_paths(config: AugurConfig, *, base_dir: Path) -> Aug
 
 
 def resolve_augur_config_path() -> Path:
-    """Return the path the runtime should read AugurConfig from.
+    """Return the path the runtime should read Config from.
 
     Order of resolution: `$AUGUR_CONFIG_PATH` if set, else
     `/etc/augur/config.yaml` (the conventional k8s ConfigMap mount point)."""
@@ -201,8 +201,8 @@ def resolve_augur_config_path() -> Path:
     return DEFAULT_AUGUR_CONFIG_PATH
 
 
-def dump_augur_config_yaml(config: AugurConfig) -> str:
-    """Serialize an AugurConfig to a stable YAML string for ConfigMap mounts.
+def dump_augur_config_yaml(config: Config) -> str:
+    """Serialize a Config to a stable YAML string for ConfigMap mounts.
 
     Uses Pydantic's JSON-mode dump (so Path/Enum fields serialize cleanly) then
     re-emits as YAML with sorted keys and block style for diff stability."""

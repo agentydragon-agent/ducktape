@@ -1,5 +1,5 @@
 """Deployment's choice of market model, as a discriminated YAML config
-embedded in `AugurConfig.market_provider`.
+embedded in `Config.market_provider`.
 
 A deployment supplies one of these per-type configs in its `config.yaml`. The
 augur server reads `augur_config.market_provider` at startup and calls

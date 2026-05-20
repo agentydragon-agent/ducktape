@@ -60,7 +60,7 @@ _FAN_METRIC_NAMES: tuple[str, ...] = (
 )
 
 
-def scenario_set_response_from_sim_runs(
+def scenario_set_response_from_runs(
     *,
     scenario_set: ScenarioSet,
     simulation_runs: Mapping[str, SimulationRun],

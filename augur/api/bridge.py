@@ -1,7 +1,7 @@
 """Bridge from current API scenario shapes into `augur/sim`.
 
 This is not a parity shim for the deleted legacy core engine. It is the first
-narrow translator for scenarios that already have native sim equivalents.
+narrow translator for scenarios that already have native runtime equivalents.
 Unsupported legacy API features fail loudly so they can be ported deliberately.
 """
 
@@ -54,12 +54,12 @@ PROPERTY_SELLER_AGENT_ID = "property_seller"
 MORTGAGE_LENDER_AGENT_ID = "mortgage_lender"
 
 
-class UnsupportedSimBridgeScenarioError(ValueError):
+class UnsupportedBridgeScenarioError(ValueError):
     """Raised when the current bridge would drop API scenario semantics."""
 
 
 @dataclass(frozen=True)
-class SimScenarioTranslation:
+class ScenarioTranslation:
     scenario_id: str
     scenario: Scenario
     required_level_series: frozenset[str]
@@ -68,8 +68,8 @@ class SimScenarioTranslation:
 
 def translate_scenario_set(
     scenario_set: ScenarioSet, *, configured_lots: tuple[InitialLot, ...] = ()
-) -> tuple[SimScenarioTranslation, ...]:
-    """Translate enabled API scenarios into native sim scenarios."""
+) -> tuple[ScenarioTranslation, ...]:
+    """Translate enabled API scenarios into runtime scenarios."""
 
     return tuple(
         translate_scenario(scenario, market_request=scenario_set.market_request, configured_lots=configured_lots)
@@ -80,11 +80,11 @@ def translate_scenario_set(
 
 def translate_scenario(
     scenario: CoreScenario, *, market_request: MarketRequest, configured_lots: tuple[InitialLot, ...] = ()
-) -> SimScenarioTranslation:
+) -> ScenarioTranslation:
     _reject_unsupported_features(scenario)
     initial_lots = [*configured_lots, *_initial_lots(scenario, include_public_positions=not configured_lots)]
     property_purchases = _property_purchases(scenario)
-    sim_scenario = Scenario(
+    translated_scenario = Scenario(
         agents=_agents(scenario, initial_lots=initial_lots, property_purchases=property_purchases),
         initial_cash=_initial_cash(scenario, property_purchases=property_purchases),
         initial_lots=initial_lots,
@@ -93,15 +93,15 @@ def translate_scenario(
         liquidity_policies=_liquidity_policies(scenario),
         horizon_months=market_request.horizon_months,
     )
-    return SimScenarioTranslation(
+    return ScenarioTranslation(
         scenario_id=scenario.scenario_id,
-        scenario=sim_scenario,
-        required_level_series=required_level_series_for_scenario(sim_scenario),
+        scenario=translated_scenario,
+        required_level_series=required_level_series_for_scenario(translated_scenario),
     )
 
 
 def required_level_series_for_scenario(scenario: Scenario) -> frozenset[str]:
-    """Market level series needed to execute this sim scenario."""
+    """Market level series needed to execute this scenario."""
 
     return frozenset(
         [
@@ -114,7 +114,7 @@ def required_level_series_for_scenario(scenario: Scenario) -> frozenset[str]:
 
 def sample_market_for_scenario(
     market_model: JointMarketModel,
-    translation: SimScenarioTranslation,
+    translation: ScenarioTranslation,
     *,
     market_request: MarketRequest,
     level_anchors: Mapping[str, float] | None = None,
@@ -132,7 +132,7 @@ def sample_market_for_scenario(
 
 def simulate_translation(
     market_model: JointMarketModel,
-    translation: SimScenarioTranslation,
+    translation: ScenarioTranslation,
     *,
     market_request: MarketRequest,
     level_anchors: Mapping[str, float] | None = None,
@@ -145,7 +145,7 @@ def simulate_translation(
 
 def sample_and_simulate_translation(
     market_model: JointMarketModel,
-    translation: SimScenarioTranslation,
+    translation: ScenarioTranslation,
     *,
     market_request: MarketRequest,
     level_anchors: Mapping[str, float] | None = None,
@@ -163,7 +163,7 @@ def sample_and_simulate_translation(
 
 def sample_market_for_translations(
     market_model: JointMarketModel,
-    translations: tuple[SimScenarioTranslation, ...],
+    translations: tuple[ScenarioTranslation, ...],
     *,
     market_request: MarketRequest,
     level_anchors: Mapping[str, float] | None = None,
@@ -333,11 +333,11 @@ def _property_purchases(scenario: CoreScenario) -> list[ScheduledPropertyPurchas
     if selection.property_id is None:
         return []
     if selection.location_id is None:
-        raise UnsupportedSimBridgeScenarioError(
+        raise UnsupportedBridgeScenarioError(
             f"scenario {scenario.scenario_id!r} selects property {selection.property_id!r} without location_id"
         )
     if selection.purchase_price_usd is None:
-        raise UnsupportedSimBridgeScenarioError(
+        raise UnsupportedBridgeScenarioError(
             f"scenario {scenario.scenario_id!r} selects property {selection.property_id!r} without purchase_price_usd"
         )
 
@@ -366,7 +366,7 @@ def _property_purchases(scenario: CoreScenario) -> list[ScheduledPropertyPurchas
 def _primary_owner_actor_id(scenario: CoreScenario) -> str:
     primary_owner_ids = [actor.actor_id for actor in scenario.actors if actor.role is ActorRole.PRIMARY_OWNER]
     if len(primary_owner_ids) != 1:
-        raise UnsupportedSimBridgeScenarioError(
+        raise UnsupportedBridgeScenarioError(
             f"scenario {scenario.scenario_id!r} must have exactly one primary_owner actor for sim translation"
         )
     return primary_owner_ids[0]
@@ -376,16 +376,16 @@ def _loan_principal_usd(scenario: CoreScenario, *, purchase_price_usd: float) ->
     financing = scenario.financing
     if financing.financing_mode is FinancingMode.CASH:
         if financing.loan_amount_usd not in (None, 0):
-            raise UnsupportedSimBridgeScenarioError("cash financing must not set loan_amount_usd")
+            raise UnsupportedBridgeScenarioError("cash financing must not set loan_amount_usd")
         return 0.0
     if financing.loan_amount_usd is not None:
         loan_principal_usd = float(financing.loan_amount_usd)
     else:
         if financing.down_payment_pct > 100:
-            raise UnsupportedSimBridgeScenarioError("down_payment_pct must be <= 100 for sim translation")
+            raise UnsupportedBridgeScenarioError("down_payment_pct must be <= 100 for sim translation")
         loan_principal_usd = purchase_price_usd * (1.0 - float(financing.down_payment_pct) / 100.0)
     if loan_principal_usd > purchase_price_usd:
-        raise UnsupportedSimBridgeScenarioError("loan_amount_usd must not exceed purchase_price_usd")
+        raise UnsupportedBridgeScenarioError("loan_amount_usd must not exceed purchase_price_usd")
     return loan_principal_usd
 
 
@@ -394,7 +394,7 @@ def _mortgage_financing(scenario: CoreScenario, *, property_id: str, principal_u
         return None
     financing = scenario.financing
     if financing.mortgage_rate_pct is None:
-        raise UnsupportedSimBridgeScenarioError(
+        raise UnsupportedBridgeScenarioError(
             f"scenario {scenario.scenario_id!r} needs mortgage_rate_pct for sim mortgage translation"
         )
     return MortgageFinancing(
@@ -415,11 +415,11 @@ def _mortgage_term_months(scenario: CoreScenario) -> int:
         return 15 * 12
     if financing.financing_mode is FinancingMode.CUSTOM:
         if financing.mortgage_term_years is None:
-            raise UnsupportedSimBridgeScenarioError(
+            raise UnsupportedBridgeScenarioError(
                 f"scenario {scenario.scenario_id!r} needs mortgage_term_years for custom sim mortgage translation"
             )
         return int(financing.mortgage_term_years) * 12
-    raise UnsupportedSimBridgeScenarioError(f"financing mode {financing.financing_mode} is not ported to augur/sim yet")
+    raise UnsupportedBridgeScenarioError(f"financing mode {financing.financing_mode} is not ported to augur/sim yet")
 
 
 def _monthly_spend_obligations(scenario: CoreScenario) -> list[RecurringObligation]:
@@ -428,7 +428,7 @@ def _monthly_spend_obligations(scenario: CoreScenario) -> list[RecurringObligati
         if not isinstance(policy, MonthlySpendPolicy) or policy.monthly_spend_usd <= 0:
             continue
         if policy.inflation_adjusted:
-            raise UnsupportedSimBridgeScenarioError("inflation-adjusted monthly spend is not ported to augur/sim yet")
+            raise UnsupportedBridgeScenarioError("inflation-adjusted monthly spend is not ported to augur/sim yet")
         obligations.append(
             RecurringObligation(
                 start_month=0,
@@ -465,7 +465,7 @@ def _liquidity_policies(scenario: CoreScenario) -> list[LiquidityPolicy]:
 def _asset_preference(asset_type: CoreAssetType) -> str:
     if asset_type is CoreAssetType.GENERIC_SP500_STOCK:
         return SP500_SERIES_ID
-    raise UnsupportedSimBridgeScenarioError(f"liquidity preference {asset_type} is not ported to augur/sim yet")
+    raise UnsupportedBridgeScenarioError(f"liquidity preference {asset_type} is not ported to augur/sim yet")
 
 
 def _reject_unsupported_features(scenario: CoreScenario) -> None:
@@ -489,7 +489,7 @@ def _reject_unsupported_features(scenario: CoreScenario) -> None:
     if any(isinstance(policy, PrivateEquitySalePolicy) for policy in scenario.policies):
         unsupported.append("private-equity sale policies")
     if unsupported:
-        raise UnsupportedSimBridgeScenarioError(
+        raise UnsupportedBridgeScenarioError(
             f"scenario {scenario.scenario_id!r} uses unsupported sim bridge features: {', '.join(unsupported)}"
         )
 

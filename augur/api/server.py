@@ -1,6 +1,6 @@
 """Generic augur HTTP server entry point.
 
-Reads `AugurConfig` from `--config` or `$AUGUR_CONFIG_PATH` (the latter via
+Reads `Config` from `--config` or `$AUGUR_CONFIG_PATH` (the latter via
 `resolve_augur_config_path`'s fallback chain). Frontend bundle is opt-in:
 set `$AUGUR_BUNDLE_INDEX_RUNFILE` to a runfiles-relative path to `index.html`
 to serve the bundle from the same process. Otherwise the server starts in
@@ -24,7 +24,7 @@ _AUGUR_BUNDLE_INDEX_RUNFILE_ENV_VAR = "AUGUR_BUNDLE_INDEX_RUNFILE"
 def _split_config_arg(argv: list[str] | None) -> tuple[Path, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
-        "--config", help="Path to AugurConfig YAML. Defaults to $AUGUR_CONFIG_PATH or /etc/augur/config.yaml."
+        "--config", help="Path to Config YAML. Defaults to $AUGUR_CONFIG_PATH or /etc/augur/config.yaml."
     )
     args, remaining = parser.parse_known_args(argv)
     return (Path(args.config).resolve() if args.config else resolve_augur_config_path()), remaining

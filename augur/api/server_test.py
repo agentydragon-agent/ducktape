@@ -1,4 +1,4 @@
-"""Smoke the generic Augur server's sim-only backend."""
+"""Smoke the generic Augur server backend."""
 
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.fixture
-def augur_sim_server(tmp_path: Path) -> Iterator[str]:
+def server_url(tmp_path: Path) -> Iterator[str]:
     out = undeclared_outputs_dir()
-    server_log = (out / "augur-sim-server.log").open("w")
+    server_log = (out / "augur-server.log").open("w")
     port = pick_free_port("127.0.0.1")
     server = subprocess.Popen(
         [
@@ -51,9 +51,7 @@ def augur_sim_server(tmp_path: Path) -> Iterator[str]:
     try:
         while time.monotonic() < deadline:
             if server.poll() is not None:
-                raise RuntimeError(
-                    f"Augur sim server exited early with code {server.returncode}; see {server_log.name}"
-                )
+                raise RuntimeError(f"Augur server exited early with code {server.returncode}; see {server_log.name}")
             try:
                 with urllib.request.urlopen(f"{origin}/healthz", timeout=1) as response:
                     if response.status == 200 and response.read().decode() == "ok\n":
@@ -61,7 +59,7 @@ def augur_sim_server(tmp_path: Path) -> Iterator[str]:
             except (OSError, urllib.error.URLError):
                 time.sleep(0.25)
         else:
-            raise RuntimeError(f"Augur sim server did not start within 30s; see {server_log.name}")
+            raise RuntimeError(f"Augur server did not start within 30s; see {server_log.name}")
         yield origin
     finally:
         server.terminate()
@@ -98,19 +96,19 @@ def _min(values: list[float | int]) -> float:
     return float(min(values))
 
 
-def test_sim_backend_server_runs_browser_shaped_property_request(augur_sim_server: str) -> None:
-    """The shared server should run a realistic browser payload through sim.
+def test_backend_server_runs_browser_shaped_property_request(server_url: str) -> None:
+    """The shared server should run a realistic browser payload through the runtime.
 
     This intentionally uses broad ranges. The test is guarding integration shape
     and obviously-wrong all-zero columns, not freezing exact stochastic paths.
     """
 
     scenario_run = _post_json(
-        augur_sim_server,
+        server_url,
         "/api/scenario_sets/run",
         {
-            "scenario_set_id": "sim_server_cutover_smoke",
-            "title": "Sim server cutover smoke",
+            "scenario_set_id": "server_smoke",
+            "title": "Server smoke",
             "market_request": {"rollout_count": 4, "horizon_months": 12, "seed": 11},
             "report_spec": {"percentiles": [5, 25, 50, 75, 95], "include_monthly_columns": True},
             "scenarios": [

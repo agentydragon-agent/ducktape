@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
+from augur.api.backend import Backend, BackendRuntimeConfig
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import (
     AgentDefinition,
-    AugurConfig,
     ConcentratedHoldingSnapshot,
+    Config,
     FinanceSnapshot,
     LocationConfig,
     PersonalFinanceConfig,
@@ -164,8 +164,8 @@ def _config(
     location_selection: tuple[str, ...] | None = None,
     asset_base_url: str | None = None,
     property_assets: tuple[PropertyAssetConfig, ...] = (),
-) -> AugurConfig:
-    return AugurConfig(
+) -> Config:
+    return Config(
         agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
         personal_finance=PersonalFinanceConfig(minimum_liquid_reserve_usd=0),
         property_source=PropertySourceConfig(
@@ -227,9 +227,9 @@ def test_backend_applies_location_tax_defaults_to_scenario(
 ) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
-    backend = AugurBackend(
+    backend = Backend(
         augur_config=_config(properties_path),
-        runtime_config=AugurBackendRuntimeConfig(
+        runtime_config=BackendRuntimeConfig(
             default_rollout_samples=8, max_rollout_samples=128, market_model=deterministic_market_model
         ),
     )
@@ -263,9 +263,9 @@ def test_backend_rejects_scenario_property_location_mismatch(
 ) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
-    backend = AugurBackend(
+    backend = Backend(
         augur_config=_config(properties_path),
-        runtime_config=AugurBackendRuntimeConfig(
+        runtime_config=BackendRuntimeConfig(
             default_rollout_samples=8, max_rollout_samples=128, market_model=deterministic_market_model
         ),
     )

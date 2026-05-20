@@ -4,6 +4,12 @@ import polars as pl
 import pytest
 import pytest_bazel
 
+from augur.api.bridge import (
+    UnsupportedBridgeScenarioError,
+    sample_and_simulate_translation,
+    simulate_translation,
+    translate_scenario_set,
+)
 from augur.api.portfolio import (
     PortfolioAccountConfig,
     PortfolioConfig,
@@ -11,20 +17,14 @@ from augur.api.portfolio import (
     PublicSecurityTaxLotConfig,
 )
 from augur.api.scenario_set import ScenarioSet
-from augur.api.sim_bridge import (
-    UnsupportedSimBridgeScenarioError,
-    sample_and_simulate_translation,
-    simulate_translation,
-    translate_scenario_set,
-)
 from augur.model.series import SP500_SERIES_ID, private_equity_series_id
 from augur.model.simple_market import SimpleMarketModel
 
 
 def _scenario_set_body() -> dict:
     return {
-        "scenario_set_id": "sim_bridge_fixture",
-        "title": "Sim bridge fixture",
+        "scenario_set_id": "bridge_fixture",
+        "title": "Bridge fixture",
         "market_request": {"market_model_id": "simple", "rollout_count": 3, "horizon_months": 3, "seed": 11},
         "scenarios": [
             {
@@ -70,7 +70,7 @@ def _scenario_set_body() -> dict:
     }
 
 
-def test_translate_current_api_shape_to_sim_and_run_with_model_sample() -> None:
+def test_translate_current_api_shape_to_runtime_and_run_with_model_sample() -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body())
 
     (translation,) = translate_scenario_set(scenario_set)
@@ -99,7 +99,7 @@ def test_bridge_rejects_features_that_do_not_have_sim_semantics_yet() -> None:
     ]
     scenario_set = ScenarioSet.model_validate(body)
 
-    with pytest.raises(UnsupportedSimBridgeScenarioError, match="move_residence"):
+    with pytest.raises(UnsupportedBridgeScenarioError, match="move_residence"):
         translate_scenario_set(scenario_set)
 
 
@@ -117,7 +117,7 @@ def test_bridge_rejects_private_equity_explicit_marks_until_series_anchoring_exi
     )
     scenario_set = ScenarioSet.model_validate(body)
 
-    with pytest.raises(UnsupportedSimBridgeScenarioError, match="private-equity explicit value marks"):
+    with pytest.raises(UnsupportedBridgeScenarioError, match="private-equity explicit value marks"):
         translate_scenario_set(scenario_set)
 
 

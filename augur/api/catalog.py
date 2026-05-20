@@ -22,7 +22,7 @@ from augur.api.bootstrap import (
     RentalUsePolicyId,
     RentalUsePolicyOption,
 )
-from augur.api.config import AugurConfig, LocationConfig, PropertyAssetConfig
+from augur.api.config import Config, LocationConfig, PropertyAssetConfig
 from augur.api.scenario_set import ActorRole
 from augur.api.schemas import KnobsConfig
 
@@ -67,7 +67,7 @@ def _location_from_config(config: LocationConfig) -> Location:
     )
 
 
-def _locations_for_config(config: AugurConfig) -> tuple[Location, ...]:
+def _locations_for_config(config: Config) -> tuple[Location, ...]:
     locations = tuple(_location_from_config(location) for location in config.locations)
     location_id_counts = Counter(location.id for location in locations)
     duplicate_ids = sorted(location_id for location_id, count in location_id_counts.items() if count > 1)
@@ -81,7 +81,7 @@ def _validate_property_location(property_: Property, *, location_by_id: dict[str
         raise ValueError(f"property {property_.id!r} references unknown location {property_.location_id!r}")
 
 
-def _public_image_url(asset: PropertyAssetConfig, *, config: AugurConfig) -> str:
+def _public_image_url(asset: PropertyAssetConfig, *, config: Config) -> str:
     if asset.image_url is not None:
         return str(asset.image_url)
     asset_base_url = config.property_source.asset_base_url
@@ -90,7 +90,7 @@ def _public_image_url(asset: PropertyAssetConfig, *, config: AugurConfig) -> str
     return f"{str(asset_base_url).rstrip('/')}/{quote(asset.asset_id, safe='')}"
 
 
-def _apply_property_assets(config: AugurConfig, properties: tuple[Property, ...]) -> tuple[Property, ...]:
+def _apply_property_assets(config: Config, properties: tuple[Property, ...]) -> tuple[Property, ...]:
     property_assets = config.property_source.property_assets
     if not property_assets:
         return properties
@@ -109,12 +109,12 @@ def _apply_property_assets(config: AugurConfig, properties: tuple[Property, ...]
     )
 
 
-def _default_knobs_for_config(config: AugurConfig) -> KnobsConfig:
+def _default_knobs_for_config(config: Config) -> KnobsConfig:
     starting_portfolio_usd = config.starting_portfolio_usd or config.snapshot.sp500_proxy_portfolio_usd
     return DEFAULT_KNOBS.model_copy(update={"starting_portfolio_usd": starting_portfolio_usd})
 
 
-def _primary_agent_label(config: AugurConfig) -> str:
+def _primary_agent_label(config: Config) -> str:
     """Return the primary-owner label derived from config.agents."""
     primary = next(agent for agent in config.agents if agent.role is ActorRole.PRIMARY_OWNER)
     return primary.label
@@ -162,7 +162,7 @@ def _rental_use_policy_options(primary: str) -> list[RentalUsePolicyOption]:
     ]
 
 
-def _load_properties(config: AugurConfig, *, location_by_id: dict[str, Location]) -> tuple[Property, ...]:
+def _load_properties(config: Config, *, location_by_id: dict[str, Location]) -> tuple[Property, ...]:
     path = config.property_source.properties_path
     # `yaml.safe_load` reads both YAML and JSON (JSON is a YAML subset), so either
     # extension is supported; deployments pick whichever is more ergonomic.
@@ -176,7 +176,7 @@ def _load_properties(config: AugurConfig, *, location_by_id: dict[str, Location]
     return _apply_property_assets(config, properties)
 
 
-def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
+def build_bootstrap_payload(config: Config) -> BootstrapResponse:
     available_locations = _locations_for_config(config)
     location_by_id = {location.id: location for location in available_locations}
     loaded_properties = _load_properties(config, location_by_id=location_by_id)
