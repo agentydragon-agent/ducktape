@@ -92,9 +92,10 @@ in
   # IIO sensor proxy for accelerometer (auto screen rotation)
   hardware.sensor.iio.enable = true;
 
-  # Capture state across suspend cycles + watchdog probes for the
-  # auto-rotate wedge. See debug/rugged/auto_rotate.md.
-  ducktape.iioDebug.enable = true;
+  # High-volume IIO debugging is useful only during an active auto-rotate
+  # investigation. Leaving it enabled during normal use flooded journald and
+  # caused periodic desktop stalls. See debug/rugged/periodic_stalls.md.
+  ducktape.iioDebug.enable = false;
 
   services = {
     avahi = {
