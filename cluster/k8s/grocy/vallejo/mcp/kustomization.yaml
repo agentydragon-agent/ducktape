@@ -29,7 +29,7 @@ patches:
       metadata:
         name: grocy-mcp-server
       spec:
-        replicas: 0
+        replicas: 1
         template:
           spec:
             containers:
@@ -53,6 +53,6 @@ patches:
                   - name: GROCY_MCP_PERSISTENCE__KIND
                     value: "valkey"
                   - name: GROCY_MCP_PERSISTENCE__HOST
-                    value: "grocy-vallejo-valkey-master.grocy-vallejo.svc.cluster.local"
+                    value: "grocy-vallejo-valkey-ovh-master.grocy-vallejo.svc.cluster.local"
                   - name: GROCY_MCP_PERSISTENCE__DB
                     value: "0"

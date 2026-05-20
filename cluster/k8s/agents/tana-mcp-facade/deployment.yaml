@@ -18,7 +18,7 @@ metadata:
       {"containerPolicies":[{"containerName":"server","minAllowed":{"cpu":"25m"},"controlledValues":"RequestsOnly"}]}
 
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: tana-mcp-facade
