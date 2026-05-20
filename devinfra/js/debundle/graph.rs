@@ -101,6 +101,12 @@ impl EdgeReason {
     pub fn is_eager_use(&self) -> bool {
         self.kind == DepKind::EagerUse
     }
+    pub fn kind(&self) -> DepKind {
+        self.kind
+    }
+    pub fn binding(&self) -> Option<&Id> {
+        self.binding.as_ref()
+    }
     pub fn is_rebind(&self) -> bool {
         matches!(self.kind, DepKind::EagerRebind | DepKind::LazyRebind)
     }

@@ -1136,6 +1136,18 @@ logical-module bytes/lines/files, residual module bytes/lines/files,
 and the largest JS sinks. Peeling tools should use these manifest fields
 for progress reporting instead of rescanning output trees.
 
+When logical modules are materialized, the output root also includes a
+`directory_manifests/` sidecar tree. `directory_manifests/index.json` lists
+one mirrored manifest for each emitted JS directory, stored at
+`directory_manifests/<emitted-dir>/manifest.json`. These manifests project the
+semantic owner/module dependency graph onto recursive emitted-directory
+boundaries. They report incoming/outgoing edge counts by dependency kind plus
+full symbol and file attribution maps. A symbol key has the form
+`<target_file>#<export_or_binding_name>`; binding-less edges such as
+`sequenced` contribute to edge-kind and file counts but not symbol maps. Use
+these directory manifests to judge hierarchy encapsulation and leaky subtree
+boundaries; use the owner graph and source bodies for drill-down.
+
 ### Workflow
 
 1. Spec author writes / edits a spec — possibly partial.
@@ -2317,20 +2329,20 @@ peel-set hyperedges so authoring tools can mostly project and filter
 debundler facts instead of re-analyzing JavaScript or private repo
 YAML conventions.
 
-| Step                             | Module                       | Runs when                                                                                                                                             |
-| -------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `load_transform_spec`            | <pipeline.rs>                | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                            |
-| `validate_transform_spec`        | <spec.rs>                    | Always after spec load.                                                                                                                               |
-| `load_js_chunks`                 | <artifact.rs>                | Always; configured by `inputs`.                                                                                                                       |
-| `prepare_js_chunks`              | <prepare_chunks.rs>          | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                       |
-| `build_artifact_indexes`         | <artifact.rs>                | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                   |
-| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>      | Always, after chunk preparation and before data-gated transforms.                                                                                     |
-| `apply_vendor_annotations`       | <vendor.rs>                  | When the `vendor` map is non-empty.                                                                                                                   |
-| `rename_vendor_exports`          | <vendor.rs>                  | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                                  |
-| `swap_vendor_chunks`             | <vendor.rs>                  | When a `vendor` entry has `level: swap`.                                                                                                              |
-| `materialize_logical_modules`    | <lowering/> + analysis files | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits. |
-| `write_js_tree`                  | <write_tree.rs>              | When `write_js_tree` output config is present; writes JS tree manifests with exact `output_metrics`.                                                  |
-| `emit_browser_harness`           | <emit_harness.rs>            | When `emit_browser_harness` output config is present; writes browser harness manifests with exact `output_metrics`.                                   |
+| Step                             | Module                       | Runs when                                                                                                                                                              |
+| -------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `load_transform_spec`            | <pipeline.rs>                | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                                             |
+| `validate_transform_spec`        | <spec.rs>                    | Always after spec load.                                                                                                                                                |
+| `load_js_chunks`                 | <artifact.rs>                | Always; configured by `inputs`.                                                                                                                                        |
+| `prepare_js_chunks`              | <prepare_chunks.rs>          | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                                        |
+| `build_artifact_indexes`         | <artifact.rs>                | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                                    |
+| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>      | Always, after chunk preparation and before data-gated transforms.                                                                                                      |
+| `apply_vendor_annotations`       | <vendor.rs>                  | When the `vendor` map is non-empty.                                                                                                                                    |
+| `rename_vendor_exports`          | <vendor.rs>                  | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                                                   |
+| `swap_vendor_chunks`             | <vendor.rs>                  | When a `vendor` entry has `level: swap`.                                                                                                                               |
+| `materialize_logical_modules`    | <lowering/> + analysis files | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits.                  |
+| `write_js_tree`                  | <write_tree.rs>              | When `write_js_tree` output config is present; writes JS tree manifests with exact `output_metrics` and directory manifests when logical modules exist.                |
+| `emit_browser_harness`           | <emit_harness.rs>            | When `emit_browser_harness` output config is present; writes browser harness manifests with exact `output_metrics` and directory manifests when logical modules exist. |
 
 Within `materialize_logical_modules`, the substages are:
 

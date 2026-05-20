@@ -358,6 +358,86 @@ export { A, B };
 }
 
 #[test]
+fn write_tree_emits_directory_dependency_manifests() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const Value = "v";
+function consume() {
+  return Value;
+}
+console.log(consume());
+export { consume };
+"#,
+        vec![
+            logical_module("domain/value", &[Member::new("Value")]),
+            logical_module("feature/consumer", &[Member::new("consume")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "v\n");
+
+    let index: serde_json::Value =
+        read_json(&fixture.out_root.join("directory_manifests/index.json"));
+    let directories = index["directories"]
+        .as_array()
+        .expect("directory manifest index entries");
+    assert!(directories.iter().any(|entry| {
+        entry["directory"] == "static/app/modules/feature"
+            && entry["manifest"] == "static/app/modules/feature/manifest.json"
+    }));
+
+    let feature: serde_json::Value = read_json(
+        &fixture
+            .out_root
+            .join("directory_manifests/static/app/modules/feature/manifest.json"),
+    );
+    assert_eq!(feature["directory"], "static/app/modules/feature");
+    assert_eq!(feature["out_edge_count"], 1);
+    assert_eq!(feature["out_symbol_count"], 1);
+    assert_eq!(feature["out_file_count"], 1);
+    assert_eq!(
+        feature["out_symbols"]["static/app/modules/domain/value.js#Value"],
+        1,
+    );
+    assert_eq!(
+        feature["out_files"]["static/app/modules/domain/value.js"],
+        1
+    );
+    assert_eq!(feature["out_edge_count_by_kind"]["lazy_use"], 1);
+    assert_eq!(
+        feature["outgoing_edges"][0]["target_dir"],
+        "static/app/modules/domain",
+    );
+
+    let domain: serde_json::Value = read_json(
+        &fixture
+            .out_root
+            .join("directory_manifests/static/app/modules/domain/manifest.json"),
+    );
+    assert_eq!(domain["in_edge_count"], 2);
+    assert_eq!(domain["in_symbol_count"], 1);
+    assert_eq!(domain["in_file_count"], 2);
+    assert_eq!(
+        domain["in_symbols"]["static/app/modules/domain/value.js#Value"],
+        2,
+    );
+    assert_eq!(
+        domain["in_files"]["static/app/modules/feature/consumer.js"],
+        1
+    );
+    assert_eq!(
+        domain["in_files"]["static/app/modules/residual/unhandled.js"],
+        1,
+    );
+
+    let modules: serde_json::Value = read_json(
+        &fixture
+            .out_root
+            .join("directory_manifests/static/app/modules/manifest.json"),
+    );
+    assert_eq!(modules["in_edge_count"], 0);
+    assert_eq!(modules["out_edge_count"], 0);
+}
+
+#[test]
 fn owner_graph_report_identifies_pair_only_residual_peel_in_emitted_js_fixture() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var A = B || "fallback";

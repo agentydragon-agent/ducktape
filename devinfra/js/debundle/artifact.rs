@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 use relative_path::RelativePath;
 use serde::Serialize;
 
+use analysis::DepKind;
 pub use analysis::{ChunkId, ChunkTable};
 use js_ast::{ParsedJsModule, emit_js_module};
 
@@ -273,6 +274,17 @@ pub struct ChunkAnalysis {
 pub struct ChunkDecompositionOutput {
     pub logical_modules: ChunkLogicalModulesSummary,
     pub selected_module_lowerings: Vec<SelectedModuleLowering>,
+    pub directory_dependency_facts: Vec<DirectoryDependencyFact>,
+}
+
+/// One semantic owner-edge fact projected onto emitted module files.
+#[derive(Debug, Clone)]
+pub struct DirectoryDependencyFact {
+    pub source_file: String,
+    pub target_file: String,
+    pub edge_kind: DepKind,
+    /// The target/provider symbol, rendered as `<target_file>#<export>`.
+    pub symbol: Option<String>,
 }
 
 /// Per-chunk manifest serialized to `<chunk>/manifest.json` at write time.
@@ -398,6 +410,53 @@ pub struct DecompositionMetrics {
     pub loc_distribution: LocDistribution,
     pub entropy: f64,
     pub per_module: Vec<ModuleDecompositionMetrics>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DirectoryManifestIndex {
+    pub directories: Vec<DirectoryManifestIndexEntry>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DirectoryManifestIndexEntry {
+    pub directory: String,
+    pub manifest: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DirectoryDependencyManifest {
+    pub directory: String,
+    pub module_count: usize,
+    pub defined_symbol_count: usize,
+    pub loc: usize,
+    pub in_edge_count: usize,
+    pub out_edge_count: usize,
+    pub in_symbol_count: usize,
+    pub out_symbol_count: usize,
+    pub in_file_count: usize,
+    pub out_file_count: usize,
+    pub in_edge_count_by_kind: BTreeMap<String, usize>,
+    pub out_edge_count_by_kind: BTreeMap<String, usize>,
+    pub in_symbols: BTreeMap<String, usize>,
+    pub out_symbols: BTreeMap<String, usize>,
+    pub in_files: BTreeMap<String, usize>,
+    pub out_files: BTreeMap<String, usize>,
+    pub incoming_edges: Vec<DirectoryDependencyEdgeManifest>,
+    pub outgoing_edges: Vec<DirectoryDependencyEdgeManifest>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DirectoryDependencyEdgeManifest {
+    pub source_dir: String,
+    pub target_dir: String,
+    pub edge_count: usize,
+    pub symbol_count: usize,
+    pub source_file_count: usize,
+    pub target_file_count: usize,
+    pub edge_count_by_kind: BTreeMap<String, usize>,
+    pub symbols: BTreeMap<String, usize>,
+    pub source_files: BTreeMap<String, usize>,
+    pub target_files: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1086,10 +1145,299 @@ pub fn materialize_artifact_scripts(
         .into_iter()
         .flatten()
         .collect();
+    if !decomposition_by_chunk.is_empty() {
+        write_directory_manifest_tree(out_dir, decomposition_by_chunk, &file_metrics)?;
+    }
     Ok(MaterializedScripts {
         output_metrics: OutputMetrics::from_file_metrics(file_metrics.clone()),
         file_metrics,
     })
+}
+
+fn write_directory_manifest_tree(
+    out_dir: &Path,
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+    file_metrics: &[OutputFileMetric],
+) -> Result<()> {
+    let manifests = build_directory_dependency_manifests(decomposition_by_chunk, file_metrics);
+    let root = out_dir.join("directory_manifests");
+    if root.exists() {
+        fs::remove_dir_all(&root)
+            .with_context(|| format!("remove stale directory manifest tree {}", root.display()))?;
+    }
+    fs::create_dir_all(&root)?;
+    let index_path = root.join("index.json");
+    let mut index_entries = Vec::with_capacity(manifests.len());
+    for manifest in manifests {
+        let manifest_path = root
+            .join(path_from_module_path(&manifest.directory))
+            .join("manifest.json");
+        if let Some(parent) = manifest_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        index_entries.push(DirectoryManifestIndexEntry {
+            directory: manifest.directory.clone(),
+            manifest: manifest_relative_path(&index_path, &manifest_path),
+        });
+        serde_json::to_writer_pretty(&fs::File::create(&manifest_path)?, &manifest)?;
+    }
+    serde_json::to_writer_pretty(
+        &fs::File::create(index_path)?,
+        &DirectoryManifestIndex {
+            directories: index_entries,
+        },
+    )?;
+    Ok(())
+}
+
+fn build_directory_dependency_manifests(
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+    file_metrics: &[OutputFileMetric],
+) -> Vec<DirectoryDependencyManifest> {
+    let loc_by_module_id: BTreeMap<&str, usize> = file_metrics
+        .iter()
+        .filter_map(|metric| Some((metric.module_id.as_deref()?, metric.lines)))
+        .collect();
+    let mut directories = BTreeMap::<String, DirectoryAccumulator>::new();
+
+    for decomposition in decomposition_by_chunk.values() {
+        for lowering in &decomposition.selected_module_lowerings {
+            let file = join_module_path(&[&lowering.chunk_id, &lowering.target_file]);
+            let loc = loc_by_module_id
+                .get(lowering.id.as_str())
+                .copied()
+                .unwrap_or(0);
+            for dir in directory_ancestors_for_file(&file) {
+                let accumulator = directories.entry(dir).or_default();
+                accumulator.module_ids.insert(lowering.id.clone());
+                accumulator.defined_symbol_count += lowering.binding_names.len();
+                accumulator.loc += loc;
+            }
+        }
+    }
+
+    for decomposition in decomposition_by_chunk.values() {
+        for fact in &decomposition.directory_dependency_facts {
+            let source_dir = module_path_dirname(&fact.source_file);
+            let target_dir = module_path_dirname(&fact.target_file);
+            for dir in directory_ancestors_for_file(&fact.source_file) {
+                if path_is_in_directory(&fact.target_file, &dir) {
+                    continue;
+                }
+                let accumulator = directories.entry(dir.clone()).or_default();
+                accumulator.outgoing.add_fact(
+                    dir,
+                    target_dir.clone(),
+                    &fact.source_file,
+                    &fact.target_file,
+                    &fact.target_file,
+                    fact.edge_kind,
+                    fact.symbol.as_deref(),
+                );
+            }
+            for dir in directory_ancestors_for_file(&fact.target_file) {
+                if path_is_in_directory(&fact.source_file, &dir) {
+                    continue;
+                }
+                let accumulator = directories.entry(dir.clone()).or_default();
+                accumulator.incoming.add_fact(
+                    source_dir.clone(),
+                    dir,
+                    &fact.source_file,
+                    &fact.target_file,
+                    &fact.source_file,
+                    fact.edge_kind,
+                    fact.symbol.as_deref(),
+                );
+            }
+        }
+    }
+
+    directories
+        .into_iter()
+        .map(|(directory, accumulator)| accumulator.into_manifest(directory))
+        .collect()
+}
+
+#[derive(Default)]
+struct DirectoryAccumulator {
+    module_ids: BTreeSet<String>,
+    defined_symbol_count: usize,
+    loc: usize,
+    incoming: DirectionalDirectoryAccumulator,
+    outgoing: DirectionalDirectoryAccumulator,
+}
+
+impl DirectoryAccumulator {
+    fn into_manifest(self, directory: String) -> DirectoryDependencyManifest {
+        let incoming = self.incoming.into_summary();
+        let outgoing = self.outgoing.into_summary();
+        DirectoryDependencyManifest {
+            directory,
+            module_count: self.module_ids.len(),
+            defined_symbol_count: self.defined_symbol_count,
+            loc: self.loc,
+            in_edge_count: incoming.edge_count,
+            out_edge_count: outgoing.edge_count,
+            in_symbol_count: incoming.symbols.len(),
+            out_symbol_count: outgoing.symbols.len(),
+            in_file_count: incoming.external_files.len(),
+            out_file_count: outgoing.external_files.len(),
+            in_edge_count_by_kind: incoming.edge_count_by_kind,
+            out_edge_count_by_kind: outgoing.edge_count_by_kind,
+            in_symbols: incoming.symbols,
+            out_symbols: outgoing.symbols,
+            in_files: incoming.external_files,
+            out_files: outgoing.external_files,
+            incoming_edges: incoming.edges,
+            outgoing_edges: outgoing.edges,
+        }
+    }
+}
+
+#[derive(Default)]
+struct DirectionalDirectoryAccumulator {
+    edge_count: usize,
+    edge_count_by_kind: BTreeMap<String, usize>,
+    symbols: BTreeMap<String, usize>,
+    external_files: BTreeMap<String, usize>,
+    edges: BTreeMap<(String, String), DirectoryEdgeAccumulator>,
+}
+
+impl DirectionalDirectoryAccumulator {
+    fn add_fact(
+        &mut self,
+        source_dir: String,
+        target_dir: String,
+        source_file: &str,
+        target_file: &str,
+        external_file: &str,
+        edge_kind: DepKind,
+        symbol: Option<&str>,
+    ) {
+        let kind = dep_kind_key(edge_kind);
+        self.edge_count += 1;
+        *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
+        if let Some(symbol) = symbol {
+            *self.symbols.entry(symbol.to_string()).or_default() += 1;
+        }
+        *self
+            .external_files
+            .entry(external_file.to_string())
+            .or_default() += 1;
+        self.edges
+            .entry((source_dir.clone(), target_dir.clone()))
+            .or_insert_with(|| DirectoryEdgeAccumulator {
+                source_dir,
+                target_dir,
+                ..Default::default()
+            })
+            .add_fact(source_file, target_file, kind, symbol);
+    }
+
+    fn into_summary(self) -> DirectionalSummary {
+        DirectionalSummary {
+            edge_count: self.edge_count,
+            edge_count_by_kind: self.edge_count_by_kind,
+            symbols: self.symbols,
+            external_files: self.external_files,
+            edges: self
+                .edges
+                .into_values()
+                .map(|edge| edge.into_manifest())
+                .collect(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct DirectoryEdgeAccumulator {
+    source_dir: String,
+    target_dir: String,
+    edge_count: usize,
+    edge_count_by_kind: BTreeMap<String, usize>,
+    symbols: BTreeMap<String, usize>,
+    source_files: BTreeMap<String, usize>,
+    target_files: BTreeMap<String, usize>,
+}
+
+impl DirectoryEdgeAccumulator {
+    fn add_fact(&mut self, source_file: &str, target_file: &str, kind: &str, symbol: Option<&str>) {
+        self.edge_count += 1;
+        *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
+        *self
+            .source_files
+            .entry(source_file.to_string())
+            .or_default() += 1;
+        *self
+            .target_files
+            .entry(target_file.to_string())
+            .or_default() += 1;
+        if let Some(symbol) = symbol {
+            *self.symbols.entry(symbol.to_string()).or_default() += 1;
+        }
+    }
+
+    fn into_manifest(self) -> DirectoryDependencyEdgeManifest {
+        DirectoryDependencyEdgeManifest {
+            source_dir: self.source_dir,
+            target_dir: self.target_dir,
+            edge_count: self.edge_count,
+            symbol_count: self.symbols.len(),
+            source_file_count: self.source_files.len(),
+            target_file_count: self.target_files.len(),
+            edge_count_by_kind: self.edge_count_by_kind,
+            symbols: self.symbols,
+            source_files: self.source_files,
+            target_files: self.target_files,
+        }
+    }
+}
+
+struct DirectionalSummary {
+    edge_count: usize,
+    edge_count_by_kind: BTreeMap<String, usize>,
+    symbols: BTreeMap<String, usize>,
+    external_files: BTreeMap<String, usize>,
+    edges: Vec<DirectoryDependencyEdgeManifest>,
+}
+
+fn directory_ancestors_for_file(file: &str) -> Vec<String> {
+    let dir = module_path_dirname(file);
+    if dir.is_empty() {
+        return Vec::new();
+    }
+    let mut ancestors = Vec::new();
+    let mut current = String::new();
+    for part in dir.split('/').filter(|part| !part.is_empty()) {
+        if current.is_empty() {
+            current.push_str(part);
+        } else {
+            current.push('/');
+            current.push_str(part);
+        }
+        ancestors.push(current.clone());
+    }
+    ancestors
+}
+
+fn path_is_in_directory(path: &str, directory: &str) -> bool {
+    !directory.is_empty()
+        && (path == directory
+            || path
+                .strip_prefix(directory)
+                .is_some_and(|rest| rest.starts_with('/')))
+}
+
+fn dep_kind_key(kind: DepKind) -> &'static str {
+    match kind {
+        DepKind::EagerUse => "eager_use",
+        DepKind::LazyUse => "lazy_use",
+        DepKind::EagerRebind => "eager_rebind",
+        DepKind::LazyRebind => "lazy_rebind",
+        DepKind::Sequenced => "sequenced",
+        DepKind::LocalEffect => "local_effect",
+    }
 }
 
 fn materialize_chunk_scripts(

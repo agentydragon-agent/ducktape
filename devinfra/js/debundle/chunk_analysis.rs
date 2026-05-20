@@ -85,7 +85,7 @@ impl ChunkAnalysis {
     /// atoms (no ctxt available at the call site). Within a chunk's
     /// top-level scope, syms are unique by construction, so the
     /// first sym match is unambiguous.
-    pub(crate) fn export_name_for(&self, binding: &Atom) -> Atom {
+    pub fn export_name_for(&self, binding: &Atom) -> Atom {
         self.export_name_by_binding
             .iter()
             .find(|(id, _)| &id.0 == binding)

@@ -27,6 +27,8 @@ The project adapter must provide:
 - `<modules-dir>`: active `modules/**/*.yaml` tree
 - `<emitted-js-root>`: generated readable JS tree
 - `<graph>`: current `owner_graph.json`, when available
+- `<directory-manifests>`: emitted `directory_manifests/` sidecar tree, when
+  available
 - `<conventions-docs>`: project-local docs such as `AGENTS.md`,
   taxonomy notes, or architecture guides
 - `<architecture-notes>` and `<module-reorg>` output paths
@@ -89,6 +91,13 @@ body and graph do not show a namespace/API/family boundary. A broad directory
 is not bad only because it has many children; it is bad when source behavior
 and graph neighborhoods show multiple concepts sharing one bucket.
 
+When `<directory-manifests>` exists, consult it before proposing hierarchy
+changes. Use its incoming/outgoing symbol, file, and edge-kind attribution to
+find leaky directory boundaries, over-broad buckets, misplaced subtrees, and
+singleton wrappers that do not carry their own API boundary. Directory
+manifests are quantitative evidence; still read the source bodies and owner
+graph behind the highest-attribution symbols before writing recommendations.
+
 Check for:
 
 - singleton directories: directories with exactly one child or exactly one
@@ -149,6 +158,19 @@ find "$EMITTED_JS_ROOT" -type f |
 
 # Count component-style leaves that may belong with a single owner.
 find "$EMITTED_JS_ROOT" -type f -name styles.js | wc -l
+
+# Show directories with the most outgoing symbol pressure.
+jq -r '
+  .directories[].manifest
+' "$DIR_MANIFESTS/index.json" |
+  while read -r manifest; do
+    jq -r '[.directory, .out_symbol_count, .out_file_count, .out_edge_count] | @tsv' \
+      "$DIR_MANIFESTS/$manifest"
+  done | sort -k2,2nr | head -50
+
+# Show top attributed outgoing symbols for one suspicious directory.
+jq -r '.out_symbols | to_entries | sort_by(.value) | reverse[] |
+  "\(.value)\t\(.key)"' "$DIR_MANIFESTS/<emitted-dir>/manifest.json" | head -50
 
 # Show root-to-root dependency pressure from owner_graph.json.
 jq -r '

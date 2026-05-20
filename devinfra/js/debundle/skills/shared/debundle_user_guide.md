@@ -19,6 +19,7 @@ GRAPH=<debundle-output>/analysis/logical_modules/.../owner_graph.json
 MODULES=<spec-root>/<version>/modules
 SOURCE_ROOT=<upstream-or-emitted-js-root>
 DEBUNDLE_OUT=<debundle-output-root>
+DIR_MANIFESTS=<debundle-output-root>/directory_manifests
 ```
 
 If remote execution or minimal output downloads are in use, request full
@@ -69,13 +70,20 @@ Interpretation:
 Typical debundle outputs include:
 
 - root and per-chunk manifests with progress metrics
+- `directory_manifests/index.json` plus mirrored
+  `directory_manifests/<emitted-dir>/manifest.json` files when logical modules
+  are materialized
 - `analysis/logical_modules/**/owner_graph.json`
 - `analysis/logical_modules/**/cycles.json` when the gate rejects
 - factorization/planner diagnostics when enabled
 - identifier rename queues when emitted by the pipeline
 
 Use manifests for progress reporting rather than rescanning generated JS by
-hand.
+hand. Use directory manifests for hierarchy-health evidence: incoming/outgoing
+semantic dependency counts by kind, and full symbol/file attribution for the
+boundary crossings that make a directory leaky or well-encapsulated. Treat
+them as graph evidence to pair with source reading, not as a substitute for
+understanding the implementation.
 
 ## Gate Discipline
 

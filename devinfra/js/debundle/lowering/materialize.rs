@@ -42,6 +42,7 @@ pub(super) struct MaterializedLogicalChunk {
     pub(super) files: Vec<JsFile>,
     pub(super) file_records: Vec<(String, FileRole)>,
     pub(super) applied: Vec<SelectedModuleLowering>,
+    pub(super) directory_dependency_facts: Vec<DirectoryDependencyFact>,
     pub(super) report: LogicalChunkReport,
 }
 
@@ -698,6 +699,9 @@ pub(super) fn materialize_logical_chunk(
             })
             .collect::<Vec<_>>()
     });
+    let directory_dependency_facts = time_phase!(timings, "build_directory_dependency_facts", {
+        build_directory_dependency_facts(chunk_id, &factorization)
+    });
     let timings = timings.into_durations(chunk_started.elapsed());
     let report = LogicalChunkReport {
         chunk_id: chunk_id.to_string(),
@@ -727,8 +731,63 @@ pub(super) fn materialize_logical_chunk(
         files,
         file_records,
         applied,
+        directory_dependency_facts,
         report,
     })
+}
+
+fn build_directory_dependency_facts(
+    chunk_id: &str,
+    factorization: &ChunkFactorization,
+) -> Vec<DirectoryDependencyFact> {
+    let mut facts = Vec::new();
+    for edge in factorization.analysis.owner_graph.iter_edges() {
+        let source_module = factorization.partition.of(edge.from);
+        let target_module = factorization.partition.of(edge.to);
+        if source_module == target_module {
+            continue;
+        }
+        let Some(source_file) = module_output_file(chunk_id, factorization, source_module) else {
+            continue;
+        };
+        let Some(target_file) = module_output_file(chunk_id, factorization, target_module) else {
+            continue;
+        };
+        let symbol = edge.reason.binding().map(|id| {
+            format!(
+                "{}#{}",
+                target_file,
+                factorization.analysis.export_name_for(&id.0)
+            )
+        });
+        facts.push(DirectoryDependencyFact {
+            source_file,
+            target_file,
+            edge_kind: edge.reason.kind(),
+            symbol,
+        });
+    }
+    facts.sort_by(|left, right| {
+        left.source_file
+            .cmp(&right.source_file)
+            .then_with(|| left.target_file.cmp(&right.target_file))
+            .then_with(|| left.edge_kind.cmp(&right.edge_kind))
+            .then_with(|| left.symbol.cmp(&right.symbol))
+    });
+    facts
+}
+
+fn module_output_file(
+    chunk_id: &str,
+    factorization: &ChunkFactorization,
+    module: ModuleId,
+) -> Option<String> {
+    let ModuleId(LogicalModuleIndex(idx)) = module;
+    factorization
+        .analysis
+        .logical_modules
+        .get(idx)
+        .map(|logical| join_module_path(&[chunk_id, &logical.target_file]))
 }
 
 pub(super) struct ApplyChunksResult {
@@ -798,6 +857,7 @@ pub(super) fn materialized_chunk_artifact(
         files,
         file_records,
         applied,
+        directory_dependency_facts,
         report,
     } = chunk;
     let chunk_name = chunk_table.name(chunk_id).to_string();
@@ -844,6 +904,7 @@ pub(super) fn materialized_chunk_artifact(
     let decomposition = ChunkDecompositionOutput {
         logical_modules,
         selected_module_lowerings: applied,
+        directory_dependency_facts,
     };
     (
         ChunkArtifact {
