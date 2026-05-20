@@ -97,6 +97,14 @@ in
   # caused periodic desktop stalls. See debug/rugged/periodic_stalls.md.
   ducktape.iioDebug.enable = false;
 
+  # Add Plasma as a parallel Wayland session for tablet/OSK testing while
+  # keeping the existing GNOME session and GDM display manager intact.
+  # See debug/rugged/osk_window_avoidance/report.md for the OSK investigation
+  # that motivates this temporary KDE probe.
+  services.desktopManager.plasma6.enable = true;
+  services.displayManager.defaultSession = "gnome";
+  programs.ssh.askPassword = lib.mkForce "${pkgs.seahorse}/libexec/seahorse/ssh-askpass";
+
   services = {
     avahi = {
       enable = true;
@@ -156,6 +164,9 @@ in
 
   # System packages
   environment.systemPackages = with pkgs; [
+    kdePackages.plasma-keyboard # Plasma virtual keyboard for OSK window-avoidance testing
+    maliit-framework # Alternative Wayland input-method stack for comparison
+    maliit-keyboard
     powertop # Power consumption analysis (useful for tablet battery)
     snapshot # GNOME camera app (uses libcamera/PipeWire natively)
     telegram-desktop
