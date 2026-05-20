@@ -22,6 +22,10 @@ resources:
   - talos-cloud-controller-manager/flux-kustomization.yaml
   - local-path-provisioner/flux-kustomization.yaml
   - local-path-provisioner/agent-rbac/flux-kustomization.yaml
+  - snapshot-controller/gitrepository.yaml
+  - snapshot-controller/crds/flux-kustomization.yaml
+  - snapshot-controller/app/flux-kustomization.yaml
+  - volsync/flux-kustomization.yaml
   - openebs-lvm/flux-kustomization.yaml
   - openebs-lvm/agent-rbac/flux-kustomization.yaml
   - longhorn/flux-kustomization.yaml
