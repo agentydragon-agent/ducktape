@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grocy-vallejo-valkey-ovh-replica-config
+data:
+  redis-additional.conf: |
+    replicaof grocy-vallejo-valkey-master.grocy-vallejo.svc.cluster.local 6379
