@@ -51,17 +51,44 @@ materializer with final read models.
 
 Near-term translation order:
 
-- Fix current smoke-slice correctness first: generic SP500 opening-lot sizing,
-  tax profile/ordinary income translation, outside-rent obligations, and the
-  current dataframe-derived response tables.
+- Fix current smoke-slice correctness first by moving opening public
+  securities into backend YAML config as actual positions: position id, account,
+  owner, symbol/security identity, market-model series mapping, units, starting
+  price, and cost basis. The sim translator should create concrete initial lots
+  and derive current value from `units * price[t=0]`, not interpret a scenario
+  `value_usd` as quantity.
+- Then add tax profile/ordinary income translation, outside-rent obligations,
+  and the current dataframe-derived response tables. Outside rent can start as
+  a flat compatibility obligation, but the target is indexing it to modeled
+  rent-cost series from `augur/model` for the applicable rental market: configure
+  current rent on the as-of date plus a model series key, then scale future rent
+  by the series ratio from that as-of value. Generalize this into a
+  path-indexed amount contract for other recurring cashflows instead of adding
+  one-off inflation/rent flags.
 - Add property purchase, mortgage origination, and property-tax translation
-  next, then run browser smoke coverage under `--backend-engine=sim`.
+  next, then run browser smoke coverage under `--backend-engine=sim`. Keep this
+  first property slice narrow: purchase is month 0, occupancy is forever when
+  selected, rental state does not transition mid-horizon, and any sale support
+  can be end-of-horizon only if needed for graphs. Property value should start
+  from the configured/list value and index by the modeled home-value series;
+  future-month purchase semantics are deferred. When native rental cashflows
+  land, tenant rent income for owned properties should use the same current-rent
+  plus modeled rent-cost series indexing contract as outside rent.
 - Add crypto positions and liquidity preferences after the property smoke is
   graphable.
 - Add private equity, tender/public/acquisition regimes, and partner property
   stakes after those concepts have native sim state and event streams.
 - Once the compatibility slice is broad enough for the frontend, replace it
   with a native sim request schema or keep it only for legacy imports.
+- Keep backend/sim accounting in nominal dollars through the cutover. Any
+  inflation-adjusted display belongs in a later postprocessing/read-model layer.
+- Derive bootstrap/UI defaults from YAML deployment config and remove or hide UI
+  toggles for facts that should remain config-only, especially initial
+  positions.
+- Split counterparties and accounts as the relevant cashflows land: landlord,
+  tenant, lender, seller, tax authority, HOA, insurer, brokerage, crypto
+  exchange, and other bookkeeping identities should be explicit rather than
+  collapsing into one generic external sink.
 
 ## Prior-Art Shape For Core Cleanup
 
@@ -419,19 +446,23 @@ Work:
 2. Expand sim smoke coverage for API-shaped requests: translate current
    request/catalog objects, sample model-owned bundles, run `augur/sim`, and
    assert durable sim invariants before changing the default frontend/API path.
-3. Continue core model cleanup only where it reduces switchover risk:
+3. Keep the switchover slice scoped: support month-0 property purchase,
+   forever occupancy when selected, no rental start/stop transition, nominal
+   backend dollars, and config-owned initial positions. Unsupported frontend
+   metrics/controls can be hidden until their native sim data exists.
+4. Continue core model cleanup only where it reduces switchover risk:
    account-aware obligations/funding, failure/default semantics, and
    ledger/accounting detail as the source of truth for monthly report arrays.
-4. Persist and harden trajectory, path, cause, and model-governance identities
+5. Persist and harden trajectory, path, cause, and model-governance identities
    so a selected rollout can be reproduced and audited from scenario input
    through market evidence and policy decisions.
-5. Keep expanding ordered actor policy programs through explicit decision and
+6. Keep expanding ordered actor policy programs through explicit decision and
    instruction traces, now that execution order is the runtime path.
-6. Move public generic data toward typed config resources: local
+7. Move public generic data toward typed config resources: local
    regulation/tax defaults, catalog rows, market config, and eventually a
    deployment-supplied portfolio/account YAML contract. Private values stay in
    downstream repos.
-7. Wire the generated Augur OpenAPI/browser schema target into browser state
+8. Wire the generated Augur OpenAPI/browser schema target into browser state
    normalization and request mapping, then split app/frontend/server packages
    after the core contracts and server cleanup settle.
 

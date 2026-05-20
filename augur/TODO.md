@@ -17,8 +17,11 @@ generic backlog rather than a second ordered roadmap.
       frontend graph tables from sim dataframes. Remaining cutover work is to
       broaden the translator/materialized response beyond the initial
       cash/SP500 smoke slice and then make sim the default production owner.
-      The migration inventory for current API fields lives in
-      `augur/sim/TODO.md#api-to-sim-translation-inventory`.
+      The next translator slice should move opening public securities into
+      backend YAML config as actual units, starting prices, and cost basis,
+      with scenarios referencing those configured assets rather than carrying
+      editable `value_usd` buckets. The migration inventory for current API
+      fields lives in `augur/sim/TODO.md#api-to-sim-translation-inventory`.
 - [ ] **PE valuation should actually be sampled** (Priority 3 in
       `plans/roadmap.md`). The market provider holds private-equity marks
       flat at 1.0 for the entire horizon. The fit is **open design work**
@@ -54,9 +57,42 @@ generic backlog rather than a second ordered roadmap.
       asset IDs/URLs backed by object storage or a database-like asset
       table, so deployments do not need to bake private media into
       frontend images.
-- [ ] Inflation-index the `OccupancyPlan.outside_rent_monthly_usd` knob.
-      Today the monthly amount is flat; a real horizon needs CPI scaling
-      (or per-actor wage-index scaling).
+- [ ] Index `OccupancyPlan.outside_rent_monthly_usd` to modeled rent costs.
+      Today the monthly amount is flat; a real horizon should be configured as
+      "rent is `$X` on the scenario/config as-of date, then moves linearly with
+      this `augur/model` rent-cost series for this rental market." In sim terms,
+      future rent should be derived from the configured base rent multiplied by
+      `rent_cost_series[t] / rent_cost_series[as_of]`. CPI or wage indexing can
+      be model choices behind that series, not hard-coded sim behavior.
+- [ ] Apply the same rent-cost indexing contract to tenant rent income for
+      owned properties. Once sim has native rental cashflows, configured tenant
+      rent should start from today's rent and scale by the modeled rent-cost
+      series for the property's rental market, instead of staying flat or using
+      hard-coded CPI/wage growth.
+- [ ] Add a shared path-indexed amount contract for model-driven cashflows:
+      base amount on the config/scenario as-of date plus a model series key,
+      with future amounts scaled by `series[t] / series[as_of]`. Use it for
+      rent, tenant rent, inflation-adjusted spend, and later recurring property
+      costs.
+- [ ] Drive owned-property mark-to-market values from configured purchase/list
+      value plus modeled home-value series. For the first sim backend cutover,
+      assert property purchase happens at month 0; defer future purchase-price
+      semantics until there is a real product case.
+- [ ] Keep the first sim backend property lifecycle slice deliberately narrow:
+      no mid-horizon purchase, no rental start/stop transition, occupancy is
+      forever when selected, and sale can be end-of-horizon only if needed for
+      graphable outputs.
+- [ ] Split economic counterparties and accounts in sim scenarios. Landlord,
+      tenant, lender, seller, tax authority, HOA, insurer, brokerage, and crypto
+      exchange identities should be explicit enough for accounting/reporting,
+      with escrow omitted until a real workflow requires it.
+- [ ] Treat backend and sim amounts as nominal dollars for now. If real-dollar
+      views are needed later, add them as response/read-model postprocessing
+      rather than alternate simulator accounting.
+- [ ] Make YAML deployment config the source of truth for initial positions and
+      other facts that are not product knobs. Bootstrap/UI defaults should
+      derive from config, and unsupported scenario toggles can be removed or
+      hidden while the sim cutover is narrowed.
 
 ## Refactor D rollup (engine-internal polars migration)
 
@@ -262,10 +298,11 @@ Followups still on the table:
       respects all three. The browser still only exposes a single
       "tender-eligible" PE input shape — no UI for setting the regime,
       no UI for entering a lockup or acquisition event. Wire it through.
-- [ ] Add a top-level reporting toggle for nominal vs inflation-adjusted USD.
-      Amounts, charts, tables, and summary metrics should make clear whether
-      they are shown in nominal future dollars or real/inflation-adjusted
-      dollars.
+- [ ] Much later: add real-dollar reporting as a postprocessing/read-model
+      layer. The backend and simulator should count in nominal dollars through
+      the sim cutover; if/when inflation-adjusted views are useful, add a
+      reporting toggle that clearly labels nominal future dollars versus real
+      dollars without changing simulator accounting.
 - [ ] Clean up redundant result-mode chips. Once a page-level header clearly
       says the user is looking at a distribution or a trajectory, individual
       child cards should not keep repeating `DISTRIBUTION`/`TRAJECTORY` badges

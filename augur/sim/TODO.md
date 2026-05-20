@@ -101,7 +101,9 @@ Already covered by the guarded sim backend smoke:
 
 - [x] Actors become `augur.sim.scenario.Agent` rows.
 - [x] Checking account balances become `InitialAccountBalance` rows.
-- [x] Generic SP500 positions become `InitialLot` rows.
+- [x] Request-local generic SP500 positions become `InitialLot` rows for the
+      first smoke slice. This is a compatibility stopgap; durable translation
+      should source real public-security lots from backend config.
 - [x] Flat `MonthlySpendPolicy` becomes a recurring hard obligation.
 - [x] SP500-only `CheckingFloorSellPublicStockPolicy` becomes a
       `LiquidityPolicy`.
@@ -113,21 +115,59 @@ Already covered by the guarded sim backend smoke:
 
 Translator gaps to migrate next:
 
-- [ ] Fix generic SP500 opening-lot sizing. The translator currently treats
-      `value_usd` as quantity under an implicit month-0 price of 1.0; durable
-      translation should size quantity from the sampled month-0 price or make
-      that normalization explicit in the market model contract.
+- [ ] Add a first-class path-indexed amount shape for recurring sim cashflows.
+      The shared contract should be "amount is `$X` on the scenario/config
+      as-of date, then scales by `model_series[t] / model_series[as_of]`."
+      Outside rent, tenant rent, inflation-adjusted spend, and eventually
+      recurring property costs should use this shape instead of each inventing
+      a special-case growth flag.
+- [ ] Define the as-of anchoring rule for every model-driven level series.
+      Public securities, home value, rent, crypto, private-equity marks, and
+      inflation-indexed amounts should all say whether the configured value is
+      a month-0 level, an as-of-date level projected into month 0, or a fixed
+      contract value. The initial cutover can require the config as-of date to
+      equal simulation month 0.
+- [ ] Add backend-configured public securities to `AugurConfig` /
+      `FinanceSnapshot`: position id, account id, owner actor id, label,
+      symbol/security identity, market-model series mapping (for example
+      SP500-proxy dynamics), units, starting price, and cost basis. Opening
+      holdings are facts about the deployment snapshot, not scenario knobs.
+- [ ] Replace request-local `GenericSp500StockPosition.value_usd` translation
+      with config-sourced initial lots. The translator should create
+      `InitialLot(quantity=units, cost_basis_per_unit_usd=cost_basis / units)`
+      and the model should produce a matching concrete asset price path that
+      starts at the configured price, so current value is derived as
+      `units * price[t=0]`.
+- [ ] Keep legacy aggregate public-equity values only as UI/bootstrap
+      compatibility. `sp500_proxy_portfolio_usd`, `wealthfront_sp500_usd`, and
+      similar display totals may be computed from configured positions, but
+      sim should not treat a dollar value as a lot quantity.
 - [ ] Translate tax profiles: filing status, taxing jurisdictions,
       prior-year tax for estimated payments, annual ordinary income as a
       recurring taxable income source, and any standard-deduction overrides the
       sim tax layer supports.
-- [ ] Translate outside rent into recurring obligations. Inflation-indexed
-      outside rent should wait for exogenous CPI/wage-indexed obligation
-      amounts instead of baking another flat path.
+- [ ] Translate outside rent into recurring obligations whose amount can be
+      indexed to modeled rent costs. The first translator slice may keep the
+      current flat amount, but durable outside-rent behavior should consume an
+      `augur/model` rent-cost series for the applicable rental market. The
+      config shape should be a current base rent on the scenario/config as-of
+      date plus a rent-cost model series key; sim then computes monthly rent as
+      `base_rent * rent_cost_series[t] / rent_cost_series[as_of]`. CPI or wage
+      indexing can be model choices behind that series, not hard-coded sim
+      behavior.
 - [ ] Translate property selection and catalog defaults into
       `ScheduledPropertyPurchase`: property id, location id, purchase price,
       buyer/seller bookkeeping agents, down payment, purchase closing cost, and
       ownership percentage.
+- [ ] For the first backend cutover, assert property purchase is always month 0. Future-month purchases need explicit semantics for whether the
+      purchase price is a fixed contract price or today's configured price
+      indexed by a home-value model path; defer that until a real product case
+      needs it.
+- [ ] Drive owned-property value from modeled home-value series. A selected
+      property should start from its configured/list purchase value at the
+      as-of/month-0 anchor, then mark to market by the applicable
+      `home_value:<location>` series. Future sale proceeds should use the same
+      value path unless an explicit sale contract price exists.
 - [ ] Translate financing into `MortgageFinancing`: loan amount, rate, term,
       lender agent/account, payment account, and liability id. Mortgage-rate
       sampling remains a market-model/sim capability follow-up.
@@ -138,6 +178,14 @@ Translator gaps to migrate next:
       and stop windows, vacancy assumptions, management fees, and leasing fees.
       These should become property cashflow policies or recurring
       income/obligation streams over sim state, not standalone core arrays.
+      Tenant rent income should use the same rent-cost indexing contract as
+      outside rent: configured current rent on the as-of date plus a
+      property/rental-market rent-cost model series, with future tenant rent
+      scaled by `rent_cost_series[t] / rent_cost_series[as_of]`.
+- [ ] Keep rental lifecycle transitions out of the initial cutover. For now,
+      assume the scenario's selected rental state applies for the whole horizon;
+      later browser timeline work can lower rental start/stop controls into
+      explicit sim events.
 - [ ] Translate special assessments into scheduled obligations.
 - [ ] Translate explicit portfolio trade events into scheduled asset
       purchases/sales once sim has the needed buy-side accounting.
@@ -159,14 +207,41 @@ Translator gaps to migrate next:
       property sale, mortgage origination, move residence, start/stop rental,
       PE IPO, and PE acquisition. Events with no native sim semantics should
       stay hard errors.
+- [ ] Keep browser timeline lowering deliberately narrow for the first cutover:
+      property purchase happens at month 0, owner occupancy lasts forever when
+      selected, and sale may be modeled only as an end-of-horizon event if the
+      response needs it. Mid-horizon purchases, moves, and rental start/stop are
+      later sim-event work.
+- [ ] Split economic counterparties into explicit agents/accounts. Landlord,
+      tenant, lender, seller, tax authority, HOA, insurer, and other sinks
+      should not all collapse into a generic `external` account once their
+      cashflows matter in reports or taxes.
+- [ ] Support the account types the YAML snapshot actually needs: checking,
+      taxable brokerage, crypto exchange, lender/loan-side accounts, and
+      bookkeeping counterparty accounts. Escrow can stay out of scope unless a
+      real workflow needs it; most account types can initially be metadata plus
+      routing, not bespoke settlement logic.
 - [ ] Expand required-market-series introspection to cover inflation, home
-      value, rent, crypto prices, private-equity marks, private-equity
-      opportunity/regime events, and mortgage/rate paths.
+      value, owned-property rent, outside-rent cost, crypto prices,
+      private-equity marks, private-equity opportunity/regime events, and
+      mortgage/rate paths.
+- [ ] Keep backend/sim results nominal-dollar only for the cutover. Real-dollar
+      or inflation-adjusted display should be a later postprocessing/read-model
+      layer, not alternate simulator accounting.
+- [ ] Let the frontend omit unsupported legacy metrics during the cutover. The
+      sim response should expose only metrics it can derive honestly; property,
+      tax, crypto, private-equity, and detail streams can be filled back in as
+      their native sim frames land.
+- [ ] Make YAML configuration the source of truth for initial positions and
+      other deployment facts. Bootstrap/UI defaults should be derived from the
+      loaded config; scenario controls may drop or hide toggles for fields that
+      are not meant to be user-twiddled in the product.
 
 Suggested migration order:
 
-- [ ] First: generic SP500 sizing, tax profile/ordinary income, outside rent,
-      and the current SP500 spend smoke response shape.
+- [ ] First: backend-configured public securities with units/price/basis,
+      concrete sim lots/price paths for those securities, tax profile/ordinary
+      income, outside rent, and the current SP500 spend smoke response shape.
 - [ ] Second: property purchase, mortgage origination, property tax, and
       browser smoke under `--backend-engine=sim`.
 - [ ] Third: crypto positions and liquidity preferences.
