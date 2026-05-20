@@ -458,13 +458,11 @@ fn normalize_url_path(url: &str) -> Result<String> {
 }
 
 fn prepare_harness_output_dir(layout: &DebundleOutputLayout) -> Result<()> {
-    if layout.root().exists() {
-        if !layout.root().is_dir() {
-            bail!(
-                "Output path exists and is not a directory: {}",
-                layout.root().display()
-            );
-        }
+    if layout.root().exists() && !layout.root().is_dir() {
+        bail!(
+            "Output path exists and is not a directory: {}",
+            layout.root().display()
+        );
     }
     let app_root = layout.app_root();
     fs::create_dir_all(app_root)?;

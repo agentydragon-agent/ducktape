@@ -1250,30 +1250,30 @@ fn build_directory_dependency_manifests(
                     continue;
                 }
                 let accumulator = directories.entry(dir.clone()).or_default();
-                accumulator.outgoing.add_fact(
-                    dir,
-                    target_dir.clone(),
-                    &fact.source_file,
-                    &fact.target_file,
-                    &fact.target_file,
-                    fact.edge_kind,
-                    fact.symbol.as_deref(),
-                );
+                accumulator.outgoing.add_fact(DirectionalDirectoryFact {
+                    source_dir: dir,
+                    target_dir: target_dir.clone(),
+                    source_file: &fact.source_file,
+                    target_file: &fact.target_file,
+                    external_file: &fact.target_file,
+                    edge_kind: fact.edge_kind,
+                    symbol: fact.symbol.as_deref(),
+                });
             }
             for dir in directory_ancestors_for_file(&fact.target_file) {
                 if path_is_in_directory(&fact.source_file, &dir) {
                     continue;
                 }
                 let accumulator = directories.entry(dir.clone()).or_default();
-                accumulator.incoming.add_fact(
-                    source_dir.clone(),
-                    dir,
-                    &fact.source_file,
-                    &fact.target_file,
-                    &fact.source_file,
-                    fact.edge_kind,
-                    fact.symbol.as_deref(),
-                );
+                accumulator.incoming.add_fact(DirectionalDirectoryFact {
+                    source_dir: source_dir.clone(),
+                    target_dir: dir,
+                    source_file: &fact.source_file,
+                    target_file: &fact.target_file,
+                    external_file: &fact.source_file,
+                    edge_kind: fact.edge_kind,
+                    symbol: fact.symbol.as_deref(),
+                });
             }
         }
     }
@@ -1377,35 +1377,36 @@ struct DirectionalDirectoryAccumulator {
     edges: BTreeMap<(String, String), DirectoryEdgeAccumulator>,
 }
 
+struct DirectionalDirectoryFact<'a> {
+    source_dir: String,
+    target_dir: String,
+    source_file: &'a str,
+    target_file: &'a str,
+    external_file: &'a str,
+    edge_kind: DepKind,
+    symbol: Option<&'a str>,
+}
+
 impl DirectionalDirectoryAccumulator {
-    fn add_fact(
-        &mut self,
-        source_dir: String,
-        target_dir: String,
-        source_file: &str,
-        target_file: &str,
-        external_file: &str,
-        edge_kind: DepKind,
-        symbol: Option<&str>,
-    ) {
-        let kind = dep_kind_key(edge_kind);
+    fn add_fact(&mut self, fact: DirectionalDirectoryFact<'_>) {
+        let kind = dep_kind_key(fact.edge_kind);
         self.edge_count += 1;
         *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
-        if let Some(symbol) = symbol {
+        if let Some(symbol) = fact.symbol {
             *self.symbols.entry(symbol.to_string()).or_default() += 1;
         }
         *self
             .external_files
-            .entry(external_file.to_string())
+            .entry(fact.external_file.to_string())
             .or_default() += 1;
         self.edges
-            .entry((source_dir.clone(), target_dir.clone()))
+            .entry((fact.source_dir.clone(), fact.target_dir.clone()))
             .or_insert_with(|| DirectoryEdgeAccumulator {
-                source_dir,
-                target_dir,
+                source_dir: fact.source_dir,
+                target_dir: fact.target_dir,
                 ..Default::default()
             })
-            .add_fact(source_file, target_file, kind, symbol);
+            .add_fact(fact.source_file, fact.target_file, kind, fact.symbol);
     }
 
     fn into_summary(self) -> DirectionalSummary {
