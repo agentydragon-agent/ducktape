@@ -92,14 +92,6 @@ class SampledMarketBundle:
         )
 
 
-class ScalarMarketModel(Protocol):
-    """One market's marginal model, used inside independent compositions."""
-
-    def sample_levels(self, *, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
-        """Return levels shaped `(rollout_count, horizon_months + 1)`."""
-        ...
-
-
 class JointMarketModel(Protocol):
     """Joint market model API consumed by the simulator."""
 

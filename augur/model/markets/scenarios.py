@@ -49,8 +49,3 @@ class Scenarios:
 def historical_log_returns(historical: HistoricalSeries) -> np.ndarray:
     """diff(log(levels), axis=time) → (T, F)."""
     return np.diff(np.log(historical.levels), axis=0)
-
-
-def scenario_log_returns(scenarios: Scenarios) -> np.ndarray:
-    """diff(log(multipliers), axis=time) → (n_paths, n_months, F)."""
-    return np.diff(np.log(scenarios.multipliers), axis=1)

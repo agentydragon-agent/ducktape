@@ -176,11 +176,6 @@ def _load_properties(config: AugurConfig, *, location_by_id: dict[str, Location]
     return _apply_property_assets(config, properties)
 
 
-def load_properties(config: AugurConfig) -> tuple[Property, ...]:
-    locations = _locations_for_config(config)
-    return _load_properties(config, location_by_id={location.id: location for location in locations})
-
-
 def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
     available_locations = _locations_for_config(config)
     location_by_id = {location.id: location for location in available_locations}

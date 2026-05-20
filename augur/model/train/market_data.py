@@ -115,20 +115,6 @@ def calibrate_market_path_priors(
     return calibration, priors
 
 
-def merge_market_path_priors(configured: dict[str, Any], evidence: MarketEvidence) -> dict[str, float]:
-    derived_keys = {
-        f"{factor_name}{suffix}"
-        for factor_name in evidence.factor_names
-        for suffix in DATA_DERIVED_MARKET_PATH_PRIOR_SUFFIXES
-    }
-    merged = {
-        key: value for key, value in configured.items() if key not in derived_keys and key != "mortgage30_rate_pct"
-    }
-    merged.update(evidence.calibrated_market_path_priors)
-    merged["mortgage30_rate_pct"] = evidence.current_mortgage30_rate_pct
-    return {key: float(value) for key, value in merged.items()}
-
-
 def _read_fred_series(path: Path, column: str) -> pd.Series:
     frame = pd.read_csv(path)
     if "observation_date" not in frame.columns or column not in frame.columns:

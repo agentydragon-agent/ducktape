@@ -60,11 +60,6 @@ def load_fred_only_evidence(config: MarketConfig, base_dir: Path) -> tuple[Histo
     return load_evidence(config, base_dir, fred_only=True)
 
 
-def load_fred_only_evidence_from_path(config_path: Path | None = None) -> tuple[HistoricalSeries, MarketEvidence]:
-    path = (config_path or DEFAULT_CONFIG_PATH).resolve()
-    return load_fred_only_evidence(load_market_config(path), path.parent)
-
-
 def load_historical(config_path: Path | None = None, *, fred_only: bool = False) -> HistoricalSeries:
     return load_evidence_from_path(config_path, fred_only=fred_only)[0]
 
