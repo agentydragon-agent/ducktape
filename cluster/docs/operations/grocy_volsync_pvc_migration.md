@@ -1,7 +1,8 @@
 # Grocy VolSync PVC Migration
 
 Status: smoke-tested with disposable PVCs on 2026-05-20; Grocy SF and Grocy
-Vallejo migrated to OVH and verified.
+Vallejo migrated to OVH and verified. Old Hetzner PVCs were removed from
+desired state after cutover.
 
 This runbook moves Grocy application data from Hetzner local-path PVCs to OVH
 Kimsufi local-path PVCs using VolSync `rsyncTLS`.
@@ -107,12 +108,11 @@ The Grocy application deployment must use `strategy.type: Recreate`. It does in
 
 ## Phase 1: Prepare Destination
 
-For one instance, add an overlay-local manifest containing:
+For one instance, add an overlay-local `pvc.yaml` containing the permanent
+destination PVC, and add a separate `volsync-migration.yaml` containing the
+temporary `ReplicationDestination`.
 
-- destination PVC `grocy-config-ovh`
-- `ReplicationDestination`
-
-Example for `grocy-sf`:
+Example permanent PVC for `grocy-sf`:
 
 ```yaml
 apiVersion: v1
@@ -126,7 +126,11 @@ spec:
   resources:
     requests:
       storage: 1Gi
----
+```
+
+Example temporary `ReplicationDestination` for `grocy-sf`:
+
+```yaml
 apiVersion: volsync.backube/v1alpha1
 kind: ReplicationDestination
 metadata:

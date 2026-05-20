@@ -60,7 +60,7 @@ spec:
       volumes:
         - name: config
           persistentVolumeClaim:
-            claimName: grocy-config
+            claimName: grocy-config-ovh
         - name: settingoverrides
           configMap:
             name: grocy-settingoverrides

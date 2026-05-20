@@ -4,6 +4,7 @@ namespace: grocy-vallejo
 resources:
   - ../../app-base
   - namespace.yaml
+  - pvc.yaml
   - volsync-verify-job.yaml
   - volsync-migration.yaml
 patches:
@@ -21,7 +22,3 @@ patches:
           spec:
             nodeSelector:
               topology.kubernetes.io/zone: hil-ovh
-            volumes:
-              - name: config
-                persistentVolumeClaim:
-                  claimName: grocy-config-ovh
