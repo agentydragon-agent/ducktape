@@ -51,8 +51,9 @@ This audit is grounded in the current Augur files:
   bundle and emits state/event frames.
 - `augur/api/sim_response.py`: derives the current compatibility graph tables
   from sim dataframes until final projection/read models replace them.
-- `augur/core/policy_runtime.py`: defines `ActorPolicyProgram`, instruction
-  batches, application results, ledger batches, and partner-ownership accrual.
+- Deleted legacy `augur/core/policy_runtime.py`: previously defined
+  `ActorPolicyProgram`, instruction batches, application results, ledger
+  batches, and partner-ownership accrual.
 - `augur/model/`: contains evidence loading, market model protocols,
   historical series, and sim-native joint market models.
 
@@ -285,7 +286,7 @@ decisions, actions, and trace output.
 Current Augur alignment:
 
 - `Policy` is a discriminated union.
-- `ActorPolicyProgram` groups enabled actor policies.
+- Ordered actor-policy programs group enabled actor policies.
 - Row-level `SimulationPolicyDecision` records decisions such as monthly spend,
   public-stock sale, private-equity sale, and partner contribution.
 - The roadmap explicitly calls for ordered actor policy programs.

@@ -38,26 +38,6 @@ py_library(
 )
 
 py_library(
-    name = "posting_schemas_py",
-    srcs = ["posting_schemas.py"],
-    deps = [
-        ":accounting_py",
-    ],
-)
-
-py_library(
-    name = "accounting_tables_py",
-    srcs = ["accounting_tables.py"],
-    deps = [
-        ":accounting_py",
-        ":policy_runtime_py",
-        ":posting_schemas_py",
-        "@pypi//numpy",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
     name = "scenario_set_py",
     srcs = ["scenario_set.py"],
     deps = [
@@ -96,39 +76,6 @@ py_library(
 )
 
 py_library(
-    name = "annual_tax_py",
-    srcs = ["annual_tax.py"],
-    data = ["annual_tax_parameters.yaml"],
-    deps = [
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "policy_runtime_py",
-    srcs = ["policy_runtime.py"],
-    deps = [
-        ":posting_schemas_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "portfolio_py",
-    srcs = ["portfolio.py"],
-    deps = [
-        ":scenario_set_py",
-        ":schemas_py",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
     name = "finance_py",
     srcs = ["finance.py"],
     deps = [
@@ -154,20 +101,6 @@ py_test(
     srcs = ["accounting_test.py"],
     deps = [
         ":accounting_py",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "accounting_tables_test",
-    srcs = ["accounting_tables_test.py"],
-    deps = [
-        ":accounting_py",
-        ":accounting_tables_py",
-        ":policy_runtime_py",
-        "@pypi//numpy",
-        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -213,42 +146,6 @@ py_test(
         ":local_regulation_py",
         ":scenario_set_py",
         ":scenario_tax_defaults_py",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "annual_tax_test",
-    srcs = ["annual_tax_test.py"],
-    deps = [
-        ":annual_tax_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "policy_runtime_test",
-    srcs = ["policy_runtime_test.py"],
-    deps = [
-        ":policy_runtime_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "portfolio_test",
-    srcs = ["portfolio_test.py"],
-    data = ["testdata/portfolio.example.yaml"],
-    deps = [
-        ":portfolio_py",
-        ":scenario_set_py",
-        "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

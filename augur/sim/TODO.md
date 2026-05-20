@@ -249,6 +249,46 @@ Suggested migration order:
       mortgage payoff, sale proceeds split, occupancy changes,
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,
       SALT cap, and qualified-residence mortgage-interest deduction.
+- [ ] Reintroduce annual federal + California income-tax allocation natively
+      only when sim has the underlying realized-income feeds. The deleted
+      `augur/core/annual_tax.py` path handled externalized tax-parameter
+      validation, federal/CA standard deductions and ordinary brackets,
+      federal long-term capital-gain tiers, NIIT, unrecaptured §1250 gain,
+      California behavioral-health surtax, SALT cap, qualified-residence
+      mortgage-interest cap, and annual allocation of tax back to monthly
+      property-sale, public-security-sale, private-equity-sale, and rental
+      income sources. The sim version should be jurisdiction reference data
+      plus annual tax accrual/settlement over realized sim events, not a
+      core-shaped array helper.
+- [ ] Add a sim-native ordered policy-program surface only if richer decisions
+      need it. The deleted `augur/core/policy_runtime.py` path had ordered
+      per-actor policy programs, monthly-spend debit decisions,
+      checking-floor public-stock sale instructions, private-equity
+      sale-opportunity decisions/applications, crypto and public-security sale
+      appliers, partner contribution/ownership accrual, and property
+      operating-cashflow applications. Existing sim obligations and liquidity
+      policies cover part of this; missing behavior should land as typed sim
+      decisions/events with explicit cause IDs.
+- [ ] Consider a sim-native ledger/read-model storage layer once consumers need
+      double-entry projections. The deleted core accounting tables used Polars
+      dimension/fact tables for chart accounts, journal-entry kinds, journal
+      entries, postings, balance snapshots, rollout identity, and materialized
+      Pydantic compatibility rows. Sim should keep event/state frames as the
+      source of truth and derive compact `ProjectionRun` slices first; add
+      double-entry tables only as a tested reporting/read-model layer.
+- [ ] Consider a declarative sim posting-schema layer only if ledger
+      projections need repeated double-entry templates. The deleted core
+      posting schemas described opening balances, public-security/crypto/
+      private-equity/property sales, tax accrual/payment, partner
+      contribution and principal-credit allocation, mortgage payment, cash
+      debit obligation settlements, monthly spend, and property operating
+      entries.
+- [ ] Mine the deleted core `PortfolioStatement` only for config-ingestion
+      ideas, not as a runtime model. The current user-friendly deployment YAML
+      lives in `augur/api/portfolio.py`; future sim/config work may still want
+      custody/source metadata, valuation provenance, tax-lot cost basis,
+      account references, public-security lots, crypto lots, private-equity
+      lots, and tender-window metadata.
 - [ ] Treat `augur/model/x/legacy_market_models/` as non-runtime code. Port
       only models selected by production or used as representative joint-model
       coverage; delete or keep the rest quarantined until a fresh design pass.

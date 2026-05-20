@@ -349,10 +349,10 @@ programmatically or via their own user-facing config; jurisdiction
 
 - location data are repo-checked-in reference data.
 
-Existing precedent: `augur/core/annual_tax_parameters.yaml` already
-holds the legacy engine's federal + CA bracket data. The new sim
-extends the pattern to locations and any other "static reference
-data" that varies with real-world law and place.
+The deleted legacy core annual-tax path used this pattern for federal and
+California bracket data. The new sim should own its reference data directly and
+extend the same idea to locations and any other "static reference data" that
+varies with real-world law and place.
 
 ## Scenarios — bottom up
 

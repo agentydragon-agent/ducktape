@@ -55,9 +55,11 @@ ledger/snapshot/accounting-detail rows.)
 2. Annual-tax parameter extraction should remain one source of truth, not become
    a JSON/YAML transition seam.
 
-   The landed shape uses `augur/core/annual_tax_parameters.yaml` as the only
-   parameter file, with `BUILD.bazel` data pointing at that file and the Python
-   loader letting YAML/Pydantic exceptions propagate directly.
+   The deleted legacy core shape used `augur/core/annual_tax_parameters.yaml`
+   as the only parameter file, with `BUILD.bazel` data pointing at that file
+   and the Python loader letting YAML/Pydantic exceptions propagate directly.
+   If the tax layer is revived in sim, keep the same "one reference-data file
+   plus typed validation" property rather than a JSON/YAML transition seam.
 
    Risk: extracting tax tables out of Python is aligned with the TODO to move
    pure data into parsed configuration. Keep this as one parameter file with no
@@ -65,20 +67,20 @@ ledger/snapshot/accounting-detail rows.)
    YAML/Pydantic errors propagate is better than wrapping them in generic "could
    not read config" exceptions that restate the traceback.
 
-   Keep if: there is exactly one parameter file, `BUILD.bazel` points at that
-   file, validation rejects missing statuses/brackets, and tax behavior tests
-   still prove representative calculations.
+   Keep if: there is exactly one sim-owned reference-data file, Bazel points at
+   that file, validation rejects missing statuses/brackets, and tax behavior
+   tests still prove representative calculations.
 
    Collapse if: both JSON and YAML remain, or runtime code has to probe
    multiple filenames. Pick one format and delete the other before merging.
 
 3. Avoid literal "checked-in data equals itself" tests for extracted tax tables.
 
-   The landed test mutates `_ANNUAL_TAX_PARAMETERS.model_dump(mode="json")` and
-   verifies that missing filing statuses are rejected. That is a useful schema
-   guard. Do not add the lower-value variant: a test that loads
-   `annual_tax_parameters.yaml` and asserts every checked-in bracket/deduction
-   equals the same literal values copied into the test.
+   The deleted legacy test mutated parsed tax parameters and verified that
+   missing filing statuses were rejected. That was a useful schema guard. Do
+   not add the lower-value variant: a test that loads a checked-in tax data
+   file and asserts every bracket/deduction equals the same literal values
+   copied into the test.
 
    Risk: such tests become change detectors for a data file, not semantic tax
    tests. They add maintenance friction while proving only that two checked-in

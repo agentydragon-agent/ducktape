@@ -93,6 +93,15 @@ generic backlog rather than a second ordered roadmap.
       other facts that are not product knobs. Bootstrap/UI defaults should
       derive from config, and unsupported scenario toggles can be removed or
       hidden while the sim cutover is narrowed.
+- [ ] Consider whether the deleted legacy market models should be revived as
+      sim-native `augur/model` implementations where they are actually useful:
+      `var` as a lighter joint macro baseline, `dcc_garch` for time-varying
+      liquid-market/crypto volatility and correlations, `wilkie` for
+      actuarial long-horizon inflation/equity/rate scenarios, and `bootstrap`
+      for empirical stress/history resampling. Do not revive the old
+      `macro_market_bundle_provider` shape directly; mine it only for data
+      loading/config ideas after the native `SampledMarketBundle` API is the
+      target.
 
 ## Response wire surface
 

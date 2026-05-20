@@ -936,11 +936,9 @@ class Acquisition(ApiModel):
 
     A forced conversion: at `event_month`, the entire remaining position is
     converted to cash at `cash_per_unit_usd`, regardless of any policy
-    decision. Realized gain (proceeds minus remaining cost basis) flows into
-    the existing annual sale-tax allocation as a long-term capital gain (the
-    `annual_sale_tax_allocation` machinery doesn't currently model
-    short-term/long-term split for PE; all PE realized gains receive
-    long-term treatment).
+    decision. Realized gain (proceeds minus remaining cost basis) is intended
+    to flow into the sim tax layer as a long-term capital gain until a richer
+    short-term/long-term PE basis model exists.
     """
 
     regime_type: Literal[LiquidityRegimeType.ACQUISITION] = LiquidityRegimeType.ACQUISITION
@@ -957,7 +955,7 @@ class PrivateEquityPosition(ApiModel):
     `units` is required and positive. `value_usd` is optional:
 
     - When `value_usd` is set, it is the authoritative month-0 mark — e.g. a tender-offer
-      or manual mark carried through from a `PortfolioStatement.PrivateEquityLot`.
+      or manual mark carried through from deployment config.
     - When `value_usd` is absent, the month-0 mark is derived from
       `units × SampledMarketBundle.metadata["current_private_equity_price_usd"]`.
       Callers without an independent mark (such as the browser UI, which stores

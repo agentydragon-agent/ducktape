@@ -239,9 +239,8 @@ def test_private_equity_position_accepts_units_only() -> None:
 
 def test_private_equity_liquidity_regime_defaults_to_liquidity_event_only() -> None:
     """Existing scenarios that omit `liquidity_regime` must continue to behave as
-    `LiquidityEventOnly` — that's the discriminated-union default, the schema
-    contract pre-existing scenarios rely on, and what `PortfolioStatement`-derived
-    positions get."""
+    `LiquidityEventOnly` — that's the discriminated-union default and the schema
+    contract pre-existing scenarios rely on."""
     body = _scenario_set_body("sf_house")
     body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
         {
