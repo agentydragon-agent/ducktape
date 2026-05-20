@@ -8,13 +8,16 @@ Last live inventory refresh: 2026-05-20.
 This note covers two related tasks:
 
 - deciding what blocks decommissioning `talos-vps-worker-0` and
-  `talos-vps-worker-1`;
+  `talos-vps-worker-1`, plus what still lives on other Hetzner/VPS-backed
+  storage;
 - moving operator-managed Valkey state to Kimsufi local storage through Flux.
 
-## Current VPS Worker PVCs
+## Current Hetzner/VPS PVCs
 
-These PVCs are currently mounted by pods on the two VPS workers. PV names are
+These PVCs are currently still backed by Hetzner/VPS storage. PV names are
 included because local-path PVs are bound to a specific node and host path.
+
+No operator-managed MCP Valkey PVCs remain on Hetzner storage.
 
 ### `talos-vps-worker-0`
 
@@ -27,11 +30,36 @@ included because local-path PVs are bound to a specific node and host path.
 
 ### `talos-vps-worker-1`
 
-| PV                                         | PVC                          | Pod                         | Purpose                                                                        | Notes                                                                                                                                                                   |
-| ------------------------------------------ | ---------------------------- | --------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pvc-c31a81bb-5802-4aff-a267-8befa8f27f81` | `grocy-sf/grocy-config`      | `grocy-77fcb8bdd-grzmj`     | Grocy SF application config/data, including SQLite and uploads under `/config` | Deployment uses `Recreate` and region `hil`; migration needs copy/restore or accepted app downtime.                                                                     |
-| `pvc-d1bb043e-a3f1-4d18-999e-0bb2da5a804f` | `grocy-vallejo/grocy-config` | `grocy-77fcb8bdd-tmq9z`     | Grocy Vallejo application config/data under `/config`                          | Same pattern as Grocy SF.                                                                                                                                               |
-| `pvc-6bd96776-3bc7-482c-bfae-487b13754982` | `tana-mcp/tana-mcp-config`   | `tana-mcp-6778d8d56f-nm4xv` | Tana Desktop profile/config under `/home/tana/.config/tana`                    | This is an `hcloud-volumes` CSI volume, not local-path. It has `Retain` reclaim policy and volume handle `105665337`; moving it is different from local-path migration. |
+| PV                                         | PVC                          | Pod                     | Purpose                                                                        | Notes                                                                                               |
+| ------------------------------------------ | ---------------------------- | ----------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `pvc-c31a81bb-5802-4aff-a267-8befa8f27f81` | `grocy-sf/grocy-config`      | `grocy-77fcb8bdd-grzmj` | Grocy SF application config/data, including SQLite and uploads under `/config` | Deployment uses `Recreate` and region `hil`; migration needs copy/restore or accepted app downtime. |
+| `pvc-d1bb043e-a3f1-4d18-999e-0bb2da5a804f` | `grocy-vallejo/grocy-config` | `grocy-77fcb8bdd-tmq9z` | Grocy Vallejo application config/data under `/config`                          | Same pattern as Grocy SF.                                                                           |
+
+### Hetzner Cloud Volumes
+
+| PV                                         | PVC                                      | State      | Pod                         | Purpose                                                     | Notes                                                                                                     |
+| ------------------------------------------ | ---------------------------------------- | ---------- | --------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `pvc-6bd96776-3bc7-482c-bfae-487b13754982` | `tana-mcp/tana-mcp-config`               | `Bound`    | `tana-mcp-6778d8d56f-nm4xv` | Tana Desktop profile/config under `/home/tana/.config/tana` | `hcloud-volumes` CSI volume with `Retain` reclaim policy and volume handle `105665337`.                   |
+| `pvc-abcebdca-d64a-41f6-8cdc-6d5a91ee9922` | `tana-mcp/tana-mcp-facade-fastmcp-state` | `Released` | none                        | Historical Tana MCP facade FastMCP state                    | Released `hcloud-volumes` PV with handle `105665343`; no PVC is currently bound, but the PV still exists. |
+
+### VPS Control-Plane Local PVCs
+
+These are not on the two worker nodes, but they are still local-path PVs pinned
+to `talos-vps-cp-*` hosts.
+
+| PV                                         | PVC                                       | Node             | Pod                         | Purpose                                 | Notes                                            |
+| ------------------------------------------ | ----------------------------------------- | ---------------- | --------------------------- | --------------------------------------- | ------------------------------------------------ |
+| `pvc-036942d3-6286-4325-a99e-580b97916f30` | `authentik/authentik-db-1`                | `talos-vps-cp-0` | `authentik-db-1`            | Authentik Postgres data                 | Generic `local-path`, physically on VPS cp node. |
+| `pvc-69f430ae-9d38-4345-9d9d-52d624b5cf7c` | `authentik/authentik-db-2`                | `talos-vps-cp-1` | `authentik-db-2`            | Authentik Postgres data                 | Generic `local-path`, physically on VPS cp node. |
+| `pvc-2f501a4b-a898-4151-aa3e-8fb628ac5e9b` | `airlock/airlock-db-2`                    | `talos-vps-cp-0` | `airlock-db-2`              | Airlock Postgres data                   | Generic `local-path`, physically on VPS cp node. |
+| `pvc-ac53c38b-d199-466c-aaa5-8ca37172af7a` | `airlock/airlock-db-1`                    | `talos-vps-cp-1` | `airlock-db-1`              | Airlock Postgres data                   | Generic `local-path`, physically on VPS cp node. |
+| `pvc-e6154595-d2c4-41f0-b762-65e060449955` | `tofu-state/tofu-state-db-1`              | `talos-vps-cp-0` | `tofu-state-db-1`           | OpenTofu state Postgres data            | Generic `local-path`, physically on VPS cp node. |
+| `pvc-184beb25-d123-493d-a4b8-e904e8f2af1d` | `tofu-state/tofu-state-db-2`              | `talos-vps-cp-1` | `tofu-state-db-2`           | OpenTofu state Postgres data            | Generic `local-path`, physically on VPS cp node. |
+| `pvc-40b5c07b-4c73-438c-ae88-42b21329489d` | `monitoring/db-alertmanager-monitoring-0` | `talos-vps-cp-0` | `alertmanager-monitoring-0` | Alertmanager notification/silence state | `local-path-hetzner`.                            |
+| `pvc-9a6cd0c0-1b45-4cca-a8b3-ec394a9dd147` | `monitoring/db-alertmanager-monitoring-1` | `talos-vps-cp-1` | `alertmanager-monitoring-1` | Alertmanager notification/silence state | `local-path-hetzner`.                            |
+| `pvc-b2d9121e-f974-423b-a36b-bff609747771` | `monitoring/grafana-db-1`                 | `talos-vps-cp-1` | `grafana-db-1`              | Grafana Postgres data                   | `local-path-hetzner`.                            |
+| `pvc-01eb3b6d-7235-4fd4-9da7-bd3c15f162c6` | `monitoring/grafana-db-2`                 | `talos-vps-cp-0` | `grafana-db-2`              | Grafana Postgres data                   | `local-path-hetzner`.                            |
+| `pvc-4fcd7c93-bb5e-47fd-87fe-4c1f3d644c45` | `gatus/gatus`                             | `talos-vps-cp-1` | `gatus-*`                   | Gatus state                             | Generic `local-path`, mounted by active pods.    |
 
 ## Operator Facts
 
