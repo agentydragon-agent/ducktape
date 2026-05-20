@@ -1168,6 +1168,152 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     assert_node_output(&probe_path, "package:package\n", "");
 }
 
+#[test]
+fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materialization() {
+    // `materialize_logical_modules` can create new import statements after
+    // the original artifact graph has been indexed. Vendor swapping still
+    // needs to recognize those generated relative paths and route them to the
+    // bundled facade instead of leaving the residual vendor chunk imported.
+    // TODO: add a browser/importmap load probe alongside this Node check once
+    // the e2e harness has a browser runner.
+    const VENDOR_PATH: &str = "static/vendor.js";
+    const APP_PATH: &str = "static/app.js";
+    const PACKAGE_NAME: &str = "observer-kit/observer";
+    const PACKAGE_VERSION: &str = "1.0.0";
+
+    let root =
+        TempDir::with_prefix("vendor-bundled-partial-swap-materialized-").expect("create tempdir");
+    let workspace_root = root.path().join("workspace");
+    let extracted_root = workspace_root.join("extracted");
+    let snapshot_root = workspace_root.join("snapshot");
+    let out_root = workspace_root.join("out");
+    let report_root = out_root.join("reports").join("tree");
+    let wrapper_root = out_root.join("app").join("vendors").join("generated");
+    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
+    let bundle_root = root.path().join("external-bundles");
+    let bundle_path = bundle_root.join("observer-kit.esbuilt.js");
+    let package_root = root.path().join("upstream").join("observer-kit");
+    fs::create_dir_all(&extracted_root).unwrap();
+    fs::create_dir_all(&snapshot_root).unwrap();
+    fs::create_dir_all(&out_root).unwrap();
+    fs::create_dir_all(&bundle_root).unwrap();
+    fs::create_dir_all(&package_root).unwrap();
+    fs::create_dir_all(snapshot_root.join("static")).unwrap();
+
+    write_text_file(
+        &snapshot_root.join(VENDOR_PATH),
+        "const observer = value => `vendor:${value}`;\n\
+         export { observer as o };\n",
+    );
+    write_text_file(
+        &snapshot_root.join(APP_PATH),
+        "import { o as observe } from \"../vendor/entry.js\";\n\
+         const observed = observe(\"ok\");\n\
+         export { observed };\n",
+    );
+    let js_list_path = extracted_root.join("js-files.txt");
+    write_text_file(&js_list_path, &format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+    write_text_file(
+        &bundle_path,
+        "const observe = value => `package:${value}`;\n\
+         export { observe };\n",
+    );
+
+    write_text_file(
+        &package_root.join("package.json"),
+        &format!(
+            "{}\n",
+            serde_json::to_string_pretty(&json!({
+                "name": "observer-kit",
+                "version": PACKAGE_VERSION,
+                "main": "index.js",
+            }))
+            .unwrap(),
+        ),
+    );
+    write_text_file(
+        &package_root.join("observer.js"),
+        "export default function observe(value) { return `package:${value}`; }\n",
+    );
+
+    let spec_path = root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            VENDOR_PATH: {
+                "level": "bundled_partial_swap",
+                "identity": "materialized import bundled partial swap fixture",
+                "bundle": { "path": &bundle_path },
+                "packages": {
+                    PACKAGE_NAME: {
+                        "version": PACKAGE_VERSION,
+                        "subpath": "observer.js",
+                        "bundle_export": "observe",
+                    },
+                },
+                "symbols": {
+                    "o": { "package": PACKAGE_NAME, "kind": "default" },
+                },
+            },
+        },
+        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
+        "logical_modules": {
+            "static/app": {
+                "helpers/observer": {
+                    "members": [
+                        {
+                            "name": "observed",
+                            "selector": { "binding": { "name": "observed" } },
+                        },
+                    ],
+                },
+            },
+        },
+        "unassigned_mode": {
+            "static/app": { "kind": "inline_in_entry" },
+        },
+        "materialize_logical_modules": {
+            "prune_other_chunks": false,
+            "report_out_dir": &report_root,
+            "target_dir": "modules",
+        },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &manifest_path,
+            "output_wrapper_dir": &wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "force": true, "out_dir": &out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let materialized_path = out_root.join("app/static/app/modules/helpers/observer.js");
+    let materialized = fs::read_to_string(&materialized_path).expect("materialized module emitted");
+    assert!(
+        !materialized.contains("vendor/entry.js"),
+        "materialized module must not keep importing the residual vendor chunk:\n{materialized}",
+    );
+    assert!(
+        materialized.contains("vendors/generated/static/vendor/observer-kit_observer.js"),
+        "materialized module should import the generated bundled facade:\n{materialized}",
+    );
+
+    let probe_path = out_root.join("__run_materialized.mjs");
+    write_text_file(
+        &probe_path,
+        "const { observed } = await import(\"./app/static/app/modules/helpers/observer.js\");\n\
+         console.log(observed);\n",
+    );
+    assert_node_output(&probe_path, "package:ok\n", "");
+}
+
 struct PartialSwapKindFixtureArgs<'a> {
     /// "namespace", "default", or "named"
     kind: &'a str,

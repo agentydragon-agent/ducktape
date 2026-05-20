@@ -12,8 +12,8 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, JsFile, JsFileAstParts,
-    get_chunk_entry_path, list_chunk_file_paths, manifest_relative_path, path_from_module_path,
-    relative_module_specifier,
+    get_chunk_entry_path, join_module_path, list_chunk_file_paths, manifest_relative_path,
+    module_path_dirname, normalize_module_path, path_from_module_path, relative_module_specifier,
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 use spec::{
@@ -2303,20 +2303,21 @@ fn rewrite_partial_swap_in_file(
             continue;
         };
         let source = str_value(&import_decl.src);
-        let Some(resolved) = references.resolve_runtime_import_reference(
+        let Some(target_chunk_id) = resolve_partial_swap_import_target(
             &source,
             job.caller_chunk_id,
             &job.file_path,
+            references,
             chunk_table,
         ) else {
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
             continue;
         };
-        if resolved.target_chunk_id == job.caller_chunk_id {
+        if target_chunk_id == job.caller_chunk_id {
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
             continue;
         }
-        let target_chunk_name = chunk_table.name(resolved.target_chunk_id).to_string();
+        let target_chunk_name = chunk_table.name(target_chunk_id).to_string();
         let Some(chunk_mapping) = mappings.get(&target_chunk_name) else {
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
             continue;
@@ -2486,20 +2487,21 @@ fn rewrite_bundled_partial_swap_in_file(
             continue;
         };
         let source = str_value(&import_decl.src);
-        let Some(resolved) = references.resolve_runtime_import_reference(
+        let Some(target_chunk_id) = resolve_partial_swap_import_target(
             &source,
             job.caller_chunk_id,
             &job.file_path,
+            references,
             chunk_table,
         ) else {
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
             continue;
         };
-        if resolved.target_chunk_id == job.caller_chunk_id {
+        if target_chunk_id == job.caller_chunk_id {
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
             continue;
         }
-        let target_chunk_name = chunk_table.name(resolved.target_chunk_id).to_string();
+        let target_chunk_name = chunk_table.name(target_chunk_id).to_string();
         let Some(chunk_mapping) = mappings.get(&target_chunk_name) else {
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
             continue;
@@ -2612,6 +2614,57 @@ fn bundled_facade_import_source(
     let caller_output_file = Path::new(chunk_table.name(caller_chunk_id)).join(caller_file_path);
     let caller_output_dir = caller_output_file.parent().unwrap_or_else(|| Path::new(""));
     relative_module_specifier(caller_output_dir, Path::new(facade_app_path))
+}
+
+fn resolve_partial_swap_import_target(
+    source: &str,
+    caller_chunk_id: ChunkId,
+    caller_file_path: &str,
+    references: &ArtifactIndexes,
+    chunk_table: &ChunkTable,
+) -> Option<ChunkId> {
+    references
+        .resolve_runtime_import_reference(source, caller_chunk_id, caller_file_path, chunk_table)
+        .map(|resolved| resolved.target_chunk_id)
+        .or_else(|| {
+            resolve_materialized_output_import_target(
+                source,
+                caller_chunk_id,
+                caller_file_path,
+                chunk_table,
+            )
+        })
+}
+
+fn resolve_materialized_output_import_target(
+    source: &str,
+    caller_chunk_id: ChunkId,
+    caller_file_path: &str,
+    chunk_table: &ChunkTable,
+) -> Option<ChunkId> {
+    if source.is_empty() || !source.starts_with('.') {
+        return None;
+    }
+    let caller_output_dir = join_module_path(&[
+        chunk_table.name(caller_chunk_id),
+        module_path_dirname(caller_file_path).as_str(),
+    ]);
+    let resolved_path =
+        normalize_module_path(&join_module_path(&[caller_output_dir.as_str(), source])).ok()?;
+
+    let mut best: Option<(usize, ChunkId)> = None;
+    for index in 0..chunk_table.len() {
+        let chunk_id = ChunkId(index);
+        let chunk_name = chunk_table.name(chunk_id);
+        let is_chunk_file = resolved_path == format!("{chunk_name}.js")
+            || resolved_path
+                .strip_prefix(chunk_name)
+                .is_some_and(|rest| rest.starts_with('/'));
+        if is_chunk_file && best.is_none_or(|(len, _)| chunk_name.len() > len) {
+            best = Some((chunk_name.len(), chunk_id));
+        }
+    }
+    best.map(|(_, chunk_id)| chunk_id)
 }
 
 enum DeferredImport {
