@@ -1,0 +1,266 @@
+# Bazel Cache Sharing Across Worktrees And Local Agents
+
+Drafted 2026-05-20.
+
+Scope: local developer machines running normal CLI Codex and Claude Code. This
+does not cover Codex Web, Claude Code Web, or Claude web sessions.
+
+## The Boundary
+
+Bazel's analysis state is server-local state under one output base. It is not a
+content-addressed cache that can be shared safely between worktrees. Do not point
+multiple worktrees at one `--output_base`: Bazel expects one workspace/server
+owner, takes an output-base lock, and keeps path-sensitive Skyframe state there.
+
+What can be shared is the expensive content cache underneath separate output
+bases:
+
+- `--output_user_root`: common parent for per-worktree output bases. This keeps
+  all Bazel state under one mount, but each worktree still receives a separate
+  hashed output base.
+- `--repository_cache`: downloaded external repository archives.
+- `--repo_contents_cache`: extracted/fetched repository contents. In the current
+  Bazel available through `bazelisk help`, this defaults to empty, so set it
+  explicitly if we want sharing.
+- `--disk_cache`: local action cache/CAS. This is less important when `--config=rbe`
+  uses remote execution and remote cache, but it helps local builds, no-RBE
+  debugging, and actions that are not downloaded from the remote cache.
+- `BAZELISK_HOME`: Bazelisk's downloaded Bazel binaries.
+
+Remote execution/cache already shares action work across machines. It does not
+share local analysis state between worktrees.
+
+## Recommended Layout
+
+Use one cache root per user:
+
+```text
+~/.cache/bazel/
+  _bazel_$USER/
+    <hashed output bases per worktree>
+    cache/
+      repos/
+      repo-contents/
+      disk/
+~/.cache/bazelisk/
+```
+
+On `wyrm2`, `~/.cache/bazel` is already a 150G SSD mount for output bases, and
+`~/.cache/bazel/_bazel_agentydragon/cache/repos` is a nested 100G HDD mount for
+repository cache. Keep `--experimental_repository_cache_hardlinks` disabled
+there: hardlinks only work when repository cache and output bases are on the
+same filesystem.
+
+## Bazelrc Proposal
+
+Put the local sharing flags in Home Manager's generated `~/.bazelrc`, before the
+optional BuildBuddy import:
+
+```nix
+let
+  bazelCacheRoot = "${config.xdg.cacheHome}/bazel";
+  bazelOutputUserRoot = "${bazelCacheRoot}/_bazel_${config.home.username}";
+  bazelRepoCache = "${bazelOutputUserRoot}/cache/repos";
+  bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
+  bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
+in
+{
+  home.file.".bazelrc".text = ''
+    startup --output_user_root=${bazelOutputUserRoot}
+    startup --max_idle_secs=28800
+
+    common --show_progress_rate_limit=0.05
+    common --progress_in_terminal_title
+    common --repository_cache=${bazelRepoCache}
+    common --repo_contents_cache=${bazelRepoContentsCache}
+
+    build --platforms //:linux_x64
+    build --disk_cache=${bazelDiskCache}
+    build --experimental_disk_cache_gc_max_size=200G
+    build --experimental_disk_cache_gc_max_age=14d
+
+    # Optional BuildBuddy / remote cache config (file not in git)
+    try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc
+  '';
+}
+```
+
+For long local debugging loops, consider adding this temporarily rather than
+globally:
+
+```text
+build --noallow_analysis_cache_discard
+```
+
+That can keep more local analysis data around inside one server at the cost of
+memory. It still does not share analysis across worktrees.
+
+Create the cache directories declaratively:
+
+```nix
+home.activation.bazelCacheDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  mkdir -p \
+    '${bazelRepoCache}' \
+    '${bazelRepoContentsCache}' \
+    '${bazelDiskCache}' \
+    '${config.xdg.cacheHome}/bazelisk'
+'';
+```
+
+## Claude Code Local Sandbox
+
+Claude Code has two filesystem concepts that matter here:
+
+- `permissions.additionalDirectories` makes paths part of Claude's working set.
+  Use this for real source/work directories.
+- `sandbox.filesystem.allowWrite` adds writable paths inside the sandbox. Use
+  this for caches and build artifacts.
+
+For local CLI Claude Code, prefer absolute paths in Nix so path expansion does
+not depend on where the settings file lives:
+
+```nix
+settings = {
+  env.BAZELISK_HOME = "${config.xdg.cacheHome}/bazelisk";
+
+  sandbox = {
+    enabled = true;
+    autoAllowBashIfSandboxed = true;
+    allowUnsandboxedCommands = true; # Keep an explicit escape hatch.
+    excludedCommands = [ "nvidia-smi" ];
+    filesystem.allowWrite = [
+      "${config.xdg.cacheHome}/bazel"
+      "${config.xdg.cacheHome}/bazelisk"
+      "${config.xdg.cacheHome}/pre-commit"
+    ];
+  };
+};
+```
+
+Do not put `bazel` or `bazelisk` in `sandbox.excludedCommands` if the goal is to
+let them run in the Claude sandbox.
+
+Avoid glob patterns in `sandbox.filesystem.allowWrite` on Linux. The restored
+sandbox runtime strips or filters write globs before building bubblewrap mounts;
+use concrete cache directories.
+
+Known caveat: Claude's Linux sandbox isolates networking and provides host access
+through proxies. Bazel repository downloads can use HTTP proxy configuration, but
+Bazel's BES/RBE gRPC path has historically failed under that sandbox because the
+Java gRPC client does not use Claude's proxy setup. If RBE/BES reliability matters
+more than sandboxing for a specific invocation, use the explicit unsandboxed
+escape hatch for that invocation.
+
+## Codex Local Sandbox
+
+The cloned Codex source at `~/code/codex` shows:
+
+- `sandbox_workspace_write.writable_roots` adds extra absolute writable roots.
+- The current working directory is writable automatically in `workspace-write`
+  mode.
+- `/tmp` and `$TMPDIR` are writable unless excluded.
+- Missing writable roots are filtered out by the Linux bubblewrap backend.
+- With `network_access = true`, the Linux bubblewrap mode uses full network
+  access unless a managed network proxy policy is active.
+
+Current Ducktape config already points Codex at writable Bazel cache roots:
+
+```nix
+codexBazelCache = "${config.xdg.cacheHome}/bazel";
+codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
+```
+
+Keep that shape, and add the shared disk-cache directories if they become
+separate roots:
+
+```nix
+shell_environment_policy.set.BAZELISK_HOME = "${config.xdg.cacheHome}/bazelisk";
+
+sandbox_mode = "workspace-write";
+sandbox_workspace_write = {
+  writable_roots = [
+    "${config.xdg.cacheHome}/bazel"
+    "${config.xdg.cacheHome}/bazelisk"
+    "${config.xdg.cacheHome}/pre-commit"
+    "${config.xdg.cacheHome}/sccache"
+    "${config.xdg.cacheHome}/nix"
+    "/nix"
+  ];
+  network_access = true;
+  exclude_tmpdir_env_var = false;
+  exclude_slash_tmp = false;
+};
+```
+
+Important Codex-specific detail: generated exec-policy `decision="allow"` rules
+can bypass Codex's shell sandbox for matching command prefixes. That is
+acceptable for the current Ducktape setup: Bazel is already treated as a trusted
+build tool in `nix/home/allowed-commands.nix`, including `build`, `test`,
+`query`, `cquery`, `aquery`, and `info`, plus the `nix develop --command ...`
+variants.
+
+The writable-root configuration is still worth keeping. It lets sandboxed Bazel
+work when a command is unmatched, manually run with sandboxing, or launched
+through a wrapper that does not hit a trusted exec-policy prefix. But do not use
+Codex's current Bazel `decision="allow"` rules as proof that those invocations
+were sandboxed; they are trusted commands.
+
+## Verification
+
+After applying the Bazelrc piece:
+
+```bash
+bazelisk info output_base repository_cache --config=nolint
+```
+
+Expected shape:
+
+```text
+output_base: /home/agentydragon/.cache/bazel/_bazel_agentydragon/<workspace-hash>
+repository_cache: /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos/v1
+```
+
+From inside Claude Code and Codex sandboxed shell commands, verify cache writes:
+
+```bash
+touch ~/.cache/bazel/sandbox-write-probe
+touch ~/.cache/bazelisk/sandbox-write-probe
+rm ~/.cache/bazel/sandbox-write-probe ~/.cache/bazelisk/sandbox-write-probe
+```
+
+For Codex specifically, remember that the current Nix-generated Bazel
+`decision="allow"` rules mean matching Bazel commands are trusted and may bypass
+the shell sandbox.
+
+## Source Basis
+
+Claude Code local source checked:
+
+- `/home/agentydragon/code/claude-code-sourcemap/restored-src/src/entrypoints/sandboxTypes.ts`
+  - `sandbox.filesystem.allowWrite` is the setting for extra writable sandbox
+    paths.
+- `/home/agentydragon/code/claude-code-sourcemap/restored-src/src/utils/sandbox/sandbox-adapter.ts`
+  - `convertToSandboxRuntimeConfig` resolves `~`, absolute paths, and
+    settings-file-relative paths.
+- `/home/agentydragon/code/claude-code-sourcemap/restored-src/node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-manager.js`
+  - Linux/WSL write globs are stripped/filtered because bubblewrap needs
+    concrete mount paths.
+
+OpenAI Codex source checked at
+`/home/agentydragon/code/codex`, commit
+`f6970214d2802ffae0c55e3f30bbc051c1482c1d`:
+
+- `codex-rs/config/src/types.rs` and `codex-rs/config/src/config_toml.rs`
+  - `sandbox_workspace_write.writable_roots` and `network_access` map from TOML
+    config into the runtime permission profile.
+- `codex-rs/protocol/src/protocol.rs`
+  - `workspace-write` adds the explicit writable roots, cwd, `/tmp`, and
+    `$TMPDIR`, with protected metadata subpaths.
+- `codex-rs/linux-sandbox/src/bwrap.rs`
+  - missing writable roots are filtered out before constructing bubblewrap args.
+- `codex-rs/linux-sandbox/src/linux_run_main.rs`
+  - full network access is used when the policy enables network and no managed
+    proxy-only mode is active.
+- `codex-rs/core/src/exec_policy.rs`
+  - explicit `decision="allow"` exec-policy matches can set
+    `bypass_sandbox = true` for the command.

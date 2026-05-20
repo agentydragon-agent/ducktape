@@ -52,8 +52,9 @@ Dangerous files get `/dev/null` mounted over them (mandatory deny):
 - Claude dirs: `.claude/commands/`, `.claude/agents/`, `.claude/skills/`
 - Settings: `.claude/settings.json`, `.claude/settings.local.json`
 
-Source: `sandbox-adapter.ts` (`convertSettingsToSandboxConfig`),
-`sandbox-utils.ts` (`DANGEROUS_FILES`, `getDangerousDirectories`).
+Source: `sandbox-adapter.ts` (`convertToSandboxRuntimeConfig`),
+`sandbox-runtime/dist/sandbox/sandbox-utils.js` (`DANGEROUS_FILES`,
+`getDangerousDirectories`).
 
 ### 2. Network (namespace isolation + proxy filtering)
 
@@ -141,7 +142,7 @@ the macOS system log store.
 
 - <https://github.com/anthropic-experimental/sandbox-runtime> — open-source
   sandbox runtime
-- `/code/github.com/anthropics/claude-code-leaked/src/utils/sandbox/` — Claude
-  Code adapter layer (from v2.1.88 source map leak)
-- `/code/github.com/anthropic-experimental/sandbox-runtime/src/sandbox/` —
-  runtime implementation
+- `/home/agentydragon/code/claude-code-sourcemap/restored-src/src/utils/sandbox/`
+  - Claude Code adapter layer (from v2.1.88 source map leak)
+- `/home/agentydragon/code/claude-code-sourcemap/restored-src/node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/`
+  - runtime implementation used by the restored source

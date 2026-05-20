@@ -2,6 +2,20 @@
 
 Investigated 2026-03-05.
 
+## Current Status
+
+This is a historical Claude Code CLI investigation note. The current canonical
+configuration proposal for shared Bazel caches across worktrees, Codex local
+sandboxing, and Claude Code local sandboxing is
+<../devinfra/docs/bazel_worktree_cache_sharing.md>.
+
+The filesystem fix should now use `sandbox.filesystem.allowWrite` for cache
+directories such as `~/.cache/bazel` and `~/.cache/bazelisk`.
+`permissions.additionalDirectories` is for real working/source directories, not
+for generic build caches. The BES/RBE gRPC caveat below still matters for Claude
+Code's local Linux sandbox: if an invocation needs reliable BuildBuddy BES/RBE,
+use an explicit unsandboxed escape hatch for that invocation.
+
 ## Root Cause
 
 `/wyrmhdd/bazel/repository_cache/` is not in the sandbox write allowlist.
